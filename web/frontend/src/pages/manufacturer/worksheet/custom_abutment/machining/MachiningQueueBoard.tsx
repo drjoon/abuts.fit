@@ -886,7 +886,7 @@ export const MachiningQueueBoard = ({
     openToolOffsetEditor,
     handleToolLifeSaveConfirm,
     openToolDetailWithSlots,
-    openMachiningStatsModal,
+    openUsageStatsModal,
   } = useCncToolPanels({
     workUid: toolWorkUid,
     callRaw,
@@ -1504,7 +1504,7 @@ export const MachiningQueueBoard = ({
         onRequestClose={() => setModalOpen(false)}
         onOpenToolOffsetEditor={() => openToolOffsetEditor()}
         onSave={handleToolLifeSaveConfirm}
-        onOpenMachiningStats={openMachiningStatsModal}
+        onOpenUsageStats={openUsageStatsModal}
       />
 
       <Dialog open={machineInfoOpen} onOpenChange={setMachineInfoOpen}>

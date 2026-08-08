@@ -25,7 +25,7 @@ interface UseCncToolPanelsParams {
   setToolTooltip: (msg: string) => void;
   /** useCncToolSlots 훅에서 제공하는 슬롯 데이터 (옵션, 없으면 슬롯 UI 비활성) */
   toolSlots?: ToolSlot[];
-  /** useCncToolSlots 훅에서 제공하는 가공 통계 (옵션) */
+  /** useCncToolSlots 훅에서 제공하는 사용 통계 (옵션) */
   machiningStats?: MachiningStatEntry[];
   /** 공구 해제 요청 함수 (useCncToolSlots.beginToolRemoval) */
   onBeginToolRemoval?: (toolNum: number) => Promise<ToolSlot[] | null>;
@@ -1354,10 +1354,10 @@ export const useCncToolPanels = ({
   openToolDetailWithSlotsRef.current = openToolDetailWithSlots;
 
   /**
-   * 가공 통계 모달 (machiningStats 탭)
-   * 슬롯별 누적/현재 가공 건수와 시간을 표시한다.
+   * 사용 통계 모달
+   * 슬롯별 사용 시간 · 사용 횟수 · 교체 주기를 표시한다.
    */
-  const openMachiningStatsModal = () => {
+  const openUsageStatsModal = () => {
     const statsMap = new Map<number, MachiningStatEntry>();
     for (const s of machiningStats) {
       statsMap.set(s.toolNum, s);
@@ -1382,68 +1382,173 @@ export const useCncToolPanels = ({
     const displayStats = Array.from(statsMap.values()).sort(
       (a, b) => a.toolNum - b.toolNum,
     );
+    const totalStat = displayStats.find((s) => s.toolNum === 0) ?? null;
+    const slotStats = displayStats.filter((s) => s.toolNum !== 0);
+
+    const toolingSummary = toolingMetaSnapshot?.toolingSummary;
+    const summaryMap = new Map<string, any>(
+      (Array.isArray(toolingSummary?.tools) ? toolingSummary.tools : []).map(
+        (item: any) => [String(item?.toolNum || ""), item],
+      ),
+    );
+    const lifeMap = new Map<number, ToolLifeRow>(
+      (Array.isArray(toolLifeRows) ? toolLifeRows : []).map((row: any) => [
+        Number(row?.toolNum || 0),
+        row,
+      ]),
+    );
+    const replacementHistory = Array.isArray(
+      toolingMetaSnapshot?.replacementHistory,
+    )
+      ? toolingMetaSnapshot.replacementHistory
+      : [];
+    const recentHistory = [...replacementHistory]
+      .sort(
+        (a: any, b: any) =>
+          new Date(b?.createdAt || 0).getTime() -
+          new Date(a?.createdAt || 0).getTime(),
+      )
+      .slice(0, 8);
+
+    const formatDate = (value: unknown) =>
+      value ? String(value).slice(0, 10) : "—";
 
     const body = (
       <div className="space-y-4 text-sm text-slate-700">
         <div className="space-y-1 text-xs leading-relaxed text-slate-500">
           <p>
-            슬롯별 누적 가공 건수와 시간입니다. 현재 장착 이후 값은 교체 완료 시
-            리셋됩니다.
+            슬롯별 공구 사용 시간과 교체 주기입니다. 현재 장착 이후 값은 교체
+            완료 시 리셋됩니다.
           </p>
           <p>
-            공구별 시간은 의뢰 1건의 전체 소요시간을 장착 공구에 동일 합산하므로,
-            합계가 전체(툴#0)보다 클 수 있습니다.
+            교체 주기는 과거 교체 이력의 평균 사용 횟수이며, 이력이 없으면 설정
+            값을 사용합니다. 공구별 시간은 의뢰 1건의 전체 소요시간을 장착
+            공구에 동일 합산하므로 합계가 전체보다 클 수 있습니다.
           </p>
         </div>
 
-        {displayStats.length === 0 ? (
+        {totalStat ? (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <div className="text-[11px] font-semibold text-slate-400">
+                누계 사용시간
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-semibold text-slate-800">
+                {formatSeconds(totalStat.totalMachiningSeconds)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <div className="text-[11px] font-semibold text-slate-400">
+                현재 사용시간
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-semibold text-slate-800">
+                {formatSeconds(totalStat.currentMachiningSeconds)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <div className="text-[11px] font-semibold text-slate-400">
+                누계 사용건수
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-semibold text-slate-800">
+                {totalStat.totalJobCount.toLocaleString()}건
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <div className="text-[11px] font-semibold text-slate-400">
+                총 교체 횟수
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-semibold text-slate-800">
+                {replacementHistory.length.toLocaleString()}회
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {slotStats.length === 0 && !totalStat ? (
           <div className="rounded-xl border border-dashed border-slate-300 py-10 text-center text-sm text-slate-400">
-            가공 통계 데이터가 없습니다.
+            사용 통계 데이터가 없습니다.
+          </div>
+        ) : slotStats.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-400">
+            등록된 공구 슬롯이 없습니다.
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="max-h-[60vh] overflow-auto">
-              <table className="w-full min-w-[860px] text-xs">
+            <div className="max-h-[48vh] overflow-auto">
+              <table className="w-full min-w-[920px] text-xs">
                 <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
                   <tr>
                     <th className="w-12 px-3 py-2.5 text-center">툴#</th>
                     <th className="px-2 py-2.5 text-left">공구명</th>
-                    <th className="px-2 py-2.5 text-center">누계건수</th>
+                    <th className="px-2 py-2.5 text-center">사용시간</th>
                     <th className="px-2 py-2.5 text-center">누계시간</th>
-                    <th className="px-2 py-2.5 text-center">현재건수</th>
-                    <th className="px-2 py-2.5 text-center">현재시간</th>
-                    <th className="px-2 py-2.5 text-center">마지막</th>
+                    <th className="px-2 py-2.5 text-center">사용횟수</th>
+                    <th className="px-2 py-2.5 text-center">교체주기</th>
+                    <th className="px-2 py-2.5 text-center">잔여</th>
+                    <th className="px-2 py-2.5 text-center">교체횟수</th>
+                    <th className="px-2 py-2.5 text-center">마지막 교체</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {displayStats.map((stat) => {
+                  {slotStats.map((stat) => {
                     const slot = toolSlots.find(
                       (s) => s.toolNum === stat.toolNum,
                     );
+                    const meta = summaryMap.get(String(stat.toolNum));
+                    const life = lifeMap.get(stat.toolNum);
+                    const useCount = Number(
+                      life?.useCount ?? meta?.useCount ?? stat.currentJobCount,
+                    );
+                    const cycle = Math.round(
+                      Number(
+                        meta?.avgReplacementUseCount ||
+                          meta?.predictedReplacementUseCount ||
+                          life?.configCount ||
+                          0,
+                      ),
+                    );
+                    const remaining =
+                      cycle > 0
+                        ? Math.max(0, cycle - useCount)
+                        : Number(meta?.remainingUseCount || 0);
+                    const replaceCount = Number(meta?.replacementCount || 0);
+                    const lastReplaced =
+                      slot?.lastReplacedAt || meta?.lastReplacementAt || null;
+
                     return (
                       <tr key={stat.toolNum} className="hover:bg-slate-50/80">
                         <td className="whitespace-nowrap px-3 py-2.5 text-center font-semibold text-slate-800">
-                          {stat.toolNum === 0 ? "전체" : stat.toolNum}
+                          {stat.toolNum}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2.5 text-left text-slate-700">
                           {slot?.toolName || "—"}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-800">
-                          {stat.totalJobCount.toLocaleString()}건
+                          {formatSeconds(stat.currentMachiningSeconds)}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-700">
                           {formatSeconds(stat.totalMachiningSeconds)}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-800">
-                          {stat.currentJobCount.toLocaleString()}건
+                          {useCount.toLocaleString()}
+                          {cycle > 0 ? (
+                            <span className="text-slate-400">
+                              {" "}
+                              / {cycle.toLocaleString()}
+                            </span>
+                          ) : null}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-700">
-                          {formatSeconds(stat.currentMachiningSeconds)}
+                          {cycle > 0 ? `${cycle.toLocaleString()}회` : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-700">
+                          {cycle > 0 ? remaining.toLocaleString() : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-700">
+                          {replaceCount.toLocaleString()}회
                         </td>
                         <td className="whitespace-nowrap px-2 py-2.5 text-center text-[10px] text-slate-400">
-                          {stat.lastJobAt
-                            ? String(stat.lastJobAt).slice(0, 10)
-                            : "—"}
+                          {formatDate(lastReplaced)}
                         </td>
                       </tr>
                     );
@@ -1453,6 +1558,56 @@ export const useCncToolPanels = ({
             </div>
           </div>
         )}
+
+        {recentHistory.length > 0 ? (
+          <div className="space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              최근 교체 이력
+            </div>
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <ul className="divide-y divide-slate-100">
+                {recentHistory.map((item: any, idx: number) => (
+                  <li
+                    key={`${String(item?.toolNum || 0)}-${String(item?.createdAt || idx)}`}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs text-slate-600"
+                  >
+                    <span className="font-semibold text-slate-800">
+                      #{item?.toolNum}
+                    </span>
+                    <span
+                      className={
+                        item?.kind === "abnormal"
+                          ? "font-medium text-rose-600"
+                          : "font-medium text-emerald-700"
+                      }
+                    >
+                      {item?.kind === "abnormal" ? "비정상" : "정상"}
+                    </span>
+                    <span className="font-mono text-slate-500">
+                      {String(item?.createdAt || "")
+                        .slice(0, 16)
+                        .replace("T", " ")}
+                    </span>
+                    <span>
+                      사용 {Number(item?.observedUseCount || 0).toLocaleString()}
+                      회
+                    </span>
+                    {item?.createdByName ? (
+                      <span className="text-slate-400">
+                        {item.createdByName}
+                      </span>
+                    ) : null}
+                    {item?.note ? (
+                      <span className="w-full text-slate-400 sm:w-auto">
+                        {item.note}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex justify-end gap-2 pt-1">
           <button
@@ -1475,7 +1630,7 @@ export const useCncToolPanels = ({
       </div>
     );
 
-    setModalTitle("가공 통계");
+    setModalTitle("사용 통계");
     setModalBody(body);
     setModalOpen(true);
   };
@@ -1547,8 +1702,8 @@ export const useCncToolPanels = ({
     openToolDetail,
     openToolOffsetEditor,
     handleToolLifeSaveConfirm,
-    // 슬롯 교체 워크플로우 + 통계 모달
+    // 슬롯 교체 워크플로우 + 사용 통계 모달
     openToolDetailWithSlots,
-    openMachiningStatsModal,
+    openUsageStatsModal,
   };
 };

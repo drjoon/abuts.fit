@@ -16,12 +16,12 @@ interface CncToolStatusModalProps {
   onRequestClose: () => void;
   onOpenToolOffsetEditor: () => void;
   onSave?: () => void;
-  /** 가공 통계 모달로 이동하는 콜백 (제공 시 헤더에 버튼 표시) */
-  onOpenMachiningStats?: () => void;
+  /** 사용 통계 모달로 이동하는 콜백 (제공 시 헤더에 버튼 표시) */
+  onOpenUsageStats?: () => void;
 }
 
 function modalSizeClass(title: string): string {
-  if (title === "가공 통계") return "max-w-5xl";
+  if (title === "사용 통계") return "max-w-5xl";
   if (title === "공구 상태") return "max-w-4xl";
   if (title === "공구 등록") return "max-w-lg";
   return "max-w-xl";
@@ -30,7 +30,7 @@ function modalSizeClass(title: string): string {
 function subtitleFor(title: string): string | null {
   if (title === "공구 상태") return "슬롯별 수명 · 옵셋 · 교체";
   if (title === "공구 등록") return "슬롯 등록 또는 템플릿 적용";
-  if (title === "가공 통계") return "슬롯별 누적 · 현재 장착 이후";
+  if (title === "사용 통계") return "사용 시간 · 교체 주기";
   return null;
 }
 
@@ -43,7 +43,7 @@ export const CncToolStatusModal = ({
   onRequestClose,
   onOpenToolOffsetEditor: _onOpenToolOffsetEditor,
   onSave,
-  onOpenMachiningStats,
+  onOpenUsageStats,
 }: CncToolStatusModalProps) => {
   if (!open) return null;
 
@@ -76,13 +76,13 @@ export const CncToolStatusModal = ({
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {isToolStatus && onOpenMachiningStats ? (
+            {isToolStatus && onOpenUsageStats ? (
               <button
                 type="button"
-                onClick={onOpenMachiningStats}
+                onClick={onOpenUsageStats}
                 className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
               >
-                가공 통계
+                사용 통계
               </button>
             ) : null}
             <button

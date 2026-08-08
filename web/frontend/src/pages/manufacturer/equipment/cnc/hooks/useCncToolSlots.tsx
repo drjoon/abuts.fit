@@ -5,7 +5,7 @@
 /**
  * useCncToolSlots.tsx
  *
- * CNC 공구 슬롯 메타데이터 + 가공 통계를 관리하는 훅.
+ * CNC 공구 슬롯 메타데이터 + 사용 통계를 관리하는 훅.
  *
  * 주요 기능:
  *  1. GetToolSlots / GetToolStats 호출로 초기 데이터 로드
@@ -13,7 +13,7 @@
  *  3. CompleteToolReplacement — 교체 완료 확인 (removing → mounted)
  *  4. UpdateToolSlotMeta — 공구 이름/타입/메모 수정
  *  5. 슬롯별 health level 산출 (useCount / configCount 기반 + replacementStatus)
- *  6. 가공 통계(machiningStats) 표시 헬퍼
+ *  6. 사용 통계(machiningStats) 표시 헬퍼
  */
 import { useCallback, useRef, useState } from "react";
 
@@ -148,7 +148,7 @@ export const useCncToolSlots = ({
   /**
    * CompleteToolReplacement — 교체 완료 확인.
    * 슬롯 상태를 mounted로 전환하고, useCount를 0으로 리셋하며,
-   * 현재 장착 이후 가공 통계(currentJobCount 등)를 리셋한다.
+   * 현재 장착 이후 사용 통계(currentJobCount 등)를 리셋한다.
    *
    * @param payload.toolNum - 교체 완료한 슬롯 번호
    * @param payload.kind    - "normal" | "abnormal"

@@ -153,7 +153,7 @@ export const EquipmentPage = () => {
     toast,
   });
 
-  // 슬롯 메타데이터(toolSlots) + 가공 통계(machiningStats) 관리 훅.
+  // 슬롯 메타데이터(toolSlots) + 사용 통계(machiningStats) 관리 훅.
   // workUid가 바뀔 때마다 백엔드에서 GetToolSlots로 캐시한다.
   const {
     toolSlots,
@@ -193,7 +193,7 @@ export const EquipmentPage = () => {
     openToolOffsetEditor,
     handleToolLifeSaveConfirm,
     openToolDetailWithSlots,
-    openMachiningStatsModal,
+    openUsageStatsModal,
   } = useCncToolPanels({
     workUid,
     callRaw,
@@ -610,7 +610,7 @@ export const EquipmentPage = () => {
         openTempDetail={openTempDetail}
         callRaw={callRaw}
         openToolDetail={openToolDetailUnified}
-        openMachiningStatsModal={openMachiningStatsModal}
+        openUsageStatsModal={openUsageStatsModal}
         updateToolTooltip={updateToolTooltip}
         updateToolHealth={updateToolHealth}
         handleEditMachine={handleEditMachine}
