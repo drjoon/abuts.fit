@@ -57,7 +57,7 @@ export const ChatRoomsList = ({ onSelectRoom, onCreateGroup }: ChatRoomsListProp
             placeholder="채팅방 이름, 참여자 검색"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8 sm:pl-10 pr-10 sm:pr-12 bg-background/50 text-sm sm:text-base h-8 sm:h-10"
+            className="pl-8 sm:pl-10 pr-10 sm:pr-12 bg-background/50 text-sm sm:text-base h-9 sm:h-10"
           />
           <Button
             size="sm"
@@ -94,7 +94,7 @@ export const ChatRoomsList = ({ onSelectRoom, onCreateGroup }: ChatRoomsListProp
                 )}
                 
                 {room.isGroup && (
-                  <div className="absolute -bottom-0.5 -right-0.5 bg-primary text-primary-foreground text-xs rounded-full h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center">
+                  <div className="absolute -bottom-0.5 -right-0.5 bg-primary text-primary-foreground text-[10px] leading-none rounded-full h-5 w-5 sm:h-5 sm:w-5 flex items-center justify-center">
                     {room.participants.length}
                   </div>
                 )}
@@ -111,7 +111,7 @@ export const ChatRoomsList = ({ onSelectRoom, onCreateGroup }: ChatRoomsListProp
                       </span>
                     )}
                     {room.unreadCount > 0 && (
-                      <Badge variant="destructive" className="text-xs min-w-[16px] h-4 sm:min-w-[20px] sm:h-5">
+                      <Badge variant="destructive" className="text-[10px] leading-none min-w-[18px] h-5 sm:min-w-[20px] sm:h-5 px-1">
                         {room.unreadCount > 99 ? '99+' : room.unreadCount}
                       </Badge>
                     )}

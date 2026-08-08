@@ -25,7 +25,7 @@ const ENABLE_HINT =
   "비활성화를 활성화하려면 설정-사업자에서 설정 변경.";
 
 /**
- * 기공의뢰서 발신(의뢰 발신자·치과) / 수신(의뢰 수신자·기공소과 기공실) 전환.
+ * 기공의뢰서 발신(의뢰 발신자·치과) / 수신(의뢰 수신자·기공소와 기공실) 전환.
  * 가능한 유형만 활성화하고, 불가한 쪽은 disabled.
  */
 export const PracticeTransferRoleTabs = ({
@@ -58,7 +58,7 @@ export const PracticeTransferRoleTabs = ({
                 disabled={!canSend}
                 variant={mode === "send" ? "default" : "ghost"}
                 className={cn(
-                  "h-8 px-3",
+                  "h-9 px-3 text-xs",
                   mode !== "send" && "text-slate-600",
                   !canSend && "pointer-events-none",
                 )}
@@ -89,7 +89,7 @@ export const PracticeTransferRoleTabs = ({
                 disabled={!canReceive}
                 variant={mode === "receive" ? "default" : "ghost"}
                 className={cn(
-                  "h-8 px-3",
+                  "h-9 px-3 text-xs",
                   mode !== "receive" && "text-slate-600",
                   !canReceive && "pointer-events-none",
                 )}

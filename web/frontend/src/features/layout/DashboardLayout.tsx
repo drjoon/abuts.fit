@@ -1315,7 +1315,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs gap-1"
+                                className="h-8 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=request",
@@ -1335,7 +1335,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs gap-1"
+                                className="h-8 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=machining",
@@ -1355,7 +1355,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs gap-1"
+                                className="h-8 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=packing",
@@ -1374,7 +1374,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs gap-1"
+                                className="h-8 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=shipping",
@@ -1394,7 +1394,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs gap-1"
+                                className="h-8 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=tracking",
@@ -1412,7 +1412,7 @@ export const DashboardLayout = () => {
                                   worksheetStage === "rnd" ? "default" : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs gap-1"
+                                className="h-8 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=rnd",
@@ -1431,7 +1431,7 @@ export const DashboardLayout = () => {
                                     : "ghost"
                                 }
                                 size="sm"
-                                className="h-7 px-2 text-xs gap-1"
+                                className="h-8 px-2 text-xs gap-1"
                                 onClick={() =>
                                   navigate(
                                     "/dashboard/worksheet?type=cnc&stage=unmachinable",
@@ -1459,7 +1459,7 @@ export const DashboardLayout = () => {
                             />
                             <span>완료포함</span>
                           </label>
-                          <div className="relative w-full max-w-[110px] lg:max-w-[200px]">
+                          <div className="relative w-full max-w-[140px] lg:max-w-[220px]">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                               placeholder="검색..."
@@ -1467,7 +1467,7 @@ export const DashboardLayout = () => {
                               onChange={(e) =>
                                 setWorksheetSearch(e.target.value)
                               }
-                              className="pl-10 h-8 text-xs"
+                              className="pl-10 h-9 text-xs"
                             />
                           </div>
                         </div>

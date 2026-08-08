@@ -170,7 +170,7 @@ export const PeriodFilter = ({
   );
 
   const rangeTriggerClassName = cn(
-    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] transition-colors",
+    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] leading-none transition-colors",
     hasCustomRange || open
       ? "bg-primary text-primary-foreground"
       : "bg-background text-muted-foreground hover:bg-muted",
@@ -245,7 +245,7 @@ export const PeriodFilter = ({
           type="button"
           onClick={() => handlePresetClick(k)}
           className={cn(
-            "whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] transition-colors",
+            "whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] leading-none transition-colors",
             !hasCustomRange && value === k
               ? "bg-primary text-primary-foreground"
               : "bg-background text-muted-foreground hover:bg-muted",

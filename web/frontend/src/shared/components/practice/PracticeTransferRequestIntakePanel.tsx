@@ -90,7 +90,7 @@ const MAX_MEMO_SUGGESTIONS = 8;
 const MEMO_SUGGEST_MIN_CHARS = 1;
 const TOOTH_CHART_VISIBLE = 6;
 /** 카드 높이: 커스텀 임플란트/스캔바디 2줄까지 표시한 기준 */
-const TOOTH_CARD_HEIGHT_CLASS = "h-[9.75rem]";
+const TOOTH_CARD_HEIGHT_CLASS = "h-[11rem]";
 /** 치식: 위(18→11→21→28) / 아래(48→41→31→38). 행마다 6칸 + <> 스크롤 */
 const TOOTH_CHART_ROWS: ReadonlyArray<{ key: string; label: string; teeth: readonly string[] }> = [
   {
@@ -1427,7 +1427,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 });
                               }}
                             >
-                              <SelectTrigger className="h-6 w-full min-w-0 max-w-full justify-center gap-0 rounded-md border-sky-200/80 bg-white/80 px-0.5 text-[11px] text-slate-600 shadow-none [&>span]:w-full [&>span]:truncate [&>span]:text-center [&>svg]:hidden">
+                              <SelectTrigger className="h-7 w-full min-w-0 max-w-full justify-center gap-0 rounded-md border-sky-200/80 bg-white/80 px-0.5 text-[11px] text-slate-600 shadow-none [&>span]:w-full [&>span]:truncate [&>span]:text-center [&>svg]:hidden">
                                 <SelectValue placeholder="형태" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1488,7 +1488,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                         <TooltipTrigger asChild>
                                           <button
                                             type="button"
-                                            className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-sky-700 hover:bg-sky-100/70 hover:underline"
+                                            className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-sky-700 hover:bg-sky-100/70 hover:underline"
                                             onClick={() => openCustomSpecsModal(originalIndex)}
                                           >
                                             {implantCompact || "임플란트"}
@@ -1502,7 +1502,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                         <TooltipTrigger asChild>
                                           <button
                                             type="button"
-                                            className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-teal-700 hover:bg-teal-50 hover:underline"
+                                            className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-teal-700 hover:bg-teal-50 hover:underline"
                                             onClick={() => openCustomSpecsModal(originalIndex)}
                                           >
                                             {abutmentCompact || "스캔바디"}

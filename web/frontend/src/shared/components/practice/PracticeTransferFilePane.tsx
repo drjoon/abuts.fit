@@ -19,9 +19,9 @@ export type PracticeTransferFileDisplayItem = {
   metaSuffix?: string;
 };
 
-/** 파일 행 높이 3.25rem × 4 + gap 1.5 × 3 ≈ 14.125rem */
+/** 파일 행 높이 3.5rem × 4 + gap 1.5 × 3 ≈ 15.125rem */
 export const PRACTICE_FILE_LIST_VIEWPORT_CLASS =
-  "h-[14.125rem] max-h-[14.125rem] min-h-[14.125rem]";
+  "h-[15.125rem] max-h-[15.125rem] min-h-[15.125rem]";
 
 export type PracticeTransferFilePaneProps = {
   acceptedHint: string;
@@ -112,7 +112,7 @@ export const PracticeTransferFilePane = ({
                       <Button
                         type="button"
                         size="sm"
-                        className="h-7 rounded-lg bg-blue-600 px-2.5 text-xs text-white hover:bg-blue-700 disabled:bg-blue-600/50"
+                        className="h-8 rounded-lg bg-blue-600 px-2.5 text-xs text-white hover:bg-blue-700 disabled:bg-blue-600/50"
                         onClick={onSyncUpload}
                         disabled={syncUploadDisabled || syncUploadBusy}
                       >
@@ -132,7 +132,7 @@ export const PracticeTransferFilePane = ({
               type="button"
               variant="outline"
               size="sm"
-              className="h-7 rounded-lg border-slate-200 bg-white text-xs"
+              className="h-8 rounded-lg border-slate-200 bg-white text-xs"
               onClick={onClearAllFiles}
               disabled={files.length === 0}
             >
@@ -150,11 +150,11 @@ export const PracticeTransferFilePane = ({
         ) : (
           <div className={`${listViewportClassName} overflow-y-auto pr-1`}>
             <TooltipProvider delayDuration={0}>
-              <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.25rem]">
+              <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.5rem]">
                 {files.map((file) => (
                   <div
                     key={file.key}
-                    className="flex h-[3.25rem] items-center justify-between rounded-lg border border-slate-200/80 bg-white px-2 py-1.5"
+                    className="flex h-[3.5rem] items-center justify-between rounded-lg border border-slate-200/80 bg-white px-2 py-1.5"
                   >
                     <div className="min-w-0">
                       <Tooltip>

@@ -247,13 +247,13 @@ const renderTransactionDetail = ({
             }
             size="sm"
           />
-          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+          <Badge variant="outline" className="h-5 px-1.5 text-[10px] leading-none">
             {manufacturerStage}
           </Badge>
           {isExpressSurchargeOnly ? (
             <Badge
               variant="outline"
-              className="h-5 px-1.5 text-[10px] border-amber-400 text-amber-700 bg-amber-50"
+              className="h-5 px-1.5 text-[10px] leading-none border-amber-400 text-amber-700 bg-amber-50"
             >
               신속추가
             </Badge>
@@ -272,7 +272,7 @@ const renderTransactionDetail = ({
             type="button"
             variant="outline"
             size="sm"
-            className="h-5 px-1.5 text-[10px]"
+            className="h-6 px-1.5 text-[10px] leading-none"
             onClick={onOpenRequestDetail}
           >
             자세히 보기

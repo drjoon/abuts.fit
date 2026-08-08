@@ -361,7 +361,7 @@ export const NewChatWidget = () => {
             <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
             {/* 읽지 않은 메시지 알림 (간단히 의뢰 개수 기준) */}
             {totalUnread > 0 && (
-              <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs rounded-full h-5 w-5 flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] leading-none rounded-full h-5 min-w-5 px-1 flex items-center justify-center">
                 {totalUnread > 99 ? "99+" : totalUnread}
               </span>
             )}

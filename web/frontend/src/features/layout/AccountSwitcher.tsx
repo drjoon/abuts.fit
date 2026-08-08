@@ -143,7 +143,7 @@ export function AccountSwitcherMenuSection({
                   {subLabel ? (
                     <Badge
                       variant="outline"
-                      className="text-[10px] px-1 py-0 h-4"
+                      className="text-[10px] px-1.5 py-0 h-5 leading-none"
                     >
                       {subLabel}
                     </Badge>

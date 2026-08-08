@@ -28,7 +28,7 @@ export function ShippingModeBadge({
   const resolved = mode ?? resolveShippingMode(source);
   const sizeClass =
     size === "sm"
-      ? "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+      ? "text-[10px] h-5 px-1.5 whitespace-nowrap leading-none"
       : "";
 
   return (

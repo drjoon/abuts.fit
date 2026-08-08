@@ -87,7 +87,7 @@ export const RequestorRiskSummaryCard = ({
   };
 
   const STAGE_BADGE_BASE =
-    "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
+    "text-[10px] h-5 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
 
   const getStatusBadge = (requestLike: any) => {
     let label: string;
@@ -220,14 +220,14 @@ export const RequestorRiskSummaryCard = ({
                         {item.riskLevel === "danger" ? (
                           <Badge
                             variant="destructive"
-                            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+                            className="text-[10px] h-5 px-1.5 whitespace-nowrap leading-none"
                           >
                             지연확정
                           </Badge>
                         ) : (
                           <Badge
                             variant="outline"
-                            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+                            className="text-[10px] h-5 px-1.5 whitespace-nowrap leading-none"
                           >
                             지연가능
                           </Badge>

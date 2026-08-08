@@ -32,7 +32,7 @@ import {
 } from "@/shared/practice/usePracticeToothWorkEditor";
 
 const TOOTH_CHART_VISIBLE = 6;
-const TOOTH_CARD_HEIGHT_CLASS = "h-[9.75rem]";
+const TOOTH_CARD_HEIGHT_CLASS = "h-[11rem]";
 
 const TOOTH_CHART_ROWS: ReadonlyArray<{
   key: string;
@@ -285,7 +285,7 @@ export const PracticeToothWorkChartReadOnly = ({
                       {row.toothNumber}
                     </span>
 
-                    <div className="mt-1.5 flex h-6 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-sky-200/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600">
+                    <div className="mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-sky-200/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600">
                       <span className="block w-full truncate px-0.5">{row.prosthesisType || "-"}</span>
                     </div>
 
@@ -298,7 +298,7 @@ export const PracticeToothWorkChartReadOnly = ({
                           <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-sky-700">
+                                <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-sky-700">
                                   {implantCompact || "임플란트"}
                                 </span>
                               </TooltipTrigger>
@@ -308,7 +308,7 @@ export const PracticeToothWorkChartReadOnly = ({
                             </Tooltip>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-teal-700">
+                                <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-teal-700">
                                   {abutmentCompact || "스캔바디"}
                                 </span>
                               </TooltipTrigger>

@@ -167,7 +167,7 @@ export const RequestorSettingsPage = () => {
                     </p>
                     {launchEventRemainingDays != null && (
                       <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold leading-none ${
                           launchEventRemainingDays > 0
                             ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
                             : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"

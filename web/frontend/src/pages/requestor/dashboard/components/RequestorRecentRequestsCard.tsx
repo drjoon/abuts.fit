@@ -44,7 +44,7 @@ import { useSystemSettings, CREDIT_SETTINGS_DEFAULTS } from "@/hooks/useSystemSe
 const EDITABLE_STATUSES = new Set(["준비", "CAM", "가공"]); // CAM 호환 포함, UI 정책상 준비/가공 단계에서 수정 허용
 
 const STAGE_BADGE_BASE =
-  "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
+  "text-[10px] h-5 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
 
 
 
@@ -638,7 +638,7 @@ export const RequestorRecentRequestsCard = ({
                   <div className="absolute top-2 right-2 z-10">
                     <button
                       type="button"
-                      className="inline-flex h-6 min-w-[72px] items-center justify-center rounded-full px-2 text-[11px] font-bold shadow-sm transition-colors bg-yellow-500 text-white hover:bg-yellow-600"
+                      className="inline-flex h-7 min-w-[72px] items-center justify-center rounded-full px-2 text-[11px] font-bold leading-none shadow-sm transition-colors bg-yellow-500 text-white hover:bg-yellow-600"
                       onClick={(e) => {
                         e.stopPropagation();
                         setUnmachinableTarget(item);
@@ -657,7 +657,7 @@ export const RequestorRecentRequestsCard = ({
                           <span className="inline-flex">
                             <button
                               type="button"
-                              className={`inline-flex h-6 min-w-[42px] items-center justify-center rounded-full px-2 text-[11px] font-bold shadow-sm transition-colors ${
+                              className={`inline-flex h-7 min-w-[42px] items-center justify-center rounded-full px-2 text-[11px] font-bold leading-none shadow-sm transition-colors ${
                                 canCancel
                                   ? "bg-red-500 text-white hover:bg-red-600"
                                   : "bg-gray-200 text-gray-500 cursor-not-allowed"
@@ -718,7 +718,7 @@ export const RequestorRecentRequestsCard = ({
                     <div className="text-[11px] text-yellow-800 mt-1 truncate flex items-center gap-2">
                       <span>불완전가공 사유: {unmachinableReason || "미등록"}</span>
                       {isUnmachinableConfirmed && (
-                        <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                        <Badge variant="outline" className="text-[10px] h-5 px-1.5">
                           확인됨
                         </Badge>
                       )}
@@ -748,7 +748,7 @@ export const RequestorRecentRequestsCard = ({
                       item.daysUntilDue >= 0 && (
                         <Badge
                           variant="outline"
-                          className="text-[10px] h-4 px-1.5 text-blue-700 border-blue-200 bg-blue-50"
+                          className="text-[10px] h-5 px-1.5 text-blue-700 border-blue-200 bg-blue-50"
                         >
                           출고 {item.daysUntilDue}일전
                         </Badge>
