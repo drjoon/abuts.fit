@@ -33,7 +33,8 @@ Notes:
   - 신규의뢰 ETA: `src/pages/requestor/new_request/hooks/useLeadTimeForecast.ts`
     (묶음: `src/shared/shipping/weeklyBatchSchedule.ts` — 백엔드 `resolveNextWeeklyBatchYmd`와 동일 civil YMD 요일)
     (묶음: 백엔드와 동일하게 접수 당일=1일차 `(N-1)` 후 주간 발송 요일 정렬)
-    (신속: KST 12시 이전=당일, 이후=+1영업일 — 백엔드 `EXPRESS_CUTOFF_HOUR_KST=12`와 동일)
+    (신속: KST 12시 이전=당일, 이후=+1영업일 — 백엔드 `EXPRESS_CUTOFF_HOUR_KST=12`와 동일.
+     선택 가능 조건: 신속 ETA YMD < 묶음 ETA YMD — `isExpressShippingSelectable`)
 - 앱/라우팅
   - `src/App.tsx`
   - `src/features/layout/DashboardLayout.tsx`
@@ -122,6 +123,8 @@ Notes:
     - 백엔드가 `price.amount`/`price.expressFee`를 내려주면 이중 합산하지 않습니다.
     - 카드/상세: `RequestorRecentRequestsCard.tsx`, `RequestDetailDialog.tsx`
   - 우측 기본 배송 방식(`normal`|`express`)은 로컬스토리지 + `BusinessAnchor.shippingPolicy.defaultShippingMode`에 저장합니다.
+  - 신속 선택: `isExpressShippingSelectable` — 신속 예상 출고일이 묶음보다 빠를 때만 UI 활성
+    (`estimateShipDate.ts`, `NewRequestShippingSection` / `NewRequestAttachmentsPanel`).
   - 의뢰카드 하단(마감시간 옆)에 `shippingMode`에 따라 `신속배송`/`묶음배송` 뱃지를 항상 표시합니다.
     (`ShippingModeBadge`, `WorksheetCardGrid`, 대시보드 의뢰 리스트)
   - 워크시트 목록 API(`view=worksheet`) projection에 `shippingMode`/`finalShipping`/`originalShipping`을 포함해야 합니다.

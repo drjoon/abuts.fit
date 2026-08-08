@@ -29,6 +29,7 @@ import {
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
 import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
+import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
@@ -137,11 +138,16 @@ export async function createRequest(req, res) {
       });
     }
 
-    const shippingMode =
-      bodyRest?.shippingMode === "express" ||
-      caseInfos?.shippingMode === "express"
-        ? "express"
-        : "normal";
+    const shippingMode = await resolveSelectableShippingMode({
+      shippingMode:
+        bodyRest?.shippingMode === "express" ||
+        caseInfos?.shippingMode === "express"
+          ? "express"
+          : "normal",
+      requestedAt: new Date(),
+      weeklyBatchDays: requestorWeeklyBatchDays,
+      maxDiameter: normalizedCaseInfos?.maxDiameter,
+    });
 
     const computedPrice = await computePriceForRequest({
       requestorId: req.user._id,
@@ -641,14 +647,28 @@ export async function createRequestsBulk(req, res) {
       expressFeePerRequest = 1000;
     }
 
-    const expressCount = items.reduce((acc, raw) => {
-      const mode =
-        raw?.shippingMode === "express" ||
-        raw?.caseInfos?.shippingMode === "express"
-          ? "express"
-          : "normal";
-      return acc + (mode === "express" ? 1 : 0);
-    }, 0);
+    // 신속 선택 가능 여부 선반영 (ETA 이점 없으면 normal)
+    const requestedAtForSelect = new Date();
+    const resolvedShippingModes = await Promise.all(
+      items.map(async (raw) => {
+        const requested =
+          raw?.shippingMode === "express" ||
+          raw?.caseInfos?.shippingMode === "express"
+            ? "express"
+            : "normal";
+        return resolveSelectableShippingMode({
+          shippingMode: requested,
+          requestedAt: requestedAtForSelect,
+          weeklyBatchDays: requestorWeeklyBatchDays,
+          maxDiameter:
+            raw?.caseInfos?.maxDiameter ?? raw?.maxDiameter ?? null,
+        });
+      }),
+    );
+
+    const expressCount = resolvedShippingModes.filter(
+      (mode) => mode === "express",
+    ).length;
 
     const totalMachiningFee =
       priceCalculations.reduce((acc, item) => {
@@ -935,12 +955,9 @@ export async function createRequestsBulk(req, res) {
 
           const requestedAt = requestedAtBatch;
 
-          // bulk create 경로: body.shippingMode가 있으면 존중, 없으면 묶음
+          // bulk create 경로: 선반영된 선택 가능 모드 사용
           const itemShippingMode =
-            rest?.shippingMode === "express" ||
-            rest?.caseInfos?.shippingMode === "express"
-              ? "express"
-              : "normal";
+            resolvedShippingModes[i] === "express" ? "express" : "normal";
 
           const quotedPrice = resolveQuotedPriceWithExpressFee({
             price: computedPrice,

@@ -5,6 +5,9 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/expressSelectable.utils.js
+// change-log:
+// - 2026-08-08: 신속 모드 전환 시 ETA 이점(신속 < 묶음) 없으면 400.
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
@@ -42,6 +45,10 @@ import { cancelExpressSurchargeIfShipDelayed } from "./common.review.helpers.js"
 import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
 import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import {
+  EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
+  isExpressShippingSelectable,
+} from "./expressSelectable.utils.js";
 
 export async function updateMyShippingMode(req, res) {
   try {
@@ -118,26 +125,42 @@ export async function updateMyShippingMode(req, res) {
           : "normal";
 
       let weeklyBatchDaysForSchedule = [];
-      if (shippingMode === "normal") {
-        try {
-          const anchorId = String(requestDoc.businessAnchorId || "").trim();
-          if (anchorId && Types.ObjectId.isValid(anchorId)) {
-            const org = await BusinessAnchor.findById(anchorId)
-              .select({ "shippingPolicy.weeklyBatchDays": 1 })
-              .lean();
-            weeklyBatchDaysForSchedule = Array.isArray(
-              org?.shippingPolicy?.weeklyBatchDays,
-            )
-              ? org.shippingPolicy.weeklyBatchDays
-                  .map((v) => String(v || "").trim())
-                  .filter(Boolean)
-              : [];
-          }
-        } catch {
-          weeklyBatchDaysForSchedule = [];
+      try {
+        const anchorId = String(requestDoc.businessAnchorId || "").trim();
+        if (anchorId && Types.ObjectId.isValid(anchorId)) {
+          const org = await BusinessAnchor.findById(anchorId)
+            .select({ "shippingPolicy.weeklyBatchDays": 1 })
+            .lean();
+          weeklyBatchDaysForSchedule = Array.isArray(
+            org?.shippingPolicy?.weeklyBatchDays,
+          )
+            ? org.shippingPolicy.weeklyBatchDays
+                .map((v) => String(v || "").trim())
+                .filter(Boolean)
+            : [];
         }
+      } catch {
+        weeklyBatchDaysForSchedule = [];
+      }
 
-        if (!weeklyBatchDaysForSchedule.length) {
+      if (shippingMode === "normal" && !weeklyBatchDaysForSchedule.length) {
+        rejectedIds.push(requestId);
+        continue;
+      }
+
+      if (shippingMode === "express") {
+        const selectable = await isExpressShippingSelectable({
+          requestedAt: new Date(),
+          weeklyBatchDays: weeklyBatchDaysForSchedule,
+          maxDiameter: requestDoc.caseInfos?.maxDiameter,
+        });
+        if (!selectable) {
+          if (uniqueIds.length === 1) {
+            return res.status(400).json({
+              success: false,
+              message: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
+            });
+          }
           rejectedIds.push(requestId);
           continue;
         }

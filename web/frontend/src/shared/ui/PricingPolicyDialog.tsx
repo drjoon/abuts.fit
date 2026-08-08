@@ -266,7 +266,7 @@ export const PricingPolicyDialog = ({
                   <PriceRow
                     label='신속 출고'
                     value='+1,000원'
-                    hint='건당 의뢰크레딧 · 낮 12시(KST) 이전 의뢰 시 당일 오후 출고 목표'
+                    hint='건당 의뢰크레딧 · 묶음보다 빠른 출고일이 있을 때만 선택 가능(당일 16:00 목표)'
                   />
                 </div>
                 <p className='mt-3 text-xs text-slate-500'>VAT 별도</p>
@@ -425,18 +425,16 @@ export const PricingPolicyDialog = ({
                       신속 출고
                     </div>
                     <p className='mt-1 text-xs leading-relaxed text-slate-600'>
-                      KST 낮 12시 이전 의뢰 건은{' '}
+                      KST 낮 12시 이전·영업일 의뢰는{' '}
                       <span className='font-medium text-slate-800'>
                         당일 16:00
                       </span>{' '}
-                      출고를 목표하고, 12시 이후(또는 휴일) 의뢰 건은{' '}
-                      <span className='font-medium text-slate-800'>
-                        다음 영업일 16:00
-                      </span>
-                      으로 잡습니다. 건당 의뢰크레딧 1,000원이 추가됩니다. 약속
-                      출고일에 집하되지 않으면(16시 이후 당일 수동 집하는 정시)
-                      자정 이후 신속 출고 실패로 처리하고 추가 크레딧은
-                      취소됩니다.
+                      출고를 목표하고, 12시 이후(또는 휴일)에는 다음 영업일
+                      16:00으로 잡습니다. 예상 출고일이 묶음 출고보다 빠를 때만
+                      선택할 수 있으며, 같거나 늦으면 선택 불가합니다. 건당
+                      의뢰크레딧 1,000원이 추가됩니다. 약속 출고일에 집하되지
+                      않으면(16시 이후 당일 수동 집하는 정시) 자정 이후 신속
+                      출고 실패로 처리하고 추가 크레딧은 취소됩니다.
                     </p>
                   </div>
                 </div>

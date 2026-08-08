@@ -1,12 +1,14 @@
 // change-log:
 // - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일).
 // - 2026-08-08: weeklyBatchDays prop SSOT — selectedDays 이중 상태 제거, optimistic 반영.
+// - 2026-08-08: 신속 선택 = 신속 ETA < 묶음 ETA일 때만 (조기 이점 없으면 비활성).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/shared/shipping/weeklyBatchSchedule.ts
+// - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 import { Button } from "@/components/ui/button";
 import { Package, Zap } from "lucide-react";
@@ -25,6 +27,11 @@ import {
   normalizeWeeklyBatchDays,
   type WeeklyBatchDayKey,
 } from "@/shared/shipping/weeklyBatchSchedule";
+import {
+  EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
+  isExpressShippingSelectable,
+  type LeadTimesMap,
+} from "@/shared/shipping/estimateShipDate";
 
 type ShippingMode = "normal" | "express";
 
@@ -32,6 +39,7 @@ type Props = {
   disabled?: boolean;
   weeklyBatchDays: string[];
   onWeeklyBatchDaysChange?: (days: string[]) => void;
+  leadTimes?: LeadTimesMap | null;
   defaultShippingMode: ShippingMode;
   onDefaultShippingModeChange: (mode: ShippingMode) => void;
   onSubmit: () => void;
@@ -51,6 +59,7 @@ export function NewRequestShippingSection({
   disabled,
   weeklyBatchDays,
   onWeeklyBatchDaysChange,
+  leadTimes = null,
   defaultShippingMode,
   onDefaultShippingModeChange,
   onSubmit,
@@ -76,10 +85,33 @@ export function NewRequestShippingSection({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const weekdaysRef = useRef<HTMLDivElement | null>(null);
   const [pulse, setPulse] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const selectedDays = useMemo(
     () => normalizeWeeklyBatchDays(weeklyBatchDays),
     [weeklyBatchDays],
   );
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const expressSelectable = useMemo(
+    () =>
+      isExpressShippingSelectable({
+        weeklyBatchDays: selectedDays,
+        leadTimes,
+        diameter: null,
+        requestedAt: now,
+      }),
+    [selectedDays, leadTimes, now],
+  );
+
+  // 저장된 기본값(preference)은 유지하고, 선택 불가 구간에서는 표시·적용만 묶음으로 본다.
+  const effectiveDefaultMode: ShippingMode =
+    !expressSelectable && defaultShippingMode === "express"
+      ? "normal"
+      : defaultShippingMode;
 
   useEffect(() => {
     const handler = () => {
@@ -175,7 +207,6 @@ export function NewRequestShippingSection({
       toast({
         title: "오류",
         description: e.message || "출고일 업데이트 중 오류가 발생했습니다.",
-        variant: "destructive",
         duration: 3000,
       });
     } finally {
@@ -185,9 +216,22 @@ export function NewRequestShippingSection({
 
   const persistDefaultShippingMode = async (mode: ShippingMode) => {
     if (isDisabled || isUpdating) return;
-    if (mode === defaultShippingMode) return;
+    if (mode === "express" && !expressSelectable) {
+      toast({
+        title: "신속 출고 선택 불가",
+        description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
 
+    // 기본값이 이미 express여도 건별 모드는 요일 변경 등으로 normal에 묶여 있을 수 있다.
+    // 같은 카드 재클릭 시에도 파일 모드를 다시 적용한다.
+    const modeUnchanged = mode === defaultShippingMode;
     onDefaultShippingModeChange(mode);
+    if (modeUnchanged) return;
+
     setIsUpdating(true);
     try {
       const res = await apiFetch<any>({
@@ -240,13 +284,14 @@ export function NewRequestShippingSection({
     }
   };
 
-  const modeCardClass = (active: boolean) =>
+  const modeCardClass = (active: boolean, cardDisabled = false) =>
     cn(
       "w-full rounded-lg border bg-white/70 px-4 py-4 space-y-3 text-center transition-all cursor-pointer",
       active
         ? "border-primary ring-2 ring-primary/25 bg-primary/5 shadow-[0_0_0_1px_rgba(37,99,235,0.12)]"
         : "border-slate-200 hover:border-primary/40 hover:bg-slate-50/80",
-      isDisabled && "opacity-50 cursor-not-allowed",
+      (isDisabled || cardDisabled) && "opacity-50 cursor-not-allowed",
+      cardDisabled && !active && "hover:border-slate-200 hover:bg-white/70",
     );
 
   return (
@@ -262,9 +307,9 @@ export function NewRequestShippingSection({
         >
           <div
             role="radio"
-            aria-checked={defaultShippingMode === "normal"}
+            aria-checked={effectiveDefaultMode === "normal"}
             tabIndex={isDisabled || isUpdating ? -1 : 0}
-            className={modeCardClass(defaultShippingMode === "normal")}
+            className={modeCardClass(effectiveDefaultMode === "normal")}
             onClick={() => {
               void persistDefaultShippingMode("normal");
             }}
@@ -321,15 +366,31 @@ export function NewRequestShippingSection({
 
           <div
             role="radio"
-            aria-checked={defaultShippingMode === "express"}
-            tabIndex={isDisabled || isUpdating ? -1 : 0}
-            className={modeCardClass(defaultShippingMode === "express")}
+            aria-checked={effectiveDefaultMode === "express"}
+            aria-disabled={!expressSelectable}
+            tabIndex={
+              isDisabled || isUpdating || !expressSelectable ? -1 : 0
+            }
+            className={modeCardClass(
+              effectiveDefaultMode === "express",
+              !expressSelectable,
+            )}
             onClick={() => {
+              if (!expressSelectable) {
+                toast({
+                  title: "신속 출고 선택 불가",
+                  description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
+                  variant: "destructive",
+                  duration: 4000,
+                });
+                return;
+              }
               void persistDefaultShippingMode("express");
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
+                if (!expressSelectable) return;
                 void persistDefaultShippingMode("express");
               }
             }}
@@ -338,14 +399,24 @@ export function NewRequestShippingSection({
               <Zap className="w-5 h-5 text-amber-500" />
               신속 출고
             </div>
-            <div className="text-base text-foreground leading-relaxed">
-              오늘 낮 12시 이전 의뢰 시 오늘 오후 출고
-            </div>
-            <div className="text-sm text-slate-600 leading-relaxed">
-              의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
-              <br />
-              단, 생산지연시 내일 출고되고, 추가 의뢰크레딧은 취소됩니다.
-            </div>
+            {expressSelectable ? (
+              <>
+                <div className="text-base text-foreground leading-relaxed">
+                  오늘 낮 12시 이전 의뢰 시 오늘 오후 출고
+                </div>
+                <div className="text-sm text-slate-600 leading-relaxed">
+                  의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
+                  <br />
+                  단, 생산지연시 내일 출고되고, 추가 의뢰크레딧은 취소됩니다.
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-slate-600 leading-relaxed">
+                지금은 선택 불가합니다.
+                <br />
+                신속 예상 출고일이 묶음 출고와 같아 조기 출고 이점이 없습니다.
+              </div>
+            )}
           </div>
         </div>
       </div>

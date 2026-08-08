@@ -1,14 +1,19 @@
 // change-log:
 // - 2026-08-08: 신규의뢰 예상 출고일 계산 SSOT (프론트 ETA + 디버그).
+// - 2026-08-08: 신속 선택 가능 = 신속 ETA < 묶음 ETA (당일·조기 이점 있을 때만).
 // related files:
 // - web/frontend/src/pages/requestor/new_request/hooks/useLeadTimeForecast.ts
 // - web/frontend/src/shared/shipping/weeklyBatchSchedule.ts
 // - web/backend/controllers/requests/production.utils.js
+// - web/backend/controllers/requests/expressSelectable.utils.js
 import { toKstYmd } from "@/shared/date/kst";
 import {
   normalizeWeeklyBatchDays,
   resolveNextWeeklyBatchYmd,
 } from "@/shared/shipping/weeklyBatchSchedule";
+
+export const EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE =
+  "지금은 신속 출고를 선택할 수 없습니다. 예상 출고일이 묶음 출고와 같아 조기 출고 이점이 없습니다.";
 
 export type LeadTimesMap = Partial<
   Record<
@@ -128,6 +133,29 @@ export function computeEstimatedShipYmd({
 export function computeEstimatedShipLabel(params: EstimateShipParams): string | null {
   const ymd = computeEstimatedShipYmd(params);
   return ymd ? formatKstMonthDayWithWeekday(ymd) : null;
+}
+
+/**
+ * 신속 출고 선택 가능 여부.
+ * 신속 예상 출고 YMD가 묶음보다  Strictly earlier 일 때만 true.
+ * 묶음 ETA를 아직 못 구하면(리드타임·요일 미설정) 비교 불가로 선택 허용(백엔드가 최종 판정).
+ */
+export function isExpressShippingSelectable(
+  params: Omit<EstimateShipParams, "shippingMode"> = {},
+): boolean {
+  const expressYmd = computeEstimatedShipYmd({
+    ...params,
+    shippingMode: "express",
+  });
+  if (!expressYmd) return false;
+
+  const normalYmd = computeEstimatedShipYmd({
+    ...params,
+    shippingMode: "normal",
+  });
+  if (!normalYmd) return true;
+
+  return expressYmd < normalYmd;
 }
 
 export function logEstimatedShipDebug(

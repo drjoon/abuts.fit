@@ -4,6 +4,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useLeadTimeForecast } from "../hooks/useLeadTimeForecast";
 import { NewRequestAttachmentsPanel } from "./NewRequestAttachmentsPanel";
 import { NewRequestDetailDialog } from "./NewRequestDetailDialog";
+import type { LeadTimesMap } from "@/shared/shipping/estimateShipDate";
 
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
@@ -83,6 +84,7 @@ type Props = {
     mode: "normal" | "express",
   ) => void;
   defaultShippingMode?: "normal" | "express";
+  onLeadTimesChange?: (leadTimes: LeadTimesMap | null) => void;
 };
 
 export function NewRequestDetailsSection({
@@ -137,6 +139,7 @@ export function NewRequestDetailsSection({
   onOpenDesignSoftwareModal,
   onShippingModeChange,
   defaultShippingMode = "normal",
+  onLeadTimesChange,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -170,7 +173,9 @@ export function NewRequestDetailsSection({
       toNormalizedFileKey,
     });
 
-
+  useEffect(() => {
+    onLeadTimesChange?.(leadTimes);
+  }, [leadTimes, onLeadTimesChange]);
 
   useEffect(() => {
     if (files.length > 0 && (selectedPreviewIndex === null || selectedPreviewIndex >= files.length)) {

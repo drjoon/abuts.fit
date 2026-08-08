@@ -34,12 +34,17 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
+import {
+  isExpressShippingSelectable,
+  type LeadTimesMap,
+} from "@/shared/shipping/estimateShipDate";
 
 
 // related files:
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
+// - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/models/user.model.js
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 업로드/매칭은 사용하지 않는다.
@@ -837,24 +842,74 @@ const NewRequestPageContent = () => {
     setDefaultShippingMode,
   } = useBulkShippingPolicy(user?.email);
 
+  const [leadTimes, setLeadTimes] = useState<LeadTimesMap | null>(null);
+  const handleLeadTimesChange = useCallback((next: LeadTimesMap | null) => {
+    setLeadTimes(next);
+  }, []);
+
+  const resolveEffectiveShippingMode = useCallback(
+    (
+      mode: "normal" | "express",
+      diameter: number | null = null,
+    ): "normal" | "express" => {
+      if (mode !== "express") return "normal";
+      const ok = isExpressShippingSelectable({
+        weeklyBatchDays,
+        leadTimes,
+        diameter,
+      });
+      return ok ? "express" : "normal";
+    },
+    [weeklyBatchDays, leadTimes],
+  );
+
   const handleWeeklyBatchDaysChange = useCallback(
     (days: string[]) => {
       setWeeklyBatchDays(days);
+      // 요일 변경 후 신속 이점이 있으면 기본 출고 방식을 유지하고, 없으면 묶음으로 맞춘다.
       for (const file of files) {
-        updateCaseInfos(toNormalizedFileKey(file), { shippingMode: "normal" });
+        const key = toNormalizedFileKey(file);
+        const diameter =
+          (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
+          null;
+        const preferred =
+          caseInfosMap?.[key]?.shippingMode === "express" ||
+          defaultShippingMode === "express"
+            ? "express"
+            : "normal";
+        updateCaseInfos(key, {
+          shippingMode: resolveEffectiveShippingMode(preferred, diameter),
+        });
       }
       if (import.meta.env.DEV) {
-        console.debug("[ship-eta] weeklyBatchDays -> all files normal", days);
+        console.debug("[ship-eta] weeklyBatchDays -> re-resolve modes", {
+          days,
+          defaultShippingMode,
+        });
       }
     },
-    [files, setWeeklyBatchDays, toNormalizedFileKey, updateCaseInfos],
+    [
+      files,
+      setWeeklyBatchDays,
+      toNormalizedFileKey,
+      updateCaseInfos,
+      caseInfosMap,
+      defaultShippingMode,
+      resolveEffectiveShippingMode,
+    ],
   );
 
   const handleDefaultShippingModeChange = useCallback(
     (mode: "normal" | "express") => {
       setDefaultShippingMode(mode);
       for (const file of files) {
-        updateCaseInfos(toNormalizedFileKey(file), { shippingMode: mode });
+        const key = toNormalizedFileKey(file);
+        const diameter =
+          (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
+          null;
+        updateCaseInfos(key, {
+          shippingMode: resolveEffectiveShippingMode(mode, diameter),
+        });
       }
       if (import.meta.env.DEV) {
         console.debug("[ship-eta] defaultShippingMode -> all files", {
@@ -863,8 +918,36 @@ const NewRequestPageContent = () => {
         });
       }
     },
-    [files, setDefaultShippingMode, toNormalizedFileKey, updateCaseInfos],
+    [
+      files,
+      setDefaultShippingMode,
+      toNormalizedFileKey,
+      updateCaseInfos,
+      resolveEffectiveShippingMode,
+      caseInfosMap,
+    ],
   );
+
+  // 신속 이점이 없어지면(ETA가 묶음과 같거나 늦으면) 건별 모드를 묶음으로 강등.
+  useEffect(() => {
+    for (const file of files) {
+      const key = toNormalizedFileKey(file);
+      const info = caseInfosMap?.[key];
+      if (info?.shippingMode !== "express") continue;
+      const diameter =
+        (info?.maxDiameter as number | null | undefined) ?? null;
+      if (resolveEffectiveShippingMode("express", diameter) === "express") {
+        continue;
+      }
+      updateCaseInfos(key, { shippingMode: "normal" });
+    }
+  }, [
+    files,
+    caseInfosMap,
+    toNormalizedFileKey,
+    updateCaseInfos,
+    resolveEffectiveShippingMode,
+  ]);
 
   // 새로 첨부된 파일에만 우측 기본 배송 방식을 적용한다.
   useEffect(() => {
@@ -877,7 +960,15 @@ const NewRequestPageContent = () => {
       const existing = caseInfosMap?.[key]?.shippingMode;
       if (existing === "normal" || existing === "express") continue;
 
-      updateCaseInfos(key, { shippingMode: defaultShippingMode });
+      const diameter =
+        (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
+        null;
+      updateCaseInfos(key, {
+        shippingMode: resolveEffectiveShippingMode(
+          defaultShippingMode,
+          diameter,
+        ),
+      });
     }
     knownFileKeysRef.current = nextKnown;
   }, [
@@ -886,6 +977,7 @@ const NewRequestPageContent = () => {
     caseInfosMap,
     updateCaseInfos,
     toNormalizedFileKey,
+    resolveEffectiveShippingMode,
   ]);
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
@@ -997,7 +1089,9 @@ const NewRequestPageContent = () => {
         const fileKey = toNormalizedFileKey(file);
         const existingMode = caseInfosMap?.[fileKey]?.shippingMode;
         if (existingMode !== "normal" && existingMode !== "express") {
-          updateCaseInfos(fileKey, { shippingMode: defaultShippingMode });
+          updateCaseInfos(fileKey, {
+            shippingMode: resolveEffectiveShippingMode(defaultShippingMode),
+          });
         }
       }
 
@@ -1439,6 +1533,7 @@ const NewRequestPageContent = () => {
               onOpenDesignSoftwareModal={handleOpenDesignSoftwareModal}
               onShippingModeChange={handleShippingModeChange}
               defaultShippingMode={defaultShippingMode}
+              onLeadTimesChange={handleLeadTimesChange}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;
@@ -1487,6 +1582,7 @@ const NewRequestPageContent = () => {
             <NewRequestShippingSection
               weeklyBatchDays={weeklyBatchDays}
               onWeeklyBatchDaysChange={handleWeeklyBatchDaysChange}
+              leadTimes={leadTimes}
               defaultShippingMode={defaultShippingMode}
               onDefaultShippingModeChange={handleDefaultShippingModeChange}
               onSubmit={() => {

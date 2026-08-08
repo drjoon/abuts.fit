@@ -2,16 +2,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check, Calendar, X } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
+import { useState, useEffect } from "react";
 import {
   computeEstimatedShipLabel,
+  EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
+  isExpressShippingSelectable,
   type LeadTimesMap,
 } from "@/shared/shipping/estimateShipDate";
+import { useToast } from "@/shared/hooks/use-toast";
 
 // change-log:
 // - 2026-08-06: 예상 발송 → 예상 출고 (제조사 출발일).
+// - 2026-08-08: 신속 버튼 = 신속 ETA < 묶음 ETA일 때만 활성.
+// - 2026-08-08: 신속 ETA를 묶음 파라미터와 분리 계산. 모드 전환 시 출고일 잔류 방지.
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
+// - web/frontend/src/shared/shipping/estimateShipDate.ts
 
 type ShippingMode = "normal" | "express";
 
@@ -84,18 +91,46 @@ export function NewRequestAttachmentsPanel({
   defaultShippingMode = "normal",
 }: Props) {
   const hasAnyAttachment = files.length > 0;
+  const { toast } = useToast();
+  const [now, setNow] = useState(() => new Date());
 
-  const applyMode = (fileKeys: string[], mode: ShippingMode) => {
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const applyMode = (
+    fileKeys: string[],
+    mode: ShippingMode,
+    options?: { diameter?: number | null },
+  ) => {
     if (!onShippingModeChange || fileKeys.length === 0) return;
+    if (mode === "express") {
+      const ok = isExpressShippingSelectable({
+        weeklyBatchDays,
+        leadTimes,
+        diameter: options?.diameter ?? null,
+        requestedAt: now,
+      });
+      if (!ok) {
+        toast({
+          title: "신속 출고 선택 불가",
+          description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
+          variant: "destructive",
+          duration: 4000,
+        });
+        return;
+      }
+    }
     onShippingModeChange(fileKeys, mode);
   };
 
-  const modeButtonClass = (active: boolean) =>
+  const modeButtonClass = (active: boolean, disabled = false) =>
     `px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
       active
         ? "bg-primary text-white"
         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-    }`;
+    } ${disabled ? "opacity-50 cursor-not-allowed hover:bg-slate-100" : ""}`;
 
   return (
     <>
@@ -194,16 +229,33 @@ export function NewRequestAttachmentsPanel({
             const computedDiameter = fileDiameters[fileKey];
             const fileInfo = caseInfosMap?.[fileKey];
             const diameter = computedDiameter ?? fileInfo?.maxDiameter ?? null;
+            const expressSelectable = isExpressShippingSelectable({
+              weeklyBatchDays,
+              leadTimes,
+              diameter,
+              requestedAt: now,
+            });
+            const effectiveShippingMode: ShippingMode =
+              shippingMode === "express" && !expressSelectable
+                ? "normal"
+                : shippingMode;
+            // 신속/묶음 ETA를 분기 계산해 모드 전환 시 묶음일이 남지 않게 한다.
             const estimatedShip =
-              computeEstimatedShipLabel({
-                weeklyBatchDays,
-                leadTimes,
-                diameter,
-                shippingMode,
-              }) ??
-              (getEstimatedShipForDiameter
-                ? getEstimatedShipForDiameter(diameter, shippingMode)
-                : null);
+              effectiveShippingMode === "express"
+                ? computeEstimatedShipLabel({
+                    shippingMode: "express",
+                    requestedAt: now,
+                  })
+                : (computeEstimatedShipLabel({
+                    weeklyBatchDays,
+                    leadTimes,
+                    diameter,
+                    shippingMode: "normal",
+                    requestedAt: now,
+                  }) ??
+                  (getEstimatedShipForDiameter
+                    ? getEstimatedShipForDiameter(diameter, "normal")
+                    : null));
             const designSoftware = String(fileInfo?.designSoftware || "").trim();
 
             return (
@@ -211,6 +263,7 @@ export function NewRequestAttachmentsPanel({
                 key={`${fileKey}-${index}`}
                 onClick={() => openDetailModal(index)}
                 data-file-index={index}
+                data-shipping-mode={effectiveShippingMode}
                 className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} hover:border-gray-400`}
               >
                 <div className="relative z-10 flex flex-col gap-2">
@@ -240,7 +293,12 @@ export function NewRequestAttachmentsPanel({
                       {estimatedShip ? (
                         <div className="flex items-center gap-1.5 text-xs text-slate-500 min-w-0">
                           <Calendar className="w-3 h-3 shrink-0" />
-                          <span className="truncate">예상 출고: {estimatedShip}</span>
+                          <span
+                            key={`eta-${fileKey}-${effectiveShippingMode}-${estimatedShip}`}
+                            className="truncate"
+                          >
+                            예상 출고: {estimatedShip}
+                          </span>
                         </div>
                       ) : (
                         <div />
@@ -254,15 +312,30 @@ export function NewRequestAttachmentsPanel({
                           <div className="flex gap-1">
                             <button
                               type="button"
-                              className={modeButtonClass(shippingMode === "normal")}
-                              onClick={() => applyMode([fileKey], "normal")}
+                              className={modeButtonClass(
+                                effectiveShippingMode === "normal",
+                              )}
+                              onClick={() =>
+                                applyMode([fileKey], "normal", { diameter })
+                              }
                             >
                               묶음
                             </button>
                             <button
                               type="button"
-                              className={modeButtonClass(shippingMode === "express")}
-                              onClick={() => applyMode([fileKey], "express")}
+                              className={modeButtonClass(
+                                effectiveShippingMode === "express",
+                                !expressSelectable,
+                              )}
+                              disabled={!expressSelectable}
+                              title={
+                                expressSelectable
+                                  ? undefined
+                                  : EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE
+                              }
+                              onClick={() =>
+                                applyMode([fileKey], "express", { diameter })
+                              }
                             >
                               신속
                             </button>

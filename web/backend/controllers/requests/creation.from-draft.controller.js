@@ -3,8 +3,11 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/creation.request.controller.js
+// - web/backend/controllers/requests/expressSelectable.utils.js
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/rules.md
+// change-log:
+// - 2026-08-08: 접수 시 신속 ETA 이점 없으면 express→normal 강등.
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
 import Request from "../../models/request.model.js";
@@ -29,6 +32,7 @@ import {
 } from "./utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
+import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
@@ -960,10 +964,6 @@ export async function createRequestsFromDraft(req, res) {
       return acc + (Number.isFinite(n) ? n : 0);
     }, 0);
 
-    const expressCount = preparedCasesForCreate.filter(
-      (item) => (item.shippingMode || "normal") === "express",
-    ).length;
-
     // Pre-fetch read-only data in parallel before transaction to minimize transaction duration
     const requestedAtForPrefetch = new Date();
     const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
@@ -998,15 +998,36 @@ export async function createRequestsFromDraft(req, res) {
       0,
       Number(systemSettings?.creditSettings?.expressFee ?? 1000) || 1000,
     );
-    const totalExpressFee = isPracticeRoutingSubmission
-      ? 0
-      : expressCount * expressFeePerRequest;
-    const requiredMachiningFee = totalSpendSupply + totalExpressFee;
     const weeklyBatchDays = Array.isArray(
       shippingOrg?.shippingPolicy?.weeklyBatchDays,
     )
       ? shippingOrg.shippingPolicy.weeklyBatchDays
       : [];
+
+    // 신속 ETA가 묶음과 같거나 늦으면 express → normal 강등 (스테일 클라 대비)
+    await Promise.all(
+      preparedCasesForCreate.map(async (item) => {
+        if ((item?.shippingMode || "normal") !== "express") return;
+        const maxDiameter =
+          item?.caseInfosWithFile?.maxDiameter ??
+          item?.caseInfos?.maxDiameter ??
+          null;
+        item.shippingMode = await resolveSelectableShippingMode({
+          shippingMode: "express",
+          requestedAt: requestedAtForPrefetch,
+          weeklyBatchDays,
+          maxDiameter,
+        });
+      }),
+    );
+
+    const expressCount = preparedCasesForCreate.filter(
+      (item) => (item.shippingMode || "normal") === "express",
+    ).length;
+    const totalExpressFee = isPracticeRoutingSubmission
+      ? 0
+      : expressCount * expressFeePerRequest;
+    const requiredMachiningFee = totalSpendSupply + totalExpressFee;
     const requestorAnodizingEnabled =
       typeof shippingOrg?.requestSettings?.anodizingEnabled === "boolean"
         ? shippingOrg.requestSettings.anodizingEnabled

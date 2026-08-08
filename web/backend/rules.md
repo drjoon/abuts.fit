@@ -88,6 +88,8 @@
     - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
   - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })`
     - 신속: **KST 12시 이전** 당일 영업일이면 당일 16:00 출고, 이후(또는 휴일)면 +1영업일
+    - 신속 **선택 가능**: 신속 ETA YMD < 묶음 ETA YMD (`expressSelectable.utils.js` /
+      프론트 `isExpressShippingSelectable`). 이점 없으면 UI 비활성·모드 변경 400·접수 시 normal 강등
     - 묶음: `resolveLeadDaysWithSameDayCutoff` — 접수 당일=1일차 → `(N-1)` 영업일 후
       주간 발송 요일 정렬 (`resolveNextWeeklyBatchYmd`)
   - 출고일 고정: 의뢰 시점 `originalEstimatedShipYmd`(=estimated)는 포장.발송 진입으로 바꾸지 않음
