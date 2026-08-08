@@ -11,6 +11,7 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import { Users } from "lucide-react";
 
 type StaffMember = {
   _id: string;
@@ -344,86 +345,112 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
   return (
     <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader>
-        <CardTitle>임직원 관리</CardTitle>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-xl">
+          <Users className="h-5 w-5" />
+          임직원 관리
+        </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-5">
         {membership !== "owner" && (
-          <div className="app-surface app-surface--panel text-sm">
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm text-muted-foreground">
             대표 계정만 직원 관리를 할 수 있습니다.
           </div>
         )}
 
         {membership === "owner" && (
           <>
-            <div className="app-surface app-surface--panel space-y-4">
-              <div className="text-sm font-medium">등록된 임직원</div>
+            <section className="space-y-2.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-sm font-semibold tracking-tight">
+                  등록된 임직원
+                </h3>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {representativeEntries.length + staffEntries.length}명
+                </span>
+              </div>
 
               {loading &&
               representativeEntries.length === 0 &&
               staffEntries.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-sm text-muted-foreground">
                   불러오는 중...
                 </div>
               ) : representativeEntries.length === 0 &&
                 staffEntries.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-sm text-muted-foreground">
                   등록된 임직원이 없습니다.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                   {representativeEntries.map((entry) => {
-                    const label = `${entry.name || ""}${
-                      entry.email ? ` (${entry.email})` : ""
-                    }`.trim();
+                    const name = String(entry.name || "").trim() || entry._id;
+                    const email = String(entry.email || "").trim();
                     return (
-                      <FunctionalItemCard
+                      <div
                         key={entry._id}
-                        className="p-3"
-                        disabled
+                        className="flex items-start gap-2.5 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5"
                       >
-                        <div className="flex items-start gap-2">
-                          <Badge variant="secondary">대표</Badge>
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">
-                              {label || entry._id}
-                            </div>
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 rounded-md px-2 py-0.5"
+                        >
+                          대표
+                        </Badge>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium leading-tight">
+                            {name}
                           </div>
+                          {email ? (
+                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {email}
+                            </div>
+                          ) : null}
                         </div>
-                      </FunctionalItemCard>
+                      </div>
                     );
                   })}
 
                   {staffEntries.map((m) => {
-                    const label = `${m.name || ""}${
-                      m.email ? ` (${m.email})` : ""
-                    }`.trim();
+                    const name = String(m.name || "").trim() || m._id;
+                    const email = String(m.email || "").trim();
+                    const label = `${name}${email ? ` (${email})` : ""}`;
                     return (
                       <FunctionalItemCard
                         key={m._id}
-                        className="p-3"
+                        className="rounded-xl border-slate-200/80 bg-white/80 p-0"
                         onRemove={() => handleRemoveStaff(m._id)}
                         confirmTitle="직원을 삭제할까요?"
                         confirmDescription={
                           <div className="text-sm text-muted-foreground">
-                            {label || m._id}
+                            {label}
                           </div>
                         }
                         confirmLabel="삭제"
                         cancelLabel="닫기"
                         disabled={actionUserId === m._id}
                       >
-                        <div className="flex items-start gap-2">
-                          <Badge variant="outline">직원</Badge>
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">
-                              {label || m._id}
+                        <div className="flex items-start gap-2.5 px-3 py-2.5 pr-8">
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 rounded-md px-2 py-0.5"
+                          >
+                            직원
+                          </Badge>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium leading-tight">
+                              {name}
                             </div>
-                            {actionUserId === m._id && (
-                              <div className="text-xs text-muted-foreground mt-1">
+                            {email ? (
+                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {email}
+                              </div>
+                            ) : null}
+                            {actionUserId === m._id ? (
+                              <div className="mt-0.5 text-xs text-muted-foreground">
                                 처리 중...
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                       </FunctionalItemCard>
@@ -431,34 +458,45 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                   })}
                 </div>
               )}
-            </div>
+            </section>
 
-            <div className="app-surface app-surface--panel">
-              <div className="text-sm font-medium mb-3">등록 신청자 관리</div>
+            <section className="space-y-2.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-sm font-semibold tracking-tight">
+                  등록 신청자 관리
+                </h3>
+                {pendingEntries.length > 0 ? (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {pendingEntries.length}건
+                  </span>
+                ) : null}
+              </div>
+
               {loading && pendingEntries.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-sm text-muted-foreground">
                   불러오는 중...
                 </div>
               ) : pendingEntries.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-sm text-muted-foreground">
                   대기 중인 신청이 없습니다.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                   {pendingEntries.map((r, idx) => {
                     const u: any = (r as any)?.user;
                     const userId =
                       typeof u === "string" ? u : String(u?._id || "");
-                    const label =
+                    const name =
                       typeof u === "string"
                         ? u
-                        : `${u?.name || ""} ${
-                            u?.email ? `(${u.email})` : ""
-                          }`.trim();
+                        : String(u?.name || "").trim() || userId;
+                    const email =
+                      typeof u === "string" ? "" : String(u?.email || "").trim();
+                    const label = `${name}${email ? ` (${email})` : ""}`;
                     return (
                       <FunctionalItemCard
                         key={`${userId}-${idx}`}
-                        className="p-3"
+                        className="rounded-xl border-slate-200/80 bg-white/80 p-0"
                         onRemove={() => handleReject(userId)}
                         confirmTitle="신청을 거절할까요?"
                         confirmDescription={
@@ -470,34 +508,48 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                         cancelLabel="닫기"
                         disabled={!userId || actionUserId === userId}
                       >
-                        <div className="flex items-start gap-2">
-                          <Badge variant="secondary">신청</Badge>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-medium truncate">
-                              {label || userId}
+                        <div className="space-y-2 px-3 py-2.5 pr-8">
+                          <div className="flex items-start gap-2.5">
+                            <Badge
+                              variant="secondary"
+                              className="shrink-0 rounded-md px-2 py-0.5"
+                            >
+                              신청
+                            </Badge>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium leading-tight">
+                                {name || userId}
+                              </div>
+                              {email ? (
+                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                  {email}
+                                </div>
+                              ) : null}
                             </div>
-                            <div className="flex gap-2 mt-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  handleApprove(userId, "representative")
-                                }
-                                disabled={!userId || actionUserId === userId}
-                              >
-                                대표
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleApprove(userId, "staff")}
-                                disabled={!userId || actionUserId === userId}
-                              >
-                                직원
-                              </Button>
-                            </div>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 flex-1 px-2 text-xs"
+                              onClick={() =>
+                                handleApprove(userId, "representative")
+                              }
+                              disabled={!userId || actionUserId === userId}
+                            >
+                              대표
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 flex-1 px-2 text-xs"
+                              onClick={() => handleApprove(userId, "staff")}
+                              disabled={!userId || actionUserId === userId}
+                            >
+                              직원
+                            </Button>
                           </div>
                         </div>
                       </FunctionalItemCard>
@@ -505,7 +557,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                   })}
                 </div>
               )}
-            </div>
+            </section>
           </>
         )}
       </CardContent>

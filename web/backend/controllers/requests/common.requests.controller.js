@@ -233,8 +233,9 @@ const isRndSampleRequest = (requestLike) => {
 const buildNonSampleRequestGuard = () => ({
   $and: [
     // 레거시 문서(requestCategory 미기재)도 일반 의뢰건으로 포함하되,
-    // source 기준 샘플은 항상 제외한다.
+    // source / price.rule 기준 샘플은 항상 제외한다.
     { source: { $ne: "manufacturer_sample" } },
+    { "price.rule": { $ne: "manufacturer_sample" } },
     {
       requestCategory: {
         $nin: [REQUEST_CATEGORY.RND_SAMPLE, REQUEST_CATEGORY.COPIED_SAMPLE],
@@ -1297,6 +1298,18 @@ export async function getAllRequests(req, res) {
       filter.createdAt = createdAtFilter;
     }
 
+    // 관리자 모니터링: 내부 샘플/R&D·복사 샘플은 운영 의뢰로 집계·표시하지 않음
+    // (price.rule=manufacturer_sample 이고 source/requestCategory 누락된 레거시 고스트 포함)
+    if (view === "monitoring") {
+      if (Array.isArray(filter.$and)) {
+        filter.$and = [...filter.$and, buildNonSampleRequestGuard()];
+      } else if (Object.keys(filter).length === 0) {
+        filter = buildNonSampleRequestGuard();
+      } else {
+        filter = { $and: [filter, buildNonSampleRequestGuard()] };
+      }
+    }
+
     // 제조사: 같은 BusinessAnchor 조직 내 대표/직원이 의뢰 공유 + 취소 제외
     // buildManufacturerOrgScopeFilter가 조직 멤버 기반 필터를 생성
     if (role === "manufacturer") {
@@ -1529,8 +1542,14 @@ export async function getAllRequests(req, res) {
       "createdAt",
       "progress",
       "caManufacturer",
+      "source",
+      "requestCategory",
+      "shippingMode",
+      "finalShipping.mode",
+      "originalShipping.mode",
       "price.amount",
       "price.paidAmount",
+      "price.rule",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",

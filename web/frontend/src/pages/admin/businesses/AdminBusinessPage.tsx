@@ -25,13 +25,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -493,266 +486,288 @@ export default function AdminBusinessPage() {
   const detailCredit = getCreditBreakdown(detailDialog.business);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-6 bg-gradient-subtle p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">사업자</h1>
-          <p className="text-sm text-muted-foreground">
-            BusinessAnchor를 중심으로 사업자 연결 상태와 크레딧을 확인합니다.
+    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-8 py-6 sm:px-10">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-5 overflow-hidden">
+        <div className="shrink-0 pl-1">
+          <h1 className="text-lg font-bold tracking-tight text-slate-900">
+            사업자
+          </h1>
+          <p className="mt-0.5 text-xs text-slate-500">
+            BusinessAnchor 연결 상태와 크레딧을 확인합니다.
           </p>
         </div>
-      </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-blue-100 p-2">
-                <Building2 className="h-4 w-4 text-blue-600" />
+        <div className="grid shrink-0 grid-cols-2 gap-3 pr-1 xl:grid-cols-4">
+          {[
+            {
+              label: "총 사업자",
+              count: totalBusinesses,
+              icon: Building2,
+              iconWrap: "bg-blue-50",
+              iconClass: "text-blue-600",
+            },
+            {
+              label: "Anchor 연결",
+              count: anchoredCount,
+              icon: Anchor,
+              iconWrap: "bg-violet-50",
+              iconClass: "text-violet-600",
+            },
+            {
+              label: "Anchor 미연결",
+              count: missingAnchorCount,
+              icon: AlertCircle,
+              iconWrap: "bg-amber-50",
+              iconClass: "text-amber-600",
+            },
+            {
+              label: "표시 사업자",
+              count: filteredBusinesses.length,
+              icon: Wallet,
+              iconWrap: "bg-sky-50",
+              iconClass: "text-sky-600",
+            },
+          ].map((card) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.label}
+                className="rounded-xl border border-slate-200/80 bg-white px-3.5 py-3 shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`rounded-lg p-2 ${card.iconWrap}`}>
+                    <Icon className={`h-4 w-4 ${card.iconClass}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-slate-500">
+                      {card.label}
+                    </p>
+                    <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">
+                      {card.count.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">총 사업자</p>
-                <p className="text-2xl font-bold">
-                  {totalBusinesses.toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-violet-100 p-2">
-                <Anchor className="h-4 w-4 text-violet-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Anchor 연결</p>
-                <p className="text-2xl font-bold">
-                  {anchoredCount.toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-amber-100 p-2">
-                <AlertCircle className="h-4 w-4 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Anchor 미연결</p>
-                <p className="text-2xl font-bold">
-                  {missingAnchorCount.toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-sky-100 p-2">
-                <Wallet className="h-4 w-4 text-sky-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">표시 사업자</p>
-                <p className="text-2xl font-bold">
-                  {filteredBusinesses.length.toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            );
+          })}
+        </div>
 
-      <Card className="flex min-h-0 flex-1 flex-col">
-        <CardHeader className="space-y-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <CardTitle>BusinessAnchor 목록</CardTitle>
-              <CardDescription>
-                사업자명, 사업자번호, 대표 계정, anchor ID를 함께 확인합니다.
-              </CardDescription>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+          <div className="shrink-0 space-y-3 border-b border-slate-100 px-5 py-3.5 sm:px-6">
+            <div className="flex items-baseline justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold tracking-tight text-slate-900">
+                  BusinessAnchor 목록
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  사업자명 · 사업자번호 · 대표 계정 · Anchor ID
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                <Users className="h-3.5 w-3.5" />
+                <span>관리자 전용</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Users className="h-4 w-4" />
-              <span>관리자 전용</span>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative min-w-[220px] flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="사업자명 / 사업자번호 / anchor ID / 대표자 검색"
+                  className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
+                />
+              </div>
+              <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+                {(
+                  [
+                    ["all", "전체"],
+                    ["requestor", "의뢰자"],
+                    ["salesman", "영업자"],
+                    ["manufacturer", "제조사"],
+                    ["devops", "개발운영사"],
+                  ] as const
+                ).map(([value, label]) => {
+                  const active = typeFilter === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setTypeFilter(value)}
+                      className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                        active
+                          ? "bg-slate-900 text-white"
+                          : "text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="relative flex-1 min-w-0">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="사업자명 / 사업자번호 / anchor ID / 대표자 검색"
-                className="pl-10"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {[
-                ["all", "전체"],
-                ["requestor", "의뢰자"],
-                ["salesman", "영업자"],
-                ["manufacturer", "제조사"],
-                ["devops", "개발운영사"],
-              ].map(([value, label]) => (
-                <Button
-                  key={value}
-                  type="button"
-                  size="sm"
-                  variant={typeFilter === value ? "default" : "outline"}
-                  onClick={() => setTypeFilter(value)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-          </div>
-        </CardHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+            {isLoading ? (
+              <div className="text-sm text-slate-500">불러오는 중...</div>
+            ) : filteredBusinesses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-16 text-center">
+                <Building2 className="mb-2 h-5 w-5 text-slate-300" />
+                <p className="text-sm font-medium text-slate-600">
+                  표시할 사업자가 없습니다
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  유형 필터 또는 검색어를 바꿔 보세요
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-2.5 xl:grid-cols-2">
+                {filteredBusinesses.map((business) => {
+                  const anchorId = String(business.businessAnchorId || "").trim();
+                  const isFocused =
+                    Boolean(focusAnchorId) &&
+                    String(anchorId || "").trim() === focusAnchorId;
+                  const credit = getCreditBreakdown(business);
 
-        <CardContent className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-          {isLoading ? (
-            <div className="text-sm text-muted-foreground">불러오는 중...</div>
-          ) : filteredBusinesses.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              표시할 사업자가 없습니다.
-            </div>
-          ) : (
-            <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
-              {filteredBusinesses.map((business) => {
-                const anchorId = String(business.businessAnchorId || "").trim();
-                const isFocused =
-                  Boolean(focusAnchorId) &&
-                  String(anchorId || "").trim() === focusAnchorId;
-                const credit = getCreditBreakdown(business);
-
-                return (
-                  <Card
-                    key={business._id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() =>
-                      setDetailDialog({
-                        open: true,
-                        business,
-                      })
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
+                  return (
+                    <div
+                      key={business._id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() =>
                         setDetailDialog({
                           open: true,
                           business,
-                        });
+                        })
                       }
-                    }}
-                    className={`border-border/70 cursor-pointer transition hover:border-primary/40 hover:shadow-sm ${
-                      isFocused ? "ring-2 ring-primary border-primary" : ""
-                    }`}
-                  >
-                    <CardHeader className="space-y-2">
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setDetailDialog({
+                            open: true,
+                            business,
+                          });
+                        }
+                      }}
+                      className={`rounded-xl border bg-white px-3.5 py-3 transition-colors hover:bg-slate-50/70 ${
+                        isFocused
+                          ? "border-slate-900 ring-1 ring-slate-900"
+                          : "border-slate-200/80"
+                      }`}
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <CardTitle className="truncate text-base">
-                            {business.companyName || business.name}
-                          </CardTitle>
-                          <CardDescription className="mt-1 text-xs">
-                            {business.name}
-                          </CardDescription>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <h3 className="truncate text-sm font-semibold text-slate-900">
+                              {business.companyName || business.name}
+                            </h3>
+                            <Badge
+                              className={`h-5 border px-1.5 text-[10px] ${getBusinessTypeBadgeClass(
+                                business.businessType,
+                              )}`}
+                            >
+                              {getBusinessTypeLabel(business.businessType)}
+                            </Badge>
+                          </div>
+                          {business.name &&
+                          business.name !== business.companyName ? (
+                            <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                              {business.name}
+                            </p>
+                          ) : null}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            className={getBusinessTypeBadgeClass(
-                              business.businessType,
-                            )}
-                          >
-                            {getBusinessTypeLabel(business.businessType)}
-                          </Badge>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteClick(business);
-                            }}
-                            onKeyDown={(e) => e.stopPropagation()}
-                            disabled={
-                              deleteMutation.isPending ||
-                              !business.businessAnchorId
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <button
+                          type="button"
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(business);
+                          }}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          disabled={
+                            deleteMutation.isPending ||
+                            !business.businessAnchorId
+                          }
+                          title="삭제"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
 
-                      <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                        <div>
-                          <div className="mb-0.5">사업자번호</div>
-                          <div className="font-medium text-foreground">
+                      <div className="mt-2.5 grid gap-x-4 gap-y-1.5 text-[11px] sm:grid-cols-2">
+                        <div className="min-w-0">
+                          <span className="text-slate-400">사업자번호</span>
+                          <div className="truncate font-medium text-slate-700">
                             {business.businessNumber || "-"}
                           </div>
                         </div>
-                        <div>
-                          <div className="mb-0.5">BusinessAnchor ID</div>
-                          <div className="font-mono text-[11px] break-all text-foreground">
+                        <div className="min-w-0">
+                          <span className="text-slate-400">Anchor ID</span>
+                          <div className="truncate font-mono text-[10px] text-slate-700">
                             {anchorId || "-"}
                           </div>
                         </div>
-                        <div>
-                          <div className="mb-0.5">대표 계정</div>
-                          <div className="font-medium text-foreground">
+                        <div className="min-w-0">
+                          <span className="text-slate-400">대표 계정</span>
+                          <div className="truncate font-medium text-slate-700">
                             {business.ownerName || "-"}
                           </div>
                         </div>
-                        <div>
-                          <div className="mb-0.5">대표 이메일</div>
-                          <div className="break-all font-medium text-foreground">
+                        <div className="min-w-0">
+                          <span className="text-slate-400">대표 이메일</span>
+                          <div className="truncate font-medium text-slate-700">
                             {business.ownerEmail || "-"}
                           </div>
                         </div>
                       </div>
-                    </CardHeader>
 
-                    <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
-                      <div className="rounded-lg border p-3">
-                        <div className="text-xs text-muted-foreground">
-                          크레딧 소비액 (유형별)
+                      <div className="mt-2.5 grid gap-2 border-t border-slate-100 pt-2.5 sm:grid-cols-2">
+                        <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+                          <div className="text-[10px] font-medium text-slate-400">
+                            크레딧 소비
+                          </div>
+                          <div className="mt-0.5 text-base font-bold tabular-nums tracking-tight text-slate-900">
+                            {formatMoney(credit.totalSpent)}원
+                          </div>
+                          <div className="mt-1 space-y-0.5 text-[10px] text-slate-400">
+                            <div>유료 {formatMoney(credit.spentPaid)}</div>
+                            <div>
+                              무료(의뢰) {formatMoney(credit.spentFreeRequest)}
+                            </div>
+                            <div>
+                              무료(배송) {formatMoney(credit.spentFreeShipping)}
+                            </div>
+                          </div>
                         </div>
-                        <div className="mt-1 text-xl font-bold">
-                          {formatMoney(credit.totalSpent)}원
-                        </div>
-                        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                          <div>유료: {formatMoney(credit.spentPaid)}원</div>
-                          <div>무료(의뢰): {formatMoney(credit.spentFreeRequest)}원</div>
-                          <div>무료(배송): {formatMoney(credit.spentFreeShipping)}원</div>
+                        <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+                          <div className="text-[10px] font-medium text-slate-400">
+                            크레딧 잔액
+                          </div>
+                          <div className="mt-0.5 text-base font-bold tabular-nums tracking-tight text-slate-900">
+                            {formatMoney(credit.totalBalance)}원
+                          </div>
+                          <div className="mt-1 space-y-0.5 text-[10px] text-slate-400">
+                            <div>유료 {formatMoney(credit.paidCredit)}</div>
+                            <div>
+                              무료(의뢰) {formatMoney(credit.freeRequestCredit)}
+                            </div>
+                            <div>
+                              무료(배송){" "}
+                              {formatMoney(credit.freeShippingCredit)}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="rounded-lg border p-3">
-                        <div className="text-xs text-muted-foreground">
-                          크레딧 잔액 (유형별)
-                        </div>
-                        <div className="mt-1 text-xl font-bold">
-                          {formatMoney(credit.totalBalance)}원
-                        </div>
-                        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                          <div>유료: {formatMoney(credit.paidCredit)}원</div>
-                          <div>무료(의뢰): {formatMoney(credit.freeRequestCredit)}원</div>
-                          <div>무료(배송): {formatMoney(credit.freeShippingCredit)}원</div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* 누락 확인 및 업데이트 다이얼로그 */}
       <Dialog

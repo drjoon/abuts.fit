@@ -278,20 +278,34 @@ const getStatusBadge = (status: string) => {
   switch (status) {
     case "active":
       return (
-        <Badge className="bg-green-100 text-green-700 border-green-200">
+        <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
           활성
-        </Badge>
+        </span>
       );
     case "pending":
       return (
-        <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">
-          승인 대기
-        </Badge>
+        <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+          승인대기
+        </span>
+      );
+    case "inactive":
+      return (
+        <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+          비활성
+        </span>
       );
     case "suspended":
-      return <Badge variant="destructive">일시정지</Badge>;
+      return (
+        <span className="rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+          일시정지
+        </span>
+      );
     default:
-      return <Badge variant="outline">{status}</Badge>;
+      return (
+        <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+          {status}
+        </span>
+      );
   }
 };
 
@@ -302,15 +316,17 @@ const getSubRoleBadge = (user: Pick<UiUserRow, "subRole">) => {
 
   if (subRole === "owner") {
     return (
-      <Badge className="bg-blue-100 text-blue-700 border-blue-200">대표</Badge>
+      <span className="rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+        대표
+      </span>
     );
   }
 
   if (subRole === "staff") {
     return (
-      <Badge className="bg-slate-100 text-slate-600 border-slate-200">
+      <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
         직원
-      </Badge>
+      </span>
     );
   }
 
@@ -326,14 +342,14 @@ const getRequestorCapabilityBadges = (
   return (
     <>
       {caps.practice ? (
-        <Badge className="bg-violet-100 text-violet-700 border-violet-200">
+        <span className="rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
           발신(치과)
-        </Badge>
+        </span>
       ) : null}
       {caps.lab ? (
-        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+        <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
           수신(기공소·기공실)
-        </Badge>
+        </span>
       ) : null}
     </>
   );
@@ -756,416 +772,411 @@ export const AdminUserManagement = () => {
   const totalPending = sourceUsers.filter((u) => u.status === "pending").length;
   const unresolvedUsers = sourceUsers.filter((u) => u.unresolvedBusiness);
 
+  const statsCards = [
+    {
+      key: "all",
+      label: "총 사용자",
+      count: totalUsers,
+      icon: Users,
+      iconWrap: "bg-slate-100",
+      iconClass: "text-slate-600",
+      onClick: () => {
+        setSelectedRole("all");
+        setSelectedStatus("all");
+      },
+      active: selectedRole === "all" && selectedStatus === "all",
+    },
+    {
+      key: "requestor",
+      label: "의뢰자",
+      count: totalRequestor,
+      icon: FileText,
+      iconWrap: "bg-blue-50",
+      iconClass: "text-blue-600",
+      onClick: () => setSelectedRole("requestor"),
+      active: selectedRole === "requestor",
+    },
+    {
+      key: "salesman",
+      label: "영업자",
+      count: totalSalesman,
+      icon: Briefcase,
+      iconWrap: "bg-emerald-50",
+      iconClass: "text-emerald-600",
+      onClick: () => setSelectedRole("salesman"),
+      active: selectedRole === "salesman",
+    },
+    {
+      key: "devops",
+      label: "개발운영사",
+      count: totalDevops,
+      icon: Shield,
+      iconWrap: "bg-violet-50",
+      iconClass: "text-violet-600",
+      onClick: () => setSelectedRole("devops"),
+      active: selectedRole === "devops",
+    },
+    {
+      key: "manufacturer",
+      label: "제조사",
+      count: totalManufacturer,
+      icon: Building2,
+      iconWrap: "bg-sky-50",
+      iconClass: "text-sky-600",
+      onClick: () => setSelectedRole("manufacturer"),
+      active: selectedRole === "manufacturer",
+    },
+    {
+      key: "admin",
+      label: "관리자",
+      count: totalAdmin,
+      icon: Shield,
+      iconWrap: "bg-rose-50",
+      iconClass: "text-rose-600",
+      onClick: () => setSelectedRole("admin"),
+      active: selectedRole === "admin",
+    },
+    {
+      key: "pending",
+      label: "승인 대기",
+      count: totalPending,
+      icon: UserCheck,
+      iconWrap: "bg-amber-50",
+      iconClass: "text-amber-600",
+      onClick: () => setSelectedStatus("pending"),
+      active: selectedStatus === "pending",
+    },
+  ] as const;
+
+  const roleFilters = [
+    ["all", "전체"],
+    ["requestor", "의뢰자"],
+    ["salesman", "영업자"],
+    ["devops", "개발운영사"],
+    ["manufacturer", "제조사"],
+    ["admin", "관리자"],
+  ] as const;
+
+  const statusFilters = [
+    ["all", "전체 상태"],
+    ["active", "활성"],
+    ["pending", "승인대기"],
+  ] as const;
+
   return (
-    <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-6">
-      <div className="max-w-7xl w-full mx-auto space-y-6 flex-1 min-h-0 overflow-y-auto">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary/10 rounded-lg">
-                  <Users className="h-4 w-4 text-primary" />
+    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-8 py-6 sm:px-10">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-5 overflow-y-auto">
+        <div className="grid grid-cols-2 gap-3 pr-1 md:grid-cols-4 xl:grid-cols-7">
+          {statsCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={card.onClick}
+                className={`rounded-xl border bg-white px-3.5 py-3 text-left shadow-sm transition-colors ${
+                  card.active
+                    ? "border-slate-900 ring-1 ring-slate-900"
+                    : "border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/60"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`rounded-lg p-2 ${card.iconWrap}`}>
+                    <Icon className={`h-4 w-4 ${card.iconClass}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-slate-500">
+                      {card.label}
+                    </p>
+                    <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">
+                      {card.count.toLocaleString()}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">총 사용자</p>
-                  <p className="text-2xl font-bold">
-                    {totalUsers.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <FileText className="h-4 w-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">의뢰자</p>
-                  <p className="text-2xl font-bold">
-                    {totalRequestor.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-slate-100 rounded-lg">
-                  <Briefcase className="h-4 w-4 text-slate-700" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">영업자</p>
-                  <p className="text-2xl font-bold">
-                    {totalSalesman.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-sky-100 rounded-lg">
-                  <Shield className="h-4 w-4 text-sky-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">개발운영사</p>
-                  <p className="text-2xl font-bold">
-                    {totalDevops.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <Building2 className="h-4 w-4 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">제조사</p>
-                  <p className="text-2xl font-bold">
-                    {totalManufacturer.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-red-100 rounded-lg">
-                  <Shield className="h-4 w-4 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">관리자</p>
-                  <p className="text-2xl font-bold">
-                    {totalAdmin.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-yellow-100 rounded-lg">
-                  <UserCheck className="h-4 w-4 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">승인 대기</p>
-                  <p className="text-2xl font-bold">
-                    {totalPending.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Search and Filter (moved below summary cards) */}
         {unresolvedUsers.length > 0 && (
-          <Card className="border-amber-200 bg-amber-50/70">
-            <CardHeader>
-              <CardTitle className="text-base">사업자 정보 확인 필요</CardTitle>
-              <CardDescription>
+          <div className="rounded-2xl border border-amber-200/80 bg-amber-50/60 px-5 py-4 shadow-sm sm:px-6">
+            <div className="mb-3">
+              <h2 className="text-sm font-bold tracking-tight text-slate-900">
+                사업자 정보 확인 필요
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-500">
                 사업자등록증 검증이 미처리된 사용자입니다.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              </p>
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {unresolvedUsers.map((user) => (
                 <div
                   key={user.id}
-                  className="rounded-lg border border-amber-200 bg-white p-3"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-white px-3.5 py-2.5"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-medium">
-                        {getDisplayUserName(user)}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {user.companyName || "사업장 미등록"}
-                      </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-900">
+                      {getDisplayUserName(user)}
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => fetchUserDetail(user.id)}
-                    >
-                      상세보기
-                    </Button>
+                    <div className="truncate text-[11px] text-slate-500">
+                      {user.companyName || "사업장 미등록"}
+                    </div>
                   </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 border-slate-200 text-xs"
+                    onClick={() => fetchUserDetail(user.id)}
+                  >
+                    상세
+                  </Button>
                 </div>
               ))}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
-        <div className="flex gap-4 flex-wrap">
-          <div className="relative flex-1 min-w-[280px]">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+
+        <div className="flex flex-wrap items-center gap-3 pl-1">
+          <div className="relative min-w-[220px] flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               placeholder="사용자 검색..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
             />
           </div>
-
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant={selectedRole === "all" ? "default" : "outline"}
-              onClick={() => setSelectedRole("all")}
-              size="sm"
-            >
-              전체
-            </Button>
-            <Button
-              variant={selectedRole === "requestor" ? "default" : "outline"}
-              onClick={() => setSelectedRole("requestor")}
-              size="sm"
-            >
-              의뢰자
-            </Button>
-            <Button
-              variant={selectedRole === "salesman" ? "default" : "outline"}
-              onClick={() => setSelectedRole("salesman")}
-              size="sm"
-            >
-              영업자
-            </Button>
-            <Button
-              variant={selectedRole === "devops" ? "default" : "outline"}
-              onClick={() => setSelectedRole("devops")}
-              size="sm"
-            >
-              개발운영사
-            </Button>
-            <Button
-              variant={selectedRole === "manufacturer" ? "default" : "outline"}
-              onClick={() => setSelectedRole("manufacturer")}
-              size="sm"
-            >
-              제조사
-            </Button>
-            <Button
-              variant={selectedRole === "admin" ? "default" : "outline"}
-              onClick={() => setSelectedRole("admin")}
-              size="sm"
-            >
-              관리자
-            </Button>
+          <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            {roleFilters.map(([value, label]) => {
+              const active = selectedRole === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSelectedRole(value)}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    active
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
-
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant={selectedStatus === "all" ? "default" : "outline"}
-              onClick={() => setSelectedStatus("all")}
-              size="sm"
-            >
-              전체 상태
-            </Button>
-            <Button
-              variant={selectedStatus === "active" ? "default" : "outline"}
-              onClick={() => setSelectedStatus("active")}
-              size="sm"
-            >
-              활성
-            </Button>
-            <Button
-              variant={selectedStatus === "pending" ? "default" : "outline"}
-              onClick={() => setSelectedStatus("pending")}
-              size="sm"
-            >
-              승인대기
-            </Button>
+          <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            {statusFilters.map(([value, label]) => {
+              const active = selectedStatus === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSelectedStatus(value)}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    active
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Users List */}
-        <Card>
-          <CardHeader>
-            <CardTitle>사용자 목록</CardTitle>
-            <CardDescription>
-              총 {filteredUsers.length}명의 사용자가 검색되었습니다
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+          <div className="flex shrink-0 items-baseline justify-between gap-3 border-b border-slate-100 px-5 py-3.5 sm:px-6">
+            <h2 className="text-sm font-bold tracking-tight text-slate-900">
+              사용자 목록
+            </h2>
+            <p className="text-xs text-slate-500">
+              총 {filteredUsers.length.toLocaleString()}명
+            </p>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
             {loadingUsers && (
-              <div className="text-sm text-muted-foreground pb-4">
-                불러오는 중...
-              </div>
+              <div className="pb-3 text-sm text-slate-500">불러오는 중...</div>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredUsers.map((user) => (
-                <div
-                  key={user.id}
-                  className={
-                    user.unresolvedBusiness
-                      ? "p-4 border border-amber-200 rounded-lg bg-amber-50/40"
-                      : "p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
-                  }
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Avatar className="shrink-0">
-                        <AvatarFallback>
+            {filteredUsers.length === 0 && !loadingUsers ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-16 text-center">
+                <Users className="mb-2 h-5 w-5 text-slate-300" />
+                <p className="text-sm font-medium text-slate-600">
+                  조건에 맞는 사용자가 없습니다
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  역할·상태 필터 또는 검색어를 바꿔 보세요
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+                {filteredUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    className={`rounded-xl border bg-white px-3.5 py-3 transition-colors hover:bg-slate-50/70 ${
+                      user.unresolvedBusiness
+                        ? "border-amber-200 bg-amber-50/40"
+                        : "border-slate-200/80"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <Avatar className="h-9 w-9 shrink-0">
+                        <AvatarFallback className="bg-slate-100 text-sm font-semibold text-slate-600">
                           {String(getDisplayUserName(user) || "?")[0]}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-medium truncate max-w-[180px]">
-                            {getDisplayUserName(user)}
-                          </h3>
-                          <Badge variant={getRoleBadgeVariant(user.role)}>
-                            {getRoleLabel(user.role)}
-                          </Badge>
-                          {getRequestorCapabilityBadges(user)}
-                          {getSubRoleBadge(user)}
-                          {getStatusBadge(user.status)}
-                          {user.unresolvedBusiness && (
-                            <Badge className="bg-amber-100 text-amber-700 border-amber-200">
-                              사업자 확인 필요
-                            </Badge>
-                          )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h3 className="truncate text-sm font-semibold text-slate-900">
+                              {getDisplayUserName(user)}
+                            </h3>
+                            <div className="mt-1 flex flex-wrap items-center gap-1">
+                              <Badge
+                                variant={getRoleBadgeVariant(user.role)}
+                                className="h-5 px-1.5 text-[10px]"
+                              >
+                                {getRoleLabel(user.role)}
+                              </Badge>
+                              {getRequestorCapabilityBadges(user)}
+                              {getSubRoleBadge(user)}
+                              {getStatusBadge(user.status)}
+                              {user.unresolvedBusiness ? (
+                                <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                  사업자 확인
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleUserAction(
+                                    "상세보기",
+                                    user.id,
+                                    getDisplayUserName(user),
+                                  )
+                                }
+                              >
+                                <Eye className="mr-2 h-4 w-4" />
+                                상세보기
+                              </DropdownMenuItem>
+                              {getRequestorSalesmanSwapRole(user.role) && (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    void swapRequestorSalesmanRole(user);
+                                  }}
+                                >
+                                  <UserCheck className="mr-2 h-4 w-4" />
+                                  {getRoleLabel(
+                                    getRequestorSalesmanSwapRole(user.role) ||
+                                      "",
+                                  )}
+                                  로 변경
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => {
+                                  setDeleteTarget(user);
+                                  setDeleteType("user-only");
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                사용자만 삭제
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                        <p className="text-sm text-muted-foreground truncate">
+                        <p className="mt-1.5 truncate text-[11px] text-slate-500">
                           {user.email}
                         </p>
-                        <p className="text-xs text-muted-foreground truncate">
+                        <p className="truncate text-[11px] text-slate-400">
                           {user.businessInfo?.name || user.companyName || "-"}
                         </p>
                       </div>
                     </div>
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() =>
-                            handleUserAction(
-                              "상세보기",
-                              user.id,
-                              getDisplayUserName(user),
-                            )
-                          }
-                        >
-                          <Eye className="mr-2 h-4 w-4" />
-                          상세보기
-                        </DropdownMenuItem>
-                        {getRequestorSalesmanSwapRole(user.role) && (
-                          <DropdownMenuItem
-                            onClick={() => {
-                              void swapRequestorSalesmanRole(user);
-                            }}
+                    <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
+                      <div className="text-[11px] text-slate-400">
+                        의뢰 {user.totalRequests ?? "-"}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {user.status === "pending" ? (
+                          <>
+                            <Button
+                              size="sm"
+                              className="h-7 px-2.5 text-xs"
+                              onClick={() =>
+                                handleUserAction(
+                                  "승인",
+                                  user.id,
+                                  getDisplayUserName(user),
+                                )
+                              }
+                            >
+                              승인
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 border-slate-200 px-2.5 text-xs"
+                              onClick={() =>
+                                handleUserAction(
+                                  "거절",
+                                  user.id,
+                                  getDisplayUserName(user),
+                                )
+                              }
+                            >
+                              거절
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant={
+                              user.status === "active" ? "outline" : "default"
+                            }
+                            className="h-7 border-slate-200 px-2.5 text-xs"
+                            onClick={() =>
+                              handleUserAction(
+                                user.status === "active"
+                                  ? "일시정지"
+                                  : "활성화",
+                                user.id,
+                                getDisplayUserName(user),
+                              )
+                            }
                           >
-                            <UserCheck className="mr-2 h-4 w-4" />
-                            {getRoleLabel(
-                              getRequestorSalesmanSwapRole(user.role) || "",
-                            )}
-                            로 변경
-                          </DropdownMenuItem>
+                            {user.status === "active" ? "비활성화" : "활성화"}
+                          </Button>
                         )}
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => {
-                            setDeleteTarget(user);
-                            setDeleteType("user-only");
-                          }}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          사용자만 삭제
-                        </DropdownMenuItem>
-                        {/* <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => {
-                            setDeleteTarget(user);
-                            setDeleteType("with-business");
-                          }}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          사업자 포함 계정 삭제
-                        </DropdownMenuItem> */}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <div className="text-xs text-muted-foreground">
-                      의뢰 {user.totalRequests ?? "-"}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {user.status === "pending" ? (
-                        <>
-                          <Button
-                            size="sm"
-                            className="h-8"
-                            onClick={() =>
-                              handleUserAction(
-                                "승인",
-                                user.id,
-                                getDisplayUserName(user),
-                              )
-                            }
-                          >
-                            승인
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8"
-                            onClick={() =>
-                              handleUserAction(
-                                "거절",
-                                user.id,
-                                getDisplayUserName(user),
-                              )
-                            }
-                          >
-                            거절
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant={
-                            user.status === "active" ? "outline" : "default"
-                          }
-                          className="h-8"
-                          onClick={() =>
-                            handleUserAction(
-                              user.status === "active" ? "일시정지" : "활성화",
-                              user.id,
-                              getDisplayUserName(user),
-                            )
-                          }
-                        >
-                          {user.status === "active" ? "비활성화" : "활성화"}
-                        </Button>
-                      )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
             <div ref={loadMoreRef} className="h-8" />
             {loadingMore && (
-              <div className="text-sm text-muted-foreground pt-2">
+              <div className="pt-2 text-sm text-slate-500">
                 추가 사용자 불러오는 중...
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
           <DialogContent className="w-[min(1440px,calc(100vw-1.5rem))] max-w-none max-h-[92vh] overflow-hidden p-0">

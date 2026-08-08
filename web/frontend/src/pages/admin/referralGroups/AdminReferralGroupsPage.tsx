@@ -2,15 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,22 +107,44 @@ type ApiGroupListResponse = {
 const roleBadge = (role?: string) => {
   if (role === "salesman") {
     return (
-      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+      <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
         영업자
-      </Badge>
+      </span>
     );
   }
   if (role === "devops") {
     return (
-      <Badge className="bg-violet-600 text-white hover:bg-violet-600">
+      <span className="rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
         개발운영사
-      </Badge>
+      </span>
     );
   }
   return (
-    <Badge className="bg-blue-600 text-white hover:bg-blue-600">의뢰자</Badge>
+    <span className="rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+      의뢰자
+    </span>
   );
 };
+
+const MetricTile = ({
+  label,
+  value,
+  hints,
+}: {
+  label: string;
+  value: ReactNode;
+  hints?: ReactNode;
+}) => (
+  <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-right">
+    <div className="text-[10px] font-medium text-slate-400">{label}</div>
+    <div className="mt-0.5 text-xl font-bold tabular-nums tracking-tight text-slate-900">
+      {value}
+    </div>
+    {hints ? (
+      <div className="mt-1 space-y-0.5 text-[10px] text-slate-400">{hints}</div>
+    ) : null}
+  </div>
+);
 
 const formatMoney = (n: number) => {
   const v = Number(n || 0);
@@ -557,426 +572,416 @@ export default function AdminReferralGroupsPage() {
   };
 
   return (
-    <div className="h-screen max-h-screen overflow-hidden p-4 flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 shrink-0">
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <CardTitle className="text-base">
-                의뢰자 할인 네트워크 현황
-              </CardTitle>
+    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-8 py-6 sm:px-10">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-5 overflow-hidden">
+        <div className="grid shrink-0 grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm sm:px-5">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-bold tracking-tight text-slate-900">
+                의뢰자 할인 네트워크
+              </h2>
               {roleBadge("requestor")}
             </div>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">
-                그룹수 / 의뢰건수
-              </div>
-              <div className="text-2xl font-semibold tracking-tight">
-                {Number(overview?.requestor?.groupCount || 0).toLocaleString()}
-                <span className="text-base font-normal text-muted-foreground mx-1">
-                  /
-                </span>
-                {Number(overview?.requestor?.totalOrders || 0).toLocaleString()}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                평균 계정수{" "}
-                {Number(
-                  overview?.requestor?.avgAccountsPerGroup || 0,
-                ).toLocaleString()}{" "}
-                · 순증가{" "}
-                {Number(
-                  overview?.requestor?.netNewGroups || 0,
-                ).toLocaleString()}
-              </div>
-            </div>
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">
-                그룹당 평균 매출
-              </div>
-              <div className="text-3xl font-semibold tracking-tight">
-                {formatMoney(
-                  Number(overview?.requestor?.avgRevenuePerGroup || 0),
-                )}
-                원
-              </div>
-              <div className="text-xs text-muted-foreground">
-                유료 {formatMoney(avgPaidRevenuePerGroup)}원
-              </div>
-              <div className="text-xs text-muted-foreground">
-                무료 {formatMoney(avgBonusRevenuePerGroup)}원
-              </div>
-            </div>
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">매출 총액</div>
-              <div className="text-2xl font-semibold tracking-tight">
-                {formatMoney(
-                  Number(overview?.requestor?.totalRevenueAmount || 0) +
-                    Number(overview?.requestor?.totalBonusAmount || 0),
-                )}
-                원
-              </div>
-              <div className="text-xs text-muted-foreground">
-                유료{" "}
-                {formatMoney(
-                  Number(overview?.requestor?.totalRevenueAmount || 0),
-                )}
-                원
-              </div>
-              <div className="text-xs text-muted-foreground">
-                무료{" "}
-                {formatMoney(
-                  Number(overview?.requestor?.totalBonusAmount || 0),
-                )}
-                원
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-base">
-                  소개자 네트워크 현황
-                </CardTitle>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant={referrerTab === "salesman" ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => setReferrerTab("salesman")}
-                  className="h-7 px-3"
-                >
-                  영업자
-                </Button>
-                <Button
-                  type="button"
-                  variant={referrerTab === "devops" ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => setReferrerTab("devops")}
-                  className="h-7 px-3"
-                >
-                  개발운영사
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
-            {referrerTab === "salesman" ? (
-              <>
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-muted-foreground">
-                    그룹수 / 의뢰건수
-                  </div>
-                  <div className="text-2xl font-semibold tracking-tight">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <MetricTile
+                label="그룹수 / 의뢰건수"
+                value={
+                  <>
                     {Number(
-                      overview?.salesman?.groupCount || 0,
+                      overview?.requestor?.groupCount || 0,
                     ).toLocaleString()}
-                    <span className="text-base font-normal text-muted-foreground mx-1">
+                    <span className="mx-1 text-sm font-normal text-slate-400">
                       /
                     </span>
                     {Number(
-                      overview?.salesman?.totalReferralOrders || 0,
+                      overview?.requestor?.totalOrders || 0,
                     ).toLocaleString()}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
+                  </>
+                }
+                hints={
+                  <>
                     평균 계정수{" "}
                     {Number(
-                      overview?.salesman?.avgAccountsPerGroup || 0,
+                      overview?.requestor?.avgAccountsPerGroup || 0,
                     ).toLocaleString()}{" "}
                     · 순증가{" "}
                     {Number(
-                      overview?.salesman?.netNewGroups || 0,
+                      overview?.requestor?.netNewGroups || 0,
                     ).toLocaleString()}
-                  </div>
-                </div>
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-muted-foreground">
-                    그룹당 평균 수수료
-                  </div>
-                  <div className="text-2xl font-semibold tracking-tight">
-                    {formatMoney(
+                  </>
+                }
+              />
+              <MetricTile
+                label="그룹당 평균 매출"
+                value={`${formatMoney(
+                  Number(overview?.requestor?.avgRevenuePerGroup || 0),
+                )}원`}
+                hints={
+                  <>
+                    <div>유료 {formatMoney(avgPaidRevenuePerGroup)}원</div>
+                    <div>무료 {formatMoney(avgBonusRevenuePerGroup)}원</div>
+                  </>
+                }
+              />
+              <MetricTile
+                label="매출 총액"
+                value={`${formatMoney(
+                  Number(overview?.requestor?.totalRevenueAmount || 0) +
+                    Number(overview?.requestor?.totalBonusAmount || 0),
+                )}원`}
+                hints={
+                  <>
+                    <div>
+                      유료{" "}
+                      {formatMoney(
+                        Number(overview?.requestor?.totalRevenueAmount || 0),
+                      )}
+                      원
+                    </div>
+                    <div>
+                      무료{" "}
+                      {formatMoney(
+                        Number(overview?.requestor?.totalBonusAmount || 0),
+                      )}
+                      원
+                    </div>
+                  </>
+                }
+              />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm sm:px-5">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-bold tracking-tight text-slate-900">
+                소개자 네트워크
+              </h2>
+              <div className="inline-flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setReferrerTab("salesman")}
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    referrerTab === "salesman"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-white"
+                  }`}
+                >
+                  영업자
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReferrerTab("devops")}
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    referrerTab === "devops"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-white"
+                  }`}
+                >
+                  개발운영사
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {referrerTab === "salesman" ? (
+                <>
+                  <MetricTile
+                    label="그룹수 / 의뢰건수"
+                    value={
+                      <>
+                        {Number(
+                          overview?.salesman?.groupCount || 0,
+                        ).toLocaleString()}
+                        <span className="mx-1 text-sm font-normal text-slate-400">
+                          /
+                        </span>
+                        {Number(
+                          overview?.salesman?.totalReferralOrders || 0,
+                        ).toLocaleString()}
+                      </>
+                    }
+                    hints={
+                      <>
+                        평균 계정수{" "}
+                        {Number(
+                          overview?.salesman?.avgAccountsPerGroup || 0,
+                        ).toLocaleString()}{" "}
+                        · 순증가{" "}
+                        {Number(
+                          overview?.salesman?.netNewGroups || 0,
+                        ).toLocaleString()}
+                      </>
+                    }
+                  />
+                  <MetricTile
+                    label="그룹당 평균 수수료"
+                    value={`${formatMoney(
                       Number(overview?.salesman?.avgCommissionPerGroup || 0),
-                    )}
-                    원
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    유료 소개 매출 기준
-                  </div>
-                </div>
-                <div className="rounded-xl border p-3 text-right">
-                  <div className="text-xs text-muted-foreground">
-                    소개 매출 총액
-                  </div>
-                  <div className="text-2xl font-semibold tracking-tight">
-                    {formatMoney(
+                    )}원`}
+                    hints="유료 소개 매출 기준"
+                  />
+                  <MetricTile
+                    label="소개 매출 총액"
+                    value={`${formatMoney(
                       Number(
                         overview?.salesman?.totalReferredRevenueAmount || 0,
                       ) +
                         Number(
                           overview?.salesman?.totalReferredBonusAmount || 0,
                         ),
-                    )}
-                    원
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    유료{" "}
-                    {formatMoney(
-                      Number(
-                        overview?.salesman?.totalReferredRevenueAmount || 0,
-                      ),
-                    )}
-                    원
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    무료{" "}
-                    {formatMoney(
-                      Number(overview?.salesman?.totalReferredBonusAmount || 0),
-                    )}
-                    원
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    수수료{" "}
-                    {formatMoney(
-                      Number(overview?.salesman?.totalCommissionAmount || 0),
-                    )}
-                    원 · 비율 {salesmanCommissionRatio.toFixed(1)}%
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-muted-foreground">
-                    그룹수 / 의뢰건수
-                  </div>
-                  <div className="text-2xl font-semibold tracking-tight">
-                    {Number(overview?.devops?.groupCount || 0).toLocaleString()}
-                    <span className="text-base font-normal text-muted-foreground mx-1">
-                      /
-                    </span>
-                    {Number(
-                      overview?.devops?.totalReferralOrders || 0,
-                    ).toLocaleString()}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    평균 계정수{" "}
-                    {Number(
-                      overview?.devops?.avgAccountsPerGroup || 0,
-                    ).toLocaleString()}{" "}
-                    · 순증가{" "}
-                    {Number(
-                      overview?.devops?.netNewGroups || 0,
-                    ).toLocaleString()}
-                  </div>
-                </div>
-                <div className="rounded-xl border p-3">
-                  <div className="text-xs text-muted-foreground">
-                    그룹당 평균 수수료
-                  </div>
-                  <div className="text-2xl font-semibold tracking-tight">
-                    {formatMoney(
+                    )}원`}
+                    hints={
+                      <>
+                        <div>
+                          유료{" "}
+                          {formatMoney(
+                            Number(
+                              overview?.salesman?.totalReferredRevenueAmount ||
+                                0,
+                            ),
+                          )}
+                          원
+                        </div>
+                        <div>
+                          무료{" "}
+                          {formatMoney(
+                            Number(
+                              overview?.salesman?.totalReferredBonusAmount || 0,
+                            ),
+                          )}
+                          원
+                        </div>
+                        <div>
+                          수수료{" "}
+                          {formatMoney(
+                            Number(
+                              overview?.salesman?.totalCommissionAmount || 0,
+                            ),
+                          )}
+                          원 · 비율 {salesmanCommissionRatio.toFixed(1)}%
+                        </div>
+                      </>
+                    }
+                  />
+                </>
+              ) : (
+                <>
+                  <MetricTile
+                    label="그룹수 / 의뢰건수"
+                    value={
+                      <>
+                        {Number(
+                          overview?.devops?.groupCount || 0,
+                        ).toLocaleString()}
+                        <span className="mx-1 text-sm font-normal text-slate-400">
+                          /
+                        </span>
+                        {Number(
+                          overview?.devops?.totalReferralOrders || 0,
+                        ).toLocaleString()}
+                      </>
+                    }
+                    hints={
+                      <>
+                        평균 계정수{" "}
+                        {Number(
+                          overview?.devops?.avgAccountsPerGroup || 0,
+                        ).toLocaleString()}{" "}
+                        · 순증가{" "}
+                        {Number(
+                          overview?.devops?.netNewGroups || 0,
+                        ).toLocaleString()}
+                      </>
+                    }
+                  />
+                  <MetricTile
+                    label="그룹당 평균 수수료"
+                    value={`${formatMoney(
                       Number(overview?.devops?.avgCommissionPerGroup || 0),
-                    )}
-                    원
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    유료 소개 매출 기준
-                  </div>
-                </div>
-                <div className="rounded-xl border p-3 text-right">
-                  <div className="text-xs text-muted-foreground">
-                    소개 매출 총액
-                  </div>
-                  <div className="text-2xl font-semibold tracking-tight">
-                    {formatMoney(
+                    )}원`}
+                    hints="유료 소개 매출 기준"
+                  />
+                  <MetricTile
+                    label="소개 매출 총액"
+                    value={`${formatMoney(
                       Number(
                         overview?.devops?.totalReferredRevenueAmount || 0,
                       ) +
                         Number(overview?.devops?.totalReferredBonusAmount || 0),
-                    )}
-                    원
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    유료{" "}
-                    {formatMoney(
-                      Number(overview?.devops?.totalReferredRevenueAmount || 0),
-                    )}
-                    원
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    무료{" "}
-                    {formatMoney(
-                      Number(overview?.devops?.totalReferredBonusAmount || 0),
-                    )}
-                    원
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    수수료{" "}
-                    {formatMoney(
-                      Number(overview?.devops?.totalCommissionAmount || 0),
-                    )}
-                    원 · 비율 {devopsCommissionRatio.toFixed(1)}%
-                  </div>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* 소개 네트워크 */}
-      <Card className="flex flex-col min-h-0 flex-1 overflow-hidden">
-        <CardHeader className="py-3 space-y-3 shrink-0">
-          {/* 상단 컨트롤 바 */}
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* 리더 선택 */}
-            <div className="flex items-center gap-2 flex-1 min-w-[300px]">
-              <span className="text-sm font-medium whitespace-nowrap">
-                리더
-              </span>
-              <select
-                value={effectiveLeaderId || ""}
-                onChange={(e) => {
-                  setSelectedLeaderId(e.target.value || null);
-                  setSelectedNode(null);
-                }}
-                className="flex-1 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="">리더를 선택하세요</option>
-                {filteredGroups.map((g) => {
-                  const leader = g.leader || ({} as Partial<ApiGroupLeader>);
-                  const displayName =
-                    leader.business ||
-                    leader.name ||
-                    leader.email ||
-                    leader._id;
-                  return (
-                    <option key={String(leader._id)} value={String(leader._id)}>
-                      {displayName} ({leader.role}) -{" "}
-                      {Number(g.memberCount || 0)}명
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* 필터 */}
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant={roleFilter === "all" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setRoleFilter("all")}
-                className="h-8"
-              >
-                전체
-              </Button>
-              <Button
-                type="button"
-                variant={roleFilter === "requestor" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setRoleFilter("requestor")}
-                className="h-8"
-              >
-                의뢰자
-              </Button>
-              <Button
-                type="button"
-                variant={roleFilter === "salesman" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setRoleFilter("salesman")}
-                className="h-8"
-              >
-                영업자
-              </Button>
-              <Button
-                type="button"
-                variant={roleFilter === "devops" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setRoleFilter("devops")}
-                className="h-8"
-              >
-                개발운영사
-              </Button>
-            </div>
-
-            {/* 검색 */}
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="검색..."
-              className="h-8 w-[200px]"
-            />
-          </div>
-
-          {/* 선택된 리더 정보 */}
-          {effectiveLeaderId && treeData?.tree ? (
-            <div className="flex items-start justify-between gap-4 p-3 rounded-lg bg-muted/30">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-semibold">
-                    {treeData.tree.business ||
-                      treeData.tree.name ||
-                      treeData.tree.email}
-                  </span>
-                  {roleBadge(treeData.tree.role)}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  네트워크 {flattenedTree.length}명
-                  {isCommissionLeader(String(treeData.tree.role || "")) && (
-                    <>
-                      {" · "}소개 {directReferralRequestors.length}개
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {isCommissionLeader(String(treeData.tree.role || "")) && (
-                <div className="text-right">
-                  <div className="text-lg font-bold">
-                    {formatMoney(totalCommissionSum)}원
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    소개 수수료 {formatMoney(directCommissionSum)}
-                  </div>
-                </div>
+                    )}원`}
+                    hints={
+                      <>
+                        <div>
+                          유료{" "}
+                          {formatMoney(
+                            Number(
+                              overview?.devops?.totalReferredRevenueAmount || 0,
+                            ),
+                          )}
+                          원
+                        </div>
+                        <div>
+                          무료{" "}
+                          {formatMoney(
+                            Number(
+                              overview?.devops?.totalReferredBonusAmount || 0,
+                            ),
+                          )}
+                          원
+                        </div>
+                        <div>
+                          수수료{" "}
+                          {formatMoney(
+                            Number(
+                              overview?.devops?.totalCommissionAmount || 0,
+                            ),
+                          )}
+                          원 · 비율 {devopsCommissionRatio.toFixed(1)}%
+                        </div>
+                      </>
+                    }
+                  />
+                </>
               )}
             </div>
-          ) : null}
-        </CardHeader>
+          </div>
+        </div>
 
-        <CardContent className="flex-1 min-h-0 p-0 overflow-hidden">
-          {isTreeLoading ? (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              로딩중...
-            </div>
-          ) : !effectiveLeaderId || !treeData?.tree ? (
-            <div className="flex items-center justify-center h-full text-center text-muted-foreground">
-              <div>
-                <div className="text-lg mb-2">👆</div>
-                <div>리더를 선택하면 소개 네트워크를 확인할 수 있습니다</div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+          <div className="shrink-0 space-y-3 border-b border-slate-100 px-5 py-3.5 sm:px-6">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex min-w-[240px] flex-1 items-center gap-2">
+                <span className="shrink-0 text-xs font-semibold text-slate-500">
+                  리더
+                </span>
+                <select
+                  value={effectiveLeaderId || ""}
+                  onChange={(e) => {
+                    setSelectedLeaderId(e.target.value || null);
+                    setSelectedNode(null);
+                  }}
+                  className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400"
+                >
+                  <option value="">리더를 선택하세요</option>
+                  {filteredGroups.map((g) => {
+                    const leader = g.leader || ({} as Partial<ApiGroupLeader>);
+                    const displayName =
+                      leader.business ||
+                      leader.name ||
+                      leader.email ||
+                      leader._id;
+                    return (
+                      <option
+                        key={String(leader._id)}
+                        value={String(leader._id)}
+                      >
+                        {displayName} ({leader.role}) -{" "}
+                        {Number(g.memberCount || 0)}명
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
-            </div>
-          ) : (
-            <div className="w-full h-full p-4">
-              <ReferralNetworkChart
-                data={treeData.tree}
-                title=""
-                mode="radial-tree"
-                legendRoles={["requestor", "salesman", "devops"]}
-                chartHeight={600}
-                showCard={false}
-                showZoomControls
+
+              <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+                {(
+                  [
+                    ["all", "전체"],
+                    ["requestor", "의뢰자"],
+                    ["salesman", "영업자"],
+                    ["devops", "개발운영사"],
+                  ] as const
+                ).map(([value, label]) => {
+                  const active = roleFilter === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setRoleFilter(value)}
+                      className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                        active
+                          ? "bg-slate-900 text-white"
+                          : "text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="검색..."
+                className="h-9 w-[180px] rounded-lg border-slate-200 bg-white text-sm shadow-sm"
               />
             </div>
-          )}
-        </CardContent>
-      </Card>
+
+            {effectiveLeaderId && treeData?.tree ? (
+              <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50/70 px-3.5 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="truncate text-sm font-semibold text-slate-900">
+                      {treeData.tree.business ||
+                        treeData.tree.name ||
+                        treeData.tree.email}
+                    </span>
+                    {roleBadge(treeData.tree.role)}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">
+                    네트워크 {flattenedTree.length}명
+                    {isCommissionLeader(String(treeData.tree.role || "")) && (
+                      <>
+                        {" · "}소개 {directReferralRequestors.length}개
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {isCommissionLeader(String(treeData.tree.role || "")) && (
+                  <div className="shrink-0 text-right">
+                    <div className="text-base font-bold tabular-nums text-slate-900">
+                      {formatMoney(totalCommissionSum)}원
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      소개 수수료 {formatMoney(directCommissionSum)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {isTreeLoading ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                로딩중...
+              </div>
+            ) : !effectiveLeaderId || !treeData?.tree ? (
+              <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+                <p className="text-sm font-medium text-slate-600">
+                  리더를 선택하면 소개 네트워크를 확인할 수 있습니다
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  상단에서 리더를 고르거나 역할 필터를 바꿔 보세요
+                </p>
+              </div>
+            ) : (
+              <div className="h-full w-full p-3 sm:p-4">
+                <ReferralNetworkChart
+                  data={treeData.tree}
+                  title=""
+                  mode="radial-tree"
+                  legendRoles={["requestor", "salesman", "devops"]}
+                  chartHeight={600}
+                  showCard={false}
+                  showZoomControls
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       <Dialog
         open={Boolean(selectedNode)}

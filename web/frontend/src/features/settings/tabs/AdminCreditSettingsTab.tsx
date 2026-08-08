@@ -22,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { CreditCard } from "lucide-react";
 
 interface CreditSettings {
   minCreditForRequest: number;
@@ -37,6 +38,9 @@ type CreditSettingsApiResponse = {
     creditSettings?: Partial<CreditSettings>;
   };
 };
+
+const amountInputClassName =
+  "h-9 w-full max-w-[11rem] tabular-nums tracking-tight";
 
 export const AdminCreditSettingsTab = () => {
   const { token } = useAuthStore();
@@ -160,140 +164,157 @@ export const AdminCreditSettingsTab = () => {
     JSON.stringify(settings) !== JSON.stringify(originalSettings);
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>최소 요구 크레딧 / 배송 요금</CardTitle>
-          <CardDescription>
-            전역 설정입니다. 신속 배송 추가비(
-            <code className="text-xs">creditSettings.expressFee</code>)는 의뢰
-            생성·표시·차감에 동일하게 적용됩니다.
+    <div className="space-y-4">
+      <Card className="app-glass-card app-glass-card--lg">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <CreditCard className="h-5 w-5" />
+            결제 · 크레딧 설정
+          </CardTitle>
+          <CardDescription className="text-sm leading-relaxed">
+            전역 설정입니다. 신속 배송 추가비는 의뢰 생성·표시·차감에 동일하게
+            적용됩니다.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="minCreditForRequest">
-                신규의뢰 최소 크레딧 (원)
-              </Label>
-              <Input
-                id="minCreditForRequest"
-                type="number"
-                min="0"
-                value={settings.minCreditForRequest}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    minCreditForRequest: Math.max(0, Number(e.target.value)),
-                  })
-                }
-                disabled={loading}
-              />
+        <CardContent className="space-y-6">
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold tracking-tight">
+              최소 요구 크레딧 / 배송 요금
+            </h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="minCreditForRequest" className="text-sm">
+                  신규의뢰 최소 크레딧 (원)
+                </Label>
+                <Input
+                  id="minCreditForRequest"
+                  type="number"
+                  min="0"
+                  className={amountInputClassName}
+                  value={settings.minCreditForRequest}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      minCreditForRequest: Math.max(0, Number(e.target.value)),
+                    })
+                  }
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="shippingFee" className="text-sm">
+                  배송비 (원)
+                </Label>
+                <Input
+                  id="shippingFee"
+                  type="number"
+                  min="0"
+                  className={amountInputClassName}
+                  value={settings.shippingFee}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      shippingFee: Math.max(0, Number(e.target.value)),
+                    })
+                  }
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                <Label htmlFor="expressFee" className="text-sm">
+                  신속 배송 추가 의뢰크레딧 (원)
+                </Label>
+                <Input
+                  id="expressFee"
+                  type="number"
+                  min="0"
+                  className={amountInputClassName}
+                  value={settings.expressFee}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      expressFee: Math.max(0, Number(e.target.value)),
+                    })
+                  }
+                  disabled={loading}
+                />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  신속배송 건당 가공비에 더해지는 추가 의뢰크레딧입니다. 기본값{" "}
+                  {CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}
+                  원.
+                </p>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="shippingFee">배송비 (원)</Label>
-              <Input
-                id="shippingFee"
-                type="number"
-                min="0"
-                value={settings.shippingFee}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    shippingFee: Math.max(0, Number(e.target.value)),
-                  })
-                }
-                disabled={loading}
-              />
+          </section>
+
+          <div className="border-t border-slate-200/80" />
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold tracking-tight">
+              환영 무료 크레딧 지급 설정
+            </h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="defaultRequestFreeCredit" className="text-sm">
+                  의뢰비 무료 크레딧 (원)
+                </Label>
+                <Input
+                  id="defaultRequestFreeCredit"
+                  type="number"
+                  min="0"
+                  className={amountInputClassName}
+                  value={settings.defaultRequestFreeCredit}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      defaultRequestFreeCredit: Math.max(
+                        0,
+                        Number(e.target.value),
+                      ),
+                    })
+                  }
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="defaultShippingFreeCredit" className="text-sm">
+                  배송비 무료 크레딧 (원)
+                </Label>
+                <Input
+                  id="defaultShippingFreeCredit"
+                  type="number"
+                  min="0"
+                  className={amountInputClassName}
+                  value={settings.defaultShippingFreeCredit}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      defaultShippingFreeCredit: Math.max(
+                        0,
+                        Number(e.target.value),
+                      ),
+                    })
+                  }
+                  disabled={loading}
+                />
+              </div>
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="expressFee">신속 배송 추가 의뢰크레딧 (원)</Label>
-              <Input
-                id="expressFee"
-                type="number"
-                min="0"
-                value={settings.expressFee}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    expressFee: Math.max(0, Number(e.target.value)),
-                  })
-                }
-                disabled={loading}
-              />
-              <p className="text-xs text-muted-foreground">
-                신속배송 건당 가공비에 더해지는 추가 의뢰크레딧입니다. 기본값{" "}
-                {CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.
-              </p>
-            </div>
+          </section>
+
+          <div className="flex justify-end gap-2 border-t border-slate-200/80 pt-4">
+            <Button
+              variant="outline"
+              onClick={handleCancel}
+              disabled={loading || !hasChanges}
+            >
+              취소
+            </Button>
+            <Button onClick={handleSave} disabled={loading || !hasChanges}>
+              {loading ? "저장 중..." : "저장"}
+            </Button>
           </div>
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>환영 무료 크레딧 지급 설정</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="defaultRequestFreeCredit">
-                의뢰비 무료 크레딧 (원)
-              </Label>
-              <Input
-                id="defaultRequestFreeCredit"
-                type="number"
-                min="0"
-                value={settings.defaultRequestFreeCredit}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    defaultRequestFreeCredit: Math.max(
-                      0,
-                      Number(e.target.value),
-                    ),
-                  })
-                }
-                disabled={loading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="defaultShippingFreeCredit">
-                배송비 무료 크레딧 (원)
-              </Label>
-              <Input
-                id="defaultShippingFreeCredit"
-                type="number"
-                min="0"
-                value={settings.defaultShippingFreeCredit}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    defaultShippingFreeCredit: Math.max(
-                      0,
-                      Number(e.target.value),
-                    ),
-                  })
-                }
-                disabled={loading}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex gap-2 justify-end">
-        <Button
-          variant="outline"
-          onClick={handleCancel}
-          disabled={loading || !hasChanges}
-        >
-          취소
-        </Button>
-        <Button onClick={handleSave} disabled={loading || !hasChanges}>
-          {loading ? "저장 중..." : "저장"}
-        </Button>
-      </div>
     </div>
   );
 };

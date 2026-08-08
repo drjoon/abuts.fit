@@ -1,30 +1,46 @@
+// change-log:
+// - 2026-08-09: 빈값·레거시(의뢰/세척.포장 등) stage 정규화 보강. 모니터링용 getMonitoringStageLabel 추가.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/requests/AdminRequestMonitoring.tsx
 export const normalizeStageValue = (manufacturerStage?: string): string => {
   const stage = String(manufacturerStage || "").trim();
+  const lower = stage.toLowerCase();
 
-  if (stage === "취소") return "cancel";
+  // 빈값·레거시(의뢰/request)는 request 단계 SSOT(준비)로 승격
+  if (!stage || stage === "준비" || stage === "의뢰" || lower === "request") {
+    return "request";
+  }
 
-  if (["tracking", "추적관리"].includes(stage)) {
+  if (stage === "취소" || lower === "cancel") return "cancel";
+
+  if (
+    ["tracking", "추적관리", "완료", "배송완료"].includes(stage) ||
+    lower === "tracking"
+  ) {
     return "tracking";
   }
-  if (["shipping", "포장.발송"].includes(stage)) {
+  if (
+    ["shipping", "포장.발송", "배송대기", "배송중"].includes(stage) ||
+    lower === "shipping"
+  ) {
     return "shipping";
   }
-  if (["packing", "세척.패킹"].includes(stage)) {
+  if (
+    ["packing", "세척.패킹", "세척.포장", "cleaning"].includes(stage) ||
+    lower === "packing" ||
+    lower === "cleaning"
+  ) {
     return "packing";
   }
-  if (["machining", "가공"].includes(stage)) {
+  if (["machining", "가공"].includes(stage) || lower === "machining") {
     return "machining";
   }
-  if (["cam", "CAM"].includes(stage)) {
+  if (["cam", "CAM"].includes(stage) || lower === "cam") {
     // 작업 공정 변경: CAM 표시는 제거하고 가공 단계로 정규화한다.
     return "machining";
-  }
-  if (["준비"].includes(stage)) {
-    return "request";
   }
   throw new Error("Invalid stage");
 };
@@ -47,6 +63,27 @@ export const normalizeStageLabelSafe = (manufacturerStage?: string): string => {
   } catch {
     return String(manufacturerStage || "").trim();
   }
+};
+
+/** 관리자 모니터링·집계용: 알 수 없는 값도 request 단계 SSOT(준비)로 승격 */
+export const normalizeMonitoringStageLabel = (
+  manufacturerStage?: string,
+): string => {
+  try {
+    return normalizeStageLabel(manufacturerStage);
+  } catch {
+    return "준비";
+  }
+};
+
+export const getMonitoringStageLabel = (requestLike: unknown): string => {
+  const m =
+    requestLike && typeof requestLike === "object"
+      ? (requestLike as Record<string, unknown>)["manufacturerStage"]
+      : undefined;
+  return normalizeMonitoringStageLabel(
+    typeof m === "string" ? m : undefined,
+  );
 };
 
 // Helper for generic request objects (like from APIs)

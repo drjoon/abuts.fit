@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useState, type ReactNode, type MouseEvent } from "react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { cn } from "@/shared/ui/cn";
 
 interface FunctionalItemCardProps {
   children: ReactNode;
@@ -54,17 +55,20 @@ export const FunctionalItemCard = ({
     <>
       <div
         onClick={onClick}
-        className={`relative group rounded-lg border bg-white hover:shadow-sm transition-all cursor-pointer ${
-          className || ""
-        }`}
+        className={cn(
+          "relative group rounded-lg border bg-white transition-all",
+          onClick ? "cursor-pointer hover:shadow-sm" : "hover:bg-slate-50/70",
+          className,
+        )}
       >
         {(onUpdate || (onRemove && !disabled)) && (
           <div
-            className={`absolute top-1 right-1 z-10 inline-flex items-center gap-1 transition-opacity ${
+            className={cn(
+              "absolute top-1.5 right-1.5 z-10 inline-flex items-center gap-1 transition-opacity",
               alwaysShowActions
                 ? "opacity-100"
-                : "opacity-0 group-hover:opacity-100"
-            }`}
+                : "opacity-0 group-hover:opacity-100",
+            )}
           >
             {onUpdate && (
               <button

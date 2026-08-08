@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-09: 빈값·레거시(의뢰/세척.포장 등)를 FE 모니터링 정규화와 동일하게 맞춤.
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
@@ -14,16 +16,37 @@ const MONITORING_STAGE_KEYS = [
 
 export function normalizeMonitoringStageLabel(manufacturerStage) {
   const stage = String(manufacturerStage || "").trim();
+  const lower = stage.toLowerCase();
 
-  if (stage === "취소") return "취소";
-  if (["tracking", "추적관리"].includes(stage)) return "추적관리";
-  if (["shipping", "포장.발송"].includes(stage)) return "포장.발송";
-  if (["packing", "세척.패킹"].includes(stage)) return "세척.패킹";
-  if (["machining", "가공"].includes(stage)) return "가공";
-  if (["cam", "CAM"].includes(stage)) return "CAM";
-  if (["준비"].includes(stage)) return "준비";
+  if (stage === "취소" || lower === "cancel") return "취소";
+  if (
+    ["tracking", "추적관리", "완료", "배송완료"].includes(stage) ||
+    lower === "tracking"
+  ) {
+    return "추적관리";
+  }
+  if (
+    ["shipping", "포장.발송", "배송대기", "배송중"].includes(stage) ||
+    lower === "shipping"
+  ) {
+    return "포장.발송";
+  }
+  if (
+    ["packing", "세척.패킹", "세척.포장", "cleaning"].includes(stage) ||
+    lower === "packing" ||
+    lower === "cleaning"
+  ) {
+    return "세척.패킹";
+  }
+  if (["machining", "가공"].includes(stage) || lower === "machining") {
+    return "가공";
+  }
+  if (["cam", "CAM"].includes(stage) || lower === "cam") return "CAM";
+  // 빈값·레거시(의뢰/request) 및 알 수 없는 상태는 request 단계 SSOT(준비)
+  if (!stage || stage === "준비" || stage === "의뢰" || lower === "request") {
+    return "준비";
+  }
 
-  // 알 수 없는 상태는 request 단계 SSOT(준비)로 처리
   return "준비";
 }
 
