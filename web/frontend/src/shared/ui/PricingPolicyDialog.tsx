@@ -293,7 +293,7 @@ export const PricingPolicyDialog = ({
                   <PriceRow
                     label='디자인비'
                     value={`${designFee.toLocaleString('ko-KR')}원`}
-                    hint='1어벗당 · 디자인+가공 시 (가공단가+디자인비)×어벗수'
+                    hint='1어벗당 · 디자인+가공 시 가공비에 별도 추가'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
@@ -313,7 +313,7 @@ export const PricingPolicyDialog = ({
                   <span className='font-medium text-slate-800'>
                     디자인+가공
                   </span>
-                  : 한 STL에 여러 어벗이 있으면{" "}
+                  : 디자인비는 가공비와 별도이며, 한 STL에 여러 어벗이 있으면{" "}
                   <span className='font-medium text-slate-800'>
                     (가공단가 + 디자인비) × 어벗 수
                   </span>

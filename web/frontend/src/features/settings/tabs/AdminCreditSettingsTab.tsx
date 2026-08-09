@@ -266,8 +266,8 @@ export const AdminCreditSettingsTab = () => {
                   disabled={loading}
                 />
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  디자인+가공 의뢰 시 (가공단가+디자인비)×어벗수로 차감됩니다.
-                  기본값{" "}
+                  디자인+가공 의뢰 시 가공비에 별도 추가되며,
+                  (가공단가+디자인비)×어벗수로 차감됩니다. 기본값{" "}
                   {CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}
                   원.
                 </p>
