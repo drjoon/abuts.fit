@@ -279,7 +279,7 @@ export const RequestorRecentRequestsCard = ({
     await Promise.resolve(onCancel(requestId));
   };
 
-  // 불완전가공 배지는 안내용으로만 사용한다.
+  // 불완전 가공 배지는 안내용으로만 사용한다.
 
   const resolveCurrentCaseInfos = useCallback((): EditableCaseInfos => {
     const fromDetail = detail?.caseInfos;
@@ -644,9 +644,9 @@ export const RequestorRecentRequestsCard = ({
                         setUnmachinableTarget(item);
                         setUnmachinableInfoOpen(true);
                       }}
-                      aria-label="불완전가공 사유 보기"
+                      aria-label="불완전 가공 사유 보기"
                     >
-                      불완전가공
+                      불완전 가공
                     </button>
                   </div>
                 ) : (
@@ -716,7 +716,7 @@ export const RequestorRecentRequestsCard = ({
                   </div>
                   {isUnmachinable && (
                     <div className="text-[11px] text-yellow-800 mt-1 truncate flex items-center gap-2">
-                      <span>불완전가공 사유: {unmachinableReason || "미등록"}</span>
+                      <span>불완전 가공 사유: {unmachinableReason || "미등록"}</span>
                       {isUnmachinableConfirmed && (
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5">
                           확인됨
@@ -826,9 +826,9 @@ export const RequestorRecentRequestsCard = ({
       >
         <DialogContent className="sm:max-w-md border-yellow-300 ring-2 ring-yellow-200">
           <DialogHeader>
-            <DialogTitle className="text-yellow-700">불완전가공 안내</DialogTitle>
+            <DialogTitle className="text-yellow-700">불완전 가공 안내</DialogTitle>
             <DialogDescription>
-              해당 의뢰는 제조사에서 불완전가공 판정을 받았습니다.
+              해당 의뢰는 제조사에서 불완전 가공 판정을 받았습니다.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -841,7 +841,7 @@ export const RequestorRecentRequestsCard = ({
                 if (!reasonLines.length) {
                   return (
                     <div className="text-sm text-yellow-800">
-                      불완전가공 사유가 등록되지 않았습니다.
+                      불완전 가공 사유가 등록되지 않았습니다.
                     </div>
                   );
                 }

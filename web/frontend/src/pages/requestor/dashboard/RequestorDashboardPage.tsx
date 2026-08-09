@@ -199,8 +199,8 @@ export const RequestorDashboardPage = () => {
     "세척.패킹": ["packing"],
     "포장.발송": ["shipping"],
     추적관리: ["tracking"],
-    // 상세 공정 코드(불완전가공)는 별도 분기 처리
-    불완전가공: null,
+    // 상세 공정 코드(불완전 가공)는 별도 분기 처리
+    "불완전 가공": null,
   }), []);
   
   const stageRawAliasByLabel = useMemo<Record<string, string[]>>(() => ({
@@ -379,14 +379,15 @@ export const RequestorDashboardPage = () => {
     const group = stageGroupByLabel[label];
     const base = (all || []).filter(filterDashboardRequest);
 
-    // 불완전가공은 stage(manufacturerStage)가 아니라 rnd 상세 상태로 분류한다.
-    if (label === "불완전가공") {
+    // 불완전 가공은 stage(manufacturerStage)가 아니라 rnd 상세 상태로 분류한다.
+    if (label === "불완전 가공") {
       return base.filter((r) => {
         if (r?.rnd?.unmachinableAt) return true;
         const rawStage = String(r?.manufacturerStage || "")
           .trim()
           .toLowerCase();
-        return rawStage === "불완전가공";
+        // stage 코드 레거시 값은 띄어쓰기 없이 저장될 수 있다.
+        return rawStage === "불완전가공" || rawStage === "불완전 가공";
       });
     }
 
@@ -552,7 +553,7 @@ export const RequestorDashboardPage = () => {
   const shouldLoadUnmachinableOverview =
     Boolean(token) &&
     (unmachinableAlertModalOpen ||
-      (statsModalOpen && statsModalLabel === "불완전가공"));
+      (statsModalOpen && statsModalLabel === "불완전 가공"));
 
   const {
     data: unmachinableOverviewResponse,
@@ -566,7 +567,7 @@ export const RequestorDashboardPage = () => {
         token,
       });
       if (!res.ok) {
-        throw new Error("불완전가공 목록 조회에 실패했습니다.");
+        throw new Error("불완전 가공 목록 조회에 실패했습니다.");
       }
       return res.data;
     },
@@ -1189,7 +1190,7 @@ export const RequestorDashboardPage = () => {
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
   }, [dashboardStatsSource, recentRequests, isUnmachinableRequest]);
   
-  // 상단 통계카드(불완전가공)는 기록용 누적(확인 포함) 건수를 사용한다.
+  // 상단 통계카드(불완전 가공)는 기록용 누적(확인 포함) 건수를 사용한다.
   const unmachinableRecordedCount = useMemo(() => {
     const stats = dashboardStatsSource?.data?.stats || {};
     const fromJudgedTotal = Number(stats?.unmachinableJudgedTotalCount);
@@ -1338,7 +1339,7 @@ export const RequestorDashboardPage = () => {
       ? summaryResponse?.data?.recentRequests
       : [];
     const unmachinableSeedItems =
-      statsModalLabel === "불완전가공" ? unmachinableOverviewItems : [];
+      statsModalLabel === "불완전 가공" ? unmachinableOverviewItems : [];
 
     const merged = [...pagedItems, ...summaryRecentItems, ...unmachinableSeedItems];
     const deduped = new Map<string, any>();
@@ -1622,7 +1623,7 @@ export const RequestorDashboardPage = () => {
         setUnmachinablePreviewLoading(false);
       } catch (error) {
         if (cancelled) return;
-        console.error("불완전가공 STL 로드 실패", error);
+        console.error("불완전 가공 STL 로드 실패", error);
         setUnmachinablePreviewError("STL 파일을 불러오지 못했습니다.");
         setUnmachinablePreviewLoading(false);
       }
@@ -1644,7 +1645,7 @@ export const RequestorDashboardPage = () => {
       const successCount = await markUnmachinableAsContinue([normalized]);
       if (successCount <= 0) {
         toast({
-          title: "불완전가공 진행 전환 실패",
+          title: "불완전 가공 진행 전환 실패",
           description: "처리된 의뢰가 없습니다. 잠시 후 다시 시도해주세요.",
           variant: "destructive",
           duration: 2500,
@@ -1660,9 +1661,9 @@ export const RequestorDashboardPage = () => {
       refreshDashboard();
       return true;
     } catch (error) {
-      console.error("불완전가공 진행 전환 실패", error);
+      console.error("불완전 가공 진행 전환 실패", error);
       toast({
-        title: "불완전가공 진행 전환 실패",
+        title: "불완전 가공 진행 전환 실패",
         description: "잠시 후 다시 시도해주세요.",
         variant: "destructive",
         duration: 2500,
@@ -1710,9 +1711,9 @@ export const RequestorDashboardPage = () => {
       setUnmachinableAlertModalOpen(false);
       refreshDashboard();
     } catch (error) {
-      console.error("불완전가공 승인 처리 실패", error);
+      console.error("불완전 가공 승인 처리 실패", error);
       toast({
-        title: "불완전가공 승인 처리 실패",
+        title: "불완전 가공 승인 처리 실패",
         description: "잠시 후 다시 시도해주세요.",
         variant: "destructive",
         duration: 2500,
@@ -1760,7 +1761,7 @@ export const RequestorDashboardPage = () => {
 
       if (canceledCount <= 0) {
         toast({
-          title: "불완전가공 취소 처리 실패",
+          title: "불완전 가공 취소 처리 실패",
           description:
             "취소 처리된 의뢰가 없습니다. 잠시 후 다시 시도해주세요.",
           variant: "destructive",
@@ -1782,7 +1783,7 @@ export const RequestorDashboardPage = () => {
     } catch (error) {
       console.error("[UNMACHINABLE_CANCEL] confirm failed", error);
       toast({
-        title: "불완전가공 취소 처리 실패",
+        title: "불완전 가공 취소 처리 실패",
         description: "잠시 후 다시 시도해주세요.",
         variant: "destructive",
         duration: 2500,
@@ -1869,7 +1870,7 @@ export const RequestorDashboardPage = () => {
         { label: "세척.패킹", value: "0", icon: Boxes },
         { label: "포장.발송", value: "0건/0박스", icon: Package },
         { label: "추적관리", value: "0건/0박스", icon: CheckCircle },
-        { label: "불완전가공", value: "0", icon: AlertTriangle },
+        { label: "불완전 가공", value: "0", icon: AlertTriangle },
       ];
     }
 
@@ -1910,7 +1911,7 @@ export const RequestorDashboardPage = () => {
         icon: CheckCircle,
       },
       {
-        label: "불완전가공",
+        label: "불완전 가공",
         value: String(unmachinableRecordedCount),
         change: "+0%",
         icon: AlertTriangle,
@@ -1953,9 +1954,9 @@ export const RequestorDashboardPage = () => {
                   setUnmachinableAlertModalOpen(true);
                 }}
                 className="inline-flex h-8 items-center rounded-md border border-yellow-300 bg-yellow-50 px-3 text-sm font-semibold text-yellow-700 ring-2 ring-yellow-200 hover:bg-yellow-100"
-                title="불완전가공 의뢰 목록을 확인합니다"
+                title="불완전 가공 의뢰 목록을 확인합니다"
               >
-                불완전가공 의뢰 {unmachinableAlertCount}건 발생
+                불완전 가공 의뢰 {unmachinableAlertCount}건 발생
               </button>
             )}
           </RequestorWorkspaceHeader>
@@ -1971,9 +1972,9 @@ export const RequestorDashboardPage = () => {
         }
         topSection={
           <div className="space-y-2.5">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 items-stretch">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch">
               <RequestorPricingReferralPolicyCard />
-              <div className="lg:col-span-2 h-full">
+              <div className="h-full min-w-0">
                 <RequestorRecentRequestsCard
                   items={recentRequests}
                   onRefresh={() => {
@@ -1989,11 +1990,11 @@ export const RequestorDashboardPage = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 items-stretch">
               <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base font-semibold">불완전가공</CardTitle>
+                  <CardTitle className="text-base font-semibold">불완전 가공</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-2">
                   {unmachinableRecentRequests.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">표시할 불완전가공 의뢰가 없습니다.</div>
+                    <div className="text-sm text-muted-foreground">표시할 불완전 가공 의뢰가 없습니다.</div>
                   ) : (
                     <div className="space-y-2 max-h-[260px] overflow-auto pr-1 pb-1">
                       {unmachinableRecentRequests.map((item: any) => {
@@ -2030,7 +2031,7 @@ export const RequestorDashboardPage = () => {
                                 의뢰번호: {requestId}
                               </div>
                               <div className="text-xs text-yellow-800 truncate">
-                                불완전가공 사유: {reason || "미등록"}
+                                불완전 가공 사유: {reason || "미등록"}
                               </div>
                             </div>
                           </button>
@@ -2180,13 +2181,13 @@ export const RequestorDashboardPage = () => {
       >
         <DialogContent className="w-[92vw] max-w-4xl h-[64vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>불완전가공 안내</DialogTitle>
+            <DialogTitle>불완전 가공 안내</DialogTitle>
           </DialogHeader>
 
           {loadingUnmachinableOverview ? (
             <div className="text-sm text-muted-foreground">불러오는 중...</div>
           ) : !activeUnmachinableDecisionItem ? (
-            <div className="text-sm text-muted-foreground">표시할 불완전가공 의뢰가 없습니다.</div>
+            <div className="text-sm text-muted-foreground">표시할 불완전 가공 의뢰가 없습니다.</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
                 {unmachinablePreviewLoading ? (
@@ -2274,7 +2275,7 @@ export const RequestorDashboardPage = () => {
                     </div>
 
                     <div className="mt-4 space-y-1">
-                        <div className="text-sm font-semibold text-yellow-900">불완전가공 사유</div>
+                        <div className="text-sm font-semibold text-yellow-900">불완전 가공 사유</div>
                         {reasonItems.length > 0 ? (
                           <div className="space-y-0.5">
                             {reasonItems.map((reasonItem, idx) => (
@@ -2353,7 +2354,7 @@ export const RequestorDashboardPage = () => {
       <ConfirmDialog
         open={unmachinableCancelConfirmOpen}
         title="의뢰건 자체를 취소합니다"
-        description="해당 불완전가공 의뢰건을 취소 처리합니다. 계속할까요?"
+        description="해당 불완전 가공 의뢰건을 취소 처리합니다. 계속할까요?"
         confirmLabel="취소 진행"
         cancelLabel="닫기"
         onCancel={() => {
@@ -2443,7 +2444,7 @@ export const RequestorDashboardPage = () => {
                       <span className="truncate">{title}</span>
                       {isUnmachinable && (
                         <Badge variant="outline" className="text-[10px] h-5 border-yellow-300 text-yellow-700 bg-yellow-50">
-                          불완전가공
+                          불완전 가공
                         </Badge>
                       )}
                     </div>
@@ -2453,7 +2454,7 @@ export const RequestorDashboardPage = () => {
 
                     {isUnmachinable && (
                       <div className="text-[11px] text-yellow-800 truncate mt-1">
-                        불완전가공 사유: {unmachinableReason || "미등록"}
+                        불완전 가공 사유: {unmachinableReason || "미등록"}
                       </div>
                     )}
                   </button>

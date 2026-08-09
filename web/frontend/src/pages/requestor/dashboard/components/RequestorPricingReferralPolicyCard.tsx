@@ -19,10 +19,6 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 
-type ReferralTreeLite = {
-  memberCount?: number;
-};
-
 type PricingReferralStats = {
   myLastMonthOrders?: number;
   myLast30DaysOrders?: number;
@@ -62,41 +58,6 @@ export const RequestorPricingReferralPolicyCard = () => {
     return `${origin}/signup/referral?ref=${encodeURIComponent(referralCode)}`;
   }, [referralCode]);
 
-  const {
-    data: referralTree,
-    isLoading: isTreeLoading,
-    isFetching: isTreeFetching,
-    isError: isTreeError,
-    error: treeError,
-  } = useQuery({
-    queryKey: ["requestor-referral-tree-member-count", user?.id || ""],
-    queryFn: async () => {
-      if (!user?.id) throw new Error("사용자 정보를 불러오지 못했습니다.");
-
-      const res = await apiFetch<ApiEnvelope<ReferralTreeLite>>({
-        path: `/api/referral-groups/${user.businessAnchorId}/tree?lite=1`,
-        method: "GET",
-        token,
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(
-          res.data?.message ||
-            res.data?.error ||
-            "소개 트리 조회에 실패했습니다.",
-        );
-      }
-      return res.data.data;
-    },
-    enabled: Boolean(
-      token && user && user.role === "requestor" && user.businessAnchorId,
-    ),
-    retry: false,
-    staleTime: 5 * 60 * 1000,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-    refetchOnWindowFocus: false,
-  });
-
   const { data, isLoading, isFetching, isError, error } = useQuery({
     queryKey: ["requestor-pricing-referral-stats", "v8"],
     queryFn: async () => {
@@ -122,9 +83,7 @@ export const RequestorPricingReferralPolicyCard = () => {
     refetchOnWindowFocus: false,
   });
 
-  const shouldShowSkeleton =
-    (!data && (isLoading || isFetching)) ||
-    (!referralTree && (isTreeLoading || isTreeFetching));
+  const shouldShowSkeleton = !data && (isLoading || isFetching);
 
   if (shouldShowSkeleton) {
     return (
@@ -143,7 +102,7 @@ export const RequestorPricingReferralPolicyCard = () => {
     );
   }
 
-  if (isError || isTreeError) {
+  if (isError) {
     return (
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader>
@@ -151,9 +110,7 @@ export const RequestorPricingReferralPolicyCard = () => {
             가격 · 소개 정책
           </CardTitle>
           <CardDescription className="text-sm text-destructive">
-            {(isError
-              ? (error as Error)?.message
-              : (treeError as Error)?.message) || "정보를 불러오지 못했습니다."}
+            {(error as Error)?.message || "정보를 불러오지 못했습니다."}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -162,14 +119,21 @@ export const RequestorPricingReferralPolicyCard = () => {
 
   if (!data) return null;
 
-  const myLast30DaysOrders =
-    Number(data.myLastMonthOrders ?? data.myLast30DaysOrders ?? 0) || 0;
-  const groupMemberCount = Number(referralTree?.memberCount || 0);
-  const referredBusinessCount = Math.max(0, groupMemberCount - 1);
+  const selfBusinessOrders =
+    Number(
+      data.selfBusinessOrders ??
+        data.myLastMonthOrders ??
+        data.myLast30DaysOrders ??
+        0,
+    ) || 0;
   const totalBusinessOrders = Number(
-    data.groupTotalOrders ??
-      Number(data.selfBusinessOrders ?? 0) +
-        Number(data.referralBusinessOrders ?? 0),
+    data.groupTotalOrders ?? selfBusinessOrders,
+  );
+  // requestor 응답의 referralBusinessOrders는 그룹 합계일 수 있어,
+  // 소개 건수는 합계 - 내 사업자로 계산한다.
+  const referralBusinessOrders = Math.max(
+    0,
+    totalBusinessOrders - selfBusinessOrders,
   );
 
   const baseUnitPrice = Number(data.baseUnitPrice ?? 15000);
@@ -237,10 +201,10 @@ export const RequestorPricingReferralPolicyCard = () => {
 
   return (
     <>
-      <Card className="app-glass-card app-glass-card--lg">
+      <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
         <CardHeader className="pt-4 pb-2">
           <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold">가격 정책</CardTitle>
+            <CardTitle className="text-base font-semibold">오늘의 가격</CardTitle>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -266,29 +230,29 @@ export const RequestorPricingReferralPolicyCard = () => {
         </CardHeader>
 
         <CardContent className="pt-2 pb-4 gap-2 text-xs text-foreground space-y-1.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-md text-slate-600">
-              내 사업자 주문 수량 (최근 30일)
-            </span>
-            <span className="text-lg font-semibold text-foreground">
-              {myLast30DaysOrders.toLocaleString()}건
-            </span>
-          </div>
-
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-md text-slate-600">소개 사업자 수</span>
-            <span className="text-lg font-semibold text-foreground">
-              {referredBusinessCount}개소
-            </span>
-          </div>
-
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-md text-slate-600">
-              사업자 주문 합계(내 사업자+소개 사업자)
-            </span>
-            <span className="text-lg font-semibold text-foreground">
-              {totalBusinessOrders.toLocaleString()}건
-            </span>
+          <div className="space-y-1">
+            <div className="text-md text-slate-600">
+              주문합계(최근 30일, 완료 기준)
+            </div>
+            <div className="flex flex-wrap items-baseline justify-end gap-x-1.5 gap-y-0.5 text-right tabular-nums">
+              <span className="text-lg font-semibold text-foreground">
+                {selfBusinessOrders.toLocaleString()}건
+                <span className="ml-0.5 text-sm font-medium text-slate-500">
+                  (나)
+                </span>
+              </span>
+              <span className="text-sm font-medium text-slate-400">+</span>
+              <span className="text-lg font-semibold text-foreground">
+                {referralBusinessOrders.toLocaleString()}건
+                <span className="ml-0.5 text-sm font-medium text-slate-500">
+                  (소개)
+                </span>
+              </span>
+              <span className="text-sm font-medium text-slate-400">=</span>
+              <span className="text-lg font-semibold text-foreground">
+                {totalBusinessOrders.toLocaleString()}건
+              </span>
+            </div>
           </div>
 
           <div className="mt-1 pt-2 border-t border-slate-200 space-y-1.5">
@@ -300,7 +264,9 @@ export const RequestorPricingReferralPolicyCard = () => {
             </div>
 
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-md text-slate-600">할인 금액</span>
+              <span className="text-md text-slate-600">
+                할인 금액(30일 주문량 할인)
+              </span>
               <span className="text-lg font-semibold text-foreground">
                 {referralDiscountAmount.toLocaleString()}원
               </span>
