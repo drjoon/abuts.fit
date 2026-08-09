@@ -25,7 +25,7 @@ import {
 } from "../../utils/krBusinessDays.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { PRICING_VOLUME_ORDER_STAGES } from "../../services/pricingReferralOrderBucket.service.js";
-import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
+import { resolveQuotedPriceWithExtras } from "./designPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 
 export {
@@ -796,14 +796,20 @@ export async function normalizeRequestForResponse(requestDoc) {
 
   if (obj.price) {
     let expressFeePerRequest = 1000;
+    let designFeePerTooth = 15000;
     try {
       const creditSettings = await loadCreditSettingsDefaults();
       expressFeePerRequest = Math.max(
         0,
         Number(creditSettings?.expressFee ?? 1000) || 1000,
       );
+      designFeePerTooth = Math.max(
+        0,
+        Number(creditSettings?.designFee ?? 15000) || 15000,
+      );
     } catch {
       expressFeePerRequest = 1000;
+      designFeePerTooth = 15000;
     }
     const shippingMode =
       obj?.finalShipping?.mode === "express" ||
@@ -811,10 +817,12 @@ export async function normalizeRequestForResponse(requestDoc) {
       obj?.shippingMode === "express"
         ? "express"
         : "normal";
-    obj.price = resolveQuotedPriceWithExpressFee({
+    obj.price = resolveQuotedPriceWithExtras({
       price: obj.price,
+      caseInfos: obj.caseInfos || {},
       shippingMode,
       expressFee: expressFeePerRequest,
+      designFeePerTooth,
     });
   }
 

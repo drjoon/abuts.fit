@@ -84,6 +84,13 @@
       - 누락 보정: `healMissingExpressSurchargesForBusiness` (크레딧 원장 조회 시)
       - 원장 표시: `creditLedger.utils.js`에서 가공비+신속추가비를 1행으로 합산
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
+  - 디자인비: `creditSettings.designFee`(기본 15000, **1치아당**)
+    - `caseInfos.productMode === "design_custom_abutment"`일 때만 적용
+    - 치아 수: `designPrice.utils.js` `countDesignFeeTeeth` (`toothWorks` → `tooth` → 1)
+    - 견적/표시: `resolveQuotedPriceWithDesignFee` — `price.amount` 합산 + `price.designFee`(의뢰 총액)
+      - 적용 순서: 디자인비 → 신속비. 무상/0원 견적에는 미적용
+      - 생성·CAM 차감·응답 정규화 경로에서 신속비와 동일하게 재적용
+    - 차감: CAM `machining_spend`에 디자인비 포함(신속 `express_surcharge`와 분리)
   - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
     - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
   - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })`

@@ -28,7 +28,10 @@ import {
 } from "./creation.helpers.controller.js";
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
-import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
+import {
+  countDesignFeeTeeth,
+  resolveQuotedPriceWithExtras,
+} from "./designPrice.utils.js";
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { emitAppEventToRoles } from "../../socket.js";
@@ -158,20 +161,28 @@ export async function createRequest(req, res) {
     });
 
     let expressFeePerRequest = 1000;
+    let designFeePerTooth = 15000;
     try {
       const creditSettings = await loadCreditSettingsDefaults();
       expressFeePerRequest = Math.max(
         0,
         Number(creditSettings?.expressFee ?? 1000) || 1000,
       );
+      designFeePerTooth = Math.max(
+        0,
+        Number(creditSettings?.designFee ?? 15000) || 15000,
+      );
     } catch {
       expressFeePerRequest = 1000;
+      designFeePerTooth = 15000;
     }
 
-    const quotedPrice = resolveQuotedPriceWithExpressFee({
+    const quotedPrice = resolveQuotedPriceWithExtras({
       price: computedPrice,
+      caseInfos: normalizedCaseInfos,
       shippingMode,
       expressFee: expressFeePerRequest,
+      designFeePerTooth,
     });
 
     const requestedAt = new Date();
@@ -635,16 +646,22 @@ export async function createRequestsBulk(req, res) {
       });
     }
 
-    // 2. 총 의뢰비 계산 (+ 신속 추가비)
+    // 2. 총 의뢰비 계산 (+ 신속 추가비 + 디자인비)
     let expressFeePerRequest = 1000;
+    let designFeePerTooth = 15000;
     try {
       const creditSettings = await loadCreditSettingsDefaults();
       expressFeePerRequest = Math.max(
         0,
         Number(creditSettings?.expressFee ?? 1000) || 1000,
       );
+      designFeePerTooth = Math.max(
+        0,
+        Number(creditSettings?.designFee ?? 15000) || 15000,
+      );
     } catch {
       expressFeePerRequest = 1000;
+      designFeePerTooth = 15000;
     }
 
     // 신속 선택 가능 여부 선반영 (ETA 이점 없으면 normal)
@@ -675,7 +692,15 @@ export async function createRequestsBulk(req, res) {
         const amount = Number(item.price?.amount || 0);
         return acc + (Number.isFinite(amount) ? amount : 0);
       }, 0) +
-      expressCount * expressFeePerRequest;
+      expressCount * expressFeePerRequest +
+      items.reduce((acc, raw, idx) => {
+        const abutmentAmount = Number(
+          priceCalculations[idx]?.price?.amount || 0,
+        );
+        if (!(abutmentAmount > 0)) return acc;
+        const teeth = countDesignFeeTeeth(raw?.caseInfos || {});
+        return acc + teeth * designFeePerTooth;
+      }, 0);
 
     // 3. 배송비 계산: 배송 날짜별로 그룹화
     const shippingFeePerBox = 3500;
@@ -959,10 +984,12 @@ export async function createRequestsBulk(req, res) {
           const itemShippingMode =
             resolvedShippingModes[i] === "express" ? "express" : "normal";
 
-          const quotedPrice = resolveQuotedPriceWithExpressFee({
+          const quotedPrice = resolveQuotedPriceWithExtras({
             price: computedPrice,
+            caseInfos: normalizedCaseInfos,
             shippingMode: itemShippingMode,
             expressFee: expressFeePerRequest,
+            designFeePerTooth,
           });
 
           const newRequest = new Request({

@@ -13,7 +13,7 @@ import {
 } from "../controllers/requests/utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "../controllers/requests/production.utils.js";
 import { resolveEffectiveShippingMode } from "../controllers/requests/shippingPriority.utils.js";
-import { resolveQuotedPriceWithExpressFee } from "../controllers/requests/expressPrice.utils.js";
+import { resolveQuotedPriceWithExtras } from "../controllers/requests/designPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 
 const buildEstimatedShipFallbackSeed = ({ createdAt, createdYmd }) => {
@@ -531,24 +531,32 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
   }));
 
   let expressFeePerRequest = 1000;
+  let designFeePerTooth = 15000;
   try {
     const creditSettings = await loadCreditSettingsDefaults();
     expressFeePerRequest = Math.max(
       0,
       Number(creditSettings?.expressFee ?? 1000) || 1000,
     );
+    designFeePerTooth = Math.max(
+      0,
+      Number(creditSettings?.designFee ?? 15000) || 15000,
+    );
   } catch {
     expressFeePerRequest = 1000;
+    designFeePerTooth = 15000;
   }
 
   const recentRequestsData = recentRequests.map((r) => {
     const ci = r.caseInfos || {};
     const shippingMode = resolveEffectiveShippingMode(r);
     const price = r.price
-      ? resolveQuotedPriceWithExpressFee({
+      ? resolveQuotedPriceWithExtras({
           price: r.price,
+          caseInfos: ci,
           shippingMode,
           expressFee: expressFeePerRequest,
+          designFeePerTooth,
         })
       : null;
 

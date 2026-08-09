@@ -31,6 +31,10 @@ import {
   resolveQuotedPriceWithExpressFee,
   toPlainRequestPrice,
 } from "./expressPrice.utils.js";
+import {
+  countDesignFeeTeeth,
+  resolveQuotedPriceWithDesignFee,
+} from "./designPrice.utils.js";
 import { resolvePackingEnterShipYmds } from "./packingEnterShipYmd.utils.js";
 import {
   evaluateShipOnTimeOutcome,
@@ -495,25 +499,46 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const shippingMode = resolveEffectiveShippingMode(request);
 
   let expressFee = 0;
-  if (shippingMode === "express") {
-    try {
-      const { loadCreditSettingsDefaults } =
-        await import("../../utils/creditSettingsDefaults.js");
-      const creditSettings = await loadCreditSettingsDefaults();
+  let designFeePerTooth = 15000;
+  try {
+    const { loadCreditSettingsDefaults } =
+      await import("../../utils/creditSettingsDefaults.js");
+    const creditSettings = await loadCreditSettingsDefaults();
+    if (shippingMode === "express") {
       expressFee = Math.max(0, Number(creditSettings?.expressFee ?? 1000) || 0);
-    } catch {
-      expressFee = 1000;
     }
+    designFeePerTooth = Math.max(
+      0,
+      Number(creditSettings?.designFee ?? 15000) || 15000,
+    );
+  } catch {
+    if (shippingMode === "express") expressFee = 1000;
+    designFeePerTooth = 15000;
   }
+
+  const caseInfos = request?.caseInfos || {};
+  const designTeeth = countDesignFeeTeeth(caseInfos);
+  const withDesign = resolveQuotedPriceWithDesignFee({
+    price: computedPrice,
+    productMode: caseInfos?.productMode,
+    toothCount: designTeeth,
+    designFeePerTooth,
+  });
+  const designTotal = Math.max(0, Number(withDesign?.designFee) || 0);
 
   request.price = {
     ...toPlainRequestPrice(request.price),
     ...resolveQuotedPriceWithExpressFee({
-      price: computedPrice,
+      price: withDesign,
       shippingMode,
       expressFee,
     }),
   };
+
+  const machiningAmount =
+    Number.isFinite(baseAmount) && baseAmount > 0
+      ? baseAmount + designTotal
+      : 0;
 
   const spendResult = await spendRequestCreditAtomic({
     request,
@@ -523,7 +548,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     spendKeySuffix: "machining_spend",
     computedPrice: {
       ...(computedPrice && typeof computedPrice === "object" ? computedPrice : {}),
-      amount: Number.isFinite(baseAmount) && baseAmount > 0 ? baseAmount : 0,
+      amount: machiningAmount,
     },
   });
 

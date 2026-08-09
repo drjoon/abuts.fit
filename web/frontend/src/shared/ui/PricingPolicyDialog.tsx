@@ -21,6 +21,10 @@ import {
 } from '@/components/ui/dialog';
 import { request } from '@/shared/api/apiClient';
 import { useAuthStore } from '@/store/useAuthStore';
+import {
+  CREDIT_SETTINGS_DEFAULTS,
+  useSystemSettings
+} from '@/hooks/useSystemSettings';
 
 type Props = {
   open: boolean;
@@ -105,6 +109,35 @@ export const PricingPolicyDialog = ({
 }: Props) => {
   const { token } = useAuthStore();
   const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
+  const { data: systemSettings } = useSystemSettings();
+  const shippingFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.shippingFee ??
+        CREDIT_SETTINGS_DEFAULTS.shippingFee
+    ) || CREDIT_SETTINGS_DEFAULTS.shippingFee
+  );
+  const expressFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.expressFee ??
+        CREDIT_SETTINGS_DEFAULTS.expressFee
+    ) || CREDIT_SETTINGS_DEFAULTS.expressFee
+  );
+  const designFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.designFee ??
+        CREDIT_SETTINGS_DEFAULTS.designFee
+    ) || CREDIT_SETTINGS_DEFAULTS.designFee
+  );
+  const welcomeRequestCredit = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.defaultRequestFreeCredit ??
+        CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit
+    ) || CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -258,14 +291,20 @@ export const PricingPolicyDialog = ({
                   <PriceRow label='커스텀 어벗' value='15,000원' hint='1개당' />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
+                    label='디자인비'
+                    value={`${designFee.toLocaleString('ko-KR')}원`}
+                    hint='1치아당 · 디자인+커스텀어벗 선택 시'
+                  />
+                  <div className='h-px bg-slate-100' />
+                  <PriceRow
                     label='배송비'
-                    value='3,500원'
+                    value={`${shippingFee.toLocaleString('ko-KR')}원`}
                     hint='출고 1회당 · 한 번에 여러 제품이어도 1회'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='신속 출고'
-                    value='+1,000원'
+                    value={`+${expressFee.toLocaleString('ko-KR')}원`}
                     hint='건당 의뢰크레딧 · 묶음보다 빠른 출고일이 있을 때만 선택 가능(당일 16:00 목표)'
                   />
                 </div>
@@ -288,7 +327,7 @@ export const PricingPolicyDialog = ({
               <div className='grid gap-3 sm:grid-cols-2'>
                 <PolicySection title='가입 축하 무료 크레딧'>
                   <p className='text-2xl font-semibold tracking-tight text-slate-900'>
-                    30,000원
+                    {welcomeRequestCredit.toLocaleString('ko-KR')}원
                   </p>
                   <p className='text-xs text-slate-500'>신규 가입 기공소 1회 지급</p>
                   <BulletList

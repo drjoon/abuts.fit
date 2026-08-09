@@ -209,6 +209,10 @@ export const ServicePage = () => {
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>배송비는 별도 청구되며 묶음배송을 권장합니다.</li>
                     <li>
+                      디자인+커스텀어벗 의뢰 시 치아당 디자인비가 추가로
+                      소비됩니다.
+                    </li>
+                    <li>
                       긴급 제작 또는 특수 소재 요청 시 추가 비용이 발생할 수
                       있습니다.
                     </li>

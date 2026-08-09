@@ -94,9 +94,9 @@ Notes:
   - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
   - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
   - `src/shared/components/CreditLedgerModal.tsx`
-  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee 전역 설정 UI)
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·designFee 전역 설정 UI)
 - 개발·운영사 설정
-  - `src/pages/devops/DevopsSettingsPage.tsx` (요금 탭 → 신속배송 추가비 등)
+  - `src/pages/devops/DevopsSettingsPage.tsx` (요금 탭 → 신속배송 추가비·디자인비 등)
   - 관리자 대시보드/소통
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
   - `src/pages/admin/support/AdminChatManagement.tsx`
@@ -119,10 +119,13 @@ Notes:
   - 의뢰카드에서 `shippingMode`(`normal`|`express`)를 건별로 선택합니다.
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 1,000원)를 사용합니다.
+  - 디자인비는 `creditSettings.designFee`(기본 15,000원 / 1치아)를 사용합니다.
+    - `productMode === "design_custom_abutment"`일 때만 적용. 의뢰카드는 `+디자인` 뱃지만(상세 모달에 금액 미표시).
+    - 표시: `PricingPolicyDialog`, `RequestorPricingReferralPolicyCard`(오늘의 가격). 상세 모달·신규의뢰 우측에는 금액 미표시(`+디자인` 뱃지만).
   - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`
     - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 표시 금액 SSOT: 신속배송이면 가공비+추가비를 합산해 보여줍니다 (`resolveQuotedPriceAmount` in `shippingMode.ts`).
-    - 백엔드가 `price.amount`/`price.expressFee`를 내려주면 이중 합산하지 않습니다.
+    - 백엔드가 `price.amount`/`price.expressFee`/`price.designFee`를 내려주면 이중 합산하지 않습니다.
     - 카드/상세: `RequestorRecentRequestsCard.tsx`, `RequestDetailDialog.tsx`
   - 우측 기본 배송 방식(`normal`|`express`)은 로컬스토리지 + `BusinessAnchor.shippingPolicy.defaultShippingMode`에 저장합니다.
   - 신속 선택: `isExpressShippingSelectable` — 신속 예상 출고일이 묶음보다 빠를 때만 UI 활성

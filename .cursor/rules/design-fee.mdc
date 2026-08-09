@@ -1,0 +1,27 @@
+---
+description: 디자인비(designFee) SSOT — 설정·견적·표시
+globs: "**/creditSettings*|**/AdminCreditSettingsTab*|**/PricingPolicyDialog*|**/expressPrice*|**/designPrice*|**/NewRequestShippingSection*|**/RequestorPricingReferralPolicyCard*|**/systemSettings.model.js"
+alwaysApply: false
+---
+
+# 디자인비 (designFee)
+
+## Policy
+
+- `creditSettings.designFee`: **1치아당** 추가 의뢰크레딧. 스키마 기본값 **15,000원**.
+- 적용 조건: `caseInfos.productMode === "design_custom_abutment"`.
+- 치아 수: `toothWorks` 유효 행 수(없으면 `tooth` 파싱, 최소 1).
+- 설정 UI SSOT: 개발·운영사/관리자 **설정 → 요금** (`AdminCreditSettingsTab`).
+- API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits`.
+
+## Quote / charge
+
+- 견적: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee` → `price.amount`에 합산, `price.designFee`에 총액 기록.
+- 적용 순서: **디자인비 → 신속비** (`resolveQuotedPriceWithExpressFee`).
+- 차감: CAM 가공 진입 시 가공비(`machining_spend`)에 디자인비 포함. 신속비는 기존처럼 `express_surcharge` 분리.
+- 무상/0원 견적(리메이크 무료 등)에는 디자인비를 붙이지 않는다.
+
+## UI
+
+- 가격 정책 모달·오늘의 가격에 설정값을 표시.
+- 상세 모달·신규의뢰 우측에는 디자인비 금액을 넣지 않는다. 의뢰카드는 `+디자인` 뱃지만.

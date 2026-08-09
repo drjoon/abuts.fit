@@ -73,6 +73,7 @@ export type RequestDetailDialogRequest = {
     amount?: number;
     expressFee?: number | null;
     expressFeeStatus?: string | null;
+    designFee?: number | null;
     rule?: string;
     currency?: string;
   };
@@ -274,6 +275,14 @@ export const RequestDetailDialog = ({
                       리메이크 무료(월 3건)
                     </Badge>
                   )}
+                </span>
+              </div>
+            )}
+            {Number(request?.price?.designFee || 0) > 0 && (
+              <div className="grid grid-cols-[90px_1fr] gap-3 items-center text-violet-700">
+                <span>디자인비</span>
+                <span className="font-medium">
+                  {Number(request.price.designFee).toLocaleString()}원 포함
                 </span>
               </div>
             )}

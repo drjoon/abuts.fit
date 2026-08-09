@@ -43,7 +43,7 @@ import {
 } from "../../services/requestDashboardCache.service.js";
 import { cancelExpressSurchargeIfShipDelayed } from "./common.review.helpers.js";
 import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
-import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
+import { resolveQuotedPriceWithExtras } from "./designPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 import {
   EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
@@ -95,14 +95,20 @@ export async function updateMyShippingMode(req, res) {
       await import("./production.utils.js");
 
     let expressFeePerRequest = 1000;
+    let designFeePerTooth = 15000;
     try {
       const creditSettings = await loadCreditSettingsDefaults();
       expressFeePerRequest = Math.max(
         0,
         Number(creditSettings?.expressFee ?? 1000) || 1000,
       );
+      designFeePerTooth = Math.max(
+        0,
+        Number(creditSettings?.designFee ?? 15000) || 15000,
+      );
     } catch {
       expressFeePerRequest = 1000;
+      designFeePerTooth = 15000;
     }
 
     for (const requestId of uniqueIds) {
@@ -218,11 +224,13 @@ export async function updateMyShippingMode(req, res) {
         }
       }
 
-      // 준비 단계 견적 금액에 신속 추가비 반영/제거 (차감 전 표시 SSOT)
-      requestDoc.price = resolveQuotedPriceWithExpressFee({
+      // 준비 단계 견적 금액에 디자인비·신속 추가비 반영/제거 (차감 전 표시 SSOT)
+      requestDoc.price = resolveQuotedPriceWithExtras({
         price: requestDoc.price,
+        caseInfos: requestDoc.caseInfos || {},
         shippingMode: resolveEffectiveShippingMode(requestDoc),
         expressFee: expressFeePerRequest,
+        designFeePerTooth,
       });
 
       await requestDoc.save();

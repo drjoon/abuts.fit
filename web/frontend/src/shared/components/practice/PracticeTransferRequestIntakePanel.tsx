@@ -607,10 +607,14 @@ export const PracticeTransferRequestIntakePanel = ({
       ? []
       : filterMemoSuggestions(memoLines[suggestLineIndex] || "", memoSnippets);
 
+  const memoOnly =
+    showMemoSection && !showHeaderFields && !showProsthesisSection;
+
   return (
     <div
       className={cn(
         "flex min-h-0 flex-col gap-3",
+        memoOnly && "h-full flex-1",
         variant === "card" &&
           "rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]",
       )}
@@ -1617,9 +1621,15 @@ export const PracticeTransferRequestIntakePanel = ({
       ) : null}
 
       {showMemoSection ? (
-      <div className={cn("flex min-h-0 flex-col space-y-2", showHeaderFields || showProsthesisSection ? "mt-5" : "mt-2")}>
+      <div
+        className={cn(
+          "flex min-h-0 flex-col space-y-2",
+          showHeaderFields || showProsthesisSection ? "mt-5" : "mt-2",
+          memoOnly && "flex-1",
+        )}
+      >
         {aboveMemoContent}
-        <Label className="text-sm">메모</Label>
+        <Label className="text-sm shrink-0">메모</Label>
         <div
           id={memoInputId}
           className={cn(

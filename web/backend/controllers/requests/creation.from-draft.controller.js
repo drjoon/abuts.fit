@@ -31,7 +31,10 @@ import {
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
-import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
+import {
+  countDesignFeeTeeth,
+  resolveQuotedPriceWithExtras,
+} from "./designPrice.utils.js";
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
@@ -998,6 +1001,10 @@ export async function createRequestsFromDraft(req, res) {
       0,
       Number(systemSettings?.creditSettings?.expressFee ?? 1000) || 1000,
     );
+    const designFeePerTooth = Math.max(
+      0,
+      Number(systemSettings?.creditSettings?.designFee ?? 15000) || 15000,
+    );
     const weeklyBatchDays = Array.isArray(
       shippingOrg?.shippingPolicy?.weeklyBatchDays,
     )
@@ -1027,7 +1034,18 @@ export async function createRequestsFromDraft(req, res) {
     const totalExpressFee = isPracticeRoutingSubmission
       ? 0
       : expressCount * expressFeePerRequest;
-    const requiredMachiningFee = totalSpendSupply + totalExpressFee;
+    const totalDesignFee = isPracticeRoutingSubmission
+      ? 0
+      : preparedCasesForCreate.reduce((acc, item) => {
+          const abutmentAmount = Number(item?.computedPrice?.amount || 0);
+          if (!(abutmentAmount > 0)) return acc;
+          const teeth = countDesignFeeTeeth(
+            item?.caseInfosWithFile || item?.caseInfos || {},
+          );
+          return acc + teeth * designFeePerTooth;
+        }, 0);
+    const requiredMachiningFee =
+      totalSpendSupply + totalExpressFee + totalDesignFee;
     const requestorAnodizingEnabled =
       typeof shippingOrg?.requestSettings?.anodizingEnabled === "boolean"
         ? shippingOrg.requestSettings.anodizingEnabled
@@ -1309,10 +1327,12 @@ export async function createRequestsFromDraft(req, res) {
 
           const quotedPrice = isPracticeRoutingSubmission
             ? item.computedPrice
-            : resolveQuotedPriceWithExpressFee({
+            : resolveQuotedPriceWithExtras({
                 price: item.computedPrice,
+                caseInfos: item.caseInfosWithFile || item.caseInfos || {},
                 shippingMode,
                 expressFee: expressFeePerRequest,
+                designFeePerTooth,
               });
 
           const newRequest = {

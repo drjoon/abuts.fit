@@ -18,6 +18,10 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
+import {
+  CREDIT_SETTINGS_DEFAULTS,
+  useSystemSettings,
+} from "@/hooks/useSystemSettings";
 
 type PricingReferralStats = {
   myLastMonthOrders?: number;
@@ -45,6 +49,14 @@ export const RequestorPricingReferralPolicyCard = () => {
   const [open, setOpen] = useState(false);
   const { user, token } = useAuthStore();
   const { toast } = useToast();
+  const { data: systemSettings } = useSystemSettings();
+  const designFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.designFee ??
+        CREDIT_SETTINGS_DEFAULTS.designFee,
+    ) || CREDIT_SETTINGS_DEFAULTS.designFee,
+  );
 
   const referralCode = String(
     (user as { referralCode?: string } | null)?.referralCode || "",
@@ -283,6 +295,13 @@ export const RequestorPricingReferralPolicyCard = () => {
                 <span className="text-xl font-bold text-primary">
                   {effectiveUnitPrice.toLocaleString()}원
                 </span>
+              </span>
+            </div>
+
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-md text-slate-600">디자인비 (1치아당)</span>
+              <span className="text-lg font-semibold text-foreground">
+                {designFee.toLocaleString()}원
               </span>
             </div>
 

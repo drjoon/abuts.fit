@@ -270,6 +270,13 @@
   - 견적/표시 금액 SSOT: 신속 지정 시점부터 `price.amount`에 추가비를 합산하고 `price.expressFee`에 기록 (`expressPrice.utils.js` `resolveQuotedPriceWithExpressFee`)
     - 적용 경로: 생성(`from-draft`/`createRequest`), 준비 단계 모드 전환, 대시보드/상세 응답 정규화
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
+- 디자인비: `creditSettings.designFee`(기본 **15,000원 / 1치아**), `productMode === "design_custom_abutment"`일 때만 적용
+  - 설정 UI: 동일 `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`
+  - 치아 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1)
+  - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee` — `price.amount`에 합산 + `price.designFee`(의뢰 총액) 기록
+  - 적용 순서: 디자인비 → 신속비. 무상/0원 견적에는 붙이지 않음
+  - 차감: CAM 가공 진입 시 `machining_spend`에 디자인비 포함(신속비와 분리)
+  - UI: `PricingPolicyDialog`, 오늘의 가격. 상세 모달·신규의뢰 우측에는 금액 미표시(`+디자인` 뱃지만)
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)
 
 ### 2.8 R&D 샘플

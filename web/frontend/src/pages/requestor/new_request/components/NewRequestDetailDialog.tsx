@@ -231,8 +231,8 @@ export function NewRequestDetailDialog({
               >
                 {(
                   [
-                    { value: "custom_abutment", label: "커스텀어벗" },
-                    { value: "design_custom_abutment", label: "디자인+커스텀어벗" },
+                    { value: "custom_abutment", label: "커스텀어벗 가공" },
+                    { value: "design_custom_abutment", label: "커스텀어벗 디자인+가공" },
                   ] as const
                 ).map((option) => {
                   const selected = productMode === option.value;

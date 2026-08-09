@@ -12,6 +12,7 @@ const SCHEMA_DEFAULTS = (() => {
     minCreditForRequest: pickDefault("creditSettings.minCreditForRequest"),
     shippingFee: pickDefault("creditSettings.shippingFee"),
     expressFee: pickDefault("creditSettings.expressFee"),
+    designFee: pickDefault("creditSettings.designFee"),
     defaultRequestFreeCredit: pickDefault(
       "creditSettings.defaultRequestFreeCredit",
     ),
@@ -33,6 +34,7 @@ export async function loadCreditSettingsDefaults() {
     expressFee: Number(
       creditSettings.expressFee ?? SCHEMA_DEFAULTS.expressFee,
     ),
+    designFee: Number(creditSettings.designFee ?? SCHEMA_DEFAULTS.designFee),
     defaultRequestFreeCredit: Number(
       creditSettings.defaultRequestFreeCredit ??
         SCHEMA_DEFAULTS.defaultRequestFreeCredit,

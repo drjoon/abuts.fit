@@ -187,7 +187,7 @@ export function NewRequestDesignAbutmentFields({
         디자인 / 환자 정보
       </div>
 
-      <div className="grid grid-cols-1 gap-2 text-foreground sm:grid-cols-3">
+      <div className="grid shrink-0 grid-cols-1 gap-2 text-foreground sm:grid-cols-3">
         <div className="min-w-0">
           <LabeledAutocompleteField
             value={caseInfos?.clinicName || ""}
@@ -290,7 +290,7 @@ export function NewRequestDesignAbutmentFields({
           variant="plain"
           hideEnlargeButton
           memoInputId="new-request-design-abutment-memo"
-          memoBoxClassName="max-h-[calc(2.5*2.5rem+1.25rem)] min-h-0 overflow-y-auto"
+          memoBoxClassName="min-h-[calc(3*2.5rem+1.25rem)] flex-1 overflow-y-auto"
         />
       </div>
 

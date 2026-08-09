@@ -26,7 +26,8 @@ export function resolveShippingMode(
 
 /**
  * 표시용 금액 SSOT: 신속배송이면 expressFee(기본 1,000)를 합산한다.
- * 백엔드가 이미 amount에 합산해 내려준 경우(expressFee 기록 있음)는 이중 합산하지 않는다.
+ * 백엔드가 이미 amount에 합산해 내려준 경우(expressFee·designFee 기록 있음)는
+ * 이중 합산하지 않는다. designFee는 amount에 포함된 채 유지한다.
  */
 export function resolveQuotedPriceAmount(params: {
   price?: {

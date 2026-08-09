@@ -28,6 +28,7 @@ interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
   expressFee: number;
+  designFee: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
 }
@@ -77,6 +78,7 @@ export const AdminCreditSettingsTab = () => {
         expressFee: Number(
           data.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
         ),
+        designFee: Number(data.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
         defaultRequestFreeCredit: Number(
           data.defaultRequestFreeCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
@@ -127,6 +129,7 @@ export const AdminCreditSettingsTab = () => {
           ),
           shippingFee: Number(saved.shippingFee ?? settings.shippingFee),
           expressFee: Number(saved.expressFee ?? settings.expressFee),
+          designFee: Number(saved.designFee ?? settings.designFee),
           defaultRequestFreeCredit: Number(
             saved.defaultRequestFreeCredit ?? settings.defaultRequestFreeCredit,
           ),
@@ -172,14 +175,14 @@ export const AdminCreditSettingsTab = () => {
             결제 · 크레딧 설정
           </CardTitle>
           <CardDescription className="text-sm leading-relaxed">
-            전역 설정입니다. 신속 배송 추가비는 의뢰 생성·표시·차감에 동일하게
-            적용됩니다.
+            전역 설정입니다. 신속 배송 추가비·디자인비는 의뢰 생성·표시·차감에
+            동일하게 적용됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <section className="space-y-3">
             <h3 className="text-sm font-semibold tracking-tight">
-              최소 요구 크레딧 / 배송 요금
+              최소 요구 크레딧 / 배송 · 디자인 요금
             </h3>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1.5">
@@ -220,7 +223,7 @@ export const AdminCreditSettingsTab = () => {
                   disabled={loading}
                 />
               </div>
-              <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+              <div className="space-y-1.5">
                 <Label htmlFor="expressFee" className="text-sm">
                   신속 배송 추가 의뢰크레딧 (원)
                 </Label>
@@ -241,6 +244,31 @@ export const AdminCreditSettingsTab = () => {
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   신속배송 건당 가공비에 더해지는 추가 의뢰크레딧입니다. 기본값{" "}
                   {CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}
+                  원.
+                </p>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                <Label htmlFor="designFee" className="text-sm">
+                  디자인비 (1치아당, 원)
+                </Label>
+                <Input
+                  id="designFee"
+                  type="number"
+                  min="0"
+                  className={amountInputClassName}
+                  value={settings.designFee}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      designFee: Math.max(0, Number(e.target.value)),
+                    })
+                  }
+                  disabled={loading}
+                />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  디자인+커스텀어벗 의뢰 시 치아 수만큼 가공비에 더해집니다.
+                  기본값{" "}
+                  {CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}
                   원.
                 </p>
               </div>
