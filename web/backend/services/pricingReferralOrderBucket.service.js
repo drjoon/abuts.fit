@@ -16,6 +16,14 @@ const normalizeAnchorIds = (anchorIds) =>
     ),
   );
 
+/** 최근 30일 볼륨 할인·리퍼럴 주문 집계에 포함되는 단계 (완료/출고 기준 SSOT). */
+export const PRICING_VOLUME_ORDER_STAGES = [
+  "shipping",
+  "포장.발송",
+  "tracking",
+  "추적관리",
+];
+
 export const getPricingReferralOrderCountMapByBusinessAnchorIds = async ({
   businessAnchorIds,
   startYmd,
@@ -51,7 +59,7 @@ export const getPricingReferralOrderCountMapByBusinessAnchorIds = async ({
           $in: anchorIds.map((id) => new Types.ObjectId(id)),
         },
         manufacturerStage: {
-          $in: ["shipping", "포장.발송", "tracking", "추적관리"],
+          $in: PRICING_VOLUME_ORDER_STAGES,
         },
         createdAt: {
           $gte: startAtKst,

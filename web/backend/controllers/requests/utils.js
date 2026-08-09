@@ -24,6 +24,7 @@ import {
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
+import { PRICING_VOLUME_ORDER_STAGES } from "../../services/pricingReferralOrderBucket.service.js";
 import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 
@@ -1172,7 +1173,8 @@ export async function computePriceForRequest({
     }
   }
 
-  // 2) 최근 30일 주문량 할인 (기존 정책 유지)
+  // 2) 최근 30일 주문량 할인 — 대시보드/리퍼럴 SSOT와 동일하게
+  //    포장.발송·추적관리(완료)만 집계. 준비/가공 등 진행 중 의뢰는 제외.
   const todayYmd = toKstYmd(now);
   const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
   todayKst.setDate(todayKst.getDate() - 30);
@@ -1183,11 +1185,15 @@ export async function computePriceForRequest({
       ? new Types.ObjectId(String(requestorOrgId))
       : null;
 
+  const volumeStageFilter = {
+    manufacturerStage: { $in: PRICING_VOLUME_ORDER_STAGES },
+  };
+
   const [last30DaysOrders, referredAnchors] = await Promise.all([
     Request.countDocuments({
       ...scopeFilter,
       ...selfExclusionFilter,
-      manufacturerStage: { $ne: "취소" },
+      ...volumeStageFilter,
       createdAt: { $gte: last30Cutoff },
     }),
     myBusinessAnchorId
@@ -1207,7 +1213,7 @@ export async function computePriceForRequest({
   const referralLast30DaysOrders = referredBusinessAnchorIds.length
     ? await Request.countDocuments({
         businessAnchorId: { $in: referredBusinessAnchorIds },
-        manufacturerStage: { $ne: "취소" },
+        ...volumeStageFilter,
         createdAt: { $gte: last30Cutoff },
       })
     : 0;

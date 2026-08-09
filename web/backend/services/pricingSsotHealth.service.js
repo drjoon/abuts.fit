@@ -13,13 +13,9 @@ import {
   getTodayYmdInKst,
   toKstYmd,
 } from "../utils/krBusinessDays.js";
+import { PRICING_VOLUME_ORDER_STAGES } from "./pricingReferralOrderBucket.service.js";
 
-const SHIPPING_TRACKING_STAGES = [
-  "shipping",
-  "포장.발송",
-  "tracking",
-  "추적관리",
-];
+const SHIPPING_TRACKING_STAGES = PRICING_VOLUME_ORDER_STAGES;
 
 export const buildPricingSsotRange = (now = new Date()) => {
   const range30 = getLast30DaysRangeUtc(now);
