@@ -1125,7 +1125,7 @@ async function practiceLogin(req, res) {
 
 /**
  * 드롭존 최소 가입 — 의뢰인(requestor) + practice 무료 경로
- * 필수: 치과명·담당자명·이메일·비밀번호·담당자 휴대폰(+인증).
+ * 필수: 치과명·담당자명·이메일·비밀번호·휴대폰(치과 공용 혹은 담당자)(+인증).
  * 주소/Org 앵커는 온보딩에서 완성.
  * @route POST /api/auth/practice/register
  *
@@ -1156,7 +1156,7 @@ async function practiceRegister(req, res) {
       return res.status(400).json({
         success: false,
         message:
-          "치과명, 원장님명, 담당자명, 이메일, 비밀번호, 담당자 휴대폰은 필수입니다.",
+          "치과명, 원장님명, 담당자명, 이메일, 비밀번호, 휴대폰(치과 공용 혹은 담당자)은 필수입니다.",
       });
     }
 
@@ -1171,7 +1171,7 @@ async function practiceRegister(req, res) {
     if (!/^01[016789]\d{7,8}$/.test(phoneDigits)) {
       return res.status(400).json({
         success: false,
-        message: "담당자 휴대폰 번호 형식이 올바르지 않습니다.",
+        message: "휴대폰 번호 형식이 올바르지 않습니다.",
       });
     }
 
@@ -1200,7 +1200,7 @@ async function practiceRegister(req, res) {
     if (!verified) {
       return res.status(400).json({
         success: false,
-        message: "이메일과 담당자 휴대폰 인증을 완료해주세요.",
+        message: "이메일과 휴대폰 인증을 완료해주세요.",
       });
     }
 

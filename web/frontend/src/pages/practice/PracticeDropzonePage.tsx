@@ -1761,7 +1761,8 @@ export const PracticeDropzonePage = () => {
     if (!canSubmitRecover) {
       toast({
         title: "입력 확인",
-        description: "이메일, 담당자 휴대폰, 새 비밀번호를 입력해주세요.",
+        description:
+          "이메일, 휴대폰(치과 공용 혹은 담당자), 새 비밀번호를 입력해주세요.",
         variant: "destructive",
       });
       return;
@@ -2001,7 +2002,7 @@ export const PracticeDropzonePage = () => {
       persistPhoneVerificationCache(phone);
       toast({
         title: "휴대폰 인증 완료",
-        description: "담당자 휴대폰 인증이 완료되었습니다.",
+        description: "휴대폰 인증이 완료되었습니다.",
       });
     } catch {
       toast({
@@ -2020,8 +2021,8 @@ export const PracticeDropzonePage = () => {
         title: "입력 확인",
         description:
           emailVerified && phoneVerified
-            ? "치과명, 원장님명, 담당자명, 이메일, 담당자 휴대폰, 비밀번호를 포함해 필수값을 모두 입력해주세요."
-            : "이메일·담당자 휴대폰 인증을 완료하고 치과명·원장님명·담당자명 등 필수값을 모두 입력해주세요.",
+            ? "치과명, 원장님명, 담당자명, 이메일, 휴대폰(치과 공용 혹은 담당자), 비밀번호를 포함해 필수값을 모두 입력해주세요."
+            : "이메일·휴대폰 인증을 완료하고 치과명·원장님명·담당자명 등 필수값을 모두 입력해주세요.",
         variant: "destructive",
       });
       return;
@@ -2474,7 +2475,8 @@ export const PracticeDropzonePage = () => {
                           </div>
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-slate-700">
-                              담당자 휴대폰 <span className="text-destructive">*</span>
+                              휴대폰(치과 공용 혹은 담당자){" "}
+                              <span className="text-destructive">*</span>
                             </Label>
                             <Input
                               className={cn(
@@ -2722,8 +2724,12 @@ export const PracticeDropzonePage = () => {
                             ) : null}
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="phone" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              담당자 휴대폰 <span className="ml-0.5 text-destructive">*</span>
+                            <Label
+                              htmlFor="phone"
+                              className="flex min-h-5 items-center text-sm font-medium text-slate-700"
+                            >
+                              휴대폰(치과 공용 혹은 담당자){" "}
+                              <span className="text-destructive">*</span>
                             </Label>
                             <div className="relative">
                               <Input
