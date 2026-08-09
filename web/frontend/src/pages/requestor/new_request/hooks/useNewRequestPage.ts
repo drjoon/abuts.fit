@@ -18,7 +18,7 @@ import { useNewRequestLocalFiles } from "./useNewRequestLocalFiles";
 import { usePatientFileGroups } from "./usePatientFileGroups";
 import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
 import { useToast } from "@/shared/hooks/use-toast";
-import { request } from "@/shared/api/apiClient";
+import { apiFetch, request } from "@/shared/api/apiClient";
 import { getLocalDraft, initLocalDraft } from "../utils/localDraftStorage";
 import { getFile } from "../utils/fileIndexedDB";
 
@@ -46,12 +46,25 @@ const normalizeRequestorHexRotation = (
 export const useNewRequestPage = (
   existingRequestId?: string,
 ) => {
-  const { user, token } = useAuthStore();
+  const { user, token, setLastDashboardPath } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+  // 사이드바 goSidebarHref와 동일: /dashboard 허브가 lastDashboardPath(신규의뢰 등)로
+  // 다시 bounce 하지 않도록 이동 전에 last path를 pin 한다.
   const navigateWithDashboardRefresh = useCallback(
     (path: string) => {
       if (path === "/dashboard") {
+        setLastDashboardPath("/dashboard");
+        if (token) {
+          void apiFetch({
+            path: "/api/users/last-dashboard-path",
+            method: "PUT",
+            token,
+            jsonBody: { path: "/dashboard" },
+          }).catch(() => {
+            // 저장 실패는 UX를 막지 않음
+          });
+        }
         navigate(path, {
           state: {
             refreshDashboardAt: Date.now(),
@@ -62,7 +75,7 @@ export const useNewRequestPage = (
 
       navigate(path);
     },
-    [navigate],
+    [navigate, setLastDashboardPath, token],
   );
 
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
