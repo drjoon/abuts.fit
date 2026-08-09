@@ -3,7 +3,7 @@
 // - web/frontend/src/shared/practice/useImplantConnectionCatalog.ts
 // - web/frontend/src/shared/practice/transferMemo.ts
 import { useMemo, useState } from "react";
-import { BookmarkPlus, Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +19,7 @@ import {
   emptyToothWorkImplant,
   type PracticeImplantFavorite,
 } from "@/shared/practice/transferMemo";
+import { cn } from "@/shared/ui/cn";
 
 export type ToothImplantValues = {
   implantManufacturer: string;
@@ -41,6 +42,7 @@ type Props = {
   allowPresetEdit?: boolean;
   /** 섹션 제목 (기본: 임플란트) */
   heading?: string;
+  className?: string;
 };
 
 const pickFirst = (arr: string[]) => arr[0] || "";
@@ -81,6 +83,7 @@ export const PracticeToothImplantFields = ({
   mode = "full",
   allowPresetEdit = true,
   heading = "임플란트",
+  className,
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothImplantValues>(emptyToothWorkImplant());
@@ -297,7 +300,8 @@ export const PracticeToothImplantFields = ({
     if (!onFavoritesChange) return;
     setFavoritesBusy(true);
     try {
-      await onFavoritesChange(next);
+      // 서버 동기화 Promise까지 await 하지 않음 (느린 저장 중 추가 버튼이 잠기지 않게)
+      void Promise.resolve(onFavoritesChange(next)).catch(() => {});
     } finally {
       setFavoritesBusy(false);
     }
@@ -312,8 +316,48 @@ export const PracticeToothImplantFields = ({
     });
   };
 
+  const saveCurrentAsFavorite = () =>
+    void persistFavorites([
+      ...favorites,
+      {
+        id: `imp-${Date.now().toString(36)}`,
+        manufacturer: value.implantManufacturer,
+        brand: value.implantBrand,
+        family: value.implantFamily,
+        type: value.implantType,
+      },
+    ]);
+
+  const renderSaveFavoriteButton = () => {
+    if (!canManagePresets || !showFields) return null;
+    return (
+      <Button
+        type="button"
+        variant={canSaveFavorite ? "default" : "outline"}
+        size="sm"
+        className={
+          canSaveFavorite
+            ? "h-10 w-full text-sm"
+            : "h-10 w-full border-dashed text-sm text-slate-500"
+        }
+        disabled={!canSaveFavorite}
+        onClick={saveCurrentAsFavorite}
+      >
+        <Plus className="mr-1 h-4 w-4" />
+        {favoritesBusy ? "저장 중..." : "현재 선택을 프리셋에 추가"}
+      </Button>
+    );
+  };
+
   const renderPresets = (placement: "top" | "bottom") => {
     if (!showPresets) return null;
+    // 필드가 있을 때 빈 프리셋 CTA는 필드 아래 버튼으로 처리 (높이 맞춤용 flex spacer만 유지)
+    if (favorites.length === 0 && showFields) {
+      return placement === "bottom" ? (
+        <div className="min-h-0 flex-1" aria-hidden />
+      ) : null;
+    }
+    const stretchList = showFields && placement === "bottom";
     return (
       <div
         className={
@@ -321,19 +365,17 @@ export const PracticeToothImplantFields = ({
             ? "space-y-2 pb-1"
             : mode === "presets"
               ? "space-y-2"
-              : "space-y-2 border-t border-sky-100 pt-3"
+              : stretchList
+                ? "flex min-h-0 flex-1 flex-col space-y-2 border-t border-sky-100 pt-3"
+                : "space-y-2 border-t border-sky-100 pt-3"
         }
       >
         {mode !== "presets" ? (
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex shrink-0 items-center justify-between gap-2">
             <p className="text-sm font-medium text-slate-600">프리셋</p>
-            {favorites.length === 0 ? (
-              <span className="text-xs text-slate-400">
-                {canManagePresets ? "선택 후 저장" : "없음"}
-              </span>
-            ) : (
-              <span className="text-xs text-slate-400">클릭하면 적용</span>
-            )}
+            <span className="text-xs text-slate-400">
+              {favorites.length === 0 ? "없음" : "클릭하면 적용"}
+            </span>
           </div>
         ) : null}
         {favorites.length === 0 ? (
@@ -344,18 +386,7 @@ export const PracticeToothImplantFields = ({
               size="sm"
               className="h-10 w-full border-dashed text-sm"
               disabled={!canSaveFavorite || favoritesBusy}
-              onClick={() =>
-                void persistFavorites([
-                  ...favorites,
-                  {
-                    id: `imp-${Date.now().toString(36)}`,
-                    manufacturer: value.implantManufacturer,
-                    brand: value.implantBrand,
-                    family: value.implantFamily,
-                    type: value.implantType,
-                  },
-                ])
-              }
+              onClick={saveCurrentAsFavorite}
             >
               <Plus className="mr-1 h-4 w-4" />
               현재 선택을 프리셋에 추가
@@ -370,7 +401,9 @@ export const PracticeToothImplantFields = ({
             className={
               mode === "presets"
                 ? "max-h-64 space-y-1.5 overflow-y-auto pr-0.5"
-                : "max-h-40 space-y-1.5 overflow-y-auto pr-0.5"
+                : stretchList
+                  ? "min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5"
+                  : "max-h-40 space-y-1.5 overflow-y-auto pr-0.5"
             }
           >
             {favorites.map((fav) => {
@@ -501,46 +534,25 @@ export const PracticeToothImplantFields = ({
   };
 
   return (
-    <div className="space-y-3 rounded-xl border border-sky-200/80 bg-sky-50/50 p-3 sm:p-4">
-      <div className="flex items-center justify-between gap-2">
+    <div
+      className={cn(
+        "flex flex-col gap-3 rounded-xl border border-sky-200/80 bg-sky-50/50 p-3 sm:p-4",
+        className,
+      )}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2">
         <p className="text-sm font-semibold text-slate-800">{heading}</p>
         {showFields ? (
-          <div className="flex items-center gap-1">
-            {canSaveFavorite ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 px-2 text-sm text-sky-700"
-                disabled={favoritesBusy}
-                onClick={() =>
-                  void persistFavorites([
-                    ...favorites,
-                    {
-                      id: `imp-${Date.now().toString(36)}`,
-                      manufacturer: value.implantManufacturer,
-                      brand: value.implantBrand,
-                      family: value.implantFamily,
-                      type: value.implantType,
-                    },
-                  ])
-                }
-              >
-                <BookmarkPlus className="mr-1 h-4 w-4" />
-                프리셋 저장
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-sm text-slate-500"
-              onClick={() => onChange(emptyToothWorkImplant())}
-            >
-              <X className="mr-1 h-4 w-4" />
-              비우기
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-sm text-slate-500"
+            onClick={() => onChange(emptyToothWorkImplant())}
+          >
+            <X className="mr-1 h-4 w-4" />
+            비우기
+          </Button>
         ) : (
           <span className="text-xs text-slate-400">
             {favorites.length === 0 ? "없음" : "클릭하면 적용"}
@@ -551,7 +563,7 @@ export const PracticeToothImplantFields = ({
       {showPresets && (presetsFirst || mode === "presets") ? renderPresets("top") : null}
 
       {showFields ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label className="text-sm text-slate-600">제조사</Label>
             <Select
@@ -669,6 +681,8 @@ export const PracticeToothImplantFields = ({
           </div>
         </div>
       ) : null}
+
+      <div className="shrink-0">{renderSaveFavoriteButton()}</div>
 
       {showPresets && !presetsFirst && mode !== "presets" ? renderPresets("bottom") : null}
     </div>

@@ -2,7 +2,8 @@
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailDialog.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
-import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+// - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,8 +19,11 @@ import {
   PracticeTransferRequestIntakePanel,
   type PracticeTransferRequestIntakePanelProps,
 } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import {
+  normalizeAbutmentFavorites,
+  normalizeImplantFavorites,
   normalizeProsthesisTypes,
   normalizeToothWorks,
   toToothMemoSortNumber,
@@ -111,6 +115,86 @@ export function NewRequestDesignAbutmentFields({
     [prosthesisTypeCatalog],
   );
 
+  // 기공의뢰(파일전송)와 동일: BusinessAnchor.practiceTransferSettings 에 프리셋 저장
+  const loadFavoritesFromServer = useCallback(async () => {
+    if (!token) {
+      setImplantFavorites([]);
+      setAbutmentFavorites([]);
+      return;
+    }
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/settings",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) return;
+      const body =
+        res.data && typeof res.data === "object" ? (res.data as { data?: unknown }) : {};
+      const payload =
+        body.data && typeof body.data === "object"
+          ? (body.data as {
+              implantFavorites?: unknown;
+              abutmentFavorites?: unknown;
+            })
+          : null;
+      setImplantFavorites(normalizeImplantFavorites(payload?.implantFavorites));
+      setAbutmentFavorites(normalizeAbutmentFavorites(payload?.abutmentFavorites));
+    } catch {
+      // ignore — 로컬 빈 목록 유지
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void loadFavoritesFromServer();
+  }, [loadFavoritesFromServer]);
+
+  const saveFavoritesToServer = useCallback(
+    async (patch: {
+      implantFavorites?: PracticeImplantFavorite[];
+      abutmentFavorites?: PracticeAbutmentFavorite[];
+    }) => {
+      if (!token) return;
+      const jsonBody: Record<string, unknown> = {};
+      if (Array.isArray(patch.implantFavorites)) {
+        jsonBody.implantFavorites = normalizeImplantFavorites(patch.implantFavorites);
+      }
+      if (Array.isArray(patch.abutmentFavorites)) {
+        jsonBody.abutmentFavorites = normalizeAbutmentFavorites(patch.abutmentFavorites);
+      }
+      if (Object.keys(jsonBody).length === 0) return;
+      try {
+        await apiFetch<unknown>({
+          path: "/api/practice/transfers/settings",
+          method: "POST",
+          token,
+          jsonBody,
+        });
+      } catch {
+        // ignore — UI 상태는 이미 반영됨
+      }
+    },
+    [token],
+  );
+
+  const handleImplantFavoritesChange = useCallback(
+    (next: PracticeImplantFavorite[]) => {
+      const normalized = normalizeImplantFavorites(next);
+      setImplantFavorites(normalized);
+      void saveFavoritesToServer({ implantFavorites: normalized });
+    },
+    [saveFavoritesToServer],
+  );
+
+  const handleAbutmentFavoritesChange = useCallback(
+    (next: PracticeAbutmentFavorite[]) => {
+      const normalized = normalizeAbutmentFavorites(next);
+      setAbutmentFavorites(normalized);
+      void saveFavoritesToServer({ abutmentFavorites: normalized });
+    },
+    [saveFavoritesToServer],
+  );
+
   const setToothWorks = useCallback<Dispatch<SetStateAction<ToothWorkSelection[]>>>(
     (action) => {
       const prev = Array.isArray(caseInfos?.toothWorks) ? caseInfos.toothWorks : [];
@@ -170,13 +254,9 @@ export function NewRequestDesignAbutmentFields({
     setRequestMemo,
     implantConnections,
     implantFavorites,
-    onImplantFavoritesChange: async (next: PracticeImplantFavorite[]) => {
-      setImplantFavorites(next);
-    },
+    onImplantFavoritesChange: handleImplantFavoritesChange,
     abutmentFavorites,
-    onAbutmentFavoritesChange: async (next: PracticeAbutmentFavorite[]) => {
-      setAbutmentFavorites(next);
-    },
+    onAbutmentFavoritesChange: handleAbutmentFavoritesChange,
     toothTensOptions: TOOTH_TENS_OPTIONS,
     toothOnesOptions: TOOTH_ONES_OPTIONS,
   } satisfies Partial<PracticeTransferRequestIntakePanelProps>;

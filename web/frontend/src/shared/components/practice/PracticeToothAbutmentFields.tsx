@@ -3,7 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 import { useState } from "react";
-import { BookmarkPlus, Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import {
   emptyToothWorkAbutment,
   type PracticeAbutmentFavorite,
 } from "@/shared/practice/transferMemo";
+import { cn } from "@/shared/ui/cn";
 
 export type ToothAbutmentValues = {
   abutmentManufacturer: string;
@@ -31,13 +32,17 @@ type Props = {
   mode?: "full" | "fields" | "presets";
   /** 프리셋 추가·수정·삭제 허용 (기본 true) */
   allowPresetEdit?: boolean;
+  className?: string;
 };
 
 const favoriteKey = (row: {
   manufacturer: string;
   diameter: string;
   height: string;
-}) => `${row.manufacturer}|${row.diameter}|${row.height}`.toLowerCase();
+}) =>
+  [row.manufacturer, row.diameter, row.height]
+    .map((v) => String(v || "").trim().toLowerCase())
+    .join("|");
 
 const favoriteLabel = (row: {
   manufacturer: string;
@@ -49,6 +54,72 @@ const favoriteLabel = (row: {
     .filter(Boolean)
     .join(" / ") || "어벗 규격";
 
+const formatSteppedNumber = (n: number, step: number) => {
+  const decimals = String(step).includes(".")
+    ? String(step).split(".")[1]?.length || 0
+    : 0;
+  return decimals > 0 ? n.toFixed(decimals) : String(Math.round(n));
+};
+
+const stepNumericValue = (raw: string, step: number, direction: 1 | -1) => {
+  const current = Number.parseFloat(String(raw || "").trim());
+  const base = Number.isFinite(current) ? current : 0;
+  const next = Math.max(0, Math.round((base + direction * step) * 1000) / 1000);
+  return formatSteppedNumber(next, step);
+};
+
+const NumericStepperInput = ({
+  value,
+  placeholder,
+  step,
+  className,
+  onValueChange,
+}: {
+  value: string;
+  placeholder: string;
+  step: number;
+  className?: string;
+  onValueChange: (next: string) => void;
+}) => (
+  <div className="relative">
+    <Input
+      type="number"
+      inputMode="decimal"
+      min={0}
+      step={step}
+      value={value}
+      placeholder={placeholder}
+      className={[
+        className,
+        "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onChange={(e) => onValueChange(e.target.value)}
+    />
+    <div className="absolute inset-y-1 right-1 flex w-6 flex-col overflow-hidden rounded border border-slate-200 bg-white">
+      <button
+        type="button"
+        tabIndex={-1}
+        className="flex h-1/2 items-center justify-center text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+        aria-label="값 증가"
+        onClick={() => onValueChange(stepNumericValue(value, step, 1))}
+      >
+        <ChevronUp className="h-3 w-3" />
+      </button>
+      <button
+        type="button"
+        tabIndex={-1}
+        className="flex h-1/2 items-center justify-center border-t border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+        aria-label="값 감소"
+        onClick={() => onValueChange(stepNumericValue(value, step, -1))}
+      >
+        <ChevronDown className="h-3 w-3" />
+      </button>
+    </div>
+  </div>
+);
+
 export const PracticeToothAbutmentFields = ({
   value,
   onChange,
@@ -58,6 +129,7 @@ export const PracticeToothAbutmentFields = ({
   presetsFirst = false,
   mode = "full",
   allowPresetEdit = true,
+  className,
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothAbutmentValues>(emptyToothWorkAbutment());
@@ -82,14 +154,54 @@ export const PracticeToothAbutmentFields = ({
     if (!onFavoritesChange) return;
     setFavoritesBusy(true);
     try {
-      await onFavoritesChange(next);
+      // 서버 동기화 Promise까지 await 하지 않음 (느린 저장 중 추가 버튼이 잠기지 않게)
+      void Promise.resolve(onFavoritesChange(next)).catch(() => {});
     } finally {
       setFavoritesBusy(false);
     }
   };
 
+  const saveCurrentAsFavorite = () =>
+    void persistFavorites([
+      ...favorites,
+      {
+        id: `abt-${Date.now().toString(36)}`,
+        manufacturer: String(value.abutmentManufacturer || "").trim(),
+        diameter: String(value.abutmentDiameter || "").trim(),
+        height: String(value.abutmentHeight || "").trim(),
+      },
+    ]);
+
+  const renderSaveFavoriteButton = () => {
+    if (!canManagePresets || !showFields) return null;
+    return (
+      <Button
+        type="button"
+        variant={canSaveFavorite ? "default" : "outline"}
+        size="sm"
+        className={
+          canSaveFavorite
+            ? "h-10 w-full text-sm"
+            : "h-10 w-full border-dashed text-sm text-slate-500"
+        }
+        disabled={!canSaveFavorite}
+        onClick={saveCurrentAsFavorite}
+      >
+        <Plus className="mr-1 h-4 w-4" />
+        {favoritesBusy ? "저장 중..." : "현재 입력을 프리셋에 추가"}
+      </Button>
+    );
+  };
+
   const renderPresets = (placement: "top" | "bottom") => {
     if (!showPresets) return null;
+    // 필드가 있을 때 빈 프리셋 CTA는 필드 아래 버튼으로 처리 (높이 맞춤용 flex spacer만 유지)
+    if (favorites.length === 0 && showFields) {
+      return placement === "bottom" ? (
+        <div className="min-h-0 flex-1" aria-hidden />
+      ) : null;
+    }
+    const stretchList = showFields && placement === "bottom";
     return (
       <div
         className={
@@ -97,19 +209,17 @@ export const PracticeToothAbutmentFields = ({
             ? "space-y-2 pb-1"
             : mode === "presets"
               ? "space-y-2"
-              : "space-y-2 border-t border-violet-100 pt-3"
+              : stretchList
+                ? "flex min-h-0 flex-1 flex-col space-y-2 border-t border-violet-100 pt-3"
+                : "space-y-2 border-t border-violet-100 pt-3"
         }
       >
         {mode !== "presets" ? (
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex shrink-0 items-center justify-between gap-2">
             <p className="text-sm font-medium text-slate-600">프리셋</p>
-            {favorites.length === 0 ? (
-              <span className="text-xs text-slate-400">
-                {canManagePresets ? "선택 후 저장" : "없음"}
-              </span>
-            ) : (
-              <span className="text-xs text-slate-400">클릭하면 적용</span>
-            )}
+            <span className="text-xs text-slate-400">
+              {favorites.length === 0 ? "없음" : "클릭하면 적용"}
+            </span>
           </div>
         ) : null}
         {favorites.length === 0 ? (
@@ -120,17 +230,7 @@ export const PracticeToothAbutmentFields = ({
               size="sm"
               className="h-10 w-full border-dashed text-sm"
               disabled={!canSaveFavorite || favoritesBusy}
-              onClick={() =>
-                void persistFavorites([
-                  ...favorites,
-                  {
-                    id: `abt-${Date.now().toString(36)}`,
-                    manufacturer: value.abutmentManufacturer,
-                    diameter: value.abutmentDiameter,
-                    height: value.abutmentHeight,
-                  },
-                ])
-              }
+              onClick={saveCurrentAsFavorite}
             >
               <Plus className="mr-1 h-4 w-4" />
               현재 입력을 프리셋에 추가
@@ -145,7 +245,9 @@ export const PracticeToothAbutmentFields = ({
             className={
               mode === "presets"
                 ? "max-h-64 space-y-1.5 overflow-y-auto pr-0.5"
-                : "max-h-36 space-y-1.5 overflow-y-auto pr-0.5"
+                : stretchList
+                  ? "min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5"
+                  : "max-h-40 space-y-1.5 overflow-y-auto pr-0.5"
             }
           >
             {favorites.map((fav) => {
@@ -157,23 +259,35 @@ export const PracticeToothAbutmentFields = ({
                     key={`edit-${fav.id}`}
                     className="grid grid-cols-3 gap-1.5 rounded-lg border border-violet-200 bg-white p-2"
                   >
-                    {(
-                      [
-                        ["abutmentManufacturer", "제조사"],
-                        ["abutmentDiameter", "직경"],
-                        ["abutmentHeight", "높이"],
-                      ] as const
-                    ).map(([key, placeholder]) => (
-                      <Input
-                        key={key}
-                        value={editDraft[key]}
-                        placeholder={placeholder}
-                        className="h-9 text-sm"
-                        onChange={(e) =>
-                          setEditDraft((prev) => ({ ...prev, [key]: e.target.value }))
-                        }
-                      />
-                    ))}
+                    <Input
+                      value={editDraft.abutmentManufacturer}
+                      placeholder="제조사"
+                      className="h-9 text-sm"
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          abutmentManufacturer: e.target.value,
+                        }))
+                      }
+                    />
+                    <NumericStepperInput
+                      value={editDraft.abutmentDiameter}
+                      placeholder="직경"
+                      step={0.1}
+                      className="h-9 pr-8 text-sm"
+                      onValueChange={(next) =>
+                        setEditDraft((prev) => ({ ...prev, abutmentDiameter: next }))
+                      }
+                    />
+                    <NumericStepperInput
+                      value={editDraft.abutmentHeight}
+                      placeholder="높이"
+                      step={0.5}
+                      className="h-9 pr-8 text-sm"
+                      onValueChange={(next) =>
+                        setEditDraft((prev) => ({ ...prev, abutmentHeight: next }))
+                      }
+                    />
                     <div className="col-span-3 flex justify-end gap-1">
                       <Button
                         type="button"
@@ -279,45 +393,25 @@ export const PracticeToothAbutmentFields = ({
   };
 
   return (
-    <div className="space-y-3 rounded-xl border border-violet-200/80 bg-violet-50/40 p-3 sm:p-4">
-      <div className="flex items-center justify-between gap-2">
+    <div
+      className={cn(
+        "flex flex-col gap-3 rounded-xl border border-violet-200/80 bg-violet-50/40 p-3 sm:p-4",
+        className,
+      )}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2">
         <p className="text-sm font-semibold text-slate-800">{heading}</p>
         {showFields ? (
-          <div className="flex items-center gap-1">
-            {canSaveFavorite ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 px-2 text-sm text-violet-700"
-                disabled={favoritesBusy}
-                onClick={() =>
-                  void persistFavorites([
-                    ...favorites,
-                    {
-                      id: `abt-${Date.now().toString(36)}`,
-                      manufacturer: value.abutmentManufacturer,
-                      diameter: value.abutmentDiameter,
-                      height: value.abutmentHeight,
-                    },
-                  ])
-                }
-              >
-                <BookmarkPlus className="mr-1 h-4 w-4" />
-                프리셋 저장
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-sm text-slate-500"
-              onClick={() => onChange(emptyToothWorkAbutment())}
-            >
-              <X className="mr-1 h-4 w-4" />
-              비우기
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-sm text-slate-500"
+            onClick={() => onChange(emptyToothWorkAbutment())}
+          >
+            <X className="mr-1 h-4 w-4" />
+            비우기
+          </Button>
         ) : (
           <span className="text-xs text-slate-400">
             {favorites.length === 0 ? "없음" : "클릭하면 적용"}
@@ -328,7 +422,7 @@ export const PracticeToothAbutmentFields = ({
       {showPresets && (presetsFirst || mode === "presets") ? renderPresets("top") : null}
 
       {showFields ? (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid shrink-0 grid-cols-2 gap-3">
           <div className="min-w-0 space-y-1.5">
             <Label className="text-sm text-slate-600">제조사</Label>
             <Input
@@ -342,28 +436,32 @@ export const PracticeToothAbutmentFields = ({
           </div>
           <div className="min-w-0 space-y-1.5">
             <Label className="text-sm text-slate-600">직경</Label>
-            <Input
+            <NumericStepperInput
               value={value.abutmentDiameter}
               placeholder="예: 4.5"
-              className="h-11 px-3 text-sm"
-              onChange={(e) =>
-                onChange({ ...value, abutmentDiameter: e.target.value })
+              step={0.1}
+              className="h-11 px-3 pr-8 text-sm"
+              onValueChange={(next) =>
+                onChange({ ...value, abutmentDiameter: next })
               }
             />
           </div>
           <div className="min-w-0 space-y-1.5">
             <Label className="text-sm text-slate-600">높이</Label>
-            <Input
+            <NumericStepperInput
               value={value.abutmentHeight}
               placeholder="예: 5"
-              className="h-11 px-3 text-sm"
-              onChange={(e) =>
-                onChange({ ...value, abutmentHeight: e.target.value })
+              step={0.5}
+              className="h-11 px-3 pr-8 text-sm"
+              onValueChange={(next) =>
+                onChange({ ...value, abutmentHeight: next })
               }
             />
           </div>
         </div>
       ) : null}
+
+      <div className="shrink-0">{renderSaveFavoriteButton()}</div>
 
       {showPresets && !presetsFirst && mode !== "presets" ? renderPresets("bottom") : null}
     </div>

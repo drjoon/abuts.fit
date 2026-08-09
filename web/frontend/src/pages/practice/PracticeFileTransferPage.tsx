@@ -5191,7 +5191,7 @@ export const PracticeFileTransferPage = ({
                   },
                   implantConnections,
                   implantFavorites,
-                  onImplantFavoritesChange: async (next) => {
+                  onImplantFavoritesChange: (next) => {
                     const normalized = normalizeImplantFavorites(next);
                     setImplantFavorites(normalized);
                     try {
@@ -5215,10 +5215,10 @@ export const PracticeFileTransferPage = ({
                     } catch {
                       // ignore
                     }
-                    await savePracticeTransferSettingsToServer({ implantFavorites: normalized });
+                    void savePracticeTransferSettingsToServer({ implantFavorites: normalized });
                   },
                   abutmentFavorites,
-                  onAbutmentFavoritesChange: async (next) => {
+                  onAbutmentFavoritesChange: (next) => {
                     const normalized = normalizeAbutmentFavorites(next);
                     setAbutmentFavorites(normalized);
                     try {
@@ -5242,7 +5242,7 @@ export const PracticeFileTransferPage = ({
                     } catch {
                       // ignore
                     }
-                    await savePracticeTransferSettingsToServer({ abutmentFavorites: normalized });
+                    void savePracticeTransferSettingsToServer({ abutmentFavorites: normalized });
                   },
                   onImeComposingChange: (composing) => {
                     imeComposingRef.current = composing;

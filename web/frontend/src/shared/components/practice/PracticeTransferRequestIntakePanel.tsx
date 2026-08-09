@@ -29,7 +29,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -51,6 +50,7 @@ import { PracticeOrderArrivalDateRangeField } from "@/shared/components/practice
 import { getBusinessLabel, type SearchBusinessResult } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { PracticeToothImplantFields } from "@/shared/components/practice/PracticeToothImplantFields";
 import { PracticeToothAbutmentFields } from "@/shared/components/practice/PracticeToothAbutmentFields";
+import { PracticeCustomSpecsPresetEditDialog } from "@/shared/components/practice/PracticeCustomSpecsPresetEditDialog";
 import { PracticeToothNumberPicker } from "@/shared/components/practice/PracticeToothNumberPicker";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
 import {
@@ -83,6 +83,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
+// - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -1902,59 +1903,24 @@ export const PracticeTransferRequestIntakePanel = ({
                 </Button>
               </div>
 
-              <Dialog
+              <PracticeCustomSpecsPresetEditDialog
                 open={customSpecsPresetEditOpen}
                 onOpenChange={setCustomSpecsPresetEditOpenSafe}
-              >
-                <DialogContent
-                  className={cn(
-                    "max-h-[92vh] gap-4 overflow-y-auto sm:max-w-3xl",
-                    nestedDialogClassName,
-                  )}
-                  overlayClassName={nestedDialogOverlayClassName}
-                >
-                  <DialogHeader className="space-y-1.5 text-left">
-                    <DialogTitle className="text-lg">프리셋 편집</DialogTitle>
-                    <DialogDescription className="text-sm">
-                      임플란트·스캔바디를 직접 선택하고, 자주 쓰는 조합을 프리셋으로 저장·수정·삭제할 수
-                      있습니다.
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <PracticeToothImplantFields
-                      presetsFirst
-                      value={pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)}
-                      onChange={(nextImplant) => {
-                        patchCustomSpecsOnTooth(customSpecsModalTarget, nextImplant);
-                      }}
-                      connections={implantConnections}
-                      favorites={implantFavorites}
-                      onFavoritesChange={onImplantFavoritesChange}
-                    />
-                    <PracticeToothAbutmentFields
-                      presetsFirst
-                      heading="스캔바디"
-                      value={pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)}
-                      onChange={(nextAbutment) => {
-                        patchCustomSpecsOnTooth(customSpecsModalTarget, nextAbutment);
-                      }}
-                      favorites={abutmentFavorites}
-                      onFavoritesChange={onAbutmentFavoritesChange}
-                    />
-                  </div>
-
-                  <DialogFooter>
-                    <Button
-                      type="button"
-                      className="h-10 min-w-[6rem] text-sm"
-                      onClick={() => setCustomSpecsPresetEditOpenSafe(false)}
-                    >
-                      완료
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                className={nestedDialogClassName}
+                overlayClassName={nestedDialogOverlayClassName}
+                value={pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)}
+                onImplantChange={(nextImplant) => {
+                  patchCustomSpecsOnTooth(customSpecsModalTarget, nextImplant);
+                }}
+                onAbutmentChange={(nextAbutment) => {
+                  patchCustomSpecsOnTooth(customSpecsModalTarget, nextAbutment);
+                }}
+                connections={implantConnections}
+                implantFavorites={implantFavorites}
+                onImplantFavoritesChange={onImplantFavoritesChange}
+                abutmentFavorites={abutmentFavorites}
+                onAbutmentFavoritesChange={onAbutmentFavoritesChange}
+              />
             </div>
           ) : null}
         </DialogContent>
