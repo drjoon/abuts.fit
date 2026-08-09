@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from "react";
 import {
   Check,
   ChevronLeft,
@@ -182,6 +182,25 @@ const persistLocalMemoSnippets = (items: string[]) => {
 };
 
 export type PracticeTransferRequestIntakePanelProps = {
+  /** false면 기공소·환자명·날짜를 숨기고 보철물·메모만 렌더 (기본 true) */
+  showHeaderFields?: boolean;
+  /** false면 보철물 치식 섹션 숨김 (기본 true) */
+  showProsthesisSection?: boolean;
+  /** false면 메모 섹션 숨김 (기본 true) */
+  showMemoSection?: boolean;
+  /** card: practice transfers 카드 스타일 / plain: 모달 등 상위 카드 안에 임베드 */
+  variant?: "card" | "plain";
+  /** 크게 보기 버튼 숨김 */
+  hideEnlargeButton?: boolean;
+  /** compact: 6칸 스크롤 / full: 16칸 전체 표시 (크게 보기와 동일) */
+  toothChartDisplayMode?: "compact" | "full";
+  /** 상위 Dialog 위에 뜨는 내부 Dialog(커스텀어벗 설정 등) z-index */
+  nestedDialogClassName?: string;
+  nestedDialogOverlayClassName?: string;
+  /** 메모 라벨 위에 렌더 (의뢰비 등) */
+  aboveMemoContent?: ReactNode;
+  /** 메모 입력 박스 className 덮어쓰기 (높이·스크롤 등) */
+  memoBoxClassName?: string;
   selectedLab: SearchBusinessResult | null;
   setSelectedLab: (value: SearchBusinessResult | null) => void;
   labOpen: boolean;
@@ -227,6 +246,16 @@ export type PracticeTransferRequestIntakePanelProps = {
 };
 
 export const PracticeTransferRequestIntakePanel = ({
+  showHeaderFields = true,
+  showProsthesisSection = true,
+  showMemoSection = true,
+  variant = "card",
+  hideEnlargeButton = false,
+  toothChartDisplayMode = "compact",
+  nestedDialogClassName,
+  nestedDialogOverlayClassName,
+  aboveMemoContent,
+  memoBoxClassName,
   selectedLab,
   setSelectedLab,
   labOpen,
@@ -282,7 +311,9 @@ export const PracticeTransferRequestIntakePanel = ({
     initialToothChartOffsets,
   );
   const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
-  const toothChartVisibleCount = toothChartEnlargeOpen ? 16 : TOOTH_CHART_VISIBLE;
+  const showFullToothChart = toothChartDisplayMode === "full" || toothChartEnlargeOpen;
+  const toothChartVisibleCount = showFullToothChart ? 16 : TOOTH_CHART_VISIBLE;
+  const showInlineToothChartHeader = !toothChartEnlargeOpen || toothChartDisplayMode === "full";
   const toothChartResetNonceRef = useRef(toothChartResetNonce);
 
   useEffect(() => {
@@ -577,8 +608,14 @@ export const PracticeTransferRequestIntakePanel = ({
       : filterMemoSuggestions(memoLines[suggestLineIndex] || "", memoSnippets);
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
-      {onClearAll ? (
+    <div
+      className={cn(
+        "flex min-h-0 flex-col gap-3",
+        variant === "card" &&
+          "rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]",
+      )}
+    >
+      {showHeaderFields && onClearAll ? (
         <div className="flex justify-end">
           <Button
             type="button"
@@ -592,6 +629,7 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
       ) : null}
 
+      {showHeaderFields ? (
       <div className="grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]">
         <div className="space-y-2">
           <Label className="text-sm">기공소 선택 <span className="text-destructive">*</span></Label>
@@ -747,9 +785,11 @@ export const PracticeTransferRequestIntakePanel = ({
           }}
         />
       </div>
+      ) : null}
 
-      <div className="mt-4 space-y-2">
-        {!toothChartEnlargeOpen ? (
+      {showProsthesisSection ? (
+      <div className={cn("space-y-2", showHeaderFields && "mt-4")}>
+        {showInlineToothChartHeader ? (
         <div className="relative flex min-h-8 items-center">
           <div className="flex items-center gap-1">
             <Label className="text-sm">
@@ -921,6 +961,7 @@ export const PracticeTransferRequestIntakePanel = ({
               </Button>
             </div>
 
+            {!hideEnlargeButton && toothChartDisplayMode !== "full" ? (
             <div className="absolute right-0">
               <Button
                 type="button"
@@ -935,6 +976,7 @@ export const PracticeTransferRequestIntakePanel = ({
                 크게 보기
               </Button>
             </div>
+            ) : null}
         </div>
         ) : null}
 
@@ -1546,7 +1588,8 @@ export const PracticeTransferRequestIntakePanel = ({
 
             return (
               <>
-                {!toothChartEnlargeOpen ? chartBody : null}
+                {toothChartDisplayMode === "full" || !toothChartEnlargeOpen ? chartBody : null}
+                {toothChartDisplayMode !== "full" ? (
                 <Dialog
                   open={toothChartEnlargeOpen}
                   onOpenChange={setToothChartEnlargeOpen}
@@ -1566,16 +1609,23 @@ export const PracticeTransferRequestIntakePanel = ({
                     {toothChartEnlargeOpen ? chartBody : null}
                   </DialogContent>
                 </Dialog>
+                ) : null}
               </>
             );
           })()}
         </div>
+      ) : null}
 
-      <div className="mt-5 flex min-h-0 flex-1 flex-col space-y-2">
+      {showMemoSection ? (
+      <div className={cn("flex min-h-0 flex-col space-y-2", showHeaderFields || showProsthesisSection ? "mt-5" : "mt-2")}>
+        {aboveMemoContent}
         <Label className="text-sm">메모</Label>
         <div
           id={memoInputId}
-          className="flex min-h-[9rem] flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5"
+          className={cn(
+            "flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5",
+            memoBoxClassName ?? "min-h-[9rem]",
+          )}
         >
           {memoLines.map((line, index) => {
             const lineSuggestions =
@@ -1757,6 +1807,7 @@ export const PracticeTransferRequestIntakePanel = ({
           ) : null}
         </div>
       </div>
+      ) : null}
 
       <Dialog
         open={customSpecsModalTarget !== null}
@@ -1764,7 +1815,10 @@ export const PracticeTransferRequestIntakePanel = ({
           if (!open) closeCustomSpecsModal();
         }}
       >
-        <DialogContent className="max-h-[92vh] gap-4 overflow-y-auto sm:max-w-3xl">
+        <DialogContent
+          className={cn("max-h-[92vh] gap-4 overflow-y-auto sm:max-w-3xl", nestedDialogClassName)}
+          overlayClassName={nestedDialogOverlayClassName}
+        >
           <DialogHeader className="space-y-1.5 text-left">
             <DialogTitle className="text-lg">
               {`커스텀어벗 설정${
@@ -1842,7 +1896,13 @@ export const PracticeTransferRequestIntakePanel = ({
                 open={customSpecsPresetEditOpen}
                 onOpenChange={setCustomSpecsPresetEditOpenSafe}
               >
-                <DialogContent className="max-h-[92vh] gap-4 overflow-y-auto sm:max-w-3xl">
+                <DialogContent
+                  className={cn(
+                    "max-h-[92vh] gap-4 overflow-y-auto sm:max-w-3xl",
+                    nestedDialogClassName,
+                  )}
+                  overlayClassName={nestedDialogOverlayClassName}
+                >
                   <DialogHeader className="space-y-1.5 text-left">
                     <DialogTitle className="text-lg">프리셋 편집</DialogTitle>
                     <DialogDescription className="text-sm">

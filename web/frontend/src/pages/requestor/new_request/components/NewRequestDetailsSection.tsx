@@ -342,15 +342,29 @@ export function NewRequestDetailsSection({
       const fileKey = toNormalizedFileKey(file);
       const fileCaseInfos = caseInfosMap?.[fileKey] || caseInfos;
       const missingFields: string[] = [];
+      const isDesignCustomMode =
+        fileCaseInfos?.productMode === "design_custom_abutment";
 
-      if (!fileCaseInfos?.clinicName) missingFields.push("치과이름");
-      if (!fileCaseInfos?.patientName) missingFields.push("환자이름");
-      if (!fileCaseInfos?.tooth) missingFields.push("치아번호");
-      if (!fileCaseInfos?.implantManufacturer) missingFields.push("임플란트 제조사");
-      if (!fileCaseInfos?.implantBrand) missingFields.push("임플란트 브랜드");
-      if (!fileCaseInfos?.implantFamily) missingFields.push("Family");
-      if (!fileCaseInfos?.implantType) missingFields.push("Type");
-
+      if (isDesignCustomMode) {
+        if (!fileCaseInfos?.clinicName) missingFields.push("치과명");
+        if (!fileCaseInfos?.patientName) missingFields.push("환자명");
+        const hasProsthesis = Array.isArray(fileCaseInfos?.toothWorks)
+          ? fileCaseInfos.toothWorks.some(
+              (row) =>
+                /^[1-4][1-8]$/.test(String(row?.toothNumber || "").trim()) &&
+                Boolean(String(row?.prosthesisType || "").trim()),
+            )
+          : Boolean(String(fileCaseInfos?.prosthesisType || "").trim());
+        if (!hasProsthesis) missingFields.push("보철물");
+      } else {
+        if (!fileCaseInfos?.clinicName) missingFields.push("치과이름");
+        if (!fileCaseInfos?.patientName) missingFields.push("환자이름");
+        if (!fileCaseInfos?.tooth) missingFields.push("치아번호");
+        if (!fileCaseInfos?.implantManufacturer) missingFields.push("임플란트 제조사");
+        if (!fileCaseInfos?.implantBrand) missingFields.push("임플란트 브랜드");
+        if (!fileCaseInfos?.implantFamily) missingFields.push("Family");
+        if (!fileCaseInfos?.implantType) missingFields.push("Type");
+      }
       if (missingFields.length > 0) {
         toast({
           title: "정보를 먼저 채워주세요",

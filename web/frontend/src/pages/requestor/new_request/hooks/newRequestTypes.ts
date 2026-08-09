@@ -4,6 +4,8 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+
 export type ClinicFavoriteImplant = {
   manufacturer: string;
   brand: string;
@@ -12,6 +14,9 @@ export type ClinicFavoriteImplant = {
 };
 
 export type RetentionGrooveValue = "none" | "shallow" | "deep";
+
+/** 신규의뢰 상세 모달: 커스텀어벗 vs 디자인+커스텀어벗 */
+export type NewRequestProductMode = "custom_abutment" | "design_custom_abutment";
 
 export type ClinicPreset = {
   id: string;
@@ -48,6 +53,7 @@ export type Connection = {
 export type CaseInfos = {
   clinicName?: string;
   patientName?: string;
+  /** 커스텀어벗 탭 치아번호 (단일/자유 입력). 디자인+커스텀어벗 toothWorks 와 별개. */
   tooth?: string;
   implantManufacturer?: string;
   implantBrand?: string;
@@ -60,6 +66,14 @@ export type CaseInfos = {
   tiltAxisVector?: { x: number; y: number; z: number };
   frontPoint?: { x: number; y: number; z: number };
   workType?: string; // "abutment" | "crown" | "prosthesis"
+  /** 상세 모달 상품 모드. 기본 custom_abutment. workType(abutment)과 별개. */
+  productMode?: NewRequestProductMode;
+  /** 디자인+커스텀어벗 탭 보철물 치식. 커스텀어벗 tooth 와 별개. */
+  toothWorks?: ToothWorkSelection[];
+  /** @deprecated 치식(toothWorks)으로 대체. 레거시 호환용 */
+  prosthesisType?: string;
+  /** 디자인+커스텀어벗: 자유 메모 */
+  memo?: string;
   shippingMode?: "normal" | "express";
   requestedShipDate?: string; // ISO date string or YYYY-MM-DD
   designSoftware?: string;

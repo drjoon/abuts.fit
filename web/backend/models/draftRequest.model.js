@@ -87,6 +87,29 @@ const draftCaseSchema = new mongoose.Schema(
           type: String,
           enum: ["abutment", "crown"],
         },
+        // 신규의뢰 상세 모달: 커스텀어벗 | 디자인+커스텀어벗
+        productMode: {
+          type: String,
+          enum: ["custom_abutment", "design_custom_abutment"],
+          default: "custom_abutment",
+        },
+        // 디자인+커스텀어벗: 보철물 형태
+        prosthesisType: {
+          type: String,
+          trim: true,
+          default: "",
+        },
+        // 디자인+커스텀어벗: 자유 메모
+        memo: {
+          type: String,
+          trim: true,
+          default: "",
+        },
+        // 디자인+커스텀어벗: practice transfers 보철물 치식
+        toothWorks: {
+          type: [mongoose.Schema.Types.Mixed],
+          default: [],
+        },
         // 유지홈(retentionGroove) — Request 승격 전 none/deep으로 정규화.
         // legacy shallow 데이터는 none으로 취급한다.
         retentionGroove: {

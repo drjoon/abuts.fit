@@ -288,7 +288,10 @@ export function NewRequestAttachmentsPanel({
                     </div>
                   </div>
 
-                  {(estimatedShip || designSoftware || onShippingModeChange) && (
+                  {(estimatedShip ||
+                    designSoftware ||
+                    onShippingModeChange ||
+                    fileInfo?.productMode === "design_custom_abutment") && (
                     <div className="flex items-center justify-between gap-2">
                       {estimatedShip ? (
                         <div className="flex items-center gap-1.5 text-xs text-slate-500 min-w-0">
@@ -340,6 +343,14 @@ export function NewRequestAttachmentsPanel({
                               신속
                             </button>
                           </div>
+                        ) : null}
+                        {fileInfo?.productMode === "design_custom_abutment" ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-violet-100 text-[10px] font-medium px-1.5 py-0.5 text-violet-700"
+                          >
+                            +디자인
+                          </Badge>
                         ) : null}
                         {designSoftware ? (
                           <Badge

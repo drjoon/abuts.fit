@@ -333,20 +333,19 @@ export function NewRequestPatientImplantFields({
   ]);
 
   return (
-    <>
-      <div className="">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-foreground ">
-          <div className="min-w-0">
-            <LabeledAutocompleteField
-              value={caseInfos?.clinicName || ""}
-              onChange={(value) => {
-                if (readOnly) return;
-                setCaseInfos({
-                  clinicName: value,
-                });
-              }}
-              options={clinicNameOptions}
-              placeholder="치과명"
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 gap-2 text-foreground sm:grid-cols-3">
+        <div className="min-w-0">
+          <LabeledAutocompleteField
+            value={caseInfos?.clinicName || ""}
+            onChange={(value) => {
+              if (readOnly) return;
+              setCaseInfos({
+                clinicName: value,
+              });
+            }}
+            options={clinicNameOptions}
+            placeholder="치과명"
               onOptionSelect={(label) => {
                 if (readOnly) return;
                 handleAddOrSelectClinic(label);
@@ -464,12 +463,9 @@ export function NewRequestPatientImplantFields({
             />
           </div>
         </div>
-      </div>
 
-      {showImplantSelect && (
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-[10px] md:text-[11px]">
+      {showImplantSelect ? (
+        <div className="grid grid-cols-1 gap-2 text-[10px] md:text-[11px] sm:grid-cols-4">
               <div className="min-w-0 space-y-1">
                 <Select
                   value={currentManufacturer}
@@ -705,9 +701,7 @@ export function NewRequestPatientImplantFields({
                 </Select>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-    </>
+      ) : null}
+    </div>
   );
 }

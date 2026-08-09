@@ -144,6 +144,23 @@ const requestSchema = new mongoose.Schema(
       faceHolePrcFileName: String,
       connectionPrcFileName: String,
       workType: String,
+      // 신규의뢰 상세 모달: 커스텀어벗 | 디자인+커스텀어벗
+      productMode: {
+        type: String,
+        enum: ["custom_abutment", "design_custom_abutment"],
+      },
+      prosthesisType: {
+        type: String,
+        trim: true,
+      },
+      memo: {
+        type: String,
+        trim: true,
+      },
+      toothWorks: {
+        type: [mongoose.Schema.Types.Mixed],
+        default: undefined,
+      },
       // 기공소(사업체) 의뢰 기본 설정에서 신규 생성 시 스냅샷되는 아노다이징 여부.
       // false이면 제조사 워크시트 카드에 "아노다이징 X" 배지를 노출한다.
       anodizingEnabled: {
