@@ -273,9 +273,19 @@ Notes:
   - 관리자 크레딧 집계 카드는 `totalChargedFreeAmount`, `totalSpentFreeAmount` 또는
     `totalFreeRequest+totalFreeShipping`, `totalSpentFreeRequestAmount+totalSpentFreeShippingAmount`를 SSOT로 사용합니다.
 
+- 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3):
+  - 운영 주체는 면세 사업자. 가격·충전·약관·정산 안내에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지.
+  - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
+    구현: `src/features/settings/tabs/CreditPaymentTab.tsx`
+  - 공개 안내/약관: `ServicePage`, `TermsPage` — 면세·부가세 없음, 환불은 잔여 유료 크레딧(공급가)만.
+  - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드·소개 페이지 — "배송비 별도"만 유지.
+  - 제조사 정산규칙 안내: 분배율만 안내하고 "+ VAT 10%" 표기 금지.
+  - 관리자 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0).
+
 - 단일 SSOT 장부 UI 필드 계약(초안):
   - Journal: `journalId`, `eventType`, `businessAnchorId`, `refType`, `refId`, `stageFrom`, `stageTo`, `occurredAt`
   - Line: `lineNo`, `accountCode`, `ownerRole`, `ownerId`, `amount`, `amountExcludingVat`, `vatAmount`, `amountIncludingVat`, `creditKind`
+    - 면세 정책상 신규 적재는 `vatAmount = 0`, `amount = amountExcludingVat = amountIncludingVat`
   - 수익 계정코드: `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - 워크시트/정산 저장 이벤트: `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_COMMIT`, `SETTLEMENT_PAYOUT`
   - 발생 타이밍: `REQUEST_SPEND_COMMIT`=가공 진입 승인(준비→가공), `SHIPPING_SPEND_COMMIT`=세척.패킹 승인(포장.발송 진입)

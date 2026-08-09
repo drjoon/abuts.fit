@@ -15,11 +15,7 @@ function formatWon(value: number) {
 
 export const ServicePage = () => {
   const products = [500000, 1000000, 2000000, 3000000, 5000000].map(
-    (supply) => {
-      const vat = Math.round(supply * 0.1);
-      const total = supply + vat;
-      return { supply, vat, total };
-    },
+    (supply) => ({ supply }),
   );
 
   return (
@@ -79,8 +75,8 @@ export const ServicePage = () => {
                     환불은 <b>계정 해지</b> 시점에 한하여 진행됩니다.
                   </li>
                   <li>
-                    충전 금액은 <b>공급가</b> 기준이며, 결제 시{" "}
-                    <b>부가가치세(VAT)</b>가 포함되어 결제됩니다.
+                    충전 금액은 <b>공급가</b> 기준이며,{" "}
+                    <b>부가가치세(VAT)는 없습니다</b>(면세).
                   </li>
                 </ul>
               </div>
@@ -102,23 +98,19 @@ export const ServicePage = () => {
                       <div className="text-sm font-medium">
                         크레딧 충전{" "}
                         {Math.floor(p.supply / 10000).toLocaleString()}만원
-                        (공급가)
                       </div>
                       <div className="mt-2 text-sm">
-                        공급가: <b>{formatWon(p.supply)}</b>
+                        결제금액: <b>{formatWon(p.supply)}</b>
                       </div>
-                      <div className="text-sm">
-                        VAT(10%): <b>{formatWon(p.vat)}</b>
-                      </div>
-                      <div className="mt-2 text-sm">
-                        결제금액(부가세 포함): <b>{formatWon(p.total)}</b>
+                      <div className="text-xs text-slate-500 mt-1">
+                        부가세 없음
                       </div>
                     </div>
                   ))}
                 </div>
                 <p className="text-xs text-slate-500">
-                  충전 범위(단건): 공급가 <b>50만원 ~ 500만원</b> (VAT 별도
-                  결제)
+                  충전 범위(단건): <b>50만원 ~ 5,000만원</b> (50만원 단위, 부가세
+                  없음)
                 </p>
               </div>
             </CardContent>
@@ -154,9 +146,6 @@ export const ServicePage = () => {
                     <li>
                       무료/이벤트로 지급된 크레딧(보너스 크레딧)은 환불 대상에서
                       제외됩니다.
-                    </li>
-                    <li>
-                      VAT는 잔여 공급가 비율에 따라 <b>비례 환불</b>됩니다.
                     </li>
                     <li>
                       가상계좌 환불을 위해 은행/계좌번호/예금주 정보가 필요할 수
@@ -253,7 +242,7 @@ export const ServicePage = () => {
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>잔여 유료 크레딧(공급가) 100% 환불</li>
                     <li>무료/이벤트 크레딧 제외</li>
-                    <li>부가가치세(VAT)는 공급가 비율로 비례 환불</li>
+                    <li>부가가치세(VAT) 없음(면세)</li>
                   </ul>
                 </div>
               </div>

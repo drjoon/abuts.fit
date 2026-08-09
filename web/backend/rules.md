@@ -619,6 +619,15 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     크레딧/정산 이벤트를 **전혀 기록하지 않음**(무자료/무상)
   - 해당 작업은 생산/장비 운영 이벤트로만 취급하고 General Ledger 쓰기를 금지합니다.
 
+- 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3):
+  - 운영 주체는 면세 사업자. 크레딧 충전·앱 내 과금·정산 모두 부가세 없음.
+  - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`.
+    구현: `controllers/credits/creditBPlan.controller.js`
+  - 수익 라인(`REV_*`) 적재 시 VAT 가산 금지. `amount = amountExcludingVat = base`, `vatAmount = 0`.
+    구현: `controllers/requests/common.review.helpers.js`
+  - 정산/잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가.
+  - 세금계산서 드래프트의 세액 기본값은 0(면세). 자동 10% 세액 계산 금지.
+
 - 정산/지급 정책:
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
   - 정산 지급(PAYOUT) 대상은 유료 수익만 허용합니다.
@@ -654,7 +663,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 의뢰자 순소비는 `REQ_PAID_CREDIT|REQ_FREE_REQUEST_CREDIT` 라인의 **부호 있는 합의 음수**다.
     - 소비(COMMIT)=음수, 환불/ADJUST 복구=양수. 음수만 절대화하면 환불을 누락한다.
   - 수익 합도 동일하게 부호 있는 합(환불 시 `REV_*` 음수 라인 포함)
-  - 합계 비교 기준은 VAT 제외 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`)
+  - 합계 비교 기준은 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`; 면세이므로 VAT 가산분 없음)
 
 - 구현 강제사항:
   - 승인/롤백/정산 이벤트는 모두 단일 저널 트랜잭션으로 처리

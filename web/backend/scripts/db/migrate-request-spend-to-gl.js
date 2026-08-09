@@ -24,10 +24,9 @@ import {
   resolveRevenueOwnerBaseAllocation,
   splitRevenueByCreditKindProRata,
 } from "../../services/creditRevenuePolicy.service.js";
-const VAT_RATE = 0.1;
-
+// 면세 정책: 수익 라인은 공급가 그대로 (VAT 가산 없음)
 function withVat(amount) {
-  return Math.round(Number(amount || 0) * (1 + VAT_RATE));
+  return Math.round(Number(amount || 0));
 }
 
 function parseCliArgs(argv) {

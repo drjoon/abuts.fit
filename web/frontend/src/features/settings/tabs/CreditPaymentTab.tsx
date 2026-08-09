@@ -10,11 +10,10 @@ import { useToast } from "@/shared/hooks/use-toast";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { Copy } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy } from "lucide-react";
 
 type Props = {
   userData: {
@@ -73,17 +72,26 @@ type CreditSpendInsightsResponse = {
   message?: string;
 };
 
-function roundVat(supply: number) {
-  return Math.round(supply * 0.1);
+const CHARGE_UNIT = 500000;
+const MIN_CHARGE_UNITS = 1;
+const MAX_CHARGE_UNITS = 100;
+
+function clampChargeUnits(raw: number) {
+  if (!Number.isFinite(raw)) return MIN_CHARGE_UNITS;
+  return Math.min(
+    MAX_CHARGE_UNITS,
+    Math.max(MIN_CHARGE_UNITS, Math.round(raw)),
+  );
 }
 
-function normalizeSupplyAmount(supply: number) {
-  const MIN = 500000;
-  const MAX = 5000000;
-  if (!Number.isFinite(supply)) return MIN;
+function unitsFromSupply(supply: number) {
+  if (!Number.isFinite(supply) || supply <= 0) return MIN_CHARGE_UNITS;
+  return clampChargeUnits(Math.round(supply / CHARGE_UNIT));
+}
 
-  const clamped = Math.min(MAX, Math.max(MIN, Math.round(supply)));
-  return Math.round(clamped / 500000) * 500000;
+function formatManwon(amount: number) {
+  const man = Math.round(amount / 10000);
+  return `${man.toLocaleString()}만원`;
 }
 
 function formatOrderShortId(orderId: string) {
@@ -108,13 +116,13 @@ function validateSupplyAmount(supply: number) {
   if (!Number.isFinite(supply) || supply <= 0)
     return "유효하지 않은 금액입니다.";
 
-  const MIN = 500000;
-  const MAX = 5000000;
+  const MIN = CHARGE_UNIT * MIN_CHARGE_UNITS;
+  const MAX = CHARGE_UNIT * MAX_CHARGE_UNITS;
   if (supply < MIN || supply > MAX) {
-    return "크레딧 충전 금액은 50만원 ~ 500만원 범위여야 합니다.";
+    return "크레딧 충전 금액은 50만원 ~ 5,000만원 범위여야 합니다.";
   }
 
-  if (supply % 500000 !== 0)
+  if (supply % CHARGE_UNIT !== 0)
     return "크레딧 충전 금액은 50만원 단위로만 충전할 수 있습니다.";
 
   return null;
@@ -141,6 +149,11 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   const [pendingOrder, setPendingOrder] = useState<
     CreditOrderResponse["data"] | null
   >(null);
+  const [depositAccount, setDepositAccount] = useState<{
+    bankName: string;
+    accountNumber: string;
+    holderName: string;
+  } | null>(null);
 
   const [balance, setBalance] = useState<number>(0);
   const [paidBalance, setPaidBalance] = useState<number>(0);
@@ -216,30 +229,36 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     }
   };
 
-  const [selectedSupply, setSelectedSupply] = useState<number>(500000);
-  const [selectedPlan, setSelectedPlan] = useState<"1m" | "3m">("1m");
-  const supplyAmount = useMemo(() => selectedSupply, [selectedSupply]);
+  const [chargeUnits, setChargeUnits] = useState<number>(MIN_CHARGE_UNITS);
+  const [unitsDraft, setUnitsDraft] = useState<string>(String(MIN_CHARGE_UNITS));
+  const [didApplyRecommendedUnits, setDidApplyRecommendedUnits] =
+    useState(false);
 
-  const oneMonthSupply = useMemo(() => {
-    return normalizeSupplyAmount(
-      Number(spendInsights?.recommended?.oneMonthSupply || 500000),
-    );
-  }, [spendInsights?.recommended?.oneMonthSupply]);
+  const applyChargeUnits = (raw: number) => {
+    const next = clampChargeUnits(raw);
+    setChargeUnits(next);
+    setUnitsDraft(String(next));
+  };
 
-  const threeMonthsSupply = useMemo(() => {
-    return normalizeSupplyAmount(oneMonthSupply * 3);
-  }, [oneMonthSupply]);
-
-  useEffect(() => {
-    setSelectedSupply(
-      selectedPlan === "3m" ? threeMonthsSupply : oneMonthSupply,
-    );
-  }, [selectedPlan, oneMonthSupply, threeMonthsSupply]);
-
-  const totalAmount = useMemo(
-    () => supplyAmount + roundVat(supplyAmount),
-    [supplyAmount],
+  const supplyAmount = useMemo(
+    () => chargeUnits * CHARGE_UNIT,
+    [chargeUnits],
   );
+  const totalAmount = supplyAmount;
+  const displayAmount = pendingOrder
+    ? Number(pendingOrder.amountTotal || pendingOrder.supplyAmount || 0)
+    : totalAmount;
+
+  const activeDepositAccount =
+    pendingOrder?.depositAccount?.accountNumber
+      ? pendingOrder.depositAccount
+      : depositAccount;
+
+  const recommendedUnits = useMemo(() => {
+    const oneMonth = Number(spendInsights?.recommended?.oneMonthSupply || 0);
+    if (!(oneMonth > 0)) return null;
+    return unitsFromSupply(oneMonth);
+  }, [spendInsights?.recommended?.oneMonthSupply]);
 
   const filteredOrders = useMemo(() => {
     const now = Date.now();
@@ -361,8 +380,61 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       if (!res.ok) throw new Error("orders fetch failed");
       const body: any = res.data || {};
       const data = body.data || body;
-      const items = data?.items;
-      setOrders(Array.isArray(items) ? (items as CreditOrderItem[]) : []);
+      const items = Array.isArray(data?.items)
+        ? (data.items as CreditOrderItem[])
+        : [];
+      setOrders(items);
+
+      const account = data?.depositAccount;
+      if (account?.accountNumber) {
+        setDepositAccount({
+          bankName: String(account.bankName || ""),
+          accountNumber: String(account.accountNumber || ""),
+          holderName: String(account.holderName || ""),
+        });
+      }
+
+      const pending = items.find((o) => String(o.status) === "PENDING");
+      if (pending?._id) {
+        setPendingOrder((prev) => {
+          if (prev?.id && String(prev.id) === String(pending._id)) {
+            return {
+              ...prev,
+              status: pending.status,
+              depositCode: pending.depositCode,
+              supplyAmount: pending.supplyAmount,
+              vatAmount: pending.vatAmount,
+              amountTotal: pending.amountTotal,
+              expiresAt: String(pending.expiresAt || prev.expiresAt || ""),
+              depositAccount: prev.depositAccount || account || depositAccount,
+            };
+          }
+          return {
+            id: String(pending._id),
+            status: pending.status,
+            depositCode: pending.depositCode,
+            depositorName: pending.depositCode,
+            supplyAmount: pending.supplyAmount,
+            vatAmount: pending.vatAmount,
+            amountTotal: pending.amountTotal,
+            expiresAt: String(pending.expiresAt || ""),
+            depositAccount: {
+              bankName: String(account?.bankName || depositAccount?.bankName || ""),
+              accountNumber: String(
+                account?.accountNumber || depositAccount?.accountNumber || "",
+              ),
+              holderName: String(
+                account?.holderName || depositAccount?.holderName || "",
+              ),
+            },
+          };
+        });
+        const units = unitsFromSupply(Number(pending.supplyAmount || 0));
+        setChargeUnits(units);
+        setUnitsDraft(String(units));
+      } else {
+        setPendingOrder(null);
+      }
     } catch {
       // ignore
     } finally {
@@ -424,21 +496,20 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   }, [chargeVariant, hasChargedBefore]);
 
   useEffect(() => {
-    if (loadingOrders) return;
-    if (isFirstCharge) {
-      setSelectedSupply(500000);
-      return;
-    }
-
-    const oneMonth = Number(spendInsights?.recommended?.oneMonthSupply || 0);
-    if (oneMonth && selectedSupply === 500000) {
-      setSelectedSupply(oneMonth);
-    }
+    if (loadingOrders || loadingInsights) return;
+    if (pendingOrder) return;
+    if (isFirstCharge || didApplyRecommendedUnits) return;
+    if (!recommendedUnits) return;
+    applyChargeUnits(recommendedUnits);
+    setDidApplyRecommendedUnits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    didApplyRecommendedUnits,
     isFirstCharge,
+    loadingInsights,
     loadingOrders,
-    spendInsights?.recommended?.oneMonthSupply,
+    pendingOrder,
+    recommendedUnits,
   ]);
 
   const handleCharge = async () => {
@@ -500,6 +571,13 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       }
 
       setPendingOrder(data);
+      if (data?.depositAccount?.accountNumber) {
+        setDepositAccount({
+          bankName: String(data.depositAccount.bankName || ""),
+          accountNumber: String(data.depositAccount.accountNumber || ""),
+          holderName: String(data.depositAccount.holderName || ""),
+        });
+      }
       await reloadOrders();
       toast({
         title: "충전 요청이 생성되었습니다",
@@ -596,245 +674,249 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                 </div>
               </div>
             </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              결제는 크레딧 차감으로 진행되며, 부가세는 충전 시점에 포함됩니다.
-            </div>
           </div>
         )}
 
-        {/* 입금 대기중 — 충전하기 후 전체 폭으로 표시 */}
-        {pendingOrder && (
-          <div className="rounded-xl border-2 border-blue-200 bg-blue-50/60 p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
-                </span>
-                <span className="font-semibold text-base">입금 대기중</span>
+        {/* 입금 정보(좌) + 충전 금액(우) */}
+        <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+          <div className="grid md:grid-cols-2">
+            {/* 왼쪽: 입금 계좌 / 코드 */}
+            <div className="space-y-4 border-b border-slate-200/80 p-5 sm:p-6 md:border-b-0 md:border-r">
+              <div className="flex items-center justify-between gap-3">
+                {pendingOrder ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                      </span>
+                      <span className="text-sm font-semibold">입금 대기중</span>
+                    </div>
+                    {pendingRemainingLabel ? (
+                      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                        {pendingRemainingLabel}
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  <span className="text-sm font-semibold text-slate-700">
+                    입금 정보
+                  </span>
+                )}
               </div>
-              {pendingRemainingLabel && (
-                <span className="text-sm font-medium text-amber-700 bg-amber-100 rounded-full px-3 py-1">
-                  {pendingRemainingLabel} 남음
-                </span>
-              )}
-            </div>
 
-            {/* 입금 금액 */}
-            <div className="rounded-lg bg-white border border-blue-100 p-4 text-center">
-              <div className="text-xs text-muted-foreground mb-1">
-                입금 금액 (부가세 포함)
+              <div className="rounded-xl bg-slate-50/80 px-4 py-3">
+                <div className="text-xs text-muted-foreground">입금 계좌</div>
+                {activeDepositAccount?.accountNumber ? (
+                  <div className="mt-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">
+                        {activeDepositAccount.bankName}
+                      </div>
+                      <div className="truncate text-lg font-semibold tracking-wide">
+                        {activeDepositAccount.accountNumber}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {activeDepositAccount.holderName}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() =>
+                        copyToClipboard(
+                          activeDepositAccount.accountNumber,
+                          "계좌번호",
+                        )
+                      }
+                    >
+                      <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      복사
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="mt-2 text-sm text-muted-foreground">—</div>
+                )}
               </div>
-              <div className="text-3xl font-bold text-blue-700">
-                {Number(pendingOrder.amountTotal || 0).toLocaleString()}원
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                공급가 {Number(pendingOrder.supplyAmount || 0).toLocaleString()}
-                원 + VAT {Number(pendingOrder.vatAmount || 0).toLocaleString()}
-                원
-              </div>
-            </div>
 
-            {/* 계좌 정보 */}
-            <div className="rounded-lg bg-white border border-blue-100 p-4 space-y-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                입금 계좌
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-muted-foreground">
-                    {pendingOrder.depositAccount.bankName}
-                  </div>
-                  <div className="text-xl font-bold tracking-wide">
-                    {pendingOrder.depositAccount.accountNumber}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    예금주 {pendingOrder.depositAccount.holderName}
-                  </div>
+              <div
+                className={
+                  pendingOrder
+                    ? "rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3"
+                    : "rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-4 py-3"
+                }
+              >
+                <div
+                  className={
+                    pendingOrder
+                      ? "text-xs font-medium text-amber-800"
+                      : "text-xs text-muted-foreground"
+                  }
+                >
+                  입금자명 코드
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    copyToClipboard(
-                      pendingOrder.depositAccount.accountNumber,
-                      "계좌번호",
-                    )
-                  }
-                >
-                  <Copy className="h-3.5 w-3.5 mr-1.5" />
-                  복사
-                </Button>
-              </div>
-            </div>
-
-            {/* 입금자코드 — 가장 중요 */}
-            <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
-              <div className="text-sm font-semibold text-amber-900 mb-3">
-                입금자명에 아래 코드를 반드시 입력해주세요
-              </div>
-              <div className="flex items-center justify-between bg-white rounded-lg border border-amber-200 px-4 py-3">
-                <span className="text-2xl font-bold tracking-widest text-amber-700">
-                  {pendingOrder.depositCode}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    copyToClipboard(pendingOrder.depositCode, "입금코드")
-                  }
-                >
-                  <Copy className="h-3.5 w-3.5 mr-1.5" />
-                  복사
-                </Button>
-              </div>
-              <div className="mt-2 space-y-1 text-xs text-amber-800">
-                <div>• 입금자명에 코드만 적어도 무방합니다.</div>
-                <div>• 입금 확인 후 자동으로 크레딧이 충전됩니다.</div>
-              </div>
-            </div>
-
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                const found = orders.find(
-                  (o) => String((o as any)._id || "") === pendingOrder.id,
-                );
-                if (found?._id) cancelOrder(String(found._id));
-                else setPendingOrder(null);
-              }}
-            >
-              입금 취소
-            </Button>
-          </div>
-        )}
-
-        {/* 충전 폼 — 입금 대기 없을 때만 표시 */}
-        {!pendingOrder && (
-          <div className="space-y-4">
-            {isFirstCharge ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="app-surface app-surface--panel space-y-2 p-4">
-                  <div className="text-sm font-semibold">첫 충전 안내</div>
-                  <div className="text-sm text-muted-foreground">
-                    가입 후 첫 충전은 50만원(공급가)으로 진행됩니다.
-                  </div>
-                  <Separator />
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      충전 크레딧(공급가)
+                {pendingOrder ? (
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <span className="text-2xl font-bold tracking-[0.2em] text-amber-700">
+                      {pendingOrder.depositCode}
                     </span>
-                    <span className="font-semibold">500,000원</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 bg-white"
+                      onClick={() =>
+                        copyToClipboard(pendingOrder.depositCode, "입금코드")
+                      }
+                    >
+                      <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      복사
+                    </Button>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">VAT(10%)</span>
-                    <span className="font-semibold">50,000원</span>
+                ) : (
+                  <div className="mt-2 text-2xl font-semibold tracking-[0.2em] text-slate-300">
+                    ——
                   </div>
-                  <div className="flex justify-between text-sm font-semibold">
-                    <span>결제금액</span>
-                    <span className="text-primary">550,000원</span>
-                  </div>
-                </div>
-                <div className="app-surface app-surface--panel flex flex-col justify-between gap-4 p-4">
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      결제금액 (부가세 포함)
-                    </div>
-                    <div className="text-3xl font-bold text-primary mt-1">
-                      55만원
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    className="w-full"
-                    onClick={handleCharge}
-                    disabled={creatingOrder}
-                  >
-                    {creatingOrder ? "요청 중..." : "충전하기"}
-                  </Button>
+                )}
+                <div
+                  className={
+                    pendingOrder
+                      ? "mt-2 text-xs leading-relaxed text-amber-800/80"
+                      : "mt-2 text-xs leading-relaxed text-muted-foreground"
+                  }
+                >
+                  입금자명에 이 코드를 입력하면 자동으로 매칭됩니다.
                 </div>
               </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="app-surface app-surface--panel space-y-3 p-4">
-                  <div className="text-sm font-semibold">충전 금액 선택</div>
-                  <div className="text-xs text-muted-foreground">
-                    최근 3개월 사용량 기반 추천 충전액입니다.
+
+              {pendingOrder ? (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    const found = orders.find(
+                      (o) => String((o as any)._id || "") === pendingOrder.id,
+                    );
+                    if (found?._id) cancelOrder(String(found._id));
+                    else setPendingOrder(null);
+                  }}
+                >
+                  입금 취소
+                </Button>
+              ) : null}
+            </div>
+
+            {/* 오른쪽: 금액 선택 / 충전 */}
+            <div className="flex flex-col justify-between gap-6 bg-gradient-to-b from-sky-50/50 to-white p-5 sm:p-6">
+              <div>
+                <div className="text-xs font-medium text-muted-foreground">
+                  입금 금액
+                </div>
+                <div className="mt-2 text-4xl font-bold tracking-tight text-primary tabular-nums">
+                  {formatManwon(displayAmount)}
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  부가세 없음
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-stretch gap-2">
+                  <div className="flex h-12 min-w-0 flex-1 items-stretch overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={unitsDraft}
+                      disabled={Boolean(pendingOrder)}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^\d]/g, "");
+                        setUnitsDraft(raw);
+                        if (!raw) return;
+                        const parsed = Number(raw);
+                        if (!Number.isFinite(parsed)) return;
+                        setChargeUnits(clampChargeUnits(parsed));
+                      }}
+                      onBlur={() => {
+                        const parsed = Number(unitsDraft);
+                        applyChargeUnits(
+                          Number.isFinite(parsed) ? parsed : MIN_CHARGE_UNITS,
+                        );
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          applyChargeUnits(chargeUnits + 1);
+                        } else if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          applyChargeUnits(chargeUnits - 1);
+                        }
+                      }}
+                      className="h-full flex-1 border-0 bg-transparent text-center text-xl font-semibold tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-60"
+                      aria-label="충전 배수"
+                    />
+                    <div className="flex w-10 flex-col border-l border-slate-200">
+                      <button
+                        type="button"
+                        aria-label="배수 증가"
+                        className="flex flex-1 items-center justify-center text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={
+                          Boolean(pendingOrder) ||
+                          chargeUnits >= MAX_CHARGE_UNITS
+                        }
+                        onClick={() => applyChargeUnits(chargeUnits + 1)}
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="배수 감소"
+                        className="flex flex-1 items-center justify-center border-t border-slate-200 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={
+                          Boolean(pendingOrder) ||
+                          chargeUnits <= MIN_CHARGE_UNITS
+                        }
+                        onClick={() => applyChargeUnits(chargeUnits - 1)}
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <RadioGroup
-                    value={selectedPlan}
-                    onValueChange={(v) => {
-                      if (v === "3m" || v === "1m") setSelectedPlan(v);
-                    }}
-                    className="grid gap-2"
-                  >
-                    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 cursor-pointer hover:border-primary/50 transition-colors">
-                      <RadioGroupItem value="1m" id="credit-plan-1m" />
-                      <Label
-                        htmlFor="credit-plan-1m"
-                        className="flex w-full items-baseline justify-between cursor-pointer"
-                      >
-                        <span>1개월 추천</span>
-                        <span className="font-semibold">
-                          {oneMonthSupply.toLocaleString()}원
-                        </span>
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 cursor-pointer hover:border-primary/50 transition-colors">
-                      <RadioGroupItem value="3m" id="credit-plan-3m" />
-                      <Label
-                        htmlFor="credit-plan-3m"
-                        className="flex w-full items-baseline justify-between cursor-pointer"
-                      >
-                        <span>3개월 추천</span>
-                        <span className="font-semibold">
-                          {threeMonthsSupply.toLocaleString()}원
-                        </span>
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                  <div className="text-xs text-muted-foreground">
-                    {loadingInsights
-                      ? "추천 정보를 계산하는 중..."
-                      : spendInsights?.estimatedDaysFor500k
-                        ? `50만원(공급가) 예상 소진: 약 ${spendInsights.estimatedDaysFor500k}일`
-                        : "최근 사용 내역이 부족하여 예상 소진일을 계산할 수 없습니다."}
+
+                  <div className="flex h-12 min-w-0 flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white text-base font-semibold text-slate-700 shadow-sm">
+                    × 50만원
                   </div>
                 </div>
 
-                <div className="app-surface app-surface--panel flex flex-col justify-between gap-4 p-4">
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">
-                      결제금액 (부가세 포함)
-                    </div>
-                    <div className="text-3xl font-bold text-primary">
-                      {totalAmount.toLocaleString()}원
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      공급가 {supplyAmount.toLocaleString()}원 + VAT{" "}
-                      {roundVat(supplyAmount).toLocaleString()}원
-                    </div>
-                  </div>
-                  {paidBalance > 0 && (
-                    <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                      환불 시 구매 크레딧(공급가)만 환불되며, 무료 크레딧은
-                      환불되지 않습니다.
-                    </div>
-                  )}
-                  <Button
+                {!isFirstCharge &&
+                !pendingOrder &&
+                recommendedUnits &&
+                recommendedUnits !== chargeUnits ? (
+                  <button
                     type="button"
-                    className="w-full"
-                    onClick={handleCharge}
-                    disabled={creatingOrder}
+                    className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+                    onClick={() => applyChargeUnits(recommendedUnits)}
                   >
-                    {creatingOrder ? "요청 중..." : "충전하기"}
-                  </Button>
-                </div>
+                    추천 {recommendedUnits}배
+                  </button>
+                ) : null}
+
+                <Button
+                  type="button"
+                  className="h-11 w-full text-base"
+                  onClick={handleCharge}
+                  disabled={creatingOrder || Boolean(pendingOrder)}
+                >
+                  {pendingOrder
+                    ? "입금 대기중"
+                    : creatingOrder
+                      ? "요청 중..."
+                      : "충전하기"}
+                </Button>
               </div>
-            )}
+            </div>
           </div>
-        )}
+        </div>
 
         {/* 충전 내역 */}
         {!isFirstCharge && (

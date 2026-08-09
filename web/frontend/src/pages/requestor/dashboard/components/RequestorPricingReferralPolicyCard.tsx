@@ -334,7 +334,7 @@ export const RequestorPricingReferralPolicyCard = () => {
             </div>
 
             <p className="text-md text-slate-600 text-right">
-              <b>부가세·배송비 별도</b>
+              <b>배송비 별도 · 부가세 없음</b>
             </p>
           </div>
         </CardContent>

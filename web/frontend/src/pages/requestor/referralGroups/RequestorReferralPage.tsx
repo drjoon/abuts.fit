@@ -244,7 +244,7 @@ export const RequestorReferralPage = () => {
                     <MetricCard
                       title="적용 단가"
                       value={`${fmtMoney(requestorUnitPrice)}원`}
-                      subtitle="부가세·배송비 별도"
+                      subtitle="배송비 별도 · 부가세 없음"
                     />
                     <div className="rounded-xl bg-blue-50 px-4 py-3.5 text-xs leading-relaxed text-blue-900">
                       <p>

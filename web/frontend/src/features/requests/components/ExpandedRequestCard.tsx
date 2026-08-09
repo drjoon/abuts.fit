@@ -435,8 +435,8 @@ export const ExpandedRequestCard = ({
                 {paymentStatus.dueDate}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                표시된 금액에는 부가세(VAT)와 배송비가 포함되어 있지 않으며,
-                부가세(VAT) 및 배송비는 별도 청구됩니다.
+                표시된 금액에는 배송비가 포함되어 있지 않으며, 배송비는 별도
+                청구됩니다. 부가세는 없습니다.
               </p>
               {paymentStatus.paidDate && (
                 <div>
@@ -504,8 +504,8 @@ export const ExpandedRequestCard = ({
             </div>
 
             <p className="mt-1 text-xs text-muted-foreground">
-              금액은 부가세(VAT) 및 배송비 제외 기준이며, 부가세와 배송비는
-              의뢰자에게 별도로 청구됩니다.
+              금액은 배송비 제외 기준이며, 배송비는 의뢰자에게 별도로
+              청구됩니다. 부가세는 없습니다.
             </p>
           </div>
         )}

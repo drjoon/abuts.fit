@@ -46,7 +46,6 @@ import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.j
 import { ensureMailboxAddressForBusiness } from "./mailbox.utils.js";
 
 const SHIPPING_FEE_SUPPLY = 3500;
-const VAT_RATE = 0.1;
 
 async function emitOrQueueCreditBalanceUpdate({
   deferredCreditEvents,
@@ -70,10 +69,6 @@ async function emitOrQueueCreditBalanceUpdate({
   }
 
   await emitCreditBalanceUpdatedToBusiness(eventPayload);
-}
-
-function withVat(amount) {
-  return Math.round(Number(amount || 0) * (1 + VAT_RATE));
 }
 
 async function resolveRoleOwnerAnchors({ request, businessAnchorId, session }) {
@@ -222,16 +217,16 @@ async function postSpendCommitGeneralLedger({
     const paid = Math.max(0, Math.round(Number(paidBase || 0)));
     const free = Math.max(0, Math.round(Number(freeBase || 0)));
 
+    // 면세: 수익 라인은 공급가 그대로 기록 (VAT 가산 없음)
     if (free > 0) {
-      const amountIncludingVat = withVat(free);
       lines.push({
         accountCode,
         ownerRole,
         ownerId,
-        amount: amountIncludingVat,
+        amount: free,
         amountExcludingVat: free,
-        vatAmount: amountIncludingVat - free,
-        amountIncludingVat,
+        vatAmount: 0,
+        amountIncludingVat: free,
         creditKind: freeCreditKind,
         refType,
         refId,
@@ -240,15 +235,14 @@ async function postSpendCommitGeneralLedger({
     }
 
     if (paid > 0) {
-      const amountIncludingVat = withVat(paid);
       lines.push({
         accountCode,
         ownerRole,
         ownerId,
-        amount: amountIncludingVat,
+        amount: paid,
         amountExcludingVat: paid,
-        vatAmount: amountIncludingVat - paid,
-        amountIncludingVat,
+        vatAmount: 0,
+        amountIncludingVat: paid,
         creditKind: "PAID",
         refType,
         refId,

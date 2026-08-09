@@ -10,9 +10,9 @@ import {
   generateChargeOrderDepositCode,
 } from "../../utils/depositCode.utils.js";
 
-function roundVat(amount) {
-  return Math.round(amount * 0.1);
-}
+const CHARGE_UNIT = 500000;
+const MIN_CHARGE_UNITS = 1;
+const MAX_CHARGE_UNITS = 100;
 
 function validateSupplyAmount(raw) {
   const supplyAmount = Number(raw);
@@ -20,29 +20,20 @@ function validateSupplyAmount(raw) {
     return { ok: false, message: "유효하지 않은 금액입니다." };
   }
 
-  const MIN = 500000;
-  const MAX = 5000000;
+  const MIN = CHARGE_UNIT * MIN_CHARGE_UNITS;
+  const MAX = CHARGE_UNIT * MAX_CHARGE_UNITS;
   if (supplyAmount < MIN || supplyAmount > MAX) {
     return {
       ok: false,
-      message: "크레딧 충전 금액은 50만원 ~ 500만원 범위여야 합니다.",
+      message: "크레딧 충전 금액은 50만원 ~ 5,000만원 범위여야 합니다.",
     };
   }
 
-  if (supplyAmount <= 1000000) {
-    if (supplyAmount % 500000 !== 0) {
-      return {
-        ok: false,
-        message: "100만원 이하는 50만원 단위로만 충전할 수 있습니다.",
-      };
-    }
-  } else {
-    if (supplyAmount % 1000000 !== 0) {
-      return {
-        ok: false,
-        message: "100만원 초과는 100만원 단위로만 충전할 수 있습니다.",
-      };
-    }
+  if (supplyAmount % CHARGE_UNIT !== 0) {
+    return {
+      ok: false,
+      message: "크레딧 충전 금액은 50만원 단위로만 충전할 수 있습니다.",
+    };
   }
 
   return { ok: true, supplyAmount };
@@ -98,8 +89,9 @@ export async function createChargeOrder(req, res) {
   }
 
   const supplyAmount = validated.supplyAmount;
-  const vatAmount = roundVat(supplyAmount);
-  const amountTotal = supplyAmount + vatAmount;
+  // 크레딧 충전은 부가세 없이 공급가 전액 입금
+  const vatAmount = 0;
+  const amountTotal = supplyAmount;
 
   // 기존 대기 건이 있으면 재사용 (유효기간 연장/코드 재발급 방지)
   const existing = await ChargeOrder.findOne({
@@ -112,7 +104,35 @@ export async function createChargeOrder(req, res) {
     .lean();
 
   if (existing) {
-    const needsMigration = !String(existing.depositCode || "")
+    // 면세 전환: 대기 중 주문에 남아 있는 VAT 가산분을 공급가 기준으로 정규화
+    const existingVat = Number(existing.vatAmount || 0);
+    const existingTotal = Number(existing.amountTotal || 0);
+    const existingSupply = Number(existing.supplyAmount || 0);
+    const needsVatStrip =
+      existingVat > 0 ||
+      (existingSupply > 0 && existingTotal !== existingSupply);
+
+    let current = existing;
+    if (needsVatStrip && existingSupply > 0) {
+      const stripped = await ChargeOrder.findOneAndUpdate(
+        {
+          _id: existing._id,
+          status: "PENDING",
+          bankTransactionId: null,
+          expiresAt: { $gt: now },
+        },
+        {
+          $set: {
+            vatAmount: 0,
+            amountTotal: existingSupply,
+          },
+        },
+        { new: true },
+      ).lean();
+      if (stripped) current = stripped;
+    }
+
+    const needsMigration = !String(current.depositCode || "")
       .trim()
       .match(/^\d{2}$/);
 
@@ -121,7 +141,7 @@ export async function createChargeOrder(req, res) {
         await generateChargeOrderDepositCode();
       const migrated = await ChargeOrder.findOneAndUpdate(
         {
-          _id: existing._id,
+          _id: current._id,
           status: "PENDING",
           bankTransactionId: null,
           expiresAt: { $gt: now },
@@ -130,7 +150,7 @@ export async function createChargeOrder(req, res) {
         { new: true },
       ).lean();
 
-      const doc = migrated || existing;
+      const doc = migrated || current;
       return res.status(200).json({
         success: true,
         data: {
@@ -139,8 +159,8 @@ export async function createChargeOrder(req, res) {
           depositCode: doc.depositCode,
           depositorName: doc.depositorName,
           supplyAmount: doc.supplyAmount,
-          vatAmount: doc.vatAmount,
-          amountTotal: doc.amountTotal,
+          vatAmount: Number(doc.vatAmount || 0),
+          amountTotal: Number(doc.amountTotal || doc.supplyAmount || 0),
           expiresAt: doc.expiresAt,
           depositAccount: getDepositAccountInfo(),
         },
@@ -150,14 +170,14 @@ export async function createChargeOrder(req, res) {
     return res.status(200).json({
       success: true,
       data: {
-        id: existing._id,
-        status: existing.status,
-        depositCode: existing.depositCode,
-        depositorName: existing.depositorName,
-        supplyAmount: existing.supplyAmount,
-        vatAmount: existing.vatAmount,
-        amountTotal: existing.amountTotal,
-        expiresAt: existing.expiresAt,
+        id: current._id,
+        status: current.status,
+        depositCode: current.depositCode,
+        depositorName: current.depositorName,
+        supplyAmount: current.supplyAmount,
+        vatAmount: Number(current.vatAmount || 0),
+        amountTotal: Number(current.amountTotal || current.supplyAmount || 0),
+        expiresAt: current.expiresAt,
         depositAccount: getDepositAccountInfo(),
       },
     });
@@ -213,6 +233,25 @@ export async function listMyChargeOrders(req, res) {
     bankTransactionId: null,
     expiresAt: { $lte: now },
   });
+
+  // 면세 전환: 대기 중 주문의 VAT 가산분 정규화
+  await ChargeOrder.updateMany(
+    {
+      businessAnchorId,
+      status: "PENDING",
+      bankTransactionId: null,
+      expiresAt: { $gt: now },
+      vatAmount: { $gt: 0 },
+    },
+    [
+      {
+        $set: {
+          vatAmount: 0,
+          amountTotal: "$supplyAmount",
+        },
+      },
+    ],
+  );
 
   const items = await ChargeOrder.find({ businessAnchorId })
     .sort({ createdAt: -1, _id: -1 })

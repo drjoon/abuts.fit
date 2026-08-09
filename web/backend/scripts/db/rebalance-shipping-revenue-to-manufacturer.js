@@ -10,9 +10,9 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 
-const VAT_RATE = 0.1;
+// 면세 정책: 공급가 그대로 (VAT 가산 없음)
 function withVat(base) {
-  return Math.round(Number(base || 0) * (1 + VAT_RATE));
+  return Math.round(Number(base || 0));
 }
 
 function parseCliArgs(argv) {

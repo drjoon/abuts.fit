@@ -269,7 +269,7 @@ export const PricingPolicyDialog = ({
                     hint='건당 의뢰크레딧 · 묶음보다 빠른 출고일이 있을 때만 선택 가능(당일 16:00 목표)'
                   />
                 </div>
-                <p className='mt-3 text-xs text-slate-500'>VAT 별도</p>
+                <p className='mt-3 text-xs text-slate-500'>배송비 별도 · 부가세 없음</p>
                 <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>
                   <span className='font-medium text-slate-800'>
                     리메이크 무료

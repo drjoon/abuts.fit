@@ -834,8 +834,8 @@ export const AdminTaxInvoices = () => {
                       setIssueForm((f) => ({
                         ...f,
                         supplyAmount: e.target.value,
-                        vatAmount: String(Math.round(sup * 0.1)),
-                        totalAmount: String(sup + Math.round(sup * 0.1)),
+                        vatAmount: "0",
+                        totalAmount: String(sup),
                       }));
                     }}
                     className="h-8 text-sm placeholder:text-slate-300"
@@ -843,7 +843,7 @@ export const AdminTaxInvoices = () => {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">
-                    세액 (10%)
+                    세액 (면세 기본 0)
                   </Label>
                   <Input
                     type="number"
@@ -988,7 +988,7 @@ function DraftCard({
               {fmtMoney(d.totalAmount)}원
             </div>
             <div className="text-xs text-muted-foreground">
-              공급 {fmtMoney(d.supplyAmount)} · VAT {fmtMoney(d.vatAmount)}
+              공급 {fmtMoney(d.supplyAmount)} · 세액 {fmtMoney(d.vatAmount)}
             </div>
           </div>
         </div>

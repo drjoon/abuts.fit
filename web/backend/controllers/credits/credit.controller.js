@@ -149,7 +149,7 @@ export async function getMyCreditSpendInsights(req, res) {
   });
 
   const MIN = 500000;
-  const MAX = 5000000;
+  const MAX = 500000 * 100;
   const WINDOW_DAYS = 90;
   const now = new Date();
   // KST 기준 90일 전

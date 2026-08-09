@@ -136,6 +136,12 @@
 
 ### 2.3 크레딧/정산
 
+- **부가세(VAT) / 면세 정책(강제):**
+  - 운영 주체는 **면세 사업자**다. 크레딧 충전·앱 내 과금·정산·안내 문구 모두 **부가세 없음**.
+  - 크레딧 충전: `vatAmount = 0`, `amountTotal = supplyAmount`(공급가 = 입금/결제 금액).
+  - 앱 내 의뢰/배송/정산 금액·장부(`LedgerLine`)·UI 표시는 **공급가(원)** 기준. 수익 라인에 VAT를 가산하지 않는다(`vatAmount = 0`).
+  - 합계 비교·잔액 집계는 `amountExcludingVat`(없으면 `amount`)를 쓰며, 이는 공급가와 동일하다.
+  - 사용자/약관/가격 안내에서 "VAT 별도·부가세 포함·VAT 10%" 표현 금지. 배송비 별도 안내는 유지.
 - 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
 - 기존 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
   **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
@@ -157,7 +163,7 @@
   - 소비는 `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`으로 분리 표기 (`SPEND` 단일표시 금지)
 - 정산 보존식 SSOT(의뢰 단위):
   - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `어벗츠/제조사/개발운영사/영업자 수익합`
-  - 합계 비교는 VAT 제외 공급가(`amountExcludingVat`) 우선
+  - 합계 비교는 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`; 면세이므로 VAT 가산분 없음)
 - 제조사/역할 정산 건수 SSOT(강제):
   - 일별·기간 정산의 의뢰/배송 **건수**는 `LedgerLine` 개수가 아니라 `(eventType, creditKind, refId)` 유니크다.
   - 동일 의뢰의 `machining_spend` + `express_surcharge`(각각 `REQUEST_SPEND_COMMIT`)는 금액은 합산하되 건수는 의뢰 1건으로 센다.
