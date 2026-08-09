@@ -56,7 +56,7 @@ export const DashboardShellSkeleton = ({
       </div>
 
       <div className="space-y-3">
-        {/* top row: 오늘의 가격 (2) + 최근 의뢰 (3) */}
+        {/* top row: 오늘의 가공 가격 (2) + 최근 의뢰 (3) */}
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-5 items-stretch">
           <div className="lg:col-span-2 rounded-2xl border border-border bg-muted/30 p-4 space-y-4">
             <div className="flex items-center justify-between gap-2">

@@ -128,7 +128,7 @@ Notes:
     - 가공만(`custom_abutment`)은 Request/STL당 가공 1개. 신속비는 건당(어벗 배수 없음).
     - 출고일: 묶음/신속 공통 **+1영업일**(디자인). 안내 카피 SSOT는 `.cursor/rules/design-fee.mdc` UI 절.
     - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(가공/디자인/배송·신속) 표시.
-    - 표시: `PricingPolicyDialog`, `RequestorPricingReferralPolicyCard`(오늘의 가격), `RequestDetailDialog`. 신규의뢰 우측에는 금액 미표시.
+    - 표시: `PricingPolicyDialog`, `RequestDetailDialog`. 오늘의 가공 가격 카드는 가공 단가·할인만(디자인비 미표시). 신규의뢰 우측에는 금액 미표시.
   - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`
     - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 표시 금액 SSOT: 신속배송이면 가공비+추가비를 합산해 보여줍니다 (`resolveQuotedPriceAmount` in `shippingMode.ts`).

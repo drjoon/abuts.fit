@@ -285,7 +285,7 @@
   - 차감: CAM `machining_spend` = `(가공단가 + 디자인비) × qty` (신속비와 분리)
   - 출고일: 묶음/신속 공통으로 디자인 리드 **+1영업일** (`production.utils.js` /
     프론트 `estimateShipDate.ts`)
-  - UI: `PricingPolicyDialog`, 오늘의 가격, 의뢰 상세 비용 세부. 신규의뢰 우측·의뢰카드는 금액 미표시(`+디자인` 뱃지만)
+  - UI: `PricingPolicyDialog`, 의뢰 상세 비용 세부. 오늘의 가공 가격 카드·신규의뢰 우측·의뢰카드는 디자인비 금액 미표시(`+디자인` 뱃지만)
   - 상세: `.cursor/rules/design-fee.mdc`
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)
 
