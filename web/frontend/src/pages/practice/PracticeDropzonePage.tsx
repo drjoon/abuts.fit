@@ -198,6 +198,7 @@ type PracticeDropzoneDraft = {
   toothWorks?: ToothWorkSelection[];
   patientName: string;
   clinicName?: string;
+  directorName?: string;
   staffName?: string;
   email: string;
   phone: string;
@@ -642,6 +643,7 @@ export const PracticeDropzonePage = () => {
 
   const [patientName, setPatientName] = useState("");
   const [clinicName, setClinicName] = useState("");
+  const [directorName, setDirectorName] = useState("");
   const [staffName, setStaffName] = useState("");
   const [email, setEmail] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
@@ -938,11 +940,13 @@ export const PracticeDropzonePage = () => {
   const canSubmitBase = missingStep1Fields.length === 0;
 
   const trimmedClinicName = String(clinicName || "").trim();
+  const trimmedDirectorName = String(directorName || "").trim();
   const trimmedStaffName = String(staffName || "").trim();
 
   const canSubmitSignup = Boolean(
     canSubmitBase &&
       trimmedClinicName &&
+      trimmedDirectorName &&
       trimmedStaffName &&
       isEmailValid &&
       emailVerified &&
@@ -1042,6 +1046,7 @@ export const PracticeDropzonePage = () => {
         );
         setPatientName(String(intake?.patientName ?? parsed?.patientName ?? ""));
         setClinicName(String(parsed?.clinicName || "").trim());
+        setDirectorName(String(parsed?.directorName || "").trim());
         setStaffName(String(parsed?.staffName || "").trim());
         setEmail(String(parsed?.email || "").trim().toLowerCase());
         setPhone(formatPhoneNumberInput(String(parsed?.phone || "")));
@@ -1311,6 +1316,7 @@ export const PracticeDropzonePage = () => {
       toothWorks,
       patientName,
       clinicName,
+      directorName,
       staffName,
       email,
       phone,
@@ -1345,6 +1351,7 @@ export const PracticeDropzonePage = () => {
   }, [
     draftHydrated,
     clinicName,
+    directorName,
     staffName,
     email,
     phone,
@@ -1379,8 +1386,10 @@ export const PracticeDropzonePage = () => {
     if (isDropzoneSenderLoggedIn) {
       const pp = authUser?.practiceProfile || null;
       const nextClinicName = String(pp?.clinicName || "").trim();
+      const nextDirectorName = String(pp?.directorName || "").trim();
       const nextStaffName = String(pp?.staffName || "").trim();
       if (nextClinicName) setClinicName(nextClinicName);
+      if (nextDirectorName) setDirectorName(nextDirectorName);
       if (nextStaffName) setStaffName(nextStaffName);
       setEmail(String(authUser?.email || email || "").trim().toLowerCase());
       setPhone(formatPhoneNumberInput(String(pp?.phone || phone || "")));
@@ -2011,8 +2020,8 @@ export const PracticeDropzonePage = () => {
         title: "입력 확인",
         description:
           emailVerified && phoneVerified
-            ? "치과명, 담당자명, 이메일, 담당자 휴대폰, 비밀번호를 포함해 필수값을 모두 입력해주세요."
-            : "이메일·담당자 휴대폰 인증을 완료하고 치과명·담당자명 등 필수값을 모두 입력해주세요.",
+            ? "치과명, 원장님명, 담당자명, 이메일, 담당자 휴대폰, 비밀번호를 포함해 필수값을 모두 입력해주세요."
+            : "이메일·담당자 휴대폰 인증을 완료하고 치과명·원장님명·담당자명 등 필수값을 모두 입력해주세요.",
         variant: "destructive",
       });
       return;
@@ -2052,6 +2061,7 @@ export const PracticeDropzonePage = () => {
           password: accessPassword,
           phone: String(phone || "").trim(),
           clinicName: trimmedClinicName,
+          directorName: trimmedDirectorName,
           staffName: trimmedStaffName,
         },
       });
@@ -2543,7 +2553,7 @@ export const PracticeDropzonePage = () => {
 
                     {authMode === "signup" && (
                       <div className="space-y-4">
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                           <div className="space-y-2">
                             <Label htmlFor="clinicName" className="flex h-5 items-center text-sm font-medium text-slate-700">
                               치과명 <span className="ml-0.5 text-destructive">*</span>
@@ -2556,6 +2566,20 @@ export const PracticeDropzonePage = () => {
                               value={clinicName}
                               onChange={(e) => setClinicName(e.target.value)}
                               placeholder="예: 향기로운치과"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="directorName" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              원장님명 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <Input
+                              id="directorName"
+                              type="text"
+                              autoComplete="name"
+                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
+                              value={directorName}
+                              onChange={(e) => setDirectorName(e.target.value)}
+                              placeholder="예: 김원장"
                             />
                           </div>
                           <div className="space-y-2">

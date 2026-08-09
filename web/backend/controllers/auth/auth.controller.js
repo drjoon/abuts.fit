@@ -1139,15 +1139,24 @@ async function practiceRegister(req, res) {
     const password = String(req.body?.password || "");
     const phone = String(req.body?.phone || "").trim();
     const clinicName = String(req.body?.clinicName || "").trim();
+    const directorName = String(req.body?.directorName || "").trim();
     const staffName = String(req.body?.staffName || "").trim();
     const normalizedEmail = String(req.body?.email || "")
       .trim()
       .toLowerCase();
 
-    if (!password || !phone || !normalizedEmail || !clinicName || !staffName) {
+    if (
+      !password ||
+      !phone ||
+      !normalizedEmail ||
+      !clinicName ||
+      !directorName ||
+      !staffName
+    ) {
       return res.status(400).json({
         success: false,
-        message: "치과명, 담당자명, 이메일, 비밀번호, 담당자 휴대폰은 필수입니다.",
+        message:
+          "치과명, 원장님명, 담당자명, 이메일, 비밀번호, 담당자 휴대폰은 필수입니다.",
       });
     }
 
@@ -1223,6 +1232,7 @@ async function practiceRegister(req, res) {
       phoneVerifiedAt: new Date(),
       practiceProfile: {
         clinicName,
+        directorName,
         staffName,
         phone,
         createdAt: new Date(),
