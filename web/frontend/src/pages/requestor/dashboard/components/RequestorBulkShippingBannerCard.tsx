@@ -144,7 +144,7 @@ const DIAMETER_LABELS: Record<DiameterKey, string> = {
 };
 
 const SHIP_OUT_INFO_MESSAGE =
-  "제조사에서 출발하는 출고일이 리드타임 기준으로 계산되며, 자정(0시)까지 접수 시 바로 다음날 오후 4시 출고됩니다.";
+  "출고일은 리드타임 기준으로 계산됩니다. 묶음출고는 자정까지 접수시 다음 날 오후 4시 출고, 신속출고는 정오까지 접수시 당일 오후 4시 출고됩니다.";
 
 type ShippingItemApi = {
   id: string;
