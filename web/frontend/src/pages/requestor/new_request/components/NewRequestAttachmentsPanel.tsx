@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 어벗디자인/구강스캔 상단 뱃지 + 호버 즉시 툴팁(생산 vs 디자인+생산).
 // - 2026-08-09: 구강스캔(디자인+생산) ETA는 메시 직경 무시(estimateShipDate 리드 1일).
 // - 2026-08-09: 우측 신속 비활성 시 카드 신속 버튼도 동일하게 막는다.
 // - 2026-08-09: 신속 비활성 스타일을 opacity 대신 명시적 slate로 구분해 요일 변경 후 상태를 분명히 한다.
@@ -44,10 +45,21 @@ import { useToast } from "@/shared/hooks/use-toast";
 import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
 import {
   getPrimaryFileKey,
+  isLikelyCustomAbutDesignSize,
+  isLikelyOralScanSize,
   resolveOralScanGroupTitle,
 } from "../utils/patientGroups";
 
 type ShippingMode = "normal" | "express";
+
+/** 파일 유형 뱃지 → 의뢰 유형 안내 (호버 즉시) */
+const ORAL_SCAN_BADGE_TOOLTIP = "커스텀어벗 디자인+생산";
+const ABUT_DESIGN_BADGE_TOOLTIP = "커스텀어벗 생산";
+
+const FILE_KIND_BADGE_CLASS =
+  "text-[10px] font-medium px-1.5 py-0.5 shrink-0";
+const ORAL_SCAN_BADGE_CLASS = `${FILE_KIND_BADGE_CLASS} bg-violet-100 text-violet-700`;
+const ABUT_DESIGN_BADGE_CLASS = `${FILE_KIND_BADGE_CLASS} bg-sky-100 text-sky-700`;
 
 type MarqueeState = {
   originX: number;
@@ -59,7 +71,7 @@ type MarqueeState = {
 
 const MARQUEE_MOVE_THRESHOLD_PX = 6;
 
-function IconTooltip({
+function ImmediateTooltip({
   label,
   children,
 }: {
@@ -675,12 +687,14 @@ export function NewRequestAttachmentsPanel({
             </div>
           ) : null}
           {isDesignMode && !hideDesignBadge ? (
-            <Badge
-              variant="secondary"
-              className="bg-violet-100 text-[10px] font-medium px-1.5 py-0.5 text-violet-700"
-            >
-              +디자인
-            </Badge>
+            <ImmediateTooltip label={ORAL_SCAN_BADGE_TOOLTIP}>
+              <Badge
+                variant="secondary"
+                className="bg-violet-100 text-[10px] font-medium px-1.5 py-0.5 text-violet-700"
+              >
+                +디자인
+              </Badge>
+            </ImmediateTooltip>
           ) : null}
           {designSoftware ? (
             <Badge
@@ -706,9 +720,13 @@ export function NewRequestAttachmentsPanel({
     const fileInfo = caseInfosMap?.[fileKey];
     const checked = selectedKeys.has(fileKey);
     const canGroupSelect = Boolean(onGroupSelectedFiles);
+    const isOralScanFile = isLikelyOralScanSize(file.size);
+    const isAbutDesignFile = isLikelyCustomAbutDesignSize(file.size);
 
     const baseClasses = isVerified
-      ? "border border-gray-200 bg-white text-gray-900"
+      ? isOralScanFile
+        ? "border border-violet-200 bg-violet-50/40 text-gray-900"
+        : "border border-gray-200 bg-white text-gray-900"
       : "border border-red-300 bg-red-50 text-red-800";
     const stateClasses = isSelected
       ? isVerified
@@ -723,6 +741,9 @@ export function NewRequestAttachmentsPanel({
           ? "ring-2 ring-red-400 ring-offset-1 ring-offset-white"
           : "";
     const selectFill = checked ? "bg-sky-50/90" : "";
+    const hoverBorder = isOralScanFile
+      ? "hover:border-violet-300"
+      : "hover:border-gray-400";
 
     return (
       <div
@@ -732,7 +753,7 @@ export function NewRequestAttachmentsPanel({
         data-file-index={fileIndex}
         data-group-select-key={canGroupSelect ? fileKey : undefined}
         aria-selected={checked}
-        className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
+        className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} ${hoverBorder}`}
       >
         <div className="relative z-10 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
@@ -754,13 +775,34 @@ export function NewRequestAttachmentsPanel({
                   data-no-marquee
                 />
               ) : null}
-              <div className="truncate flex-1">{filename}</div>
+              <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
+                <div className="truncate">{filename}</div>
+                {isOralScanFile ? (
+                  <ImmediateTooltip label={ORAL_SCAN_BADGE_TOOLTIP}>
+                    <Badge
+                      variant="secondary"
+                      className={ORAL_SCAN_BADGE_CLASS}
+                    >
+                      구강스캔
+                    </Badge>
+                  </ImmediateTooltip>
+                ) : isAbutDesignFile ? (
+                  <ImmediateTooltip label={ABUT_DESIGN_BADGE_TOOLTIP}>
+                    <Badge
+                      variant="secondary"
+                      className={ABUT_DESIGN_BADGE_CLASS}
+                    >
+                      어벗디자인
+                    </Badge>
+                  </ImmediateTooltip>
+                ) : null}
+              </div>
             </div>
             <div className="flex items-center gap-1">
               {isVerified && (
                 <Check className="w-4 h-4 text-primary" aria-label="확인됨" />
               )}
-              <IconTooltip label="삭제">
+              <ImmediateTooltip label="삭제">
                 <button
                   type="button"
                   onClick={(event) => {
@@ -773,13 +815,16 @@ export function NewRequestAttachmentsPanel({
                 >
                   <X className="w-4 h-4" />
                 </button>
-              </IconTooltip>
+              </ImmediateTooltip>
             </div>
           </div>
           {renderEtaAndModes({
             fileKey,
             fileKeysForMode: [fileKey],
             fileInfo,
+            // 상단 구강스캔 뱃지로 충분하므로 +디자인 숨김
+            hideDesignBadge: isOralScanFile,
+            forceDesignProductMode: isOralScanFile,
           })}
         </div>
       </div>
@@ -859,12 +904,14 @@ export function NewRequestAttachmentsPanel({
               ) : null}
               <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
                 <div className="truncate font-medium">{patientLabel}</div>
-                <Badge
-                  variant="secondary"
-                  className="bg-violet-100 text-[10px] font-medium px-1.5 py-0.5 text-violet-700 shrink-0"
-                >
-                  구강스캔
-                </Badge>
+                <ImmediateTooltip label={ORAL_SCAN_BADGE_TOOLTIP}>
+                  <Badge
+                    variant="secondary"
+                    className={ORAL_SCAN_BADGE_CLASS}
+                  >
+                    구강스캔
+                  </Badge>
+                </ImmediateTooltip>
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
@@ -872,7 +919,7 @@ export function NewRequestAttachmentsPanel({
                 <Check className="w-4 h-4 text-primary" aria-label="확인됨" />
               )}
               {onUngroup ? (
-                <IconTooltip label="연결 끊기">
+                <ImmediateTooltip label="연결 끊기">
                   <button
                     type="button"
                     onClick={(event) => {
@@ -885,7 +932,7 @@ export function NewRequestAttachmentsPanel({
                   >
                     <Link2Off className="w-4 h-4" />
                   </button>
-                </IconTooltip>
+                </ImmediateTooltip>
               ) : null}
             </div>
           </div>
@@ -912,7 +959,7 @@ export function NewRequestAttachmentsPanel({
                   </button>
                   <div className="flex items-center gap-0.5 shrink-0">
                     {onRemoveFileFromGroup ? (
-                      <IconTooltip label="연결 끊기">
+                      <ImmediateTooltip label="연결 끊기">
                         <button
                           type="button"
                           onClick={(event) => {
@@ -925,9 +972,9 @@ export function NewRequestAttachmentsPanel({
                         >
                           <Link2Off className="w-3.5 h-3.5" />
                         </button>
-                      </IconTooltip>
+                      </ImmediateTooltip>
                     ) : null}
-                    <IconTooltip label="삭제">
+                    <ImmediateTooltip label="삭제">
                       <button
                         type="button"
                         onClick={(event) => {
@@ -940,7 +987,7 @@ export function NewRequestAttachmentsPanel({
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
-                    </IconTooltip>
+                    </ImmediateTooltip>
                   </div>
                 </li>
               );

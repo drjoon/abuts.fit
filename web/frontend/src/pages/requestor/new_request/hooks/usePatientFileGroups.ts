@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-09: 묶음 해제/파일 분리 시 productMode를 크기 기준으로 복원(디자인+1일 잔류 방지).
+// - 2026-08-09: 커스텀어벗 디자인 STL(<1.5MB) 업로드 시 productMode=생산 고정.
 // - 2026-08-09: 자동묶음에 파일 크기 전달. 단일 구강스캔(>3MB)도 디자인+생산 표시.
 // - 2026-08-09: 새로고침 시 files 복원 전 그룹 정리로 묶음이 풀리던 문제 수정.
 // - 2026-08-09: 디자인+생산 환자 단위 파일 묶음 상태/자동묶기/수동묶기.
@@ -18,11 +20,13 @@ import {
   createPatientGroupId,
   findGroupByFileKey,
   getPrimaryFileKey,
+  isLikelyCustomAbutDesignSize,
   isLikelyOralScanSize,
   mergeFileKeysIntoGroup,
   planAutoGroupsForNewFiles,
   planBatchGroupIfAmbiguous,
   removeFileKeysFromGroups,
+  resolveFileSizeBytes,
   type PatientFileGroup,
 } from "../utils/patientGroups";
 
@@ -124,6 +128,33 @@ export function usePatientFileGroups({
     [caseInfosMap, syncGroupCaseInfos],
   );
 
+  /**
+   * 묶음에서 빠져나온 파일의 productMode 복원.
+   * 묶을 때 전원 design_custom_abutment로 올리므로, 분리 시 크기 휴리스틱으로 되돌린다.
+   * 구강스캔(>3MB) → 디자인+생산, 그 외(어벗 STL 등) → 생산.
+   */
+  const restoreProductModeAfterLeaveGroup = useCallback(
+    (fileKey: string) => {
+      const file = files.find((f) => toFileKey(f) === fileKey);
+      const size =
+        typeof file?.size === "number"
+          ? file.size
+          : resolveFileSizeBytes(fileKey);
+      if (isLikelyOralScanSize(size)) {
+        updateCaseInfos(fileKey, {
+          productMode: "design_custom_abutment",
+          workType: "abutment",
+        });
+        return;
+      }
+      updateCaseInfos(fileKey, {
+        productMode: "custom_abutment",
+        workType: "abutment",
+      });
+    },
+    [files, toFileKey, updateCaseInfos],
+  );
+
   const autoGroupNewFiles = useCallback(
     (newFiles: File[]) => {
       if (!newFiles.length) return;
@@ -206,15 +237,21 @@ export function usePatientFileGroups({
         }
       }
 
-      // 묶이지 않은 단일 구강스캔도 디자인+생산
+      // 크기별 productMode: 구강스캔→디자인+생산, 어벗디자인 STL→생산
       for (const file of newFiles) {
-        if (!isLikelyOralScanSize(file.size)) continue;
         const key = toFileKey(file);
         if (next.some((g) => g.fileKeys.includes(key))) continue;
-        updateCaseInfos(key, {
-          productMode: "design_custom_abutment",
-          workType: "abutment",
-        });
+        if (isLikelyOralScanSize(file.size)) {
+          updateCaseInfos(key, {
+            productMode: "design_custom_abutment",
+            workType: "abutment",
+          });
+        } else if (isLikelyCustomAbutDesignSize(file.size)) {
+          updateCaseInfos(key, {
+            productMode: "custom_abutment",
+            workType: "abutment",
+          });
+        }
       }
     },
     [
@@ -249,7 +286,7 @@ export function usePatientFileGroups({
       };
 
       let touchedCount = 0;
-      let nextSnapshot: PatientFileGroup[] | null = null;
+      let nextSnapshot: PatientFileGroup[] = [];
       let touchedSnapshot: PatientFileGroup[] = [];
 
       setPatientGroups((prev) => {
@@ -285,15 +322,15 @@ export function usePatientFileGroups({
           ...(batchGroup ? [batchGroup] : []),
         ];
         touchedCount = touched.length;
-        if (!touched.length) return prev;
-
         touchedSnapshot = touched;
         nextSnapshot = next;
+        if (!touched.length) return prev;
+
         savePatientGroups(next);
         return next;
       });
 
-      if (touchedCount > 0 && nextSnapshot) {
+      if (touchedCount > 0) {
         for (const group of touchedSnapshot) {
           const latest = nextSnapshot.find((g) => g.id === group.id) || group;
           const patientHint =
@@ -326,12 +363,10 @@ export function usePatientFileGroups({
         }
       }
 
-      // 묶이지 않은 단일 구강스캔도 디자인+생산
-      const groupedKeys = new Set(
-        (nextSnapshot || []).flatMap((g) => g.fileKeys),
-      );
+      // 크기별 productMode: 구강스캔→디자인+생산, 어벗디자인 STL→생산
+      // (이미 환자 케이스에 묶인 키는 건너뛴다 — AI 재파싱에도 유지)
+      const groupedKeys = new Set(nextSnapshot.flatMap((g) => g.fileKeys));
       for (const file of newFiles) {
-        if (!isLikelyOralScanSize(file.size)) continue;
         const key = toFileKey(file);
         if (groupedKeys.has(key)) continue;
         const patientHint =
@@ -344,12 +379,23 @@ export function usePatientFileGroups({
               caseInfosMap?.[key]?.clinicName ||
               "",
           ).trim() || undefined;
-        updateCaseInfos(key, {
-          productMode: "design_custom_abutment",
-          workType: "abutment",
+        const nameHints = {
           ...(clinicHint ? { clinicName: clinicHint } : {}),
           ...(patientHint ? { patientName: patientHint } : {}),
-        });
+        };
+        if (isLikelyOralScanSize(file.size)) {
+          updateCaseInfos(key, {
+            productMode: "design_custom_abutment",
+            workType: "abutment",
+            ...nameHints,
+          });
+        } else if (isLikelyCustomAbutDesignSize(file.size)) {
+          updateCaseInfos(key, {
+            productMode: "custom_abutment",
+            workType: "abutment",
+            ...nameHints,
+          });
+        }
       }
 
       return touchedCount;
@@ -370,17 +416,38 @@ export function usePatientFileGroups({
       };
       next = [...next, group];
       persistGroups(next);
+
+      // 새 묶음에 안 들어간 채 기존 묶음에서만 빠져나온 키(해체된 나머지) productMode 복원
+      const stillGrouped = new Set(next.flatMap((g) => g.fileKeys));
+      for (const prev of patientGroups) {
+        for (const key of prev.fileKeys) {
+          if (!stillGrouped.has(key)) {
+            restoreProductModeAfterLeaveGroup(key);
+          }
+        }
+      }
+
       markGroupAsDesignProduction(group);
       return group;
     },
-    [markGroupAsDesignProduction, patientGroups, persistGroups],
+    [
+      markGroupAsDesignProduction,
+      patientGroups,
+      persistGroups,
+      restoreProductModeAfterLeaveGroup,
+    ],
   );
 
   const ungroup = useCallback(
     (groupId: string) => {
+      const group = patientGroups.find((g) => g.id === groupId);
       persistGroups(patientGroups.filter((g) => g.id !== groupId));
+      if (!group) return;
+      for (const key of group.fileKeys) {
+        restoreProductModeAfterLeaveGroup(key);
+      }
     },
-    [patientGroups, persistGroups],
+    [patientGroups, persistGroups, restoreProductModeAfterLeaveGroup],
   );
 
   const addFilesToGroup = useCallback(
@@ -390,17 +457,45 @@ export function usePatientFileGroups({
       let next = removeFileKeysFromGroups(patientGroups, unique);
       next = mergeFileKeysIntoGroup(next, groupId, unique);
       persistGroups(next);
+
+      const stillGrouped = new Set(next.flatMap((g) => g.fileKeys));
+      for (const prev of patientGroups) {
+        for (const key of prev.fileKeys) {
+          if (!stillGrouped.has(key)) {
+            restoreProductModeAfterLeaveGroup(key);
+          }
+        }
+      }
+
       const group = next.find((g) => g.id === groupId);
       if (group) markGroupAsDesignProduction(group);
     },
-    [markGroupAsDesignProduction, patientGroups, persistGroups],
+    [
+      markGroupAsDesignProduction,
+      patientGroups,
+      persistGroups,
+      restoreProductModeAfterLeaveGroup,
+    ],
   );
 
   const removeFileFromGroups = useCallback(
     (fileKey: string) => {
-      persistGroups(removeFileKeysFromGroups(patientGroups, [fileKey]));
+      const next = removeFileKeysFromGroups(patientGroups, [fileKey]);
+      persistGroups(next);
+
+      // 분리된 키 + 그룹이 2개 미만이 되어 해체된 나머지 키도 productMode 복원
+      const stillGrouped = new Set(next.flatMap((g) => g.fileKeys));
+      const leftKeys = new Set<string>([fileKey]);
+      for (const group of patientGroups) {
+        for (const key of group.fileKeys) {
+          if (!stillGrouped.has(key)) leftKeys.add(key);
+        }
+      }
+      for (const key of leftKeys) {
+        restoreProductModeAfterLeaveGroup(key);
+      }
     },
-    [patientGroups, persistGroups],
+    [patientGroups, persistGroups, restoreProductModeAfterLeaveGroup],
   );
 
   const clearGroups = useCallback(() => {

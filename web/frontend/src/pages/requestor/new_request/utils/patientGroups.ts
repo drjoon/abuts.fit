@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 크기별 productMode·상단 뱃지(구강스캔/어벗디자인) SSOT 주석.
 // - 2026-08-09: 구강스캔 자동묶음 — 파일 크기(>3MB) 기준. 소형(<1.5MB) 커스텀어벗은 제외.
 // - 2026-08-09: 구강스캔 카드 제목 — 파일명 환자명/공통 문자열 추출.
 // - 2026-08-09: 디자인+생산용 환자 단위 파일 묶음(구강 스캔 N개 → 환자 1건).
@@ -10,9 +11,9 @@
 
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
-/** 이 크기 초과면 구강 스캔으로 간주 (자동 묶음 대상) */
+/** 이 크기 초과면 구강 스캔으로 간주 (자동 묶음 대상 → 디자인+생산) */
 export const ORAL_SCAN_MIN_BYTES = 3 * 1024 * 1024;
-/** 이 크기 미만이면 커스텀어벗 디자인 STL로 간주 (자동 묶음 제외) */
+/** 이 크기 미만이면 커스텀어벗 디자인 STL로 간주 (자동 묶음 제외 → 생산) */
 export const CUSTOM_ABUT_DESIGN_MAX_BYTES = 1.5 * 1024 * 1024;
 
 export type PatientFileGroup = {
@@ -39,12 +40,12 @@ export function resolveFileSizeBytes(
   return Number.isFinite(size) && size >= 0 ? size : null;
 }
 
-/** 구강 스캔 후보(>3MB). 자동 묶음에만 포함. */
+/** 구강 스캔 후보(>3MB). 자동 묶음·디자인+생산. */
 export function isLikelyOralScanSize(sizeBytes: number | null | undefined): boolean {
   return typeof sizeBytes === "number" && sizeBytes > ORAL_SCAN_MIN_BYTES;
 }
 
-/** 커스텀어벗 디자인 STL 후보(<1.5MB). 자동 묶음에서 제외. */
+/** 커스텀어벗 디자인 STL 후보(<1.5MB). 자동 묶음 제외·생산. */
 export function isLikelyCustomAbutDesignSize(
   sizeBytes: number | null | undefined,
 ): boolean {

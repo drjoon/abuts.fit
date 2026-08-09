@@ -6,7 +6,12 @@ import { NewRequestAttachmentsPanel } from "./NewRequestAttachmentsPanel";
 import { NewRequestDetailDialog } from "./NewRequestDetailDialog";
 import type { LeadTimesMap } from "@/shared/shipping/estimateShipDate";
 import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
-import { findGroupByFileKey, getPrimaryFileKey } from "../utils/patientGroups";
+import {
+  findGroupByFileKey,
+  getPrimaryFileKey,
+  isLikelyCustomAbutDesignSize,
+  isLikelyOralScanSize,
+} from "../utils/patientGroups";
 
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
@@ -298,13 +303,26 @@ export function NewRequestDetailsSection({
   const detailCaseInfosBase = detailFileKey
     ? caseInfosMap?.[detailFileKey] || caseInfos
     : caseInfos;
-  const detailCaseInfos = detailPatientGroup
+  const detailIsOralScan = isLikelyOralScanSize(detailFile?.size);
+  const detailIsAbutDesign = isLikelyCustomAbutDesignSize(detailFile?.size);
+  // 구강스캔(묶음·단일) → 디자인+생산 고정. 어벗디자인 STL → 생산 고정.
+  const lockDesignProductMode =
+    Boolean(detailPatientGroup) || detailIsOralScan;
+  const lockProductionProductMode =
+    !lockDesignProductMode && detailIsAbutDesign;
+  const detailCaseInfos = lockDesignProductMode
     ? {
         ...detailCaseInfosBase,
         productMode: "design_custom_abutment" as const,
         workType: "abutment" as const,
       }
-    : detailCaseInfosBase;
+    : lockProductionProductMode
+      ? {
+          ...detailCaseInfosBase,
+          productMode: "custom_abutment" as const,
+          workType: "abutment" as const,
+        }
+      : detailCaseInfosBase;
 
   const setDetailCaseInfos = useCallback(
     (updates: Partial<CaseInfos>) => {
@@ -313,21 +331,42 @@ export function NewRequestDetailsSection({
         return;
       }
       const group = findGroupByFileKey(patientGroups, detailFileKey);
-      if (group) {
-        // 구강스캔 묶음은 항상 디자인+생산
+      const fileSize = files.find(
+        (f) => toNormalizedFileKey(f) === detailFileKey,
+      )?.size;
+      const oralScanLocked = isLikelyOralScanSize(fileSize);
+      if (group || oralScanLocked) {
+        // 구강스캔(묶음·단일)은 항상 디자인+생산
         const nextUpdates: Partial<CaseInfos> = {
           ...updates,
           productMode: "design_custom_abutment",
           workType: "abutment",
         };
-        for (const key of group.fileKeys) {
+        const keys = group ? group.fileKeys : [detailFileKey];
+        for (const key of keys) {
           updateCaseInfos(key, nextUpdates);
         }
         return;
       }
+      if (isLikelyCustomAbutDesignSize(fileSize)) {
+        // 어벗디자인 STL은 항상 생산
+        updateCaseInfos(detailFileKey, {
+          ...updates,
+          productMode: "custom_abutment",
+          workType: "abutment",
+        });
+        return;
+      }
       updateCaseInfos(detailFileKey, updates);
     },
-    [detailFileKey, patientGroups, setCaseInfos, updateCaseInfos],
+    [
+      detailFileKey,
+      files,
+      patientGroups,
+      setCaseInfos,
+      toNormalizedFileKey,
+      updateCaseInfos,
+    ],
   );
 
   const handleDialogOpenChange = useCallback(
@@ -637,7 +676,8 @@ export function NewRequestDetailsSection({
           moveToNextDetail();
         }}
         toast={toast}
-        lockDesignProductMode={Boolean(detailPatientGroup)}
+        lockDesignProductMode={lockDesignProductMode}
+        lockProductionProductMode={lockProductionProductMode}
         previewFileIndices={previewFileIndices}
         onSelectPreviewIndex={selectPreviewIndex}
       />

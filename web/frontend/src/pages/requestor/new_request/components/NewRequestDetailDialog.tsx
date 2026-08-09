@@ -97,8 +97,10 @@ type Props = {
   onVerifyAndNext: (index: number) => Promise<void>;
   onSkip: () => void;
   toast: ToastFn;
-  /** 구강스캔 묶음: 커스텀어벗 디자인+생산 고정 */
+  /** 구강스캔(묶음·단일): 커스텀어벗 디자인+생산 고정 */
   lockDesignProductMode?: boolean;
+  /** 어벗디자인 STL(<1.5MB): 커스텀어벗 생산 고정 */
+  lockProductionProductMode?: boolean;
   /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
   previewFileIndices?: number[];
   onSelectPreviewIndex?: (index: number) => void;
@@ -142,6 +144,7 @@ export function NewRequestDetailDialog({
   onSkip,
   toast,
   lockDesignProductMode = false,
+  lockProductionProductMode = false,
   previewFileIndices,
   onSelectPreviewIndex,
 }: Props) {
@@ -210,11 +213,13 @@ export function NewRequestDetailDialog({
   }, [detailFile, detailCaseInfos?.retentionGroove, setDetailCaseInfos]);
 
   const showImplantSelect = true;
-  const productMode: NewRequestProductMode =
-    lockDesignProductMode ||
-    detailCaseInfos?.productMode === "design_custom_abutment"
-      ? "design_custom_abutment"
-      : "custom_abutment";
+  const productMode: NewRequestProductMode = lockDesignProductMode
+    ? "design_custom_abutment"
+    : lockProductionProductMode
+      ? "custom_abutment"
+      : detailCaseInfos?.productMode === "design_custom_abutment"
+        ? "design_custom_abutment"
+        : "custom_abutment";
   const isDesignCustomMode = productMode === "design_custom_abutment";
 
   const selectablePreviewIndices = useMemo(() => {
@@ -237,9 +242,10 @@ export function NewRequestDetailDialog({
   const setProductMode = useCallback(
     (mode: NewRequestProductMode) => {
       if (lockDesignProductMode && mode !== "design_custom_abutment") return;
+      if (lockProductionProductMode && mode !== "custom_abutment") return;
       setDetailCaseInfos({ productMode: mode });
     },
-    [lockDesignProductMode, setDetailCaseInfos],
+    [lockDesignProductMode, lockProductionProductMode, setDetailCaseInfos],
   );
 
   return (
@@ -264,8 +270,15 @@ export function NewRequestDetailDialog({
                 ).map((option) => {
                   const selected = productMode === option.value;
                   const lockedOut =
-                    lockDesignProductMode &&
-                    option.value !== "design_custom_abutment";
+                    (lockDesignProductMode &&
+                      option.value !== "design_custom_abutment") ||
+                    (lockProductionProductMode &&
+                      option.value !== "custom_abutment");
+                  const lockedTitle = lockDesignProductMode
+                    ? "구강 스캔은 디자인+생산만 가능합니다"
+                    : lockProductionProductMode
+                      ? "어벗디자인 파일은 생산만 가능합니다"
+                      : undefined;
                   return (
                     <button
                       key={option.value}
@@ -273,11 +286,7 @@ export function NewRequestDetailDialog({
                       role="radio"
                       aria-checked={selected}
                       disabled={lockedOut}
-                      title={
-                        lockedOut
-                          ? "구강 스캔 묶음은 디자인+생산만 가능합니다"
-                          : undefined
-                      }
+                      title={lockedOut ? lockedTitle : undefined}
                       className={cn(
                         "rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap",
                         selected

@@ -124,8 +124,8 @@ Notes:
 - 신규의뢰 첨부·구강스캔 자동묶음 (파일 크기 SSOT):
   - 목적: 한 번에 올린 동일 환자·유사 파일명이어도 **커스텀어벗 디자인 STL**과 **구강 스캔**을 섞어 묶지 않는다.
   - 분류:
-    - **> 3MB** (`ORAL_SCAN_MIN_BYTES`): 구강 스캔 → 자동 묶음 대상. `productMode=design_custom_abutment`.
-    - **< 1.5MB** (`CUSTOM_ABUT_DESIGN_MAX_BYTES`): 커스텀어벗 디자인 → 자동 묶음 **제외**(각각 별도 건).
+    - **> 3MB** (`ORAL_SCAN_MIN_BYTES`): 구강 스캔 → 자동 묶음 대상. `productMode=design_custom_abutment`. 상단 뱃지 `구강스캔`(툴팁: 커스텀어벗 디자인+생산).
+    - **< 1.5MB** (`CUSTOM_ABUT_DESIGN_MAX_BYTES`): 커스텀어벗 디자인 → 자동 묶음 **제외**(각각 별도 건). `productMode=custom_abutment`. 상단 뱃지 `어벗디자인`(툴팁: 커스텀어벗 생산).
     - **1.5~3MB**: 자동 묶음 안 함. 수동 «구강 스캔으로 합치기»는 허용.
   - 자동 묶음: `planAutoGroupsForNewFiles` / `planBatchGroupIfAmbiguous`는 **구강 스캔 크기만** 포함.
   - 구현: `patientGroups.ts`, `usePatientFileGroups.ts`, UI `NewRequestAttachmentsPanel.tsx`.
