@@ -491,7 +491,7 @@ export const RequestorDashboardPage = () => {
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
     enabled: !!token && heavySummaryEnabled,
-    placeholderData: (previous) => previous,
+    // period 전환 시 이전 기간의 최근의뢰/지연위험을 그대로 보여주지 않는다.
   });
 
   const {
@@ -1924,10 +1924,11 @@ export const RequestorDashboardPage = () => {
   }
 
   return (
-    <div>
+    <div className="p-4 h-full min-h-0">
+      <div className="max-w-6xl mx-auto w-full space-y-3">
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
-        statsGridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5"
+        statsGridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3"
         subtitle={
           insufficientCredit && insufficientShippingCredit
             ? "의뢰비와 배송비 크레딧 부족. 충전해주세요"
@@ -1971,10 +1972,12 @@ export const RequestorDashboardPage = () => {
           />
         }
         topSection={
-          <div className="space-y-2.5">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch">
-              <RequestorPricingReferralPolicyCard />
-              <div className="h-full min-w-0">
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch">
+              <div className="lg:col-span-2 min-w-0 h-full">
+                <RequestorPricingReferralPolicyCard />
+              </div>
+              <div className="lg:col-span-3 h-full min-w-0">
                 <RequestorRecentRequestsCard
                   items={recentRequests}
                   onRefresh={() => {
@@ -1987,8 +1990,8 @@ export const RequestorDashboardPage = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 items-stretch">
-              <Card className="app-glass-card app-glass-card--lg h-full">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-stretch">
+              <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base font-semibold">불완전 가공</CardTitle>
                 </CardHeader>
@@ -1996,7 +1999,7 @@ export const RequestorDashboardPage = () => {
                   {unmachinableRecentRequests.length === 0 ? (
                     <div className="text-sm text-muted-foreground">표시할 불완전 가공 의뢰가 없습니다.</div>
                   ) : (
-                    <div className="space-y-2 max-h-[260px] overflow-auto pr-1 pb-1">
+                    <div className="space-y-2 max-h-[200px] overflow-auto pr-1 pb-1">
                       {unmachinableRecentRequests.map((item: any) => {
                         const requestMongoId = String(item?._id || item?.id || "").trim();
                         const requestId = String(item?.requestId || "-").trim() || "-";
@@ -2044,6 +2047,7 @@ export const RequestorDashboardPage = () => {
 
               <RequestorBulkShippingBannerCard
                 bulkData={bulkData}
+                period={period}
                 onRefresh={() => {
                   refetchBulk();
                 }}
@@ -2084,6 +2088,7 @@ export const RequestorDashboardPage = () => {
           </div>
         }
       />
+      </div>
 
       <RequestorEditRequestDialog
         editingRequest={editingRequest}

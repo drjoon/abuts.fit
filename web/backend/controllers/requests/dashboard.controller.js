@@ -907,7 +907,8 @@ export async function getMyDashboardSummary(req, res) {
         const summarySnapshotComputedAtMs = summarySnapshot?.computedAt
           ? new Date(summarySnapshot.computedAt).getTime()
           : 0;
-        const summaryCacheKey = `dashboard-summary:v2:${String(userId || "")}:${businessAnchorId}:${period}:${summarySnapshotComputedAtMs}`;
+        // v3: recentRequests에도 period dateFilter를 적용 (이번달 등에서 기간 밖 건 미표시)
+        const summaryCacheKey = `dashboard-summary:v3:${String(userId || "")}:${businessAnchorId}:${period}:${summarySnapshotComputedAtMs}`;
 
         if (!debug) {
           const cachedSummary = getRequestPerfCacheValue(summaryCacheKey);
@@ -957,6 +958,7 @@ export async function getMyDashboardSummary(req, res) {
         ] = await Promise.all([
           Request.find({
             ...requestFilter,
+            ...dateFilter,
             manufacturerStage: { $ne: "취소" },
             $and: [
               { source: { $ne: "manufacturer_sample" } },

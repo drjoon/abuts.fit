@@ -60,7 +60,7 @@ export const RequestorRiskSummaryCard = ({
 }: Props) => {
   if (loading) {
     return (
-      <Card className="app-glass-card app-glass-card--lg h-full">
+      <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
         <CardHeader className="pb-3">
           <Skeleton className="h-5 w-32" />
         </CardHeader>
@@ -153,8 +153,8 @@ export const RequestorRiskSummaryCard = ({
 
   return (
     <Card
-      className={`app-glass-card app-glass-card--lg ${
-        disableInnerScroll ? "" : "h-full min-h-[360px]"
+      className={`app-glass-card app-glass-card--lg min-w-0 ${
+        disableInnerScroll ? "h-full" : "h-full min-h-[360px]"
       }`}
     >
       <CardHeader className="pb-3">

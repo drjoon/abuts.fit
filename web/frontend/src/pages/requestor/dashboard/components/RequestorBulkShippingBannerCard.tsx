@@ -29,6 +29,8 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
+import type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
+import { periodToRange } from "@/store/usePeriodStore";
 
 interface ShippingPackageSummaryItem {
   id: string;
@@ -78,6 +80,41 @@ type Props = {
     waiting?: ShippingItemApi[];
   } | null;
   onRefresh?: () => void;
+  /** 대시보드 기간 필터. 오늘 출고/대기 내역을 createdAt 기준으로 좁힌다. */
+  period?: PeriodFilterValue;
+};
+
+const periodToShippingSummaryDays = (period: PeriodFilterValue): number => {
+  if (period === "90d") return 90;
+  if (period === "30d") return 30;
+  const range = periodToRange(period, {
+    customStartDate: "",
+    customEndDate: "",
+  });
+  const startMs = new Date(range.startDate).getTime();
+  const endMs = new Date(range.endDate).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    return 30;
+  }
+  return Math.max(1, Math.ceil((endMs - startMs) / (24 * 60 * 60 * 1000)) + 1);
+};
+
+const isCreatedAtInPeriod = (
+  createdAt: unknown,
+  period: PeriodFilterValue,
+  options?: { includeMissing?: boolean },
+): boolean => {
+  if (!createdAt) return Boolean(options?.includeMissing);
+  const createdMs = new Date(createdAt as string | Date).getTime();
+  if (!Number.isFinite(createdMs)) return Boolean(options?.includeMissing);
+  const range = periodToRange(period, {
+    customStartDate: "",
+    customEndDate: "",
+  });
+  const startMs = new Date(range.startDate).getTime();
+  const endMs = new Date(range.endDate).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false;
+  return createdMs >= startMs && createdMs <= endMs;
 };
 
 type DiameterKey = "d6" | "d8" | "d10" | "d12";
@@ -125,12 +162,14 @@ type ShippingItemApi = {
   estimatedShipYmd?: string | null; // next ETA 우선(백엔드 매핑)
   originalEstimatedShipYmd?: string | null;
   nextEstimatedShipYmd?: string | null;
+  createdAt?: string | Date | null;
 };
 
 export const RequestorBulkShippingBannerCard = ({
   onOpenBulkModal,
   bulkData,
   onRefresh,
+  period = "30d",
 }: Props) => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
@@ -144,14 +183,15 @@ export const RequestorBulkShippingBannerCard = ({
   const [todayBoxDialogOpen, setTodayBoxDialogOpen] = useState(false);
 
   const canAccessShippingSummary = user?.role === "requestor";
+  const shippingSummaryDays = periodToShippingSummaryDays(period);
 
   const { data: shippingSummaryData, isLoading: isShippingSummaryLoading } =
     useQuery({
-      queryKey: ["requestor-shipping-packages-summary"],
+      queryKey: ["requestor-shipping-packages-summary", period, shippingSummaryDays],
       enabled: Boolean(token && canAccessShippingSummary),
       queryFn: async () => {
         const params = new URLSearchParams();
-        params.set("days", "30");
+        params.set("days", String(shippingSummaryDays));
 
         const res = await apiFetch<ShippingPackagesSummaryResponse>({
           path: `/api/requests/my/shipping-packages?${params.toString()}`,
@@ -177,21 +217,38 @@ export const RequestorBulkShippingBannerCard = ({
       };
     }
 
-    const todayCount = shippingSummaryData.today?.packageCount ?? 0;
     const items = Array.isArray(shippingSummaryData.items)
       ? shippingSummaryData.items
       : [];
-    const todayRequests = items
-      .filter((it) => it.shipDateYmd === shippingSummaryData.today?.shipDateYmd)
+    const todayShipYmd = shippingSummaryData.today?.shipDateYmd;
+    const todayPackages = items.filter((it) => it.shipDateYmd === todayShipYmd);
+    const todayRequests = todayPackages
       .flatMap((it) =>
         Array.isArray((it as any).requests) ? (it as any).requests : [],
+      )
+      .filter((req: ShippingPackageSummaryRequest) =>
+        isCreatedAtInPeriod(req?.createdAt, period, { includeMissing: false }),
       );
+
+    // 기간 밖 의뢰만 남은 박스는 카운트에서 제외
+    const todayCount = todayPackages.filter((pkg) => {
+      const requests = Array.isArray((pkg as any).requests)
+        ? (pkg as any).requests
+        : [];
+      if (requests.length === 0) {
+        // 요청 상세가 없으면 패키지 단위는 유지(레거시 응답 호환)
+        return true;
+      }
+      return requests.some((req: ShippingPackageSummaryRequest) =>
+        isCreatedAtInPeriod(req?.createdAt, period, { includeMissing: false }),
+      );
+    }).length;
 
     return {
       todayCount,
       todayRequests: todayRequests ?? [],
     };
-  }, [shippingSummaryData]);
+  }, [period, shippingSummaryData]);
 
   const [originalBulkEtaById, setOriginalBulkEtaById] = useState<
     Record<string, string | null>
@@ -205,9 +262,14 @@ export const RequestorBulkShippingBannerCard = ({
       ...(bulkData?.pre || []),
       ...(bulkData?.post || []),
       ...(bulkData?.waiting || []),
-    ].filter(Boolean);
+    ]
+      .filter(Boolean)
+      // 스냅샷 재계산 전 createdAt 없는 레거시 항목은 유지
+      .filter((it) =>
+        isCreatedAtInPeriod(it?.createdAt, period, { includeMissing: true }),
+      );
     setItems(next);
-  }, [bulkData]);
+  }, [bulkData, period]);
 
   const hasAnyEta = useMemo(() => {
     return items.some((it) => Boolean(it.estimatedShipYmd));
@@ -582,7 +644,7 @@ export const RequestorBulkShippingBannerCard = ({
 
   return (
     <>
-      <Card className="app-glass-card app-glass-card--lg h-full">
+      <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base font-semibold text-foreground">

@@ -719,6 +719,7 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
       estimatedShipYmd,
       originalEstimatedShipYmd,
       nextEstimatedShipYmd,
+      createdAt: r.createdAt || null,
     };
   };
 

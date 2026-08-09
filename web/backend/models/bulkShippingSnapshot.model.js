@@ -67,6 +67,10 @@ const bulkShippingSnapshotItemSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    createdAt: {
+      type: Date,
+      default: null,
+    },
   },
   { _id: false },
 );

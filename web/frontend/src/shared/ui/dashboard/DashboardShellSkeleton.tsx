@@ -23,7 +23,8 @@ export const DashboardShellSkeleton = ({
   showMain = true,
 }: DashboardShellSkeletonProps) => {
   return (
-    <div className="p-3 space-y-3">
+    <div className="p-4 h-full min-h-0">
+      <div className="max-w-6xl mx-auto w-full space-y-3">
       {/* headerRight: PeriodFilter + 보유 크레딧 + 지난 의뢰 */}
       <div className="flex flex-wrap items-center gap-2">
         <Skeleton className="h-8 w-44" />
@@ -36,28 +37,28 @@ export const DashboardShellSkeleton = ({
       </div>
 
       {/* stats: 6 cards */}
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
         {repeat(6).map((idx) => (
           <div
             key={`stat-${idx}`}
-            className="rounded-2xl border border-border bg-muted/30 p-3 space-y-3"
+            className="rounded-2xl border border-border bg-muted/30 p-2.5 sm:p-3 space-y-2.5"
           >
             <div className="flex items-center justify-between">
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="h-4 w-4 rounded-full" />
+              <Skeleton className="h-3.5 w-16" />
+              <Skeleton className="h-3.5 w-3.5 rounded-full" />
             </div>
             <div className="flex flex-col items-center gap-1.5 pt-1">
-              <Skeleton className="h-7 w-16" />
-              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-6 w-14" />
+              <Skeleton className="h-3 w-20" />
             </div>
           </div>
         ))}
       </div>
 
-      <div className="space-y-2.5">
-        {/* top row: 가격 정책 (1) + 최근 의뢰 (2) */}
-        <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-3 items-stretch">
-          <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-4">
+      <div className="space-y-3">
+        {/* top row: 오늘의 가격 (2) + 최근 의뢰 (3) */}
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-5 items-stretch">
+          <div className="lg:col-span-2 rounded-2xl border border-border bg-muted/30 p-4 space-y-4">
             <div className="flex items-center justify-between gap-2">
               <Skeleton className="h-5 w-24" />
               <div className="flex gap-2">
@@ -79,7 +80,7 @@ export const DashboardShellSkeleton = ({
             </div>
           </div>
 
-          <div className="lg:col-span-2 rounded-2xl border border-border bg-muted/30 p-4 space-y-4">
+          <div className="lg:col-span-3 rounded-2xl border border-border bg-muted/30 p-4 space-y-4">
             <Skeleton className="h-5 w-24" />
             <div className="space-y-3">
               {repeat(3).map((innerIdx) => (
@@ -104,11 +105,11 @@ export const DashboardShellSkeleton = ({
 
         {/* bottom row: 불완전가공 + 출고 + 지연 위험 요약 */}
         {showMain && (
-          <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-3 items-stretch">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 items-stretch">
             {repeat(3).map((idx) => (
               <div
                 key={`bottom-${idx}`}
-                className="rounded-2xl border border-border bg-muted/30 p-4 space-y-4"
+                className="rounded-2xl border border-border bg-muted/30 p-4 space-y-4 min-w-0"
               >
                 <div className="flex items-center justify-between gap-2">
                   <Skeleton className="h-5 w-28" />
@@ -132,6 +133,7 @@ export const DashboardShellSkeleton = ({
             ))}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

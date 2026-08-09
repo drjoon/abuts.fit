@@ -319,9 +319,18 @@ export async function getMyBulkShipping(req, res) {
       const waiting = Array.isArray(value?.waiting) ? value.waiting : [];
       return pre.length > 0 || post.length > 0 || waiting.length > 0;
     };
+    const hasCreatedAtOnItems = (value) => {
+      const rows = [
+        ...(Array.isArray(value?.pre) ? value.pre : []),
+        ...(Array.isArray(value?.post) ? value.post : []),
+        ...(Array.isArray(value?.waiting) ? value.waiting : []),
+      ];
+      if (rows.length === 0) return true;
+      return rows.every((row) => row?.createdAt != null);
+    };
 
     const cached = getBulkShippingCacheValue(cacheKey);
-    if (cached && hasBulkShippingItems(cached)) {
+    if (cached && hasBulkShippingItems(cached) && hasCreatedAtOnItems(cached)) {
       return res.status(200).json({
         success: true,
         data: cached,
@@ -334,7 +343,7 @@ export async function getMyBulkShipping(req, res) {
         ? await getBulkShippingSnapshotForBusinessAnchorId(businessAnchorId)
         : null;
 
-      if (snapshot) {
+      if (snapshot && hasCreatedAtOnItems(snapshot)) {
         const snapshotted = {
           pre: Array.isArray(snapshot.pre) ? snapshot.pre : [],
           post: Array.isArray(snapshot.post) ? snapshot.post : [],

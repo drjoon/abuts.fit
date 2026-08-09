@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +49,10 @@ import { useSystemSettings, CREDIT_SETTINGS_DEFAULTS } from "@/hooks/useSystemSe
 // - web/backend/controllers/requests/expressPrice.utils.js
 
 const EDITABLE_STATUSES = new Set(["준비", "CAM", "가공"]); // CAM 호환 포함, UI 정책상 준비/가공 단계에서 수정 허용
+
+/** 최근 의뢰 리스트에 한 번에 보여줄 카드 개수(넘치면 스크롤) */
+const RECENT_REQUESTS_VISIBLE_COUNT = 2.5;
+const RECENT_REQUESTS_LIST_GAP_PX = 12; // space-y-3
 
 const STAGE_BADGE_BASE =
   "text-[10px] h-5 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
@@ -214,6 +225,10 @@ export const RequestorRecentRequestsCard = ({
   const [unmachinableInfoOpen, setUnmachinableInfoOpen] = useState(false);
   const [unmachinableTarget, setUnmachinableTarget] =
     useState<RecentRequestCardItem | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [listMaxHeightPx, setListMaxHeightPx] = useState<number | undefined>(
+    undefined,
+  );
 
   const {
     connections,
@@ -266,6 +281,36 @@ export const RequestorRecentRequestsCard = ({
     () => items.filter((it) => !isManufacturerSampleRequest(it)),
     [items],
   );
+
+  useLayoutEffect(() => {
+    const listEl = listRef.current;
+    if (!listEl) return;
+
+    const measure = () => {
+      const firstItem = listEl.firstElementChild as HTMLElement | null;
+      if (!firstItem) {
+        setListMaxHeightPx(undefined);
+        return;
+      }
+      const itemHeight = firstItem.getBoundingClientRect().height;
+      if (!Number.isFinite(itemHeight) || itemHeight <= 0) {
+        setListMaxHeightPx(undefined);
+        return;
+      }
+      const gapCount = Math.floor(RECENT_REQUESTS_VISIBLE_COUNT);
+      setListMaxHeightPx(
+        itemHeight * RECENT_REQUESTS_VISIBLE_COUNT +
+          RECENT_REQUESTS_LIST_GAP_PX * gapCount,
+      );
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(listEl);
+    const firstItem = listEl.firstElementChild;
+    if (firstItem instanceof HTMLElement) observer.observe(firstItem);
+    return () => observer.disconnect();
+  }, [visibleItems]);
 
   const selectedSummary = useMemo(() => {
     if (!selectedRequestId) return null;
@@ -592,8 +637,16 @@ export const RequestorRecentRequestsCard = ({
       <CardHeader className="pb-2 flex flex-row items-center justify-between gap-3">
         <CardTitle className="text-base font-semibold">최근 의뢰</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col justify-between pt-2 overflow-visible">
-        <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1 pl-0.5 pb-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+      <CardContent className="flex-1 flex flex-col justify-between pt-2 min-h-0 overflow-hidden">
+        <div
+          ref={listRef}
+          className="space-y-3 overflow-y-auto pr-1 pl-0.5 pb-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
+          style={
+            listMaxHeightPx != null
+              ? { maxHeight: `${listMaxHeightPx}px` }
+              : undefined
+          }
+        >
           {visibleItems.map((item) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
