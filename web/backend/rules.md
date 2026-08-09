@@ -128,6 +128,21 @@
   - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
   - 대시보드 토글: `PATCH /my/shipping-mode` → `shipping.Requestor.controller.js` `updateMyShippingMode`
 
+### 디자인 파트너 클레임·마감
+
+- 접근: `BusinessAnchor.designAccessEnabled` (`/api/devops/design-access`). 제조사 큐 엔드포인트는
+  `authorizeManufacturerOrDesignPartner`로 지정 의뢰자도 허용.
+- 설정: `SystemSettings.designDeadlineSettings.claimHours` (기본 3, 1–24).
+  API: `GET/PUT /api/devops/design-deadline` (devops/admin).
+- 요청 필드: `Request.designClaim` `{ claimedBy, claimedByName, claimedAt, deadlineAt, claimHours }`
+  - 활성 = `claimedBy` 존재 && `deadlineAt > now` (만료 lazy)
+- 클레임: `POST /api/requests/:id/design-claim` (원자적 findOneAndUpdate, 충돌 409)
+- 목록 (`GET /api/requests/all?productMode=design_custom_abutment`, `__designPartner`):
+  - 본인 활성 / 미클레임·만료 / 타인 발표 60초만 노출. 발표 후 타인은 숨김. 마감 후 재공개.
+  - 응답 메타: `designClaimMeta` / `designClaimPeerBusy` / `designClaimMine` / …
+- 승인: 디자인 파트너는 `design_custom_abutment` + stage=`request` + **본인 활성 클레임**만
+  (`updateReviewStatusByStage`). 상수: 발표 60초·경고 30분 (`utils/designClaim.js`).
+
 ### 가공 우선순위
 
 장비 생산 큐(재생목록 / Next Up / 자동 연속 가공) 정렬·배정 SSOT.

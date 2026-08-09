@@ -27,6 +27,10 @@ import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import {
+  buildDesignClaimListVisibilityFilter,
+  enrichDesignClaimForViewer,
+} from "../../utils/designClaim.js";
+import {
   applyStatusMapping,
   canAccessRequestAsRequestor,
   normalizeRequestForResponse,
@@ -1309,6 +1313,25 @@ export async function getAllRequests(req, res) {
       }
     }
 
+    // 디자인 파트너 큐: 활성 클레임 가시성 (본인 / 발표 1분 / 미클레임·만료)
+    const productModeFilter = String(req.query.productMode || "").trim();
+    const isDesignPartnerQueue =
+      Boolean(req.__designPartner) &&
+      productModeFilter === "design_custom_abutment";
+    if (isDesignPartnerQueue) {
+      const claimVisibility = buildDesignClaimListVisibilityFilter(
+        req.user?._id,
+        new Date(),
+      );
+      if (Array.isArray(filter.$and)) {
+        filter.$and = [...filter.$and, claimVisibility];
+      } else if (Object.keys(filter).length === 0) {
+        filter = claimVisibility;
+      } else {
+        filter = { $and: [filter, claimVisibility] };
+      }
+    }
+
     // 생성일 범위 필터 (관리자 모니터링/대시보드와 동일 파서 사용)
     const createdAtFilter = buildCreatedAtFilterFromQuery(req.query);
     if (createdAtFilter) {
@@ -1411,6 +1434,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.tooth",
       "caseInfos.productMode",
       "caseInfos.designSoftware",
+      "designClaim",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
       "caseInfos.requestorHexRotation",
@@ -1809,6 +1833,25 @@ export async function getAllRequests(req, res) {
           },
         };
         item.requestorBusinessAnchor = item.business;
+      }
+    }
+
+    if (isDesignPartnerQueue && Array.isArray(requests)) {
+      const nowMs = Date.now();
+      const viewerId = req.user?._id;
+      for (const item of requests) {
+        if (!item || typeof item !== "object") continue;
+        const meta = enrichDesignClaimForViewer(
+          item.designClaim,
+          viewerId,
+          nowMs,
+        );
+        item.designClaimMeta = meta;
+        item.designClaimPeerBusy = meta.peerBusy;
+        item.designClaimClaimable = meta.claimable;
+        item.designClaimMine = meta.mine;
+        item.designClaimRemainingMs = meta.remainingMs;
+        item.designClaimWarn = meta.warn;
       }
     }
 

@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/devops/DevopsSettingsPage.tsx
 // - web/frontend/src/pages/devops/components/DevopsPayoutAccountTab.tsx
 // - web/frontend/src/pages/devops/components/DesignerAssignmentTab.tsx
+// - web/frontend/src/pages/devops/components/DevopsDesignDeadlineTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -14,9 +15,10 @@ import {
 import { DevopsPayoutAccountTab } from "./components/DevopsPayoutAccountTab";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
 import { DesignerAssignmentTab } from "./components/DesignerAssignmentTab";
-import { Landmark, CreditCard, PenTool } from "lucide-react";
+import { DevopsDesignDeadlineTab } from "./components/DevopsDesignDeadlineTab";
+import { Landmark, CreditCard, PenTool, Clock } from "lucide-react";
 
-type TabKey = "payment" | "credits" | "design";
+type TabKey = "payment" | "credits" | "design" | "deadline";
 
 export const DevopsPartnerPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,6 +42,12 @@ export const DevopsPartnerPage = () => {
         label: "디자이너 지정",
         icon: PenTool,
         content: <DesignerAssignmentTab />,
+      },
+      {
+        key: "deadline",
+        label: "마감 설정",
+        icon: Clock,
+        content: <DevopsDesignDeadlineTab />,
       },
     ],
     [],

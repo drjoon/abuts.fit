@@ -918,8 +918,6 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/printer");
   const isWorksheetRoute =
     isManufacturer && location.pathname.startsWith("/dashboard/worksheet");
-  const isDesignRoute = location.pathname.startsWith("/dashboard/design");
-
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStageRaw = worksheetParams.get("stage") || "request";
@@ -1360,9 +1358,7 @@ export const DashboardLayout = () => {
             data-dashboard-scroll="1"
           >
             <div className="flex flex-col h-full">
-              {(isManufacturer && isEquipmentRoute) ||
-              isWorksheetRoute ||
-              isDesignRoute ? (
+              {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
                 <div className="border-b border-border bg-background/80 sticky top-0 z-10">
                   <div className="px-4 py-2 flex flex-col gap-2">
                     {isManufacturer && isEquipmentRoute && (
@@ -1389,14 +1385,6 @@ export const DashboardLayout = () => {
                         >
                           프린터
                         </Button>
-                      </div>
-                    )}
-
-                    {isDesignRoute && (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:flex-nowrap sm:justify-between">
-                        <div className="flex gap-2 flex-shrink-0">
-                          <PeriodFilter value={period} onChange={setPeriod} />
-                        </div>
                       </div>
                     )}
 

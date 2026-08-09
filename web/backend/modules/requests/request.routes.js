@@ -16,6 +16,7 @@ import {
   enqueueApproval,
 } from "../../services/reviewApprovalQueue.service.js";
 import Request from "../../models/request.model.js";
+import { claimDesignRequest } from "../../controllers/requests/designClaim.controller.js";
 
 // 새 의뢰 생성 (의뢰자만 가능)
 router.post(
@@ -71,6 +72,14 @@ router.get(
   authenticate,
   authorizeManufacturerOrDesignPartner(),
   requestController.getAllRequests,
+);
+
+// 디자인 파트너: 준비 단계 디자인+생산 클레임
+router.post(
+  "/:id/design-claim",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  claimDesignRequest,
 );
 
 // 내 의뢰 목록 조회 (의뢰자 전용)

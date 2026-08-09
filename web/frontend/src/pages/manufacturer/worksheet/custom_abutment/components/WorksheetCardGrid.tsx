@@ -62,6 +62,9 @@ type WorksheetCardGridProps = {
   onSaveToRnd?: (req: ManufacturerRequest) => void;
   onRollback?: (req: ManufacturerRequest) => void;
   onApprove?: (req: ManufacturerRequest) => void;
+  onDesignClaim?: (req: ManufacturerRequest) => void;
+  enableDesignClaim?: boolean;
+  designClaimBusyIds?: Record<string, boolean>;
   onDelete?: (req: ManufacturerRequest) => void;
   onDone?: (req: ManufacturerRequest) => void;
   onRestoreUnmachinable?: (req: ManufacturerRequest) => void;
@@ -101,6 +104,9 @@ export const WorksheetCardGrid = ({
   onSaveToRnd,
   onRollback,
   onApprove,
+  onDesignClaim,
+  enableDesignClaim = false,
+  designClaimBusyIds = {},
   onDelete,
   onDone,
   onRestoreUnmachinable,
@@ -118,6 +124,13 @@ export const WorksheetCardGrid = ({
   rndMemoSaving = {},
   debugLog = false,
 }: WorksheetCardGridProps) => {
+  const [claimTickMs, setClaimTickMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!enableDesignClaim) return;
+    const id = window.setInterval(() => setClaimTickMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [enableDesignClaim]);
+
   const camDiaLogRef = useRef<Record<string, number | null>>({});
   const [rndMemoDrafts, setRndMemoDrafts] = useState<Record<string, string>>(
     {},
@@ -135,6 +148,20 @@ export const WorksheetCardGrid = ({
       return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
     }
     return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  };
+
+  const formatClaimRemaining = (remainingMs: number) => {
+    const totalSec = Math.max(0, Math.ceil(remainingMs / 1000));
+    const hh = Math.floor(totalSec / 3600);
+    const mm = Math.floor((totalSec % 3600) / 60);
+    const ss = totalSec % 60;
+    if (hh > 0) {
+      return `${hh}시간 ${mm}분`;
+    }
+    if (mm > 0) {
+      return `${mm}분 ${String(ss).padStart(2, "0")}초`;
+    }
+    return `${ss}초`;
   };
 
   const getRealtimeToneClass = (tone?: string | null) => {
@@ -404,6 +431,15 @@ export const WorksheetCardGrid = ({
               : null;
 
         const canApprove = (() => {
+          if (enableDesignClaim) {
+            const peerBusy = Boolean(
+              request.designClaimPeerBusy ?? request.designClaimMeta?.peerBusy,
+            );
+            const mine = Boolean(
+              request.designClaimMine ?? request.designClaimMeta?.mine,
+            );
+            if (peerBusy || !mine) return false;
+          }
           if (
             reviewStageKey === "machining" ||
             reviewStageKey === "packing" ||
@@ -424,6 +460,36 @@ export const WorksheetCardGrid = ({
           }
           return true;
         })();
+
+        const designPeerBusy = Boolean(
+          enableDesignClaim &&
+            (request.designClaimPeerBusy ?? request.designClaimMeta?.peerBusy),
+        );
+        const designClaimMine = Boolean(
+          enableDesignClaim &&
+            (request.designClaimMine ?? request.designClaimMeta?.mine),
+        );
+        const designClaimable = Boolean(
+          enableDesignClaim &&
+            !designPeerBusy &&
+            !designClaimMine &&
+            (request.designClaimClaimable ??
+              request.designClaimMeta?.claimable ??
+              true),
+        );
+        const designDeadlineMs = request.designClaim?.deadlineAt
+          ? Date.parse(String(request.designClaim.deadlineAt))
+          : NaN;
+        const designRemainingMs = designClaimMine
+          ? Number.isFinite(designDeadlineMs)
+            ? Math.max(0, designDeadlineMs - claimTickMs)
+            : Number(request.designClaimRemainingMs ?? request.designClaimMeta?.remainingMs ?? 0)
+          : null;
+        const designClaimWarn =
+          designClaimMine &&
+          designRemainingMs != null &&
+          designRemainingMs <= 30 * 60 * 1000;
+        const designClaimBusy = Boolean(designClaimBusyIds[requestObjectId]);
 
         const isNcGenerating =
           reviewStageKey === "cam" &&
@@ -706,7 +772,58 @@ export const WorksheetCardGrid = ({
                 )}
               </div>
             )}
+            {enableDesignClaim && (designPeerBusy || designClaimMine) && (
+              <div className="absolute left-2 right-14 top-10 z-20 flex flex-wrap items-center gap-2">
+                {designPeerBusy && (
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border-amber-300 bg-amber-50 text-amber-800"
+                  >
+                    다른 디자이너 작업중
+                  </Badge>
+                )}
+                {designClaimMine && designRemainingMs != null && (
+                  <Badge
+                    variant="outline"
+                    className={`text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] ${
+                      designClaimWarn
+                        ? "border-red-300 bg-red-50 text-red-700"
+                        : "border-sky-300 bg-sky-50 text-sky-800"
+                    }`}
+                    title={
+                      designClaimWarn
+                        ? "마감이 임박했습니다"
+                        : "디자인 작업 마감까지 남은 시간"
+                    }
+                  >
+                    {designClaimWarn ? "마감 임박 · " : "작업중 · "}
+                    {formatClaimRemaining(designRemainingMs)}
+                  </Badge>
+                )}
+              </div>
+            )}
             <div className="absolute right-2 top-2 z-20 flex items-center gap-1">
+              {enableDesignClaim && designClaimable && onDesignClaim && (
+                <button
+                  type="button"
+                  className={`h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-sky-700 shadow-sm transition hover:bg-sky-50 ${
+                    designClaimBusy ? "opacity-40 cursor-not-allowed" : ""
+                  }`}
+                  disabled={designClaimBusy}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (designClaimBusy) return;
+                    onDesignClaim(request);
+                  }}
+                  aria-label="수락"
+                  title="이 디자인 작업을 수락합니다"
+                >
+                  <span className="text-[11px] font-semibold">
+                    {designClaimBusy ? "수락 중…" : "수락"}
+                  </span>
+                </button>
+              )}
               {shouldShowTopUnmachinableBadge && (
                 <Badge
                   variant="outline"

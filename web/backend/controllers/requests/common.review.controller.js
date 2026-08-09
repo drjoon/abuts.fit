@@ -34,6 +34,7 @@ import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
+import { isDesignClaimActive } from "../../utils/designClaim.js";
 import {
   revertManufacturerStageByReviewStage,
   ensureRequestCreditSpendOnMachiningEnter,
@@ -1063,9 +1064,12 @@ export async function updateReviewStatusByStage(req, res) {
     }
 
     if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
-      return res
-        .status(403)
-        .json({ success: false, message: "변경 권한이 없습니다." });
+      // 디자인 파트너: design_custom_abutment + 준비 단계 승인만, 본인 활성 클레임 필수
+      if (!(req.__designPartner && String(req.user.role || "").trim() === "requestor")) {
+        return res
+          .status(403)
+          .json({ success: false, message: "변경 권한이 없습니다." });
+      }
     }
 
     const allowedStages = [
@@ -1131,6 +1135,36 @@ export async function updateReviewStatusByStage(req, res) {
       }
 
       await assertAndClaimManufacturerRequestAccess({ req, request });
+
+      // 디자인 파트너: 디자인+생산 준비 승인만, 본인 활성 클레임 필수
+      if (req.__designPartner && String(req.user?.role || "").trim() === "requestor") {
+        const productMode = String(request?.caseInfos?.productMode || "").trim();
+        if (productMode !== "design_custom_abutment") {
+          const err = new Error("디자인+생산 의뢰만 처리할 수 있습니다.");
+          err.statusCode = 403;
+          throw err;
+        }
+        if (String(effectiveStage || "").trim() !== "request") {
+          const err = new Error("디자인 파트너는 준비 단계만 승인할 수 있습니다.");
+          err.statusCode = 403;
+          throw err;
+        }
+        const claimerId = request?.designClaim?.claimedBy
+          ? String(request.designClaim.claimedBy)
+          : "";
+        const actorId = req.user?._id ? String(req.user._id) : "";
+        if (
+          !isDesignClaimActive(request.designClaim) ||
+          !claimerId ||
+          claimerId !== actorId
+        ) {
+          const err = new Error(
+            "수락한 디자이너만 승인할 수 있습니다. 먼저 「수락」으로 잡아 주세요.",
+          );
+          err.statusCode = 403;
+          throw err;
+        }
+      }
 
       const mailboxAllocationScopeFilter =
         String(req?.user?.role || "").trim() === "manufacturer"

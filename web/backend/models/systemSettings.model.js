@@ -116,6 +116,10 @@ const systemSettingsSchema = new mongoose.Schema(
         { type: "E", lotNumber: "" },
       ],
     },
+    // 디자인 클레임 마감 (파트너 → 마감 설정). 클레임 시각 + claimHours.
+    designDeadlineSettings: {
+      claimHours: { type: Number, default: 3 },
+    },
     // 신속배송 14:00 빠른 가공 재배치 최근 Alert 스냅샷
     // related: controllers/requests/expressDeadlineRebalance.utils.js
     lastExpressDeadlineRebalance: {

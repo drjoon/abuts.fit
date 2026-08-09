@@ -104,7 +104,9 @@ Notes:
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·designFee 전역 설정 UI)
 - 개발·운영사 설정
   - `src/pages/devops/DevopsSettingsPage.tsx` (계정/사업자/임직원/**결제(입금 계좌)**/알림/보안)
-  - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · 디자이너 지정
+  - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · 디자이너 지정 · **마감 설정**
+  - 마감 설정: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감 시간(`designDeadlineSettings.claimHours`, 기본 3시간)
+  - 디자이너 지정: `DesignerAssignmentTab` — `BusinessAnchor.designAccessEnabled` (의뢰자 중 디자인 큐 접근)
   - 영업자 없을 때 분배: 설정된 영업자 분배비의 절반→제조사, 나머지 절반→관리자 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
   - 관리자 대시보드/소통
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
@@ -171,6 +173,15 @@ Notes:
     - `src/shared/ui/PricingPolicyDialog.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/shippingDay.helpers.ts`
+
+- 지정 디자이너 디자인 큐 (`/dashboard/design`):
+  - 접근: `BusinessAnchor.designAccessEnabled` (파트너 → 디자이너 지정). 사이드바·`DesignAccessGate`.
+  - 목록: `design_custom_abutment` + 준비. PeriodFilter는 흰 패널 안(좌우상하 여백 동일).
+  - 클레임: 「수락」 → `POST /api/requests/:id/design-claim`
+    - 타 디자이너: 클레임 후 60초간 「다른 디자이너 작업중」 → 이후 목록에서 숨김
+    - 마감(`designDeadlineSettings.claimHours`, 기본 3h, 클레임 시각 기준) 만료 시 재공개
+    - 본인만 승인(화살표). 남은 시간 ≤30분이면 마감 임박 경고
+  - 관련: `DesignPage.tsx`, `WorksheetCardGrid.tsx`, `RequestPage.tsx`, `DevopsDesignDeadlineTab.tsx`
 
 ### 가공 우선순위
 

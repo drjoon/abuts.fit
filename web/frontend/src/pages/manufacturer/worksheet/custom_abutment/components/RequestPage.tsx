@@ -47,6 +47,7 @@ import {
   isAnySampleRequest,
   isRndSampleRequest,
   getWorksheetStageFilterForTab,
+  PRODUCT_MODE,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import {
   filterRequestsByStage,
@@ -1917,6 +1918,93 @@ export const RequestPage = ({
     tabStage === "tracking" ||
     tabStage === "request";
 
+  const enableDesignClaim =
+    productMode === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT &&
+    user?.role === "requestor";
+
+  const [designClaimBusyIds, setDesignClaimBusyIds] = useState<
+    Record<string, boolean>
+  >({});
+
+  const handleDesignClaim = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!token || !req?._id) return;
+      const id = String(req._id);
+      setDesignClaimBusyIds((prev) => ({ ...prev, [id]: true }));
+      try {
+        const res = await fetch(`/api/requests/${id}/design-claim`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.success) {
+        toast({
+          title: "수락 실패",
+          description:
+            json?.message ||
+            (res.status === 409
+              ? "다른 디자이너가 이미 작업 중입니다."
+              : "디자인 수락에 실패했습니다."),
+          variant: "destructive",
+        });
+        if (res.status === 409) {
+          void fetchRequestsCore(true);
+        }
+        return;
+      }
+      const claimed = json?.data?.request;
+      const meta = json?.data?.designClaimMeta;
+      pageState.setRequests((prev) =>
+        prev.map((row) => {
+          if (String(row._id) !== id) return row;
+          return {
+            ...row,
+            designClaim: claimed?.designClaim || row.designClaim,
+            designClaimMeta: meta || row.designClaimMeta,
+            designClaimMine: true,
+            designClaimPeerBusy: false,
+            designClaimClaimable: false,
+            designClaimRemainingMs: meta?.remainingMs ?? null,
+            designClaimWarn: Boolean(meta?.warn),
+          };
+        }),
+      );
+      toast({
+        title: "수락됨",
+        description: "이 디자인을 수락했습니다. 마감 전에 승인해 주세요.",
+      });
+    } catch (error) {
+      toast({
+        title: "수락 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "디자인 수락에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+        setDesignClaimBusyIds((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    },
+    [token, toast, fetchRequestsCore, pageState],
+  );
+
+  // 발표 창/마감 만료 시 목록 재조회 (1분 숨김 · 재공개)
+  useEffect(() => {
+    if (!enableDesignClaim) return;
+    const id = window.setInterval(() => {
+      void fetchRequestsCore(true);
+    }, 15_000);
+    return () => window.clearInterval(id);
+  }, [enableDesignClaim, fetchRequestsCore]);
+
   const { handleDownloadOriginal } = useRequestCardHandlers(
     token,
     isMachiningStage,
@@ -2385,6 +2473,11 @@ export const RequestPage = ({
                     enableCardRollback ? handleCardRollbackForTab : undefined
                   }
                   onApprove={enableCardApprove ? handleCardApprove : undefined}
+                  onDesignClaim={
+                    enableDesignClaim ? handleDesignClaim : undefined
+                  }
+                  enableDesignClaim={enableDesignClaim}
+                  designClaimBusyIds={designClaimBusyIds}
                   onDelete={handleCardDelete}
                   onDone={handleCardDone}
                   onRestoreUnmachinable={handleRestoreUnmachinable}

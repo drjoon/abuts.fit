@@ -296,6 +296,9 @@
   - UI: `PricingPolicyDialog`, 의뢰 상세 비용 세부. 오늘의 생산 가격 카드·신규의뢰 우측·의뢰카드는 디자인비 금액 미표시(`+디자인` 뱃지만)
   - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`)
   - 상세: `.cursor/rules/design-fee.mdc`
+  - 지정 디자이너 클레임·마감: `Request.designClaim` + `designDeadlineSettings.claimHours`(기본 3h).
+    UI 「수락」 후 60초 공지 → 타인 숨김, 마감 만료 시 재공개, 본인만 승인. 상세는
+    `web/frontend/rules.md` / `web/backend/rules.md` 디자인 파트너 절.
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)
 
 ### 2.8 R&D 샘플

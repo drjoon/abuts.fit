@@ -57,6 +57,26 @@ export type ManufacturerRequest = RequestBase & {
     elapsedSeconds?: number | null;
     tone?: "blue" | "amber" | "slate" | "indigo" | "rose" | null;
   } | null;
+  designClaim?: {
+    claimedBy?: string | { _id?: string } | null;
+    claimedByName?: string | null;
+    claimedAt?: string | null;
+    deadlineAt?: string | null;
+    claimHours?: number | null;
+  } | null;
+  designClaimMeta?: {
+    active?: boolean;
+    mine?: boolean;
+    peerBusy?: boolean;
+    claimable?: boolean;
+    remainingMs?: number | null;
+    warn?: boolean;
+  } | null;
+  designClaimPeerBusy?: boolean;
+  designClaimClaimable?: boolean;
+  designClaimMine?: boolean;
+  designClaimRemainingMs?: number | null;
+  designClaimWarn?: boolean;
 };
 
 export type ReviewStageKey =

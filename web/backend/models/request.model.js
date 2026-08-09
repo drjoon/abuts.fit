@@ -611,6 +611,32 @@ const requestSchema = new mongoose.Schema(
       },
     },
 
+    // 디자인 파트너 클레임 (design_custom_abutment 준비 큐)
+    // 활성 = claimedAt 존재 && deadlineAt > now (만료는 lazy)
+    designClaim: {
+      claimedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      claimedByName: {
+        type: String,
+        default: null,
+      },
+      claimedAt: {
+        type: Date,
+        default: null,
+      },
+      deadlineAt: {
+        type: Date,
+        default: null,
+      },
+      claimHours: {
+        type: Number,
+        default: null,
+      },
+    },
+
     manufacturerStage: {
       type: String,
       enum: [
@@ -1156,6 +1182,12 @@ requestSchema.index({
   mailboxAddress: 1,
   caManufacturer: 1,
   createdAt: -1,
+});
+
+// 디자인 클레임 목록 필터
+requestSchema.index({
+  "designClaim.claimedBy": 1,
+  "designClaim.deadlineAt": 1,
 });
 
 // 추적관리(pre-pickup 후보) 조회 최적화

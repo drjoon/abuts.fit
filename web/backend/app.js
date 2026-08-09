@@ -233,6 +233,7 @@ import referralGroupsRoutes from "./modules/referralGroups/referralGroups.routes
 import systemRoutes from "./modules/system/system.routes.js";
 import practiceTransferRoutes from "./modules/practiceTransfers/practiceTransfer.routes.js";
 import designAccessRoutes from "./modules/devops/designAccess.routes.js";
+import designDeadlineRoutes from "./modules/devops/designDeadline.routes.js";
 
 // 라우트 설정
 app.use("/api/system", systemRoutes);
@@ -267,6 +268,7 @@ app.use("/api/salesman", salesmanRoutes);
 app.use("/api/snapshots", snapshotRoutes);
 app.use("/api/referral-groups", referralGroupsRoutes);
 app.use("/api/devops/design-access", designAccessRoutes);
+app.use("/api/devops/design-deadline", designDeadlineRoutes);
 // 호환: 프런트에서 /api/cnc/machines/... 로 호출하는 경우도 지원
 app.use("/api/cnc/machines", cncMachineRoutes);
 
