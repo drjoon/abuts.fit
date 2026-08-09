@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-10: worksheet select에 caseInfos.memo/toothWorks/prosthesisType/files 추가(디자인 큐).
 // related files:
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
@@ -7,6 +9,7 @@
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/requestor/design/DesignPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
@@ -1434,6 +1437,10 @@ export async function getAllRequests(req, res) {
       "caseInfos.tooth",
       "caseInfos.productMode",
       "caseInfos.designSoftware",
+      "caseInfos.memo",
+      "caseInfos.toothWorks",
+      "caseInfos.prosthesisType",
+      "caseInfos.files",
       "designClaim",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",

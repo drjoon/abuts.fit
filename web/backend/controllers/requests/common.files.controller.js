@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-10: 디자인 파트너(designAccessEnabled) 원본 파일 URL 접근 허용.
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
@@ -5,7 +7,9 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/utils/designAccess.js
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/requestor/design/DesignPage.tsx
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -19,6 +23,7 @@ import s3Utils, {
 } from "../../utils/s3.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
 
 export async function getStlFileUrl(req, res) {
   return getCamFileUrl(req, res);
@@ -48,15 +53,23 @@ export async function getOriginalFileUrl(req, res) {
     }
 
     // 제조사/관리자는 전체 접근 가능,
-    // 의뢰자는 본인 사업자 소속 의뢰건에 한해 접근 가능
+    // 의뢰자는 본인 사업자 소속 의뢰건에 한해 접근 가능,
+    // 디자인 파트너는 design_custom_abutment 원본 파일 접근 가능
     const role = String(req.user?.role || "").trim();
     if (role === "requestor") {
       const myAnchorId = String(req.user?.businessAnchorId || "").trim();
       const ownerAnchorId = String(request?.businessAnchorId || "").trim();
-      if (!myAnchorId || !ownerAnchorId || myAnchorId !== ownerAnchorId) {
-        return res
-          .status(403)
-          .json({ success: false, message: "다운로드 권한이 없습니다." });
+      const isOwner = Boolean(myAnchorId && ownerAnchorId && myAnchorId === ownerAnchorId);
+      if (!isOwner) {
+        const productMode = String(request?.caseInfos?.productMode || "").trim();
+        const isDesignPartner =
+          productMode === "design_custom_abutment" &&
+          (await resolveDesignAccessForUser(req.user));
+        if (!isDesignPartner) {
+          return res
+            .status(403)
+            .json({ success: false, message: "다운로드 권한이 없습니다." });
+        }
       }
     } else if (role !== "manufacturer" && role !== "admin") {
       return res

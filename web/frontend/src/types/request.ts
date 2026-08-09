@@ -1,7 +1,12 @@
+// change-log:
+// - 2026-08-10: RequestCaseInfos에 memo/toothWorks/prosthesisType/files 보강(디자인 큐 카드·모달).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/requestor/design/DesignPage.tsx
+import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+
 export interface RequestUserSummary {
   _id?: string;
   id?: string;
@@ -53,6 +58,18 @@ export interface RequestCaseInfos {
   patientName?: string;
   tooth?: string;
   productMode?: string | null;
+  memo?: string | null;
+  prosthesisType?: string | null;
+  toothWorks?: ToothWorkSelection[] | null;
+  files?: Array<{
+    originalName?: string;
+    fileType?: string;
+    fileSize?: number;
+    filePath?: string;
+    s3Key?: string;
+    s3Url?: string;
+    uploadedAt?: string;
+  }> | null;
   implantManufacturer?: string;
   implantBrand?: string;
   implantFamily?: string;

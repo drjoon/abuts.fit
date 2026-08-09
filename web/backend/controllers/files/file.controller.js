@@ -1,9 +1,13 @@
+// change-log:
+// - 2026-08-10: 디자인 파트너가 Request caseInfos 파일 S3 키 다운로드 가능.
 // related files:
 // - web/backend/modules/files/file.routes.js
 // - web/backend/models/file.model.js
 // - web/backend/models/practiceTransfer.model.js
+// - web/backend/utils/designAccess.js
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/design/DesignPage.tsx
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs/promises";
@@ -16,6 +20,7 @@ import s3Utils from "../../utils/s3.utils.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
+import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
 
 const getFileType = (filename) => {
   const extension = filename.split(".").pop().toLowerCase();
@@ -641,6 +646,48 @@ const canUserAccessS3Key = async (req, key) => {
       currentAnchorId === String(practiceTransfer?.practiceBusinessAnchorId || "").trim();
 
     if (isPracticeOwner || isTargetLabMember || isPracticeBusinessMember) {
+      return true;
+    }
+  }
+
+  // Request caseInfos 파일 (원본 STL / 추가 첨부)
+  // - 의뢰 소유 사업자 / 제조사·관리자 / 디자인 파트너
+  const requestWithFile = await Request.findOne({
+    $or: [
+      { "caseInfos.file.s3Key": key },
+      { "caseInfos.files.s3Key": key },
+    ],
+  })
+    .select({
+      businessAnchorId: 1,
+      requestor: 1,
+      "caseInfos.productMode": 1,
+    })
+    .lean();
+
+  if (requestWithFile) {
+    const role = String(req.user?.role || "").trim();
+    if (role === "manufacturer" || role === "admin") {
+      return true;
+    }
+    const currentAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const ownerAnchorId = String(requestWithFile?.businessAnchorId || "").trim();
+    if (currentAnchorId && ownerAnchorId && currentAnchorId === ownerAnchorId) {
+      return true;
+    }
+    const currentUserId = String(req.user?._id || "").trim();
+    if (
+      currentUserId &&
+      currentUserId === String(requestWithFile?.requestor || "").trim()
+    ) {
+      return true;
+    }
+    if (
+      role === "requestor" &&
+      String(requestWithFile?.caseInfos?.productMode || "").trim() ===
+        "design_custom_abutment" &&
+      (await resolveDesignAccessForUser(req.user))
+    ) {
       return true;
     }
   }

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-10: detailMode=transferChat — 디자인 큐는 기공의뢰서형 카드·채팅 모달(PreviewModal 미사용).
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-03: 제조사 워크시트의 공정 필터 기본값 및 탭 라벨을 '준비'로 표시되도록 수정함. (display-only)
 // - 2026-08-03: request(준비) 탭 API 조회를 `manufacturerStageIn=준비` 단일값으로 정리.
@@ -14,6 +15,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/requestor/design/DesignPage.tsx
+// - web/frontend/src/pages/requestor/design/DesignRequestTransferView.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
@@ -69,6 +72,7 @@ import { MailboxContentsModal } from "../shipping/components/MailboxContentsModa
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
 import { MachiningQueueBoard } from "../machining/MachiningQueueBoard";
 import { PreviewModal } from "./PreviewModal";
+import { DesignRequestTransferView } from "@/pages/requestor/design/DesignRequestTransferView";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useStageDropHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useStageDropHandlers";
@@ -104,6 +108,7 @@ export const RequestPage = ({
   productMode,
   productModeNe,
   useManufacturerQueueList = false,
+  detailMode = "preview",
 }: {
   showQueueBar?: boolean;
   /** 준비/CAM 탭의 전체 Filled STL·가공 준비 재생성 버튼 */
@@ -115,7 +120,10 @@ export const RequestPage = ({
   productModeNe?: string;
   /** 지정 의뢰자(디자인 파트너)도 제조사 큐 `/api/requests/all` 사용 */
   useManufacturerQueueList?: boolean;
+  /** preview=제조 PreviewModal, transferChat=기공의뢰서형 상세/채팅(디자인 큐) */
+  detailMode?: "preview" | "transferChat";
 }) => {
+  const isTransferChatDetail = detailMode === "transferChat";
   const queryClient = useQueryClient();
   const { user, token } = useAuthStore();
   const canUseManufacturerQueue =
@@ -2443,66 +2451,91 @@ export const RequestPage = ({
                     </div>
                   </div>
                 )}
-                <WorksheetCardGrid
-                  requests={paginatedRequests}
-                  selectedRequestIds={
-                    tabStage === "packing"
-                      ? pageState.selectedPackingRequestIds
-                      : []
-                  }
-                  onToggleSelected={
-                    tabStage === "packing"
-                      ? handleTogglePackingRequest
-                      : undefined
-                  }
-                  onDownload={handleDownloadOriginal}
-                  onOpenPreview={(req) => {
-                    void handleOpenPreviewWithSameReopenGuard(req);
-                  }}
-                  onDeleteCam={handleDeleteCam}
-                  onDeleteNc={handleDeleteNc}
-                  onCloneSample={
-                    tabStage === "request"
-                      ? handleCloneSampleForProduction
-                      : undefined
-                  }
-                  onSaveToRnd={
-                    tabStage === "request" ? handleSaveToRnd : undefined
-                  }
-                  onRollback={
-                    enableCardRollback ? handleCardRollbackForTab : undefined
-                  }
-                  onApprove={enableCardApprove ? handleCardApprove : undefined}
-                  onDesignClaim={
-                    enableDesignClaim ? handleDesignClaim : undefined
-                  }
-                  enableDesignClaim={enableDesignClaim}
-                  designClaimBusyIds={designClaimBusyIds}
-                  onDelete={handleCardDelete}
-                  onDone={handleCardDone}
-                  onRestoreUnmachinable={handleRestoreUnmachinable}
-                  onUploadNc={handleUploadNc}
-                  uploadProgress={pageState.uploadProgress}
-                  uploading={pageState.uploading}
-                  deletingCam={pageState.deletingCam}
-                  deletingNc={pageState.deletingNc}
-                  isCamStage={isCamStage}
-                  isMachiningStage={isMachiningStage}
-                  downloading={pageState.downloading}
-                  currentStageOrder={currentStageOrder}
-                  tabStage={tabStage}
-                  onSaveRndMemo={handleSaveRndMemo}
-                  rndMemoSaving={rndMemoSaving}
-                />
+                {isTransferChatDetail ? (
+                  <DesignRequestTransferView
+                    requests={paginatedRequests}
+                    hasMoreLabel={
+                      pageState.visibleCount >= filteredAndSorted.length
+                        ? "모든 의뢰를 표시했습니다."
+                        : "스크롤하여 더보기"
+                    }
+                    sentinelRef={pageState.sentinelRef}
+                    onDesignClaim={
+                      enableDesignClaim ? handleDesignClaim : undefined
+                    }
+                    onApprove={
+                      enableCardApprove ? handleCardApprove : undefined
+                    }
+                    designClaimBusyIds={designClaimBusyIds}
+                  />
+                ) : (
+                  <>
+                    <WorksheetCardGrid
+                      requests={paginatedRequests}
+                      selectedRequestIds={
+                        tabStage === "packing"
+                          ? pageState.selectedPackingRequestIds
+                          : []
+                      }
+                      onToggleSelected={
+                        tabStage === "packing"
+                          ? handleTogglePackingRequest
+                          : undefined
+                      }
+                      onDownload={handleDownloadOriginal}
+                      onOpenPreview={(req) => {
+                        void handleOpenPreviewWithSameReopenGuard(req);
+                      }}
+                      onDeleteCam={handleDeleteCam}
+                      onDeleteNc={handleDeleteNc}
+                      onCloneSample={
+                        tabStage === "request"
+                          ? handleCloneSampleForProduction
+                          : undefined
+                      }
+                      onSaveToRnd={
+                        tabStage === "request" ? handleSaveToRnd : undefined
+                      }
+                      onRollback={
+                        enableCardRollback
+                          ? handleCardRollbackForTab
+                          : undefined
+                      }
+                      onApprove={
+                        enableCardApprove ? handleCardApprove : undefined
+                      }
+                      onDesignClaim={
+                        enableDesignClaim ? handleDesignClaim : undefined
+                      }
+                      enableDesignClaim={enableDesignClaim}
+                      designClaimBusyIds={designClaimBusyIds}
+                      onDelete={handleCardDelete}
+                      onDone={handleCardDone}
+                      onRestoreUnmachinable={handleRestoreUnmachinable}
+                      onUploadNc={handleUploadNc}
+                      uploadProgress={pageState.uploadProgress}
+                      uploading={pageState.uploading}
+                      deletingCam={pageState.deletingCam}
+                      deletingNc={pageState.deletingNc}
+                      isCamStage={isCamStage}
+                      isMachiningStage={isMachiningStage}
+                      downloading={pageState.downloading}
+                      currentStageOrder={currentStageOrder}
+                      tabStage={tabStage}
+                      onSaveRndMemo={handleSaveRndMemo}
+                      rndMemoSaving={rndMemoSaving}
+                    />
 
-                <div
-                  ref={pageState.sentinelRef}
-                  className="py-4 text-center text-gray-500"
-                >
-                  {pageState.visibleCount >= filteredAndSorted.length
-                    ? "모든 의뢰를 표시했습니다."
-                    : "스크롤하여 더보기"}
-                </div>
+                    <div
+                      ref={pageState.sentinelRef}
+                      className="py-4 text-center text-gray-500"
+                    >
+                      {pageState.visibleCount >= filteredAndSorted.length
+                        ? "모든 의뢰를 표시했습니다."
+                        : "스크롤하여 더보기"}
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -2570,39 +2603,41 @@ export const RequestPage = ({
         }
       />
 
-      <PreviewModal
-        open={pageState.previewOpen}
-        onOpenChange={handlePreviewOpenChange}
-        previewLoading={pageState.previewLoading}
-        previewFiles={pageState.previewFiles}
-        previewNcText={pageState.previewNcText}
-        previewNcName={pageState.previewNcName}
-        previewStageUrl={pageState.previewStageUrl}
-        previewStageName={pageState.previewStageName}
-        uploading={pageState.uploading}
-        reviewSaving={pageState.reviewSaving}
-        stage={tabStage}
-        isCamStage={isCamStage}
-        isMachiningStage={isMachiningStage}
-        onUpdateReviewStatus={handleUpdateReviewStatus}
-        onDeleteCam={handleDeleteCam}
-        onDeleteNc={handleDeleteNc}
-        onDeleteStageFile={handleDeleteStageFile}
-        onUploadCam={handleUploadCam}
-        onUploadNc={handleUploadNc}
-        onUploadStageFile={handleUploadStageFile}
-        onDownloadOriginalStl={handleDownloadOriginalStl}
-        onDownloadCamStl={handleDownloadCamStl}
-        onDownloadNcFile={handleDownloadNcFile}
-        onDownloadStageFile={handleDownloadStageFile}
-        onRefreshPreview={handleOpenPreviewWithSameReopenGuard}
-        onMarkUnmachinable={handleMarkUnmachinable}
-        onRestoreUnmachinable={handleRestoreUnmachinable}
-        onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
-        onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
-        onOpenNextRequest={handleOpenNextRequest}
-        setSearchParams={setSearchParams}
-      />
+      {!isTransferChatDetail ? (
+        <PreviewModal
+          open={pageState.previewOpen}
+          onOpenChange={handlePreviewOpenChange}
+          previewLoading={pageState.previewLoading}
+          previewFiles={pageState.previewFiles}
+          previewNcText={pageState.previewNcText}
+          previewNcName={pageState.previewNcName}
+          previewStageUrl={pageState.previewStageUrl}
+          previewStageName={pageState.previewStageName}
+          uploading={pageState.uploading}
+          reviewSaving={pageState.reviewSaving}
+          stage={tabStage}
+          isCamStage={isCamStage}
+          isMachiningStage={isMachiningStage}
+          onUpdateReviewStatus={handleUpdateReviewStatus}
+          onDeleteCam={handleDeleteCam}
+          onDeleteNc={handleDeleteNc}
+          onDeleteStageFile={handleDeleteStageFile}
+          onUploadCam={handleUploadCam}
+          onUploadNc={handleUploadNc}
+          onUploadStageFile={handleUploadStageFile}
+          onDownloadOriginalStl={handleDownloadOriginalStl}
+          onDownloadCamStl={handleDownloadCamStl}
+          onDownloadNcFile={handleDownloadNcFile}
+          onDownloadStageFile={handleDownloadStageFile}
+          onRefreshPreview={handleOpenPreviewWithSameReopenGuard}
+          onMarkUnmachinable={handleMarkUnmachinable}
+          onRestoreUnmachinable={handleRestoreUnmachinable}
+          onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
+          onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
+          onOpenNextRequest={handleOpenNextRequest}
+          setSearchParams={setSearchParams}
+        />
+      ) : null}
 
       <RemakeStartQuickModal
         open={remakeDialogOpen}

@@ -74,6 +74,10 @@ Notes:
   - `src/shared/components/RequestorWorkspaceHeader.tsx` (보유 크레딧·지난 의뢰 공통; 기간 필터는 대시보드만)
   - `src/shared/shipping/shippingMode.ts`
   - `src/pages/requestor/practice/RequestorPracticePage.tsx`
+  - 디자인 큐
+  - `src/pages/requestor/design/DesignPage.tsx`
+  - `src/pages/requestor/design/DesignRequestCardGrid.tsx`
+  - `src/pages/requestor/design/DesignRequestTransferView.tsx`
   - 제조사 워크시트
   - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
   - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx`
@@ -177,11 +181,15 @@ Notes:
 - 지정 디자이너 디자인 큐 (`/dashboard/design`):
   - 접근: `BusinessAnchor.designAccessEnabled` (파트너 → 디자이너 지정). 사이드바·`DesignAccessGate`.
   - 목록: `design_custom_abutment` + 준비. PeriodFilter는 흰 패널 안(좌우상하 여백 동일).
+  - UI: 기공의뢰서형 카드 + `PracticeTransferDetailChatDialog`(상세·치식·파일·기공소 채팅).
+    `RequestPage detailMode="transferChat"` — 제조 `WorksheetCardGrid`/`PreviewModal` 미사용.
   - 클레임: 「수락」 → `POST /api/requests/:id/design-claim`
     - 타 디자이너: 클레임 후 60초간 「다른 디자이너 작업중」 → 이후 목록에서 숨김
     - 마감(`designDeadlineSettings.claimHours`, 기본 3h, 클레임 시각 기준) 만료 시 재공개
     - 본인만 승인(화살표). 남은 시간 ≤30분이면 마감 임박 경고
-  - 관련: `DesignPage.tsx`, `WorksheetCardGrid.tsx`, `RequestPage.tsx`, `DevopsDesignDeadlineTab.tsx`
+  - 채팅: `GET /api/chats/request-room/:requestId` (디자인 파트너 ↔ 의뢰 기공소)
+  - 관련: `DesignPage.tsx`, `DesignRequestCardGrid.tsx`, `DesignRequestTransferView.tsx`,
+    `RequestPage.tsx`, `PracticeTransferDetailChatDialog.tsx`, `DevopsDesignDeadlineTab.tsx`
 
 ### 가공 우선순위
 

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-10: detailMode=transferChat — 기공의뢰서형 카드·상세/채팅 모달.
 // - 2026-08-10: PeriodFilter를 sticky 헤더에서 흰 패널 안으로 이동(좌우상하 여백 동일).
 // - 2026-08-10: 디자인 큐를 제조사 → 지정 의뢰자(designAccessEnabled)로 이전.
 // - 2026-08-09: 디자인 페이지에서 진행중 요약 카드·Filled STL 재생성 버튼 숨김.
@@ -8,6 +9,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/WorksheetPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/requestor/design/DesignRequestTransferView.tsx
+// - web/frontend/src/pages/requestor/design/DesignRequestCardGrid.tsx
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 import { Suspense, lazy } from "react";
 import {
@@ -41,6 +44,7 @@ export const DesignPage = () => {
           showQueueBar={false}
           showBulkCamRegenerate={false}
           useManufacturerQueueList
+          detailMode="transferChat"
           productMode={PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT}
           filterRequests={(req) =>
             isDesignCustomAbutmentRequest(req) &&

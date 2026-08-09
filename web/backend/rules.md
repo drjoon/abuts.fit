@@ -140,8 +140,12 @@
 - 목록 (`GET /api/requests/all?productMode=design_custom_abutment`, `__designPartner`):
   - 본인 활성 / 미클레임·만료 / 타인 발표 60초만 노출. 발표 후 타인은 숨김. 마감 후 재공개.
   - 응답 메타: `designClaimMeta` / `designClaimPeerBusy` / `designClaimMine` / …
+  - worksheet select에 `caseInfos.memo` / `toothWorks` / `prosthesisType` / `files` 포함(디자인 카드·모달).
 - 승인: 디자인 파트너는 `design_custom_abutment` + stage=`request` + **본인 활성 클레임**만
   (`updateReviewStatusByStage`). 상수: 발표 60초·경고 30분 (`utils/designClaim.js`).
+- 채팅: `GET /api/chats/request-room/:requestId` — 디자인 파트너는 의뢰 기공소(`request.requestor`)와
+  1:1 룸(participants=`[designPartner, requestor]`, `relatedRequestId`). 제조사 룸과 분리.
+- 파일: 디자인 파트너는 `original-file-url` 및 Request `caseInfos.file`/`files` S3 키 다운로드 허용.
 
 ### 가공 우선순위
 
