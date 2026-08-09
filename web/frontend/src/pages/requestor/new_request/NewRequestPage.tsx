@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-09: 왼쪽 첨부 패널을 넓혀 드롭존 안내 문구가 1줄로 유지되도록 함.
+// - 2026-08-09: 신규의뢰 첨부 허용 확장자 STL/PLY/OBJ.
 // - 2026-08-09: 연결 끊기 시 productMode 복원과 함께 출고 모드·일정을 다시 계산한다.
 // - 2026-08-09: 구강스캔·디자인+생산은 메시 직경 없이 리드 1일로 출고 모드를 판정.
 // - 2026-08-09: 우측 신속 비활성(디자인+1일 등)일 때 의뢰카드 신속 버튼도 함께 막는다.
@@ -1263,14 +1265,14 @@ const NewRequestPageContent = () => {
         return;
       }
 
-      if (ext === ".stl") {
+      if (ext === ".stl" || ext === ".ply" || ext === ".obj") {
         stlCandidates.push({ id: toNormalizedFileKey(file), file });
         return;
       }
 
       rejectedFiles.push({
         name: file.name,
-        reason: "STL 파일만 업로드할 수 있어요.",
+        reason: "3D 모델(STL, PLY, OBJ)만 업로드할 수 있어요.",
       });
     });
 
@@ -1699,7 +1701,7 @@ const NewRequestPageContent = () => {
           </DialogContent>
         </Dialog>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch flex-1 min-h-0 h-full">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
             <NewRequestDetailsSection
               files={files}
@@ -1828,7 +1830,7 @@ const NewRequestPageContent = () => {
                   toast({
                     title: "파일이 필요합니다",
                     description:
-                      "최소 1개의 커스텀 어벗 STL 파일을 추가한 뒤 의뢰해주세요.",
+                      "최소 1개의 3D 모델(STL, PLY, OBJ)을 추가한 뒤 의뢰해주세요.",
                     variant: "destructive",
                     duration: 4000,
                   });

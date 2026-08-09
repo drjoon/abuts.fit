@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-09: 드롭존 안내 문구가 항상 1줄이 되도록 가로폭·nowrap 고정.
+// - 2026-08-09: 첨부 accept·드롭존 문구를 3D 모델(STL, PLY, OBJ)로 확장.
 // - 2026-08-09: 구강스캔 카드 — 환자정보 완료 시 흰 배경, 묶음 헤더에 의뢰 삭제(X).
 // - 2026-08-09: 어벗디자인/구강스캔 상단 뱃지 + 호버 즉시 툴팁(생산 vs 디자인+생산).
 // - 2026-08-09: 구강스캔(디자인+생산) ETA는 메시 직경 무시(estimateShipDate 리드 1일).
@@ -1040,7 +1042,7 @@ export function NewRequestAttachmentsPanel({
           }
           e.currentTarget.value = "";
         }}
-        accept=".stl"
+        accept=".stl,.ply,.obj"
       />
 
       <div className="flex items-center justify-between gap-2 px-3 pb-1">
@@ -1075,7 +1077,7 @@ export function NewRequestAttachmentsPanel({
           className={`shrink-0 w-full border-2 border-dashed rounded-2xl text-center transition-colors flex flex-col items-center justify-center cursor-pointer ${
             hasAnyAttachment
               ? "min-h-[4.75rem] md:min-h-[5.25rem] px-3 py-3 md:px-4 md:py-4"
-              : "min-h-[7rem] md:min-h-[8rem] p-5 md:p-6 max-w-[420px] mx-auto"
+              : "min-h-[7rem] md:min-h-[8rem] p-5 md:p-6"
           } ${
             isDragOver
               ? "border-primary bg-primary/5"
@@ -1086,8 +1088,8 @@ export function NewRequestAttachmentsPanel({
           onDrop={onDrop}
           onClick={() => uploadInputRef.current?.click()}
         >
-          <p className="text-xs md:text-sm text-muted-foreground">
-            여기를 클릭하거나 STL 파일을 드래그해 추가하세요.
+          <p className="whitespace-nowrap text-xs md:text-sm text-muted-foreground">
+            여기를 클릭하거나 3D 모델(STL, PLY, OBJ)을 드래그해 추가하세요.
           </p>
         </div>
 

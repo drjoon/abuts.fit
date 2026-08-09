@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 프리뷰 로더가 STL/PLY/OBJ를 지원.
 // - 2026-08-09: 신규의뢰 프리뷰에서 그리드 숨김(showGrid) + FOV 맞춤.
 // - 2026-08-09: STL 프리뷰 카메라를 FOV 기준으로 맞춰 모델이 화면에 거의 꽉 차게 표시.
 // related files:
@@ -9,12 +10,59 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import {
+  mergeGeometries,
+  mergeVertices,
+} from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { cn } from "@/shared/ui/cn";
 import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
+
+const getModelExtLower = (name: string) => {
+  const lower = String(name || "").trim().toLowerCase();
+  const dot = lower.lastIndexOf(".");
+  if (dot < 0) return "";
+  return lower.slice(dot);
+};
+
+const parseModelGeometry = async (file: File): Promise<THREE.BufferGeometry> => {
+  const buffer = await file.arrayBuffer();
+  const ext = getModelExtLower(file.name);
+
+  if (ext === ".ply") {
+    return new PLYLoader().parse(buffer);
+  }
+
+  if (ext === ".obj") {
+    const text = new TextDecoder().decode(buffer);
+    const group = new OBJLoader().parse(text);
+    group.updateMatrixWorld(true);
+    const parts: THREE.BufferGeometry[] = [];
+    group.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.geometry) return;
+      const geo = mesh.geometry.clone();
+      geo.applyMatrix4(mesh.matrixWorld);
+      parts.push(geo);
+    });
+    if (parts.length === 0) {
+      throw new Error("OBJ에 표시할 메시가 없습니다.");
+    }
+    if (parts.length === 1) return parts[0]!;
+    const merged = mergeGeometries(parts, false);
+    if (!merged) {
+      throw new Error("OBJ 메시를 합치지 못했습니다.");
+    }
+    return merged;
+  }
+
+  // 기본: STL (확장자 없거나 .stl)
+  return new STLLoader().parse(buffer);
+};
 
 type Props = {
   file: File;
@@ -427,7 +475,6 @@ export function StlPreviewViewer({
       scene.add(grid);
     }
 
-    const loader = new STLLoader();
     let mesh: THREE.Mesh | null = null;
     let geometry: THREE.BufferGeometry | null = null;
     let finishLine: THREE.Object3D | null = null;
@@ -443,10 +490,9 @@ export function StlPreviewViewer({
     let cancelled = false;
     (async () => {
       try {
-        const buffer = await file.arrayBuffer();
+        geometry = await parseModelGeometry(file);
         if (cancelled) return;
 
-        geometry = loader.parse(buffer);
         geometry = mergeVertices(geometry, 1e-5);
         geometry.computeBoundingBox();
         geometry.computeBoundingSphere();
@@ -1837,8 +1883,8 @@ export function StlPreviewViewer({
         controls.target.set(0, 0, 0);
         controls.update();
       } catch (e) {
-        console.error("[StlPreviewViewer] failed to load STL", e);
-        setError("STL 파일을 불러오지 못했습니다");
+        console.error("[StlPreviewViewer] failed to load 3D model", e);
+        setError("3D 모델 파일을 불러오지 못했습니다");
       }
     })();
     const updateSize = () => {
