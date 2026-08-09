@@ -654,6 +654,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트(`scripts/db/migrate-request-spend-to-gl.js`, `scripts/db/migrate-legacy-creditledger-to-gl.js`)는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
+    - 기본 분배(영업자 소개 있음): 제조사 60% / 개발운영사 10% / 영업자 10% / 관리자 20% (`BusinessAnchor.payoutRates` SSOT, 개발운영사 설정에서만 갱신).
+    - 영업자 소개 없음(`hasSalesmanReferrer=false`): 설정된 영업자 분배비의 **절반을 제조사**, **나머지 절반을 관리자**에 가산하고 영업자 0%. 기본값이면 제조사 65% / 개발운영사 10% / 영업자 0% / 관리자 25%. 하드코딩 고정비율이 아니라 `resolveRatesWithoutSalesman(configuredRates)`로 파생.
 
 - 관리자 credit-reconcile API 정책:
   - `credit-reconcile/check`는 General Ledger 기준 누락 의심 건만 점검합니다.

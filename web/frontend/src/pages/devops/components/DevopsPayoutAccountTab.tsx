@@ -21,13 +21,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 
-type PayoutAccount = {
-  bankName: string;
-  accountNumber: string;
-  holderName: string;
-  updatedAt?: string | null;
-};
-
 type DevopsSettings = {
   manufacturerRate?: number;
   devopsRate?: number;
@@ -44,33 +37,29 @@ type RateField = {
   onChange: (next: string) => void;
 };
 
+function formatRatePct(n: number) {
+  if (!Number.isFinite(n)) return "—";
+  const rounded = Math.round(n * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
 export const DevopsPayoutAccountTab = () => {
   const { toast } = useToast();
   const { token, loginWithToken } = useAuthStore();
 
   const [loading, setLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
-  const [data, setData] = useState<PayoutAccount>({
-    bankName: "",
-    accountNumber: "",
-    holderName: "",
-    updatedAt: null,
-  });
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [manufacturerRate, setManufacturerRate] = useState<string>("60");
   const [devopsRate, setDevopsRate] = useState<string>("10");
   const [salesmanRate, setSalesmanRate] = useState<string>("10");
   const [adminRate, setAdminRate] = useState<string>("20");
   const savedRef = useRef({
-    data: {
-      bankName: "",
-      accountNumber: "",
-      holderName: "",
-      updatedAt: null as string | null,
-    },
     manufacturerRate: "60",
     devopsRate: "10",
     salesmanRate: "10",
     adminRate: "20",
+    updatedAt: null as string | null,
   });
 
   useEffect(() => {
@@ -95,25 +84,9 @@ export const DevopsPayoutAccountTab = () => {
           [key: string]: unknown;
         };
         const profile = (body.data || body) as Record<string, unknown>;
-        const pa = (profile.salesmanPayoutAccount || {}) as Record<
-          string,
-          unknown
-        >;
-        setData({
-          bankName: String(pa?.bankName || ""),
-          accountNumber: String(pa?.accountNumber || ""),
-          holderName: String(pa?.holderName || ""),
-          updatedAt: pa?.updatedAt ? String(pa.updatedAt) : null,
-        });
         const ds: DevopsSettings =
           (profile.devopsPayoutSettings as DevopsSettings) || {};
         const snap = {
-          data: {
-            bankName: String(pa?.bankName || ""),
-            accountNumber: String(pa?.accountNumber || ""),
-            holderName: String(pa?.holderName || ""),
-            updatedAt: pa?.updatedAt ? String(pa.updatedAt) : null,
-          },
           manufacturerRate: String(
             Math.round(Number(ds?.manufacturerRate ?? 0.6) * 100),
           ),
@@ -122,12 +95,14 @@ export const DevopsPayoutAccountTab = () => {
             Math.round(Number(ds?.salesmanRate ?? 0.1) * 100),
           ),
           adminRate: String(Math.round(Number(ds?.adminRate ?? 0.2) * 100)),
+          updatedAt: ds?.updatedAt ? String(ds.updatedAt) : null,
         };
         savedRef.current = snap;
         setManufacturerRate(snap.manufacturerRate);
         setDevopsRate(snap.devopsRate);
         setSalesmanRate(snap.salesmanRate);
         setAdminRate(snap.adminRate);
+        setUpdatedAt(snap.updatedAt);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -139,15 +114,38 @@ export const DevopsPayoutAccountTab = () => {
     };
   }, [token]);
 
-  const rateTotal = useMemo(() => {
-    const nums = [manufacturerRate, devopsRate, salesmanRate, adminRate].map(
-      (v) => Number(v),
-    );
-    if (nums.some((n) => !Number.isFinite(n))) return null;
-    return nums.reduce((a, b) => a + b, 0);
+  const rateNums = useMemo(() => {
+    const mfr = Number(manufacturerRate);
+    const devops = Number(devopsRate);
+    const salesman = Number(salesmanRate);
+    const admin = Number(adminRate);
+    if (![mfr, devops, salesman, admin].every(Number.isFinite)) return null;
+    return { mfr, devops, salesman, admin };
   }, [adminRate, devopsRate, manufacturerRate, salesmanRate]);
 
+  const rateTotal = rateNums
+    ? rateNums.mfr + rateNums.devops + rateNums.salesman + rateNums.admin
+    : null;
   const rateTotalOk = rateTotal !== null && Math.abs(rateTotal - 100) <= 0.01;
+
+  const hasChanges =
+    manufacturerRate !== savedRef.current.manufacturerRate ||
+    devopsRate !== savedRef.current.devopsRate ||
+    salesmanRate !== savedRef.current.salesmanRate ||
+    adminRate !== savedRef.current.adminRate;
+
+  // 영업자 없을 때: 영업자 분배비의 절반 → 제조사, 나머지 절반 → 관리자
+  const withoutSalesmanPreview = useMemo(() => {
+    if (!rateNums) return null;
+    const half = rateNums.salesman / 2;
+    return {
+      manufacturer: rateNums.mfr + half,
+      devops: rateNums.devops,
+      salesman: 0,
+      admin: rateNums.admin + half,
+      half,
+    };
+  }, [rateNums]);
 
   const rateFields: RateField[] = [
     {
@@ -178,32 +176,6 @@ export const DevopsPayoutAccountTab = () => {
     },
   ];
 
-  const validate = (v: PayoutAccount) => {
-    const bankName = v.bankName.trim();
-    const holderName = v.holderName.trim();
-    const accountNumber = v.accountNumber.replace(/\s/g, "").trim();
-
-    const allEmpty = !bankName && !holderName && !accountNumber;
-    if (allEmpty) {
-      return {
-        ok: true as const,
-        normalized: { bankName: "", holderName: "", accountNumber: "" },
-      };
-    }
-
-    if (!bankName || !holderName || !accountNumber) {
-      return {
-        ok: false as const,
-        message: "은행/계좌번호/예금주를 모두 입력해주세요.",
-      };
-    }
-
-    return {
-      ok: true as const,
-      normalized: { bankName, holderName, accountNumber },
-    };
-  };
-
   const save = async () => {
     if (!token) {
       toast({
@@ -215,23 +187,20 @@ export const DevopsPayoutAccountTab = () => {
     }
     if (saving) return;
 
-    const v = validate(data);
-    if (!v.ok) {
+    if (!rateNums) {
       toast({
-        title: "입력값을 확인해주세요",
-        description: v.message,
+        title: "수수료율 오류",
+        description: "수수료율은 숫자여야 합니다.",
         variant: "destructive",
         duration: 3000,
       });
       return;
     }
 
-    const mfrNum = Number(manufacturerRate);
-    const devopsNum = Number(devopsRate);
-    const salesmanNum = Number(salesmanRate);
-    const adminNum = Number(adminRate);
+    const { mfr: mfrNum, devops: devopsNum, salesman: salesmanNum, admin: adminNum } =
+      rateNums;
     const allRates = [mfrNum, devopsNum, salesmanNum, adminNum];
-    if (allRates.some((r) => !Number.isFinite(r) || r < 0 || r > 100)) {
+    if (allRates.some((r) => r < 0 || r > 100)) {
       toast({
         title: "수수료율 오류",
         description: "수수료율은 0~100% 범위여야 합니다.",
@@ -257,11 +226,6 @@ export const DevopsPayoutAccountTab = () => {
         method: "PUT",
         token,
         jsonBody: {
-          salesmanPayoutAccount: {
-            bankName: v.normalized.bankName,
-            accountNumber: v.normalized.accountNumber,
-            holderName: v.normalized.holderName,
-          },
           devopsPayoutSettings: {
             manufacturerRate: mfrNum / 100,
             devopsRate: devopsNum / 100,
@@ -304,23 +268,17 @@ export const DevopsPayoutAccountTab = () => {
       }
 
       const now = new Date().toISOString();
-      const newData = { ...v.normalized, updatedAt: now } as PayoutAccount;
-      setData((prev) => ({ ...prev, ...newData }));
       setManufacturerRate(String(mfrNum));
       setDevopsRate(String(devopsNum));
       setSalesmanRate(String(salesmanNum));
       setAdminRate(String(adminNum));
+      setUpdatedAt(now);
       savedRef.current = {
-        data: {
-          bankName: v.normalized.bankName,
-          accountNumber: v.normalized.accountNumber,
-          holderName: v.normalized.holderName,
-          updatedAt: now,
-        },
         manufacturerRate: String(mfrNum),
         devopsRate: String(devopsNum),
         salesmanRate: String(salesmanNum),
         adminRate: String(adminNum),
+        updatedAt: now,
       };
     } finally {
       setSaving(false);
@@ -342,17 +300,20 @@ export const DevopsPayoutAccountTab = () => {
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-lg">
           <Landmark className="h-5 w-5" />
-          수익 분배
+          입금
         </CardTitle>
         <CardDescription>
-          매출 100% 기준 분배율과 입금 계좌를 관리합니다.
+          매출 100% 기준 분배율. 영업자 소개가 없으면 영업자 몫을 제조사·관리자가
+          절반씩 가져갑니다.
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-8">
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold tracking-tight">분배율</h3>
+            <h3 className="text-sm font-semibold tracking-tight">
+              분배율 (영업자 소개 있음)
+            </h3>
             <Badge
               variant="outline"
               className={cn(
@@ -406,55 +367,65 @@ export const DevopsPayoutAccountTab = () => {
           </div>
         </section>
 
-        <section className="space-y-3">
-          <div className="space-y-0.5">
-            <h3 className="text-sm font-semibold tracking-tight">입금 계좌</h3>
-            <p className="text-sm text-muted-foreground">
-              개발운영사 분배금 수령 계좌
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="devops-bank">은행</Label>
-              <Input
-                id="devops-bank"
-                value={data.bankName}
-                onChange={(e) =>
-                  setData((p) => ({ ...p, bankName: e.target.value }))
-                }
-                placeholder="예: 국민은행"
-              />
+        {withoutSalesmanPreview ? (
+          <section className="space-y-3">
+            <div className="space-y-0.5">
+              <h3 className="text-sm font-semibold tracking-tight">
+                영업자 없을 때 (자동 적용)
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                영업자 {formatRatePct(rateNums?.salesman ?? 0)}% 중{" "}
+                {formatRatePct(withoutSalesmanPreview.half)}%p씩 제조사·관리자에
+                가산
+              </p>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="devops-account">계좌번호</Label>
-              <Input
-                id="devops-account"
-                value={data.accountNumber}
-                onChange={(e) =>
-                  setData((p) => ({ ...p, accountNumber: e.target.value }))
-                }
-                placeholder="숫자만 입력"
-                className="tabular-nums"
-              />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(
+                [
+                  {
+                    key: "manufacturer",
+                    label: "제조사 (애크로덴트)",
+                    value: withoutSalesmanPreview.manufacturer,
+                  },
+                  {
+                    key: "devops",
+                    label: "개발운영사 (메이븐)",
+                    value: withoutSalesmanPreview.devops,
+                  },
+                  {
+                    key: "salesman",
+                    label: "영업자 (법인/개인)",
+                    value: withoutSalesmanPreview.salesman,
+                  },
+                  {
+                    key: "admin",
+                    label: "관리자 (어벗츠)",
+                    value: withoutSalesmanPreview.admin,
+                  },
+                ] as const
+              ).map((row) => (
+                <div
+                  key={row.key}
+                  className="rounded-xl border border-dashed border-border/80 bg-muted/30 p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-foreground">
+                      {row.label}
+                    </span>
+                    <span className="text-sm tabular-nums text-muted-foreground">
+                      {formatRatePct(row.value)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="devops-holder">예금주</Label>
-              <Input
-                id="devops-holder"
-                value={data.holderName}
-                onChange={(e) =>
-                  setData((p) => ({ ...p, holderName: e.target.value }))
-                }
-              />
-            </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
           <div className="text-xs text-muted-foreground">
-            {data.updatedAt
-              ? `마지막 저장 · ${new Date(data.updatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`
+            {updatedAt
+              ? `마지막 저장 · ${new Date(updatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`
               : null}
           </div>
           <div className="flex items-center gap-2">
@@ -463,17 +434,21 @@ export const DevopsPayoutAccountTab = () => {
               variant="outline"
               onClick={() => {
                 const s = savedRef.current;
-                setData(s.data);
                 setManufacturerRate(s.manufacturerRate);
                 setDevopsRate(s.devopsRate);
                 setSalesmanRate(s.salesmanRate);
                 setAdminRate(s.adminRate);
+                setUpdatedAt(s.updatedAt);
               }}
-              disabled={saving}
+              disabled={saving || !hasChanges}
             >
               취소
             </Button>
-            <Button type="button" onClick={save} disabled={saving}>
+            <Button
+              type="button"
+              onClick={save}
+              disabled={saving || !hasChanges}
+            >
               {saving ? "저장 중…" : "저장"}
             </Button>
           </div>

@@ -103,7 +103,9 @@ Notes:
   - `src/shared/components/CreditLedgerModal.tsx`
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·designFee 전역 설정 UI)
 - 개발·운영사 설정
-  - `src/pages/devops/DevopsSettingsPage.tsx` (요금 탭 → 신속배송 추가비·디자인비 등)
+  - `src/pages/devops/DevopsSettingsPage.tsx` (계정/사업자/임직원/**결제(입금 계좌)**/알림/보안)
+  - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · 디자이너 지정
+  - 영업자 없을 때 분배: 설정된 영업자 분배비의 절반→제조사, 나머지 절반→관리자 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
   - 관리자 대시보드/소통
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
   - `src/pages/admin/support/AdminChatManagement.tsx`

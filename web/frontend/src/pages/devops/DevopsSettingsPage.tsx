@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/devops/DevopsPartnerPage.tsx
+// - web/frontend/src/pages/devops/components/DevopsDepositAccountTab.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -14,13 +15,15 @@ import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestorSecurity } from "@/pages/requestor/settings/Security";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
-import { User, Building2, Bell, Shield, Users } from "lucide-react";
+import { DevopsDepositAccountTab } from "./components/DevopsDepositAccountTab";
+import { User, Building2, Landmark, Bell, Shield, Users } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
+  | "payment"
   | "notifications"
   | "security";
 
@@ -47,6 +50,12 @@ export const DevopsSettingsPage = () => {
         label: "임직원",
         icon: Users,
         content: <StaffTab userData={user} />,
+      },
+      {
+        key: "payment",
+        label: "결제",
+        icon: Landmark,
+        content: <DevopsDepositAccountTab />,
       },
       {
         key: "notifications",

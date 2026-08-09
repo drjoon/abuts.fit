@@ -25,7 +25,7 @@ export const DevopsPartnerPage = () => {
     () => [
       {
         key: "payment",
-        label: "수익 분배",
+        label: "입금",
         icon: Landmark,
         content: <DevopsPayoutAccountTab />,
       },
