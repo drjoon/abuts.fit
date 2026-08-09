@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 묶음 요일 변경 시 신규 days·구강스캔(디자인+1일)로 신속 선택 가능 여부를 다시 판정.
 // - 2026-08-09: 상단 헤더(보유 크레딧/지난 의뢰)를 RequestorWorkspaceHeader로 공유. 기간 필터는 신규의뢰에서 미표시.
 // - 2026-08-04: 중복 의뢰 "취소 후 재의뢰" 선택 시 기존 의뢰/치과 즐겨찾기 정보로 누락 필드를 채우고 카드 검증을 자동 완료.
 // - 2026-08-03: 중복 의뢰 안내 모달의 상태 표시를 공정 라벨 정규화(의뢰 -> 준비)로 표시. (display-only)
@@ -887,10 +888,11 @@ const NewRequestPageContent = () => {
       mode: "normal" | "express",
       diameter: number | null = null,
       productMode: string | null = null,
+      batchDays: string[] | null = null,
     ): "normal" | "express" => {
       if (mode !== "express") return "normal";
       const ok = isExpressShippingSelectable({
-        weeklyBatchDays,
+        weeklyBatchDays: batchDays ?? weeklyBatchDays,
         leadTimes,
         diameter,
         productMode,
@@ -900,20 +902,44 @@ const NewRequestPageContent = () => {
     [weeklyBatchDays, leadTimes],
   );
 
+  const groupedFileKeys = useMemo(
+    () => new Set((patientGroups || []).flatMap((g) => g.fileKeys)),
+    [patientGroups],
+  );
+
+  const resolveCaseProductMode = useCallback(
+    (fileKey: string, info?: CaseInfos | null) => {
+      if (groupedFileKeys.has(fileKey)) return "design_custom_abutment";
+      return (info?.productMode as string | null | undefined) ?? null;
+    },
+    [groupedFileKeys],
+  );
+
+  /** 우측 기본 신속 카드: 첨부 중 디자인+생산이 있으면 +1영업일로 판정 */
+  const expressSelectProductMode = useMemo(() => {
+    if (groupedFileKeys.size > 0) return "design_custom_abutment";
+    for (const file of files) {
+      const key = toNormalizedFileKey(file);
+      if (caseInfosMap?.[key]?.productMode === "design_custom_abutment") {
+        return "design_custom_abutment";
+      }
+    }
+    return null;
+  }, [groupedFileKeys, files, caseInfosMap, toNormalizedFileKey]);
+
   const handleWeeklyBatchDaysChange = useCallback(
     (days: string[]) => {
       setWeeklyBatchDays(days);
       // 요일 변경 후 신속 이점이 있으면 기본 출고 방식을 유지하고, 없으면 묶음으로 맞춘다.
+      // 주의: setState 직후라 weeklyBatchDays 클로저는 아직 이전 값 — 반드시 days를 넘긴다.
       for (const file of files) {
         const key = toNormalizedFileKey(file);
+        const info = caseInfosMap?.[key];
         const diameter =
-          (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
-          null;
-        const productMode =
-          (caseInfosMap?.[key]?.productMode as string | null | undefined) ??
-          null;
+          (info?.maxDiameter as number | null | undefined) ?? null;
+        const productMode = resolveCaseProductMode(key, info);
         const preferred =
-          caseInfosMap?.[key]?.shippingMode === "express" ||
+          info?.shippingMode === "express" ||
           defaultShippingMode === "express"
             ? "express"
             : "normal";
@@ -922,6 +948,7 @@ const NewRequestPageContent = () => {
             preferred,
             diameter,
             productMode,
+            days,
           ),
         });
       }
@@ -940,6 +967,7 @@ const NewRequestPageContent = () => {
       caseInfosMap,
       defaultShippingMode,
       resolveEffectiveShippingMode,
+      resolveCaseProductMode,
     ],
   );
 
@@ -948,12 +976,10 @@ const NewRequestPageContent = () => {
       setDefaultShippingMode(mode);
       for (const file of files) {
         const key = toNormalizedFileKey(file);
+        const info = caseInfosMap?.[key];
         const diameter =
-          (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
-          null;
-        const productMode =
-          (caseInfosMap?.[key]?.productMode as string | null | undefined) ??
-          null;
+          (info?.maxDiameter as number | null | undefined) ?? null;
+        const productMode = resolveCaseProductMode(key, info);
         updateCaseInfos(key, {
           shippingMode: resolveEffectiveShippingMode(
             mode,
@@ -975,6 +1001,7 @@ const NewRequestPageContent = () => {
       toNormalizedFileKey,
       updateCaseInfos,
       resolveEffectiveShippingMode,
+      resolveCaseProductMode,
       caseInfosMap,
     ],
   );
@@ -982,18 +1009,13 @@ const NewRequestPageContent = () => {
   // 신속 이점이 없어지면(ETA가 묶음과 같거나 늦으면) 건별 모드를 묶음으로 강등.
   // 환자 케이스는 항상 디자인+생산(+1영업일)로 판정한다.
   useEffect(() => {
-    const groupedKeys = new Set(
-      (patientGroups || []).flatMap((g) => g.fileKeys),
-    );
     for (const file of files) {
       const key = toNormalizedFileKey(file);
       const info = caseInfosMap?.[key];
       if (info?.shippingMode !== "express") continue;
       const diameter =
         (info?.maxDiameter as number | null | undefined) ?? null;
-      const productMode = groupedKeys.has(key)
-        ? "design_custom_abutment"
-        : ((info?.productMode as string | null | undefined) ?? null);
+      const productMode = resolveCaseProductMode(key, info);
       if (
         resolveEffectiveShippingMode("express", diameter, productMode) ===
         "express"
@@ -1005,10 +1027,10 @@ const NewRequestPageContent = () => {
   }, [
     files,
     caseInfosMap,
-    patientGroups,
     toNormalizedFileKey,
     updateCaseInfos,
     resolveEffectiveShippingMode,
+    resolveCaseProductMode,
   ]);
 
   // 새로 첨부된 파일에만 우측 기본 배송 방식을 적용한다.
@@ -1019,15 +1041,13 @@ const NewRequestPageContent = () => {
       nextKnown.add(key);
       if (knownFileKeysRef.current.has(key)) continue;
 
-      const existing = caseInfosMap?.[key]?.shippingMode;
+      const info = caseInfosMap?.[key];
+      const existing = info?.shippingMode;
       if (existing === "normal" || existing === "express") continue;
 
       const diameter =
-        (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
-        null;
-      const productMode =
-        (caseInfosMap?.[key]?.productMode as string | null | undefined) ??
-        null;
+        (info?.maxDiameter as number | null | undefined) ?? null;
+      const productMode = resolveCaseProductMode(key, info);
       updateCaseInfos(key, {
         shippingMode: resolveEffectiveShippingMode(
           defaultShippingMode,
@@ -1044,6 +1064,7 @@ const NewRequestPageContent = () => {
     updateCaseInfos,
     toNormalizedFileKey,
     resolveEffectiveShippingMode,
+    resolveCaseProductMode,
   ]);
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
@@ -1662,6 +1683,7 @@ const NewRequestPageContent = () => {
               weeklyBatchDays={weeklyBatchDays}
               onWeeklyBatchDaysChange={handleWeeklyBatchDaysChange}
               leadTimes={leadTimes}
+              expressProductMode={expressSelectProductMode}
               defaultShippingMode={defaultShippingMode}
               onDefaultShippingModeChange={handleDefaultShippingModeChange}
               onSubmit={() => {

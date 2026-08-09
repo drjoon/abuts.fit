@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 신속 비활성 스타일을 opacity 대신 명시적 slate로 구분해 요일 변경 후 상태를 분명히 한다.
 // - 2026-08-09: 하나로 묶기 옆 선택해제, 카드 좌우 드래그 여유 공간.
 // - 2026-08-09: 카드 클릭 모달 — 마키는 드래그 임계 이후에만 시작(클릭 방해 제거).
 // - 2026-08-09: 구강스캔 카드 제목을 파일명 환자명/공통문자열로 표시.
@@ -262,10 +263,12 @@ export function NewRequestAttachmentsPanel({
 
   const modeButtonClass = (active: boolean, disabled = false) =>
     `px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-      active
-        ? "bg-primary text-white"
-        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-    } ${disabled ? "opacity-50 cursor-not-allowed hover:bg-slate-100" : ""}`;
+      disabled
+        ? "bg-slate-50 text-slate-400 cursor-not-allowed"
+        : active
+          ? "bg-primary text-white"
+          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+    }`;
 
   const collectKeysInMarquee = useCallback(
     (originX: number, originY: number, currentX: number, currentY: number) => {

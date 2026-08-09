@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 첨부 건이 디자인+생산이면 신속 선택 판정에 productMode(+1영업일) 반영.
 // - 2026-08-09: 출고 카드 상단 여백 정리(세로 중앙정렬 제거, 상하좌우 패딩 균일).
 // - 2026-08-09: 묶음/신속 카피 정리, 디자인+1일 안내를 의뢰하기 버튼 바로 위로.
 // - 2026-08-09: 디자인+1일 안내를 신속 카드 밖으로 이동(묶음/신속 내부 카피 삭제).
@@ -46,6 +47,8 @@ type Props = {
   weeklyBatchDays: string[];
   onWeeklyBatchDaysChange?: (days: string[]) => void;
   leadTimes?: LeadTimesMap | null;
+  /** 첨부 건이 디자인+생산(구강 스캔 묶음 등)이면 +1영업일 반영 */
+  expressProductMode?: string | null;
   defaultShippingMode: ShippingMode;
   onDefaultShippingModeChange: (mode: ShippingMode) => void;
   onSubmit: () => void;
@@ -66,6 +69,7 @@ export function NewRequestShippingSection({
   weeklyBatchDays,
   onWeeklyBatchDaysChange,
   leadTimes = null,
+  expressProductMode = null,
   defaultShippingMode,
   onDefaultShippingModeChange,
   onSubmit,
@@ -108,9 +112,10 @@ export function NewRequestShippingSection({
         weeklyBatchDays: selectedDays,
         leadTimes,
         diameter: null,
+        productMode: expressProductMode,
         requestedAt: now,
       }),
-    [selectedDays, leadTimes, now],
+    [selectedDays, leadTimes, expressProductMode, now],
   );
 
   // 저장된 기본값(preference)은 유지하고, 선택 불가 구간에서는 표시·적용만 묶음으로 본다.
