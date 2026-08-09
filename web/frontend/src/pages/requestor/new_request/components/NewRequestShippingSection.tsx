@@ -1,4 +1,9 @@
 // change-log:
+// - 2026-08-09: 출고 카드 상단 여백 정리(세로 중앙정렬 제거, 상하좌우 패딩 균일).
+// - 2026-08-09: 묶음/신속 카피 정리, 디자인+1일 안내를 의뢰하기 버튼 바로 위로.
+// - 2026-08-09: 디자인+1일 안내를 신속 카드 밖으로 이동(묶음/신속 내부 카피 삭제).
+// - 2026-08-09: 신속 카피 «디자인까지 의뢰할 경우 1일 추가».
+// - 2026-08-09: 출고 카드 max-h 제거·왼쪽과 동일 높이로 의뢰하기 버튼 잘림 방지.
 // - 2026-08-09: 디자인+생산 출고 +1영업일 안내(묶음/신속 카피).
 // - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일).
 // - 2026-08-08: weeklyBatchDays prop SSOT — selectedDays 이중 상태 제거, optimistic 반영.
@@ -298,9 +303,9 @@ export function NewRequestShippingSection({
   return (
     <div
       ref={containerRef}
-      className="app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-4 border-2 p-4 md:p-6 transition-all border-gray-300 h-full max-h-[500px]"
+      className="app-glass-card app-glass-card--lg relative flex flex-1 min-h-0 h-full flex-col gap-4 border-2 p-4 md:p-6 transition-all border-gray-300"
     >
-      <div className="app-glass-card-content flex flex-col items-center gap-3">
+      <div className="app-glass-card-content flex min-h-0 flex-1 flex-col items-center justify-start gap-3 overflow-y-auto">
         <div
           className="w-full flex flex-col gap-4"
           role="radiogroup"
@@ -359,11 +364,9 @@ export function NewRequestShippingSection({
             </div>
             <div className="text-sm text-red-500">적어도 2-3개 요일 선택 권장</div>
             <div className="text-sm text-slate-600 leading-relaxed">
-              디자인하시는대로 바로 바로 의뢰해주세요.
+              준비되는대로 바로 의뢰해주세요.
               <br />
               지정된 요일에 일괄 출고해드립니다.
-              <br />
-              디자인+생산은 출고일에 +1영업일이 더해집니다.
             </div>
           </div>
 
@@ -405,14 +408,12 @@ export function NewRequestShippingSection({
             {expressSelectable ? (
               <>
                 <div className="text-base text-foreground leading-relaxed">
-                  생산: 오늘 낮 12시 이전 의뢰 시 오늘 오후 출고
-                  <br />
-                  디자인+생산: +1영업일
+                  오늘 낮 12시 이전 의뢰 시 오늘 오후 출고
                 </div>
                 <div className="text-sm text-slate-600 leading-relaxed">
                   의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
                   <br />
-                  단, 생산지연시 내일 출고되고, 추가 의뢰크레딧은 취소됩니다.
+                  (생산지연시 내일 출고, 추가 크레딧 없음)
                 </div>
               </>
             ) : (
@@ -426,7 +427,10 @@ export function NewRequestShippingSection({
         </div>
       </div>
 
-      <div className="app-glass-card-content pt-1">
+      <div className="app-glass-card-content mt-auto shrink-0 space-y-2">
+        <div className="text-center text-sm text-slate-600">
+          디자인까지 의뢰할 경우 1일 추가
+        </div>
         <div className="flex justify-center">
           <Button
             onClick={onSubmit}
