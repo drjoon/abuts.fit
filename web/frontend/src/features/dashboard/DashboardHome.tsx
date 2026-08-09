@@ -3,14 +3,12 @@ import { RequestorDashboardPage } from "@/pages/requestor/dashboard/RequestorDas
 import { AdminDashboardPage } from "@/pages/admin/dashboard/AdminDashboardPage";
 import { SalesmanDashboardPage } from "@/pages/salesman/SalesmanDashboardPage";
 import { DevopsDashboardPage } from "@/pages/devops/DevopsDashboardPage";
-import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
 import { Navigate } from "react-router-dom";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
-import {
-  getRoleDefaultDashboardPath,
-  normalizeLastDashboardPath,
-} from "@/shared/navigation/lastDashboardPath";
+import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// change-log:
+// - 2026-08-09: 모든 role에서 /dashboard 허브가 lastDashboardPath(없으면 역할 기본값)로 복원.
 // related files:
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
@@ -21,8 +19,10 @@ export const DashboardHome = () => {
 
   if (!user) return null;
 
-  if (user.role === "practice") {
-    return <PracticeFileTransferPage />;
+  const entry = resolveEntryDashboardPath(user);
+  // `/dashboard`는 진입 허브. 최근 메뉴(또는 역할 기본)가 다른면 그쪽으로 보낸다.
+  if (entry !== "/dashboard") {
+    return <Navigate to={entry} replace />;
   }
 
   if (user.role === "requestor") {
@@ -33,15 +33,6 @@ export const DashboardHome = () => {
     );
   }
 
-  if (user.role === "manufacturer") {
-    const last = normalizeLastDashboardPath(user.lastDashboardPath);
-    const target =
-      last && last !== "/dashboard"
-        ? last
-        : getRoleDefaultDashboardPath("manufacturer");
-    return <Navigate to={target} replace />;
-  }
-
   if (user.role === "salesman") {
     return <SalesmanDashboardPage />;
   }
@@ -50,5 +41,10 @@ export const DashboardHome = () => {
     return <DevopsDashboardPage />;
   }
 
-  return <AdminDashboardPage />;
+  if (user.role === "admin") {
+    return <AdminDashboardPage />;
+  }
+
+  // manufacturer / practice 등은 entry가 역할 기본으로 보정되어 위에서 Navigate 됨
+  return <Navigate to={entry} replace />;
 };

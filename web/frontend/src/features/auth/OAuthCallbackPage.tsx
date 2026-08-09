@@ -7,10 +7,7 @@ import type { NavigateOptions, To } from "react-router-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
-import {
-  getRoleDefaultDashboardPath,
-  normalizeLastDashboardPath,
-} from "@/shared/navigation/lastDashboardPath";
+import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 export const OAuthCallbackPage = () => {
   const [searchParams] = useSearchParams();
@@ -130,9 +127,9 @@ export const OAuthCallbackPage = () => {
       }
 
       const user = useAuthStore.getState().user;
-      const last = normalizeLastDashboardPath(user?.lastDashboardPath);
-      const target = last || getRoleDefaultDashboardPath(user?.role);
-      await navigateAfterDelay(target, { replace: true });
+      await navigateAfterDelay(resolveEntryDashboardPath(user), {
+        replace: true,
+      });
     };
 
     run();

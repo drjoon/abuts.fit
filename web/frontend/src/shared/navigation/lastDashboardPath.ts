@@ -45,3 +45,27 @@ export function getRoleDefaultDashboardPath(role: string | null | undefined): st
       return "/dashboard";
   }
 }
+
+/**
+ * 로그인·/dashboard 허브 진입용.
+ * 저장된 최근 사이드바 경로를 우선하고, 역할에 맞지 않는 bare `/dashboard`는 역할 기본값으로 보정한다.
+ */
+export function resolveEntryDashboardPath(user: {
+  role?: string | null;
+  lastDashboardPath?: string | null;
+} | null | undefined): string {
+  const role = user?.role;
+  const roleDefault = getRoleDefaultDashboardPath(role);
+  const last = normalizeLastDashboardPath(user?.lastDashboardPath);
+  if (!last) return roleDefault;
+
+  // manufacturer/practice는 `/dashboard`에 콘텐츠가 없음
+  if (
+    (role === "manufacturer" || role === "practice") &&
+    (last === "/dashboard" || last === "/dashboard/")
+  ) {
+    return roleDefault;
+  }
+
+  return last;
+}

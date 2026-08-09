@@ -22,17 +22,21 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { PublicPageLayout } from "./components/PublicPageLayout";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/App.tsx
+// - web/frontend/src/shared/navigation/lastDashboardPath.ts
 
 const Index = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);
   const [isQuickDropOver, setIsQuickDropOver] = useState(false);
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const entryPath = resolveEntryDashboardPath(user);
 
   const moveToPracticeDropzoneWithFiles = (files: File[]) => {
     const nextFiles = Array.from(files || []);
@@ -119,7 +123,7 @@ const Index = () => {
               size="lg"
               className="flex-1 basis-[calc(50%-0.75rem)] h-14 rounded-full bg-white text-slate-900 hover:bg-white/90 sm:basis-auto"
               onClick={() =>
-                navigate(isAuthenticated ? "/dashboard" : "/signup")
+                navigate(isAuthenticated ? entryPath : "/signup")
               }
             >
               지금 가입하기
@@ -130,7 +134,7 @@ const Index = () => {
               variant="outline"
               className="flex-1 basis-[calc(50%-0.75rem)] h-14 rounded-full border-white/40 bg-transparent text-white hover:bg-white/10 sm:basis-auto"
               onClick={() =>
-                navigate(isAuthenticated ? "/dashboard" : "/login")
+                navigate(isAuthenticated ? entryPath : "/login")
               }
             >
               로그인

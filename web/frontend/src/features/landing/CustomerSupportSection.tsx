@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { MessageSquare, Phone, Mail } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNavigate } from "react-router-dom";
+import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { ToastAction } from "@/components/ui/toast";
 import { useToast } from "@/shared/hooks/use-toast";
 import { COMPANY_PHONE, SUPPORT_EMAIL } from "@/shared/lib/contactInfo";
@@ -18,13 +19,13 @@ interface CustomerSupportSectionProps {
 export const CustomerSupportSection = ({
   onOpenGuestChat,
 }: CustomerSupportSectionProps) => {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const handleChatClick = () => {
     if (isAuthenticated) {
-      navigate("/dashboard");
+      navigate(resolveEntryDashboardPath(user));
     } else {
       onOpenGuestChat();
     }

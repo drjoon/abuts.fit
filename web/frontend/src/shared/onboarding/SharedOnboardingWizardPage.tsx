@@ -8,11 +8,13 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
 import { SettingsWizard } from "./wizard/SettingsWizard";
 import { canUsePaidServices } from "@/shared/business/requestorCapabilities";
+import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 const resolvePostOnboardingPath = (user: {
   role?: string | null;
   businessVerified?: boolean;
   requestorCapabilities?: { practice?: boolean; lab?: boolean } | null;
+  lastDashboardPath?: string | null;
 } | null) => {
   // 유료 미가용(practice-only·미검증)은 대시보드 대신 기공의뢰서로
   if (
@@ -24,7 +26,7 @@ const resolvePostOnboardingPath = (user: {
   ) {
     return "/dashboard/practice-transfers";
   }
-  return "/dashboard";
+  return resolveEntryDashboardPath(user);
 };
 
 export const SharedOnboardingWizardPage = () => {

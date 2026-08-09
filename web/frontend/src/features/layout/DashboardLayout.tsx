@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-09: 모든 role 최근 사이드바 경로를 계정 디폴트 진입점으로 서버 저장·복원. `/dashboard` 홈 클릭 시 last path pin.
 // - 2026-08-09: 제조사 사이드메뉴 가공작업→생산.
 // - 2026-08-09: 제조사 사이드메뉴 디자인 추가·작업→가공작업. 계정별 최근 대시보드 경로 서버 저장. 디자인은 상단 기간필터 헤더만.
 // - 2026-08-08: 미확인 배지 초기 API는 토큰당 1회만. 가시성 refetch 제거(소켓만 갱신).
@@ -371,6 +372,25 @@ export const DashboardLayout = () => {
     ].includes(user?.role);
 
   // 계정별 최근 대시보드 경로 서버 저장 (pathname + search)
+  const persistLastDashboardPath = useCallback(
+    (rawPath: string) => {
+      if (!token || !user?.id) return;
+      const nextPath = normalizeLastDashboardPath(rawPath);
+      if (!nextPath) return;
+      if (nextPath === user.lastDashboardPath) return;
+      setLastDashboardPath(nextPath);
+      void apiFetch({
+        path: "/api/users/last-dashboard-path",
+        method: "PUT",
+        token,
+        jsonBody: { path: nextPath },
+      }).catch(() => {
+        // 저장 실패는 UX를 막지 않음
+      });
+    },
+    [setLastDashboardPath, token, user?.id, user?.lastDashboardPath],
+  );
+
   useEffect(() => {
     if (!token || !user?.id) return;
     if (isWizardRoute) return;
@@ -383,15 +403,7 @@ export const DashboardLayout = () => {
     if (nextPath === user.lastDashboardPath) return;
 
     const timer = window.setTimeout(() => {
-      setLastDashboardPath(nextPath);
-      void apiFetch({
-        path: "/api/users/last-dashboard-path",
-        method: "PUT",
-        token,
-        jsonBody: { path: nextPath },
-      }).catch(() => {
-        // 저장 실패는 UX를 막지 않음
-      });
+      persistLastDashboardPath(nextPath);
     }, 400);
 
     return () => window.clearTimeout(timer);
@@ -400,12 +412,24 @@ export const DashboardLayout = () => {
     location.pathname,
     location.search,
     onboardingCompleted,
-    setLastDashboardPath,
+    persistLastDashboardPath,
     shouldForceOnboarding,
     token,
     user?.id,
     user?.lastDashboardPath,
   ]);
+
+  /** 사이드바 이동. `/dashboard` 홈은 last path를 먼저 pin해 허브 리다이렉트와 충돌하지 않게 한다. */
+  const goSidebarHref = useCallback(
+    (href: string) => {
+      if (href === "/dashboard") {
+        persistLastDashboardPath("/dashboard");
+      }
+      navigate(href);
+      setIsOpen(false);
+    },
+    [navigate, persistLastDashboardPath],
+  );
 
   useEffect(() => {
     if (!token) return;
@@ -1076,8 +1100,7 @@ export const DashboardLayout = () => {
                                   : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                               }`}
                               onClick={() => {
-                                navigate(item.href);
-                                setIsOpen(false);
+                                goSidebarHref(item.href);
                               }}
                               aria-current={isActive ? "page" : undefined}
                             >
@@ -1141,8 +1164,7 @@ export const DashboardLayout = () => {
                       }`}
                       onClick={() => {
                         if (paidLocked) return;
-                        navigate(item.href);
-                        setIsOpen(false);
+                        goSidebarHref(item.href);
                       }}
                       aria-current={isActive ? "page" : undefined}
                     >

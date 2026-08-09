@@ -16,10 +16,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
-import {
-  getRoleDefaultDashboardPath,
-  normalizeLastDashboardPath,
-} from "@/shared/navigation/lastDashboardPath";
+import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 type DevAccount = {
   label: string;
@@ -28,10 +25,7 @@ type DevAccount = {
 };
 
 const resolvePostLoginPath = () => {
-  const user = useAuthStore.getState().user;
-  const last = normalizeLastDashboardPath(user?.lastDashboardPath);
-  if (last) return last;
-  return getRoleDefaultDashboardPath(user?.role);
+  return resolveEntryDashboardPath(useAuthStore.getState().user);
 };
 
 const isDev = import.meta.env.DEV;
