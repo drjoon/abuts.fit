@@ -390,21 +390,32 @@ export function StlPreviewViewer({
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
 
     containerRef.current.innerHTML = "";
     containerRef.current.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 1.2);
+    // 형태 인식: ambient를 낮추고 key/fill 대비로 굴곡을 살린다.
+    // (너무 균등한 랩어라운드는 스캔이 납작해 보임)
+    const hemi = new THREE.HemisphereLight(0xf7fafc, 0xc5d0de, 0.5);
+    scene.add(hemi);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.18);
     scene.add(ambient);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    keyLight.position.set(80, -40, 100);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    keyLight.position.set(35, -55, 95);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
-    fillLight.position.set(-60, 40, 60);
+    const fillLight = new THREE.DirectionalLight(0xeaf2ff, 0.4);
+    fillLight.position.set(-70, 45, 50);
     scene.add(fillLight);
+
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    rimLight.position.set(15, 90, -60);
+    scene.add(rimLight);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -453,8 +464,8 @@ export function StlPreviewViewer({
 
         const material = new THREE.MeshStandardMaterial({
           color: 0x5b9dff,
-          metalness: 0.2,
-          roughness: 0.25,
+          metalness: 0.08,
+          roughness: 0.6,
         });
         mesh = new THREE.Mesh(geometry, material);
 
