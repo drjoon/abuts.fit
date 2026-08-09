@@ -1,18 +1,18 @@
 ---
-description: 신규의뢰 구강스캔 vs 커스텀어벗 STL — 파일 크기 기준 자동묶음·productMode·뱃지
+description: 신규의뢰 구강스캔 vs 커스텀어벗 STL — 자동은 3MB, 수동 연결/해제는 크기 무관
 globs: "**/patientGroups.ts|**/usePatientFileGroups.ts|**/NewRequestAttachmentsPanel.tsx|**/useNewRequestLocalFiles.ts|**/useNewRequestPage.ts|**/NewRequestPage.tsx|**/NewRequestDetailsSection.tsx"
 alwaysApply: false
 ---
 
-# 구강스캔 파일 크기 분류 (신규의뢰 자동묶음)
+# 구강스캔 파일 크기 분류 (신규의뢰 묶음)
 
 ## Policy
 
-- 구강 스캔은 파일이 크고, 커스텀어벗 디자인 STL은 작다. **자동 묶음은 파일 크기**로 가린다.
-- **파일명·환자명만으로** 한꺼번에 올린 파일을 구강스캔 1건으로 합치지 않는다.
-  동일 환자의 커스텀어벗 디자인 여러 개를 올리는 경우가 많다.
+- 구강 스캔은 파일이 크고, 커스텀어벗 디자인 STL은 작다.
+- **자동 묶음만** 파일 크기(3MB)로 가린다. 파일명·환자명만으로 합치지 않는다.
+- **수동** 연결(합치기)·해제(연결 끊기)는 **3MB 기준을 적용하지 않는다**. 모든 첨부 파일에 가능.
 
-## Thresholds (SSOT)
+## Thresholds — 자동만 (SSOT)
 
 | 크기 | 간주 | 자동 묶음 | productMode | 뱃지 / 툴팁 |
 |------|------|-----------|-------------|-------------|
@@ -21,25 +21,29 @@ alwaysApply: false
 
 상수·헬퍼: `web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts`
 
-## Do / Don't
+## Auto vs Manual
 
 ```ts
-// ❌ BAD — 환자명/배치만으로 소형 STL까지 구강스캔 묶음
-planBatchGroupIfAmbiguous({ newFileKeys: allKeys, ... });
-
-// ✅ GOOD — >=3MB만 자동 묶음
+// ✅ 자동 — >=3MB만
 planAutoGroupsForNewFiles({ ..., sizeByFileKey });
 planBatchGroupIfAmbiguous({ ..., sizeByFileKey });
+
+// ✅ 수동 — 크기 필터 없이 선택된 키 전부
+groupSelectedFiles(fileKeys); // 합치기
+ungroup(groupId);             // 묶음 전체 해제
+removeFileFromGroups(fileKey); // 멤버 연결 끊기
+addFilesToGroup(groupId, fileKeys);
+
+// ❌ BAD — 수동 경로에 isLikelyOralScanSize / filterOralScanFileKeys 넣기
 ```
 
-- 자동 묶음 진입점: `usePatientFileGroups` → `planAutoGroupsForNewFiles` / `planBatchGroupIfAmbiguous`
-- 단일 구강스캔(>=3MB)도 묶음 없이 `productMode=design_custom_abutment` (상세 모달에서 생산 비활성)
-- 커스텀어벗 디자인 STL(<3MB)은 `productMode=custom_abutment` (상세 모달에서 디자인+생산 비활성)
-- 수동 «구강 스캔으로 합치기»는 크기 제한 없음(사용자 의도)
-- 뱃지 위치: ETA줄 3Shape 왼쪽. 툴팁 `delayDuration={0}`. UI: `NewRequestAttachmentsPanel`
-- 연결 끊기/분리 시: `productMode` 복원 + `NewRequestPage.refreshShipScheduleAfterLeaveGroup`로 출고 모드·ETA 재계산
+- 자동 진입: `usePatientFileGroups` → `planAutoGroups*` / `planBatchGroup*`
+- 수동 묶음 시 `productMode=design_custom_abutment`. 해제 시 크기 휴리스틱으로 복원.
+- 단일 구강스캔(>=3MB, 묶음 없음)도 `design_custom_abutment`
+- 뱃지: ETA줄 3Shape 왼쪽. UI `NewRequestAttachmentsPanel`
+- 연결 끊기 후 출고: `NewRequestPage.refreshShipScheduleAfterLeaveGroup`
 
 ## Related
 
-- `web/frontend/rules.md` (신규의뢰 첨부·구강스캔 자동묶음)
+- `web/frontend/rules.md` (신규의뢰 첨부·구강스캔 묶음)
 - 루트 `rules.md` §2.2

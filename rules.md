@@ -121,11 +121,13 @@
 ### 2.2 의뢰 생성/공정
 
 - 신규 의뢰 표준: `POST /api/requests/from-draft`
-- 신규의뢰 첨부 자동묶음(구강 스캔) SSOT — 파일 **크기**로 분류 (파일명·환자명만으로 묶지 않음):
-  - **>= 3MB**: 구강 스캔 → 같은 환자면 디자인+생산(`design_custom_abutment`) 1건으로 자동 합침
-  - **< 3MB**: 커스텀어벗 디자인 STL → 동일 환자·동일 파일명이어도 자동 묶음 금지(각각 별도 건)
-  - 구현: `web/frontend/.../patientGroups.ts` (`ORAL_SCAN_MIN_BYTES` / `CUSTOM_ABUT_DESIGN_MAX_BYTES`).
-    상세·관련 파일: `web/frontend/rules.md`, `.cursor/rules/oral-scan-file-size.mdc`
+- 신규의뢰 첨부·구강 스캔 묶음 SSOT — **자동**만 파일 크기 기준 (파일명·환자명만으로 묶지 않음):
+  - **>= 3MB**: 구강 스캔 → 같은 환자면 디자인+생산(`design_custom_abutment`) 1건으로 **자동** 합침
+  - **< 3MB**: 커스텀어벗 디자인 STL → 동일 환자·동일 파일명이어도 **자동** 묶음 금지(각각 별도 건)
+  - **수동** 연결(합치기)·해제(연결 끊기): **3MB 기준 미적용**. 모든 첨부 파일에 대해 사용자가 묶거나 풀 수 있다.
+  - 구현: `web/frontend/.../patientGroups.ts` (`ORAL_SCAN_MIN_BYTES`). 자동만 `filterOralScanFileKeys`.
+    수동: `groupSelectedFiles` / `ungroup` / `addFilesToGroup` / `removeFileFromGroups`.
+    상세: `web/frontend/rules.md`, `.cursor/rules/oral-scan-file-size.mdc`
 - 공정 SSOT: `Request.manufacturerStage`
   - `준비 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
 - 크레딧 이벤트 발생 시점 SSOT:

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-10: 수동 합치기/해제는 3MB 필터 없음(모든 파일). 자동만 크기 기준 — 룰 SSOT 정리.
 // - 2026-08-09: 크기 판정 3MB 단일 기준 — >=3MB 구강스캔, <3MB 어벗디자인(중간 구간 제거).
 // - 2026-08-09: 크기별 productMode·상단 뱃지(구강스캔/어벗디자인) SSOT 주석.
 // - 2026-08-09: 구강스캔 자동묶음 — 파일 크기(>=3MB) 기준. 소형(<3MB) 커스텀어벗은 제외.
@@ -9,14 +10,16 @@
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/shared/filename/parseFilenameWithRules.ts
+// - .cursor/rules/oral-scan-file-size.mdc
 
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
-/** 이 크기 이상이면 구강 스캔으로 간주 (자동 묶음 대상 → 디자인+생산) */
+/** 이 크기 이상이면 구강 스캔으로 간주 (**자동** 묶음 대상 → 디자인+생산) */
 export const ORAL_SCAN_MIN_BYTES = 3 * 1024 * 1024;
 /**
- * 이 크기 미만이면 커스텀어벗 디자인 STL로 간주 (자동 묶음 제외 → 생산).
+ * 이 크기 미만이면 커스텀어벗 디자인 STL로 간주 (**자동** 묶음 제외 → 생산).
  * 3MB 단일 기준 — ORAL_SCAN_MIN_BYTES와 동일.
+ * 수동 합치기/연결 끊기에는 이 기준을 쓰지 않는다.
  */
 export const CUSTOM_ABUT_DESIGN_MAX_BYTES = ORAL_SCAN_MIN_BYTES;
 
@@ -44,12 +47,12 @@ export function resolveFileSizeBytes(
   return Number.isFinite(size) && size >= 0 ? size : null;
 }
 
-/** 구강 스캔 후보(>=3MB). 자동 묶음·디자인+생산. */
+/** 구강 스캔 후보(>=3MB). **자동** 묶음·디자인+생산. 수동 경로에서는 사용하지 말 것. */
 export function isLikelyOralScanSize(sizeBytes: number | null | undefined): boolean {
   return typeof sizeBytes === "number" && sizeBytes >= ORAL_SCAN_MIN_BYTES;
 }
 
-/** 커스텀어벗 디자인 STL 후보(<3MB). 자동 묶음 제외·생산. */
+/** 커스텀어벗 디자인 STL 후보(<3MB). **자동** 묶음 제외·생산. */
 export function isLikelyCustomAbutDesignSize(
   sizeBytes: number | null | undefined,
 ): boolean {
@@ -60,6 +63,7 @@ export function isLikelyCustomAbutDesignSize(
   );
 }
 
+/** 자동 묶음 전용 — 수동 합치기/해제에는 호출하지 않는다. */
 function filterOralScanFileKeys(
   fileKeys: string[],
   sizeByFileKey?: Record<string, number | undefined>,

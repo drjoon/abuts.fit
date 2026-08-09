@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-10: 수동 합치기/해제는 3MB 미적용(모든 파일). 자동만 크기 필터 — 주석·룰 정리.
 // - 2026-08-09: 묶음 해제/파일 분리 시 productMode 복원 + 출고일 재계산은 NewRequestPage에서.
 // - 2026-08-09: 커스텀어벗 디자인 STL(<3MB) 업로드 시 productMode=생산 고정.
 // - 2026-08-09: 자동묶음에 파일 크기 전달. 단일 구강스캔(>=3MB)도 디자인+생산 표시.
@@ -8,6 +9,7 @@
 // - web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts
 // - web/frontend/src/pages/requestor/new_request/utils/localDraftStorage.ts
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - .cursor/rules/oral-scan-file-size.mdc
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CaseInfos } from "./newRequestTypes";
 import {
@@ -408,6 +410,7 @@ export function usePatientFileGroups({
 
   const groupSelectedFiles = useCallback(
     (fileKeys: string[]) => {
+      // 수동 합치기: 3MB 필터 없이 선택된 키 전부 (룰: oral-scan-file-size.mdc)
       const unique = Array.from(new Set(fileKeys.filter(Boolean)));
       if (unique.length < 2) return null;
 
@@ -443,6 +446,7 @@ export function usePatientFileGroups({
 
   const ungroup = useCallback(
     (groupId: string) => {
+      // 수동 해제: 크기와 무관하게 묶음 전체 해제
       const group = patientGroups.find((g) => g.id === groupId);
       persistGroups(patientGroups.filter((g) => g.id !== groupId));
       if (!group) return;
@@ -455,6 +459,7 @@ export function usePatientFileGroups({
 
   const addFilesToGroup = useCallback(
     (groupId: string, fileKeys: string[]) => {
+      // 수동 추가: 크기 필터 없음
       const unique = Array.from(new Set(fileKeys.filter(Boolean)));
       if (!unique.length) return;
       let next = removeFileKeysFromGroups(patientGroups, unique);
@@ -483,6 +488,7 @@ export function usePatientFileGroups({
 
   const removeFileFromGroups = useCallback(
     (fileKey: string) => {
+      // 수동 연결 끊기: 크기와 무관
       const next = removeFileKeysFromGroups(patientGroups, [fileKey]);
       persistGroups(next);
 

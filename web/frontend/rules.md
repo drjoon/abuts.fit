@@ -122,13 +122,16 @@ Notes:
 
 ## 2. 구현 메모
 
-- 신규의뢰 첨부·구강스캔 자동묶음 (파일 크기 SSOT):
-  - 목적: 한 번에 올린 동일 환자·유사 파일명이어도 **커스텀어벗 디자인 STL**과 **구강 스캔**을 섞어 묶지 않는다.
+- 신규의뢰 첨부·구강스캔 묶음 (파일 크기 SSOT):
+  - 목적: 첨부 시 **자동**으로 커스텀어벗 디자인 STL과 구강 스캔을 섞어 묶지 않는다.
   - 허용 확장자: `.stl` / `.ply` / `.obj` (드롭존·파일 선택·분류·프리뷰 공통).
-  - 분류:
+  - 자동 분류·묶음 (3MB 단일 기준):
     - **>= 3MB** (`ORAL_SCAN_MIN_BYTES`): 구강 스캔 → 자동 묶음 대상. `productMode=design_custom_abutment`. 뱃지 `구강스캔`(툴팁: 커스텀어벗 디자인+생산).
     - **< 3MB** (`CUSTOM_ABUT_DESIGN_MAX_BYTES` = 동일): 커스텀어벗 디자인 → 자동 묶음 **제외**(각각 별도 건). `productMode=custom_abutment`. 뱃지 `어벗디자인`(툴팁: 커스텀어벗 생산).
-  - 자동 묶음: `planAutoGroupsForNewFiles` / `planBatchGroupIfAmbiguous`는 **구강 스캔 크기만** 포함.
+    - `planAutoGroupsForNewFiles` / `planBatchGroupIfAmbiguous`는 **>=3MB만** 포함.
+  - 수동 연결·해제: **3MB 기준 적용 안 함**. 체크/마키로 합치기·연결 끊기는 **모든 파일** 가능.
+    - `groupSelectedFiles` / `ungroup` / `addFilesToGroup` / `removeFileFromGroups`에 크기 필터 금지.
+    - 수동 묶음은 `design_custom_abutment`. 해제 시 크기 휴리스틱으로 productMode 복원.
   - 구현: `patientGroups.ts`, `usePatientFileGroups.ts`, UI `NewRequestAttachmentsPanel.tsx`.
   - Cursor 룰: `.cursor/rules/oral-scan-file-size.mdc`
 - 신규의뢰 배송 방식(묶음/신속):
