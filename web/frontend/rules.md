@@ -163,8 +163,8 @@ Notes:
   - 재생목록 항목 클릭 → PreviewModal (코드 에디터는 프리뷰 내 버튼)
 
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
-  - 가입 승인일 기준 `180일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
-  - 안내 모달/대시보드 카드 문구는 동일한 `180일` 기준을 사용해야 합니다.
+  - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
+  - 안내 모달/대시보드 카드 문구는 동일한 `90일` 기준을 사용해야 합니다.
   - 관련 파일:
     - `src/shared/ui/PricingPolicyDialog.tsx`
     - `src/pages/requestor/dashboard/components/RequestorPricingReferralPolicyCard.tsx`

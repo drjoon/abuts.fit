@@ -347,7 +347,7 @@ export const PricingPolicyDialog = ({
                       <>
                         가입 승인일로부터{' '}
                         <span className='font-semibold text-slate-900'>
-                          180일간 개당 10,000원
+                          90일간 개당 10,000원
                         </span>{' '}
                         고정
                       </>,

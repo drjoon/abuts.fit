@@ -175,8 +175,10 @@ export const RequestorPricingReferralPolicyCard = () => {
   const baseUnitPrice = Number(data.baseUnitPrice ?? 15000);
   const referralDiscountAmount = Number(data.referralDiscountAmount ?? 0);
   const effectiveUnitPrice = Number(data.effectiveUnitPrice ?? baseUnitPrice);
-  const isNewUserFixedPrice =
-    String(data.rule || "") === "new_user_180days_fixed_10000";
+  const isNewUserFixedPrice = [
+    "new_user_90days_fixed_10000",
+    "new_user_180days_fixed_10000", // legacy rule id
+  ].includes(String(data.rule || ""));
 
   const monthlyRemakeFreeLimit = Number(data.monthlyRemakeFreeLimit ?? 3);
   const monthlyRemakeUsed = Number(data.monthlyRemakeUsed ?? 0);
@@ -320,7 +322,7 @@ export const RequestorPricingReferralPolicyCard = () => {
 
             {isNewUserFixedPrice && (
               <p className="text-[11px]  text-right">
-                가입 승인일 기준 180일 이내 고정가(10,000원) 적용 중
+                가입 승인일 기준 90일 이내 고정가(10,000원) 적용 중
               </p>
             )}
 

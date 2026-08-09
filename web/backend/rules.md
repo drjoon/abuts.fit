@@ -192,7 +192,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 관리자 문자/알림톡 발송은 큐가 아니라 팝빌 즉시 전송(`sendPopbillXMS` / `sendPopbillKakaoATS`)
 
 - 신규 기공소 런칭 이벤트 가격 SSOT:
-  - 가입 승인일 기준 `180일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 우선 적용합니다.
+  - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 우선 적용합니다.
   - 기준일 계산은 `resolveRequestorPricingBaseDate`를 사용하고, 신규 의뢰 견적/의뢰자 대시보드 집계가 동일 규칙명을 공유해야 합니다.
   - 관련 파일:
     - `controllers/requests/utils.js`

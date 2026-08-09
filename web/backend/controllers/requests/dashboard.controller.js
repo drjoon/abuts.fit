@@ -1713,13 +1713,13 @@ export async function getMyPricingReferralStats(req, res) {
         let fixedUntil = null;
 
         if (baseDate) {
-          // KST 기준 180일 후 계산
+          // KST 기준 90일 후 계산
           const baseYmd = toKstYmd(baseDate);
           const baseKst = new Date(`${baseYmd}T00:00:00+09:00`);
-          baseKst.setDate(baseKst.getDate() + 180);
+          baseKst.setDate(baseKst.getDate() + 90);
           fixedUntil = baseKst;
           if (now < fixedUntil) {
-            rule = "new_user_180days_fixed_10000";
+            rule = "new_user_90days_fixed_10000";
             effectiveUnitPrice = 10000;
           }
         }
