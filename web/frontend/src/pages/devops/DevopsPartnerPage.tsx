@@ -31,13 +31,13 @@ export const DevopsPartnerPage = () => {
       },
       {
         key: "credits",
-        label: "요금설정",
+        label: "요금 · 크레딧",
         icon: CreditCard,
         content: <AdminCreditSettingsTab />,
       },
       {
         key: "design",
-        label: "디자이너지정",
+        label: "디자이너 지정",
         icon: PenTool,
         content: <DesignerAssignmentTab />,
       },

@@ -2,15 +2,24 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/devops/DevopsPartnerPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Landmark } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { cn } from "@/shared/ui/cn";
 
 type PayoutAccount = {
   bankName: string;
@@ -20,20 +29,24 @@ type PayoutAccount = {
 };
 
 type DevopsSettings = {
-  manufacturerRate?: number; // 0~1 (e.g. 0.60 = 60%)
-  devopsRate?: number; // 0~1 (e.g. 0.10 = 10%)
-  salesmanRate?: number; // 0~1 (e.g. 0.10 = 10%)
-  adminRate?: number; // 0~1 (e.g. 0.20 = 20%)
+  manufacturerRate?: number;
+  devopsRate?: number;
+  salesmanRate?: number;
+  adminRate?: number;
   updatedAt?: string | null;
+};
+
+type RateField = {
+  key: "manufacturer" | "devops" | "salesman" | "admin";
+  label: string;
+  hint?: string;
+  value: string;
+  onChange: (next: string) => void;
 };
 
 export const DevopsPayoutAccountTab = () => {
   const { toast } = useToast();
-  const { token, user, loginWithToken } = useAuthStore();
-
-  const mockHeaders = useMemo(() => {
-    return {} as Record<string, string>;
-  }, []);
+  const { token, loginWithToken } = useAuthStore();
 
   const [loading, setLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
@@ -43,12 +56,10 @@ export const DevopsPayoutAccountTab = () => {
     holderName: "",
     updatedAt: null,
   });
-  // 분배율 — 0~100 정수(퍼센트) 단위로 관리
   const [manufacturerRate, setManufacturerRate] = useState<string>("60");
   const [devopsRate, setDevopsRate] = useState<string>("10");
   const [salesmanRate, setSalesmanRate] = useState<string>("10");
   const [adminRate, setAdminRate] = useState<string>("20");
-  // 직전 저장 스냅샷 (취소 시 복원 기준)
   const savedRef = useRef({
     data: {
       bankName: "",
@@ -128,6 +139,45 @@ export const DevopsPayoutAccountTab = () => {
     };
   }, [token]);
 
+  const rateTotal = useMemo(() => {
+    const nums = [manufacturerRate, devopsRate, salesmanRate, adminRate].map(
+      (v) => Number(v),
+    );
+    if (nums.some((n) => !Number.isFinite(n))) return null;
+    return nums.reduce((a, b) => a + b, 0);
+  }, [adminRate, devopsRate, manufacturerRate, salesmanRate]);
+
+  const rateTotalOk = rateTotal !== null && Math.abs(rateTotal - 100) <= 0.01;
+
+  const rateFields: RateField[] = [
+    {
+      key: "manufacturer",
+      label: "제조사 (애크로덴트)",
+      value: manufacturerRate,
+      onChange: setManufacturerRate,
+    },
+    {
+      key: "devops",
+      label: "개발운영사 (메이븐)",
+      hint: "유료 의뢰비 기준",
+      value: devopsRate,
+      onChange: setDevopsRate,
+    },
+    {
+      key: "salesman",
+      label: "영업자 (법인/개인)",
+      hint: "소개 의뢰자 1단계",
+      value: salesmanRate,
+      onChange: setSalesmanRate,
+    },
+    {
+      key: "admin",
+      label: "관리자 (어벗츠)",
+      value: adminRate,
+      onChange: setAdminRate,
+    },
+  ];
+
   const validate = (v: PayoutAccount) => {
     const bankName = v.bankName.trim();
     const holderName = v.holderName.trim();
@@ -136,19 +186,22 @@ export const DevopsPayoutAccountTab = () => {
     const allEmpty = !bankName && !holderName && !accountNumber;
     if (allEmpty) {
       return {
-        ok: true,
+        ok: true as const,
         normalized: { bankName: "", holderName: "", accountNumber: "" },
       };
     }
 
     if (!bankName || !holderName || !accountNumber) {
       return {
-        ok: false,
+        ok: false as const,
         message: "은행/계좌번호/예금주를 모두 입력해주세요.",
       };
     }
 
-    return { ok: true, normalized: { bankName, holderName, accountNumber } };
+    return {
+      ok: true as const,
+      normalized: { bankName, holderName, accountNumber },
+    };
   };
 
   const save = async () => {
@@ -203,7 +256,6 @@ export const DevopsPayoutAccountTab = () => {
         path: "/api/users/profile",
         method: "PUT",
         token,
-        headers: mockHeaders,
         jsonBody: {
           salesmanPayoutAccount: {
             bankName: v.normalized.bankName,
@@ -278,8 +330,8 @@ export const DevopsPayoutAccountTab = () => {
   if (loading) {
     return (
       <Card className="app-glass-card app-glass-card--lg">
-        <CardContent className="py-8 text-sm text-muted-foreground">
-          불러오는 중...
+        <CardContent className="py-10 text-sm text-muted-foreground">
+          불러오는 중…
         </CardContent>
       </Card>
     );
@@ -287,147 +339,123 @@ export const DevopsPayoutAccountTab = () => {
 
   return (
     <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2 text-lg">
           <Landmark className="h-5 w-5" />
           수익 분배
         </CardTitle>
+        <CardDescription>
+          매출 100% 기준 분배율과 입금 계좌를 관리합니다.
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="rounded-lg border border-dashed p-4 space-y-3 text-sm text-muted-foreground">
-          <div className="font-semibold text-foreground">
-            현재 분배 규칙 (매출 100% 기준)
+
+      <CardContent className="space-y-8">
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold tracking-tight">분배율</h3>
+            <Badge
+              variant="outline"
+              className={cn(
+                "tabular-nums font-medium",
+                rateTotalOk
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700",
+              )}
+            >
+              합계 {rateTotal === null ? "—" : `${rateTotal}%`}
+              {rateTotalOk ? " · OK" : " · 100% 필요"}
+            </Badge>
           </div>
-          <div className="grid grid-cols-[1fr_auto] items-start gap-x-4 gap-y-3">
-            {/* 제조사 */}
-            <div className="flex items-center gap-2 text-foreground">
-              <span className="w-36 shrink-0 text-muted-foreground">
-                제조사(애크로덴트)
-              </span>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {rateFields.map((field) => (
+              <div
+                key={field.key}
+                className="rounded-xl border border-border/80 bg-background/60 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-0.5">
+                    <Label
+                      htmlFor={`rate-${field.key}`}
+                      className="text-sm font-medium text-foreground"
+                    >
+                      {field.label}
+                    </Label>
+                    {field.hint ? (
+                      <p className="text-xs text-muted-foreground">
+                        {field.hint}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Input
+                      id={`rate-${field.key}`}
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.5}
+                      value={field.value}
+                      onChange={(e) => field.onChange(e.target.value)}
+                      className="h-9 w-[4.5rem] px-2 text-center text-sm tabular-nums"
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-semibold tracking-tight">입금 계좌</h3>
+            <p className="text-sm text-muted-foreground">
+              개발운영사 분배금 수령 계좌
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="devops-bank">은행</Label>
               <Input
-                type="number"
-                min={0}
-                max={100}
-                step={0.5}
-                value={manufacturerRate}
-                onChange={(e) => setManufacturerRate(e.target.value)}
-                className="h-7 w-16 text-center text-sm px-1"
+                id="devops-bank"
+                value={data.bankName}
+                onChange={(e) =>
+                  setData((p) => ({ ...p, bankName: e.target.value }))
+                }
+                placeholder="예: 국민은행"
               />
-              <span>%</span>
             </div>
-            <div />
-
-            {/* 개발운영사 */}
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-foreground">
-                <span className="w-36 shrink-0 text-muted-foreground">
-                  개발운영사(메이븐)
-                </span>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
-                  value={devopsRate}
-                  onChange={(e) => setDevopsRate(e.target.value)}
-                  className="h-7 w-16 text-center text-sm px-1"
-                />
-                <span>%</span>
-              </div>
-              <div className="text-xs pl-36 text-muted-foreground">
-                유료의뢰비 기준 개발·운영사 분배율
-              </div>
-            </div>
-            <div />
-
-            {/* 영업자 */}
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-foreground">
-                <span className="w-36 shrink-0 text-muted-foreground">
-                  영업자(법인/개인)
-                </span>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
-                  value={salesmanRate}
-                  onChange={(e) => setSalesmanRate(e.target.value)}
-                  className="h-7 w-16 text-center text-sm px-1"
-                />
-                <span>%</span>
-              </div>
-              <div className="text-xs pl-36 text-muted-foreground">
-                영업자 소개 의뢰자 분배율 (1단계)
-              </div>
-            </div>
-            <div />
-
-            <div className="flex items-center gap-2 text-foreground">
-              <span className="w-36 shrink-0 text-muted-foreground">
-                관리자(어벗츠)
-              </span>
+            <div className="space-y-1.5">
+              <Label htmlFor="devops-account">계좌번호</Label>
               <Input
-                type="number"
-                min={0}
-                max={100}
-                step={0.5}
-                value={adminRate}
-                onChange={(e) => setAdminRate(e.target.value)}
-                className="h-7 w-16 text-center text-sm px-1"
+                id="devops-account"
+                value={data.accountNumber}
+                onChange={(e) =>
+                  setData((p) => ({ ...p, accountNumber: e.target.value }))
+                }
+                placeholder="숫자만 입력"
+                className="tabular-nums"
               />
-              <span>%</span>
             </div>
-            <div />
+            <div className="space-y-1.5">
+              <Label htmlFor="devops-holder">예금주</Label>
+              <Input
+                id="devops-holder"
+                value={data.holderName}
+                onChange={(e) =>
+                  setData((p) => ({ ...p, holderName: e.target.value }))
+                }
+              />
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground">
-            분배비는 개발운영사 설정에서 관리하며, 필요 시 관리자와 협의 후
-            변경될 수 있습니다.
-          </div>
-        </div>
+        </section>
 
-        <div className="text-sm text-muted-foreground">
-          개발운영사 수익 분배금을 입금받을 계좌 정보를 입력해주세요.
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="devops-bank">은행</Label>
-            <Input
-              id="devops-bank"
-              value={data.bankName}
-              onChange={(e) =>
-                setData((p) => ({ ...p, bankName: e.target.value }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="devops-account">계좌번호</Label>
-            <Input
-              id="devops-account"
-              value={data.accountNumber}
-              onChange={(e) =>
-                setData((p) => ({ ...p, accountNumber: e.target.value }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="devops-holder">예금주</Label>
-            <Input
-              id="devops-holder"
-              value={data.holderName}
-              onChange={(e) =>
-                setData((p) => ({ ...p, holderName: e.target.value }))
-              }
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 pt-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
           <div className="text-xs text-muted-foreground">
             {data.updatedAt
-              ? `마지막 저장: ${new Date(data.updatedAt).toLocaleString()}`
-              : ""}
+              ? `마지막 저장 · ${new Date(data.updatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`
+              : null}
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -446,7 +474,7 @@ export const DevopsPayoutAccountTab = () => {
               취소
             </Button>
             <Button type="button" onClick={save} disabled={saving}>
-              {saving ? "저장 중..." : "저장"}
+              {saving ? "저장 중…" : "저장"}
             </Button>
           </div>
         </div>

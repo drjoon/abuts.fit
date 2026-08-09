@@ -3,11 +3,21 @@
 // - web/frontend/src/pages/devops/DevopsPartnerPage.tsx
 // - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
 import { useCallback, useEffect, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { PenTool, Search } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import { cn } from "@/shared/ui/cn";
 
 type DesignAccessRow = {
   _id: string;
@@ -16,6 +26,14 @@ type DesignAccessRow = {
   status: string;
   designAccessEnabled: boolean;
 };
+
+function statusLabel(status: string) {
+  const s = String(status || "").toLowerCase();
+  if (s === "verified" || s === "approved") return "인증";
+  if (s === "pending") return "대기";
+  if (s === "rejected") return "거절";
+  return status || "";
+}
 
 export const DesignerAssignmentTab = () => {
   const { token } = useAuthStore();
@@ -35,9 +53,7 @@ export const DesignerAssignmentTab = () => {
     if (!token) return;
     setLoading(true);
     try {
-      const qs = debouncedQ
-        ? `?q=${encodeURIComponent(debouncedQ)}`
-        : "";
+      const qs = debouncedQ ? `?q=${encodeURIComponent(debouncedQ)}` : "";
       const res = await request<{
         success?: boolean;
         data?: DesignAccessRow[];
@@ -110,55 +126,94 @@ export const DesignerAssignmentTab = () => {
     }
   };
 
+  const enabledCount = rows.filter((r) => r.designAccessEnabled).length;
+
   return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <h3 className="text-base font-semibold text-foreground">디자이너지정</h3>
-        <p className="text-sm text-muted-foreground">
-          지정한 의뢰자 사업자만 사이드바에 디자인 메뉴가 노출되고 디자인 큐에
-          접근할 수 있습니다.
-        </p>
-      </div>
-
-      <Input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="사업자명 또는 사업자번호 검색"
-        className="max-w-md"
-      />
-
-      <div className="rounded-lg border border-border divide-y divide-border bg-background">
-        {loading ? (
-          <div className="px-4 py-8 text-sm text-muted-foreground text-center">
-            불러오는 중…
+    <Card className="app-glass-card app-glass-card--lg">
+      <CardHeader className="pb-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1.5">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <PenTool className="h-5 w-5" />
+              디자이너 지정
+            </CardTitle>
+            <CardDescription>
+              지정된 의뢰자만 디자인 메뉴·큐에 접근할 수 있습니다.
+            </CardDescription>
           </div>
-        ) : rows.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-muted-foreground text-center">
-            해당하는 의뢰자 사업자가 없습니다.
-          </div>
-        ) : (
-          rows.map((row) => (
-            <div
-              key={row._id}
-              className="flex items-center justify-between gap-4 px-4 py-3"
-            >
-              <div className="min-w-0">
-                <div className="font-medium truncate">{row.name || "이름 없음"}</div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {row.businessNumberNormalized || "사업자번호 없음"}
-                  {row.status ? ` · ${row.status}` : ""}
-                </div>
-              </div>
-              <Switch
-                checked={Boolean(row.designAccessEnabled)}
-                disabled={savingId === row._id}
-                onCheckedChange={(checked) => void onToggle(row, checked)}
-                aria-label={`${row.name} 디자인 접근`}
-              />
+          {!loading && rows.length > 0 ? (
+            <Badge variant="secondary" className="tabular-nums">
+              지정 {enabledCount} / {rows.length}
+            </Badge>
+          ) : null}
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        <div className="relative max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="사업자명 또는 사업자번호"
+            className="pl-9"
+          />
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-border/80 bg-background/60">
+          {loading ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              불러오는 중…
             </div>
-          ))
-        )}
-      </div>
-    </div>
+          ) : rows.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              해당하는 의뢰자 사업자가 없습니다.
+            </div>
+          ) : (
+            <ul className="divide-y divide-border/70">
+              {rows.map((row) => {
+                const label = statusLabel(row.status);
+                return (
+                  <li
+                    key={row._id}
+                    className={cn(
+                      "flex items-center gap-4 px-4 py-3 transition-colors",
+                      "hover:bg-muted/40",
+                      row.designAccessEnabled && "bg-primary/[0.03]",
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">
+                        {row.name || "이름 없음"}
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="tabular-nums">
+                          {row.businessNumberNormalized || "사업자번호 없음"}
+                        </span>
+                        {label ? (
+                          <Badge
+                            variant="outline"
+                            className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground"
+                          >
+                            {label}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={Boolean(row.designAccessEnabled)}
+                      disabled={savingId === row._id}
+                      onCheckedChange={(checked) => void onToggle(row, checked)}
+                      aria-label={`${row.name} 디자인 접근`}
+                      className="shrink-0"
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 };
