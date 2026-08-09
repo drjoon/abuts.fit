@@ -267,7 +267,7 @@ export function NewRequestDesignAbutmentFields({
         디자인 / 환자 정보
       </div>
 
-      <div className="grid shrink-0 grid-cols-1 gap-2 text-foreground sm:grid-cols-3">
+      <div className="grid shrink-0 grid-cols-1 gap-2 text-foreground sm:grid-cols-2">
         <div className="min-w-0">
           <LabeledAutocompleteField
             value={caseInfos?.clinicName || ""}
@@ -337,7 +337,7 @@ export function NewRequestDesignAbutmentFields({
           />
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0 sm:col-span-2">
           <Button
             type="button"
             variant="outline"

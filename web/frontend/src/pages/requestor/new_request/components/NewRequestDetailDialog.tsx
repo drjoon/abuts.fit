@@ -99,6 +99,9 @@ type Props = {
   toast: ToastFn;
   /** 구강스캔 묶음: 커스텀어벗 디자인+생산 고정 */
   lockDesignProductMode?: boolean;
+  /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
+  previewFileIndices?: number[];
+  onSelectPreviewIndex?: (index: number) => void;
 };
 
 export function NewRequestDetailDialog({
@@ -139,6 +142,8 @@ export function NewRequestDetailDialog({
   onSkip,
   toast,
   lockDesignProductMode = false,
+  previewFileIndices,
+  onSelectPreviewIndex,
 }: Props) {
   const [showNewSystemForm, setShowNewSystemForm] = useState(false);
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
@@ -212,6 +217,23 @@ export function NewRequestDetailDialog({
       : "custom_abutment";
   const isDesignCustomMode = productMode === "design_custom_abutment";
 
+  const selectablePreviewIndices = useMemo(() => {
+    if (Array.isArray(previewFileIndices) && previewFileIndices.length > 0) {
+      return previewFileIndices.filter(
+        (index) => Number.isInteger(index) && index >= 0 && index < files.length,
+      );
+    }
+    if (detailIndex != null && detailIndex >= 0 && detailIndex < files.length) {
+      return [detailIndex];
+    }
+    return [];
+  }, [previewFileIndices, detailIndex, files.length]);
+
+  const activePreviewIndex =
+    detailIndex != null && selectablePreviewIndices.includes(detailIndex)
+      ? detailIndex
+      : (selectablePreviewIndices[0] ?? null);
+
   const setProductMode = useCallback(
     (mode: NewRequestProductMode) => {
       if (lockDesignProductMode && mode !== "design_custom_abutment") return;
@@ -277,12 +299,13 @@ export function NewRequestDetailDialog({
           </DialogHeader>
 
           <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%]">
-            <div className="app-glass-card app-glass-card--lg flex h-full min-h-[240px] flex-col !p-2">
-              <div className="app-glass-card-content flex-1">
+            <div className="app-glass-card app-glass-card--lg flex h-full min-h-[240px] flex-col !p-2 gap-2">
+              <div className="app-glass-card-content min-h-0 flex-1">
                 {detailFile ? (
                   <StlPreviewViewer
                     file={detailFile}
                     showOverlay={false}
+                    showGrid={false}
                     className="h-full min-h-[240px]"
                     onDiameterComputed={handleDiameterComputed}
                   />
@@ -292,6 +315,40 @@ export function NewRequestDetailDialog({
                   </div>
                 )}
               </div>
+              {selectablePreviewIndices.length > 1 ? (
+                <div className="shrink-0 rounded-lg border border-slate-200 bg-white/80">
+                  <ul className="max-h-[7.5rem] overflow-y-auto py-1">
+                    {selectablePreviewIndices.map((fileIndex) => {
+                      const file = files[fileIndex];
+                      if (!file) return null;
+                      const selected = activePreviewIndex === fileIndex;
+                      return (
+                        <li key={`${file.name}:${file.size}:${fileIndex}`}>
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors",
+                              selected
+                                ? "bg-primary/10 font-medium text-primary"
+                                : "text-slate-600 hover:bg-slate-50",
+                            )}
+                            onClick={() => onSelectPreviewIndex?.(fileIndex)}
+                            aria-current={selected ? "true" : undefined}
+                          >
+                            <span
+                              className={cn(
+                                "h-1.5 w-1.5 shrink-0 rounded-full",
+                                selected ? "bg-primary" : "bg-slate-300",
+                              )}
+                            />
+                            <span className="truncate">{file.name}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
             </div>
 
             <div className="flex h-full min-h-0 flex-col">

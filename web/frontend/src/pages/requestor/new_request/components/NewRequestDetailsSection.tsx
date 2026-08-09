@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useLeadTimeForecast } from "../hooks/useLeadTimeForecast";
@@ -269,6 +269,28 @@ export function NewRequestDetailsSection({
   const detailPatientGroup = detailFileKey
     ? findGroupByFileKey(patientGroups, detailFileKey)
     : null;
+
+  const previewFileIndices = useMemo(() => {
+    if (detailPatientGroup) {
+      const keyToIndex = new Map(
+        files.map((file, index) => [toNormalizedFileKey(file), index]),
+      );
+      return detailPatientGroup.fileKeys
+        .map((key) => keyToIndex.get(key))
+        .filter((index): index is number => typeof index === "number");
+    }
+    if (detailIndex != null) return [detailIndex];
+    return [];
+  }, [detailPatientGroup, detailIndex, files, toNormalizedFileKey]);
+
+  const selectPreviewIndex = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= files.length) return;
+      setSelectedPreviewIndex(index);
+      setDetailIndex(index);
+    },
+    [files.length, setSelectedPreviewIndex],
+  );
 
   const detailCaseInfosBase = detailFileKey
     ? caseInfosMap?.[detailFileKey] || caseInfos
@@ -612,6 +634,8 @@ export function NewRequestDetailsSection({
         }}
         toast={toast}
         lockDesignProductMode={Boolean(detailPatientGroup)}
+        previewFileIndices={previewFileIndices}
+        onSelectPreviewIndex={selectPreviewIndex}
       />
 
 

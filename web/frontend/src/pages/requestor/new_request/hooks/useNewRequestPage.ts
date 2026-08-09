@@ -668,6 +668,17 @@ export const useNewRequestPage = (
           duration: 3500,
         });
       }
+
+      // AI/룰로 보강된 치과·환자명을 기존 환자 케이스에도 반영
+      for (const row of parsed) {
+        if (!row.clinicName && !row.patientName) continue;
+        const group = patientFileGroupsApi.getGroupForFileKey(row.fileKey);
+        if (!group) continue;
+        patientFileGroupsApi.updateGroupCaseInfos(group.id, {
+          ...(row.clinicName ? { clinicName: row.clinicName } : {}),
+          ...(row.patientName ? { patientName: row.patientName } : {}),
+        });
+      }
     },
   });
 

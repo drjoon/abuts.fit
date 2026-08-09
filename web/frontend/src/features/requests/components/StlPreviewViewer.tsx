@@ -1,3 +1,6 @@
+// change-log:
+// - 2026-08-09: 신규의뢰 프리뷰에서 그리드 숨김(showGrid) + FOV 맞춤.
+// - 2026-08-09: STL 프리뷰 카메라를 FOV 기준으로 맞춰 모델이 화면에 거의 꽉 차게 표시.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -26,6 +29,8 @@ type Props = {
     frontPoint?: { x: number; y: number; z: number } | null,
   ) => void;
   showOverlay?: boolean;
+  /** 바닥 그리드 표시. 기본 true. 신규의뢰 프리뷰 등에서는 false 권장. */
+  showGrid?: boolean;
   finishLinePoints?: number[][] | null;
   enableManualPick?: boolean;
   manualPickPoints?: number[][] | null;
@@ -40,6 +45,7 @@ export function StlPreviewViewer({
   requestId,
   onDiameterComputed,
   showOverlay = true,
+  showGrid = true,
   finishLinePoints,
   enableManualPick = false,
   manualPickPoints,
@@ -404,9 +410,11 @@ export function StlPreviewViewer({
     controls.enableDamping = true;
     controls.dampingFactor = 0.1;
 
-    const grid = new THREE.GridHelper(60, 12, 0xaaaaaa, 0xe5e7eb);
-    (grid.rotation as any).x = Math.PI / 2;
-    scene.add(grid);
+    if (showGrid) {
+      const grid = new THREE.GridHelper(60, 12, 0xaaaaaa, 0xe5e7eb);
+      (grid.rotation as any).x = Math.PI / 2;
+      scene.add(grid);
+    }
 
     const loader = new STLLoader();
     let mesh: THREE.Mesh | null = null;
@@ -1783,26 +1791,40 @@ export function StlPreviewViewer({
         }
 
         const sphere = geometry.boundingSphere;
-        const radius = sphere ? sphere.radius : Math.max(maxDiameter / 2, 1);
-
-        // 모델의 실제 높이(totalLength)와 반경을 고려하여 카메라 거리 계산
-        // 세로로 긴 모델이 화면 밖으로 벗어나지 않도록 bounding box의 크기를 반영
         const modelHeight = bbox.max.z - bbox.min.z;
         const modelWidth = Math.max(
           bbox.max.x - bbox.min.x,
           bbox.max.y - bbox.min.y,
         );
-        const maxDimension = Math.max(modelHeight, modelWidth);
+        const maxDimension = Math.max(modelHeight, modelWidth, 1);
+        const radius = Math.max(
+          sphere?.radius ?? 0,
+          maxDimension / 2,
+          1,
+        );
 
-        // 카메라 거리: 모델의 가장 긴 변에 비례하게 설정하되, 기존 반경 로직과 조합
-        const dist = Math.max(radius * 2.5, maxDimension * 1.5);
+        // FOV/aspect 기준으로 바운딩 스피어가 뷰포트에 맞게 들어오도록 카메라 거리 계산.
+        // (기존 radius*2.5 고정 배율은 구강 스캔처럼 큰 모델에서 과도하게 줌아웃됨)
+        const fovRad = THREE.MathUtils.degToRad(camera.fov);
+        const aspect = Math.max(camera.aspect, 0.01);
+        const halfVFov = fovRad / 2;
+        const halfHFov = Math.atan(Math.tan(halfVFov) * aspect);
+        const fitDistance = Math.max(
+          radius / Math.sin(halfVFov),
+          radius / Math.sin(halfHFov),
+        );
+        // 화면을 거의 꽉 채우되 살짝 여백. 제조사 오버레이 뷰는 주석/가이드 공간 확보.
+        const padding = showOverlay ? 1.22 : 1.06;
+        const distance = fitDistance * padding;
 
-        // 카메라 위치 조정: 세로로 긴 모델일 경우 상하가 꽉 차도록 Y, Z축을 조정
-        // dist 값을 키워서 모델 전체가 한눈에 들어오도록 줌아웃 (기존보다 더 멀리서 보게)
-        const cameraDist = dist * (showOverlay ? 1.0 : 1.2); // 의뢰자 페이지(showOverlay=false)에서는 조금 더 멀리서
-
-        camera.position.set(cameraDist, -cameraDist, cameraDist * 0.9);
+        const viewDir = new THREE.Vector3(1, -1, 0.9).normalize();
+        camera.position.copy(viewDir.multiplyScalar(distance));
+        camera.near = Math.max(distance / 200, 0.01);
+        camera.far = Math.max(distance * 40, 2000);
+        camera.updateProjectionMatrix();
         camera.lookAt(0, 0, 0);
+        controls.target.set(0, 0, 0);
+        controls.update();
       } catch (e) {
         console.error("[StlPreviewViewer] failed to load STL", e);
         setError("STL 파일을 불러오지 못했습니다");
@@ -1981,6 +2003,7 @@ export function StlPreviewViewer({
   }, [
     stableFileKey,
     showOverlay,
+    showGrid,
     shouldWaitForMetadata,
     shouldBlockSceneForMetadata,
     finishLinePoints,

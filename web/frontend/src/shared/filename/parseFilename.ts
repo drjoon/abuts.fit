@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-09: 치아번호 없는 구강 스캔 파일명에서도 한글 토큰으로 환자/치과 후보 추출.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -186,7 +188,24 @@ export function parseFilename(filename: string): ParsedFilenameInfo {
       result.clinicName = clinicName;
     }
   } else {
-    // 치아번호가 없는 경우: 추측해서 채우지 않음 (빈 값이 잘못된 자동입력보다 낫다)
+    // 치아번호가 없는 구강 스캔 등: 한글 토큰을 환자/치과 후보로 사용
+    const hangulParts = parts
+      .map((p) => p.replace(/^[0-9]+/, ""))
+      .filter((p) => /[가-힣]/.test(p));
+    const hasScanToken = parts.some((p) =>
+      /jaw|bite|scan|upper|lower|occlusion|모델|스캔|인상/i.test(p),
+    );
+
+    if (hangulParts.length === 1) {
+      result.patientName = hangulParts[0];
+    } else if (hangulParts.length >= 2 && hasScanToken) {
+      result.patientName = hangulParts[hangulParts.length - 1];
+      result.clinicName = hangulParts.slice(0, -1).join(" ");
+    } else if (hangulParts.length >= 2) {
+      // 치과+환자 형태 추정 (마지막 한글 = 환자)
+      result.patientName = hangulParts[hangulParts.length - 1];
+      result.clinicName = hangulParts.slice(0, -1).join(" ");
+    }
   }
 
   return result;
