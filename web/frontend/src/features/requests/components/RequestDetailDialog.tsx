@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-09: 기본 하단 "닫기" 버튼 제거(헤더 X로 충분, 레이아웃 깨짐).
 // - 2026-08-06: 남은기간 표시를 "N일 남음" → "출고 N일전"으로 통일.
 // - 2026-08-06: 발송 예정일 → 출고 예정일 (제조사 출발일).
 // related files:
@@ -8,7 +9,6 @@ import { type ReactNode } from "react";
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -408,18 +408,7 @@ export const RequestDetailDialog = ({
             </div>
           </div>
         </DialogDescription>
-        {footer || (
-          <div className="mt-4 flex justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-            >
-              닫기
-            </Button>
-          </div>
-        )}
+        {footer}
       </DialogContent>
     </Dialog>
   );
