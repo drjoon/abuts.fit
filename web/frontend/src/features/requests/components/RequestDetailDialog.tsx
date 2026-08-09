@@ -418,13 +418,13 @@ export const RequestDetailDialog = ({
 
                     <div className="border-t border-slate-200 pt-2 space-y-1">
                       <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-slate-700 font-medium">의뢰 합계</span>
+                        <span className="text-slate-700 font-medium">크레딧 사용액</span>
                         <span className="font-semibold tabular-nums">
                           {Number(priceAmount).toLocaleString()}원
                         </span>
                       </div>
                       <p className="text-[11px] leading-relaxed text-slate-500">
-                        {`의뢰 합계는 가공${designFeeTotal > 0 ? "·디자인" : ""}${
+                        {`크레딧 사용액은 생산${designFeeTotal > 0 ? "·디자인" : ""}${
                           expressFeeTotal > 0 ? "·신속" : ""
                         } 비용입니다. 배송비는 출고 시 박스 단위로 별도 차감됩니다.`}
                       </p>
