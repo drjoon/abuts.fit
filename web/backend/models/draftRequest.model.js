@@ -34,6 +34,11 @@ const draftCaseSchema = new mongoose.Schema(
       {
         // 이 case 에 연결된 파일 메타정보 (임시 업로드 파일)
         file: draftFileSchema,
+        // 디자인+생산: 환자 단위로 묶인 구강 스캔 파일들 (대표 file 포함 가능)
+        files: {
+          type: [draftFileSchema],
+          default: undefined,
+        },
 
         clinicName: String,
         patientName: String,

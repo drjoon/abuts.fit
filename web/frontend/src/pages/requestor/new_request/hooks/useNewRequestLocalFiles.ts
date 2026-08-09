@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/frontend/src/pages/requestor/new_request/hooks/usePatientFileGroups.ts
 import { useCallback } from "react";
 import { saveFile } from "../utils/fileIndexedDB";
 import { getFileKey } from "../utils/localDraftStorage";
@@ -11,16 +12,28 @@ import { addUploadedFiles, filterNewFiles } from "../utils/localFileStorage";
 import { useToast } from "@/shared/hooks/use-toast";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
+export type LocalUploadParsedMeta = {
+  fileKey: string;
+  clinicName?: string;
+  patientName?: string;
+  tooth?: string;
+};
+
 export const useNewRequestLocalFiles = ({
   setFiles,
   setSelectedPreviewIndex,
   updateCaseInfos,
   caseInfosMap,
+  onFilesAdded,
 }: {
   setFiles: React.Dispatch<React.SetStateAction<File[]>>;
   setSelectedPreviewIndex: React.Dispatch<React.SetStateAction<number | null>>;
   updateCaseInfos?: (fileKey: string, updates: any) => void;
   caseInfosMap?: Record<string, any>;
+  onFilesAdded?: (payload: {
+    files: File[];
+    parsed: LocalUploadParsedMeta[];
+  }) => void;
 }) => {
   const { toast } = useToast();
 
@@ -86,11 +99,20 @@ export const useNewRequestLocalFiles = ({
 
         setSelectedPreviewIndex((prev) => (prev === null ? 0 : prev));
 
+        const parsedMeta: LocalUploadParsedMeta[] = [];
+
         if (updateCaseInfos) {
           normalizedFiles.forEach((file) => {
             const normalizedName = normalize(file.name);
             const fileKey = getFileKey(file);
             const parsed = parseFilenameWithRules(normalizedName);
+
+            parsedMeta.push({
+              fileKey,
+              clinicName: String(parsed.clinicName || "").trim() || undefined,
+              patientName: String(parsed.patientName || "").trim() || undefined,
+              tooth: String(parsed.tooth || "").trim() || undefined,
+            });
 
             if (!parsed.clinicName && !parsed.patientName && !parsed.tooth) {
               return;
@@ -112,7 +134,21 @@ export const useNewRequestLocalFiles = ({
                 undefined,
             });
           });
+        } else {
+          normalizedFiles.forEach((file) => {
+            const normalizedName = normalize(file.name);
+            const fileKey = getFileKey(file);
+            const parsed = parseFilenameWithRules(normalizedName);
+            parsedMeta.push({
+              fileKey,
+              clinicName: String(parsed.clinicName || "").trim() || undefined,
+              patientName: String(parsed.patientName || "").trim() || undefined,
+              tooth: String(parsed.tooth || "").trim() || undefined,
+            });
+          });
         }
+
+        onFilesAdded?.({ files: normalizedFiles, parsed: parsedMeta });
 
         toast({
           title: "파일 추가 완료",
@@ -129,7 +165,14 @@ export const useNewRequestLocalFiles = ({
         });
       }
     },
-    [setFiles, setSelectedPreviewIndex, updateCaseInfos, caseInfosMap, toast],
+    [
+      setFiles,
+      setSelectedPreviewIndex,
+      updateCaseInfos,
+      caseInfosMap,
+      onFilesAdded,
+      toast,
+    ],
   );
 
   return { handleUpload };

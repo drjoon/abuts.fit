@@ -21,6 +21,11 @@ import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import type { PatientFileGroup } from "../utils/patientGroups";
+import {
+  buildAttachmentListItems,
+  getPrimaryFileKey,
+} from "../utils/patientGroups";
 
 const NEW_REQUEST_DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const API_BASE_URL =
@@ -38,6 +43,7 @@ type UseNewRequestSubmitV2Params = {
   selectedClinicId: string | null;
   setSelectedPreviewIndex: (v: number | null) => void;
   caseInfosMap?: Record<string, CaseInfos>;
+  patientGroups?: PatientFileGroup[];
   patchDraftImmediately?: (map: Record<string, CaseInfos>) => Promise<void>;
   onDuplicateDetected?: (payload: {
     mode: "active" | "tracking";
@@ -69,6 +75,7 @@ export const useNewRequestSubmitV2 = ({
   selectedClinicId,
   setSelectedPreviewIndex,
   caseInfosMap,
+  patientGroups = [],
   patchDraftImmediately,
   onDuplicateDetected,
 }: UseNewRequestSubmitV2Params) => {
@@ -410,7 +417,15 @@ export const useNewRequestSubmitV2 = ({
                     creditData?.freeShippingCredit ?? 0,
                   );
 
-                  const estimatedMachiningFee = files.length * 10000;
+                  const estimatedCaseCount = Math.max(
+                    1,
+                    buildAttachmentListItems(
+                      files,
+                      toNormalizedFileKey,
+                      patientGroups,
+                    ).length,
+                  );
+                  const estimatedMachiningFee = estimatedCaseCount * 10000;
                   const estimatedShippingFee = boxCount * 3500;
 
                   const availableForMachining = paidCredit + freeRequestCredit;
@@ -479,59 +494,92 @@ export const useNewRequestSubmitV2 = ({
 
         // 3. Draft 파일+정보 업데이트 (S3 업로드 완료 후)
         if (files.length > 0 && tempFiles.length > 0) {
-          const toNfcName = (name: string) => {
-            try {
-              return String(name || "").normalize("NFC");
-            } catch {
-              return String(name || "");
-            }
+          const fileByKey = new Map<string, { file: File; temp: TempUploadedFile }>();
+          for (let i = 0; i < files.length; i += 1) {
+            const file = files[i];
+            const tf = tempFiles[i];
+            if (!file || !tf?.key) continue;
+            fileByKey.set(toNormalizedFileKey(file), { file, temp: tf });
+          }
+
+          const listItems = buildAttachmentListItems(
+            files,
+            toNormalizedFileKey,
+            patientGroups,
+          );
+
+          const buildCasePayload = (
+            primaryKey: string,
+            memberKeys: string[],
+          ) => {
+            const primary = fileByKey.get(primaryKey);
+            if (!primary) return null;
+            const ci = (caseInfosMap?.[primaryKey] ||
+              filteredMap[primaryKey] ||
+              {}) as Partial<CaseInfos>;
+
+            const memberFiles = memberKeys
+              .map((key) => fileByKey.get(key))
+              .filter(
+                (
+                  row,
+                ): row is { file: File; temp: TempUploadedFile } => Boolean(row),
+              )
+              .map(({ file, temp }) => ({
+                originalName: temp.originalName,
+                size: temp.size,
+                mimetype: temp.mimetype,
+                s3Key: temp.key,
+              }));
+
+            return {
+              clinicName: ci.clinicName,
+              patientName: ci.patientName,
+              tooth: ci.tooth,
+              implantManufacturer: ci.implantManufacturer,
+              implantBrand: ci.implantBrand,
+              implantFamily: ci.implantFamily,
+              implantType: ci.implantType,
+              maxDiameter: ci.maxDiameter,
+              connectionDiameter: ci.connectionDiameter,
+              totalLength: ci.totalLength,
+              taperAngle: ci.taperAngle,
+              workType: ci.workType || "abutment",
+              productMode: ci.productMode,
+              prosthesisType: ci.prosthesisType,
+              toothWorks: ci.toothWorks,
+              memo: ci.memo,
+              retentionGroove: ci.retentionGroove,
+              requestorHexRotation: ci.requestorHexRotation,
+              shippingMode: ci.shippingMode,
+              requestedShipDate: ci.requestedShipDate,
+              designSoftware: ci.designSoftware,
+              file: {
+                originalName: primary.temp.originalName,
+                size: primary.temp.size,
+                mimetype: primary.temp.mimetype,
+                s3Key: primary.temp.key,
+              },
+              ...(memberFiles.length > 1
+                ? {
+                    files: memberFiles,
+                  }
+                : {}),
+            };
           };
 
-
-
-          const caseInfosPayload = files
-            .map((file, i) => {
-              const tf = tempFiles[i];
-              const fileKey = `${toNfcName(file.name)}:${file.size}`;
-              const ci = (caseInfosMap?.[fileKey] ||
-                filteredMap[fileKey] ||
-                {}) as Partial<CaseInfos>;
-
-
-
-              return {
-                clinicName: ci.clinicName,
-                patientName: ci.patientName,
-                tooth: ci.tooth,
-                implantManufacturer: ci.implantManufacturer,
-                implantBrand: ci.implantBrand,
-                implantFamily: ci.implantFamily,
-                implantType: ci.implantType,
-                maxDiameter: ci.maxDiameter,
-                connectionDiameter: ci.connectionDiameter,
-                totalLength: ci.totalLength,
-                taperAngle: ci.taperAngle,
-                workType: ci.workType || "abutment",
-                productMode: ci.productMode,
-                prosthesisType: ci.prosthesisType,
-                toothWorks: ci.toothWorks,
-                memo: ci.memo,
-                retentionGroove: ci.retentionGroove,
-                requestorHexRotation: ci.requestorHexRotation,
-                shippingMode: ci.shippingMode,
-                requestedShipDate: ci.requestedShipDate,
-                designSoftware: ci.designSoftware,
-                file: tf?.key
-                  ? {
-                      originalName: tf.originalName,
-                      size: tf.size,
-                      mimetype: tf.mimetype,
-                      s3Key: tf.key,
-                    }
-                  : undefined,
-              };
+          const caseInfosPayload = listItems
+            .map((item) => {
+              if (item.kind === "group") {
+                const primary =
+                  getPrimaryFileKey(item.group) || item.group.fileKeys[0];
+                return buildCasePayload(primary, item.group.fileKeys);
+              }
+              return buildCasePayload(item.fileKey, [item.fileKey]);
             })
-            .filter((ci) => Boolean(ci.file?.s3Key));
+            .filter((ci): ci is NonNullable<typeof ci> =>
+              Boolean(ci?.file?.s3Key),
+            );
 
           if (caseInfosPayload.length > 0) {
             const patchRes = await fetch(

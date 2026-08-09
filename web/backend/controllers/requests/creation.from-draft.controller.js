@@ -543,6 +543,19 @@ export async function createRequestsFromDraft(req, res) {
                 filePath: undefined,
                 s3Key: ci.file.s3Key,
               },
+              ...(Array.isArray(ci.files) && ci.files.length > 0
+                ? {
+                    files: ci.files
+                      .filter((f) => f && f.s3Key)
+                      .map((f) => ({
+                        originalName: f.originalName,
+                        fileType: f.mimetype || f.fileType,
+                        fileSize: f.size ?? f.fileSize,
+                        filePath: undefined,
+                        s3Key: f.s3Key,
+                      })),
+                  }
+                : {}),
             }
           : {
               ...normalizedCi,

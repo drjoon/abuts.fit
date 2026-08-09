@@ -15,6 +15,7 @@ import { useDraftMeta } from "./useDraftMeta";
 import { useNewRequestFilesV2 } from "./useNewRequestFilesV2";
 import { useNewRequestImplant } from "./useNewRequestImplant";
 import { useNewRequestLocalFiles } from "./useNewRequestLocalFiles";
+import { usePatientFileGroups } from "./usePatientFileGroups";
 import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
@@ -634,12 +635,40 @@ export const useNewRequestPage = (
     ],
   );
 
+  const patientFileGroupsApi = usePatientFileGroups({
+    files,
+    toFileKey: toNormalizedFileKey,
+    caseInfosMap,
+    updateCaseInfos,
+  });
+
   // V3 래퍼: 로컬 저장만 수행 (S3 업로드 없음)
   const { handleUpload: handleLocalUpload } = useNewRequestLocalFiles({
     setFiles,
     setSelectedPreviewIndex,
     updateCaseInfos,
     caseInfosMap,
+    onFilesAdded: ({ files: addedFiles, parsed }) => {
+      const patientByKey: Record<string, string | undefined> = {};
+      const clinicByKey: Record<string, string | undefined> = {};
+      for (const row of parsed) {
+        patientByKey[row.fileKey] = row.patientName;
+        clinicByKey[row.fileKey] = row.clinicName;
+      }
+      const groupedCount = patientFileGroupsApi.autoGroupWithParsedNames(
+        addedFiles,
+        patientByKey,
+        clinicByKey,
+      );
+      if (groupedCount > 0) {
+        toast({
+          title: "구강 스캔으로 합쳤습니다",
+          description:
+            "같은 환자(또는 한 번에 올린 파일)를 디자인+생산 1건으로 합쳤습니다. 출고는 +1영업일입니다. 필요하면 합치기를 해제하거나 다시 합칠 수 있습니다.",
+          duration: 3500,
+        });
+      }
+    },
   });
 
   // 파일 관리 (업로드/삭제/복원)
@@ -1064,6 +1093,7 @@ export const useNewRequestPage = (
     selectedClinicId,
     setSelectedPreviewIndex,
     caseInfosMap,
+    patientGroups: patientFileGroupsApi.patientGroups,
     patchDraftImmediately,
     onDuplicateDetected: handleServerDuplicateDetected,
   });
@@ -1126,6 +1156,17 @@ export const useNewRequestPage = (
     handleUpload: isReady ? handleUpload : () => {},
     handleUploadUnchecked: isReady ? handleUploadUnchecked : () => {},
     handleRemoveFile: isReady ? handleRemoveFile : () => {},
+
+    // 디자인+생산: 환자 케이스(구강 스캔 합치기)
+    patientGroups: patientFileGroupsApi.patientGroups,
+    attachmentListItems: patientFileGroupsApi.listItems,
+    groupSelectedFiles: patientFileGroupsApi.groupSelectedFiles,
+    ungroupPatientFiles: patientFileGroupsApi.ungroup,
+    removeFileFromPatientGroup: patientFileGroupsApi.removeFileFromGroups,
+    addFilesToPatientGroup: patientFileGroupsApi.addFilesToGroup,
+    clearPatientGroups: patientFileGroupsApi.clearGroups,
+    getPatientGroupForFileKey: patientFileGroupsApi.getGroupForFileKey,
+    updatePatientGroupCaseInfos: patientFileGroupsApi.updateGroupCaseInfos,
 
     // 임플란트 정보
     typeOptions,

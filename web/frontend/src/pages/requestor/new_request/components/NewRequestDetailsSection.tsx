@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useLeadTimeForecast } from "../hooks/useLeadTimeForecast";
 import { NewRequestAttachmentsPanel } from "./NewRequestAttachmentsPanel";
 import { NewRequestDetailDialog } from "./NewRequestDetailDialog";
 import type { LeadTimesMap } from "@/shared/shipping/estimateShipDate";
+import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
+import { findGroupByFileKey, getPrimaryFileKey } from "../utils/patientGroups";
 
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts
 // Rhino의 align 기능이 구성정보를 대체하므로, 신규의뢰에서 개별 구성정보 파일은 사용하지 않는다.
 
 type ToastFn = (props: {
@@ -85,6 +88,11 @@ type Props = {
   ) => void;
   defaultShippingMode?: "normal" | "express";
   onLeadTimesChange?: (leadTimes: LeadTimesMap | null) => void;
+  attachmentListItems?: AttachmentListItem[];
+  patientGroups?: PatientFileGroup[];
+  onGroupSelectedFiles?: (fileKeys: string[]) => void;
+  onUngroupPatientFiles?: (groupId: string) => void;
+  onRemoveFileFromPatientGroup?: (fileKey: string) => void;
 };
 
 export function NewRequestDetailsSection({
@@ -140,6 +148,11 @@ export function NewRequestDetailsSection({
   onShippingModeChange,
   defaultShippingMode = "normal",
   onLeadTimesChange,
+  attachmentListItems,
+  patientGroups = [],
+  onGroupSelectedFiles,
+  onUngroupPatientFiles,
+  onRemoveFileFromPatientGroup,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -224,8 +237,14 @@ export function NewRequestDetailsSection({
 
   useEffect(() => {
     if (!focusUnverifiedTick || !files.length) return;
+    const grouped = new Set(patientGroups.flatMap((g) => g.fileKeys));
     const firstUnverifiedIndex = files.findIndex((file) => {
       const key = toNormalizedFileKey(file);
+      if (grouped.has(key)) {
+        const group = findGroupByFileKey(patientGroups, key);
+        const primary = group ? getPrimaryFileKey(group) : null;
+        if (primary !== key) return false;
+      }
       return !fileVerificationStatus[key];
     });
     if (firstUnverifiedIndex < 0) return;
@@ -237,24 +256,53 @@ export function NewRequestDetailsSection({
       `[data-file-index="${firstUnverifiedIndex}"]`,
     );
     target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [focusUnverifiedTick, files, fileVerificationStatus, toNormalizedFileKey]);
+  }, [
+    focusUnverifiedTick,
+    files,
+    fileVerificationStatus,
+    patientGroups,
+    toNormalizedFileKey,
+  ]);
 
   const detailFile = detailIndex !== null ? files[detailIndex] : null;
   const detailFileKey = detailFile ? toNormalizedFileKey(detailFile) : null;
+  const detailPatientGroup = detailFileKey
+    ? findGroupByFileKey(patientGroups, detailFileKey)
+    : null;
 
-  const detailCaseInfos = detailFileKey
+  const detailCaseInfosBase = detailFileKey
     ? caseInfosMap?.[detailFileKey] || caseInfos
     : caseInfos;
+  const detailCaseInfos = detailPatientGroup
+    ? {
+        ...detailCaseInfosBase,
+        productMode: "design_custom_abutment" as const,
+        workType: "abutment" as const,
+      }
+    : detailCaseInfosBase;
 
   const setDetailCaseInfos = useCallback(
     (updates: Partial<CaseInfos>) => {
-      if (detailFileKey) {
-        updateCaseInfos(detailFileKey, updates);
+      if (!detailFileKey) {
+        setCaseInfos(updates);
         return;
       }
-      setCaseInfos(updates);
+      const group = findGroupByFileKey(patientGroups, detailFileKey);
+      if (group) {
+        // 구강스캔 묶음은 항상 디자인+생산
+        const nextUpdates: Partial<CaseInfos> = {
+          ...updates,
+          productMode: "design_custom_abutment",
+          workType: "abutment",
+        };
+        for (const key of group.fileKeys) {
+          updateCaseInfos(key, nextUpdates);
+        }
+        return;
+      }
+      updateCaseInfos(detailFileKey, updates);
     },
-    [detailFileKey, setCaseInfos, updateCaseInfos],
+    [detailFileKey, patientGroups, setCaseInfos, updateCaseInfos],
   );
 
   const handleDialogOpenChange = useCallback(
@@ -267,11 +315,30 @@ export function NewRequestDetailsSection({
 
   const openDetailModal = useCallback(
     (index: number) => {
+      const file = files[index];
+      if (file) {
+        const fileKey = toNormalizedFileKey(file);
+        const group = findGroupByFileKey(patientGroups, fileKey);
+        if (group) {
+          for (const key of group.fileKeys) {
+            updateCaseInfos(key, {
+              productMode: "design_custom_abutment",
+              workType: "abutment",
+            });
+          }
+        }
+      }
       setSelectedPreviewIndex(index);
       setDetailIndex(index);
       setIsDetailOpen(true);
     },
-    [setSelectedPreviewIndex],
+    [
+      files,
+      patientGroups,
+      setSelectedPreviewIndex,
+      toNormalizedFileKey,
+      updateCaseInfos,
+    ],
   );
 
   const focusSelectedCard = useCallback((index: number) => {
@@ -379,16 +446,43 @@ export function NewRequestDetailsSection({
         [fileKey]: true,
       };
 
-      const hasRemainingUnverified = files.some((candidate) => {
-        const key = toNormalizedFileKey(candidate);
-        return !nextStatus[key];
-      });
+      const group = findGroupByFileKey(patientGroups, fileKey);
+      if (group) {
+        for (const key of group.fileKeys) {
+          nextStatus[key] = true;
+        }
+      }
+
+      const countableKeys = new Set<string>();
+      if (patientGroups.length > 0) {
+        const grouped = new Set(patientGroups.flatMap((g) => g.fileKeys));
+        for (const g of patientGroups) {
+          const primary = getPrimaryFileKey(g);
+          if (primary) countableKeys.add(primary);
+        }
+        files.forEach((candidate) => {
+          const key = toNormalizedFileKey(candidate);
+          if (!grouped.has(key)) countableKeys.add(key);
+        });
+      } else {
+        files.forEach((candidate) => {
+          countableKeys.add(toNormalizedFileKey(candidate));
+        });
+      }
+
+      const hasRemainingUnverified = [...countableKeys].some(
+        (key) => !nextStatus[key],
+      );
 
       let nextIndex = -1;
       if (hasRemainingUnverified) {
+        const isCountableIndex = (i: number) => {
+          const key = toNormalizedFileKey(files[i]);
+          return countableKeys.has(key);
+        };
         for (let i = index + 1; i < files.length; i += 1) {
           const key = toNormalizedFileKey(files[i]);
-          if (!nextStatus[key]) {
+          if (isCountableIndex(i) && !nextStatus[key]) {
             nextIndex = i;
             break;
           }
@@ -396,7 +490,7 @@ export function NewRequestDetailsSection({
         if (nextIndex === -1) {
           for (let i = 0; i < index; i += 1) {
             const key = toNormalizedFileKey(files[i]);
-            if (!nextStatus[key]) {
+            if (isCountableIndex(i) && !nextStatus[key]) {
               nextIndex = i;
               break;
             }
@@ -426,6 +520,7 @@ export function NewRequestDetailsSection({
       caseInfosMap,
       fileVerificationStatus,
       files,
+      patientGroups,
       setFileVerificationStatus,
       setHighlightUnverifiedArrows,
       setSelectedPreviewIndex,
@@ -469,6 +564,10 @@ export function NewRequestDetailsSection({
             uploadInputRef={uploadInputRef}
             onShippingModeChange={onShippingModeChange}
             defaultShippingMode={defaultShippingMode}
+            listItems={attachmentListItems}
+            onGroupSelectedFiles={onGroupSelectedFiles}
+            onUngroup={onUngroupPatientFiles}
+            onRemoveFileFromGroup={onRemoveFileFromPatientGroup}
           />
         </div>
       </div>
@@ -512,6 +611,7 @@ export function NewRequestDetailsSection({
           moveToNextDetail();
         }}
         toast={toast}
+        lockDesignProductMode={Boolean(detailPatientGroup)}
       />
 
 

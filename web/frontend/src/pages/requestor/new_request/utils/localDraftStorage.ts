@@ -4,10 +4,13 @@
  * 파일 드롭부터 의뢰하기 클릭까지 모든 데이터를 로컬 스토리지에 저장
  * - 파일 메타데이터 (File 객체는 IndexedDB에 저장)
  * - 환자/임플란트 정보 (CaseInfos)
+ * - 환자 단위 파일 묶음 (디자인+생산 구강 스캔)
  * - 중복 처리 결정 (DuplicateResolutions)
  *
  * 의뢰하기 클릭 시 이 데이터를 기반으로 S3 업로드 및 Draft 생성
  */
+
+import type { PatientFileGroup } from "./patientGroups";
 
 const STORAGE_KEY = "abutsfit:new-request-draft:v2";
 
@@ -23,6 +26,7 @@ export interface FileMetadata {
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
+// - web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts
 // Rhino align 정책으로 구성정보 파일은 저장하지 않으므로,
 // 로컬 Draft SSOT도 STL 케이스 메타만 보관한다.
 export interface CaseInfos {
@@ -52,6 +56,8 @@ export interface DuplicateResolution {
 export interface LocalDraft {
   files: FileMetadata[];
   caseInfosMap: Record<string, CaseInfos>; // fileKey -> CaseInfos
+  /** 디자인+생산: 여러 구강 스캔 → 한 환자 */
+  patientGroups?: PatientFileGroup[];
   duplicateResolutions: DuplicateResolution[];
   createdAt: number;
   updatedAt: number;
@@ -107,10 +113,21 @@ export function initLocalDraft(): LocalDraft {
   const draft: LocalDraft = {
     files: [],
     caseInfosMap: {},
+    patientGroups: [],
     duplicateResolutions: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
+  saveLocalDraft(draft);
+  return draft;
+}
+
+/**
+ * 환자 파일 묶음 저장
+ */
+export function savePatientGroups(groups: PatientFileGroup[]): LocalDraft {
+  const draft = getLocalDraft() || initLocalDraft();
+  draft.patientGroups = groups;
   saveLocalDraft(draft);
   return draft;
 }
@@ -206,6 +223,12 @@ export function removeFile(fileKey: string): LocalDraft {
   draft.duplicateResolutions = draft.duplicateResolutions.filter(
     (r) => r.fileKey !== fileKey,
   );
+  draft.patientGroups = (draft.patientGroups || [])
+    .map((group) => ({
+      ...group,
+      fileKeys: group.fileKeys.filter((key) => key !== fileKey),
+    }))
+    .filter((group) => group.fileKeys.length >= 2);
 
   saveLocalDraft(draft);
   return draft;

@@ -153,7 +153,28 @@ const NewRequestPageContent = () => {
     setDuplicateResolutions,
     handleSubmitWithDuplicateResolutions,
     draftStatus,
+    attachmentListItems,
+    patientGroups,
+    groupSelectedFiles,
+    ungroupPatientFiles,
+    removeFileFromPatientGroup,
+    clearPatientGroups,
   } = useNewRequestPage(existingRequestId);
+
+  const countableFileKeys = useMemo(() => {
+    if (!patientGroups?.length) return undefined;
+    const grouped = new Set(patientGroups.flatMap((g) => g.fileKeys));
+    const keys: string[] = [];
+    for (const g of patientGroups) {
+      const primary = g.fileKeys[0];
+      if (primary) keys.push(primary);
+    }
+    for (const file of files) {
+      const key = toNormalizedFileKey(file);
+      if (!grouped.has(key)) keys.push(key);
+    }
+    return keys;
+  }, [files, patientGroups, toNormalizedFileKey]);
 
   const {
     fileVerificationStatus,
@@ -162,7 +183,10 @@ const NewRequestPageContent = () => {
     setHighlightUnverifiedArrows,
     unverifiedCount,
     highlightStep,
-  } = useFileVerification({ files });
+  } = useFileVerification({
+    files,
+    countableFileKeys,
+  });
 
 
 
@@ -444,6 +468,7 @@ const NewRequestPageContent = () => {
     await resetDraft();
     handleCancel();
     clearLocalDraft();
+    clearPatientGroups();
     setFileVerificationStatus({});
     setCaseInfos({
       clinicName: "",
@@ -955,15 +980,20 @@ const NewRequestPageContent = () => {
   );
 
   // 신속 이점이 없어지면(ETA가 묶음과 같거나 늦으면) 건별 모드를 묶음으로 강등.
+  // 환자 케이스는 항상 디자인+생산(+1영업일)로 판정한다.
   useEffect(() => {
+    const groupedKeys = new Set(
+      (patientGroups || []).flatMap((g) => g.fileKeys),
+    );
     for (const file of files) {
       const key = toNormalizedFileKey(file);
       const info = caseInfosMap?.[key];
       if (info?.shippingMode !== "express") continue;
       const diameter =
         (info?.maxDiameter as number | null | undefined) ?? null;
-      const productMode =
-        (info?.productMode as string | null | undefined) ?? null;
+      const productMode = groupedKeys.has(key)
+        ? "design_custom_abutment"
+        : ((info?.productMode as string | null | undefined) ?? null);
       if (
         resolveEffectiveShippingMode("express", diameter, productMode) ===
         "express"
@@ -975,6 +1005,7 @@ const NewRequestPageContent = () => {
   }, [
     files,
     caseInfosMap,
+    patientGroups,
     toNormalizedFileKey,
     updateCaseInfos,
     resolveEffectiveShippingMode,
@@ -1577,6 +1608,11 @@ const NewRequestPageContent = () => {
               onShippingModeChange={handleShippingModeChange}
               defaultShippingMode={defaultShippingMode}
               onLeadTimesChange={handleLeadTimesChange}
+              attachmentListItems={attachmentListItems}
+              patientGroups={patientGroups}
+              onGroupSelectedFiles={groupSelectedFiles}
+              onUngroupPatientFiles={ungroupPatientFiles}
+              onRemoveFileFromPatientGroup={removeFileFromPatientGroup}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;

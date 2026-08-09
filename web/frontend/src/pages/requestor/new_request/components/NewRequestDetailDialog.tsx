@@ -97,6 +97,8 @@ type Props = {
   onVerifyAndNext: (index: number) => Promise<void>;
   onSkip: () => void;
   toast: ToastFn;
+  /** 구강스캔 묶음: 커스텀어벗 디자인+생산 고정 */
+  lockDesignProductMode?: boolean;
 };
 
 export function NewRequestDetailDialog({
@@ -136,6 +138,7 @@ export function NewRequestDetailDialog({
   onVerifyAndNext,
   onSkip,
   toast,
+  lockDesignProductMode = false,
 }: Props) {
   const [showNewSystemForm, setShowNewSystemForm] = useState(false);
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
@@ -203,6 +206,7 @@ export function NewRequestDetailDialog({
 
   const showImplantSelect = true;
   const productMode: NewRequestProductMode =
+    lockDesignProductMode ||
     detailCaseInfos?.productMode === "design_custom_abutment"
       ? "design_custom_abutment"
       : "custom_abutment";
@@ -210,9 +214,10 @@ export function NewRequestDetailDialog({
 
   const setProductMode = useCallback(
     (mode: NewRequestProductMode) => {
+      if (lockDesignProductMode && mode !== "design_custom_abutment") return;
       setDetailCaseInfos({ productMode: mode });
     },
-    [setDetailCaseInfos],
+    [lockDesignProductMode, setDetailCaseInfos],
   );
 
   return (
@@ -236,17 +241,27 @@ export function NewRequestDetailDialog({
                   ] as const
                 ).map((option) => {
                   const selected = productMode === option.value;
+                  const lockedOut =
+                    lockDesignProductMode &&
+                    option.value !== "design_custom_abutment";
                   return (
                     <button
                       key={option.value}
                       type="button"
                       role="radio"
                       aria-checked={selected}
+                      disabled={lockedOut}
+                      title={
+                        lockedOut
+                          ? "구강 스캔 묶음은 디자인+생산만 가능합니다"
+                          : undefined
+                      }
                       className={cn(
                         "rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap",
                         selected
                           ? "bg-blue-600 text-white shadow-sm"
                           : "text-slate-600 hover:bg-white/70 hover:text-slate-900",
+                        lockedOut && "cursor-not-allowed opacity-50 hover:bg-transparent",
                       )}
                       onClick={() => setProductMode(option.value)}
                     >

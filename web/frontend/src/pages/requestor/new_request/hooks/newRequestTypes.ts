@@ -86,6 +86,13 @@ export type CaseInfos = {
     free?: boolean;
     tag?: string;
   };
+  /** 디자인+생산: 환자 케이스로 합친 추가 스캔 파일 (대표 file 포함 가능) */
+  files?: Array<{
+    originalName?: string;
+    size?: number;
+    mimetype?: string;
+    s3Key?: string;
+  }>;
   retentionGroove?: "none" | "shallow" | "deep";
 
   // 헥스 회전 모드값 SSOT

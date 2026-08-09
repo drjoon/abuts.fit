@@ -391,6 +391,24 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
+      // 디자인+생산: 환자 단위로 묶인 구강 스캔 등 추가 첨부
+      files: {
+        type: [
+          {
+            originalName: String,
+            fileType: String,
+            fileSize: Number,
+            filePath: String,
+            s3Key: String,
+            s3Url: String,
+            uploadedAt: {
+              type: Date,
+              default: Date.now,
+            },
+          },
+        ],
+        default: undefined,
+      },
 
       camFile: {
         fileName: String,
