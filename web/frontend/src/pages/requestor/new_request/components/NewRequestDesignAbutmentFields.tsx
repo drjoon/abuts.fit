@@ -37,8 +37,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 
 const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
-const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
-const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
 
 const ensurePresetProsthesisTypes = (items: string[] | null | undefined) => {
   const normalized = normalizeProsthesisTypes(items || []);
@@ -257,8 +255,6 @@ export function NewRequestDesignAbutmentFields({
     onImplantFavoritesChange: handleImplantFavoritesChange,
     abutmentFavorites,
     onAbutmentFavoritesChange: handleAbutmentFavoritesChange,
-    toothTensOptions: TOOTH_TENS_OPTIONS,
-    toothOnesOptions: TOOTH_ONES_OPTIONS,
   } satisfies Partial<PracticeTransferRequestIntakePanelProps>;
 
   return (

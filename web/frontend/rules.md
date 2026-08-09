@@ -87,6 +87,7 @@ Notes:
   - `src/pages/practice/hooks/usePracticeTransferStep1.ts` (최근 기공소 local+서버 merge)
   - `src/shared/components/practice/PracticeTransferFilePane.tsx`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
+    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운↔인레이 / 브리지↔Pontic. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
   - `src/shared/practice/toothWorkDraft.ts`
   - `src/shared/components/PracticeTransferDetailChatDialog.tsx`
@@ -123,6 +124,7 @@ Notes:
 
 - 신규의뢰 첨부·구강스캔 자동묶음 (파일 크기 SSOT):
   - 목적: 한 번에 올린 동일 환자·유사 파일명이어도 **커스텀어벗 디자인 STL**과 **구강 스캔**을 섞어 묶지 않는다.
+  - 허용 확장자: `.stl` / `.ply` / `.obj` (드롭존·파일 선택·분류·프리뷰 공통).
   - 분류:
     - **> 3MB** (`ORAL_SCAN_MIN_BYTES`): 구강 스캔 → 자동 묶음 대상. `productMode=design_custom_abutment`. 상단 뱃지 `구강스캔`(툴팁: 커스텀어벗 디자인+생산).
     - **< 1.5MB** (`CUSTOM_ABUT_DESIGN_MAX_BYTES`): 커스텀어벗 디자인 → 자동 묶음 **제외**(각각 별도 건). `productMode=custom_abutment`. 상단 뱃지 `어벗디자인`(툴팁: 커스텀어벗 생산).

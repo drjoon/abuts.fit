@@ -337,8 +337,6 @@ const makeTransferId = () => {
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
 const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
 const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
-const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
-const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
 
@@ -5256,8 +5254,6 @@ export const PracticeFileTransferPage = ({
                   },
                   prosthesisTypeSelectWidthClassName: "w-[7rem]",
                   showBridgeConnections: true,
-                  toothTensOptions: TOOTH_TENS_OPTIONS,
-                  toothOnesOptions: TOOTH_ONES_OPTIONS,
                 }}
               />
 

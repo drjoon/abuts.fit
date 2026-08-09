@@ -333,8 +333,6 @@ const makeTransferId = () => {
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
 const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
-const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
-const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
 
@@ -2283,8 +2281,6 @@ export const PracticeDropzonePage = () => {
                     memoInputId: "practice-request-memo",
                     prosthesisTypeSelectWidthClassName: "w-[110px]",
                     showBridgeConnections: false,
-                    toothTensOptions: TOOTH_TENS_OPTIONS,
-                    toothOnesOptions: TOOTH_ONES_OPTIONS,
                     onClearAll: handleClearRequestIntakeCache,
                     implantConnections,
                     implantFavorites,
