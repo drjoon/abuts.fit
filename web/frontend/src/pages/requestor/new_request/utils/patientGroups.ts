@@ -1,6 +1,7 @@
 // change-log:
+// - 2026-08-09: 크기 판정 3MB 단일 기준 — >=3MB 구강스캔, <3MB 어벗디자인(중간 구간 제거).
 // - 2026-08-09: 크기별 productMode·상단 뱃지(구강스캔/어벗디자인) SSOT 주석.
-// - 2026-08-09: 구강스캔 자동묶음 — 파일 크기(>3MB) 기준. 소형(<1.5MB) 커스텀어벗은 제외.
+// - 2026-08-09: 구강스캔 자동묶음 — 파일 크기(>=3MB) 기준. 소형(<3MB) 커스텀어벗은 제외.
 // - 2026-08-09: 구강스캔 카드 제목 — 파일명 환자명/공통 문자열 추출.
 // - 2026-08-09: 디자인+생산용 환자 단위 파일 묶음(구강 스캔 N개 → 환자 1건).
 // related files:
@@ -11,10 +12,13 @@
 
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
-/** 이 크기 초과면 구강 스캔으로 간주 (자동 묶음 대상 → 디자인+생산) */
+/** 이 크기 이상이면 구강 스캔으로 간주 (자동 묶음 대상 → 디자인+생산) */
 export const ORAL_SCAN_MIN_BYTES = 3 * 1024 * 1024;
-/** 이 크기 미만이면 커스텀어벗 디자인 STL로 간주 (자동 묶음 제외 → 생산) */
-export const CUSTOM_ABUT_DESIGN_MAX_BYTES = 1.5 * 1024 * 1024;
+/**
+ * 이 크기 미만이면 커스텀어벗 디자인 STL로 간주 (자동 묶음 제외 → 생산).
+ * 3MB 단일 기준 — ORAL_SCAN_MIN_BYTES와 동일.
+ */
+export const CUSTOM_ABUT_DESIGN_MAX_BYTES = ORAL_SCAN_MIN_BYTES;
 
 export type PatientFileGroup = {
   id: string;
@@ -40,12 +44,12 @@ export function resolveFileSizeBytes(
   return Number.isFinite(size) && size >= 0 ? size : null;
 }
 
-/** 구강 스캔 후보(>3MB). 자동 묶음·디자인+생산. */
+/** 구강 스캔 후보(>=3MB). 자동 묶음·디자인+생산. */
 export function isLikelyOralScanSize(sizeBytes: number | null | undefined): boolean {
-  return typeof sizeBytes === "number" && sizeBytes > ORAL_SCAN_MIN_BYTES;
+  return typeof sizeBytes === "number" && sizeBytes >= ORAL_SCAN_MIN_BYTES;
 }
 
-/** 커스텀어벗 디자인 STL 후보(<1.5MB). 자동 묶음 제외·생산. */
+/** 커스텀어벗 디자인 STL 후보(<3MB). 자동 묶음 제외·생산. */
 export function isLikelyCustomAbutDesignSize(
   sizeBytes: number | null | undefined,
 ): boolean {
@@ -252,7 +256,7 @@ export function buildAttachmentListItems(
 /**
  * 새로 추가된 파일들 중 같은 환자명(비어 있지 않음)끼리 묶을 후보를 만든다.
  * 기존 그룹에 같은 환자가 있으면 그 그룹 id로 합친다.
- * 구강 스캔 크기(>3MB)만 대상 — 소형 커스텀어벗 디자인 STL은 같은 환자여도 묶지 않는다.
+ * 구강 스캔 크기(>=3MB)만 대상 — 소형 커스텀어벗 디자인 STL은 같은 환자여도 묶지 않는다.
  */
 export function planAutoGroupsForNewFiles(params: {
   newFileKeys: string[];
@@ -308,7 +312,7 @@ export function planAutoGroupsForNewFiles(params: {
 /**
  * 한 번에 드롭/선택한 파일이 2개 이상이고 환자명이 없거나 모두 같으면
  * (구강 스캔 묶음으로 보고) 하나의 환자 그룹으로 만든다.
- * 구강 스캔 크기(>3MB)만 대상 — 동일 환자 커스텀어벗 여러 개를 한꺼번에 올려도 묶지 않는다.
+ * 구강 스캔 크기(>=3MB)만 대상 — 동일 환자 커스텀어벗 여러 개를 한꺼번에 올려도 묶지 않는다.
  */
 export function planBatchGroupIfAmbiguous(params: {
   newFileKeys: string[];

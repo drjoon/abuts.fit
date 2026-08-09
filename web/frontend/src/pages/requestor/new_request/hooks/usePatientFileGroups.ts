@@ -1,7 +1,7 @@
 // change-log:
 // - 2026-08-09: 묶음 해제/파일 분리 시 productMode 복원 + 출고일 재계산은 NewRequestPage에서.
-// - 2026-08-09: 커스텀어벗 디자인 STL(<1.5MB) 업로드 시 productMode=생산 고정.
-// - 2026-08-09: 자동묶음에 파일 크기 전달. 단일 구강스캔(>3MB)도 디자인+생산 표시.
+// - 2026-08-09: 커스텀어벗 디자인 STL(<3MB) 업로드 시 productMode=생산 고정.
+// - 2026-08-09: 자동묶음에 파일 크기 전달. 단일 구강스캔(>=3MB)도 디자인+생산 표시.
 // - 2026-08-09: 새로고침 시 files 복원 전 그룹 정리로 묶음이 풀리던 문제 수정.
 // - 2026-08-09: 디자인+생산 환자 단위 파일 묶음 상태/자동묶기/수동묶기.
 // related files:
@@ -131,7 +131,7 @@ export function usePatientFileGroups({
   /**
    * 묶음에서 빠져나온 파일의 productMode 복원.
    * 묶을 때 전원 design_custom_abutment로 올리므로, 분리 시 크기 휴리스틱으로 되돌린다.
-   * 구강스캔(>3MB) → 디자인+생산, 그 외(어벗 STL 등) → 생산.
+   * 구강스캔(>=3MB) → 디자인+생산, 그 외(어벗 STL 등) → 생산.
    * (출고 모드·ETA 재계산은 NewRequestPage.refreshShipScheduleAfterLeaveGroup)
    */
   const restoreProductModeAfterLeaveGroup = useCallback(

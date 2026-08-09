@@ -99,7 +99,7 @@ type Props = {
   toast: ToastFn;
   /** 구강스캔(묶음·단일): 커스텀어벗 디자인+생산 고정 */
   lockDesignProductMode?: boolean;
-  /** 어벗디자인 STL(<1.5MB): 커스텀어벗 생산 고정 */
+  /** 어벗디자인 STL(<3MB): 커스텀어벗 생산 고정 */
   lockProductionProductMode?: boolean;
   /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
   previewFileIndices?: number[];

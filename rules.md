@@ -122,9 +122,8 @@
 
 - 신규 의뢰 표준: `POST /api/requests/from-draft`
 - 신규의뢰 첨부 자동묶음(구강 스캔) SSOT — 파일 **크기**로 분류 (파일명·환자명만으로 묶지 않음):
-  - **> 3MB**: 구강 스캔 → 같은 환자면 디자인+생산(`design_custom_abutment`) 1건으로 자동 합침
-  - **< 1.5MB**: 커스텀어벗 디자인 STL → 동일 환자·동일 파일명이어도 자동 묶음 금지(각각 별도 건)
-  - **1.5~3MB**: 자동 묶음 없음(수동 합치기만)
+  - **>= 3MB**: 구강 스캔 → 같은 환자면 디자인+생산(`design_custom_abutment`) 1건으로 자동 합침
+  - **< 3MB**: 커스텀어벗 디자인 STL → 동일 환자·동일 파일명이어도 자동 묶음 금지(각각 별도 건)
   - 구현: `web/frontend/.../patientGroups.ts` (`ORAL_SCAN_MIN_BYTES` / `CUSTOM_ABUT_DESIGN_MAX_BYTES`).
     상세·관련 파일: `web/frontend/rules.md`, `.cursor/rules/oral-scan-file-size.mdc`
 - 공정 SSOT: `Request.manufacturerStage`

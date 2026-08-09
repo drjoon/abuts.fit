@@ -14,11 +14,10 @@ alwaysApply: false
 
 ## Thresholds (SSOT)
 
-| 크기 | 간주 | 자동 묶음 | productMode | 상단 뱃지 / 툴팁 |
-|------|------|-----------|-------------|------------------|
-| **> 3MB** (`ORAL_SCAN_MIN_BYTES`) | 구강 스캔 | 대상 | `design_custom_abutment` (고정) | `구강스캔` → «커스텀어벗 디자인+생산» |
-| **< 1.5MB** (`CUSTOM_ABUT_DESIGN_MAX_BYTES`) | 커스텀어벗 디자인 | **제외** (각각 별도 건) | `custom_abutment` | `어벗디자인` → «커스텀어벗 생산» |
-| **1.5~3MB** | 미분류 | 자동 묶음 없음. 수동 합치기만 | 사용자 선택 | 없음 |
+| 크기 | 간주 | 자동 묶음 | productMode | 뱃지 / 툴팁 |
+|------|------|-----------|-------------|-------------|
+| **>= 3MB** (`ORAL_SCAN_MIN_BYTES`) | 구강 스캔 | 대상 | `design_custom_abutment` (고정) | `구강스캔` → «커스텀어벗 디자인+생산» |
+| **< 3MB** (`CUSTOM_ABUT_DESIGN_MAX_BYTES` = 동일) | 커스텀어벗 디자인 | **제외** (각각 별도 건) | `custom_abutment` | `어벗디자인` → «커스텀어벗 생산» |
 
 상수·헬퍼: `web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts`
 
@@ -28,16 +27,16 @@ alwaysApply: false
 // ❌ BAD — 환자명/배치만으로 소형 STL까지 구강스캔 묶음
 planBatchGroupIfAmbiguous({ newFileKeys: allKeys, ... });
 
-// ✅ GOOD — >3MB만 자동 묶음
+// ✅ GOOD — >=3MB만 자동 묶음
 planAutoGroupsForNewFiles({ ..., sizeByFileKey });
 planBatchGroupIfAmbiguous({ ..., sizeByFileKey });
 ```
 
 - 자동 묶음 진입점: `usePatientFileGroups` → `planAutoGroupsForNewFiles` / `planBatchGroupIfAmbiguous`
-- 단일 구강스캔(>3MB)도 묶음 없이 `productMode=design_custom_abutment` (상세 모달에서 생산 비활성)
-- 커스텀어벗 디자인 STL(<1.5MB)은 `productMode=custom_abutment` (상세 모달에서 디자인+생산 비활성)
+- 단일 구강스캔(>=3MB)도 묶음 없이 `productMode=design_custom_abutment` (상세 모달에서 생산 비활성)
+- 커스텀어벗 디자인 STL(<3MB)은 `productMode=custom_abutment` (상세 모달에서 디자인+생산 비활성)
 - 수동 «구강 스캔으로 합치기»는 크기 제한 없음(사용자 의도)
-- 뱃지 툴팁: `delayDuration={0}` (호버 즉시). UI: `NewRequestAttachmentsPanel`
+- 뱃지 위치: ETA줄 3Shape 왼쪽. 툴팁 `delayDuration={0}`. UI: `NewRequestAttachmentsPanel`
 - 연결 끊기/분리 시: `productMode` 복원 + `NewRequestPage.refreshShipScheduleAfterLeaveGroup`로 출고 모드·ETA 재계산
 
 ## Related

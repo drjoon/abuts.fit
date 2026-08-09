@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-09: 구강스캔 묶음 멤버 파일명 오른쪽에도 용량 표시. 크기 판정 3MB 단일 기준.
+// - 2026-08-09: 단일 카드 파일명 짧게 truncate + 오른쪽 끝에 파일 크기 표시.
+// - 2026-08-09: 구강스캔·어벗디자인 뱃지를 파일명 옆 → ETA줄 3Shape 왼쪽으로 이동(긴 파일명 잘림 방지).
 // - 2026-08-09: 드롭존 안내 문구가 항상 1줄이 되도록 가로폭·nowrap 고정.
 // - 2026-08-09: 첨부 accept·드롭존 문구를 3D 모델(STL, PLY, OBJ)로 확장.
 // - 2026-08-09: 구강스캔 카드 — 환자정보 완료 시 흰 배경, 묶음 헤더에 의뢰 삭제(X).
@@ -63,6 +66,18 @@ const FILE_KIND_BADGE_CLASS =
   "text-[10px] font-medium px-1.5 py-0.5 shrink-0";
 const ORAL_SCAN_BADGE_CLASS = `${FILE_KIND_BADGE_CLASS} bg-violet-100 text-violet-700`;
 const ABUT_DESIGN_BADGE_CLASS = `${FILE_KIND_BADGE_CLASS} bg-sky-100 text-sky-700`;
+
+/** 첨부 카드용 짧은 용량 표기 (예: 0.8MB, 12MB) */
+function formatAttachmentSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) {
+    const kb = bytes / 1024;
+    return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)}KB`;
+  }
+  const mb = bytes / (1024 * 1024);
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)}MB`;
+}
 
 type MarqueeState = {
   originX: number;
@@ -574,8 +589,10 @@ export function NewRequestAttachmentsPanel({
     fileInfo?: CaseInfos;
     /** 구강 스캔 묶음은 항상 디자인+생산(+1영업일) */
     forceDesignProductMode?: boolean;
-    /** 구강 스캔 카드는 상단 뱃지로 충분하므로 +디자인 숨김 */
+    /** 구강 스캔 카드는 파일유형 뱃지로 충분하므로 +디자인 숨김 */
     hideDesignBadge?: boolean;
+    /** ETA줄 3Shape 왼쪽에 표시할 파일 유형 뱃지 */
+    fileKindBadge?: "oral_scan" | "abut_design" | null;
   }) => {
     const {
       fileKey,
@@ -583,6 +600,7 @@ export function NewRequestAttachmentsPanel({
       fileInfo,
       forceDesignProductMode,
       hideDesignBadge,
+      fileKindBadge,
     } = params;
     const shippingMode = resolveShippingMode(fileInfo, defaultShippingMode);
     // 구강스캔 메시 최대직경(>20mm)은 생산 리드에 쓰지 않는다(디자인+생산=리드 1일 SSOT).
@@ -630,7 +648,8 @@ export function NewRequestAttachmentsPanel({
       !estimatedShip &&
       !designSoftware &&
       !onShippingModeChange &&
-      !isDesignMode
+      !isDesignMode &&
+      !fileKindBadge
     ) {
       return null;
     }
@@ -696,6 +715,19 @@ export function NewRequestAttachmentsPanel({
                 className="bg-violet-100 text-[10px] font-medium px-1.5 py-0.5 text-violet-700"
               >
                 +디자인
+              </Badge>
+            </ImmediateTooltip>
+          ) : null}
+          {fileKindBadge === "oral_scan" ? (
+            <ImmediateTooltip label={ORAL_SCAN_BADGE_TOOLTIP}>
+              <Badge variant="secondary" className={ORAL_SCAN_BADGE_CLASS}>
+                구강스캔
+              </Badge>
+            </ImmediateTooltip>
+          ) : fileKindBadge === "abut_design" ? (
+            <ImmediateTooltip label={ABUT_DESIGN_BADGE_TOOLTIP}>
+              <Badge variant="secondary" className={ABUT_DESIGN_BADGE_CLASS}>
+                어벗디자인
               </Badge>
             </ImmediateTooltip>
           ) : null}
@@ -773,30 +805,17 @@ export function NewRequestAttachmentsPanel({
                   data-no-marquee
                 />
               ) : null}
-              <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
-                <div className="truncate">{filename}</div>
-                {isOralScanFile ? (
-                  <ImmediateTooltip label={ORAL_SCAN_BADGE_TOOLTIP}>
-                    <Badge
-                      variant="secondary"
-                      className={ORAL_SCAN_BADGE_CLASS}
-                    >
-                      구강스캔
-                    </Badge>
-                  </ImmediateTooltip>
-                ) : isAbutDesignFile ? (
-                  <ImmediateTooltip label={ABUT_DESIGN_BADGE_TOOLTIP}>
-                    <Badge
-                      variant="secondary"
-                      className={ABUT_DESIGN_BADGE_CLASS}
-                    >
-                      어벗디자인
-                    </Badge>
-                  </ImmediateTooltip>
-                ) : null}
+              <div className="min-w-0 flex-1 truncate pr-1" title={filename}>
+                {filename}
               </div>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span
+                className="text-[11px] tabular-nums text-slate-500"
+                title={`${file.size.toLocaleString()} bytes`}
+              >
+                {formatAttachmentSize(file.size)}
+              </span>
               {isVerified && (
                 <Check className="w-4 h-4 text-primary" aria-label="확인됨" />
               )}
@@ -820,9 +839,14 @@ export function NewRequestAttachmentsPanel({
             fileKey,
             fileKeysForMode: [fileKey],
             fileInfo,
-            // 상단 구강스캔 뱃지로 충분하므로 +디자인 숨김
+            // 파일유형 뱃지(구강스캔)로 충분하므로 +디자인 숨김
             hideDesignBadge: isOralScanFile,
             forceDesignProductMode: isOralScanFile,
+            fileKindBadge: isOralScanFile
+              ? "oral_scan"
+              : isAbutDesignFile
+                ? "abut_design"
+                : null,
           })}
         </div>
       </div>
@@ -910,16 +934,8 @@ export function NewRequestAttachmentsPanel({
                   data-no-marquee
                 />
               ) : null}
-              <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
-                <div className="truncate font-medium">{patientLabel}</div>
-                <ImmediateTooltip label={ORAL_SCAN_BADGE_TOOLTIP}>
-                  <Badge
-                    variant="secondary"
-                    className={ORAL_SCAN_BADGE_CLASS}
-                  >
-                    구강스캔
-                  </Badge>
-                </ImmediateTooltip>
+              <div className="min-w-0 flex-1 truncate font-medium">
+                {patientLabel}
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
@@ -971,7 +987,8 @@ export function NewRequestAttachmentsPanel({
                 >
                   <button
                     type="button"
-                    className="truncate text-left hover:text-primary"
+                    className="min-w-0 flex-1 truncate text-left hover:text-primary"
+                    title={member.name}
                     onClick={(e) => {
                       e.stopPropagation();
                       openDetailModal(idx);
@@ -979,7 +996,13 @@ export function NewRequestAttachmentsPanel({
                   >
                     {member.name}
                   </button>
-                  <div className="flex items-center gap-0.5 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span
+                      className="text-[11px] tabular-nums text-slate-500"
+                      title={`${member.size.toLocaleString()} bytes`}
+                    >
+                      {formatAttachmentSize(member.size)}
+                    </span>
                     {onRemoveFileFromGroup ? (
                       <ImmediateTooltip label="연결 끊기">
                         <button
@@ -1022,6 +1045,7 @@ export function NewRequestAttachmentsPanel({
             fileInfo,
             forceDesignProductMode: true,
             hideDesignBadge: true,
+            fileKindBadge: "oral_scan",
           })}
         </div>
       </div>
