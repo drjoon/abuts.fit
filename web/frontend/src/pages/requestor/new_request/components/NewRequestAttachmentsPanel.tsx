@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-09: 구강스캔(디자인+생산) ETA는 메시 직경 무시(estimateShipDate 리드 1일).
+// - 2026-08-09: 우측 신속 비활성 시 카드 신속 버튼도 동일하게 막는다.
 // - 2026-08-09: 신속 비활성 스타일을 opacity 대신 명시적 slate로 구분해 요일 변경 후 상태를 분명히 한다.
 // - 2026-08-09: 하나로 묶기 옆 선택해제, 카드 좌우 드래그 여유 공간.
 // - 2026-08-09: 카드 클릭 모달 — 마키는 드래그 임계 이후에만 시작(클릭 방해 제거).
@@ -126,6 +128,8 @@ type Props = {
   onOpenDesignSoftwareModal?: () => void;
   onShippingModeChange?: (fileKeys: string[], mode: ShippingMode) => void;
   defaultShippingMode?: ShippingMode;
+  /** 우측 신속 카드와 동일 조건. false면 건별 이점이 있어도 신속 비활성 */
+  expressSelectableGlobal?: boolean;
   listItems?: AttachmentListItem[];
   onGroupSelectedFiles?: (fileKeys: string[]) => void;
   onUngroup?: (groupId: string) => void;
@@ -167,6 +171,7 @@ export function NewRequestAttachmentsPanel({
   onOpenDesignSoftwareModal,
   onShippingModeChange,
   defaultShippingMode = "normal",
+  expressSelectableGlobal = true,
   listItems,
   onGroupSelectedFiles,
   onUngroup,
@@ -241,6 +246,15 @@ export function NewRequestAttachmentsPanel({
   ) => {
     if (!onShippingModeChange || fileKeys.length === 0) return;
     if (mode === "express") {
+      if (!expressSelectableGlobal) {
+        toast({
+          title: "신속 출고 선택 불가",
+          description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
+          variant: "destructive",
+          duration: 4000,
+        });
+        return;
+      }
       const ok = isExpressShippingSelectable({
         weeklyBatchDays,
         leadTimes,
@@ -556,17 +570,22 @@ export function NewRequestAttachmentsPanel({
       hideDesignBadge,
     } = params;
     const shippingMode = resolveShippingMode(fileInfo, defaultShippingMode);
-    const diameter = fileDiameters[fileKey] ?? fileInfo?.maxDiameter ?? null;
+    // 구강스캔 메시 최대직경(>20mm)은 생산 리드에 쓰지 않는다(디자인+생산=리드 1일 SSOT).
+    const diameter = forceDesignProductMode
+      ? null
+      : (fileDiameters[fileKey] ?? fileInfo?.maxDiameter ?? null);
     const productMode = forceDesignProductMode
       ? "design_custom_abutment"
       : (fileInfo?.productMode ?? null);
-    const expressSelectable = isExpressShippingSelectable({
-      weeklyBatchDays,
-      leadTimes,
-      diameter,
-      productMode,
-      requestedAt: now,
-    });
+    const expressSelectable =
+      expressSelectableGlobal &&
+      isExpressShippingSelectable({
+        weeklyBatchDays,
+        leadTimes,
+        diameter,
+        productMode,
+        requestedAt: now,
+      });
     const effectiveShippingMode: ShippingMode =
       shippingMode === "express" && !expressSelectable ? "normal" : shippingMode;
     const estimatedShip =

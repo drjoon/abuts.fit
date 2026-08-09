@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-09: 구강스캔·디자인+생산은 메시 직경 없이 리드 1일로 출고 모드를 판정.
+// - 2026-08-09: 우측 신속 비활성(디자인+1일 등)일 때 의뢰카드 신속 버튼도 함께 막는다.
 // - 2026-08-09: 묶음 요일 변경 시 신규 days·구강스캔(디자인+1일)로 신속 선택 가능 여부를 다시 판정.
 // - 2026-08-09: 상단 헤더(보유 크레딧/지난 의뢰)를 RequestorWorkspaceHeader로 공유. 기간 필터는 신규의뢰에서 미표시.
 // - 2026-08-04: 중복 의뢰 "취소 후 재의뢰" 선택 시 기존 의뢰/치과 즐겨찾기 정보로 누락 필드를 채우고 카드 검증을 자동 완료.
@@ -883,25 +885,6 @@ const NewRequestPageContent = () => {
     setLeadTimes(next);
   }, []);
 
-  const resolveEffectiveShippingMode = useCallback(
-    (
-      mode: "normal" | "express",
-      diameter: number | null = null,
-      productMode: string | null = null,
-      batchDays: string[] | null = null,
-    ): "normal" | "express" => {
-      if (mode !== "express") return "normal";
-      const ok = isExpressShippingSelectable({
-        weeklyBatchDays: batchDays ?? weeklyBatchDays,
-        leadTimes,
-        diameter,
-        productMode,
-      });
-      return ok ? "express" : "normal";
-    },
-    [weeklyBatchDays, leadTimes],
-  );
-
   const groupedFileKeys = useMemo(
     () => new Set((patientGroups || []).flatMap((g) => g.fileKeys)),
     [patientGroups],
@@ -913,6 +896,16 @@ const NewRequestPageContent = () => {
       return (info?.productMode as string | null | undefined) ?? null;
     },
     [groupedFileKeys],
+  );
+
+  /** 구강스캔·디자인+생산은 메시 직경으로 리드를 잡지 않는다 */
+  const resolveCaseLeadDiameter = useCallback(
+    (fileKey: string, info?: CaseInfos | null) => {
+      const productMode = resolveCaseProductMode(fileKey, info);
+      if (productMode === "design_custom_abutment") return null;
+      return (info?.maxDiameter as number | null | undefined) ?? null;
+    },
+    [resolveCaseProductMode],
   );
 
   /** 우측 기본 신속 카드: 첨부 중 디자인+생산이 있으면 +1영업일로 판정 */
@@ -927,6 +920,46 @@ const NewRequestPageContent = () => {
     return null;
   }, [groupedFileKeys, files, caseInfosMap, toNormalizedFileKey]);
 
+  /** 우측 신속 카드와 동일 조건 — 카드 신속 버튼·모드 강등에도 공통 적용 */
+  const expressSelectableGlobal = useMemo(
+    () =>
+      isExpressShippingSelectable({
+        weeklyBatchDays,
+        leadTimes,
+        diameter: null,
+        productMode: expressSelectProductMode,
+      }),
+    [weeklyBatchDays, leadTimes, expressSelectProductMode],
+  );
+
+  const resolveEffectiveShippingMode = useCallback(
+    (
+      mode: "normal" | "express",
+      diameter: number | null = null,
+      productMode: string | null = null,
+      batchDays: string[] | null = null,
+    ): "normal" | "express" => {
+      if (mode !== "express") return "normal";
+      const days = batchDays ?? weeklyBatchDays;
+      // 우측에 디자인+1일 등으로 신속 이점이 없으면 건별(생산만)도 신속을 열지 않는다.
+      const globalOk = isExpressShippingSelectable({
+        weeklyBatchDays: days,
+        leadTimes,
+        diameter: null,
+        productMode: expressSelectProductMode,
+      });
+      if (!globalOk) return "normal";
+      const ok = isExpressShippingSelectable({
+        weeklyBatchDays: days,
+        leadTimes,
+        diameter,
+        productMode,
+      });
+      return ok ? "express" : "normal";
+    },
+    [weeklyBatchDays, leadTimes, expressSelectProductMode],
+  );
+
   const handleWeeklyBatchDaysChange = useCallback(
     (days: string[]) => {
       setWeeklyBatchDays(days);
@@ -935,8 +968,7 @@ const NewRequestPageContent = () => {
       for (const file of files) {
         const key = toNormalizedFileKey(file);
         const info = caseInfosMap?.[key];
-        const diameter =
-          (info?.maxDiameter as number | null | undefined) ?? null;
+        const diameter = resolveCaseLeadDiameter(key, info);
         const productMode = resolveCaseProductMode(key, info);
         const preferred =
           info?.shippingMode === "express" ||
@@ -968,6 +1000,7 @@ const NewRequestPageContent = () => {
       defaultShippingMode,
       resolveEffectiveShippingMode,
       resolveCaseProductMode,
+      resolveCaseLeadDiameter,
     ],
   );
 
@@ -977,8 +1010,7 @@ const NewRequestPageContent = () => {
       for (const file of files) {
         const key = toNormalizedFileKey(file);
         const info = caseInfosMap?.[key];
-        const diameter =
-          (info?.maxDiameter as number | null | undefined) ?? null;
+        const diameter = resolveCaseLeadDiameter(key, info);
         const productMode = resolveCaseProductMode(key, info);
         updateCaseInfos(key, {
           shippingMode: resolveEffectiveShippingMode(
@@ -1002,6 +1034,7 @@ const NewRequestPageContent = () => {
       updateCaseInfos,
       resolveEffectiveShippingMode,
       resolveCaseProductMode,
+      resolveCaseLeadDiameter,
       caseInfosMap,
     ],
   );
@@ -1013,8 +1046,7 @@ const NewRequestPageContent = () => {
       const key = toNormalizedFileKey(file);
       const info = caseInfosMap?.[key];
       if (info?.shippingMode !== "express") continue;
-      const diameter =
-        (info?.maxDiameter as number | null | undefined) ?? null;
+      const diameter = resolveCaseLeadDiameter(key, info);
       const productMode = resolveCaseProductMode(key, info);
       if (
         resolveEffectiveShippingMode("express", diameter, productMode) ===
@@ -1031,6 +1063,7 @@ const NewRequestPageContent = () => {
     updateCaseInfos,
     resolveEffectiveShippingMode,
     resolveCaseProductMode,
+    resolveCaseLeadDiameter,
   ]);
 
   // 새로 첨부된 파일에만 우측 기본 배송 방식을 적용한다.
@@ -1045,8 +1078,7 @@ const NewRequestPageContent = () => {
       const existing = info?.shippingMode;
       if (existing === "normal" || existing === "express") continue;
 
-      const diameter =
-        (info?.maxDiameter as number | null | undefined) ?? null;
+      const diameter = resolveCaseLeadDiameter(key, info);
       const productMode = resolveCaseProductMode(key, info);
       updateCaseInfos(key, {
         shippingMode: resolveEffectiveShippingMode(
@@ -1065,6 +1097,7 @@ const NewRequestPageContent = () => {
     toNormalizedFileKey,
     resolveEffectiveShippingMode,
     resolveCaseProductMode,
+    resolveCaseLeadDiameter,
   ]);
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
@@ -1628,6 +1661,7 @@ const NewRequestPageContent = () => {
               onOpenDesignSoftwareModal={handleOpenDesignSoftwareModal}
               onShippingModeChange={handleShippingModeChange}
               defaultShippingMode={defaultShippingMode}
+              expressSelectableGlobal={expressSelectableGlobal}
               onLeadTimesChange={handleLeadTimesChange}
               attachmentListItems={attachmentListItems}
               patientGroups={patientGroups}

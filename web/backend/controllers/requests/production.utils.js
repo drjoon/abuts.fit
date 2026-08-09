@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일·기본 직경 그룹.
 // - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 모두 출고일에
 //   디자인 리드 +1영업일 추가.
 // - 2026-08-06: 묶음 리드타임 (N-1) 복원. 접수 당일을 1일차로 포함(자정 컷오프/
@@ -273,11 +274,13 @@ export async function calculateInitialProductionSchedule({
 }) {
   const mode = shippingMode === "express" ? "express" : "normal";
   const now = requestedAt || new Date();
-  const designLeadDays = needsDesignLeadDay(productMode)
-    ? DESIGN_LEAD_BUSINESS_DAYS
-    : 0;
+  const designMode = needsDesignLeadDay(productMode);
+  const designLeadDays = designMode ? DESIGN_LEAD_BUSINESS_DAYS : 0;
+  // 구강스캔 메시는 직경이 수십 mm라 d12·최대 리드/대기으로 잡힘.
+  // 디자인+생산은 최종 어벗 직경 미정이므로 기본(8mm)·리드 1일로 잡는다.
+  const scheduleMaxDiameter = designMode ? 8 : maxDiameter;
   const { diameter, diameterGroup, preferredMachine } =
-    getDiameterGroupAndMachine(maxDiameter);
+    getDiameterGroupAndMachine(scheduleMaxDiameter);
 
   // Fetch manufacturer settings for lead times
   let manufacturerLeadTimes = null;
@@ -392,15 +395,20 @@ export async function calculateInitialProductionSchedule({
 
   // 가공 완료 → 배치 처리 (세척/검사/포장)
   // Use manufacturer lead times based on diameter
+  // 디자인+생산(구강스캔): 턱스캔 직경 무시, 생산 리드 1영업일 고정
   const d =
-    typeof maxDiameter === "number" && !isNaN(maxDiameter) ? maxDiameter : 8;
+    typeof scheduleMaxDiameter === "number" && !isNaN(scheduleMaxDiameter)
+      ? scheduleMaxDiameter
+      : 8;
   let diameterKey = "d8";
   if (d <= 6) diameterKey = "d6";
   else if (d <= 8) diameterKey = "d8";
   else if (d <= 10) diameterKey = "d10";
   else diameterKey = "d12";
 
-  const leadDays = manufacturerLeadTimes?.[diameterKey]?.minBusinessDays ?? 1;
+  const leadDays = designMode
+    ? 1
+    : (manufacturerLeadTimes?.[diameterKey]?.minBusinessDays ?? 1);
   const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
     leadDays,
     requestedAt: now,

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일.
 // - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 출고 +1영업일.
 // - 2026-08-08: 신규의뢰 예상 출고일 계산 SSOT (프론트 ETA + 디버그).
 // - 2026-08-08: 신속 선택 가능 = 신속 ETA < 묶음 ETA (당일·조기 이점 있을 때만).
@@ -134,12 +135,18 @@ export function computeEstimatedShipYmd({
     return applyDesignLeadDay(baseYmd, productMode);
   }
 
-  if (!leadTimes) return null;
+  // 구강스캔·디자인+생산: 턱스캔 메시 직경(>20mm)으로 d12 최대 리드가 잡히지 않게
+  // 생산 리드타임은 1영업일 고정. (디자인 +1영업일은 applyDesignLeadDay)
+  const designMode = needsDesignLeadDay(productMode);
+  if (!designMode && !leadTimes) return null;
 
-  const diameterKey = resolveDiameterKey(diameter);
-  const rawLead = leadTimes?.[diameterKey]?.minBusinessDays;
-  const leadNumber = Number(rawLead);
-  const leadDays = Number.isFinite(leadNumber) ? Math.max(1, leadNumber) : 1;
+  let leadDays = 1;
+  if (!designMode) {
+    const diameterKey = resolveDiameterKey(diameter);
+    const rawLead = leadTimes?.[diameterKey]?.minBusinessDays;
+    const leadNumber = Number(rawLead);
+    leadDays = Number.isFinite(leadNumber) ? Math.max(1, leadNumber) : 1;
+  }
   const resolvedLeadDays = resolveLeadDaysForPickup(leadDays);
   const baseShipYmd = applyDesignLeadDay(
     addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays),

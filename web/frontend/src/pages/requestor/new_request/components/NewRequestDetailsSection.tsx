@@ -87,6 +87,8 @@ type Props = {
     mode: "normal" | "express",
   ) => void;
   defaultShippingMode?: "normal" | "express";
+  /** 우측 신속 카드와 동일 — false면 카드 신속 버튼도 비활성 */
+  expressSelectableGlobal?: boolean;
   onLeadTimesChange?: (leadTimes: LeadTimesMap | null) => void;
   attachmentListItems?: AttachmentListItem[];
   patientGroups?: PatientFileGroup[];
@@ -147,6 +149,7 @@ export function NewRequestDetailsSection({
   onOpenDesignSoftwareModal,
   onShippingModeChange,
   defaultShippingMode = "normal",
+  expressSelectableGlobal = true,
   onLeadTimesChange,
   attachmentListItems,
   patientGroups = [],
@@ -586,6 +589,7 @@ export function NewRequestDetailsSection({
             uploadInputRef={uploadInputRef}
             onShippingModeChange={onShippingModeChange}
             defaultShippingMode={defaultShippingMode}
+            expressSelectableGlobal={expressSelectableGlobal}
             listItems={attachmentListItems}
             onGroupSelectedFiles={onGroupSelectedFiles}
             onUngroup={onUngroupPatientFiles}

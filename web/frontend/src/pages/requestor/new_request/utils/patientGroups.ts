@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 구강스캔 자동묶음 — 파일 크기(>3MB) 기준. 소형(<1.5MB) 커스텀어벗은 제외.
 // - 2026-08-09: 구강스캔 카드 제목 — 파일명 환자명/공통 문자열 추출.
 // - 2026-08-09: 디자인+생산용 환자 단위 파일 묶음(구강 스캔 N개 → 환자 1건).
 // related files:
@@ -9,11 +10,59 @@
 
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
+/** 이 크기 초과면 구강 스캔으로 간주 (자동 묶음 대상) */
+export const ORAL_SCAN_MIN_BYTES = 3 * 1024 * 1024;
+/** 이 크기 미만이면 커스텀어벗 디자인 STL로 간주 (자동 묶음 제외) */
+export const CUSTOM_ABUT_DESIGN_MAX_BYTES = 1.5 * 1024 * 1024;
+
 export type PatientFileGroup = {
   id: string;
   /** 그룹에 속한 fileKey 목록. 첫 항목이 대표(primary) 키. */
   fileKeys: string[];
 };
+
+/**
+ * fileKey(`name:size`)에서 바이트 크기 추출.
+ * sizeByFileKey가 있으면 그쪽을 우선한다.
+ */
+export function resolveFileSizeBytes(
+  fileKey: string,
+  sizeByFileKey?: Record<string, number | undefined>,
+): number | null {
+  const fromMap = sizeByFileKey?.[fileKey];
+  if (typeof fromMap === "number" && Number.isFinite(fromMap) && fromMap >= 0) {
+    return fromMap;
+  }
+  const idx = String(fileKey || "").lastIndexOf(":");
+  if (idx < 0) return null;
+  const size = Number(String(fileKey).slice(idx + 1));
+  return Number.isFinite(size) && size >= 0 ? size : null;
+}
+
+/** 구강 스캔 후보(>3MB). 자동 묶음에만 포함. */
+export function isLikelyOralScanSize(sizeBytes: number | null | undefined): boolean {
+  return typeof sizeBytes === "number" && sizeBytes > ORAL_SCAN_MIN_BYTES;
+}
+
+/** 커스텀어벗 디자인 STL 후보(<1.5MB). 자동 묶음에서 제외. */
+export function isLikelyCustomAbutDesignSize(
+  sizeBytes: number | null | undefined,
+): boolean {
+  return (
+    typeof sizeBytes === "number" &&
+    sizeBytes >= 0 &&
+    sizeBytes < CUSTOM_ABUT_DESIGN_MAX_BYTES
+  );
+}
+
+function filterOralScanFileKeys(
+  fileKeys: string[],
+  sizeByFileKey?: Record<string, number | undefined>,
+): string[] {
+  return fileKeys.filter((key) =>
+    isLikelyOralScanSize(resolveFileSizeBytes(key, sizeByFileKey)),
+  );
+}
 
 export type AttachmentListItem =
   | { kind: "group"; group: PatientFileGroup; fileIndices: number[] }
@@ -202,16 +251,20 @@ export function buildAttachmentListItems(
 /**
  * 새로 추가된 파일들 중 같은 환자명(비어 있지 않음)끼리 묶을 후보를 만든다.
  * 기존 그룹에 같은 환자가 있으면 그 그룹 id로 합친다.
+ * 구강 스캔 크기(>3MB)만 대상 — 소형 커스텀어벗 디자인 STL은 같은 환자여도 묶지 않는다.
  */
 export function planAutoGroupsForNewFiles(params: {
   newFileKeys: string[];
   patientNameByFileKey: Record<string, string | undefined>;
   existingGroups: PatientFileGroup[];
+  sizeByFileKey?: Record<string, number | undefined>;
 }): { groupsToCreate: PatientFileGroup[]; groupsToUpdate: PatientFileGroup[] } {
-  const { newFileKeys, patientNameByFileKey, existingGroups } = params;
+  const { newFileKeys, patientNameByFileKey, existingGroups, sizeByFileKey } =
+    params;
+  const oralScanKeys = filterOralScanFileKeys(newFileKeys, sizeByFileKey);
   const byPatient = new Map<string, string[]>();
 
-  for (const fileKey of newFileKeys) {
+  for (const fileKey of oralScanKeys) {
     const patientKey = normalizePatientKey(patientNameByFileKey[fileKey]);
     if (!patientKey) continue;
     const list = byPatient.get(patientKey) || [];
@@ -254,13 +307,18 @@ export function planAutoGroupsForNewFiles(params: {
 /**
  * 한 번에 드롭/선택한 파일이 2개 이상이고 환자명이 없거나 모두 같으면
  * (구강 스캔 묶음으로 보고) 하나의 환자 그룹으로 만든다.
+ * 구강 스캔 크기(>3MB)만 대상 — 동일 환자 커스텀어벗 여러 개를 한꺼번에 올려도 묶지 않는다.
  */
 export function planBatchGroupIfAmbiguous(params: {
   newFileKeys: string[];
   patientNameByFileKey: Record<string, string | undefined>;
   alreadyGroupedKeys: Set<string>;
+  sizeByFileKey?: Record<string, number | undefined>;
 }): PatientFileGroup | null {
-  const keys = params.newFileKeys.filter((k) => !params.alreadyGroupedKeys.has(k));
+  const keys = filterOralScanFileKeys(
+    params.newFileKeys.filter((k) => !params.alreadyGroupedKeys.has(k)),
+    params.sizeByFileKey,
+  );
   if (keys.length < 2) return null;
 
   const patientKeys = keys.map((k) =>
