@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-09: 배송비(출고 시)를 크레딧 사용액 아래로 이동, 별도 차감 안내 문구 분리.
 // - 2026-08-09: 디자인+생산 — 커스텀어벗 치아만 표시·과금 수량. 신속비=단가×어벗수.
 // - 2026-08-09: 디자인+생산(우열)에서 STL 다어벗 공통이 아닌 스펙(임플란트/SW/직경/유지홈) 숨김.
 // - 2026-08-09: 의뢰 상세 2열 레이아웃(좌: 비용, 우: 케이스 정보).
@@ -451,6 +452,35 @@ export const RequestDetailDialog = ({
                             : "없음"}
                         </span>
                       </div>
+                      {expressFeeTotal > 0 && (
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-slate-600 shrink-0">신속출고</span>
+                          <span className="font-medium tabular-nums text-right text-amber-700">
+                            {formatUnitTimesQty(
+                              expressUnit,
+                              expressQty,
+                              expressFeeTotal,
+                            )}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="border-t border-dashed border-slate-200 pt-2 space-y-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-slate-700 font-medium">크레딧 사용액</span>
+                        <span className="font-semibold tabular-nums">
+                          {Number(priceAmount).toLocaleString()}원
+                        </span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-slate-500">
+                        {`크레딧 사용액은 생산비와 디자인비${
+                          expressFeeTotal > 0 ? "·신속비" : ""
+                        }입니다.`}
+                      </p>
+                    </div>
+
+                    <div className="border-t border-slate-200 pt-2 space-y-1">
                       <div className="flex items-baseline justify-between gap-3">
                         <span className="text-slate-600 shrink-0">
                           배송비
@@ -466,31 +496,8 @@ export const RequestDetailDialog = ({
                           )}
                         </span>
                       </div>
-                      {expressFeeTotal > 0 && (
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="text-slate-600 shrink-0">신속출고</span>
-                          <span className="font-medium tabular-nums text-right text-amber-700">
-                            {formatUnitTimesQty(
-                              expressUnit,
-                              expressQty,
-                              expressFeeTotal,
-                            )}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="border-t border-slate-200 pt-2 space-y-1">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-slate-700 font-medium">크레딧 사용액</span>
-                        <span className="font-semibold tabular-nums">
-                          {Number(priceAmount).toLocaleString()}원
-                        </span>
-                      </div>
                       <p className="text-[11px] leading-relaxed text-slate-500">
-                        {`크레딧 사용액은 생산${designFeeTotal > 0 ? "·디자인" : ""}${
-                          expressFeeTotal > 0 ? "·신속" : ""
-                        } 비용입니다. 배송비는 출고 시 박스 단위로 별도 차감됩니다.`}
+                        배송비는 출고 시 박스 단위로 별도 차감됩니다.
                       </p>
                     </div>
                   </div>
