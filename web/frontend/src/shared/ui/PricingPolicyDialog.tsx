@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 디자인+가공 출고 +1영업일 안내(가격·리드타임·출고 방식).
 // - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일). 배송비(수수료) 표기는 유지.
 // - 2026-08-08: 정책 안내 모달 섹션 카드·가격 하이라이트·리드타임 그리드로 스타일 개선.
 // related files:
@@ -305,7 +306,7 @@ export const PricingPolicyDialog = ({
                   <PriceRow
                     label='신속 출고'
                     value={`+${expressFee.toLocaleString('ko-KR')}원`}
-                    hint='건당 의뢰크레딧 · 묶음보다 빠른 출고일이 있을 때만 선택 가능(당일 16:00 목표)'
+                    hint='건당 의뢰크레딧 · 묶음보다 빠른 출고일이 있을 때만 선택 가능(가공만 당일 16:00 목표)'
                   />
                 </div>
                 <p className='mt-3 text-xs text-slate-500'>배송비 별도 · 부가세 없음</p>
@@ -318,6 +319,11 @@ export const PricingPolicyDialog = ({
                     (가공단가 + 디자인비) × 어벗 수
                   </span>
                   로 의뢰크레딧에서 차감합니다. 신속 출고 추가비는 건당입니다.
+                  출고 일정에는 디자인 작업으로{" "}
+                  <span className='font-medium text-slate-800'>
+                    묶음·신속 모두 +1영업일
+                  </span>
+                  이 더해집니다.
                 </div>
                 <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>
                   <span className='font-medium text-slate-800'>
@@ -424,7 +430,15 @@ export const PricingPolicyDialog = ({
                   <span className='font-medium text-slate-700'>
                     자정 이후 접수 건부터는 익영업일
                   </span>{' '}
-                  기준으로 계산됩니다.
+                  기준으로 계산됩니다.{' '}
+                  <span className='font-medium text-slate-700'>
+                    디자인+가공
+                  </span>
+                  은 아래 직경 리드타임에{' '}
+                  <span className='font-medium text-slate-700'>
+                    +1영업일
+                  </span>
+                  (디자인)이 추가로 더해집니다.
                 </p>
                 <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
                   {diameterRows.map(({ label, key }) => {
@@ -449,7 +463,7 @@ export const PricingPolicyDialog = ({
                         </div>
                         {hasSameDayNote ? (
                           <div className='mt-1.5 text-[11px] leading-snug text-blue-700'>
-                            자정까지 접수 시 당일 집하 가능
+                            가공만 · 자정까지 접수 시 당일 집하 가능
                           </div>
                         ) : null}
                       </div>
@@ -466,7 +480,8 @@ export const PricingPolicyDialog = ({
                     </div>
                     <p className='mt-1 text-xs leading-relaxed text-slate-600'>
                       설정한 출고 요일 중 가장 먼저 도래하는 날에 제조사에서 함께
-                      출고합니다.
+                      출고합니다. 디자인+가공은 직경 리드타임에 +1영업일(디자인)을
+                      더한 뒤 출고 요일에 맞춥니다.
                     </p>
                   </div>
                   <div className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5'>
@@ -474,16 +489,20 @@ export const PricingPolicyDialog = ({
                       신속 출고
                     </div>
                     <p className='mt-1 text-xs leading-relaxed text-slate-600'>
-                      KST 낮 12시 이전·영업일 의뢰는{' '}
+                      가공만: KST 낮 12시 이전·영업일 의뢰는{' '}
                       <span className='font-medium text-slate-800'>
                         당일 16:00
                       </span>{' '}
                       출고를 목표하고, 12시 이후(또는 휴일)에는 다음 영업일
-                      16:00으로 잡습니다. 예상 출고일이 묶음 출고보다 빠를 때만
-                      선택할 수 있으며, 같거나 늦으면 선택 불가합니다. 건당
-                      의뢰크레딧 1,000원이 추가됩니다. 약속 출고일에 집하되지
-                      않으면(16시 이후 당일 수동 집하는 정시) 자정 이후 신속
-                      출고 실패로 처리하고 추가 크레딧은 취소됩니다.
+                      16:00으로 잡습니다.{' '}
+                      <span className='font-medium text-slate-800'>
+                        디자인+가공은 그 기준에 +1영업일
+                      </span>
+                      입니다. 예상 출고일이 묶음 출고보다 빠를 때만 선택할 수
+                      있으며, 같거나 늦으면 선택 불가합니다. 건당 의뢰크레딧
+                      1,000원이 추가됩니다. 약속 출고일에 집하되지 않으면(16시
+                      이후 당일 수동 집하는 정시) 자정 이후 신속 출고 실패로
+                      처리하고 추가 크레딧은 취소됩니다.
                     </p>
                   </div>
                 </div>

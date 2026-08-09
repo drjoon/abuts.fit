@@ -150,6 +150,7 @@ export async function createRequest(req, res) {
       requestedAt: new Date(),
       weeklyBatchDays: requestorWeeklyBatchDays,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
+      productMode: normalizedCaseInfos?.productMode ?? null,
     });
 
     const computedPrice = await computePriceForRequest({
@@ -231,6 +232,7 @@ export async function createRequest(req, res) {
       requestedAt,
       weeklyBatchDays:
         shippingMode === "normal" ? requestorWeeklyBatchDays : [],
+      productMode: normalizedCaseInfos?.productMode ?? null,
     });
     newRequest.productionSchedule = productionSchedule;
 
@@ -679,6 +681,7 @@ export async function createRequestsBulk(req, res) {
           weeklyBatchDays: requestorWeeklyBatchDays,
           maxDiameter:
             raw?.caseInfos?.maxDiameter ?? raw?.maxDiameter ?? null,
+          productMode: raw?.caseInfos?.productMode ?? null,
         });
       }),
     );
@@ -1028,6 +1031,7 @@ export async function createRequestsBulk(req, res) {
           const schedKey = JSON.stringify({
             shippingMode: itemShippingMode,
             maxDiameter: normalizedCaseInfos?.maxDiameter,
+            productMode: normalizedCaseInfos?.productMode ?? null,
             requestedAt: toKstYmd(requestedAt),
             weeklyBatchDays:
               itemShippingMode === "normal" ? requestorWeeklyBatchDays : [],
@@ -1040,6 +1044,7 @@ export async function createRequestsBulk(req, res) {
               requestedAt,
               weeklyBatchDays:
                 itemShippingMode === "normal" ? requestorWeeklyBatchDays : [],
+              productMode: normalizedCaseInfos?.productMode ?? null,
             });
             scheduleCache.set(schedKey, productionSchedule);
           }

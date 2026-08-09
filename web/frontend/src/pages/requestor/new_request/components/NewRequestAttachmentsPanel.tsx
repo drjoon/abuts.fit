@@ -12,6 +12,7 @@ import {
 import { useToast } from "@/shared/hooks/use-toast";
 
 // change-log:
+// - 2026-08-09: 디자인+가공 ETA/신속선택에 productMode(+1영업일) 반영.
 // - 2026-08-06: 예상 발송 → 예상 출고 (제조사 출발일).
 // - 2026-08-08: 신속 버튼 = 신속 ETA < 묶음 ETA일 때만 활성.
 // - 2026-08-08: 신속 ETA를 묶음 파라미터와 분리 계산. 모드 전환 시 출고일 잔류 방지.
@@ -35,6 +36,7 @@ type Props = {
   getEstimatedShipForDiameter: ((
     diameter: number | null,
     shippingMode?: "normal" | "express",
+    productMode?: string | null,
   ) => string | null) | null;
   fileDiameters: Record<string, number>;
   handleRemoveFile: (index: number) => void;
@@ -102,7 +104,7 @@ export function NewRequestAttachmentsPanel({
   const applyMode = (
     fileKeys: string[],
     mode: ShippingMode,
-    options?: { diameter?: number | null },
+    options?: { diameter?: number | null; productMode?: string | null },
   ) => {
     if (!onShippingModeChange || fileKeys.length === 0) return;
     if (mode === "express") {
@@ -110,6 +112,7 @@ export function NewRequestAttachmentsPanel({
         weeklyBatchDays,
         leadTimes,
         diameter: options?.diameter ?? null,
+        productMode: options?.productMode ?? null,
         requestedAt: now,
       });
       if (!ok) {
@@ -229,10 +232,12 @@ export function NewRequestAttachmentsPanel({
             const computedDiameter = fileDiameters[fileKey];
             const fileInfo = caseInfosMap?.[fileKey];
             const diameter = computedDiameter ?? fileInfo?.maxDiameter ?? null;
+            const productMode = fileInfo?.productMode ?? null;
             const expressSelectable = isExpressShippingSelectable({
               weeklyBatchDays,
               leadTimes,
               diameter,
+              productMode,
               requestedAt: now,
             });
             const effectiveShippingMode: ShippingMode =
@@ -244,17 +249,19 @@ export function NewRequestAttachmentsPanel({
               effectiveShippingMode === "express"
                 ? computeEstimatedShipLabel({
                     shippingMode: "express",
+                    productMode,
                     requestedAt: now,
                   })
                 : (computeEstimatedShipLabel({
                     weeklyBatchDays,
                     leadTimes,
                     diameter,
+                    productMode,
                     shippingMode: "normal",
                     requestedAt: now,
                   }) ??
                   (getEstimatedShipForDiameter
-                    ? getEstimatedShipForDiameter(diameter, "normal")
+                    ? getEstimatedShipForDiameter(diameter, "normal", productMode)
                     : null));
             const designSoftware = String(fileInfo?.designSoftware || "").trim();
 
@@ -319,7 +326,10 @@ export function NewRequestAttachmentsPanel({
                                 effectiveShippingMode === "normal",
                               )}
                               onClick={() =>
-                                applyMode([fileKey], "normal", { diameter })
+                                applyMode([fileKey], "normal", {
+                                  diameter,
+                                  productMode,
+                                })
                               }
                             >
                               묶음
@@ -337,7 +347,10 @@ export function NewRequestAttachmentsPanel({
                                   : EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE
                               }
                               onClick={() =>
-                                applyMode([fileKey], "express", { diameter })
+                                applyMode([fileKey], "express", {
+                                  diameter,
+                                  productMode,
+                                })
                               }
                             >
                               신속

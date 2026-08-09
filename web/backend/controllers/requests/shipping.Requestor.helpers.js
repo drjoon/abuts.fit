@@ -426,6 +426,10 @@ export async function buildShippingEstimate(req) {
       : typeof maxDiameterRaw === "number"
         ? maxDiameterRaw
         : null;
+  const productMode =
+    typeof req.query.productMode === "string"
+      ? req.query.productMode.trim()
+      : null;
 
   if (!mode || !["express", "normal"].includes(mode)) {
     throw Object.assign(new Error("유효하지 않은 mode 입니다."), {
@@ -460,6 +464,7 @@ export async function buildShippingEstimate(req) {
     requestedAt,
     weeklyBatchDays,
     shippingMode: mode,
+    productMode,
   });
   const pickupYmdRaw = schedule?.scheduledShipPickup
     ? toKstYmd(schedule.scheduledShipPickup)

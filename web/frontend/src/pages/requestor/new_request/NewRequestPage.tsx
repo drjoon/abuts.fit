@@ -861,12 +861,14 @@ const NewRequestPageContent = () => {
     (
       mode: "normal" | "express",
       diameter: number | null = null,
+      productMode: string | null = null,
     ): "normal" | "express" => {
       if (mode !== "express") return "normal";
       const ok = isExpressShippingSelectable({
         weeklyBatchDays,
         leadTimes,
         diameter,
+        productMode,
       });
       return ok ? "express" : "normal";
     },
@@ -882,13 +884,20 @@ const NewRequestPageContent = () => {
         const diameter =
           (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
           null;
+        const productMode =
+          (caseInfosMap?.[key]?.productMode as string | null | undefined) ??
+          null;
         const preferred =
           caseInfosMap?.[key]?.shippingMode === "express" ||
           defaultShippingMode === "express"
             ? "express"
             : "normal";
         updateCaseInfos(key, {
-          shippingMode: resolveEffectiveShippingMode(preferred, diameter),
+          shippingMode: resolveEffectiveShippingMode(
+            preferred,
+            diameter,
+            productMode,
+          ),
         });
       }
       if (import.meta.env.DEV) {
@@ -917,8 +926,15 @@ const NewRequestPageContent = () => {
         const diameter =
           (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
           null;
+        const productMode =
+          (caseInfosMap?.[key]?.productMode as string | null | undefined) ??
+          null;
         updateCaseInfos(key, {
-          shippingMode: resolveEffectiveShippingMode(mode, diameter),
+          shippingMode: resolveEffectiveShippingMode(
+            mode,
+            diameter,
+            productMode,
+          ),
         });
       }
       if (import.meta.env.DEV) {
@@ -946,7 +962,12 @@ const NewRequestPageContent = () => {
       if (info?.shippingMode !== "express") continue;
       const diameter =
         (info?.maxDiameter as number | null | undefined) ?? null;
-      if (resolveEffectiveShippingMode("express", diameter) === "express") {
+      const productMode =
+        (info?.productMode as string | null | undefined) ?? null;
+      if (
+        resolveEffectiveShippingMode("express", diameter, productMode) ===
+        "express"
+      ) {
         continue;
       }
       updateCaseInfos(key, { shippingMode: "normal" });
@@ -973,10 +994,14 @@ const NewRequestPageContent = () => {
       const diameter =
         (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
         null;
+      const productMode =
+        (caseInfosMap?.[key]?.productMode as string | null | undefined) ??
+        null;
       updateCaseInfos(key, {
         shippingMode: resolveEffectiveShippingMode(
           defaultShippingMode,
           diameter,
+          productMode,
         ),
       });
     }

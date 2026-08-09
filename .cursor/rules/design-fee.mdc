@@ -31,9 +31,16 @@ alwaysApply: false
 - 이중 합산 방지: 기존 `designFee`·`abutmentQty`·`expressFee`를 걷어 가공 단가를 복원한 뒤 다시 적용.
 - 차감: CAM 가공 진입 시 `machining_spend` = `(가공단가 + 디자인비) × qty`. 신속비는 `express_surcharge` 분리.
 - 무상/0원 견적(리메이크 무료 등)에는 디자인비·배수를 붙이지 않는다.
+- 출고일: 묶음/신속 모두 디자인 리드 **+1영업일**
+  (`production.utils.js` `needsDesignLeadDay` / 프론트 `estimateShipDate.ts`).
 
 ## UI
 
 - 가격 정책 모달·오늘의 가격: 디자인비는 **1어벗당 · 가공비에 별도 추가**. 합산 공식 `(가공단가 + 디자인비) × 어벗 수`는 디자인비 행이 아닌 안내 문구에 둔다.
+- 출고 +1영업일(묶음·신속) 안내는 다음에도 동일하게 유지한다.
+  - `PricingPolicyDialog` (기본 가격·출고 리드타임·출고 방식)
+  - `NewRequestShippingSection` (묶음/신속 카드)
+  - `RequestorBulkShippingBannerCard` `SHIP_OUT_INFO_MESSAGE`
+  - `AdminCreditSettingsTab` 디자인비 도움말
 - 의뢰 상세(`RequestDetailDialog`): 비용 세부(가공/디자인/배송·신속)를 표시.
 - 신규의뢰 우측·의뢰카드에는 디자인비 금액을 넣지 않는다. 의뢰카드는 `+디자인` 뱃지만.

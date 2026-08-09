@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-09: 디자인비 행에 출고 +1영업일(묶음·신속) 안내 추가.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -304,6 +306,9 @@ export const RequestorPricingReferralPolicyCard = () => {
                 {designFee.toLocaleString()}원
               </span>
             </div>
+            <p className="text-[11px] text-slate-500 text-right leading-relaxed">
+              디자인+가공 시 출고 +1영업일(묶음·신속)
+            </p>
 
             {isNewUserFixedPrice && (
               <p className="text-[11px]  text-right">

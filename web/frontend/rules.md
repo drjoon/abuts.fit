@@ -36,6 +36,10 @@ Notes:
     (묶음: 백엔드와 동일하게 접수 당일=1일차 `(N-1)` 후 주간 발송 요일 정렬)
     (신속: KST 12시 이전=당일, 이후=+1영업일 — 백엔드 `EXPRESS_CUTOFF_HOUR_KST=12`와 동일.
      선택 가능 조건: 신속 ETA YMD < 묶음 ETA YMD — `isExpressShippingSelectable`)
+    (디자인+가공 `design_custom_abutment`: 묶음/신속 공통 출고 +1영업일 —
+     `estimateShipDate.ts` / 백엔드 `needsDesignLeadDay`)
+    (안내 카피: `PricingPolicyDialog` 출고 리드타임·출고 방식,
+     `NewRequestShippingSection`, 대시보드 `RequestorBulkShippingBannerCard`)
 - 앱/라우팅
   - `src/App.tsx`
   - `src/features/layout/DashboardLayout.tsx`
@@ -122,6 +126,7 @@ Notes:
   - 디자인+가공(`design_custom_abutment`): `(가공 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 `creditSettings.designFee`(기본 15,000원 / 1어벗). 어벗 수는 `toothWorks` 유효 행.
     - 가공만(`custom_abutment`)은 Request/STL당 가공 1개. 신속비는 건당(어벗 배수 없음).
+    - 출고일: 묶음/신속 공통 **+1영업일**(디자인). 안내 카피 SSOT는 `.cursor/rules/design-fee.mdc` UI 절.
     - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(가공/디자인/배송·신속) 표시.
     - 표시: `PricingPolicyDialog`, `RequestorPricingReferralPolicyCard`(오늘의 가격), `RequestDetailDialog`. 신규의뢰 우측에는 금액 미표시.
   - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`

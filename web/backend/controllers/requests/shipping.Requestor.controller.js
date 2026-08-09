@@ -159,6 +159,7 @@ export async function updateMyShippingMode(req, res) {
           requestedAt: new Date(),
           weeklyBatchDays: weeklyBatchDaysForSchedule,
           maxDiameter: requestDoc.caseInfos?.maxDiameter,
+          productMode: requestDoc.caseInfos?.productMode ?? null,
         });
         if (!selectable) {
           if (uniqueIds.length === 1) {
@@ -180,6 +181,7 @@ export async function updateMyShippingMode(req, res) {
         requestedAt,
         weeklyBatchDays:
           shippingMode === "normal" ? weeklyBatchDaysForSchedule : [],
+        productMode: requestDoc.caseInfos?.productMode ?? null,
       });
 
       if (!newSchedule) {

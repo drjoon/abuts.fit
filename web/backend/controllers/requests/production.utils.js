@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-09: 디자인+가공(design_custom_abutment)은 묶음/신속 모두 출고일에
+//   디자인 리드 +1영업일 추가.
 // - 2026-08-06: 묶음 리드타임 (N-1) 복원. 접수 당일을 1일차로 포함(자정 컷오프/
 //   PricingPolicyDialog SSOT). lead=1이면 당일 기준일 → 주간 발송 요일 정렬.
 // - 2026-08-06: 스케줄 기준일을 toKstYmd(requestedAt)로 고정. 재계산 시 오늘 기준 밀림 방지.
@@ -65,6 +67,12 @@ const PACKING_CUTOFF_HOUR = 14; // 포장 마감 시각 (14:00)
 const PICKUP_REQUEST_HOUR = 15; // 택배 수거 신청 시각 (15:00)
 const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
 const EXPRESS_CUTOFF_HOUR_KST = 12; // 신속: 낮 12시 이전 당일 발송 목표
+/** 디자인+가공: 디자인 작업 리드 (영업일). 묶음/신속 공통. */
+const DESIGN_LEAD_BUSINESS_DAYS = 1;
+
+export function needsDesignLeadDay(productMode) {
+  return String(productMode || "").trim() === "design_custom_abutment";
+}
 
 function getKstHour(date = new Date()) {
   const hour = Number(
@@ -253,6 +261,7 @@ function getBulkWaitHours(diameterGroup) {
  * @param {Date} params.requestedAt - 의뢰 생성 시각
  * @param {Array} params.weeklyBatchDays - 주간 배치일 (e.g. ["mon", "wed"])
  * @param {"normal"|"express"} [params.shippingMode="normal"]
+ * @param {string} [params.productMode] - design_custom_abutment 이면 출고 +1영업일
  * @returns {Object} productionSchedule
  */
 export async function calculateInitialProductionSchedule({
@@ -260,9 +269,13 @@ export async function calculateInitialProductionSchedule({
   requestedAt,
   weeklyBatchDays,
   shippingMode = "normal",
+  productMode = null,
 }) {
   const mode = shippingMode === "express" ? "express" : "normal";
   const now = requestedAt || new Date();
+  const designLeadDays = needsDesignLeadDay(productMode)
+    ? DESIGN_LEAD_BUSINESS_DAYS
+    : 0;
   const { diameter, diameterGroup, preferredMachine } =
     getDiameterGroupAndMachine(maxDiameter);
 
@@ -307,6 +320,13 @@ export async function calculateInitialProductionSchedule({
       shipYmd = await addKoreanBusinessDays({
         startYmd: todayYmd,
         days: 1,
+      });
+    }
+    // 디자인+가공: 디자인 1영업일을 출고일에 더한다.
+    if (designLeadDays > 0) {
+      shipYmd = await addKoreanBusinessDays({
+        startYmd: shipYmd,
+        days: designLeadDays,
       });
     }
 
@@ -391,10 +411,17 @@ export async function calculateInitialProductionSchedule({
   // "오늘"로 밀려 출고일이 하루 더해진다.
   const baseBatchStartYmd =
     toKstYmd(now) || getTodayYmdInKst(now) || machiningCompleteYmd;
-  const batchProcessingYmd = await addKoreanBusinessDays({
+  let batchProcessingYmd = await addKoreanBusinessDays({
     startYmd: baseBatchStartYmd,
     days: resolvedLeadDays,
   });
+  // 디자인+가공: 디자인 1영업일 후 주간 발송 요일 정렬.
+  if (designLeadDays > 0) {
+    batchProcessingYmd = await addKoreanBusinessDays({
+      startYmd: batchProcessingYmd,
+      days: designLeadDays,
+    });
+  }
   const scheduledBatchProcessing = createKstDateTime(
     batchProcessingYmd,
     PACKING_CUTOFF_HOUR,
@@ -634,6 +661,7 @@ export async function recalculateProductionSchedule({
   requestedAt,
   weeklyBatchDays,
   shippingMode = "normal",
+  productMode = null,
 }) {
   // 준비 단계가 아니면 스케줄 변경 불가
   if (currentStage !== "준비") {
@@ -646,6 +674,7 @@ export async function recalculateProductionSchedule({
     requestedAt,
     weeklyBatchDays,
     shippingMode,
+    productMode,
   });
 }
 

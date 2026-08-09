@@ -1019,6 +1019,10 @@ export async function createRequestsFromDraft(req, res) {
           requestedAt: requestedAtForPrefetch,
           weeklyBatchDays,
           maxDiameter,
+          productMode:
+            item?.caseInfosWithFile?.productMode ??
+            item?.caseInfos?.productMode ??
+            null,
         });
       }),
     );
@@ -1387,6 +1391,7 @@ export async function createRequestsFromDraft(req, res) {
             requestedAt,
             weeklyBatchDays:
               shippingMode === "normal" ? requestorWeeklyBatchDays : [],
+            productMode: item.caseInfosWithFile?.productMode ?? null,
           });
           newRequest.productionSchedule = productionSchedule;
 

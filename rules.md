@@ -93,6 +93,10 @@
     (`production.utils.js` `resolveNextWeeklyBatchYmd` / `resolveLeadDaysWithSameDayCutoff` 등)
   - 묶음 리드타임 SSOT: `minBusinessDays=N`이면 접수 당일을 1일차로 포함 → 추가 영업일 `(N-1)`
     (PricingPolicyDialog: 자정까지 1영업일=당일 집하). 이후 주간 발송 요일로 정렬.
+  - 디자인+가공 출고 SSOT: `productMode === "design_custom_abutment"`이면 묶음/신속 모두
+    출고일에 디자인 리드 **+1영업일** (`production.utils.js` / `estimateShipDate.ts`).
+    UI 안내: `PricingPolicyDialog`, `NewRequestShippingSection`,
+    `RequestorBulkShippingBannerCard` `SHIP_OUT_INFO_MESSAGE`.
 
 
 ### 1.5 구조
@@ -279,6 +283,8 @@
     - `price.amount` = `(가공단가 + designFee) × qty`, `price.designFee` = 디자인 총액, `price.abutmentQty` = qty
   - 적용 순서: 디자인+가공 배수 → 신속비(건당, 배수 없음). 무상/0원 견적에는 미적용
   - 차감: CAM `machining_spend` = `(가공단가 + 디자인비) × qty` (신속비와 분리)
+  - 출고일: 묶음/신속 공통으로 디자인 리드 **+1영업일** (`production.utils.js` /
+    프론트 `estimateShipDate.ts`)
   - UI: `PricingPolicyDialog`, 오늘의 가격, 의뢰 상세 비용 세부. 신규의뢰 우측·의뢰카드는 금액 미표시(`+디자인` 뱃지만)
   - 상세: `.cursor/rules/design-fee.mdc`
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)

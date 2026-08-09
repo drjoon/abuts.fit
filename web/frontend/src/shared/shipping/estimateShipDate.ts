@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 디자인+가공(design_custom_abutment)은 묶음/신속 출고 +1영업일.
 // - 2026-08-08: 신규의뢰 예상 출고일 계산 SSOT (프론트 ETA + 디버그).
 // - 2026-08-08: 신속 선택 가능 = 신속 ETA < 묶음 ETA (당일·조기 이점 있을 때만).
 // related files:
@@ -28,9 +29,16 @@ export type EstimateShipParams = {
   diameter?: number | null;
   shippingMode?: "normal" | "express";
   requestedAt?: Date;
+  /** design_custom_abutment 이면 출고 +1영업일 (묶음/신속 공통) */
+  productMode?: string | null;
 };
 
 const EXPRESS_CUTOFF_HOUR_KST = 12;
+const DESIGN_LEAD_BUSINESS_DAYS = 1;
+
+function needsDesignLeadDay(productMode?: string | null): boolean {
+  return String(productMode || "").trim() === "design_custom_abutment";
+}
 
 function getKstWeekdayFromYmd(ymd: string): number | null {
   const parts = ymd.split("-").map(Number);
@@ -99,21 +107,31 @@ function resolveDiameterKey(diameter: number | null | undefined) {
   return "d12" as const;
 }
 
+function applyDesignLeadDay(
+  shipYmd: string,
+  productMode?: string | null,
+): string {
+  if (!needsDesignLeadDay(productMode)) return shipYmd;
+  return addBusinessDaysFromKstYmd(shipYmd, DESIGN_LEAD_BUSINESS_DAYS);
+}
+
 export function computeEstimatedShipYmd({
   weeklyBatchDays,
   leadTimes,
   diameter = null,
   shippingMode = "normal",
   requestedAt = new Date(),
+  productMode = null,
 }: EstimateShipParams): string | null {
   const requestedYmd = toKstYmd(requestedAt);
   if (!requestedYmd) return null;
 
   if (shippingMode === "express") {
     const beforeNoon = getKstHour(requestedAt) < EXPRESS_CUTOFF_HOUR_KST;
-    return beforeNoon
+    const baseYmd = beforeNoon
       ? nextBusinessDayInclusive(requestedYmd)
       : addBusinessDaysFromKstYmd(requestedYmd, 1);
+    return applyDesignLeadDay(baseYmd, productMode);
   }
 
   if (!leadTimes) return null;
@@ -123,7 +141,10 @@ export function computeEstimatedShipYmd({
   const leadNumber = Number(rawLead);
   const leadDays = Number.isFinite(leadNumber) ? Math.max(1, leadNumber) : 1;
   const resolvedLeadDays = resolveLeadDaysForPickup(leadDays);
-  const baseShipYmd = addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays);
+  const baseShipYmd = applyDesignLeadDay(
+    addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays),
+    productMode,
+  );
   const batchDays = normalizeWeeklyBatchDays(weeklyBatchDays);
   // 묶음 출고일 미로드/미설정 시 baseYmd(월요일 등)만 노출하지 않는다.
   if (batchDays.length === 0) return null;
@@ -167,6 +188,7 @@ export function logEstimatedShipDebug(
   const ymd = computeEstimatedShipYmd(params);
   console.debug("[ship-eta]", tag, {
     shippingMode: params.shippingMode ?? "normal",
+    productMode: params.productMode ?? null,
     weeklyBatchDays: batchDays,
     diameter: params.diameter ?? null,
     leadTimesLoaded: Boolean(params.leadTimes),

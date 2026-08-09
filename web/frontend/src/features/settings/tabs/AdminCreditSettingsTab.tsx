@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-09: 디자인비 도움말에 출고 +1영업일(묶음·신속) 안내 추가.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -267,7 +269,8 @@ export const AdminCreditSettingsTab = () => {
                 />
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   디자인+가공 의뢰 시 가공비에 별도 추가되며,
-                  (가공단가+디자인비)×어벗수로 차감됩니다. 기본값{" "}
+                  (가공단가+디자인비)×어벗수로 차감됩니다. 출고일은 묶음·신속
+                  모두 +1영업일(디자인)이 더해집니다. 기본값{" "}
                   {CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}
                   원.
                 </p>

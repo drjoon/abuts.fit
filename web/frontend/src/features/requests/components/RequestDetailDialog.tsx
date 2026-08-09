@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-09: 디자인+가공(우열)에서 STL 다어벗 공통이 아닌 스펙(임플란트/SW/직경/유지홈) 숨김.
 // - 2026-08-09: 의뢰 상세 2열 레이아웃(좌: 비용, 우: 케이스 정보).
 // - 2026-08-09: 비용 세부 내역(가공/디자인/배송·신속) 표시.
 // - 2026-08-09: 기본 하단 "닫기" 버튼 제거(헤더 X로 충분, 레이아웃 깨짐).
@@ -474,30 +475,35 @@ export const RequestDetailDialog = ({
                   <span className="font-medium text-right">
                     {caseInfos.tooth || "-"}
                   </span>
-                  <span className="text-slate-600">임플란트</span>
-                  <span className="font-medium text-right whitespace-pre-wrap">
-                    {implantDisplay}
-                  </span>
-                  <span className="text-slate-600">디자인 SW</span>
-                  <span className="font-medium text-right">
-                    {String(caseInfos.designSoftware || "").trim() || "-"}
-                  </span>
-                  <span className="text-slate-600">직경</span>
-                  <span className="font-medium text-right">
-                    {Number.isFinite(maxDiameter as number)
-                      ? `${Number(maxDiameter).toFixed(1)} mm`
-                      : "-"}
-                  </span>
-                  <span className="text-slate-600">커넥션 직경</span>
-                  <span className="font-medium text-right">
-                    {Number.isFinite(connectionDiameter as number)
-                      ? `${Number(connectionDiameter).toFixed(1)} mm`
-                      : "-"}
-                  </span>
-                  <span className="text-slate-600">유지홈</span>
-                  <span className="font-medium text-right">
-                    {retentionGrooveLabel}
-                  </span>
+                  {/* 디자인+가공: 한 STL에 다어벗 → 단건 스펙 행은 표시하지 않음 */}
+                  {!isDesignMode && (
+                    <>
+                      <span className="text-slate-600">임플란트</span>
+                      <span className="font-medium text-right whitespace-pre-wrap">
+                        {implantDisplay}
+                      </span>
+                      <span className="text-slate-600">디자인 SW</span>
+                      <span className="font-medium text-right">
+                        {String(caseInfos.designSoftware || "").trim() || "-"}
+                      </span>
+                      <span className="text-slate-600">직경</span>
+                      <span className="font-medium text-right">
+                        {Number.isFinite(maxDiameter as number)
+                          ? `${Number(maxDiameter).toFixed(1)} mm`
+                          : "-"}
+                      </span>
+                      <span className="text-slate-600">커넥션 직경</span>
+                      <span className="font-medium text-right">
+                        {Number.isFinite(connectionDiameter as number)
+                          ? `${Number(connectionDiameter).toFixed(1)} mm`
+                          : "-"}
+                      </span>
+                      <span className="text-slate-600">유지홈</span>
+                      <span className="font-medium text-right">
+                        {retentionGrooveLabel}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
