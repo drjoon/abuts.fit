@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-10: 의뢰자 사이드메뉴 디자인을 기공의뢰서 바로 아래로 이동.
 // - 2026-08-09: 모든 role 최근 사이드바 경로를 계정 디폴트 진입점으로 서버 저장·복원. `/dashboard` 홈 클릭 시 last path pin.
 // - 2026-08-09: 제조사 사이드메뉴 가공작업→생산.
 // - 2026-08-09: 제조사 사이드메뉴 디자인 추가·작업→가공작업. 계정별 최근 대시보드 경로 서버 저장. 디자인은 상단 기간필터 헤더만.
@@ -117,8 +118,8 @@ const sidebarItems = {
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
     { icon: Building2, label: "기공의뢰서", href: "/dashboard/practice-transfers" },
-    { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: PenTool, label: "디자인", href: "/dashboard/design" },
+    { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
