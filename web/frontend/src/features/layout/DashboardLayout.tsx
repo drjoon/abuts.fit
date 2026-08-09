@@ -8,7 +8,9 @@ import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
+import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-09: 제조사 사이드메뉴 디자인 추가·작업→가공작업. 계정별 최근 대시보드 경로 서버 저장. 디자인은 상단 기간필터 헤더만.
 // - 2026-08-08: 미확인 배지 초기 API는 토큰당 1회만. 가시성 refetch 제거(소켓만 갱신).
 // - 2026-08-08: 기공의뢰서 미확인 배지를 30s 폴링 → 소켓(practice:transfer-*)로 전환.
 // - 2026-08-05: 사이드바 계정 팝업에서 같은 사업자 동료 계정으로 비밀번호 확인 후 전환(모든 role).
@@ -21,9 +23,12 @@ import { useToast } from "@/shared/hooks/use-toast";
 // related files:
 // - web/frontend/src/features/layout/AccountSwitcher.tsx
 // - web/frontend/src/store/useAuthStore.ts
+// - web/frontend/src/shared/navigation/lastDashboardPath.ts
+// - web/backend/controllers/users/user.controller.js
 // - web/backend/controllers/auth/auth.controller.js
 // - web/backend/modules/auth/auth.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/design/DesignPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -77,6 +82,7 @@ import {
   Shield,
   Users2,
   ClipboardList,
+  PenTool,
   Printer,
   Search,
   Sparkles,
@@ -131,7 +137,8 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/practice/settings" },
   ],
   manufacturer: [
-    { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
+    { icon: PenTool, label: "디자인", href: "/dashboard/design" },
+    { icon: ClipboardList, label: "가공작업", href: "/dashboard/worksheet" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
@@ -306,7 +313,8 @@ const getRoleBadgeVariant = (role: string) => {
 };
 
 export const DashboardLayout = () => {
-  const { user, logout, token, loginWithToken } = useAuthStore();
+  const { user, logout, token, loginWithToken, setLastDashboardPath } =
+    useAuthStore();
   const {
     period,
     setPeriod,
@@ -360,6 +368,43 @@ export const DashboardLayout = () => {
       "admin",
       "devops",
     ].includes(user?.role);
+
+  // 계정별 최근 대시보드 경로 서버 저장 (pathname + search)
+  useEffect(() => {
+    if (!token || !user?.id) return;
+    if (isWizardRoute) return;
+    if (!onboardingCompleted && shouldForceOnboarding) return;
+
+    const nextPath = normalizeLastDashboardPath(
+      `${location.pathname}${location.search}`,
+    );
+    if (!nextPath) return;
+    if (nextPath === user.lastDashboardPath) return;
+
+    const timer = window.setTimeout(() => {
+      setLastDashboardPath(nextPath);
+      void apiFetch({
+        path: "/api/users/last-dashboard-path",
+        method: "PUT",
+        token,
+        jsonBody: { path: nextPath },
+      }).catch(() => {
+        // 저장 실패는 UX를 막지 않음
+      });
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    isWizardRoute,
+    location.pathname,
+    location.search,
+    onboardingCompleted,
+    setLastDashboardPath,
+    shouldForceOnboarding,
+    token,
+    user?.id,
+    user?.lastDashboardPath,
+  ]);
 
   useEffect(() => {
     if (!token) return;
@@ -843,6 +888,8 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/printer");
   const isWorksheetRoute =
     isManufacturer && location.pathname.startsWith("/dashboard/worksheet");
+  const isDesignRoute =
+    isManufacturer && location.pathname.startsWith("/dashboard/design");
 
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
@@ -1286,7 +1333,9 @@ export const DashboardLayout = () => {
             data-dashboard-scroll="1"
           >
             <div className="flex flex-col h-full">
-              {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
+              {(isManufacturer && isEquipmentRoute) ||
+              isWorksheetRoute ||
+              isDesignRoute ? (
                 <div className="border-b border-border bg-background/80 sticky top-0 z-10">
                   <div className="px-4 py-2 flex flex-col gap-2">
                     {isManufacturer && isEquipmentRoute && (
@@ -1313,6 +1362,14 @@ export const DashboardLayout = () => {
                         >
                           프린터
                         </Button>
+                      </div>
+                    )}
+
+                    {isDesignRoute && (
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:flex-nowrap sm:justify-between">
+                        <div className="flex gap-2 flex-shrink-0">
+                          <PeriodFilter value={period} onChange={setPeriod} />
+                        </div>
                       </div>
                     )}
 

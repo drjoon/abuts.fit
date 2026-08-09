@@ -16,11 +16,22 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
+import {
+  getRoleDefaultDashboardPath,
+  normalizeLastDashboardPath,
+} from "@/shared/navigation/lastDashboardPath";
 
 type DevAccount = {
   label: string;
   email: string;
   password: string;
+};
+
+const resolvePostLoginPath = () => {
+  const user = useAuthStore.getState().user;
+  const last = normalizeLastDashboardPath(user?.lastDashboardPath);
+  if (last) return last;
+  return getRoleDefaultDashboardPath(user?.role);
 };
 
 const isDev = import.meta.env.DEV;
@@ -113,7 +124,7 @@ export const LoginPage = () => {
     try {
       const result = await login(credential, password);
       if (result.success) {
-        navigate("/dashboard", { replace: true });
+        navigate(resolvePostLoginPath(), { replace: true });
       } else {
         toast({
           title: "로그인 실패",
@@ -142,7 +153,7 @@ export const LoginPage = () => {
     try {
       const result = await login(account.email, account.password);
       if (result.success) {
-        navigate("/dashboard", { replace: true });
+        navigate(resolvePostLoginPath(), { replace: true });
       } else {
         toast({
           title: "로그인 실패",

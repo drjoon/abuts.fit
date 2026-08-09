@@ -10,6 +10,7 @@ import { messageService } from "../../utils/popbill.util.js";
 import { Types } from "mongoose";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { ensureRequestorOrgAnchor } from "../businesses/requestorOrgAnchor.util.js";
+import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.js";
 
 /**
  * 사용자 프로필 조회
@@ -798,6 +799,81 @@ async function updateNotificationSettings(req, res) {
   }
 }
 
+/**
+ * 최근 대시보드 경로 조회
+ * @route GET /api/users/last-dashboard-path
+ */
+async function getLastDashboardPath(req, res) {
+  try {
+    const user = await User.findById(req.user._id)
+      .select("preferences.lastDashboardPath")
+      .lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+    const path = normalizeLastDashboardPath(
+      user?.preferences?.lastDashboardPath,
+    );
+    return res.status(200).json({
+      success: true,
+      data: { path },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "최근 페이지 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 최근 대시보드 경로 저장
+ * @route PUT /api/users/last-dashboard-path
+ */
+async function updateLastDashboardPath(req, res) {
+  try {
+    const path = normalizeLastDashboardPath(req.body?.path);
+    if (!path) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 대시보드 경로입니다.",
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { "preferences.lastDashboardPath": path } },
+      { new: true, runValidators: true },
+    ).select("preferences.lastDashboardPath");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        path: normalizeLastDashboardPath(
+          updatedUser.preferences?.lastDashboardPath,
+        ),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "최근 페이지 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export {
   getProfile,
   updateProfile,
@@ -805,6 +881,8 @@ export {
   verifyPhoneVerification,
   getNotificationSettings,
   updateNotificationSettings,
+  getLastDashboardPath,
+  updateLastDashboardPath,
   getMySecurityLogs,
 };
 

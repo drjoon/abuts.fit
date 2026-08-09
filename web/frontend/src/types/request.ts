@@ -52,6 +52,7 @@ export interface RequestCaseInfos {
   clinicName?: string;
   patientName?: string;
   tooth?: string;
+  productMode?: string | null;
   implantManufacturer?: string;
   implantBrand?: string;
   implantFamily?: string;

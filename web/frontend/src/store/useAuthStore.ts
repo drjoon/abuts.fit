@@ -55,6 +55,8 @@ export interface User {
     holderName: string;
     updatedAt?: string | null;
   };
+  /** 계정별 최근 대시보드 경로 (pathname+search) */
+  lastDashboardPath?: string | null;
 }
 
 const normalizeApiUser = (u: unknown): User | null => {
@@ -132,6 +134,14 @@ const normalizeApiUser = (u: unknown): User | null => {
             updatedAt: pa?.updatedAt ? String(pa.updatedAt) : null,
           }
         : undefined,
+    lastDashboardPath: (() => {
+      const prefs =
+        row.preferences && typeof row.preferences === "object"
+          ? (row.preferences as Record<string, unknown>)
+          : null;
+      const raw = prefs?.lastDashboardPath;
+      return typeof raw === "string" && raw.trim() ? String(raw).trim() : null;
+    })(),
   };
 };
 
@@ -157,6 +167,7 @@ interface AuthState {
     refreshToken?: string | null,
   ) => Promise<boolean>;
   setUser: (user: User | null) => void;
+  setLastDashboardPath: (path: string | null) => void;
   logout: () => void;
 }
 
@@ -433,6 +444,17 @@ export const useAuthStore = create<AuthState>((set, get) => {
         user,
         isAuthenticated: Boolean(state.token && user),
       }));
+    },
+    setLastDashboardPath: (path: string | null) => {
+      const current = get().user;
+      if (!current) return;
+      const next = { ...current, lastDashboardPath: path };
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      set({ user: next });
     },
     logout: () => {
       try {

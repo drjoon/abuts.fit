@@ -211,6 +211,12 @@ const userSchema = new mongoose.Schema(
         enum: ["light", "dark", "system"],
         default: "system",
       },
+      /** 계정별 최근 대시보드 경로 (pathname + search). 로그인·/dashboard 랜딩 복원용 */
+      lastDashboardPath: {
+        type: String,
+        default: null,
+        maxlength: 300,
+      },
     },
   },
   {

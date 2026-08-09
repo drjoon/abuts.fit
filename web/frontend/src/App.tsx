@@ -64,6 +64,11 @@ const ManufacturerWorksheetPage = lazy(() =>
     default: m.ManufacturerWorksheetPage,
   })),
 );
+const ManufacturerDesignPage = lazy(() =>
+  import("./pages/manufacturer/design/DesignPage").then((m) => ({
+    default: m.ManufacturerDesignPage,
+  })),
+);
 const SettingsPage = lazy(() =>
   import("./features/dashboard/SettingsPage").then((m) => ({
     default: m.SettingsPage,
@@ -478,6 +483,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["manufacturer"]}>
                         <ManufacturerWorksheetPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="design"
+                    element={
+                      <RoleProtectedRoute roles={["manufacturer"]}>
+                        <ManufacturerDesignPage />
                       </RoleProtectedRoute>
                     }
                   />
