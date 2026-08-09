@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 구강스캔 카드 — 환자정보 완료 시 흰 배경, 묶음 헤더에 의뢰 삭제(X).
 // - 2026-08-09: 어벗디자인/구강스캔 상단 뱃지 + 호버 즉시 툴팁(생산 vs 디자인+생산).
 // - 2026-08-09: 구강스캔(디자인+생산) ETA는 메시 직경 무시(estimateShipDate 리드 1일).
 // - 2026-08-09: 우측 신속 비활성 시 카드 신속 버튼도 동일하게 막는다.
@@ -724,9 +725,7 @@ export function NewRequestAttachmentsPanel({
     const isAbutDesignFile = isLikelyCustomAbutDesignSize(file.size);
 
     const baseClasses = isVerified
-      ? isOralScanFile
-        ? "border border-violet-200 bg-violet-50/40 text-gray-900"
-        : "border border-gray-200 bg-white text-gray-900"
+      ? "border border-gray-200 bg-white text-gray-900"
       : "border border-red-300 bg-red-50 text-red-800";
     const stateClasses = isSelected
       ? isVerified
@@ -741,9 +740,6 @@ export function NewRequestAttachmentsPanel({
           ? "ring-2 ring-red-400 ring-offset-1 ring-offset-white"
           : "";
     const selectFill = checked ? "bg-sky-50/90" : "";
-    const hoverBorder = isOralScanFile
-      ? "hover:border-violet-300"
-      : "hover:border-gray-400";
 
     return (
       <div
@@ -753,7 +749,7 @@ export function NewRequestAttachmentsPanel({
         data-file-index={fileIndex}
         data-group-select-key={canGroupSelect ? fileKey : undefined}
         aria-selected={checked}
-        className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} ${hoverBorder}`}
+        className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
       >
         <div className="relative z-10 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
@@ -848,7 +844,7 @@ export function NewRequestAttachmentsPanel({
     const checked = areKeysSelected(group.fileKeys);
 
     const baseClasses = isVerified
-      ? "border border-violet-200 bg-violet-50/40 text-gray-900"
+      ? "border border-gray-200 bg-white text-gray-900"
       : "border border-red-300 bg-red-50 text-red-800";
     const stateClasses = isSelected
       ? isVerified
@@ -864,6 +860,16 @@ export function NewRequestAttachmentsPanel({
           : "";
     const selectFill = checked ? "bg-sky-50/90" : "";
 
+    const handleRemoveGroup = () => {
+      // 인덱스 밀림 방지: 큰 인덱스부터 순차 삭제
+      void (async () => {
+        const sorted = [...fileIndices].sort((a, b) => b - a);
+        for (const idx of sorted) {
+          await handleRemoveFile(idx);
+        }
+      })();
+    };
+
     return (
       <div
         key={group.id}
@@ -877,7 +883,7 @@ export function NewRequestAttachmentsPanel({
           canGroupSelect ? group.fileKeys.join("|") : undefined
         }
         aria-selected={checked}
-        className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-violet-300`}
+        className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
       >
         <div className="relative z-10 flex flex-col gap-2">
           <div className="flex items-start justify-between gap-3">
@@ -934,6 +940,20 @@ export function NewRequestAttachmentsPanel({
                   </button>
                 </ImmediateTooltip>
               ) : null}
+              <ImmediateTooltip label="삭제">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleRemoveGroup();
+                  }}
+                  className="p-1 text-slate-400 hover:text-red-500"
+                  aria-label="의뢰 삭제"
+                  data-no-marquee
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </ImmediateTooltip>
             </div>
           </div>
 
