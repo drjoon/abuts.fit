@@ -23,7 +23,7 @@ export const DashboardShellSkeleton = ({
   showMain = true,
 }: DashboardShellSkeletonProps) => {
   return (
-    <div className="p-4 h-full min-h-0">
+    <div className="h-full min-h-0">
       <div className="max-w-6xl mx-auto w-full space-y-3">
       {/* headerRight: PeriodFilter + 보유 크레딧 + 지난 의뢰 */}
       <div className="flex flex-wrap items-center gap-2">

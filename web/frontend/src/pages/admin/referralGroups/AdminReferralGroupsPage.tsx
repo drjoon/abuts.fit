@@ -580,7 +580,7 @@ export default function AdminReferralGroupsPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-3 pt-3 pb-2 sm:px-4 sm:pt-4">
+    <div className="flex h-full min-h-0 flex-col px-4 pt-4 pb-2 sm:px-4 sm:pt-4">
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-hidden">
         <div className="grid shrink-0 grid-cols-1 gap-2.5 p-0.5 md:grid-cols-2">
           <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm sm:px-5">

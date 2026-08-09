@@ -142,7 +142,7 @@ export const SalesmanReferralPage = () => {
   return (
     <TooltipProvider>
       <div className="flex flex-col h-full min-h-0">
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {!isReferralEligible ? (
             <Card>
               <CardContent className="pt-6">

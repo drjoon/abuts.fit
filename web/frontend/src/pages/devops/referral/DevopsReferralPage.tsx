@@ -63,7 +63,7 @@ export const DevopsReferralPage = () => {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="p-3 space-y-3 min-h-full">
+        <div className="p-4 space-y-3 min-h-full">
           {!isReferralEligible ? (
             <Card className="border-gray-200">
               <CardContent className="pt-6">

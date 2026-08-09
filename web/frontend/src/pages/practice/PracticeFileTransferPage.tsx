@@ -4992,7 +4992,7 @@ export const PracticeFileTransferPage = ({
       activeClassName="ring-2 ring-primary/30"
       className="h-full min-h-0"
     >
-      <div className="h-full min-h-0 p-3 space-y-3">
+      <div className="h-full min-h-0 p-4 space-y-3">
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
           {promoNoticeVisible ? (
             <>

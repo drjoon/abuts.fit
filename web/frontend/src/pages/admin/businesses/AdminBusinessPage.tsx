@@ -486,7 +486,7 @@ export default function AdminBusinessPage() {
   const detailCredit = getCreditBreakdown(detailDialog.business);
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-3 pt-3 pb-2 sm:px-4 sm:pt-4">
+    <div className="flex h-full min-h-0 flex-col px-4 pt-4 pb-2 sm:px-4 sm:pt-4">
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-hidden">
         <div className="shrink-0 pl-0">
           <h1 className="text-lg font-bold tracking-tight text-slate-900">

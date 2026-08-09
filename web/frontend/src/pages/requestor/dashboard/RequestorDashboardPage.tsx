@@ -1924,7 +1924,7 @@ export const RequestorDashboardPage = () => {
   }
 
   return (
-    <div className="p-4 h-full min-h-0">
+    <div className="h-full min-h-0">
       <div className="max-w-6xl mx-auto w-full space-y-3">
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}

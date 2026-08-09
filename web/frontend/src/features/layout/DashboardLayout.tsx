@@ -1270,7 +1270,7 @@ export const DashboardLayout = () => {
 
           {user.role === "admin" &&
             !location.pathname.startsWith("/dashboard/settings") && (
-              <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-3 py-1.5 sm:px-4">
+              <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 py-2">
                 <AdminPeriodDateFilter
                   period={period}
                   onPeriodChange={setPeriod}
@@ -1496,8 +1496,8 @@ export const DashboardLayout = () => {
                 </div>
               ) : null}
               <div className="flex-1 min-h-0 overflow-auto">
-                <div className="flex flex-1 min-h-0 flex-col items-stretch p-1 sm:p-1.5">
-                  <main className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white/80 p-1.5 shadow-lg backdrop-blur-xl sm:p-2">
+                <div className="flex flex-1 min-h-0 flex-col items-stretch p-2 sm:p-4 lg:p-6">
+                  <main className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white/80 p-4 shadow-lg backdrop-blur-xl sm:p-6">
                     <div className="flex-1 min-h-0 overflow-auto">
                       <Outlet
                         context={{

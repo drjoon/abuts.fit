@@ -71,7 +71,7 @@ export default function AdminOrganizationVerification() {
   };
 
   return (
-    <div className="p-2 sm:p-3 space-y-4">
+    <div className="p-4 space-y-4">
       <Card className="max-w-3xl">
         <CardHeader>
           <CardTitle>사업자 검증 수동 처리</CardTitle>

@@ -2158,7 +2158,7 @@ export const PracticeDropzonePage = () => {
     <PageFileDropZone
       onFiles={handleIncomingFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="bg-gradient-subtle p-3 md:p-4 flex flex-col h-full min-h-0 overflow-hidden"
+      className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
       <div className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-2.5">
         <Card className="border-blue-100 bg-gradient-to-br from-white to-blue-50/70 shadow-sm">
