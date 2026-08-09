@@ -10,7 +10,7 @@ import express from "express";
 const router = express.Router();
 import requestController from "../../controllers/requests/request.controller.js";
 import * as cncEventController from "../../controllers/cnc/cncEvent.controller.js";
-import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import { authenticate, authorize, authorizeManufacturerOrDesignPartner } from "../../middlewares/auth.middleware.js";
 import {
   getQueueStatus,
   enqueueApproval,
@@ -69,7 +69,7 @@ router.get(
 router.get(
   "/all",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getAllRequests,
 );
 
@@ -110,7 +110,7 @@ router.post(
 router.get(
   "/assigned/dashboard-summary",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getAssignedDashboardSummary,
 );
 
@@ -126,7 +126,7 @@ router.get(
 router.get(
   "/dashboard-risk-summary",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getDashboardRiskSummary,
 );
 
@@ -351,14 +351,14 @@ router.post(
 router.get(
   "/rnd-unmachinable-reasons",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getRndUnmachinableReasonOptions,
 );
 
 router.put(
   "/rnd-unmachinable-reasons",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.saveRndUnmachinableReasonOptions,
 );
 
@@ -450,42 +450,42 @@ router.patch(
 router.patch(
   "/:id/review-status",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.updateReviewStatusByStage,
 );
 
 router.patch(
   "/:id/rnd-done",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.updateRndDoneStatus,
 );
 
 router.patch(
   "/:id/rnd-unmachinable",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.updateRndUnmachinableStatus,
 );
 
 router.patch(
   "/:id/rnd-hex-rotation",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.updateRndHexRotation,
 );
 
 router.patch(
   "/:id/anodizing-override",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.updateRequestAnodizingOverride,
 );
 
 router.patch(
   "/:id/rnd-memo",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.updateRndMemo,
 );
 
@@ -493,7 +493,7 @@ router.patch(
 router.get(
   "/:requestId/cnc-events",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   cncEventController.getCncEventsByRequestId,
 );
 
@@ -501,7 +501,7 @@ router.get(
 router.post(
   "/by-request/:requestId/nc-file/ensure-bridge",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.ensureNcFileOnBridgeStoreByRequestId,
 );
 
@@ -511,7 +511,7 @@ router.post(
 router.get(
   "/by-request/:requestId/summary",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getRequestSummaryByRequestId,
 );
 
@@ -519,7 +519,7 @@ router.get(
 router.get(
   "/self-inspection/instruments",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getSelfInspectionInstrumentOptions,
 );
 
@@ -527,7 +527,7 @@ router.get(
 router.put(
   "/self-inspection/instruments",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.saveSelfInspectionInstrumentOptions,
 );
 
@@ -535,7 +535,7 @@ router.put(
 router.get(
   "/by-request/:requestId/self-inspection",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getSelfInspectionByRequestId,
 );
 
@@ -543,7 +543,7 @@ router.get(
 router.get(
   "/by-request/:requestId/connection-spec",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getConnectionSpecByRequestId,
 );
 
@@ -551,7 +551,7 @@ router.get(
 router.post(
   "/by-request/:requestId/self-inspection",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.saveSelfInspectionByRequestId,
 );
 
@@ -569,7 +569,7 @@ router.get(
 router.get(
   "/:id/cam-file-url",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getCamFileUrl,
 );
 
@@ -577,7 +577,7 @@ router.get(
 router.get(
   "/:id/stl-file-url",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getStlFileUrl,
 );
 
@@ -585,7 +585,7 @@ router.get(
 router.post(
   "/:id/cam-file",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.saveCamFileAndCompleteCam,
 );
 
@@ -593,7 +593,7 @@ router.post(
 router.delete(
   "/:id/cam-file",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.deleteCamFileAndRollback,
 );
 
@@ -604,27 +604,27 @@ router.delete(
 router.post(
   "/by-request/:requestId/nc-file/regenerate",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.regenerateNcByRequestIdTwoPhase,
 );
 // 하위호환: 기존 regenerate-2phase 경로도 Two-Phase로 동일하게 동작
 router.post(
   "/by-request/:requestId/nc-file/regenerate-2phase",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.regenerateNcByRequestIdTwoPhase,
 );
 // 제조사/관리자: requestId 기반 One-Phase NC 재생성 (명시적 요청 시)
 router.post(
   "/by-request/:requestId/nc-file/regenerate-onephase",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.regenerateNcByRequestIdOnePhase,
 );
 router.get(
   "/:id/nc-file-url",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getNcFileUrl,
 );
 
@@ -632,7 +632,7 @@ router.get(
 router.get(
   "/:id/stage-file-url",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.getStageFileUrl,
 );
 
@@ -640,7 +640,7 @@ router.get(
 router.post(
   "/:id/stage-file",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.saveStageFile,
 );
 
@@ -648,7 +648,7 @@ router.post(
 router.delete(
   "/:id/stage-file",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.deleteStageFile,
 );
 
@@ -656,7 +656,7 @@ router.delete(
 router.post(
   "/:id/nc-file",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.saveNcFileAndMoveToMachining,
 );
 
@@ -664,7 +664,7 @@ router.post(
 router.delete(
   "/:id/nc-file",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.deleteNcFileAndRollbackCam,
 );
 
@@ -680,7 +680,7 @@ router.post(
 router.get(
   "/approval-queue/status",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   async (req, res) => {
     try {
       const status = await getQueueStatus();
@@ -741,7 +741,7 @@ router.post(
 // - legacy 경로(/recall-clone)와 신규 경로(/remake-clone)를 모두 지원
 const remakeCloneMiddleware = [
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.cloneRequestsForRecall,
 ];
 router.post("/recall-clone", ...remakeCloneMiddleware);
@@ -756,14 +756,14 @@ router.delete("/:id", authenticate, requestController.deleteRequest);
 router.post(
   "/:id/clone-as-sample",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.cloneAsSample,
 );
 
 router.post(
   "/:id/clone-from-sample-to-request",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorizeManufacturerOrDesignPartner(),
   requestController.cloneFromSampleToRequest,
 );
 

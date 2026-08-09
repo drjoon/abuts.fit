@@ -67,5 +67,15 @@ export function resolveEntryDashboardPath(user: {
     return roleDefault;
   }
 
+  // 디자인 큐는 지정 의뢰자 전용 (제조사 last path 호환)
+  const lastPathname = last.split("?")[0];
+  if (
+    role === "manufacturer" &&
+    (lastPathname === "/dashboard/design" ||
+      lastPathname.startsWith("/dashboard/design/"))
+  ) {
+    return roleDefault;
+  }
+
   return last;
 }

@@ -39,6 +39,16 @@ const businessAnchorSchema = new mongoose.Schema(
       practice: { type: Boolean, default: false },
       lab: { type: Boolean, default: false },
     },
+    // 개발운영사 지정: 의뢰자 사업자에 디자인 큐(사이드바·API) 접근 허용
+    // related files:
+    // - web/backend/utils/designAccess.js
+    // - web/backend/modules/devops/designAccess.routes.js
+    // - web/frontend/src/pages/devops/components/DesignerAssignmentTab.tsx
+    designAccessEnabled: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     name: {
       type: String,
       required: true,

@@ -17,6 +17,7 @@ import { NewChatWidget } from "@/features/chat/components/NewChatWidget";
 import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { useSocket } from "@/shared/hooks/useSocket";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
 // related files:
 // - web/frontend/src/shared/types/role.ts
@@ -64,9 +65,14 @@ const ManufacturerWorksheetPage = lazy(() =>
     default: m.ManufacturerWorksheetPage,
   })),
 );
-const ManufacturerDesignPage = lazy(() =>
-  import("./pages/manufacturer/design/DesignPage").then((m) => ({
-    default: m.ManufacturerDesignPage,
+const DesignPage = lazy(() =>
+  import("./pages/requestor/design/DesignPage").then((m) => ({
+    default: m.DesignPage,
+  })),
+);
+const DevopsPartnerPage = lazy(() =>
+  import("./pages/devops/DevopsPartnerPage").then((m) => ({
+    default: m.DevopsPartnerPage,
   })),
 );
 const SettingsPage = lazy(() =>
@@ -208,6 +214,16 @@ const RoleProtectedRoute = ({
   return <>{children}</>;
 };
 
+/** 개발운영사가 지정한 의뢰자만 디자인 큐 진입 */
+const DesignAccessGate = ({ children }: { children: React.ReactNode }) => {
+  const { loading, designAccessEnabled } = useRequestorBusinessAccess();
+  if (loading) return null;
+  if (!designAccessEnabled) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
+};
+
 const PracticeAccountProtectedRoute = ({
   children,
 }: {
@@ -264,9 +280,17 @@ const InquiriesRoute = () => {
 
 const SettingsRoute = () => {
   const { user } = useAuthStore();
+  const location = useLocation();
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "practice") {
     return <Navigate to="/practice/settings" replace />;
+  }
+  // 구 북마크: devops 설정 수익분배/요금 → 파트너 페이지
+  if (user.role === "devops") {
+    const tab = new URLSearchParams(location.search).get("tab");
+    if (tab === "payment" || tab === "credits") {
+      return <Navigate to={`/dashboard/partner?tab=${tab}`} replace />;
+    }
   }
   return <SettingsPage />;
 };
@@ -489,8 +513,18 @@ const App = () => {
                   <Route
                     path="design"
                     element={
-                      <RoleProtectedRoute roles={["manufacturer"]}>
-                        <ManufacturerDesignPage />
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <DesignAccessGate>
+                          <DesignPage />
+                        </DesignAccessGate>
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="partner"
+                    element={
+                      <RoleProtectedRoute roles={["devops"]}>
+                        <DevopsPartnerPage />
                       </RoleProtectedRoute>
                     }
                   />

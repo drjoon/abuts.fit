@@ -102,6 +102,7 @@ export const RequestPage = ({
   filterRequests,
   productMode,
   productModeNe,
+  useManufacturerQueueList = false,
 }: {
   showQueueBar?: boolean;
   /** 준비/CAM 탭의 전체 Filled STL·가공 준비 재생성 버튼 */
@@ -111,9 +112,15 @@ export const RequestPage = ({
   productMode?: string;
   /** API: caseInfos.productMode 제외 (가공작업 준비) */
   productModeNe?: string;
+  /** 지정 의뢰자(디자인 파트너)도 제조사 큐 `/api/requests/all` 사용 */
+  useManufacturerQueueList?: boolean;
 }) => {
   const queryClient = useQueryClient();
   const { user, token } = useAuthStore();
+  const canUseManufacturerQueue =
+    user?.role === "manufacturer" ||
+    user?.role === "admin" ||
+    (useManufacturerQueueList && user?.role === "requestor");
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
     showCompleted: boolean;
@@ -187,7 +194,7 @@ export const RequestPage = ({
         const basePath =
           user?.role === "admin"
             ? "/api/admin/requests"
-            : user?.role === "manufacturer"
+            : canUseManufacturerQueue
               ? "/api/requests/all"
               : "/api/requests";
         const stageFilterForTab = getWorksheetStageFilterForTab(
@@ -508,6 +515,7 @@ export const RequestPage = ({
     [
       token,
       user?.role,
+      canUseManufacturerQueue,
       toast,
       tabStage,
       rawTabStage,

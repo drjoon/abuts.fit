@@ -30,6 +30,7 @@ export const useRequestorBusinessAccess = () => {
     lab: false,
   });
   const [membership, setMembership] = useState<string>("none");
+  const [designAccessEnabled, setDesignAccessEnabled] = useState(false);
 
   const businessType = useMemo(
     () => resolveBusinessType(user?.role, "requestor"),
@@ -40,6 +41,7 @@ export const useRequestorBusinessAccess = () => {
     if (!token || user?.role !== "requestor") {
       setLoading(false);
       setBusinessVerified(Boolean(user?.businessVerified));
+      setDesignAccessEnabled(false);
       setCapabilities(
         resolveRequestorCapabilities({
           userRole: user?.role,
@@ -59,6 +61,7 @@ export const useRequestorBusinessAccess = () => {
       const verified = Boolean(data?.businessVerified);
       setBusinessVerified(verified);
       setMembership(String(data?.membership || "none"));
+      setDesignAccessEnabled(Boolean(data?.designAccessEnabled));
       setCapabilities(
         resolveRequestorCapabilities({
           anchorCaps: data?.requestorCapabilities,
@@ -69,6 +72,7 @@ export const useRequestorBusinessAccess = () => {
       );
     } catch {
       setBusinessVerified(false);
+      setDesignAccessEnabled(false);
       setCapabilities(
         resolveRequestorCapabilities({
           userCaps: user?.requestorCapabilities,
@@ -113,6 +117,7 @@ export const useRequestorBusinessAccess = () => {
       }),
     membership,
     businessVerified,
+    designAccessEnabled,
     capabilities: caps,
     hasCapability: hasAnyRequestorCapability(caps),
     requiresLicense: requiresBusinessLicense(caps),

@@ -2,10 +2,12 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/designAccess.js
 import { verifyToken } from "../utils/jwt.utils.js";
 import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { Types } from "mongoose";
+import { resolveDesignAccessForUser } from "../utils/designAccess.js";
 
 const AUTH_USER_CACHE_TTL_MS = 30 * 1000;
 const __authUserCache = new Map();
@@ -269,6 +271,52 @@ export const authorize = (roles = [], options = {}) => {
       next();
     } catch (error) {
       console.error("[authorize] middleware error", {
+        path: req.path,
+        method: req.method,
+        userId: req.user?._id,
+        error: error?.message,
+      });
+      return res.status(500).json({
+        success: false,
+        message: "권한 확인 중 오류가 발생했습니다.",
+      });
+    }
+  };
+};
+
+/**
+ * 제조사/관리자 또는 디자인 지정 의뢰자.
+ * shipping/packing/cnc 전용 라우트에는 쓰지 않는다.
+ */
+export const authorizeManufacturerOrDesignPartner = () => {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: "인증이 필요합니다.",
+        });
+      }
+
+      const role = String(req.user.role || "").trim();
+      if (role === "manufacturer" || role === "admin") {
+        return next();
+      }
+
+      if (role === "requestor") {
+        const enabled = await resolveDesignAccessForUser(req.user);
+        if (enabled) {
+          req.__designPartner = true;
+          return next();
+        }
+      }
+
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    } catch (error) {
+      console.error("[authorizeManufacturerOrDesignPartner] error", {
         path: req.path,
         method: req.method,
         userId: req.user?._id,

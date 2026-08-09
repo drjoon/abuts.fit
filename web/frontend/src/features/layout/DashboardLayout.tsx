@@ -118,6 +118,7 @@ const sidebarItems = {
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
     { icon: Building2, label: "기공의뢰서", href: "/dashboard/practice-transfers" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
+    { icon: PenTool, label: "디자인", href: "/dashboard/design" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
@@ -131,6 +132,7 @@ const sidebarItems = {
   devops: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
+    { icon: Users2, label: "파트너", href: "/dashboard/partner" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   practice: [
@@ -139,7 +141,6 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/practice/settings" },
   ],
   manufacturer: [
-    { icon: PenTool, label: "디자인", href: "/dashboard/design" },
     { icon: ClipboardList, label: "생산", href: "/dashboard/worksheet" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
@@ -353,7 +354,8 @@ export const DashboardLayout = () => {
   const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
     useState(0);
   const { rooms: chatRooms } = useChatRooms();
-  const { canUsePaid: requestorCanUsePaid } = useRequestorBusinessAccess();
+  const { canUsePaid: requestorCanUsePaid, designAccessEnabled } =
+    useRequestorBusinessAccess();
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const isPracticeUser = Boolean(user?.role === "practice");
@@ -863,7 +865,9 @@ export const DashboardLayout = () => {
   const baseMenuItems = (sidebarItems[effectiveSidebarRole] ||
     []) as unknown as SidebarItem[];
   const menuItems = (() => {
-    return baseMenuItems;
+    if (user.role !== "requestor") return baseMenuItems;
+    if (designAccessEnabled) return baseMenuItems;
+    return baseMenuItems.filter((item) => item.href !== "/dashboard/design");
   })();
 
   const displayRole = isPracticeUser ? "practice" : user.role;
@@ -913,8 +917,7 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/printer");
   const isWorksheetRoute =
     isManufacturer && location.pathname.startsWith("/dashboard/worksheet");
-  const isDesignRoute =
-    isManufacturer && location.pathname.startsWith("/dashboard/design");
+  const isDesignRoute = location.pathname.startsWith("/dashboard/design");
 
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";

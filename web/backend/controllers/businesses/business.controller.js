@@ -346,6 +346,7 @@ export async function getMyBusiness(req, res) {
           payoutAccount: {},
           pricingBaseDate: pricingBaseDate || null,
           requestorCapabilities,
+          designAccessEnabled: false,
         },
       });
     }
@@ -469,6 +470,10 @@ export async function getMyBusiness(req, res) {
         shippingPolicy: anchor?.shippingPolicy || null,
         pricingBaseDate: pricingBaseDate || null,
         requestorCapabilities,
+        designAccessEnabled:
+          businessType === "requestor"
+            ? Boolean(anchor?.designAccessEnabled)
+            : false,
         requestSettings: {
           anodizingEnabled:
             typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
