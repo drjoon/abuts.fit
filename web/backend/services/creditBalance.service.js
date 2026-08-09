@@ -421,7 +421,7 @@ export async function deleteRequestSpendAtomicOnRollback({
       hasSession: !!session,
     });
 
-    // 1) canonical unique keys(idempotency) — 가공비 + 신속 추가비
+    // 1) canonical unique keys(idempotency) — 생산비 + 신속 추가비
     for (const uniqueKey of uniqueKeys) {
       const byUnique = await findCommitJournalBySpendKey({
         spendUniqueKey: uniqueKey,

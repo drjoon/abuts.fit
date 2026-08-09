@@ -632,7 +632,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     );
   }
 
-  // 레거시 합산 차감(가공비+신속비가 machining_spend 한 건) 재진입 시 이중 차감 방지
+  // 레거시 합산 차감(생산비+신속비가 machining_spend 한 건) 재진입 시 이중 차감 방지
   if (spendResult?.reason === "already_spent") {
     const expressKey = `gl:request:${String(request?._id || "")}:express_surcharge`;
     const existingExpress = await LedgerJournal.findOne({

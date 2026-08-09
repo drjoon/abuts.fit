@@ -36,7 +36,7 @@ Notes:
     (묶음: 백엔드와 동일하게 접수 당일=1일차 `(N-1)` 후 주간 발송 요일 정렬)
     (신속: KST 12시 이전=당일, 이후=+1영업일 — 백엔드 `EXPRESS_CUTOFF_HOUR_KST=12`와 동일.
      선택 가능 조건: 신속 ETA YMD < 묶음 ETA YMD — `isExpressShippingSelectable`)
-    (디자인+가공 `design_custom_abutment`: 묶음/신속 공통 출고 +1영업일 —
+    (디자인+생산 `design_custom_abutment`: 묶음/신속 공통 출고 +1영업일 —
      `estimateShipDate.ts` / 백엔드 `needsDesignLeadDay`)
     (안내 카피: `PricingPolicyDialog` 출고 리드타임·출고 방식,
      `NewRequestShippingSection`, 대시보드 `RequestorBulkShippingBannerCard`)
@@ -123,15 +123,16 @@ Notes:
   - 의뢰카드에서 `shippingMode`(`normal`|`express`)를 건별로 선택합니다.
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 1,000원)를 사용합니다.
-  - 디자인+가공(`design_custom_abutment`): `(가공 단가 + 디자인비) × 어벗 수`.
+  - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 `creditSettings.designFee`(기본 15,000원 / 1어벗). 어벗 수는 `toothWorks` 유효 행.
-    - 가공만(`custom_abutment`)은 Request/STL당 가공 1개. 신속비는 건당(어벗 배수 없음).
+    - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당(어벗 배수 없음).
+    - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
     - 출고일: 묶음/신속 공통 **+1영업일**(디자인). 안내 카피 SSOT는 `.cursor/rules/design-fee.mdc` UI 절.
-    - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(가공/디자인/배송·신속) 표시.
-    - 표시: `PricingPolicyDialog`, `RequestDetailDialog`. 오늘의 가공 가격 카드는 가공 단가·할인만(디자인비 미표시). 신규의뢰 우측에는 금액 미표시.
+    - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(생산/디자인/배송·신속) 표시.
+    - 표시: `PricingPolicyDialog`, `RequestDetailDialog`. 오늘의 생산 가격 카드는 생산 단가·할인만(디자인비 미표시). 신규의뢰 우측에는 금액 미표시.
   - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`
     - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits` (`admin`|`devops`)
-  - 표시 금액 SSOT: 신속배송이면 가공비+추가비를 합산해 보여줍니다 (`resolveQuotedPriceAmount` in `shippingMode.ts`).
+  - 표시 금액 SSOT: 신속배송이면 생산비+추가비를 합산해 보여줍니다 (`resolveQuotedPriceAmount` in `shippingMode.ts`).
     - 백엔드가 `price.amount`/`price.expressFee`/`price.designFee`를 내려주면 이중 합산하지 않습니다.
     - 카드/상세: `RequestorRecentRequestsCard.tsx`, `RequestDetailDialog.tsx`
   - 우측 기본 배송 방식(`normal`|`express`)은 로컬스토리지 + `BusinessAnchor.shippingPolicy.defaultShippingMode`에 저장합니다.
@@ -272,7 +273,7 @@ Notes:
   - 모달 상단 잔액 요약은 단일 SSOT 장부 API의 `currentBalanceSnapshot` 값을 사용합니다.
   - 테이블 `balanceAfter`는 현재 총잔액이 아니라 “행 시점 잔액”으로 표기합니다.
   - 의뢰(REQUEST) 차감 행에는 신속/묶음배송 뱃지를 표시합니다 (`ShippingModeBadge`).
-  - 신속 추가비(`express_surcharge`)는 API에서 가공비(`machining_spend`)와 합산해 1행으로 내려줍니다(표시 금액=가공비+추가비).
+  - 신속 추가비(`express_surcharge`)는 API에서 생산비(`machining_spend`)와 합산해 1행으로 내려줍니다(표시 금액=생산비+추가비).
   - 레거시 `BONUS` 타입 문구/분기 사용 금지. 이벤트 타입/계정코드(`LedgerJournal.eventType`, `LedgerLine.accountCode`)를 기준으로 표시합니다.
   - 표시 타입은 아래로 고정합니다.
     - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`

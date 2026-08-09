@@ -15,7 +15,7 @@ export type ClinicFavoriteImplant = {
 
 export type RetentionGrooveValue = "none" | "shallow" | "deep";
 
-/** 신규의뢰 상세 모달: 커스텀어벗 vs 디자인+커스텀어벗 */
+/** 신규의뢰 상세 모달: 커스텀어벗 생산 vs 커스텀어벗 디자인+생산 */
 export type NewRequestProductMode = "custom_abutment" | "design_custom_abutment";
 
 export type ClinicPreset = {
@@ -53,7 +53,7 @@ export type Connection = {
 export type CaseInfos = {
   clinicName?: string;
   patientName?: string;
-  /** 커스텀어벗 탭 치아번호 (단일/자유 입력). 디자인+커스텀어벗 toothWorks 와 별개. */
+  /** 커스텀어벗 생산 탭 치아번호 (단일/자유 입력). 디자인+생산 toothWorks 와 별개. */
   tooth?: string;
   implantManufacturer?: string;
   implantBrand?: string;
@@ -68,11 +68,11 @@ export type CaseInfos = {
   workType?: string; // "abutment" | "crown" | "prosthesis"
   /** 상세 모달 상품 모드. 기본 custom_abutment. workType(abutment)과 별개. */
   productMode?: NewRequestProductMode;
-  /** 디자인+커스텀어벗 탭 보철물 치식. 커스텀어벗 tooth 와 별개. */
+  /** 디자인+생산 탭 보철물 치식. 커스텀어벗 생산 tooth 와 별개. */
   toothWorks?: ToothWorkSelection[];
   /** @deprecated 치식(toothWorks)으로 대체. 레거시 호환용 */
   prosthesisType?: string;
-  /** 디자인+커스텀어벗: 자유 메모 */
+  /** 디자인+생산: 자유 메모 */
   memo?: string;
   shippingMode?: "normal" | "express";
   requestedShipDate?: string; // ISO date string or YYYY-MM-DD

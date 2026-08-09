@@ -226,9 +226,26 @@ export async function getAssignedLikeDashboardSummary({
                 ],
               },
             },
+            // 준비(request) 카운트: 디자인+생산은 디자인 페이지 소관이라 가공작업 배지에서 제외
             requestCount: {
               $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0],
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$normalizedStage", "request"] },
+                      {
+                        $ne: [
+                          {
+                            $ifNull: ["$caseInfos.productMode", ""],
+                          },
+                          "design_custom_abutment",
+                        ],
+                      },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
               },
             },
             camCount: {

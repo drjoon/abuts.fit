@@ -11,7 +11,7 @@ import {
 } from "./expressPrice.utils.js";
 
 /**
- * 디자인+가공 어벗 수 SSOT.
+ * 디자인+생산 어벗 수 SSOT.
  * - productMode !== design_custom_abutment → 0
  * - toothWorks 유효 행 우선, 없으면 tooth 문자열 파싱, 최소 1
  */
@@ -45,11 +45,11 @@ export function countDesignAbutmentQty(caseInfos) {
 export const countDesignFeeTeeth = countDesignAbutmentQty;
 
 /**
- * 견적/표시용 금액 SSOT (디자인+가공):
- * - design_custom_abutment이면 `(가공단가 + designFee) × 어벗수`
+ * 견적/표시용 금액 SSOT (디자인+생산):
+ * - design_custom_abutment이면 `(생산단가 + designFee) × 어벗수`
  * - price.designFee = 디자인 총액, price.abutmentQty = 적용 어벗 수
  * - 무상/0원 견적에는 붙이지 않는다
- * - 이중 합산 방지: designFee·abutmentQty·expressFee를 걷어 가공 단가 복원 후 재적용
+ * - 이중 합산 방지: designFee·abutmentQty·expressFee를 걷어 생산 단가 복원 후 재적용
  *
  * 적용 순서: 본 함수 → resolveQuotedPriceWithExpressFee
  */
@@ -112,7 +112,7 @@ export function resolveQuotedPriceWithDesignFee({
   return next;
 }
 
-/** 디자인+가공 배수 → 신속비 순으로 견적 합산 */
+/** 디자인+생산 배수 → 신속비 순으로 견적 합산 */
 export function resolveQuotedPriceWithExtras({
   price,
   caseInfos,

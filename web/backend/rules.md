@@ -79,21 +79,22 @@
       - 응답 정규화: `utils.js` `normalizeRequestForResponse`, 대시보드 recent/snapshot
     - 제출 잔액 체크: `creation.from-draft.controller.js`
     - 실제 차감: `common.review.helpers.js` `ensureRequestCreditSpendOnMachiningEnter`
-      - 가공비: `request:<id>:machining_spend`
+      - 생산비: `request:<id>:machining_spend`
       - 신속 추가비: `request:<id>:express_surcharge` (분리 저널)
       - 누락 보정: `healMissingExpressSurchargesForBusiness` (크레딧 원장 조회 시)
-      - 원장 표시: `creditLedger.utils.js`에서 가공비+신속추가비를 1행으로 합산
+      - 원장 표시: `creditLedger.utils.js`에서 생산비+신속추가비를 1행으로 합산
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
-  - 디자인+가공 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
-    - 공식: `(가공 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
+  - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
+    - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
     - 디자인비: `creditSettings.designFee`(기본 15000, **1어벗당**)
     - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
-      - `price.amount` = `(가공단가 + designFee) × qty`
+      - `price.amount` = `(생산단가 + designFee) × qty`
       - `price.designFee` = 디자인 총액, `price.abutmentQty` = qty (재견적 단가 복원)
-      - 적용 순서: 디자인+가공 배수 → 신속비(건당). 무상/0원 견적에는 미적용
+      - 적용 순서: 디자인+생산 배수 → 신속비(건당). 무상/0원 견적에는 미적용
       - 생성·CAM 차감·응답 정규화 경로에서 재적용
-    - 차감: CAM `machining_spend` = `(가공단가 + 디자인비) × qty` (신속 `express_surcharge`와 분리)
+    - 차감: CAM `machining_spend` = `(생산단가 + 디자인비) × qty` (신속 `express_surcharge`와 분리)
+    - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`)
     - SSOT: `.cursor/rules/design-fee.mdc`
   - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
     - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
@@ -103,7 +104,7 @@
       프론트 `isExpressShippingSelectable`). 이점 없으면 UI 비활성·모드 변경 400·접수 시 normal 강등
     - 묶음: `resolveLeadDaysWithSameDayCutoff` — 접수 당일=1일차 → `(N-1)` 영업일 후
       주간 발송 요일 정렬 (`resolveNextWeeklyBatchYmd`)
-    - **디자인+가공** (`productMode === "design_custom_abutment"`): 묶음/신속 공통으로
+    - **디자인+생산** (`productMode === "design_custom_abutment"`): 묶음/신속 공통으로
       출고일에 디자인 리드 **+1영업일** (프론트 `estimateShipDate.ts`와 동일).
       안내 UI: `PricingPolicyDialog`, `NewRequestShippingSection`,
       `RequestorBulkShippingBannerCard`

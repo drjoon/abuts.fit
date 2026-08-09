@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-09: 디자인+가공(design_custom_abutment)은 묶음/신속 모두 출고일에
+// - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 모두 출고일에
 //   디자인 리드 +1영업일 추가.
 // - 2026-08-06: 묶음 리드타임 (N-1) 복원. 접수 당일을 1일차로 포함(자정 컷오프/
 //   PricingPolicyDialog SSOT). lead=1이면 당일 기준일 → 주간 발송 요일 정렬.
@@ -67,7 +67,7 @@ const PACKING_CUTOFF_HOUR = 14; // 포장 마감 시각 (14:00)
 const PICKUP_REQUEST_HOUR = 15; // 택배 수거 신청 시각 (15:00)
 const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
 const EXPRESS_CUTOFF_HOUR_KST = 12; // 신속: 낮 12시 이전 당일 발송 목표
-/** 디자인+가공: 디자인 작업 리드 (영업일). 묶음/신속 공통. */
+/** 디자인+생산: 디자인 작업 리드 (영업일). 묶음/신속 공통. */
 const DESIGN_LEAD_BUSINESS_DAYS = 1;
 
 export function needsDesignLeadDay(productMode) {
@@ -322,7 +322,7 @@ export async function calculateInitialProductionSchedule({
         days: 1,
       });
     }
-    // 디자인+가공: 디자인 1영업일을 출고일에 더한다.
+    // 디자인+생산: 디자인 1영업일을 출고일에 더한다.
     if (designLeadDays > 0) {
       shipYmd = await addKoreanBusinessDays({
         startYmd: shipYmd,
@@ -415,7 +415,7 @@ export async function calculateInitialProductionSchedule({
     startYmd: baseBatchStartYmd,
     days: resolvedLeadDays,
   });
-  // 디자인+가공: 디자인 1영업일 후 주간 발송 요일 정렬.
+  // 디자인+생산: 디자인 1영업일 후 주간 발송 요일 정렬.
   if (designLeadDays > 0) {
     batchProcessingYmd = await addKoreanBusinessDays({
       startYmd: batchProcessingYmd,

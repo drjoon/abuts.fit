@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-09: 디자인+가공 ETA에 productMode(+1영업일) 전달.
+// - 2026-08-09: 디자인+생산 ETA에 productMode(+1영업일) 전달.
 // - 2026-08-06: 묶음 ETA를 백엔드와 같이 (N-1) 적용. 접수 당일=1일차(자정 컷오프).
 // - 2026-08-08: memo/stale closure 제거 — computeEstimatedShipLabel render 시점 호출.
 // related files:

@@ -98,10 +98,19 @@ const MAILBOX_DETAILS_STORAGE_PREFIX = "ca:shipping:mailbox-details:";
 
 export const RequestPage = ({
   showQueueBar = true,
+  showBulkCamRegenerate = true,
   filterRequests,
+  productMode,
+  productModeNe,
 }: {
   showQueueBar?: boolean;
+  /** 준비/CAM 탭의 전체 Filled STL·가공 준비 재생성 버튼 */
+  showBulkCamRegenerate?: boolean;
   filterRequests?: (req: ManufacturerRequest) => boolean;
+  /** API: caseInfos.productMode 일치 (디자인 페이지) */
+  productMode?: string;
+  /** API: caseInfos.productMode 제외 (가공작업 준비) */
+  productModeNe?: string;
 }) => {
   const queryClient = useQueryClient();
   const { user, token } = useAuthStore();
@@ -329,6 +338,12 @@ export const RequestPage = ({
               url.searchParams.append("manufacturerStageIn", stage);
             }
           }
+          if (productMode) {
+            url.searchParams.set("productMode", productMode);
+          }
+          if (productModeNe) {
+            url.searchParams.set("productModeNe", productModeNe);
+          }
           return url.pathname + url.search;
         };
 
@@ -500,6 +515,9 @@ export const RequestPage = ({
       showCompleted,
       effectivePageLimit,
       pageState,
+      productMode,
+      productModeNe,
+      queryClient,
     ],
   );
 
@@ -1908,7 +1926,7 @@ export const RequestPage = ({
       false,
       tabStage === "shipping" ? { forceMailboxRefresh: true } : undefined,
     );
-  }, [tabStage, showCompleted]);
+  }, [tabStage, showCompleted, productMode, productModeNe]);
 
   const { filteredBase, filteredAndSorted, getFilteredAndSortedRequests } =
     useRequestFiltering(
@@ -2269,7 +2287,8 @@ export const RequestPage = ({
               </div>
             ) : (
               <>
-                {(isCamStage || tabStage === "request") && (
+                {showBulkCamRegenerate &&
+                  (isCamStage || tabStage === "request") && (
                   <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
                     <Button
                       type="button"

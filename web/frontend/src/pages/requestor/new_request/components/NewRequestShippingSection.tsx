@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-09: 디자인+가공 출고 +1영업일 안내(묶음/신속 카피).
+// - 2026-08-09: 디자인+생산 출고 +1영업일 안내(묶음/신속 카피).
 // - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일).
 // - 2026-08-08: weeklyBatchDays prop SSOT — selectedDays 이중 상태 제거, optimistic 반영.
 // - 2026-08-08: 신속 선택 = 신속 ETA < 묶음 ETA일 때만 (조기 이점 없으면 비활성).
@@ -363,7 +363,7 @@ export function NewRequestShippingSection({
               <br />
               지정된 요일에 일괄 출고해드립니다.
               <br />
-              디자인+가공은 출고일에 +1영업일이 더해집니다.
+              디자인+생산은 출고일에 +1영업일이 더해집니다.
             </div>
           </div>
 
@@ -405,9 +405,9 @@ export function NewRequestShippingSection({
             {expressSelectable ? (
               <>
                 <div className="text-base text-foreground leading-relaxed">
-                  가공만: 오늘 낮 12시 이전 의뢰 시 오늘 오후 출고
+                  생산: 오늘 낮 12시 이전 의뢰 시 오늘 오후 출고
                   <br />
-                  디자인+가공: +1영업일
+                  디자인+생산: +1영업일
                 </div>
                 <div className="text-sm text-slate-600 leading-relaxed">
                   의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.

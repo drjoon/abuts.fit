@@ -108,6 +108,29 @@ export const isCopiedSampleRequest = (req?: ManufacturerRequest | null) => {
   return resolveRequestCategory(req) === REQUEST_CATEGORY.COPIED_SAMPLE;
 };
 
+/** caseInfos.productMode SSOT: 커스텀어벗 생산 vs 디자인+생산 */
+export const PRODUCT_MODE = {
+  CUSTOM_ABUTMENT: "custom_abutment",
+  DESIGN_CUSTOM_ABUTMENT: "design_custom_abutment",
+} as const;
+
+export type ProductMode =
+  (typeof PRODUCT_MODE)[keyof typeof PRODUCT_MODE];
+
+export const resolveProductMode = (
+  req?: ManufacturerRequest | null,
+): ProductMode => {
+  const raw = String(req?.caseInfos?.productMode || "").trim();
+  if (raw === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT) {
+    return PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT;
+  }
+  return PRODUCT_MODE.CUSTOM_ABUTMENT;
+};
+
+export const isDesignCustomAbutmentRequest = (
+  req?: ManufacturerRequest | null,
+) => resolveProductMode(req) === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT;
+
 // change-log (getDeadlineInfo):
 // - 2026-08-06: 남은시간 뱃지 문구 "출고 N일 N시간" → "출고 N일전"(+시간).
 // - 2026-08-06: 남은시간 뱃지 문구 "마감 …" → "출고 …".

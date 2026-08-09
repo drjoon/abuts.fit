@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-09: 디자인+가공 productMode를 스케줄 비교에 전달 (출고 +1영업일).
+// - 2026-08-09: 디자인+생산 productMode를 스케줄 비교에 전달 (출고 +1영업일).
 // - 2026-08-08: 신속 선택 가능 = 신속 ETA < 묶음 ETA (조기 출고 이점 있을 때만).
 // related files:
 // - web/backend/controllers/requests/production.utils.js

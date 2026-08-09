@@ -93,10 +93,11 @@
     (`production.utils.js` `resolveNextWeeklyBatchYmd` / `resolveLeadDaysWithSameDayCutoff` 등)
   - 묶음 리드타임 SSOT: `minBusinessDays=N`이면 접수 당일을 1일차로 포함 → 추가 영업일 `(N-1)`
     (PricingPolicyDialog: 자정까지 1영업일=당일 집하). 이후 주간 발송 요일로 정렬.
-  - 디자인+가공 출고 SSOT: `productMode === "design_custom_abutment"`이면 묶음/신속 모두
+  - 디자인+생산 출고 SSOT: `productMode === "design_custom_abutment"`이면 묶음/신속 모두
     출고일에 디자인 리드 **+1영업일** (`production.utils.js` / `estimateShipDate.ts`).
     UI 안내: `PricingPolicyDialog`, `NewRequestShippingSection`,
     `RequestorBulkShippingBannerCard` `SHIP_OUT_INFO_MESSAGE`.
+    표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (문맥상 생략 시 `생산` / `디자인+생산`).
 
 
 ### 1.5 구조
@@ -274,18 +275,19 @@
   - 견적/표시 금액 SSOT: 신속 지정 시점부터 `price.amount`에 추가비를 합산하고 `price.expressFee`에 기록 (`expressPrice.utils.js` `resolveQuotedPriceWithExpressFee`)
     - 적용 경로: 생성(`from-draft`/`createRequest`), 준비 단계 모드 전환, 대시보드/상세 응답 정규화
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
-- 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
-  - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
+- 디자인+생산 과금: `productMode === "design_custom_abutment"`일 때만 적용
+  - **1 STL에 여러 어벗** 가능. 공식: `(생산 단가 + 디자인비) × 어벗 수`
   - 디자인비: `creditSettings.designFee`(기본 **15,000원 / 1어벗**)
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`
-    - `price.amount` = `(가공단가 + designFee) × qty`, `price.designFee` = 디자인 총액, `price.abutmentQty` = qty
-  - 적용 순서: 디자인+가공 배수 → 신속비(건당, 배수 없음). 무상/0원 견적에는 미적용
-  - 차감: CAM `machining_spend` = `(가공단가 + 디자인비) × qty` (신속비와 분리)
+    - `price.amount` = `(생산단가 + designFee) × qty`, `price.designFee` = 디자인 총액, `price.abutmentQty` = qty
+  - 적용 순서: 디자인+생산 배수 → 신속비(건당, 배수 없음). 무상/0원 견적에는 미적용
+  - 차감: CAM `machining_spend` = `(생산단가 + 디자인비) × qty` (신속비와 분리)
   - 출고일: 묶음/신속 공통으로 디자인 리드 **+1영업일** (`production.utils.js` /
     프론트 `estimateShipDate.ts`)
-  - UI: `PricingPolicyDialog`, 의뢰 상세 비용 세부. 오늘의 가공 가격 카드·신규의뢰 우측·의뢰카드는 디자인비 금액 미표시(`+디자인` 뱃지만)
+  - UI: `PricingPolicyDialog`, 의뢰 상세 비용 세부. 오늘의 생산 가격 카드·신규의뢰 우측·의뢰카드는 디자인비 금액 미표시(`+디자인` 뱃지만)
+  - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`)
   - 상세: `.cursor/rules/design-fee.mdc`
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)
 

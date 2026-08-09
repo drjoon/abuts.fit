@@ -199,7 +199,7 @@ export function NewRequestDesignAbutmentFields({
     (action) => {
       const prev = Array.isArray(caseInfos?.toothWorks) ? caseInfos.toothWorks : [];
       const next = typeof action === "function" ? action(prev) : action;
-      // 디자인+커스텀어벗 치식만 갱신. 커스텀어벗 caseInfos.tooth 와 공유하지 않는다.
+      // 디자인+생산 치식만 갱신. 커스텀어벗 생산 caseInfos.tooth 와 공유하지 않는다.
       setCaseInfos({ toothWorks: next });
     },
     [caseInfos?.toothWorks, setCaseInfos],

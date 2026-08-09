@@ -1,6 +1,6 @@
 // change-log:
-// - 2026-08-09: 카드에서 디자인비·출고 +1영업일 안내 행 제거(가공 단가만 유지).
-// - 2026-08-09: 카드 제목을 "오늘의 가공 가격"으로 변경.
+// - 2026-08-09: 카드에서 디자인비·출고 +1영업일 안내 행 제거(생산 단가만 유지).
+// - 2026-08-09: 카드 제목을 "오늘의 생산 가격"으로 변경.
 // - 2026-08-09: 디자인비 행에 출고 +1영업일(묶음·신속) 안내 추가.
 // related files:
 // - web/frontend/rules.md
@@ -208,7 +208,7 @@ export const RequestorPricingReferralPolicyCard = () => {
       <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
         <CardHeader className="pt-4 pb-2">
           <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold">오늘의 가공 가격</CardTitle>
+            <CardTitle className="text-base font-semibold">오늘의 생산 가격</CardTitle>
             <div className="flex items-center gap-2">
               <Button
                 type="button"

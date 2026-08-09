@@ -1292,6 +1292,23 @@ export async function getAllRequests(req, res) {
     }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
+    // caseInfos.productMode: 커스텀어벗 생산 vs 디자인+생산 분기
+    // - productMode=design_custom_abutment → 디자인 페이지
+    // - productModeNe=design_custom_abutment → 가공작업(준비)에서 디자인+생산 제외
+    if (typeof req.query.productMode === "string") {
+      const productMode = String(req.query.productMode || "").trim();
+      if (productMode) {
+        filter["caseInfos.productMode"] = productMode;
+      }
+    }
+    if (typeof req.query.productModeNe === "string") {
+      const productModeNe = String(req.query.productModeNe || "").trim();
+      if (productModeNe) {
+        // $ne는 필드 누락(레거시 생산)도 포함한다.
+        filter["caseInfos.productMode"] = { $ne: productModeNe };
+      }
+    }
+
     // 생성일 범위 필터 (관리자 모니터링/대시보드와 동일 파서 사용)
     const createdAtFilter = buildCreatedAtFilterFromQuery(req.query);
     if (createdAtFilter) {
@@ -1392,6 +1409,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
+      "caseInfos.productMode",
       "caseInfos.designSoftware",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",

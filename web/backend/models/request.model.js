@@ -144,7 +144,7 @@ const requestSchema = new mongoose.Schema(
       faceHolePrcFileName: String,
       connectionPrcFileName: String,
       workType: String,
-      // 신규의뢰 상세 모달: 커스텀어벗 | 디자인+커스텀어벗
+      // 신규의뢰 상세 모달: 커스텀어벗 생산 | 커스텀어벗 디자인+생산
       productMode: {
         type: String,
         enum: ["custom_abutment", "design_custom_abutment"],
@@ -915,7 +915,7 @@ const requestSchema = new mongoose.Schema(
         type: Number,
         default: null,
       },
-      // 디자인+가공 적용 어벗 수. 재견적 시 가공 단가 복원용.
+      // 디자인+생산 적용 어벗 수. 재견적 시 생산 단가 복원용.
       abutmentQty: {
         type: Number,
         default: null,
