@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 연결 끊기 시 productMode 복원과 함께 출고 모드·일정을 다시 계산한다.
 // - 2026-08-09: 구강스캔·디자인+생산은 메시 직경 없이 리드 1일로 출고 모드를 판정.
 // - 2026-08-09: 우측 신속 비활성(디자인+1일 등)일 때 의뢰카드 신속 버튼도 함께 막는다.
 // - 2026-08-09: 묶음 요일 변경 시 신규 days·구강스캔(디자인+1일)로 신속 선택 가능 여부를 다시 판정.
@@ -47,6 +48,11 @@ import {
   isExpressShippingSelectable,
   type LeadTimesMap,
 } from "@/shared/shipping/estimateShipDate";
+import {
+  findGroupByFileKey,
+  isLikelyOralScanSize,
+  resolveFileSizeBytes,
+} from "./utils/patientGroups";
 
 
 // related files:
@@ -960,6 +966,103 @@ const NewRequestPageContent = () => {
     [weeklyBatchDays, leadTimes, expressSelectProductMode],
   );
 
+  /**
+   * 구강스캔 묶음에서 빠진 파일: productMode·출고 모드를 크기 기준으로 다시 맞춘다.
+   * (디자인+1일이 남아 예상 출고가 하루 밀리는 문제 방지)
+   * 이탈 직후 patientGroups/groupedFileKeys는 아직 이전 값일 수 있어
+   * 건별 productMode로만 신속 가능 여부를 판정한다.
+   */
+  const refreshShipScheduleAfterLeaveGroup = useCallback(
+    (fileKeys: string[]) => {
+      const unique = Array.from(new Set(fileKeys.filter(Boolean)));
+      for (const key of unique) {
+        const file = files.find((f) => toNormalizedFileKey(f) === key);
+        const size =
+          typeof file?.size === "number"
+            ? file.size
+            : resolveFileSizeBytes(key);
+        const productMode = isLikelyOralScanSize(size)
+          ? "design_custom_abutment"
+          : "custom_abutment";
+        const info = caseInfosMap?.[key];
+        const diameter =
+          productMode === "design_custom_abutment"
+            ? null
+            : typeof info?.maxDiameter === "number"
+              ? info.maxDiameter
+              : null;
+        const preferred =
+          info?.shippingMode === "express" ||
+          defaultShippingMode === "express"
+            ? ("express" as const)
+            : ("normal" as const);
+        const shippingMode =
+          preferred === "express" &&
+          isExpressShippingSelectable({
+            weeklyBatchDays,
+            leadTimes,
+            diameter,
+            productMode,
+          })
+            ? ("express" as const)
+            : ("normal" as const);
+        updateCaseInfos(key, {
+          productMode,
+          workType: "abutment",
+          shippingMode,
+          requestedShipDate: undefined,
+        });
+        if (import.meta.env.DEV) {
+          console.debug("[ship-eta] leave-group refresh", {
+            key,
+            productMode,
+            diameter,
+            shippingMode,
+          });
+        }
+      }
+    },
+    [
+      files,
+      toNormalizedFileKey,
+      caseInfosMap,
+      defaultShippingMode,
+      weeklyBatchDays,
+      leadTimes,
+      updateCaseInfos,
+    ],
+  );
+
+  const handleUngroupPatientFiles = useCallback(
+    (groupId: string) => {
+      const group = (patientGroups || []).find((g) => g.id === groupId);
+      const keys = group ? [...group.fileKeys] : [];
+      ungroupPatientFiles(groupId);
+      refreshShipScheduleAfterLeaveGroup(keys);
+    },
+    [patientGroups, ungroupPatientFiles, refreshShipScheduleAfterLeaveGroup],
+  );
+
+  const handleRemoveFileFromPatientGroup = useCallback(
+    (fileKey: string) => {
+      const group = findGroupByFileKey(patientGroups || [], fileKey);
+      let leftKeys = [fileKey];
+      if (group) {
+        const remaining = group.fileKeys.filter((k) => k !== fileKey);
+        // 2개 미만이면 묶음 해체 → 멤버 전원 이탈
+        leftKeys =
+          remaining.length >= 2 ? [fileKey] : [...group.fileKeys];
+      }
+      removeFileFromPatientGroup(fileKey);
+      refreshShipScheduleAfterLeaveGroup(leftKeys);
+    },
+    [
+      patientGroups,
+      removeFileFromPatientGroup,
+      refreshShipScheduleAfterLeaveGroup,
+    ],
+  );
+
   const handleWeeklyBatchDaysChange = useCallback(
     (days: string[]) => {
       setWeeklyBatchDays(days);
@@ -1666,8 +1769,8 @@ const NewRequestPageContent = () => {
               attachmentListItems={attachmentListItems}
               patientGroups={patientGroups}
               onGroupSelectedFiles={groupSelectedFiles}
-              onUngroupPatientFiles={ungroupPatientFiles}
-              onRemoveFileFromPatientGroup={removeFileFromPatientGroup}
+              onUngroupPatientFiles={handleUngroupPatientFiles}
+              onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;
