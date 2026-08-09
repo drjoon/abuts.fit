@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/shared/ui/dashboard/DashboardShell.tsx
+// - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 import { Skeleton } from "@/components/ui/skeleton";
 
 type DashboardShellSkeletonProps = {

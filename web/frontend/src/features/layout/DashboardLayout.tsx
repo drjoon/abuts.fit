@@ -32,6 +32,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
+// - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";

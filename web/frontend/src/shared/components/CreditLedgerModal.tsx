@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 잔액 요약 우측에 [충전] 버튼 노출 (chargeNavPath 제공 시).
 // - 2026-08-04: 의뢰 차감 행에 신속/묶음배송 뱃지 표시. (display-only)
 // - 2026-08-03: Credit ledger detail row의 공정 배지 표시를 normalizeStageLabel 기반으로 정규화(의뢰 -> 준비). (display-only)
 // related files:
@@ -611,22 +612,22 @@ export const CreditLedgerModal = ({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader className="pb-2">
-            <div className="flex items-center justify-start gap-2">
+            <div className="flex items-center justify-between gap-2">
               <DialogTitle className="text-lg">
                 크레딧 내역{titleSuffix ? ` · ${titleSuffix}` : ""}
               </DialogTitle>
-              {canCharge && (
+              {canCharge && !currentBalanceSnapshot && (
                 <Button
                   type="button"
                   size="sm"
-                  className="h-8"
+                  className="h-8 shrink-0 px-4 font-semibold"
                   onClick={() => {
                     onOpenChange(false);
                     navigate(chargeNavPath!);
                   }}
                   disabled={loading}
                 >
-                  충전하기
+                  충전
                 </Button>
               )}
             </div>
@@ -634,8 +635,8 @@ export const CreditLedgerModal = ({
 
           <div className="flex flex-col gap-3 min-h-0 flex-1">
             {currentBalanceSnapshot ? (
-              <div className="rounded-md border bg-muted/30 px-3 py-2">
-                <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
+                <div className="grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-4">
                   <div className="tabular-nums">
                     <span className="text-muted-foreground">현재 잔액</span>{" "}
                     <span className="font-semibold text-slate-900">
@@ -667,6 +668,20 @@ export const CreditLedgerModal = ({
                     </span>
                   </div>
                 </div>
+                {canCharge && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 shrink-0 px-4 font-semibold"
+                    onClick={() => {
+                      onOpenChange(false);
+                      navigate(chargeNavPath!);
+                    }}
+                    disabled={loading}
+                  >
+                    충전
+                  </Button>
+                )}
               </div>
             ) : null}
             <div className="flex flex-col gap-2">

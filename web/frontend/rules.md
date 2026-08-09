@@ -17,6 +17,7 @@
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
+- Requestor workspace header: 보유 크레딧·지난 의뢰는 `RequestorWorkspaceHeader` SSOT. 기간 필터는 대시보드만(`period` prop 제공 시). 크레딧 모달 충전은 `chargeNavPath=/dashboard/settings?tab=payment`.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절
@@ -64,6 +65,7 @@ Notes:
   - `src/pages/requestor/new_request/NewRequestPage.tsx`
   - `src/pages/requestor/new_request/components/NewRequestShippingSection.tsx`
   - `src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
+  - `src/shared/components/RequestorWorkspaceHeader.tsx` (보유 크레딧·지난 의뢰 공통; 기간 필터는 대시보드만)
   - `src/shared/shipping/shippingMode.ts`
   - `src/pages/requestor/practice/RequestorPracticePage.tsx`
   - 제조사 워크시트

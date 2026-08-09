@@ -37,15 +37,7 @@ import {
 import { RequestorBulkShippingBannerCard } from "./components/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "./components/RequestorRecentRequestsCard";
 import type { RequestorDashboardStat } from "./components/RequestorDashboardStatsCards";
-import { PeriodFilter } from "@/shared/ui/PeriodFilter";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { CreditLedgerModal } from "./components/CreditLedgerModal";
-import { PastRequestsModal } from "@/shared/components/PastRequestsModal";
+import { RequestorWorkspaceHeader } from "@/shared/components/RequestorWorkspaceHeader";
 import {
   Dialog,
   DialogContent,
@@ -83,6 +75,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
@@ -102,11 +95,9 @@ const dashDebug = (label: string, payload?: unknown) => {
 
 
 type DashboardOutletContext = {
-  creditBalance: number | null;
   paidCredit: number | null;
   freeRequestCredit: number | null;
   freeShippingCredit: number | null;
-  loadingCreditBalance: boolean;
 };
 
 export const RequestorDashboardPage = () => {
@@ -115,17 +106,14 @@ export const RequestorDashboardPage = () => {
   const location = useLocation();
   const { toast } = useToast();
   const {
-    creditBalance,
     paidCredit,
     freeRequestCredit,
     freeShippingCredit,
-    loadingCreditBalance,
   } = useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [creditLedgerOpen, setCreditLedgerOpen] = useState(false);
-  const [pastRequestsOpen, setPastRequestsOpen] = useState(false);
   const [editingRequest, setEditingRequest] =
     useState<EditingRequestState>(null);
   const [editingDescription, setEditingDescription] = useState("");
@@ -1930,8 +1918,6 @@ export const RequestorDashboardPage = () => {
     ];
   })();
 
-  const canOpenCreditLedger = user.role === "requestor";
-
   if (showSkeleton) {
     return <DashboardShellSkeleton />;
   }
@@ -1951,62 +1937,14 @@ export const RequestorDashboardPage = () => {
                 : "의뢰 현황을 확인하세요."
         }
         headerRight={
-          <div className="flex flex-wrap items-center gap-2 w-full">
-            <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
-            {canOpenCreditLedger && (
-              <TooltipProvider>
-                <Tooltip
-                  open={insufficientCredit || insufficientShippingCredit}
-                >
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant={
-                        insufficientCredit || insufficientShippingCredit
-                          ? "destructive"
-                          : "outline"
-                      }
-                      size="sm"
-                      className={`h-8 transition-all ${
-                        insufficientCredit || insufficientShippingCredit
-                          ? "ring-2 ring-destructive ring-offset-2 animate-pulse"
-                          : ""
-                      }`}
-                      onClick={() => setCreditLedgerOpen(true)}
-                    >
-                      {loadingCreditBalance
-                        ? "보유 크레딧: ..."
-                        : `보유 크레딧: ${Number(
-                            creditBalance || 0,
-                          ).toLocaleString()}원`}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    className="bg-destructive text-destructive-foreground"
-                  >
-                    <p>
-                      {insufficientCredit && insufficientShippingCredit
-                        ? "의뢰비와 배송비 크레딧이 모두 부족합니다"
-                        : insufficientCredit
-                          ? "의뢰비 크레딧이 부족합니다. 충전하시면 생산이 진행됩니다"
-                          : "배송비 크레딧이 부족합니다. 충전해주세요"}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={() => setPastRequestsOpen(true)}
-            >
-              지난 의뢰
-            </Button>
-
+          <RequestorWorkspaceHeader
+            period={period}
+            onPeriodChange={setPeriod}
+            insufficientCredit={insufficientCredit}
+            insufficientShippingCredit={insufficientShippingCredit}
+            onCreditLedgerOpenChange={setCreditLedgerOpen}
+            onSelectPastRequest={openEditDialogFromRequest}
+          >
             {unmachinableAlertCount > 0 && (
               <button
                 type="button"
@@ -2020,7 +1958,7 @@ export const RequestorDashboardPage = () => {
                 불완전가공 의뢰 {unmachinableAlertCount}건 발생
               </button>
             )}
-          </div>
+          </RequestorWorkspaceHeader>
         }
         stats={
           <RequestorDashboardStatsCards
@@ -2228,21 +2166,6 @@ export const RequestorDashboardPage = () => {
           } finally {
             setEditingRequest(null);
           }
-        }}
-      />
-
-      <CreditLedgerModal
-        open={creditLedgerOpen}
-        onOpenChange={setCreditLedgerOpen}
-      />
-
-      <PastRequestsModal
-        open={pastRequestsOpen}
-        onOpenChange={setPastRequestsOpen}
-        title="지난 의뢰"
-        onSelectRequest={(r) => {
-          setPastRequestsOpen(false);
-          openEditDialogFromRequest(r);
         }}
       />
 

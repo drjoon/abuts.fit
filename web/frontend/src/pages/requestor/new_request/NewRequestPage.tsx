@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-09: 상단 헤더(보유 크레딧/지난 의뢰)를 RequestorWorkspaceHeader로 공유. 기간 필터는 신규의뢰에서 미표시.
 // - 2026-08-04: 중복 의뢰 "취소 후 재의뢰" 선택 시 기존 의뢰/치과 즐겨찾기 정보로 누락 필드를 채우고 카드 검증을 자동 완료.
 // - 2026-08-03: 중복 의뢰 안내 모달의 상태 표시를 공정 라벨 정규화(의뢰 -> 준비)로 표시. (display-only)
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
@@ -32,6 +33,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
+import { RequestorWorkspaceHeader } from "@/shared/components/RequestorWorkspaceHeader";
+import {
+  RequestDetailDialog,
+  type RequestDetailDialogRequest,
+} from "@/features/requests/components/RequestDetailDialog";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
 import {
@@ -44,6 +50,7 @@ import {
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
+// - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/models/user.model.js
@@ -86,6 +93,9 @@ const NewRequestPageContent = () => {
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
     {},
   );
+  const [pastRequestDetail, setPastRequestDetail] =
+    useState<RequestDetailDialogRequest | null>(null);
+  const [pastRequestDetailOpen, setPastRequestDetailOpen] = useState(false);
 
   const normalizeKeyPart = useCallback((s: string) => {
     try {
@@ -1263,7 +1273,15 @@ const NewRequestPageContent = () => {
       activeClassName="ring-2 ring-primary/30"
       className="new-request-page bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
-      <div className="max-w-6xl mx-auto w-full space-y-4 flex flex-col flex-1 min-h-0 h-full">
+      <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
+        <div className="w-full shrink-0">
+          <RequestorWorkspaceHeader
+            onSelectPastRequest={(r) => {
+              setPastRequestDetail(r as RequestDetailDialogRequest);
+              setPastRequestDetailOpen(true);
+            }}
+          />
+        </div>
         <MultiActionDialog
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={false}
@@ -1660,6 +1678,15 @@ const NewRequestPageContent = () => {
           </div>
         </div>
       </div>
+
+      <RequestDetailDialog
+        open={pastRequestDetailOpen}
+        onOpenChange={(open) => {
+          setPastRequestDetailOpen(open);
+          if (!open) setPastRequestDetail(null);
+        }}
+        request={pastRequestDetail}
+      />
     </PageFileDropZone>
   );
 };
