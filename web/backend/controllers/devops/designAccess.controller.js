@@ -10,16 +10,43 @@ import {
 } from "../../utils/designAccess.js";
 import { invalidateMyBusinessCache } from "../businesses/business.controller.js";
 
+const PAGE_LIMIT_DEFAULT = 15;
+const PAGE_LIMIT_MAX = 50;
+
 const escapeRegex = (value) =>
   String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const formatAddress = (metadata) => {
+  const base = String(metadata?.address || "").trim();
+  const detail = String(metadata?.addressDetail || "").trim();
+  return [base, detail].filter(Boolean).join(" ");
+};
+
+const toListRow = (row) => ({
+  _id: row._id,
+  name: row.name || row?.metadata?.companyName || "",
+  businessNumberNormalized: row.businessNumberNormalized || "",
+  status: row.status || "",
+  representativeName: String(row?.metadata?.representativeName || "").trim(),
+  address: formatAddress(row?.metadata),
+  designAccessEnabled: isDesignAccessEnabled(row),
+});
+
 /**
- * GET /api/devops/design-access?q=
- * 의뢰자 사업자 목록 + designAccessEnabled
+ * GET /api/devops/design-access?q=&page=1&limit=15
+ * 의뢰자 사업자 목록 + designAccessEnabled (페이지네이션)
  */
 export async function listDesignAccess(req, res) {
   try {
     const q = String(req.query?.q || "").trim();
+    const page = Math.max(1, Number.parseInt(String(req.query?.page || "1"), 10) || 1);
+    const rawLimit = Number.parseInt(String(req.query?.limit || PAGE_LIMIT_DEFAULT), 10);
+    const limit = Math.min(
+      PAGE_LIMIT_MAX,
+      Math.max(1, Number.isFinite(rawLimit) ? rawLimit : PAGE_LIMIT_DEFAULT),
+    );
+    const skip = (page - 1) * limit;
+
     const filter = {
       businessType: "requestor",
       status: { $ne: "merged" },
@@ -31,30 +58,41 @@ export async function listDesignAccess(req, res) {
         { name: re },
         { businessNumberNormalized: re },
         { "metadata.companyName": re },
+        { "metadata.representativeName": re },
+        { "metadata.address": re },
       ];
     }
 
-    const rows = await BusinessAnchor.find(filter)
-      .select({
-        name: 1,
-        businessNumberNormalized: 1,
-        status: 1,
-        designAccessEnabled: 1,
-        "metadata.companyName": 1,
-      })
-      .sort({ designAccessEnabled: -1, name: 1 })
-      .limit(100)
-      .lean();
+    const [total, enabledCount, rows] = await Promise.all([
+      BusinessAnchor.countDocuments(filter),
+      BusinessAnchor.countDocuments({ ...filter, designAccessEnabled: true }),
+      BusinessAnchor.find(filter)
+        .select({
+          name: 1,
+          businessNumberNormalized: 1,
+          status: 1,
+          designAccessEnabled: 1,
+          "metadata.companyName": 1,
+          "metadata.representativeName": 1,
+          "metadata.address": 1,
+          "metadata.addressDetail": 1,
+        })
+        .sort({ designAccessEnabled: -1, name: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
 
     return res.json({
       success: true,
-      data: rows.map((row) => ({
-        _id: row._id,
-        name: row.name || row?.metadata?.companyName || "",
-        businessNumberNormalized: row.businessNumberNormalized || "",
-        status: row.status || "",
-        designAccessEnabled: isDesignAccessEnabled(row),
-      })),
+      data: rows.map(toListRow),
+      pagination: {
+        page,
+        limit,
+        total,
+        hasMore: skip + rows.length < total,
+      },
+      enabledCount,
     });
   } catch (error) {
     console.error("[designAccess] list failed", error);
@@ -91,7 +129,19 @@ export async function patchDesignAccess(req, res) {
     const updated = await BusinessAnchor.findOneAndUpdate(
       { _id: anchorId, businessType: "requestor" },
       { $set: { designAccessEnabled: enabled } },
-      { new: true, projection: { name: 1, businessNumberNormalized: 1, status: 1, designAccessEnabled: 1, "metadata.companyName": 1 } },
+      {
+        new: true,
+        projection: {
+          name: 1,
+          businessNumberNormalized: 1,
+          status: 1,
+          designAccessEnabled: 1,
+          "metadata.companyName": 1,
+          "metadata.representativeName": 1,
+          "metadata.address": 1,
+          "metadata.addressDetail": 1,
+        },
+      },
     ).lean();
 
     if (!updated) {
@@ -106,13 +156,7 @@ export async function patchDesignAccess(req, res) {
 
     return res.json({
       success: true,
-      data: {
-        _id: updated._id,
-        name: updated.name || updated?.metadata?.companyName || "",
-        businessNumberNormalized: updated.businessNumberNormalized || "",
-        status: updated.status || "",
-        designAccessEnabled: isDesignAccessEnabled(updated),
-      },
+      data: toListRow(updated),
     });
   } catch (error) {
     console.error("[designAccess] patch failed", error);

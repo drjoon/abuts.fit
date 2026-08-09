@@ -2,7 +2,7 @@
 // - web/backend/modules/devops/designAccess.routes.js
 // - web/frontend/src/pages/devops/DevopsPartnerPage.tsx
 // - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -19,21 +19,17 @@ import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 
+const PAGE_LIMIT = 15;
+
 type DesignAccessRow = {
   _id: string;
   name: string;
   businessNumberNormalized: string;
   status: string;
+  representativeName: string;
+  address: string;
   designAccessEnabled: boolean;
 };
-
-function statusLabel(status: string) {
-  const s = String(status || "").toLowerCase();
-  if (s === "verified" || s === "approved") return "인증";
-  if (s === "pending") return "대기";
-  if (s === "rejected") return "거절";
-  return status || "";
-}
 
 export const DesignerAssignmentTab = () => {
   const { token } = useAuthStore();
@@ -41,59 +37,142 @@ export const DesignerAssignmentTab = () => {
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [rows, setRows] = useState<DesignAccessRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [enabledCount, setEnabledCount] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQ(q.trim()), 250);
     return () => window.clearTimeout(t);
   }, [q]);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    try {
-      const qs = debouncedQ ? `?q=${encodeURIComponent(debouncedQ)}` : "";
-      const res = await request<{
-        success?: boolean;
-        data?: DesignAccessRow[];
-      }>({
-        path: `/api/devops/design-access${qs}`,
-        method: "GET",
-        token,
-      });
-      if (!res.ok) {
-        throw new Error("목록 조회 실패");
+  const loadPage = useCallback(
+    async (targetPage: number, append: boolean) => {
+      if (!token) return;
+      if (append) {
+        if (loadingMoreRef.current) return;
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
       }
-      const body: any = res.data || {};
-      const list = Array.isArray(body.data) ? body.data : [];
-      setRows(list);
-    } catch (error) {
-      console.error("[DesignerAssignmentTab] load failed", error);
-      toast({
-        title: "목록 불러오기 실패",
-        description: "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [debouncedQ, toast, token]);
+      try {
+        const qs = new URLSearchParams({
+          page: String(targetPage),
+          limit: String(PAGE_LIMIT),
+        });
+        if (debouncedQ) qs.set("q", debouncedQ);
+
+        const res = await request<{
+          success?: boolean;
+          data?: DesignAccessRow[];
+          pagination?: {
+            page?: number;
+            limit?: number;
+            total?: number;
+            hasMore?: boolean;
+          };
+          enabledCount?: number;
+        }>({
+          path: `/api/devops/design-access?${qs.toString()}`,
+          method: "GET",
+          token,
+        });
+        if (!res.ok) {
+          throw new Error("목록 조회 실패");
+        }
+        const body: any = res.data || {};
+        const list: DesignAccessRow[] = Array.isArray(body.data)
+          ? body.data.map((row: any) => ({
+              _id: String(row?._id || ""),
+              name: String(row?.name || ""),
+              businessNumberNormalized: String(
+                row?.businessNumberNormalized || "",
+              ),
+              status: String(row?.status || ""),
+              representativeName: String(row?.representativeName || "").trim(),
+              address: String(row?.address || "").trim(),
+              designAccessEnabled: Boolean(row?.designAccessEnabled),
+            }))
+          : [];
+
+        setRows((prev) => (append ? [...prev, ...list] : list));
+        setPage(Number(body?.pagination?.page || targetPage));
+        setHasMore(Boolean(body?.pagination?.hasMore));
+        setTotalCount(Number(body?.pagination?.total || 0));
+        setEnabledCount(Number(body?.enabledCount || 0));
+      } catch (error) {
+        console.error("[DesignerAssignmentTab] load failed", error);
+        toast({
+          title: "목록 불러오기 실패",
+          description: "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        if (!append) {
+          setRows([]);
+          setHasMore(false);
+          setTotalCount(0);
+          setEnabledCount(0);
+        }
+      } finally {
+        if (append) {
+          loadingMoreRef.current = false;
+          setLoadingMore(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [debouncedQ, toast, token],
+  );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    setRows([]);
+    setPage(1);
+    setHasMore(false);
+    void loadPage(1, false);
+  }, [loadPage]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const root = scrollRef.current;
+    if (!sentinel || !root || !hasMore || loading || loadingMore) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries.some((e) => e.isIntersecting) &&
+          hasMore &&
+          !loading &&
+          !loadingMoreRef.current
+        ) {
+          void loadPage(page + 1, true);
+        }
+      },
+      { root, rootMargin: "160px", threshold: 0 },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [hasMore, loading, loadingMore, page, loadPage]);
 
   const onToggle = async (row: DesignAccessRow, enabled: boolean) => {
     if (!token || savingId) return;
     setSavingId(row._id);
     const prev = rows;
+    const prevEnabled = enabledCount;
     setRows((cur) =>
       cur.map((r) =>
         r._id === row._id ? { ...r, designAccessEnabled: enabled } : r,
       ),
     );
+    setEnabledCount((c) => Math.max(0, c + (enabled ? 1 : -1)));
     try {
       const res = await request<{
         success?: boolean;
@@ -110,12 +189,24 @@ export const DesignerAssignmentTab = () => {
       const body: any = res.data || {};
       if (body?.data?._id) {
         setRows((cur) =>
-          cur.map((r) => (r._id === body.data._id ? { ...r, ...body.data } : r)),
+          cur.map((r) =>
+            r._id === body.data._id
+              ? {
+                  ...r,
+                  ...body.data,
+                  representativeName: String(
+                    body.data.representativeName || r.representativeName || "",
+                  ).trim(),
+                  address: String(body.data.address || r.address || "").trim(),
+                }
+              : r,
+          ),
         );
       }
     } catch (error) {
       console.error("[DesignerAssignmentTab] patch failed", error);
       setRows(prev);
+      setEnabledCount(prevEnabled);
       toast({
         title: "저장 실패",
         description: "디자인 접근 설정을 저장하지 못했습니다.",
@@ -125,8 +216,6 @@ export const DesignerAssignmentTab = () => {
       setSavingId(null);
     }
   };
-
-  const enabledCount = rows.filter((r) => r.designAccessEnabled).length;
 
   return (
     <Card className="app-glass-card app-glass-card--lg">
@@ -141,9 +230,9 @@ export const DesignerAssignmentTab = () => {
               지정된 의뢰자만 디자인 메뉴·큐에 접근할 수 있습니다.
             </CardDescription>
           </div>
-          {!loading && rows.length > 0 ? (
+          {!loading && totalCount > 0 ? (
             <Badge variant="secondary" className="tabular-nums">
-              지정 {enabledCount} / {rows.length}
+              지정 {enabledCount} / {totalCount}
             </Badge>
           ) : null}
         </div>
@@ -160,57 +249,66 @@ export const DesignerAssignmentTab = () => {
           />
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-border/80 bg-background/60">
+        <div
+          ref={scrollRef}
+          className="max-h-[min(60vh,560px)] overflow-y-auto overflow-x-hidden rounded-xl border border-border/80 bg-background/60 p-3"
+        >
           {loading ? (
-            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            <div className="px-1 py-10 text-center text-sm text-muted-foreground">
               불러오는 중…
             </div>
           ) : rows.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            <div className="px-1 py-10 text-center text-sm text-muted-foreground">
               해당하는 의뢰자 사업자가 없습니다.
             </div>
           ) : (
-            <ul className="divide-y divide-border/70">
-              {rows.map((row) => {
-                const label = statusLabel(row.status);
-                return (
-                  <li
-                    key={row._id}
-                    className={cn(
-                      "flex items-center gap-4 px-4 py-3 transition-colors",
-                      "hover:bg-muted/40",
-                      row.designAccessEnabled && "bg-primary/[0.03]",
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">
-                        {row.name || "이름 없음"}
+            <>
+              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {rows.map((row) => {
+                  const metaParts = [
+                    row.representativeName || null,
+                    row.address || null,
+                  ].filter(Boolean);
+                  return (
+                    <li
+                      key={row._id}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 transition-colors",
+                        "hover:bg-muted/40",
+                        row.designAccessEnabled &&
+                          "border-primary/20 bg-primary/[0.03]",
+                      )}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">
+                          {row.name || "이름 없음"}
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {metaParts.length > 0
+                            ? metaParts.join(" · ")
+                            : "대표자·주소 없음"}
+                        </div>
                       </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                        <span className="tabular-nums">
-                          {row.businessNumberNormalized || "사업자번호 없음"}
-                        </span>
-                        {label ? (
-                          <Badge
-                            variant="outline"
-                            className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground"
-                          >
-                            {label}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </div>
-                    <Switch
-                      checked={Boolean(row.designAccessEnabled)}
-                      disabled={savingId === row._id}
-                      onCheckedChange={(checked) => void onToggle(row, checked)}
-                      aria-label={`${row.name} 디자인 접근`}
-                      className="shrink-0"
-                    />
-                  </li>
-                );
-              })}
-            </ul>
+                      <Switch
+                        checked={Boolean(row.designAccessEnabled)}
+                        disabled={savingId === row._id}
+                        onCheckedChange={(checked) =>
+                          void onToggle(row, checked)
+                        }
+                        aria-label={`${row.name} 디자인 접근`}
+                        className="shrink-0"
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+              <div ref={sentinelRef} className="h-4 w-full" aria-hidden />
+              {loadingMore ? (
+                <div className="py-3 text-center text-xs text-muted-foreground">
+                  더 불러오는 중…
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       </CardContent>
