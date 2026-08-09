@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-09: 디자인+생산 — 커스텀어벗 치아만 표시·과금 수량. 신속비=단가×어벗수.
 // - 2026-08-09: 디자인+생산(우열)에서 STL 다어벗 공통이 아닌 스펙(임플란트/SW/직경/유지홈) 숨김.
 // - 2026-08-09: 의뢰 상세 2열 레이아웃(좌: 비용, 우: 케이스 정보).
 // - 2026-08-09: 비용 세부 내역(가공/디자인/배송·신속) 표시.
@@ -11,6 +12,7 @@ import { type ReactNode } from "react";
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
+// - web/backend/controllers/requests/designPrice.utils.js
 // - .cursor/rules/design-fee.mdc
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,6 +31,16 @@ import {
   CREDIT_SETTINGS_DEFAULTS,
 } from "@/hooks/useSystemSettings";
 
+export type RequestDetailDialogToothWork = {
+  toothNumber?: string | null;
+  prosthesisType?: string | null;
+  customAbutment?: boolean | null;
+  implantManufacturer?: string | null;
+  implantBrand?: string | null;
+  implantFamily?: string | null;
+  implantType?: string | null;
+};
+
 export type RequestDetailDialogCaseInfos = {
   clinicName?: string;
   patientName?: string;
@@ -44,6 +56,7 @@ export type RequestDetailDialogCaseInfos = {
   requestorHexRotation?: "STL모델대로" | "헥스30도회전";
   finalHexRotation?: "STL모델대로" | "헥스30도회전";
   productMode?: string | null;
+  toothWorks?: RequestDetailDialogToothWork[] | null;
 };
 
 export type RequestDetailDialogRequest = {
@@ -123,6 +136,42 @@ const formatUnitTimesQty = (unit: number, qty: number, total: number) => {
   const safeUnit = Math.max(0, Number(unit) || 0);
   const safeTotal = Math.max(0, Number(total) || 0);
   return `${safeUnit.toLocaleString()}원 × ${safeQty} = ${safeTotal.toLocaleString()}원`;
+};
+
+const isPonticProsthesisType = (prosthesisType: unknown) =>
+  /^pontic$/i.test(String(prosthesisType || "").trim());
+
+const isBillableDesignAbutmentRow = (row: RequestDetailDialogToothWork | null | undefined) => {
+  const toothNumber = String(row?.toothNumber || "").trim();
+  const prosthesisType = String(row?.prosthesisType || "").trim();
+  if (!/^[1-4][1-8]$/.test(toothNumber) || !prosthesisType) return false;
+  if (isPonticProsthesisType(prosthesisType)) return false;
+  if (row?.customAbutment === true) return true;
+  return Boolean(
+    String(row?.implantManufacturer || "").trim() ||
+      String(row?.implantBrand || "").trim() ||
+      String(row?.implantFamily || "").trim() ||
+      String(row?.implantType || "").trim(),
+  );
+};
+
+const resolveDesignAbutmentToothLabel = (
+  caseInfos: RequestDetailDialogCaseInfos,
+) => {
+  const direct = String(caseInfos.tooth || "").trim();
+  const works = Array.isArray(caseInfos.toothWorks) ? caseInfos.toothWorks : [];
+  const fromWorks = works
+    .filter((row) => isBillableDesignAbutmentRow(row))
+    .map((row) => String(row?.toothNumber || "").trim())
+    .filter(Boolean);
+  const unique = Array.from(new Set(fromWorks)).sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+    return String(a).localeCompare(String(b), "ko");
+  });
+  if (unique.length > 0) return unique.join(", ");
+  return direct || "-";
 };
 
 
@@ -210,25 +259,38 @@ export const RequestDetailDialog = ({
 
   const designFeeTotal = Math.max(0, Number(request?.price?.designFee) || 0);
   const expressFeeStatus = String(request?.price?.expressFeeStatus || "").trim();
+  const isDesignMode =
+    String(caseInfos.productMode || "").trim() === "design_custom_abutment" ||
+    designFeeTotal > 0;
+  const abutmentQty = Math.max(
+    0,
+    Math.floor(Number(request?.price?.abutmentQty) || 0),
+  );
+  const feeQty = isDesignMode
+    ? abutmentQty > 0
+      ? abutmentQty
+      : 1
+    : 1;
+  const expressQty = isDesignMode
+    ? Math.max(1, abutmentQty > 0 ? abutmentQty : feeQty)
+    : 1;
   const expressFeeTotal =
     shippingMode === "express" && expressFeeStatus !== "cancelled"
       ? Math.max(
           0,
-          Number(request?.price?.expressFee) || Number(expressFeeSetting) || 0,
+          Number(request?.price?.expressFee) ||
+            Number(expressFeeSetting) * expressQty ||
+            0,
         )
       : 0;
+  const expressUnit =
+    expressQty > 0 && expressFeeTotal > 0
+      ? Math.round(expressFeeTotal / expressQty)
+      : Math.max(0, Number(expressFeeSetting) || 0);
   const machiningFeeTotal =
     priceAmount != null
       ? Math.max(0, Number(priceAmount) - designFeeTotal - expressFeeTotal)
       : null;
-  const abutmentQty = Math.max(
-    1,
-    Math.floor(Number(request?.price?.abutmentQty) || 0) || 1,
-  );
-  const isDesignMode =
-    String(caseInfos.productMode || "").trim() === "design_custom_abutment" ||
-    designFeeTotal > 0;
-  const feeQty = isDesignMode ? abutmentQty : 1;
   const machiningUnit =
     machiningFeeTotal != null && feeQty > 0
       ? Math.round(machiningFeeTotal / feeQty)
@@ -238,7 +300,9 @@ export const RequestDetailDialog = ({
       ? Math.round(designFeeTotal / feeQty)
       : 0;
   const shippingQty = 1;
-  const expressQty = 1;
+  const toothDisplay = isDesignMode
+    ? resolveDesignAbutmentToothLabel(caseInfos)
+    : String(caseInfos.tooth || "").trim() || "-";
 
   const isUnmachinable = Boolean(request?.rnd?.unmachinableAt);
   const unmachinableReason = String(request?.rnd?.unmachinableReason || "").trim();
@@ -407,7 +471,7 @@ export const RequestDetailDialog = ({
                           <span className="text-slate-600 shrink-0">신속출고</span>
                           <span className="font-medium tabular-nums text-right text-amber-700">
                             {formatUnitTimesQty(
-                              expressFeeTotal,
+                              expressUnit,
                               expressQty,
                               expressFeeTotal,
                             )}
@@ -473,7 +537,7 @@ export const RequestDetailDialog = ({
                   </span>
                   <span className="text-slate-600">치아번호</span>
                   <span className="font-medium text-right">
-                    {caseInfos.tooth || "-"}
+                    {toothDisplay}
                   </span>
                   {/* 디자인+생산: 한 STL에 다어벗 → 단건 스펙 행은 표시하지 않음 */}
                   {!isDesignMode && (

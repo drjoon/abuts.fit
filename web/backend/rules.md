@@ -87,11 +87,11 @@
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
     - 디자인비: `creditSettings.designFee`(기본 15000, **1어벗당**)
-    - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` → `tooth` → 1)
+    - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
       - `price.amount` = `(생산단가 + designFee) × qty`
       - `price.designFee` = 디자인 총액, `price.abutmentQty` = qty (재견적 단가 복원)
-      - 적용 순서: 디자인+생산 배수 → 신속비(건당). 무상/0원 견적에는 미적용
+      - 적용 순서: 디자인+생산 배수 → 신속비(생산=건당, 디자인+생산=어벗 수). 무상/0원 견적에는 미적용
       - 생성·CAM 차감·응답 정규화 경로에서 재적용
     - 차감: CAM `machining_spend` = `(생산단가 + 디자인비) × qty` (신속 `express_surcharge`와 분리)
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`)

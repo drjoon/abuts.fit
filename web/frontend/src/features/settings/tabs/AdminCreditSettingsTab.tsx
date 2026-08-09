@@ -244,7 +244,8 @@ export const AdminCreditSettingsTab = () => {
                   disabled={loading}
                 />
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  신속배송 건당 생산비에 더해지는 추가 의뢰크레딧입니다. 기본값{" "}
+                  신속배송 추가 의뢰크레딧입니다. 생산 의뢰는 건당, 디자인+생산은
+                  커스텀어벗 수만큼 곱합니다. 기본값{" "}
                   {CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}
                   원.
                 </p>

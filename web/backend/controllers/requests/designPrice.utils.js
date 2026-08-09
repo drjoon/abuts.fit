@@ -1,3 +1,7 @@
+// change-log:
+// - 2026-08-09: 디자인+생산 신속비도 커스텀어벗 수만큼 배수.
+// - 2026-08-09: 과금 어벗= customAbutment(임플란트) 치아만. Pontic 등 제외.
+// - 2026-08-09: Pontic은 커스텀어벗 디자인·생산 대상이 아니므로 과금 어벗 수에서 제외.
 // related files:
 // - web/backend/controllers/requests/expressPrice.utils.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
@@ -10,10 +14,55 @@ import {
   toPlainRequestPrice,
 } from "./expressPrice.utils.js";
 
+/** Pontic: 커스텀어벗 디자인·생산 없음 → 과금 제외 */
+export function isPonticProsthesisType(prosthesisType) {
+  return /^pontic$/i.test(String(prosthesisType || "").trim());
+}
+
+function hasImplantSpec(row) {
+  return Boolean(
+    String(row?.implantManufacturer || "").trim() ||
+      String(row?.implantBrand || "").trim() ||
+      String(row?.implantFamily || "").trim() ||
+      String(row?.implantType || "").trim(),
+  );
+}
+
+/**
+ * 디자인+생산에서 실제로 디자인·생산하는 커스텀어벗 치아.
+ * - customAbutment === true, 또는 임플란트 스펙이 채워진 행
+ * - Pontic 제외
+ */
+export function isBillableDesignAbutmentRow(row) {
+  const toothNumber = String(row?.toothNumber || "").trim();
+  const prosthesisType = String(row?.prosthesisType || "").trim();
+  if (!/^[1-4][1-8]$/.test(toothNumber) || !prosthesisType) return false;
+  if (isPonticProsthesisType(prosthesisType)) return false;
+  if (row?.customAbutment === true) return true;
+  return hasImplantSpec(row);
+}
+
+/** 과금 대상 커스텀어벗 치아번호 (정렬) */
+export function listDesignAbutmentToothNumbers(caseInfos) {
+  const works = Array.isArray(caseInfos?.toothWorks) ? caseInfos.toothWorks : [];
+  const nums = works
+    .filter((row) => isBillableDesignAbutmentRow(row))
+    .map((row) => String(row?.toothNumber || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(nums)).sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+    return String(a).localeCompare(String(b), "ko");
+  });
+}
+
 /**
  * 디자인+생산 어벗 수 SSOT.
  * - productMode !== design_custom_abutment → 0
- * - toothWorks 유효 행 우선, 없으면 tooth 문자열 파싱, 최소 1
+ * - toothWorks 중 커스텀어벗(임플란트) 치아만. Pontic·단순 보철 제외
+ * - 유효 toothWorks가 있는데 과금 행이 없으면 0
+ * - toothWorks 유효 행이 없으면 tooth 문자열 파싱, 최소 1
  */
 export function countDesignAbutmentQty(caseInfos) {
   if (!caseInfos || typeof caseInfos !== "object") return 0;
@@ -22,12 +71,14 @@ export function countDesignAbutmentQty(caseInfos) {
   }
 
   const works = Array.isArray(caseInfos.toothWorks) ? caseInfos.toothWorks : [];
-  const fromWorks = works.filter((row) => {
+  const validWorks = works.filter((row) => {
     const toothNumber = String(row?.toothNumber || "").trim();
     const prosthesisType = String(row?.prosthesisType || "").trim();
     return /^[1-4][1-8]$/.test(toothNumber) && Boolean(prosthesisType);
-  }).length;
-  if (fromWorks > 0) return fromWorks;
+  });
+  if (validWorks.length > 0) {
+    return validWorks.filter((row) => isBillableDesignAbutmentRow(row)).length;
+  }
 
   const tooth = String(caseInfos.tooth || "").trim();
   if (tooth) {
@@ -88,9 +139,16 @@ export function resolveQuotedPriceWithDesignFee({
     return next;
   }
 
-  const shouldApply = mode === "design_custom_abutment" && qty > 0;
-
-  if (shouldApply) {
+  if (mode === "design_custom_abutment") {
+    // 과금 어벗 0(Pontic-only 등): 생산·디자인 미부과 (신속비만 다음 단계에서 처리)
+    if (!(qty > 0)) {
+      return {
+        ...src,
+        amount: recordedExpressFee,
+        designFee: null,
+        abutmentQty: 0,
+      };
+    }
     const designTotal = feePerUnit * qty;
     const fabTotal = unitFab * qty;
     return {
@@ -112,7 +170,7 @@ export function resolveQuotedPriceWithDesignFee({
   return next;
 }
 
-/** 디자인+생산 배수 → 신속비 순으로 견적 합산 */
+/** 디자인+생산 배수 → 신속비(디자인+생산은 어벗 수 배수) 순으로 견적 합산 */
 export function resolveQuotedPriceWithExtras({
   price,
   caseInfos,
@@ -120,16 +178,21 @@ export function resolveQuotedPriceWithExtras({
   expressFee = 1000,
   designFeePerTooth = 15000,
 }) {
+  const mode = String(caseInfos?.productMode || "").trim();
+  const qty = countDesignAbutmentQty(caseInfos);
   const withDesign = resolveQuotedPriceWithDesignFee({
     price,
-    productMode: caseInfos?.productMode,
-    toothCount: countDesignAbutmentQty(caseInfos),
+    productMode: mode,
+    toothCount: qty,
     designFeePerTooth,
   });
+  const expressQty =
+    mode === "design_custom_abutment" ? Math.max(0, qty) : 1;
   return resolveQuotedPriceWithExpressFee({
     price: withDesign,
     shippingMode,
     expressFee,
+    expressQty,
   });
 }
 

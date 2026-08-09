@@ -32,6 +32,7 @@ import {
 } from "./utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import {
+  countDesignAbutmentQty,
   resolveMachiningSpendAmount,
   resolveQuotedPriceWithExtras,
 } from "./designPrice.utils.js";
@@ -1040,7 +1041,7 @@ export async function createRequestsFromDraft(req, res) {
       }),
     );
 
-    // 가공+디자인(어벗 배수) 합계. 신속비는 건당 별도.
+    // 가공+디자인(어벗 배수) 합계. 신속비: 생산=건당, 디자인+생산=어벗 수.
     const totalSpendSupply = isPracticeRoutingSubmission
       ? 0
       : preparedCasesForCreate.reduce((acc, item) => {
@@ -1051,12 +1052,21 @@ export async function createRequestsFromDraft(req, res) {
           });
           return acc + (Number.isFinite(n) ? n : 0);
         }, 0);
+    const totalExpressFee = isPracticeRoutingSubmission
+      ? 0
+      : preparedCasesForCreate.reduce((acc, item) => {
+          if ((item.shippingMode || "normal") !== "express") return acc;
+          const ci = item?.caseInfosWithFile || item?.caseInfos || {};
+          const mode = String(ci?.productMode || "").trim();
+          const qty =
+            mode === "design_custom_abutment"
+              ? Math.max(0, countDesignAbutmentQty(ci))
+              : 1;
+          return acc + qty * expressFeePerRequest;
+        }, 0);
     const expressCount = preparedCasesForCreate.filter(
       (item) => (item.shippingMode || "normal") === "express",
     ).length;
-    const totalExpressFee = isPracticeRoutingSubmission
-      ? 0
-      : expressCount * expressFeePerRequest;
     const requiredMachiningFee = totalSpendSupply + totalExpressFee;
     const requestorAnodizingEnabled =
       typeof shippingOrg?.requestSettings?.anodizingEnabled === "boolean"

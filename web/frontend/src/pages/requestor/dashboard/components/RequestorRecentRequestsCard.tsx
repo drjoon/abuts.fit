@@ -37,16 +37,26 @@ import {
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { resolveQuotedPriceAmount } from "@/shared/shipping/shippingMode";
 import { useSystemSettings, CREDIT_SETTINGS_DEFAULTS } from "@/hooks/useSystemSettings";
+import {
+  PRODUCT_MODE,
+  resolveProductMode,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
+// change-log:
+// - 2026-08-09: 최근 의뢰 커스텀어벗 수= customAbutment·임플란트 치아만(Pontic 제외).
+// - 2026-08-09: 최근 의뢰에 생산/디자인+생산 뱃지. 디자인+생산은 임플란트 대신 치과·환자·어벗 수.
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/designPrice.utils.js
 // - web/frontend/rules.md
 // - web/backend/controllers/requests/expressPrice.utils.js
+// - .cursor/rules/design-fee.mdc
 
 const EDITABLE_STATUSES = new Set(["준비", "CAM", "가공"]); // CAM 호환 포함, UI 정책상 준비/가공 단계에서 수정 허용
 
@@ -56,6 +66,20 @@ const RECENT_REQUESTS_LIST_GAP_PX = 12; // space-y-3
 
 const STAGE_BADGE_BASE =
   "text-[10px] h-5 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
+
+const PRODUCT_MODE_BADGE_STYLES: Record<
+  string,
+  { label: string; className: string }
+> = {
+  [PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT]: {
+    label: "디자인+생산",
+    className: "bg-violet-50 text-violet-700 border border-violet-200",
+  },
+  [PRODUCT_MODE.CUSTOM_ABUTMENT]: {
+    label: "생산",
+    className: "bg-sky-50 text-sky-700 border border-sky-200",
+  },
+};
 
 
 
@@ -93,6 +117,16 @@ type EditableCaseInfos = {
   retentionGroove?: "none" | "shallow" | "deep";
   maxDiameter?: number | null;
   connectionDiameter?: number | null;
+  productMode?: string | null;
+  toothWorks?: Array<{
+    toothNumber?: string | null;
+    prosthesisType?: string | null;
+    customAbutment?: boolean | null;
+    implantManufacturer?: string | null;
+    implantBrand?: string | null;
+    implantFamily?: string | null;
+    implantType?: string | null;
+  }> | null;
   [key: string]: unknown;
 };
 
@@ -180,6 +214,85 @@ const isManufacturerSampleRequest = (item: RecentRequestCardItem | null) => {
   return source === "manufacturer_sample" || priceRule === "manufacturer_sample";
 };
 
+const isDesignCustomAbutmentItem = (item: RecentRequestCardItem | null) => {
+  if (!item) return false;
+  if (resolveProductMode(item) === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT) {
+    return true;
+  }
+  return Math.max(0, Number(item?.price?.designFee) || 0) > 0;
+};
+
+const isPonticProsthesisType = (prosthesisType: unknown) =>
+  /^pontic$/i.test(String(prosthesisType || "").trim());
+
+const isBillableDesignAbutmentRow = (row: {
+  toothNumber?: string | null;
+  prosthesisType?: string | null;
+  customAbutment?: boolean | null;
+  implantManufacturer?: string | null;
+  implantBrand?: string | null;
+  implantFamily?: string | null;
+  implantType?: string | null;
+} | null | undefined) => {
+  const toothNumber = String(row?.toothNumber || "").trim();
+  const prosthesisType = String(row?.prosthesisType || "").trim();
+  if (!/^[1-4][1-8]$/.test(toothNumber) || !prosthesisType) return false;
+  if (isPonticProsthesisType(prosthesisType)) return false;
+  if (row?.customAbutment === true) return true;
+  return Boolean(
+    String(row?.implantManufacturer || "").trim() ||
+      String(row?.implantBrand || "").trim() ||
+      String(row?.implantFamily || "").trim() ||
+      String(row?.implantType || "").trim(),
+  );
+};
+
+/** 디자인+생산 커스텀어벗 수: price.abutmentQty → toothWorks(커스텀어벗) → tooth 파싱 → 1 */
+const resolveCustomAbutmentQty = (item: RecentRequestCardItem | null) => {
+  const fromPrice = Math.floor(Number(item?.price?.abutmentQty) || 0);
+  if (fromPrice > 0) return fromPrice;
+
+  const works = Array.isArray(item?.caseInfos?.toothWorks)
+    ? item.caseInfos.toothWorks
+    : [];
+  const validWorks = works.filter((row) => {
+    const toothNumber = String(row?.toothNumber || "").trim();
+    const prosthesisType = String(row?.prosthesisType || "").trim();
+    return /^[1-4][1-8]$/.test(toothNumber) && Boolean(prosthesisType);
+  });
+  if (validWorks.length > 0) {
+    return validWorks.filter((row) => isBillableDesignAbutmentRow(row)).length;
+  }
+
+  const tooth = String(item?.caseInfos?.tooth || "").trim();
+  if (tooth) {
+    const parts = tooth
+      .split(/[,/·\s]+/)
+      .map((p) => p.trim())
+      .filter((p) => /^[1-4][1-8]$/.test(p) || /^\d{1,2}$/.test(p));
+    if (parts.length > 0) return parts.length;
+  }
+
+  return 1;
+};
+
+const renderProductModeBadge = (item: RecentRequestCardItem | null) => {
+  if (!item) return null;
+  const mode = isDesignCustomAbutmentItem(item)
+    ? PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT
+    : PRODUCT_MODE.CUSTOM_ABUTMENT;
+  const style = PRODUCT_MODE_BADGE_STYLES[mode];
+  if (!style) return null;
+  return (
+    <Badge
+      variant="outline"
+      className={`${STAGE_BADGE_BASE} ${style.className}`.trim()}
+    >
+      {style.label}
+    </Badge>
+  );
+};
+
 const renderStageBadge = (item: RecentRequestCardItem | null) => {
   const label = resolveStageLabel(item);
   if (!label) return null;
@@ -191,6 +304,45 @@ const renderStageBadge = (item: RecentRequestCardItem | null) => {
     >
       {label}
     </Badge>
+  );
+};
+
+const renderRecentRequestSummaryLine = (
+  item: RecentRequestCardItem | null,
+) => {
+  if (!item) return null;
+  const clinicName = String(item.caseInfos?.clinicName || "").trim();
+  const patientName = String(item.caseInfos?.patientName || "").trim();
+
+  if (isDesignCustomAbutmentItem(item)) {
+    const qty = resolveCustomAbutmentQty(item);
+    return (
+      <>
+        {clinicName ? <span>{clinicName}</span> : null}
+        {patientName ? (
+          <span className={clinicName ? "ml-1" : undefined}>{patientName}</span>
+        ) : null}
+        <span className={clinicName || patientName ? "ml-1" : undefined}>
+          커스텀어벗 {qty}개
+        </span>
+      </>
+    );
+  }
+
+  const retentionGrooveLabel =
+    item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
+  return (
+    <>
+      {clinicName ? <span>{clinicName}</span> : null}
+      {patientName ? (
+        <span className={clinicName ? "ml-1" : undefined}>{patientName}</span>
+      ) : null}
+      {item.caseInfos?.tooth ? (
+        <span className="ml-1">#{item.caseInfos.tooth}</span>
+      ) : null}
+      <span className="ml-1">{formatImplantDisplay(item.caseInfos)}</span>
+      <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
+    </>
   );
 };
 
@@ -662,8 +814,6 @@ export const RequestorRecentRequestsCard = ({
             const isRemakeFixed = item.price?.rule === "remake_fixed_10000";
             const isRemakeMonthlyFree =
               item.price?.rule === "remake_monthly_free_3";
-            const retentionGrooveLabel =
-              item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
 
             const isUnmachinable = isUnmachinableRequest(item);
             const isUnmachinableConfirmed = Boolean(
@@ -742,6 +892,7 @@ export const RequestorRecentRequestsCard = ({
                       {item.title || displayId}
                     </div>
                     <ShippingModeBadge source={item as any} size="sm" />
+                    {renderProductModeBadge(item)}
                     {renderStageBadge(item)}
                     {isRemakeFixed && (
                       <Badge variant="secondary" className="text-[10px]">
@@ -755,19 +906,7 @@ export const RequestorRecentRequestsCard = ({
                     )}
                   </div>
                   <div className="text-[11px] text-slate-600 truncate">
-                    {item.caseInfos?.clinicName && (
-                      <span>{item.caseInfos.clinicName}</span>
-                    )}
-                    {item.caseInfos?.patientName && (
-                      <span className="ml-1">{item.caseInfos.patientName}</span>
-                    )}
-                    {item.caseInfos?.tooth && (
-                      <span className="ml-1">#{item.caseInfos.tooth}</span>
-                    )}
-                    <span className="ml-1">
-                      {formatImplantDisplay(item.caseInfos)}
-                    </span>
-                    <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
+                    {renderRecentRequestSummaryLine(item)}
                   </div>
                   {isUnmachinable && (
                     <div className="text-[11px] text-yellow-800 mt-1 truncate flex items-center gap-2">
@@ -828,32 +967,16 @@ export const RequestorRecentRequestsCard = ({
           <div className="text-md">
             <div className="font-medium mb-1 truncate">
               <div className="flex items-center justify-between gap-4 mb-2">
-                {renderStageBadge(cancelTarget)}
+                <div className="flex items-center gap-1.5">
+                  {renderProductModeBadge(cancelTarget)}
+                  {renderStageBadge(cancelTarget)}
+                </div>
                 <span className="text-xs text-muted-foreground">
                   {cancelTarget?.createdAt &&
                     formatDateOnly(cancelTarget.createdAt)}
                 </span>
               </div>
-              {cancelTarget?.caseInfos?.clinicName && (
-                <span>{cancelTarget.caseInfos.clinicName}</span>
-              )}
-              {cancelTarget?.caseInfos?.patientName && (
-                <span className="ml-1">
-                  {cancelTarget.caseInfos.patientName}
-                </span>
-              )}
-              {cancelTarget?.caseInfos?.tooth && (
-                <span className="ml-1">{cancelTarget.caseInfos.tooth}</span>
-              )}
-              <span className="ml-1">
-                {formatImplantDisplay(cancelTarget?.caseInfos)}
-              </span>
-              <span className="ml-1">
-                유지홈{" "}
-                {cancelTarget?.caseInfos?.retentionGroove === "deep"
-                  ? "있음"
-                  : "없음"}
-              </span>
+              {renderRecentRequestSummaryLine(cancelTarget)}
 
             </div>
           </div>

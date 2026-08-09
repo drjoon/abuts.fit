@@ -498,25 +498,34 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   const shippingMode = resolveEffectiveShippingMode(request);
 
-  let expressFee = 0;
+  let expressFeeUnit = 0;
   let designFeePerTooth = 15000;
   try {
     const { loadCreditSettingsDefaults } =
       await import("../../utils/creditSettingsDefaults.js");
     const creditSettings = await loadCreditSettingsDefaults();
     if (shippingMode === "express") {
-      expressFee = Math.max(0, Number(creditSettings?.expressFee ?? 1000) || 0);
+      expressFeeUnit = Math.max(
+        0,
+        Number(creditSettings?.expressFee ?? 1000) || 0,
+      );
     }
     designFeePerTooth = Math.max(
       0,
       Number(creditSettings?.designFee ?? 15000) || 15000,
     );
   } catch {
-    if (shippingMode === "express") expressFee = 1000;
+    if (shippingMode === "express") expressFeeUnit = 1000;
     designFeePerTooth = 15000;
   }
 
   const caseInfos = request?.caseInfos || {};
+  const abutmentQty = countDesignAbutmentQty(caseInfos);
+  const productMode = String(caseInfos?.productMode || "").trim();
+  const expressQty =
+    productMode === "design_custom_abutment" ? Math.max(0, abutmentQty) : 1;
+  const expressFee = expressFeeUnit * expressQty;
+
   const machiningAmount = resolveMachiningSpendAmount({
     price: computedPrice,
     caseInfos,
@@ -525,7 +534,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const withDesign = resolveQuotedPriceWithDesignFee({
     price: computedPrice,
     productMode: caseInfos?.productMode,
-    toothCount: countDesignAbutmentQty(caseInfos),
+    toothCount: abutmentQty,
     designFeePerTooth,
   });
 
@@ -534,7 +543,8 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     ...resolveQuotedPriceWithExpressFee({
       price: withDesign,
       shippingMode,
-      expressFee,
+      expressFee: expressFeeUnit,
+      expressQty,
     }),
   };
 

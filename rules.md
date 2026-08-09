@@ -284,11 +284,11 @@
 - 디자인+생산 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(생산 단가 + 디자인비) × 어벗 수`
   - 디자인비: `creditSettings.designFee`(기본 **15,000원 / 1어벗**)
-  - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
+  - 어벗 수: `caseInfos.toothWorks` 커스텀어벗·임플란트 치아만(Pontic·단순 보철 제외; 없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`
     - `price.amount` = `(생산단가 + designFee) × qty`, `price.designFee` = 디자인 총액, `price.abutmentQty` = qty
-  - 적용 순서: 디자인+생산 배수 → 신속비(건당, 배수 없음). 무상/0원 견적에는 미적용
+  - 적용 순서: 디자인+생산 배수 → 신속비(생산=건당, 디자인+생산=어벗 수 배수). 무상/0원 견적에는 미적용
   - 차감: CAM `machining_spend` = `(생산단가 + 디자인비) × qty` (신속비와 분리)
   - 출고일: 묶음/신속 공통으로 디자인 리드 **+1영업일** (`production.utils.js` /
     프론트 `estimateShipDate.ts`)

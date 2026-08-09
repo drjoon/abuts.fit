@@ -22,7 +22,7 @@ const systemSettingsSchema = new mongoose.Schema(
     creditSettings: {
       minCreditForRequest: { type: Number, default: 10000 },
       shippingFee: { type: Number, default: 3500 },
-      // 신속 배송 추가 의뢰크레딧 (건당, 가공 진입 시 차감)
+      // 신속 배송 추가 의뢰크레딧 (생산=건당, 디자인+생산=1어벗당, 가공 진입 시 차감)
       expressFee: { type: Number, default: 1000 },
       // 디자인비 (1어벗당, design_custom_abutment 시 (생산단가+디자인비)×어벗수)
       designFee: { type: Number, default: 15000 },
