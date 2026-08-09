@@ -29,7 +29,7 @@ import {
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
 import {
-  countDesignFeeTeeth,
+  resolveMachiningSpendAmount,
   resolveQuotedPriceWithExtras,
 } from "./designPrice.utils.js";
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
@@ -688,19 +688,15 @@ export async function createRequestsBulk(req, res) {
     ).length;
 
     const totalMachiningFee =
-      priceCalculations.reduce((acc, item) => {
-        const amount = Number(item.price?.amount || 0);
-        return acc + (Number.isFinite(amount) ? amount : 0);
+      priceCalculations.reduce((acc, item, idx) => {
+        const n = resolveMachiningSpendAmount({
+          price: item.price,
+          caseInfos: items[idx]?.caseInfos || {},
+          designFeePerTooth,
+        });
+        return acc + (Number.isFinite(n) ? n : 0);
       }, 0) +
-      expressCount * expressFeePerRequest +
-      items.reduce((acc, raw, idx) => {
-        const abutmentAmount = Number(
-          priceCalculations[idx]?.price?.amount || 0,
-        );
-        if (!(abutmentAmount > 0)) return acc;
-        const teeth = countDesignFeeTeeth(raw?.caseInfos || {});
-        return acc + teeth * designFeePerTooth;
-      }, 0);
+      expressCount * expressFeePerRequest;
 
     // 3. 배송비 계산: 배송 날짜별로 그룹화
     const shippingFeePerBox = 3500;

@@ -288,12 +288,12 @@ export const PricingPolicyDialog = ({
                   기본 가격
                 </h3>
                 <div className='mt-3 space-y-3'>
-                  <PriceRow label='커스텀 어벗' value='15,000원' hint='1개당' />
+                  <PriceRow label='커스텀 어벗' value='15,000원' hint='1개당 · 가공만' />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='디자인비'
                     value={`${designFee.toLocaleString('ko-KR')}원`}
-                    hint='1치아당 · 디자인+커스텀어벗 선택 시'
+                    hint='1어벗당 · 디자인+가공 시 (가공단가+디자인비)×어벗수'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
@@ -309,6 +309,16 @@ export const PricingPolicyDialog = ({
                   />
                 </div>
                 <p className='mt-3 text-xs text-slate-500'>배송비 별도 · 부가세 없음</p>
+                <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>
+                  <span className='font-medium text-slate-800'>
+                    디자인+가공
+                  </span>
+                  : 한 STL에 여러 어벗이 있으면{" "}
+                  <span className='font-medium text-slate-800'>
+                    (가공단가 + 디자인비) × 어벗 수
+                  </span>
+                  로 의뢰크레딧에서 차감합니다. 신속 출고 추가비는 건당입니다.
+                </div>
                 <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>
                   <span className='font-medium text-slate-800'>
                     리메이크 무료

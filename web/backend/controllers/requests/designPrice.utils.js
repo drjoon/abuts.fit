@@ -4,17 +4,18 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/backend/rules.md
+// - .cursor/rules/design-fee.mdc
 import {
   resolveQuotedPriceWithExpressFee,
   toPlainRequestPrice,
 } from "./expressPrice.utils.js";
 
 /**
- * 디자인비 적용 치아 수 SSOT.
+ * 디자인+가공 어벗 수 SSOT.
  * - productMode !== design_custom_abutment → 0
  * - toothWorks 유효 행 우선, 없으면 tooth 문자열 파싱, 최소 1
  */
-export function countDesignFeeTeeth(caseInfos) {
+export function countDesignAbutmentQty(caseInfos) {
   if (!caseInfos || typeof caseInfos !== "object") return 0;
   if (String(caseInfos.productMode || "").trim() !== "design_custom_abutment") {
     return 0;
@@ -40,11 +41,15 @@ export function countDesignFeeTeeth(caseInfos) {
   return 1;
 }
 
+/** @deprecated use countDesignAbutmentQty */
+export const countDesignFeeTeeth = countDesignAbutmentQty;
+
 /**
- * 견적/표시용 금액 SSOT:
- * - design_custom_abutment이면 1치아당 designFee × 치아 수를 amount에 합산하고 designFee에 총액 기록
+ * 견적/표시용 금액 SSOT (디자인+가공):
+ * - design_custom_abutment이면 `(가공단가 + designFee) × 어벗수`
+ * - price.designFee = 디자인 총액, price.abutmentQty = 적용 어벗 수
  * - 무상/0원 견적에는 붙이지 않는다
- * - 이중 합산 방지: 기존 price.designFee 만큼을 base에서 제거한 뒤 다시 적용
+ * - 이중 합산 방지: designFee·abutmentQty·expressFee를 걷어 가공 단가 복원 후 재적용
  *
  * 적용 순서: 본 함수 → resolveQuotedPriceWithExpressFee
  */
@@ -56,43 +61,58 @@ export function resolveQuotedPriceWithDesignFee({
 }) {
   const src = toPlainRequestPrice(price);
   const mode = String(productMode || "").trim();
-  const feePerTooth = Math.max(0, Number(designFeePerTooth) || 0);
-  const teeth = Math.max(0, Math.floor(Number(toothCount) || 0));
-  const recordedFee = Math.max(0, Number(src.designFee) || 0);
+  const feePerUnit = Math.max(0, Number(designFeePerTooth) || 0);
+  const qty = Math.max(0, Math.floor(Number(toothCount) || 0));
+  const recordedDesignFee = Math.max(0, Number(src.designFee) || 0);
+  const recordedExpressFee = Math.max(0, Number(src.expressFee) || 0);
+  const recordedQtyRaw = Math.floor(Number(src.abutmentQty) || 0);
+  const recordedQty = recordedQtyRaw > 0 ? recordedQtyRaw : 1;
+
   const amountRaw = Number(src.amount);
   const amount =
     Number.isFinite(amountRaw) && amountRaw > 0
       ? amountRaw
       : Math.max(0, amountRaw || 0);
-  const baseAmount = Math.max(0, amount - recordedFee);
 
-  if (!(baseAmount > 0)) {
-    const next = { ...src, amount: baseAmount };
+  // amount = unitFab * recordedQty + designFee + expressFee (재견적 시)
+  const amountSansFees = Math.max(
+    0,
+    amount - recordedDesignFee - recordedExpressFee,
+  );
+  const unitFab = amountSansFees / recordedQty;
+
+  if (!(unitFab > 0)) {
+    const next = { ...src, amount: 0 };
     next.designFee = null;
+    next.abutmentQty = null;
     return next;
   }
 
-  const shouldApply =
-    mode === "design_custom_abutment" && teeth > 0 && feePerTooth > 0;
-  const designTotal = shouldApply ? feePerTooth * teeth : 0;
+  const shouldApply = mode === "design_custom_abutment" && qty > 0;
 
-  if (designTotal > 0) {
+  if (shouldApply) {
+    const designTotal = feePerUnit * qty;
+    const fabTotal = unitFab * qty;
     return {
       ...src,
-      amount: baseAmount + designTotal,
-      designFee: designTotal,
+      // express는 다음 단계에서 재적용하므로 여기선 제외한 채 둔다
+      // (이미 포함된 expressFee가 있으면 express resolver가 이중제거하지 않도록 잔액에 유지)
+      amount: fabTotal + designTotal + recordedExpressFee,
+      designFee: designTotal > 0 ? designTotal : null,
+      abutmentQty: qty,
     };
   }
 
   const next = {
     ...src,
-    amount: baseAmount,
+    amount: unitFab + recordedExpressFee,
   };
   next.designFee = null;
+  next.abutmentQty = null;
   return next;
 }
 
-/** 디자인비 → 신속비 순으로 견적 합산 */
+/** 디자인+가공 배수 → 신속비 순으로 견적 합산 */
 export function resolveQuotedPriceWithExtras({
   price,
   caseInfos,
@@ -103,7 +123,7 @@ export function resolveQuotedPriceWithExtras({
   const withDesign = resolveQuotedPriceWithDesignFee({
     price,
     productMode: caseInfos?.productMode,
-    toothCount: countDesignFeeTeeth(caseInfos),
+    toothCount: countDesignAbutmentQty(caseInfos),
     designFeePerTooth,
   });
   return resolveQuotedPriceWithExpressFee({
@@ -111,6 +131,26 @@ export function resolveQuotedPriceWithExtras({
     shippingMode,
     expressFee,
   });
+}
+
+/**
+ * CAM machining_spend / 잔액 체크용: 신속비 제외한 가공+디자인 총액.
+ * 무상 견적이면 0.
+ */
+export function resolveMachiningSpendAmount({
+  price,
+  caseInfos,
+  designFeePerTooth = 15000,
+}) {
+  const withDesign = resolveQuotedPriceWithDesignFee({
+    price,
+    productMode: caseInfos?.productMode,
+    toothCount: countDesignAbutmentQty(caseInfos),
+    designFeePerTooth,
+  });
+  const recordedExpress = Math.max(0, Number(withDesign?.expressFee) || 0);
+  const amount = Math.max(0, Number(withDesign?.amount) || 0);
+  return Math.max(0, amount - recordedExpress);
 }
 
 export { toPlainRequestPrice };

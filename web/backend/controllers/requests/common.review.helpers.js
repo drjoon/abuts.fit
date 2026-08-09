@@ -32,7 +32,8 @@ import {
   toPlainRequestPrice,
 } from "./expressPrice.utils.js";
 import {
-  countDesignFeeTeeth,
+  countDesignAbutmentQty,
+  resolveMachiningSpendAmount,
   resolveQuotedPriceWithDesignFee,
 } from "./designPrice.utils.js";
 import { resolvePackingEnterShipYmds } from "./packingEnterShipYmd.utils.js";
@@ -495,7 +496,6 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     currentRequestId: request?._id,
   });
 
-  const baseAmount = Number(computedPrice?.amount || 0);
   const shippingMode = resolveEffectiveShippingMode(request);
 
   let expressFee = 0;
@@ -517,14 +517,17 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   }
 
   const caseInfos = request?.caseInfos || {};
-  const designTeeth = countDesignFeeTeeth(caseInfos);
+  const machiningAmount = resolveMachiningSpendAmount({
+    price: computedPrice,
+    caseInfos,
+    designFeePerTooth,
+  });
   const withDesign = resolveQuotedPriceWithDesignFee({
     price: computedPrice,
     productMode: caseInfos?.productMode,
-    toothCount: designTeeth,
+    toothCount: countDesignAbutmentQty(caseInfos),
     designFeePerTooth,
   });
-  const designTotal = Math.max(0, Number(withDesign?.designFee) || 0);
 
   request.price = {
     ...toPlainRequestPrice(request.price),
@@ -534,11 +537,6 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       expressFee,
     }),
   };
-
-  const machiningAmount =
-    Number.isFinite(baseAmount) && baseAmount > 0
-      ? baseAmount + designTotal
-      : 0;
 
   const spendResult = await spendRequestCreditAtomic({
     request,

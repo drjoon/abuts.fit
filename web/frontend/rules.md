@@ -119,9 +119,11 @@ Notes:
   - 의뢰카드에서 `shippingMode`(`normal`|`express`)를 건별로 선택합니다.
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 1,000원)를 사용합니다.
-  - 디자인비는 `creditSettings.designFee`(기본 15,000원 / 1치아)를 사용합니다.
-    - `productMode === "design_custom_abutment"`일 때만 적용. 의뢰카드는 `+디자인` 뱃지만(상세 모달에 금액 미표시).
-    - 표시: `PricingPolicyDialog`, `RequestorPricingReferralPolicyCard`(오늘의 가격). 상세 모달·신규의뢰 우측에는 금액 미표시(`+디자인` 뱃지만).
+  - 디자인+가공(`design_custom_abutment`): `(가공 단가 + 디자인비) × 어벗 수`.
+    - 디자인비는 `creditSettings.designFee`(기본 15,000원 / 1어벗). 어벗 수는 `toothWorks` 유효 행.
+    - 가공만(`custom_abutment`)은 Request/STL당 가공 1개. 신속비는 건당(어벗 배수 없음).
+    - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(가공/디자인/배송·신속) 표시.
+    - 표시: `PricingPolicyDialog`, `RequestorPricingReferralPolicyCard`(오늘의 가격), `RequestDetailDialog`. 신규의뢰 우측에는 금액 미표시.
   - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`
     - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 표시 금액 SSOT: 신속배송이면 가공비+추가비를 합산해 보여줍니다 (`resolveQuotedPriceAmount` in `shippingMode.ts`).

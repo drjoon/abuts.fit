@@ -119,6 +119,7 @@ type RecentRequestCardItem = {
     expressFee?: number | null;
     expressFeeStatus?: string | null;
     designFee?: number | null;
+    abutmentQty?: number | null;
     rule?: string;
   };
   caseInfos?: EditableCaseInfos;

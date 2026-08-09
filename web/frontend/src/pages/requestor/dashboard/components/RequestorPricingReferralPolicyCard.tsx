@@ -299,7 +299,7 @@ export const RequestorPricingReferralPolicyCard = () => {
             </div>
 
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-md text-slate-600">디자인비 (1치아당)</span>
+              <span className="text-md text-slate-600">디자인비 (1어벗당)</span>
               <span className="text-lg font-semibold text-foreground">
                 {designFee.toLocaleString()}원
               </span>

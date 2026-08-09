@@ -32,7 +32,7 @@ import {
 } from "./utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import {
-  countDesignFeeTeeth,
+  resolveMachiningSpendAmount,
   resolveQuotedPriceWithExtras,
 } from "./designPrice.utils.js";
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
@@ -962,11 +962,6 @@ export async function createRequestsFromDraft(req, res) {
       }
     }
 
-    const totalSpendSupply = preparedCasesForCreate.reduce((acc, item) => {
-      const n = Number(item?.computedPrice?.amount || 0);
-      return acc + (Number.isFinite(n) ? n : 0);
-    }, 0);
-
     // Pre-fetch read-only data in parallel before transaction to minimize transaction duration
     const requestedAtForPrefetch = new Date();
     const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
@@ -1028,24 +1023,24 @@ export async function createRequestsFromDraft(req, res) {
       }),
     );
 
+    // 가공+디자인(어벗 배수) 합계. 신속비는 건당 별도.
+    const totalSpendSupply = isPracticeRoutingSubmission
+      ? 0
+      : preparedCasesForCreate.reduce((acc, item) => {
+          const n = resolveMachiningSpendAmount({
+            price: item?.computedPrice,
+            caseInfos: item?.caseInfosWithFile || item?.caseInfos || {},
+            designFeePerTooth,
+          });
+          return acc + (Number.isFinite(n) ? n : 0);
+        }, 0);
     const expressCount = preparedCasesForCreate.filter(
       (item) => (item.shippingMode || "normal") === "express",
     ).length;
     const totalExpressFee = isPracticeRoutingSubmission
       ? 0
       : expressCount * expressFeePerRequest;
-    const totalDesignFee = isPracticeRoutingSubmission
-      ? 0
-      : preparedCasesForCreate.reduce((acc, item) => {
-          const abutmentAmount = Number(item?.computedPrice?.amount || 0);
-          if (!(abutmentAmount > 0)) return acc;
-          const teeth = countDesignFeeTeeth(
-            item?.caseInfosWithFile || item?.caseInfos || {},
-          );
-          return acc + teeth * designFeePerTooth;
-        }, 0);
-    const requiredMachiningFee =
-      totalSpendSupply + totalExpressFee + totalDesignFee;
+    const requiredMachiningFee = totalSpendSupply + totalExpressFee;
     const requestorAnodizingEnabled =
       typeof shippingOrg?.requestSettings?.anodizingEnabled === "boolean"
         ? shippingOrg.requestSettings.anodizingEnabled

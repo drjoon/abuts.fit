@@ -910,8 +910,13 @@ const requestSchema = new mongoose.Schema(
         type: String,
         enum: ["charged", "cancelled"],
       },
-      // 디자인비 총액(1치아당 designFee × 치아 수). design_custom_abutment 전용.
+      // 디자인비 총액(1어벗당 designFee × 어벗 수). design_custom_abutment 전용.
       designFee: {
+        type: Number,
+        default: null,
+      },
+      // 디자인+가공 적용 어벗 수. 재견적 시 가공 단가 복원용.
+      abutmentQty: {
         type: Number,
         default: null,
       },

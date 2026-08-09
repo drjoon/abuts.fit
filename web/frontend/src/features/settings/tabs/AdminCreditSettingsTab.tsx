@@ -249,7 +249,7 @@ export const AdminCreditSettingsTab = () => {
               </div>
               <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
                 <Label htmlFor="designFee" className="text-sm">
-                  디자인비 (1치아당, 원)
+                  디자인비 (1어벗당, 원)
                 </Label>
                 <Input
                   id="designFee"
@@ -266,7 +266,7 @@ export const AdminCreditSettingsTab = () => {
                   disabled={loading}
                 />
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  디자인+커스텀어벗 의뢰 시 치아 수만큼 가공비에 더해집니다.
+                  디자인+가공 의뢰 시 (가공단가+디자인비)×어벗수로 차감됩니다.
                   기본값{" "}
                   {CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}
                   원.
