@@ -418,8 +418,7 @@ export function NewRequestShippingSection({
                 <div className="text-sm text-slate-600 leading-relaxed">
                   의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
                   <br />
-                  (디자인+생산은 커스텀어벗 수만큼, 생산지연시 내일 출고·추가
-                  크레딧 없음)
+                  (생산지연시 내일 출고·추가 크레딧 없음)
                 </div>
               </>
             ) : (
