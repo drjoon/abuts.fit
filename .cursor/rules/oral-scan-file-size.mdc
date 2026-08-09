@@ -1,0 +1,43 @@
+---
+description: 신규의뢰 구강스캔 vs 커스텀어벗 STL — 파일 크기 기준 자동묶음
+globs: "**/patientGroups.ts|**/usePatientFileGroups.ts|**/NewRequestAttachmentsPanel.tsx|**/useNewRequestLocalFiles.ts|**/useNewRequestPage.ts|**/NewRequestPage.tsx"
+alwaysApply: false
+---
+
+# 구강스캔 파일 크기 분류 (신규의뢰 자동묶음)
+
+## Policy
+
+- 구강 스캔은 파일이 크고, 커스텀어벗 디자인 STL은 작다. **자동 묶음은 파일 크기**로 가린다.
+- **파일명·환자명만으로** 한꺼번에 올린 파일을 구강스캔 1건으로 합치지 않는다.
+  동일 환자의 커스텀어벗 디자인 여러 개를 올리는 경우가 많다.
+
+## Thresholds (SSOT)
+
+| 크기 | 간주 | 자동 묶음 |
+|------|------|-----------|
+| **> 3MB** (`ORAL_SCAN_MIN_BYTES`) | 구강 스캔 | 대상. `design_custom_abutment` |
+| **< 1.5MB** (`CUSTOM_ABUT_DESIGN_MAX_BYTES`) | 커스텀어벗 디자인 | **제외** (각각 별도 건) |
+| **1.5~3MB** | 미분류 | 자동 묶음 없음. 수동 합치기만 |
+
+상수·헬퍼: `web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts`
+
+## Do / Don't
+
+```ts
+// ❌ BAD — 환자명/배치만으로 소형 STL까지 구강스캔 묶음
+planBatchGroupIfAmbiguous({ newFileKeys: allKeys, ... });
+
+// ✅ GOOD — >3MB만 자동 묶음
+planAutoGroupsForNewFiles({ ..., sizeByFileKey });
+planBatchGroupIfAmbiguous({ ..., sizeByFileKey });
+```
+
+- 자동 묶음 진입점: `usePatientFileGroups` → `planAutoGroupsForNewFiles` / `planBatchGroupIfAmbiguous`
+- 단일 구강스캔(>3MB)도 묶음 없이 `productMode=design_custom_abutment`
+- 수동 «구강 스캔으로 합치기»는 크기 제한 없음(사용자 의도)
+
+## Related
+
+- `web/frontend/rules.md` (신규의뢰 첨부·구강스캔 자동묶음)
+- 루트 `rules.md` §2.2
