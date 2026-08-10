@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드에 미반영(신규 업로드만).
 // - 2026-08-11: 아노다이징을 의뢰건 caseInfos SSOT로 저장·뱃지 표시(디자인소프트웨어와 동일). 사업체는 기본값 시드만.
 // - 2026-08-11: 설정 의뢰 탭 제거 후 아노다이징 토글을 좌측 상단(디자인소프트웨어 옆)으로 이전.
 // - 2026-08-09: 왼쪽 첨부 패널을 넓혀 드롭존 안내 문구가 1줄로 유지되도록 함.
@@ -475,12 +476,9 @@ const NewRequestPageContent = () => {
     const next = !anodizingEnabled;
     const prev = anodizingEnabled;
     setAnodizingEnabled(next);
-    // 신규 업로드 시드(__default__) + 현재 카드 반영. 계정 기본값도 저장.
+    // 디자인소프트웨어와 동일: 이미 첨부된 카드는 유지하고,
+    // 신규 업로드 시드(__default__)·계정 기본값만 갱신한다.
     updateCaseInfos("__default__", { anodizingEnabled: next });
-    for (const file of files) {
-      const fileKey = toNormalizedFileKey(file);
-      updateCaseInfos(fileKey, { anodizingEnabled: next });
-    }
 
     setAnodizingSaving(true);
     void (async () => {
@@ -495,10 +493,6 @@ const NewRequestPageContent = () => {
         if (!res.ok) {
           setAnodizingEnabled(prev);
           updateCaseInfos("__default__", { anodizingEnabled: prev });
-          for (const file of files) {
-            const fileKey = toNormalizedFileKey(file);
-            updateCaseInfos(fileKey, { anodizingEnabled: prev });
-          }
           const body: any = res.data || {};
           toast({
             title: "저장에 실패했습니다",
@@ -523,10 +517,6 @@ const NewRequestPageContent = () => {
       } catch {
         setAnodizingEnabled(prev);
         updateCaseInfos("__default__", { anodizingEnabled: prev });
-        for (const file of files) {
-          const fileKey = toNormalizedFileKey(file);
-          updateCaseInfos(fileKey, { anodizingEnabled: prev });
-        }
         toast({
           title: "저장에 실패했습니다",
           description: "아노다이징 기본값 저장 중 오류가 발생했습니다.",
@@ -539,10 +529,8 @@ const NewRequestPageContent = () => {
   }, [
     anodizingEnabled,
     anodizingSaving,
-    files,
     toast,
     token,
-    toNormalizedFileKey,
     updateCaseInfos,
   ]);
 

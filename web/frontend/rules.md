@@ -17,7 +17,7 @@
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
-- Requestor workspace header: 지난 의뢰(+기간 필터는 대시보드만). 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → 업로드 시 `caseInfos.anodizingEnabled` 주입. 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
+- Requestor workspace header: 지난 의뢰(+기간 필터는 대시보드만). 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
 - Semantic color palette (강제, 앱 전체):
   - 의미 축 4 + 서비스 1만 사용. 같은 축 안 차이는 soft/muted/DEFAULT/strong 밝기만.
     - **Primary** (`--primary*`) — 브랜드·CTA·공정·묶음출고·정상/완료

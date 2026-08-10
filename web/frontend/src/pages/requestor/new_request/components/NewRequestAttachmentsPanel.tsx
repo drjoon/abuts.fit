@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드 뱃지에 미반영.
 // - 2026-08-11: 카드 ETA줄에 아노다이징 뱃지 추가(디자인소프트웨어와 동일). 의뢰건 caseInfos SSOT.
 // - 2026-08-11: 좌측 상단에 아노다이징 토글 버튼 추가(디자인소프트웨어 옆). 설정 의뢰 탭에서 이전.
 // - 2026-08-09: 구강스캔 묶음 멤버 파일명 오른쪽에도 용량 표시. 크기 판정 3MB 단일 기준.
@@ -654,10 +655,11 @@ export function NewRequestAttachmentsPanel({
             ? getEstimatedShipForDiameter(diameter, "normal", productMode)
             : null));
     const designSoftware = String(fileInfo?.designSoftware || "").trim();
-    const cardAnodizing =
-      typeof fileInfo?.anodizingEnabled === "boolean"
-        ? fileInfo.anodizingEnabled
-        : anodizingEnabled;
+    // 카드에 스냅샷된 값만 표시. 상단 기본값 변경이 기존 첨부 뱃지를 바꾸지 않는다.
+    const hasCardAnodizing = typeof fileInfo?.anodizingEnabled === "boolean";
+    const cardAnodizing = hasCardAnodizing
+      ? Boolean(fileInfo?.anodizingEnabled)
+      : null;
     const isDesignMode =
       !productionOnly &&
       (forceDesignProductMode ||
@@ -748,16 +750,16 @@ export function NewRequestAttachmentsPanel({
               {designSoftware}
             </Badge>
           ) : null}
-          <Badge
-            variant="secondary"
-            className={`text-[10px] font-medium px-1.5 py-0.5 ${
-              cardAnodizing
-                ? ""
-                : "bg-accent-soft text-accent-strong"
-            }`}
-          >
-            {cardAnodizing ? "아노 ON" : "아노 OFF"}
-          </Badge>
+          {cardAnodizing !== null ? (
+            <Badge
+              variant="secondary"
+              className={`text-[10px] font-medium px-1.5 py-0.5 ${
+                cardAnodizing ? "" : "bg-accent-soft text-accent-strong"
+              }`}
+            >
+              {cardAnodizing ? "아노 ON" : "아노 OFF"}
+            </Badge>
+          ) : null}
         </div>
       </div>
     );
@@ -1107,7 +1109,7 @@ export function NewRequestAttachmentsPanel({
             size="sm"
             disabled={anodizingSaving}
             onClick={() => onToggleAnodizing?.()}
-            title="의뢰자 기본값으로 저장되며, 새 업로드에 적용됩니다"
+            title="의뢰자 기본값으로 저장되며, 새로 올리는 파일에만 적용됩니다"
           >
             {anodizingEnabled ? "아노다이징 ON" : "아노다이징 OFF"}
           </Button>
@@ -1223,7 +1225,7 @@ export function NewRequestAttachmentsPanel({
                   return (
                     <div
                       aria-hidden
-                      className="pointer-events-none absolute z-20 rounded-sm border border-primary bg-primary/70/20"
+                      className="pointer-events-none absolute z-20 rounded-sm border border-primary bg-primary/20"
                       style={{ left, top, width, height }}
                     />
                   );
