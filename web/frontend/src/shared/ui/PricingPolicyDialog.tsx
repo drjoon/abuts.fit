@@ -427,12 +427,18 @@ export const PricingPolicyDialog = ({
               <PolicySection title='출고 리드타임 (최대 직경 기준)'>
                 <p className='text-xs text-slate-500'>
                   KST 기준{' '}
-                  <span className='font-medium text-slate-700'>자정(0시)까지</span>{' '}
-                  접수 건은 1영업일 리드타임의 경우 당일 집하로 계산되고,{' '}
                   <span className='font-medium text-slate-700'>
-                    자정 이후 접수 건부터는 익영업일
-                  </span>{' '}
-                  기준으로 계산됩니다.{' '}
+                    묶음 출고
+                  </span>
+                  는 자정(0시)까지 접수 건을 익영업일부터 리드타임을 계산하며,{' '}
+                  <span className='font-medium text-slate-700'>
+                    +1영업일
+                  </span>
+                  리드타임이면 다음 영업일 16:00 출고입니다.{' '}
+                  <span className='font-medium text-slate-700'>
+                    신속 출고
+                  </span>
+                  는 낮 12시 컷오프로 당일/익영업일을 구분합니다.{' '}
                   <span className='font-medium text-slate-700'>
                     디자인+생산
                   </span>
@@ -465,7 +471,7 @@ export const PricingPolicyDialog = ({
                         </div>
                         {hasSameDayNote ? (
                           <div className='mt-1.5 text-[11px] leading-snug text-blue-700'>
-                            생산 · 자정까지 접수 시 당일 집하 가능
+                            묶음 · 자정까지 접수 시 익영업일 16:00 출고
                           </div>
                         ) : null}
                       </div>

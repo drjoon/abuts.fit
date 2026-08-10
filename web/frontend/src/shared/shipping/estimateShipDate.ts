@@ -1,7 +1,7 @@
 // change-log:
 // - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일.
 // - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 출고 +1영업일.
-// - 2026-08-08: 신규의뢰 예상 출고일 계산 SSOT (프론트 ETA + 디버그).
+// - 2026-08-10: 묶음 리드타임 minBusinessDays=N → N영업일 후 출고(lead=1 → 익영업일).
 // - 2026-08-08: 신속 선택 가능 = 신속 ETA < 묶음 ETA (당일·조기 이점 있을 때만).
 // related files:
 // - web/frontend/src/pages/requestor/new_request/hooks/useLeadTimeForecast.ts
@@ -69,8 +69,8 @@ function addBusinessDaysFromKstYmd(startYmd: string, days: number): string {
 }
 
 function resolveLeadDaysForPickup(leadDays: number): number {
-  if (!Number.isFinite(leadDays) || leadDays <= 0) return 0;
-  return Math.max(0, Math.floor(Number(leadDays)) - 1);
+  if (!Number.isFinite(leadDays) || leadDays <= 0) return 1;
+  return Math.max(1, Math.floor(Number(leadDays)));
 }
 
 function formatKstMonthDayWithWeekday(ymd: string): string {

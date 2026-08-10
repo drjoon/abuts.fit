@@ -91,8 +91,9 @@
     프로세스 TZ만 믿지 말고, 가능하면 `Asia/Seoul` 명시(`Intl` / `+09:00` / UTC noon 달력일)로 방어
   - 출고일·묶음요일·출고 뱃지·영업일 계산은 이 정책에 직접 영향 받음
     (`production.utils.js` `resolveNextWeeklyBatchYmd` / `resolveLeadDaysWithSameDayCutoff` 등)
-  - 묶음 리드타임 SSOT: `minBusinessDays=N`이면 접수 당일을 1일차로 포함 → 추가 영업일 `(N-1)`
-    (PricingPolicyDialog: 자정까지 1영업일=당일 집하). 이후 주간 발송 요일로 정렬.
+  - 묶음 리드타임 SSOT: `minBusinessDays=N`이면 접수 익영업일부터 N영업일 생산 후
+    주간 발송 요일로 정렬 (lead=1 → 다음 영업일 16:00 출고 가능).
+    신속은 KST 12시 컷오프로 당일/익영업일 분기.
   - 디자인+생산 출고 SSOT: `productMode === "design_custom_abutment"`이면 묶음/신속 모두
     출고일에 디자인 리드 **+1영업일** (`production.utils.js` / `estimateShipDate.ts`).
     UI 안내: `PricingPolicyDialog`, `NewRequestShippingSection`,

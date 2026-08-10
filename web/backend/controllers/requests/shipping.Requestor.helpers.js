@@ -491,6 +491,7 @@ export async function buildShippingEstimate(req) {
     const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
       leadDays,
       requestedAt,
+      shippingMode: mode,
     });
     estimatedShipYmdRaw = await addKoreanBusinessDays({
       startYmd: todayYmd,
@@ -590,10 +591,12 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
       const originalLeadDays = resolveLeadDaysWithSameDayCutoff({
         leadDays: baseLeadDays,
         requestedAt: requestedAtOriginal,
+        shippingMode: "express",
       });
       const nextLeadDays = resolveLeadDaysWithSameDayCutoff({
         leadDays: baseLeadDays,
         requestedAt: requestedAtForNext,
+        shippingMode: "express",
       });
       const signature = `${signatureBase}:${originalLeadDays}:${nextLeadDays}`;
       const cachedSignature = estimatedShipYmdsBySignature.get(signature);
@@ -650,10 +653,12 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     const originalLeadDays = resolveLeadDaysWithSameDayCutoff({
       leadDays,
       requestedAt: requestedAtOriginal,
+      shippingMode: "normal",
     });
     const nextLeadDays = resolveLeadDaysWithSameDayCutoff({
       leadDays,
       requestedAt: requestedAtForNext,
+      shippingMode: "normal",
     });
     const signature = `${signatureBase}:${originalLeadDays}:${nextLeadDays}`;
     const cachedSignature = estimatedShipYmdsBySignature.get(signature);

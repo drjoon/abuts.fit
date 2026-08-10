@@ -269,6 +269,7 @@ export async function createRequest(req, res) {
       const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
         leadDays,
         requestedAt,
+        shippingMode,
       });
 
       estimatedShipYmdRaw = await addKoreanBusinessDays({
@@ -1080,6 +1081,7 @@ export async function createRequestsBulk(req, res) {
               const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
                 leadDays,
                 requestedAt,
+                shippingMode: itemShippingMode,
               });
               const added = await addKoreanBusinessDays({
                 startYmd: createdYmd,

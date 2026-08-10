@@ -2,8 +2,8 @@
 // - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일·기본 직경 그룹.
 // - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 모두 출고일에
 //   디자인 리드 +1영업일 추가.
-// - 2026-08-06: 묶음 리드타임 (N-1) 복원. 접수 당일을 1일차로 포함(자정 컷오프/
-//   PricingPolicyDialog SSOT). lead=1이면 당일 기준일 → 주간 발송 요일 정렬.
+// - 2026-08-10: 묶음 리드타임 SSOT 수정. minBusinessDays=N → 접수 익영업일부터
+//   N영업일 생산(lead=1이면 다음 영업일 출고). 신속은 12시 컷오프로 당일/익일 분기.
 // - 2026-08-06: 스케줄 기준일을 toKstYmd(requestedAt)로 고정. 재계산 시 오늘 기준 밀림 방지.
 // - 2026-08-06: resolveNextWeeklyBatchYmd 요일 판정을 서버 로컬 getDay() 대신
 //   YMD 달력일 기준(UTC noon)으로 바꿔 UTC 서버에서 목→금으로 하루 밀리던 버그 수정.
@@ -129,17 +129,31 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
   throw new Error(`Invalid ymd for createKstDateTime: ${ymdString}`);
 }
 
-export function resolveLeadDaysWithSameDayCutoff({ leadDays, requestedAt }) {
+export function resolveLeadDaysWithSameDayCutoff({
+  leadDays,
+  requestedAt,
+  shippingMode = "normal",
+}) {
   const rawDays = Number.isFinite(leadDays) ? Number(leadDays) : 1;
   const baseDays = Math.max(1, Math.floor(rawDays));
 
-  // PricingPolicyDialog / BulkShippingBanner SSOT:
-  // KST 자정(0시)까지 접수분은 접수 당일을 리드타임 1일차로 포함한다.
-  // 예) minBusinessDays=1 → 추가 영업일 0(당일 기준) → 주간 발송 요일로 정렬.
-  // requestedAt은 컷오프 시각 분기용으로 남겨 두되, 자정 정책에서는 당일 전체가
-  // "자정 전"이므로 (N-1)만 적용한다.
+  if (shippingMode === "express") {
+    const at =
+      requestedAt instanceof Date
+        ? requestedAt
+        : new Date(requestedAt || Date.now());
+    const hour = getKstHour(at);
+    // 신속: 12시 이전 당일, 이후 익영업일 (calculateInitialProductionSchedule SSOT)
+    if (hour < EXPRESS_CUTOFF_HOUR_KST) {
+      return Math.max(0, baseDays - 1);
+    }
+    return baseDays;
+  }
+
+  // 묶음출고: minBusinessDays=N → 접수일 다음부터 N영업일 생산 후 출고 요일 정렬
+  // (자정까지 접수 → 익영업일 16:00, RequestorBulkShippingBannerCard SSOT)
   void requestedAt;
-  return Math.max(0, baseDays - 1);
+  return baseDays;
 }
 
 export function addKstCalendarDays({ startYmd, days }) {
@@ -412,6 +426,7 @@ export async function calculateInitialProductionSchedule({
   const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
     leadDays,
     requestedAt: now,
+    shippingMode: "normal",
   });
 
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);

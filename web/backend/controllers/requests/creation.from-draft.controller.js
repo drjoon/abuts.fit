@@ -998,6 +998,7 @@ export async function createRequestsFromDraft(req, res) {
           const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
             leadDays: 1,
             requestedAt: requestedAtForPrefetch,
+            shippingMode: "normal",
           });
           return addKoreanBusinessDays({
             startYmd: createdYmd,
@@ -1446,6 +1447,7 @@ export async function createRequestsFromDraft(req, res) {
             const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
               leadDays,
               requestedAt,
+              shippingMode,
             });
 
             const estimatedShipYmd = await addKoreanBusinessDays({
