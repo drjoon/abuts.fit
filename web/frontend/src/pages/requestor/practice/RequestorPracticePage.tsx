@@ -15,6 +15,9 @@
 // - web/backend/controllers/files/file.controller.js
 // - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-11: 디자인 페이지 삭제 — DesignQueueSection을 의뢰수신 UI에 통합(기간필터 공유).
+// - 2026-08-11: 기공소 의뢰수신 — 발신/수신 탭 제거·항상 수신. 디자인 큐를 의뢰수신으로 편입.
+// - 2026-08-11: 사이드메뉴 딥링크용 ?mode=send|receive 동기화.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +51,8 @@ import {
   type PracticeTransferRoleMode,
 } from "@/shared/business/PracticeTransferRoleTabs";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
-import { useNavigate } from "react-router-dom";
+import { DesignQueueSection } from "@/pages/requestor/design/DesignQueueSection";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   formatToothWorksForDisplay,
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
@@ -170,41 +174,139 @@ const getTransferDisplayStatus = (transfer: {
 
 export default function RequestorPracticePage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     loading,
     canSendTransfer,
     canReceiveTransfer,
+    kind,
+    designAccessEnabled,
   } = useRequestorBusinessAccess();
   const [mode, setMode] = useState<PracticeTransferRoleMode>("receive");
   const [modeReady, setModeReady] = useState(false);
+  const modeParam = searchParams.get("mode");
+
+  const syncModeToUrl = useCallback(
+    (next: PracticeTransferRoleMode) => {
+      if (searchParams.get("mode") === next) return;
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set("mode", next);
+      setSearchParams(nextParams, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const setModeAndUrl = useCallback(
+    (next: PracticeTransferRoleMode) => {
+      setMode(next);
+      syncModeToUrl(next);
+    },
+    [syncModeToUrl],
+  );
 
   useEffect(() => {
     if (loading) return;
-
-    if (!modeReady) {
-      if (canSendTransfer && !canReceiveTransfer) setMode("send");
-      else if (canReceiveTransfer) setMode("receive");
-      else if (canSendTransfer) setMode("send");
-      setModeReady(true);
+    // 기공소 의뢰수신은 항상 receive — URL/탭 전환 없음
+    if (kind === "lab") {
+      if (!modeReady) setModeReady(true);
+      if (modeParam !== "receive") syncModeToUrl("receive");
+      if (mode !== "receive") setMode("receive");
       return;
     }
 
+    const resolveMode = (): PracticeTransferRoleMode | null => {
+      if (modeParam === "send" && canSendTransfer) return "send";
+      if (modeParam === "receive" && canReceiveTransfer) return "receive";
+      if (canSendTransfer && !canReceiveTransfer) return "send";
+      if (canReceiveTransfer) return "receive";
+      if (canSendTransfer) return "send";
+      return null;
+    };
+
+    const resolved = resolveMode();
+    if (!resolved) {
+      if (!modeReady) setModeReady(true);
+      return;
+    }
+
+    if (!modeReady) {
+      setMode(resolved);
+      setModeReady(true);
+      syncModeToUrl(resolved);
+      return;
+    }
+
+    if (
+      (modeParam === "send" || modeParam === "receive") &&
+      modeParam !== mode
+    ) {
+      if (modeParam === "send" && canSendTransfer) {
+        setMode("send");
+        return;
+      }
+      if (modeParam === "receive" && canReceiveTransfer) {
+        setMode("receive");
+        return;
+      }
+    }
+
     if (mode === "send" && !canSendTransfer && canReceiveTransfer) {
-      setMode("receive");
+      setModeAndUrl("receive");
     } else if (mode === "receive" && !canReceiveTransfer && canSendTransfer) {
-      setMode("send");
+      setModeAndUrl("send");
+    } else if (modeParam !== mode) {
+      syncModeToUrl(mode);
     }
   }, [
     canReceiveTransfer,
     canSendTransfer,
+    kind,
     loading,
     mode,
+    modeParam,
     modeReady,
+    setModeAndUrl,
+    syncModeToUrl,
   ]);
 
   if (loading) {
     return (
       <div className="p-6 text-sm text-slate-500">불러오는 중...</div>
+    );
+  }
+
+  // 기공소: 항상 수신만. 지정 기공소 디자인 큐도 의뢰수신에 통합 표시.
+  if (kind === "lab") {
+    if (!canReceiveTransfer && !designAccessEnabled) {
+      return (
+        <div className="flex min-h-[50vh] items-center justify-center p-6">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="text-lg">역할·서비스 선택 필요</CardTitle>
+              <CardDescription>
+                기공의뢰서 이용을 위해 설정 &gt; 사업자에서{" "}
+                {REQUESTOR_KIND_LABEL.lab} 역할과{" "}
+                {REQUESTOR_SERVICE_LABEL.free}를 선택해주세요.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                className="w-full"
+                onClick={() => navigate("/dashboard/settings?tab=business")}
+              >
+                사업자 설정으로 이동
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return (
+      <RequestorPracticeReceivePage
+        showDesignQueue={designAccessEnabled}
+        showTransfers={canReceiveTransfer}
+      />
     );
   }
 
@@ -233,14 +335,16 @@ export default function RequestorPracticePage() {
     );
   }
 
-  const roleSwitcher = (
-    <PracticeTransferRoleTabs
-      mode={mode}
-      onChange={setMode}
-      canSend={canSendTransfer}
-      canReceive={canReceiveTransfer}
-    />
-  );
+  // 치과(기공의뢰): 발신 UI. 수신 가능 시에만 역할 탭 노출.
+  const roleSwitcher =
+    canSendTransfer && canReceiveTransfer ? (
+      <PracticeTransferRoleTabs
+        mode={mode}
+        onChange={setModeAndUrl}
+        canSend={canSendTransfer}
+        canReceive={canReceiveTransfer}
+      />
+    ) : undefined;
 
   if (mode === "send" && canSendTransfer) {
     return <PracticeFileTransferPage roleSwitcher={roleSwitcher} />;
@@ -251,8 +355,14 @@ export default function RequestorPracticePage() {
 
 function RequestorPracticeReceivePage({
   roleSwitcher,
+  showDesignQueue = false,
+  showTransfers = true,
 }: {
   roleSwitcher?: ReactNode;
+  /** 지정 기공소: 디자인+생산 준비 큐를 의뢰수신에 통합 */
+  showDesignQueue?: boolean;
+  /** 무료 기공의뢰서 수신 목록 표시 */
+  showTransfers?: boolean;
 }) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
@@ -1333,6 +1443,22 @@ function RequestorPracticeReceivePage({
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        {showDesignQueue && !showTransfers ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold tracking-tight">의뢰수신</h2>
+              <PeriodFilter
+                value={period}
+                onChange={setPeriod}
+                presets={["thisMonth", "lastMonth"]}
+                className="shrink-0"
+              />
+            </div>
+            <DesignQueueSection />
+          </div>
+        ) : null}
+
+        {showTransfers ? (
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
           {promoNoticeVisible ? (
             <>
@@ -1353,11 +1479,32 @@ function RequestorPracticeReceivePage({
             </>
           ) : null}
 
-          <Card className={promoNoticeVisible ? "xl:col-span-12" : "xl:col-span-9"}>
+          {showDesignQueue ? (
+            <Card className="xl:col-span-12">
+              <CardHeader className="space-y-3 pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <CardTitle className="text-xl">의뢰수신</CardTitle>
+                  <PeriodFilter
+                    value={period}
+                    onChange={setPeriod}
+                    presets={["thisMonth", "lastMonth"]}
+                    className="shrink-0"
+                  />
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <DesignQueueSection />
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card className={promoNoticeVisible || showDesignQueue ? "xl:col-span-12" : "xl:col-span-9"}>
             <CardHeader className="space-y-3">
               <div className="flex flex-wrap items-center gap-3">
                 {roleSwitcher}
-                <CardTitle className="text-xl">기공의뢰서 내역</CardTitle>
+                <CardTitle className="text-xl">
+                  {showDesignQueue ? "기공의뢰서 내역" : "의뢰수신"}
+                </CardTitle>
               </div>
               <div className="space-y-3">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1370,12 +1517,14 @@ function RequestorPracticeReceivePage({
                       placeholder="전송ID, 치과명, 파일명, 환자명 검색"
                     />
                   </div>
-                  <PeriodFilter
-                    value={period}
-                    onChange={setPeriod}
-                    presets={["thisMonth", "lastMonth"]}
-                    className="shrink-0"
-                  />
+                  {!showDesignQueue ? (
+                    <PeriodFilter
+                      value={period}
+                      onChange={setPeriod}
+                      presets={["thisMonth", "lastMonth"]}
+                      className="shrink-0"
+                    />
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -1541,8 +1690,10 @@ function RequestorPracticeReceivePage({
             <div className="space-y-3 xl:col-span-3">{inviteLinkCard}</div>
           ) : null}
         </div>
+        ) : null}
       </div>
 
+      {showTransfers ? (
       <PracticeTransferDetailChatDialog
         open={dialogOpen}
         onOpenChange={(open) => {
@@ -1631,6 +1782,7 @@ function RequestorPracticeReceivePage({
           (!chatDraft.trim() && chatAttachedFiles.length === 0)
         }
       />
+      ) : null}
     </div>
   );
 }

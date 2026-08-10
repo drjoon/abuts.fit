@@ -17,7 +17,6 @@ import { NewChatWidget } from "@/features/chat/components/NewChatWidget";
 import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { useSocket } from "@/shared/hooks/useSocket";
-import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
 // related files:
 // - web/frontend/src/shared/types/role.ts
@@ -63,11 +62,6 @@ const RequestorPracticePage = lazy(
 const ManufacturerWorksheetPage = lazy(() =>
   import("./pages/manufacturer/worksheet/WorksheetPage").then((m) => ({
     default: m.ManufacturerWorksheetPage,
-  })),
-);
-const DesignPage = lazy(() =>
-  import("./pages/requestor/design/DesignPage").then((m) => ({
-    default: m.DesignPage,
   })),
 );
 const DevopsPartnerPage = lazy(() =>
@@ -209,16 +203,6 @@ const RoleProtectedRoute = ({
     return <Navigate to="/login" replace />;
   }
   if (!user || !roles.includes(user.role)) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  return <>{children}</>;
-};
-
-/** 개발운영사가 지정한 의뢰자만 디자인 큐 진입 */
-const DesignAccessGate = ({ children }: { children: React.ReactNode }) => {
-  const { loading, designAccessEnabled } = useRequestorBusinessAccess();
-  if (loading) return null;
-  if (!designAccessEnabled) {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
@@ -514,9 +498,10 @@ const App = () => {
                     path="design"
                     element={
                       <RoleProtectedRoute roles={["requestor"]}>
-                        <DesignAccessGate>
-                          <DesignPage />
-                        </DesignAccessGate>
+                        <Navigate
+                          to="/dashboard/practice-transfers?mode=receive"
+                          replace
+                        />
                       </RoleProtectedRoute>
                     }
                   />

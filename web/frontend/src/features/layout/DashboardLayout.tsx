@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-11: 의뢰자 사이드 — 디자인 메뉴/페이지 삭제·의뢰수신 통합. 소개(치과 포함) 공통. 기공의뢰/의뢰수신↑·어벗의뢰↓.
 // - 2026-08-10: 의뢰자·치과 사이드메뉴에서 소개 제거.
 // - 2026-08-10: 의뢰자 사이드메뉴를 kind별로 분기 — practice(디자인 제외·유료게이트), lab(디자인·무게이트).
 // - 2026-08-10: 의뢰자 역할 뱃지를 requestorKind에 따라 의뢰자·치과 / 의뢰자·기공소로 표기.
@@ -88,7 +89,6 @@ import {
   Shield,
   Users2,
   ClipboardList,
-  PenTool,
   Printer,
   Search,
   Sparkles,
@@ -116,7 +116,16 @@ import {
 /** DashboardLayout StrictMode remount에도 토큰당 unread 시드 API 1회만 */
 const practiceUnreadSeededTokens = new Set<string>();
 
-type SidebarItem = { icon: LucideIcon; label: string; href: string };
+type SidebarItem = {
+  icon: LucideIcon;
+  label: string;
+  href: string;
+  /** 사이드바 호버 빠른툴팁(선택) */
+  tooltip?: string;
+};
+
+const sidebarItemPath = (href: string) =>
+  String(href || "").split("?")[0].replace(/\/$/, "") || "/";
 
 const requestorSidebarCommonTail: SidebarItem[] = [
   { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
@@ -129,31 +138,45 @@ const requestorReferralItem: SidebarItem = {
   href: "/dashboard/referral-groups",
 };
 
+const ABUTMENT_REQUEST_TOOLTIP =
+  "커스텀어벗 디자인을 올려서 CNC 생산 의뢰";
+
 const buildRequestorSidebarItems = (
   kind: "practice" | "lab" | null,
-  designAccessEnabled: boolean,
 ): SidebarItem[] => {
-  const items: SidebarItem[] = [
+  const transferItem: SidebarItem =
+    kind === "lab"
+      ? {
+          icon: Building2,
+          label: "의뢰수신",
+          href: "/dashboard/practice-transfers?mode=receive",
+          tooltip:
+            "구강스캔 파일을 받아서 인레이, 크라운, 브리지 등 보철 기공 처리",
+        }
+      : {
+          icon: Building2,
+          label: "기공의뢰",
+          href: "/dashboard/practice-transfers?mode=send",
+          tooltip:
+            "구강스캔 파일을 올려서 인레이, 크라운, 브리지 등 보철 기공 의뢰",
+        };
+
+  return [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
+    transferItem,
     {
-      icon: Building2,
-      label: "기공의뢰서",
-      href: "/dashboard/practice-transfers",
+      icon: FileText,
+      label: "어벗의뢰",
+      href: "/dashboard/new-request",
+      tooltip: ABUTMENT_REQUEST_TOOLTIP,
     },
+    requestorReferralItem,
+    ...requestorSidebarCommonTail,
   ];
-  if (kind === "lab" && designAccessEnabled) {
-    items.push({ icon: PenTool, label: "디자인", href: "/dashboard/design" });
-  }
-  const tail =
-    kind === "practice"
-      ? requestorSidebarCommonTail
-      : [requestorReferralItem, ...requestorSidebarCommonTail];
-  return [...items, ...tail];
 };
 
 const sidebarItems = {
-  requestor: buildRequestorSidebarItems("practice", false),
+  requestor: buildRequestorSidebarItems("practice"),
   salesman: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
@@ -389,7 +412,6 @@ export const DashboardLayout = () => {
   const { rooms: chatRooms } = useChatRooms();
   const {
     canUsePaid: requestorCanUsePaid,
-    designAccessEnabled,
     kind: requestorKind,
   } = useRequestorBusinessAccess();
 
@@ -902,7 +924,7 @@ export const DashboardLayout = () => {
     []) as unknown as SidebarItem[];
   const menuItems = (() => {
     if (user.role !== "requestor") return baseMenuItems;
-    return buildRequestorSidebarItems(requestorKind, designAccessEnabled);
+    return buildRequestorSidebarItems(requestorKind);
   })();
 
   const displayRole = isPracticeUser ? "practice" : user.role;
@@ -930,8 +952,12 @@ export const DashboardLayout = () => {
 
   const getSidebarBadgeCount = useCallback(
     (href: string) => {
-      const adminCommBadge = Number(getBadgeForHref(href) || 0);
-      if (href === "/dashboard/practice-transfers" && user.role === "requestor") {
+      const path = sidebarItemPath(href);
+      const adminCommBadge = Number(getBadgeForHref(path) || 0);
+      if (
+        path === "/dashboard/practice-transfers" &&
+        user.role === "requestor"
+      ) {
         const transferUnread = Math.max(0, Number(requestorPracticeUnreadCount || 0));
         const chatUnread = Math.max(0, Number(requestorPracticeChatUnreadCount || 0));
         return adminCommBadge + transferUnread + chatUnread;
@@ -1173,11 +1199,12 @@ export const DashboardLayout = () => {
             ) : (
               <ul className="space-y-1 lg:space-y-2">
                 {resolvedMenuItems.map((item) => {
-                  const isRootDashboard = item.href === "/dashboard";
+                  const itemPath = sidebarItemPath(item.href);
+                  const isRootDashboard = itemPath === "/dashboard";
                   const isActive = isRootDashboard
-                    ? location.pathname === item.href
-                    : location.pathname === item.href ||
-                      location.pathname.startsWith(`${item.href}/`);
+                    ? location.pathname === itemPath
+                    : location.pathname === itemPath ||
+                      location.pathname.startsWith(`${itemPath}/`);
                   const paidLocked =
                     user.role === "requestor" &&
                     isPaidRequestorSidebarLocked({
@@ -1185,6 +1212,9 @@ export const DashboardLayout = () => {
                       canUsePaid: requestorCanUsePaid,
                       href: item.href,
                     });
+                  const quickTooltip = paidLocked
+                    ? PAID_ACCESS_DISABLED_HINT
+                    : item.tooltip;
 
                   const button = (
                     <Button
@@ -1232,12 +1262,22 @@ export const DashboardLayout = () => {
 
                   return (
                     <li key={item.href}>
-                      {paidLocked ? (
+                      {quickTooltip ? (
                         <TooltipProvider delayDuration={200}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="block w-full cursor-not-allowed">
-                                <span className="pointer-events-none block">
+                              <span
+                                className={`block w-full ${
+                                  paidLocked ? "cursor-not-allowed" : ""
+                                }`}
+                              >
+                                <span
+                                  className={
+                                    paidLocked
+                                      ? "pointer-events-none block"
+                                      : "block"
+                                  }
+                                >
                                   {button}
                                 </span>
                               </span>
@@ -1246,7 +1286,7 @@ export const DashboardLayout = () => {
                               side="right"
                               className="max-w-xs text-center"
                             >
-                              <p>{PAID_ACCESS_DISABLED_HINT}</p>
+                              <p>{quickTooltip}</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>

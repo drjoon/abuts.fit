@@ -77,5 +77,14 @@ export function resolveEntryDashboardPath(user: {
     return roleDefault;
   }
 
+  // 의뢰자 디자인 메뉴 제거 → 의뢰수신으로 통합
+  if (
+    role === "requestor" &&
+    (lastPathname === "/dashboard/design" ||
+      lastPathname.startsWith("/dashboard/design/"))
+  ) {
+    return "/dashboard/practice-transfers?mode=receive";
+  }
+
   return last;
 }

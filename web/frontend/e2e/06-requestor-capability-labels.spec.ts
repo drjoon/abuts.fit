@@ -28,8 +28,8 @@ const REQUESTOR = resolveAccount("requestor");
 
 const RELATED_REQUESTOR_PAGES = [
   { path: "/dashboard", label: "대시보드(유료게이트)" },
-  { path: "/dashboard/new-request", label: "신규의뢰(유료게이트)" },
-  { path: "/dashboard/practice-transfers", label: "기공의뢰서" },
+  { path: "/dashboard/new-request", label: "어벗의뢰(유료게이트)" },
+  { path: "/dashboard/practice-transfers", label: "기공의뢰/의뢰수신" },
   { path: "/dashboard/settings?tab=business", label: "설정 > 사업자" },
   { path: "/dashboard/settings?tab=request", label: "설정 > 의뢰" },
   { path: "/dashboard/settings?tab=payment", label: "설정 > 결제" },
@@ -179,18 +179,20 @@ test.describe("Requestor capability labels – 실계정 로그인", () => {
     }
   });
 
-  test("기공의뢰서 – 발신/수신 UI", async ({ page }) => {
+  test("기공의뢰서 – 수신/발신 UI", async ({ page }) => {
     await page.goto("/dashboard/practice-transfers");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(1500);
     expect(page.url()).not.toContain("/login");
 
     const body = await assertNoLegacyLabels(page, "기공의뢰서");
+    // 치과: 발신 작성 UI / 기공소: 수신 내역(발신·수신 역할 탭 없음)
     expect(
       body.includes("발신") ||
         body.includes("수신") ||
         body.includes("환자명") ||
         body.includes("기공소") ||
+        body.includes("기공의뢰서") ||
         body.includes("역할"),
     ).toBe(true);
   });
