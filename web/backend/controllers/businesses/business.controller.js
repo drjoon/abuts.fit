@@ -928,11 +928,15 @@ function normalizeRequestorHexRotation(value) {
 // related files:
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/models/user.model.js
-// - web/frontend/src/features/settings/tabs/RequestTab.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 function normalizeDesignSoftware(value) {
   const v = String(value || "").trim();
   return v ? v : null;
+}
+
+function normalizeRequestorAnodizingEnabled(value) {
+  if (typeof value === "boolean") return value;
+  return null;
 }
 
 /**
@@ -950,6 +954,7 @@ export async function getMyRequestSettings(req, res) {
         businessAnchorId: 1,
         subRole: 1,
         "requestSettings.designSoftware": 1,
+        "requestSettings.anodizingEnabled": 1,
       })
       .lean();
     const businessAnchorId =
@@ -957,6 +962,9 @@ export async function getMyRequestSettings(req, res) {
 
     const requestorDesignSoftware = normalizeDesignSoftware(
       freshUser?.requestSettings?.designSoftware,
+    );
+    const requestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
+      freshUser?.requestSettings?.anodizingEnabled,
     );
 
     if (!businessAnchorId) {
@@ -968,6 +976,10 @@ export async function getMyRequestSettings(req, res) {
           canEdit: false,
           canEditDesignSoftware: false,
           anodizingEnabled: true,
+          requestorAnodizingEnabled:
+            typeof requestorAnodizingEnabled === "boolean"
+              ? requestorAnodizingEnabled
+              : true,
           designSoftware: null,
           requestorDesignSoftware,
           defaultRequestorHexRotation: "STL모델대로",
@@ -1007,6 +1019,12 @@ export async function getMyRequestSettings(req, res) {
           typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
             ? anchor.requestSettings.anodizingEnabled
             : true,
+        requestorAnodizingEnabled:
+          typeof requestorAnodizingEnabled === "boolean"
+            ? requestorAnodizingEnabled
+            : typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
+              ? anchor.requestSettings.anodizingEnabled
+              : true,
         // 하위 호환: designSoftware는 사업체 공통 기본값을 유지한다.
         designSoftware: businessDesignSoftware,
         requestorDesignSoftware,
@@ -1039,6 +1057,10 @@ export async function updateMyRequestSettings(req, res) {
       req.body || {},
       "anodizingEnabled",
     );
+    const hasRequestorAnodizingEnabled = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "requestorAnodizingEnabled",
+    );
     const hasDefaultRequestorHexRotation = Object.prototype.hasOwnProperty.call(
       req.body || {},
       "defaultRequestorHexRotation",
@@ -1054,6 +1076,7 @@ export async function updateMyRequestSettings(req, res) {
 
     if (
       !hasAnodizingEnabled &&
+      !hasRequestorAnodizingEnabled &&
       !hasDefaultRequestorHexRotation &&
       !hasDesignSoftware &&
       !hasRequestorDesignSoftware
@@ -1061,7 +1084,7 @@ export async function updateMyRequestSettings(req, res) {
       return res.status(400).json({
         success: false,
         message:
-          "유효하지 않은 의뢰 설정입니다. anodizingEnabled, defaultRequestorHexRotation, designSoftware 또는 requestorDesignSoftware가 필요합니다.",
+          "유효하지 않은 의뢰 설정입니다. anodizingEnabled, requestorAnodizingEnabled, defaultRequestorHexRotation, designSoftware 또는 requestorDesignSoftware가 필요합니다.",
       });
     }
 
@@ -1072,6 +1095,24 @@ export async function updateMyRequestSettings(req, res) {
         message:
           "유효하지 않은 의뢰 설정입니다. anodizingEnabled는 boolean이어야 합니다.",
       });
+    }
+
+    let requestorAnodizingEnabled;
+    if (hasRequestorAnodizingEnabled) {
+      if (String(req.user?.role || "") !== "requestor") {
+        return res.status(403).json({
+          success: false,
+          message: "의뢰자 계정만 개인 아노다이징 기본값을 저장할 수 있습니다.",
+        });
+      }
+      if (typeof req.body?.requestorAnodizingEnabled !== "boolean") {
+        return res.status(400).json({
+          success: false,
+          message:
+            "유효하지 않은 의뢰 설정입니다. requestorAnodizingEnabled는 boolean이어야 합니다.",
+        });
+      }
+      requestorAnodizingEnabled = req.body.requestorAnodizingEnabled;
     }
 
     let defaultRequestorHexRotation;
@@ -1139,6 +1180,7 @@ export async function updateMyRequestSettings(req, res) {
         businessAnchorId: 1,
         subRole: 1,
         "requestSettings.designSoftware": 1,
+        "requestSettings.anodizingEnabled": 1,
       })
       .lean();
     const businessAnchorId =
@@ -1256,15 +1298,27 @@ export async function updateMyRequestSettings(req, res) {
     let updatedRequestorDesignSoftware = normalizeDesignSoftware(
       freshUser?.requestSettings?.designSoftware,
     );
+    let updatedRequestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
+      freshUser?.requestSettings?.anodizingEnabled,
+    );
 
-    if (hasRequestorDesignSoftware) {
+    if (hasRequestorDesignSoftware || hasRequestorAnodizingEnabled) {
+      const userSetPayload = {
+        "requestSettings.updatedAt": now,
+      };
+      if (hasRequestorDesignSoftware) {
+        userSetPayload["requestSettings.designSoftware"] =
+          requestorDesignSoftware;
+      }
+      if (hasRequestorAnodizingEnabled) {
+        userSetPayload["requestSettings.anodizingEnabled"] =
+          requestorAnodizingEnabled;
+      }
+
       const updatedUser = await User.findByIdAndUpdate(
         req.user._id,
         {
-          $set: {
-            "requestSettings.designSoftware": requestorDesignSoftware,
-            "requestSettings.updatedAt": now,
-          },
+          $set: userSetPayload,
         },
         {
           new: true,
@@ -1281,6 +1335,9 @@ export async function updateMyRequestSettings(req, res) {
 
       updatedRequestorDesignSoftware = normalizeDesignSoftware(
         updatedUser?.requestSettings?.designSoftware,
+      );
+      updatedRequestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
+        updatedUser?.requestSettings?.anodizingEnabled,
       );
     }
 
@@ -1301,6 +1358,12 @@ export async function updateMyRequestSettings(req, res) {
           typeof requestSettingsSource?.anodizingEnabled === "boolean"
             ? requestSettingsSource.anodizingEnabled
             : true,
+        requestorAnodizingEnabled:
+          typeof updatedRequestorAnodizingEnabled === "boolean"
+            ? updatedRequestorAnodizingEnabled
+            : typeof requestSettingsSource?.anodizingEnabled === "boolean"
+              ? requestSettingsSource.anodizingEnabled
+              : true,
         // 하위 호환: designSoftware는 사업체 공통 기본값을 유지한다.
         designSoftware: businessDesignSoftware,
         requestorDesignSoftware: updatedRequestorDesignSoftware,

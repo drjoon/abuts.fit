@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-11: 아노다이징은 의뢰건 caseInfos 우선, 미설정 시 사업체 기본값(ON) 폴백.
 // - 2026-08-10: caseInfos.files에서 primary s3Key 중복 저장 방지.
 // - 2026-08-08: 접수 시 신속 ETA 이점 없으면 express→normal 강등.
 import mongoose, { Types } from "mongoose";
@@ -1384,7 +1385,10 @@ export async function createRequestsFromDraft(req, res) {
             caseInfos: {
               ...(item.caseInfosWithFile || {}),
               designSoftware: resolvedDesignSoftware || undefined,
-              anodizingEnabled: requestorAnodizingEnabled,
+              anodizingEnabled:
+                typeof item.caseInfosWithFile?.anodizingEnabled === "boolean"
+                  ? item.caseInfosWithFile.anodizingEnabled
+                  : requestorAnodizingEnabled,
               requestorHexRotation: resolvedRequestorHexRotation,
               finalHexRotation: resolvedFinalHexRotation,
             },

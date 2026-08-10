@@ -171,8 +171,8 @@ const businessAnchorSchema = new mongoose.Schema(
     requestSettings: {
       // related files:
       // - web/backend/controllers/businesses/business.controller.js
-      // - web/frontend/src/features/settings/tabs/RequestTab.tsx
       // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+      // 사업체 아노다이징 기본값(신규의뢰 __default__ 시드). 의뢰건 SSOT는 caseInfos.anodizingEnabled.
       anodizingEnabled: {
         type: Boolean,
         default: true,

@@ -190,6 +190,11 @@ const userSchema = new mongoose.Schema(
         trim: true,
         maxlength: 120,
       },
+      // 의뢰자(계정) 단위 아노다이징 기본값. 신규 업로드 시드 → caseInfos.anodizingEnabled
+      anodizingEnabled: {
+        type: Boolean,
+        default: true,
+      },
       updatedAt: {
         type: Date,
         default: null,

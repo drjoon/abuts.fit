@@ -225,6 +225,7 @@ export const useNewRequestSubmitV2 = ({
             shippingMode: base.shippingMode,
             requestedShipDate: base.requestedShipDate,
             designSoftware: base.designSoftware,
+            anodizingEnabled: base.anodizingEnabled,
           };
 
           Object.keys(payload.caseInfos).forEach((k) => {
@@ -557,6 +558,7 @@ export const useNewRequestSubmitV2 = ({
               shippingMode: ci.shippingMode,
               requestedShipDate: ci.requestedShipDate,
               designSoftware: ci.designSoftware,
+              anodizingEnabled: ci.anodizingEnabled,
               file: {
                 originalName: primary.temp.originalName,
                 size: primary.temp.size,

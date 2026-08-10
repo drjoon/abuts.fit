@@ -161,8 +161,13 @@ const requestSchema = new mongoose.Schema(
         type: [mongoose.Schema.Types.Mixed],
         default: undefined,
       },
-      // 기공소(사업체) 의뢰 기본 설정에서 신규 생성 시 스냅샷되는 아노다이징 여부.
+      // 의뢰건 아노다이징 SSOT(신규의뢰 카드 → 생성 시 스냅샷).
+      // 미설정 레거시는 사업체 requestSettings.anodizingEnabled(기본 true)로 보정.
       // false이면 제조사 워크시트 카드에 "아노다이징 X" 배지를 노출한다.
+      // related files:
+      // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+      // - web/backend/controllers/requests/creation.from-draft.controller.js
+      // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
       anodizingEnabled: {
         type: Boolean,
         default: true,

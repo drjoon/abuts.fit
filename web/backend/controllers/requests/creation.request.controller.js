@@ -5,6 +5,8 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// change-log:
+// - 2026-08-11: 아노다이징은 의뢰건 caseInfos 우선, 미설정 시 사업체 기본값(ON) 폴백.
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -195,7 +197,10 @@ export async function createRequest(req, res) {
       ...bodyRest,
       caseInfos: {
         ...normalizedCaseInfos,
-        anodizingEnabled: requestorAnodizingEnabled,
+        anodizingEnabled:
+          typeof normalizedCaseInfos?.anodizingEnabled === "boolean"
+            ? normalizedCaseInfos.anodizingEnabled
+            : requestorAnodizingEnabled,
       },
       requestor: req.user._id,
       businessAnchorId:
@@ -996,7 +1001,10 @@ export async function createRequestsBulk(req, res) {
             ...rest,
             caseInfos: {
               ...normalizedCaseInfos,
-              anodizingEnabled: requestorAnodizingEnabled,
+              anodizingEnabled:
+                typeof normalizedCaseInfos?.anodizingEnabled === "boolean"
+                  ? normalizedCaseInfos.anodizingEnabled
+                  : requestorAnodizingEnabled,
             },
             requestor: req.user._id,
             businessAnchorId:

@@ -87,6 +87,9 @@ type Props = {
   onCancelAll: () => void;
   designSoftwareLabel?: string;
   onOpenDesignSoftwareModal?: () => void;
+  anodizingEnabled?: boolean;
+  anodizingSaving?: boolean;
+  onToggleAnodizing?: () => void;
   onShippingModeChange?: (
     fileKeys: string[],
     mode: "normal" | "express",
@@ -154,6 +157,9 @@ export function NewRequestDetailsSection({
   onCancelAll,
   designSoftwareLabel,
   onOpenDesignSoftwareModal,
+  anodizingEnabled,
+  anodizingSaving,
+  onToggleAnodizing,
   onShippingModeChange,
   defaultShippingMode = "normal",
   expressSelectableGlobal = true,
@@ -639,6 +645,9 @@ export function NewRequestDetailsSection({
             handleClearAll={handleClearAll}
             designSoftwareLabel={designSoftwareLabel}
             onOpenDesignSoftwareModal={onOpenDesignSoftwareModal}
+            anodizingEnabled={anodizingEnabled}
+            anodizingSaving={anodizingSaving}
+            onToggleAnodizing={onToggleAnodizing}
             onFilesSelected={onFilesSelected}
             isDragOver={isDragOver}
             onDragOver={onDragOver}

@@ -296,8 +296,11 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 제조사 아노다이징 override는 `caseInfos.anodizingEnabled` SSOT로 저장합니다.
   - endpoint: `PATCH /api/requests/:id/anodizing-override`
   - 변경 가능 단계: `준비`, `가공` (레거시 `CAM` 호환, 그 외 단계는 409)
+  - 생성 시: 의뢰건 `caseInfos.anodizingEnabled` 우선, 미설정이면 사업체 `requestSettings.anodizingEnabled`(기본 true).
+  - 의뢰자 계정 기본값: `User.requestSettings.anodizingEnabled` (API: `requestorAnodizingEnabled`). 신규의뢰 토글 시 저장되고 업로드 시드에 사용.
   - 제조사 워크시트 응답의 `item.business.requestSettings.anodizingEnabled`를 함께 제공해
-    프론트가 `caseInfos` 미설정 시 사업자 기본값으로 표시할 수 있어야 합니다.
+    프론트가 **레거시** `caseInfos` 미설정 시 사업자 기본값으로 표시할 수 있어야 합니다.
+  - 관련: `creation.from-draft.controller.js`, `creation.request.controller.js`, `business.controller.js` request-settings
   - 전달 SSOT: `헥스X도회전`의 X는 `totalDeg(=30+minorDeg)`
     - 예) canonical `헥스40도회전`
   - 하위호환 입력: 레거시 `0`/`30`, 기존 minor 저장값(`헥스10도회전`)은 `헥스40도회전`으로 정규화 허용
@@ -650,6 +653,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3):
   - 운영 주체는 면세 사업자. 크레딧 충전·앱 내 과금·정산 모두 부가세 없음.
   - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`.
+  - 충전 단위: `utils/creditChargeUnit.js` — 기공소 50만원, 치과(practice) 100만원. 절대 상한 5,000만원.
+    주문 검증 `creditBPlan.controller.js`, 추천액(월사용량/3 반올림) `credit.controller.js` insights.
     구현: `controllers/credits/creditBPlan.controller.js`
   - 수익 라인(`REV_*`) 적재 시 VAT 가산 금지. `amount = amountExcludingVat = base`, `vatAmount = 0`.
     구현: `controllers/requests/common.review.helpers.js`

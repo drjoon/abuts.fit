@@ -10,13 +10,11 @@ import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { RequestTab } from "@/features/settings/tabs/RequestTab";
 import {
   User,
   Building2,
   Bell,
   Users,
-  FileText,
   Shield,
 } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
@@ -29,15 +27,15 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/controllers/requests/utils.js
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // 가입일시/경과일/D-day는 신규 기공소 90일 고정가와 동일 기준일(pricingBaseDate)을 사용한다.
 // 2026-08-11: 설정 결제 탭 제거 → 사이드바 크레딧(`/dashboard/credits`)로 이전.
-// 2026-08-11: 설정 의뢰 탭은 유료 게이트 없이 항상 활성.
+// 2026-08-11: 설정 의뢰 탭 제거 → 어벗의뢰 좌측 상단(디자인소프트웨어·아노다이징).
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
-  | "request"
   | "notifications"
   | "security";
 
@@ -146,7 +144,7 @@ export const RequestorSettingsPage = () => {
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold leading-none ${
                           launchEventRemainingDays > 0
-                            ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
+                            ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
                             : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"
                         }`}
                       >
@@ -168,12 +166,6 @@ export const RequestorSettingsPage = () => {
         label: "임직원",
         icon: Users,
         content: <StaffTab userData={user} />,
-      },
-      {
-        key: "request",
-        label: "의뢰",
-        icon: FileText,
-        content: <RequestTab />,
       },
       {
         key: "notifications",

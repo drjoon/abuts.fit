@@ -77,6 +77,8 @@ export type CaseInfos = {
   shippingMode?: "normal" | "express";
   requestedShipDate?: string; // ISO date string or YYYY-MM-DD
   designSoftware?: string;
+  /** 의뢰건 아노다이징. 미설정 시 생성 단계에서 사업체 기본값(기본 ON)으로 보정 */
+  anodizingEnabled?: boolean;
   newSystemRequest?: {
     requested: boolean;
     manufacturer?: string;

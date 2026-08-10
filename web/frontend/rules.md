@@ -17,7 +17,17 @@
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
-- Requestor workspace header: 지난 의뢰(+기간 필터는 대시보드만). 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트).
+- Requestor workspace header: 지난 의뢰(+기간 필터는 대시보드만). 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → 업로드 시 `caseInfos.anodizingEnabled` 주입. 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
+- Semantic color palette (강제, 앱 전체):
+  - 의미 축 4 + 서비스 1만 사용. 같은 축 안 차이는 soft/muted/DEFAULT/strong 밝기만.
+    - **Primary** (`--primary*`) — 브랜드·CTA·공정·묶음출고·정상/완료
+    - **Attention** (`--accent*`) — 신속출고·불완전가공·마감임박·warning
+    - **Danger** (`--destructive*`) — 취소·실패·치명
+    - **Neutral** (muted/secondary/slate chrome) — 준비·추적·비활성·보조
+    - **Service** (`--service-gigong*` / `--service-abut*`) — 기공 vs 어벗 구분만 (인접 cyan, hue ~12°)
+  - raw Tailwind 팔레트(`sky`/`teal`/`violet`/`purple`/`emerald`/`green`/`yellow`/`orange`/`rose`/`indigo`/`cyan` 등)로 의미 색을 새로 쓰지 말 것.
+  - SSOT: `src/index.css`, `tailwind.config.ts`, `src/shared/ui/semanticStatus.ts`,
+    `src/shared/ui/gigongAbutAccent.ts`, `src/shared/shipping/shippingMode.ts`
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절
@@ -329,6 +339,9 @@ Notes:
   - 운영 주체는 면세 사업자. 가격·충전·약관·정산 안내에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지.
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
     구현: `src/features/settings/tabs/CreditPaymentTab.tsx`
+    충전 단위 SSOT: 기공소(`lab`) 50만원, 치과(`practice`) 100만원.
+    첫 충전 기본 1단위. 2회차부터 기본 추천 = 월사용량(90일/3)의 1/3을 단위로 반올림(0이면 최소 1단위).
+    백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage` — 면세·부가세 없음, 환불은 잔여 유료 크레딧(공급가)만.
   - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드·소개 페이지 — "배송비 별도"만 유지.
   - 제조사 정산규칙 안내: 분배율만 안내하고 "+ VAT 10%" 표기 금지.
@@ -366,10 +379,11 @@ Notes:
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
 
 - `PreviewModal` 상단 아노다이징 체크박스 표시/override 정책:
-  - 표시 우선순위는 `caseInfos.anodizingEnabled` → `business.requestSettings.anodizingEnabled` 입니다.
+  - 의뢰건 SSOT는 `caseInfos.anodizingEnabled`. 신규의뢰에서 카드 단위로 저장·생성 시 스냅샷.
+  - 표시 우선순위는 `caseInfos.anodizingEnabled` → (레거시 미설정만) `business.requestSettings.anodizingEnabled` → 기본 ON.
   - 제조사 override 저장은 준비/가공 단계에서만 허용합니다.
   - 저장 API: `PATCH /api/requests/:id/anodizing-override`
-  - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+  - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`, `src/pages/requestor/new_request/NewRequestPage.tsx`
 
 - 헥스 회전 라벨은 **표시(UI)와 전달(canonical)을 total 기준으로 통일**합니다.
   - 코드에서 `보정`/`무보정` 문자열 사용 금지(레거시).

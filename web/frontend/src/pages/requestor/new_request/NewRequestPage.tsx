@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-11: 아노다이징을 의뢰건 caseInfos SSOT로 저장·뱃지 표시(디자인소프트웨어와 동일). 사업체는 기본값 시드만.
+// - 2026-08-11: 설정 의뢰 탭 제거 후 아노다이징 토글을 좌측 상단(디자인소프트웨어 옆)으로 이전.
 // - 2026-08-09: 왼쪽 첨부 패널을 넓혀 드롭존 안내 문구가 1줄로 유지되도록 함.
 // - 2026-08-09: 신규의뢰 첨부 허용 확장자 STL/PLY/OBJ.
 // - 2026-08-09: 연결 끊기 시 productMode 복원과 함께 출고 모드·일정을 다시 계산한다.
@@ -62,7 +64,7 @@ import {
 // related files:
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
-// - web/frontend/src/features/settings/tabs/RequestTab.tsx
+// - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/controllers/businesses/business.controller.js
@@ -103,6 +105,8 @@ const NewRequestPageContent = () => {
   const [designSoftwareValue, setDesignSoftwareValue] = useState("");
   const [needsBusinessDesignSoftwareBootstrap, setNeedsBusinessDesignSoftwareBootstrap] =
     useState(false);
+  const [anodizingEnabled, setAnodizingEnabled] = useState(true);
+  const [anodizingSaving, setAnodizingSaving] = useState(false);
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
@@ -227,6 +231,27 @@ const NewRequestPageContent = () => {
 
         const body: any = res.data || {};
         const data = body?.data || body;
+
+        // 아노다이징 기본값: Draft __default__ > 의뢰자 계정 > 사업체 > ON
+        const draftAnodizing = caseInfosMap?.__default__?.anodizingEnabled;
+        const requestorAnodizing =
+          typeof data?.requestorAnodizingEnabled === "boolean"
+            ? data.requestorAnodizingEnabled
+            : null;
+        const businessAnodizing =
+          typeof data?.anodizingEnabled === "boolean"
+            ? data.anodizingEnabled
+            : true;
+        const resolvedAnodizing =
+          typeof draftAnodizing === "boolean"
+            ? draftAnodizing
+            : typeof requestorAnodizing === "boolean"
+              ? requestorAnodizing
+              : businessAnodizing;
+        setAnodizingEnabled(resolvedAnodizing);
+        if (typeof draftAnodizing !== "boolean") {
+          updateCaseInfos("__default__", { anodizingEnabled: resolvedAnodizing });
+        }
 
         let requestorDefault = String(data?.requestorDesignSoftware || "").trim();
         let businessDefault = String(data?.designSoftware || "").trim();
@@ -435,6 +460,92 @@ const NewRequestPageContent = () => {
     setDesignSoftwareModalOpen(true);
   }, [caseInfosMap, designSoftwareValue]);
 
+  const handleToggleAnodizing = useCallback(() => {
+    if (!token) {
+      toast({
+        title: "로그인이 필요합니다",
+        description: "아노다이징 설정을 저장하려면 로그인해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (anodizingSaving) return;
+
+    const next = !anodizingEnabled;
+    const prev = anodizingEnabled;
+    setAnodizingEnabled(next);
+    // 신규 업로드 시드(__default__) + 현재 카드 반영. 계정 기본값도 저장.
+    updateCaseInfos("__default__", { anodizingEnabled: next });
+    for (const file of files) {
+      const fileKey = toNormalizedFileKey(file);
+      updateCaseInfos(fileKey, { anodizingEnabled: next });
+    }
+
+    setAnodizingSaving(true);
+    void (async () => {
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/businesses/me/request-settings",
+          method: "PUT",
+          token,
+          jsonBody: { requestorAnodizingEnabled: next },
+        });
+
+        if (!res.ok) {
+          setAnodizingEnabled(prev);
+          updateCaseInfos("__default__", { anodizingEnabled: prev });
+          for (const file of files) {
+            const fileKey = toNormalizedFileKey(file);
+            updateCaseInfos(fileKey, { anodizingEnabled: prev });
+          }
+          const body: any = res.data || {};
+          toast({
+            title: "저장에 실패했습니다",
+            description:
+              String(
+                body?.message ||
+                  "아노다이징 기본값 저장 중 오류가 발생했습니다.",
+              ),
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const body: any = res.data || {};
+        const data = body?.data || body;
+        if (typeof data?.requestorAnodizingEnabled === "boolean") {
+          setAnodizingEnabled(data.requestorAnodizingEnabled);
+          updateCaseInfos("__default__", {
+            anodizingEnabled: data.requestorAnodizingEnabled,
+          });
+        }
+      } catch {
+        setAnodizingEnabled(prev);
+        updateCaseInfos("__default__", { anodizingEnabled: prev });
+        for (const file of files) {
+          const fileKey = toNormalizedFileKey(file);
+          updateCaseInfos(fileKey, { anodizingEnabled: prev });
+        }
+        toast({
+          title: "저장에 실패했습니다",
+          description: "아노다이징 기본값 저장 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setAnodizingSaving(false);
+      }
+    })();
+  }, [
+    anodizingEnabled,
+    anodizingSaving,
+    files,
+    toast,
+    token,
+    toNormalizedFileKey,
+    updateCaseInfos,
+  ]);
+
   // 파일 삭제는 rawHandleRemoveFile이 처리하고,
   // fileVerificationStatus cleanup은 useFileVerification의 effect가 자동으로 처리
   const handleRemoveFile = rawHandleRemoveFile;
@@ -481,6 +592,10 @@ const NewRequestPageContent = () => {
     const preservedDesignSoftware = String(
       designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
     ).trim();
+    const preservedAnodizing =
+      typeof caseInfosMap?.__default__?.anodizingEnabled === "boolean"
+        ? caseInfosMap.__default__.anodizingEnabled
+        : anodizingEnabled;
 
     await resetDraft();
     handleCancel();
@@ -520,6 +635,9 @@ const NewRequestPageContent = () => {
         setCustomDesignSoftware(preservedDesignSoftware);
       }
     }
+
+    setAnodizingEnabled(preservedAnodizing);
+    updateCaseInfos("__default__", { anodizingEnabled: preservedAnodizing });
 
     const fileInput = document.getElementById(
       "file-input",
@@ -720,6 +838,12 @@ const NewRequestPageContent = () => {
           existingCaseInfos.designSoftware,
           designSoftwareValue,
         );
+        const anodizingNext =
+          typeof current.anodizingEnabled === "boolean"
+            ? current.anodizingEnabled
+            : typeof existingCaseInfos.anodizingEnabled === "boolean"
+              ? existingCaseInfos.anodizingEnabled
+              : anodizingEnabled;
 
         if (clinicNameValue) updates.clinicName = clinicNameValue;
         if (patientNameValue) updates.patientName = patientNameValue;
@@ -730,6 +854,7 @@ const NewRequestPageContent = () => {
         if (typeValue) updates.implantType = typeValue;
         updates.retentionGroove = retentionGrooveValue;
         if (designSoftwareNext) updates.designSoftware = designSoftwareNext;
+        updates.anodizingEnabled = anodizingNext;
         if (!current.workType) updates.workType = "abutment";
 
         updateCaseInfos(fileKey, updates);
@@ -830,7 +955,7 @@ const NewRequestPageContent = () => {
                 existingRequestId: "",
               });
             }}
-            className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
+            className="flex-1 rounded bg-primary-strong px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-primary-strong"
           >
             이 중복 항목 제외
           </button>
@@ -864,7 +989,7 @@ const NewRequestPageContent = () => {
               existingRequestId,
             });
           }}
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
+          className="flex-1 rounded bg-primary-strong px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-primary-strong"
         >
           {primaryLabel}
         </button>
@@ -1346,6 +1471,17 @@ const NewRequestPageContent = () => {
         }
       }
 
+      const currentAnodizing =
+        typeof caseInfosMap?.__default__?.anodizingEnabled === "boolean"
+          ? caseInfosMap.__default__.anodizingEnabled
+          : anodizingEnabled;
+      for (const file of stlFiles) {
+        const fileKey = toNormalizedFileKey(file);
+        if (typeof caseInfosMap?.[fileKey]?.anodizingEnabled !== "boolean") {
+          updateCaseInfos(fileKey, { anodizingEnabled: currentAnodizing });
+        }
+      }
+
       void onUpload(stlFiles);
     }
 
@@ -1530,7 +1666,7 @@ const NewRequestPageContent = () => {
                   : "제출하려는 파일들끼리 동일한 치과/환자/치아 조합이 중복되었습니다. 항목별로 제외 여부를 선택해주세요."}
               </div>
               {duplicatePrompt?.remakeQuota && (
-                <div className="rounded border border-blue-200 bg-blue-50 px-2.5 py-2 text-[11px] text-blue-800">
+                <div className="rounded border border-primary-muted bg-primary-soft px-2.5 py-2 text-[11px] text-primary-strong">
                   이번 달 무료 재의뢰: {duplicatePrompt.remakeQuota.limit}건 중{" "}
                   {duplicatePrompt.remakeQuota.used}건 사용, 잔여{" "}
                   {duplicatePrompt.remakeQuota.remaining}건
@@ -1775,6 +1911,9 @@ const NewRequestPageContent = () => {
               onCancelAll={handleCancelAll}
               designSoftwareLabel={String(designSoftwareValue || "").trim()}
               onOpenDesignSoftwareModal={handleOpenDesignSoftwareModal}
+              anodizingEnabled={anodizingEnabled}
+              anodizingSaving={anodizingSaving}
+              onToggleAnodizing={handleToggleAnodizing}
               onShippingModeChange={handleShippingModeChange}
               defaultShippingMode={defaultShippingMode}
               expressSelectableGlobal={expressSelectableGlobal}

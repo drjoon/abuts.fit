@@ -31,8 +31,7 @@ const RELATED_REQUESTOR_PAGES = [
   { path: "/dashboard/new-request", label: "어벗의뢰" },
   { path: "/dashboard/practice-transfers", label: "기공의뢰/의뢰수신" },
   { path: "/dashboard/settings?tab=business", label: "설정 > 사업자" },
-  { path: "/dashboard/settings?tab=request", label: "설정 > 의뢰" },
-  { path: "/dashboard/settings?tab=payment", label: "설정 > 결제" },
+  { path: "/dashboard/credits", label: "크레딧" },
   { path: "/dashboard/referral-groups", label: "소개" },
 ];
 

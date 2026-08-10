@@ -131,6 +131,10 @@ const draftCaseSchema = new mongoose.Schema(
           trim: true,
           maxlength: 120,
         },
+        // 의뢰건 아노다이징(신규의뢰 카드 단위 SSOT). 미설정 시 생성 시 사업체 기본값(ON) 적용
+        anodizingEnabled: {
+          type: Boolean,
+        },
         // 의뢰자 헥스 회전 선택값(canonical)
         requestorHexRotation: {
           type: String,

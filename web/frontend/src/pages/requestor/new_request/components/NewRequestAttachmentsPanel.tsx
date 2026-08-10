@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-11: 카드 ETA줄에 아노다이징 뱃지 추가(디자인소프트웨어와 동일). 의뢰건 caseInfos SSOT.
+// - 2026-08-11: 좌측 상단에 아노다이징 토글 버튼 추가(디자인소프트웨어 옆). 설정 의뢰 탭에서 이전.
 // - 2026-08-09: 구강스캔 묶음 멤버 파일명 오른쪽에도 용량 표시. 크기 판정 3MB 단일 기준.
 // - 2026-08-09: 단일 카드 파일명 짧게 truncate + 오른쪽 끝에 파일 크기 표시.
 // - 2026-08-09: 구강스캔·어벗디자인 뱃지를 파일명 옆 → ETA줄 3Shape 왼쪽으로 이동(긴 파일명 잘림 방지).
@@ -29,7 +31,6 @@
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts
-// - web/frontend/src/features/settings/tabs/RequestTab.tsx
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,8 +65,8 @@ const ABUT_DESIGN_BADGE_TOOLTIP = "커스텀어벗 생산";
 
 const FILE_KIND_BADGE_CLASS =
   "text-[10px] font-medium px-1.5 py-0.5 shrink-0";
-const ORAL_SCAN_BADGE_CLASS = `${FILE_KIND_BADGE_CLASS} bg-violet-100 text-violet-700`;
-const ABUT_DESIGN_BADGE_CLASS = `${FILE_KIND_BADGE_CLASS} bg-sky-100 text-sky-700`;
+const ORAL_SCAN_BADGE_CLASS = `${FILE_KIND_BADGE_CLASS} bg-primary-muted/50 text-primary-strong`;
+const ABUT_DESIGN_BADGE_CLASS = `${FILE_KIND_BADGE_CLASS} bg-primary-soft text-primary-strong`;
 
 /** 첨부 카드용 짧은 용량 표기 (예: 0.8MB, 12MB) */
 function formatAttachmentSize(bytes: number): string {
@@ -156,6 +157,9 @@ type Props = {
   onFilesSelected: (files: File[]) => void;
   designSoftwareLabel?: string;
   onOpenDesignSoftwareModal?: () => void;
+  anodizingEnabled?: boolean;
+  anodizingSaving?: boolean;
+  onToggleAnodizing?: () => void;
   onShippingModeChange?: (fileKeys: string[], mode: ShippingMode) => void;
   defaultShippingMode?: ShippingMode;
   /** 우측 신속 카드와 동일 조건. false면 건별 이점이 있어도 신속 비활성 */
@@ -201,6 +205,9 @@ export function NewRequestAttachmentsPanel({
   onFilesSelected,
   designSoftwareLabel,
   onOpenDesignSoftwareModal,
+  anodizingEnabled = true,
+  anodizingSaving = false,
+  onToggleAnodizing,
   onShippingModeChange,
   defaultShippingMode = "normal",
   expressSelectableGlobal = true,
@@ -647,20 +654,14 @@ export function NewRequestAttachmentsPanel({
             ? getEstimatedShipForDiameter(diameter, "normal", productMode)
             : null));
     const designSoftware = String(fileInfo?.designSoftware || "").trim();
+    const cardAnodizing =
+      typeof fileInfo?.anodizingEnabled === "boolean"
+        ? fileInfo.anodizingEnabled
+        : anodizingEnabled;
     const isDesignMode =
       !productionOnly &&
       (forceDesignProductMode ||
         fileInfo?.productMode === "design_custom_abutment");
-
-    if (
-      !estimatedShip &&
-      !designSoftware &&
-      !onShippingModeChange &&
-      !isDesignMode &&
-      !fileKindBadge
-    ) {
-      return null;
-    }
 
     return (
       <div className="flex items-center justify-between gap-2">
@@ -720,7 +721,7 @@ export function NewRequestAttachmentsPanel({
             <ImmediateTooltip label={ORAL_SCAN_BADGE_TOOLTIP}>
               <Badge
                 variant="secondary"
-                className="bg-violet-100 text-[10px] font-medium px-1.5 py-0.5 text-violet-700"
+                className="bg-primary-muted/50 text-[10px] font-medium px-1.5 py-0.5 text-primary-strong"
               >
                 +디자인
               </Badge>
@@ -747,6 +748,16 @@ export function NewRequestAttachmentsPanel({
               {designSoftware}
             </Badge>
           ) : null}
+          <Badge
+            variant="secondary"
+            className={`text-[10px] font-medium px-1.5 py-0.5 ${
+              cardAnodizing
+                ? ""
+                : "bg-accent-soft text-accent-strong"
+            }`}
+          >
+            {cardAnodizing ? "아노 ON" : "아노 OFF"}
+          </Badge>
         </div>
       </div>
     );
@@ -768,20 +779,20 @@ export function NewRequestAttachmentsPanel({
 
     const baseClasses = isVerified
       ? "border border-gray-200 bg-white text-gray-900"
-      : "border border-red-300 bg-red-50 text-red-800";
+      : "border border-destructive/80 bg-destructive-soft text-destructive";
     const stateClasses = isSelected
       ? isVerified
         ? "border-primary bg-primary/10 text-primary shadow-[0_4px_12px_rgba(37,99,235,0.2)]"
-        : "border-red-400 bg-red-50 shadow-[0_4px_12px_rgba(248,113,113,0.2)]"
+        : "border-destructive/80 bg-destructive-soft shadow-[0_4px_12px_rgba(248,113,113,0.2)]"
       : "";
     const ringClasses = checked
-      ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-white"
+      ? "ring-2 ring-primary ring-offset-1 ring-offset-white"
       : isSelected
         ? "ring-2 ring-primary ring-offset-1 ring-offset-white"
         : isUnverifiedHighlight
-          ? "ring-2 ring-red-400 ring-offset-1 ring-offset-white"
+          ? "ring-2 ring-destructive/80 ring-offset-1 ring-offset-white"
           : "";
-    const selectFill = checked ? "bg-sky-50/90" : "";
+    const selectFill = checked ? "bg-primary-soft/90" : "";
 
     return (
       <div
@@ -834,7 +845,7 @@ export function NewRequestAttachmentsPanel({
                     event.stopPropagation();
                     handleRemoveFile(fileIndex);
                   }}
-                  className="p-1 text-slate-400 hover:text-red-500"
+                  className="p-1 text-slate-400 hover:text-destructive"
                   aria-label="파일 삭제"
                   data-no-marquee
                 >
@@ -880,20 +891,20 @@ export function NewRequestAttachmentsPanel({
 
     const baseClasses = isVerified
       ? "border border-gray-200 bg-white text-gray-900"
-      : "border border-red-300 bg-red-50 text-red-800";
+      : "border border-destructive/80 bg-destructive-soft text-destructive";
     const stateClasses = isSelected
       ? isVerified
         ? "border-primary bg-primary/10 text-primary shadow-[0_4px_12px_rgba(37,99,235,0.2)]"
-        : "border-red-400 bg-red-50 shadow-[0_4px_12px_rgba(248,113,113,0.2)]"
+        : "border-destructive/80 bg-destructive-soft shadow-[0_4px_12px_rgba(248,113,113,0.2)]"
       : "";
     const ringClasses = checked
-      ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-white"
+      ? "ring-2 ring-primary ring-offset-1 ring-offset-white"
       : isSelected
         ? "ring-2 ring-primary ring-offset-1 ring-offset-white"
         : isUnverifiedHighlight
-          ? "ring-2 ring-red-400 ring-offset-1 ring-offset-white"
+          ? "ring-2 ring-destructive/80 ring-offset-1 ring-offset-white"
           : "";
-    const selectFill = checked ? "bg-sky-50/90" : "";
+    const selectFill = checked ? "bg-primary-soft/90" : "";
 
     const handleRemoveGroup = () => {
       // 인덱스 밀림 방지: 큰 인덱스부터 순차 삭제
@@ -974,7 +985,7 @@ export function NewRequestAttachmentsPanel({
                     event.stopPropagation();
                     handleRemoveGroup();
                   }}
-                  className="p-1 text-slate-400 hover:text-red-500"
+                  className="p-1 text-slate-400 hover:text-destructive"
                   aria-label="의뢰 삭제"
                   data-no-marquee
                 >
@@ -984,7 +995,7 @@ export function NewRequestAttachmentsPanel({
             </div>
           </div>
 
-          <ul className="space-y-1 rounded-lg border border-violet-100/80 bg-white/70 px-2.5 py-2">
+          <ul className="space-y-1 rounded-lg border border-primary-soft/80 bg-white/70 px-2.5 py-2">
             {fileIndices.map((idx) => {
               const member = files[idx];
               if (!member) return null;
@@ -1035,7 +1046,7 @@ export function NewRequestAttachmentsPanel({
                           event.stopPropagation();
                           handleRemoveFile(idx);
                         }}
-                        className="p-0.5 text-slate-400 hover:text-red-500"
+                        className="p-0.5 text-slate-400 hover:text-destructive"
                         aria-label={`${member.name} 삭제`}
                         data-no-marquee
                       >
@@ -1089,6 +1100,16 @@ export function NewRequestAttachmentsPanel({
             {designSoftwareLabel
               ? `${designSoftwareLabel}`
               : "디자인 소프트웨어 설정"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={anodizingSaving}
+            onClick={() => onToggleAnodizing?.()}
+            title="의뢰자 기본값으로 저장되며, 새 업로드에 적용됩니다"
+          >
+            {anodizingEnabled ? "아노다이징 ON" : "아노다이징 OFF"}
           </Button>
         </div>
 
@@ -1202,7 +1223,7 @@ export function NewRequestAttachmentsPanel({
                   return (
                     <div
                       aria-hidden
-                      className="pointer-events-none absolute z-20 rounded-sm border border-sky-500 bg-sky-400/20"
+                      className="pointer-events-none absolute z-20 rounded-sm border border-primary bg-primary/70/20"
                       style={{ left, top, width, height }}
                     />
                   );
