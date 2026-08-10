@@ -1504,12 +1504,6 @@ const NewRequestPageContent = () => {
               생산의뢰합니다.
             </p>
           ) : null}
-          {requestorKind === "lab" ? (
-            <p className="text-xs text-slate-500">
-              기공소: 구강스캔으로 디자인 후 납품하거나, 외부에서 받은 커스텀어벗
-              디자인 파일을 업로드해 생산의뢰합니다.
-            </p>
-          ) : null}
         </div>
         <MultiActionDialog
           open={!!duplicatePrompt}

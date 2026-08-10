@@ -16,7 +16,7 @@ import {
 const KIND_PRACTICE = "치과 (기공실 포함)";
 const KIND_LAB = "기공소";
 const ROLE_BADGE_PRACTICE = "의뢰자·치과";
-const ROLE_BADGE_LAB = "의뢰자(기공소)";
+const ROLE_BADGE_LAB = "의뢰자·기공소";
 const SERVICE_FREE = "기공의뢰서 (무료)";
 const SERVICE_PAID = "생산의뢰 (유료)";
 const OLD_SENDER = "원내 기공실 없는 치과";

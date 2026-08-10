@@ -228,10 +228,10 @@ export const REQUESTOR_KIND_LABEL = {
   lab: "기공소",
 } as const;
 
-/** 역할 뱃지 표기 SSOT: 의뢰자·치과 / 의뢰자(기공소) */
+/** 역할 뱃지 표기 SSOT: 의뢰자·치과 / 의뢰자·기공소 / 의뢰자 */
 export const REQUESTOR_ROLE_BADGE_LABEL = {
   practice: "의뢰자·치과",
-  lab: "의뢰자(기공소)",
+  lab: "의뢰자·기공소",
 } as const;
 
 export const getRequestorRoleBadgeLabel = (
@@ -254,7 +254,8 @@ export const REQUESTOR_SERVICE_LABEL = {
   paid: "생산의뢰 (유료)",
 } as const;
 
-export const PAID_ACCESS_DISABLED_HINT = `설정 > 사업자에서 ${REQUESTOR_SERVICE_LABEL.paid}를 선택하고, 사업자등록증을 검증한 뒤 이용할 수 있습니다.`;
+export const PAID_ACCESS_DISABLED_HINT =
+  "설정 > 사업자에서 사업자등록증을 등록,검증한 뒤 이용할 수 있습니다.";
 
 export const canUseFreeServices = (
   servicesOrProfileOrCaps?:

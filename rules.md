@@ -227,7 +227,7 @@
   - 최소 가입: 이메일(+인증) + 비밀번호 + 담당자 휴대폰(+인증). `practiceProfile`/Org 앵커는 만들지 않음
   - 가입 직후 **첫 PracticeTransfer**까지 드롭존에서 전송 가능
   - 온보딩에서 `practiceProfile` 완료 시 Org 앵커 생성(synthetic `practice-*` BN 가능). 이후 유료 선택·검증 시 동일 앵커에 실BN·license 승격
-- UI 라벨: `REQUESTOR_KIND_LABEL` / `REQUESTOR_SERVICE_LABEL` / `REQUESTOR_ROLE_BADGE_LABEL`(의뢰자·치과 / 의뢰자(기공소))
+- UI 라벨: `REQUESTOR_KIND_LABEL` / `REQUESTOR_SERVICE_LABEL` / `REQUESTOR_ROLE_BADGE_LABEL`(의뢰자·치과 / 의뢰자·기공소 / 의뢰자)
 - 가입·온보딩:
   1. `/signup` 또는 드롭존 가입 → 로그인
   2. `/dashboard/wizard`: 프로필 → 휴대전화 → 역할(owner/staff) → 사업자
