@@ -17,7 +17,7 @@
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
-- Requestor workspace header: 보유 크레딧·지난 의뢰는 `RequestorWorkspaceHeader` SSOT. 기간 필터는 대시보드만(`period` prop 제공 시). 크레딧 모달 충전은 `chargeNavPath=/dashboard/settings?tab=payment`.
+- Requestor workspace header: 지난 의뢰(+기간 필터는 대시보드만). 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트).
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절
@@ -72,7 +72,8 @@ Notes:
   - `src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
   - `src/pages/requestor/new_request/utils/patientGroups.ts` (구강스캔 자동묶음·파일크기 분류)
   - `src/pages/requestor/new_request/hooks/usePatientFileGroups.ts`
-  - `src/shared/components/RequestorWorkspaceHeader.tsx` (보유 크레딧·지난 의뢰 공통; 기간 필터는 대시보드만)
+  - `src/shared/components/RequestorWorkspaceHeader.tsx` (지난 의뢰 공통; 기간 필터는 대시보드만)
+  - `src/pages/requestor/credits/RequestorCreditsPage.tsx` (사이드바 크레딧: 내역/충전)
   - `src/shared/shipping/shippingMode.ts`
   - `src/pages/requestor/practice/RequestorPracticePage.tsx`
   - 디자인 큐
@@ -578,8 +579,7 @@ Notes:
     - 쿼리 옵션: `placeholderData: previous`를 유지해 refetch 중에도 스켈레톤 전환(플리커)을 방지합니다.
 
   - 이번 세션 구현 기준(운영 메모):
-    - 의뢰자 `CreditLedgerModal`은 열린 상태에서 `credit:balance-updated` 수신 시 모달 유지 + 목록/스냅샷만 재조회
-    - `RequestorDashboardPage`는 크레딧 모달 오픈 중 스켈레톤 전환으로 인한 모달 언마운트(닫힘 체감)를 방지
+    - 의뢰자 크레딧은 사이드바 `/dashboard/credits`(내역/충전). `CreditLedgerModal` embedded·Dialog 모두 `credit:balance-updated` 시 목록/스냅샷만 재조회
     - 관리자 `AdminPaymentsPage`는 `request:stage-changed`/`credit:balance-updated`/배송 업데이트를 디바운스 수신해 무플리커 동기화
     - 관리자 `useAdminCreditPage`는 `credit:balance-updated` 수신 시 전체 목록 reset 대신 payload 대상 사업자 1건만 부분 갱신합니다.
       - 조회 경로: `GET /api/admin/credits/businesses?businessAnchorId=:id&limit=1&skip=0`

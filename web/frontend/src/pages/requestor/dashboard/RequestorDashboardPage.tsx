@@ -79,12 +79,14 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-11: 헤더 보유 크레딧/원장 모달 제거 → 사이드바 크레딧 페이지로 이전.
 // - 2026-08-11: 요약카드 압축·전기간대비 제거, 오늘의 가격 숨김/출고 툴팁 반영.
 // - 2026-08-11: 치과·기공소 공통 — 기공/어벗 2행 요약, 오늘의 생산가격↔출고 위치 교체.
 // - 2026-08-11: 치과(practice) 상단 요약 — 기공/어벗 2행, 좌측 행 라벨, 불완전 가공 카드 제거.
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
+// - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx
@@ -123,7 +125,6 @@ export const RequestorDashboardPage = () => {
   const { data: systemSettings } = useSystemSettings();
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
-  const [creditLedgerOpen, setCreditLedgerOpen] = useState(false);
   const [editingRequest, setEditingRequest] =
     useState<EditingRequestState>(null);
   const [editingDescription, setEditingDescription] = useState("");
@@ -1318,7 +1319,7 @@ export const RequestorDashboardPage = () => {
         title: "의뢰가 취소되었습니다",
         duration: 2000,
       });
-      // 최근의뢰 목록은 request:stage-changed, 헤더 보유크레딧은 credit:balance-updated
+      // 최근의뢰 목록은 request:stage-changed, 크레딧 잔액은 credit:balance-updated
       // 웹소켓 수신 후 silent refetch로 무플리커 반영한다. (optimistic 금지)
     } catch (error) {
       console.error("의뢰 취소 중 오류", error);
@@ -1861,16 +1862,15 @@ export const RequestorDashboardPage = () => {
   }, [cardsSummaryResponse, summaryResponse]);
 
   // 웹소켓 실시간 업데이트 안정성:
-  // 크레딧 모달 오픈 중에는 스켈레톤 전환으로 모달이 언마운트되지 않도록 차단한다.
-  if (isInitialLoading && !creditLedgerOpen) {
+  // 초기 로딩 중에는 스켈레톤을 우선 표시한다.
+  if (isInitialLoading) {
     return <DashboardShellSkeleton showMain />;
   }
 
   const showSkeleton =
     !hasSummaryHydrated &&
     isCardsSummaryLoading &&
-    !cardsSummaryResponse &&
-    !creditLedgerOpen;
+    !cardsSummaryResponse;
 
   const abutmentStats: RequestorDashboardStat[] = (() => {
     if (!dashboardStatsSource?.success) {
@@ -1979,9 +1979,6 @@ export const RequestorDashboardPage = () => {
           <RequestorWorkspaceHeader
             period={period}
             onPeriodChange={setPeriod}
-            insufficientCredit={insufficientCredit}
-            insufficientShippingCredit={insufficientShippingCredit}
-            onCreditLedgerOpenChange={setCreditLedgerOpen}
             onSelectPastRequest={openEditDialogFromRequest}
           >
             {unmachinableAlertCount > 0 && (

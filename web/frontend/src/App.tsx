@@ -23,6 +23,7 @@ import { useSocket } from "@/shared/hooks/useSocket";
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 
 const Index = lazy(() => import("./pages/public/Index"));
@@ -99,6 +100,7 @@ import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
+import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage";
 import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
@@ -252,6 +254,15 @@ const PaymentsRoute = () => {
   return <Navigate to="/dashboard" replace />;
 };
 
+const CreditsRoute = () => {
+  const { user } = useAuthStore();
+
+  if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.role === "admin") return <AdminCreditPage />;
+  if (user.role === "requestor") return <RequestorCreditsPage />;
+  return <Navigate to="/dashboard" replace />;
+};
+
 const InquiriesRoute = () => {
   const { user } = useAuthStore();
   if (!user) return <Navigate to="/dashboard" replace />;
@@ -274,6 +285,13 @@ const SettingsRoute = () => {
     const tab = new URLSearchParams(location.search).get("tab");
     if (tab === "payment" || tab === "credits") {
       return <Navigate to={`/dashboard/partner?tab=${tab}`} replace />;
+    }
+  }
+  // 구 북마크: 의뢰자 설정 결제 → 사이드바 크레딧 충전
+  if (user.role === "requestor") {
+    const tab = new URLSearchParams(location.search).get("tab");
+    if (tab === "payment") {
+      return <Navigate to="/dashboard/credits?tab=charge" replace />;
     }
   }
   return <SettingsPage />;
@@ -640,8 +658,8 @@ const App = () => {
                   <Route
                     path="credits"
                     element={
-                      <RoleProtectedRoute roles={["admin"]}>
-                        <AdminCreditPage />
+                      <RoleProtectedRoute roles={["admin", "requestor"]}>
+                        <CreditsRoute />
                       </RoleProtectedRoute>
                     }
                   />

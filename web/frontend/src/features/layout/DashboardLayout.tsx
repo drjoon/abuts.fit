@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-11: 의뢰자 사이드바에 크레딧 메뉴 추가. 충전 토스트 CTA → /dashboard/credits?tab=charge.
 // - 2026-08-11: 기공/어벗 사이드 — 버튼 그라데이션 제거, 가로 연결선만 적용.
 // - 2026-08-11: 기공의뢰/의뢰수신·어벗의뢰 사이드 메뉴에 기공/어벗 그라데이션 액센트 적용.
 // - 2026-08-11: 의뢰자 사이드 — 디자인 메뉴/페이지 삭제·의뢰수신 통합. 소개(치과 포함) 공통. 기공의뢰/의뢰수신↑·어벗의뢰↓.
@@ -47,6 +48,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
+// - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
@@ -183,6 +185,7 @@ const buildRequestorSidebarItems = (
       accent: "어벗",
     },
     requestorReferralItem,
+    { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
     ...requestorSidebarCommonTail,
   ];
 };
@@ -826,11 +829,13 @@ export const DashboardLayout = () => {
     }
 
     const params = new URLSearchParams(location.search);
-    const isOnPaymentTab =
-      location.pathname.startsWith("/dashboard/settings") &&
-      params.get("tab") === "payment";
+    const isOnCreditCharge =
+      (location.pathname.startsWith("/dashboard/credits") &&
+        params.get("tab") === "charge") ||
+      (location.pathname.startsWith("/dashboard/settings") &&
+        params.get("tab") === "payment");
 
-    if (isOnPaymentTab) {
+    if (isOnCreditCharge) {
       try {
         localStorage.setItem(storageKey, "1");
       } catch {
@@ -889,7 +894,7 @@ export const DashboardLayout = () => {
             action: (
               <ToastAction
                 altText="크레딧 충전하기"
-                onClick={() => navigate("/dashboard/settings?tab=payment")}
+                onClick={() => navigate("/dashboard/credits?tab=charge")}
               >
                 충전하기
               </ToastAction>
@@ -916,7 +921,7 @@ export const DashboardLayout = () => {
           action: (
             <ToastAction
               altText="크레딧 충전하기"
-              onClick={() => navigate("/dashboard/settings?tab=payment")}
+              onClick={() => navigate("/dashboard/credits?tab=charge")}
             >
               충전하기
             </ToastAction>

@@ -241,7 +241,7 @@ export const PricingPolicyDialog = ({
                       지급 계좌는 <b className='text-slate-800'>설정 &gt; 결제</b>
                       에서 관리
                     </>,
-                    '정산 원장은 보유 크레딧 모달에서 확인 가능'
+                    '정산 원장은 사이드바 크레딧 페이지에서 확인 가능'
                   ]}
                 />
               </PolicySection>

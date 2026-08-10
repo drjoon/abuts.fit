@@ -12,9 +12,8 @@ export const NewRequestPageSkeleton = () => {
   return (
     <div className="p-4">
       <div className="max-w-6xl mx-auto w-full space-y-3">
-      {/* RequestorWorkspaceHeader: 보유 크레딧 + 지난 의뢰 (기간 필터 없음) */}
+      {/* RequestorWorkspaceHeader: 지난 의뢰 (기간 필터 없음) */}
       <div className="flex flex-wrap items-center gap-2">
-        <Skeleton className="h-8 w-36" />
         <Skeleton className="h-8 w-20" />
       </div>
 

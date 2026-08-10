@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 보유 크레딧 스켈레톤 슬롯 제거(사이드바 크레딧 페이지로 이전).
 // - 2026-08-11: 압축 요약카드(전기간대비 제거)·기공/어벗 라벨·출고 Info 툴팁·오늘의 가격 숨김에 맞춰 재생성.
 // related files:
 // - web/frontend/rules.md
@@ -40,14 +41,13 @@ export const DashboardShellSkeleton = ({
   return (
     <div className="h-full min-h-0">
       <div className="max-w-6xl mx-auto w-full space-y-3">
-        {/* headerRight: PeriodFilter + 보유 크레딧 + 지난 의뢰 */}
+        {/* headerRight: PeriodFilter + 지난 의뢰 */}
         <div className="flex flex-wrap items-center gap-2">
           <Skeleton className="h-8 w-44" />
           <Skeleton className="h-8 w-14" />
           <Skeleton className="h-8 w-14" />
           <Skeleton className="h-8 w-16" />
           <Skeleton className="h-8 w-16" />
-          <Skeleton className="h-8 w-36" />
           <Skeleton className="h-8 w-20" />
         </div>
 

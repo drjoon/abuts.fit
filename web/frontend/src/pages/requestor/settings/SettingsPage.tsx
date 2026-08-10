@@ -9,21 +9,18 @@ import { SettingsTabsSkeleton } from "@/features/components/SettingsSkeletons";
 import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
-import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestTab } from "@/features/settings/tabs/RequestTab";
 import {
   User,
   Building2,
-  CreditCard,
   Bell,
   Users,
   FileText,
+  Shield,
 } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
-import { Shield } from "lucide-react";
-import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
@@ -31,34 +28,26 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 // related files:
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/controllers/requests/utils.js
+// - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // 가입일시/경과일/D-day는 신규 기공소 90일 고정가와 동일 기준일(pricingBaseDate)을 사용한다.
-// 2026-08-11: 설정 의뢰/결제 탭은 유료 게이트 없이 항상 활성.
+// 2026-08-11: 설정 결제 탭 제거 → 사이드바 크레딧(`/dashboard/credits`)로 이전.
+// 2026-08-11: 설정 의뢰 탭은 유료 게이트 없이 항상 활성.
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
   | "request"
-  | "payment"
   | "notifications"
   | "security";
 
 export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { toast } = useToast();
   const { loading: accessLoading } = useRequestorBusinessAccess();
 
-  const [membership, setMembership] = useState<
-    "owner" | "member" | "pending" | "none" | "unknown"
-  >(token ? "unknown" : "none");
-  const [canManageStaff, setCanManageStaff] = useState(false);
   const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
   const [pricingBaseDate, setPricingBaseDate] = useState<string | null>(null);
-
-  const mockHeaders = useMemo(() => {
-    return {} as Record<string, string>;
-  }, []);
 
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
@@ -67,8 +56,6 @@ export const RequestorSettingsPage = () => {
   useEffect(() => {
     const load = async () => {
       if (!token) {
-        setMembership("none");
-        setCanManageStaff(false);
         setPricingBaseDate(null);
         setLoadingMembership(false);
         return;
@@ -76,7 +63,10 @@ export const RequestorSettingsPage = () => {
 
       setLoadingMembership(true);
       try {
-        const res = await request<any>({
+        const res = await request<{
+          data?: { pricingBaseDate?: string };
+          pricingBaseDate?: string;
+        }>({
           path: `/api/businesses/me?businessType=${encodeURIComponent(
             businessType,
           )}`,
@@ -84,23 +74,15 @@ export const RequestorSettingsPage = () => {
           token,
         });
         if (!res.ok) {
-          setMembership("none");
-          setCanManageStaff(false);
           setPricingBaseDate(null);
           return;
         }
-        const body: any = res.data || {};
+        const body = res.data || {};
         const data = body.data || body;
-        const next = String(data?.membership || "none") as
-          "owner" | "member" | "pending" | "none";
-        setMembership(next);
-        setCanManageStaff(next === "owner");
         setPricingBaseDate(
           data?.pricingBaseDate ? String(data.pricingBaseDate) : null,
         );
       } catch {
-        setMembership("none");
-        setCanManageStaff(false);
         setPricingBaseDate(null);
       } finally {
         setLoadingMembership(false);
@@ -129,7 +111,7 @@ export const RequestorSettingsPage = () => {
   }, [pricingElapsedDays]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
-    const base: SettingsTabDef[] = [
+    return [
       {
         key: "account",
         label: "계정",
@@ -156,7 +138,9 @@ export const RequestorSettingsPage = () => {
                   <p className="text-xs text-slate-500">가입 후 경과일</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     <p className="font-medium text-slate-900">
-                      {pricingElapsedDays == null ? "-" : `${pricingElapsedDays}일`}
+                      {pricingElapsedDays == null
+                        ? "-"
+                        : `${pricingElapsedDays}일`}
                     </p>
                     {launchEventRemainingDays != null && (
                       <span
@@ -191,15 +175,6 @@ export const RequestorSettingsPage = () => {
         icon: FileText,
         content: <RequestTab />,
       },
-    ];
-
-    base.push(
-      {
-        key: "payment",
-        label: "결제",
-        icon: CreditCard,
-        content: <PaymentTab userData={user} />,
-      },
       {
         key: "notifications",
         label: "알림",
@@ -212,9 +187,7 @@ export const RequestorSettingsPage = () => {
         icon: Shield,
         content: <RequestorSecurity />,
       },
-    );
-
-    return base;
+    ];
   }, [
     launchEventRemainingDays,
     pricingBaseDate,
@@ -237,16 +210,14 @@ export const RequestorSettingsPage = () => {
   }
 
   return (
-    <>
-      <SettingsScaffold
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={(next) => {
-          const nextParams = new URLSearchParams(searchParams);
-          nextParams.set("tab", next);
-          setSearchParams(nextParams, { replace: true });
-        }}
-      />
-    </>
+    <SettingsScaffold
+      tabs={tabs}
+      activeTab={activeTab}
+      onTabChange={(next) => {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.set("tab", next);
+        setSearchParams(nextParams, { replace: true });
+      }}
+    />
   );
 };
