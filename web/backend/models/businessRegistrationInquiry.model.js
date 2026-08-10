@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/frontend/src/features/support/InquiriesPage.tsx
+// change-log:
+// - 2026-08-11: 문의 type enum을 프론트 역할별 프리셋과 맞춤.
 import mongoose from "mongoose";
 
 const businessRegistrationInquirySchema = new mongoose.Schema(
@@ -29,7 +32,29 @@ const businessRegistrationInquirySchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["general", "business_registration", "user_registration", "other"],
+      // Frontend role presets (InquiriesPage) + legacy business/user registration keys.
+      enum: [
+        "general",
+        "business_registration",
+        "user_registration",
+        "other",
+        "manufacturing",
+        "delivery",
+        "billing",
+        "credit",
+        "design",
+        "file_transfer",
+        "account",
+        "order_intake",
+        "cam_machining",
+        "equipment",
+        "packing",
+        "settlement",
+        "referral_commission",
+        "partnership",
+        "operation",
+        "system",
+      ],
       default: "general",
       index: true,
     },

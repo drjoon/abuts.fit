@@ -4,6 +4,8 @@
 // - web/backend/server.js
 // - web/frontend/src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx
 // - web/frontend/src/features/support/InquiriesPage.tsx
+// change-log:
+// - 2026-08-11: 문의 type enum을 역할별 프리셋(크레딧/디자인/파일전송 등)까지 확장.
 import { randomBytes } from "crypto";
 import { uploadFileToS3 } from "../../utils/s3.utils.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
@@ -109,8 +111,26 @@ export async function createInquiry(req, res) {
       "business_registration",
       "user_registration",
       "other",
+      "manufacturing",
+      "delivery",
+      "billing",
+      "credit",
+      "design",
+      "file_transfer",
+      "account",
+      "order_intake",
+      "cam_machining",
+      "equipment",
+      "packing",
+      "settlement",
+      "referral_commission",
+      "partnership",
+      "operation",
+      "system",
     ];
-    const normalizedType = allowedTypes.includes(type) ? type : "general";
+    const normalizedType = allowedTypes.includes(String(type || "").trim())
+      ? String(type).trim()
+      : "general";
     const trimmedSubject = String(subject || "").trim();
     const trimmedMessage = String(message || "").trim();
 
