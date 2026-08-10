@@ -221,6 +221,26 @@ export const isPaidRequestorPath = (href: string) => {
   return false;
 };
 
+/** practice만 사업자등록증(유료) 미가용 시 대시보드·신규의뢰를 막는다. lab은 항상 허용. */
+export const shouldGatePaidRequestorAccess = (args?: {
+  kind?: RequestorKind | string | null;
+  canUsePaid?: boolean;
+}) => {
+  if (normalizeRequestorKind(args?.kind) === "lab") return false;
+  return !Boolean(args?.canUsePaid);
+};
+
+export const isPaidRequestorSidebarLocked = (args?: {
+  kind?: RequestorKind | string | null;
+  canUsePaid?: boolean;
+  href?: string;
+}) =>
+  isPaidRequestorPath(args?.href || "") &&
+  shouldGatePaidRequestorAccess({
+    kind: args?.kind,
+    canUsePaid: args?.canUsePaid,
+  });
+
 export const PAID_REQUESTOR_SETTINGS_TABS = new Set(["request", "payment"]);
 
 export const REQUESTOR_KIND_LABEL = {

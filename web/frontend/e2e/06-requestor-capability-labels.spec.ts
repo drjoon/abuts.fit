@@ -134,6 +134,11 @@ test.describe("Requestor capability labels – 유료게이트 로직", () => {
       }),
     ).toBe(false);
   });
+
+  test("shouldGatePaidRequestorAccess – lab은 항상 허용, practice만 게이트", async () => {
+    expect(capsSource).toContain("shouldGatePaidRequestorAccess");
+    expect(capsSource).toContain('normalizeRequestorKind(args?.kind) === "lab"');
+  });
 });
 
 test.describe("Requestor capability labels – 실계정 로그인", () => {

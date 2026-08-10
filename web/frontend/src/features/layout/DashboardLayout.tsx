@@ -10,8 +10,8 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-10: 의뢰자 사이드메뉴를 kind별로 분기 — practice(디자인 제외·유료게이트), lab(디자인·무게이트).
 // - 2026-08-10: 의뢰자 역할 뱃지를 requestorKind에 따라 의뢰자·치과 / 의뢰자·기공소로 표기.
-// - 2026-08-10: 의뢰자 사이드메뉴 디자인을 기공의뢰서 바로 아래로 이동.
 // - 2026-08-09: 모든 role 최근 사이드바 경로를 계정 디폴트 진입점으로 서버 저장·복원. `/dashboard` 홈 클릭 시 last path pin.
 // - 2026-08-09: 제조사 사이드메뉴 가공작업→생산.
 // - 2026-08-09: 제조사 사이드메뉴 디자인 추가·작업→가공작업. 계정별 최근 대시보드 경로 서버 저장. 디자인은 상단 기간필터 헤더만.
@@ -47,7 +47,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   getRequestorRoleBadgeLabel,
-  isPaidRequestorPath,
+  isPaidRequestorSidebarLocked,
   PAID_ACCESS_DISABLED_HINT,
 } from "@/shared/business/requestorCapabilities";
 import { ToastAction } from "@/components/ui/toast";
@@ -115,16 +115,35 @@ import {
 /** DashboardLayout StrictMode remount에도 토큰당 unread 시드 API 1회만 */
 const practiceUnreadSeededTokens = new Set<string>();
 
-const sidebarItems = {
-  requestor: [
+type SidebarItem = { icon: LucideIcon; label: string; href: string };
+
+const requestorSidebarTail: SidebarItem[] = [
+  { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
+  { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+  { icon: Settings, label: "설정", href: "/dashboard/settings" },
+];
+
+const buildRequestorSidebarItems = (
+  kind: "practice" | "lab" | null,
+  designAccessEnabled: boolean,
+): SidebarItem[] => {
+  const items: SidebarItem[] = [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
-    { icon: Building2, label: "기공의뢰서", href: "/dashboard/practice-transfers" },
-    { icon: PenTool, label: "디자인", href: "/dashboard/design" },
-    { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
-    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
-  ],
+    {
+      icon: Building2,
+      label: "기공의뢰서",
+      href: "/dashboard/practice-transfers",
+    },
+  ];
+  if (kind === "lab" && designAccessEnabled) {
+    items.push({ icon: PenTool, label: "디자인", href: "/dashboard/design" });
+  }
+  return [...items, ...requestorSidebarTail];
+};
+
+const sidebarItems = {
+  requestor: buildRequestorSidebarItems("practice", false),
   salesman: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
@@ -184,8 +203,6 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
 } as const;
-
-type SidebarItem = { icon: LucideIcon; label: string; href: string };
 
 const accountMenuItemsByRole: Record<string, SidebarItem[]> = {
   admin: [
@@ -875,8 +892,7 @@ export const DashboardLayout = () => {
     []) as unknown as SidebarItem[];
   const menuItems = (() => {
     if (user.role !== "requestor") return baseMenuItems;
-    if (designAccessEnabled) return baseMenuItems;
-    return baseMenuItems.filter((item) => item.href !== "/dashboard/design");
+    return buildRequestorSidebarItems(requestorKind, designAccessEnabled);
   })();
 
   const displayRole = isPracticeUser ? "practice" : user.role;
@@ -1154,8 +1170,11 @@ export const DashboardLayout = () => {
                       location.pathname.startsWith(`${item.href}/`);
                   const paidLocked =
                     user.role === "requestor" &&
-                    !requestorCanUsePaid &&
-                    isPaidRequestorPath(item.href);
+                    isPaidRequestorSidebarLocked({
+                      kind: requestorKind,
+                      canUsePaid: requestorCanUsePaid,
+                      href: item.href,
+                    });
 
                   const button = (
                     <Button

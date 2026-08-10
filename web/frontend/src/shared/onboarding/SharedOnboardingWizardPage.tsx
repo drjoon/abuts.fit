@@ -7,7 +7,11 @@ import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
 import { SettingsWizard } from "./wizard/SettingsWizard";
-import { canUsePaidServices } from "@/shared/business/requestorCapabilities";
+import {
+  canUsePaidServices,
+  normalizeRequestorKind,
+  shouldGatePaidRequestorAccess,
+} from "@/shared/business/requestorCapabilities";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 const resolvePostOnboardingPath = (user: {
@@ -18,13 +22,16 @@ const resolvePostOnboardingPath = (user: {
   requestorCapabilities?: { practice?: boolean; lab?: boolean } | null;
   lastDashboardPath?: string | null;
 } | null) => {
-  // 유료 미가용은 대시보드 대신 기공의뢰서로
+  // practice + 유료 미가용은 대시보드 대신 기공의뢰서로 (lab은 대시보드 허용)
   if (
     user?.role === "requestor" &&
-    !canUsePaidServices({
-      businessVerified: Boolean(user?.businessVerified),
-      services: user?.requestorServices,
-      caps: user?.requestorCapabilities,
+    shouldGatePaidRequestorAccess({
+      kind: normalizeRequestorKind(user?.requestorKind),
+      canUsePaid: canUsePaidServices({
+        businessVerified: Boolean(user?.businessVerified),
+        services: user?.requestorServices,
+        caps: user?.requestorCapabilities,
+      }),
     })
   ) {
     return "/dashboard/practice-transfers";
