@@ -152,6 +152,7 @@ export const isDesignCustomAbutmentRequest = (
 ) => resolveProductMode(req) === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT;
 
 // change-log (getDeadlineInfo):
+// - 2026-08-10: 마감 1시간 미만(remainingMs>0)은 "출고일 지남"이 아니라 "출고 0시간전".
 // - 2026-08-06: 남은시간 뱃지 문구 "출고 N일 N시간" → "출고 N일전"(+시간).
 // - 2026-08-06: 남은시간 뱃지 문구 "마감 …" → "출고 …".
 // - 2026-08-06: createdAt 필수 조건 제거. 큐 아이템처럼 estimatedShipYmd만 있어도 마감 뱃지 계산.
@@ -257,15 +258,12 @@ export const getDeadlineInfo = (
   const totalHours = countHoursRemaining(now, shipDateDeadline);
 
   const formatTimeRemaining = (hoursRemaining: number): string => {
+    // 16:00 KST 이후만 "출고일 지남". 그 전(1시간 미만 포함)은 남은 시간으로 표시.
     if (remainingMs <= 0) return "출고일 지남";
 
     const hours = Math.max(0, Math.floor(hoursRemaining));
     const days = Math.floor(hours / 24);
     const restHours = hours % 24;
-
-    if (hours <= 0) {
-      return "출고일 지남";
-    }
 
     if (days > 0) {
       return restHours > 0
@@ -273,6 +271,7 @@ export const getDeadlineInfo = (
         : `출고 ${days}일전`;
     }
 
+    // 1시간 미만(0 ≤ floor < 1) → "출고 0시간전"
     return `출고 ${restHours}시간전`;
   };
 
