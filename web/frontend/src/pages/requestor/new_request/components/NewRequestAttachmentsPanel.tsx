@@ -164,7 +164,7 @@ type Props = {
   onGroupSelectedFiles?: (fileKeys: string[]) => void;
   onUngroup?: (groupId: string) => void;
   onRemoveFileFromGroup?: (fileKey: string) => void;
-  /** true: 기공소 — 항상 생산 ETA·어벗디자인 뱃지만 */
+  /** true: 기공소 — 생산 전용(구강스캔 묶음·파일유형 뱃지 없음) */
   productionOnly?: boolean;
 };
 
@@ -850,9 +850,7 @@ export function NewRequestAttachmentsPanel({
             hideDesignBadge: productionOnly ? true : isOralScanFile,
             forceDesignProductMode: productionOnly ? false : isOralScanFile,
             fileKindBadge: productionOnly
-              ? isOralScanFile || isAbutDesignFile
-                ? "abut_design"
-                : null
+              ? null
               : isOralScanFile
                 ? "oral_scan"
                 : isAbutDesignFile
