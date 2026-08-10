@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-10: 의뢰 메모는 자유 메모만(치아/임플란트 폴백 제거). 파일 목록 s3Key 중복 제거.
+// - 2026-08-10: 개별/전체 다운로드 중 재클릭 방지. 채팅 라벨·상대를 치과(발신 의뢰자)로 정렬.
 // - 2026-08-10: 디자인 큐 기공의뢰서형 카드 + 상세/채팅 모달 호스트.
 // related files:
 // - web/frontend/src/pages/requestor/design/DesignPage.tsx
@@ -27,11 +29,12 @@ import {
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import {
-  formatToothWorksForDisplay,
+  parsePracticeTransferMemoMeta,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import type { ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { DesignRequestCardGrid } from "./DesignRequestCardGrid";
+import { downloadWithProgress } from "@/shared/files/downloadWithProgress";
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -95,26 +98,44 @@ const collectRequestFiles = (
   if (!request) return [];
   const caseInfos = request.caseInfos || {};
   const out: PracticeTransferDialogFileItem[] = [];
-  const primary = caseInfos.file;
-  if (primary?.s3Key || primary?.filePath || primary?.originalName) {
+  const seenKeys = new Set<string>();
+
+  const pushFile = (file: {
+    originalName?: string;
+    filePath?: string;
+    fileSize?: number;
+    size?: number;
+    s3Key?: string;
+  } | null | undefined, id: string) => {
+    if (!file) return;
+    const s3Key = String(file.s3Key || "").trim();
+    const fileName =
+      String(file.originalName || file.filePath || "").trim() || "원본.stl";
+    if (!s3Key && !file.originalName && !file.filePath) return;
+    if (s3Key) {
+      if (seenKeys.has(s3Key)) return;
+      seenKeys.add(s3Key);
+    } else {
+      const dedupeName = fileName.toLowerCase();
+      if (seenKeys.has(`name:${dedupeName}`)) return;
+      seenKeys.add(`name:${dedupeName}`);
+    }
     out.push({
-      id: `primary:${request._id || request.requestId || "file"}`,
-      fileName:
-        String(primary.originalName || primary.filePath || "원본.stl").trim() ||
-        "원본.stl",
-      size: Number(primary.fileSize || 0),
-      s3Key: String(primary.s3Key || "").trim(),
+      id,
+      fileName,
+      size: Number(file.fileSize ?? file.size ?? 0),
+      s3Key,
     });
-  }
+  };
+
+  // caseInfos.file(primary)과 caseInfos.files에 동일 s3Key가 중복 저장되는 경우가 있어 제거한다.
+  pushFile(
+    caseInfos.file,
+    `primary:${request._id || request.requestId || "file"}`,
+  );
   const extras = Array.isArray(caseInfos.files) ? caseInfos.files : [];
   extras.forEach((file, idx) => {
-    if (!file) return;
-    out.push({
-      id: `extra:${idx}:${file.s3Key || file.originalName || idx}`,
-      fileName: String(file.originalName || file.filePath || `파일${idx + 1}`).trim(),
-      size: Number(file.fileSize || 0),
-      s3Key: String(file.s3Key || "").trim(),
-    });
+    pushFile(file, `extra:${idx}:${file?.s3Key || file?.originalName || idx}`);
   });
   return out.filter((f) => f.fileName);
 };
@@ -155,8 +176,14 @@ export function DesignRequestTransferView({
   } | null>(null);
   const [chatAttachedFiles, setChatAttachedFiles] = useState<File[]>([]);
   const [chatSending, setChatSending] = useState(false);
+  const [downloadingKeys, setDownloadingKeys] = useState<string[]>([]);
+  const [downloadProgressByKey, setDownloadProgressByKey] = useState<
+    Record<string, number>
+  >({});
+  const [downloadAllBusy, setDownloadAllBusy] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
+  const downloadingKeysRef = useRef<Set<string>>(new Set());
 
   const {
     messages,
@@ -224,7 +251,7 @@ export function DesignRequestTransferView({
             res.data && typeof res.data === "object"
               ? (res.data as Record<string, unknown>)
               : {};
-          setChatError(String(body.message || "기공소 채팅방을 열 수 없습니다."));
+          setChatError(String(body.message || "치과 채팅방을 열 수 없습니다."));
           return;
         }
 
@@ -243,7 +270,7 @@ export function DesignRequestTransferView({
         setActiveChatRoom(room);
       } catch {
         if (resolveSeq !== chatRoomResolveSeqRef.current) return;
-        setChatError("기공소 채팅방 조회 중 오류가 발생했습니다.");
+        setChatError("치과 채팅방 조회 중 오류가 발생했습니다.");
       }
     },
     [prefetchMessages, rooms, setChatMessages, token],
@@ -260,35 +287,46 @@ export function DesignRequestTransferView({
         return;
       }
 
+      const busyKey = String(file.s3Key || file.id || "").trim();
+      if (busyKey && downloadingKeysRef.current.has(busyKey)) return;
+
+      if (busyKey) {
+        downloadingKeysRef.current.add(busyKey);
+        setDownloadingKeys(Array.from(downloadingKeysRef.current));
+        setDownloadProgressByKey((prev) => ({ ...prev, [busyKey]: 0 }));
+      }
+
       try {
         const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(file.s3Key)}&fileName=${encodeURIComponent(file.fileName || "download")}&_ts=${Date.now()}`;
-        const resp = await fetch(downloadPath, {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            Authorization: `Bearer ${token}`,
+        await downloadWithProgress({
+          url: downloadPath,
+          token,
+          fileName: String(file.fileName || "download").trim() || "download",
+          onProgress: (percent) => {
+            if (!busyKey) return;
+            setDownloadProgressByKey((prev) => ({
+              ...prev,
+              [busyKey]: percent,
+            }));
           },
         });
-
-        if (!resp.ok) {
-          throw new Error("다운로드 응답이 올바르지 않습니다.");
-        }
-
-        const blob = await resp.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = objectUrl;
-        a.download = String(file.fileName || "download").trim() || "download";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(objectUrl);
-      } catch {
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return;
         toast({
           title: "다운로드 실패",
           description: "다운로드 요청 중 오류가 발생했습니다.",
           variant: "destructive",
         });
+      } finally {
+        if (busyKey) {
+          downloadingKeysRef.current.delete(busyKey);
+          setDownloadingKeys(Array.from(downloadingKeysRef.current));
+          setDownloadProgressByKey((prev) => {
+            const next = { ...prev };
+            delete next[busyKey];
+            return next;
+          });
+        }
       }
     },
     [toast, token],
@@ -300,9 +338,14 @@ export function DesignRequestTransferView({
   );
 
   const handleDownloadAllFiles = useCallback(async () => {
-    if (!dialogFiles.length) return;
-    await Promise.all(dialogFiles.map((file) => handleDownloadFile(file)));
-  }, [dialogFiles, handleDownloadFile]);
+    if (!dialogFiles.length || downloadAllBusy) return;
+    setDownloadAllBusy(true);
+    try {
+      await Promise.all(dialogFiles.map((file) => handleDownloadFile(file)));
+    } finally {
+      setDownloadAllBusy(false);
+    }
+  }, [dialogFiles, downloadAllBusy, handleDownloadFile]);
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
@@ -319,21 +362,11 @@ export function DesignRequestTransferView({
 
       try {
         const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(s3Key)}&fileName=${encodeURIComponent(rawName)}&_ts=${Date.now()}`;
-        const resp = await fetch(downloadPath, {
-          method: "GET",
-          cache: "no-store",
-          headers: { Authorization: `Bearer ${token}` },
+        await downloadWithProgress({
+          url: downloadPath,
+          token,
+          fileName: rawName,
         });
-        if (!resp.ok) throw new Error("download failed");
-        const blob = await resp.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = objectUrl;
-        a.download = rawName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(objectUrl);
       } catch {
         toast({
           title: "다운로드 실패",
@@ -415,19 +448,10 @@ export function DesignRequestTransferView({
 
   const caseInfos = selectedRequest?.caseInfos;
   const toothWorks = normalizeToothWorks(caseInfos?.toothWorks);
-  const toothWorksPreview = formatToothWorksForDisplay(toothWorks);
-  const memoParts = [
-    String(caseInfos?.memo || "").trim(),
-    !toothWorks.length && caseInfos?.prosthesisType
-      ? `형태: ${String(caseInfos.prosthesisType).trim()}`
-      : "",
-    caseInfos?.tooth && !toothWorks.length
-      ? `치아: ${String(caseInfos.tooth).trim()}`
-      : "",
-  ].filter(Boolean);
-  const displayMemo =
-    memoParts.join("\n") ||
-    (toothWorksPreview ? `치아별 ${toothWorksPreview}` : "");
+  // 보철물 차트에 치아/임플란트가 있으므로 메모는 의뢰인 자유 텍스트만 표시.
+  const displayMemo = String(
+    parsePracticeTransferMemoMeta(String(caseInfos?.memo || "")).memo || "",
+  ).trim();
 
   const summaryItems: PracticeTransferDialogSummaryItem[] = [
     { label: "의뢰ID", value: selectedRequest?.requestId || "-" },
@@ -491,16 +515,23 @@ export function DesignRequestTransferView({
             setChatReplyTo(null);
             setChatAttachedFiles([]);
             setChatError("");
+            setDownloadingKeys([]);
+            setDownloadProgressByKey({});
+            setDownloadAllBusy(false);
+            downloadingKeysRef.current.clear();
           }
         }}
-        title="의뢰 상세 · 기공소 채팅"
-        conversationTitle="기공소와의 소통"
+        title="의뢰 상세 · 치과 채팅"
+        conversationTitle="치과와의 소통"
         summaryItems={summaryItems}
         memo={displayMemo || "-"}
         toothWorks={toothWorks}
         toothWorksKey={selectedRequest?.requestId || "design-request"}
         filesLabel="의뢰 파일"
         files={dialogFiles}
+        downloadingFileKeys={downloadingKeys}
+        downloadProgressByKey={downloadProgressByKey}
+        downloadAllBusy={downloadAllBusy}
         onDownloadAllFiles={() => void handleDownloadAllFiles()}
         onDownloadTransferFile={(file) => void handleDownloadFile(file)}
         chatLoading={chatLoading}
@@ -536,7 +567,7 @@ export function DesignRequestTransferView({
         }}
         onCancelReply={() => setChatReplyTo(null)}
         onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
-        composerPlaceholder="기공소에 전달할 내용을 입력하세요"
+        composerPlaceholder="치과에 전달할 내용을 입력하세요"
         inputDisabled={chatLoading || chatSending || !activeChatRoom?._id}
         sendDisabled={
           chatLoading ||

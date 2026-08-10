@@ -18,6 +18,7 @@ import {
 } from "@/features/chat/components/MessageReply";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+import { Progress } from "@/components/ui/progress";
 
 export type PracticeTransferDialogSummaryItem = {
   label: string;
@@ -43,6 +44,11 @@ type PracticeTransferDetailChatDialogProps = {
   toothWorksKey?: string;
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
+  /** 다운로드 진행 중 파일 키(s3Key 또는 id). 재클릭 방지 */
+  downloadingFileKeys?: string[];
+  /** 파일별 다운로드 진행률 0~100 */
+  downloadProgressByKey?: Record<string, number>;
+  downloadAllBusy?: boolean;
   onDownloadAllFiles: () => void | Promise<void>;
   onDownloadTransferFile: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
   chatLoading: boolean;
@@ -86,6 +92,9 @@ export function PracticeTransferDetailChatDialog({
   toothWorksKey,
   filesLabel,
   files,
+  downloadingFileKeys = [],
+  downloadProgressByKey = {},
+  downloadAllBusy = false,
   onDownloadAllFiles,
   onDownloadTransferFile,
   chatLoading,
@@ -158,23 +167,49 @@ export function PracticeTransferDetailChatDialog({
                     variant="outline"
                     size="sm"
                     onClick={() => void onDownloadAllFiles()}
-                    disabled={files.length === 0}
+                    disabled={files.length === 0 || downloadAllBusy}
                   >
-                    전체 다운로드
+                    {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
                   </Button>
                 </div>
                 {files.length ? (
                   <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">
-                    {files.map((file, idx) => (
-                      <button
-                        key={`${file.id}:${idx}`}
-                        type="button"
-                        onClick={() => void onDownloadTransferFile(file)}
-                        className="block w-full text-left rounded border px-2 py-1 text-sm hover:bg-muted/50"
-                      >
-                        {file.fileName} · {formatFileSize(Number(file.size || 0))}
-                      </button>
-                    ))}
+                    {files.map((file, idx) => {
+                      const busyKey = String(file.s3Key || file.id || "").trim();
+                      const isBusy =
+                        downloadAllBusy ||
+                        (busyKey
+                          ? downloadingFileKeys.includes(busyKey)
+                          : false);
+                      const progress = busyKey
+                        ? Number(downloadProgressByKey[busyKey] ?? 0)
+                        : 0;
+                      return (
+                        <div
+                          key={`${file.id}:${idx}`}
+                          className="rounded border px-2 py-1 space-y-1"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isBusy) return;
+                              void onDownloadTransferFile(file);
+                            }}
+                            disabled={isBusy}
+                            className="block w-full text-left text-sm hover:underline disabled:opacity-60 disabled:pointer-events-none disabled:no-underline"
+                          >
+                            {isBusy
+                              ? `다운로드 중 ${Math.round(progress)}% · `
+                              : ""}
+                            {file.fileName} ·{" "}
+                            {formatFileSize(Number(file.size || 0))}
+                          </button>
+                          {isBusy ? (
+                            <Progress value={progress} className="h-1.5" />
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="font-medium">-</p>

@@ -1,9 +1,11 @@
 // change-log:
+// - 2026-08-10: 디자인 큐 request-room은 발신 의뢰자(치과)와 연결. 기공소/제조사 폴백 금지.
 // - 2026-08-10: 디자인 파트너가 request-room에서 의뢰 기공소와 1:1 채팅 가능.
 // related files:
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/utils/designAccess.js
+// - web/backend/utils/designClaim.js
 // - web/backend/socket.js
 // - web/frontend/src/shared/hooks/useChatRooms.ts
 // - web/frontend/src/shared/hooks/useChatMessages.ts
@@ -18,6 +20,7 @@ import Request from "../../models/request.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
+import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { emitAppEventToUser, emitToUser } from "../../socket.js";
 
 const __chatPerfCache = new Map();
@@ -719,6 +722,9 @@ export async function getOrCreateRequestChatRoom(req, res) {
         "caseInfos.newSystemRequest.tag": 1,
         "caseInfos.newSystemRequest.manufacturer": 1,
         "caseInfos.newSystemRequest.message": 1,
+        "designClaim.claimedBy": 1,
+        "designClaim.deadlineAt": 1,
+        "designClaim.claimedAt": 1,
       })
       .lean();
 
@@ -733,23 +739,52 @@ export async function getOrCreateRequestChatRoom(req, res) {
     const currentManufacturerId = String(targetRequest.caManufacturer || "").trim();
     const productMode = String(targetRequest?.caseInfos?.productMode || "").trim();
     const isDesignCustomAbutment = productMode === "design_custom_abutment";
-    const isDesignPartnerCaller =
-      String(req.user?.role || "").trim() === "requestor" &&
-      currentUserId &&
-      currentUserId !== requestorId &&
-      isDesignCustomAbutment &&
-      (await resolveDesignAccessForUser(req.user));
+    const callerRole = String(req.user?.role || "").trim();
+    const hasDesignAccess =
+      callerRole === "requestor" && (await resolveDesignAccessForUser(req.user));
 
-    // 디자인 파트너 ↔ 의뢰 기공소 1:1 (제조사 룸과 분리)
-    if (isDesignPartnerCaller) {
-      if (!requestorId || !Types.ObjectId.isValid(requestorId)) {
-        return res.status(409).json({
+    // 디자인 큐: 디자인 담당 ↔ 발신 의뢰자(치과). 제조사/기공소 라우팅으로 떨어지지 않는다.
+    if (isDesignCustomAbutment && callerRole === "requestor") {
+      if (!hasDesignAccess && currentUserId !== requestorId) {
+        return res.status(403).json({
           success: false,
-          message: "연결 가능한 기공소가 없습니다.",
+          message: "이 의뢰 채팅방에 접근할 권한이 없습니다.",
         });
       }
 
-      const participantObjectIds = [currentUserId, requestorId].map(
+      let counterpartUserId = "";
+      if (currentUserId && requestorId && currentUserId !== requestorId) {
+        // 디자인 파트너 → 발신 의뢰자(치과)
+        counterpartUserId = requestorId;
+      } else if (
+        currentUserId &&
+        currentUserId === requestorId &&
+        isDesignClaimActive(targetRequest.designClaim)
+      ) {
+        // 발신 의뢰자 → 활성 디자인 담당자
+        counterpartUserId = String(
+          targetRequest?.designClaim?.claimedBy || "",
+        ).trim();
+      }
+
+      if (!counterpartUserId || !Types.ObjectId.isValid(counterpartUserId)) {
+        return res.status(409).json({
+          success: false,
+          message:
+            currentUserId === requestorId
+              ? "아직 디자인 담당자가 지정되지 않았습니다."
+              : "아직 연결 가능한 치과가 지정되지 않았습니다.",
+        });
+      }
+
+      if (counterpartUserId === currentUserId) {
+        return res.status(409).json({
+          success: false,
+          message: "아직 연결 가능한 치과가 지정되지 않았습니다.",
+        });
+      }
+
+      const participantObjectIds = [currentUserId, counterpartUserId].map(
         (id) => new Types.ObjectId(id),
       );
 

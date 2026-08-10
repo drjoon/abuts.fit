@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-10: caseInfos.files에서 primary s3Key 중복 저장 방지.
 // - 2026-08-08: 접수 시 신속 ETA 이점 없으면 express→normal 강등.
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
@@ -546,15 +547,27 @@ export async function createRequestsFromDraft(req, res) {
               },
               ...(Array.isArray(ci.files) && ci.files.length > 0
                 ? {
-                    files: ci.files
-                      .filter((f) => f && f.s3Key)
-                      .map((f) => ({
-                        originalName: f.originalName,
-                        fileType: f.mimetype || f.fileType,
-                        fileSize: f.size ?? f.fileSize,
-                        filePath: undefined,
-                        s3Key: f.s3Key,
-                      })),
+                    files: (() => {
+                      const primaryKey = String(ci?.file?.s3Key || "").trim();
+                      const seen = new Set(
+                        primaryKey ? [primaryKey] : [],
+                      );
+                      return ci.files
+                        .filter((f) => f && f.s3Key)
+                        .filter((f) => {
+                          const key = String(f.s3Key || "").trim();
+                          if (!key || seen.has(key)) return false;
+                          seen.add(key);
+                          return true;
+                        })
+                        .map((f) => ({
+                          originalName: f.originalName,
+                          fileType: f.mimetype || f.fileType,
+                          fileSize: f.size ?? f.fileSize,
+                          filePath: undefined,
+                          s3Key: f.s3Key,
+                        }));
+                    })(),
                   }
                 : {}),
             }

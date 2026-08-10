@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-10: 디자인 승인=완성 어벗 STL 업로드 후 design-handoff(제조사 가공).
 // - 2026-08-10: detailMode=transferChat — 디자인 큐는 기공의뢰서형 카드·채팅 모달(PreviewModal 미사용).
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-03: 제조사 워크시트의 공정 필터 기본값 및 탭 라벨을 '준비'로 표시되도록 수정함. (display-only)
@@ -40,6 +41,7 @@ import {
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   type ManufacturerRequest,
@@ -179,6 +181,7 @@ export const RequestPage = ({
   }, []);
 
   const { toast } = useToast();
+  const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const pendingStageTransitionToastRef = useRef<
     Record<
       string,
@@ -2004,6 +2007,120 @@ export const RequestPage = ({
     [token, toast, fetchRequestsCore, pageState],
   );
 
+  const pickDesignAbutmentFile = useCallback((): Promise<File | null> => {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".stl,.ply,.obj,model/stl,application/sla";
+      input.style.display = "none";
+      let settled = false;
+      const finish = (file: File | null) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener("focus", onWindowFocus);
+        input.removeEventListener("change", onChange);
+        input.remove();
+        resolve(file);
+      };
+      const onChange = () => {
+        finish(input.files?.[0] || null);
+      };
+      const onWindowFocus = () => {
+        window.setTimeout(() => {
+          if (!settled) finish(input.files?.[0] || null);
+        }, 400);
+      };
+      input.addEventListener("change", onChange);
+      window.addEventListener("focus", onWindowFocus);
+      document.body.appendChild(input);
+      input.click();
+    });
+  }, []);
+
+  const handleDesignHandoffApprove = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!token || !req?._id) return;
+      const id = String(req._id);
+      if (designClaimBusyIds[id]) return;
+
+      const file = await pickDesignAbutmentFile();
+      if (!file) {
+        toast({
+          title: "승인 취소",
+          description: "완성 어벗 STL을 선택해야 제조사로 넘길 수 있습니다.",
+        });
+        return;
+      }
+
+      setDesignClaimBusyIds((prev) => ({ ...prev, [id]: true }));
+      try {
+        const uploaded = await uploadFilesWithToast([file]);
+        const temp = uploaded?.[0];
+        const s3Key = String(temp?.key || "").trim();
+        if (!s3Key) {
+          throw new Error("파일 업로드에 실패했습니다.");
+        }
+
+        const res = await fetch(`/api/requests/${id}/design-handoff`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            file: {
+              originalName: temp.originalName || file.name,
+              size: temp.size ?? file.size,
+              mimetype: temp.mimetype || file.type || "application/octet-stream",
+              s3Key,
+              s3Url: temp.location || "",
+            },
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.success) {
+          throw new Error(
+            String(json?.message || "디자인 승인(핸드오프)에 실패했습니다."),
+          );
+        }
+
+        pageState.setRequests((prev) =>
+          prev.filter((row) => String(row._id) !== id),
+        );
+        toast({
+          title: "제조사로 전달됨",
+          description:
+            "완성 어벗이 업로드되어 커스텀어벗 생산(가공)으로 넘어갔습니다.",
+        });
+        void fetchRequestsCore(true);
+      } catch (error) {
+        toast({
+          title: "승인 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "디자인 승인에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setDesignClaimBusyIds((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    },
+    [
+      token,
+      toast,
+      designClaimBusyIds,
+      pickDesignAbutmentFile,
+      uploadFilesWithToast,
+      pageState,
+      fetchRequestsCore,
+    ],
+  );
+
   // 발표 창/마감 만료 시 목록 재조회 (1분 숨김 · 재공개)
   useEffect(() => {
     if (!enableDesignClaim) return;
@@ -2464,7 +2581,11 @@ export const RequestPage = ({
                       enableDesignClaim ? handleDesignClaim : undefined
                     }
                     onApprove={
-                      enableCardApprove ? handleCardApprove : undefined
+                      enableDesignClaim
+                        ? handleDesignHandoffApprove
+                        : enableCardApprove
+                          ? handleCardApprove
+                          : undefined
                     }
                     designClaimBusyIds={designClaimBusyIds}
                   />
@@ -2502,7 +2623,11 @@ export const RequestPage = ({
                           : undefined
                       }
                       onApprove={
-                        enableCardApprove ? handleCardApprove : undefined
+                        enableDesignClaim
+                          ? handleDesignHandoffApprove
+                          : enableCardApprove
+                            ? handleCardApprove
+                            : undefined
                       }
                       onDesignClaim={
                         enableDesignClaim ? handleDesignClaim : undefined

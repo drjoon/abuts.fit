@@ -18,6 +18,7 @@ import {
 } from "../../services/reviewApprovalQueue.service.js";
 import Request from "../../models/request.model.js";
 import { claimDesignRequest } from "../../controllers/requests/designClaim.controller.js";
+import { handoffDesignToProduction } from "../../controllers/requests/designHandoff.controller.js";
 
 // 새 의뢰 생성 (의뢰자만 가능) — 유료(paid+verified) 필수
 router.post(
@@ -84,6 +85,14 @@ router.post(
   authenticate,
   authorizeManufacturerOrDesignPartner(),
   claimDesignRequest,
+);
+
+// 디자인 파트너: 완성 어벗 STL 업로드 + 제조사 가공 핸드오프
+router.post(
+  "/:id/design-handoff",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  handoffDesignToProduction,
 );
 
 // 내 의뢰 목록 조회 (의뢰자 전용)

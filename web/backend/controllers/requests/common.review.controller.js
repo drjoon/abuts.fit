@@ -5,10 +5,13 @@
 // - web/backend/controllers/requests/mailbox.utils.js
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/services/reviewApprovalQueue.service.js
+// - web/backend/controllers/requests/designHandoff.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// change-log:
+// - 2026-08-10: 디자인 파트너 준비→가공(nextUpCamRunGuard) 핸드오프 승인 허용.
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import Machine from "../../models/machine.model.js";
@@ -1136,7 +1139,7 @@ export async function updateReviewStatusByStage(req, res) {
 
       await assertAndClaimManufacturerRequestAccess({ req, request });
 
-      // 디자인 파트너: 디자인+생산 준비 승인만, 본인 활성 클레임 필수
+      // 디자인 파트너: 디자인+생산 준비→가공 핸드오프만, 본인 활성 클레임 필수
       if (req.__designPartner && String(req.user?.role || "").trim() === "requestor") {
         const productMode = String(request?.caseInfos?.productMode || "").trim();
         if (productMode !== "design_custom_abutment") {
@@ -1144,8 +1147,13 @@ export async function updateReviewStatusByStage(req, res) {
           err.statusCode = 403;
           throw err;
         }
-        if (String(effectiveStage || "").trim() !== "request") {
-          const err = new Error("디자인 파트너는 준비 단계만 승인할 수 있습니다.");
+        const stageKey = String(effectiveStage || "").trim();
+        const allowsMachiningHandoff =
+          stageKey === "machining" && nextUpCamRunGuard === true;
+        if (stageKey !== "request" && !allowsMachiningHandoff) {
+          const err = new Error(
+            "디자인 파트너는 준비→가공 핸드오프만 승인할 수 있습니다.",
+          );
           err.statusCode = 403;
           throw err;
         }

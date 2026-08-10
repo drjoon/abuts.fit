@@ -518,14 +518,17 @@ export const useNewRequestSubmitV2 = ({
               filteredMap[primaryKey] ||
               {}) as Partial<CaseInfos>;
 
-            const memberFiles = memberKeys
+            const primaryKeyNorm = String(primary.temp.key || "").trim();
+            // primary는 caseInfos.file에만 두고, files에는 나머지 멤버만 넣어 목록 중복을 막는다.
+            const extraFiles = memberKeys
               .map((key) => fileByKey.get(key))
               .filter(
                 (
                   row,
                 ): row is { file: File; temp: TempUploadedFile } => Boolean(row),
               )
-              .map(({ file, temp }) => ({
+              .filter((row) => String(row.temp.key || "").trim() !== primaryKeyNorm)
+              .map(({ temp }) => ({
                 originalName: temp.originalName,
                 size: temp.size,
                 mimetype: temp.mimetype,
@@ -560,9 +563,9 @@ export const useNewRequestSubmitV2 = ({
                 mimetype: primary.temp.mimetype,
                 s3Key: primary.temp.key,
               },
-              ...(memberFiles.length > 1
+              ...(extraFiles.length > 0
                 ? {
-                    files: memberFiles,
+                    files: extraFiles,
                   }
                 : {}),
             };

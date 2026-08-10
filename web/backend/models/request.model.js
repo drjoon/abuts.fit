@@ -410,6 +410,25 @@ const requestSchema = new mongoose.Schema(
         default: undefined,
       },
 
+      // 디자인 핸드오프 전 구강스캔/원본 primary 스냅샷 (생산 primary 교체 후 보존)
+      designSourceFiles: {
+        type: [
+          {
+            originalName: String,
+            fileType: String,
+            fileSize: Number,
+            filePath: String,
+            s3Key: String,
+            s3Url: String,
+            uploadedAt: {
+              type: Date,
+              default: Date.now,
+            },
+          },
+        ],
+        default: undefined,
+      },
+
       camFile: {
         fileName: String,
         fileType: String,
@@ -635,6 +654,23 @@ const requestSchema = new mongoose.Schema(
         type: Number,
         default: null,
       },
+    },
+
+    // 디자인 완료 핸드오프 스냅샷 (가공 진입 시 기공소 주문내역 스코프용)
+    designLabBusinessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
+      index: true,
+    },
+    designCompletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    designCompletedAt: {
+      type: Date,
+      default: null,
     },
 
     manufacturerStage: {

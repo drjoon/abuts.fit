@@ -328,6 +328,13 @@ export async function buildRequestorOrgScopeFilter(req) {
       $or: [
         { businessAnchorId: new Types.ObjectId(orgId) },
         { requestor: { $in: memberObjectIds } },
+        // 디자인 기공소: 가공 진입(생산 시작) 이후 주문내역에 포함
+        {
+          $and: [
+            { designLabBusinessAnchorId: new Types.ObjectId(orgId) },
+            { manufacturerStage: { $nin: ["준비"] } },
+          ],
+        },
       ],
     };
   });

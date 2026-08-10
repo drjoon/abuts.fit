@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-10: 파일 카운트 s3Key 중복 제거(primary+files).
 // - 2026-08-10: 디자인 큐 전용 기공의뢰서형 카드(수락/승인/unread).
 // related files:
 // - web/frontend/src/pages/requestor/design/DesignPage.tsx
@@ -68,15 +69,22 @@ const normalizeToothWorks = (raw: unknown): ToothWorkSelection[] => {
 
 const countRequestFiles = (request: ManufacturerRequest) => {
   const caseInfos = request.caseInfos || {};
-  let count = 0;
-  if (caseInfos.file?.s3Key || caseInfos.file?.s3Url || caseInfos.file?.filePath) {
-    count += 1;
-  }
+  const seen = new Set<string>();
+  const add = (key: string) => {
+    const k = String(key || "").trim();
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+  };
+  const primaryKey = String(
+    caseInfos.file?.s3Key || caseInfos.file?.s3Url || caseInfos.file?.filePath || "",
+  ).trim();
+  if (primaryKey) add(primaryKey);
   const extras = Array.isArray(caseInfos.files) ? caseInfos.files : [];
   for (const f of extras) {
-    if (f?.s3Key || f?.s3Url || f?.filePath) count += 1;
+    const key = String(f?.s3Key || f?.s3Url || f?.filePath || "").trim();
+    if (key) add(key);
   }
-  return count;
+  return seen.size;
 };
 
 export type DesignRequestCardGridProps = {
@@ -288,7 +296,7 @@ export function DesignRequestCardGrid({
                     onApprove(request);
                   }}
                   aria-label="승인"
-                  title="승인"
+                  title="완성 어벗 STL 업로드 후 제조사 생산으로 넘깁니다"
                 >
                   <ArrowRight className="h-4 w-4" />
                 </span>
