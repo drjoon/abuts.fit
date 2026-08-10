@@ -10,7 +10,7 @@
 // - web/frontend/src/pages/requestor/new_request/utils/localDraftStorage.ts
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - .cursor/rules/oral-scan-file-size.mdc
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CaseInfos } from "./newRequestTypes";
 import {
   getLocalDraft,
@@ -37,6 +37,8 @@ type Params = {
   toFileKey: (file: File) => string;
   caseInfosMap?: Record<string, CaseInfos>;
   updateCaseInfos: (fileKey: string, updates: Partial<CaseInfos>) => void;
+  /** false: 기공소 — 구강스캔 자동·수동 묶음 비활성, 항상 생산(custom_abutment) */
+  enableOralScanGrouping?: boolean;
 };
 
 function buildSizeByFileKey(
@@ -55,6 +57,7 @@ export function usePatientFileGroups({
   toFileKey,
   caseInfosMap,
   updateCaseInfos,
+  enableOralScanGrouping = true,
 }: Params) {
   const [patientGroups, setPatientGroups] = useState<PatientFileGroup[]>(() => {
     const draft = getLocalDraft();
@@ -65,6 +68,36 @@ export function usePatientFileGroups({
     setPatientGroups(next);
     savePatientGroups(next);
   }, []);
+
+  // 기공소: 저장된 구강스캔 묶음 제거
+  useEffect(() => {
+    if (enableOralScanGrouping) return;
+    setPatientGroups((prev) => {
+      if (!prev.length) return prev;
+      savePatientGroups([]);
+      return [];
+    });
+  }, [enableOralScanGrouping]);
+
+  const normalizedProductionOnlyRef = useRef(false);
+  useEffect(() => {
+    if (enableOralScanGrouping) {
+      normalizedProductionOnlyRef.current = false;
+      return;
+    }
+    if (normalizedProductionOnlyRef.current) return;
+    const keys = Object.keys(caseInfosMap || {});
+    if (!keys.length) return;
+    normalizedProductionOnlyRef.current = true;
+    for (const key of keys) {
+      if (caseInfosMap?.[key]?.productMode === "design_custom_abutment") {
+        updateCaseInfos(key, {
+          productMode: "custom_abutment",
+          workType: "abutment",
+        });
+      }
+    }
+  }, [enableOralScanGrouping, caseInfosMap, updateCaseInfos]);
 
   // 삭제된 파일 키가 그룹에 남지 않도록 정리.
   // files가 비어 있는 동안(새로고침 후 IndexedDB 복원 전)에는 실행하지 않는다.
@@ -138,6 +171,14 @@ export function usePatientFileGroups({
    */
   const restoreProductModeAfterLeaveGroup = useCallback(
     (fileKey: string) => {
+      if (!enableOralScanGrouping) {
+        updateCaseInfos(fileKey, {
+          productMode: "custom_abutment",
+          workType: "abutment",
+          requestedShipDate: undefined,
+        });
+        return;
+      }
       const file = files.find((f) => toFileKey(f) === fileKey);
       const size =
         typeof file?.size === "number"
@@ -157,12 +198,37 @@ export function usePatientFileGroups({
         requestedShipDate: undefined,
       });
     },
-    [files, toFileKey, updateCaseInfos],
+    [enableOralScanGrouping, files, toFileKey, updateCaseInfos],
+  );
+
+  const applyProductionOnlyProductModes = useCallback(
+    (
+      newFiles: File[],
+      nameHintsByKey: Record<
+        string,
+        { clinicName?: string; patientName?: string }
+      > = {},
+    ) => {
+      for (const file of newFiles) {
+        const key = toFileKey(file);
+        updateCaseInfos(key, {
+          productMode: "custom_abutment",
+          workType: "abutment",
+          ...nameHintsByKey[key],
+        });
+      }
+    },
+    [toFileKey, updateCaseInfos],
   );
 
   const autoGroupNewFiles = useCallback(
     (newFiles: File[]) => {
       if (!newFiles.length) return;
+
+      if (!enableOralScanGrouping) {
+        applyProductionOnlyProductModes(newFiles);
+        return;
+      }
 
       const newFileKeys = newFiles.map((file) => toFileKey(file));
       const sizeByFileKey = buildSizeByFileKey(newFiles, toFileKey);
@@ -260,7 +326,9 @@ export function usePatientFileGroups({
       }
     },
     [
+      applyProductionOnlyProductModes,
       caseInfosMap,
+      enableOralScanGrouping,
       markGroupAsDesignProduction,
       patientGroups,
       persistGroups,
@@ -277,6 +345,32 @@ export function usePatientFileGroups({
       parsedClinicByFileKey?: Record<string, string | undefined>,
     ) => {
       if (!newFiles.length) return 0;
+
+      if (!enableOralScanGrouping) {
+        const nameHintsByKey: Record<
+          string,
+          { clinicName?: string; patientName?: string }
+        > = {};
+        for (const file of newFiles) {
+          const key = toFileKey(file);
+          const patientHint =
+            String(
+              parsedPatientByFileKey[key] || caseInfosMap?.[key]?.patientName || "",
+            ).trim() || undefined;
+          const clinicHint =
+            String(
+              parsedClinicByFileKey?.[key] ||
+                caseInfosMap?.[key]?.clinicName ||
+                "",
+            ).trim() || undefined;
+          nameHintsByKey[key] = {
+            ...(clinicHint ? { clinicName: clinicHint } : {}),
+            ...(patientHint ? { patientName: patientHint } : {}),
+          };
+        }
+        applyProductionOnlyProductModes(newFiles, nameHintsByKey);
+        return 0;
+      }
 
       const newFileKeys = newFiles.map((file) => toFileKey(file));
       const sizeByFileKey = buildSizeByFileKey(newFiles, toFileKey);
@@ -405,11 +499,18 @@ export function usePatientFileGroups({
 
       return touchedCount;
     },
-    [caseInfosMap, toFileKey, updateCaseInfos],
+    [
+      applyProductionOnlyProductModes,
+      caseInfosMap,
+      enableOralScanGrouping,
+      toFileKey,
+      updateCaseInfos,
+    ],
   );
 
   const groupSelectedFiles = useCallback(
     (fileKeys: string[]) => {
+      if (!enableOralScanGrouping) return null;
       // 수동 합치기: 3MB 필터 없이 선택된 키 전부 (룰: oral-scan-file-size.mdc)
       const unique = Array.from(new Set(fileKeys.filter(Boolean)));
       if (unique.length < 2) return null;
@@ -437,6 +538,7 @@ export function usePatientFileGroups({
       return group;
     },
     [
+      enableOralScanGrouping,
       markGroupAsDesignProduction,
       patientGroups,
       persistGroups,
@@ -446,6 +548,7 @@ export function usePatientFileGroups({
 
   const ungroup = useCallback(
     (groupId: string) => {
+      if (!enableOralScanGrouping) return;
       // 수동 해제: 크기와 무관하게 묶음 전체 해제
       const group = patientGroups.find((g) => g.id === groupId);
       persistGroups(patientGroups.filter((g) => g.id !== groupId));
@@ -454,11 +557,12 @@ export function usePatientFileGroups({
         restoreProductModeAfterLeaveGroup(key);
       }
     },
-    [patientGroups, persistGroups, restoreProductModeAfterLeaveGroup],
+    [enableOralScanGrouping, patientGroups, persistGroups, restoreProductModeAfterLeaveGroup],
   );
 
   const addFilesToGroup = useCallback(
     (groupId: string, fileKeys: string[]) => {
+      if (!enableOralScanGrouping) return;
       // 수동 추가: 크기 필터 없음
       const unique = Array.from(new Set(fileKeys.filter(Boolean)));
       if (!unique.length) return;
@@ -479,6 +583,7 @@ export function usePatientFileGroups({
       if (group) markGroupAsDesignProduction(group);
     },
     [
+      enableOralScanGrouping,
       markGroupAsDesignProduction,
       patientGroups,
       persistGroups,
@@ -488,6 +593,7 @@ export function usePatientFileGroups({
 
   const removeFileFromGroups = useCallback(
     (fileKey: string) => {
+      if (!enableOralScanGrouping) return;
       // 수동 연결 끊기: 크기와 무관
       const next = removeFileKeysFromGroups(patientGroups, [fileKey]);
       persistGroups(next);
@@ -504,7 +610,12 @@ export function usePatientFileGroups({
         restoreProductModeAfterLeaveGroup(key);
       }
     },
-    [patientGroups, persistGroups, restoreProductModeAfterLeaveGroup],
+    [
+      enableOralScanGrouping,
+      patientGroups,
+      persistGroups,
+      restoreProductModeAfterLeaveGroup,
+    ],
   );
 
   const clearGroups = useCallback(() => {

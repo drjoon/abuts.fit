@@ -104,6 +104,8 @@ type Props = {
   /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
   previewFileIndices?: number[];
   onSelectPreviewIndex?: (index: number) => void;
+  /** true: 상단 생산/디자인+생산 탭 숨김(기공소 — 생산만) */
+  hideProductModeTabs?: boolean;
 };
 
 export function NewRequestDetailDialog({
@@ -147,6 +149,7 @@ export function NewRequestDetailDialog({
   lockProductionProductMode = false,
   previewFileIndices,
   onSelectPreviewIndex,
+  hideProductModeTabs = false,
 }: Props) {
   const [showNewSystemForm, setShowNewSystemForm] = useState(false);
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
@@ -213,13 +216,14 @@ export function NewRequestDetailDialog({
   }, [detailFile, detailCaseInfos?.retentionGroove, setDetailCaseInfos]);
 
   const showImplantSelect = true;
-  const productMode: NewRequestProductMode = lockDesignProductMode
-    ? "design_custom_abutment"
-    : lockProductionProductMode
+  const productMode: NewRequestProductMode =
+    hideProductModeTabs || lockProductionProductMode
       ? "custom_abutment"
-      : detailCaseInfos?.productMode === "design_custom_abutment"
+      : lockDesignProductMode
         ? "design_custom_abutment"
-        : "custom_abutment";
+        : detailCaseInfos?.productMode === "design_custom_abutment"
+          ? "design_custom_abutment"
+          : "custom_abutment";
   const isDesignCustomMode = productMode === "design_custom_abutment";
 
   const selectablePreviewIndices = useMemo(() => {
@@ -255,8 +259,9 @@ export function NewRequestDetailDialog({
           <DialogHeader className="relative shrink-0 space-y-0 pr-8">
             <div className="relative flex min-h-9 flex-col gap-3 sm:flex-row sm:items-center">
               <DialogTitle className="text-lg font-semibold sm:pr-[300px]">
-                STL 확인 및 정보 입력
+                3D 모델 확인 및 정보 입력
               </DialogTitle>
+              {!hideProductModeTabs ? (
               <div
                 role="radiogroup"
                 aria-label="의뢰 유형"
@@ -301,9 +306,10 @@ export function NewRequestDetailDialog({
                   );
                 })}
               </div>
+              ) : null}
             </div>
             <DialogDescription className="sr-only">
-              STL 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 다음 케이스로 이동합니다.
+              3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 다음 케이스로 이동합니다.
             </DialogDescription>
           </DialogHeader>
 

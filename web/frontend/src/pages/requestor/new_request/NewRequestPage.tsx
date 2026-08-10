@@ -88,6 +88,7 @@ const NewRequestPageContent = () => {
   const { toast } = useToast();
   const { token } = useAuthStore();
   const { kind: requestorKind } = useRequestorBusinessAccess();
+  const isLabRequestor = requestorKind === "lab";
 
   const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
   const [designSoftwareMode, setDesignSoftwareMode] = useState<
@@ -172,7 +173,9 @@ const NewRequestPageContent = () => {
     ungroupPatientFiles,
     removeFileFromPatientGroup,
     clearPatientGroups,
-  } = useNewRequestPage(existingRequestId);
+  } = useNewRequestPage(existingRequestId, {
+    enableOralScanGrouping: !isLabRequestor,
+  });
 
   const countableFileKeys = useMemo(() => {
     if (!patientGroups?.length) return undefined;
@@ -902,10 +905,11 @@ const NewRequestPageContent = () => {
 
   const resolveCaseProductMode = useCallback(
     (fileKey: string, info?: CaseInfos | null) => {
+      if (isLabRequestor) return "custom_abutment";
       if (groupedFileKeys.has(fileKey)) return "design_custom_abutment";
       return (info?.productMode as string | null | undefined) ?? null;
     },
-    [groupedFileKeys],
+    [groupedFileKeys, isLabRequestor],
   );
 
   /** 구강스캔·디자인+생산은 메시 직경으로 리드를 잡지 않는다 */
@@ -920,6 +924,7 @@ const NewRequestPageContent = () => {
 
   /** 우측 기본 신속 카드: 첨부 중 디자인+생산이 있으면 +1영업일로 판정 */
   const expressSelectProductMode = useMemo(() => {
+    if (isLabRequestor) return null;
     if (groupedFileKeys.size > 0) return "design_custom_abutment";
     for (const file of files) {
       const key = toNormalizedFileKey(file);
@@ -928,7 +933,7 @@ const NewRequestPageContent = () => {
       }
     }
     return null;
-  }, [groupedFileKeys, files, caseInfosMap, toNormalizedFileKey]);
+  }, [groupedFileKeys, files, caseInfosMap, isLabRequestor, toNormalizedFileKey]);
 
   /** 우측 신속 카드와 동일 조건 — 카드 신속 버튼·모드 강등에도 공통 적용 */
   const expressSelectableGlobal = useMemo(
@@ -985,9 +990,11 @@ const NewRequestPageContent = () => {
           typeof file?.size === "number"
             ? file.size
             : resolveFileSizeBytes(key);
-        const productMode = isLikelyOralScanSize(size)
-          ? "design_custom_abutment"
-          : "custom_abutment";
+        const productMode = isLabRequestor
+          ? "custom_abutment"
+          : isLikelyOralScanSize(size)
+            ? "design_custom_abutment"
+            : "custom_abutment";
         const info = caseInfosMap?.[key];
         const diameter =
           productMode === "design_custom_abutment"
@@ -1034,6 +1041,7 @@ const NewRequestPageContent = () => {
       weeklyBatchDays,
       leadTimes,
       updateCaseInfos,
+      isLabRequestor,
     ],
   );
 
@@ -1778,6 +1786,7 @@ const NewRequestPageContent = () => {
               onLeadTimesChange={handleLeadTimesChange}
               attachmentListItems={attachmentListItems}
               patientGroups={patientGroups}
+              productionOnly={isLabRequestor}
               onGroupSelectedFiles={groupSelectedFiles}
               onUngroupPatientFiles={handleUngroupPatientFiles}
               onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
@@ -1831,6 +1840,7 @@ const NewRequestPageContent = () => {
               onWeeklyBatchDaysChange={handleWeeklyBatchDaysChange}
               leadTimes={leadTimes}
               expressProductMode={expressSelectProductMode}
+              showDesignLeadTimeHint={!isLabRequestor}
               defaultShippingMode={defaultShippingMode}
               onDefaultShippingModeChange={handleDefaultShippingModeChange}
               onSubmit={() => {

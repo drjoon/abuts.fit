@@ -100,6 +100,8 @@ type Props = {
   onGroupSelectedFiles?: (fileKeys: string[]) => void;
   onUngroupPatientFiles?: (groupId: string) => void;
   onRemoveFileFromPatientGroup?: (fileKey: string) => void;
+  /** true: 기공소 — 항상 커스텀어벗 생산, 구강스캔 묶음·디자인+생산 탭 없음 */
+  productionOnly?: boolean;
 };
 
 export function NewRequestDetailsSection({
@@ -161,6 +163,7 @@ export function NewRequestDetailsSection({
   onGroupSelectedFiles,
   onUngroupPatientFiles,
   onRemoveFileFromPatientGroup,
+  productionOnly = false,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -305,29 +308,45 @@ export function NewRequestDetailsSection({
     : caseInfos;
   const detailIsOralScan = isLikelyOralScanSize(detailFile?.size);
   const detailIsAbutDesign = isLikelyCustomAbutDesignSize(detailFile?.size);
-  // 구강스캔(묶음·단일) → 디자인+생산 고정. 어벗디자인 STL → 생산 고정.
-  const lockDesignProductMode =
-    Boolean(detailPatientGroup) || detailIsOralScan;
-  const lockProductionProductMode =
-    !lockDesignProductMode && detailIsAbutDesign;
-  const detailCaseInfos = lockDesignProductMode
+  // 구강스캔(묶음·단일) → 디자인+생산 고정. 어벗디자인 STL → 생산 고정. 기공소 → 항상 생산.
+  const lockDesignProductMode = productionOnly
+    ? false
+    : Boolean(detailPatientGroup) || detailIsOralScan;
+  const lockProductionProductMode = productionOnly
+    ? true
+    : !lockDesignProductMode && detailIsAbutDesign;
+  const detailCaseInfos = productionOnly
     ? {
         ...detailCaseInfosBase,
-        productMode: "design_custom_abutment" as const,
+        productMode: "custom_abutment" as const,
         workType: "abutment" as const,
       }
-    : lockProductionProductMode
+    : lockDesignProductMode
       ? {
           ...detailCaseInfosBase,
-          productMode: "custom_abutment" as const,
+          productMode: "design_custom_abutment" as const,
           workType: "abutment" as const,
         }
-      : detailCaseInfosBase;
+      : lockProductionProductMode
+        ? {
+            ...detailCaseInfosBase,
+            productMode: "custom_abutment" as const,
+            workType: "abutment" as const,
+          }
+        : detailCaseInfosBase;
 
   const setDetailCaseInfos = useCallback(
     (updates: Partial<CaseInfos>) => {
       if (!detailFileKey) {
         setCaseInfos(updates);
+        return;
+      }
+      if (productionOnly) {
+        updateCaseInfos(detailFileKey, {
+          ...updates,
+          productMode: "custom_abutment",
+          workType: "abutment",
+        });
         return;
       }
       const group = findGroupByFileKey(patientGroups, detailFileKey);
@@ -363,6 +382,7 @@ export function NewRequestDetailsSection({
       detailFileKey,
       files,
       patientGroups,
+      productionOnly,
       setCaseInfos,
       toNormalizedFileKey,
       updateCaseInfos,
@@ -380,7 +400,7 @@ export function NewRequestDetailsSection({
   const openDetailModal = useCallback(
     (index: number) => {
       const file = files[index];
-      if (file) {
+      if (file && !productionOnly) {
         const fileKey = toNormalizedFileKey(file);
         const group = findGroupByFileKey(patientGroups, fileKey);
         if (group) {
@@ -399,6 +419,7 @@ export function NewRequestDetailsSection({
     [
       files,
       patientGroups,
+      productionOnly,
       setSelectedPreviewIndex,
       toNormalizedFileKey,
       updateCaseInfos,
@@ -630,9 +651,10 @@ export function NewRequestDetailsSection({
             defaultShippingMode={defaultShippingMode}
             expressSelectableGlobal={expressSelectableGlobal}
             listItems={attachmentListItems}
-            onGroupSelectedFiles={onGroupSelectedFiles}
-            onUngroup={onUngroupPatientFiles}
-            onRemoveFileFromGroup={onRemoveFileFromPatientGroup}
+            onGroupSelectedFiles={productionOnly ? undefined : onGroupSelectedFiles}
+            onUngroup={productionOnly ? undefined : onUngroupPatientFiles}
+            onRemoveFileFromGroup={productionOnly ? undefined : onRemoveFileFromPatientGroup}
+            productionOnly={productionOnly}
           />
         </div>
       </div>
@@ -678,6 +700,7 @@ export function NewRequestDetailsSection({
         toast={toast}
         lockDesignProductMode={lockDesignProductMode}
         lockProductionProductMode={lockProductionProductMode}
+        hideProductModeTabs={productionOnly}
         previewFileIndices={previewFileIndices}
         onSelectPreviewIndex={selectPreviewIndex}
       />

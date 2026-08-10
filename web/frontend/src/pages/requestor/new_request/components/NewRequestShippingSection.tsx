@@ -49,6 +49,8 @@ type Props = {
   leadTimes?: LeadTimesMap | null;
   /** 첨부 건이 디자인+생산(구강 스캔 묶음 등)이면 +1영업일 반영 */
   expressProductMode?: string | null;
+  /** false: 기공소 — «디자인까지 의뢰할 경우 1일 추가» 숨김 */
+  showDesignLeadTimeHint?: boolean;
   defaultShippingMode: ShippingMode;
   onDefaultShippingModeChange: (mode: ShippingMode) => void;
   onSubmit: () => void;
@@ -70,6 +72,7 @@ export function NewRequestShippingSection({
   onWeeklyBatchDaysChange,
   leadTimes = null,
   expressProductMode = null,
+  showDesignLeadTimeHint = true,
   defaultShippingMode,
   onDefaultShippingModeChange,
   onSubmit,
@@ -433,9 +436,11 @@ export function NewRequestShippingSection({
       </div>
 
       <div className="app-glass-card-content mt-auto shrink-0 space-y-2">
-        <div className="text-center text-sm text-slate-600">
-          디자인까지 의뢰할 경우 1일 추가
-        </div>
+        {showDesignLeadTimeHint ? (
+          <div className="text-center text-sm text-slate-600">
+            디자인까지 의뢰할 경우 1일 추가
+          </div>
+        ) : null}
         <div className="flex justify-center">
           <Button
             onClick={onSubmit}

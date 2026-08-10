@@ -45,10 +45,12 @@ const normalizeRequestorHexRotation = (
  */
 export const useNewRequestPage = (
   existingRequestId?: string,
+  options?: { enableOralScanGrouping?: boolean },
 ) => {
   const { user, token, setLastDashboardPath } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const enableOralScanGrouping = options?.enableOralScanGrouping !== false;
   // 사이드바 goSidebarHref와 동일: /dashboard 허브가 lastDashboardPath(신규의뢰 등)로
   // 다시 bounce 하지 않도록 이동 전에 last path를 pin 한다.
   const navigateWithDashboardRefresh = useCallback(
@@ -653,6 +655,7 @@ export const useNewRequestPage = (
     toFileKey: toNormalizedFileKey,
     caseInfosMap,
     updateCaseInfos,
+    enableOralScanGrouping,
   });
 
   // V3 래퍼: 로컬 저장만 수행 (S3 업로드 없음)
@@ -673,7 +676,7 @@ export const useNewRequestPage = (
         patientByKey,
         clinicByKey,
       );
-      if (groupedCount > 0) {
+      if (enableOralScanGrouping && groupedCount > 0) {
         toast({
           title: "구강 스캔으로 합쳤습니다",
           description:
@@ -683,6 +686,7 @@ export const useNewRequestPage = (
       }
 
       // AI/룰로 보강된 치과·환자명을 기존 환자 케이스에도 반영
+      if (!enableOralScanGrouping) return;
       for (const row of parsed) {
         if (!row.clinicName && !row.patientName) continue;
         const group = patientFileGroupsApi.getGroupForFileKey(row.fileKey);

@@ -164,6 +164,8 @@ type Props = {
   onGroupSelectedFiles?: (fileKeys: string[]) => void;
   onUngroup?: (groupId: string) => void;
   onRemoveFileFromGroup?: (fileKey: string) => void;
+  /** true: 기공소 — 항상 생산 ETA·어벗디자인 뱃지만 */
+  productionOnly?: boolean;
 };
 
 function resolveShippingMode(
@@ -206,6 +208,7 @@ export function NewRequestAttachmentsPanel({
   onGroupSelectedFiles,
   onUngroup,
   onRemoveFileFromGroup,
+  productionOnly = false,
 }: Props) {
   const hasAnyAttachment = files.length > 0;
   const { toast } = useToast();
@@ -604,12 +607,16 @@ export function NewRequestAttachmentsPanel({
     } = params;
     const shippingMode = resolveShippingMode(fileInfo, defaultShippingMode);
     // 구강스캔 메시 최대직경(>20mm)은 생산 리드에 쓰지 않는다(디자인+생산=리드 1일 SSOT).
-    const diameter = forceDesignProductMode
-      ? null
-      : (fileDiameters[fileKey] ?? fileInfo?.maxDiameter ?? null);
-    const productMode = forceDesignProductMode
-      ? "design_custom_abutment"
-      : (fileInfo?.productMode ?? null);
+    const diameter = productionOnly
+      ? (fileDiameters[fileKey] ?? fileInfo?.maxDiameter ?? null)
+      : forceDesignProductMode
+        ? null
+        : (fileDiameters[fileKey] ?? fileInfo?.maxDiameter ?? null);
+    const productMode = productionOnly
+      ? "custom_abutment"
+      : forceDesignProductMode
+        ? "design_custom_abutment"
+        : (fileInfo?.productMode ?? null);
     const expressSelectable =
       expressSelectableGlobal &&
       isExpressShippingSelectable({
@@ -641,8 +648,9 @@ export function NewRequestAttachmentsPanel({
             : null));
     const designSoftware = String(fileInfo?.designSoftware || "").trim();
     const isDesignMode =
-      forceDesignProductMode ||
-      fileInfo?.productMode === "design_custom_abutment";
+      !productionOnly &&
+      (forceDesignProductMode ||
+        fileInfo?.productMode === "design_custom_abutment");
 
     if (
       !estimatedShip &&
@@ -839,14 +847,17 @@ export function NewRequestAttachmentsPanel({
             fileKey,
             fileKeysForMode: [fileKey],
             fileInfo,
-            // 파일유형 뱃지(구강스캔)로 충분하므로 +디자인 숨김
-            hideDesignBadge: isOralScanFile,
-            forceDesignProductMode: isOralScanFile,
-            fileKindBadge: isOralScanFile
-              ? "oral_scan"
-              : isAbutDesignFile
+            hideDesignBadge: productionOnly ? true : isOralScanFile,
+            forceDesignProductMode: productionOnly ? false : isOralScanFile,
+            fileKindBadge: productionOnly
+              ? isOralScanFile || isAbutDesignFile
                 ? "abut_design"
-                : null,
+                : null
+              : isOralScanFile
+                ? "oral_scan"
+                : isAbutDesignFile
+                  ? "abut_design"
+                  : null,
           })}
         </div>
       </div>
