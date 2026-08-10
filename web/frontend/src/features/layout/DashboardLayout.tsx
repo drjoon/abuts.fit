@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-10: 의뢰자·치과 사이드메뉴에서 소개 제거.
 // - 2026-08-10: 의뢰자 사이드메뉴를 kind별로 분기 — practice(디자인 제외·유료게이트), lab(디자인·무게이트).
 // - 2026-08-10: 의뢰자 역할 뱃지를 requestorKind에 따라 의뢰자·치과 / 의뢰자·기공소로 표기.
 // - 2026-08-09: 모든 role 최근 사이드바 경로를 계정 디폴트 진입점으로 서버 저장·복원. `/dashboard` 홈 클릭 시 last path pin.
@@ -117,11 +118,16 @@ const practiceUnreadSeededTokens = new Set<string>();
 
 type SidebarItem = { icon: LucideIcon; label: string; href: string };
 
-const requestorSidebarTail: SidebarItem[] = [
-  { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
+const requestorSidebarCommonTail: SidebarItem[] = [
   { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
   { icon: Settings, label: "설정", href: "/dashboard/settings" },
 ];
+
+const requestorReferralItem: SidebarItem = {
+  icon: Share2,
+  label: "소개",
+  href: "/dashboard/referral-groups",
+};
 
 const buildRequestorSidebarItems = (
   kind: "practice" | "lab" | null,
@@ -139,7 +145,11 @@ const buildRequestorSidebarItems = (
   if (kind === "lab" && designAccessEnabled) {
     items.push({ icon: PenTool, label: "디자인", href: "/dashboard/design" });
   }
-  return [...items, ...requestorSidebarTail];
+  const tail =
+    kind === "practice"
+      ? requestorSidebarCommonTail
+      : [requestorReferralItem, ...requestorSidebarCommonTail];
+  return [...items, ...tail];
 };
 
 const sidebarItems = {
