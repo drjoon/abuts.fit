@@ -654,7 +654,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 운영 주체는 면세 사업자. 크레딧 충전·앱 내 과금·정산 모두 부가세 없음.
   - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`.
   - 충전 단위: `utils/creditChargeUnit.js` — 기공소 50만원, 치과(practice) 100만원. 절대 상한 5,000만원.
-    주문 검증 `creditBPlan.controller.js`, 추천액(월사용량/3 반올림) `credit.controller.js` insights.
+    주문 검증 `creditBPlan.controller.js`, insights(월사용량/3·한 달분) `credit.controller.js`.
+    UI 2회차 기본 배수 3은 프론트(`CreditPaymentTab`). 잔액 < 단위 시 사이드바 충전 강조는 `DashboardLayout`.
     구현: `controllers/credits/creditBPlan.controller.js`
   - 수익 라인(`REV_*`) 적재 시 VAT 가산 금지. `amount = amountExcludingVat = base`, `vatAmount = 0`.
     구현: `controllers/requests/common.review.helpers.js`

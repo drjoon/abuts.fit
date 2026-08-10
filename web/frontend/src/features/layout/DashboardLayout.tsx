@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-11: 잔액 < 충전단위면 사이드바 크레딧에 깜빡이는 충전 뱃지·클릭 시 ?tab=charge.
 // - 2026-08-11: 의뢰자 사이드바에 크레딧 메뉴 추가. 충전 토스트 CTA → /dashboard/credits?tab=charge.
 // - 2026-08-11: 기공/어벗 사이드 — 버튼 그라데이션 제거, 가로 연결선만 적용.
 // - 2026-08-11: 기공의뢰/의뢰수신·어벗의뢰 사이드 메뉴에 기공/어벗 그라데이션 액센트 적용.
@@ -138,6 +139,11 @@ type SidebarItem = {
 const sidebarItemPath = (href: string) =>
   String(href || "").split("?")[0].replace(/\/$/, "") || "/";
 
+const CHARGE_UNIT_LAB = 500_000;
+const CHARGE_UNIT_PRACTICE = 1_000_000;
+const CREDITS_HREF = "/dashboard/credits";
+const CREDITS_CHARGE_HREF = "/dashboard/credits?tab=charge";
+
 const requestorSidebarCommonTail: SidebarItem[] = [
   { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
   { icon: Settings, label: "설정", href: "/dashboard/settings" },
@@ -185,7 +191,7 @@ const buildRequestorSidebarItems = (
       accent: "어벗",
     },
     requestorReferralItem,
-    { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
+    { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
     ...requestorSidebarCommonTail,
   ];
 };
@@ -949,6 +955,14 @@ export const DashboardLayout = () => {
     return buildRequestorSidebarItems(requestorKind);
   })();
 
+  const creditChargeUnit =
+    requestorKind === "practice" ? CHARGE_UNIT_PRACTICE : CHARGE_UNIT_LAB;
+  const isCreditBelowUnit =
+    user.role === "requestor" &&
+    typeof creditBalance === "number" &&
+    Number.isFinite(creditBalance) &&
+    creditBalance < creditChargeUnit;
+
   const displayRole = isPracticeUser ? "practice" : user.role;
   const adminMenuSections = user.role === "admin" ? adminSidebarSections : null;
   const accountMenuItems = accountMenuItemsByRole[displayRole] || [];
@@ -960,7 +974,11 @@ export const DashboardLayout = () => {
   }, [location.pathname, clearBadgeForPath]);
 
   const resolvedMenuItems = (() => {
-    return menuItems;
+    if (!isCreditBelowUnit) return menuItems;
+    return menuItems.map((item) => {
+      if (sidebarItemPath(item.href) !== CREDITS_HREF) return item;
+      return { ...item, href: CREDITS_CHARGE_HREF };
+    });
   })();
 
   const requestorPracticeChatUnreadCount = useMemo(() => {
@@ -1085,8 +1103,8 @@ export const DashboardLayout = () => {
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <div className="max-w-md w-full space-y-6 text-center">
           <div className="flex justify-center">
-            <div className="h-16 w-16 rounded-full bg-amber-50 flex items-center justify-center">
-              <Clock className="h-8 w-8 text-amber-600" />
+            <div className="h-16 w-16 rounded-full bg-accent-soft flex items-center justify-center">
+              <Clock className="h-8 w-8 text-accent-strong" />
             </div>
           </div>
           <div className="space-y-2">
@@ -1227,6 +1245,8 @@ export const DashboardLayout = () => {
                     ? location.pathname === itemPath
                     : location.pathname === itemPath ||
                       location.pathname.startsWith(`${itemPath}/`);
+                  const isCreditsLowHighlight =
+                    isCreditBelowUnit && itemPath === CREDITS_HREF && !isActive;
                   const paidLocked =
                     user.role === "requestor" &&
                     isPaidRequestorSidebarLocked({
@@ -1236,7 +1256,9 @@ export const DashboardLayout = () => {
                     });
                   const quickTooltip = paidLocked
                     ? PAID_ACCESS_DISABLED_HINT
-                    : item.tooltip;
+                    : isCreditsLowHighlight
+                      ? "크레딧이 부족합니다. 충전해주세요."
+                      : item.tooltip;
 
                   const button = (
                     <Button
@@ -1258,6 +1280,11 @@ export const DashboardLayout = () => {
                         goSidebarHref(item.href);
                       }}
                       aria-current={isActive ? "page" : undefined}
+                      aria-label={
+                        isCreditsLowHighlight
+                          ? "크레딧 부족 — 충전 탭으로 이동"
+                          : undefined
+                      }
                     >
                       <item.icon
                         className={`h-4 w-4 flex-shrink-0 ${
@@ -1269,6 +1296,16 @@ export const DashboardLayout = () => {
                       )}
                       {!isCollapsed &&
                         (() => {
+                          if (isCreditsLowHighlight) {
+                            return (
+                              <Badge
+                                variant="outline"
+                                className="ml-auto h-5 animate-pulse border-accent-muted bg-accent text-accent-foreground px-1.5 text-[10px] font-semibold leading-none flex-shrink-0"
+                              >
+                                충전
+                              </Badge>
+                            );
+                          }
                           const badgeCount = getSidebarBadgeCount(item.href);
                           return badgeCount > 0 ? (
                             <Badge
@@ -1279,6 +1316,12 @@ export const DashboardLayout = () => {
                             </Badge>
                           ) : null;
                         })()}
+                      {isCollapsed && isCreditsLowHighlight ? (
+                        <span
+                          aria-hidden
+                          className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+                        />
+                      ) : null}
                     </Button>
                   );
 
@@ -1465,7 +1508,7 @@ export const DashboardLayout = () => {
               </div>
             )}
           <div
-            className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-blue-100"
+            className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-primary-soft"
             data-dashboard-scroll="1"
           >
             <div className="flex flex-col h-full">

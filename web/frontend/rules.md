@@ -24,7 +24,9 @@ Notes:
     - **Attention** (`--accent*`) — 신속출고·불완전가공·마감임박·warning
     - **Danger** (`--destructive*`) — 취소·실패·치명
     - **Neutral** (muted/secondary/slate chrome) — 준비·추적·비활성·보조
-    - **Service** (`--service-gigong*` / `--service-abut*`) — 기공 vs 어벗 구분만 (인접 cyan, hue ~12°)
+    - **Service** (`--service-gigong*` / `--service-abut*`) — 기공 vs 어벗 구분만
+      (기공=부드러운 푸른색 hue 208°, 어벗=눈 편한 골드/노랑 hue 46°, 채도 낮춤.
+       Attention 앰버(25°)와는 어벗이 더 노란 골드로 구분)
   - raw Tailwind 팔레트(`sky`/`teal`/`violet`/`purple`/`emerald`/`green`/`yellow`/`orange`/`rose`/`indigo`/`cyan` 등)로 의미 색을 새로 쓰지 말 것.
   - SSOT: `src/index.css`, `tailwind.config.ts`, `src/shared/ui/semanticStatus.ts`,
     `src/shared/ui/gigongAbutAccent.ts`, `src/shared/shipping/shippingMode.ts`
@@ -341,8 +343,7 @@ Notes:
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
     구현: `src/features/settings/tabs/CreditPaymentTab.tsx`
     충전 단위 SSOT: 기공소(`lab`) 50만원, 치과(`practice`) 100만원.
-    첫 충전 기본 1단위. 2회차부터 기본 배수 3(단위≈월사용량 1/3 → 약 한 달분). 추천 버튼은 월사용량(90일/3)을 단위로 반올림.
-    잔액이 충전 단위 미만이면 사이드바 `크레딧`을 강조하고 클릭 시 `?tab=charge`.
+    첫 충전 기본 1단위. 2회차부터 기본 추천 = 월사용량(90일/3)의 1/3을 단위로 반올림(0이면 최소 1단위).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage` — 면세·부가세 없음, 환불은 잔여 유료 크레딧(공급가)만.
   - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드·소개 페이지 — "배송비 별도"만 유지.

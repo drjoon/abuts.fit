@@ -239,7 +239,7 @@ export async function getMyCreditSpendInsights(req, res) {
       ? Math.max(1, Math.ceil(chargeUnit / avgDailySpendSupply))
       : null;
 
-  // 2회차부터 기본 추천: 한 달 사용량의 약 1/3, 단위(기공소 50만/치과 100만)로 반올림
+  // 2회차 기본 배수 3의 근거: 단위≈월사용량 1/3. insights는 추천 버튼(한 달분)용.
   const recommendedChargeSupply = roundNearestUnit(
     avgMonthlySpendSupply / 3,
     chargeUnit,
@@ -278,7 +278,8 @@ export async function getMyCreditSpendInsights(req, res) {
       chargeUnit,
       requestorKind,
       recommended: {
-        // 충전 UI 기본 추천(월사용량/3). oneMonthSupply는 호환용으로 동일 값 유지.
+        // chargeSupply = 월사용량/3(단위). UI 기본 배수는 프론트에서 3 고정.
+        // oneMonthSupply는 호환용으로 chargeSupply와 동일. 한 달분은 oneMonthFullSupply.
         chargeSupply,
         oneMonthSupply: chargeSupply,
         oneMonthFullSupply: oneMonthSupply,
