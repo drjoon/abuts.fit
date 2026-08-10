@@ -69,7 +69,7 @@
   - Draft/Request `shippingMode` 필드를 다시 저장합니다. (`models/draftRequest.model.js`, `models/request.model.js`)
   - 생성 경로에서 `"normal"` 강제 금지: `draftRequest.controller.js`, `creation.draft.controller.js`, `creation.from-draft.controller.js`, `creation.request.controller.js`
   - 유효 모드 해석: `controllers/requests/shippingPriority.utils.js`의 `resolveEffectiveShippingMode`
-  - 신속 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1000)
+  - 신속 추가 의뢰크레딧: `creditSettings.expressFee`(기본 2000)
     - 설정 API: `GET|PATCH /api/admin/settings/credits` (`authorize(["admin","devops"])`)
       - 공개 조회: `GET /api/credits/settings`
       - 저장/정규화: `admin.settings.controller.js` `updateCreditSettings` (기존 값 merge)

@@ -1023,7 +1023,7 @@ export async function createRequestsFromDraft(req, res) {
     const shippingFeePerBox = 3500;
     const expressFeePerRequest = Math.max(
       0,
-      Number(systemSettings?.creditSettings?.expressFee ?? 1000) || 1000,
+      Number(systemSettings?.creditSettings?.expressFee ?? 2000) || 2000,
     );
     const designFeePerTooth = Math.max(
       0,

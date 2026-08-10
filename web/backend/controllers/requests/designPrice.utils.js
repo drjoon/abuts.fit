@@ -175,7 +175,7 @@ export function resolveQuotedPriceWithExtras({
   price,
   caseInfos,
   shippingMode,
-  expressFee = 1000,
+  expressFee = 2000,
   designFeePerTooth = 15000,
 }) {
   const mode = String(caseInfos?.productMode || "").trim();

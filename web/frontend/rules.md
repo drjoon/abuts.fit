@@ -160,7 +160,7 @@ Notes:
 - 신규의뢰 배송 방식(묶음/신속):
   - 의뢰카드에서 `shippingMode`(`normal`|`express`)를 건별로 선택합니다.
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
-  - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 1,000원)를 사용합니다.
+  - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 `creditSettings.designFee`(기본 15,000원 / 1어벗). 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic 제외).
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.

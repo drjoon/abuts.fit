@@ -507,7 +507,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     if (shippingMode === "express") {
       expressFeeUnit = Math.max(
         0,
-        Number(creditSettings?.expressFee ?? 1000) || 0,
+        Number(creditSettings?.expressFee ?? 2000) || 0,
       );
     }
     designFeePerTooth = Math.max(
@@ -515,7 +515,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       Number(creditSettings?.designFee ?? 15000) || 15000,
     );
   } catch {
-    if (shippingMode === "express") expressFeeUnit = 1000;
+    if (shippingMode === "express") expressFeeUnit = 2000;
     designFeePerTooth = 15000;
   }
 

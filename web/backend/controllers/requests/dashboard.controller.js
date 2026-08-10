@@ -1106,20 +1106,20 @@ export async function getMyDashboardSummary(req, res) {
           }),
         }));
 
-        let expressFeePerRequest = 1000;
+        let expressFeePerRequest = 2000;
         let designFeePerTooth = 15000;
         try {
           const creditSettings = await loadCreditSettingsDefaults();
           expressFeePerRequest = Math.max(
             0,
-            Number(creditSettings?.expressFee ?? 1000) || 1000,
+            Number(creditSettings?.expressFee ?? 2000) || 2000,
           );
           designFeePerTooth = Math.max(
             0,
             Number(creditSettings?.designFee ?? 15000) || 15000,
           );
         } catch {
-          expressFeePerRequest = 1000;
+          expressFeePerRequest = 2000;
           designFeePerTooth = 15000;
         }
 

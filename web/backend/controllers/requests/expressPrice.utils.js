@@ -56,7 +56,7 @@ export function toPlainRequestPrice(price) {
 
 /**
  * 견적/표시용 금액 SSOT:
- * - 신속(express)이면 `creditSettings.expressFee`(기본 1,000) × expressQty 를 amount에 합산하고 expressFee에 총액 기록
+ * - 신속(express)이면 `creditSettings.expressFee`(기본 2,000) × expressQty 를 amount에 합산하고 expressFee에 총액 기록
  * - expressQty 기본 1(생산 건당). 디자인+생산은 커스텀어벗 수
  * - 실제 차감은 CAM 승인 시 express_surcharge 저널로 분리 처리
  * - expressFeeStatus === "cancelled" 이면 표시 금액에서 추가비를 제외
@@ -66,7 +66,7 @@ export function toPlainRequestPrice(price) {
 export function resolveQuotedPriceWithExpressFee({
   price,
   shippingMode,
-  expressFee = 1000,
+  expressFee = 2000,
   expressQty = 1,
 }) {
   const src = toPlainRequestPrice(price);

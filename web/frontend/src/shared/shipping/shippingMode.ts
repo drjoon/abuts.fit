@@ -55,7 +55,7 @@ export function resolveQuotedPriceAmount(params: {
         ? "express"
         : "normal"
       : resolveShippingMode(params.shippingMode);
-  const feeSetting = Math.max(0, Number(params.expressFee ?? 1000) || 1000);
+  const feeSetting = Math.max(0, Number(params.expressFee ?? 2000) || 2000);
 
   if (status === "cancelled") {
     return baseAmount > 0 || amountRaw === 0 ? baseAmount : amountRaw;
