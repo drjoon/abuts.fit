@@ -1506,12 +1506,6 @@ const NewRequestPageContent = () => {
               setPastRequestDetailOpen(true);
             }}
           />
-          {requestorKind === "practice" ? (
-            <p className="text-xs text-slate-500">
-              치과(기공실): 구강스캔 또는 커스텀어벗 디자인 파일로 어벗츠에
-              생산의뢰합니다.
-            </p>
-          ) : null}
         </div>
         <MultiActionDialog
           open={!!duplicatePrompt}
