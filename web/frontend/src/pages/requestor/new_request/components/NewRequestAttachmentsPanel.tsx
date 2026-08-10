@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-11: 상단 버튼·드롭존 카드내 좌우상하 여백 균일(중첩 px 제거, 카드 패딩 SSOT).
+// - 2026-08-11: 디자인소프트웨어·아노다이징 뱃지를 파일 용량 오른쪽으로 이동, 축소. 아노 OFF도 동일 secondary 색.
 // - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드 뱃지에 미반영.
 // - 2026-08-11: 카드 ETA줄에 아노다이징 뱃지 추가(디자인소프트웨어와 동일). 의뢰건 caseInfos SSOT.
 // - 2026-08-11: 좌측 상단에 아노다이징 토글 버튼 추가(디자인소프트웨어 옆). 설정 의뢰 탭에서 이전.
@@ -79,6 +81,33 @@ function formatAttachmentSize(bytes: number): string {
   }
   const mb = bytes / (1024 * 1024);
   return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)}MB`;
+}
+
+/** 파일 용량 옆 케이스 메타 뱃지(디자인소프트웨어·아노다이징). 카드 스냅샷만 표시. */
+const CASE_META_BADGE_CLASS =
+  "text-[9px] font-medium leading-none px-1 py-0.5 shrink-0";
+
+function renderCaseMetaBadges(fileInfo?: CaseInfos | null) {
+  const designSoftware = String(fileInfo?.designSoftware || "").trim();
+  const hasCardAnodizing = typeof fileInfo?.anodizingEnabled === "boolean";
+  const cardAnodizing = hasCardAnodizing
+    ? Boolean(fileInfo?.anodizingEnabled)
+    : null;
+  if (!designSoftware && cardAnodizing === null) return null;
+  return (
+    <>
+      {designSoftware ? (
+        <Badge variant="secondary" className={CASE_META_BADGE_CLASS}>
+          {designSoftware}
+        </Badge>
+      ) : null}
+      {cardAnodizing !== null ? (
+        <Badge variant="secondary" className={CASE_META_BADGE_CLASS}>
+          {cardAnodizing ? "아노 ON" : "아노 OFF"}
+        </Badge>
+      ) : null}
+    </>
+  );
 }
 
 type MarqueeState = {
@@ -654,12 +683,6 @@ export function NewRequestAttachmentsPanel({
           (getEstimatedShipForDiameter
             ? getEstimatedShipForDiameter(diameter, "normal", productMode)
             : null));
-    const designSoftware = String(fileInfo?.designSoftware || "").trim();
-    // 카드에 스냅샷된 값만 표시. 상단 기본값 변경이 기존 첨부 뱃지를 바꾸지 않는다.
-    const hasCardAnodizing = typeof fileInfo?.anodizingEnabled === "boolean";
-    const cardAnodizing = hasCardAnodizing
-      ? Boolean(fileInfo?.anodizingEnabled)
-      : null;
     const isDesignMode =
       !productionOnly &&
       (forceDesignProductMode ||
@@ -742,24 +765,6 @@ export function NewRequestAttachmentsPanel({
               </Badge>
             </ImmediateTooltip>
           ) : null}
-          {designSoftware ? (
-            <Badge
-              variant="secondary"
-              className="text-[10px] font-medium px-1.5 py-0.5"
-            >
-              {designSoftware}
-            </Badge>
-          ) : null}
-          {cardAnodizing !== null ? (
-            <Badge
-              variant="secondary"
-              className={`text-[10px] font-medium px-1.5 py-0.5 ${
-                cardAnodizing ? "" : "bg-accent-soft text-accent-strong"
-              }`}
-            >
-              {cardAnodizing ? "아노 ON" : "아노 OFF"}
-            </Badge>
-          ) : null}
         </div>
       </div>
     );
@@ -837,6 +842,7 @@ export function NewRequestAttachmentsPanel({
               >
                 {formatAttachmentSize(file.size)}
               </span>
+              {renderCaseMetaBadges(fileInfo)}
               {isVerified && (
                 <Check className="w-4 h-4 text-primary" aria-label="확인됨" />
               )}
@@ -1025,6 +1031,9 @@ export function NewRequestAttachmentsPanel({
                     >
                       {formatAttachmentSize(member.size)}
                     </span>
+                    {memberKey === primaryKey
+                      ? renderCaseMetaBadges(fileInfo)
+                      : null}
                     {onRemoveFileFromGroup ? (
                       <ImmediateTooltip label="연결 끊기">
                         <button
@@ -1091,44 +1100,45 @@ export function NewRequestAttachmentsPanel({
         accept=".stl,.ply,.obj"
       />
 
-      <div className="flex items-center justify-between gap-2 px-3 pb-1">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex flex-col flex-1 min-h-0 gap-3 h-full">
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onOpenDesignSoftwareModal?.()}
+            >
+              {designSoftwareLabel
+                ? `${designSoftwareLabel}`
+                : "디자인 소프트웨어 설정"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={anodizingSaving}
+              onClick={() => onToggleAnodizing?.()}
+              title="의뢰자 기본값으로 저장되며, 새로 올리는 파일에만 적용됩니다"
+            >
+              {anodizingEnabled ? "아노다이징 ON" : "아노다이징 OFF"}
+            </Button>
+          </div>
+
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => onOpenDesignSoftwareModal?.()}
+            onClick={handleClearAll}
+            disabled={!files.length}
           >
-            {designSoftwareLabel
-              ? `${designSoftwareLabel}`
-              : "디자인 소프트웨어 설정"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={anodizingSaving}
-            onClick={() => onToggleAnodizing?.()}
-            title="의뢰자 기본값으로 저장되며, 새로 올리는 파일에만 적용됩니다"
-          >
-            {anodizingEnabled ? "아노다이징 ON" : "아노다이징 OFF"}
+            전체 삭제
           </Button>
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handleClearAll}
-          disabled={!files.length}
+        <div
+          className={`flex flex-col gap-2.5 flex-1 min-h-0 ${hasAnyAttachment ? "" : "justify-center"}`}
         >
-          전체 삭제
-        </Button>
-      </div>
-
-      <div
-        className={`flex flex-col gap-2.5 px-3 py-2 flex-1 min-h-0 ${hasAnyAttachment ? "" : "justify-center"}`}
-      >
         <div
           className={`shrink-0 w-full border-2 border-dashed rounded-2xl text-center transition-colors flex flex-col items-center justify-center cursor-pointer ${
             hasAnyAttachment
@@ -1233,6 +1243,7 @@ export function NewRequestAttachmentsPanel({
               : null}
           </div>
         ) : null}
+        </div>
       </div>
     </>
   );

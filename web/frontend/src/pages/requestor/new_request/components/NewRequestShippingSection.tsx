@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 묶음/신속 옵션 카드 ring·그림자 잘림 방지(내부 여백 확대).
 // - 2026-08-09: 첨부 건이 디자인+생산이면 신속 선택 판정에 productMode(+1영업일) 반영.
 // - 2026-08-09: 출고 카드 상단 여백 정리(세로 중앙정렬 제거, 상하좌우 패딩 균일).
 // - 2026-08-09: 묶음/신속 카피 정리, 디자인+1일 안내를 의뢰하기 버튼 바로 위로.
@@ -311,9 +312,9 @@ export function NewRequestShippingSection({
   return (
     <div
       ref={containerRef}
-      className="app-glass-card app-glass-card--lg relative flex flex-1 min-h-0 h-full flex-col gap-4 border-2 p-4 md:p-6 transition-all border-gray-300"
+      className="app-glass-card app-glass-card--lg relative flex flex-1 min-h-0 h-full flex-col gap-4 border-2 p-5 md:p-7 transition-all border-gray-300"
     >
-      <div className="app-glass-card-content flex min-h-0 flex-1 flex-col items-center justify-start gap-3 overflow-y-auto">
+      <div className="app-glass-card-content flex min-h-0 flex-1 flex-col items-center justify-start gap-3 overflow-y-auto p-2">
         <div
           className="w-full flex flex-col gap-4"
           role="radiogroup"
@@ -344,7 +345,7 @@ export function NewRequestShippingSection({
                 ref={weekdaysRef}
                 className={`flex gap-1 rounded-md px-1 py-1 transition-all ${
                   pulse
-                    ? "bg-red-50 border border-red-300 ring-2 ring-red-200"
+                    ? "bg-destructive-soft border border-destructive/80 ring-2 ring-destructive-muted"
                     : ""
                 }`}
                 onClick={(e) => e.stopPropagation()}
@@ -370,7 +371,7 @@ export function NewRequestShippingSection({
                 ))}
               </div>
             </div>
-            <div className="text-sm text-red-500">적어도 2-3개 요일 선택 권장</div>
+            <div className="text-sm text-destructive">적어도 2-3개 요일 선택 권장</div>
             <div className="text-sm text-slate-600 leading-relaxed">
               준비되는대로 바로 의뢰해주세요.
               <br />
@@ -410,7 +411,7 @@ export function NewRequestShippingSection({
             }}
           >
             <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
-              <Zap className="w-5 h-5 text-amber-500" />
+              <Zap className="w-5 h-5 text-accent" />
               신속 출고
             </div>
             {expressSelectable ? (
@@ -435,7 +436,7 @@ export function NewRequestShippingSection({
         </div>
       </div>
 
-      <div className="app-glass-card-content mt-auto shrink-0 space-y-2">
+      <div className="app-glass-card-content mt-auto shrink-0 space-y-2 px-2">
         {showDesignLeadTimeHint ? (
           <div className="text-center text-sm text-slate-600">
             디자인까지 의뢰할 경우 1일 추가

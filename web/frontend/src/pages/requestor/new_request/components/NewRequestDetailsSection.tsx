@@ -625,7 +625,7 @@ export function NewRequestDetailsSection({
   }, [onCancelAll]);
 
   return (
-    <div className="app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-2.5 md:p-3.5 flex-1 min-h-0 h-full">
+    <div className="app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-3 md:p-4 flex-1 min-h-0 h-full">
       <div className="app-glass-card-content flex flex-col flex-1 min-h-0 h-full">
         <div className="flex flex-col flex-1 min-h-0 h-full">
           <NewRequestAttachmentsPanel
