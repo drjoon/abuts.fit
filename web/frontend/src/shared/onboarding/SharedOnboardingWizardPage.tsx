@@ -22,7 +22,7 @@ const resolvePostOnboardingPath = (user: {
   requestorCapabilities?: { practice?: boolean; lab?: boolean } | null;
   lastDashboardPath?: string | null;
 } | null) => {
-  // practice + 유료 미가용은 대시보드 대신 기공의뢰서로 (lab은 대시보드 허용)
+// practice + 유료 미가용도 대시보드 허용(게이트 비활성). lab도 동일.
   if (
     user?.role === "requestor" &&
     shouldGatePaidRequestorAccess({

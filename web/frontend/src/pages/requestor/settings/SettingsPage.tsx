@@ -27,14 +27,12 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import {
-  PAID_ACCESS_DISABLED_HINT,
-} from "@/shared/business/requestorCapabilities";
 
 // related files:
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/controllers/requests/utils.js
 // 가입일시/경과일/D-day는 신규 기공소 90일 고정가와 동일 기준일(pricingBaseDate)을 사용한다.
+// 2026-08-11: 설정 의뢰/결제 탭은 유료 게이트 없이 항상 활성.
 
 type TabKey =
   | "account"
@@ -49,7 +47,7 @@ export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
-  const { loading: accessLoading, canUsePaid } = useRequestorBusinessAccess();
+  const { loading: accessLoading } = useRequestorBusinessAccess();
 
   const [membership, setMembership] = useState<
     "owner" | "member" | "pending" | "none" | "unknown"
@@ -131,11 +129,6 @@ export const RequestorSettingsPage = () => {
   }, [pricingElapsedDays]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
-    const paidDisabled = !canUsePaid;
-    const paidTabProps = paidDisabled
-      ? { disabled: true, disabledHint: PAID_ACCESS_DISABLED_HINT }
-      : {};
-
     const base: SettingsTabDef[] = [
       {
         key: "account",
@@ -197,7 +190,6 @@ export const RequestorSettingsPage = () => {
         label: "의뢰",
         icon: FileText,
         content: <RequestTab />,
-        ...paidTabProps,
       },
     ];
 
@@ -207,7 +199,6 @@ export const RequestorSettingsPage = () => {
         label: "결제",
         icon: CreditCard,
         content: <PaymentTab userData={user} />,
-        ...paidTabProps,
       },
       {
         key: "notifications",
@@ -225,7 +216,6 @@ export const RequestorSettingsPage = () => {
 
     return base;
   }, [
-    canUsePaid,
     launchEventRemainingDays,
     pricingBaseDate,
     pricingElapsedDays,

@@ -17,6 +17,7 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-11: 디자인 페이지 삭제 — DesignQueueSection을 의뢰수신 UI에 통합(기간필터 공유).
 // - 2026-08-11: 기공소 의뢰수신 — 발신/수신 탭 제거·항상 수신. 디자인 큐를 의뢰수신으로 편입.
+// - 2026-08-11: 치과 기공의뢰 — 발신/수신 탭 제거·항상 발신.
 // - 2026-08-11: 사이드메뉴 딥링크용 ?mode=send|receive 동기화.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -46,10 +47,6 @@ import {
   REQUESTOR_KIND_LABEL,
   REQUESTOR_SERVICE_LABEL,
 } from "@/shared/business/requestorCapabilities";
-import {
-  PracticeTransferRoleTabs,
-  type PracticeTransferRoleMode,
-} from "@/shared/business/PracticeTransferRoleTabs";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
 import { DesignQueueSection } from "@/pages/requestor/design/DesignQueueSection";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -182,92 +179,16 @@ export default function RequestorPracticePage() {
     kind,
     designAccessEnabled,
   } = useRequestorBusinessAccess();
-  const [mode, setMode] = useState<PracticeTransferRoleMode>("receive");
-  const [modeReady, setModeReady] = useState(false);
   const modeParam = searchParams.get("mode");
-
-  const syncModeToUrl = useCallback(
-    (next: PracticeTransferRoleMode) => {
-      if (searchParams.get("mode") === next) return;
-      const nextParams = new URLSearchParams(searchParams);
-      nextParams.set("mode", next);
-      setSearchParams(nextParams, { replace: true });
-    },
-    [searchParams, setSearchParams],
-  );
-
-  const setModeAndUrl = useCallback(
-    (next: PracticeTransferRoleMode) => {
-      setMode(next);
-      syncModeToUrl(next);
-    },
-    [syncModeToUrl],
-  );
 
   useEffect(() => {
     if (loading) return;
-    // 기공소 의뢰수신은 항상 receive — URL/탭 전환 없음
-    if (kind === "lab") {
-      if (!modeReady) setModeReady(true);
-      if (modeParam !== "receive") syncModeToUrl("receive");
-      if (mode !== "receive") setMode("receive");
-      return;
-    }
-
-    const resolveMode = (): PracticeTransferRoleMode | null => {
-      if (modeParam === "send" && canSendTransfer) return "send";
-      if (modeParam === "receive" && canReceiveTransfer) return "receive";
-      if (canSendTransfer && !canReceiveTransfer) return "send";
-      if (canReceiveTransfer) return "receive";
-      if (canSendTransfer) return "send";
-      return null;
-    };
-
-    const resolved = resolveMode();
-    if (!resolved) {
-      if (!modeReady) setModeReady(true);
-      return;
-    }
-
-    if (!modeReady) {
-      setMode(resolved);
-      setModeReady(true);
-      syncModeToUrl(resolved);
-      return;
-    }
-
-    if (
-      (modeParam === "send" || modeParam === "receive") &&
-      modeParam !== mode
-    ) {
-      if (modeParam === "send" && canSendTransfer) {
-        setMode("send");
-        return;
-      }
-      if (modeParam === "receive" && canReceiveTransfer) {
-        setMode("receive");
-        return;
-      }
-    }
-
-    if (mode === "send" && !canSendTransfer && canReceiveTransfer) {
-      setModeAndUrl("receive");
-    } else if (mode === "receive" && !canReceiveTransfer && canSendTransfer) {
-      setModeAndUrl("send");
-    } else if (modeParam !== mode) {
-      syncModeToUrl(mode);
-    }
-  }, [
-    canReceiveTransfer,
-    canSendTransfer,
-    kind,
-    loading,
-    mode,
-    modeParam,
-    modeReady,
-    setModeAndUrl,
-    syncModeToUrl,
-  ]);
+    const desired = kind === "lab" ? "receive" : "send";
+    if (modeParam === desired) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("mode", desired);
+    setSearchParams(nextParams, { replace: true });
+  }, [kind, loading, modeParam, searchParams, setSearchParams]);
 
   if (loading) {
     return (
@@ -310,7 +231,8 @@ export default function RequestorPracticePage() {
     );
   }
 
-  if (!canSendTransfer && !canReceiveTransfer) {
+  // 치과: 항상 발신만.
+  if (!canSendTransfer) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center p-6">
         <Card className="w-full max-w-md">
@@ -318,7 +240,7 @@ export default function RequestorPracticePage() {
             <CardTitle className="text-lg">역할·서비스 선택 필요</CardTitle>
             <CardDescription>
               기공의뢰서 이용을 위해 설정 &gt; 사업자에서{" "}
-              {REQUESTOR_KIND_LABEL.practice}/{REQUESTOR_KIND_LABEL.lab} 역할과{" "}
+              {REQUESTOR_KIND_LABEL.practice} 역할과{" "}
               {REQUESTOR_SERVICE_LABEL.free}를 선택해주세요.
             </CardDescription>
           </CardHeader>
@@ -335,22 +257,7 @@ export default function RequestorPracticePage() {
     );
   }
 
-  // 치과(기공의뢰): 발신 UI. 수신 가능 시에만 역할 탭 노출.
-  const roleSwitcher =
-    canSendTransfer && canReceiveTransfer ? (
-      <PracticeTransferRoleTabs
-        mode={mode}
-        onChange={setModeAndUrl}
-        canSend={canSendTransfer}
-        canReceive={canReceiveTransfer}
-      />
-    ) : undefined;
-
-  if (mode === "send" && canSendTransfer) {
-    return <PracticeFileTransferPage roleSwitcher={roleSwitcher} />;
-  }
-
-  return <RequestorPracticeReceivePage roleSwitcher={roleSwitcher} />;
+  return <PracticeFileTransferPage />;
 }
 
 function RequestorPracticeReceivePage({

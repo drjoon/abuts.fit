@@ -27,8 +27,8 @@ const OLD_CAP_RECEIVER = "의뢰 수신자 (기공소와 기공실)";
 const REQUESTOR = resolveAccount("requestor");
 
 const RELATED_REQUESTOR_PAGES = [
-  { path: "/dashboard", label: "대시보드(유료게이트)" },
-  { path: "/dashboard/new-request", label: "어벗의뢰(유료게이트)" },
+  { path: "/dashboard", label: "대시보드" },
+  { path: "/dashboard/new-request", label: "어벗의뢰" },
   { path: "/dashboard/practice-transfers", label: "기공의뢰/의뢰수신" },
   { path: "/dashboard/settings?tab=business", label: "설정 > 사업자" },
   { path: "/dashboard/settings?tab=request", label: "설정 > 의뢰" },
@@ -135,9 +135,9 @@ test.describe("Requestor capability labels – 유료게이트 로직", () => {
     ).toBe(false);
   });
 
-  test("shouldGatePaidRequestorAccess – lab은 항상 허용, practice만 게이트", async () => {
+  test("shouldGatePaidRequestorAccess – 현재 항상 허용(게이트 비활성)", async () => {
     expect(capsSource).toContain("shouldGatePaidRequestorAccess");
-    expect(capsSource).toContain('normalizeRequestorKind(args?.kind) === "lab"');
+    expect(capsSource).toMatch(/shouldGatePaidRequestorAccess[\s\S]*?=>\s*false/);
   });
 });
 
@@ -179,25 +179,24 @@ test.describe("Requestor capability labels – 실계정 로그인", () => {
     }
   });
 
-  test("기공의뢰서 – 수신/발신 UI", async ({ page }) => {
+  test("기공의뢰서 – 치과 발신 UI(역할 탭 없음)", async ({ page }) => {
     await page.goto("/dashboard/practice-transfers");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(1500);
     expect(page.url()).not.toContain("/login");
 
     const body = await assertNoLegacyLabels(page, "기공의뢰서");
-    // 치과: 발신 작성 UI / 기공소: 수신 내역(발신·수신 역할 탭 없음)
+    expect(body.includes("발신(치과)")).toBe(false);
+    expect(body.includes("수신(기공소)")).toBe(false);
     expect(
-      body.includes("발신") ||
-        body.includes("수신") ||
-        body.includes("환자명") ||
+      body.includes("환자명") ||
         body.includes("기공소") ||
-        body.includes("기공의뢰서") ||
+        body.includes("기공의뢰") ||
         body.includes("역할"),
     ).toBe(true);
   });
 
-  test("유료 게이트 – free-only면 대시보드→기공의뢰서", async ({ page }) => {
+  test("유료 게이트 해제 – free-only여도 대시보드 유지", async ({ page }) => {
     await page.goto("/dashboard");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
@@ -206,14 +205,10 @@ test.describe("Requestor capability labels – 실계정 로그인", () => {
     const url = page.url();
     expect(url).toMatch(/\/dashboard/);
     const pathOnly = new URL(url).pathname.replace(/\/$/, "") || "/";
-    if (pathOnly === "/dashboard") {
-      expect(url).not.toContain("practice-transfers");
-    } else {
-      expect(url).toContain("practice-transfers");
-    }
+    expect(pathOnly).toBe("/dashboard");
   });
 
-  test("유료 게이트 – paid+verified 모킹 시 대시보드 허용", async ({
+  test("유료 게이트 해제 – paid+verified 모킹 시에도 대시보드 허용", async ({
     page,
   }) => {
     await page.route("**/api/businesses/me**", async (route) => {

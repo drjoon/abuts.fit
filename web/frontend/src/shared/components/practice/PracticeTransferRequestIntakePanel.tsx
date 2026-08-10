@@ -51,7 +51,13 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import { PracticeOrderArrivalDateRangeField } from "@/shared/components/practice/PracticeOrderArrivalDateRangeField";
-import { getBusinessLabel, type SearchBusinessResult } from "@/pages/practice/hooks/usePracticeTransferStep1";
+import {
+  AUTO_MATCH_LAB,
+  AUTO_MATCH_LAB_TOOLTIP,
+  getBusinessLabel,
+  isAutoMatchLab,
+  type SearchBusinessResult,
+} from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { PracticeToothImplantFields } from "@/shared/components/practice/PracticeToothImplantFields";
 import { PracticeToothAbutmentFields } from "@/shared/components/practice/PracticeToothAbutmentFields";
 import { PracticeCustomSpecsPresetEditDialog } from "@/shared/components/practice/PracticeCustomSpecsPresetEditDialog";
@@ -87,6 +93,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
+// - 2026-08-11: 기공소 선택에 "자동 매칭" 옵션(+빠른툴팁) 추가.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -1284,7 +1291,11 @@ export const PracticeTransferRequestIntakePanel = ({
                 className="h-11 w-full justify-between text-base"
               >
                 <span className="truncate">
-                  {selectedLab ? getBusinessLabel(selectedLab) : "기공소를 검색해서 선택하세요"}
+                  {selectedLab
+                    ? isAutoMatchLab(selectedLab)
+                      ? AUTO_MATCH_LAB.name
+                      : getBusinessLabel(selectedLab)
+                    : "기공소를 검색해서 선택하세요"}
                 </span>
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
@@ -1299,6 +1310,47 @@ export const PracticeTransferRequestIntakePanel = ({
                   }}
                 />
                 <CommandList>
+                  <CommandGroup>
+                    <CommandItem
+                      value={`${AUTO_MATCH_LAB.name} 자동매칭 auto match`}
+                      onSelect={() => {
+                        setSelectedLab(AUTO_MATCH_LAB);
+                        setLabOpen(false);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          isAutoMatchLab(selectedLab)
+                            ? "opacity-100"
+                            : "opacity-0",
+                        )}
+                      />
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="min-w-0 flex-1 text-left">
+                              <div className="truncate text-base font-medium">
+                                {AUTO_MATCH_LAB.name}
+                              </div>
+                              <div className="truncate text-sm text-muted-foreground">
+                                어벗츠 검증 기공소 자동 연결
+                              </div>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="right"
+                            className="max-w-xs text-center"
+                          >
+                            <p>{AUTO_MATCH_LAB_TOOLTIP}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </CommandItem>
+                  </CommandGroup>
+
+                  <CommandSeparator />
+
                   {!recentLabsInitialized ? (
                     <div className="px-3 py-2 text-sm text-muted-foreground">불러오는 중...</div>
                   ) : null}

@@ -221,14 +221,12 @@ export const isPaidRequestorPath = (href: string) => {
   return false;
 };
 
-/** practice만 사업자등록증(유료) 미가용 시 대시보드·신규의뢰를 막는다. lab은 항상 허용. */
-export const shouldGatePaidRequestorAccess = (args?: {
+/** practice만 사업자등록증(유료) 미가용 시 대시보드·신규의뢰를 막는다. lab은 항상 허용.
+ * 2026-08-11: 치과도 대시보드·어벗의뢰를 상시 열어 게이트 비활성. */
+export const shouldGatePaidRequestorAccess = (_args?: {
   kind?: RequestorKind | string | null;
   canUsePaid?: boolean;
-}) => {
-  if (normalizeRequestorKind(args?.kind) === "lab") return false;
-  return !Boolean(args?.canUsePaid);
-};
+}) => false;
 
 export const isPaidRequestorSidebarLocked = (args?: {
   kind?: RequestorKind | string | null;

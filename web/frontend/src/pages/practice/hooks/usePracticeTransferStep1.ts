@@ -23,6 +23,20 @@ export type SearchBusinessResult = {
   businessType?: string;
 };
 
+/** 기공소 선택 — 서버가 검증 기공소 중 한 곳을 연결할 때 쓰는 센티널 */
+export const AUTO_MATCH_LAB_ID = "__auto_match__";
+export const AUTO_MATCH_LAB_NAME = "자동 매칭";
+export const AUTO_MATCH_LAB_TOOLTIP =
+  "어벗츠에서 검증한 기공소 중 한 곳을 자동으로 매칭합니다";
+export const AUTO_MATCH_LAB: SearchBusinessResult = {
+  _id: AUTO_MATCH_LAB_ID,
+  name: AUTO_MATCH_LAB_NAME,
+  businessType: "requestor",
+};
+
+export const isAutoMatchLab = (lab?: { _id?: string | null } | null) =>
+  String(lab?._id || "").trim() === AUTO_MATCH_LAB_ID;
+
 type ClassifiedUploadBatch = {
   modelFiles: File[];
   rejectedFiles: { name: string; reason: string }[];
@@ -120,6 +134,7 @@ const writeRecentLabs = (rows: SearchBusinessResult[]) => {
 
 const normalizeRecentLab = (lab: SearchBusinessResult | null | undefined): SearchBusinessResult | null => {
   if (!lab || !String(lab.name || "").trim()) return null;
+  if (isAutoMatchLab(lab)) return null;
   const name = String(lab.name || "").trim();
   return {
     _id: String(lab._id || `recent:${name}`).trim(),
