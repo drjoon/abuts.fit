@@ -17,7 +17,7 @@
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
-- Requestor workspace header: 지난 의뢰(+기간 필터는 대시보드만). 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
+- Requestor workspace header: 기간 필터는 대시보드만. 지난 의뢰는 대시보드 `RequestorRecentRequestsCard` 헤더 우측. 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
 - Semantic color palette (강제, 앱 전체):
   - 의미 축 4 + 서비스 1만 사용. 같은 축 안 차이는 soft/muted/DEFAULT/strong 밝기만.
     - **Primary** (`--primary*`) — 브랜드·CTA·공정·묶음출고·정상/완료
@@ -82,7 +82,8 @@ Notes:
   - `src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
   - `src/pages/requestor/new_request/utils/patientGroups.ts` (구강스캔 자동묶음·파일크기 분류)
   - `src/pages/requestor/new_request/hooks/usePatientFileGroups.ts`
-  - `src/shared/components/RequestorWorkspaceHeader.tsx` (지난 의뢰 공통; 기간 필터는 대시보드만)
+  - `src/shared/components/RequestorWorkspaceHeader.tsx` (대시보드 기간 필터+알림)
+  - `src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx` (지난 의뢰 버튼)
   - `src/pages/requestor/credits/RequestorCreditsPage.tsx` (사이드바 크레딧: 내역/충전)
   - `src/shared/shipping/shippingMode.ts`
   - `src/pages/requestor/practice/RequestorPracticePage.tsx`
@@ -340,7 +341,8 @@ Notes:
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
     구현: `src/features/settings/tabs/CreditPaymentTab.tsx`
     충전 단위 SSOT: 기공소(`lab`) 50만원, 치과(`practice`) 100만원.
-    첫 충전 기본 1단위. 2회차부터 기본 추천 = 월사용량(90일/3)의 1/3을 단위로 반올림(0이면 최소 1단위).
+    첫 충전 기본 1단위. 2회차부터 기본 배수 3(단위≈월사용량 1/3 → 약 한 달분). 추천 버튼은 월사용량(90일/3)을 단위로 반올림.
+    잔액이 충전 단위 미만이면 사이드바 `크레딧`을 강조하고 클릭 시 `?tab=charge`.
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage` — 면세·부가세 없음, 환불은 잔여 유료 크레딧(공급가)만.
   - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드·소개 페이지 — "배송비 별도"만 유지.

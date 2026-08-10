@@ -17,6 +17,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
+import { PastRequestsModal } from "@/shared/components/PastRequestsModal";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { getNormalizedStageLabel } from "@/utils/stage";
 import { formatImplantDisplay } from "@/utils/implant";
@@ -43,10 +44,13 @@ import {
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
 // change-log:
+// - 2026-08-11: 카드 헤더 오른쪽 위에 [지난 의뢰] 버튼·모달 추가(대시보드/어벗의뢰 상단 헤더에서 이전).
 // - 2026-08-09: 최근 의뢰 커스텀어벗 수= customAbutment·임플란트 치아만(Pontic 제외).
 // - 2026-08-09: 최근 의뢰에 생산/디자인+생산 뱃지. 디자인+생산은 임플란트 대신 치과·환자·어벗 수.
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/shared/components/PastRequestsModal.tsx
+// - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
@@ -379,6 +383,7 @@ export const RequestorRecentRequestsCard = ({
   const [unmachinableInfoOpen, setUnmachinableInfoOpen] = useState(false);
   const [unmachinableTarget, setUnmachinableTarget] =
     useState<RecentRequestCardItem | null>(null);
+  const [pastRequestsOpen, setPastRequestsOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const [listMaxHeightPx, setListMaxHeightPx] = useState<number | undefined>(
     undefined,
@@ -790,6 +795,18 @@ export const RequestorRecentRequestsCard = ({
     >
       <CardHeader className="pb-2 flex flex-row items-center justify-between gap-3">
         <CardTitle className="text-base font-semibold">최근 의뢰</CardTitle>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0"
+          onClick={(e) => {
+            e.stopPropagation();
+            setPastRequestsOpen(true);
+          }}
+        >
+          지난 의뢰
+        </Button>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-between pt-2 min-h-0 overflow-hidden">
         <div
@@ -1062,6 +1079,16 @@ export const RequestorRecentRequestsCard = ({
           }
         }}
         request={detail || selectedSummary}
+      />
+
+      <PastRequestsModal
+        open={pastRequestsOpen}
+        onOpenChange={setPastRequestsOpen}
+        title="지난 의뢰"
+        onSelectRequest={(r) => {
+          setPastRequestsOpen(false);
+          onEdit(r as RecentRequestCardItem);
+        }}
       />
     </Card>
   );

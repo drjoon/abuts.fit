@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 상단 헤더(지난 의뢰) 제거 — 대시보드 최근 의뢰 카드로만 제공.
 // - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드에 미반영(신규 업로드만).
 // - 2026-08-11: 아노다이징을 의뢰건 caseInfos SSOT로 저장·뱃지 표시(디자인소프트웨어와 동일). 사업체는 기본값 시드만.
 // - 2026-08-11: 설정 의뢰 탭 제거 후 아노다이징 토글을 좌측 상단(디자인소프트웨어 옆)으로 이전.
@@ -44,11 +45,6 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import { RequestorWorkspaceHeader } from "@/shared/components/RequestorWorkspaceHeader";
-import {
-  RequestDetailDialog,
-  type RequestDetailDialogRequest,
-} from "@/features/requests/components/RequestDetailDialog";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
 import {
@@ -66,7 +62,7 @@ import {
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
-// - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/models/user.model.js
@@ -113,9 +109,6 @@ const NewRequestPageContent = () => {
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
     {},
   );
-  const [pastRequestDetail, setPastRequestDetail] =
-    useState<RequestDetailDialogRequest | null>(null);
-  const [pastRequestDetailOpen, setPastRequestDetailOpen] = useState(false);
 
   const normalizeKeyPart = useCallback((s: string) => {
     try {
@@ -1624,14 +1617,6 @@ const NewRequestPageContent = () => {
       className="new-request-page bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
-        <div className="w-full shrink-0 space-y-2">
-          <RequestorWorkspaceHeader
-            onSelectPastRequest={(r) => {
-              setPastRequestDetail(r as RequestDetailDialogRequest);
-              setPastRequestDetailOpen(true);
-            }}
-          />
-        </div>
         <MultiActionDialog
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={false}
@@ -2040,15 +2025,6 @@ const NewRequestPageContent = () => {
           </div>
         </div>
       </div>
-
-      <RequestDetailDialog
-        open={pastRequestDetailOpen}
-        onOpenChange={(open) => {
-          setPastRequestDetailOpen(open);
-          if (!open) setPastRequestDetail(null);
-        }}
-        request={pastRequestDetail}
-      />
     </PageFileDropZone>
   );
 };

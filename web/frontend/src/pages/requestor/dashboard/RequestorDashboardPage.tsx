@@ -79,6 +79,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-11: 지난 의뢰 버튼을 상단 헤더에서 최근 의뢰 카드로 이동(어벗의뢰 헤더에서도 제거).
 // - 2026-08-11: 헤더 보유 크레딧/원장 모달 제거 → 사이드바 크레딧 페이지로 이전.
 // - 2026-08-11: 요약카드 압축·전기간대비 제거, 오늘의 가격 숨김/출고 툴팁 반영.
 // - 2026-08-11: 치과·기공소 공통 — 기공/어벗 2행 요약, 오늘의 생산가격↔출고 위치 교체.
@@ -1979,7 +1980,6 @@ export const RequestorDashboardPage = () => {
           <RequestorWorkspaceHeader
             period={period}
             onPeriodChange={setPeriod}
-            onSelectPastRequest={openEditDialogFromRequest}
           >
             {unmachinableAlertCount > 0 && (
               <button

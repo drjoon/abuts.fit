@@ -1,8 +1,9 @@
+// change-log:
+// - 2026-08-11: 상단 RequestorWorkspaceHeader(지난 의뢰) 스켈레톤 제거.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -12,11 +13,6 @@ export const NewRequestPageSkeleton = () => {
   return (
     <div className="p-4">
       <div className="max-w-6xl mx-auto w-full space-y-3">
-      {/* RequestorWorkspaceHeader: 지난 의뢰 (기간 필터 없음) */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Skeleton className="h-8 w-20" />
-      </div>
-
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="space-y-3">
           <Skeleton className="h-52 w-full rounded-2xl" />
