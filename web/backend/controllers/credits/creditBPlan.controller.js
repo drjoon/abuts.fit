@@ -1,7 +1,11 @@
+// change-log:
+// - 2026-08-11: 충전 단위를 기공소 50만/치과 100만으로 분기. 사업자 requestorKind 기준 검증.
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/creditChargeUnit.js
+// - web/backend/utils/requestorCapabilities.js
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -9,34 +13,18 @@ import {
   ensureOrganizationDepositCode,
   generateChargeOrderDepositCode,
 } from "../../utils/depositCode.utils.js";
+import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
+import { validateCreditSupplyAmount } from "../../utils/creditChargeUnit.js";
 
-const CHARGE_UNIT = 500000;
-const MIN_CHARGE_UNITS = 1;
-const MAX_CHARGE_UNITS = 100;
-
-function validateSupplyAmount(raw) {
-  const supplyAmount = Number(raw);
-  if (!Number.isFinite(supplyAmount) || supplyAmount <= 0) {
-    return { ok: false, message: "유효하지 않은 금액입니다." };
-  }
-
-  const MIN = CHARGE_UNIT * MIN_CHARGE_UNITS;
-  const MAX = CHARGE_UNIT * MAX_CHARGE_UNITS;
-  if (supplyAmount < MIN || supplyAmount > MAX) {
-    return {
-      ok: false,
-      message: "크레딧 충전 금액은 50만원 ~ 5,000만원 범위여야 합니다.",
-    };
-  }
-
-  if (supplyAmount % CHARGE_UNIT !== 0) {
-    return {
-      ok: false,
-      message: "크레딧 충전 금액은 50만원 단위로만 충전할 수 있습니다.",
-    };
-  }
-
-  return { ok: true, supplyAmount };
+async function resolveRequestorKindForCharge(req, businessAnchorId) {
+  const anchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({ requestorKind: 1 })
+    .lean();
+  return (
+    normalizeRequestorKind(anchor?.requestorKind) ||
+    normalizeRequestorKind(req.user?.requestorKind) ||
+    "lab"
+  );
 }
 
 function getDepositAccountInfo() {
@@ -83,7 +71,14 @@ export async function createChargeOrder(req, res) {
     expiresAt: { $lte: now },
   });
 
-  const validated = validateSupplyAmount(req.body?.supplyAmount);
+  const requestorKind = await resolveRequestorKindForCharge(
+    req,
+    businessAnchorId,
+  );
+  const validated = validateCreditSupplyAmount(
+    req.body?.supplyAmount,
+    requestorKind,
+  );
   if (!validated.ok) {
     return res.status(400).json({ success: false, message: validated.message });
   }

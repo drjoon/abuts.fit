@@ -1,12 +1,19 @@
+// change-log:
+// - 2026-08-11: 충전 단위 — 기공소 50만원, 치과 100만원. 2회차 추천은 월사용량/3 반올림.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
+// - web/backend/utils/creditChargeUnit.js
+// - web/backend/controllers/credits/creditBPlan.controller.js
+// - web/backend/controllers/credits/credit.controller.js
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -64,29 +71,44 @@ type CreditSpendInsightsResponse = {
     avgMonthlySpendSupply: number;
     estimatedDaysFor500k: number | null;
     hasUsageData: boolean;
+    chargeUnit?: number;
+    requestorKind?: "practice" | "lab" | null;
     recommended: {
+      chargeSupply?: number;
       oneMonthSupply: number;
+      oneMonthFullSupply?: number;
       threeMonthsSupply: number;
     };
   };
   message?: string;
 };
 
-const CHARGE_UNIT = 500000;
+const CHARGE_UNIT_LAB = 500_000;
+const CHARGE_UNIT_PRACTICE = 1_000_000;
+const MAX_CHARGE_SUPPLY = 50_000_000;
 const MIN_CHARGE_UNITS = 1;
-const MAX_CHARGE_UNITS = 100;
 
-function clampChargeUnits(raw: number) {
-  if (!Number.isFinite(raw)) return MIN_CHARGE_UNITS;
-  return Math.min(
-    MAX_CHARGE_UNITS,
-    Math.max(MIN_CHARGE_UNITS, Math.round(raw)),
-  );
+function resolveChargeUnit(kind: "practice" | "lab" | null | undefined) {
+  return kind === "practice" ? CHARGE_UNIT_PRACTICE : CHARGE_UNIT_LAB;
 }
 
-function unitsFromSupply(supply: number) {
-  if (!Number.isFinite(supply) || supply <= 0) return MIN_CHARGE_UNITS;
-  return clampChargeUnits(Math.round(supply / CHARGE_UNIT));
+function maxChargeUnitsFor(unit: number) {
+  if (!Number.isFinite(unit) || unit <= 0) return 1;
+  return Math.max(1, Math.floor(MAX_CHARGE_SUPPLY / unit));
+}
+
+function clampChargeUnits(raw: number, maxUnits: number) {
+  if (!Number.isFinite(raw)) return MIN_CHARGE_UNITS;
+  return Math.min(maxUnits, Math.max(MIN_CHARGE_UNITS, Math.round(raw)));
+}
+
+/** 공급가 → 배수 (반올림). 0이 되면 최소 1단위 */
+function unitsFromSupply(supply: number, unit: number, maxUnits: number) {
+  if (!Number.isFinite(supply) || !(unit > 0)) {
+    return MIN_CHARGE_UNITS;
+  }
+  if (supply <= 0) return MIN_CHARGE_UNITS;
+  return clampChargeUnits(Math.round(supply / unit), maxUnits);
 }
 
 function formatManwon(amount: number) {
@@ -112,18 +134,17 @@ function formatKoreanDate(value?: string | null) {
   return `${yyyy}.${mm}.${dd}`;
 }
 
-function validateSupplyAmount(supply: number) {
+function validateSupplyAmount(supply: number, unit: number) {
   if (!Number.isFinite(supply) || supply <= 0)
     return "유효하지 않은 금액입니다.";
 
-  const MIN = CHARGE_UNIT * MIN_CHARGE_UNITS;
-  const MAX = CHARGE_UNIT * MAX_CHARGE_UNITS;
-  if (supply < MIN || supply > MAX) {
-    return "크레딧 충전 금액은 50만원 ~ 5,000만원 범위여야 합니다.";
+  const unitLabel = formatManwon(unit);
+  if (supply < unit || supply > MAX_CHARGE_SUPPLY) {
+    return `크레딧 충전 금액은 ${unitLabel} ~ 5,000만원 범위여야 합니다.`;
   }
 
-  if (supply % CHARGE_UNIT !== 0)
-    return "크레딧 충전 금액은 50만원 단위로만 충전할 수 있습니다.";
+  if (supply % unit !== 0)
+    return `크레딧 충전 금액은 ${unitLabel} 단위로만 충전할 수 있습니다.`;
 
   return null;
 }
@@ -145,6 +166,22 @@ function formatRemaining(ms: number) {
 export const CreditPaymentTab = ({ userData }: Props) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
+  const { kind: accessKind } = useRequestorBusinessAccess();
+
+  const requestorKind =
+    accessKind ||
+    (user?.requestorKind === "practice" || user?.requestorKind === "lab"
+      ? user.requestorKind
+      : null);
+
+  const chargeUnit = useMemo(
+    () => resolveChargeUnit(requestorKind),
+    [requestorKind],
+  );
+  const maxChargeUnits = useMemo(
+    () => maxChargeUnitsFor(chargeUnit),
+    [chargeUnit],
+  );
 
   const [pendingOrder, setPendingOrder] = useState<
     CreditOrderResponse["data"] | null
@@ -235,14 +272,14 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     useState(false);
 
   const applyChargeUnits = (raw: number) => {
-    const next = clampChargeUnits(raw);
+    const next = clampChargeUnits(raw, maxChargeUnits);
     setChargeUnits(next);
     setUnitsDraft(String(next));
   };
 
   const supplyAmount = useMemo(
-    () => chargeUnits * CHARGE_UNIT,
-    [chargeUnits],
+    () => chargeUnits * chargeUnit,
+    [chargeUnits, chargeUnit],
   );
   const totalAmount = supplyAmount;
   const displayAmount = pendingOrder
@@ -255,10 +292,31 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       : depositAccount;
 
   const recommendedUnits = useMemo(() => {
-    const oneMonth = Number(spendInsights?.recommended?.oneMonthSupply || 0);
-    if (!(oneMonth > 0)) return null;
-    return unitsFromSupply(oneMonth);
-  }, [spendInsights?.recommended?.oneMonthSupply]);
+    const fromApi = Number(
+      spendInsights?.recommended?.chargeSupply ??
+        spendInsights?.recommended?.oneMonthSupply ??
+        0,
+    );
+    if (fromApi > 0) {
+      return unitsFromSupply(fromApi, chargeUnit, maxChargeUnits);
+    }
+    const monthly = Number(spendInsights?.avgMonthlySpendSupply || 0);
+    if (!(monthly > 0)) return null;
+    return unitsFromSupply(monthly / 3, chargeUnit, maxChargeUnits);
+  }, [
+    chargeUnit,
+    maxChargeUnits,
+    spendInsights?.avgMonthlySpendSupply,
+    spendInsights?.recommended?.chargeSupply,
+    spendInsights?.recommended?.oneMonthSupply,
+  ]);
+
+  // 단위가 바뀌면(치과/기공소) 배수·추천 적용 상태를 다시 맞춘다.
+  useEffect(() => {
+    setDidApplyRecommendedUnits(false);
+    applyChargeUnits(MIN_CHARGE_UNITS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chargeUnit]);
 
   const filteredOrders = useMemo(() => {
     const now = Date.now();
@@ -429,7 +487,11 @@ export const CreditPaymentTab = ({ userData }: Props) => {
             },
           };
         });
-        const units = unitsFromSupply(Number(pending.supplyAmount || 0));
+        const units = unitsFromSupply(
+          Number(pending.supplyAmount || 0),
+          chargeUnit,
+          maxChargeUnits,
+        );
         setChargeUnits(units);
         setUnitsDraft(String(units));
       } else {
@@ -540,7 +602,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       return;
     }
 
-    const validationError = validateSupplyAmount(supplyAmount);
+    const validationError = validateSupplyAmount(supplyAmount, chargeUnit);
     if (validationError) {
       toast({
         title: "금액을 확인해주세요",
@@ -835,7 +897,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                         if (!raw) return;
                         const parsed = Number(raw);
                         if (!Number.isFinite(parsed)) return;
-                        setChargeUnits(clampChargeUnits(parsed));
+                        setChargeUnits(clampChargeUnits(parsed, maxChargeUnits));
                       }}
                       onBlur={() => {
                         const parsed = Number(unitsDraft);
@@ -862,7 +924,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                         className="flex flex-1 items-center justify-center text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={
                           Boolean(pendingOrder) ||
-                          chargeUnits >= MAX_CHARGE_UNITS
+                          chargeUnits >= maxChargeUnits
                         }
                         onClick={() => applyChargeUnits(chargeUnits + 1)}
                       >
@@ -884,7 +946,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                   </div>
 
                   <div className="flex h-12 min-w-0 flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white text-base font-semibold text-slate-700 shadow-sm">
-                    × 50만원
+                    × {formatManwon(chargeUnit)}
                   </div>
                 </div>
 

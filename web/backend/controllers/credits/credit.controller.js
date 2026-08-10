@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-11: spend insights 추천 충전액을 월사용량/3 반올림으로 변경. 단위는 기공소 50만/치과 100만.
 // related files:
 // - web/backend/rules.md
 // - web/backend/services/creditBalance.service.js
@@ -5,23 +7,29 @@
 // - web/backend/controllers/auth/auth.controller.js
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
+// - web/backend/utils/creditChargeUnit.js
+// - web/backend/utils/requestorCapabilities.js
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { Types } from "mongoose";
-import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
+import {
+  MAX_CHARGE_SUPPLY,
+  resolveCreditChargeUnit,
+} from "../../utils/creditChargeUnit.js";
 
 // NOTE:
 // - /api/credits/balance 는 GL 집계 SSOT를 즉시 반영해야 하므로
 //   프로세스 메모리 캐시를 사용하지 않는다.
 
-function roundUpUnit(amount, unit) {
+function roundNearestUnit(amount, unit) {
   const n = Number(amount);
   const u = Number(unit);
   if (!Number.isFinite(n) || !Number.isFinite(u) || u <= 0) return 0;
-  return Math.ceil(n / u) * u;
+  return Math.round(n / u) * u;
 }
 
 async function resolveCreditScopeIdentity(req) {
@@ -148,8 +156,16 @@ export async function getMyCreditSpendInsights(req, res) {
     resolvedBusinessAnchorId: String(scope.businessAnchorId || ""),
   });
 
-  const MIN = 500000;
-  const MAX = 500000 * 100;
+  const anchor = await BusinessAnchor.findById(scope.businessAnchorId)
+    .select({ requestorKind: 1 })
+    .lean();
+  const requestorKind =
+    normalizeRequestorKind(anchor?.requestorKind) ||
+    normalizeRequestorKind(req.user?.requestorKind) ||
+    "lab";
+  const chargeUnit = resolveCreditChargeUnit(requestorKind);
+  const MIN = chargeUnit;
+  const MAX = MAX_CHARGE_SUPPLY;
   const WINDOW_DAYS = 90;
   const now = new Date();
   // KST 기준 90일 전
@@ -220,15 +236,27 @@ export async function getMyCreditSpendInsights(req, res) {
 
   const estimatedDaysFor500k =
     avgDailySpendSupply > 0
-      ? Math.max(1, Math.ceil(500000 / avgDailySpendSupply))
+      ? Math.max(1, Math.ceil(chargeUnit / avgDailySpendSupply))
       : null;
 
-  const recommendedOneMonthSupply = roundUpUnit(avgMonthlySpendSupply, 500000);
-  const recommendedThreeMonthsSupply = roundUpUnit(
+  // 2회차부터 기본 추천: 한 달 사용량의 약 1/3, 단위(기공소 50만/치과 100만)로 반올림
+  const recommendedChargeSupply = roundNearestUnit(
+    avgMonthlySpendSupply / 3,
+    chargeUnit,
+  );
+  const recommendedOneMonthSupply = roundNearestUnit(
+    avgMonthlySpendSupply,
+    chargeUnit,
+  );
+  const recommendedThreeMonthsSupply = roundNearestUnit(
     avgMonthlySpendSupply * 3,
-    500000,
+    chargeUnit,
   );
 
+  const chargeSupply = Math.min(
+    MAX,
+    Math.max(MIN, recommendedChargeSupply || 0),
+  );
   const oneMonthSupply = Math.min(
     MAX,
     Math.max(MIN, recommendedOneMonthSupply || 0),
@@ -247,8 +275,13 @@ export async function getMyCreditSpendInsights(req, res) {
       avgMonthlySpendSupply,
       estimatedDaysFor500k,
       hasUsageData: spentSupply90 > 0,
+      chargeUnit,
+      requestorKind,
       recommended: {
-        oneMonthSupply,
+        // 충전 UI 기본 추천(월사용량/3). oneMonthSupply는 호환용으로 동일 값 유지.
+        chargeSupply,
+        oneMonthSupply: chargeSupply,
+        oneMonthFullSupply: oneMonthSupply,
         threeMonthsSupply,
       },
     },
