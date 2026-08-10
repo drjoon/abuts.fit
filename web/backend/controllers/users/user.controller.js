@@ -615,21 +615,13 @@ async function updateProfile(req, res) {
           updateData.phoneNumber = phone;
         }
 
-        // 의뢰자 Org SSOT: practiceProfile 완료 시 BusinessAnchor 보장 (practice/lab 캡).
-        const existingCaps =
-          req.user?.requestorCapabilities &&
-          typeof req.user.requestorCapabilities === "object"
-            ? req.user.requestorCapabilities
-            : {};
+        // 의뢰자 Org SSOT: practiceProfile 완료 시 BusinessAnchor 보장.
         if (
           (isRequestorPracticeProfile || isPracticeRole) &&
-          !existingCaps.practice &&
-          !existingCaps.lab
+          !req.user?.requestorKind
         ) {
-          updateData.requestorCapabilities = {
-            practice: true,
-            lab: Boolean(existingCaps.lab),
-          };
+          updateData.requestorKind = "practice";
+          updateData.requestorServices = { free: true, paid: false };
         }
       }
     }

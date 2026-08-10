@@ -31,6 +31,12 @@ interface HandleSaveParams {
     s3Key?: string;
     originalName?: string;
   };
+  requestorKind?: "practice" | "lab" | null;
+  requestorServices?: {
+    free?: boolean;
+    paid?: boolean;
+  };
+  /** @deprecated requestorKind / requestorServices */
   requestorCapabilities?: {
     practice?: boolean;
     lab?: boolean;
@@ -73,6 +79,8 @@ export const handleSave = async (
     membership,
     businessType,
     businessLicense,
+    requestorKind,
+    requestorServices,
     requestorCapabilities,
     mockHeaders,
     toast,
@@ -253,9 +261,14 @@ export const handleSave = async (
             },
           }
         : {}),
-      ...(requestorCapabilities
-        ? { requestorCapabilities }
-        : {}),
+      ...(requestorKind || requestorServices
+        ? {
+            requestorKind: requestorKind ?? undefined,
+            requestorServices: requestorServices ?? undefined,
+          }
+        : requestorCapabilities
+          ? { requestorCapabilities }
+          : {}),
     };
 
     console.info("[handleSave] API request payload", requestPayload);

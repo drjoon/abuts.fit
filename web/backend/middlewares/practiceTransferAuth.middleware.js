@@ -7,28 +7,46 @@ import User from "../models/user.model.js";
 import {
   canReceivePracticeTransfer,
   canSendPracticeTransfer,
-  resolveRequestorCapabilities,
+  resolveRequestorProfile,
 } from "../utils/requestorCapabilities.js";
 
-const loadResolvedCapabilities = async (user) => {
-  if (!user) return { practice: false, lab: false };
+const loadResolvedProfile = async (user) => {
+  if (!user) return { kind: null, services: { free: false, paid: false } };
 
+  let anchorKind = null;
+  let anchorServices = null;
   let anchorCaps = null;
   let businessVerified = false;
   if (user.businessAnchorId) {
     const anchor = await BusinessAnchor.findById(user.businessAnchorId)
-      .select({ requestorCapabilities: 1, status: 1 })
+      .select({
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+        status: 1,
+      })
       .lean();
+    anchorKind = anchor?.requestorKind || null;
+    anchorServices = anchor?.requestorServices || null;
     anchorCaps = anchor?.requestorCapabilities || null;
     businessVerified = anchor?.status === "verified";
   }
 
   const freshUser = await User.findById(user._id)
-    .select({ requestorCapabilities: 1, role: 1 })
+    .select({
+      requestorKind: 1,
+      requestorServices: 1,
+      requestorCapabilities: 1,
+      role: 1,
+    })
     .lean();
 
-  return resolveRequestorCapabilities({
+  return resolveRequestorProfile({
+    anchorKind,
+    anchorServices,
     anchorCaps,
+    userKind: freshUser?.requestorKind,
+    userServices: freshUser?.requestorServices,
     userCaps: freshUser?.requestorCapabilities,
     userRole: freshUser?.role || user.role,
     businessVerified,
@@ -36,7 +54,7 @@ const loadResolvedCapabilities = async (user) => {
 };
 
 /**
- * 기공의뢰서 발신: legacy practice role 또는 requestor+practice
+ * 기공의뢰서 발신: legacy practice role 또는 requestor+practice+free
  */
 export const authorizePracticeTransferSend = (options = {}) => {
   return async (req, res, next) => {
@@ -70,12 +88,12 @@ export const authorizePracticeTransferSend = (options = {}) => {
         });
       }
 
-      const caps = await loadResolvedCapabilities(req.user);
-      if (!canSendPracticeTransfer(caps)) {
+      const profile = await loadResolvedProfile(req.user);
+      if (!canSendPracticeTransfer(profile)) {
         return res.status(403).json({
           success: false,
           message:
-            "치과(무료 서비스) 유형이 필요합니다. 설정 > 사업자에서 유형을 확인해주세요.",
+            "치과(기공실) 역할과 기공의뢰서(무료) 서비스가 필요합니다. 설정 > 사업자에서 확인해주세요.",
         });
       }
 
@@ -90,7 +108,11 @@ export const authorizePracticeTransferSend = (options = {}) => {
         }
       }
 
-      req.requestorCapabilities = caps;
+      req.requestorProfile = profile;
+      req.requestorCapabilities = {
+        practice: profile.kind === "practice",
+        lab: profile.kind === "lab",
+      };
       return next();
     } catch (error) {
       return res.status(500).json({
@@ -103,7 +125,7 @@ export const authorizePracticeTransferSend = (options = {}) => {
 };
 
 /**
- * 기공의뢰서 수신: requestor+lab (레거시 requestor는 resolve 기본 lab)
+ * 기공의뢰서 수신: requestor+lab+free
  */
 export const authorizePracticeTransferReceive = () => {
   return async (req, res, next) => {
@@ -123,16 +145,20 @@ export const authorizePracticeTransferReceive = () => {
         });
       }
 
-      const caps = await loadResolvedCapabilities(req.user);
-      if (!canReceivePracticeTransfer(caps)) {
+      const profile = await loadResolvedProfile(req.user);
+      if (!canReceivePracticeTransfer(profile)) {
         return res.status(403).json({
           success: false,
           message:
-            "기공소(유료 서비스) 유형이 필요합니다. 설정 > 사업자에서 유형을 확인해주세요.",
+            "기공소 역할과 기공의뢰서(무료) 서비스가 필요합니다. 설정 > 사업자에서 확인해주세요.",
         });
       }
 
-      req.requestorCapabilities = caps;
+      req.requestorProfile = profile;
+      req.requestorCapabilities = {
+        practice: profile.kind === "practice",
+        lab: profile.kind === "lab",
+      };
       return next();
     } catch (error) {
       return res.status(500).json({

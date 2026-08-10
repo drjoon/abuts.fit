@@ -442,39 +442,32 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
-- 의뢰자 가입·유형·유료게이트 SSOT (2026-08, 루트 §2.4 상세)
-  - 가입 role: `requestor` | `salesman`만. `practice` role **제거**(공개 가입·드롭존·관리자 신규 생성 금지). 기존 practice는 `requestor`+`practice` 마이그레이션.
-  - 공개 가입(`/signup`, `SignupPage`): 역할 선택 `requestor` | `salesman`만. 복원 draft에 `practice`가 있으면 requestor로 전환.
-  - 가입 API: `POST /api/auth/register`. 중간 상태: `localStorage`(signupWizardProgress/signupFormData) + `PUT/GET/DELETE /api/auth/signup/draft`(7일 TTL). 가입 완료 시 삭제.
-  - 로그인: 공통 `/login` · 이메일+비밀번호(`POST /api/auth/login`).
-  - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자. 중도 이탈 후 `/signup` 재진입 시 `clearOnboardingLocalStorage`로 1/4부터.
+- 의뢰자 역할·서비스·유료게이트 SSOT (2026-08, 루트 §2.4 상세)
+  - 가입 role: `requestor` | `salesman`만. `practice` role **제거**.
+  - 공개 가입(`/signup`): `requestor` | `salesman`. 복원 draft에 `practice`가 있으면 requestor로 전환.
+  - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자.
   - 사업자 단계(`BusinessTab` + `RequestorCapabilitiesPicker`):
-    - 라벨: practice=`의뢰 발신자 (치과)`, lab=`의뢰 수신자 (기공소와 기공실)` (`REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`)
-    - `lab` 선택 시 사업자등록증 미검증이면 저장 차단·안내
-    - `practice`-only로 등록증 건너뛰면 `practiceProfilePhase` → `PracticeBusinessProfileStep`(기공의뢰서용 치과 필수정보)
-  - 온보딩 완료 랜딩(`SharedOnboardingWizardPage.resolvePostOnboardingPath`):
-    - requestor + 유료 미가용(`!lab` 또는 미검증) → `/dashboard/practice-transfers`
-    - 그 외 → `/dashboard`
-  - 유료 게이트:
-    - `canUsePaidServices({ businessVerified, caps })` = `lab && verified`
-    - 라우트: `BusinessPaidAccessGate`로 대시보드 홈·신규의뢰 감싸기
-    - 사이드바: `isPaidRequestorPath`(`/dashboard`, `/dashboard/new-request*`) — 유료 미가용 시 비활성+힌트
-    - 설정 탭: `PAID_REQUESTOR_SETTINGS_TABS`(`request`, `payment`) 동일
-    - 소개(`/dashboard/referral-groups`): 유료 게이트 아님(모든 requestor 접근)
-    - 유형 변경 후: `notifyRequestorAccessUpdated`로 사이드바·게이트 재조회
-  - 기공의뢰서 UI: `PracticeTransferRoleTabs`(발신/수신). practice→발신, lab→수신. `RequestorPracticePage`.
-  - 접근 훅: `useRequestorBusinessAccess` (앵커 caps + verified 해석).
-  - 계정 전환(모든 role): `GET /api/auth/colleagues`, `POST /api/auth/switch-account` — UI `AccountSwitcher`.
+    - 역할 라디오: `REQUESTOR_KIND_LABEL` — practice=`치과 (기공실 포함)`, lab=`기공소`
+    - 온보딩: `forceFreeServices` — 서비스 UI 숨김, `{free:true,paid:false}` 고정. 유료는 이후 사업자등록증 검증으로 개방
+    - 설정: 서비스 체크 표시. `paid` 선택 시 미검증이면 저장 차단
+    - free-only + practice로 등록증 건너뛰면 `practiceProfilePhase` → `PracticeBusinessProfileStep`
+  - 온보딩 완료 랜딩: 유료 미가용(`!paid` 또는 미검증) → `/dashboard/practice-transfers`, 그 외 → `/dashboard`
+  - 유료 게이트: `canUsePaidServices({ businessVerified, services })` = `paid && verified`
+    - `BusinessPaidAccessGate`, 사이드바 `isPaidRequestorPath`, 설정 `PAID_REQUESTOR_SETTINGS_TABS`
+    - 변경 후 `notifyRequestorAccessUpdated`
+  - 기공의뢰서: 발신=`kind===practice && free`, 수신=`kind===lab && free` (`PracticeTransferRoleTabs`)
+  - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
+  - 계정 전환: `AccountSwitcher`
 
 - practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 다운로드완료`
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isDownloaded/requestorDownloadedAt`)
 
-- 드롭존 가입(치과 전용, requestor+practice)
-  - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. lab 선택 UI 없음.
+- 드롭존 가입(치과 전용, requestor+practice+free)
+  - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab·paid 선택 UI 없음.
   - Step 2 임베디드 로그인/가입/비밀번호 변경. 라벨은 「의뢰인 계정」.
-  - 최소 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorCapabilities={practice:true,lab:false}`.
+  - 최소 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorKind=practice` + `requestorServices={free:true,paid:false}`.
     필수: `email`, `password`, `phone`, `clinicName`, `staffName`.
     `practiceProfile.clinicName/staffName/phone`과 계정 `name(=staffName)`을 저장. 주소/Org 앵커는 온보딩에서 완성.
   - 가입 전 이메일·담당자 휴대폰 인증 필수(공통 signup verification API). 로컬 캐시: `practice_dropzone_signup_verification_v1`.

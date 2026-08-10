@@ -11,6 +11,7 @@ const router = express.Router();
 import requestController from "../../controllers/requests/request.controller.js";
 import * as cncEventController from "../../controllers/cnc/cncEvent.controller.js";
 import { authenticate, authorize, authorizeManufacturerOrDesignPartner } from "../../middlewares/auth.middleware.js";
+import { authorizePaidRequestor } from "../../middlewares/paidRequestor.middleware.js";
 import {
   getQueueStatus,
   enqueueApproval,
@@ -18,11 +19,12 @@ import {
 import Request from "../../models/request.model.js";
 import { claimDesignRequest } from "../../controllers/requests/designClaim.controller.js";
 
-// 새 의뢰 생성 (의뢰자만 가능)
+// 새 의뢰 생성 (의뢰자만 가능) — 유료(paid+verified) 필수
 router.post(
   "/",
   authenticate,
   authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  authorizePaidRequestor(),
   requestController.createRequest,
 );
 
@@ -36,6 +38,7 @@ router.post(
   "/from-draft",
   authenticate,
   authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  authorizePaidRequestor(),
   requestController.createRequestsFromDraft,
 );
 
@@ -47,6 +50,7 @@ router.post(
   "/bulk",
   authenticate,
   authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  authorizePaidRequestor(),
   requestController.createRequestsBulk,
 );
 

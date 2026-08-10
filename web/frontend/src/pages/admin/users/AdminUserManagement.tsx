@@ -16,7 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
+  REQUESTOR_KIND_LABEL,
+  REQUESTOR_SERVICE_LABEL,
+  legacyCapabilitiesFromProfile,
   normalizeRequestorCapabilities,
+  normalizeRequestorKind,
+  normalizeRequestorServices,
+  resolveRequestorProfile,
 } from "@/shared/business/requestorCapabilities";
 import {
   Select,
@@ -144,6 +150,11 @@ type ApiUser = {
   totalRequests?: number;
   replacesUserId?: string | null;
   replacedByUserId?: string | null;
+  requestorKind?: "practice" | "lab" | null;
+  requestorServices?: {
+    free?: boolean;
+    paid?: boolean;
+  } | null;
   requestorCapabilities?: {
     practice?: boolean;
     lab?: boolean;
@@ -203,6 +214,11 @@ type UiUserRow = {
   totalRequests?: number | null;
   replacesUserId?: string | null;
   replacedByUserId?: string | null;
+  requestorKind?: "practice" | "lab" | null;
+  requestorServices?: {
+    free: boolean;
+    paid: boolean;
+  } | null;
   requestorCapabilities?: {
     practice: boolean;
     lab: boolean;
@@ -264,17 +280,21 @@ const toUiUser = (u: ApiUser): UiUserRow => {
       : "active";
   const email = String(u.email || "");
   const originalEmail = String(u.originalEmail || "");
-  const caps = u.requestorCapabilities;
-  const normalizedCaps = caps
-    ? normalizeRequestorCapabilities(
-        caps as { practice?: boolean; clinic?: boolean; lab?: boolean },
-      )
-    : null;
-  const hasCaps =
-    normalizedCaps != null &&
-    (normalizedCaps.practice ||
-      normalizedCaps.lab ||
-      caps != null);
+  const profile = resolveRequestorProfile({
+    userKind: u.requestorKind,
+    userServices: u.requestorServices,
+    userCaps: u.requestorCapabilities,
+    userRole: u.role,
+    businessVerified: Boolean(u.businessInfo?.verification?.verified),
+  });
+  const kind = normalizeRequestorKind(profile.kind);
+  const services = normalizeRequestorServices(profile.services);
+  const hasProfile = Boolean(kind) && (services.free || services.paid);
+  const normalizedCaps = hasProfile
+    ? legacyCapabilitiesFromProfile(profile)
+    : u.requestorCapabilities
+      ? normalizeRequestorCapabilities(u.requestorCapabilities)
+      : null;
   return {
     id: String(u._id || ""),
     name: String(u.name || ""),
@@ -292,7 +312,9 @@ const toUiUser = (u: ApiUser): UiUserRow => {
         : null,
     replacesUserId: u.replacesUserId || null,
     replacedByUserId: u.replacedByUserId || null,
-    requestorCapabilities: hasCaps && normalizedCaps ? normalizedCaps : null,
+    requestorKind: kind,
+    requestorServices: hasProfile ? services : null,
+    requestorCapabilities: normalizedCaps,
     businessInfo: u.businessInfo || null,
     unresolvedBusiness: Boolean(u.unresolvedBusiness),
   };
@@ -358,21 +380,41 @@ const getSubRoleBadge = (user: Pick<UiUserRow, "subRole">) => {
 };
 
 const getRequestorCapabilityBadges = (
-  user: Pick<UiUserRow, "role" | "requestorCapabilities">,
+  user: Pick<
+    UiUserRow,
+    "role" | "requestorKind" | "requestorServices" | "requestorCapabilities"
+  >,
 ) => {
   if (normalizeRole(user.role) !== "requestor") return null;
-  const caps = user.requestorCapabilities;
-  if (!caps) return null;
+  const kind =
+    user.requestorKind ||
+    (user.requestorCapabilities?.practice
+      ? "practice"
+      : user.requestorCapabilities?.lab
+        ? "lab"
+        : null);
+  const services = user.requestorServices;
+  if (!kind && !services) return null;
   return (
     <>
-      {caps.practice ? (
+      {kind === "practice" ? (
         <span className="rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
-          발신(치과)
+          {REQUESTOR_KIND_LABEL.practice}
         </span>
       ) : null}
-      {caps.lab ? (
+      {kind === "lab" ? (
         <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-          수신(기공소·기공실)
+          {REQUESTOR_KIND_LABEL.lab}
+        </span>
+      ) : null}
+      {services?.free ? (
+        <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+          {REQUESTOR_SERVICE_LABEL.free}
+        </span>
+      ) : null}
+      {services?.paid ? (
+        <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+          {REQUESTOR_SERVICE_LABEL.paid}
         </span>
       ) : null}
     </>

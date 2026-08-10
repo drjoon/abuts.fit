@@ -1025,6 +1025,7 @@ async function practiceLogin(req, res) {
             {
               role: "requestor",
               $or: [
+                { requestorKind: "practice" },
                 { "requestorCapabilities.practice": true },
                 // 마이그레이션 전 레거시 키
                 { "requestorCapabilities.clinic": true },
@@ -1222,7 +1223,8 @@ async function practiceRegister(req, res) {
       subRole: "owner",
       referralCode,
       referredByAnchorId: referredByAnchorId || null,
-      requestorCapabilities: { practice: true, lab: false },
+      requestorKind: "practice",
+      requestorServices: { free: true, paid: false },
       signupChannel: "practice_dropzone",
       onboardingWizardCompleted: false,
       approvedAt: new Date(),

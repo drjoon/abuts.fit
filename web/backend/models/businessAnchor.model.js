@@ -30,12 +30,26 @@ const businessAnchorSchema = new mongoose.Schema(
       default: "requestor",
       index: true,
     },
-    // 의뢰자 사업자 유형 (체크박스 OR): practice=발신(치과·무료), lab=수신(기공소·기공실·유료)
+    // 의뢰자 역할 XOR: practice=치과(기공실), lab=기공소
     // related files:
-    // - web/backend/controllers/businesses/business.controller.js
+    // - web/backend/utils/requestorCapabilities.js
     // - web/frontend/src/shared/business/requestorCapabilities.ts
+    requestorKind: {
+      type: String,
+      default: null,
+      index: true,
+      validate: {
+        validator: (v) => v == null || v === "practice" || v === "lab",
+        message: "requestorKind must be practice or lab",
+      },
+    },
+    // 이용 서비스 OR: free=기공의뢰서, paid=생산의뢰(검증 필수)
+    requestorServices: {
+      free: { type: Boolean, default: false },
+      paid: { type: Boolean, default: false },
+    },
+    // 레거시 — normalize/백필·resolve 폴백만. 신규 쓰기 금지.
     requestorCapabilities: {
-      // SSOT: practice (레거시 clinic 키는 normalize/백필로 승격)
       practice: { type: Boolean, default: false },
       lab: { type: Boolean, default: false },
     },

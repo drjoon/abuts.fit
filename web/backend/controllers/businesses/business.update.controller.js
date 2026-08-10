@@ -30,10 +30,12 @@ import {
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 import { invalidateMyBusinessCache } from "./business.controller.js";
 import {
-  normalizeRequestorCapabilities,
-  hasAnyRequestorCapability,
+  hasRequestorProfile,
   requiresBusinessLicense,
-  resolveRequestorCapabilities,
+  resolveRequestorProfile,
+  normalizeRequestorProfileInput,
+  requestorProfilePersistFields,
+  requestorProfileResponseFields,
 } from "../../utils/requestorCapabilities.js";
 import { isSyntheticPracticeBusinessNumber } from "./requestorOrgAnchor.util.js";
 
@@ -155,12 +157,15 @@ export async function updateMyBusiness(req, res) {
     const zipCodeProvided = hasOwnKey(req.body, "zipCode");
     const startDateProvided = hasOwnKey(req.body, "startDate");
     const shippingPolicyProvided = hasOwnKey(req.body, "shippingPolicy");
-    const requestorCapabilitiesProvided = hasOwnKey(
-      req.body,
-      "requestorCapabilities",
-    );
-    const nextRequestorCapabilities = requestorCapabilitiesProvided
-      ? normalizeRequestorCapabilities(req.body?.requestorCapabilities)
+    const requestorProfileProvided =
+      hasOwnKey(req.body, "requestorKind") ||
+      hasOwnKey(req.body, "requestorServices") ||
+      hasOwnKey(req.body, "requestorCapabilities");
+    const nextRequestorProfile = requestorProfileProvided
+      ? normalizeRequestorProfileInput({
+          ...req.body,
+          businessVerified: false,
+        })
       : null;
 
     const freshUser = await User.findById(req.user._id)
@@ -168,6 +173,8 @@ export async function updateMyBusiness(req, res) {
         businessAnchorId: 1,
         business: 1,
         referredByAnchorId: 1,
+        requestorKind: 1,
+        requestorServices: 1,
         requestorCapabilities: 1,
         role: 1,
       })
@@ -224,7 +231,7 @@ export async function updateMyBusiness(req, res) {
         zipCodeProvided ||
         startDateProvided ||
         hasOwnKey(req.body, "businessLicense") ||
-        requestorCapabilitiesProvided;
+        requestorProfileProvided;
       if (!canEdit && (nonShippingProvided || !shippingPolicyProvided)) {
         return res.status(403).json({
           success: false,
@@ -257,34 +264,34 @@ export async function updateMyBusiness(req, res) {
         }
       : null;
 
-    // 의뢰자 유형(발신/수신 체크박스) — 앵커 SSOT(캡). 단독 저장 시 User(+Anchor) 동기화.
+    // 의뢰자 역할(kind) + 서비스(services) — 앵커 SSOT. 단독 저장 시 User(+Anchor) 동기화.
     if (
-      requestorCapabilitiesProvided &&
+      requestorProfileProvided &&
       businessType === "requestor" &&
-      nextRequestorCapabilities
+      nextRequestorProfile
     ) {
-      if (!hasAnyRequestorCapability(nextRequestorCapabilities)) {
+      if (!hasRequestorProfile(nextRequestorProfile)) {
         return res.status(400).json({
           success: false,
-          message: "의뢰 발신자(치과) 또는 의뢰 수신자(기공소와 기공실) 중 하나 이상 선택해주세요.",
+          message:
+            "역할(치과/기공소)과 이용 서비스(기공의뢰서/생산의뢰)를 선택해주세요.",
         });
       }
 
       const isVerifiedBusiness = businessAnchor?.status === "verified";
       if (
-        requiresBusinessLicense(nextRequestorCapabilities) &&
+        requiresBusinessLicense(nextRequestorProfile.services) &&
         !isVerifiedBusiness
       ) {
         return res.status(400).json({
           success: false,
           reason: "business_license_required",
           message:
-            "의뢰 수신자(기공소와 기공실)을 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+            "생산의뢰(유료)를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
         });
       }
 
-      // 다른 사업자 필드 없이 유형만 바꾼 경우: User(+Anchor)에 저장 후 반환
-      const onlyCapabilitiesUpdate =
+      const onlyProfileUpdate =
         !nextNameProvided &&
         !representativeNameProvided &&
         !businessItemProvided &&
@@ -299,13 +306,14 @@ export async function updateMyBusiness(req, res) {
         !shippingPolicyProvided &&
         !hasOwnKey(req.body, "businessLicense");
 
-      if (onlyCapabilitiesUpdate) {
+      if (onlyProfileUpdate) {
+        const persist = requestorProfilePersistFields(nextRequestorProfile);
         await User.findByIdAndUpdate(req.user._id, {
-          $set: { requestorCapabilities: nextRequestorCapabilities },
+          $set: persist,
         });
         if (businessAnchor?._id) {
           await BusinessAnchor.findByIdAndUpdate(businessAnchor._id, {
-            $set: { requestorCapabilities: nextRequestorCapabilities },
+            $set: persist,
           });
         }
         invalidateMyBusinessCache(req.user._id);
@@ -313,7 +321,7 @@ export async function updateMyBusiness(req, res) {
           success: true,
           data: {
             updated: true,
-            requestorCapabilities: nextRequestorCapabilities,
+            ...requestorProfileResponseFields(nextRequestorProfile),
             businessAnchorId: businessAnchor?._id || null,
           },
         });
@@ -509,23 +517,19 @@ export async function updateMyBusiness(req, res) {
     }
 
     if (
-      requestorCapabilitiesProvided &&
-      nextRequestorCapabilities &&
+      requestorProfileProvided &&
+      nextRequestorProfile &&
       businessType === "requestor"
     ) {
-      if (!hasAnyRequestorCapability(nextRequestorCapabilities)) {
+      if (!hasRequestorProfile(nextRequestorProfile)) {
         return res.status(400).json({
           success: false,
-          message: "의뢰 발신자(치과) 또는 의뢰 수신자(기공소와 기공실) 중 하나 이상 선택해주세요.",
+          message:
+            "역할(치과/기공소)과 이용 서비스(기공의뢰서/생산의뢰)를 선택해주세요.",
         });
       }
-      const willBeVerified =
-        businessAnchor?.status === "verified" ||
-        Boolean(businessLicense?.s3Key || businessLicense?.fileId);
-      // lab 필수 검증은 저장 시점: 이미 verified이거나 이번 요청에서 검증 플로우를 타는 경우 허용
-      // (아래 verification 후 status 갱신). 미검증+lab만 단독이면 앞서 onlyCapabilities에서 거부.
       if (
-        requiresBusinessLicense(nextRequestorCapabilities) &&
+        requiresBusinessLicense(nextRequestorProfile.services) &&
         businessAnchor?.status !== "verified" &&
         !businessNumberProvided &&
         !businessLicense
@@ -534,11 +538,10 @@ export async function updateMyBusiness(req, res) {
           success: false,
           reason: "business_license_required",
           message:
-            "의뢰 수신자(기공소와 기공실)을 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+            "생산의뢰(유료)를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
         });
       }
-      patch.requestorCapabilities = nextRequestorCapabilities;
-      void willBeVerified;
+      Object.assign(patch, requestorProfilePersistFields(nextRequestorProfile));
     }
 
     const metadataPatch = {};
@@ -759,15 +762,27 @@ export async function updateMyBusiness(req, res) {
         const businessNumberNormalized = businessNumber
           .replace(/\D/g, "")
           .trim();
-        const createdCaps =
-          nextRequestorCapabilities &&
-          hasAnyRequestorCapability(nextRequestorCapabilities)
-            ? nextRequestorCapabilities
-            : resolveRequestorCapabilities({
+        const verifiedNow = Boolean(verificationResult?.verified);
+        const createdProfile =
+          nextRequestorProfile && hasRequestorProfile(nextRequestorProfile)
+            ? nextRequestorProfile
+            : resolveRequestorProfile({
+                userKind: freshUser?.requestorKind,
+                userServices: freshUser?.requestorServices,
                 userCaps: freshUser?.requestorCapabilities,
                 userRole: req.user.role,
-                businessVerified: Boolean(verificationResult?.verified),
+                businessVerified: verifiedNow,
               });
+        const createdKind = hasRequestorProfile(createdProfile)
+          ? createdProfile.kind
+          : "lab";
+        // 검증 성공 시 유료 개방, 아니면 가입 기본(무료)
+        const createdPersist = requestorProfilePersistFields({
+          kind: createdKind,
+          services: verifiedNow
+            ? { free: true, paid: true }
+            : { free: true, paid: false },
+        });
 
         const created = await BusinessAnchor.create({
           businessType,
@@ -777,7 +792,7 @@ export async function updateMyBusiness(req, res) {
           owners: [],
           members: [req.user._id],
           status: verificationResult?.verified ? "verified" : "active",
-          requestorCapabilities: createdCaps,
+          ...createdPersist,
           ...(businessLicense &&
           (businessLicense.s3Key || businessLicense.originalName)
             ? { businessLicense }
@@ -809,7 +824,7 @@ export async function updateMyBusiness(req, res) {
               businessAnchorId: created._id,
               business: created.name,
               subRole: "owner",
-              requestorCapabilities: createdCaps,
+              ...createdPersist,
             },
           },
           { new: true },
@@ -891,6 +906,10 @@ export async function updateMyBusiness(req, res) {
 
     if (verificationResult) {
       patch.status = verificationResult.verified ? "verified" : "active";
+      // 사업자등록증 검증 성공 시 생산의뢰(유료) 자동 개방 (가입 시에는 무료만)
+      if (verificationResult.verified && businessType === "requestor") {
+        patch.requestorServices = { free: true, paid: true };
+      }
     }
 
     for (const [k, v] of Object.entries(metadataPatch)) {
@@ -964,8 +983,13 @@ export async function updateMyBusiness(req, res) {
     if (newBusinessName && currentBusinessName !== newBusinessName) {
       userSyncPatch.business = newBusinessName;
     }
-    if (patch.requestorCapabilities) {
-      userSyncPatch.requestorCapabilities = patch.requestorCapabilities;
+    if (patch.requestorKind != null || patch.requestorServices) {
+      if (patch.requestorKind != null) {
+        userSyncPatch.requestorKind = patch.requestorKind;
+      }
+      if (patch.requestorServices) {
+        userSyncPatch.requestorServices = patch.requestorServices;
+      }
     }
 
     if (Object.keys(userSyncPatch).length > 0) {
@@ -975,11 +999,19 @@ export async function updateMyBusiness(req, res) {
           { $set: { business: userSyncPatch.business } },
         );
       }
-      if (userSyncPatch.requestorCapabilities) {
+      if (
+        userSyncPatch.requestorKind != null ||
+        userSyncPatch.requestorServices
+      ) {
+        const profileSet = {};
+        if (userSyncPatch.requestorKind != null) {
+          profileSet.requestorKind = userSyncPatch.requestorKind;
+        }
+        if (userSyncPatch.requestorServices) {
+          profileSet.requestorServices = userSyncPatch.requestorServices;
+        }
         await User.findByIdAndUpdate(req.user._id, {
-          $set: {
-            requestorCapabilities: userSyncPatch.requestorCapabilities,
-          },
+          $set: profileSet,
         });
       }
     }

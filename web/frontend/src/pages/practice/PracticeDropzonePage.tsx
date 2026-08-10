@@ -95,7 +95,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import {
   canSendPracticeTransfer,
-  resolveRequestorCapabilities,
+  resolveRequestorProfile,
 } from "@/shared/business/requestorCapabilities";
 import {
   formatPhoneNumberInput,
@@ -240,7 +240,9 @@ const canUseDropzoneSenderAccount = (user: User | null | undefined) => {
   if (user.role === "practice") return true;
   if (user.role !== "requestor") return false;
   return canSendPracticeTransfer(
-    resolveRequestorCapabilities({
+    resolveRequestorProfile({
+      userKind: user.requestorKind,
+      userServices: user.requestorServices,
       userCaps: user.requestorCapabilities,
       userRole: user.role,
       businessVerified: user.businessVerified,
@@ -1726,7 +1728,7 @@ export const PracticeDropzonePage = () => {
         toast({
           title: "의뢰인(치과 발신) 계정만 이용 가능합니다",
           description:
-            "의뢰 발신자(치과) 유형의 의뢰인 계정으로 로그인해 주세요.",
+            "치과(기공실) 역할의 의뢰인 계정으로 로그인해 주세요.",
           variant: "destructive",
         });
         return;

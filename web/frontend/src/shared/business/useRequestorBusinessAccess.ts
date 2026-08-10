@@ -14,21 +14,22 @@ import {
   canSendPracticeTransfer,
   canUseFreeServices,
   canUsePaidServices,
-  hasAnyRequestorCapability,
-  normalizeRequestorCapabilities,
+  hasRequestorProfile,
   requiresBusinessLicense,
-  resolveRequestorCapabilities,
-  type RequestorCapabilities,
+  resolveRequestorProfile,
+  type RequestorProfile,
 } from "@/shared/business/requestorCapabilities";
+
+const emptyProfile = (): RequestorProfile => ({
+  kind: null,
+  services: { free: false, paid: false },
+});
 
 export const useRequestorBusinessAccess = () => {
   const { token, user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [businessVerified, setBusinessVerified] = useState(false);
-  const [capabilities, setCapabilities] = useState<RequestorCapabilities>({
-    practice: false,
-    lab: false,
-  });
+  const [profile, setProfile] = useState<RequestorProfile>(emptyProfile);
   const [membership, setMembership] = useState<string>("none");
   const [designAccessEnabled, setDesignAccessEnabled] = useState(false);
 
@@ -42,8 +43,11 @@ export const useRequestorBusinessAccess = () => {
       setLoading(false);
       setBusinessVerified(Boolean(user?.businessVerified));
       setDesignAccessEnabled(false);
-      setCapabilities(
-        resolveRequestorCapabilities({
+      setProfile(
+        resolveRequestorProfile({
+          userKind: user?.requestorKind,
+          userServices: user?.requestorServices,
+          userCaps: user?.requestorCapabilities,
           userRole: user?.role,
           businessVerified: Boolean(user?.businessVerified),
         }),
@@ -62,9 +66,13 @@ export const useRequestorBusinessAccess = () => {
       setBusinessVerified(verified);
       setMembership(String(data?.membership || "none"));
       setDesignAccessEnabled(Boolean(data?.designAccessEnabled));
-      setCapabilities(
-        resolveRequestorCapabilities({
+      setProfile(
+        resolveRequestorProfile({
+          anchorKind: data?.requestorKind,
+          anchorServices: data?.requestorServices,
           anchorCaps: data?.requestorCapabilities,
+          userKind: user?.requestorKind,
+          userServices: user?.requestorServices,
           userCaps: user?.requestorCapabilities,
           userRole: user?.role,
           businessVerified: verified,
@@ -73,8 +81,10 @@ export const useRequestorBusinessAccess = () => {
     } catch {
       setBusinessVerified(false);
       setDesignAccessEnabled(false);
-      setCapabilities(
-        resolveRequestorCapabilities({
+      setProfile(
+        resolveRequestorProfile({
+          userKind: user?.requestorKind,
+          userServices: user?.requestorServices,
           userCaps: user?.requestorCapabilities,
           userRole: user?.role,
           businessVerified: false,
@@ -88,6 +98,8 @@ export const useRequestorBusinessAccess = () => {
     token,
     user?.businessVerified,
     user?.requestorCapabilities,
+    user?.requestorKind,
+    user?.requestorServices,
     user?.role,
   ]);
 
@@ -105,8 +117,6 @@ export const useRequestorBusinessAccess = () => {
     };
   }, [refresh]);
 
-  const caps = normalizeRequestorCapabilities(capabilities);
-
   return {
     loading,
     refresh,
@@ -118,12 +128,23 @@ export const useRequestorBusinessAccess = () => {
     membership,
     businessVerified,
     designAccessEnabled,
-    capabilities: caps,
-    hasCapability: hasAnyRequestorCapability(caps),
-    requiresLicense: requiresBusinessLicense(caps),
-    canUsePaid: canUsePaidServices({ businessVerified, caps }),
-    canUseFree: canUseFreeServices(caps),
-    canSendTransfer: canSendPracticeTransfer(caps) || user?.role === "practice",
-    canReceiveTransfer: canReceivePracticeTransfer(caps),
+    profile,
+    kind: profile.kind,
+    services: profile.services,
+    /** @deprecated profile / kind 사용 */
+    capabilities: {
+      practice: profile.kind === "practice",
+      lab: profile.kind === "lab",
+    },
+    hasCapability: hasRequestorProfile(profile),
+    requiresLicense: requiresBusinessLicense(profile.services),
+    canUsePaid: canUsePaidServices({
+      businessVerified,
+      services: profile.services,
+    }),
+    canUseFree: canUseFreeServices(profile),
+    canSendTransfer:
+      canSendPracticeTransfer(profile) || user?.role === "practice",
+    canReceiveTransfer: canReceivePracticeTransfer(profile),
   };
 };

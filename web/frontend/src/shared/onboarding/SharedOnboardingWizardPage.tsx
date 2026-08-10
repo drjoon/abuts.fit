@@ -13,14 +13,17 @@ import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath
 const resolvePostOnboardingPath = (user: {
   role?: string | null;
   businessVerified?: boolean;
+  requestorKind?: "practice" | "lab" | null;
+  requestorServices?: { free?: boolean; paid?: boolean } | null;
   requestorCapabilities?: { practice?: boolean; lab?: boolean } | null;
   lastDashboardPath?: string | null;
 } | null) => {
-  // 유료 미가용(practice-only·미검증)은 대시보드 대신 기공의뢰서로
+  // 유료 미가용은 대시보드 대신 기공의뢰서로
   if (
     user?.role === "requestor" &&
     !canUsePaidServices({
       businessVerified: Boolean(user?.businessVerified),
+      services: user?.requestorServices,
       caps: user?.requestorCapabilities,
     })
   ) {

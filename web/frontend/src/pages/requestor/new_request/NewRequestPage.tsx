@@ -39,6 +39,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { RequestorWorkspaceHeader } from "@/shared/components/RequestorWorkspaceHeader";
 import {
   RequestDetailDialog,
@@ -86,6 +87,7 @@ const NewRequestPageContent = () => {
 
   const { toast } = useToast();
   const { token } = useAuthStore();
+  const { kind: requestorKind } = useRequestorBusinessAccess();
 
   const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
   const [designSoftwareMode, setDesignSoftwareMode] = useState<
@@ -1489,13 +1491,25 @@ const NewRequestPageContent = () => {
       className="new-request-page bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
-        <div className="w-full shrink-0">
+        <div className="w-full shrink-0 space-y-2">
           <RequestorWorkspaceHeader
             onSelectPastRequest={(r) => {
               setPastRequestDetail(r as RequestDetailDialogRequest);
               setPastRequestDetailOpen(true);
             }}
           />
+          {requestorKind === "practice" ? (
+            <p className="text-xs text-slate-500">
+              치과(기공실): 구강스캔 또는 커스텀어벗 디자인 파일로 어벗츠에
+              생산의뢰합니다.
+            </p>
+          ) : null}
+          {requestorKind === "lab" ? (
+            <p className="text-xs text-slate-500">
+              기공소: 구강스캔으로 디자인 후 납품하거나, 외부에서 받은 커스텀어벗
+              디자인 파일을 업로드해 생산의뢰합니다.
+            </p>
+          ) : null}
         </div>
         <MultiActionDialog
           open={!!duplicatePrompt}

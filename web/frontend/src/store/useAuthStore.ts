@@ -11,7 +11,11 @@ import { request } from "@/shared/api/apiClient";
 import type { AppUserRole } from "@/shared/types/role";
 import {
   normalizeRequestorCapabilities,
+  normalizeRequestorKind,
+  normalizeRequestorServices,
   type RequestorCapabilities,
+  type RequestorKind,
+  type RequestorServices,
 } from "@/shared/business/requestorCapabilities";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
@@ -37,6 +41,9 @@ export interface User {
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
   signupChannel?: string | null;
+  requestorKind?: RequestorKind | null;
+  requestorServices?: RequestorServices | null;
+  /** @deprecated requestorKind / requestorServices 사용 */
   requestorCapabilities?: RequestorCapabilities | null;
   practiceProfile?: {
     clinicName?: string;
@@ -72,6 +79,10 @@ const normalizeApiUser = (u: unknown): User | null => {
     row.requestorCapabilities && typeof row.requestorCapabilities === "object"
       ? (row.requestorCapabilities as Partial<RequestorCapabilities>)
       : null;
+  const rawServices =
+    row.requestorServices && typeof row.requestorServices === "object"
+      ? (row.requestorServices as Partial<RequestorServices>)
+      : null;
   return {
     id,
     name: String(row.name || ""),
@@ -89,6 +100,12 @@ const normalizeApiUser = (u: unknown): User | null => {
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
     signupChannel: row.signupChannel ? String(row.signupChannel) : null,
+    requestorKind: normalizeRequestorKind(
+      typeof row.requestorKind === "string" ? row.requestorKind : null,
+    ),
+    requestorServices: rawServices
+      ? normalizeRequestorServices(rawServices)
+      : null,
     requestorCapabilities: rawCaps
       ? normalizeRequestorCapabilities(rawCaps)
       : null,

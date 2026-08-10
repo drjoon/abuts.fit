@@ -13,10 +13,14 @@ import {
   visitPage,
 } from "./helpers";
 
-const SENDER_LABEL = "의뢰 발신자 (치과)";
-const RECEIVER_LABEL = "의뢰 수신자 (기공소와 기공실)";
+const KIND_PRACTICE = "치과 (기공실 포함)";
+const KIND_LAB = "기공소";
+const SERVICE_FREE = "기공의뢰서 (무료)";
+const SERVICE_PAID = "생산의뢰 (유료)";
 const OLD_SENDER = "원내 기공실 없는 치과";
 const OLD_RECEIVER = "기공소 혹은 원내 기공실";
+const OLD_CAP_SENDER = "의뢰 발신자 (치과)";
+const OLD_CAP_RECEIVER = "의뢰 수신자 (기공소와 기공실)";
 
 const REQUESTOR = resolveAccount("requestor");
 
@@ -50,13 +54,17 @@ async function assertNoLegacyLabels(
 
 test.describe("Requestor capability labels – SSOT/공개/관리자", () => {
   test("SSOT 상수 – 신규 라벨 존재·구 라벨 제거", async () => {
-    expect(capsSource).toContain(`practice: "${SENDER_LABEL}"`);
-    expect(capsSource).toContain(`lab: "${RECEIVER_LABEL}"`);
+    expect(capsSource).toContain(`practice: "${KIND_PRACTICE}"`);
+    expect(capsSource).toContain(`lab: "${KIND_LAB}"`);
+    expect(capsSource).toContain(`free: "${SERVICE_FREE}"`);
+    expect(capsSource).toContain(`paid: "${SERVICE_PAID}"`);
     expect(capsSource).not.toContain(OLD_SENDER);
     expect(capsSource).not.toContain(OLD_RECEIVER);
+    expect(capsSource).not.toContain(OLD_CAP_SENDER);
+    expect(capsSource).not.toContain(OLD_CAP_RECEIVER);
   });
 
-  test("가입 안내 – 의뢰자 역할에 발신/수신 문구", async ({ page }) => {
+  test("가입 안내 – 의뢰자 역할에 치과/기공소 문구", async ({ page }) => {
     await page.goto("/signup");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(800);
@@ -72,7 +80,7 @@ test.describe("Requestor capability labels – SSOT/공개/관리자", () => {
     const body = await page.evaluate(() => document.body?.innerText ?? "");
     expect(body.includes(OLD_SENDER) || body.includes(OLD_RECEIVER)).toBe(false);
     expect(
-      body.includes("의뢰 발신자") || body.includes("의뢰 수신자"),
+      body.includes("치과") || body.includes("기공소"),
     ).toBe(true);
   });
 
@@ -96,33 +104,31 @@ test.describe("Requestor capability labels – SSOT/공개/관리자", () => {
 });
 
 test.describe("Requestor capability labels – 유료게이트 로직", () => {
-  test("canUsePaidServices = lab && verified", async () => {
-    const normalize = (raw?: {
-      practice?: boolean;
-      clinic?: boolean;
-      lab?: boolean;
-    }) => ({
-      practice: Boolean(raw?.practice ?? raw?.clinic),
-      lab: Boolean(raw?.lab),
-    });
+  test("canUsePaidServices = paid && verified", async () => {
     const canUsePaid = (args?: {
       businessVerified?: boolean;
-      caps?: { practice?: boolean; clinic?: boolean; lab?: boolean };
+      services?: { free?: boolean; paid?: boolean };
     }) =>
-      Boolean(args?.businessVerified) && Boolean(normalize(args?.caps).lab);
+      Boolean(args?.businessVerified) && Boolean(args?.services?.paid);
 
     expect(
       canUsePaid({
         businessVerified: true,
-        caps: { practice: true, lab: false },
+        services: { free: true, paid: false },
       }),
     ).toBe(false);
     expect(
       canUsePaid({
         businessVerified: true,
-        caps: { practice: true, lab: true },
+        services: { free: true, paid: true },
       }),
     ).toBe(true);
+    expect(
+      canUsePaid({
+        businessVerified: false,
+        services: { free: true, paid: true },
+      }),
+    ).toBe(false);
   });
 });
 
@@ -143,20 +149,24 @@ test.describe("Requestor capability labels – 실계정 로그인", () => {
     });
   }
 
-  test("설정 > 사업자 – 발신/수신 라벨 표시", async ({ page }) => {
+  test("설정 > 사업자 – 역할/서비스 라벨 표시", async ({ page }) => {
     await page.goto("/dashboard/settings?tab=business");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(1500);
     expect(page.url()).not.toContain("/login");
 
     const body = await assertNoLegacyLabels(page, "설정>사업자");
-    if (body.includes("사업자 유형")) {
-      await expect(page.getByText(SENDER_LABEL, { exact: false })).toBeVisible({
+    if (body.includes("역할을 하나") || body.includes("이용할 서비스")) {
+      await expect(page.getByText(KIND_PRACTICE, { exact: false })).toBeVisible({
         timeout: 10_000,
       });
-      await expect(
-        page.getByText(RECEIVER_LABEL, { exact: false }),
-      ).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByText(KIND_LAB, { exact: false })).toBeVisible({
+        timeout: 10_000,
+      });
+      // 설정 화면에서는 서비스 체크가 보일 수 있음(온보딩은 무료 고정·숨김)
+      await expect(page.getByText(SERVICE_FREE, { exact: false })).toBeVisible({
+        timeout: 10_000,
+      });
     }
   });
 
@@ -172,29 +182,29 @@ test.describe("Requestor capability labels – 실계정 로그인", () => {
         body.includes("수신") ||
         body.includes("환자명") ||
         body.includes("기공소") ||
-        body.includes("사업자 유형"),
+        body.includes("역할"),
     ).toBe(true);
   });
 
-  test("유료 게이트 – practice-only면 대시보드→기공의뢰서", async ({ page }) => {
+  test("유료 게이트 – free-only면 대시보드→기공의뢰서", async ({ page }) => {
     await page.goto("/dashboard");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
     expect(page.url()).not.toContain("/login");
 
-    // practice-only 계정이면 practice-transfers, lab+verified면 /dashboard 유지
     const url = page.url();
     expect(url).toMatch(/\/dashboard/);
     const pathOnly = new URL(url).pathname.replace(/\/$/, "") || "/";
     if (pathOnly === "/dashboard") {
-      // 유료 허용
       expect(url).not.toContain("practice-transfers");
     } else {
       expect(url).toContain("practice-transfers");
     }
   });
 
-  test("유료 게이트 – lab+verified 모킹 시 대시보드 허용", async ({ page }) => {
+  test("유료 게이트 – paid+verified 모킹 시 대시보드 허용", async ({
+    page,
+  }) => {
     await page.route("**/api/businesses/me**", async (route) => {
       if (route.request().method() !== "GET") {
         await route.continue();
@@ -208,7 +218,8 @@ test.describe("Requestor capability labels – 실계정 로그인", () => {
           data: {
             membership: "owner",
             businessVerified: true,
-            requestorCapabilities: { practice: true, lab: true },
+            requestorKind: "lab",
+            requestorServices: { free: true, paid: true },
           },
         }),
       });

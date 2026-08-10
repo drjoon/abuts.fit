@@ -24,7 +24,8 @@ import { findBusinessByAnchors } from "./business.find.util.js";
 import { updateMyBusiness } from "./business.update.controller.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
-  resolveRequestorCapabilities,
+  resolveRequestorProfile,
+  requestorProfileResponseFields,
 } from "../../utils/requestorCapabilities.js";
 import {
   ensureRequestorOrgAnchor,
@@ -266,6 +267,8 @@ export async function getMyBusiness(req, res) {
         role: 1,
         subRole: 1,
         email: 1,
+        requestorKind: 1,
+        requestorServices: 1,
         requestorCapabilities: 1,
         practiceProfile: 1,
         referredByAnchorId: 1,
@@ -326,7 +329,9 @@ export async function getMyBusiness(req, res) {
     });
 
     if (!anchor) {
-      const requestorCapabilities = resolveRequestorCapabilities({
+      const profile = resolveRequestorProfile({
+        userKind: freshUser?.requestorKind,
+        userServices: freshUser?.requestorServices,
         userCaps: freshUser?.requestorCapabilities,
         userRole: freshUser?.role || req.user.role,
         businessVerified: false,
@@ -345,7 +350,7 @@ export async function getMyBusiness(req, res) {
           metadata: {},
           payoutAccount: {},
           pricingBaseDate: pricingBaseDate || null,
-          requestorCapabilities,
+          ...requestorProfileResponseFields(profile),
           designAccessEnabled: false,
         },
       });
@@ -399,11 +404,15 @@ export async function getMyBusiness(req, res) {
           metadata: {},
           payoutAccount: {},
           pricingBaseDate: pricingBaseDate || null,
-          requestorCapabilities: resolveRequestorCapabilities({
-            userCaps: req.user?.requestorCapabilities,
-            userRole: req.user?.role,
-            businessVerified: false,
-          }),
+          ...requestorProfileResponseFields(
+            resolveRequestorProfile({
+              userKind: req.user?.requestorKind,
+              userServices: req.user?.requestorServices,
+              userCaps: req.user?.requestorCapabilities,
+              userRole: req.user?.role,
+              businessVerified: false,
+            }),
+          ),
         },
       });
     }
@@ -447,10 +456,19 @@ export async function getMyBusiness(req, res) {
     });
 
     const capsUser = await User.findById(req.user._id)
-      .select({ requestorCapabilities: 1, role: 1 })
+      .select({
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+        role: 1,
+      })
       .lean();
-    const requestorCapabilities = resolveRequestorCapabilities({
+    const requestorProfile = resolveRequestorProfile({
+      anchorKind: anchor.requestorKind,
+      anchorServices: anchor.requestorServices,
       anchorCaps: anchor.requestorCapabilities,
+      userKind: capsUser?.requestorKind,
+      userServices: capsUser?.requestorServices,
       userCaps: capsUser?.requestorCapabilities,
       userRole: capsUser?.role || req.user.role,
       businessVerified,
@@ -469,7 +487,7 @@ export async function getMyBusiness(req, res) {
         payoutAccount: anchor?.payoutAccount || {},
         shippingPolicy: anchor?.shippingPolicy || null,
         pricingBaseDate: pricingBaseDate || null,
-        requestorCapabilities,
+        ...requestorProfileResponseFields(requestorProfile),
         designAccessEnabled:
           businessType === "requestor"
             ? Boolean(anchor?.designAccessEnabled)

@@ -47,9 +47,21 @@ const userSchema = new mongoose.Schema(
       createdAt: { type: Date, default: null },
       updatedAt: { type: Date, default: null },
     },
-    // 캡 미러(온보딩·미링크). Org SSOT는 BusinessAnchor.requestorCapabilities.
+    // 미러(온보딩·미링크). Org SSOT는 BusinessAnchor.requestorKind/Services.
+    requestorKind: {
+      type: String,
+      default: null,
+      validate: {
+        validator: (v) => v == null || v === "practice" || v === "lab",
+        message: "requestorKind must be practice or lab",
+      },
+    },
+    requestorServices: {
+      free: { type: Boolean, default: false },
+      paid: { type: Boolean, default: false },
+    },
+    // 레거시 — normalize/백필·resolve 폴백만. 신규 쓰기 금지.
     requestorCapabilities: {
-      // SSOT: practice (레거시 clinic 키는 normalize/백필로 승격)
       practice: { type: Boolean, default: false },
       lab: { type: Boolean, default: false },
     },
