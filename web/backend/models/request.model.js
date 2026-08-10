@@ -99,7 +99,13 @@ const requestSchema = new mongoose.Schema(
         x: Number,
         y: Number,
         z: Number,
+        // "frontend-manual" | undefined(auto/rhino)
+        source: String,
       },
+      // Front Face 끝점 오프셋(mm): Face.RightX = FrontPointX + 이 값
+      // - 수동 Front Point 지정 시 0 (찍은 점이 Face 끝)
+      // - 미지정 시 Esprit 기본값 1.0 사용
+      frontFaceEndOffsetMm: Number,
       hexRotation: {
         version: Number,
         moduleVersion: String,
