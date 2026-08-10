@@ -10,6 +10,8 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-11: 기공/어벗 사이드 — 버튼 그라데이션 제거, 가로 연결선만 적용.
+// - 2026-08-11: 기공의뢰/의뢰수신·어벗의뢰 사이드 메뉴에 기공/어벗 그라데이션 액센트 적용.
 // - 2026-08-11: 의뢰자 사이드 — 디자인 메뉴/페이지 삭제·의뢰수신 통합. 소개(치과 포함) 공통. 기공의뢰/의뢰수신↑·어벗의뢰↓.
 // - 2026-08-10: 의뢰자·치과 사이드메뉴에서 소개 제거.
 // - 2026-08-10: 의뢰자 사이드메뉴를 kind별로 분기 — practice(디자인 제외·유료게이트), lab(디자인·무게이트).
@@ -36,6 +38,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/design/DesignPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/shared/ui/gigongAbutAccent.ts
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -112,6 +115,10 @@ import {
   AccountSwitchPasswordDialog,
   type ColleagueAccount,
 } from "@/features/layout/AccountSwitcher";
+import {
+  gigongAbutConnectorLineClass,
+  type GigongAbutAccentKey,
+} from "@/shared/ui/gigongAbutAccent";
 
 /** DashboardLayout StrictMode remount에도 토큰당 unread 시드 API 1회만 */
 const practiceUnreadSeededTokens = new Set<string>();
@@ -122,6 +129,8 @@ type SidebarItem = {
   href: string;
   /** 사이드바 호버 빠른툴팁(선택) */
   tooltip?: string;
+  /** 기공/어벗 가로 연결선 액센트 */
+  accent?: GigongAbutAccentKey;
 };
 
 const sidebarItemPath = (href: string) =>
@@ -152,6 +161,7 @@ const buildRequestorSidebarItems = (
           href: "/dashboard/practice-transfers?mode=receive",
           tooltip:
             "구강스캔 파일을 받아서 인레이, 크라운, 브리지 등 보철 기공 처리",
+          accent: "기공",
         }
       : {
           icon: Building2,
@@ -159,6 +169,7 @@ const buildRequestorSidebarItems = (
           href: "/dashboard/practice-transfers?mode=send",
           tooltip:
             "구강스캔 파일을 올려서 인레이, 크라운, 브리지 등 보철 기공 의뢰",
+          accent: "기공",
         };
 
   return [
@@ -169,6 +180,7 @@ const buildRequestorSidebarItems = (
       label: "어벗의뢰",
       href: "/dashboard/new-request",
       tooltip: ABUTMENT_REQUEST_TOOLTIP,
+      accent: "어벗",
     },
     requestorReferralItem,
     ...requestorSidebarCommonTail,
@@ -191,7 +203,12 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   practice: [
-    { icon: LayoutDashboard, label: "기공의뢰", href: "/practice/dashboard" },
+    {
+      icon: LayoutDashboard,
+      label: "기공의뢰",
+      href: "/practice/dashboard",
+      accent: "기공",
+    },
     { icon: MessageSquare, label: "문의", href: "/practice/inquiries" },
     { icon: Settings, label: "설정", href: "/practice/settings" },
   ],
@@ -1220,7 +1237,7 @@ export const DashboardLayout = () => {
                     <Button
                       variant="ghost"
                       disabled={paidLocked}
-                      className={`w-full h-10 lg:h-11 text-sm lg:text-base transition-all ${
+                      className={`relative z-[1] w-full h-10 lg:h-11 text-sm lg:text-base transition-all ${
                         isCollapsed
                           ? "justify-center px-2"
                           : "justify-start px-3 lg:px-4"
@@ -1260,6 +1277,18 @@ export const DashboardLayout = () => {
                     </Button>
                   );
 
+                  const buttonWithAccent = item.accent ? (
+                    <div className="relative">
+                      <div
+                        aria-hidden
+                        className={gigongAbutConnectorLineClass(item.accent)}
+                      />
+                      {button}
+                    </div>
+                  ) : (
+                    button
+                  );
+
                   return (
                     <li key={item.href}>
                       {quickTooltip ? (
@@ -1278,7 +1307,7 @@ export const DashboardLayout = () => {
                                       : "block"
                                   }
                                 >
-                                  {button}
+                                  {buttonWithAccent}
                                 </span>
                               </span>
                             </TooltipTrigger>
@@ -1291,7 +1320,7 @@ export const DashboardLayout = () => {
                           </Tooltip>
                         </TooltipProvider>
                       ) : (
-                        button
+                        buttonWithAccent
                       )}
                     </li>
                   );

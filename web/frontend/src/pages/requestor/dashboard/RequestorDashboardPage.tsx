@@ -18,7 +18,9 @@ import {
   FileText,
   Package,
   Boxes,
-  AlertTriangle,
+  Send,
+  Inbox,
+  Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,7 +38,10 @@ import {
 } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { RequestorBulkShippingBannerCard } from "./components/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "./components/RequestorRecentRequestsCard";
-import type { RequestorDashboardStat } from "./components/RequestorDashboardStatsCards";
+import type {
+  RequestorDashboardStat,
+  RequestorDashboardStatRow,
+} from "./components/RequestorDashboardStatsCards";
 import { RequestorWorkspaceHeader } from "@/shared/components/RequestorWorkspaceHeader";
 import {
   Dialog,
@@ -73,11 +78,16 @@ const dashDebug = (label: string, payload?: unknown) => {
   console.log(`[RequestorDashboardDebug][${ts}] ${label}`, payload);
 };
 
+// change-log:
+// - 2026-08-11: 요약카드 압축·전기간대비 제거, 오늘의 가격 숨김/출고 툴팁 반영.
+// - 2026-08-11: 치과·기공소 공통 — 기공/어벗 2행 요약, 오늘의 생산가격↔출고 위치 교체.
+// - 2026-08-11: 치과(practice) 상단 요약 — 기공/어벗 2행, 좌측 행 라벨, 불완전 가공 카드 제거.
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
@@ -1862,7 +1872,7 @@ export const RequestorDashboardPage = () => {
     !cardsSummaryResponse &&
     !creditLedgerOpen;
 
-  const stats: RequestorDashboardStat[] = (() => {
+  const abutmentStats: RequestorDashboardStat[] = (() => {
     if (!dashboardStatsSource?.success) {
       return [
         { label: "준비", value: "0", icon: FileText },
@@ -1870,7 +1880,6 @@ export const RequestorDashboardPage = () => {
         { label: "세척.패킹", value: "0", icon: Boxes },
         { label: "포장.발송", value: "0건/0박스", icon: Package },
         { label: "추적관리", value: "0건/0박스", icon: CheckCircle },
-        { label: "불완전 가공", value: "0", icon: AlertTriangle },
       ];
     }
 
@@ -1883,41 +1892,69 @@ export const RequestorDashboardPage = () => {
       {
         label: "준비",
         value: `${s.totalRequests ?? 0}`,
-        change: `${s.totalRequestsChange ?? "+0%"}`,
         icon: FileText,
       },
       {
         label: "가공",
         value: String((s.inCam ?? 0) + (s.inProduction ?? 0)),
-        change: s.inProductionChange ?? "+0%",
         icon: Factory,
       },
       {
         label: "세척.패킹",
         value: String(s.inPacking ?? 0),
-        change: s.inPackingChange ?? "+0%",
         icon: Boxes,
       },
       {
         label: "포장.발송",
         value: `${shippingProductCount}건/${shippingBoxCount}박스`,
-        change: s.inShippingChange ?? "+0%",
         icon: Package,
       },
       {
         label: "추적관리",
         value: `${trackingProductCount}건/${trackingBoxCount}박스`,
-        change: s.inTrackingChange ?? "+0%",
         icon: CheckCircle,
-      },
-      {
-        label: "불완전 가공",
-        value: String(unmachinableRecordedCount),
-        change: "+0%",
-        icon: AlertTriangle,
       },
     ];
   })();
+
+  // 기공(무료 기공의뢰서) 라인 — 집계 API 연동 전 UI 슬롯. 수치는 placeholder.
+  const practiceTransferStats: RequestorDashboardStat[] = [
+    {
+      label: "의뢰서발송",
+      value: "0",
+      icon: Send,
+      interactive: false,
+    },
+    {
+      label: "의뢰서수신",
+      value: "0",
+      icon: Inbox,
+      interactive: false,
+    },
+    {
+      label: "파일 다운로드",
+      value: "0",
+      icon: Download,
+      interactive: false,
+    },
+    {
+      label: "포장.발송",
+      value: "0",
+      icon: Package,
+      interactive: false,
+    },
+    {
+      label: "추적관리",
+      value: "0",
+      icon: CheckCircle,
+      interactive: false,
+    },
+  ];
+
+  const requestorStatRows: RequestorDashboardStatRow[] = [
+    { rowLabel: "기공", stats: practiceTransferStats },
+    { rowLabel: "어벗", stats: abutmentStats },
+  ];
 
   if (showSkeleton) {
     return <DashboardShellSkeleton />;
@@ -1928,7 +1965,7 @@ export const RequestorDashboardPage = () => {
       <div className="max-w-6xl mx-auto w-full space-y-3">
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
-        statsGridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3"
+        statsGridClassName="space-y-3"
         subtitle={
           insufficientCredit && insufficientShippingCredit
             ? "의뢰비와 배송비 크레딧 부족. 충전해주세요"
@@ -1964,8 +2001,9 @@ export const RequestorDashboardPage = () => {
         }
         stats={
           <RequestorDashboardStatsCards
-            stats={stats}
-            onCardClick={(stat) => {
+            rows={requestorStatRows}
+            onCardClick={(stat, rowLabel) => {
+              if (rowLabel === "기공") return;
               setStatsModalLabel(stat.label);
               setStatsModalOpen(true);
             }}
@@ -1975,7 +2013,14 @@ export const RequestorDashboardPage = () => {
           <div className="space-y-3">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch">
               <div className="lg:col-span-2 min-w-0 h-full">
-                <RequestorPricingReferralPolicyCard />
+                <RequestorBulkShippingBannerCard
+                  bulkData={bulkData}
+                  period={period}
+                  onRefresh={() => {
+                    refetchBulk();
+                  }}
+                  onOpenBulkModal={() => {}}
+                />
               </div>
               <div className="lg:col-span-3 h-full min-w-0">
                 <RequestorRecentRequestsCard
@@ -2045,14 +2090,9 @@ export const RequestorDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              <RequestorBulkShippingBannerCard
-                bulkData={bulkData}
-                period={period}
-                onRefresh={() => {
-                  refetchBulk();
-                }}
-                onOpenBulkModal={() => {}}
-              />
+              <div className="min-w-0 h-full">
+                <RequestorPricingReferralPolicyCard />
+              </div>
 
               <RequestorRiskSummaryCard
                 riskSummary={riskSummary}

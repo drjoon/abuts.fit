@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 출고 안내 문구를 카드에서 제거하고 Info 빠른 툴팁으로 이동.
 // - 2026-08-09: 디자인+생산 출고 +1영업일 안내를 SHIP_OUT_INFO_MESSAGE에 반영.
 // - 2026-08-06: 출고 카드/모달 문구·레이아웃 정리.
 // - 2026-08-06: 카드 제목/설명 정리. 대기수량·다음출고 예정 제거.
@@ -9,7 +10,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Box, Clock, Package, Zap } from "lucide-react";
+import { Box, Clock, Info, Package, Zap } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -26,6 +27,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -648,9 +654,29 @@ export const RequestorBulkShippingBannerCard = ({
       <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold text-foreground">
-              출고
-            </CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle className="text-base font-semibold text-foreground">
+                출고
+              </CardTitle>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="출고 안내"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="bottom"
+                  align="start"
+                  className="max-w-xs text-xs leading-relaxed break-keep"
+                >
+                  {SHIP_OUT_INFO_MESSAGE}
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge
                 variant="outline"
@@ -714,32 +740,24 @@ export const RequestorBulkShippingBannerCard = ({
             </div>
           )}
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3.5 space-y-3">
-            <div className="flex items-start gap-2.5">
-              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-              <p className="text-xs leading-relaxed text-slate-600">
-                {SHIP_OUT_INFO_MESSAGE}
-              </p>
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <Button
-                variant="default"
-                size="sm"
-                className="h-9 w-full font-semibold"
-                onClick={handleOpenModal}
-              >
-                출고 대기 내역
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 w-full font-semibold bg-white/80"
-                onClick={handleLeadTimeButtonClick}
-                disabled={isLeadTimeLoading}
-              >
-                {isLeadTimeLoading ? "조회 중..." : "리드타임 조회"}
-              </Button>
-            </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              variant="default"
+              size="sm"
+              className="h-9 w-full font-semibold"
+              onClick={handleOpenModal}
+            >
+              출고 대기 내역
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 w-full font-semibold bg-white/80"
+              onClick={handleLeadTimeButtonClick}
+              disabled={isLeadTimeLoading}
+            >
+              {isLeadTimeLoading ? "조회 중..." : "리드타임 조회"}
+            </Button>
           </div>
         </CardContent>
       </Card>
