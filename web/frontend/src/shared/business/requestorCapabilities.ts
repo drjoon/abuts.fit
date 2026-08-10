@@ -228,6 +228,21 @@ export const REQUESTOR_KIND_LABEL = {
   lab: "기공소",
 } as const;
 
+/** 역할 뱃지 표기 SSOT: 의뢰자·치과 / 의뢰자(기공소) */
+export const REQUESTOR_ROLE_BADGE_LABEL = {
+  practice: "의뢰자·치과",
+  lab: "의뢰자(기공소)",
+} as const;
+
+export const getRequestorRoleBadgeLabel = (
+  kind?: RequestorKind | string | null,
+): string => {
+  const normalized = normalizeRequestorKind(kind);
+  if (normalized === "practice") return REQUESTOR_ROLE_BADGE_LABEL.practice;
+  if (normalized === "lab") return REQUESTOR_ROLE_BADGE_LABEL.lab;
+  return "의뢰자";
+};
+
 /** @deprecated REQUESTOR_KIND_LABEL 사용 */
 export const REQUESTOR_CAPABILITY_LABEL = {
   practice: REQUESTOR_KIND_LABEL.practice,

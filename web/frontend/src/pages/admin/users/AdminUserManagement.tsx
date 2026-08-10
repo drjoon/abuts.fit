@@ -16,8 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  REQUESTOR_KIND_LABEL,
   REQUESTOR_SERVICE_LABEL,
+  getRequestorRoleBadgeLabel,
   legacyCapabilitiesFromProfile,
   normalizeRequestorCapabilities,
   normalizeRequestorKind,
@@ -105,6 +105,31 @@ const getRoleLabel = (role: string) => {
     default:
       return "사용자";
   }
+};
+
+const resolveUserRequestorKind = (
+  user: Pick<
+    UiUserRow,
+    "requestorKind" | "requestorCapabilities"
+  >,
+) =>
+  user.requestorKind ||
+  (user.requestorCapabilities?.practice
+    ? "practice"
+    : user.requestorCapabilities?.lab
+      ? "lab"
+      : null);
+
+const getRoleBadgeLabel = (
+  user: Pick<
+    UiUserRow,
+    "role" | "requestorKind" | "requestorCapabilities"
+  >,
+) => {
+  if (normalizeRole(user.role) !== "requestor") {
+    return getRoleLabel(user.role);
+  }
+  return getRequestorRoleBadgeLabel(resolveUserRequestorKind(user));
 };
 
 const getRoleBadgeVariant = (role: string) => {
@@ -386,27 +411,10 @@ const getRequestorCapabilityBadges = (
   >,
 ) => {
   if (normalizeRole(user.role) !== "requestor") return null;
-  const kind =
-    user.requestorKind ||
-    (user.requestorCapabilities?.practice
-      ? "practice"
-      : user.requestorCapabilities?.lab
-        ? "lab"
-        : null);
   const services = user.requestorServices;
-  if (!kind && !services) return null;
+  if (!services?.free && !services?.paid) return null;
   return (
     <>
-      {kind === "practice" ? (
-        <span className="rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
-          {REQUESTOR_KIND_LABEL.practice}
-        </span>
-      ) : null}
-      {kind === "lab" ? (
-        <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-          {REQUESTOR_KIND_LABEL.lab}
-        </span>
-      ) : null}
       {services?.free ? (
         <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
           {REQUESTOR_SERVICE_LABEL.free}
@@ -1220,7 +1228,7 @@ export const AdminUserManagement = () => {
                               variant={getRoleBadgeVariant(user.role)}
                               className="h-5 px-1.5 text-[10px]"
                             >
-                              {getRoleLabel(user.role)}
+                              {getRoleBadgeLabel(user)}
                             </Badge>
                             {getRequestorCapabilityBadges(user)}
                             {user.unresolvedBusiness ? (

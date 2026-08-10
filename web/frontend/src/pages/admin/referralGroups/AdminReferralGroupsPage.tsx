@@ -27,6 +27,7 @@ import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -112,7 +113,7 @@ type ApiGroupListResponse = {
   error?: string;
 };
 
-const roleBadge = (role?: string) => {
+const roleBadge = (role?: string, requestorKind?: "practice" | "lab" | null) => {
   if (role === "salesman") {
     return (
       <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
@@ -129,7 +130,7 @@ const roleBadge = (role?: string) => {
   }
   return (
     <span className="rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
-      의뢰자
+      {getRequestorRoleBadgeLabel(requestorKind)}
     </span>
   );
 };

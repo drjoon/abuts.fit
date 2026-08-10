@@ -11,6 +11,7 @@ import { ArrowLeft, Send, Paperclip, Smile } from "lucide-react";
 import { ChatRoom, Message } from "./types";
 import { mockMessages } from "./mockData";
 import { useAuthStore } from "@/store/useAuthStore";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 
 interface ChatConversationProps {
   room: ChatRoom;
@@ -35,9 +36,9 @@ const getRoleColor = (role: string) => {
 const getRoleLabel = (role: string) => {
   switch (role) {
     case "requestor":
-      return "기공소";
+      return getRequestorRoleBadgeLabel("lab");
     case "practice":
-      return "치과";
+      return getRequestorRoleBadgeLabel("practice");
     case "manufacturer":
       return "애크로덴트(제조사)";
     case "admin":

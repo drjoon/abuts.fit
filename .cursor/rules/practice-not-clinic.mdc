@@ -13,7 +13,7 @@ alwaysApply: true
 - `practice` (`requestorKind`) → **치과 (기공실 포함)**
 - `lab` (`requestorKind`) → **기공소**
 - `free` / `paid` (`requestorServices`) → **기공의뢰서 (무료)** / **생산의뢰 (유료)**
-- 상수: `REQUESTOR_KIND_LABEL` / `REQUESTOR_SERVICE_LABEL`
+- 상수: `REQUESTOR_KIND_LABEL` / `REQUESTOR_SERVICE_LABEL` / `REQUESTOR_ROLE_BADGE_LABEL`
 
 ## Do
 

@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-10: 의뢰자 역할 뱃지를 requestorKind에 따라 의뢰자·치과 / 의뢰자(기공소)로 표기.
 // - 2026-08-10: 의뢰자 사이드메뉴 디자인을 기공의뢰서 바로 아래로 이동.
 // - 2026-08-09: 모든 role 최근 사이드바 경로를 계정 디폴트 진입점으로 서버 저장·복원. `/dashboard` 홈 클릭 시 last path pin.
 // - 2026-08-09: 제조사 사이드메뉴 가공작업→생산.
@@ -45,6 +46,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
+  getRequestorRoleBadgeLabel,
   isPaidRequestorPath,
   PAID_ACCESS_DISABLED_HINT,
 } from "@/shared/business/requestorCapabilities";
@@ -278,10 +280,13 @@ const adminSidebarSections: SidebarSection[] = [
   },
 ];
 
-const getRoleLabel = (role: string) => {
+const getRoleLabel = (
+  role: string,
+  requestorKind?: "practice" | "lab" | null,
+) => {
   switch (role) {
     case "requestor":
-      return "의뢰자";
+      return getRequestorRoleBadgeLabel(requestorKind);
     case "salesman":
       return "영업자";
     case "devops":
@@ -289,7 +294,7 @@ const getRoleLabel = (role: string) => {
     case "manufacturer":
       return "제조사";
     case "practice":
-      return "의뢰자";
+      return getRequestorRoleBadgeLabel(requestorKind ?? "practice");
     case "admin":
       return "어벗츠.핏";
     default:
@@ -355,8 +360,11 @@ export const DashboardLayout = () => {
   const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
     useState(0);
   const { rooms: chatRooms } = useChatRooms();
-  const { canUsePaid: requestorCanUsePaid, designAccessEnabled } =
-    useRequestorBusinessAccess();
+  const {
+    canUsePaid: requestorCanUsePaid,
+    designAccessEnabled,
+    kind: requestorKind,
+  } = useRequestorBusinessAccess();
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const isPracticeUser = Boolean(user?.role === "practice");
@@ -1272,7 +1280,7 @@ export const DashboardLayout = () => {
                       variant={getRoleBadgeVariant(displayRole)}
                       className="w-fit mt-1"
                     >
-                      {getRoleLabel(displayRole)}
+                      {getRoleLabel(displayRole, requestorKind)}
                     </Badge>
                   </div>
                 </DropdownMenuLabel>

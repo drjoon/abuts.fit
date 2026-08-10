@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Search, UserPlus } from "lucide-react";
 import { Friend } from "./types";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 
 interface AddFriendModalProps {
   open: boolean;
@@ -39,9 +40,9 @@ const getRoleBadgeColor = (role: string) => {
 const getRoleLabel = (role: string) => {
   switch (role) {
     case "requestor":
-      return "기공소";
+      return getRequestorRoleBadgeLabel("lab");
     case "practice":
-      return "치과";
+      return getRequestorRoleBadgeLabel("practice");
     case "manufacturer":
       return "제작사";
     case "admin":

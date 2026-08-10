@@ -11,6 +11,7 @@ import { Search, UserPlus, Star } from "lucide-react";
 import { Friend } from "./types";
 import { mockFriends } from "./mockData";
 import { AddFriendModal } from "./AddFriendModal";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 
 interface ChatFriendsListProps {
   onSelectFriend: (friend: Friend) => void;
@@ -33,8 +34,9 @@ const getRoleBadgeColor = (role: string) => {
 const getRoleLabel = (role: string) => {
   switch (role) {
     case "requestor":
+      return getRequestorRoleBadgeLabel("lab");
     case "practice":
-      return "의뢰자";
+      return getRequestorRoleBadgeLabel("practice");
     case "manufacturer":
       return "제작사";
     case "admin":

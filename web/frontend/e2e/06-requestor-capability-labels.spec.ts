@@ -15,6 +15,8 @@ import {
 
 const KIND_PRACTICE = "치과 (기공실 포함)";
 const KIND_LAB = "기공소";
+const ROLE_BADGE_PRACTICE = "의뢰자·치과";
+const ROLE_BADGE_LAB = "의뢰자(기공소)";
 const SERVICE_FREE = "기공의뢰서 (무료)";
 const SERVICE_PAID = "생산의뢰 (유료)";
 const OLD_SENDER = "원내 기공실 없는 치과";
@@ -56,6 +58,8 @@ test.describe("Requestor capability labels – SSOT/공개/관리자", () => {
   test("SSOT 상수 – 신규 라벨 존재·구 라벨 제거", async () => {
     expect(capsSource).toContain(`practice: "${KIND_PRACTICE}"`);
     expect(capsSource).toContain(`lab: "${KIND_LAB}"`);
+    expect(capsSource).toContain(`practice: "${ROLE_BADGE_PRACTICE}"`);
+    expect(capsSource).toContain(`lab: "${ROLE_BADGE_LAB}"`);
     expect(capsSource).toContain(`free: "${SERVICE_FREE}"`);
     expect(capsSource).toContain(`paid: "${SERVICE_PAID}"`);
     expect(capsSource).not.toContain(OLD_SENDER);

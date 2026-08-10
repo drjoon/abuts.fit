@@ -5,6 +5,7 @@
 import { Reply, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 
 export interface ReplyToMessage {
   _id: string;
@@ -56,9 +57,9 @@ export function MessageReply({
       case "manufacturer":
         return "제조사";
       case "requestor":
-        return "기공소";
+        return getRequestorRoleBadgeLabel("lab");
       case "practice":
-        return "치과";
+        return getRequestorRoleBadgeLabel("practice");
       default:
         return role;
     }

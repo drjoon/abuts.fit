@@ -19,6 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { cn } from "@/shared/ui/cn";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import {
@@ -67,6 +69,7 @@ interface AccountTabProps {
 export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
   const { token, user, logout, loginWithToken } = useAuthStore();
+  const { kind: requestorKind } = useRequestorBusinessAccess();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
@@ -724,11 +727,19 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                     userData?.role === "admin" ? "destructive" : "default"
                   }
                 >
-                  {userData?.role === "requestor"
-                    ? "의뢰자"
+                  {userData?.role === "requestor" ||
+                  userData?.role === "practice"
+                    ? getRequestorRoleBadgeLabel(
+                        requestorKind ??
+                          (userData?.role === "practice" ? "practice" : null),
+                      )
                     : userData?.role === "manufacturer"
                       ? "제조사"
-                      : "어벗츠.핏"}
+                      : userData?.role === "salesman"
+                        ? "영업자"
+                        : userData?.role === "devops"
+                          ? "개발운영사"
+                          : "어벗츠.핏"}
                 </Badge>
               </div>
             </div>
