@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-08-11: 기공/어벗 라벨 열 폭 확대(5.5rem) — 요약카드는 남은 폭 균등.
+// - 2026-08-11: 기공/어벗 라벨 박스는 6.5rem(열 10rem 유지·가운데).
+// - 2026-08-11: 기공/어벗 라벨 열 폭 확대(10rem) — 요약카드는 남은 폭 균등.
 // - 2026-08-11: 요약카드 패딩·라벨·아이콘·간격 완화(답답함 해소).
 // - 2026-08-11: 기공/어벗 — 라벨 고정폭 + 카드 flex로 좌·총폭 정렬(어벗 카드 약간 넓게).
 // - 2026-08-11: 기공 6카드(+작업완료) 한 줄 — 열 수 동적·카드 패딩 축소.
@@ -46,7 +47,7 @@ type Props = {
 };
 
 /** 기공/어벗 공통: 라벨 열 폭을 맞춰 카드 영역 시작점을 정렬 */
-const ROW_LABEL_COL_CLASS = "w-full xl:w-[5.5rem] xl:shrink-0";
+const ROW_LABEL_COL_CLASS = "w-full xl:w-[10rem] xl:shrink-0";
 
 const resolveRowTheme = (label: string) =>
   GIGONG_ABUT_ACCENT[label as GigongAbutAccentKey] || DEFAULT_GIGONG_ABUT_ACCENT;
@@ -69,7 +70,7 @@ const RowLabelSlot = ({ label }: { label: string }) => {
     <div className="flex h-full min-h-[3.5rem] w-full items-center justify-center">
       <div
         className={cn(
-          "relative inline-flex h-[3rem] w-full items-center justify-center overflow-hidden rounded-xl border px-2 py-1.5 backdrop-blur-sm",
+          "relative inline-flex h-[3rem] w-[6.5rem] items-center justify-center overflow-hidden rounded-xl border px-2 py-1.5 backdrop-blur-sm",
           theme.shell,
           theme.glow,
         )}
@@ -204,7 +205,7 @@ export const RequestorDashboardStatsCards = ({
               <div className="relative z-[1] flex flex-col gap-2 xl:flex-row xl:items-stretch">
                 <div className={ROW_LABEL_COL_CLASS}>
                   <div className="flex min-h-[3.5rem] w-full items-center justify-center">
-                    <Skeleton className="h-[3rem] w-full rounded-xl" />
+                    <Skeleton className="h-[3rem] w-[6.5rem] rounded-xl" />
                   </div>
                 </div>
                 <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:flex xl:flex-1">

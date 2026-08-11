@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-11: 기공/어벗 라벨 열 5.5rem — 요약카드 폭 소폭 축소.
+// - 2026-08-11: 기공/어벗 라벨 열 10rem — 요약카드 폭 소폭 축소.
 // - 2026-08-11: 대시보드 스켈레톤 max-w-7xl·요약카드 여백 완화.
 // - 2026-08-11: 기공/어벗 스켈레톤 — 라벨 고정폭 + 카드 flex(총폭·좌정렬 맞춤).
 // - 2026-08-11: 기공 요약 스켈레톤 — 라벨+6카드(작업완료 포함) / 어벗 라벨+5.
@@ -71,9 +71,9 @@ export const DashboardShellSkeleton = ({
                   className={`pointer-events-none absolute inset-x-0 bottom-1 z-0 rounded-full bg-slate-200/70 opacity-55 ${GIGONG_ABUT_CONNECTOR_THICKNESS_CLASS}`}
                 />
                 <div className="relative z-[1] flex flex-col gap-2 xl:flex-row xl:items-stretch">
-                  <div className="w-full xl:w-[5.5rem] xl:shrink-0">
+                  <div className="w-full xl:w-[10rem] xl:shrink-0">
                     <div className="flex min-h-[3.5rem] w-full items-center justify-center">
-                      <Skeleton className="h-[3rem] w-full rounded-xl" />
+                      <Skeleton className="h-[3rem] w-[6.5rem] rounded-xl" />
                     </div>
                   </div>
                   <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:flex xl:flex-1">
