@@ -129,8 +129,9 @@ Notes:
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·designFee 전역 설정 UI)
 - 개발·운영사 설정
   - `src/pages/devops/DevopsSettingsPage.tsx` (계정/사업자/임직원/**결제(입금 계좌)**/알림/보안)
-  - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · 디자이너 지정 · **마감 설정**
+  - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · **기공 자동매칭**
     - 요금·크레딧에 치과 납품 어벗 소매가(`abutmentRetailPrice`) 포함
+    - 기공 자동매칭: 상단 `DevopsDesignDeadlineTab`(수락 후 마감 요약) + `PracticeTransferAutoMatchTab`(기공의뢰 자동매칭 ON) + `DesignerAssignmentTab`(검증된 디자이너 지정). 구 `?tab=design|deadline` → `autoMatch`
   - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「거래 치과 등록」·「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - `src/features/settings/tabs/LabTradingPartnersTab.tsx` — 거래처 O/X 결제 안내 + 초대
@@ -138,8 +139,9 @@ Notes:
     - 등록 기간 D-day 배너: `LabTradingPartnerWindowBanner` — 기공의뢰수신·어벗의뢰 상단. 클릭 → `?tab=trading-partners`
       - `src/features/lab/LabTradingPartnerWindowBanner.tsx`
       - `src/shared/lab/useLabTradingPartnerWindow.ts` (`GET /api/lab-trading-partners/window`)
-  - 마감 설정: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감 시간(`designDeadlineSettings.claimHours`, 기본 3시간)
-  - 디자이너 지정: `DesignerAssignmentTab` — `BusinessAnchor.designAccessEnabled` (의뢰자 중 디자인 큐 접근)
+  - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공 자동매칭** 탭 상단
+  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab` — 검증 기공소 `BusinessAnchor.practiceTransferAutoMatchEnabled`. 파트너 **기공 자동매칭** 탭
+  - 검증된 디자이너 지정: `DesignerAssignmentTab` — 검증 의뢰자만, `BusinessAnchor.designAccessEnabled`(디자인 큐). 파트너 **기공 자동매칭** 탭 하단
   - 영업자 없을 때 분배: 설정된 영업자 분배비의 절반→제조사, 나머지 절반→관리자 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
   - 관리자 대시보드/소통
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
@@ -209,7 +211,7 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/shippingDay.helpers.ts`
 
 - 지정 디자이너 디자인 큐 (`/dashboard/design`):
-  - 접근: `BusinessAnchor.designAccessEnabled` (파트너 → 디자이너 지정). 사이드바·`DesignAccessGate`.
+  - 접근: `BusinessAnchor.designAccessEnabled` (파트너 → 기공 자동매칭 · 검증된 디자이너 지정). 사이드바·`DesignAccessGate`.
   - 목록: `design_custom_abutment` + 준비. PeriodFilter는 흰 패널 안(좌우상하 여백 동일).
   - UI: 기공의뢰서형 카드 + `PracticeTransferDetailChatDialog`(상세·치식·파일·기공소 채팅).
     `RequestPage detailMode="transferChat"` — 제조 `WorksheetCardGrid`/`PreviewModal` 미사용.
@@ -506,7 +508,7 @@ Notes:
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
   - 기공소 의뢰수락: 상세 다이얼로그 「의뢰수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관.
-  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto`. 검증·devops ON 기공소만 공개 풀 수신. 선착순 수락(3시간)·「작업 완료」(`mark-complete`). 만료 시 재공개. devops UI: `PracticeTransferAutoMatchTab`
+  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto`. 검증·devops ON 기공소만 공개 풀 수신. 선착순 수락(3시간)·「작업 완료」(`mark-complete`). 만료 시 재공개. devops UI: `PracticeTransferAutoMatchTab` (파트너 **기공 자동매칭** 탭)
 
 - 드롭존 가입(치과 전용, requestor+practice+free)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab·paid 선택 UI 없음.

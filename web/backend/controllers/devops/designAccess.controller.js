@@ -34,7 +34,7 @@ const toListRow = (row) => ({
 
 /**
  * GET /api/devops/design-access?q=&page=1&limit=15
- * 의뢰자 사업자 목록 + designAccessEnabled (페이지네이션)
+ * 검증된 의뢰자 목록 + designAccessEnabled (페이지네이션)
  */
 export async function listDesignAccess(req, res) {
   try {
@@ -47,9 +47,10 @@ export async function listDesignAccess(req, res) {
     );
     const skip = (page - 1) * limit;
 
+    // 검증된 의뢰자만 디자이너 지정 대상
     const filter = {
       businessType: "requestor",
-      status: { $ne: "merged" },
+      status: "verified",
     };
 
     if (q) {
@@ -98,7 +99,7 @@ export async function listDesignAccess(req, res) {
     console.error("[designAccess] list failed", error);
     return res.status(500).json({
       success: false,
-      message: "디자이너지정 목록 조회 중 오류가 발생했습니다.",
+      message: "검증된 디자이너 지정 목록 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -126,6 +127,28 @@ export async function patchDesignAccess(req, res) {
     }
 
     const enabled = Boolean(req.body.enabled);
+
+    const existing = await BusinessAnchor.findOne({
+      _id: anchorId,
+      businessType: "requestor",
+    })
+      .select({ status: 1 })
+      .lean();
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰자 사업자를 찾을 수 없습니다.",
+      });
+    }
+
+    if (enabled && String(existing.status || "").trim() !== "verified") {
+      return res.status(400).json({
+        success: false,
+        message: "검증된 의뢰자만 디자이너로 지정할 수 있습니다.",
+      });
+    }
+
     const updated = await BusinessAnchor.findOneAndUpdate(
       { _id: anchorId, businessType: "requestor" },
       { $set: { designAccessEnabled: enabled } },
@@ -162,7 +185,7 @@ export async function patchDesignAccess(req, res) {
     console.error("[designAccess] patch failed", error);
     return res.status(500).json({
       success: false,
-      message: "디자이너지정 저장 중 오류가 발생했습니다.",
+      message: "검증된 디자이너 지정 저장 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

@@ -19,6 +19,30 @@ export const isPracticeTransferAutoMatchEnabled = (anchor) =>
   Boolean(anchor?.practiceTransferAutoMatchEnabled);
 
 /**
+ * 검증 기공소(수신 가능) Mongo 필터.
+ * requestorKind=lab 또는 레거시 caps.lab( kind 미백필 ) 포함.
+ */
+export const verifiedLabCapableAnchorFilter = () => ({
+  businessType: "requestor",
+  status: "verified",
+  $or: [
+    { requestorKind: "lab" },
+    {
+      $and: [
+        {
+          $or: [
+            { requestorKind: { $exists: false } },
+            { requestorKind: null },
+            { requestorKind: "" },
+          ],
+        },
+        { "requestorCapabilities.lab": true },
+      ],
+    },
+  ],
+});
+
+/**
  * 자동매칭 공개 풀 자격: lab+free + verified + devops ON
  */
 export const isAutoMatchEligibleLabAnchor = (anchor) => {
@@ -145,11 +169,8 @@ export async function loadAutoMatchEligibleLabAnchors({
   select = { _id: 1, name: 1, primaryContactUserId: 1 },
 } = {}) {
   const rows = await BusinessAnchor.find({
-    businessType: "requestor",
-    status: "verified",
+    ...verifiedLabCapableAnchorFilter(),
     practiceTransferAutoMatchEnabled: true,
-    requestorKind: "lab",
-    "requestorServices.free": true,
   })
     .select(select)
     .lean();

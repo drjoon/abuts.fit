@@ -4,9 +4,14 @@
 // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import { isPracticeTransferAutoMatchEnabled } from "../../utils/practiceTransferAutoMatch.js";
+import {
+  isPracticeTransferAutoMatchEnabled,
+  verifiedLabCapableAnchorFilter,
+} from "../../utils/practiceTransferAutoMatch.js";
 import {
   canReceivePracticeTransfer,
+  legacyCapabilitiesFromProfile,
+  requestorProfilePersistFields,
   resolveRequestorProfile,
 } from "../../utils/requestorCapabilities.js";
 import { invalidateMyBusinessCache } from "../businesses/business.controller.js";
@@ -59,20 +64,24 @@ export async function listPracticeTransferAutoMatch(req, res) {
     );
     const skip = (page - 1) * limit;
 
+    // 공개 풀 자격과 동일: 검증 기공소만 목록·지정 대상 (kind 또는 레거시 caps)
     const filter = {
-      businessType: "requestor",
-      requestorKind: "lab",
-      status: { $ne: "merged" },
+      ...verifiedLabCapableAnchorFilter(),
     };
 
     if (q) {
       const re = new RegExp(escapeRegex(q), "i");
-      filter.$or = [
-        { name: re },
-        { businessNumberNormalized: re },
-        { "metadata.companyName": re },
-        { "metadata.representativeName": re },
-        { "metadata.address": re },
+      filter.$and = [
+        ...(Array.isArray(filter.$and) ? filter.$and : []),
+        {
+          $or: [
+            { name: re },
+            { businessNumberNormalized: re },
+            { "metadata.companyName": re },
+            { "metadata.representativeName": re },
+            { "metadata.address": re },
+          ],
+        },
       ];
     }
 
@@ -145,13 +154,63 @@ export async function patchPracticeTransferAutoMatch(req, res) {
     }
 
     const enabled = Boolean(req.body.enabled);
+
+    const existing = await BusinessAnchor.findOne({
+      _id: anchorId,
+      ...verifiedLabCapableAnchorFilter(),
+    })
+      .select({
+        status: 1,
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+      })
+      .lean();
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "기공소 사업자를 찾을 수 없습니다.",
+      });
+    }
+
+    if (enabled && String(existing.status || "").trim() !== "verified") {
+      return res.status(400).json({
+        success: false,
+        message: "검증된 기공소만 자동매칭을 ON할 수 있습니다.",
+      });
+    }
+
+    const profile = resolveRequestorProfile({
+      anchorKind: existing.requestorKind,
+      anchorServices: existing.requestorServices,
+      anchorCaps: existing.requestorCapabilities,
+      businessVerified: true,
+    });
+
+    if (enabled) {
+      if (!canReceivePracticeTransfer(profile)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "기공의뢰를 수신할 수 있는 기공소만 자동매칭을 ON할 수 있습니다.",
+        });
+      }
+    }
+
+    const $set = { practiceTransferAutoMatchEnabled: enabled };
+    // kind 미백필 레거시 앵커는 ON 시 SSOT 필드를 채운다
+    if (enabled && !String(existing.requestorKind || "").trim()) {
+      Object.assign($set, requestorProfilePersistFields(profile));
+      $set.requestorCapabilities = legacyCapabilitiesFromProfile(profile);
+    }
+
     const updated = await BusinessAnchor.findOneAndUpdate(
       {
         _id: anchorId,
-        businessType: "requestor",
-        requestorKind: "lab",
+        ...verifiedLabCapableAnchorFilter(),
       },
-      { $set: { practiceTransferAutoMatchEnabled: enabled } },
+      { $set },
       {
         new: true,
         projection: {

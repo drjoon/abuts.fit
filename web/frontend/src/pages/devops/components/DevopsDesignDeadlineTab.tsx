@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/src/pages/devops/DevopsPartnerPage.tsx
+// - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // - web/backend/modules/devops/designDeadline.routes.js
 // - web/backend/controllers/devops/designDeadline.controller.js
 // - web/frontend/rules.md
@@ -7,12 +8,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Clock } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
@@ -24,6 +21,7 @@ const DEFAULT_CLAIM_HOURS = 3;
 const MIN_CLAIM_HOURS = 1;
 const MAX_CLAIM_HOURS = 24;
 
+/** 기공 자동매칭 탭 상단 — 디자인 수락 후 마감(시간) 요약 설정 */
 export const DevopsDesignDeadlineTab = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -103,7 +101,7 @@ export const DevopsDesignDeadlineTab = () => {
       );
       savedRef.current = saved;
       setClaimHours(saved);
-      toast({ title: "저장됨", description: "디자인 마감 설정을 저장했습니다." });
+      toast({ title: "저장됨", description: "마감 설정을 저장했습니다." });
     } finally {
       setSaving(false);
     }
@@ -111,19 +109,19 @@ export const DevopsDesignDeadlineTab = () => {
 
   return (
     <Card className="app-glass-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Clock className="h-4 w-4" />
-          디자인 마감 설정
-        </CardTitle>
-        <CardDescription>
-          지정 디자이너가 「수락」으로 잡은 뒤, 이 시간 안에 작업하지 않으면
-          다른 디자이너에게 다시 공개됩니다. (기본 {DEFAULT_CLAIM_HOURS}시간)
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2 max-w-xs">
-          <Label htmlFor="design-claim-hours">수락 후 마감 (시간)</Label>
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Clock className="h-4 w-4 shrink-0" />
+            수락 후 마감
+          </div>
+          <p className="text-xs text-muted-foreground">
+            수락 후 이 시간 안에 미작업 시 재공개 · {MIN_CLAIM_HOURS}–
+            {MAX_CLAIM_HOURS}시간 (기본 {DEFAULT_CLAIM_HOURS}시간, 마감 30분 전
+            경고)
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
           <Input
             id="design-claim-hours"
             type="number"
@@ -133,16 +131,16 @@ export const DevopsDesignDeadlineTab = () => {
             disabled={loading || saving}
             value={claimHours}
             onChange={(e) => setClaimHours(e.target.value)}
-            className={cn(!valid && claimHours !== "" && "border-destructive")}
+            aria-label="수락 후 마감 시간"
+            className={cn(
+              "h-9 w-[4.5rem] tabular-nums",
+              !valid && claimHours !== "" && "border-destructive",
+            )}
           />
-          <p className="text-xs text-muted-foreground">
-            {MIN_CLAIM_HOURS}–{MAX_CLAIM_HOURS}시간. 마감 30분 전부터 디자이너
-            화면에 경고가 표시됩니다.
-          </p>
-        </div>
-        <div className="flex gap-2">
+          <span className="text-sm text-muted-foreground">시간</span>
           <Button
             type="button"
+            size="sm"
             disabled={loading || saving || !dirty || !valid}
             onClick={() => void handleSave()}
           >

@@ -171,6 +171,23 @@ export const PracticeTransferAutoMatchTab = () => {
 
   const onToggle = async (row: AutoMatchRow, enabled: boolean) => {
     if (!token || savingId) return;
+    if (enabled && !row.verified) {
+      toast({
+        title: "검증 기공소만 가능",
+        description: "검증된 기공소만 자동매칭을 ON할 수 있습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (enabled && !row.canReceivePracticeTransfer) {
+      toast({
+        title: "자동매칭 불가",
+        description:
+          "기공의뢰를 수신할 수 있는 기공소만 자동매칭을 ON할 수 있습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSavingId(row._id);
     const prev = rows;
     const prevEnabled = enabledCount;
@@ -278,8 +295,13 @@ export const PracticeTransferAutoMatchTab = () => {
             <>
               <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {rows.map((row) => {
+                  const canEnable =
+                    row.verified && row.canReceivePracticeTransfer;
                   const metaParts = [
                     row.verified ? "검증" : row.status || null,
+                    !row.canReceivePracticeTransfer
+                      ? "기공의뢰 수신 불가"
+                      : null,
                     row.representativeName || null,
                     row.address || null,
                   ].filter(Boolean);
@@ -291,6 +313,7 @@ export const PracticeTransferAutoMatchTab = () => {
                         "hover:bg-muted/40",
                         row.practiceTransferAutoMatchEnabled &&
                           "border-primary/20 bg-primary/[0.03]",
+                        !canEnable && "opacity-70",
                       )}
                     >
                       <div className="min-w-0 flex-1">
@@ -305,7 +328,11 @@ export const PracticeTransferAutoMatchTab = () => {
                       </div>
                       <Switch
                         checked={Boolean(row.practiceTransferAutoMatchEnabled)}
-                        disabled={savingId === row._id}
+                        disabled={
+                          savingId === row._id ||
+                          (!canEnable &&
+                            !row.practiceTransferAutoMatchEnabled)
+                        }
                         onCheckedChange={(checked) =>
                           void onToggle(row, checked)
                         }

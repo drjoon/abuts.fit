@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/devops/components/DevopsPayoutAccountTab.tsx
 // - web/frontend/src/pages/devops/components/DesignerAssignmentTab.tsx
 // - web/frontend/src/pages/devops/components/DevopsDesignDeadlineTab.tsx
+// - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -15,11 +16,16 @@ import {
 import { DevopsPayoutAccountTab } from "./components/DevopsPayoutAccountTab";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
 import { DesignerAssignmentTab } from "./components/DesignerAssignmentTab";
-import { PracticeTransferAutoMatchTab } from "./components/PracticeTransferAutoMatchTab";
 import { DevopsDesignDeadlineTab } from "./components/DevopsDesignDeadlineTab";
-import { Landmark, CreditCard, PenTool, Clock, FlaskConical } from "lucide-react";
+import { PracticeTransferAutoMatchTab } from "./components/PracticeTransferAutoMatchTab";
+import { Landmark, CreditCard, FlaskConical } from "lucide-react";
 
-type TabKey = "payment" | "credits" | "design" | "autoMatch" | "deadline";
+type TabKey = "payment" | "credits" | "autoMatch";
+
+const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
+  design: "autoMatch",
+  deadline: "autoMatch",
+};
 
 export const DevopsPartnerPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -39,29 +45,27 @@ export const DevopsPartnerPage = () => {
         content: <AdminCreditSettingsTab />,
       },
       {
-        key: "design",
-        label: "디자이너 지정",
-        icon: PenTool,
-        content: <DesignerAssignmentTab />,
-      },
-      {
         key: "autoMatch",
         label: "기공 자동매칭",
         icon: FlaskConical,
-        content: <PracticeTransferAutoMatchTab />,
-      },
-      {
-        key: "deadline",
-        label: "마감 설정",
-        icon: Clock,
-        content: <DevopsDesignDeadlineTab />,
+        content: (
+          <div className="space-y-6">
+            <DevopsDesignDeadlineTab />
+            <PracticeTransferAutoMatchTab />
+            <DesignerAssignmentTab />
+          </div>
+        ),
       },
     ],
     [],
   );
 
-  const tabFromUrl =
-    (searchParams.get("tab") as TabKey | null) || (tabs[0]?.key as TabKey);
+  const rawTab = searchParams.get("tab");
+  const mapped =
+    rawTab && LEGACY_TAB_REDIRECT[rawTab]
+      ? LEGACY_TAB_REDIRECT[rawTab]
+      : (rawTab as TabKey | null);
+  const tabFromUrl = mapped || (tabs[0]?.key as TabKey);
   const allowed = new Set(tabs.map((t) => t.key));
   const activeTab = allowed.has(tabFromUrl)
     ? tabFromUrl
