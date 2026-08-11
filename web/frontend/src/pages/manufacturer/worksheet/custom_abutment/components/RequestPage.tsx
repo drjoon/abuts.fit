@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: transferChat(의뢰수신) 로딩 중에도「표시할 의뢰가 없습니다.」표시.
 // - 2026-08-10: 디자인 승인=완성 어벗 STL 업로드 후 design-handoff(제조사 가공).
 // - 2026-08-10: detailMode=transferChat — 디자인 큐는 기공의뢰서형 카드·채팅 모달(PreviewModal 미사용).
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
@@ -2407,6 +2408,13 @@ export const RequestPage = ({
   const diameterQueueForReceive = useDiameterQueue(filteredAndSorted);
 
   if (pageState.isLoading) {
+    if (isTransferChatDetail) {
+      return (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
+          표시할 의뢰가 없습니다.
+        </div>
+      );
+    }
     return <WorksheetLoading />;
   }
 
@@ -2443,9 +2451,9 @@ export const RequestPage = ({
       >
         {isCamStage && isDraggingOver && (
           <BodyPortal>
-          <div className="fixed inset-0 z-[100] bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-solid border-blue-500 text-center">
-              <div className="text-2xl font-bold text-blue-700 mb-2">
+          <div className="fixed inset-0 z-[100] bg-primary/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-solid border-primary text-center">
+              <div className="text-2xl font-bold text-primary-strong mb-2">
                 NC 파일을 드롭하세요
               </div>
               <div className="text-sm text-slate-600">

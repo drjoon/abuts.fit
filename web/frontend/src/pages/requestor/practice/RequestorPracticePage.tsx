@@ -19,6 +19,11 @@
 // - 2026-08-11: 기공소 의뢰수신 — 발신/수신 탭 제거·항상 수신. 디자인 큐를 의뢰수신으로 편입.
 // - 2026-08-11: 치과 기공의뢰 — 발신/수신 탭 제거·항상 발신.
 // - 2026-08-11: 사이드메뉴 딥링크용 ?mode=send|receive 동기화.
+// - 2026-08-11: 기공소 기공의뢰수신 — 내역 카드 제거·검색/뱃지를 의뢰수신으로 통합·제목 삭제.
+// - 2026-08-11: 치과초대 우측 상단(9:3)·의뢰수신 상단 필터左/검색右.
+// - 2026-08-11: 치과 링크 전달 — 파일전송(/p) → 기공소 소개코드 가입 링크.
+// - 2026-08-11: 상단 뱃지에 포장.발송·추적관리 추가(기공 파이프라인 UI).
+// - 2026-08-11: 디자인 큐 빈 목록일 때 하단 전송 내역 영역 미렌더(중복 제거).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -285,7 +290,9 @@ function RequestorPracticeReceivePage({
   const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "발송완료" | "수신완료" | "다운로드완료">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "발송완료" | "수신완료" | "다운로드완료" | "포장.발송" | "추적관리"
+  >("all");
   const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
   const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
   const [promoNoticeVisible, setPromoNoticeVisible] = useState(false);
@@ -786,7 +793,7 @@ function RequestorPracticeReceivePage({
   }, [period, search, transfers]);
 
   const statusCounts = useMemo(() => {
-    return baseFilteredTransfers.reduce(
+    const counts = baseFilteredTransfers.reduce(
       (acc, transfer) => {
         const status = getTransferDisplayStatus(transfer);
         if (status === "다운로드완료") acc.downloaded += 1;
@@ -794,8 +801,10 @@ function RequestorPracticeReceivePage({
         else acc.sent += 1;
         return acc;
       },
-      { sent: 0, read: 0, downloaded: 0 },
+      { sent: 0, read: 0, downloaded: 0, shipping: 0, tracking: 0 },
     );
+    // 포장.발송·추적관리는 기공 파이프라인 UI 슬롯(집계 연동 전).
+    return counts;
   }, [baseFilteredTransfers]);
 
   const filteredTransfers = useMemo(() => {
@@ -1250,21 +1259,29 @@ function RequestorPracticeReceivePage({
     uploadFilesWithToast,
   ]);
 
-  const labId = String(user?.businessAnchorId || "").trim();
-  const practiceLinkQuery = new URLSearchParams();
-  if (labId) practiceLinkQuery.set("l", labId);
-  const practiceDropzoneLink = `${window.location.origin}/p${
-    practiceLinkQuery.toString() ? `?${practiceLinkQuery.toString()}` : ""
-  }`;
+  const referralCode = String(user?.referralCode || "")
+    .trim()
+    .toUpperCase();
+  const referralSignupLink = referralCode
+    ? `${window.location.origin}/signup/referral?ref=${encodeURIComponent(referralCode)}`
+    : "";
 
   const handleCopyPracticeDropzoneLink = async () => {
+    if (!referralSignupLink) {
+      toast({
+        title: "복사 실패",
+        description: "소개 코드를 확인할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(practiceDropzoneLink);
+      await navigator.clipboard.writeText(referralSignupLink);
       setPracticeLinkCopied(true);
       setTimeout(() => setPracticeLinkCopied(false), 2000);
       toast({
         title: "복사 완료",
-        description: "치과 파일전송 링크가 복사되었습니다.",
+        description: "가입 링크가 복사되었습니다.",
         duration: 2000,
       });
     } catch {
@@ -1277,14 +1294,22 @@ function RequestorPracticeReceivePage({
   };
 
   const handleCopyPracticeMessage = async () => {
-    const message = `안녕하세요 🙂 아래 링크에서 구강 스캔 파일을 보내주세요.\n링크를 열면 기공소가 자동 선택됩니다.\n${practiceDropzoneLink}`;
+    if (!referralSignupLink) {
+      toast({
+        title: "복사 실패",
+        description: "소개 코드를 확인할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const message = `안녕하세요 🙂 아래 링크로 어벗츠에 가입해 주시면 기공의뢰서를 더 쉽고 빠르게 보낼 수 있습니다.\n${referralSignupLink}`;
     try {
       await navigator.clipboard.writeText(message);
       setPracticeMessageCopied(true);
       setTimeout(() => setPracticeMessageCopied(false), 2000);
       toast({
         title: "복사 완료",
-        description: "전송 안내 문구가 복사되었습니다.",
+        description: "가입 안내 문구가 복사되었습니다.",
         duration: 2000,
       });
     } catch {
@@ -1301,8 +1326,7 @@ function RequestorPracticeReceivePage({
   const inviteLinkCard = (
     <Card className="h-fit">
       <CardHeader className="pb-2">
-        <CardTitle className="text-xl">치과 초대</CardTitle>
-        <CardDescription className="text-sm">치과에 기공의뢰서 링크를 전달하세요</CardDescription>
+        <CardTitle className="text-xl">치과에 가입 링크 전달</CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
         <div className="grid grid-cols-1 gap-2">
@@ -1310,7 +1334,8 @@ function RequestorPracticeReceivePage({
             type="button"
             size="sm"
             onClick={() => void handleCopyPracticeDropzoneLink()}
-            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+            disabled={!referralSignupLink}
+            className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
           >
             {practiceLinkCopied ? (
               <>
@@ -1328,7 +1353,8 @@ function RequestorPracticeReceivePage({
             type="button"
             size="sm"
             onClick={() => void handleCopyPracticeMessage()}
-            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+            disabled={!referralSignupLink}
+            className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
           >
             {practiceMessageCopied ? (
               <>
@@ -1347,13 +1373,224 @@ function RequestorPracticeReceivePage({
     </Card>
   );
 
+  const transferSearchAndBadges = (
+    <div className="space-y-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <PeriodFilter
+          value={period}
+          onChange={setPeriod}
+          presets={["thisMonth", "lastMonth"]}
+          className="shrink-0"
+        />
+        <div className="relative w-full md:max-w-md md:ml-auto">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+            placeholder="전송ID, 치과명, 파일명, 환자명 검색"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="rounded-full"
+          onClick={() => setStatusFilter((prev) => (prev === "발송완료" ? "all" : "발송완료"))}
+          aria-pressed={statusFilter === "발송완료"}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === "발송완료"
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            발송 {statusCounts.sent}건
+          </Badge>
+        </button>
+
+        <button
+          type="button"
+          className="rounded-full"
+          onClick={() => setStatusFilter((prev) => (prev === "수신완료" ? "all" : "수신완료"))}
+          aria-pressed={statusFilter === "수신완료"}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === "수신완료"
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            수신 {statusCounts.read}건
+          </Badge>
+        </button>
+
+        <button
+          type="button"
+          className="rounded-full"
+          onClick={() =>
+            setStatusFilter((prev) => (prev === "다운로드완료" ? "all" : "다운로드완료"))
+          }
+          aria-pressed={statusFilter === "다운로드완료"}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === "다운로드완료"
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            다운로드 {statusCounts.downloaded}건
+          </Badge>
+        </button>
+
+        <button
+          type="button"
+          className="rounded-full"
+          onClick={() => setStatusFilter((prev) => (prev === "포장.발송" ? "all" : "포장.발송"))}
+          aria-pressed={statusFilter === "포장.발송"}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === "포장.발송"
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            포장.발송 {statusCounts.shipping}건
+          </Badge>
+        </button>
+
+        <button
+          type="button"
+          className="rounded-full"
+          onClick={() => setStatusFilter((prev) => (prev === "추적관리" ? "all" : "추적관리"))}
+          aria-pressed={statusFilter === "추적관리"}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === "추적관리"
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            추적관리 {statusCounts.tracking}건
+          </Badge>
+        </button>
+      </div>
+    </div>
+  );
+
+  const transferListBody = (
+    <>
+      {error ? <div className="text-sm text-destructive">{error}</div> : null}
+      {!error && !showDesignQueue && sortedFilteredTransfers.length === 0 ? (
+        <div className="text-sm text-muted-foreground">표시할 의뢰가 없습니다.</div>
+      ) : null}
+
+      <div
+        className="overflow-y-auto pr-1"
+        style={transferCardsMaxHeightPx ? { maxHeight: `${transferCardsMaxHeightPx}px` } : undefined}
+      >
+        <div ref={transferCardsGridRef} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {sortedFilteredTransfers.map((transfer) => {
+            const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
+            const toothWorksPreview = formatToothWorksSummary(transfer.toothWorksSummary);
+            return (
+              <button
+                key={transfer._id || transfer.transferId}
+                type="button"
+                onClick={() => void openTransferDialog(transfer)}
+                className="w-full rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20"
+                data-transfer-card="true"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-semibold">{transfer.transferId}</span>
+                    {chatUnreadCount > 0 ? (
+                      <Badge
+                        variant="destructive"
+                        className="h-5 min-w-5 justify-center px-1 text-[11px] leading-none"
+                      >
+                        {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {formatDateTime(transfer.createdAt)}
+                    </span>
+                    {(() => {
+                      const displayStatus = getTransferDisplayStatus(transfer);
+                      return (
+                        <Badge
+                          variant={displayStatus === "발송완료" ? "destructive" : "secondary"}
+                          className={cn(
+                            "shrink-0 whitespace-nowrap",
+                            displayStatus === "다운로드완료"
+                              ? "bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                              : "",
+                          )}
+                        >
+                          {displayStatus}
+                        </Badge>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="mt-2 text-sm text-muted-foreground">
+                  치과: {transfer.practice.businessName || "-"}
+                  {transfer.practice.userName ? ` · 담당자 ${transfer.practice.userName}` : ""}
+                </div>
+
+                <p className="mt-2 text-xs text-muted-foreground truncate">
+                  파일 {transfer.fileCount}개
+                  {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
+                  {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                  {toothWorksPreview
+                    ? ` · 치아별 ${toothWorksPreview}`
+                    : transfer.prosthesisTypes.length
+                      ? ` · 형태 ${transfer.prosthesisTypes.join(", ")}`
+                      : ""}
+                  {String(transfer.transferMemo || "").trim()
+                    ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
+                    : ""}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {!error && hasMore ? (
+        <div ref={loadMoreRef} className="py-4 text-center text-xs text-muted-foreground">
+          {loadingMore ? "더 불러오는 중..." : "아래로 스크롤하면 더 불러옵니다."}
+        </div>
+      ) : null}
+    </>
+  );
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
         {showDesignQueue && !showTransfers ? (
           <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold tracking-tight">의뢰수신</h2>
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}
@@ -1366,236 +1603,46 @@ function RequestorPracticeReceivePage({
         ) : null}
 
         {showTransfers ? (
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-start">
           {promoNoticeVisible ? (
-            <>
-              <Alert className="flex flex-col items-center justify-center border-blue-200 bg-blue-50 text-blue-900 text-center xl:col-span-6">
-                <button
-                  type="button"
-                  onClick={() => void handleDismissPromoNotice()}
-                  disabled={promoNoticeSaving}
-                  className="absolute right-3 top-3 rounded p-1 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label="안내 닫기"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-                <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
-                <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
-              </Alert>
-              <div className="xl:col-span-6">{inviteLinkCard}</div>
-            </>
-          ) : null}
-
-          {showDesignQueue ? (
-            <Card className="xl:col-span-12">
-              <CardHeader className="space-y-3 pb-2">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <CardTitle className="text-xl">의뢰수신</CardTitle>
-                  <PeriodFilter
-                    value={period}
-                    onChange={setPeriod}
-                    presets={["thisMonth", "lastMonth"]}
-                    className="shrink-0"
-                  />
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <DesignQueueSection />
-              </CardContent>
-            </Card>
-          ) : null}
-
-          <Card className={promoNoticeVisible || showDesignQueue ? "xl:col-span-12" : "xl:col-span-9"}>
-            <CardHeader className="space-y-3">
-              <div className="flex flex-wrap items-center gap-3">
-                {roleSwitcher}
-                <CardTitle className="text-xl">
-                  {showDesignQueue ? "기공의뢰서 내역" : "의뢰수신"}
-                </CardTitle>
-              </div>
-              <div className="space-y-3">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="relative w-full md:max-w-md">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="pl-9"
-                      placeholder="전송ID, 치과명, 파일명, 환자명 검색"
-                    />
-                  </div>
-                  {!showDesignQueue ? (
-                    <PeriodFilter
-                      value={period}
-                      onChange={setPeriod}
-                      presets={["thisMonth", "lastMonth"]}
-                      className="shrink-0"
-                    />
-                  ) : null}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="rounded-full"
-                    onClick={() =>
-                      setStatusFilter((prev) => (prev === "발송완료" ? "all" : "발송완료"))
-                    }
-                    aria-pressed={statusFilter === "발송완료"}
-                  >
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "cursor-pointer",
-                        statusFilter === "발송완료"
-                          ? "border-blue-300 bg-blue-50 text-blue-700"
-                          : "hover:bg-muted/40",
-                      )}
-                    >
-                      발송 {statusCounts.sent}건
-                    </Badge>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="rounded-full"
-                    onClick={() => setStatusFilter((prev) => (prev === "수신완료" ? "all" : "수신완료"))}
-                    aria-pressed={statusFilter === "수신완료"}
-                  >
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "cursor-pointer",
-                        statusFilter === "수신완료"
-                          ? "border-blue-300 bg-blue-50 text-blue-700"
-                          : "hover:bg-muted/40",
-                      )}
-                    >
-                      수신 {statusCounts.read}건
-                    </Badge>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="rounded-full"
-                    onClick={() =>
-                      setStatusFilter((prev) => (prev === "다운로드완료" ? "all" : "다운로드완료"))
-                    }
-                    aria-pressed={statusFilter === "다운로드완료"}
-                  >
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "cursor-pointer",
-                        statusFilter === "다운로드완료"
-                          ? "border-blue-300 bg-blue-50 text-blue-700"
-                          : "hover:bg-muted/40",
-                      )}
-                    >
-                      다운로드 {statusCounts.downloaded}건
-                    </Badge>
-                  </button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {error ? <div className="text-sm text-destructive">{error}</div> : null}
-              {!error && loading ? <div className="text-sm text-muted-foreground">불러오는 중...</div> : null}
-              {!error && !loading && sortedFilteredTransfers.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  {statusFilter === "all"
-                    ? "표시할 치과 전송 내역이 없습니다."
-                    : `${statusFilter} 상태의 치과 전송 내역이 없습니다.`}
-                </div>
-              ) : null}
-
-              <div
-                className="overflow-y-auto pr-1"
-                style={transferCardsMaxHeightPx ? { maxHeight: `${transferCardsMaxHeightPx}px` } : undefined}
+            <Alert className="relative flex flex-col items-center justify-center border-primary-muted bg-primary-soft text-primary-strong text-center xl:col-span-9">
+              <button
+                type="button"
+                onClick={() => void handleDismissPromoNotice()}
+                disabled={promoNoticeSaving}
+                className="absolute right-3 top-3 rounded p-1 text-primary-strong hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="안내 닫기"
               >
-                <div ref={transferCardsGridRef} className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {sortedFilteredTransfers.map((transfer) => {
-                    const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
-                    const toothWorksPreview = formatToothWorksSummary(transfer.toothWorksSummary);
-                    return (
-                      <button
-                        key={transfer._id || transfer.transferId}
-                        type="button"
-                        onClick={() => void openTransferDialog(transfer)}
-                        className="w-full rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20"
-                        data-transfer-card="true"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-semibold">{transfer.transferId}</span>
-                            {chatUnreadCount > 0 ? (
-                              <Badge
-                                variant="destructive"
-                                className="h-5 min-w-5 justify-center px-1 text-[11px] leading-none"
-                              >
-                                {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              {formatDateTime(transfer.createdAt)}
-                            </span>
-                            {(() => {
-                              const displayStatus = getTransferDisplayStatus(transfer);
-                              return (
-                                <Badge
-                                  variant={displayStatus === "발송완료" ? "destructive" : "secondary"}
-                                  className={cn(
-                                    "shrink-0 whitespace-nowrap",
-                                    displayStatus === "다운로드완료"
-                                      ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
-                                      : "",
-                                  )}
-                                >
-                                  {displayStatus}
-                                </Badge>
-                              );
-                            })()}
-                          </div>
-                        </div>
+                <X className="h-4 w-4" />
+              </button>
+              <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
+              <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
+            </Alert>
+          ) : null}
 
-                        <div className="mt-2 text-sm text-muted-foreground">
-                          치과: {transfer.practice.businessName || "-"}
-                          {transfer.practice.userName ? ` · 담당자 ${transfer.practice.userName}` : ""}
-                        </div>
+          <div
+            className={cn(
+              "xl:col-span-3 xl:col-start-10",
+              promoNoticeVisible ? "xl:row-start-1" : "order-first xl:order-none xl:row-start-1",
+            )}
+          >
+            {inviteLinkCard}
+          </div>
 
-                        <p className="mt-2 text-xs text-muted-foreground truncate">
-                          파일 {transfer.fileCount}개
-                          {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
-                          {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
-                          {toothWorksPreview
-                            ? ` · 치아별 ${toothWorksPreview}`
-                            : transfer.prosthesisTypes.length
-                              ? ` · 형태 ${transfer.prosthesisTypes.join(", ")}`
-                              : ""}
-                          {String(transfer.transferMemo || "").trim()
-                            ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
-                            : ""}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {!error && hasMore ? (
-                <div ref={loadMoreRef} className="py-4 text-center text-xs text-muted-foreground">
-                  {loadingMore ? "더 불러오는 중..." : "아래로 스크롤하면 더 불러옵니다."}
-                </div>
+          <Card className="xl:col-span-9 xl:col-start-1">
+            <CardHeader className="space-y-3">
+              {roleSwitcher ? (
+                <div className="flex flex-wrap items-center gap-3">{roleSwitcher}</div>
               ) : null}
+              {transferSearchAndBadges}
+            </CardHeader>
+            <CardContent className={showDesignQueue ? "space-y-4 pt-0" : undefined}>
+              {showDesignQueue ? <DesignQueueSection /> : null}
+              {showDesignQueue && !error && sortedFilteredTransfers.length === 0
+                ? null
+                : transferListBody}
             </CardContent>
           </Card>
-
-          {!promoNoticeVisible ? (
-            <div className="space-y-3 xl:col-span-3">{inviteLinkCard}</div>
-          ) : null}
         </div>
         ) : null}
       </div>
