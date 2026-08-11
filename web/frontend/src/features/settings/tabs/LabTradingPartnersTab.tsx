@@ -193,8 +193,8 @@ export const LabTradingPartnersTab = () => {
       const url = await createInvite();
       if (!url) return;
       const message = canInvite
-        ? `안녕하세요 🙂 어벗츠에서 거래 치과로 등록되면 정산·의뢰가 더 원활해져요!\n아래 링크로 가입하신 뒤, 사업자등록증 검증만 완료해 주시면 등록이 끝나요.\n${url}`
-        : `안녕하세요 🙂 어벗츠에서 함께해요!\n아래 링크로 가입하신 뒤, 사업자등록증 검증만 완료해 주시면 등록이 끝나요.\n${url}`;
+        ? `안녕하세요 🙂 어벗츠 거래 치과로 등록하시면 정산·의뢰가 편리합니다.\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`
+        : `안녕하세요 🙂 어벗츠에 함께해요!\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`;
       await copyText(
         message,
         "안내 문구를 복사했습니다.",
@@ -223,7 +223,7 @@ export const LabTradingPartnersTab = () => {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">결제 안내</CardTitle>
           <CardDescription>
-            기공소 입장에서, 치과와의 관계에 따라 플랫폼 수수료가 달라집니다.
+            관계별로 수수료와 결제크레딧 적립 비율이 다릅니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
@@ -232,18 +232,20 @@ export const LabTradingPartnersTab = () => {
               <p className="font-semibold text-primary-strong">
                 거래 치과 (수수료 0%)
               </p>
-              <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-slate-700">
-                <li>치과가 낸 금액(기공비+어벗) 전액이 결제크레딧으로 들어옵니다</li>
-                <li>어벗 생산비는 어벗의뢰 때 기공소가 어벗츠에 납부합니다</li>
-              </ul>
+              <p className="text-[13px] leading-relaxed text-slate-700">
+                치과 결제 금액 전액이 기공소 결제크레딧으로 적립됩니다.
+              </p>
             </div>
             <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-1.5">
               <p className="font-semibold text-slate-900">
                 소개 치과 (수수료 {feeRatePct.referred}%)
               </p>
               <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-muted-foreground">
-                <li>등록 기간 이후 소개로 들어온 치과</li>
-                <li>청구 총액의 {100 - feeRatePct.referred}%가 결제크레딧으로 적립됩니다</li>
+                <li>30일 등록 기간 이후 기공소 소개로 가입</li>
+                <li>
+                  치과 결제 금액의 {100 - feeRatePct.referred}%가 결제크레딧으로
+                  적립
+                </li>
               </ul>
             </div>
             <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-1.5">
@@ -251,15 +253,17 @@ export const LabTradingPartnersTab = () => {
                 그 외 치과 (수수료 {feeRatePct.nonPartner}%)
               </p>
               <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-muted-foreground">
-                <li>거래처 등록·소개 모두 아닌 경우</li>
-                <li>청구 총액의 {100 - feeRatePct.nonPartner}%가 결제크레딧으로 적립됩니다</li>
+                <li>거래·소개 치과가 아닌 경우</li>
+                <li>
+                  치과 결제 금액의 {100 - feeRatePct.nonPartner}%가 결제크레딧으로
+                  적립
+                </li>
               </ul>
             </div>
           </div>
 
           <p className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-2.5 text-[13px] leading-relaxed text-muted-foreground">
-            기공소가 직접 어벗의뢰할 때는 기존처럼 생산단가만 어벗츠에
-            납부합니다.
+            어벗의뢰비는 기공소가 어벗츠에 별도 납부합니다.
           </p>
         </CardContent>
       </Card>
@@ -268,13 +272,26 @@ export const LabTradingPartnersTab = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Handshake className="h-5 w-5" />
-            거래 치과 등록 / 소개
+            치과 등록·소개
           </CardTitle>
           <CardDescription>
-            {canInvite
-              ? "가입 후 30일 동안 등록한 치과는 정식 거래처(수수료 0%)가 됩니다. 아래에서 소개 코드·초대 링크·안내 문구를 만든 뒤 치과에 전달하세요."
-              : `정식 거래처 등록 기간은 종료되었지만, 소개 링크로 계속 치과를 소개할 수 있습니다. 이 이후 등록되는 치과는 소개 관계(수수료 ${feeRatePct.referred}%)로 등록됩니다.`}
-            {" "}치과가 링크로 가입하고 사업자등록증 검증을 완료하면 등록됩니다.
+            {canInvite ? (
+              <>
+                <span className="font-semibold text-foreground">
+                  가입 후 30일 이내 등록한 치과
+                </span>
+                는 거래 치과(수수료 0%)입니다. 아래에서 소개 코드·초대 링크·안내
+                문구를 복사해 치과에 전달하세요. 가입·사업자등록증 검증 후
+                등록됩니다.
+              </>
+            ) : (
+              <>
+                30일 등록 기간이 종료되었습니다. 이후 소개 가입 치과는 소개
+                치과(수수료 {feeRatePct.referred}%)입니다. 아래에서 소개
+                코드·초대 링크·안내 문구를 복사해 치과에 전달하세요.
+                가입·사업자등록증 검증 후 등록됩니다.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -294,11 +311,11 @@ export const LabTradingPartnersTab = () => {
                       ? "-"
                       : canInvite
                         ? `D-${remaining}일`
-                        : "기간 종료 · 이후 소개는 소개 관계로 등록"}
+                        : "기간 종료 · 이후 소개 가입은 소개 치과"}
                   </span>
                 </div>
                 <p className="text-[13px] leading-relaxed text-muted-foreground">
-                  생성·복사한 내용을 치과에 보내 주세요.
+                  복사한 내용을 치과에 전달하세요.
                 </p>
               </div>
 
@@ -370,16 +387,16 @@ export const LabTradingPartnersTab = () => {
 
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader>
-          <CardTitle className="text-base">등록·초대 목록</CardTitle>
+          <CardTitle className="text-base">등록 목록</CardTitle>
           <CardDescription>
-            치과가 초대 링크로 가입을 시작하면 여기에 표시됩니다. 사업자 검증이
-            끝나면 등록 완료됩니다.
+            초대 링크로 가입을 시작한 치과가 표시됩니다. 사업자등록증 검증 후
+            등록 완료됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {items.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              아직 가입·등록된 거래 치과가 없습니다.
+              등록된 치과가 없습니다.
             </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -399,10 +416,10 @@ export const LabTradingPartnersTab = () => {
                   item.practiceRepresentativeName || "",
                 ).trim();
                 const badgeLabel = isActive
-                  ? "거래처 등록 완료"
+                  ? "거래 치과"
                   : isReferred
-                    ? `소개 등록 완료 (수수료 ${feeRatePct.referred}%)`
-                    : "가입 진행중";
+                    ? `소개 치과 (${feeRatePct.referred}%)`
+                    : "가입 진행 중";
                 const badgeClassName = isActive
                   ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
                   : isReferred

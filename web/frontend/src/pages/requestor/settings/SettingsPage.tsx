@@ -35,7 +35,7 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 // 가입일시/경과일/D-day는 신규 기공소 90일 고정가와 동일 기준일(pricingBaseDate)을 사용한다.
 // 2026-08-11: 설정 결제 탭 제거 → 사이드바 크레딧(`/dashboard/credits`)로 이전.
 // 2026-08-11: 설정 의뢰 탭 제거 → 어벗의뢰 좌측 상단(디자인소프트웨어·아노다이징).
-// 2026-08-11: 기공소 전용 「거래 치과 등록」「기공비」탭(알림 왼쪽).
+// 2026-08-11: 기공소 전용 「치과 등록」「기공비」탭(알림 왼쪽).
 
 type TabKey =
   | "account"
@@ -187,7 +187,7 @@ export const RequestorSettingsPage = () => {
         },
         {
           key: "trading-partners",
-          label: "거래 치과 등록",
+          label: "치과 등록",
           icon: Handshake,
           content: <LabTradingPartnersTab />,
         },
