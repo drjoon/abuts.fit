@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
-import { Calendar as CalendarIcon, ChevronDown } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronDown, CircleHelp } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -11,6 +11,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 
@@ -18,6 +23,7 @@ import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
+// - 2026-08-11: 캘린더 상단 안내문 제거 → 라벨 즉시툴팁.
 
 const addDaysToYmd = (ymd: string, days: number) => {
   const base = String(ymd || "").trim();
@@ -118,7 +124,24 @@ export function PracticeOrderArrivalDateRangeField({
 
   return (
     <div className={cn("space-y-2", className)}>
-      <Label className="text-sm">주문일–도착일</Label>
+      <div className="flex h-7 items-center gap-1">
+        <Label className="text-sm leading-none">주문일–도착일</Label>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
+              aria-label="주문일–도착일 도움말"
+            >
+              <CircleHelp className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
+            주문일은 오늘 고정. 도착일만 선택하면 됩니다. 변경한 간격(+{arrivalDefaultDays}일)이
+            다음 기본값으로 저장됩니다.
+          </TooltipContent>
+        </Tooltip>
+      </div>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -145,11 +168,6 @@ export function PracticeOrderArrivalDateRangeField({
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <div className="inline-flex flex-col">
-            <div className="w-0 min-w-full border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-              주문일은 오늘 고정. 도착일을 누르면 기간이 표시됩니다.
-              <br />
-              변경 시 간격(+{arrivalDefaultDays}일)이 다음 기본값으로 저장됩니다.
-            </div>
             <Calendar
               mode="range"
               locale={ko}
@@ -168,7 +186,7 @@ export function PracticeOrderArrivalDateRangeField({
             />
             <div className="flex w-0 min-w-full items-center justify-between gap-2 border-t px-3 py-2">
               <p className="min-w-0 truncate text-[11px] text-muted-foreground">
-                {draftArrivalYmd ? formatArrivalLabel(draftArrivalYmd) : "도착일을 선택하세요"}
+                {draftArrivalYmd ? formatArrivalLabel(draftArrivalYmd) : "도착일 선택"}
               </p>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Button

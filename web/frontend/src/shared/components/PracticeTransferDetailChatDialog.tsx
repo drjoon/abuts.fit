@@ -55,6 +55,12 @@ type PracticeTransferDetailChatDialogProps = {
   acceptBusy?: boolean;
   accepted?: boolean;
   onAccept?: () => void | Promise<void>;
+  /** 자동매칭 작업 완료 */
+  completeBusy?: boolean;
+  completed?: boolean;
+  showComplete?: boolean;
+  remainingLabel?: string | null;
+  onComplete?: () => void | Promise<void>;
   chatLoading: boolean;
   chatError: string;
   chatMessages: ChatMessage[];
@@ -104,6 +110,11 @@ export function PracticeTransferDetailChatDialog({
   acceptBusy = false,
   accepted = false,
   onAccept,
+  completeBusy = false,
+  completed = false,
+  showComplete = false,
+  remainingLabel = null,
+  onComplete,
   chatLoading,
   chatError,
   chatMessages,
@@ -169,15 +180,39 @@ export function PracticeTransferDetailChatDialog({
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-muted-foreground">{filesLabel} ({files.length}개)</p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {remainingLabel ? (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {remainingLabel}
+                      </span>
+                    ) : null}
                     {onAccept ? (
                       <Button
                         type="button"
                         size="sm"
                         onClick={() => void onAccept()}
-                        disabled={accepted || acceptBusy}
+                        disabled={accepted || acceptBusy || completed}
                       >
-                        {accepted ? "수락완료" : acceptBusy ? "수락 중..." : "의뢰수락"}
+                        {accepted || completed
+                          ? "수락완료"
+                          : acceptBusy
+                            ? "수락 중..."
+                            : "의뢰수락"}
+                      </Button>
+                    ) : null}
+                    {showComplete && onComplete ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void onComplete()}
+                        disabled={completed || completeBusy}
+                      >
+                        {completed
+                          ? "작업완료"
+                          : completeBusy
+                            ? "완료 중..."
+                            : "작업 완료"}
                       </Button>
                     ) : null}
                     <Button

@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
@@ -11,6 +10,7 @@ import {
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+// - 2026-08-11: 드롭존·목록을 생산의뢰식 심플 스타일로. 확장자 안내는 즉시툴팁.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -34,6 +34,17 @@ export type PracticeTransferFilePaneProps = {
   listViewportClassName?: string;
 };
 
+const formatAttachmentSize = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) {
+    const kb = bytes / 1024;
+    return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)}KB`;
+  }
+  const mb = bytes / (1024 * 1024);
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)}MB`;
+};
+
 export const PracticeTransferFilePane = ({
   acceptedHint,
   fileInputId,
@@ -44,115 +55,122 @@ export const PracticeTransferFilePane = ({
   onClearAllFiles,
   listViewportClassName = PRACTICE_FILE_LIST_VIEWPORT_CLASS,
 }: PracticeTransferFilePaneProps) => {
-  const cardClassName =
-    "overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm";
+  const hasFiles = files.length > 0;
+  const openPicker = () => {
+    const input = document.getElementById(fileInputId) as HTMLInputElement | null;
+    input?.click();
+  };
 
   return (
-    <div className="grid min-h-0 shrink-0 grid-cols-1 gap-2 sm:grid-cols-2 sm:items-stretch">
-      <div
-        className={`${cardClassName} flex min-h-[12rem] flex-col items-center justify-center border-dashed bg-slate-50/50 p-3 text-center sm:min-h-0`}
-      >
-        <div className="mx-auto mb-1.5 w-fit rounded-full bg-primary-soft p-2 text-primary-strong">
-          <UploadCloud className="h-5 w-5" />
-        </div>
-        <p className="text-sm font-semibold text-slate-900">파일 첨부</p>
-        <p className="mt-0.5 text-xs text-slate-500">{acceptedHint}</p>
-        <div className="mt-2">
-          <input
-            id={fileInputId}
-            type="file"
-            accept=".stl,.ply,.obj,.png,.jpg,.jpeg,.webp,.bmp,.gif"
-            className="hidden"
-            multiple
-            onChange={(e) => {
-              const nextFiles = Array.from(e.target.files || []);
-              if (nextFiles.length) onPickFiles(nextFiles);
-              e.currentTarget.value = "";
-            }}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="rounded-lg border-slate-200 bg-white"
-            onClick={() => {
-              const input = document.getElementById(fileInputId) as HTMLInputElement | null;
-              input?.click();
-            }}
-          >
-            파일 선택
-          </Button>
-        </div>
-      </div>
+    <div className="flex min-h-0 shrink-0 flex-col gap-2.5">
+      <input
+        id={fileInputId}
+        type="file"
+        accept=".stl,.ply,.obj,.png,.jpg,.jpeg,.webp,.bmp,.gif"
+        className="hidden"
+        multiple
+        onChange={(e) => {
+          const nextFiles = Array.from(e.target.files || []);
+          if (nextFiles.length) onPickFiles(nextFiles);
+          e.currentTarget.value = "";
+        }}
+      />
 
-      <div className={`${cardClassName} flex flex-col p-3`}>
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="text-xs text-slate-500">
-            {files.length}개 · {totalSizeMb}MB
-          </div>
-          <Button
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
             type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 rounded-lg border-slate-200 bg-white text-xs"
-            onClick={onClearAllFiles}
-            disabled={files.length === 0}
+            onClick={openPicker}
+            className={`w-full rounded-2xl border-2 border-dashed text-center transition-colors ${
+              hasFiles
+                ? "min-h-[4.75rem] px-3 py-3"
+                : "min-h-[7rem] px-4 py-5"
+            } border-slate-300 bg-white hover:border-primary/50`}
           >
-            전체삭제
-          </Button>
-        </div>
+            <div
+              className={`mx-auto flex w-fit items-center justify-center rounded-full bg-primary-soft text-primary-strong ${
+                hasFiles ? "mb-1 p-1.5" : "mb-1.5 p-2"
+              }`}
+            >
+              <UploadCloud className={hasFiles ? "h-4 w-4" : "h-5 w-5"} />
+            </div>
+            <p className="whitespace-nowrap text-sm text-muted-foreground">
+              클릭하거나 파일을 드래그해 추가
+            </p>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          {acceptedHint}
+        </TooltipContent>
+      </Tooltip>
 
-        {files.length === 0 ? (
-          <div
-            className={`${listViewportClassName} flex items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/40 text-center text-xs text-slate-500`}
-          >
-            첨부된 파일 없음
+      {hasFiles ? (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-xs text-muted-foreground">
+              {files.length}개 · {totalSizeMb}MB
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={onClearAllFiles}
+            >
+              전체삭제
+            </Button>
           </div>
-        ) : (
+
           <div className={`${listViewportClassName} overflow-y-auto pr-1`}>
-            <TooltipProvider delayDuration={0}>
-              <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.5rem]">
-                {files.map((file) => (
-                  <div
-                    key={file.key}
-                    className="flex h-[3.5rem] items-center justify-between rounded-lg border border-slate-200/80 bg-white px-2 py-1.5"
-                  >
-                    <div className="min-w-0">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <p className="truncate text-sm font-medium text-slate-900">
-                            {file.name}
-                          </p>
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="top"
-                          align="start"
-                          className="max-w-sm break-all"
-                        >
+            <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.5rem]">
+              {files.map((file) => (
+                <div
+                  key={file.key}
+                  className="app-glass-card flex h-[3.5rem] items-center justify-between rounded-xl border border-slate-200/80 bg-white px-3 py-1.5"
+                >
+                  <div className="min-w-0">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <p className="truncate text-sm font-medium text-slate-900">
                           {file.name}
-                        </TooltipContent>
-                      </Tooltip>
-                      <p className="text-xs text-slate-500">
-                        {(file.size / (1024 * 1024)).toFixed(2)}MB
-                        {file.metaSuffix ? ` · ${file.metaSuffix}` : ""}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-slate-500 hover:text-destructive"
-                      onClick={() => onRemoveFile(file.key)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                        </p>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        align="start"
+                        className="max-w-sm break-all text-xs"
+                      >
+                        {file.name}
+                      </TooltipContent>
+                    </Tooltip>
+                    <p className="text-xs text-slate-500">
+                      {formatAttachmentSize(file.size)}
+                      {file.metaSuffix ? ` · ${file.metaSuffix}` : ""}
+                    </p>
                   </div>
-                ))}
-              </div>
-            </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-slate-500 hover:text-destructive"
+                        onClick={() => onRemoveFile(file.key)}
+                        aria-label="파일 삭제"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left" className="text-xs">
+                      삭제
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
+        </>
+      ) : null}
     </div>
   );
 };

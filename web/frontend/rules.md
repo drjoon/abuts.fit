@@ -501,11 +501,12 @@ Notes:
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
   - 계정 전환: `AccountSwitcher`
 
-- practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 의뢰수락`
+- practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료`
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
   - 기공소 의뢰수락: 상세 다이얼로그 「의뢰수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관.
+  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto`. 검증·devops ON 기공소만 공개 풀 수신. 선착순 수락(3시간)·「작업 완료」(`mark-complete`). 만료 시 재공개. devops UI: `PracticeTransferAutoMatchTab`
 
 - 드롭존 가입(치과 전용, requestor+practice+free)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab·paid 선택 UI 없음.

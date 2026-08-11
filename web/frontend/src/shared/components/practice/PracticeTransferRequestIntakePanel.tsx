@@ -17,6 +17,7 @@ import {
   ChevronsUpDown,
   Minus,
   Plus,
+  CircleHelp,
   Settings,
   Trash2,
 } from "lucide-react";
@@ -94,6 +95,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - 2026-08-11: 기공소 선택에 "자동 매칭" 옵션(+빠른툴팁) 추가.
+// - 2026-08-11: 안내문구 최소화 — 플레이스홀더·메모 도움말·커스텀규격 설명을 즉시툴팁으로.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -1277,7 +1279,7 @@ export const PracticeTransferRequestIntakePanel = ({
       {showHeaderFields ? (
       <div className="grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]">
         <div className="space-y-2">
-          <Label className="text-sm">기공소 선택 <span className="text-destructive">*</span></Label>
+          <Label className="text-sm">기공소 <span className="text-destructive">*</span></Label>
           <Popover open={labOpen} onOpenChange={setLabOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -1292,7 +1294,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     ? isAutoMatchLab(selectedLab)
                       ? AUTO_MATCH_LAB.name
                       : getBusinessLabel(selectedLab)
-                    : "기공소를 검색해서 선택하세요"}
+                    : "기공소 선택"}
                 </span>
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
@@ -1300,7 +1302,7 @@ export const PracticeTransferRequestIntakePanel = ({
             <PopoverContent className="w-[420px] p-0" align="start">
               <Command>
                 <CommandInput
-                  placeholder="기공소 검색 (사업자명/대표자명/사업자번호/주소)"
+                  placeholder="기공소 검색"
                   value={labSearch}
                   onValueChange={(v) => {
                     setLabSearch(v);
@@ -1323,26 +1325,21 @@ export const PracticeTransferRequestIntakePanel = ({
                             : "opacity-0",
                         )}
                       />
-                      <TooltipProvider delayDuration={0}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="min-w-0 flex-1 text-left">
-                              <div className="truncate text-base font-medium">
-                                {AUTO_MATCH_LAB.name}
-                              </div>
-                              <div className="truncate text-sm text-muted-foreground">
-                                어벗츠 검증 기공소 자동 연결
-                              </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="min-w-0 flex-1 text-left">
+                            <div className="truncate text-base font-medium">
+                              {AUTO_MATCH_LAB.name}
                             </div>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="right"
-                            className="max-w-xs text-center"
-                          >
-                            <p>{AUTO_MATCH_LAB_TOOLTIP}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="right"
+                          className="max-w-xs text-xs"
+                        >
+                          <p>{AUTO_MATCH_LAB_TOOLTIP}</p>
+                        </TooltipContent>
+                      </Tooltip>
                     </CommandItem>
                   </CommandGroup>
 
@@ -1353,7 +1350,7 @@ export const PracticeTransferRequestIntakePanel = ({
                   ) : null}
 
                   {recentLabs.length > 0 ? (
-                    <CommandGroup heading="최근 전송한 기공소">
+                    <CommandGroup heading="최근">
                       {recentLabs.map((b) => {
                         const selected = selectedLab?._id === b._id;
                         const rep = String(b.representativeName || "").trim();
@@ -1387,13 +1384,11 @@ export const PracticeTransferRequestIntakePanel = ({
                         );
                       })}
                     </CommandGroup>
-                  ) : (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">최근 전송한 기공소가 없습니다.</div>
-                  )}
+                  ) : null}
 
                   <CommandSeparator />
 
-                  <CommandGroup heading="기공소 검색">
+                  <CommandGroup heading="검색">
                     {labSearching ? (
                       <div className="px-3 py-2 text-sm text-muted-foreground">검색 중...</div>
                     ) : labSearch.trim() ? (
@@ -1433,12 +1428,10 @@ export const PracticeTransferRequestIntakePanel = ({
                           );
                         })
                       ) : (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">검색 결과가 없습니다.</div>
+                        <div className="px-3 py-2 text-sm text-muted-foreground">결과 없음</div>
                       )
                     ) : (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">
-                        검색어를 입력하면 기공소를 찾을 수 있습니다.
-                      </div>
+                      <div className="px-3 py-2 text-sm text-muted-foreground">검색어 입력</div>
                     )}
                   </CommandGroup>
                 </CommandList>
@@ -1456,7 +1449,7 @@ export const PracticeTransferRequestIntakePanel = ({
               patientComposingRef.current = composing;
               reportImeComposing();
             }}
-            placeholder="예: 홍길동"
+            placeholder="환자명"
             className="h-11 text-base"
           />
         </div>
@@ -1487,6 +1480,20 @@ export const PracticeTransferRequestIntakePanel = ({
               <span className="font-normal text-muted-foreground">({requestedToothCount}개)</span>{" "}
               <span className="text-destructive">*</span>
             </Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
+                  aria-label="보철물 도움말"
+                >
+                  <CircleHelp className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                치아 클릭·드래그로 선택. +로 브리지. 형태 글자 클릭으로 종류 변경.
+              </TooltipContent>
+            </Tooltip>
           </div>
 
           <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
@@ -2171,7 +2178,23 @@ export const PracticeTransferRequestIntakePanel = ({
         )}
       >
         {aboveMemoContent}
-        <Label className="text-sm shrink-0">메모</Label>
+        <div className="flex h-7 shrink-0 items-center gap-1">
+          <Label className="text-sm leading-none">메모</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
+                aria-label="메모 도움말"
+              >
+                <CircleHelp className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+              Enter로 줄바꿈. 입력한 문장은 다음에 자동 제안됩니다.
+            </TooltipContent>
+          </Tooltip>
+        </div>
         <div
           id={memoInputId}
           className={cn(
@@ -2300,11 +2323,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         handleDeleteMemoLine(index);
                       }
                     }}
-                    placeholder={
-                      index === 0
-                        ? "메모 입력 (위/아래 화살표 누르면 입력 문장 제안)"
-                        : "추가 문장"
-                    }
+                    placeholder={index === 0 ? "메모" : ""}
                     className="h-10 w-full text-sm"
                     autoComplete="off"
                   />
@@ -2352,11 +2371,6 @@ export const PracticeTransferRequestIntakePanel = ({
               </div>
             );
           })}
-          {memoSnippets.length === 0 ? (
-            <p className="px-0.5 text-xs text-slate-400">
-              입력한 문장이 쌓이면 자동으로 제안됩니다. Enter로 수락하세요.
-            </p>
-          ) : null}
         </div>
       </div>
       ) : null}
@@ -2372,15 +2386,31 @@ export const PracticeTransferRequestIntakePanel = ({
           overlayClassName={nestedDialogOverlayClassName}
         >
           <DialogHeader className="space-y-1.5 text-left">
-            <DialogTitle className="text-lg">
-              {`커스텀어벗 설정${
-                typeof customSpecsModalTarget === "number" &&
-                toothWorks[customSpecsModalTarget]?.toothNumber
-                  ? ` (#${toothWorks[customSpecsModalTarget].toothNumber})`
-                  : ""
-              }`}
+            <DialogTitle className="flex items-center gap-1.5 text-lg">
+              <span>
+                {`커스텀어벗 설정${
+                  typeof customSpecsModalTarget === "number" &&
+                  toothWorks[customSpecsModalTarget]?.toothNumber
+                    ? ` (#${toothWorks[customSpecsModalTarget].toothNumber})`
+                    : ""
+                }`}
+              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
+                    aria-label="커스텀어벗 설정 도움말"
+                  >
+                    <CircleHelp className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                  임플란트·스캔바디 프리셋을 각각 선택하면 저장되고 닫힙니다.
+                </TooltipContent>
+              </Tooltip>
             </DialogTitle>
-            <DialogDescription className="text-sm">
+            <DialogDescription className="sr-only">
               임플란트와 스캔바디 프리셋을 각각 한 번씩 선택하면 저장되고 닫힙니다.
             </DialogDescription>
           </DialogHeader>
@@ -2390,8 +2420,7 @@ export const PracticeTransferRequestIntakePanel = ({
               {customSpecsKey(lastUsedCustomSpecs) !== emptySpecsKey ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-slate-700">직전에 선택한 규격</p>
-                    <span className="text-xs text-slate-400">클릭하면 적용</span>
+                    <p className="text-sm font-medium text-slate-700">직전 규격</p>
                   </div>
                   <button
                     type="button"

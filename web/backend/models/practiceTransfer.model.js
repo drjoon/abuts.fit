@@ -49,6 +49,25 @@ const practiceTransferSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    // "direct"(지정 기공소) | "auto"(검증 기공소 공개 풀 · 선착순)
+    matchingMode: {
+      type: String,
+      enum: ["direct", "auto"],
+      default: "direct",
+      index: true,
+    },
+    autoMatch: {
+      claimedAt: { type: Date, default: null },
+      deadlineAt: { type: Date, default: null, index: true },
+      claimHours: { type: Number, default: null },
+      completedAt: { type: Date, default: null, index: true },
+      completedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      releaseCount: { type: Number, default: 0 },
+    },
     transferMemo: {
       type: String,
       default: "",
@@ -142,6 +161,14 @@ practiceTransferSchema.index({
   targetLabAnchorId: 1,
   status: 1,
   requestorReadAt: 1,
+});
+// 자동매칭 공개 풀 조회
+practiceTransferSchema.index({
+  matchingMode: 1,
+  status: 1,
+  targetLabAnchorId: 1,
+  "autoMatch.deadlineAt": 1,
+  "autoMatch.completedAt": 1,
 });
 
 const PracticeTransfer = mongoose.model("PracticeTransfer", practiceTransferSchema);

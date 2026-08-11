@@ -17,6 +17,20 @@ import {
   rollbackPracticeTransferBilling,
 } from "../../services/practiceTransferBilling.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
+import {
+  AUTO_MATCH_LAB_DISPLAY_NAME,
+  PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
+  buildAutoMatchClaimableFilter,
+  buildAutoMatchDeadlineAt,
+  buildReceivedScopeWithAutoMatch,
+  isAutoMatchClaimActive,
+  isAutoMatchCompleted,
+  isAutoMatchMode,
+  isAutoMatchOpenPool,
+  isLabAnchorAutoMatchEligible,
+  loadAutoMatchEligibleLabAnchors,
+  toAutoMatchApiFields,
+} from "../../utils/practiceTransferAutoMatch.js";
 // related files:
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -46,16 +60,118 @@ const PRACTICE_ALLOWED_EXTENSIONS = new Set([
   ...PRACTICE_ALLOWED_IMAGE_EXTENSIONS,
 ]);
 
-const unreadCountCacheKey = (scope) => {
-  if (!scope || typeof scope !== "object") return "practice-unread:admin";
-  const labId = scope.targetLabAnchorId
-    ? String(scope.targetLabAnchorId)
+const unreadCountCacheKey = (scopeOrLabId) => {
+  if (typeof scopeOrLabId === "string") {
+    return `practice-unread:${scopeOrLabId || "all"}`;
+  }
+  if (!scopeOrLabId || typeof scopeOrLabId !== "object") {
+    return "practice-unread:admin";
+  }
+  const labId = scopeOrLabId.targetLabAnchorId
+    ? String(scopeOrLabId.targetLabAnchorId)
     : "all";
   return `practice-unread:${labId}`;
 };
 
-const invalidateUnreadCountCache = (scope) => {
-  deleteRequestPerfCacheValue(unreadCountCacheKey(scope));
+const invalidateUnreadCountCache = (scopeOrLabId) => {
+  deleteRequestPerfCacheValue(unreadCountCacheKey(scopeOrLabId));
+};
+
+const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
+  const prev = doc.autoMatch && typeof doc.autoMatch === "object"
+    ? doc.autoMatch
+    : {};
+  const releaseCount = Number(prev.releaseCount || 0);
+  doc.targetLabAnchorId = null;
+  doc.targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
+  doc.requestorReadAt = null;
+  doc.requestorReadBy = null;
+  doc.requestorDownloadedAt = null;
+  doc.requestorDownloadedBy = null;
+  doc.billing = {
+    labFeeTotal: 0,
+    abutmentRetailTotal: 0,
+    abutmentQty: 0,
+    total: 0,
+    isTradingPartner: false,
+    relationshipKind: "none",
+    feeRateApplied: 0,
+    labTradingPartnerId: null,
+    labSettlementAmount: 0,
+    abutsRevenueAmount: 0,
+    billedAt: null,
+  };
+  doc.autoMatch = {
+    claimedAt: null,
+    deadlineAt: null,
+    claimHours: null,
+    completedAt: null,
+    completedBy: null,
+    releaseCount: bumpRelease ? releaseCount + 1 : releaseCount,
+  };
+};
+
+/**
+ * 만료된 자동매칭 claim을 과금 롤백 후 공개 풀로 되돌린다.
+ * @returns {{ released: boolean, previousLabAnchorId: string|null }}
+ */
+const releaseExpiredAutoMatchClaim = async (doc) => {
+  if (!doc || !isAutoMatchMode(doc)) {
+    return { released: false, previousLabAnchorId: null };
+  }
+  if (isAutoMatchCompleted(doc)) {
+    return { released: false, previousLabAnchorId: null };
+  }
+  if (isAutoMatchClaimActive(doc)) {
+    return { released: false, previousLabAnchorId: null };
+  }
+  const previousLabAnchorId = String(doc.targetLabAnchorId || "").trim() || null;
+  const hadClaim =
+    Boolean(previousLabAnchorId) || Boolean(doc.requestorDownloadedAt);
+  if (!hadClaim) {
+    return { released: false, previousLabAnchorId: null };
+  }
+
+  try {
+    await rollbackPracticeTransferBilling({ transferId: doc._id });
+  } catch (rollbackErr) {
+    console.warn(
+      "[practiceTransfer] autoMatch release billing rollback failed",
+      String(doc?._id || ""),
+      rollbackErr?.message || rollbackErr,
+    );
+  }
+
+  clearAutoMatchClaimFields(doc, { bumpRelease: true });
+  await doc.save();
+  return { released: true, previousLabAnchorId };
+};
+
+const emitAutoMatchPoolCreated = async (realtimePayload) => {
+  try {
+    const labs = await loadAutoMatchEligibleLabAnchors({
+      select: { _id: 1, primaryContactUserId: 1 },
+    });
+    for (const lab of labs) {
+      const labId = String(lab?._id || "").trim();
+      if (!labId) continue;
+      invalidateUnreadCountCache(labId);
+      await emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId: labId,
+        type: "practice:transfer-created",
+        payload: {
+          ...realtimePayload,
+          matchingMode: "auto",
+          targetLabAnchorId: null,
+        },
+      });
+    }
+  } catch (err) {
+    console.warn(
+      "[practiceTransfer] autoMatch pool emit failed",
+      err?.message || err,
+    );
+  }
 };
 
 const getLowerExt = (filename) => {
@@ -98,20 +214,28 @@ const extractTransferMemoFromMessage = (message) => {
 
 const toVirtualRequestRows = (transferDoc) => {
   const transferId = String(transferDoc?.transferId || "").trim();
+  const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
   const targetLabName = String(transferDoc?.targetLabName || "").trim();
   const transferMemo = String(transferDoc?.transferMemo || "").trim();
   const message = `[기공소: ${targetLabName}] ${transferMemo}\n[전송ID: ${transferId}]`;
   const files = Array.isArray(transferDoc?.files) ? transferDoc.files : [];
+  const autoFields = toAutoMatchApiFields(transferDoc);
 
   // requestorDownloadedAt = 의뢰수락 시각 SSOT (레거시 필드명 유지)
-  const manufacturerStage =
+  let manufacturerStage =
     transferDoc?.status === "canceled"
       ? "취소"
-      : transferDoc?.requestorDownloadedAt
-        ? "의뢰수락"
-        : transferDoc?.requestorReadAt
-          ? "수신완료"
-          : "발송완료";
+      : autoFields.autoMatch?.completed
+        ? "작업완료"
+        : transferDoc?.requestorDownloadedAt &&
+            !(matchingMode === "auto" && autoFields.autoMatch?.openPool)
+          ? "의뢰수락"
+          : transferDoc?.requestorReadAt &&
+              !(matchingMode === "auto" && autoFields.autoMatch?.openPool)
+            ? "수신완료"
+            : matchingMode === "auto" && autoFields.autoMatch?.openPool
+              ? "자동매칭"
+              : "발송완료";
 
   // 첨부 파일 없는 전송도 최근 의뢰 목록에 보이도록 placeholder row 1건 생성
   const memoPatientMatch = transferMemo.match(/\[\s*환자명\s*:\s*([^\]]+)\]/);
@@ -124,6 +248,8 @@ const toVirtualRequestRows = (transferDoc) => {
     manufacturerStage,
     createdAt: transferDoc?.createdAt,
     practiceTransferId: String(transferDoc?._id || ""),
+    matchingMode,
+    autoMatch: autoFields.autoMatch,
     caseInfos: {
       clinicName: "",
       patientName: String(item?.patientName || memoPatientName || "").trim(),
@@ -142,25 +268,34 @@ const toVirtualRequestRows = (transferDoc) => {
       practiceRouting: {
         targetLabAnchorId: transferDoc?.targetLabAnchorId || null,
         targetLabName,
+        matchingMode,
       },
     },
   }));
 };
 
-const buildReceivedScope = (req) => {
+const buildReceivedScope = async (req) => {
   const role = String(req.user?.role || "").trim();
   if (role === "admin") {
-    return { role, scope: {} };
+    return { role, scope: {}, labAnchorId: null, autoMatchEligible: false };
   }
 
   const targetLabAnchorId = String(req.user?.businessAnchorId || "").trim();
   if (!targetLabAnchorId || !Types.ObjectId.isValid(targetLabAnchorId)) {
-    return { role, scope: null };
+    return { role, scope: null, labAnchorId: null, autoMatchEligible: false };
   }
+
+  const autoMatchEligible = await isLabAnchorAutoMatchEligible(targetLabAnchorId);
+  const scope = buildReceivedScopeWithAutoMatch({
+    labAnchorId: targetLabAnchorId,
+    autoMatchEligible,
+  });
 
   return {
     role,
-    scope: { targetLabAnchorId: new Types.ObjectId(targetLabAnchorId) },
+    scope,
+    labAnchorId: targetLabAnchorId,
+    autoMatchEligible,
   };
 };
 
@@ -1030,11 +1165,33 @@ export async function createPracticeTransfer(req, res) {
       String(req.body?.targetLabAnchorId || "").trim() ||
       String(practiceRouting?.targetLabAnchorId || "").trim();
 
-    const targetLabAnchorId = Types.ObjectId.isValid(rawAnchorId)
-      ? new Types.ObjectId(rawAnchorId)
-      : null;
+    const matchingModeRaw = String(
+      req.body?.matchingMode ||
+        practiceRouting?.matchingMode ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
+    const wantsAutoMatch =
+      matchingModeRaw === "auto" ||
+      req.body?.autoMatch === true ||
+      practiceRouting?.autoMatch === true ||
+      rawAnchorId === "__auto_match__" ||
+      targetLabName === AUTO_MATCH_LAB_DISPLAY_NAME ||
+      targetLabName === "자동매칭";
 
-    if (!targetLabName && targetLabAnchorId) {
+    const matchingMode = wantsAutoMatch ? "auto" : "direct";
+
+    const targetLabAnchorId =
+      matchingMode === "auto"
+        ? null
+        : Types.ObjectId.isValid(rawAnchorId)
+          ? new Types.ObjectId(rawAnchorId)
+          : null;
+
+    if (matchingMode === "auto") {
+      targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
+    } else if (!targetLabName && targetLabAnchorId) {
       const anchor = await BusinessAnchor.findById(targetLabAnchorId)
         .select({ name: 1 })
         .lean();
@@ -1078,7 +1235,7 @@ export async function createPracticeTransfer(req, res) {
         message: "치과 사업자 정보가 필요합니다. 사업자 등록 후 다시 시도해주세요.",
       });
     }
-    if (!targetLabAnchorId) {
+    if (matchingMode === "direct" && !targetLabAnchorId) {
       return res.status(400).json({
         success: false,
         message: "대상 기공소를 선택해주세요.",
@@ -1092,6 +1249,18 @@ export async function createPracticeTransfer(req, res) {
       practiceBusinessAnchorId: practiceAnchorId,
       targetLabAnchorId,
       targetLabName,
+      matchingMode,
+      autoMatch:
+        matchingMode === "auto"
+          ? {
+              claimedAt: null,
+              deadlineAt: null,
+              claimHours: null,
+              completedAt: null,
+              completedBy: null,
+              releaseCount: 0,
+            }
+          : undefined,
       transferMemo,
       tag,
       status: "active",
@@ -1121,9 +1290,7 @@ export async function createPracticeTransfer(req, res) {
 
     const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
     if (targetLabAnchorIdText) {
-      invalidateUnreadCountCache({
-        targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
-      });
+      invalidateUnreadCountCache(targetLabAnchorIdText);
     }
     const unreadCountForRequestor = targetLabAnchorIdText
       ? await PracticeTransfer.countDocuments({
@@ -1134,9 +1301,7 @@ export async function createPracticeTransfer(req, res) {
       : 0;
     if (targetLabAnchorIdText) {
       setRequestPerfCacheValue(
-        unreadCountCacheKey({
-          targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
-        }),
+        unreadCountCacheKey(targetLabAnchorIdText),
         { unreadCount: unreadCountForRequestor },
         10 * 1000,
       );
@@ -1147,12 +1312,14 @@ export async function createPracticeTransfer(req, res) {
       transferId,
       transferMongoId: String(transferDoc?._id || ""),
       targetLabAnchorId: targetLabAnchorIdText || null,
+      matchingMode,
       practiceUserId: String(req.user?._id || ""),
       clearedDraftId,
       status: "active",
       count: files.length,
       unreadCount: unreadCountForRequestor,
       createdAt: transferDoc?.createdAt || new Date(),
+      ...toAutoMatchApiFields(transferDoc),
     };
 
     await emitPracticeTransferEventToPracticeUsers({
@@ -1178,21 +1345,30 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
-    await emitPracticeTransferEventToRequestorUsers({
-      targetLabAnchorId,
-      type: "practice:transfer-created",
-      payload: realtimePayload,
-    });
+    if (matchingMode === "auto") {
+      await emitAutoMatchPoolCreated(realtimePayload);
+    } else {
+      await emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId,
+        type: "practice:transfer-created",
+        payload: realtimePayload,
+      });
+    }
 
     return res.status(201).json({
       success: true,
-      message: "practice 전송이 접수되었습니다.",
+      message:
+        matchingMode === "auto"
+          ? "자동매칭 기공의뢰가 공개 풀에 등록되었습니다."
+          : "practice 전송이 접수되었습니다.",
       data: {
         _id: String(transferDoc?._id || ""),
         transferId,
+        matchingMode,
         count: files.length,
         clearedDraftId,
         billing: transferDoc?.billing || null,
+        ...toAutoMatchApiFields(transferDoc),
       },
     });
   } catch (error) {
@@ -1256,7 +1432,7 @@ export async function getReceivedPracticeTransfers(req, res) {
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 10)));
     const skip = (page - 1) * limit;
 
-    const { scope } = buildReceivedScope(req);
+    const { scope, labAnchorId } = await buildReceivedScope(req);
     if (scope === null) {
       return res.status(200).json({
         success: true,
@@ -1272,6 +1448,54 @@ export async function getReceivedPracticeTransfers(req, res) {
           },
         },
       });
+    }
+
+    // 만료 claim lazy release (목록에 잡힌 expired 건)
+    const expiredCandidates = await PracticeTransfer.find({
+      ...scope,
+      matchingMode: "auto",
+      status: "active",
+      targetLabAnchorId: { $ne: null },
+      "autoMatch.completedAt": null,
+      "autoMatch.deadlineAt": { $lte: new Date() },
+    }).limit(50);
+
+    for (const expiredDoc of expiredCandidates) {
+      const { released, previousLabAnchorId } =
+        await releaseExpiredAutoMatchClaim(expiredDoc);
+      if (released) {
+        if (previousLabAnchorId) invalidateUnreadCountCache(previousLabAnchorId);
+        const releasePayload = {
+          action: "auto-match-released",
+          transferId: String(expiredDoc.transferId || "").trim(),
+          transferMongoId: String(expiredDoc._id || "").trim(),
+          targetLabAnchorId: null,
+          previousLabAnchorId,
+          matchingMode: "auto",
+          practiceUserId: String(expiredDoc.practiceUserId || "").trim() || null,
+          status: "active",
+          manufacturerStage: "자동매칭",
+          updatedAt: expiredDoc.updatedAt || new Date(),
+          ...toAutoMatchApiFields(expiredDoc),
+        };
+        await emitPracticeTransferEventToPracticeUsers({
+          practiceBusinessAnchorId: expiredDoc.practiceBusinessAnchorId,
+          type: "practice:transfer-updated",
+          payload: releasePayload,
+          extraUserIds: [expiredDoc.practiceUserId],
+        });
+        if (previousLabAnchorId) {
+          await emitPracticeTransferEventToRequestorUsers({
+            targetLabAnchorId: previousLabAnchorId,
+            type: "practice:transfer-updated",
+            payload: releasePayload,
+          });
+        }
+        await emitAutoMatchPoolCreated({
+          ...releasePayload,
+          source: "autoMatchRelease",
+        });
+      }
     }
 
     const [docs, totalCount, unreadCount] = await Promise.all([
@@ -1293,6 +1517,14 @@ export async function getReceivedPracticeTransfers(req, res) {
       }),
     ]);
 
+    if (labAnchorId) {
+      setRequestPerfCacheValue(
+        unreadCountCacheKey(labAnchorId),
+        { unreadCount },
+        10 * 1000,
+      );
+    }
+
     const transfers = docs.map((doc) => {
       const practiceBusiness =
         doc?.practiceBusinessAnchorId &&
@@ -1309,21 +1541,28 @@ export async function getReceivedPracticeTransfers(req, res) {
           ? practiceUser.practiceProfile
           : null;
       const files = Array.isArray(doc?.files) ? doc.files : [];
+      const autoFields = toAutoMatchApiFields(doc, labAnchorId);
+      const openPool = Boolean(autoFields.autoMatch?.openPool);
+      const isAccepted =
+        Boolean(doc?.requestorDownloadedAt) && !openPool;
 
       return {
         _id: String(doc?._id || ""),
         transferId: String(doc?.transferId || "").trim(),
+        targetLabAnchorId: String(doc?.targetLabAnchorId || "").trim() || null,
         targetLabName: String(doc?.targetLabName || "").trim(),
         transferMemo: String(doc?.transferMemo || "").trim(),
         status: String(doc?.status || "").trim() || "active",
         createdAt: doc?.createdAt || null,
         updatedAt: doc?.updatedAt || null,
-        isRead: Boolean(doc?.requestorReadAt),
-        requestorReadAt: doc?.requestorReadAt || null,
-        isDownloaded: Boolean(doc?.requestorDownloadedAt),
-        isAccepted: Boolean(doc?.requestorDownloadedAt),
-        requestorDownloadedAt: doc?.requestorDownloadedAt || null,
-        requestorAcceptedAt: doc?.requestorDownloadedAt || null,
+        isRead: Boolean(doc?.requestorReadAt) && !openPool,
+        requestorReadAt: openPool ? null : doc?.requestorReadAt || null,
+        isDownloaded: isAccepted,
+        isAccepted,
+        requestorDownloadedAt: openPool ? null : doc?.requestorDownloadedAt || null,
+        requestorAcceptedAt: openPool ? null : doc?.requestorDownloadedAt || null,
+        matchingMode: autoFields.matchingMode,
+        autoMatch: autoFields.autoMatch,
         practice: {
           businessName: String(
             practiceBusiness?.name || practiceProfile?.clinicName || "",
@@ -1377,7 +1616,7 @@ export async function getReceivedPracticeTransferUnreadCount(req, res) {
 
     // 배지 초기/보정용. lab 게이트(BusinessAnchor)는 받지 않는다 —
     // 캐시 히트 경로를 가볍게 유지하고, practice-only는 scope 카운트 0으로 동일 결과.
-    const { scope } = buildReceivedScope(req);
+    const { scope, labAnchorId } = await buildReceivedScope(req);
     if (scope === null) {
       return res.status(200).json({
         success: true,
@@ -1385,7 +1624,7 @@ export async function getReceivedPracticeTransferUnreadCount(req, res) {
       });
     }
 
-    const cacheKey = unreadCountCacheKey(scope);
+    const cacheKey = unreadCountCacheKey(labAnchorId || "admin");
     const cached = getRequestPerfCacheValue(cacheKey);
     if (cached && typeof cached.unreadCount === "number") {
       return res.status(200).json({
@@ -1432,7 +1671,7 @@ export async function markReceivedPracticeTransferRead(req, res) {
       });
     }
 
-    const { scope } = buildReceivedScope(req);
+    const { scope, labAnchorId } = await buildReceivedScope(req);
     if (scope === null) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
@@ -1446,11 +1685,25 @@ export async function markReceivedPracticeTransferRead(req, res) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
+    // 자동매칭 공개 풀(미클레임)은 특정 기공소 read로 잠그지 않는다.
+    if (isAutoMatchMode(doc) && isAutoMatchOpenPool(doc)) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          transferId: String(doc.transferId || "").trim(),
+          requestorReadAt: null,
+          requestorDownloadedAt: null,
+          matchingMode: "auto",
+          ...toAutoMatchApiFields(doc, labAnchorId),
+        },
+      });
+    }
+
     if (!doc.requestorReadAt) {
       doc.requestorReadAt = new Date();
       doc.requestorReadBy = req.user?._id || null;
       await doc.save();
-      invalidateUnreadCountCache(scope);
+      if (labAnchorId) invalidateUnreadCountCache(labAnchorId);
     }
 
     const unreadCount = await PracticeTransfer.countDocuments({
@@ -1458,18 +1711,26 @@ export async function markReceivedPracticeTransferRead(req, res) {
       status: { $ne: "canceled" },
       requestorReadAt: null,
     });
-    setRequestPerfCacheValue(unreadCountCacheKey(scope), { unreadCount }, 10 * 1000);
+    if (labAnchorId) {
+      setRequestPerfCacheValue(
+        unreadCountCacheKey(labAnchorId),
+        { unreadCount },
+        10 * 1000,
+      );
+    }
 
     const realtimePayload = {
       action: "read",
       transferId: String(doc.transferId || "").trim(),
       transferMongoId: String(doc._id || "").trim(),
       targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
+      matchingMode: isAutoMatchMode(doc) ? "auto" : "direct",
       practiceUserId: String(doc.practiceUserId || "").trim() || null,
       requestorReadAt: doc.requestorReadAt,
       unreadCount,
       status: String(doc.status || "active").trim(),
       updatedAt: doc.updatedAt || new Date(),
+      ...toAutoMatchApiFields(doc, labAnchorId),
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
@@ -1494,6 +1755,7 @@ export async function markReceivedPracticeTransferRead(req, res) {
         requestorReadAt: doc.requestorReadAt,
         requestorDownloadedAt: doc.requestorDownloadedAt || null,
         unreadCount,
+        ...toAutoMatchApiFields(doc, labAnchorId),
       },
     });
   } catch (error) {
@@ -1520,12 +1782,15 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       });
     }
 
-    const { scope } = buildReceivedScope(req);
-    if (scope === null) {
+    const { scope, labAnchorId, autoMatchEligible } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
       return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
     }
 
-    const doc = await PracticeTransfer.findOne({
+    const labOid = new Types.ObjectId(labAnchorId);
+    const now = new Date();
+
+    let doc = await PracticeTransfer.findOne({
       ...scope,
       ...transferIdFilter,
     });
@@ -1541,6 +1806,238 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       });
     }
 
+    const isAuto = isAutoMatchMode(doc);
+
+    if (isAuto) {
+      if (!autoMatchEligible && role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "자동매칭 대상 기공소가 아닙니다.",
+        });
+      }
+      if (isAutoMatchCompleted(doc)) {
+        return res.status(409).json({
+          success: false,
+          message: "이미 작업 완료된 자동매칭 의뢰입니다.",
+        });
+      }
+
+      // 내 활성 claim이면 idempotent 성공
+      if (
+        isAutoMatchClaimActive(doc, now.getTime()) &&
+        String(doc.targetLabAnchorId || "").trim() === labAnchorId
+      ) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            transferId: String(doc.transferId || "").trim(),
+            requestorReadAt: doc.requestorReadAt,
+            requestorDownloadedAt: doc.requestorDownloadedAt,
+            requestorAcceptedAt: doc.requestorDownloadedAt,
+            isAccepted: true,
+            billing: doc.billing || null,
+            alreadyAccepted: true,
+            ...toAutoMatchApiFields(doc, labAnchorId),
+          },
+        });
+      }
+
+      // 타인 활성 claim
+      if (
+        isAutoMatchClaimActive(doc, now.getTime()) &&
+        String(doc.targetLabAnchorId || "").trim() !== labAnchorId
+      ) {
+        return res.status(409).json({
+          success: false,
+          message: "다른 기공소가 이미 수락했습니다.",
+          data: toAutoMatchApiFields(doc, labAnchorId),
+        });
+      }
+
+      // 만료 claim이면 롤백 후 재공개 상태로 만든 뒤 클레임
+      if (isAutoMatchOpenPool(doc, now.getTime()) && doc.targetLabAnchorId) {
+        const prevLab = String(doc.targetLabAnchorId || "").trim();
+        await releaseExpiredAutoMatchClaim(doc);
+        if (prevLab) invalidateUnreadCountCache(prevLab);
+        doc = await PracticeTransfer.findById(doc._id);
+        if (!doc) {
+          return res.status(404).json({
+            success: false,
+            message: "전송 내역을 찾을 수 없습니다.",
+          });
+        }
+      }
+
+      const labAnchor = await BusinessAnchor.findById(labOid)
+        .select({ name: 1 })
+        .lean();
+      const labName = String(labAnchor?.name || "").trim() || "기공소";
+      const deadlineAt = buildAutoMatchDeadlineAt(
+        now,
+        PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
+      );
+
+      const claimed = await PracticeTransfer.findOneAndUpdate(
+        {
+          _id: doc._id,
+          ...buildAutoMatchClaimableFilter(now),
+        },
+        {
+          $set: {
+            targetLabAnchorId: labOid,
+            targetLabName: labName,
+            requestorReadAt: now,
+            requestorReadBy: req.user?._id || null,
+            requestorDownloadedAt: now,
+            requestorDownloadedBy: req.user?._id || null,
+            "autoMatch.claimedAt": now,
+            "autoMatch.deadlineAt": deadlineAt,
+            "autoMatch.claimHours": PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
+            "autoMatch.completedAt": null,
+            "autoMatch.completedBy": null,
+          },
+        },
+        { new: true },
+      );
+
+      if (!claimed) {
+        const latest = await PracticeTransfer.findById(doc._id).lean();
+        return res.status(409).json({
+          success: false,
+          message: "다른 기공소가 이미 수락했습니다.",
+          data: latest ? toAutoMatchApiFields(latest, labAnchorId) : null,
+        });
+      }
+
+      doc = claimed;
+
+      let billingResult = null;
+      try {
+        billingResult = await commitPracticeTransferBilling({
+          transfer: doc,
+          toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
+          actorUserId: req.user?._id,
+        });
+        if (billingResult?.billed) {
+          doc.billing = {
+            labFeeTotal: billingResult.fees?.labFeeTotal || 0,
+            abutmentRetailTotal: billingResult.fees?.abutmentRetailTotal || 0,
+            abutmentQty: billingResult.fees?.abutmentQty || 0,
+            total: billingResult.fees?.total || 0,
+            isTradingPartner: Boolean(billingResult.isPartner),
+            relationshipKind: billingResult.relationshipKind || "none",
+            feeRateApplied: Number(billingResult.feeRateApplied || 0),
+            labTradingPartnerId: billingResult.labTradingPartnerId || null,
+            labSettlementAmount: billingResult.labSettlementAmount || 0,
+            abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
+            billedAt: new Date(),
+          };
+          await doc.save();
+        }
+      } catch (billingErr) {
+        // 과금 실패 시 claim 해제 (다른 기공소가 재시도 가능)
+        try {
+          await rollbackPracticeTransferBilling({ transferId: doc._id });
+        } catch {
+          // ignore
+        }
+        clearAutoMatchClaimFields(doc, { bumpRelease: false });
+        await doc.save();
+        const status = Number(billingErr?.statusCode || 500);
+        return res.status(status).json({
+          success: false,
+          message: billingErr?.message || "기공의뢰 수락 과금에 실패했습니다.",
+          ...(billingErr?.payload || {}),
+        });
+      }
+
+      if (billingResult?.billed) {
+        const spendTotal = Number(billingResult.fees?.total || 0);
+        if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
+          await emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: doc.practiceBusinessAnchorId,
+            balanceDelta: -spendTotal,
+            reason: "practice_transfer_accept",
+            refId: doc._id,
+          });
+        }
+        const settlement = Number(billingResult.labSettlementAmount || 0);
+        if (settlement > 0 && doc.targetLabAnchorId) {
+          await emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: doc.targetLabAnchorId,
+            balanceDelta: settlement,
+            reason: "practice_transfer_lab_settlement",
+            refId: doc._id,
+          });
+        }
+      }
+
+      invalidateUnreadCountCache(labAnchorId);
+      const unreadCount = await PracticeTransfer.countDocuments({
+        ...scope,
+        status: { $ne: "canceled" },
+        requestorReadAt: null,
+      });
+      setRequestPerfCacheValue(
+        unreadCountCacheKey(labAnchorId),
+        { unreadCount },
+        10 * 1000,
+      );
+
+      const realtimePayload = {
+        action: "accepted",
+        transferId: String(doc.transferId || "").trim(),
+        transferMongoId: String(doc._id || "").trim(),
+        targetLabAnchorId: labAnchorId,
+        targetLabName: labName,
+        matchingMode: "auto",
+        practiceUserId: String(doc.practiceUserId || "").trim() || null,
+        requestorReadAt: doc.requestorReadAt,
+        requestorDownloadedAt: doc.requestorDownloadedAt,
+        requestorAcceptedAt: doc.requestorDownloadedAt,
+        unreadCount,
+        status: String(doc.status || "active").trim(),
+        manufacturerStage: "의뢰수락",
+        billing: doc.billing || null,
+        updatedAt: doc.updatedAt || new Date(),
+        ...toAutoMatchApiFields(doc, labAnchorId),
+      };
+
+      emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+        extraUserIds: [doc.practiceUserId],
+      });
+      await emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId: labOid,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+      });
+      // 다른 eligible 기공소에는 풀에서 사라졌음을 알림
+      await emitAutoMatchPoolCreated({
+        ...realtimePayload,
+        action: "auto-match-claimed",
+        source: "autoMatchClaim",
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          transferId: String(doc.transferId || "").trim(),
+          requestorReadAt: doc.requestorReadAt,
+          requestorDownloadedAt: doc.requestorDownloadedAt,
+          requestorAcceptedAt: doc.requestorDownloadedAt,
+          isAccepted: true,
+          billing: doc.billing || null,
+          unreadCount,
+          ...toAutoMatchApiFields(doc, labAnchorId),
+        },
+      });
+    }
+
+    // —— direct (지정 기공소) 기존 로직 ——
     const alreadyAccepted = Boolean(doc.requestorDownloadedAt);
     let billingResult = null;
 
@@ -1576,7 +2073,6 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       }
     }
 
-    const now = new Date();
     let didChangeRead = false;
     if (!doc.requestorReadAt) {
       doc.requestorReadAt = now;
@@ -1584,7 +2080,6 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       didChangeRead = true;
     }
     if (!doc.requestorDownloadedAt) {
-      // requestorDownloadedAt = 의뢰수락 시각 (레거시 필드명)
       doc.requestorDownloadedAt = now;
       doc.requestorDownloadedBy = req.user?._id || null;
       await doc.save();
@@ -1593,7 +2088,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     }
 
     if (didChangeRead) {
-      invalidateUnreadCountCache(scope);
+      invalidateUnreadCountCache(labAnchorId);
     }
 
     if (billingResult?.billed) {
@@ -1622,13 +2117,18 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       status: { $ne: "canceled" },
       requestorReadAt: null,
     });
-    setRequestPerfCacheValue(unreadCountCacheKey(scope), { unreadCount }, 10 * 1000);
+    setRequestPerfCacheValue(
+      unreadCountCacheKey(labAnchorId),
+      { unreadCount },
+      10 * 1000,
+    );
 
     const realtimePayload = {
       action: "accepted",
       transferId: String(doc.transferId || "").trim(),
       transferMongoId: String(doc._id || "").trim(),
       targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
+      matchingMode: "direct",
       practiceUserId: String(doc.practiceUserId || "").trim() || null,
       requestorReadAt: doc.requestorReadAt,
       requestorDownloadedAt: doc.requestorDownloadedAt,
@@ -1679,6 +2179,125 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
 /** @deprecated 의뢰수락 SSOT — markReceivedPracticeTransferAccepted 사용 */
 export const markReceivedPracticeTransferDownloaded =
   markReceivedPracticeTransferAccepted;
+
+export async function markReceivedPracticeTransferComplete(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "requestor" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    if (!isAutoMatchMode(doc)) {
+      return res.status(400).json({
+        success: false,
+        message: "자동매칭 의뢰만 작업 완료 처리할 수 있습니다.",
+      });
+    }
+
+    if (String(doc.status || "").trim() === "canceled") {
+      return res.status(409).json({
+        success: false,
+        message: "취소된 기공의뢰는 완료할 수 없습니다.",
+      });
+    }
+
+    if (isAutoMatchCompleted(doc)) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          transferId: String(doc.transferId || "").trim(),
+          alreadyCompleted: true,
+          ...toAutoMatchApiFields(doc, labAnchorId),
+        },
+      });
+    }
+
+    if (!isAutoMatchClaimActive(doc)) {
+      return res.status(409).json({
+        success: false,
+        message: "작업 기한이 만료되었거나 수락되지 않은 의뢰입니다.",
+        data: toAutoMatchApiFields(doc, labAnchorId),
+      });
+    }
+
+    if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId) {
+      return res.status(403).json({
+        success: false,
+        message: "수락한 기공소만 작업 완료할 수 있습니다.",
+      });
+    }
+
+    const now = new Date();
+    doc.autoMatch = {
+      ...(doc.autoMatch && typeof doc.autoMatch === "object" ? doc.autoMatch : {}),
+      completedAt: now,
+      completedBy: req.user?._id || null,
+    };
+    await doc.save();
+
+    const realtimePayload = {
+      action: "completed",
+      transferId: String(doc.transferId || "").trim(),
+      transferMongoId: String(doc._id || "").trim(),
+      targetLabAnchorId: labAnchorId,
+      matchingMode: "auto",
+      practiceUserId: String(doc.practiceUserId || "").trim() || null,
+      status: String(doc.status || "active").trim(),
+      manufacturerStage: "작업완료",
+      updatedAt: doc.updatedAt || now,
+      ...toAutoMatchApiFields(doc, labAnchorId),
+    };
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    await emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+      extraUserIds: [doc.practiceUserId],
+    });
+    await emitPracticeTransferEventToRequestorUsers({
+      targetLabAnchorId: labAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toAutoMatchApiFields(doc, labAnchorId),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "기공의뢰 작업 완료 처리 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
 
 export async function cancelPracticeTransfersBatch(req, res) {
   try {

@@ -33,6 +33,7 @@
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
  * - web/frontend/src/shared/hooks/usePracticeFilePreUpload.ts
  * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
+ * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 초대/프로모 카피 축소.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -61,9 +62,8 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -772,6 +772,8 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   if (raw === "발송완료") return "발송완료";
   if (raw === "수신완료") return "수신완료";
   if (raw === "의뢰수락" || raw === "다운로드완료") return "의뢰수락";
+  if (raw === "자동매칭") return "자동매칭";
+  if (raw === "작업완료") return "작업완료";
 
   // 레거시/과거 데이터 호환
   if (raw === "수신전" || raw === "확인전") return "발송완료";
@@ -806,9 +808,7 @@ const formatFileSize = (bytes: number) => {
 };
 
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
-const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 유료서비스를 쓰지 않더라도 이용 가능!";
-const PRACTICE_TRANSFER_PROMO_DESC = "무료로 구강스캔 파일전송, 기공의뢰서 관리하세요.";
-
+const PRACTICE_TRANSFER_PROMO_TITLE = "유료 서비스 없이 기공의뢰·구강스캔 전송";
 const clearPracticeFileTransferCaches = async () => {
   let keys: string[] = [];
   try {
@@ -4811,49 +4811,62 @@ export const PracticeFileTransferPage = ({
   };
 
   const inviteLinkCard = (
-    <Card className="h-fit">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">기공소 초대</CardTitle>
-        <CardDescription className="text-xs">기공소에 가입 링크를 전달하세요.</CardDescription>
+    <Card className="h-fit border-slate-200/80 shadow-sm">
+      <CardHeader className="pb-2 pt-3">
+        <CardTitle className="text-sm font-semibold">기공소 초대</CardTitle>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="pt-0 pb-3">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void handleCopyPracticeDropzoneLink()}
-            className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
-          >
-            {inviteLinkCopied ? (
-              <>
-                <Copy className="h-4 w-4" />
-                복사됨
-              </>
-            ) : (
-              <>
-                <Link2 className="h-4 w-4" />
-                링크 복사
-              </>
-            )}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void handleCopyPracticeInviteMessage()}
-            className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
-          >
-            {inviteMessageCopied ? (
-              <>
-                <Copy className="h-4 w-4" />
-                복사됨
-              </>
-            ) : (
-              <>
-                <Send className="h-4 w-4" />
-                안내 복사
-              </>
-            )}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleCopyPracticeDropzoneLink()}
+                className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
+              >
+                {inviteLinkCopied ? (
+                  <>
+                    <Copy className="h-4 w-4" />
+                    복사됨
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="h-4 w-4" />
+                    링크 복사
+                  </>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs">
+              기공소 가입·드롭존 링크를 복사합니다.
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleCopyPracticeInviteMessage()}
+                className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
+              >
+                {inviteMessageCopied ? (
+                  <>
+                    <Copy className="h-4 w-4" />
+                    복사됨
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    안내 복사
+                  </>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs">
+              초대 안내 문구를 복사합니다.
+            </TooltipContent>
+          </Tooltip>
         </div>
       </CardContent>
     </Card>
@@ -4863,30 +4876,31 @@ export const PracticeFileTransferPage = ({
     <PageFileDropZone
       onFiles={handleIncomingFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="h-full min-h-0"
+      className="h-full min-h-0 bg-gradient-subtle"
     >
-      <div className="h-full min-h-0 p-4 space-y-3">
+      <div className="mx-auto h-full min-h-0 max-w-6xl space-y-3 p-4">
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
           {promoNoticeVisible ? (
             <>
-              <Alert className="flex flex-col items-center justify-center border-primary-muted bg-primary-soft text-primary-strong text-center xl:col-span-5">
+              <Alert className="relative flex items-center justify-between gap-3 border-primary-muted bg-primary-soft/80 py-2.5 text-primary-strong xl:col-span-5">
+                <AlertTitle className="m-0 pr-8 text-sm font-medium leading-snug">
+                  {PRACTICE_TRANSFER_PROMO_TITLE}
+                </AlertTitle>
                 <button
                   type="button"
                   onClick={() => void handleDismissPromoNotice()}
                   disabled={promoNoticeSaving}
-                  className="absolute right-3 top-3 rounded p-1 text-primary-strong hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-strong hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
                   aria-label="안내 닫기"
                 >
                   <X className="h-4 w-4" />
                 </button>
-                <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
-                <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
               </Alert>
               <div className="xl:col-span-5">{inviteLinkCard}</div>
             </>
           ) : null}
-          <Card className="xl:col-span-7">
-            <CardHeader className="pb-3">
+          <Card className="border-slate-200/80 shadow-sm xl:col-span-7">
+            <CardHeader className="pb-2 pt-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-3">
                   {roleSwitcher}
@@ -4908,58 +4922,53 @@ export const PracticeFileTransferPage = ({
                   </CardTitle>
                 </div>
                 <div className="flex items-center gap-2">
-                  <TooltipProvider delayDuration={0}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8"
-                          disabled={
-                            tempSaving ||
-                            requestSubmitting ||
-                            (!hasMeaningfulFormInputForAutosave &&
-                              draftFiles.length === 0 &&
-                              files.length === 0) ||
-                            (!activeDraftId &&
-                              files.length === 0 &&
-                              lastSavedFormFingerprint !== null &&
-                              currentFormFingerprint === lastSavedFormFingerprint)
-                          }
-                          onClick={() => void handleManualTempSaveSnapshot()}
-                        >
-                          임시 저장
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                        작성 중인 의뢰서를 목록에 저장합니다. 이후 내용을 바꾸면 새 임시저장이
-                        만들어집니다.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider delayDuration={0}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8"
-                          onClick={() => void handleStartNewTransfer()}
-                        >
-                          새로 작성
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                        작성 화면만 비웁니다. 임시저장은 오른쪽 목록에 남습니다.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        disabled={
+                          tempSaving ||
+                          requestSubmitting ||
+                          (!hasMeaningfulFormInputForAutosave &&
+                            draftFiles.length === 0 &&
+                            files.length === 0) ||
+                          (!activeDraftId &&
+                            files.length === 0 &&
+                            lastSavedFormFingerprint !== null &&
+                            currentFormFingerprint === lastSavedFormFingerprint)
+                        }
+                        onClick={() => void handleManualTempSaveSnapshot()}
+                      >
+                        임시 저장
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs text-xs">
+                      목록에 저장. 이후 수정하면 새 임시저장이 생깁니다.
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => void handleStartNewTransfer()}
+                      >
+                        새로 작성
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs text-xs">
+                      작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 pt-1">
               <PracticeTransferIntakeSection
                 filePaneProps={{
                   acceptedHint: PRACTICE_ACCEPTED_HINT,
@@ -5124,50 +5133,45 @@ export const PracticeFileTransferPage = ({
               />
 
               <div className="flex items-center justify-end gap-2">
-                <TooltipProvider delayDuration={0}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <Button
-                          type="button"
-                          className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none"
-                          onClick={() => void handleSubmitPracticeRequest()}
-                          disabled={requestSubmitting || !hasRequiredSubmitFields}
-                        >
-                          {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" align="end" className="max-w-xs text-xs leading-relaxed">
-                      {requestSubmitting ? (
-                        <p>기공소로 전송 중입니다.</p>
-                      ) : hasRequiredSubmitFields ? (
-                        <p>기공소 · 환자명 · 보철물 입력이 완료되어 전송할 수 있습니다.</p>
-                      ) : (
-                        <div className="space-y-1">
-                          <p>다음을 모두 입력하면 전송할 수 있습니다.</p>
-                          <ul className="list-disc space-y-0.5 pl-3.5">
-                            {(
-                              [
-                                { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
-                                { key: "환자명", ok: Boolean(normalizedPatientName) },
-                                { key: "보철물", ok: normalizedToothWorks.length > 0 },
-                              ] as const
-                            ).map((item) => (
-                              <li
-                                key={item.key}
-                                className={item.ok ? "text-primary-muted" : "text-accent-muted"}
-                              >
-                                {item.key}
-                                {item.ok ? " (완료)" : " (미입력)"}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex">
+                      <Button
+                        type="button"
+                        className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none"
+                        onClick={() => void handleSubmitPracticeRequest()}
+                        disabled={requestSubmitting || !hasRequiredSubmitFields}
+                      >
+                        {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="end" className="max-w-xs text-xs leading-relaxed">
+                    {requestSubmitting ? (
+                      <p>전송 중…</p>
+                    ) : hasRequiredSubmitFields ? (
+                      <p>전송 가능</p>
+                    ) : (
+                      <ul className="space-y-0.5">
+                        {(
+                          [
+                            { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
+                            { key: "환자명", ok: Boolean(normalizedPatientName) },
+                            { key: "보철물", ok: normalizedToothWorks.length > 0 },
+                          ] as const
+                        ).map((item) => (
+                          <li
+                            key={item.key}
+                            className={item.ok ? "text-primary-muted" : "text-accent-muted"}
+                          >
+                            {item.key}
+                            {item.ok ? " ✓" : " · 필요"}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </CardContent>
           </Card>
@@ -5175,12 +5179,12 @@ export const PracticeFileTransferPage = ({
           <div className="space-y-3 xl:col-span-3">
             {!promoNoticeVisible ? inviteLinkCard : null}
 
-            <Card>
+            <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={recentTransfersOpen} onOpenChange={setRecentTransfersOpen}>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-2 pt-3">
                 <CollapsibleTrigger asChild>
                   <button type="button" className="mb-2 flex w-full items-center justify-between gap-2 text-left">
-                    <CardTitle className="flex items-center gap-2 text-base">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold">
                       <ClipboardList className="h-4 w-4 text-primary-strong" />
                       최근 전송
                     </CardTitle>
@@ -5299,8 +5303,8 @@ export const PracticeFileTransferPage = ({
                 ) : displayGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                     {recentStatusFilter === "all"
-                      ? "검색 조건에 맞는 의뢰서 전송 내역이 없습니다."
-                      : `${recentStatusFilter} 상태의 의뢰서 전송 내역이 없습니다.`}
+                      ? "전송 내역 없음"
+                      : `${recentStatusFilter} 없음`}
                   </div>
                 ) : (
                   <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
@@ -5389,14 +5393,14 @@ export const PracticeFileTransferPage = ({
               </Collapsible>
             </Card>
 
-            <Card>
+            <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={draftsOpen} onOpenChange={setDraftsOpen}>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-2 pt-3">
                 <CollapsibleTrigger asChild>
                   <button type="button" className="flex w-full items-center justify-between gap-2 text-left">
-                    <CardTitle className="flex items-center gap-2 text-base">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold">
                       <BookmarkPlus className="h-4 w-4 text-slate-500" />
-                      작성중인 의뢰서 임시저장
+                      임시저장
                       {draftGroupedTransfers.length > 0 ? (
                         <Badge variant="secondary" className="ml-1">
                           {draftGroupedTransfers.length}
@@ -5413,7 +5417,7 @@ export const PracticeFileTransferPage = ({
               <CardContent className="space-y-2">
                 {draftGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-                    작성중인 의뢰서 없음
+                    없음
                   </div>
                 ) : (
                   <div className="max-h-[15.25rem] space-y-2 overflow-y-auto pr-1">
@@ -5487,10 +5491,8 @@ export const PracticeFileTransferPage = ({
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
-                                  이 임시저장을 휴지통으로 보냅니다. 활성 목록·동기화에서
-                                  제외되며, 아래 휴지통에서 복구할 수 있습니다. (「새로 작성」과
-                                  달리 서버에서도 활성 임시저장이 제거됩니다.)
+                                <TooltipContent side="left" className="max-w-xs text-xs">
+                                  휴지통으로 이동
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
@@ -5505,13 +5507,13 @@ export const PracticeFileTransferPage = ({
               </Collapsible>
             </Card>
 
-            <Card>
+            <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={trashOpen} onOpenChange={setTrashOpen}>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-2 pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <CollapsibleTrigger asChild>
                     <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left">
-                      <CardTitle className="flex items-center gap-2 text-base">
+                      <CardTitle className="flex items-center gap-2 text-sm font-semibold">
                         <Trash2 className="h-4 w-4 text-slate-500" />
                         휴지통
                         {trashGroupedTransfers.length > 0 ? (
@@ -5544,7 +5546,7 @@ export const PracticeFileTransferPage = ({
               <CardContent className="space-y-2">
                 {trashGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-                    휴지통이 비어 있습니다.
+                    비어 있음
                   </div>
                 ) : (
                   <div className="max-h-[18.25rem] space-y-2 overflow-y-auto pr-1">

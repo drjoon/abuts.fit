@@ -63,6 +63,15 @@ const businessAnchorSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    // 개발운영사 지정: 검증 기공소가 기공의뢰 자동매칭 공개 풀에 참여
+    // related files:
+    // - web/backend/utils/practiceTransferAutoMatch.js
+    // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
+    practiceTransferAutoMatchEnabled: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     name: {
       type: String,
       required: true,

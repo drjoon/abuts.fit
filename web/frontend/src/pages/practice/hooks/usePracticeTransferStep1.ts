@@ -12,7 +12,7 @@ import {
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
-export const PRACTICE_ACCEPTED_HINT = "3D 모델 및 그림 파일 업로드 가능";
+export const PRACTICE_ACCEPTED_HINT = "STL · PLY · OBJ · 이미지";
 
 export type SearchBusinessResult = {
   _id: string;

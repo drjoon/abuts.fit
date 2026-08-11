@@ -100,6 +100,19 @@ type ReceivedPracticeTransfer = {
   isAccepted: boolean;
   requestorDownloadedAt: string | null;
   requestorAcceptedAt: string | null;
+  matchingMode?: "direct" | "auto";
+  autoMatch?: {
+    claimedAt?: string | null;
+    deadlineAt?: string | null;
+    claimHours?: number | null;
+    completedAt?: string | null;
+    openPool?: boolean;
+    claimActive?: boolean;
+    completed?: boolean;
+    mine?: boolean;
+    remainingMs?: number | null;
+    releaseCount?: number;
+  } | null;
   practice: {
     businessName: string;
     userName: string;
@@ -165,6 +178,17 @@ const parsePracticeTransferMemoMeta = (rawMemo: string) => {
   };
 };
 
+const formatRemainingMs = (remainingMs: number | null | undefined) => {
+  const ms = Number(remainingMs);
+  if (!Number.isFinite(ms) || ms <= 0) return "0분";
+  const totalMin = Math.ceil(ms / 60000);
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours <= 0) return `${mins}분`;
+  if (mins <= 0) return `${hours}시간`;
+  return `${hours}시간 ${mins}분`;
+};
+
 const getTransferDisplayStatus = (transfer: {
   status?: string;
   isRead?: boolean;
@@ -172,7 +196,24 @@ const getTransferDisplayStatus = (transfer: {
   isAccepted?: boolean;
   requestorDownloadedAt?: string | null;
   requestorAcceptedAt?: string | null;
+  matchingMode?: string | null;
+  autoMatch?: {
+    openPool?: boolean;
+    completed?: boolean;
+    claimActive?: boolean;
+    mine?: boolean;
+  } | null;
 }) => {
+  if (transfer.autoMatch?.completed) {
+    return "작업완료" as const;
+  }
+  if (
+    String(transfer.matchingMode || "") === "auto" &&
+    transfer.autoMatch?.openPool
+  ) {
+    return "자동매칭" as const;
+  }
+
   const rawStatus = String(transfer.status || "").trim().toLowerCase();
   if (
     Boolean(transfer.isAccepted) ||
@@ -310,7 +351,7 @@ function RequestorPracticeReceivePage({
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "발송완료" | "수신완료" | "의뢰수락" | "포장.발송" | "추적관리"
+    "all" | "발송완료" | "수신완료" | "의뢰수락" | "자동매칭" | "작업완료" | "포장.발송" | "추적관리"
   >("all");
   const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
   const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
@@ -320,6 +361,7 @@ function RequestorPracticeReceivePage({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
+  const [completeBusy, setCompleteBusy] = useState(false);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -483,6 +525,38 @@ function RequestorPracticeReceivePage({
           ? String(r.requestorDownloadedAt)
           : null;
         const rawStatus = String(r.status || "").trim().toLowerCase();
+        const matchingMode =
+          String(r.matchingMode || "").trim() === "auto" ? "auto" : "direct";
+        const autoMatchRaw =
+          r.autoMatch && typeof r.autoMatch === "object"
+            ? (r.autoMatch as Record<string, unknown>)
+            : null;
+        const autoMatch = autoMatchRaw
+          ? {
+              claimedAt: autoMatchRaw.claimedAt
+                ? String(autoMatchRaw.claimedAt)
+                : null,
+              deadlineAt: autoMatchRaw.deadlineAt
+                ? String(autoMatchRaw.deadlineAt)
+                : null,
+              claimHours:
+                autoMatchRaw.claimHours != null
+                  ? Number(autoMatchRaw.claimHours)
+                  : null,
+              completedAt: autoMatchRaw.completedAt
+                ? String(autoMatchRaw.completedAt)
+                : null,
+              openPool: Boolean(autoMatchRaw.openPool),
+              claimActive: Boolean(autoMatchRaw.claimActive),
+              completed: Boolean(autoMatchRaw.completed),
+              mine: Boolean(autoMatchRaw.mine),
+              remainingMs:
+                autoMatchRaw.remainingMs != null
+                  ? Number(autoMatchRaw.remainingMs)
+                  : null,
+              releaseCount: Number(autoMatchRaw.releaseCount || 0),
+            }
+          : null;
 
         return {
           _id: String(r._id || "").trim(),
@@ -517,6 +591,8 @@ function RequestorPracticeReceivePage({
             rawStatus === "의뢰수락",
           requestorDownloadedAt,
           requestorAcceptedAt: requestorDownloadedAt,
+          matchingMode,
+          autoMatch,
           practice: {
             businessName: String(practiceRaw.businessName || "").trim(),
             userName: String(practiceRaw.userName || "").trim(),
@@ -661,6 +737,17 @@ function RequestorPracticeReceivePage({
         : null;
 
       if (type === "practice:transfer-updated" && transferId) {
+        if (
+          action === "auto-match-released" ||
+          action === "auto-match-claimed" ||
+          action === "completed"
+        ) {
+          void loadFirstPage({ silent: true });
+          if (Number.isFinite(unreadCount) && unreadCount >= 0) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
         if (isRemovedEvent) {
           setTransfers((prev) => prev.filter((row) => row.transferId !== transferId));
           setSelectedTransfer((prev) => {
@@ -843,12 +930,14 @@ function RequestorPracticeReceivePage({
     const counts = baseFilteredTransfers.reduce(
       (acc, transfer) => {
         const status = getTransferDisplayStatus(transfer);
-        if (status === "의뢰수락") acc.accepted += 1;
+        if (status === "작업완료") acc.completed += 1;
+        else if (status === "의뢰수락") acc.accepted += 1;
         else if (status === "수신완료") acc.read += 1;
+        else if (status === "자동매칭") acc.autoMatch += 1;
         else acc.sent += 1;
         return acc;
       },
-      { sent: 0, read: 0, accepted: 0, shipping: 0, tracking: 0 },
+      { sent: 0, read: 0, accepted: 0, autoMatch: 0, completed: 0, shipping: 0, tracking: 0 },
     );
     // 포장.발송·추적관리는 기공 파이프라인 UI 슬롯(집계 연동 전).
     return counts;
@@ -1020,7 +1109,12 @@ function RequestorPracticeReceivePage({
   const markTransferAccepted = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
-      if (transfer.isAccepted || transfer.isDownloaded || transfer.requestorDownloadedAt) {
+      const isOpenPool =
+        transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
+      if (
+        !isOpenPool &&
+        (transfer.isAccepted || transfer.isDownloaded || transfer.requestorDownloadedAt)
+      ) {
         return true;
       }
 
@@ -1041,6 +1135,9 @@ function RequestorPracticeReceivePage({
             description: String(body.message || "의뢰수락 중 오류가 발생했습니다."),
             variant: "destructive",
           });
+          if (String(body.message || "").includes("다른 기공소")) {
+            void loadFirstPage({ silent: true });
+          }
           return false;
         }
 
@@ -1058,40 +1155,81 @@ function RequestorPracticeReceivePage({
             ? String(data.requestorDownloadedAt)
             : transfer.requestorDownloadedAt || new Date().toISOString();
         const unreadCount = Number(data.unreadCount || 0);
+        const autoMatchRaw =
+          data.autoMatch && typeof data.autoMatch === "object"
+            ? (data.autoMatch as Record<string, unknown>)
+            : null;
+        const autoMatchPatch = autoMatchRaw
+          ? {
+              claimedAt: autoMatchRaw.claimedAt
+                ? String(autoMatchRaw.claimedAt)
+                : null,
+              deadlineAt: autoMatchRaw.deadlineAt
+                ? String(autoMatchRaw.deadlineAt)
+                : null,
+              claimHours:
+                autoMatchRaw.claimHours != null
+                  ? Number(autoMatchRaw.claimHours)
+                  : null,
+              completedAt: autoMatchRaw.completedAt
+                ? String(autoMatchRaw.completedAt)
+                : null,
+              openPool: Boolean(autoMatchRaw.openPool),
+              claimActive: Boolean(autoMatchRaw.claimActive),
+              completed: Boolean(autoMatchRaw.completed),
+              mine: Boolean(autoMatchRaw.mine),
+              remainingMs:
+                autoMatchRaw.remainingMs != null
+                  ? Number(autoMatchRaw.remainingMs)
+                  : null,
+              releaseCount: Number(autoMatchRaw.releaseCount || 0),
+            }
+          : {
+              openPool: false,
+              claimActive: true,
+              completed: false,
+              mine: true,
+              remainingMs: 3 * 60 * 60 * 1000,
+            };
+
+        const patch = {
+          isRead: true,
+          requestorReadAt: readAt,
+          isDownloaded: true,
+          isAccepted: true,
+          requestorDownloadedAt: acceptedAt,
+          requestorAcceptedAt: acceptedAt,
+          matchingMode:
+            String(data.matchingMode || transfer.matchingMode || "direct") ===
+            "auto"
+              ? ("auto" as const)
+              : ("direct" as const),
+          autoMatch: autoMatchPatch,
+          targetLabName: data.targetLabName
+            ? String(data.targetLabName)
+            : transfer.targetLabName,
+        };
 
         setTransfers((prev) =>
           prev.map((row) =>
             row._id === transfer._id || row.transferId === transfer.transferId
-              ? {
-                  ...row,
-                  isRead: true,
-                  requestorReadAt: readAt,
-                  isDownloaded: true,
-                  isAccepted: true,
-                  requestorDownloadedAt: acceptedAt,
-                  requestorAcceptedAt: acceptedAt,
-                }
+              ? { ...row, ...patch }
               : row,
           ),
         );
         setSelectedTransfer((prev) =>
           prev && (prev._id === transfer._id || prev.transferId === transfer.transferId)
-            ? {
-                ...prev,
-                isRead: true,
-                requestorReadAt: readAt,
-                isDownloaded: true,
-                isAccepted: true,
-                requestorDownloadedAt: acceptedAt,
-                requestorAcceptedAt: acceptedAt,
-              }
+            ? { ...prev, ...patch }
             : prev,
         );
 
         emitUnreadBadgeRefresh(unreadCount);
         toast({
           title: "의뢰수락 완료",
-          description: "기공의뢰를 수락했습니다.",
+          description:
+            transfer.matchingMode === "auto"
+              ? "선착순 수락되었습니다. 3시간 안에 작업을 완료해주세요."
+              : "기공의뢰를 수락했습니다.",
         });
         return true;
       } catch {
@@ -1103,7 +1241,86 @@ function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [emitUnreadBadgeRefresh, toast, token],
+    [emitUnreadBadgeRefresh, loadFirstPage, toast, token],
+  );
+
+  const markTransferComplete = useCallback(
+    async (transfer: ReceivedPracticeTransfer) => {
+      if (!token) return false;
+      if (transfer.autoMatch?.completed) return true;
+
+      try {
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-complete`,
+          method: "POST",
+          token,
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "작업 완료 실패",
+            description: String(body.message || "작업 완료 처리 중 오류가 발생했습니다."),
+            variant: "destructive",
+          });
+          return false;
+        }
+
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const data =
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : body;
+        const autoMatchRaw =
+          data.autoMatch && typeof data.autoMatch === "object"
+            ? (data.autoMatch as Record<string, unknown>)
+            : null;
+        const autoMatchPatch = {
+          ...(transfer.autoMatch || {}),
+          completedAt: autoMatchRaw?.completedAt
+            ? String(autoMatchRaw.completedAt)
+            : new Date().toISOString(),
+          openPool: false,
+          claimActive: false,
+          completed: true,
+          mine: true,
+          remainingMs: null,
+        };
+
+        setTransfers((prev) =>
+          prev.map((row) =>
+            row._id === transfer._id || row.transferId === transfer.transferId
+              ? { ...row, autoMatch: autoMatchPatch }
+              : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev &&
+          (prev._id === transfer._id || prev.transferId === transfer.transferId)
+            ? { ...prev, autoMatch: autoMatchPatch }
+            : prev,
+        );
+
+        toast({
+          title: "작업 완료",
+          description: "자동매칭 작업을 완료 처리했습니다.",
+        });
+        return true;
+      } catch {
+        toast({
+          title: "작업 완료 실패",
+          description: "작업 완료 요청 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [toast, token],
   );
 
   const handleAcceptTransfer = useCallback(async () => {
@@ -1115,6 +1332,16 @@ function RequestorPracticeReceivePage({
       setAcceptBusy(false);
     }
   }, [acceptBusy, markTransferAccepted, selectedTransfer]);
+
+  const handleCompleteTransfer = useCallback(async () => {
+    if (!selectedTransfer || completeBusy) return;
+    setCompleteBusy(true);
+    try {
+      await markTransferComplete(selectedTransfer);
+    } finally {
+      setCompleteBusy(false);
+    }
+  }, [completeBusy, markTransferComplete, selectedTransfer]);
 
   const openTransferDialog = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -1541,6 +1768,48 @@ function RequestorPracticeReceivePage({
         <button
           type="button"
           className="rounded-full"
+          onClick={() =>
+            setStatusFilter((prev) => (prev === "자동매칭" ? "all" : "자동매칭"))
+          }
+          aria-pressed={statusFilter === "자동매칭"}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === "자동매칭"
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            자동매칭 {statusCounts.autoMatch}건
+          </Badge>
+        </button>
+
+        <button
+          type="button"
+          className="rounded-full"
+          onClick={() =>
+            setStatusFilter((prev) => (prev === "작업완료" ? "all" : "작업완료"))
+          }
+          aria-pressed={statusFilter === "작업완료"}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === "작업완료"
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            작업완료 {statusCounts.completed}건
+          </Badge>
+        </button>
+
+        <button
+          type="button"
+          className="rounded-full"
           onClick={() => setStatusFilter((prev) => (prev === "포장.발송" ? "all" : "포장.발송"))}
           aria-pressed={statusFilter === "포장.발송"}
         >
@@ -1631,15 +1900,21 @@ function RequestorPracticeReceivePage({
                       const displayStatus = getTransferDisplayStatus(transfer);
                       return (
                         <Badge
-                          variant={displayStatus === "발송완료" ? "destructive" : "secondary"}
+                          variant={displayStatus === "발송완료" || displayStatus === "자동매칭" ? "destructive" : "secondary"}
                           className={cn(
                             "shrink-0 whitespace-nowrap",
-                            displayStatus === "의뢰수락"
+                            displayStatus === "의뢰수락" || displayStatus === "작업완료"
                               ? "bg-primary-soft text-primary-strong hover:bg-primary-soft"
                               : "",
                           )}
                         >
                           {displayStatus}
+                          {displayStatus === "의뢰수락" &&
+                          transfer.matchingMode === "auto" &&
+                          transfer.autoMatch?.mine &&
+                          transfer.autoMatch?.claimActive
+                            ? ` · ${formatRemainingMs(transfer.autoMatch.remainingMs)}`
+                            : ""}
                         </Badge>
                       );
                     })()}
@@ -1794,11 +2069,33 @@ function RequestorPracticeReceivePage({
         }
         acceptBusy={acceptBusy}
         accepted={Boolean(
-          selectedTransfer?.isAccepted ||
-            selectedTransfer?.isDownloaded ||
-            selectedTransfer?.requestorDownloadedAt,
+          selectedTransfer &&
+            !(
+              selectedTransfer.matchingMode === "auto" &&
+              selectedTransfer.autoMatch?.openPool
+            ) &&
+            (selectedTransfer.isAccepted ||
+              selectedTransfer.isDownloaded ||
+              selectedTransfer.requestorDownloadedAt),
         )}
         onAccept={() => void handleAcceptTransfer()}
+        completeBusy={completeBusy}
+        completed={Boolean(selectedTransfer?.autoMatch?.completed)}
+        showComplete={Boolean(
+          selectedTransfer?.matchingMode === "auto" &&
+            selectedTransfer?.autoMatch?.mine &&
+            selectedTransfer?.autoMatch?.claimActive &&
+            !selectedTransfer?.autoMatch?.completed,
+        )}
+        remainingLabel={
+          selectedTransfer?.matchingMode === "auto" &&
+          selectedTransfer?.autoMatch?.mine &&
+          selectedTransfer?.autoMatch?.claimActive &&
+          !selectedTransfer?.autoMatch?.completed
+            ? `남은 시간 ${formatRemainingMs(selectedTransfer.autoMatch?.remainingMs)}`
+            : null
+        }
+        onComplete={() => void handleCompleteTransfer()}
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
         chatMessages={messages}

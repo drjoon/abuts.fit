@@ -342,10 +342,16 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/requests/common.review.controller.js`
     - `controllers/bg/bg.controller.js`
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
-- practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락`을 사용합니다.
+- practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료`을 사용합니다.
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
   - 의뢰수락 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`(레거시 필드명 유지; API alias `requestorAcceptedAt`/`isAccepted`)
   - 과금 SSOT: `POST /api/practice/transfers/:transferId/mark-accepted`에서 `commitPracticeTransferBilling` (파일 다운로드는 상태·과금에 영향 없음)
+  - **자동매칭 SSOT** (`matchingMode: "auto"`):
+    - 생성 시 `targetLabAnchorId=null`, 공개 풀. 자격: `verified` + `practiceTransferAutoMatchEnabled` + lab+free (`utils/practiceTransferAutoMatch.js`)
+    - devops ON: `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }`
+    - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정·만료 claim). 타인 활성 claim은 숨김
+    - 수락=`mark-accepted` 원자 FCFS claim(3시간 `autoMatch.deadlineAt`) + 과금. 작업완료=`POST .../mark-complete`
+    - 만료 시 lazy release: `rollbackPracticeTransferBilling` 후 풀 재공개(`releaseCount++`). 완료되면 재공개 없음
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
   - practice 전송 목록/취소/복구 권한 범위 SSOT: 동일 치과 `practiceBusinessAnchorId`(=`req.user.businessAnchorId`) 구성원 공유.
     구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch` / draft list·DELETE by id).

@@ -15,10 +15,11 @@ import {
 import { DevopsPayoutAccountTab } from "./components/DevopsPayoutAccountTab";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
 import { DesignerAssignmentTab } from "./components/DesignerAssignmentTab";
+import { PracticeTransferAutoMatchTab } from "./components/PracticeTransferAutoMatchTab";
 import { DevopsDesignDeadlineTab } from "./components/DevopsDesignDeadlineTab";
-import { Landmark, CreditCard, PenTool, Clock } from "lucide-react";
+import { Landmark, CreditCard, PenTool, Clock, FlaskConical } from "lucide-react";
 
-type TabKey = "payment" | "credits" | "design" | "deadline";
+type TabKey = "payment" | "credits" | "design" | "autoMatch" | "deadline";
 
 export const DevopsPartnerPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -42,6 +43,12 @@ export const DevopsPartnerPage = () => {
         label: "디자이너 지정",
         icon: PenTool,
         content: <DesignerAssignmentTab />,
+      },
+      {
+        key: "autoMatch",
+        label: "기공 자동매칭",
+        icon: FlaskConical,
+        content: <PracticeTransferAutoMatchTab />,
       },
       {
         key: "deadline",
