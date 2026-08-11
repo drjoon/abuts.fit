@@ -1,17 +1,67 @@
+// change-log:
+// - 2026-08-11: 모델 확장자 판별을 shared/files/modelPreviewFile로 통일.
+// - 2026-08-11: forceFilled prop — cam 파일명에 filled 없어도 가이드/프론트포인트/경사축 표시.
+// - 2026-08-11: FP 픽 시 frontPoint 메타 변경으로 씬 전체 재생성(카메라 초기화)되지 않게 deps에서 제외.
+// - 2026-08-11: filled STL 카메라는 bbox 중심 lookAt(원점 고정 시 상단 잘림 수정). 오버레이용 여백 제거.
+// - 2026-08-09: 프리뷰 로더가 STL/PLY/OBJ를 지원.
+// - 2026-08-09: 신규의뢰 프리뷰에서 그리드 숨김(showGrid) + FOV 맞춤.
+// - 2026-08-09: STL 프리뷰 카메라를 FOV 기준으로 맞춰 모델이 화면에 거의 꽉 차게 표시.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/files/modelPreviewFile.ts
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import {
+  mergeGeometries,
+  mergeVertices,
+} from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { cn } from "@/shared/ui/cn";
+import { getModelExtLower } from "@/shared/files/modelPreviewFile";
 import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
+
+const parseModelGeometry = async (file: File): Promise<THREE.BufferGeometry> => {
+  const buffer = await file.arrayBuffer();
+  const ext = getModelExtLower(file.name);
+
+  if (ext === ".ply") {
+    return new PLYLoader().parse(buffer);
+  }
+
+  if (ext === ".obj") {
+    const text = new TextDecoder().decode(buffer);
+    const group = new OBJLoader().parse(text);
+    group.updateMatrixWorld(true);
+    const parts: THREE.BufferGeometry[] = [];
+    group.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.geometry) return;
+      const geo = mesh.geometry.clone();
+      geo.applyMatrix4(mesh.matrixWorld);
+      parts.push(geo);
+    });
+    if (parts.length === 0) {
+      throw new Error("OBJ에 표시할 메시가 없습니다.");
+    }
+    if (parts.length === 1) return parts[0]!;
+    const merged = mergeGeometries(parts, false);
+    if (!merged) {
+      throw new Error("OBJ 메시를 합치지 못했습니다.");
+    }
+    return merged;
+  }
+
+  // 기본: STL (확장자 없거나 .stl)
+  return new STLLoader().parse(buffer);
+};
 
 type Props = {
   file: File;
@@ -26,6 +76,8 @@ type Props = {
     frontPoint?: { x: number; y: number; z: number } | null,
   ) => void;
   showOverlay?: boolean;
+  /** 바닥 그리드 표시. 기본 true. 신규의뢰 프리뷰 등에서는 false 권장. */
+  showGrid?: boolean;
   finishLinePoints?: number[][] | null;
   enableManualPick?: boolean;
   manualPickPoints?: number[][] | null;
@@ -33,6 +85,8 @@ type Props = {
   onManualUndo?: () => void;
   className?: string;
   metadata?: StlMetadata | null;
+  /** true면 파일명과 무관하게 filled 가이드/오버레이(FL·축·프론트포인트)를 켠다. */
+  forceFilled?: boolean;
 };
 
 export function StlPreviewViewer({
@@ -40,6 +94,7 @@ export function StlPreviewViewer({
   requestId,
   onDiameterComputed,
   showOverlay = true,
+  showGrid = true,
   finishLinePoints,
   enableManualPick = false,
   manualPickPoints,
@@ -47,6 +102,7 @@ export function StlPreviewViewer({
   onManualUndo,
   className,
   metadata,
+  forceFilled = false,
 }: Props) {
   const { metadata: fetchedMetadata, loading: fetchedMetadataLoading } =
     useStlMetadata(metadata ? undefined : requestId);
@@ -152,7 +208,8 @@ export function StlPreviewViewer({
     ? Number(resolvedMetadata?.finishLine?.min_z)
     : finishLineExtremaFromPoints?.min?.z ?? null;
 
-  const isFilledFile = file.name.toLowerCase().includes("filled");
+  const isFilledFile =
+    forceFilled || file.name.toLowerCase().includes("filled");
   const hasTiltAxis = toValidPoint(resolvedMetadata?.tiltAxisVector) !== null;
   const shouldBlockSceneForMetadata =
     shouldWaitForMetadata &&
@@ -316,7 +373,7 @@ export function StlPreviewViewer({
     const scenePosition = point ? resolveFrontPointScenePosition(point) : null;
 
     // 원본 STL은 front point 표시 안함, filled STL만 표시
-    const isFilled = file.name.toLowerCase().includes("filled");
+    const isFilled = isFilledFile;
     if (
       !showOverlay ||
       !isFilled ||
@@ -359,6 +416,7 @@ export function StlPreviewViewer({
     resolvedMetadata?.frontPoint?.x,
     resolvedMetadata?.frontPoint?.y,
     resolvedMetadata?.frontPoint?.z,
+    isFilledFile,
   ]);
 
   // STL 렌더링 및 finish line 시각화
@@ -384,31 +442,43 @@ export function StlPreviewViewer({
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
 
     containerRef.current.innerHTML = "";
     containerRef.current.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 1.2);
+    // 형태 인식: ambient를 낮추고 key/fill 대비로 굴곡을 살린다.
+    // (너무 균등한 랩어라운드는 스캔이 납작해 보임)
+    const hemi = new THREE.HemisphereLight(0xf7fafc, 0xc5d0de, 0.5);
+    scene.add(hemi);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.18);
     scene.add(ambient);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    keyLight.position.set(80, -40, 100);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    keyLight.position.set(35, -55, 95);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
-    fillLight.position.set(-60, 40, 60);
+    const fillLight = new THREE.DirectionalLight(0xeaf2ff, 0.4);
+    fillLight.position.set(-70, 45, 50);
     scene.add(fillLight);
+
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    rimLight.position.set(15, 90, -60);
+    scene.add(rimLight);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.1;
 
-    const grid = new THREE.GridHelper(60, 12, 0xaaaaaa, 0xe5e7eb);
-    (grid.rotation as any).x = Math.PI / 2;
-    scene.add(grid);
+    if (showGrid) {
+      const grid = new THREE.GridHelper(60, 12, 0xaaaaaa, 0xe5e7eb);
+      (grid.rotation as any).x = Math.PI / 2;
+      scene.add(grid);
+    }
 
-    const loader = new STLLoader();
     let mesh: THREE.Mesh | null = null;
     let geometry: THREE.BufferGeometry | null = null;
     let finishLine: THREE.Object3D | null = null;
@@ -424,10 +494,9 @@ export function StlPreviewViewer({
     let cancelled = false;
     (async () => {
       try {
-        const buffer = await file.arrayBuffer();
+        geometry = await parseModelGeometry(file);
         if (cancelled) return;
 
-        geometry = loader.parse(buffer);
         geometry = mergeVertices(geometry, 1e-5);
         geometry.computeBoundingBox();
         geometry.computeBoundingSphere();
@@ -438,15 +507,15 @@ export function StlPreviewViewer({
         bbox.getCenter(center);
 
         // filled STL은 이미 원점 정렬되어 있으므로 center를 (0,0,0)으로 설정
-        const isFilled = file.name.toLowerCase().includes("filled");
+        const isFilled = isFilledFile;
         centerRef.current = isFilled
           ? new THREE.Vector3(0, 0, 0)
           : center.clone();
 
         const material = new THREE.MeshStandardMaterial({
           color: 0x5b9dff,
-          metalness: 0.2,
-          roughness: 0.25,
+          metalness: 0.08,
+          roughness: 0.6,
         });
         mesh = new THREE.Mesh(geometry, material);
 
@@ -1783,29 +1852,47 @@ export function StlPreviewViewer({
         }
 
         const sphere = geometry.boundingSphere;
-        const radius = sphere ? sphere.radius : Math.max(maxDiameter / 2, 1);
-
-        // 모델의 실제 높이(totalLength)와 반경을 고려하여 카메라 거리 계산
-        // 세로로 긴 모델이 화면 밖으로 벗어나지 않도록 bounding box의 크기를 반영
         const modelHeight = bbox.max.z - bbox.min.z;
         const modelWidth = Math.max(
           bbox.max.x - bbox.min.x,
           bbox.max.y - bbox.min.y,
         );
-        const maxDimension = Math.max(modelHeight, modelWidth);
+        const maxDimension = Math.max(modelHeight, modelWidth, 1);
+        const radius = Math.max(
+          sphere?.radius ?? 0,
+          maxDimension / 2,
+          1,
+        );
 
-        // 카메라 거리: 모델의 가장 긴 변에 비례하게 설정하되, 기존 반경 로직과 조합
-        const dist = Math.max(radius * 2.5, maxDimension * 1.5);
+        // FOV/aspect 기준으로 바운딩 스피어가 뷰포트에 맞게 들어오도록 카메라 거리 계산.
+        // (기존 radius*2.5 고정 배율은 구강 스캔처럼 큰 모델에서 과도하게 줌아웃됨)
+        const fovRad = THREE.MathUtils.degToRad(camera.fov);
+        const aspect = Math.max(camera.aspect, 0.01);
+        const halfVFov = fovRad / 2;
+        const halfHFov = Math.atan(Math.tan(halfVFov) * aspect);
+        const fitDistance = Math.max(
+          radius / Math.sin(halfVFov),
+          radius / Math.sin(halfHFov),
+        );
+        // 오버레이는 absolute라 카메라 여백을 따로 두지 않는다. 모델 전체가 보이게만 맞춤.
+        const distance = fitDistance * 1.08;
 
-        // 카메라 위치 조정: 세로로 긴 모델일 경우 상하가 꽉 차도록 Y, Z축을 조정
-        // dist 값을 키워서 모델 전체가 한눈에 들어오도록 줌아웃 (기존보다 더 멀리서 보게)
-        const cameraDist = dist * (showOverlay ? 1.0 : 1.2); // 의뢰자 페이지(showOverlay=false)에서는 조금 더 멀리서
-
-        camera.position.set(cameraDist, -cameraDist, cameraDist * 0.9);
-        camera.lookAt(0, 0, 0);
+        // filled는 메시를 원점 재정렬하지 않으므로 bbox 중심을 바라본다.
+        // (원점 lookAt이면 +Z 치우친 어버트먼트가 위로 밀려 상단이 잘림)
+        const viewTarget = isFilled
+          ? bbox.getCenter(new THREE.Vector3())
+          : new THREE.Vector3(0, 0, 0);
+        const viewDir = new THREE.Vector3(1, -1, 0.9).normalize();
+        camera.position.copy(viewTarget.clone().add(viewDir.multiplyScalar(distance)));
+        camera.near = Math.max(distance / 200, 0.01);
+        camera.far = Math.max(distance * 40, 2000);
+        camera.updateProjectionMatrix();
+        camera.lookAt(viewTarget);
+        controls.target.copy(viewTarget);
+        controls.update();
       } catch (e) {
-        console.error("[StlPreviewViewer] failed to load STL", e);
-        setError("STL 파일을 불러오지 못했습니다");
+        console.error("[StlPreviewViewer] failed to load 3D model", e);
+        setError("3D 모델 파일을 불러오지 못했습니다");
       }
     })();
     const updateSize = () => {
@@ -1981,6 +2068,7 @@ export function StlPreviewViewer({
   }, [
     stableFileKey,
     showOverlay,
+    showGrid,
     shouldWaitForMetadata,
     shouldBlockSceneForMetadata,
     finishLinePoints,
@@ -1992,11 +2080,11 @@ export function StlPreviewViewer({
     resolvedMetadata?.tiltAxisVector?.x,
     resolvedMetadata?.tiltAxisVector?.y,
     resolvedMetadata?.tiltAxisVector?.z,
-    resolvedMetadata?.frontPoint?.x,
-    resolvedMetadata?.frontPoint?.y,
-    resolvedMetadata?.frontPoint?.z,
+    // frontPoint는 전용 마커 effect로만 갱신한다. deps에 넣으면 FP 더블클릭 픽마다
+    // 씬/카메라가 초기화된다.
     resolvedMetadata?.finishLine?.max_z,
     resolvedMetadata?.finishLine?.min_z,
+    isFilledFile,
   ]);
 
   useEffect(() => {
@@ -2049,7 +2137,7 @@ export function StlPreviewViewer({
       {shouldBlockSceneForMetadata && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-slate-500">
           <div className="flex flex-col items-center gap-2">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
             <span>메타데이터 로딩 중...</span>
           </div>
         </div>

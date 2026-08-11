@@ -31,6 +31,10 @@ router.get("/notification-settings", userController.getNotificationSettings);
 // 알림 설정 수정
 router.put("/notification-settings", userController.updateNotificationSettings);
 
+// 최근 대시보드 경로
+router.get("/last-dashboard-path", userController.getLastDashboardPath);
+router.put("/last-dashboard-path", userController.updateLastDashboardPath);
+
 // 내 보안 로그 (로그인 기록 등)
 router.get("/security-logs", userController.getMySecurityLogs);
 

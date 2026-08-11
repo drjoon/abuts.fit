@@ -11,30 +11,20 @@ import { Search, UserPlus, Star } from "lucide-react";
 import { Friend } from "./types";
 import { mockFriends } from "./mockData";
 import { AddFriendModal } from "./AddFriendModal";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import { getRoleBadgeClassName, getOnlineDotClass } from "@/shared/ui/semanticStatus";
 
 interface ChatFriendsListProps {
   onSelectFriend: (friend: Friend) => void;
 }
 
-const getRoleBadgeColor = (role: string) => {
-  switch (role) {
-    case "requestor":
-    case "practice":
-      return "bg-blue-100 text-blue-800 border-blue-200";
-    case "manufacturer":
-      return "bg-green-100 text-green-800 border-green-200";
-    case "admin":
-      return "bg-purple-100 text-purple-800 border-purple-200";
-    default:
-      return "bg-gray-100 text-gray-800 border-gray-200";
-  }
-};
 
 const getRoleLabel = (role: string) => {
   switch (role) {
     case "requestor":
+      return getRequestorRoleBadgeLabel("lab");
     case "practice":
-      return "의뢰자";
+      return getRequestorRoleBadgeLabel("practice");
     case "manufacturer":
       return "제작사";
     case "admin":
@@ -85,7 +75,7 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
         {favoriteFriends.length > 0 && (
           <div className="p-3 sm:p-4">
             <div className="flex items-center gap-2 mb-2 sm:mb-3">
-              <Star className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-500" />
+              <Star className="h-3 w-3 sm:h-4 sm:w-4 text-accent" />
               <span className="text-xs sm:text-sm font-medium text-muted-foreground">
                 즐겨찾기
               </span>
@@ -108,7 +98,7 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
                     </Avatar>
                     <div
                       className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-background ${
-                        friend.isOnline ? "bg-green-500" : "bg-gray-400"
+                        getOnlineDotClass(friend.isOnline)
                       }`}
                     />
                   </div>
@@ -120,7 +110,7 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
                       </span>
                       <Badge
                         variant="outline"
-                        className={`text-xs ${getRoleBadgeColor(friend.role)}`}
+                        className={`text-xs ${getRoleBadgeClassName(friend.role)}`}
                       >
                         {getRoleLabel(friend.role)}
                       </Badge>
@@ -162,7 +152,7 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
                   </Avatar>
                   <div
                     className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-background ${
-                      friend.isOnline ? "bg-green-500" : "bg-gray-400"
+                      getOnlineDotClass(friend.isOnline)
                     }`}
                   />
                 </div>
@@ -174,7 +164,7 @@ export const ChatFriendsList = ({ onSelectFriend }: ChatFriendsListProps) => {
                     </span>
                     <Badge
                       variant="outline"
-                      className={`text-xs ${getRoleBadgeColor(friend.role)}`}
+                      className={`text-xs ${getRoleBadgeClassName(friend.role)}`}
                     >
                       {getRoleLabel(friend.role)}
                     </Badge>

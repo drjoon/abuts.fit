@@ -20,11 +20,11 @@ export const formatDateTime = (iso?: string) => {
 export const getDirectionBadge = (direction: MailItem["direction"]) => {
   if (direction === "inbound") {
     return (
-      <Badge className="bg-blue-100 text-blue-700 border-blue-200">수신</Badge>
+      <Badge className="bg-primary-soft text-primary-strong border-primary-muted">수신</Badge>
     );
   }
   return (
-    <Badge className="bg-purple-100 text-purple-700 border-purple-200">
+    <Badge className="bg-primary-muted/50 text-primary-strong border-primary-muted">
       발신
     </Badge>
   );
@@ -36,7 +36,7 @@ export const getStatusBadge = (status: MailItem["status"]) => {
       return <Badge variant="secondary">수신완료</Badge>;
     case "sent":
       return (
-        <Badge className="bg-green-100 text-green-700 border-green-200">
+        <Badge className="bg-primary-muted/50 text-primary-strong border-primary-muted">
           발송완료
         </Badge>
       );

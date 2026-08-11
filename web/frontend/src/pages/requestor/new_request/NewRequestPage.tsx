@@ -1,4 +1,20 @@
 // change-log:
+// - 2026-08-11: 첨부 직후 S3 사전 업로드(useFilePreUpload) — 기공의뢰와 동일 가속 경로.
+// - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(PLY/OBJ는 기공의뢰).
+// - 2026-08-11: 3MB 초과 확인 모달 «기공의뢰» 클릭 시 prefilledFiles로 기공의뢰 페이지에 첨부.
+// - 2026-08-11: 3MB 초과 드롭/오픈 시 3D 프리뷰+ConfirmDialog로 커스텀어벗 여부 확인(구강스캔→기공의뢰 안내).
+// - 2026-08-11: 기공소 어벗의뢰 상단 — 거래 치과 등록 D-day 배너.
+// - 2026-08-11: 상단 헤더(지난 의뢰) 제거 — 대시보드 최근 의뢰 카드로만 제공.
+// - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드에 미반영(신규 업로드만).
+// - 2026-08-11: 아노다이징을 의뢰건 caseInfos SSOT로 저장·뱃지 표시(디자인소프트웨어와 동일). 사업체는 기본값 시드만.
+// - 2026-08-11: 설정 의뢰 탭 제거 후 아노다이징 토글을 좌측 상단(디자인소프트웨어 옆)으로 이전.
+// - 2026-08-09: 왼쪽 첨부 패널을 넓혀 드롭존 안내 문구가 1줄로 유지되도록 함.
+// - 2026-08-09: 신규의뢰 첨부 허용 확장자 STL/PLY/OBJ.
+// - 2026-08-09: 연결 끊기 시 productMode 복원과 함께 출고 모드·일정을 다시 계산한다.
+// - 2026-08-09: 구강스캔·디자인+생산은 메시 직경 없이 리드 1일로 출고 모드를 판정.
+// - 2026-08-09: 우측 신속 비활성(디자인+1일 등)일 때 의뢰카드 신속 버튼도 함께 막는다.
+// - 2026-08-09: 묶음 요일 변경 시 신규 days·구강스캔(디자인+1일)로 신속 선택 가능 여부를 다시 판정.
+// - 2026-08-11: 상단 헤더에서 보유 크레딧 제거(사이드바 크레딧 페이지로 이전). 지난 의뢰만 유지.
 // - 2026-08-09: 상단 헤더(보유 크레딧/지난 의뢰)를 RequestorWorkspaceHeader로 공유. 기간 필터는 신규의뢰에서 미표시.
 // - 2026-08-04: 중복 의뢰 "취소 후 재의뢰" 선택 시 기존 의뢰/치과 즐겨찾기 정보로 누락 필드를 채우고 카드 검증을 자동 완료.
 // - 2026-08-03: 중복 의뢰 안내 모달의 상태 표시를 공정 라벨 정규화(의뢰 -> 준비)로 표시. (display-only)
@@ -16,7 +32,9 @@ import { useFileVerification } from "./hooks/useFileVerification";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { clearLocalDraft } from "./utils/localDraftStorage";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
+import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
 import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkeleton";
@@ -33,27 +51,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
-import { RequestorWorkspaceHeader } from "@/shared/components/RequestorWorkspaceHeader";
-import {
-  RequestDetailDialog,
-  type RequestDetailDialogRequest,
-} from "@/features/requests/components/RequestDetailDialog";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
 import {
   isExpressShippingSelectable,
   type LeadTimesMap,
 } from "@/shared/shipping/estimateShipDate";
+import {
+  findGroupByFileKey,
+  isLikelyOralScanSize,
+  resolveFileSizeBytes,
+} from "./utils/patientGroups";
 
 
 // related files:
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
-// - web/frontend/src/features/settings/tabs/RequestTab.tsx
-// - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
+// - web/frontend/src/features/support/components/ConfirmDialog.tsx
+// - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
+// - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/models/user.model.js
+// - .cursor/rules/oral-scan-file-size.mdc
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 업로드/매칭은 사용하지 않는다.
 
 
@@ -75,6 +98,8 @@ const NewRequestPageContent = () => {
 
   const { toast } = useToast();
   const { token } = useAuthStore();
+  const { kind: requestorKind } = useRequestorBusinessAccess();
+  const isLabRequestor = requestorKind === "lab";
 
   const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
   const [designSoftwareMode, setDesignSoftwareMode] = useState<
@@ -88,14 +113,16 @@ const NewRequestPageContent = () => {
   const [designSoftwareValue, setDesignSoftwareValue] = useState("");
   const [needsBusinessDesignSoftwareBootstrap, setNeedsBusinessDesignSoftwareBootstrap] =
     useState(false);
+  const [anodizingEnabled, setAnodizingEnabled] = useState(true);
+  const [anodizingSaving, setAnodizingSaving] = useState(false);
+  /** 3MB 초과(구강스캔 후보) — ConfirmDialog 확인 후 첨부 */
+  const [oversizedPendingFiles, setOversizedPendingFiles] = useState<File[]>([]);
+  const [oversizedPreviewIndex, setOversizedPreviewIndex] = useState(0);
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
     {},
   );
-  const [pastRequestDetail, setPastRequestDetail] =
-    useState<RequestDetailDialogRequest | null>(null);
-  const [pastRequestDetailOpen, setPastRequestDetailOpen] = useState(false);
 
   const normalizeKeyPart = useCallback((s: string) => {
     try {
@@ -153,7 +180,30 @@ const NewRequestPageContent = () => {
     setDuplicateResolutions,
     handleSubmitWithDuplicateResolutions,
     draftStatus,
-  } = useNewRequestPage(existingRequestId);
+    attachmentListItems,
+    patientGroups,
+    groupSelectedFiles,
+    ungroupPatientFiles,
+    removeFileFromPatientGroup,
+    clearPatientGroups,
+  } = useNewRequestPage(existingRequestId, {
+    enableOralScanGrouping: !isLabRequestor,
+  });
+
+  const countableFileKeys = useMemo(() => {
+    if (!patientGroups?.length) return undefined;
+    const grouped = new Set(patientGroups.flatMap((g) => g.fileKeys));
+    const keys: string[] = [];
+    for (const g of patientGroups) {
+      const primary = g.fileKeys[0];
+      if (primary) keys.push(primary);
+    }
+    for (const file of files) {
+      const key = toNormalizedFileKey(file);
+      if (!grouped.has(key)) keys.push(key);
+    }
+    return keys;
+  }, [files, patientGroups, toNormalizedFileKey]);
 
   const {
     fileVerificationStatus,
@@ -162,7 +212,10 @@ const NewRequestPageContent = () => {
     setHighlightUnverifiedArrows,
     unverifiedCount,
     highlightStep,
-  } = useFileVerification({ files });
+  } = useFileVerification({
+    files,
+    countableFileKeys,
+  });
 
 
 
@@ -186,6 +239,27 @@ const NewRequestPageContent = () => {
 
         const body: any = res.data || {};
         const data = body?.data || body;
+
+        // 아노다이징 기본값: Draft __default__ > 의뢰자 계정 > 사업체 > ON
+        const draftAnodizing = caseInfosMap?.__default__?.anodizingEnabled;
+        const requestorAnodizing =
+          typeof data?.requestorAnodizingEnabled === "boolean"
+            ? data.requestorAnodizingEnabled
+            : null;
+        const businessAnodizing =
+          typeof data?.anodizingEnabled === "boolean"
+            ? data.anodizingEnabled
+            : true;
+        const resolvedAnodizing =
+          typeof draftAnodizing === "boolean"
+            ? draftAnodizing
+            : typeof requestorAnodizing === "boolean"
+              ? requestorAnodizing
+              : businessAnodizing;
+        setAnodizingEnabled(resolvedAnodizing);
+        if (typeof draftAnodizing !== "boolean") {
+          updateCaseInfos("__default__", { anodizingEnabled: resolvedAnodizing });
+        }
 
         let requestorDefault = String(data?.requestorDesignSoftware || "").trim();
         let businessDefault = String(data?.designSoftware || "").trim();
@@ -394,6 +468,79 @@ const NewRequestPageContent = () => {
     setDesignSoftwareModalOpen(true);
   }, [caseInfosMap, designSoftwareValue]);
 
+  const handleToggleAnodizing = useCallback(() => {
+    if (!token) {
+      toast({
+        title: "로그인이 필요합니다",
+        description: "아노다이징 설정을 저장하려면 로그인해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (anodizingSaving) return;
+
+    const next = !anodizingEnabled;
+    const prev = anodizingEnabled;
+    setAnodizingEnabled(next);
+    // 디자인소프트웨어와 동일: 이미 첨부된 카드는 유지하고,
+    // 신규 업로드 시드(__default__)·계정 기본값만 갱신한다.
+    updateCaseInfos("__default__", { anodizingEnabled: next });
+
+    setAnodizingSaving(true);
+    void (async () => {
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/businesses/me/request-settings",
+          method: "PUT",
+          token,
+          jsonBody: { requestorAnodizingEnabled: next },
+        });
+
+        if (!res.ok) {
+          setAnodizingEnabled(prev);
+          updateCaseInfos("__default__", { anodizingEnabled: prev });
+          const body: any = res.data || {};
+          toast({
+            title: "저장에 실패했습니다",
+            description:
+              String(
+                body?.message ||
+                  "아노다이징 기본값 저장 중 오류가 발생했습니다.",
+              ),
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const body: any = res.data || {};
+        const data = body?.data || body;
+        if (typeof data?.requestorAnodizingEnabled === "boolean") {
+          setAnodizingEnabled(data.requestorAnodizingEnabled);
+          updateCaseInfos("__default__", {
+            anodizingEnabled: data.requestorAnodizingEnabled,
+          });
+        }
+      } catch {
+        setAnodizingEnabled(prev);
+        updateCaseInfos("__default__", { anodizingEnabled: prev });
+        toast({
+          title: "저장에 실패했습니다",
+          description: "아노다이징 기본값 저장 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setAnodizingSaving(false);
+      }
+    })();
+  }, [
+    anodizingEnabled,
+    anodizingSaving,
+    toast,
+    token,
+    updateCaseInfos,
+  ]);
+
   // 파일 삭제는 rawHandleRemoveFile이 처리하고,
   // fileVerificationStatus cleanup은 useFileVerification의 effect가 자동으로 처리
   const handleRemoveFile = rawHandleRemoveFile;
@@ -440,10 +587,15 @@ const NewRequestPageContent = () => {
     const preservedDesignSoftware = String(
       designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
     ).trim();
+    const preservedAnodizing =
+      typeof caseInfosMap?.__default__?.anodizingEnabled === "boolean"
+        ? caseInfosMap.__default__.anodizingEnabled
+        : anodizingEnabled;
 
     await resetDraft();
     handleCancel();
     clearLocalDraft();
+    clearPatientGroups();
     setFileVerificationStatus({});
     setCaseInfos({
       clinicName: "",
@@ -478,6 +630,9 @@ const NewRequestPageContent = () => {
         setCustomDesignSoftware(preservedDesignSoftware);
       }
     }
+
+    setAnodizingEnabled(preservedAnodizing);
+    updateCaseInfos("__default__", { anodizingEnabled: preservedAnodizing });
 
     const fileInput = document.getElementById(
       "file-input",
@@ -678,6 +833,12 @@ const NewRequestPageContent = () => {
           existingCaseInfos.designSoftware,
           designSoftwareValue,
         );
+        const anodizingNext =
+          typeof current.anodizingEnabled === "boolean"
+            ? current.anodizingEnabled
+            : typeof existingCaseInfos.anodizingEnabled === "boolean"
+              ? existingCaseInfos.anodizingEnabled
+              : anodizingEnabled;
 
         if (clinicNameValue) updates.clinicName = clinicNameValue;
         if (patientNameValue) updates.patientName = patientNameValue;
@@ -688,6 +849,7 @@ const NewRequestPageContent = () => {
         if (typeValue) updates.implantType = typeValue;
         updates.retentionGroove = retentionGrooveValue;
         if (designSoftwareNext) updates.designSoftware = designSoftwareNext;
+        updates.anodizingEnabled = anodizingNext;
         if (!current.workType) updates.workType = "abutment";
 
         updateCaseInfos(fileKey, updates);
@@ -788,7 +950,7 @@ const NewRequestPageContent = () => {
                 existingRequestId: "",
               });
             }}
-            className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
+            className="flex-1 rounded bg-primary-strong px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-primary-strong"
           >
             이 중복 항목 제외
           </button>
@@ -822,7 +984,7 @@ const NewRequestPageContent = () => {
               existingRequestId,
             });
           }}
-          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
+          className="flex-1 rounded bg-primary-strong px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-primary-strong"
         >
           {primaryLabel}
         </button>
@@ -857,38 +1019,205 @@ const NewRequestPageContent = () => {
     setLeadTimes(next);
   }, []);
 
+  const groupedFileKeys = useMemo(
+    () => new Set((patientGroups || []).flatMap((g) => g.fileKeys)),
+    [patientGroups],
+  );
+
+  const resolveCaseProductMode = useCallback(
+    (fileKey: string, info?: CaseInfos | null) => {
+      if (isLabRequestor) return "custom_abutment";
+      if (groupedFileKeys.has(fileKey)) return "design_custom_abutment";
+      return (info?.productMode as string | null | undefined) ?? null;
+    },
+    [groupedFileKeys, isLabRequestor],
+  );
+
+  /** 구강스캔·디자인+생산은 메시 직경으로 리드를 잡지 않는다 */
+  const resolveCaseLeadDiameter = useCallback(
+    (fileKey: string, info?: CaseInfos | null) => {
+      const productMode = resolveCaseProductMode(fileKey, info);
+      if (productMode === "design_custom_abutment") return null;
+      return (info?.maxDiameter as number | null | undefined) ?? null;
+    },
+    [resolveCaseProductMode],
+  );
+
+  /** 우측 기본 신속 카드: 첨부 중 디자인+생산이 있으면 +1영업일로 판정 */
+  const expressSelectProductMode = useMemo(() => {
+    if (isLabRequestor) return null;
+    if (groupedFileKeys.size > 0) return "design_custom_abutment";
+    for (const file of files) {
+      const key = toNormalizedFileKey(file);
+      if (caseInfosMap?.[key]?.productMode === "design_custom_abutment") {
+        return "design_custom_abutment";
+      }
+    }
+    return null;
+  }, [groupedFileKeys, files, caseInfosMap, isLabRequestor, toNormalizedFileKey]);
+
+  /** 우측 신속 카드와 동일 조건 — 카드 신속 버튼·모드 강등에도 공통 적용 */
+  const expressSelectableGlobal = useMemo(
+    () =>
+      isExpressShippingSelectable({
+        weeklyBatchDays,
+        leadTimes,
+        diameter: null,
+        productMode: expressSelectProductMode,
+      }),
+    [weeklyBatchDays, leadTimes, expressSelectProductMode],
+  );
+
   const resolveEffectiveShippingMode = useCallback(
     (
       mode: "normal" | "express",
       diameter: number | null = null,
+      productMode: string | null = null,
+      batchDays: string[] | null = null,
     ): "normal" | "express" => {
       if (mode !== "express") return "normal";
+      const days = batchDays ?? weeklyBatchDays;
+      // 우측에 디자인+1일 등으로 신속 이점이 없으면 건별(생산만)도 신속을 열지 않는다.
+      const globalOk = isExpressShippingSelectable({
+        weeklyBatchDays: days,
+        leadTimes,
+        diameter: null,
+        productMode: expressSelectProductMode,
+      });
+      if (!globalOk) return "normal";
       const ok = isExpressShippingSelectable({
-        weeklyBatchDays,
+        weeklyBatchDays: days,
         leadTimes,
         diameter,
+        productMode,
       });
       return ok ? "express" : "normal";
     },
-    [weeklyBatchDays, leadTimes],
+    [weeklyBatchDays, leadTimes, expressSelectProductMode],
+  );
+
+  /**
+   * 구강스캔 묶음에서 빠진 파일: productMode·출고 모드를 크기 기준으로 다시 맞춘다.
+   * (디자인+1일이 남아 예상 출고가 하루 밀리는 문제 방지)
+   * 이탈 직후 patientGroups/groupedFileKeys는 아직 이전 값일 수 있어
+   * 건별 productMode로만 신속 가능 여부를 판정한다.
+   */
+  const refreshShipScheduleAfterLeaveGroup = useCallback(
+    (fileKeys: string[]) => {
+      const unique = Array.from(new Set(fileKeys.filter(Boolean)));
+      for (const key of unique) {
+        const file = files.find((f) => toNormalizedFileKey(f) === key);
+        const size =
+          typeof file?.size === "number"
+            ? file.size
+            : resolveFileSizeBytes(key);
+        const productMode = isLabRequestor
+          ? "custom_abutment"
+          : isLikelyOralScanSize(size)
+            ? "design_custom_abutment"
+            : "custom_abutment";
+        const info = caseInfosMap?.[key];
+        const diameter =
+          productMode === "design_custom_abutment"
+            ? null
+            : typeof info?.maxDiameter === "number"
+              ? info.maxDiameter
+              : null;
+        const preferred =
+          info?.shippingMode === "express" ||
+          defaultShippingMode === "express"
+            ? ("express" as const)
+            : ("normal" as const);
+        const shippingMode =
+          preferred === "express" &&
+          isExpressShippingSelectable({
+            weeklyBatchDays,
+            leadTimes,
+            diameter,
+            productMode,
+          })
+            ? ("express" as const)
+            : ("normal" as const);
+        updateCaseInfos(key, {
+          productMode,
+          workType: "abutment",
+          shippingMode,
+          requestedShipDate: undefined,
+        });
+        if (import.meta.env.DEV) {
+          console.debug("[ship-eta] leave-group refresh", {
+            key,
+            productMode,
+            diameter,
+            shippingMode,
+          });
+        }
+      }
+    },
+    [
+      files,
+      toNormalizedFileKey,
+      caseInfosMap,
+      defaultShippingMode,
+      weeklyBatchDays,
+      leadTimes,
+      updateCaseInfos,
+      isLabRequestor,
+    ],
+  );
+
+  const handleUngroupPatientFiles = useCallback(
+    (groupId: string) => {
+      const group = (patientGroups || []).find((g) => g.id === groupId);
+      const keys = group ? [...group.fileKeys] : [];
+      ungroupPatientFiles(groupId);
+      refreshShipScheduleAfterLeaveGroup(keys);
+    },
+    [patientGroups, ungroupPatientFiles, refreshShipScheduleAfterLeaveGroup],
+  );
+
+  const handleRemoveFileFromPatientGroup = useCallback(
+    (fileKey: string) => {
+      const group = findGroupByFileKey(patientGroups || [], fileKey);
+      let leftKeys = [fileKey];
+      if (group) {
+        const remaining = group.fileKeys.filter((k) => k !== fileKey);
+        // 2개 미만이면 묶음 해체 → 멤버 전원 이탈
+        leftKeys =
+          remaining.length >= 2 ? [fileKey] : [...group.fileKeys];
+      }
+      removeFileFromPatientGroup(fileKey);
+      refreshShipScheduleAfterLeaveGroup(leftKeys);
+    },
+    [
+      patientGroups,
+      removeFileFromPatientGroup,
+      refreshShipScheduleAfterLeaveGroup,
+    ],
   );
 
   const handleWeeklyBatchDaysChange = useCallback(
     (days: string[]) => {
       setWeeklyBatchDays(days);
       // 요일 변경 후 신속 이점이 있으면 기본 출고 방식을 유지하고, 없으면 묶음으로 맞춘다.
+      // 주의: setState 직후라 weeklyBatchDays 클로저는 아직 이전 값 — 반드시 days를 넘긴다.
       for (const file of files) {
         const key = toNormalizedFileKey(file);
-        const diameter =
-          (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
-          null;
+        const info = caseInfosMap?.[key];
+        const diameter = resolveCaseLeadDiameter(key, info);
+        const productMode = resolveCaseProductMode(key, info);
         const preferred =
-          caseInfosMap?.[key]?.shippingMode === "express" ||
+          info?.shippingMode === "express" ||
           defaultShippingMode === "express"
             ? "express"
             : "normal";
         updateCaseInfos(key, {
-          shippingMode: resolveEffectiveShippingMode(preferred, diameter),
+          shippingMode: resolveEffectiveShippingMode(
+            preferred,
+            diameter,
+            productMode,
+            days,
+          ),
         });
       }
       if (import.meta.env.DEV) {
@@ -906,6 +1235,8 @@ const NewRequestPageContent = () => {
       caseInfosMap,
       defaultShippingMode,
       resolveEffectiveShippingMode,
+      resolveCaseProductMode,
+      resolveCaseLeadDiameter,
     ],
   );
 
@@ -914,11 +1245,15 @@ const NewRequestPageContent = () => {
       setDefaultShippingMode(mode);
       for (const file of files) {
         const key = toNormalizedFileKey(file);
-        const diameter =
-          (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
-          null;
+        const info = caseInfosMap?.[key];
+        const diameter = resolveCaseLeadDiameter(key, info);
+        const productMode = resolveCaseProductMode(key, info);
         updateCaseInfos(key, {
-          shippingMode: resolveEffectiveShippingMode(mode, diameter),
+          shippingMode: resolveEffectiveShippingMode(
+            mode,
+            diameter,
+            productMode,
+          ),
         });
       }
       if (import.meta.env.DEV) {
@@ -934,19 +1269,25 @@ const NewRequestPageContent = () => {
       toNormalizedFileKey,
       updateCaseInfos,
       resolveEffectiveShippingMode,
+      resolveCaseProductMode,
+      resolveCaseLeadDiameter,
       caseInfosMap,
     ],
   );
 
   // 신속 이점이 없어지면(ETA가 묶음과 같거나 늦으면) 건별 모드를 묶음으로 강등.
+  // 환자 케이스는 항상 디자인+생산(+1영업일)로 판정한다.
   useEffect(() => {
     for (const file of files) {
       const key = toNormalizedFileKey(file);
       const info = caseInfosMap?.[key];
       if (info?.shippingMode !== "express") continue;
-      const diameter =
-        (info?.maxDiameter as number | null | undefined) ?? null;
-      if (resolveEffectiveShippingMode("express", diameter) === "express") {
+      const diameter = resolveCaseLeadDiameter(key, info);
+      const productMode = resolveCaseProductMode(key, info);
+      if (
+        resolveEffectiveShippingMode("express", diameter, productMode) ===
+        "express"
+      ) {
         continue;
       }
       updateCaseInfos(key, { shippingMode: "normal" });
@@ -957,6 +1298,8 @@ const NewRequestPageContent = () => {
     toNormalizedFileKey,
     updateCaseInfos,
     resolveEffectiveShippingMode,
+    resolveCaseProductMode,
+    resolveCaseLeadDiameter,
   ]);
 
   // 새로 첨부된 파일에만 우측 기본 배송 방식을 적용한다.
@@ -967,16 +1310,17 @@ const NewRequestPageContent = () => {
       nextKnown.add(key);
       if (knownFileKeysRef.current.has(key)) continue;
 
-      const existing = caseInfosMap?.[key]?.shippingMode;
+      const info = caseInfosMap?.[key];
+      const existing = info?.shippingMode;
       if (existing === "normal" || existing === "express") continue;
 
-      const diameter =
-        (caseInfosMap?.[key]?.maxDiameter as number | null | undefined) ??
-        null;
+      const diameter = resolveCaseLeadDiameter(key, info);
+      const productMode = resolveCaseProductMode(key, info);
       updateCaseInfos(key, {
         shippingMode: resolveEffectiveShippingMode(
           defaultShippingMode,
           diameter,
+          productMode,
         ),
       });
     }
@@ -988,6 +1332,8 @@ const NewRequestPageContent = () => {
     updateCaseInfos,
     toNormalizedFileKey,
     resolveEffectiveShippingMode,
+    resolveCaseProductMode,
+    resolveCaseLeadDiameter,
   ]);
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
@@ -1050,6 +1396,15 @@ const NewRequestPageContent = () => {
         return;
       }
 
+      if (ext === ".ply" || ext === ".obj") {
+        rejectedFiles.push({
+          name: file.name,
+          reason:
+            "어벗생산의뢰는 STL만 받을 수 있어요. PLY/OBJ는 기공의뢰를 이용해주세요.",
+        });
+        return;
+      }
+
       if (ext === ".stl") {
         stlCandidates.push({ id: toNormalizedFileKey(file), file });
         return;
@@ -1081,7 +1436,10 @@ const NewRequestPageContent = () => {
     }
   };
 
-  const applyClassifiedBatch = (batch: ClassifiedUploadBatch) => {
+  const applyClassifiedBatch = (
+    batch: ClassifiedUploadBatch,
+    options?: { suppressEmptyToast?: boolean },
+  ) => {
     const stlFiles = batch.stlCandidates.map((item) => item.file);
 
     if (stlFiles.length > 0) {
@@ -1120,6 +1478,17 @@ const NewRequestPageContent = () => {
         }
       }
 
+      const currentAnodizing =
+        typeof caseInfosMap?.__default__?.anodizingEnabled === "boolean"
+          ? caseInfosMap.__default__.anodizingEnabled
+          : anodizingEnabled;
+      for (const file of stlFiles) {
+        const fileKey = toNormalizedFileKey(file);
+        if (typeof caseInfosMap?.[fileKey]?.anodizingEnabled !== "boolean") {
+          updateCaseInfos(fileKey, { anodizingEnabled: currentAnodizing });
+        }
+      }
+
       void onUpload(stlFiles);
     }
 
@@ -1138,7 +1507,7 @@ const NewRequestPageContent = () => {
       });
     }
 
-    if (stlFiles.length === 0) {
+    if (stlFiles.length === 0 && !options?.suppressEmptyToast) {
       toast({
         title: "업로드할 파일이 없습니다",
         description: "선택된 파일 중 업로드 가능한 파일이 없었습니다.",
@@ -1148,10 +1517,55 @@ const NewRequestPageContent = () => {
     }
   };
 
+  const clearOversizedPending = useCallback(() => {
+    setOversizedPendingFiles([]);
+    setOversizedPreviewIndex(0);
+  }, []);
+
   const handleIncomingFiles = (selectedFiles: File[]) => {
     const normalized = dedupeFiles(selectedFiles || []);
     if (!normalized.length) return;
-    applyClassifiedBatch(classifyIncomingFiles(normalized));
+
+    const batch = classifyIncomingFiles(normalized);
+    const smallCandidates: StlSelectionCandidate[] = [];
+    const largeCandidates: StlSelectionCandidate[] = [];
+    for (const candidate of batch.stlCandidates) {
+      if (isLikelyOralScanSize(candidate.file.size)) {
+        largeCandidates.push(candidate);
+      } else {
+        smallCandidates.push(candidate);
+      }
+    }
+
+    applyClassifiedBatch(
+      {
+        stlCandidates: smallCandidates,
+        rejectedFiles: batch.rejectedFiles,
+        ignoredFiles: batch.ignoredFiles,
+      },
+      { suppressEmptyToast: largeCandidates.length > 0 },
+    );
+
+    if (largeCandidates.length > 0) {
+      setOversizedPendingFiles((prev) =>
+        dedupeFiles([...prev, ...largeCandidates.map((item) => item.file)]),
+      );
+      setOversizedPreviewIndex(0);
+    }
+  };
+
+  const confirmOversizedPending = () => {
+    const pending = oversizedPendingFiles;
+    clearOversizedPending();
+    if (!pending.length) return;
+    applyClassifiedBatch({
+      stlCandidates: pending.map((file) => ({
+        id: toNormalizedFileKey(file),
+        file,
+      })),
+      rejectedFiles: [],
+      ignoredFiles: [],
+    });
   };
 
   const checkDesignSoftwareOnDrop = useCallback(() => {
@@ -1267,6 +1681,16 @@ const NewRequestPageContent = () => {
     return <NewRequestPageSkeleton />;
   }
 
+  const oversizedPreviewFile =
+    oversizedPendingFiles[
+      Math.min(
+        oversizedPreviewIndex,
+        Math.max(0, oversizedPendingFiles.length - 1),
+      )
+    ] ?? null;
+  const formatOversizedMb = (bytes: number) =>
+    `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+
   return (
     <PageFileDropZone
       onFiles={handleIncomingDroppedFiles}
@@ -1274,14 +1698,84 @@ const NewRequestPageContent = () => {
       className="new-request-page bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
-        <div className="w-full shrink-0">
-          <RequestorWorkspaceHeader
-            onSelectPastRequest={(r) => {
-              setPastRequestDetail(r as RequestDetailDialogRequest);
-              setPastRequestDetailOpen(true);
-            }}
-          />
-        </div>
+        {isLabRequestor ? <LabTradingPartnerWindowBanner /> : null}
+        <ConfirmDialog
+          open={oversizedPendingFiles.length > 0}
+          panelClassName="max-w-xl"
+          confirmTone="primary"
+          title="커스텀 어벗 STL이 맞나요?"
+          confirmLabel="이대로 진행"
+          cancelLabel="취소"
+          onConfirm={confirmOversizedPending}
+          onCancel={clearOversizedPending}
+          description={
+            <div className="space-y-3">
+              <p>
+                이 페이지는{" "}
+                <span className="font-semibold">커스텀 어벗 STL</span>만
+                받습니다.
+              </p>
+              <p>
+                구강 스캔이라면{" "}
+                <button
+                  type="button"
+                  className="font-semibold text-primary-strong underline underline-offset-2"
+                  onClick={() => {
+                    const filesToPrefill = [...oversizedPendingFiles];
+                    clearOversizedPending();
+                    navigate("/dashboard/practice-transfers?mode=send", {
+                      state: {
+                        prefilledFiles: filesToPrefill,
+                        source: "new-request-oversized",
+                      },
+                    });
+                  }}
+                >
+                  기공의뢰
+                </button>{" "}
+                페이지를 이용해주세요.
+              </p>
+              {oversizedPendingFiles.length > 1 ? (
+                <ul className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
+                  {oversizedPendingFiles.map((file, index) => (
+                    <li key={`${file.name}:${file.size}:${file.lastModified}`}>
+                      <button
+                        type="button"
+                        className={
+                          index === oversizedPreviewIndex
+                            ? "w-full rounded px-2 py-1 text-left font-medium text-primary-strong bg-primary-soft"
+                            : "w-full rounded px-2 py-1 text-left text-slate-700 hover:bg-white"
+                        }
+                        onClick={() => setOversizedPreviewIndex(index)}
+                      >
+                        {file.name}{" "}
+                        <span className="text-slate-500">
+                          ({formatOversizedMb(file.size)})
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : oversizedPreviewFile ? (
+                <p className="truncate text-xs text-slate-600">
+                  {oversizedPreviewFile.name} (
+                  {formatOversizedMb(oversizedPreviewFile.size)})
+                </p>
+              ) : null}
+              {oversizedPreviewFile ? (
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                  <StlPreviewViewer
+                    file={oversizedPreviewFile}
+                    showOverlay={false}
+                    showGrid={false}
+                    className="h-56 min-h-[14rem]"
+                  />
+                </div>
+              ) : null}
+              <p>그래도 어벗생산의뢰로 첨부할까요?</p>
+            </div>
+          }
+        />
         <MultiActionDialog
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={false}
@@ -1304,7 +1798,7 @@ const NewRequestPageContent = () => {
                   : "제출하려는 파일들끼리 동일한 치과/환자/치아 조합이 중복되었습니다. 항목별로 제외 여부를 선택해주세요."}
               </div>
               {duplicatePrompt?.remakeQuota && (
-                <div className="rounded border border-blue-200 bg-blue-50 px-2.5 py-2 text-[11px] text-blue-800">
+                <div className="rounded border border-primary-muted bg-primary-soft px-2.5 py-2 text-[11px] text-primary-strong">
                   이번 달 무료 재의뢰: {duplicatePrompt.remakeQuota.limit}건 중{" "}
                   {duplicatePrompt.remakeQuota.used}건 사용, 잔여{" "}
                   {duplicatePrompt.remakeQuota.remaining}건
@@ -1486,7 +1980,7 @@ const NewRequestPageContent = () => {
           </DialogContent>
         </Dialog>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch flex-1 min-h-0 h-full">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
             <NewRequestDetailsSection
               files={files}
@@ -1549,9 +2043,19 @@ const NewRequestPageContent = () => {
               onCancelAll={handleCancelAll}
               designSoftwareLabel={String(designSoftwareValue || "").trim()}
               onOpenDesignSoftwareModal={handleOpenDesignSoftwareModal}
+              anodizingEnabled={anodizingEnabled}
+              anodizingSaving={anodizingSaving}
+              onToggleAnodizing={handleToggleAnodizing}
               onShippingModeChange={handleShippingModeChange}
               defaultShippingMode={defaultShippingMode}
+              expressSelectableGlobal={expressSelectableGlobal}
               onLeadTimesChange={handleLeadTimesChange}
+              attachmentListItems={attachmentListItems}
+              patientGroups={patientGroups}
+              productionOnly={isLabRequestor}
+              onGroupSelectedFiles={groupSelectedFiles}
+              onUngroupPatientFiles={handleUngroupPatientFiles}
+              onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;
@@ -1596,11 +2100,12 @@ const NewRequestPageContent = () => {
             />
           </div>
 
-          <div className="flex flex-col min-h-0 h-full">
+          <div className="flex flex-col flex-1 min-h-0 h-full">
             <NewRequestShippingSection
               weeklyBatchDays={weeklyBatchDays}
               onWeeklyBatchDaysChange={handleWeeklyBatchDaysChange}
               leadTimes={leadTimes}
+              expressProductMode={expressSelectProductMode}
               defaultShippingMode={defaultShippingMode}
               onDefaultShippingModeChange={handleDefaultShippingModeChange}
               onSubmit={() => {
@@ -1608,7 +2113,7 @@ const NewRequestPageContent = () => {
                   toast({
                     title: "파일이 필요합니다",
                     description:
-                      "최소 1개의 커스텀 어벗 STL 파일을 추가한 뒤 의뢰해주세요.",
+                      "최소 1개의 STL 파일을 추가한 뒤 의뢰해주세요.",
                     variant: "destructive",
                     duration: 4000,
                   });
@@ -1678,15 +2183,6 @@ const NewRequestPageContent = () => {
           </div>
         </div>
       </div>
-
-      <RequestDetailDialog
-        open={pastRequestDetailOpen}
-        onOpenChange={(open) => {
-          setPastRequestDetailOpen(open);
-          if (!open) setPastRequestDetail(null);
-        }}
-        request={pastRequestDetail}
-      />
     </PageFileDropZone>
   );
 };

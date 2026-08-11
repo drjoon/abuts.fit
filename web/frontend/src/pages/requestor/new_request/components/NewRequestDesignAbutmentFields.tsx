@@ -36,16 +36,14 @@ import { cn } from "@/shared/ui/cn";
 import { useAuthStore } from "@/store/useAuthStore";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
-const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
-const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이", "어벗 디자인"] as const;
 
 const ensurePresetProsthesisTypes = (items: string[] | null | undefined) => {
-  const normalized = normalizeProsthesisTypes(items || []);
-  const withPontic = normalized.includes("Pontic")
-    ? normalized
-    : [...normalized, "Pontic"];
-  return withPontic.length ? withPontic : [...PRESET_PROSTHESIS_TYPES];
+  const normalized = normalizeProsthesisTypes([
+    ...PRESET_PROSTHESIS_TYPES,
+    ...(Array.isArray(items) ? items : []),
+  ]);
+  return normalized.length ? normalized : [...PRESET_PROSTHESIS_TYPES];
 };
 
 const toothNumbersLabelFromWorks = (toothWorks: ToothWorkSelection[]) =>
@@ -199,7 +197,7 @@ export function NewRequestDesignAbutmentFields({
     (action) => {
       const prev = Array.isArray(caseInfos?.toothWorks) ? caseInfos.toothWorks : [];
       const next = typeof action === "function" ? action(prev) : action;
-      // 디자인+커스텀어벗 치식만 갱신. 커스텀어벗 caseInfos.tooth 와 공유하지 않는다.
+      // 디자인+생산 치식만 갱신. 커스텀어벗 생산 caseInfos.tooth 와 공유하지 않는다.
       setCaseInfos({ toothWorks: next });
     },
     [caseInfos?.toothWorks, setCaseInfos],
@@ -257,8 +255,6 @@ export function NewRequestDesignAbutmentFields({
     onImplantFavoritesChange: handleImplantFavoritesChange,
     abutmentFavorites,
     onAbutmentFavoritesChange: handleAbutmentFavoritesChange,
-    toothTensOptions: TOOTH_TENS_OPTIONS,
-    toothOnesOptions: TOOTH_ONES_OPTIONS,
   } satisfies Partial<PracticeTransferRequestIntakePanelProps>;
 
   return (
@@ -267,7 +263,7 @@ export function NewRequestDesignAbutmentFields({
         디자인 / 환자 정보
       </div>
 
-      <div className="grid shrink-0 grid-cols-1 gap-2 text-foreground sm:grid-cols-3">
+      <div className="grid shrink-0 grid-cols-1 gap-2 text-foreground sm:grid-cols-2">
         <div className="min-w-0">
           <LabeledAutocompleteField
             value={caseInfos?.clinicName || ""}
@@ -337,7 +333,7 @@ export function NewRequestDesignAbutmentFields({
           />
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0 sm:col-span-2">
           <Button
             type="button"
             variant="outline"

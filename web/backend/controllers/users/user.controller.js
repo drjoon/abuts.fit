@@ -10,6 +10,7 @@ import { messageService } from "../../utils/popbill.util.js";
 import { Types } from "mongoose";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { ensureRequestorOrgAnchor } from "../businesses/requestorOrgAnchor.util.js";
+import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.js";
 
 /**
  * 사용자 프로필 조회
@@ -455,6 +456,23 @@ async function updateProfile(req, res) {
           });
         }
 
+        // 기공의뢰(practice transfer) 플랫폼 수수료율: 4자 분배율과 별개의 독립 비율.
+        const labReferredFeeRate = Number(raw?.labReferredFeeRate ?? 0.1);
+        const nonPartnerFeeRate = Number(raw?.nonPartnerFeeRate ?? 0.2);
+        const feeRates = [labReferredFeeRate, nonPartnerFeeRate];
+        if (feeRates.some((r) => !Number.isFinite(r) || r < 0 || r > 1)) {
+          return res.status(400).json({
+            success: false,
+            message: "플랫폼 수수료율은 0~100% 범위여야 합니다.",
+          });
+        }
+        if (labReferredFeeRate > nonPartnerFeeRate) {
+          return res.status(400).json({
+            success: false,
+            message: "소개 수수료율은 미거래처 수수료율보다 클 수 없습니다.",
+          });
+        }
+
         const anchorId = req.user?.businessAnchorId;
         if (anchorId && Types.ObjectId.isValid(String(anchorId))) {
           await BusinessAnchor.updateOne(
@@ -466,6 +484,8 @@ async function updateProfile(req, res) {
                   devopsRate,
                   salesmanRate,
                   adminRate,
+                  labReferredFeeRate,
+                  nonPartnerFeeRate,
                   updatedAt: new Date(),
                 },
               },
@@ -614,21 +634,13 @@ async function updateProfile(req, res) {
           updateData.phoneNumber = phone;
         }
 
-        // 의뢰자 Org SSOT: practiceProfile 완료 시 BusinessAnchor 보장 (practice/lab 캡).
-        const existingCaps =
-          req.user?.requestorCapabilities &&
-          typeof req.user.requestorCapabilities === "object"
-            ? req.user.requestorCapabilities
-            : {};
+        // 의뢰자 Org SSOT: practiceProfile 완료 시 BusinessAnchor 보장.
         if (
           (isRequestorPracticeProfile || isPracticeRole) &&
-          !existingCaps.practice &&
-          !existingCaps.lab
+          !req.user?.requestorKind
         ) {
-          updateData.requestorCapabilities = {
-            practice: true,
-            lab: Boolean(existingCaps.lab),
-          };
+          updateData.requestorKind = "practice";
+          updateData.requestorServices = { free: true, paid: false };
         }
       }
     }
@@ -798,6 +810,81 @@ async function updateNotificationSettings(req, res) {
   }
 }
 
+/**
+ * 최근 대시보드 경로 조회
+ * @route GET /api/users/last-dashboard-path
+ */
+async function getLastDashboardPath(req, res) {
+  try {
+    const user = await User.findById(req.user._id)
+      .select("preferences.lastDashboardPath")
+      .lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+    const path = normalizeLastDashboardPath(
+      user?.preferences?.lastDashboardPath,
+    );
+    return res.status(200).json({
+      success: true,
+      data: { path },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "최근 페이지 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 최근 대시보드 경로 저장
+ * @route PUT /api/users/last-dashboard-path
+ */
+async function updateLastDashboardPath(req, res) {
+  try {
+    const path = normalizeLastDashboardPath(req.body?.path);
+    if (!path) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 대시보드 경로입니다.",
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { "preferences.lastDashboardPath": path } },
+      { new: true, runValidators: true },
+    ).select("preferences.lastDashboardPath");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        path: normalizeLastDashboardPath(
+          updatedUser.preferences?.lastDashboardPath,
+        ),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "최근 페이지 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export {
   getProfile,
   updateProfile,
@@ -805,6 +892,8 @@ export {
   verifyPhoneVerification,
   getNotificationSettings,
   updateNotificationSettings,
+  getLastDashboardPath,
+  updateLastDashboardPath,
   getMySecurityLogs,
 };
 

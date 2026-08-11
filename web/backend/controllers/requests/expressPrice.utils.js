@@ -1,8 +1,11 @@
+// change-log:
+// - 2026-08-09: expressQty 지원 — 디자인+생산은 커스텀어벗 수만큼 신속비 배수.
 // related files:
 // - web/backend/controllers/requests/shippingPriority.utils.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/shipping.Requestor.controller.js
+// - web/backend/controllers/requests/designPrice.utils.js
 // - web/backend/rules.md
 
 function normalizeShippingMode(value) {
@@ -53,7 +56,8 @@ export function toPlainRequestPrice(price) {
 
 /**
  * 견적/표시용 금액 SSOT:
- * - 신속(express)이면 `creditSettings.expressFee`(기본 1,000)를 amount에 합산하고 expressFee에 기록
+ * - 신속(express)이면 `creditSettings.expressFee`(기본 2,000) × expressQty 를 amount에 합산하고 expressFee에 총액 기록
+ * - expressQty 기본 1(생산 건당). 디자인+생산은 커스텀어벗 수
  * - 실제 차감은 CAM 승인 시 express_surcharge 저널로 분리 처리
  * - expressFeeStatus === "cancelled" 이면 표시 금액에서 추가비를 제외
  *
@@ -62,11 +66,13 @@ export function toPlainRequestPrice(price) {
 export function resolveQuotedPriceWithExpressFee({
   price,
   shippingMode,
-  expressFee = 1000,
+  expressFee = 2000,
+  expressQty = 1,
 }) {
   const src = toPlainRequestPrice(price);
   const mode = normalizeShippingMode(shippingMode);
-  const feeSetting = Math.max(0, Number(expressFee) || 0);
+  const qty = Math.max(0, Math.floor(Number(expressQty) || 0));
+  const feeTotal = Math.max(0, Number(expressFee) || 0) * qty;
   const recordedFee = Math.max(0, Number(src.expressFee) || 0);
   const amountRaw = Number(src.amount);
   const amount =
@@ -86,11 +92,11 @@ export function resolveQuotedPriceWithExpressFee({
     return next;
   }
 
-  if (mode === "express" && status !== "cancelled" && feeSetting > 0) {
+  if (mode === "express" && status !== "cancelled" && feeTotal > 0) {
     return {
       ...src,
-      amount: baseAmount + feeSetting,
-      expressFee: feeSetting,
+      amount: baseAmount + feeTotal,
+      expressFee: feeTotal,
     };
   }
 
@@ -100,7 +106,7 @@ export function resolveQuotedPriceWithExpressFee({
   };
 
   if (status === "cancelled") {
-    next.expressFee = recordedFee > 0 ? recordedFee : feeSetting || null;
+    next.expressFee = recordedFee > 0 ? recordedFee : feeTotal || null;
     next.expressFeeStatus = "cancelled";
   } else {
     next.expressFee = null;

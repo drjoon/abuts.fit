@@ -8,7 +8,24 @@ import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
+import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-11: 개발운영사·관리자 사이드·라우트에서 소개 제거(영업자만 유지).
+// - 2026-08-11: 의뢰자 사이드·라우트에서 소개 제거(소개 할인 정책 종료).
+// - 2026-08-11: 작업영역(흰 카드)이 outlet 높이를 채우도록 — 충전 탭 수직 중앙·내역 테이블 스크롤 고정.
+// - 2026-08-11: 잔액 < 충전단위면 사이드바 크레딧에 깜빡이는 충전 뱃지·클릭 시 ?tab=charge.
+// - 2026-08-11: 의뢰자 사이드바에 크레딧 메뉴 추가. 충전 토스트 CTA → /dashboard/credits?tab=charge.
+// - 2026-08-11: 기공/어벗 사이드 — 버튼 그라데이션 제거, 가로 연결선만 적용.
+// - 2026-08-11: 기공의뢰/기공의뢰수신 사이드 툴팁에 커스텀어벗 디자인 포함.
+// - 2026-08-11: 기공소 사이드 — 의뢰수신 → 기공의뢰수신.
+// - 2026-08-11: 기공의뢰/기공의뢰수신·어벗의뢰 사이드 메뉴에 기공/어벗 그라데이션 액센트 적용.
+// - 2026-08-11: 의뢰자 사이드 — 디자인 메뉴/페이지 삭제·의뢰수신 통합. 기공의뢰/기공의뢰수신↑·어벗의뢰↓.
+// - 2026-08-10: 의뢰자·치과 사이드메뉴에서 소개 제거.
+// - 2026-08-10: 의뢰자 사이드메뉴를 kind별로 분기 — practice(디자인 제외·유료게이트), lab(디자인·무게이트).
+// - 2026-08-10: 의뢰자 역할 뱃지를 requestorKind에 따라 의뢰자·치과 / 의뢰자·기공소로 표기.
+// - 2026-08-09: 모든 role 최근 사이드바 경로를 계정 디폴트 진입점으로 서버 저장·복원. `/dashboard` 홈 클릭 시 last path pin.
+// - 2026-08-09: 제조사 사이드메뉴 가공작업→생산.
+// - 2026-08-09: 제조사 사이드메뉴 디자인 추가·작업→가공작업. 계정별 최근 대시보드 경로 서버 저장. 디자인은 상단 기간필터 헤더만.
 // - 2026-08-08: 미확인 배지 초기 API는 토큰당 1회만. 가시성 refetch 제거(소켓만 갱신).
 // - 2026-08-08: 기공의뢰서 미확인 배지를 30s 폴링 → 소켓(practice:transfer-*)로 전환.
 // - 2026-08-05: 사이드바 계정 팝업에서 같은 사업자 동료 계정으로 비밀번호 확인 후 전환(모든 role).
@@ -21,10 +38,14 @@ import { useToast } from "@/shared/hooks/use-toast";
 // related files:
 // - web/frontend/src/features/layout/AccountSwitcher.tsx
 // - web/frontend/src/store/useAuthStore.ts
+// - web/frontend/src/shared/navigation/lastDashboardPath.ts
+// - web/backend/controllers/users/user.controller.js
 // - web/backend/controllers/auth/auth.controller.js
 // - web/backend/modules/auth/auth.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/design/DesignPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/shared/ui/gigongAbutAccent.ts
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -33,11 +54,13 @@ import { useToast } from "@/shared/hooks/use-toast";
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
+// - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
-  isPaidRequestorPath,
+  getRequestorRoleBadgeLabel,
+  isPaidRequestorSidebarLocked,
   PAID_ACCESS_DISABLED_HINT,
 } from "@/shared/business/requestorCapabilities";
 import { ToastAction } from "@/components/ui/toast";
@@ -100,19 +123,79 @@ import {
   AccountSwitchPasswordDialog,
   type ColleagueAccount,
 } from "@/features/layout/AccountSwitcher";
+import {
+  gigongAbutConnectorLineClass,
+  type GigongAbutAccentKey,
+} from "@/shared/ui/gigongAbutAccent";
 
 /** DashboardLayout StrictMode remount에도 토큰당 unread 시드 API 1회만 */
 const practiceUnreadSeededTokens = new Set<string>();
 
-const sidebarItems = {
-  requestor: [
+type SidebarItem = {
+  icon: LucideIcon;
+  label: string;
+  href: string;
+  /** 사이드바 호버 빠른툴팁(선택) */
+  tooltip?: string;
+  /** 기공/어벗 가로 연결선 액센트 */
+  accent?: GigongAbutAccentKey;
+};
+
+const sidebarItemPath = (href: string) =>
+  String(href || "").split("?")[0].replace(/\/$/, "") || "/";
+
+const CHARGE_UNIT_LAB = 500_000;
+const CHARGE_UNIT_PRACTICE = 1_000_000;
+const CREDITS_HREF = "/dashboard/credits";
+const CREDITS_CHARGE_HREF = "/dashboard/credits?tab=charge";
+
+const requestorSidebarCommonTail: SidebarItem[] = [
+  { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+  { icon: Settings, label: "설정", href: "/dashboard/settings" },
+];
+
+const ABUTMENT_REQUEST_TOOLTIP =
+  "커스텀어벗 디자인을 올려서 CNC 생산 의뢰";
+
+const buildRequestorSidebarItems = (
+  kind: "practice" | "lab" | null,
+): SidebarItem[] => {
+  const transferItem: SidebarItem =
+    kind === "lab"
+      ? {
+          icon: Building2,
+          label: "기공의뢰수신",
+          href: "/dashboard/practice-transfers?mode=receive",
+          tooltip:
+            "구강스캔 파일을 받아서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 처리",
+          accent: "기공",
+        }
+      : {
+          icon: Building2,
+          label: "기공의뢰",
+          href: "/dashboard/practice-transfers?mode=send",
+          tooltip:
+            "구강스캔 파일을 올려서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 의뢰",
+          accent: "기공",
+        };
+
+  return [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
-    { icon: Building2, label: "기공의뢰서", href: "/dashboard/practice-transfers" },
-    { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
-    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
-  ],
+    transferItem,
+    {
+      icon: FileText,
+      label: "어벗생산의뢰",
+      href: "/dashboard/new-request",
+      tooltip: ABUTMENT_REQUEST_TOOLTIP,
+      accent: "어벗",
+    },
+    { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
+    ...requestorSidebarCommonTail,
+  ];
+};
+
+const sidebarItems = {
+  requestor: buildRequestorSidebarItems("practice"),
   salesman: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
@@ -122,16 +205,21 @@ const sidebarItems = {
   ],
   devops: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
+    { icon: Users2, label: "파트너", href: "/dashboard/partner" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   practice: [
-    { icon: LayoutDashboard, label: "기공의뢰", href: "/practice/dashboard" },
+    {
+      icon: LayoutDashboard,
+      label: "기공의뢰",
+      href: "/practice/dashboard",
+      accent: "기공",
+    },
     { icon: MessageSquare, label: "문의", href: "/practice/inquiries" },
     { icon: Settings, label: "설정", href: "/practice/settings" },
   ],
   manufacturer: [
-    { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
+    { icon: ClipboardList, label: "생산", href: "/dashboard/worksheet" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
@@ -140,7 +228,6 @@ const sidebarItems = {
     { icon: Building2, label: "사업자", href: "/dashboard/businesses" },
     { icon: Users, label: "사용자", href: "/dashboard/users" },
     { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
-    { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
     {
       icon: FileText,
       label: "의뢰",
@@ -171,8 +258,6 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
 } as const;
-
-type SidebarItem = { icon: LucideIcon; label: string; href: string };
 
 const accountMenuItemsByRole: Record<string, SidebarItem[]> = {
   admin: [
@@ -237,7 +322,6 @@ const adminSidebarSections: SidebarSection[] = [
       { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
       { icon: Building2, label: "사업자", href: "/dashboard/businesses" },
       { icon: Users, label: "사용자", href: "/dashboard/users" },
-      { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
     ],
   },
   {
@@ -267,10 +351,13 @@ const adminSidebarSections: SidebarSection[] = [
   },
 ];
 
-const getRoleLabel = (role: string) => {
+const getRoleLabel = (
+  role: string,
+  requestorKind?: "practice" | "lab" | null,
+) => {
   switch (role) {
     case "requestor":
-      return "의뢰자";
+      return getRequestorRoleBadgeLabel(requestorKind);
     case "salesman":
       return "영업자";
     case "devops":
@@ -278,7 +365,7 @@ const getRoleLabel = (role: string) => {
     case "manufacturer":
       return "제조사";
     case "practice":
-      return "의뢰자";
+      return getRequestorRoleBadgeLabel(requestorKind ?? "practice");
     case "admin":
       return "어벗츠.핏";
     default:
@@ -306,7 +393,8 @@ const getRoleBadgeVariant = (role: string) => {
 };
 
 export const DashboardLayout = () => {
-  const { user, logout, token, loginWithToken } = useAuthStore();
+  const { user, logout, token, loginWithToken, setLastDashboardPath } =
+    useAuthStore();
   const {
     period,
     setPeriod,
@@ -343,7 +431,10 @@ export const DashboardLayout = () => {
   const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
     useState(0);
   const { rooms: chatRooms } = useChatRooms();
-  const { canUsePaid: requestorCanUsePaid } = useRequestorBusinessAccess();
+  const {
+    canUsePaid: requestorCanUsePaid,
+    kind: requestorKind,
+  } = useRequestorBusinessAccess();
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const isPracticeUser = Boolean(user?.role === "practice");
@@ -360,6 +451,66 @@ export const DashboardLayout = () => {
       "admin",
       "devops",
     ].includes(user?.role);
+
+  // 계정별 최근 대시보드 경로 서버 저장 (pathname + search)
+  const persistLastDashboardPath = useCallback(
+    (rawPath: string) => {
+      if (!token || !user?.id) return;
+      const nextPath = normalizeLastDashboardPath(rawPath);
+      if (!nextPath) return;
+      if (nextPath === user.lastDashboardPath) return;
+      setLastDashboardPath(nextPath);
+      void apiFetch({
+        path: "/api/users/last-dashboard-path",
+        method: "PUT",
+        token,
+        jsonBody: { path: nextPath },
+      }).catch(() => {
+        // 저장 실패는 UX를 막지 않음
+      });
+    },
+    [setLastDashboardPath, token, user?.id, user?.lastDashboardPath],
+  );
+
+  useEffect(() => {
+    if (!token || !user?.id) return;
+    if (isWizardRoute) return;
+    if (!onboardingCompleted && shouldForceOnboarding) return;
+
+    const nextPath = normalizeLastDashboardPath(
+      `${location.pathname}${location.search}`,
+    );
+    if (!nextPath) return;
+    if (nextPath === user.lastDashboardPath) return;
+
+    const timer = window.setTimeout(() => {
+      persistLastDashboardPath(nextPath);
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    isWizardRoute,
+    location.pathname,
+    location.search,
+    onboardingCompleted,
+    persistLastDashboardPath,
+    shouldForceOnboarding,
+    token,
+    user?.id,
+    user?.lastDashboardPath,
+  ]);
+
+  /** 사이드바 이동. `/dashboard` 홈은 last path를 먼저 pin해 허브 리다이렉트와 충돌하지 않게 한다. */
+  const goSidebarHref = useCallback(
+    (href: string) => {
+      if (href === "/dashboard") {
+        persistLastDashboardPath("/dashboard");
+      }
+      navigate(href);
+      setIsOpen(false);
+    },
+    [navigate, persistLastDashboardPath],
+  );
 
   useEffect(() => {
     if (!token) return;
@@ -679,11 +830,13 @@ export const DashboardLayout = () => {
     }
 
     const params = new URLSearchParams(location.search);
-    const isOnPaymentTab =
-      location.pathname.startsWith("/dashboard/settings") &&
-      params.get("tab") === "payment";
+    const isOnCreditCharge =
+      (location.pathname.startsWith("/dashboard/credits") &&
+        params.get("tab") === "charge") ||
+      (location.pathname.startsWith("/dashboard/settings") &&
+        params.get("tab") === "payment");
 
-    if (isOnPaymentTab) {
+    if (isOnCreditCharge) {
       try {
         localStorage.setItem(storageKey, "1");
       } catch {
@@ -742,7 +895,7 @@ export const DashboardLayout = () => {
             action: (
               <ToastAction
                 altText="크레딧 충전하기"
-                onClick={() => navigate("/dashboard/settings?tab=payment")}
+                onClick={() => navigate("/dashboard/credits?tab=charge")}
               >
                 충전하기
               </ToastAction>
@@ -769,7 +922,7 @@ export const DashboardLayout = () => {
           action: (
             <ToastAction
               altText="크레딧 충전하기"
-              onClick={() => navigate("/dashboard/settings?tab=payment")}
+              onClick={() => navigate("/dashboard/credits?tab=charge")}
             >
               충전하기
             </ToastAction>
@@ -793,8 +946,17 @@ export const DashboardLayout = () => {
   const baseMenuItems = (sidebarItems[effectiveSidebarRole] ||
     []) as unknown as SidebarItem[];
   const menuItems = (() => {
-    return baseMenuItems;
+    if (user.role !== "requestor") return baseMenuItems;
+    return buildRequestorSidebarItems(requestorKind);
   })();
+
+  const creditChargeUnit =
+    requestorKind === "practice" ? CHARGE_UNIT_PRACTICE : CHARGE_UNIT_LAB;
+  const isCreditBelowUnit =
+    user.role === "requestor" &&
+    typeof creditBalance === "number" &&
+    Number.isFinite(creditBalance) &&
+    creditBalance < creditChargeUnit;
 
   const displayRole = isPracticeUser ? "practice" : user.role;
   const adminMenuSections = user.role === "admin" ? adminSidebarSections : null;
@@ -807,7 +969,11 @@ export const DashboardLayout = () => {
   }, [location.pathname, clearBadgeForPath]);
 
   const resolvedMenuItems = (() => {
-    return menuItems;
+    if (!isCreditBelowUnit) return menuItems;
+    return menuItems.map((item) => {
+      if (sidebarItemPath(item.href) !== CREDITS_HREF) return item;
+      return { ...item, href: CREDITS_CHARGE_HREF };
+    });
   })();
 
   const requestorPracticeChatUnreadCount = useMemo(() => {
@@ -821,8 +987,12 @@ export const DashboardLayout = () => {
 
   const getSidebarBadgeCount = useCallback(
     (href: string) => {
-      const adminCommBadge = Number(getBadgeForHref(href) || 0);
-      if (href === "/dashboard/practice-transfers" && user.role === "requestor") {
+      const path = sidebarItemPath(href);
+      const adminCommBadge = Number(getBadgeForHref(path) || 0);
+      if (
+        path === "/dashboard/practice-transfers" &&
+        user.role === "requestor"
+      ) {
         const transferUnread = Math.max(0, Number(requestorPracticeUnreadCount || 0));
         const chatUnread = Math.max(0, Number(requestorPracticeChatUnreadCount || 0));
         return adminCommBadge + transferUnread + chatUnread;
@@ -843,7 +1013,6 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/printer");
   const isWorksheetRoute =
     isManufacturer && location.pathname.startsWith("/dashboard/worksheet");
-
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStageRaw = worksheetParams.get("stage") || "request";
@@ -929,8 +1098,8 @@ export const DashboardLayout = () => {
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <div className="max-w-md w-full space-y-6 text-center">
           <div className="flex justify-center">
-            <div className="h-16 w-16 rounded-full bg-amber-50 flex items-center justify-center">
-              <Clock className="h-8 w-8 text-amber-600" />
+            <div className="h-16 w-16 rounded-full bg-accent-soft flex items-center justify-center">
+              <Clock className="h-8 w-8 text-accent-strong" />
             </div>
           </div>
           <div className="space-y-2">
@@ -1028,8 +1197,7 @@ export const DashboardLayout = () => {
                                   : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                               }`}
                               onClick={() => {
-                                navigate(item.href);
-                                setIsOpen(false);
+                                goSidebarHref(item.href);
                               }}
                               aria-current={isActive ? "page" : undefined}
                             >
@@ -1066,21 +1234,32 @@ export const DashboardLayout = () => {
             ) : (
               <ul className="space-y-1 lg:space-y-2">
                 {resolvedMenuItems.map((item) => {
-                  const isRootDashboard = item.href === "/dashboard";
+                  const itemPath = sidebarItemPath(item.href);
+                  const isRootDashboard = itemPath === "/dashboard";
                   const isActive = isRootDashboard
-                    ? location.pathname === item.href
-                    : location.pathname === item.href ||
-                      location.pathname.startsWith(`${item.href}/`);
+                    ? location.pathname === itemPath
+                    : location.pathname === itemPath ||
+                      location.pathname.startsWith(`${itemPath}/`);
+                  const isCreditsLowHighlight =
+                    isCreditBelowUnit && itemPath === CREDITS_HREF && !isActive;
                   const paidLocked =
                     user.role === "requestor" &&
-                    !requestorCanUsePaid &&
-                    isPaidRequestorPath(item.href);
+                    isPaidRequestorSidebarLocked({
+                      kind: requestorKind,
+                      canUsePaid: requestorCanUsePaid,
+                      href: item.href,
+                    });
+                  const quickTooltip = paidLocked
+                    ? PAID_ACCESS_DISABLED_HINT
+                    : isCreditsLowHighlight
+                      ? "크레딧이 부족합니다. 충전해주세요."
+                      : item.tooltip;
 
                   const button = (
                     <Button
                       variant="ghost"
                       disabled={paidLocked}
-                      className={`w-full h-10 lg:h-11 text-sm lg:text-base transition-all ${
+                      className={`relative z-[1] w-full h-10 lg:h-11 text-sm lg:text-base transition-all ${
                         isCollapsed
                           ? "justify-center px-2"
                           : "justify-start px-3 lg:px-4"
@@ -1093,10 +1272,14 @@ export const DashboardLayout = () => {
                       }`}
                       onClick={() => {
                         if (paidLocked) return;
-                        navigate(item.href);
-                        setIsOpen(false);
+                        goSidebarHref(item.href);
                       }}
                       aria-current={isActive ? "page" : undefined}
+                      aria-label={
+                        isCreditsLowHighlight
+                          ? "크레딧 부족 — 충전 탭으로 이동"
+                          : undefined
+                      }
                     >
                       <item.icon
                         className={`h-4 w-4 flex-shrink-0 ${
@@ -1108,6 +1291,16 @@ export const DashboardLayout = () => {
                       )}
                       {!isCollapsed &&
                         (() => {
+                          if (isCreditsLowHighlight) {
+                            return (
+                              <Badge
+                                variant="outline"
+                                className="ml-auto h-5 animate-pulse border-accent-muted bg-accent text-accent-foreground px-1.5 text-[10px] font-semibold leading-none flex-shrink-0"
+                              >
+                                충전
+                              </Badge>
+                            );
+                          }
                           const badgeCount = getSidebarBadgeCount(item.href);
                           return badgeCount > 0 ? (
                             <Badge
@@ -1118,18 +1311,46 @@ export const DashboardLayout = () => {
                             </Badge>
                           ) : null;
                         })()}
+                      {isCollapsed && isCreditsLowHighlight ? (
+                        <span
+                          aria-hidden
+                          className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+                        />
+                      ) : null}
                     </Button>
+                  );
+
+                  const buttonWithAccent = item.accent ? (
+                    <div className="relative">
+                      <div
+                        aria-hidden
+                        className={gigongAbutConnectorLineClass(item.accent)}
+                      />
+                      {button}
+                    </div>
+                  ) : (
+                    button
                   );
 
                   return (
                     <li key={item.href}>
-                      {paidLocked ? (
-                        <TooltipProvider delayDuration={200}>
+                      {quickTooltip ? (
+                        <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="block w-full cursor-not-allowed">
-                                <span className="pointer-events-none block">
-                                  {button}
+                              <span
+                                className={`block w-full ${
+                                  paidLocked ? "cursor-not-allowed" : ""
+                                }`}
+                              >
+                                <span
+                                  className={
+                                    paidLocked
+                                      ? "pointer-events-none block"
+                                      : "block"
+                                  }
+                                >
+                                  {buttonWithAccent}
                                 </span>
                               </span>
                             </TooltipTrigger>
@@ -1137,12 +1358,12 @@ export const DashboardLayout = () => {
                               side="right"
                               className="max-w-xs text-center"
                             >
-                              <p>{PAID_ACCESS_DISABLED_HINT}</p>
+                              <p>{quickTooltip}</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       ) : (
-                        button
+                        buttonWithAccent
                       )}
                     </li>
                   );
@@ -1200,7 +1421,7 @@ export const DashboardLayout = () => {
                       variant={getRoleBadgeVariant(displayRole)}
                       className="w-fit mt-1"
                     >
-                      {getRoleLabel(displayRole)}
+                      {getRoleLabel(displayRole, requestorKind)}
                     </Badge>
                   </div>
                 </DropdownMenuLabel>
@@ -1282,7 +1503,7 @@ export const DashboardLayout = () => {
               </div>
             )}
           <div
-            className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-blue-100"
+            className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-primary-soft"
             data-dashboard-scroll="1"
           >
             <div className="flex flex-col h-full">
@@ -1495,10 +1716,10 @@ export const DashboardLayout = () => {
                   </div>
                 </div>
               ) : null}
-              <div className="flex-1 min-h-0 overflow-auto">
-                <div className="flex flex-1 min-h-0 flex-col items-stretch p-2 sm:p-4 lg:p-6">
-                  <main className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white/80 p-4 shadow-lg backdrop-blur-xl sm:p-6">
-                    <div className="flex-1 min-h-0 overflow-auto">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex h-full min-h-0 flex-col items-stretch p-2 sm:p-4 lg:p-6">
+                  <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white/80 p-4 shadow-lg backdrop-blur-xl sm:p-6">
+                    <div className="flex h-full min-h-0 flex-1 flex-col overflow-auto">
                       <Outlet
                         context={{
                           worksheetSearch,

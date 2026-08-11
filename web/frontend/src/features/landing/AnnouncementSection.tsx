@@ -33,9 +33,9 @@ export const AnnouncementSection = () => {
   const getAnnouncementStyle = (type: string) => {
     switch (type) {
       case "new":
-        return "border-green-200 bg-green-50 text-green-800";
+        return "border-primary-muted bg-primary-soft text-primary-strong";
       case "notice":
-        return "border-blue-200 bg-blue-50 text-blue-800";
+        return "border-primary-muted bg-primary-soft text-primary-strong";
       default:
         return "border-gray-200 bg-gray-50 text-gray-800";
     }

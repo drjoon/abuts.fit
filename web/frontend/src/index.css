@@ -17,15 +17,24 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 215 25% 15%;
 
-    /* Blue primary inspired by Lovable */
+    /* Semantic axes: Primary / Attention(=accent) / Danger / Neutral / Service
+       Same axis → brightness only (soft / muted / DEFAULT / glow). No extra hues. */
+
+    /* Primary — brand, CTA, process, normal shipping */
     --primary: 217 91% 59%;
     --primary-foreground: 0 0% 100%;
     --primary-glow: 217 100% 70%;
+    --primary-soft: 217 90% 96%;
+    --primary-muted: 217 70% 88%;
+    --primary-strong: 217 91% 45%;
 
-    /* Orange accent inspired by Lovable */
+    /* Attention — express, warning, incomplete (not fatal) */
     --accent: 25 95% 60%;
     --accent-foreground: 0 0% 100%;
     --accent-glow: 25 100% 70%;
+    --accent-soft: 25 95% 95%;
+    --accent-muted: 25 85% 85%;
+    --accent-strong: 25 90% 45%;
 
     --secondary: 210 40% 96%;
     --secondary-foreground: 215 25% 15%;
@@ -35,6 +44,20 @@ All colors MUST be HSL.
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
+    --destructive-soft: 0 84% 96%;
+    --destructive-muted: 0 70% 88%;
+
+    /* Service — 기공 vs 어벗 only
+       기공 = soft blue · 어벗 = soft gold/yellow (낮은 채도, 눈 부담 완화)
+       Attention 앰버(25°)와는 어벗을 더 노란 골드(46°)로 구분 */
+    --service-gigong: 208 62% 48%;
+    --service-gigong-foreground: 0 0% 100%;
+    --service-gigong-soft: 208 55% 96%;
+    --service-gigong-muted: 208 45% 82%;
+    --service-abut: 46 58% 46%;
+    --service-abut-foreground: 0 0% 100%;
+    --service-abut-soft: 46 55% 95%;
+    --service-abut-muted: 46 42% 78%;
 
     --border: 214 32% 91%;
     --input: 214 32% 91%;
@@ -92,8 +115,12 @@ All colors MUST be HSL.
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 210 40% 98%;
+    --primary: 217 91% 65%;
     --primary-foreground: 222.2 47.4% 11.2%;
+    --primary-glow: 217 100% 75%;
+    --primary-soft: 217 40% 18%;
+    --primary-muted: 217 45% 28%;
+    --primary-strong: 217 91% 72%;
 
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -101,15 +128,31 @@ All colors MUST be HSL.
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 18% 78%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    /* Attention stays amber in dark (not remapped to gray) */
+    --accent: 25 90% 55%;
+    --accent-foreground: 0 0% 100%;
+    --accent-glow: 25 100% 65%;
+    --accent-soft: 25 40% 16%;
+    --accent-muted: 25 50% 28%;
+    --accent-strong: 25 95% 62%;
 
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 72% 48%;
     --destructive-foreground: 210 40% 98%;
+    --destructive-soft: 0 40% 16%;
+    --destructive-muted: 0 45% 28%;
+
+    --service-gigong: 208 55% 58%;
+    --service-gigong-foreground: 0 0% 100%;
+    --service-gigong-soft: 208 35% 16%;
+    --service-gigong-muted: 208 40% 28%;
+    --service-abut: 46 50% 55%;
+    --service-abut-foreground: 215 25% 12%;
+    --service-abut-soft: 46 30% 16%;
+    --service-abut-muted: 46 35% 28%;
 
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --ring: 217 91% 65%;
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;

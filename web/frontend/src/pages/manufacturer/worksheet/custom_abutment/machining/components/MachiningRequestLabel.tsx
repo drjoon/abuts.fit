@@ -120,10 +120,10 @@ export const MachiningRequestLabel = ({
   const retentionBadgeClass = (() => {
     const base = `${chipBase} `;
     if (retentionGroove === "none" || retentionGroove === "shallow")
-      return base + "border-amber-100 bg-amber-50 text-amber-600";
+      return base + "border-accent-soft bg-accent-soft text-accent-strong";
     if (retentionGroove === "deep")
-      return base + "border-amber-400 bg-amber-100 text-amber-900";
-    return base + "border-amber-100 bg-amber-50 text-amber-600";
+      return base + "border-accent bg-accent-soft text-accent-strong";
+    return base + "border-accent-soft bg-accent-soft text-accent-strong";
   })();
 
   const renderInfoBadges = () => {
@@ -159,7 +159,7 @@ export const MachiningRequestLabel = ({
         ) : null}
         {showNc ? (
           <span
-            className={`${chipBase} border-cyan-200 bg-cyan-50 text-cyan-700`}
+            className={`${chipBase} border-primary-muted bg-primary-soft text-primary-strong`}
           >
             NC
           </span>
@@ -169,7 +169,7 @@ export const MachiningRequestLabel = ({
         ) : null}
         {showRebalance ? (
           <span
-            className={`${chipBase} border-violet-200 bg-violet-50 text-violet-700`}
+            className={`${chipBase} border-primary-muted bg-primary-soft text-primary-strong`}
           >
             빠른 가공 재배치
           </span>
@@ -178,8 +178,8 @@ export const MachiningRequestLabel = ({
           <span
             className={`${chipBase} ${
               isRndArchivedSample
-                ? "border-purple-200 bg-purple-50 text-purple-700"
-                : "border-blue-200 bg-blue-50 text-blue-700"
+                ? "border-primary-muted bg-primary-soft text-primary-strong"
+                : "border-primary-muted bg-primary-soft text-primary-strong"
             }`}
           >
             {isRndArchivedSample

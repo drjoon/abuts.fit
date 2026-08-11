@@ -1,16 +1,20 @@
 // change-log:
+// - 2026-08-09: 디자인+생산(productMode=design_custom_abutment) 준비 건은 디자인 페이지로 분리.
 // - 2026-08-03: 워크시트 기본 탭 '의뢰' 표시를 '준비'로 변경(표시 레이어만). 관련 유틸의 deriveStageForFilter와 연동됨.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/manufacturer/design/DesignPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { Suspense, lazy } from "react";
 import { useLocation } from "react-router-dom";
 import {
   deriveStageForFilter,
+  isDesignCustomAbutmentRequest,
   isRndSampleRequest,
+  PRODUCT_MODE,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
 const RequestPage = lazy(() =>
@@ -40,6 +44,11 @@ const TrackingInquiryPage = lazy(() =>
   })),
 );
 
+const isWorksheetReadyQueueRequest = (
+  req: Parameters<typeof isDesignCustomAbutmentRequest>[0],
+) =>
+  deriveStageForFilter(req) === "준비" && !isDesignCustomAbutmentRequest(req);
+
 export const ManufacturerWorksheetPage = () => {
   const location = useLocation();
   const worksheetParams = new URLSearchParams(location.search);
@@ -57,7 +66,8 @@ export const ManufacturerWorksheetPage = () => {
           return (
             <RequestPage
               showQueueBar={true}
-              filterRequests={(req) => deriveStageForFilter(req) === "준비"}
+              productModeNe={PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT}
+              filterRequests={isWorksheetReadyQueueRequest}
             />
           );
         case "cam":
@@ -91,7 +101,8 @@ export const ManufacturerWorksheetPage = () => {
           return (
             <RequestPage
               showQueueBar={true}
-              filterRequests={(req) => deriveStageForFilter(req) === "준비"}
+              productModeNe={PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT}
+              filterRequests={isWorksheetReadyQueueRequest}
             />
           );
       }

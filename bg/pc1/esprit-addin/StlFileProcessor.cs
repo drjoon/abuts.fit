@@ -48,6 +48,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const double CompositeFinishToleranceOverrideMm = 0.03;
         private const string BackRoughFourWayEnableEnv = "ABUTS_BACK_ROUGH_4WAY_ENABLE";
         private const string FinishLineMinZEnv = "ABUTS_FINISHLINE_MIN_Z";
+        // Face.RightX = FrontPointX + offset. 수동 Front Point 시 백엔드가 0을 내려준다.
+        private const string FrontFaceEndOffsetEnv = "ABUTS_FRONT_FACE_END_OFFSET_MM";
         // Finish_Cuff SSOT env
         // - ABUTS_COMPOSITE_CUFF_PROFILE: backend finishline points를 ESPRIT FeatureChain으로 변환한 profile token("6,<key>")
         // - ABUTS_COMPOSITE_CUFF_START_X: 시작 X (정책: finishline min_z)
@@ -152,13 +154,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // requestIdHint:
         // - 백엔드가 트리거 시 전달한 canonical requestId
         // - R&D 샘플 복사본이 원본과 동일 STL 파일명을 공유해도, 공정/콜백 귀속이 원본으로 섞이지 않도록 우선 사용한다.
-        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null, double? stlZLengthMm = null)
+        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null, double? stlZLengthMm = null, double? frontFaceEndOffsetMm = null)
         {
             AppLogger.BeginRun();
             AppLogger.Log("StlFileProcessor: Process 시작");
             ResetPerRunState();
             TryApplyCompositeOrientationVectorEnvFromPayload(tiltAxisX, tiltAxisY, tiltAxisZ);
             TryApplyCompositeFinishToleranceEnv(stlZLengthMm);
+            TryApplyFrontFaceEndOffsetEnv(frontFaceEndOffsetMm, "payload");
             Directory.CreateDirectory(_outputFolder);
             Document document = _documentManager.EnsureDocument(materialDiameter);
             if (document == null)
@@ -282,6 +285,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         }
                         TryApplyCompositeFirstPassPercentEnv(requestMeta.tooth);
                         TryApplyCompositeOrientationVectorEnv(requestMeta);
+                        TryApplyFrontFaceEndOffsetEnvFromMeta(requestMeta);
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
@@ -545,6 +549,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable(CompositeOrientationWAxisDegreesEnv, null);
             Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
             Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
+            Environment.SetEnvironmentVariable(FrontFaceEndOffsetEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, null);
@@ -1774,6 +1779,51 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 AppLogger.Log($"DentalAddin: payload TiltAxisVector 적용 실패 - {ex.GetType().Name}:{ex.Message}");
             }
+        }
+
+        private void TryApplyFrontFaceEndOffsetEnv(double? offsetMm, string source)
+        {
+            try
+            {
+                if (!offsetMm.HasValue || double.IsNaN(offsetMm.Value) || double.IsInfinity(offsetMm.Value))
+                {
+                    return;
+                }
+
+                string envValue = offsetMm.Value.ToString("0.###", CultureInfo.InvariantCulture);
+                Environment.SetEnvironmentVariable(FrontFaceEndOffsetEnv, envValue);
+                AppLogger.Log($"StlFileProcessor: FrontFaceEndOffsetMm={envValue} (source={source}) → {FrontFaceEndOffsetEnv}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: FrontFaceEndOffsetMm env 적용 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private void TryApplyFrontFaceEndOffsetEnvFromMeta(BackendApiClient.RequestMetaCaseInfos requestMeta)
+        {
+            if (requestMeta == null)
+            {
+                return;
+            }
+
+            double? offset = requestMeta.frontFaceEndOffsetMm;
+            if (!offset.HasValue)
+            {
+                string source = (requestMeta.frontPoint?.source ?? string.Empty).Trim();
+                if (string.Equals(source, "frontend-manual", StringComparison.OrdinalIgnoreCase))
+                {
+                    offset = 0.0;
+                }
+            }
+
+            if (!offset.HasValue)
+            {
+                AppLogger.Log("StlFileProcessor: FrontFaceEndOffsetMm meta 미지정 → MainModuleComposite 기본값(+1.0mm) 사용");
+                return;
+            }
+
+            TryApplyFrontFaceEndOffsetEnv(offset, "request-meta");
         }
 
         private void TryApplyCompositeOrientationVectorEnv(BackendApiClient.RequestMetaCaseInfos requestMeta)

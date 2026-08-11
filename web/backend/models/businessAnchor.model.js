@@ -30,14 +30,47 @@ const businessAnchorSchema = new mongoose.Schema(
       default: "requestor",
       index: true,
     },
-    // 의뢰자 사업자 유형 (체크박스 OR): practice=발신(치과·무료), lab=수신(기공소·기공실·유료)
+    // 의뢰자 역할 XOR: practice=치과(기공실), lab=기공소
     // related files:
-    // - web/backend/controllers/businesses/business.controller.js
+    // - web/backend/utils/requestorCapabilities.js
     // - web/frontend/src/shared/business/requestorCapabilities.ts
+    requestorKind: {
+      type: String,
+      default: null,
+      index: true,
+      validate: {
+        validator: (v) => v == null || v === "practice" || v === "lab",
+        message: "requestorKind must be practice or lab",
+      },
+    },
+    // 이용 서비스 OR: free=기공의뢰서, paid=생산의뢰(검증 필수)
+    requestorServices: {
+      free: { type: Boolean, default: false },
+      paid: { type: Boolean, default: false },
+    },
+    // 레거시 — normalize/백필·resolve 폴백만. 신규 쓰기 금지.
     requestorCapabilities: {
-      // SSOT: practice (레거시 clinic 키는 normalize/백필로 승격)
       practice: { type: Boolean, default: false },
       lab: { type: Boolean, default: false },
+    },
+    // 개발운영사 지정: 의뢰자 사업자에 디자인 큐(사이드바·API) 접근 허용
+    // related files:
+    // - web/backend/utils/designAccess.js
+    // - web/backend/modules/devops/designAccess.routes.js
+    // - web/frontend/src/pages/devops/components/DesignerAssignmentTab.tsx
+    designAccessEnabled: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    // 개발운영사 지정: 검증 기공소가 기공의뢰 자동매칭 공개 풀에 참여
+    // related files:
+    // - web/backend/utils/practiceTransferAutoMatch.js
+    // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
+    practiceTransferAutoMatchEnabled: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
     name: {
       type: String,
@@ -110,6 +143,10 @@ const businessAnchorSchema = new mongoose.Schema(
       devopsRate: { type: Number, default: 0.1, min: 0, max: 1 },
       salesmanRate: { type: Number, default: 0.1, min: 0, max: 1 },
       adminRate: { type: Number, default: 0.2, min: 0, max: 1 },
+      // 기공의뢰(practice transfer) 플랫폼 수수료율. 거래처(active)=0%, 소개(referred)=labReferredFeeRate,
+      // 그 외(none)=nonPartnerFeeRate. 걷힌 수수료 총액은 위 4자 배분율로 다시 나뉜다.
+      labReferredFeeRate: { type: Number, default: 0.1, min: 0, max: 1 },
+      nonPartnerFeeRate: { type: Number, default: 0.2, min: 0, max: 1 },
       updatedAt: { type: Date, default: null },
     },
     shippingPolicy: {
@@ -147,8 +184,8 @@ const businessAnchorSchema = new mongoose.Schema(
     requestSettings: {
       // related files:
       // - web/backend/controllers/businesses/business.controller.js
-      // - web/frontend/src/features/settings/tabs/RequestTab.tsx
       // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+      // 사업체 아노다이징 기본값(신규의뢰 __default__ 시드). 의뢰건 SSOT는 caseInfos.anodizingEnabled.
       anodizingEnabled: {
         type: Boolean,
         default: true,
@@ -183,6 +220,16 @@ const businessAnchorSchema = new mongoose.Schema(
         type: Date,
         default: null,
       },
+    },
+    // 기공소 기공비 수가 (원). lab only. 설정 「기공비」탭 SSOT
+    // related: web/backend/utils/labFeeSchedule.js
+    labFeeSchedule: {
+      crown: { type: Number, default: 60000, min: 0 },
+      bridge: { type: Number, default: 60000, min: 0 },
+      inlay: { type: Number, default: 50000, min: 0 },
+      pontic: { type: Number, default: 40000, min: 0 },
+      customAbutmentDesign: { type: Number, default: 10000, min: 0 },
+      updatedAt: { type: Date, default: null },
     },
     practiceTransferSettings: {
       // related files:
@@ -229,6 +276,11 @@ const businessAnchorSchema = new mongoose.Schema(
       promoNoticeDismissedAt: {
         type: Date,
         default: null,
+      },
+      // 기공의뢰 전송 시 「디자인 컨펌 생략」기본값 (계정/앵커 SSOT)
+      skipDesignConfirm: {
+        type: Boolean,
+        default: false,
       },
       updatedAt: {
         type: Date,

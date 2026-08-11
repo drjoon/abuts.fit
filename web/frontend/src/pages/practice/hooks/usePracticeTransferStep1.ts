@@ -11,8 +11,11 @@ import {
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+// - web/frontend/src/shared/practice/practiceTransferAccept.ts
 // - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
-export const PRACTICE_ACCEPTED_HINT = "3D 모델 및 그림 파일 업로드 가능";
+export {
+  PRACTICE_ACCEPTED_HINT,
+} from "@/shared/practice/practiceTransferAccept";
 
 export type SearchBusinessResult = {
   _id: string;
@@ -22,6 +25,20 @@ export type SearchBusinessResult = {
   address?: string;
   businessType?: string;
 };
+
+/** 기공소 선택 — 서버가 검증 기공소 중 한 곳을 연결할 때 쓰는 센티널 */
+export const AUTO_MATCH_LAB_ID = "__auto_match__";
+export const AUTO_MATCH_LAB_NAME = "자동 매칭";
+export const AUTO_MATCH_LAB_TOOLTIP =
+  "어벗츠에서 검증한 기공소 중 한 곳을 자동으로 매칭합니다";
+export const AUTO_MATCH_LAB: SearchBusinessResult = {
+  _id: AUTO_MATCH_LAB_ID,
+  name: AUTO_MATCH_LAB_NAME,
+  businessType: "requestor",
+};
+
+export const isAutoMatchLab = (lab?: { _id?: string | null } | null) =>
+  String(lab?._id || "").trim() === AUTO_MATCH_LAB_ID;
 
 type ClassifiedUploadBatch = {
   modelFiles: File[];
@@ -120,6 +137,7 @@ const writeRecentLabs = (rows: SearchBusinessResult[]) => {
 
 const normalizeRecentLab = (lab: SearchBusinessResult | null | undefined): SearchBusinessResult | null => {
   if (!lab || !String(lab.name || "").trim()) return null;
+  if (isAutoMatchLab(lab)) return null;
   const name = String(lab.name || "").trim();
   return {
     _id: String(lab._id || `recent:${name}`).trim(),

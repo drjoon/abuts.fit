@@ -31,6 +31,12 @@ interface HandleSaveParams {
     s3Key?: string;
     originalName?: string;
   };
+  requestorKind?: "practice" | "lab" | null;
+  requestorServices?: {
+    free?: boolean;
+    paid?: boolean;
+  };
+  /** @deprecated requestorKind / requestorServices */
   requestorCapabilities?: {
     practice?: boolean;
     lab?: boolean;
@@ -73,6 +79,8 @@ export const handleSave = async (
     membership,
     businessType,
     businessLicense,
+    requestorKind,
+    requestorServices,
     requestorCapabilities,
     mockHeaders,
     toast,
@@ -253,10 +261,25 @@ export const handleSave = async (
             },
           }
         : {}),
-      ...(requestorCapabilities
-        ? { requestorCapabilities }
-        : {}),
+      ...(requestorKind || requestorServices
+        ? {
+            requestorKind: requestorKind ?? undefined,
+            requestorServices: requestorServices ?? undefined,
+          }
+        : requestorCapabilities
+          ? { requestorCapabilities }
+          : {}),
     };
+
+    try {
+      const labPartnerToken = sessionStorage.getItem("labPartnerInviteToken");
+      if (labPartnerToken) {
+        (requestPayload as Record<string, unknown>).labPartnerToken =
+          labPartnerToken;
+      }
+    } catch {
+      // ignore
+    }
 
     console.info("[handleSave] API request payload", requestPayload);
 
@@ -267,6 +290,20 @@ export const handleSave = async (
       headers: mockHeaders ?? undefined,
       jsonBody: requestPayload,
     });
+
+    if (res.ok) {
+      try {
+        // 등록 완료(active)일 때만 토큰 제거. pending이면 검증 재시도용으로 유지.
+        if (
+          res.data?.data?.labTradingPartnerBound &&
+          res.data?.data?.labTradingPartnerStatus !== "pending"
+        ) {
+          sessionStorage.removeItem("labPartnerInviteToken");
+        }
+      } catch {
+        // ignore
+      }
+    }
 
     console.info("[handleSave] API response", {
       ok: res.ok,

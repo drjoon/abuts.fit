@@ -23,7 +23,7 @@ export const MailboxShelfGroupTabs = ({
           onClick={() => setSelectedGroupIdx(idx)}
           className={`px-3 py-1 text-xs font-medium rounded-full transition-colors border ${
             idx === selectedGroupIdx
-              ? "bg-blue-50 text-blue-700 border-blue-200 shadow-sm"
+              ? "bg-primary-soft text-primary-strong border-primary-muted shadow-sm"
               : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
           }`}
         >

@@ -1483,7 +1483,7 @@ namespace DentalAddin
                 const double middleRoughOverCutMm = 2.2;
 
                 // Rough 경계(현재 정책): Front Face 끝(FrontPointX+2.5) + faceToRough
-                double frontRoughEnd = Math.Min(xMax, splitline1 + FrontFaceEndOffsetFromFrontMm + faceToRoughMm);
+                double frontRoughEnd = Math.Min(xMax, splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm);
                 double middleRoughStart = Math.Max(xMin, splitline1 - middleRoughOverCutMm);
                 double middleRoughEnd = Math.Min(xMax, splitline2 + middleRoughOverCutMm);
 

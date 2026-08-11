@@ -14,7 +14,6 @@ const ACCOUNT = ACCOUNTS.devops;
 
 const DEVOPS_PAGES = [
   { path: "/dashboard", label: "대시보드" },
-  { path: "/dashboard/referral-groups", label: "소개" },
   { path: "/dashboard/payments", label: "정산" },
   { path: "/dashboard/inquiries", label: "문의" },
   { path: "/dashboard/settings", label: "설정" },
@@ -74,5 +73,12 @@ test.describe("Devops – 전체 페이지", () => {
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(500);
     expect(page.url()).not.toContain("new-request");
+  });
+
+  test("소개 페이지 접근 차단", async ({ page }) => {
+    await page.goto("/dashboard/referral-groups");
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(500);
+    expect(page.url()).not.toContain("referral-groups");
   });
 });

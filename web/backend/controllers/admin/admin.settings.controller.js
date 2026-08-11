@@ -20,6 +20,7 @@ const CREDIT_SETTINGS_DEFAULTS = (() => {
     shippingFee: pickDefault("creditSettings.shippingFee"),
     expressFee: pickDefault("creditSettings.expressFee"),
     designFee: pickDefault("creditSettings.designFee"),
+    abutmentRetailPrice: pickDefault("creditSettings.abutmentRetailPrice"),
     defaultRequestFreeCredit: pickDefault(
       "creditSettings.defaultRequestFreeCredit",
     ),
@@ -37,6 +38,9 @@ function normalizeCreditSettings(raw = {}) {
     shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
     expressFee: Number(raw.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee),
     designFee: Number(raw.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
+    abutmentRetailPrice: Number(
+      raw.abutmentRetailPrice ?? CREDIT_SETTINGS_DEFAULTS.abutmentRetailPrice,
+    ),
     defaultRequestFreeCredit: Number(
       raw.defaultRequestFreeCredit ??
         CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
@@ -308,6 +312,7 @@ export async function updateCreditSettings(req, res) {
     const shippingFee = Number(payload.shippingFee);
     const expressFee = Number(payload.expressFee);
     const designFee = Number(payload.designFee);
+    const abutmentRetailPrice = Number(payload.abutmentRetailPrice);
     const defaultRequestFreeCredit = Number(payload.defaultRequestFreeCredit);
     const defaultShippingFreeCredit = Number(payload.defaultShippingFreeCredit);
 
@@ -323,6 +328,9 @@ export async function updateCreditSettings(req, res) {
     }
     if (!Number.isNaN(designFee) && designFee >= 0) {
       sanitized.designFee = designFee;
+    }
+    if (!Number.isNaN(abutmentRetailPrice) && abutmentRetailPrice >= 0) {
+      sanitized.abutmentRetailPrice = abutmentRetailPrice;
     }
     if (!Number.isNaN(defaultRequestFreeCredit) && defaultRequestFreeCredit >= 0) {
       sanitized.defaultRequestFreeCredit = defaultRequestFreeCredit;

@@ -89,7 +89,7 @@ export function ExpressRebalanceAlertModal({
         </DialogHeader>
 
         <div className="space-y-3 px-5 py-4 text-sm sm:px-6">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-amber-900">
+          <div className="rounded-xl border border-accent-muted bg-accent-soft px-3.5 py-2.5 text-accent-strong">
             <div className="text-sm font-semibold">
               목표 마감: {alert?.deadlineAtLabel || "오늘 14:00"}
             </div>
@@ -139,7 +139,7 @@ export function ExpressRebalanceAlertModal({
                       ? ` · 소재 ${machine.materialDiameter}mm`
                       : ""}
                     {machine.missesDeadline ? (
-                      <span className="ml-2 inline-flex items-center rounded-md border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                      <span className="ml-2 inline-flex items-center rounded-md border border-destructive-muted bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
                         14시 위험
                       </span>
                     ) : null}
@@ -166,17 +166,17 @@ export function ExpressRebalanceAlertModal({
                           <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-800">
                             <span>{item.requestId || "-"}</span>
                             {item.isTodayExpress ? (
-                              <span className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                              <span className="inline-flex items-center rounded-md border border-destructive-muted bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
                                 당일신속
                               </span>
                             ) : null}
                             {item.fastMachiningRebalance ? (
-                              <span className="inline-flex items-center rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                              <span className="inline-flex items-center rounded-md border border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong">
                                 재배치
                               </span>
                             ) : null}
                             {item.isRunning ? (
-                              <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                              <span className="inline-flex items-center rounded-md border border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong">
                                 가공중
                               </span>
                             ) : null}

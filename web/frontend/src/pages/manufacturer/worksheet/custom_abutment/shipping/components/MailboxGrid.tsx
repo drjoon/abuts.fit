@@ -84,12 +84,12 @@ const MANUAL_PICKUP_CARD_STYLE: Record<
     badge: "bg-slate-200 text-slate-600",
   },
   hanjin: {
-    card: "border-blue-200 bg-blue-50/40",
-    badge: "bg-blue-100 text-blue-700",
+    card: "border-primary-muted bg-primary-soft/40",
+    badge: "bg-primary-soft text-primary-strong",
   },
   alternate: {
-    card: "border-amber-200 bg-amber-50/40",
-    badge: "bg-amber-100 text-amber-800",
+    card: "border-accent-muted bg-accent-soft/40",
+    badge: "bg-accent-soft text-accent-strong",
   },
 };
 
@@ -119,6 +119,7 @@ type MailboxGridProps = {
   forceTodayMailboxAddresses?: Set<string>;
   clearedForceTodayMailboxAddresses?: Set<string>;
   onBoxClick?: (address: string) => void | Promise<void>;
+  onBoxPrefetch?: (address: string) => void;
   onMailboxError?: (address: string, message: string) => void;
   onRefresh?: (options?: MailboxRefreshOptions) => void | Promise<void>;
 };
@@ -128,6 +129,7 @@ export const MailboxGrid = ({
   forceTodayMailboxAddresses,
   clearedForceTodayMailboxAddresses,
   onBoxClick,
+  onBoxPrefetch,
   onMailboxError,
   onRefresh,
 }: MailboxGridProps) => {
@@ -308,18 +310,18 @@ export const MailboxGrid = ({
       summary.earliestEstimatedShipYmd || "",
     ).trim();
     if (!earliestShipDate) {
-      return "bg-blue-50 border-blue-400 cursor-pointer hover:bg-blue-100 hover:shadow-md";
+      return "bg-primary-soft border-primary/70 cursor-pointer hover:bg-primary-soft hover:shadow-md";
     }
     const today = new Date();
     const kstOffset = 9 * 60;
     const kstDate = new Date(today.getTime() + kstOffset * 60 * 1000);
     const todayYmd = kstDate.toISOString().split("T")[0];
     if (earliestShipDate === todayYmd) {
-      return "bg-blue-50 border-blue-400 cursor-pointer hover:bg-blue-100 hover:shadow-md";
+      return "bg-primary-soft border-primary/70 cursor-pointer hover:bg-primary-soft hover:shadow-md";
     } else if (earliestShipDate > todayYmd) {
       return "bg-slate-50 border-slate-300 cursor-pointer hover:bg-slate-100 hover:shadow-md";
     } else {
-      return "bg-red-50 border-red-400 cursor-pointer hover:bg-red-100 hover:shadow-md";
+      return "bg-destructive-soft border-destructive/80 cursor-pointer hover:bg-destructive-soft hover:shadow-md";
     }
   };
 
@@ -1825,10 +1827,10 @@ export const MailboxGrid = ({
                             occupiedAddresses.length > 0 &&
                             reprintSelectedAddresses.size ===
                               occupiedAddresses.length
-                              ? "bg-blue-500 border-blue-500 text-white"
+                              ? "bg-primary border-primary text-white"
                               : reprintSelectedAddresses.size > 0
-                                ? "bg-blue-100 border-blue-400 text-blue-600"
-                                : "border-slate-300 group-hover:border-blue-400"
+                                ? "bg-primary-soft border-primary/70 text-primary-strong"
+                                : "border-slate-300 group-hover:border-primary/70"
                           }`}
                         >
                           {occupiedAddresses.length > 0 &&
@@ -1859,10 +1861,10 @@ export const MailboxGrid = ({
                           onClick={() => toggleReprintByBinCol(col)}
                           className={`h-10 border border-slate-200 text-xs font-semibold font-mono cursor-pointer transition-colors px-2 ${
                             allSel
-                              ? "bg-blue-500 text-white"
+                              ? "bg-primary text-white"
                               : someSel
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-slate-50 text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+                                ? "bg-primary-soft text-primary-strong"
+                                : "bg-slate-50 text-slate-500 hover:bg-primary-soft hover:text-primary-strong"
                           }`}
                         >
                           {col}열
@@ -1890,10 +1892,10 @@ export const MailboxGrid = ({
                           onClick={() => toggleReprintByBinRow(row)}
                           className={`h-12 border border-slate-200 text-xs font-semibold font-mono cursor-pointer transition-colors text-center ${
                             allRowSel
-                              ? "bg-blue-500 text-white"
+                              ? "bg-primary text-white"
                               : someRowSel
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-slate-50 text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+                                ? "bg-primary-soft text-primary-strong"
+                                : "bg-slate-50 text-slate-500 hover:bg-primary-soft hover:text-primary-strong"
                           }`}
                         >
                           {row}행
@@ -1947,18 +1949,18 @@ export const MailboxGrid = ({
                                 !exists
                                   ? "bg-slate-50"
                                   : isNotToday
-                                    ? "bg-amber-50 border-dashed border-amber-400 cursor-not-allowed opacity-70"
+                                    ? "bg-accent-soft border-dashed border-accent cursor-not-allowed opacity-70"
                                     : selected
-                                      ? "bg-blue-500 cursor-pointer"
+                                      ? "bg-primary cursor-pointer"
                                       : isPrinted
                                         ? "bg-slate-100 hover:bg-slate-50 cursor-pointer"
-                                        : "bg-white hover:bg-blue-50 cursor-pointer"
+                                        : "bg-white hover:bg-primary-soft cursor-pointer"
                               }`}
                             >
                               {exists && (
                                 <div className="flex flex-col items-center justify-center gap-0.5">
                                   {isNotToday && nextDayLabel && (
-                                    <div className="text-[9px] font-semibold text-amber-700 mb-0.5">
+                                    <div className="text-[9px] font-semibold text-accent-strong mb-0.5">
                                       다음 {nextDayLabel}요일
                                     </div>
                                   )}
@@ -1982,7 +1984,7 @@ export const MailboxGrid = ({
                                     <span
                                       className={`text-[10px] ${
                                         selected
-                                          ? "text-blue-100"
+                                          ? "text-primary-soft"
                                           : isPrinted
                                             ? "text-slate-400"
                                             : "text-slate-400"
@@ -2016,7 +2018,7 @@ export const MailboxGrid = ({
                   취소
                 </button>
                 <button
-                  className="px-5 py-2 rounded-lg text-sm text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 font-medium"
+                  className="px-5 py-2 rounded-lg text-sm text-white bg-primary hover:bg-primary-strong disabled:opacity-50 font-medium"
                   disabled={reprintSelectedAddresses.size === 0}
                   onClick={handlePrintConfirm}
                 >
@@ -2057,9 +2059,9 @@ export const MailboxGrid = ({
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                   <span className="font-medium text-slate-600">제외</span> 반영 안 함
                   <span className="mx-1.5 text-slate-300">·</span>
-                  <span className="font-medium text-blue-600">한진</span> 운송장 → 집하완료
+                  <span className="font-medium text-primary-strong">한진</span> 운송장 → 집하완료
                   <span className="mx-1.5 text-slate-300">·</span>
-                  <span className="font-medium text-amber-700">한진외</span> 사유 → 배송완료
+                  <span className="font-medium text-accent-strong">한진외</span> 사유 → 배송완료
                 </p>
                 <div className="flex items-center gap-1 text-[11px] text-slate-500">
                   <span className="mr-0.5">일괄</span>
@@ -2123,9 +2125,9 @@ export const MailboxGrid = ({
                                 className={`h-8 rounded-md text-xs font-medium transition-colors ${
                                   selected
                                     ? opt.value === "hanjin"
-                                      ? "bg-blue-500 text-white shadow-sm"
+                                      ? "bg-primary text-white shadow-sm"
                                       : opt.value === "alternate"
-                                        ? "bg-amber-500 text-white shadow-sm"
+                                        ? "bg-accent text-white shadow-sm"
                                         : "bg-slate-500 text-white shadow-sm"
                                     : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
                                 }`}
@@ -2147,7 +2149,7 @@ export const MailboxGrid = ({
                               }));
                             }}
                             placeholder="운송장번호 입력"
-                            className="w-full h-9 rounded-lg border border-blue-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                            className="w-full h-9 rounded-lg border border-primary-muted bg-white px-3 text-sm outline-none focus:border-primary/70 focus:ring-2 focus:ring-primary-soft"
                           />
                         )}
 
@@ -2168,7 +2170,7 @@ export const MailboxGrid = ({
                                   }),
                                 );
                               }}
-                              className="w-full h-9 appearance-none rounded-lg border border-amber-200 bg-white pl-3 pr-8 text-sm text-slate-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                              className="w-full h-9 appearance-none rounded-lg border border-accent-muted bg-white pl-3 pr-8 text-sm text-slate-700 outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
                             >
                               {manualPickupReasonOptions.map((reason) => (
                                 <option key={reason.id} value={reason.id}>
@@ -2176,7 +2178,7 @@ export const MailboxGrid = ({
                                 </option>
                               ))}
                             </select>
-                            <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-amber-400 text-[10px]">
+                            <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-accent/80 text-[10px]">
                               ▾
                             </span>
                           </div>
@@ -2236,7 +2238,7 @@ export const MailboxGrid = ({
                           isSavingManualPickupReasons ||
                           !String(manualPickupReasonOptionDraft || "").trim()
                         }
-                        className="inline-flex h-9 items-center gap-1 shrink-0 rounded-lg border border-blue-200 bg-white px-2.5 text-xs font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                        className="inline-flex h-9 items-center gap-1 shrink-0 rounded-lg border border-primary-muted bg-white px-2.5 text-xs font-medium text-primary-strong hover:bg-primary-soft disabled:opacity-50"
                         onClick={addManualPickupReasonOption}
                       >
                         <Plus className="h-3.5 w-3.5" />
@@ -2274,7 +2276,7 @@ export const MailboxGrid = ({
                             type="button"
                             aria-label={`${reason.label} 삭제`}
                             disabled={isSavingManualPickupReasons}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-rose-500 hover:bg-rose-50 disabled:opacity-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-destructive hover:bg-destructive-soft disabled:opacity-50"
                             onClick={() => {
                               if (manualPickupReasonOptions.length <= 1) {
                                 toast({
@@ -2326,12 +2328,12 @@ export const MailboxGrid = ({
                   <>
                     반영 {manualPickupSummary.applyCount}개
                     {manualPickupSummary.hanjin > 0 && (
-                      <span className="ml-1.5 text-blue-500">
+                      <span className="ml-1.5 text-primary">
                         한진 {manualPickupSummary.hanjin}
                       </span>
                     )}
                     {manualPickupSummary.alternate > 0 && (
-                      <span className="ml-1.5 text-amber-600">
+                      <span className="ml-1.5 text-accent-strong">
                         한진외 {manualPickupSummary.alternate}
                       </span>
                     )}
@@ -2355,7 +2357,7 @@ export const MailboxGrid = ({
                 </button>
                 <button
                   type="button"
-                  className="px-5 py-2 rounded-lg text-sm text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 font-medium"
+                  className="px-5 py-2 rounded-lg text-sm text-white bg-primary hover:bg-primary-strong disabled:opacity-50 font-medium"
                   disabled={
                     isRequestingPickup || manualPickupSummary.applyCount === 0
                   }
@@ -2423,6 +2425,7 @@ export const MailboxGrid = ({
         handleTouchEnd={handleTouchEnd}
         getMailboxColorClass={getMailboxColorClass}
         onBoxClick={onBoxClick}
+        onBoxPrefetch={onBoxPrefetch}
       />
     </div>
   );

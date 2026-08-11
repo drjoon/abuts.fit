@@ -108,79 +108,80 @@ export const usePackingCapture = ({
           imageFiles.map((file) => resizeImageFile(file)),
         );
         const uploadResult = await uploadToS3(resizedFiles);
+        // 업로드는 병렬, 우편함 할당이 있는 lot-capture 승인은 직렬 처리한다.
+        // (동일 의뢰자 건이 동시에 빈 우편함을 각각 집어 박스가 쪼개지는 레이스 방지)
         setOcrStage("recognize");
-        await Promise.allSettled(
-          uploadResult.map(async (uploaded, index) => {
-            try {
-              const uploadedMeta = (uploaded || {}) as any;
-              if (!uploaded?.key) {
-                toast({
-                  title: "이미지 업로드에 실패했습니다",
-                  description: "잠시 후 다시 시도해주세요.",
-                  variant: "destructive",
-                });
-                return;
-              }
-              const captureRes = await fetch("/api/bg/lot-capture/packing", {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  s3Key: uploaded.key,
-                  s3Url: uploadedMeta.url || uploadedMeta.s3Url || "",
-                  originalName: uploaded.originalName,
-                  fileSize:
-                    uploadedMeta.fileSize || imageFiles[index]?.size || 0,
-                  source: "manual",
-                }),
+        for (let index = 0; index < uploadResult.length; index += 1) {
+          const uploaded = uploadResult[index];
+          try {
+            const uploadedMeta = (uploaded || {}) as any;
+            if (!uploaded?.key) {
+              toast({
+                title: "이미지 업로드에 실패했습니다",
+                description: "잠시 후 다시 시도해주세요.",
+                variant: "destructive",
               });
-              const captureData = await captureRes.json().catch(() => ({}));
-              if (!captureRes.ok || captureData?.success === false) {
-                throw new Error(
-                  captureData?.message || "세척·포장 캡쳐 처리에 실패했습니다.",
-                );
-              }
+              continue;
+            }
+            const captureRes = await fetch("/api/bg/lot-capture/packing", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                s3Key: uploaded.key,
+                s3Url: uploadedMeta.url || uploadedMeta.s3Url || "",
+                originalName: uploaded.originalName,
+                fileSize:
+                  uploadedMeta.fileSize || imageFiles[index]?.size || 0,
+                source: "manual",
+              }),
+            });
+            const captureData = await captureRes.json().catch(() => ({}));
+            if (!captureRes.ok || captureData?.success === false) {
+              throw new Error(
+                captureData?.message || "세척·포장 캡쳐 처리에 실패했습니다.",
+              );
+            }
 
-              if (!captureData?.data?.matched) {
-                const reason = String(captureData?.data?.reason || "").trim();
-                const recognizedSuffix = extractLotSuffix3(
-                  String(captureData?.data?.suffix || ""),
-                );
-                toast({
-                  title: "일치하는 의뢰를 찾지 못했습니다",
-                  description:
-                    reason === "no_recognized_suffix"
-                      ? "이미지 내 영문 대문자 3글자가 보이도록 다시 촬영해주세요."
-                      : recognizedSuffix
-                        ? `일치하는 의뢰 없음: ${recognizedSuffix}`
-                        : "세척.패킹 의뢰를 찾지 못했습니다.",
-                  variant: "destructive",
-                });
-                return;
-              }
-
+            if (!captureData?.data?.matched) {
+              const reason = String(captureData?.data?.reason || "").trim();
               const recognizedSuffix = extractLotSuffix3(
                 String(captureData?.data?.suffix || ""),
               );
               toast({
-                title: "세척·포장 처리 완료",
-                description: recognizedSuffix
-                  ? `LOT 코드 ${recognizedSuffix} 의뢰를 발송 단계로 이동했습니다.`
-                  : "세척·포장 처리 결과를 반영했습니다.",
-              });
-            } catch (error) {
-              toast({
-                title: "이미지 처리 실패",
+                title: "일치하는 의뢰를 찾지 못했습니다",
                 description:
-                  (error as Error)?.message ||
-                  "세척·포장 이미지 처리 중 오류가 발생했습니다.",
+                  reason === "no_recognized_suffix"
+                    ? "이미지 내 영문 대문자 3글자가 보이도록 다시 촬영해주세요."
+                    : recognizedSuffix
+                      ? `일치하는 의뢰 없음: ${recognizedSuffix}`
+                      : "세척.패킹 의뢰를 찾지 못했습니다.",
                 variant: "destructive",
               });
+              continue;
             }
-          }),
-        );
+
+            const recognizedSuffix = extractLotSuffix3(
+              String(captureData?.data?.suffix || ""),
+            );
+            toast({
+              title: "세척·포장 처리 완료",
+              description: recognizedSuffix
+                ? `LOT 코드 ${recognizedSuffix} 의뢰를 발송 단계로 이동했습니다.`
+                : "세척·포장 처리 결과를 반영했습니다.",
+            });
+          } catch (error) {
+            toast({
+              title: "이미지 처리 실패",
+              description:
+                (error as Error)?.message ||
+                "세척·포장 이미지 처리 중 오류가 발생했습니다.",
+              variant: "destructive",
+            });
+          }
+        }
       } catch (error: any) {
         console.error("Packing LOT 인식 처리 오류:", error);
         toast({

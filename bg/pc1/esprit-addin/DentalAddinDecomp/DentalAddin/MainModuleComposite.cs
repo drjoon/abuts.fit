@@ -1622,7 +1622,20 @@ namespace DentalAddin
 
         // Front Face 종료점 오프셋(mm): Face.RightX = FrontPointX(STL 상부) + 이 값
         // Rough Front 끝점도 동일 오프셋을 기준으로 faceToRough 여유를 더한다.
-        private const double FrontFaceEndOffsetFromFrontMm = 2.5;
+        // - 기본: +1.0mm
+        // - 수동 Front Point(ABUTS_FRONT_FACE_END_OFFSET_MM): 백엔드가 내려준 값(보통 0)
+        private const double FrontFaceEndOffsetFromFrontMmDefault = 1.0;
+        private const string FrontFaceEndOffsetEnv = "ABUTS_FRONT_FACE_END_OFFSET_MM";
+
+        private static double GetFrontFaceEndOffsetFromFrontMm()
+        {
+            double? fromEnv = GetEnvDoubleNullable(FrontFaceEndOffsetEnv);
+            if (fromEnv.HasValue && !double.IsNaN(fromEnv.Value) && !double.IsInfinity(fromEnv.Value))
+            {
+                return fromEnv.Value;
+            }
+            return FrontFaceEndOffsetFromFrontMmDefault;
+        }
 
         // Face(EM2_0BALL) 안전가드 상수:
         // Front_Rough 우측 끝보다 Face 우측 끝이 우측으로 더 나가면 공구 파손 위험이 있어,
@@ -1696,7 +1709,7 @@ namespace DentalAddin
                 // 기본 모드에서는 기존 D4 기준 오프셋(2.2mm)을 유지한다.
                 double faceToRoughMm = GetRoughBoundaryOffsetMm();
                 splitXUsed = splitline1;
-                roughARightEndX = Clamp(splitline1 + FrontFaceEndOffsetFromFrontMm + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
+                roughARightEndX = Clamp(splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
                 return true;
             }
             catch (Exception ex)
@@ -1710,7 +1723,7 @@ namespace DentalAddin
 
         /// <summary>
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
-        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + FrontFaceEndOffsetFromFrontMm(2.5mm)
+        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + FrontFaceEndOffset(기본 1.0mm, 수동 Front Point 시 메타값)
         /// - 단, Face.RightX는 Splitline_2를 침범하지 않도록 항상 Splitline_2보다 작게 클램프한다.
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
@@ -1738,10 +1751,11 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
-                // Front_Face 끝점: Splitline_1(=FrontPointX) + FrontFaceEndOffsetFromFrontMm
+                // Front_Face 끝점: Splitline_1(=FrontPointX) + FrontFaceEndOffset
                 // 단, Splitline_2를 침범하지 않도록 Splitline_2보다 약간 작은 값으로 상한 클램프한다.
                 const double splitline2NoCrossMarginMm = 0.001;
-                double requestedFaceRightX = MoveSTL_Module.FrontPointX + FrontFaceEndOffsetFromFrontMm;
+                double faceEndOffsetMm = GetFrontFaceEndOffsetFromFrontMm();
+                double requestedFaceRightX = MoveSTL_Module.FrontPointX + faceEndOffsetMm;
                 double appliedFaceRightX = requestedFaceRightX;
 
                 bool splitline2ClampApplied = false;
@@ -1774,7 +1788,7 @@ namespace DentalAddin
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={splitline2NoCrossMarginMm:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: offset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={splitline2NoCrossMarginMm:F3}");
             }
             catch (Exception ex)
             {
@@ -2273,8 +2287,8 @@ namespace DentalAddin
             double backRoughOverCutMm = roughBoundaryOffsetMm;
 
             double frontStart = xMin;
-            // Front Rough 끝점: Face(FrontPointX+2.5)보다 rough 경계 오프셋만큼 더 길게 (D4:+2.2 / D2:+1.2)
-            double frontEnd = Clamp(splitline1 + FrontFaceEndOffsetFromFrontMm + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
+            // Front Rough 끝점: Face(FrontPointX+1.0)보다 rough 경계 오프셋만큼 더 길게 (D4:+2.2 / D2:+1.2)
+            double frontEnd = Clamp(splitline1 + GetFrontFaceEndOffsetFromFrontMm() + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
 
             double middleStart = Clamp(splitline1 - middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
             double middleEnd = Clamp(splitline2 + middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);

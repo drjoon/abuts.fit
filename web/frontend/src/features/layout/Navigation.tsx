@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import logo from "@/assets/logo.png";
 
 export const Navigation = () => {
@@ -28,7 +29,7 @@ export const Navigation = () => {
 
   const handleLoginClick = () => {
     if (isAuthenticated) {
-      navigate("/dashboard");
+      navigate(resolveEntryDashboardPath(user));
     } else {
       navigate("/login");
     }

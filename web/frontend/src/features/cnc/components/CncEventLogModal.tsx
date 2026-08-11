@@ -85,7 +85,7 @@ export function CncEventLogModal({
       return (
         <Badge
           variant="outline"
-          className="shrink-0 bg-emerald-50 text-[10px] font-extrabold text-emerald-700 border-emerald-200 px-2 py-0.5"
+          className="shrink-0 bg-primary-soft text-[10px] font-extrabold text-primary-strong border-primary-muted px-2 py-0.5"
         >
           성공
         </Badge>
@@ -95,7 +95,7 @@ export function CncEventLogModal({
       return (
         <Badge
           variant="outline"
-          className="shrink-0 bg-rose-50 text-[10px] font-extrabold text-rose-700 border-rose-200 px-2 py-0.5"
+          className="shrink-0 bg-destructive-soft text-[10px] font-extrabold text-destructive border-destructive-muted px-2 py-0.5"
         >
           실패
         </Badge>
@@ -129,7 +129,7 @@ export function CncEventLogModal({
         {loading ? (
           <div className="text-sm text-slate-500">불러오는 중...</div>
         ) : error ? (
-          <div className="text-sm text-rose-600">{error}</div>
+          <div className="text-sm text-destructive">{error}</div>
         ) : items.length === 0 ? (
           <div className="text-sm text-slate-500">표시할 로그가 없습니다.</div>
         ) : (

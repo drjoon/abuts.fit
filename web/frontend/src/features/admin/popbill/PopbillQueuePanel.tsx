@@ -82,13 +82,13 @@ function statusBadge(status: TaskStatus) {
       return <Badge variant="secondary">대기</Badge>;
     case "PROCESSING":
       return (
-        <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+        <Badge className="bg-primary-soft text-primary-strong border-primary-muted">
           처리중
         </Badge>
       );
     case "COMPLETED":
       return (
-        <Badge className="bg-green-100 text-green-700 border-green-200">
+        <Badge className="bg-primary-muted/50 text-primary-strong border-primary-muted">
           완료
         </Badge>
       );
@@ -372,7 +372,7 @@ export function PopbillQueuePanel({
                       </span>
                     ) : null}
                     {statusCounts.PROCESSING ? (
-                      <span className="text-blue-600">
+                      <span className="text-primary-strong">
                         처리중: {statusCounts.PROCESSING}
                       </span>
                     ) : null}
@@ -382,7 +382,7 @@ export function PopbillQueuePanel({
                       </span>
                     ) : null}
                     {statusCounts.COMPLETED ? (
-                      <span className="text-green-600">
+                      <span className="text-primary-strong">
                         완료: {statusCounts.COMPLETED}
                       </span>
                     ) : null}

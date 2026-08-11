@@ -166,13 +166,13 @@ const getBusinessTypeLabel = (type?: string) => {
 const getBusinessTypeBadgeClass = (type?: string) => {
   switch (normalizeBusinessType(type)) {
     case "requestor":
-      return "bg-blue-100 text-blue-700 border-blue-200";
+      return "bg-primary-soft text-primary-strong border-primary-muted";
     case "salesman":
-      return "bg-emerald-100 text-emerald-700 border-emerald-200";
+      return "bg-primary-soft text-primary-strong border-primary-muted";
     case "manufacturer":
       return "bg-slate-100 text-slate-700 border-slate-200";
     case "devops":
-      return "bg-violet-100 text-violet-700 border-violet-200";
+      return "bg-primary-muted/50 text-primary-strong border-primary-muted";
     default:
       return "bg-muted text-muted-foreground border-border";
   }
@@ -503,29 +503,29 @@ export default function AdminBusinessPage() {
               label: "총 사업자",
               count: totalBusinesses,
               icon: Building2,
-              iconWrap: "bg-blue-50",
-              iconClass: "text-blue-600",
+              iconWrap: "bg-primary-soft",
+              iconClass: "text-primary-strong",
             },
             {
               label: "Anchor 연결",
               count: anchoredCount,
               icon: Anchor,
-              iconWrap: "bg-violet-50",
-              iconClass: "text-violet-600",
+              iconWrap: "bg-primary-soft",
+              iconClass: "text-primary-strong",
             },
             {
               label: "Anchor 미연결",
               count: missingAnchorCount,
               icon: AlertCircle,
-              iconWrap: "bg-amber-50",
-              iconClass: "text-amber-600",
+              iconWrap: "bg-accent-soft",
+              iconClass: "text-accent-strong",
             },
             {
               label: "표시 사업자",
               count: filteredBusinesses.length,
               icon: Wallet,
-              iconWrap: "bg-sky-50",
-              iconClass: "text-sky-600",
+              iconWrap: "bg-primary-soft",
+              iconClass: "text-primary-strong",
             },
           ].map((card) => {
             const Icon = card.icon;
@@ -680,7 +680,7 @@ export default function AdminBusinessPage() {
                         </div>
                         <button
                           type="button"
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-destructive-soft hover:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDeleteClick(business);
@@ -794,7 +794,7 @@ export default function AdminBusinessPage() {
               누락 현황 조회 중...
             </div>
           ) : reconcileDialog.error ? (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            <div className="rounded-lg bg-destructive-soft p-3 text-sm text-destructive">
               {reconcileDialog.error}
             </div>
           ) : reconcileDialog.summary ? (
@@ -1096,7 +1096,7 @@ export default function AdminBusinessPage() {
               </span>
             </div>
           ) : linkedUsersDialog.error ? (
-            <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
+            <div className="rounded-lg bg-destructive-soft p-4 text-sm text-destructive">
               {linkedUsersDialog.error}
             </div>
           ) : (
@@ -1203,7 +1203,7 @@ export default function AdminBusinessPage() {
               {/* 경고 메시지 */}
               {linkedUsersDialog.stats &&
                 linkedUsersDialog.stats.childAnchorCount > 0 && (
-                  <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
+                  <div className="rounded-lg bg-accent-soft p-3 text-sm text-accent-strong">
                     하위 소개 사업자가{" "}
                     {linkedUsersDialog.stats.childAnchorCount}개 존재하여 삭제할
                     수 없습니다. 하위 사업자를 먼저 삭제해주세요.
@@ -1213,7 +1213,7 @@ export default function AdminBusinessPage() {
               {/* 삭제 안내 */}
               {linkedUsersDialog.stats &&
                 linkedUsersDialog.stats.childAnchorCount === 0 && (
-                  <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                  <div className="rounded-lg bg-destructive-soft p-3 text-sm text-destructive">
                     삭제 시 사업자와 연결된 {linkedUsersDialog.stats.userCount}
                     명의 사용자가 모두 함께 삭제됩니다. 관련 의뢰{" "}
                     {linkedUsersDialog.stats.requestCount}건은 보존되며 사업자

@@ -129,7 +129,7 @@ export const CncBridgePanel: React.FC<CncBridgePanelProps> = ({
       <div
         className={`rounded-xl border-2 border-dashed overflow-hidden mt-1 transition-colors cursor-pointer ${
           bridgeDropping
-            ? "border-blue-400 bg-blue-50/60"
+            ? "border-primary/70 bg-primary-soft/60"
             : "border-slate-200 bg-slate-50/80"
         }`}
         onClick={() => {
@@ -160,7 +160,7 @@ export const CncBridgePanel: React.FC<CncBridgePanelProps> = ({
               불러오는 중...
             </div>
           ) : bridgeError ? (
-            <div className="px-3 py-4 text-xs text-red-500">{bridgeError}</div>
+            <div className="px-3 py-4 text-xs text-destructive">{bridgeError}</div>
           ) : bridgeEntries.length === 0 ? (
             <div className="px-3 py-6 text-xs text-slate-500 text-center">
               폴더가 비어 있습니다. 여기로 .nc / .txt 파일을 드래그해서 업로드할
@@ -183,8 +183,8 @@ export const CncBridgePanel: React.FC<CncBridgePanelProps> = ({
                       ? `${rawName.slice(0, 15)}...`
                       : rawName;
                   const cardClass = isDir
-                    ? "border-2 border-amber-500 bg-white hover:border-amber-600"
-                    : "border border-blue-200 bg-white hover:border-blue-400 hover:bg-blue-50/60";
+                    ? "border-2 border-accent bg-white hover:border-accent-strong"
+                    : "border border-primary-muted bg-white hover:border-primary/70 hover:bg-primary-soft/60";
 
                   return (
                     <div
@@ -197,7 +197,7 @@ export const CncBridgePanel: React.FC<CncBridgePanelProps> = ({
                           e.stopPropagation();
                           await onDeleteEntry(entry);
                         }}
-                        className="absolute top-0.5 right-0.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-0.5 right-0.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full bg-destructive text-[11px] font-bold text-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         ×
                       </button>

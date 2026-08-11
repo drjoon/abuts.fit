@@ -1,7 +1,9 @@
 // related files:
 // - web/frontend/src/shared/business/requestorCapabilities.ts
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
-import { useCallback, useEffect, useMemo, useState } from "react";
+// change-log:
+// - 2026-08-11: 초기 1회만 loading=true — 이후 refresh는 silent(페이지 스켈레톤 플리커 방지).
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import {
@@ -14,22 +16,25 @@ import {
   canSendPracticeTransfer,
   canUseFreeServices,
   canUsePaidServices,
-  hasAnyRequestorCapability,
-  normalizeRequestorCapabilities,
+  hasRequestorProfile,
   requiresBusinessLicense,
-  resolveRequestorCapabilities,
-  type RequestorCapabilities,
+  resolveRequestorProfile,
+  type RequestorProfile,
 } from "@/shared/business/requestorCapabilities";
+
+const emptyProfile = (): RequestorProfile => ({
+  kind: null,
+  services: { free: false, paid: false },
+});
 
 export const useRequestorBusinessAccess = () => {
   const { token, user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [businessVerified, setBusinessVerified] = useState(false);
-  const [capabilities, setCapabilities] = useState<RequestorCapabilities>({
-    practice: false,
-    lab: false,
-  });
+  const [profile, setProfile] = useState<RequestorProfile>(emptyProfile);
   const [membership, setMembership] = useState<string>("none");
+  const [designAccessEnabled, setDesignAccessEnabled] = useState(false);
+  const hasLoadedOnceRef = useRef(false);
 
   const businessType = useMemo(
     () => resolveBusinessType(user?.role, "requestor"),
@@ -39,9 +44,14 @@ export const useRequestorBusinessAccess = () => {
   const refresh = useCallback(async () => {
     if (!token || user?.role !== "requestor") {
       setLoading(false);
+      hasLoadedOnceRef.current = true;
       setBusinessVerified(Boolean(user?.businessVerified));
-      setCapabilities(
-        resolveRequestorCapabilities({
+      setDesignAccessEnabled(false);
+      setProfile(
+        resolveRequestorProfile({
+          userKind: user?.requestorKind,
+          userServices: user?.requestorServices,
+          userCaps: user?.requestorCapabilities,
           userRole: user?.role,
           businessVerified: Boolean(user?.businessVerified),
         }),
@@ -49,7 +59,10 @@ export const useRequestorBusinessAccess = () => {
       return;
     }
 
-    setLoading(true);
+    // 초기 진입 1회만 스켈레톤용 loading. 이후 이벤트/캐시 refresh는 silent.
+    if (!hasLoadedOnceRef.current) {
+      setLoading(true);
+    }
     try {
       const data = await loadBusinessMeCached({
         token,
@@ -59,9 +72,14 @@ export const useRequestorBusinessAccess = () => {
       const verified = Boolean(data?.businessVerified);
       setBusinessVerified(verified);
       setMembership(String(data?.membership || "none"));
-      setCapabilities(
-        resolveRequestorCapabilities({
+      setDesignAccessEnabled(Boolean(data?.designAccessEnabled));
+      setProfile(
+        resolveRequestorProfile({
+          anchorKind: data?.requestorKind,
+          anchorServices: data?.requestorServices,
           anchorCaps: data?.requestorCapabilities,
+          userKind: user?.requestorKind,
+          userServices: user?.requestorServices,
           userCaps: user?.requestorCapabilities,
           userRole: user?.role,
           businessVerified: verified,
@@ -69,14 +87,18 @@ export const useRequestorBusinessAccess = () => {
       );
     } catch {
       setBusinessVerified(false);
-      setCapabilities(
-        resolveRequestorCapabilities({
+      setDesignAccessEnabled(false);
+      setProfile(
+        resolveRequestorProfile({
+          userKind: user?.requestorKind,
+          userServices: user?.requestorServices,
           userCaps: user?.requestorCapabilities,
           userRole: user?.role,
           businessVerified: false,
         }),
       );
     } finally {
+      hasLoadedOnceRef.current = true;
       setLoading(false);
     }
   }, [
@@ -84,6 +106,8 @@ export const useRequestorBusinessAccess = () => {
     token,
     user?.businessVerified,
     user?.requestorCapabilities,
+    user?.requestorKind,
+    user?.requestorServices,
     user?.role,
   ]);
 
@@ -101,8 +125,6 @@ export const useRequestorBusinessAccess = () => {
     };
   }, [refresh]);
 
-  const caps = normalizeRequestorCapabilities(capabilities);
-
   return {
     loading,
     refresh,
@@ -113,12 +135,24 @@ export const useRequestorBusinessAccess = () => {
       }),
     membership,
     businessVerified,
-    capabilities: caps,
-    hasCapability: hasAnyRequestorCapability(caps),
-    requiresLicense: requiresBusinessLicense(caps),
-    canUsePaid: canUsePaidServices({ businessVerified, caps }),
-    canUseFree: canUseFreeServices(caps),
-    canSendTransfer: canSendPracticeTransfer(caps) || user?.role === "practice",
-    canReceiveTransfer: canReceivePracticeTransfer(caps),
+    designAccessEnabled,
+    profile,
+    kind: profile.kind,
+    services: profile.services,
+    /** @deprecated profile / kind 사용 */
+    capabilities: {
+      practice: profile.kind === "practice",
+      lab: profile.kind === "lab",
+    },
+    hasCapability: hasRequestorProfile(profile),
+    requiresLicense: requiresBusinessLicense(profile.services),
+    canUsePaid: canUsePaidServices({
+      businessVerified,
+      services: profile.services,
+    }),
+    canUseFree: canUseFreeServices(profile),
+    canSendTransfer:
+      canSendPracticeTransfer(profile) || user?.role === "practice",
+    canReceiveTransfer: canReceivePracticeTransfer(profile),
   };
 };

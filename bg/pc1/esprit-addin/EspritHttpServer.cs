@@ -43,6 +43,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         [DataMember] public double TaperAngle { get; set; }
         [DataMember] public Vector3Dto TiltAxisVector { get; set; }
         [DataMember] public Vector3Dto FrontPoint { get; set; }
+        // 수동 Front Point 시 Face 끝 오프셋(mm). null이면 Esprit 기본 +1.0mm.
+        // Face.RightX = FrontPointX + FrontFaceEndOffsetMm
+        [DataMember] public double? FrontFaceEndOffsetMm { get; set; }
+        [DataMember] public bool FrontPointManual { get; set; }
         [DataMember] public bool TwoPhase { get; set; }
     }
 
@@ -492,12 +496,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             var frontPointLabel = req.FrontPoint != null
                 ? $"({req.FrontPoint.x:F4}, {req.FrontPoint.y:F4}, {req.FrontPoint.z:F4})"
                 : "<null>";
-            AppLogger.Log($"[NC Processing] STL metadata: TotalLength={req.TotalLength:F4}, TaperAngle={req.TaperAngle:F4}, TiltAxis={tiltVectorLabel}, FrontPoint={frontPointLabel}");
+            AppLogger.Log($"[NC Processing] STL metadata: TotalLength={req.TotalLength:F4}, TaperAngle={req.TaperAngle:F4}, TiltAxis={tiltVectorLabel}, FrontPoint={frontPointLabel}, FrontFaceEndOffsetMm={(req.FrontFaceEndOffsetMm.HasValue ? req.FrontFaceEndOffsetMm.Value.ToString("F3") : "<default>")}, FrontPointManual={req.FrontPointManual}");
             if (req.FrontPoint == null)
             {
                 throw new InvalidOperationException("FrontPoint from backend is missing");
             }
             double frontLimitX = -req.FrontPoint.z;
+            double? frontFaceEndOffsetMm = req.FrontFaceEndOffsetMm;
+            if (!frontFaceEndOffsetMm.HasValue && req.FrontPointManual)
+            {
+                // 수동 Front Point인데 오프셋 미전달이면 Face 끝을 FrontPointX에 맞춤(offset=0)
+                frontFaceEndOffsetMm = 0.0;
+            }
             var processor = new StlFileProcessor(_espApp)
             {
                 lotNumber = req.LotNumber ?? "ACR"
@@ -515,7 +525,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 req.TiltAxisVector?.x,
                 req.TiltAxisVector?.y,
                 req.TiltAxisVector?.z,
-                req.TotalLength);
+                req.TotalLength,
+                frontFaceEndOffsetMm);
             AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
         }
         private async Task ProcessQueueLoop(CancellationToken token)

@@ -9,9 +9,9 @@ import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import {
-  hasAnyRequestorCapability,
-  normalizeRequestorCapabilities,
-  resolveRequestorCapabilities,
+  hasRequestorProfile,
+  resolveRequestorProfile,
+  requestorProfilePersistFields,
 } from "../../utils/requestorCapabilities.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 
@@ -47,9 +47,9 @@ const buildSyntheticBusinessNumber = () =>
 
 /**
  * 의뢰자(requestor) 조직 앵커 보장.
- * practice/lab은 캡일 뿐 — 발신 프로필만으로도 Org SSOT(BusinessAnchor)를 만든다.
+ * practice/lab은 kind일 뿐 — 발신 프로필만으로도 Org SSOT(BusinessAnchor)를 만든다.
  * 사업자등록번호가 없으면 synthetic `practice-*` BN을 사용하고,
- * 이후 lab 등록·검증 시 동일 앵커에 실BN을 올린다.
+ * 이후 유료(paid) 등록·검증 시 동일 앵커에 실BN을 올린다.
  */
 export async function ensureRequestorOrgAnchor({ user } = {}) {
   if (!user?._id) return null;
@@ -72,14 +72,17 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
   const zipCode = String(practiceProfile.zipCode || "").trim();
   const email = String(user.email || "").trim();
 
-  const caps = resolveRequestorCapabilities({
+  const resolved = resolveRequestorProfile({
+    userKind: user.requestorKind,
+    userServices: user.requestorServices,
     userCaps: user.requestorCapabilities,
     userRole: role,
     businessVerified: false,
   });
-  const requestorCapabilities = hasAnyRequestorCapability(caps)
-    ? normalizeRequestorCapabilities(caps)
-    : { practice: true, lab: false };
+  const profile = hasRequestorProfile(resolved)
+    ? resolved
+    : { kind: "practice", services: { free: true, paid: false } };
+  const persist = requestorProfilePersistFields(profile);
 
   const existingAnchorId = user.businessAnchorId;
   if (existingAnchorId && Types.ObjectId.isValid(String(existingAnchorId))) {
@@ -104,11 +107,9 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
           phoneNumber: clinicPhone || phone,
           email: email || String(anchor.metadata?.email || ""),
         };
-        if (
-          !hasAnyRequestorCapability(anchor.requestorCapabilities) &&
-          hasAnyRequestorCapability(requestorCapabilities)
-        ) {
-          anchor.requestorCapabilities = requestorCapabilities;
+        if (!anchor.requestorKind) {
+          anchor.requestorKind = persist.requestorKind;
+          anchor.requestorServices = persist.requestorServices;
         }
         const ownerIds = Array.isArray(anchor.owners) ? anchor.owners : [];
         if (!ownerIds.some((id) => String(id) === String(user._id))) {
@@ -125,11 +126,8 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
         business: clinicName || String(user.business || ""),
       };
       if (!user.subRole) userPatch.subRole = "owner";
-      if (
-        !hasAnyRequestorCapability(user.requestorCapabilities) &&
-        hasAnyRequestorCapability(requestorCapabilities)
-      ) {
-        userPatch.requestorCapabilities = requestorCapabilities;
+      if (!user.requestorKind) {
+        Object.assign(userPatch, persist);
       }
       await User.findByIdAndUpdate(user._id, { $set: userPatch });
       return anchor;
@@ -144,7 +142,7 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
     primaryContactUserId: user._id,
     owners: [user._id],
     members: [user._id],
-    requestorCapabilities,
+    ...persist,
     metadata: {
       companyName: clinicName,
       representativeName: directorName,
@@ -172,7 +170,7 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
       businessAnchorId: created._id,
       business: clinicName,
       subRole: "owner",
-      requestorCapabilities,
+      ...persist,
     },
   });
 

@@ -2,19 +2,36 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/files/file.controller.js
+// - web/frontend/src/shared/hooks/useS3TempUpload.ts
 import {
   S3Client,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl as presignV3 } from "@aws-sdk/s3-request-presigner";
 import multer from "multer";
 import { extname } from "path";
 import { randomBytes } from "crypto";
+import { createGunzip, gunzipSync } from "zlib";
+import { PassThrough } from "stream";
 import { shouldBlockExternalCall } from "./rateGuard.js";
+
+const getBucket = () => process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
+
+const normalizeContentEncoding = (value) => {
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase();
+  return raw === "gzip" ? "gzip" : "";
+};
 
 let _s3Client = null;
 
@@ -161,13 +178,16 @@ export const getObjectBufferFromS3 = async (key) => {
   }
 
   const command = new GetObjectCommand({
-    Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+    Bucket: getBucket(),
     Key: key,
   });
 
   const resp = await getS3Client().send(command);
   const body = resp?.Body;
-  const buffer = await streamToBuffer(body);
+  let buffer = await streamToBuffer(body);
+  if (normalizeContentEncoding(resp?.ContentEncoding) === "gzip") {
+    buffer = gunzipSync(buffer);
+  }
   return buffer;
 };
 
@@ -185,15 +205,30 @@ export const getObjectStreamFromS3 = async (key) => {
   }
 
   const command = new GetObjectCommand({
-    Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+    Bucket: getBucket(),
     Key: key,
   });
 
   const resp = await getS3Client().send(command);
+  const contentEncoding = normalizeContentEncoding(resp?.ContentEncoding);
+  const rawBody = resp?.Body || null;
+  let body = rawBody;
+  let contentLength = Number(resp?.ContentLength || 0);
+
+  // gzip으로 올린 3D 모델은 다운로드 시 원본 바이트로 풀어 CAD 호환을 유지한다.
+  if (rawBody && contentEncoding === "gzip") {
+    const gunzip = createGunzip();
+    const pass = new PassThrough();
+    rawBody.pipe(gunzip).pipe(pass);
+    body = pass;
+    contentLength = 0;
+  }
+
   return {
-    body: resp?.Body || null,
+    body,
     contentType: String(resp?.ContentType || "application/octet-stream"),
-    contentLength: Number(resp?.ContentLength || 0),
+    contentLength,
+    contentEncoding,
     eTag: String(resp?.ETag || "").trim(),
     lastModified: resp?.LastModified || null,
   };
@@ -337,7 +372,12 @@ const getDownloadSignedUrl = async (
   return getSignedUrlV3(getS3Client(), command, { expiresIn: expires });
 };
 
-const getUploadSignedUrl = async (key, contentType, expires = 900) => {
+const getUploadSignedUrl = async (
+  key,
+  contentType,
+  expires = 900,
+  { contentEncoding } = {},
+) => {
   const guardKey = `s3-uploadSignedUrl:${key}`;
   const { blocked, count } = shouldBlockExternalCall(guardKey);
   if (blocked) {
@@ -350,14 +390,112 @@ const getUploadSignedUrl = async (key, contentType, expires = 900) => {
     );
   }
 
+  const encoding = normalizeContentEncoding(contentEncoding);
   const command = new PutObjectCommand({
-    Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+    Bucket: getBucket(),
     Key: key,
     ContentType: String(contentType || "application/octet-stream"),
+    ...(encoding ? { ContentEncoding: encoding } : {}),
   });
   const { getSignedUrl: getSignedUrlV3 } =
     await import("@aws-sdk/s3-request-presigner");
   return getSignedUrlV3(getS3Client(), command, { expiresIn: expires });
+};
+
+const createMultipartUpload = async (
+  key,
+  contentType,
+  { contentEncoding } = {},
+) => {
+  const encoding = normalizeContentEncoding(contentEncoding);
+  const resp = await getS3Client().send(
+    new CreateMultipartUploadCommand({
+      Bucket: getBucket(),
+      Key: key,
+      ContentType: String(contentType || "application/octet-stream"),
+      ...(encoding ? { ContentEncoding: encoding } : {}),
+    }),
+  );
+  const uploadId = String(resp?.UploadId || "").trim();
+  if (!uploadId) {
+    throw new Error("S3 multipart uploadId 생성에 실패했습니다.");
+  }
+  return { uploadId };
+};
+
+const getUploadPartSignedUrl = async (
+  key,
+  uploadId,
+  partNumber,
+  expires = 900,
+) => {
+  const part = Math.floor(Number(partNumber) || 0);
+  if (!Number.isFinite(part) || part < 1) {
+    throw new Error("S3 multipart partNumber가 올바르지 않습니다.");
+  }
+
+  const guardKey = `s3-uploadPartSignedUrl:${key}:${part}`;
+  const { blocked, count } = shouldBlockExternalCall(guardKey);
+  if (blocked) {
+    console.error("[S3] getUploadPartSignedUrl: rate guard blocked", {
+      key,
+      part,
+      count,
+    });
+    throw new Error(
+      "S3 파트 업로드 URL 생성이 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
+    );
+  }
+
+  const command = new UploadPartCommand({
+    Bucket: getBucket(),
+    Key: key,
+    UploadId: String(uploadId || "").trim(),
+    PartNumber: part,
+  });
+  const { getSignedUrl: getSignedUrlV3 } =
+    await import("@aws-sdk/s3-request-presigner");
+  return getSignedUrlV3(getS3Client(), command, { expiresIn: expires });
+};
+
+const completeMultipartUpload = async (key, uploadId, parts) => {
+  const normalizedParts = (Array.isArray(parts) ? parts : [])
+    .map((row) => ({
+      ETag: String(row?.ETag || row?.etag || "").trim(),
+      PartNumber: Math.floor(Number(row?.PartNumber || row?.partNumber || 0)),
+    }))
+    .filter((row) => row.ETag && row.PartNumber >= 1)
+    .sort((a, b) => a.PartNumber - b.PartNumber);
+
+  if (!normalizedParts.length) {
+    throw new Error("S3 multipart 완료에 필요한 파트 정보가 없습니다.");
+  }
+
+  await getS3Client().send(
+    new CompleteMultipartUploadCommand({
+      Bucket: getBucket(),
+      Key: key,
+      UploadId: String(uploadId || "").trim(),
+      MultipartUpload: { Parts: normalizedParts },
+    }),
+  );
+  return true;
+};
+
+const abortMultipartUpload = async (key, uploadId) => {
+  try {
+    await getS3Client().send(
+      new AbortMultipartUploadCommand({
+        Bucket: getBucket(),
+        Key: key,
+        UploadId: String(uploadId || "").trim(),
+      }),
+    );
+    return true;
+  } catch (error) {
+    console.error("S3 multipart abort 오류:", error);
+    return false;
+  }
 };
 
 export { s3Upload };
@@ -373,9 +511,19 @@ export default {
   getDownloadSignedUrl,
   getSignedUrl: getDownloadSignedUrl,
   getUploadSignedUrl,
+  createMultipartUpload,
+  getUploadPartSignedUrl,
+  completeMultipartUpload,
+  abortMultipartUpload,
   getFileType,
 };
 
 export { getUploadSignedUrl };
+export {
+  createMultipartUpload,
+  getUploadPartSignedUrl,
+  completeMultipartUpload,
+  abortMultipartUpload,
+};
 
 export { getDownloadSignedUrl as getSignedUrl };

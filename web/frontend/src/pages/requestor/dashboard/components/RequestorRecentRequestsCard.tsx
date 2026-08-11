@@ -1,9 +1,7 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,10 +15,12 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
+import { PastRequestsModal } from "@/shared/components/PastRequestsModal";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
-import { getNormalizedStageLabel } from "@/utils/stage";
+import { getNormalizedStage, getNormalizedStageLabel } from "@/utils/stage";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
+import { toKstYmd, kstYmdDiffDays } from "@/shared/date/kst";
 import {
   Dialog,
   DialogContent,
@@ -37,49 +37,58 @@ import {
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { resolveQuotedPriceAmount } from "@/shared/shipping/shippingMode";
 import { useSystemSettings, CREDIT_SETTINGS_DEFAULTS } from "@/hooks/useSystemSettings";
+import {
+  PRODUCT_MODE,
+  resolveProductMode,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  SEMANTIC_BADGE,
+  SEMANTIC_CALLOUT,
+  STAGE_BADGE_STYLES,
+  getProductModeBadgeClassName,
+} from "@/shared/ui/semanticStatus";
 
+// change-log:
+// - 2026-08-11: 지연(출고예정일 경과·미출고) 케이스를 빨간 뱃지로 표시.
+// - 2026-08-11: 좌측 2행 높이에 맞춰 리스트가 카드 전체 높이를 채우도록 변경(고정 2.5행 maxHeight 제거).
+// - 2026-08-11: 카드 헤더 오른쪽 위에 [지난 의뢰] 버튼·모달 추가(대시보드 상단 헤더에서 이전).
+// - 2026-08-11: 뱃지/불완전가공 색 — semanticStatus Primary/Attention/Danger.
+// - 2026-08-09: 최근 의뢰 커스텀어벗 수= customAbutment·임플란트 치아만(Pontic 제외).
+// - 2026-08-09: 최근 의뢰에 생산/디자인+생산 뱃지. 디자인+생산은 임플란트 대신 치과·환자·어벗 수.
 // related files:
+// - web/frontend/src/shared/ui/semanticStatus.ts
+// - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/shared/components/PastRequestsModal.tsx
+// - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/designPrice.utils.js
 // - web/frontend/rules.md
 // - web/backend/controllers/requests/expressPrice.utils.js
+// - .cursor/rules/design-fee.mdc
 
 const EDITABLE_STATUSES = new Set(["준비", "CAM", "가공"]); // CAM 호환 포함, UI 정책상 준비/가공 단계에서 수정 허용
-
-/** 최근 의뢰 리스트에 한 번에 보여줄 카드 개수(넘치면 스크롤) */
-const RECENT_REQUESTS_VISIBLE_COUNT = 2.5;
-const RECENT_REQUESTS_LIST_GAP_PX = 12; // space-y-3
 
 const STAGE_BADGE_BASE =
   "text-[10px] h-5 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
 
-
-
-const STAGE_BADGE_STYLES: Record<
+const PRODUCT_MODE_BADGE_STYLES: Record<
   string,
-  {
-    variant: "outline" | "default" | "secondary" | "destructive";
-    extra?: string;
-  }
+  { label: string; className: string }
 > = {
-  의뢰: { variant: "outline" },
-  준비: { variant: "outline" }, // display alias for '의뢰'
-  CAM: { variant: "default" },
-  가공: { variant: "default" },
-  "세척.패킹": {
-    variant: "default",
-    extra: "bg-purple-50 text-purple-700 border border-purple-200",
+  [PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT]: {
+    label: "디자인+생산",
+    className: getProductModeBadgeClassName("design_custom_abutment"),
   },
-  "포장.발송": {
-    variant: "default",
-    extra: "bg-blue-50 text-blue-700 border border-blue-200",
+  [PRODUCT_MODE.CUSTOM_ABUTMENT]: {
+    label: "생산",
+    className: getProductModeBadgeClassName("custom_abutment"),
   },
-  추적관리: { variant: "secondary" },
-  취소: { variant: "destructive" },
 };
 
 type EditableCaseInfos = {
@@ -93,6 +102,16 @@ type EditableCaseInfos = {
   retentionGroove?: "none" | "shallow" | "deep";
   maxDiameter?: number | null;
   connectionDiameter?: number | null;
+  productMode?: string | null;
+  toothWorks?: Array<{
+    toothNumber?: string | null;
+    prosthesisType?: string | null;
+    customAbutment?: boolean | null;
+    implantManufacturer?: string | null;
+    implantBrand?: string | null;
+    implantFamily?: string | null;
+    implantType?: string | null;
+  }> | null;
   [key: string]: unknown;
 };
 
@@ -112,6 +131,8 @@ type RecentRequestCardItem = {
   manufacturerStage?: string;
   createdAt?: string;
   estimatedShipYmd?: string;
+  nextEstimatedShipYmd?: string | null;
+  originalEstimatedShipYmd?: string | null;
   daysOverdue?: number;
   daysUntilDue?: number;
   price?: {
@@ -125,6 +146,7 @@ type RecentRequestCardItem = {
   caseInfos?: EditableCaseInfos;
   timeline?: {
     estimatedShipYmd?: string;
+    nextEstimatedShipYmd?: string | null;
   };
   deliveryInfoRef?: {
     deliveredAt?: string;
@@ -180,6 +202,123 @@ const isManufacturerSampleRequest = (item: RecentRequestCardItem | null) => {
   return source === "manufacturer_sample" || priceRule === "manufacturer_sample";
 };
 
+/** 출고예정일(당일 포함)이 지났는데 아직 포장.발송/추적/취소가 아니면 지연 */
+const resolveDelayBadgeLabel = (
+  item: RecentRequestCardItem | null,
+): string | null => {
+  if (!item) return null;
+  if (item.deliveryInfoRef?.deliveredAt) return null;
+
+  let normalizedStage = "";
+  try {
+    normalizedStage = getNormalizedStage(item);
+  } catch {
+    normalizedStage = String(item.manufacturerStage || "")
+      .trim()
+      .toLowerCase();
+  }
+  if (["shipping", "tracking", "cancel"].includes(normalizedStage)) {
+    return null;
+  }
+
+  const shipYmd = String(
+    item.nextEstimatedShipYmd ||
+      item.timeline?.nextEstimatedShipYmd ||
+      item.timeline?.estimatedShipYmd ||
+      item.estimatedShipYmd ||
+      "",
+  ).trim();
+  if (!shipYmd) return null;
+
+  const todayYmd = toKstYmd(new Date());
+  const daysOverdue = kstYmdDiffDays(shipYmd, todayYmd);
+  if (daysOverdue == null || daysOverdue < 0) return null;
+
+  if (typeof item.daysOverdue === "number" && item.daysOverdue > 0) {
+    return `${item.daysOverdue}일 지연`;
+  }
+  return daysOverdue > 0 ? `${daysOverdue}일 지연` : "지연";
+};
+
+const isDesignCustomAbutmentItem = (item: RecentRequestCardItem | null) => {
+  if (!item) return false;
+  if (resolveProductMode(item) === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT) {
+    return true;
+  }
+  return Math.max(0, Number(item?.price?.designFee) || 0) > 0;
+};
+
+const isPonticProsthesisType = (prosthesisType: unknown) =>
+  /^pontic$/i.test(String(prosthesisType || "").trim());
+
+const isBillableDesignAbutmentRow = (row: {
+  toothNumber?: string | null;
+  prosthesisType?: string | null;
+  customAbutment?: boolean | null;
+  implantManufacturer?: string | null;
+  implantBrand?: string | null;
+  implantFamily?: string | null;
+  implantType?: string | null;
+} | null | undefined) => {
+  const toothNumber = String(row?.toothNumber || "").trim();
+  const prosthesisType = String(row?.prosthesisType || "").trim();
+  if (!/^[1-4][1-8]$/.test(toothNumber) || !prosthesisType) return false;
+  if (isPonticProsthesisType(prosthesisType)) return false;
+  if (row?.customAbutment === true) return true;
+  return Boolean(
+    String(row?.implantManufacturer || "").trim() ||
+      String(row?.implantBrand || "").trim() ||
+      String(row?.implantFamily || "").trim() ||
+      String(row?.implantType || "").trim(),
+  );
+};
+
+/** 디자인+생산 커스텀어벗 수: price.abutmentQty → toothWorks(커스텀어벗) → tooth 파싱 → 1 */
+const resolveCustomAbutmentQty = (item: RecentRequestCardItem | null) => {
+  const fromPrice = Math.floor(Number(item?.price?.abutmentQty) || 0);
+  if (fromPrice > 0) return fromPrice;
+
+  const works = Array.isArray(item?.caseInfos?.toothWorks)
+    ? item.caseInfos.toothWorks
+    : [];
+  const validWorks = works.filter((row) => {
+    const toothNumber = String(row?.toothNumber || "").trim();
+    const prosthesisType = String(row?.prosthesisType || "").trim();
+    return /^[1-4][1-8]$/.test(toothNumber) && Boolean(prosthesisType);
+  });
+  if (validWorks.length > 0) {
+    return validWorks.filter((row) => isBillableDesignAbutmentRow(row)).length;
+  }
+
+  const tooth = String(item?.caseInfos?.tooth || "").trim();
+  if (tooth) {
+    const parts = tooth
+      .split(/[,/·\s]+/)
+      .map((p) => p.trim())
+      .filter((p) => /^[1-4][1-8]$/.test(p) || /^\d{1,2}$/.test(p));
+    if (parts.length > 0) return parts.length;
+  }
+
+  return 1;
+};
+
+const renderProductModeBadge = (item: RecentRequestCardItem | null) => {
+  if (!item) return null;
+  const mode = isDesignCustomAbutmentItem(item)
+    ? PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT
+    : PRODUCT_MODE.CUSTOM_ABUTMENT;
+  const style = PRODUCT_MODE_BADGE_STYLES[mode];
+  if (!style) return null;
+  return (
+    <Badge
+      variant="outline"
+      className={`${STAGE_BADGE_BASE} ${style.className}`.trim()}
+    >
+      {style.label}
+    </Badge>
+  );
+};
+
 const renderStageBadge = (item: RecentRequestCardItem | null) => {
   const label = resolveStageLabel(item);
   if (!label) return null;
@@ -191,6 +330,45 @@ const renderStageBadge = (item: RecentRequestCardItem | null) => {
     >
       {label}
     </Badge>
+  );
+};
+
+const renderRecentRequestSummaryLine = (
+  item: RecentRequestCardItem | null,
+) => {
+  if (!item) return null;
+  const clinicName = String(item.caseInfos?.clinicName || "").trim();
+  const patientName = String(item.caseInfos?.patientName || "").trim();
+
+  if (isDesignCustomAbutmentItem(item)) {
+    const qty = resolveCustomAbutmentQty(item);
+    return (
+      <>
+        {clinicName ? <span>{clinicName}</span> : null}
+        {patientName ? (
+          <span className={clinicName ? "ml-1" : undefined}>{patientName}</span>
+        ) : null}
+        <span className={clinicName || patientName ? "ml-1" : undefined}>
+          커스텀어벗 {qty}개
+        </span>
+      </>
+    );
+  }
+
+  const retentionGrooveLabel =
+    item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
+  return (
+    <>
+      {clinicName ? <span>{clinicName}</span> : null}
+      {patientName ? (
+        <span className={clinicName ? "ml-1" : undefined}>{patientName}</span>
+      ) : null}
+      {item.caseInfos?.tooth ? (
+        <span className="ml-1">#{item.caseInfos.tooth}</span>
+      ) : null}
+      <span className="ml-1">{formatImplantDisplay(item.caseInfos)}</span>
+      <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
+    </>
   );
 };
 
@@ -227,10 +405,7 @@ export const RequestorRecentRequestsCard = ({
   const [unmachinableInfoOpen, setUnmachinableInfoOpen] = useState(false);
   const [unmachinableTarget, setUnmachinableTarget] =
     useState<RecentRequestCardItem | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const [listMaxHeightPx, setListMaxHeightPx] = useState<number | undefined>(
-    undefined,
-  );
+  const [pastRequestsOpen, setPastRequestsOpen] = useState(false);
 
   const {
     connections,
@@ -283,36 +458,6 @@ export const RequestorRecentRequestsCard = ({
     () => items.filter((it) => !isManufacturerSampleRequest(it)),
     [items],
   );
-
-  useLayoutEffect(() => {
-    const listEl = listRef.current;
-    if (!listEl) return;
-
-    const measure = () => {
-      const firstItem = listEl.firstElementChild as HTMLElement | null;
-      if (!firstItem) {
-        setListMaxHeightPx(undefined);
-        return;
-      }
-      const itemHeight = firstItem.getBoundingClientRect().height;
-      if (!Number.isFinite(itemHeight) || itemHeight <= 0) {
-        setListMaxHeightPx(undefined);
-        return;
-      }
-      const gapCount = Math.floor(RECENT_REQUESTS_VISIBLE_COUNT);
-      setListMaxHeightPx(
-        itemHeight * RECENT_REQUESTS_VISIBLE_COUNT +
-          RECENT_REQUESTS_LIST_GAP_PX * gapCount,
-      );
-    };
-
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(listEl);
-    const firstItem = listEl.firstElementChild;
-    if (firstItem instanceof HTMLElement) observer.observe(firstItem);
-    return () => observer.disconnect();
-  }, [visibleItems]);
 
   const selectedSummary = useMemo(() => {
     if (!selectedRequestId) return null;
@@ -638,17 +783,21 @@ export const RequestorRecentRequestsCard = ({
     >
       <CardHeader className="pb-2 flex flex-row items-center justify-between gap-3">
         <CardTitle className="text-base font-semibold">최근 의뢰</CardTitle>
-      </CardHeader>
-      <CardContent className="flex-1 flex flex-col justify-between pt-2 min-h-0 overflow-hidden">
-        <div
-          ref={listRef}
-          className="space-y-3 overflow-y-auto pr-1 pl-0.5 pb-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
-          style={
-            listMaxHeightPx != null
-              ? { maxHeight: `${listMaxHeightPx}px` }
-              : undefined
-          }
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0"
+          onClick={(e) => {
+            e.stopPropagation();
+            setPastRequestsOpen(true);
+          }}
         >
+          지난 의뢰
+        </Button>
+      </CardHeader>
+      <CardContent className="flex-1 flex flex-col pt-2 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-1 pl-0.5 pb-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {visibleItems.map((item) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
@@ -662,8 +811,7 @@ export const RequestorRecentRequestsCard = ({
             const isRemakeFixed = item.price?.rule === "remake_fixed_10000";
             const isRemakeMonthlyFree =
               item.price?.rule === "remake_monthly_free_3";
-            const retentionGrooveLabel =
-              item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
+            const delayBadgeLabel = resolveDelayBadgeLabel(item);
 
             const isUnmachinable = isUnmachinableRequest(item);
             const isUnmachinableConfirmed = Boolean(
@@ -678,7 +826,7 @@ export const RequestorRecentRequestsCard = ({
                 key={stableKey || displayId}
                 className={`flex items-center justify-between p-3 border rounded-lg ${
                   isUnmachinable
-                    ? "border-yellow-300 ring-2 ring-yellow-200 bg-yellow-50/40"
+                    ? SEMANTIC_CALLOUT.attention
                     : "border-border"
                 }`}
                 onClick={(e) => {
@@ -693,7 +841,7 @@ export const RequestorRecentRequestsCard = ({
                   <div className="absolute top-2 right-2 z-10">
                     <button
                       type="button"
-                      className="inline-flex h-7 min-w-[72px] items-center justify-center rounded-full px-2 text-[11px] font-bold leading-none shadow-sm transition-colors bg-yellow-500 text-white hover:bg-yellow-600"
+                      className={`inline-flex h-7 min-w-[72px] items-center justify-center rounded-full px-2 text-[11px] font-bold leading-none shadow-sm transition-colors ${SEMANTIC_CALLOUT.attentionSolid}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         setUnmachinableTarget(item);
@@ -714,7 +862,7 @@ export const RequestorRecentRequestsCard = ({
                               type="button"
                               className={`inline-flex h-7 min-w-[42px] items-center justify-center rounded-full px-2 text-[11px] font-bold leading-none shadow-sm transition-colors ${
                                 canCancel
-                                  ? "bg-red-500 text-white hover:bg-red-600"
+                                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                   : "bg-gray-200 text-gray-500 cursor-not-allowed"
                               }`}
                               disabled={!canCancel}
@@ -742,7 +890,16 @@ export const RequestorRecentRequestsCard = ({
                       {item.title || displayId}
                     </div>
                     <ShippingModeBadge source={item as any} size="sm" />
+                    {renderProductModeBadge(item)}
                     {renderStageBadge(item)}
+                    {delayBadgeLabel && (
+                      <Badge
+                        variant="destructive"
+                        className={`text-[10px] h-5 px-1.5 ${SEMANTIC_BADGE.danger}`}
+                      >
+                        {delayBadgeLabel}
+                      </Badge>
+                    )}
                     {isRemakeFixed && (
                       <Badge variant="secondary" className="text-[10px]">
                         리메이크 1만원
@@ -755,22 +912,10 @@ export const RequestorRecentRequestsCard = ({
                     )}
                   </div>
                   <div className="text-[11px] text-slate-600 truncate">
-                    {item.caseInfos?.clinicName && (
-                      <span>{item.caseInfos.clinicName}</span>
-                    )}
-                    {item.caseInfos?.patientName && (
-                      <span className="ml-1">{item.caseInfos.patientName}</span>
-                    )}
-                    {item.caseInfos?.tooth && (
-                      <span className="ml-1">#{item.caseInfos.tooth}</span>
-                    )}
-                    <span className="ml-1">
-                      {formatImplantDisplay(item.caseInfos)}
-                    </span>
-                    <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
+                    {renderRecentRequestSummaryLine(item)}
                   </div>
                   {isUnmachinable && (
-                    <div className="text-[11px] text-yellow-800 mt-1 truncate flex items-center gap-2">
+                    <div className="text-[11px] text-accent-strong mt-1 truncate flex items-center gap-2">
                       <span>불완전 가공 사유: {unmachinableReason || "미등록"}</span>
                       {isUnmachinableConfirmed && (
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5">
@@ -794,7 +939,7 @@ export const RequestorRecentRequestsCard = ({
                         item.estimatedShipYmd;
                       if (!eta) return null;
                       return (
-                        <span className="text-blue-600 font-medium">
+                        <span className="text-primary-strong font-medium">
                           출고 예정: {formatDateWithDay(eta)}
                         </span>
                       );
@@ -803,13 +948,13 @@ export const RequestorRecentRequestsCard = ({
                       item.daysUntilDue >= 0 && (
                         <Badge
                           variant="outline"
-                          className="text-[10px] h-5 px-1.5 text-blue-700 border-blue-200 bg-blue-50"
+                          className="text-[10px] h-5 px-1.5 text-primary-strong border-primary-muted bg-primary-soft"
                         >
                           출고 {item.daysUntilDue}일전
                         </Badge>
                       )}
                     {item.deliveryInfoRef?.deliveredAt && (
-                      <span className="text-green-600 font-medium">
+                      <span className="text-primary-strong font-medium">
                         배송완료: {formatDateOnly(item.deliveryInfoRef.deliveredAt)}
                       </span>
                     )}
@@ -828,32 +973,16 @@ export const RequestorRecentRequestsCard = ({
           <div className="text-md">
             <div className="font-medium mb-1 truncate">
               <div className="flex items-center justify-between gap-4 mb-2">
-                {renderStageBadge(cancelTarget)}
+                <div className="flex items-center gap-1.5">
+                  {renderProductModeBadge(cancelTarget)}
+                  {renderStageBadge(cancelTarget)}
+                </div>
                 <span className="text-xs text-muted-foreground">
                   {cancelTarget?.createdAt &&
                     formatDateOnly(cancelTarget.createdAt)}
                 </span>
               </div>
-              {cancelTarget?.caseInfos?.clinicName && (
-                <span>{cancelTarget.caseInfos.clinicName}</span>
-              )}
-              {cancelTarget?.caseInfos?.patientName && (
-                <span className="ml-1">
-                  {cancelTarget.caseInfos.patientName}
-                </span>
-              )}
-              {cancelTarget?.caseInfos?.tooth && (
-                <span className="ml-1">{cancelTarget.caseInfos.tooth}</span>
-              )}
-              <span className="ml-1">
-                {formatImplantDisplay(cancelTarget?.caseInfos)}
-              </span>
-              <span className="ml-1">
-                유지홈{" "}
-                {cancelTarget?.caseInfos?.retentionGroove === "deep"
-                  ? "있음"
-                  : "없음"}
-              </span>
+              {renderRecentRequestSummaryLine(cancelTarget)}
 
             </div>
           </div>
@@ -879,29 +1008,29 @@ export const RequestorRecentRequestsCard = ({
           if (!next) setUnmachinableTarget(null);
         }}
       >
-        <DialogContent className="sm:max-w-md border-yellow-300 ring-2 ring-yellow-200">
+        <DialogContent className="sm:max-w-md border-accent-muted ring-2 ring-accent-muted/80">
           <DialogHeader>
-            <DialogTitle className="text-yellow-700">불완전 가공 안내</DialogTitle>
+            <DialogTitle className="text-accent-strong">불완전 가공 안내</DialogTitle>
             <DialogDescription>
               해당 의뢰는 제조사에서 불완전 가공 판정을 받았습니다.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2">
-              <div className="text-xs font-semibold text-yellow-700 mb-1">상세 사유</div>
+            <div className="rounded-md border border-accent-muted bg-accent-soft px-3 py-2">
+              <div className="text-xs font-semibold text-accent-strong mb-1">상세 사유</div>
               {(() => {
                 const reasonLines = parseUnmachinableReasonLines(
                   getUnmachinableReason(unmachinableTarget),
                 );
                 if (!reasonLines.length) {
                   return (
-                    <div className="text-sm text-yellow-800">
+                    <div className="text-sm text-accent-strong">
                       불완전 가공 사유가 등록되지 않았습니다.
                     </div>
                   );
                 }
                 return (
-                  <div className="text-sm text-yellow-800 space-y-0.5">
+                  <div className="text-sm text-accent-strong space-y-0.5">
                     {reasonLines.map((line, idx) => (
                       <div key={`unmachinable-reason-line-${idx}`}>{line}</div>
                     ))}
@@ -939,6 +1068,16 @@ export const RequestorRecentRequestsCard = ({
           }
         }}
         request={detail || selectedSummary}
+      />
+
+      <PastRequestsModal
+        open={pastRequestsOpen}
+        onOpenChange={setPastRequestsOpen}
+        title="지난 의뢰"
+        onSelectRequest={(r) => {
+          setPastRequestsOpen(false);
+          onEdit(r as RecentRequestCardItem);
+        }}
       />
     </Card>
   );

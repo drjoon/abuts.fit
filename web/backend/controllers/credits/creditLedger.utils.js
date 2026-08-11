@@ -73,8 +73,8 @@ export function buildFreeCreditGrantReason(grant) {
 }
 
 /**
- * 가공비(machining_spend) + 신속추가비(express_surcharge)를 동일 의뢰 기준으로 1행으로 합친다.
- * 표시 금액 SSOT(신속=가공비+추가비)와 맞추기 위함. 장부 저널 자체는 분리 유지.
+ * 생산비(machining_spend) + 신속추가비(express_surcharge)를 동일 의뢰 기준으로 1행으로 합친다.
+ * 표시 금액 SSOT(신속=생산비+추가비)와 맞추기 위함. 장부 저널 자체는 분리 유지.
  */
 export function mergeRequestExpressSurchargeIntoMachiningSpend(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return rows;

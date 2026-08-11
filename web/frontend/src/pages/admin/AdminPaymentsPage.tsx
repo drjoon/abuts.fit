@@ -170,7 +170,7 @@ function SettlementCard({ group }: { group: AnchorGroup }) {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">미정산 잔액</span>
-          <span className="font-semibold text-blue-600">
+          <span className="font-semibold text-primary-strong">
             {formatMoney(group.balanceAmount)}원
           </span>
         </div>
@@ -231,7 +231,7 @@ function SummaryBreakdownCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
-        <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums text-violet-700 leading-tight">
+        <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums text-primary-strong leading-tight">
           {totalValue}
         </div>
         <div className="space-y-0.5 text-xs text-muted-foreground tabular-nums leading-tight">
@@ -1037,7 +1037,7 @@ export default function AdminPaymentsPage() {
             </CardHeader>
             <CardContent>
               <div className="flex items-start justify-between gap-3">
-                <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums text-blue-700 leading-tight">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums text-primary-strong leading-tight">
                   {isLoading ? "-" : `${formatMoney(totals.unpaidBalance)}원`}
                 </div>
                 <div className="space-y-0.5 text-right text-xs text-muted-foreground tabular-nums leading-tight">

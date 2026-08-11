@@ -390,6 +390,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember(Name = "hexRotation")] public RequestMetaHexRotation hexRotation { get; set; }
 
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
+
+            // Front Point (Rhino 자동 또는 프론트 수동)
+            // - source == "frontend-manual" 이면 Face 끝 오프셋 기본을 0으로 본다.
+            [DataMember] public RequestMetaFrontPoint frontPoint { get; set; }
+            // Face.RightX = FrontPointX + frontFaceEndOffsetMm
+            // - 수동 지정 시 보통 0
+            // - 미지정(null)이면 MainModuleComposite 기본값 +1.0mm
+            [DataMember] public double? frontFaceEndOffsetMm { get; set; }
+        }
+
+        [DataContract]
+        public class RequestMetaFrontPoint
+        {
+            [DataMember] public double x { get; set; }
+            [DataMember] public double y { get; set; }
+            [DataMember] public double z { get; set; }
+            [DataMember] public string source { get; set; }
         }
 
         [DataContract]

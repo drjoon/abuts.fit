@@ -10,6 +10,8 @@ type HighlightStep = "upload" | "details" | "shipping";
 
 type Params = {
   files: File[];
+  /** 환자 케이스가 있으면 대표 키(+단독 파일)만 검증 카운트에 포함 */
+  countableFileKeys?: string[];
 };
 
 const STORAGE_KEY = "new-request:file-verification";
@@ -42,7 +44,10 @@ const persistStatus = (status: Record<string, boolean>) => {
   }
 };
 
-export function useFileVerification({ files }: Params) {
+export function useFileVerification({
+  files,
+  countableFileKeys,
+}: Params) {
   const [fileVerificationStatus, setFileVerificationStatus] = useState<
     Record<string, boolean>
   >(() => loadStoredStatus());
@@ -94,20 +99,19 @@ export function useFileVerification({ files }: Params) {
     persistStatus(fileVerificationStatus);
   }, [fileVerificationStatus]);
 
-  const unverifiedCount = useMemo(
-    () =>
-      files.filter((file) => {
-        const key = (() => {
-          try {
-            return `${String(file.name || "").normalize("NFC")}:${file.size}`;
-          } catch {
-            return `${file.name}:${file.size}`;
-          }
-        })();
-        return !fileVerificationStatus[key];
-      }).length,
-    [files, fileVerificationStatus],
-  );
+  const unverifiedCount = useMemo(() => {
+    const keys =
+      Array.isArray(countableFileKeys) && countableFileKeys.length > 0
+        ? countableFileKeys
+        : files.map((file) => {
+            try {
+              return `${String(file.name || "").normalize("NFC")}:${file.size}`;
+            } catch {
+              return `${file.name}:${file.size}`;
+            }
+          });
+    return keys.filter((key) => !fileVerificationStatus[key]).length;
+  }, [countableFileKeys, files, fileVerificationStatus]);
 
   const highlightStep = useMemo<HighlightStep>(() => {
     if (!files.length) return "upload";

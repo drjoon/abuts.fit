@@ -115,8 +115,8 @@ export const useCncTempPanel = ({
                               t1 == null
                                 ? "text-gray-400"
                                 : t1 > 40
-                                ? "text-red-500"
-                                : "text-emerald-500"
+                                ? "text-destructive"
+                                : "text-primary"
                             }
                           >
                             {t1 != null ? `${t1.toFixed(1)}℃` : "-"}
@@ -131,8 +131,8 @@ export const useCncTempPanel = ({
                               t2 == null
                                 ? "text-gray-400"
                                 : t2 > 40
-                                ? "text-red-500"
-                                : "text-emerald-500"
+                                ? "text-destructive"
+                                : "text-primary"
                             }
                           >
                             {t2 != null ? `${t2.toFixed(1)}℃` : "-"}
@@ -160,8 +160,8 @@ export const useCncTempPanel = ({
                             !valid
                               ? "text-gray-400"
                               : n > 40
-                              ? "text-red-500"
-                              : "text-emerald-500"
+                              ? "text-destructive"
+                              : "text-primary"
                           }`}
                         >
                           {valid ? `${n.toFixed(1)}℃` : "-"}

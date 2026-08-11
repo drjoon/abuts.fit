@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-12: currentBalanceSnapshot에 settlementCredit·requestorKind 포함(기공소 기공크레딧 UI).
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/credits/creditLedger.routes.js
@@ -6,15 +8,18 @@
 // - web/backend/services/creditBalance.service.js
 // - web/backend/controllers/credits/creditLedger.utils.js
 // - web/backend/controllers/requests/common.review.helpers.js
+// - web/backend/utils/requestorCapabilities.js
 import mongoose from "mongoose";
 import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import Request from "../../models/request.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import { healMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
+import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
   buildCreditLedgerRequestSummary,
   buildFreeCreditGrantReason,
@@ -23,6 +28,32 @@ import {
   parseSpendKindFromUniqueKey,
   resolveFreeCreditGrantIdFromLedgerItem,
 } from "./creditLedger.utils.js";
+
+async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
+  const anchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({ requestorKind: 1 })
+    .lean();
+  return (
+    normalizeRequestorKind(anchor?.requestorKind) ||
+    normalizeRequestorKind(fallbackKind) ||
+    null
+  );
+}
+
+function buildCurrentBalanceSnapshot(balanceSnapshot, requestorKind) {
+  const kind = normalizeRequestorKind(requestorKind) || null;
+  const isLab = kind === "lab";
+  return {
+    paidCredit: Number(balanceSnapshot?.paidCredit || 0),
+    freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
+    freeShippingCredit: Number(balanceSnapshot?.freeShippingCredit || 0),
+    // 기공크레딧은 기공소 전용 버킷. 치과 응답에도 숫자는 포함하되 UI는 requestorKind로 숨긴다.
+    settlementCredit: Number(balanceSnapshot?.settlementCredit || 0),
+    balance: Number(balanceSnapshot?.balance || 0),
+    requestorKind: kind,
+    showSettlementCredit: isLab,
+  };
+}
 
 function buildRequestSummary(doc) {
   return buildCreditLedgerRequestSummary(doc);
@@ -122,10 +153,13 @@ export async function listMyCreditLedger(req, res) {
     });
   }
 
-  const balanceSnapshot = await getBusinessCreditBalanceSnapshot({
-    businessAnchorId: anchorObjectId,
-    upsertIfMissing: true,
-  });
+  const [balanceSnapshot, requestorKind] = await Promise.all([
+    getBusinessCreditBalanceSnapshot({
+      businessAnchorId: anchorObjectId,
+      upsertIfMissing: true,
+    }),
+    resolveRequestorKindForAnchor(anchorObjectId, req.user?.requestorKind),
+  ]);
   const currentBalance = Number(balanceSnapshot?.balance || 0);
 
   const occurredAt = {};
@@ -157,7 +191,12 @@ export async function listMyCreditLedger(req, res) {
     ownerRole: "requestor",
     ownerId: anchorObjectId,
     accountCode: {
-      $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
+      $in: [
+        "REQ_PAID_CREDIT",
+        "REQ_FREE_REQUEST_CREDIT",
+        "REQ_FREE_SHIPPING_CREDIT",
+        "LAB_SETTLEMENT_CREDIT",
+      ],
     },
   };
 
@@ -204,7 +243,16 @@ export async function listMyCreditLedger(req, res) {
             $cond: [
               {
                 $and: [
-                  { $in: ["$eventType", ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"]] },
+                  {
+                    $in: [
+                      "$eventType",
+                      [
+                        "REQUEST_SPEND_COMMIT",
+                        "SHIPPING_SPEND_COMMIT",
+                        "PRACTICE_TRANSFER_SPEND_COMMIT",
+                      ],
+                    ],
+                  },
                   { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
                   { $lt: ["$amountBase", 0] },
                 ],
@@ -219,7 +267,16 @@ export async function listMyCreditLedger(req, res) {
             $cond: [
               {
                 $and: [
-                  { $in: ["$eventType", ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"]] },
+                  {
+                    $in: [
+                      "$eventType",
+                      [
+                        "REQUEST_SPEND_COMMIT",
+                        "SHIPPING_SPEND_COMMIT",
+                        "PRACTICE_TRANSFER_SPEND_COMMIT",
+                      ],
+                    ],
+                  },
                   {
                     $in: [
                       "$accountCode",
@@ -234,6 +291,7 @@ export async function listMyCreditLedger(req, res) {
             ],
           },
         },
+        accountCode: { $first: "$accountCode" },
       },
     },
     {
@@ -256,7 +314,11 @@ export async function listMyCreditLedger(req, res) {
                     {
                       $in: [
                         "$eventType",
-                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                        [
+                          "REQUEST_SPEND_COMMIT",
+                          "SHIPPING_SPEND_COMMIT",
+                          "PRACTICE_TRANSFER_SPEND_COMMIT",
+                        ],
                       ],
                     },
                     { $gt: ["$spentPaidAmount", 0] },
@@ -271,6 +333,23 @@ export async function listMyCreditLedger(req, res) {
               {
                 case: { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
                 then: "SPEND_FREE_SHIPPING",
+              },
+              {
+                case: { $eq: ["$eventType", "LAB_SETTLEMENT_CHARGE"] },
+                then: "LAB_SETTLEMENT_CHARGE",
+              },
+              {
+                case: { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] },
+                then: "LAB_SETTLEMENT_PAYOUT",
+              },
+              {
+                case: {
+                  $and: [
+                    { $eq: ["$eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
+                    { $gt: ["$amount", 0] },
+                  ],
+                },
+                then: "LAB_SETTLEMENT_CHARGE",
               },
               { case: { $eq: ["$eventType", "ADJUST"] }, then: "ADJUST" },
             ],
@@ -291,6 +370,8 @@ export async function listMyCreditLedger(req, res) {
       "SPEND_PAID",
       "SPEND_FREE_REQUEST",
       "SPEND_FREE_SHIPPING",
+      "LAB_SETTLEMENT_CHARGE",
+      "LAB_SETTLEMENT_PAYOUT",
       "ADJUST",
     ].includes(typeRaw)
   ) {
@@ -517,12 +598,10 @@ export async function listMyCreditLedger(req, res) {
       total,
       page,
       pageSize,
-      currentBalanceSnapshot: {
-        paidCredit: Number(balanceSnapshot?.paidCredit || 0),
-        freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
-        freeShippingCredit: Number(balanceSnapshot?.freeShippingCredit || 0),
-        balance: Number(balanceSnapshot?.balance || 0),
-      },
+      currentBalanceSnapshot: buildCurrentBalanceSnapshot(
+        balanceSnapshot,
+        requestorKind,
+      ),
     },
   });
 }

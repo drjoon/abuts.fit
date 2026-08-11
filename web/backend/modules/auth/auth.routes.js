@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-11: POST /verify-password (민감 정보 잠금 해제용) 추가.
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
@@ -45,6 +47,9 @@ router.get("/me", authenticate, authController.getCurrentUser);
 // 같은 사업자 동료 계정 목록 / 계정 전환 (모든 role)
 router.get("/colleagues", authenticate, authController.listColleagues);
 router.post("/switch-account", authenticate, authController.switchAccount);
+
+// 로그인 비밀번호 확인 (민감 정보 잠금 해제)
+router.post("/verify-password", authenticate, authController.verifyPassword);
 
 // 비밀번호 변경 (인증 필요)
 router.put("/change-password", authenticate, authController.changePassword);

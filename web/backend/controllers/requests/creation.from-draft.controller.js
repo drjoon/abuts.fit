@@ -7,6 +7,8 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-11: 아노다이징은 의뢰건 caseInfos 우선, 미설정 시 사업체 기본값(ON) 폴백.
+// - 2026-08-10: caseInfos.files에서 primary s3Key 중복 저장 방지.
 // - 2026-08-08: 접수 시 신속 ETA 이점 없으면 express→normal 강등.
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
@@ -32,6 +34,7 @@ import {
 } from "./utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import {
+  countDesignAbutmentQty,
   resolveMachiningSpendAmount,
   resolveQuotedPriceWithExtras,
 } from "./designPrice.utils.js";
@@ -40,6 +43,7 @@ import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
+import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
 import {
   buildStandardStlFileName,
   getBusinessCreditBalanceBreakdown,
@@ -543,6 +547,31 @@ export async function createRequestsFromDraft(req, res) {
                 filePath: undefined,
                 s3Key: ci.file.s3Key,
               },
+              ...(Array.isArray(ci.files) && ci.files.length > 0
+                ? {
+                    files: (() => {
+                      const primaryKey = String(ci?.file?.s3Key || "").trim();
+                      const seen = new Set(
+                        primaryKey ? [primaryKey] : [],
+                      );
+                      return ci.files
+                        .filter((f) => f && f.s3Key)
+                        .filter((f) => {
+                          const key = String(f.s3Key || "").trim();
+                          if (!key || seen.has(key)) return false;
+                          seen.add(key);
+                          return true;
+                        })
+                        .map((f) => ({
+                          originalName: f.originalName,
+                          fileType: f.mimetype || f.fileType,
+                          fileSize: f.size ?? f.fileSize,
+                          filePath: undefined,
+                          s3Key: f.s3Key,
+                        }));
+                    })(),
+                  }
+                : {}),
             }
           : {
               ...normalizedCi,
@@ -984,17 +1013,18 @@ export async function createRequestsFromDraft(req, res) {
           const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
             leadDays: 1,
             requestedAt: requestedAtForPrefetch,
+            shippingMode: "normal",
           });
           return addKoreanBusinessDays({
             startYmd: createdYmd,
-            days: resolvedLeadDays,
+            days: Math.max(1, resolvedLeadDays),
           });
         })(),
       ]);
     const shippingFeePerBox = 3500;
     const expressFeePerRequest = Math.max(
       0,
-      Number(systemSettings?.creditSettings?.expressFee ?? 1000) || 1000,
+      Number(systemSettings?.creditSettings?.expressFee ?? 2000) || 2000,
     );
     const designFeePerTooth = Math.max(
       0,
@@ -1019,11 +1049,15 @@ export async function createRequestsFromDraft(req, res) {
           requestedAt: requestedAtForPrefetch,
           weeklyBatchDays,
           maxDiameter,
+          productMode:
+            item?.caseInfosWithFile?.productMode ??
+            item?.caseInfos?.productMode ??
+            null,
         });
       }),
     );
 
-    // 가공+디자인(어벗 배수) 합계. 신속비는 건당 별도.
+    // 가공+디자인(어벗 배수) 합계. 신속비: 생산=건당, 디자인+생산=어벗 수.
     const totalSpendSupply = isPracticeRoutingSubmission
       ? 0
       : preparedCasesForCreate.reduce((acc, item) => {
@@ -1034,12 +1068,21 @@ export async function createRequestsFromDraft(req, res) {
           });
           return acc + (Number.isFinite(n) ? n : 0);
         }, 0);
+    const totalExpressFee = isPracticeRoutingSubmission
+      ? 0
+      : preparedCasesForCreate.reduce((acc, item) => {
+          if ((item.shippingMode || "normal") !== "express") return acc;
+          const ci = item?.caseInfosWithFile || item?.caseInfos || {};
+          const mode = String(ci?.productMode || "").trim();
+          const qty =
+            mode === "design_custom_abutment"
+              ? Math.max(0, countDesignAbutmentQty(ci))
+              : 1;
+          return acc + qty * expressFeePerRequest;
+        }, 0);
     const expressCount = preparedCasesForCreate.filter(
       (item) => (item.shippingMode || "normal") === "express",
     ).length;
-    const totalExpressFee = isPracticeRoutingSubmission
-      ? 0
-      : expressCount * expressFeePerRequest;
     const requiredMachiningFee = totalSpendSupply + totalExpressFee;
     const requestorAnodizingEnabled =
       typeof shippingOrg?.requestSettings?.anodizingEnabled === "boolean"
@@ -1343,7 +1386,10 @@ export async function createRequestsFromDraft(req, res) {
             caseInfos: {
               ...(item.caseInfosWithFile || {}),
               designSoftware: resolvedDesignSoftware || undefined,
-              anodizingEnabled: requestorAnodizingEnabled,
+              anodizingEnabled:
+                typeof item.caseInfosWithFile?.anodizingEnabled === "boolean"
+                  ? item.caseInfosWithFile.anodizingEnabled
+                  : requestorAnodizingEnabled,
               requestorHexRotation: resolvedRequestorHexRotation,
               finalHexRotation: resolvedFinalHexRotation,
             },
@@ -1356,6 +1402,33 @@ export async function createRequestsFromDraft(req, res) {
               : {}),
             manufacturerStage: "준비",
           };
+
+          // 기공의뢰 선결제·거래처 생산차감 메타 (클라이언트/기공소 연계)
+          const partnerBillingBody =
+            (item?.partnerBilling && typeof item.partnerBilling === "object"
+              ? item.partnerBilling
+              : null) ||
+            (req.body?.partnerBilling &&
+            typeof req.body.partnerBilling === "object"
+              ? req.body.partnerBilling
+              : null);
+          if (partnerBillingBody) {
+            newRequest.partnerBilling = {
+              practicePrepaidAbutment: Boolean(
+                partnerBillingBody.practicePrepaidAbutment,
+              ),
+              isTradingPartner: Boolean(partnerBillingBody.isTradingPartner),
+              labTradingPartnerId:
+                partnerBillingBody.labTradingPartnerId || null,
+              relatedPracticeTransferId:
+                partnerBillingBody.relatedPracticeTransferId || null,
+              billingOwnerAnchorId:
+                partnerBillingBody.billingOwnerAnchorId ||
+                (Boolean(partnerBillingBody.isTradingPartner)
+                  ? req.user?.businessAnchorId || null
+                  : null),
+            };
+          }
 
           newRequest.originalShipping = {
             mode: shippingMode,
@@ -1387,6 +1460,7 @@ export async function createRequestsFromDraft(req, res) {
             requestedAt,
             weeklyBatchDays:
               shippingMode === "normal" ? requestorWeeklyBatchDays : [],
+            productMode: item.caseInfosWithFile?.productMode ?? null,
           });
           newRequest.productionSchedule = productionSchedule;
 
@@ -1418,11 +1492,15 @@ export async function createRequestsFromDraft(req, res) {
             const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
               leadDays,
               requestedAt,
+              shippingMode,
             });
 
             const estimatedShipYmd = await addKoreanBusinessDays({
               startYmd: createdYmd,
-              days: resolvedLeadDays,
+              days:
+                shippingMode === "express"
+                  ? resolvedLeadDays
+                  : Math.max(1, resolvedLeadDays),
             });
             newRequest.timeline = newRequest.timeline || {};
             newRequest.timeline.originalEstimatedShipYmd = estimatedShipYmd;
@@ -1596,6 +1674,24 @@ export async function createRequestsFromDraft(req, res) {
           .map((row) => String(row?._id || "").trim())
           .filter(Boolean),
       });
+
+      const designQueueCreated = createdRequests.filter(
+        (row) =>
+          String(row?.caseInfos?.productMode || "").trim() ===
+          "design_custom_abutment",
+      );
+      if (designQueueCreated.length > 0) {
+        emitDesignClaimChanged({
+          reason: "created",
+          delta: designQueueCreated.length,
+          requestIds: designQueueCreated
+            .map((row) => String(row?.requestId || "").trim())
+            .filter(Boolean),
+          requestMongoIds: designQueueCreated
+            .map((row) => String(row?._id || "").trim())
+            .filter(Boolean),
+        });
+      }
     }
 
     if (isPracticeRoutingSubmission && createdRequests.length > 0) {

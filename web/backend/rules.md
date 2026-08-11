@@ -69,7 +69,7 @@
   - Draft/Request `shippingMode` 필드를 다시 저장합니다. (`models/draftRequest.model.js`, `models/request.model.js`)
   - 생성 경로에서 `"normal"` 강제 금지: `draftRequest.controller.js`, `creation.draft.controller.js`, `creation.from-draft.controller.js`, `creation.request.controller.js`
   - 유효 모드 해석: `controllers/requests/shippingPriority.utils.js`의 `resolveEffectiveShippingMode`
-  - 신속 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1000)
+  - 신속 추가 의뢰크레딧: `creditSettings.expressFee`(기본 2000)
     - 설정 API: `GET|PATCH /api/admin/settings/credits` (`authorize(["admin","devops"])`)
       - 공개 조회: `GET /api/credits/settings`
       - 저장/정규화: `admin.settings.controller.js` `updateCreditSettings` (기존 값 merge)
@@ -79,30 +79,36 @@
       - 응답 정규화: `utils.js` `normalizeRequestForResponse`, 대시보드 recent/snapshot
     - 제출 잔액 체크: `creation.from-draft.controller.js`
     - 실제 차감: `common.review.helpers.js` `ensureRequestCreditSpendOnMachiningEnter`
-      - 가공비: `request:<id>:machining_spend`
+      - 생산비: `request:<id>:machining_spend`
       - 신속 추가비: `request:<id>:express_surcharge` (분리 저널)
       - 누락 보정: `healMissingExpressSurchargesForBusiness` (크레딧 원장 조회 시)
-      - 원장 표시: `creditLedger.utils.js`에서 가공비+신속추가비를 1행으로 합산
+      - 원장 표시: `creditLedger.utils.js`에서 생산비+신속추가비를 1행으로 합산
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
-  - 디자인+가공 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
-    - 공식: `(가공 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
+  - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
+    - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
     - 디자인비: `creditSettings.designFee`(기본 15000, **1어벗당**)
-    - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` → `tooth` → 1)
+    - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
-      - `price.amount` = `(가공단가 + designFee) × qty`
+      - `price.amount` = `(생산단가 + designFee) × qty`
       - `price.designFee` = 디자인 총액, `price.abutmentQty` = qty (재견적 단가 복원)
-      - 적용 순서: 디자인+가공 배수 → 신속비(건당). 무상/0원 견적에는 미적용
+      - 적용 순서: 디자인+생산 배수 → 신속비(생산=건당, 디자인+생산=어벗 수). 무상/0원 견적에는 미적용
       - 생성·CAM 차감·응답 정규화 경로에서 재적용
-    - 차감: CAM `machining_spend` = `(가공단가 + 디자인비) × qty` (신속 `express_surcharge`와 분리)
+    - 차감: CAM `machining_spend` = `(생산단가 + 디자인비) × qty` (신속 `express_surcharge`와 분리)
+    - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`)
     - SSOT: `.cursor/rules/design-fee.mdc`
   - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
     - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
-  - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })`
+  - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode, productMode })`
     - 신속: **KST 12시 이전** 당일 영업일이면 당일 16:00 출고, 이후(또는 휴일)면 +1영업일
     - 신속 **선택 가능**: 신속 ETA YMD < 묶음 ETA YMD (`expressSelectable.utils.js` /
       프론트 `isExpressShippingSelectable`). 이점 없으면 UI 비활성·모드 변경 400·접수 시 normal 강등
-    - 묶음: `resolveLeadDaysWithSameDayCutoff` — 접수 당일=1일차 → `(N-1)` 영업일 후
-      주간 발송 요일 정렬 (`resolveNextWeeklyBatchYmd`)
+    - 묶음: `resolveLeadDaysWithSameDayCutoff` — `minBusinessDays=N`이면 접수
+      **익영업일부터** N영업일 생산 후 주간 발송 요일 정렬 (`resolveNextWeeklyBatchYmd`).
+      lead=1 → 익영업일 16:00 (당일 출고 금지, `(N-1)` 사용 금지)
+    - **디자인+생산** (`productMode === "design_custom_abutment"`): 묶음/신속 공통으로
+      출고일에 디자인 리드 **+1영업일** (프론트 `estimateShipDate.ts`와 동일).
+      안내 UI: `PricingPolicyDialog`, `NewRequestShippingSection`,
+      `RequestorBulkShippingBannerCard`
   - 출고일 고정: 의뢰 시점 `originalEstimatedShipYmd`(=estimated)는 포장.발송 진입으로 바꾸지 않음
     (`packingEnterShipYmd.utils.js`). 14:00 이후 진입해도 16:00 집하(또는 당일 수동 집하)면 정시.
   - 자정 이후 정시 평가: `jobs/shippingOnTimeEvalWorker.js` + `shippingOnTime.utils.js`
@@ -122,6 +128,27 @@
   - 우선순위: `sortByProductionPriority` 신속 부스트 (스케줄/ETA용). **장비 가공 큐 순서**는 아래 **가공 우선순위** SSOT.
   - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
   - 대시보드 토글: `PATCH /my/shipping-mode` → `shipping.Requestor.controller.js` `updateMyShippingMode`
+
+### 디자인 파트너 클레임·마감
+
+- 접근: `BusinessAnchor.designAccessEnabled` (`/api/devops/design-access`). 제조사 큐 엔드포인트는
+  `authorizeManufacturerOrDesignPartner`로 지정 의뢰자도 허용.
+- 설정: `SystemSettings.designDeadlineSettings.claimHours` (기본 3, 1–24).
+  API: `GET/PUT /api/devops/design-deadline` (devops/admin).
+- 요청 필드: `Request.designClaim` `{ claimedBy, claimedByName, claimedAt, deadlineAt, claimHours }`
+  - 활성 = `claimedBy` 존재 && `deadlineAt > now` (만료 lazy)
+- 클레임: `POST /api/requests/:id/design-claim` (원자적 findOneAndUpdate, 충돌 409)
+- 목록 (`GET /api/requests/all?productMode=design_custom_abutment`, `__designPartner`):
+  - 본인 활성 / 미클레임·만료 / 타인 발표 60초만 노출. 발표 후 타인은 숨김. 마감 후 재공개.
+  - 응답 메타: `designClaimMeta` / `designClaimPeerBusy` / `designClaimMine` / …
+  - worksheet select에 `caseInfos.memo` / `toothWorks` / `prosthesisType` / `files` 포함(디자인 카드·모달).
+- 승인: 디자인 파트너는 `design_custom_abutment` + stage=`request` + **본인 활성 클레임**만
+  (`updateReviewStatusByStage`). 상수: 발표 60초·경고 30분 (`utils/designClaim.js`).
+- 실시간: `request:design-claim-changed` (role=`requestor`/`admin`) — 클레임·발표 60초·마감·신규
+  큐 입장 시 push. 스케줄 SSOT: `utils/designClaimRealtime.js`.
+- 채팅: `GET /api/chats/request-room/:requestId` — 디자인 파트너는 의뢰 기공소(`request.requestor`)와
+  1:1 룸(participants=`[designPartner, requestor]`, `relatedRequestId`). 제조사 룸과 분리.
+- 파일: 디자인 파트너는 `original-file-url` 및 Request `caseInfos.file`/`files` S3 키 다운로드 허용.
 
 ### 가공 우선순위
 
@@ -209,6 +236,25 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/requests/utils.js`
     - `controllers/requests/dashboard.controller.js`
 
+- 역할별 크레딧 버킷 SSOT(강제):
+  - **치과(`practice`)**: 유료 잔액=`유료크레딧`(`paidCredit`/`REQ_PAID_CREDIT`). 기공의뢰 차감도 동일 유료크레딧. 치과 잔액/장부 UI에 `기공크레딧`/`settlementCredit`을 **노출하지 않음**.
+  - **기공소(`lab`)**: `유료크레딧`=입금·충전·앱 내 소비(`paidCredit`). `기공크레딧`=치과로부터 적립된 `LAB_SETTLEMENT_CREDIT`(정산 전용, 의뢰/배송 유료와 분리) → 매월 `SETTLEMENT_PAYOUT`.
+  - 잔액 API/`currentBalanceSnapshot`은 `requestorKind`를 함께 내려 UI가 기공크레딧 행을 lab에만 그린다. lab일 때만 `settlementCredit`을 의미 있게 표시.
+
+- 기공소 기존 거래처 · 기공크레딧 SSOT:
+  - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 발급된 초대는 검증 완료 시 `status=active`(거래처, 수수료 0%). 30일 경과 후에도 초대 발급은 계속 허용하되(`invitedAfterWindow=true`), 검증 완료 시 `status=referred`(소개)로 승격된다.
+  - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
+  - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic/customAbutmentDesign). 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops). `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과).
+  - PracticeTransfer 유료: **기공소 의뢰수락(`POST .../mark-accepted`)** 시 치과 **유료크레딧**에서 청구 총액(기공비+어벗 소매가) 1회 차감 → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 기공소 `LAB_SETTLEMENT_CREDIT`(UI: 기공크레딧). 전송 생성 시점에는 과금하지 않는다.
+    - `active`(정식 거래처): 수수료 0% — 전액 기공소 정산.
+    - `referred`(30일 경과 후 소개로 등록): 수수료 `BusinessAnchor.payoutRates.labReferredFeeRate`(기본 10%).
+    - 그 외(관계 없음): 수수료 `BusinessAnchor.payoutRates.nonPartnerFeeRate`(기본 20%).
+    - 걷힌 수수료 금액은 기존 4자 분배율(`manufacturerRate`/`devopsRate`/`salesmanRate`/`adminRate`)로 다시 나뉜다(영업자 추천 유무에 따른 재배분 로직 동일 적용).
+  - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
+  - eventType: `PRACTICE_TRANSFER_SPEND_COMMIT`, `LAB_SETTLEMENT_CHARGE`; accountCode: `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부 항목 라벨: `기공비` / 기공소 버킷 표시: `기공크레딧`.
+  - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공크레딧 → 계좌 이체.
+  - 어벗의뢰(직접 커스텀 어벗 생산 의뢰, `practicePrepaid=false`)는 위 관계 규칙과 무관하게 기존처럼 의뢰자(치과/기공소)가 설정된 비용을 전액 부담하고 4자 분배율로 나뉜다(`controllers/requests/common.review.helpers.js`).
+
 - 스커리씁 로트 추적(세척.패킹)은 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
 - 한진 배송조회 자동동기화 장애 우회 정책:
   - 한진 API가 `403/InvalidApiKeyForGivenResource`를 반환하면 앱 기동/런타임을 중단하지 않고 auto-sync만 blocked mode로 전환합니다.
@@ -272,8 +318,11 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 제조사 아노다이징 override는 `caseInfos.anodizingEnabled` SSOT로 저장합니다.
   - endpoint: `PATCH /api/requests/:id/anodizing-override`
   - 변경 가능 단계: `준비`, `가공` (레거시 `CAM` 호환, 그 외 단계는 409)
+  - 생성 시: 의뢰건 `caseInfos.anodizingEnabled` 우선, 미설정이면 사업체 `requestSettings.anodizingEnabled`(기본 true).
+  - 의뢰자 계정 기본값: `User.requestSettings.anodizingEnabled` (API: `requestorAnodizingEnabled`). 신규의뢰 토글 시 저장되고 업로드 시드에 사용.
   - 제조사 워크시트 응답의 `item.business.requestSettings.anodizingEnabled`를 함께 제공해
-    프론트가 `caseInfos` 미설정 시 사업자 기본값으로 표시할 수 있어야 합니다.
+    프론트가 **레거시** `caseInfos` 미설정 시 사업자 기본값으로 표시할 수 있어야 합니다.
+  - 관련: `creation.from-draft.controller.js`, `creation.request.controller.js`, `business.controller.js` request-settings
   - 전달 SSOT: `헥스X도회전`의 X는 `totalDeg(=30+minorDeg)`
     - 예) canonical `헥스40도회전`
   - 하위호환 입력: 레거시 `0`/`30`, 기존 minor 저장값(`헥스10도회전`)은 `헥스40도회전`으로 정규화 허용
@@ -298,9 +347,18 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/requests/common.review.controller.js`
     - `controllers/bg/bg.controller.js`
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
-- practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 다운로드완료`를 사용합니다.
+- practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`을 사용합니다.
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
-  - 다운로드완료 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`
+  - 의뢰수락 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`(레거시 필드명 유지; API alias `requestorAcceptedAt`/`isAccepted`)
+  - 과금 SSOT: `POST /api/practice/transfers/:transferId/mark-accepted`에서 `commitPracticeTransferBilling` (파일 다운로드는 상태·과금에 영향 없음)
+  - **자동매칭 SSOT** (`matchingMode: "auto"`):
+    - 생성 시 `targetLabAnchorId=null`, 공개 풀. 자격: `verified` + `practiceTransferAutoMatchEnabled` + lab+free (`utils/practiceTransferAutoMatch.js`). devops 목록/ON은 `verifiedLabCapableAnchorFilter`(kind=lab 또는 레거시 caps.lab)
+    - devops ON: `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }`
+    - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정·만료 claim). 타인 활성 claim은 숨김
+    - 수락=`mark-accepted` 원자 FCFS claim(3시간 `autoMatch.deadlineAt`) + 과금. 작업완료=`POST .../mark-complete`(결과파일 필수, 커스텀어벗 시 shippingMode). 작업취소=`POST .../mark-release`(auto는 풀 재공개, direct는 수락 해제+과금 롤백)
+    - 치과 생산컨펌=`POST .../confirm-production` → 생산진행. 커스텀어벗이면 기공소→어벗츠 Request 자동 생성
+    - 만료 시 lazy release: `rollbackPracticeTransferBilling` 후 풀 재공개(`releaseCount++`). 완료되면 재공개 없음
+    - 기공소 수신 카드(의뢰수락): `PracticeTransferFileDropTarget` + `[작업완료]` / `[작업취소]` (`RequestorPracticePage`)
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
   - practice 전송 목록/취소/복구 권한 범위 SSOT: 동일 치과 `practiceBusinessAnchorId`(=`req.user.businessAnchorId`) 구성원 공유.
     구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch` / draft list·DELETE by id).
@@ -317,31 +375,24 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `validRoles` 기준은 루트 규칙(사업자 타입 허용값)과 동기화합니다.
   - 기존 `practice` 계정은 `requestor`+`practice` 마이그레이션 대상입니다.
 
-- 의뢰자 유형(requestorCapabilities) · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
+- 의뢰자 역할·서비스 · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
   - 가입 role SSOT: `requestor` | `salesman`만. `practice` role **제거**(신규 생성 금지).
-  - 필드: `BusinessAnchor.requestorCapabilities` / `User.requestorCapabilities` = `{ practice, lab }` (체크박스 OR, 최소 1개). 레거시 키 `clinic`→`practice`.
-  - Org SSOT: `BusinessAnchor` (`businessType: requestor`). practice/lab은 캡이며 무앵커 발신 전용 조직 경로 없음.
-  - 헬퍼 SSOT: `utils/requestorCapabilities.js`, `controllers/businesses/requestorOrgAnchor.util.js` (`ensureRequestorOrgAnchor`)
-    - `normalize` / `hasAny` / `requiresBusinessLicense`(lab) / `canUsePaidServices`(lab+verified) / `canUseFreeServices`(practice)
-    - `canSendPracticeTransfer`(practice·발신) / `canReceivePracticeTransfer`(lab·수신)
-    - UI 라벨: practice=`의뢰 발신자 (치과)`, lab=`의뢰 수신자 (기공소와 기공실)` (프론트 `REQUESTOR_CAPABILITY_LABEL`과 동기)
-    - `resolveRequestorCapabilities`: 앵커 → 유저 → 마이그레이션 전 폴백(구 practice role·미기입 requestor→practice, verified requestor→lab)
-  - 사업자 저장(`business.update.controller.js`):
-    - body `requestorCapabilities` 수신 시 normalize·최소 1개 검증
-    - `lab`이면 미검증 상태에서 저장 거부(이미 verified이거나 이번 요청에서 검증 플로우 타는 경우만 허용)
-    - 무BN synthetic(`practice-*`) 앵커에 실BN·license를 올리면 **동일 앵커**에서 `businessNumberNormalized` 교체·검증. 신규 앵커 생성 금지
-  - 기공의뢰서 권한 미들웨어(`practiceTransferAuth.middleware.js`):
-    - 발신: `authorizePracticeTransferSend` — admin | (`requestor` + practice)
-    - 수신: `authorizePracticeTransferReceive` — admin | (`requestor` + lab)
-  - 공개 가입: `POST /api/auth/register` — `requestor`/`salesman`. signup draft: `models/signupDraft.model.js`, `PUT/GET/DELETE /api/auth/signup/draft`(7일 TTL).
-  - 발신 경로 프로필: `PUT /api/users/profile`의 `practiceProfile`(clinicName, directorName, staffName, clinicPhone, phone, address, zipCode) → `ensureRequestorOrgAnchor`.
-  - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`) + practice→requestor+practice 마이그레이션.
-  - 크레딧/정산 집계는 유료(verified lab) 경로만. synthetic 무BN 앵커에는 환영 크레딧 미지급; 실BN 검증 승격 시 1회.
-  - 소개 접근은 requestor 전체 허용; 귀속·그룹 할인은 추천인 앵커 기준.
+  - 필드 SSOT: `BusinessAnchor.requestorKind` (`practice|lab`) + `requestorServices` (`{free,paid}`). User 미러 동일.
+  - 레거시 `requestorCapabilities`는 resolve/백필 폴백만. 신규 쓰기 금지.
+  - 헬퍼: `utils/requestorCapabilities.js`, `requestorOrgAnchor.util.js`
+    - `requiresBusinessLicense`(paid) / `canUsePaidServices`(paid+verified)
+    - `canSendPracticeTransfer`(practice+free) / `canReceivePracticeTransfer`(lab+free)
+    - `resolveRequestorProfile`: kind+services 우선, 없으면 레거시 caps 파생
+  - 사업자 저장(`business.update.controller.js`): body `requestorKind`/`requestorServices`(또는 레거시 caps) → normalize·검증. paid면 미검증 저장 거부(검증 플로우 중 제외). 홈택스 검증 성공 시 `requestorServices={free:true,paid:true}` 자동 개방.
+  - 기공의뢰서: `practiceTransferAuth.middleware.js` — 발신 practice+free, 수신 lab+free
+  - 생산의뢰: `paidRequestor.middleware.js` — `POST /api/requests`, `/from-draft`, `/bulk`
+  - 공개 가입: `POST /api/auth/register`. 발신 프로필: `practiceProfile` → `ensureRequestorOrgAnchor`.
+  - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
+  - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
 
-- 드롭존 가입(치과 전용, requestor+practice):
+- 드롭존 가입(치과 전용, requestor+practice+free):
   - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.
-    `role=requestor` + `requestorCapabilities={practice:true,lab:false}` + 휴대폰 인증·치과명·담당자명을 저장.
+    `role=requestor` + `requestorKind=practice` + `requestorServices={free:true,paid:false}` + 휴대폰 인증·치과명·담당자명을 저장.
     완전한 주소/Org 앵커는 온보딩(`PUT /api/users/profile` → `ensureRequestorOrgAnchor`)에서 생성.
   - 필수: `email` + `password` + `phone` + `clinicName` + `staffName`. 로그인 식별은 이메일.
     `name`/`practiceProfile.staffName`=담당자명, `practiceProfile.clinicName`=치과명.
@@ -393,7 +444,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 설정 SSOT:
   - 저장 위치: `BusinessAnchor.practiceTransferSettings`
   - API: `GET/POST /api/practice/transfers/settings`
-  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`
+  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`
   - `memoSnippets`는 의뢰 메모 문장 즐겨찾기(최대 40개, 공백/중복 제거)이며 프론트는 로컬스토리지에도 미러링합니다.
   - 관련 파일:
     - `controllers/practiceTransfers/practiceTransferSettings.controller.js`
@@ -431,6 +482,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 채팅/전송 첨부 다운로드 정책:
   - 다운로드 SSOT 엔드포인트: `GET /api/files/s3/download?key=...&fileName=...`
   - S3 파일은 signed-url 리다이렉트가 아니라 서버 프록시 스트리밍(`pipe`)으로 응답합니다.
+  - gzip으로 저장된 객체(`ContentEncoding=gzip`)는 프록시/버퍼 조회 시 자동 해제해 원본 바이트로 내려줍니다.
+  - temp 업로드:
+    - `POST /api/files/temp/presign` (단건 PUT, optional `contentEncoding`)
+    - `POST /api/files/temp/multipart/init|complete|abort` (8MB+ 대용량)
   - 권한 판정은 다음 중 하나를 만족해야 합니다:
     - 관리자
     - 업로더 본인
@@ -492,7 +547,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `eventType`(저장형):
     - `REQUEST_SPEND_COMMIT`
     - `SHIPPING_SPEND_COMMIT`
-    - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
+    - `PRACTICE_TRANSFER_SPEND_COMMIT`
+    - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `LAB_SETTLEMENT_CHARGE`, `ADJUST`, `SETTLEMENT_PAYOUT`
   - `businessAnchorId`(의뢰자 기준 키)
   - `refType`, `refId` (`REQUEST`, `SHIPPING_PACKAGE`, `CHARGE_ORDER` 등)
   - `stageFrom`, `stageTo` (워크시트 승인/롤백 전이 기록)
@@ -503,13 +559,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - LedgerLine 스키마 초안(필수 필드):
   - `journalId`(FK), `lineNo`
   - `accountCode`:
-    - 크레딧 버킷: `REQ_PAID_CREDIT`, `REQ_FREE_REQUEST_CREDIT`, `REQ_FREE_SHIPPING_CREDIT`
+    - 크레딧 버킷: `REQ_PAID_CREDIT`, `REQ_FREE_REQUEST_CREDIT`, `REQ_FREE_SHIPPING_CREDIT`, `LAB_SETTLEMENT_CREDIT`
     - 수익 귀속: `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - `ownerRole` (`requestor|manufacturer|devops|salesman|admin`)
   - `ownerId` (원칙적으로 BusinessAnchor 식별자)
   - `amount`, `amountExcludingVat`, `vatAmount`, `amountIncludingVat`
-  - `creditKind` (`PAID|FREE_REQUEST|FREE_SHIPPING|null`)
-  - `meta` (requestId, shippingPackageId, settlementBatchId 등)
+  - `creditKind` (`PAID|FREE_REQUEST|FREE_SHIPPING|SETTLEMENT|null`)
+  - `meta` (requestId, shippingPackageId, settlementBatchId, practiceTransferId, labFee, abutmentRetail 등)
 
 - 승인/롤백 이벤트 정책(강제):
   - `REQUEST_SPEND_COMMIT`: **가공 진입 승인(준비→가공)** 시 기록
@@ -565,6 +621,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       `services/dashboardRiskSummary.service.js`에서 우선순위 계산을 병렬 처리한다. 전체 populate 금지.
     - `GET /api/requests/assigned/dashboard-summary`: `requestDashboardCache` 짧은 TTL + in-flight coalesce.
       집계는 `getAssignedLikeDashboardSummary`에서 병렬 aggregate.
+    - `GET /api/requests/shipping/mailbox-requests`: case-insensitive regex/`populate` 금지.
+      uppercase exact `mailboxAddress` + lean + User/BusinessAnchor/DeliveryInfo 배치 hydrate,
+      packing/tracking 분리 조회, 선택적 `requestIds` 단축 경로, 15s 메모리 캐시.
+      구현: `controllers/requests/shipping.controller.js` (`getShippingMailboxRequests`).
     - `GET /api/practice/transfers/received-unread-count`: 짧은 TTL 캐시 +
       인덱스 `PracticeTransfer(targetLabAnchorId, status, requestorReadAt)`.
       BusinessAnchor 선행 조회 금지(캐시 히트 경로 경량). 프론트는 소켓
@@ -633,6 +693,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3):
   - 운영 주체는 면세 사업자. 크레딧 충전·앱 내 과금·정산 모두 부가세 없음.
   - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`.
+  - 충전 단위: `utils/creditChargeUnit.js` — 기공소 50만원, 치과(practice) 100만원. 절대 상한 5,000만원.
+    주문 검증 `creditBPlan.controller.js`, insights(월사용량/3·한 달분) `credit.controller.js`.
+    UI 2회차 기본 배수 3은 프론트(`CreditPaymentTab`). 잔액 < 단위 시 사이드바 충전 강조는 `DashboardLayout`.
     구현: `controllers/credits/creditBPlan.controller.js`
   - 수익 라인(`REV_*`) 적재 시 VAT 가산 금지. `amount = amountExcludingVat = base`, `vatAmount = 0`.
     구현: `controllers/requests/common.review.helpers.js`
@@ -649,6 +712,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트(`scripts/db/migrate-request-spend-to-gl.js`, `scripts/db/migrate-legacy-creditledger-to-gl.js`)는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
+    - 기본 분배(영업자 소개 있음): 제조사 60% / 개발운영사 10% / 영업자 10% / 관리자 20% (`BusinessAnchor.payoutRates` SSOT, 개발운영사 설정에서만 갱신).
+    - 영업자 소개 없음(`hasSalesmanReferrer=false`): 설정된 영업자 분배비의 **절반을 제조사**, **나머지 절반을 관리자**에 가산하고 영업자 0%. 기본값이면 제조사 65% / 개발운영사 10% / 영업자 0% / 관리자 25%. 하드코딩 고정비율이 아니라 `resolveRatesWithoutSalesman(configuredRates)`로 파생.
 
 - 관리자 credit-reconcile API 정책:
   - `credit-reconcile/check`는 General Ledger 기준 누락 의심 건만 점검합니다.

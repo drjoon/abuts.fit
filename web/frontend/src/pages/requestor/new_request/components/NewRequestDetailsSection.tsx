@@ -5,10 +5,18 @@ import { useLeadTimeForecast } from "../hooks/useLeadTimeForecast";
 import { NewRequestAttachmentsPanel } from "./NewRequestAttachmentsPanel";
 import { NewRequestDetailDialog } from "./NewRequestDetailDialog";
 import type { LeadTimesMap } from "@/shared/shipping/estimateShipDate";
+import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
+import {
+  findGroupByFileKey,
+  getPrimaryFileKey,
+  isLikelyCustomAbutDesignSize,
+  isLikelyOralScanSize,
+} from "../utils/patientGroups";
 
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts
 // Rhino의 align 기능이 구성정보를 대체하므로, 신규의뢰에서 개별 구성정보 파일은 사용하지 않는다.
 
 type ToastFn = (props: {
@@ -79,12 +87,24 @@ type Props = {
   onCancelAll: () => void;
   designSoftwareLabel?: string;
   onOpenDesignSoftwareModal?: () => void;
+  anodizingEnabled?: boolean;
+  anodizingSaving?: boolean;
+  onToggleAnodizing?: () => void;
   onShippingModeChange?: (
     fileKeys: string[],
     mode: "normal" | "express",
   ) => void;
   defaultShippingMode?: "normal" | "express";
+  /** 우측 신속 카드와 동일 — false면 카드 신속 버튼도 비활성 */
+  expressSelectableGlobal?: boolean;
   onLeadTimesChange?: (leadTimes: LeadTimesMap | null) => void;
+  attachmentListItems?: AttachmentListItem[];
+  patientGroups?: PatientFileGroup[];
+  onGroupSelectedFiles?: (fileKeys: string[]) => void;
+  onUngroupPatientFiles?: (groupId: string) => void;
+  onRemoveFileFromPatientGroup?: (fileKey: string) => void;
+  /** true: 기공소 — 항상 커스텀어벗 생산, 구강스캔 묶음·디자인+생산 탭 없음 */
+  productionOnly?: boolean;
 };
 
 export function NewRequestDetailsSection({
@@ -137,9 +157,19 @@ export function NewRequestDetailsSection({
   onCancelAll,
   designSoftwareLabel,
   onOpenDesignSoftwareModal,
+  anodizingEnabled,
+  anodizingSaving,
+  onToggleAnodizing,
   onShippingModeChange,
   defaultShippingMode = "normal",
+  expressSelectableGlobal = true,
   onLeadTimesChange,
+  attachmentListItems,
+  patientGroups = [],
+  onGroupSelectedFiles,
+  onUngroupPatientFiles,
+  onRemoveFileFromPatientGroup,
+  productionOnly = false,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -224,8 +254,14 @@ export function NewRequestDetailsSection({
 
   useEffect(() => {
     if (!focusUnverifiedTick || !files.length) return;
+    const grouped = new Set(patientGroups.flatMap((g) => g.fileKeys));
     const firstUnverifiedIndex = files.findIndex((file) => {
       const key = toNormalizedFileKey(file);
+      if (grouped.has(key)) {
+        const group = findGroupByFileKey(patientGroups, key);
+        const primary = group ? getPrimaryFileKey(group) : null;
+        if (primary !== key) return false;
+      }
       return !fileVerificationStatus[key];
     });
     if (firstUnverifiedIndex < 0) return;
@@ -237,24 +273,126 @@ export function NewRequestDetailsSection({
       `[data-file-index="${firstUnverifiedIndex}"]`,
     );
     target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [focusUnverifiedTick, files, fileVerificationStatus, toNormalizedFileKey]);
+  }, [
+    focusUnverifiedTick,
+    files,
+    fileVerificationStatus,
+    patientGroups,
+    toNormalizedFileKey,
+  ]);
 
   const detailFile = detailIndex !== null ? files[detailIndex] : null;
   const detailFileKey = detailFile ? toNormalizedFileKey(detailFile) : null;
+  const detailPatientGroup = detailFileKey
+    ? findGroupByFileKey(patientGroups, detailFileKey)
+    : null;
 
-  const detailCaseInfos = detailFileKey
+  const previewFileIndices = useMemo(() => {
+    if (detailPatientGroup) {
+      const keyToIndex = new Map(
+        files.map((file, index) => [toNormalizedFileKey(file), index]),
+      );
+      return detailPatientGroup.fileKeys
+        .map((key) => keyToIndex.get(key))
+        .filter((index): index is number => typeof index === "number");
+    }
+    if (detailIndex != null) return [detailIndex];
+    return [];
+  }, [detailPatientGroup, detailIndex, files, toNormalizedFileKey]);
+
+  const selectPreviewIndex = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= files.length) return;
+      setSelectedPreviewIndex(index);
+      setDetailIndex(index);
+    },
+    [files.length, setSelectedPreviewIndex],
+  );
+
+  const detailCaseInfosBase = detailFileKey
     ? caseInfosMap?.[detailFileKey] || caseInfos
     : caseInfos;
+  const detailIsOralScan = isLikelyOralScanSize(detailFile?.size);
+  const detailIsAbutDesign = isLikelyCustomAbutDesignSize(detailFile?.size);
+  // 구강스캔(묶음·단일) → 디자인+생산 고정. 어벗디자인 STL → 생산 고정. 기공소 → 항상 생산.
+  const lockDesignProductMode = productionOnly
+    ? false
+    : Boolean(detailPatientGroup) || detailIsOralScan;
+  const lockProductionProductMode = productionOnly
+    ? true
+    : !lockDesignProductMode && detailIsAbutDesign;
+  const detailCaseInfos = productionOnly
+    ? {
+        ...detailCaseInfosBase,
+        productMode: "custom_abutment" as const,
+        workType: "abutment" as const,
+      }
+    : lockDesignProductMode
+      ? {
+          ...detailCaseInfosBase,
+          productMode: "design_custom_abutment" as const,
+          workType: "abutment" as const,
+        }
+      : lockProductionProductMode
+        ? {
+            ...detailCaseInfosBase,
+            productMode: "custom_abutment" as const,
+            workType: "abutment" as const,
+          }
+        : detailCaseInfosBase;
 
   const setDetailCaseInfos = useCallback(
     (updates: Partial<CaseInfos>) => {
-      if (detailFileKey) {
-        updateCaseInfos(detailFileKey, updates);
+      if (!detailFileKey) {
+        setCaseInfos(updates);
         return;
       }
-      setCaseInfos(updates);
+      if (productionOnly) {
+        updateCaseInfos(detailFileKey, {
+          ...updates,
+          productMode: "custom_abutment",
+          workType: "abutment",
+        });
+        return;
+      }
+      const group = findGroupByFileKey(patientGroups, detailFileKey);
+      const fileSize = files.find(
+        (f) => toNormalizedFileKey(f) === detailFileKey,
+      )?.size;
+      const oralScanLocked = isLikelyOralScanSize(fileSize);
+      if (group || oralScanLocked) {
+        // 구강스캔(묶음·단일)은 항상 디자인+생산
+        const nextUpdates: Partial<CaseInfos> = {
+          ...updates,
+          productMode: "design_custom_abutment",
+          workType: "abutment",
+        };
+        const keys = group ? group.fileKeys : [detailFileKey];
+        for (const key of keys) {
+          updateCaseInfos(key, nextUpdates);
+        }
+        return;
+      }
+      if (isLikelyCustomAbutDesignSize(fileSize)) {
+        // 어벗디자인 STL은 항상 생산
+        updateCaseInfos(detailFileKey, {
+          ...updates,
+          productMode: "custom_abutment",
+          workType: "abutment",
+        });
+        return;
+      }
+      updateCaseInfos(detailFileKey, updates);
     },
-    [detailFileKey, setCaseInfos, updateCaseInfos],
+    [
+      detailFileKey,
+      files,
+      patientGroups,
+      productionOnly,
+      setCaseInfos,
+      toNormalizedFileKey,
+      updateCaseInfos,
+    ],
   );
 
   const handleDialogOpenChange = useCallback(
@@ -267,11 +405,31 @@ export function NewRequestDetailsSection({
 
   const openDetailModal = useCallback(
     (index: number) => {
+      const file = files[index];
+      if (file && !productionOnly) {
+        const fileKey = toNormalizedFileKey(file);
+        const group = findGroupByFileKey(patientGroups, fileKey);
+        if (group) {
+          for (const key of group.fileKeys) {
+            updateCaseInfos(key, {
+              productMode: "design_custom_abutment",
+              workType: "abutment",
+            });
+          }
+        }
+      }
       setSelectedPreviewIndex(index);
       setDetailIndex(index);
       setIsDetailOpen(true);
     },
-    [setSelectedPreviewIndex],
+    [
+      files,
+      patientGroups,
+      productionOnly,
+      setSelectedPreviewIndex,
+      toNormalizedFileKey,
+      updateCaseInfos,
+    ],
   );
 
   const focusSelectedCard = useCallback((index: number) => {
@@ -379,16 +537,43 @@ export function NewRequestDetailsSection({
         [fileKey]: true,
       };
 
-      const hasRemainingUnverified = files.some((candidate) => {
-        const key = toNormalizedFileKey(candidate);
-        return !nextStatus[key];
-      });
+      const group = findGroupByFileKey(patientGroups, fileKey);
+      if (group) {
+        for (const key of group.fileKeys) {
+          nextStatus[key] = true;
+        }
+      }
+
+      const countableKeys = new Set<string>();
+      if (patientGroups.length > 0) {
+        const grouped = new Set(patientGroups.flatMap((g) => g.fileKeys));
+        for (const g of patientGroups) {
+          const primary = getPrimaryFileKey(g);
+          if (primary) countableKeys.add(primary);
+        }
+        files.forEach((candidate) => {
+          const key = toNormalizedFileKey(candidate);
+          if (!grouped.has(key)) countableKeys.add(key);
+        });
+      } else {
+        files.forEach((candidate) => {
+          countableKeys.add(toNormalizedFileKey(candidate));
+        });
+      }
+
+      const hasRemainingUnverified = [...countableKeys].some(
+        (key) => !nextStatus[key],
+      );
 
       let nextIndex = -1;
       if (hasRemainingUnverified) {
+        const isCountableIndex = (i: number) => {
+          const key = toNormalizedFileKey(files[i]);
+          return countableKeys.has(key);
+        };
         for (let i = index + 1; i < files.length; i += 1) {
           const key = toNormalizedFileKey(files[i]);
-          if (!nextStatus[key]) {
+          if (isCountableIndex(i) && !nextStatus[key]) {
             nextIndex = i;
             break;
           }
@@ -396,7 +581,7 @@ export function NewRequestDetailsSection({
         if (nextIndex === -1) {
           for (let i = 0; i < index; i += 1) {
             const key = toNormalizedFileKey(files[i]);
-            if (!nextStatus[key]) {
+            if (isCountableIndex(i) && !nextStatus[key]) {
               nextIndex = i;
               break;
             }
@@ -426,6 +611,7 @@ export function NewRequestDetailsSection({
       caseInfosMap,
       fileVerificationStatus,
       files,
+      patientGroups,
       setFileVerificationStatus,
       setHighlightUnverifiedArrows,
       setSelectedPreviewIndex,
@@ -439,7 +625,7 @@ export function NewRequestDetailsSection({
   }, [onCancelAll]);
 
   return (
-    <div className="app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-2.5 md:p-3.5 flex-1 min-h-0 h-full max-h-[500px]">
+    <div className="app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-3 md:p-4 flex-1 min-h-0 h-full">
       <div className="app-glass-card-content flex flex-col flex-1 min-h-0 h-full">
         <div className="flex flex-col flex-1 min-h-0 h-full">
           <NewRequestAttachmentsPanel
@@ -459,6 +645,9 @@ export function NewRequestDetailsSection({
             handleClearAll={handleClearAll}
             designSoftwareLabel={designSoftwareLabel}
             onOpenDesignSoftwareModal={onOpenDesignSoftwareModal}
+            anodizingEnabled={anodizingEnabled}
+            anodizingSaving={anodizingSaving}
+            onToggleAnodizing={onToggleAnodizing}
             onFilesSelected={onFilesSelected}
             isDragOver={isDragOver}
             onDragOver={onDragOver}
@@ -469,6 +658,12 @@ export function NewRequestDetailsSection({
             uploadInputRef={uploadInputRef}
             onShippingModeChange={onShippingModeChange}
             defaultShippingMode={defaultShippingMode}
+            expressSelectableGlobal={expressSelectableGlobal}
+            listItems={attachmentListItems}
+            onGroupSelectedFiles={productionOnly ? undefined : onGroupSelectedFiles}
+            onUngroup={productionOnly ? undefined : onUngroupPatientFiles}
+            onRemoveFileFromGroup={productionOnly ? undefined : onRemoveFileFromPatientGroup}
+            productionOnly={productionOnly}
           />
         </div>
       </div>
@@ -512,6 +707,11 @@ export function NewRequestDetailsSection({
           moveToNextDetail();
         }}
         toast={toast}
+        lockDesignProductMode={lockDesignProductMode}
+        lockProductionProductMode={lockProductionProductMode}
+        hideProductModeTabs={productionOnly}
+        previewFileIndices={previewFileIndices}
+        onSelectPreviewIndex={selectPreviewIndex}
       />
 
 

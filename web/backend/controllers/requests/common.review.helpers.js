@@ -487,9 +487,34 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     return;
   }
 
+  const partnerBilling =
+    request?.partnerBilling && typeof request.partnerBilling === "object"
+      ? request.partnerBilling
+      : {};
+  const practicePrepaid = Boolean(partnerBilling.practicePrepaidAbutment);
+  const isTradingPartner = Boolean(partnerBilling.isTradingPartner);
+
+  // 비거래처: 기공의뢰에서 어벗 소매가가 이미 REV_*로 반영됨 → 생산 차감 스킵
+  if (practicePrepaid && !isTradingPartner) {
+    request.price = {
+      ...toPlainRequestPrice(request.price),
+      rule: String(request?.price?.rule || "") || "practice_transfer_prepaid_non_partner",
+    };
+    return;
+  }
+
+  // 거래처: 기공소 의뢰크레딧에서 생산단가 강제 차감
+  let spendAnchorId = businessAnchorId;
+  if (practicePrepaid && isTradingPartner) {
+    const forcedLabAnchor = String(
+      partnerBilling.billingOwnerAnchorId || businessAnchorId || "",
+    ).trim();
+    if (forcedLabAnchor) spendAnchorId = forcedLabAnchor;
+  }
+
   const computedPrice = await computePriceForRequest({
     requestorId: request?.requestor,
-    requestorOrgId: businessAnchorId,
+    requestorOrgId: spendAnchorId,
     clinicName: request?.caseInfos?.clinicName || "",
     patientName: request?.caseInfos?.patientName || "",
     tooth: request?.caseInfos?.tooth || "",
@@ -498,25 +523,34 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   const shippingMode = resolveEffectiveShippingMode(request);
 
-  let expressFee = 0;
+  let expressFeeUnit = 0;
   let designFeePerTooth = 15000;
   try {
     const { loadCreditSettingsDefaults } =
       await import("../../utils/creditSettingsDefaults.js");
     const creditSettings = await loadCreditSettingsDefaults();
     if (shippingMode === "express") {
-      expressFee = Math.max(0, Number(creditSettings?.expressFee ?? 1000) || 0);
+      expressFeeUnit = Math.max(
+        0,
+        Number(creditSettings?.expressFee ?? 2000) || 0,
+      );
     }
     designFeePerTooth = Math.max(
       0,
       Number(creditSettings?.designFee ?? 15000) || 15000,
     );
   } catch {
-    if (shippingMode === "express") expressFee = 1000;
+    if (shippingMode === "express") expressFeeUnit = 2000;
     designFeePerTooth = 15000;
   }
 
   const caseInfos = request?.caseInfos || {};
+  const abutmentQty = countDesignAbutmentQty(caseInfos);
+  const productMode = String(caseInfos?.productMode || "").trim();
+  const expressQty =
+    productMode === "design_custom_abutment" ? Math.max(0, abutmentQty) : 1;
+  const expressFee = expressFeeUnit * expressQty;
+
   const machiningAmount = resolveMachiningSpendAmount({
     price: computedPrice,
     caseInfos,
@@ -525,7 +559,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const withDesign = resolveQuotedPriceWithDesignFee({
     price: computedPrice,
     productMode: caseInfos?.productMode,
-    toothCount: countDesignAbutmentQty(caseInfos),
+    toothCount: abutmentQty,
     designFeePerTooth,
   });
 
@@ -534,13 +568,14 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     ...resolveQuotedPriceWithExpressFee({
       price: withDesign,
       shippingMode,
-      expressFee,
+      expressFee: expressFeeUnit,
+      expressQty,
     }),
   };
 
   const spendResult = await spendRequestCreditAtomic({
     request,
-    businessAnchorId,
+    businessAnchorId: spendAnchorId,
     actorUserId,
     session,
     spendKeySuffix: "machining_spend",
@@ -557,14 +592,16 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       requestId: request?.requestId,
       requestMongoId: String(request?._id || ""),
       amount: spentAmount,
-      businessAnchorId: String(businessAnchorId),
+      businessAnchorId: String(spendAnchorId),
+      practicePrepaid: Boolean(practicePrepaid),
+      isTradingPartner: Boolean(isTradingPartner),
     });
 
     const glPostResult = await postSpendCommitGeneralLedger({
       eventType: "REQUEST_SPEND_COMMIT",
       spendUniqueKey: spendResult.uniqueKey,
       request,
-      businessAnchorId,
+      businessAnchorId: spendAnchorId,
       actorUserId,
       amount: Number(spendResult.resolvedAmount || 0),
       fromPaid: Number(spendResult.fromPaid || 0),
@@ -632,7 +669,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     );
   }
 
-  // 레거시 합산 차감(가공비+신속비가 machining_spend 한 건) 재진입 시 이중 차감 방지
+  // 레거시 합산 차감(생산비+신속비가 machining_spend 한 건) 재진입 시 이중 차감 방지
   if (spendResult?.reason === "already_spent") {
     const expressKey = `gl:request:${String(request?._id || "")}:express_surcharge`;
     const existingExpress = await LedgerJournal.findOne({
@@ -696,7 +733,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   const expressSpendResult = await spendRequestCreditAtomic({
     request,
-    businessAnchorId,
+    businessAnchorId: spendAnchorId,
     actorUserId,
     session,
     spendKeySuffix: "express_surcharge",
@@ -728,7 +765,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     eventType: "REQUEST_SPEND_COMMIT",
     spendUniqueKey: expressSpendResult.uniqueKey,
     request,
-    businessAnchorId,
+    businessAnchorId: spendAnchorId,
     actorUserId,
     amount: Number(expressSpendResult.resolvedAmount || 0),
     fromPaid: Number(expressSpendResult.fromPaid || 0),

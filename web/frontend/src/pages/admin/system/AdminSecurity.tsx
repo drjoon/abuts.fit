@@ -46,13 +46,13 @@ const getSeverityBadge = (severity: string) => {
       return <Badge variant="destructive">높음</Badge>;
     case "medium":
       return (
-        <Badge className="bg-orange-100 text-orange-700 border-orange-200">
+        <Badge className="bg-accent-soft text-accent-strong border-accent-muted">
           보통
         </Badge>
       );
     case "low":
       return (
-        <Badge className="bg-green-100 text-green-700 border-green-200">
+        <Badge className="bg-primary-muted/50 text-primary-strong border-primary-muted">
           낮음
         </Badge>
       );
@@ -67,23 +67,23 @@ const getStatusBadge = (status: string) => {
       return <Badge variant="destructive">차단됨</Badge>;
     case "critical":
       return (
-        <Badge className="bg-red-100 text-red-700 border-red-200">심각</Badge>
+        <Badge className="bg-destructive-soft text-destructive border-destructive-muted">심각</Badge>
       );
     case "allowed":
       return (
-        <Badge className="bg-green-100 text-green-700 border-green-200">
+        <Badge className="bg-primary-muted/50 text-primary-strong border-primary-muted">
           허용됨
         </Badge>
       );
     case "warning":
       return (
-        <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">
+        <Badge className="bg-accent-muted/50 text-accent-strong border-accent-muted">
           주의
         </Badge>
       );
     case "ok":
       return (
-        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+        <Badge className="bg-primary-soft text-primary-strong border-primary-muted">
           정상
         </Badge>
       );
@@ -231,12 +231,12 @@ export const AdminSecurity = () => {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <Shield className="h-4 w-4 text-green-600" />
+                <div className="p-2 bg-primary-muted/50 rounded-lg">
+                  <Shield className="h-4 w-4 text-primary-strong" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">보안 점수</p>
-                  <p className="text-2xl font-bold text-green-600">
+                  <p className="text-2xl font-bold text-primary-strong">
                     {stats.securityScore ?? "-"}
                   </p>
                 </div>
@@ -246,8 +246,8 @@ export const AdminSecurity = () => {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Eye className="h-4 w-4 text-blue-600" />
+                <div className="p-2 bg-primary-soft rounded-lg">
+                  <Eye className="h-4 w-4 text-primary-strong" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">모니터링</p>
@@ -261,8 +261,8 @@ export const AdminSecurity = () => {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-red-100 rounded-lg">
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                <div className="p-2 bg-destructive-soft rounded-lg">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">위험 탐지</p>
@@ -276,8 +276,8 @@ export const AdminSecurity = () => {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-yellow-100 rounded-lg">
-                  <CheckCircle className="h-4 w-4 text-yellow-600" />
+                <div className="p-2 bg-accent-muted/50 rounded-lg">
+                  <CheckCircle className="h-4 w-4 text-accent-strong" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">차단된 시도</p>
@@ -433,9 +433,9 @@ export const AdminSecurity = () => {
                   const isOk = item.status === "ok";
                   const isWarn = item.status === "warning";
                   const icon = isOk ? (
-                    <CheckCircle className="h-5 w-5 text-emerald-600" />
+                    <CheckCircle className="h-5 w-5 text-primary-strong" />
                   ) : (
-                    <AlertCircle className="h-5 w-5 text-amber-600" />
+                    <AlertCircle className="h-5 w-5 text-accent-strong" />
                   );
                   return (
                     <div
@@ -444,13 +444,13 @@ export const AdminSecurity = () => {
                     >
                       <div className="flex items-center gap-3">
                         {item.name.includes("데이터") ? (
-                          <Database className="h-5 w-5 text-emerald-600" />
+                          <Database className="h-5 w-5 text-primary-strong" />
                         ) : item.name.includes("네트워크") ? (
-                          <Network className="h-5 w-5 text-emerald-600" />
+                          <Network className="h-5 w-5 text-primary-strong" />
                         ) : item.name.includes("API") ? (
-                          <Key className="h-5 w-5 text-amber-600" />
+                          <Key className="h-5 w-5 text-accent-strong" />
                         ) : (
-                          <Shield className="h-5 w-5 text-emerald-600" />
+                          <Shield className="h-5 w-5 text-primary-strong" />
                         )}
                         <div>
                           <p className="font-medium">{item.name}</p>
@@ -572,7 +572,7 @@ export const AdminSecurity = () => {
                 >
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
-                      <AlertTriangle className="h-4 w-4 text-orange-500" />
+                      <AlertTriangle className="h-4 w-4 text-accent" />
                       <h4 className="font-medium">{log.action || "이벤트"}</h4>
                       {log.severity ? getSeverityBadge(log.severity) : null}
                       {log.status ? getStatusBadge(log.status) : null}

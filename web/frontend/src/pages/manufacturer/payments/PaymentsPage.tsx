@@ -3,6 +3,9 @@
 // - web/backend/controllers/manufacturers/manufacturer.controller.js
 // - web/backend/modules/manufacturers/manufacturer.routes.js
 // - web/frontend/src/shared/date/kst.ts
+// - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
+// change-log:
+// - 2026-08-11: 기공소 기공크레딧 정산과 동일 UX — 요약 카드 축소·(N건), 일자 제거, 액션 세로열, 초기화 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
@@ -14,7 +17,7 @@ import { isPeriodFilterValue } from "@/shared/ui/periodFilterValues";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   ArrowDown,
   ArrowUp,
@@ -118,14 +121,14 @@ const statusLabel = (s: string) => {
 };
 
 const statusColor = (s: string) => {
-  if (s === "CONFIRMED") return "text-blue-700";
-  if (s === "PENDING") return "text-yellow-600";
-  if (s === "CANCELLED") return "text-rose-600";
+  if (s === "CONFIRMED") return "text-primary-strong";
+  if (s === "PENDING") return "text-accent-strong";
+  if (s === "CANCELLED") return "text-destructive";
   return "";
 };
 
 const periodToYmdRange = (period: PeriodFilterValue): { from: string; to: string } | null => {
-  // 제조사 정산 페이지는 자체 period/from/to를 사용한다.
+  // 제조사 정산 페이지는 PeriodFilter period → KST YMD 범위로 조회한다.
   // 관리자 전역 커스텀 날짜 필터의 간접 영향을 받지 않도록 옵션을 명시적으로 비운다.
   const range = periodToRange(period, { customStartDate: "", customEndDate: "" });
   if (!range) return null;
@@ -276,8 +279,6 @@ export const ManufacturerPaymentPage = () => {
   const [tab, setTab] = useState<"snapshot" | "payments">("snapshot");
 
   const { period, setPeriod } = usePeriodStore();
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [q, setQ] = useState("");
   const [requestSettlementFilter, setRequestSettlementFilter] = useState<
     "all" | "paid" | "free"
@@ -308,34 +309,21 @@ export const ManufacturerPaymentPage = () => {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const isManufacturer = Boolean(user && user.role === "manufacturer");
 
-  const resetFilters = () => {
-    setPeriod("30d");
-    setFrom("");
-    setTo("");
-    setQ("");
-    setRequestSettlementFilter("all");
-  };
-
   const buildQueryParams = useCallback(
     (p: number) => {
       const params = new URLSearchParams({
         page: String(p),
         limit: String(PAGE_SIZE),
       });
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
-      if (!from && !to) {
-        const range = periodToYmdRange(period);
-        if (range) {
-          params.set("from", range.from);
-          params.set("to", range.to);
-        }
+      const range = periodToYmdRange(period);
+      if (range) {
+        params.set("from", range.from);
+        params.set("to", range.to);
       }
       if (q.trim()) params.set("q", q.trim());
-
       return params.toString();
     },
-    [from, to, period, q],
+    [period, q],
   );
 
   const loadPayments = useCallback(
@@ -379,17 +367,13 @@ export const ManufacturerPaymentPage = () => {
 
   const buildSnapshotParams = useCallback(() => {
     const params = new URLSearchParams({ limit: "60" });
-    if (from) params.set("fromYmd", from);
-    if (to) params.set("toYmd", to);
-    if (!from && !to) {
-      const range = periodToYmdRange(period);
-      if (range) {
-        params.set("fromYmd", range.from);
-        params.set("toYmd", range.to);
-      }
+    const range = periodToYmdRange(period);
+    if (range) {
+      params.set("fromYmd", range.from);
+      params.set("toYmd", range.to);
     }
     return params.toString();
-  }, [period, from, to]);
+  }, [period]);
 
   const loadSnapshots = useCallback(async () => {
     if (!token) return;
@@ -454,7 +438,7 @@ export const ManufacturerPaymentPage = () => {
     if (tab === "snapshot") {
       void loadSnapshots();
     }
-  }, [isManufacturer, tab, period, from, to, q, loadPayments, loadSnapshots]);
+  }, [isManufacturer, tab, period, q, loadPayments, loadSnapshots]);
 
   useEffect(() => {
     if (!isManufacturer) return;
@@ -645,208 +629,207 @@ export const ManufacturerPaymentPage = () => {
   return (
     <DashboardShell
       title="정산 내역"
-      subtitle="일별 정산 집계와 입금 내역을 확인하세요."
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      subtitle=""
+      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
       stats={
         <>
-          <Card className="min-h-[116px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
+          <Card>
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
                 유료 미정산액 합계
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-xl md:text-2xl font-semibold text-blue-700 tabular-nums">
+            <CardContent className="p-3 pt-0">
+              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
                 ₩{snapshotTotals.paidUnsettledTotal.toLocaleString()}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground tabular-nums leading-tight">
-                의뢰 ₩{snapshotTotals.paidRequestTotal.toLocaleString()} ({snapshotTotals.paidRequestCountTotal}) / 배송 ₩{snapshotTotals.paidShippingTotal.toLocaleString()} ({snapshotTotals.paidShippingCountTotal})
+                <span className="ml-1 text-sm font-medium text-muted-foreground">
+                  (
+                  {snapshotTotals.paidRequestCountTotal +
+                    snapshotTotals.paidShippingCountTotal}
+                  건)
+                </span>
               </div>
             </CardContent>
           </Card>
-          <Card className="min-h-[116px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
+          <Card>
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
                 무료 미정산액 합계
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-xl md:text-2xl font-semibold text-violet-700 tabular-nums leading-tight">
+            <CardContent className="p-3 pt-0">
+              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
                 ₩{snapshotTotals.freeUnsettledTotal.toLocaleString()}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground tabular-nums leading-tight">
-                의뢰 ₩{snapshotTotals.freeRequestTotal.toLocaleString()} ({snapshotTotals.freeRequestCountTotal}) / 배송 ₩{snapshotTotals.freeShippingTotal.toLocaleString()} ({snapshotTotals.freeShippingCountTotal})
+                <span className="ml-1 text-sm font-medium text-muted-foreground">
+                  (
+                  {snapshotTotals.freeRequestCountTotal +
+                    snapshotTotals.freeShippingCountTotal}
+                  건)
+                </span>
               </div>
             </CardContent>
           </Card>
-          <Card className="min-h-[116px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
+          <Card>
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
                 지급 합계
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-xl md:text-2xl font-semibold tabular-nums">
+            <CardContent className="p-3 pt-0">
+              <div className="text-center text-lg font-semibold tabular-nums sm:text-xl">
                 ₩{snapshotTotals.payoutTotal.toLocaleString()}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground tabular-nums leading-tight">
-                지급 ({snapshotTotals.payoutCount})
+                <span className="ml-1 text-sm font-medium text-muted-foreground">
+                  ({snapshotTotals.payoutCount}건)
+                </span>
               </div>
             </CardContent>
           </Card>
+          <div className="flex flex-col justify-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={tab === "snapshot" ? "default" : "outline"}
+              className="h-8 w-full"
+              onClick={() => setTab("snapshot")}
+            >
+              일별 정산
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={tab === "payments" ? "default" : "outline"}
+              className="h-8 w-full"
+              onClick={() => setTab("payments")}
+            >
+              입금 내역
+            </Button>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-full"
+                >
+                  정산규칙
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>제조사 정산 규칙</DialogTitle>
+                </DialogHeader>
+
+                <div className="grid gap-2 text-sm">
+                  <div className="flex items-start gap-3 rounded-lg border p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
+                      01
+                    </span>
+                    <HandCoins className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">가공 승인 적립</div>
+                      <div className="text-muted-foreground">
+                        유료 의뢰비 기준 제조사 분배율 적용 (기본 60%, 영업자
+                        미연결 시 65%)
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 rounded-lg border p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
+                      02
+                    </span>
+                    <ReceiptText className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">배송비 적립</div>
+                      <div className="text-muted-foreground">
+                        발송 패키지 1박스당 +3,500원
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 rounded-lg border p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
+                      03
+                    </span>
+                    <BookOpenText className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">롤백 시 환불</div>
+                      <div className="text-muted-foreground">
+                        가공·포장 롤백 시 기존 소비/적립 커밋 내역은 삭제형
+                        롤백으로 정리
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 rounded-lg border p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
+                      04
+                    </span>
+                    <CalendarClock className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">일별 정산 집계</div>
+                      <div className="text-muted-foreground">
+                        원장 기준 KST 일자별 실시간 집계
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </>
       }
       mainLeft={
         <div className="space-y-4">
           <Tabs value={tab} onValueChange={handleTabChange}>
-            <div className="flex flex-col gap-2 mb-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <PeriodFilter value={period} onChange={setPeriod} />
-                <TabsList className="h-9">
-                  <TabsTrigger value="snapshot">일별 정산</TabsTrigger>
-                  <TabsTrigger value="payments">입금 내역</TabsTrigger>
-                </TabsList>
-
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button type="button" variant="outline" className="h-9">
-                      정산규칙
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-lg">
-                    <DialogHeader>
-                      <DialogTitle>제조사 정산 규칙</DialogTitle>
-                    </DialogHeader>
-
-                    <div className="grid gap-2 text-sm">
-                      <div className="flex items-start gap-3 rounded-lg border p-3">
-                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                          01
-                        </span>
-                        <HandCoins className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="font-medium">가공 승인 적립</div>
-                          <div className="text-muted-foreground">
-                            유료 의뢰비 기준 제조사 분배율 적용 (기본 60%,
-                            영업자 미연결 시 65%)
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3 rounded-lg border p-3">
-                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                          02
-                        </span>
-                        <ReceiptText className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="font-medium">배송비 적립</div>
-                          <div className="text-muted-foreground">
-                            발송 패키지 1박스당 +3,500원
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3 rounded-lg border p-3">
-                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                          03
-                        </span>
-                        <BookOpenText className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="font-medium">롤백 시 환불</div>
-                          <div className="text-muted-foreground">
-                            가공·포장 롤백 시 기존 소비/적립 커밋 내역은 삭제형 롤백으로 정리
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3 rounded-lg border p-3">
-                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                          04
-                        </span>
-                        <CalendarClock className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="font-medium">일별 정산 집계</div>
-                          <div className="text-muted-foreground">
-                            원장 기준 KST 일자별 실시간 집계
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
-                <div className="grow" />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  type="date"
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-                <span className="text-xs text-muted-foreground">~</span>
-                <Input
-                  type="date"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-                <Input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="검색 (메모/외부ID/키)"
-                  className="h-9 w-full sm:w-[280px]"
-                />
-                <div className="inline-flex items-center rounded-md border bg-background p-0.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={
-                      requestSettlementFilter === "all" ? "default" : "ghost"
-                    }
-                    className="h-7 px-2"
-                    onClick={() => setRequestSettlementFilter("all")}
-                    disabled={anyLoading}
-                  >
-                    전체
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={
-                      requestSettlementFilter === "paid" ? "default" : "ghost"
-                    }
-                    className="h-7 px-2"
-                    onClick={() => setRequestSettlementFilter("paid")}
-                    disabled={anyLoading}
-                  >
-                    유료(의뢰+배송)
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={
-                      requestSettlementFilter === "free" ? "default" : "ghost"
-                    }
-                    className="h-7 px-2"
-                    onClick={() => setRequestSettlementFilter("free")}
-                    disabled={anyLoading}
-                  >
-                    무료(의뢰+배송)
-                  </Button>
-                </div>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <PeriodFilter value={period} onChange={setPeriod} />
+              <div className="inline-flex items-center rounded-md border bg-background p-0.5">
                 <Button
                   type="button"
-                  variant="outline"
-                  className="h-9"
-                  onClick={resetFilters}
+                  size="sm"
+                  variant={
+                    requestSettlementFilter === "all" ? "default" : "ghost"
+                  }
+                  className="h-7 px-2"
+                  onClick={() => setRequestSettlementFilter("all")}
                   disabled={anyLoading}
                 >
-                  초기화
+                  전체
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={
+                    requestSettlementFilter === "paid" ? "default" : "ghost"
+                  }
+                  className="h-7 px-2"
+                  onClick={() => setRequestSettlementFilter("paid")}
+                  disabled={anyLoading}
+                >
+                  유료(의뢰+배송)
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={
+                    requestSettlementFilter === "free" ? "default" : "ghost"
+                  }
+                  className="h-7 px-2"
+                  onClick={() => setRequestSettlementFilter("free")}
+                  disabled={anyLoading}
+                >
+                  무료(의뢰+배송)
                 </Button>
               </div>
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="검색 (메모/외부ID/키)"
+                className="h-9 w-full sm:w-[280px]"
+              />
             </div>
 
             <TabsContent value="snapshot" className="mt-0">
               {snapshotAnomalyMessage ? (
-                <div className="mb-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                <div className="mb-2 rounded-md border border-destructive/80 bg-destructive-soft px-3 py-2 text-xs text-destructive">
                   {snapshotAnomalyMessage}
                 </div>
               ) : null}
@@ -980,13 +963,13 @@ export const ManufacturerPaymentPage = () => {
                           <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
                             {shippingText}
                           </TableCell>
-                          <TableCell className="text-center text-[11px] tabular-nums text-amber-700 whitespace-nowrap">
+                          <TableCell className="text-center text-[11px] tabular-nums text-accent-strong whitespace-nowrap">
                             {deductionText}
                           </TableCell>
-                          <TableCell className="text-center text-xs font-semibold tabular-nums text-blue-700 whitespace-nowrap">
+                          <TableCell className="text-center text-xs font-semibold tabular-nums text-primary-strong whitespace-nowrap">
                             {paidNetText}
                           </TableCell>
-                          <TableCell className="text-center text-[11px] tabular-nums text-violet-700 whitespace-nowrap">
+                          <TableCell className="text-center text-[11px] tabular-nums text-primary-strong whitespace-nowrap">
                             {freeNetText}
                           </TableCell>
                         </TableRow>
@@ -1078,7 +1061,7 @@ export const ManufacturerPaymentPage = () => {
                         >
                           {statusLabel(r.status)}
                         </TableCell>
-                        <TableCell className="text-center text-xs font-semibold text-blue-700 tabular-nums whitespace-nowrap">
+                        <TableCell className="text-center text-xs font-semibold text-primary-strong tabular-nums whitespace-nowrap">
                           ₩{Number(r.amount || 0).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-center text-xs text-muted-foreground">

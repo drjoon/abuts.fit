@@ -21,7 +21,11 @@ import {
   getReceivedPracticeTransfers,
   getReceivedPracticeTransferUnreadCount,
   markReceivedPracticeTransferRead,
+  markReceivedPracticeTransferAccepted,
+  markReceivedPracticeTransferComplete,
+  markReceivedPracticeTransferRelease,
   markReceivedPracticeTransferDownloaded,
+  confirmPracticeTransferProduction,
   restorePracticeTransfersBatch,
   upsertPracticeTransferDraft,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
@@ -91,6 +95,35 @@ router.post(
   markReceivedPracticeTransferRead,
 );
 
+router.post(
+  "/:transferId/mark-accepted",
+  authenticate,
+  receiveAuth,
+  markReceivedPracticeTransferAccepted,
+);
+
+router.post(
+  "/:transferId/mark-complete",
+  authenticate,
+  receiveAuth,
+  markReceivedPracticeTransferComplete,
+);
+
+router.post(
+  "/:transferId/confirm-production",
+  authenticate,
+  sendAuth,
+  confirmPracticeTransferProduction,
+);
+
+router.post(
+  "/:transferId/mark-release",
+  authenticate,
+  receiveAuth,
+  markReceivedPracticeTransferRelease,
+);
+
+// 레거시 별칭 — 의뢰수락과 동일 (다운로드로 상태 전이하지 않음; FE는 mark-accepted 사용)
 router.post(
   "/:transferId/mark-downloaded",
   authenticate,

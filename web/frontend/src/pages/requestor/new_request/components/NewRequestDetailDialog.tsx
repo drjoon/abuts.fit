@@ -97,6 +97,15 @@ type Props = {
   onVerifyAndNext: (index: number) => Promise<void>;
   onSkip: () => void;
   toast: ToastFn;
+  /** 구강스캔(묶음·단일): 커스텀어벗 디자인+생산 고정 */
+  lockDesignProductMode?: boolean;
+  /** 어벗디자인 STL(<3MB): 커스텀어벗 생산 고정 */
+  lockProductionProductMode?: boolean;
+  /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
+  previewFileIndices?: number[];
+  onSelectPreviewIndex?: (index: number) => void;
+  /** true: 상단 생산/디자인+생산 탭 숨김(기공소 — 생산만) */
+  hideProductModeTabs?: boolean;
 };
 
 export function NewRequestDetailDialog({
@@ -136,6 +145,11 @@ export function NewRequestDetailDialog({
   onVerifyAndNext,
   onSkip,
   toast,
+  lockDesignProductMode = false,
+  lockProductionProductMode = false,
+  previewFileIndices,
+  onSelectPreviewIndex,
+  hideProductModeTabs = false,
 }: Props) {
   const [showNewSystemForm, setShowNewSystemForm] = useState(false);
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
@@ -203,16 +217,39 @@ export function NewRequestDetailDialog({
 
   const showImplantSelect = true;
   const productMode: NewRequestProductMode =
-    detailCaseInfos?.productMode === "design_custom_abutment"
-      ? "design_custom_abutment"
-      : "custom_abutment";
+    hideProductModeTabs || lockProductionProductMode
+      ? "custom_abutment"
+      : lockDesignProductMode
+        ? "design_custom_abutment"
+        : detailCaseInfos?.productMode === "design_custom_abutment"
+          ? "design_custom_abutment"
+          : "custom_abutment";
   const isDesignCustomMode = productMode === "design_custom_abutment";
+
+  const selectablePreviewIndices = useMemo(() => {
+    if (Array.isArray(previewFileIndices) && previewFileIndices.length > 0) {
+      return previewFileIndices.filter(
+        (index) => Number.isInteger(index) && index >= 0 && index < files.length,
+      );
+    }
+    if (detailIndex != null && detailIndex >= 0 && detailIndex < files.length) {
+      return [detailIndex];
+    }
+    return [];
+  }, [previewFileIndices, detailIndex, files.length]);
+
+  const activePreviewIndex =
+    detailIndex != null && selectablePreviewIndices.includes(detailIndex)
+      ? detailIndex
+      : (selectablePreviewIndices[0] ?? null);
 
   const setProductMode = useCallback(
     (mode: NewRequestProductMode) => {
+      if (lockDesignProductMode && mode !== "design_custom_abutment") return;
+      if (lockProductionProductMode && mode !== "custom_abutment") return;
       setDetailCaseInfos({ productMode: mode });
     },
-    [setDetailCaseInfos],
+    [lockDesignProductMode, lockProductionProductMode, setDetailCaseInfos],
   );
 
   return (
@@ -222,8 +259,9 @@ export function NewRequestDetailDialog({
           <DialogHeader className="relative shrink-0 space-y-0 pr-8">
             <div className="relative flex min-h-9 flex-col gap-3 sm:flex-row sm:items-center">
               <DialogTitle className="text-lg font-semibold sm:pr-[300px]">
-                STL 확인 및 정보 입력
+                3D 모델 확인 및 정보 입력
               </DialogTitle>
+              {!hideProductModeTabs ? (
               <div
                 role="radiogroup"
                 aria-label="의뢰 유형"
@@ -231,22 +269,35 @@ export function NewRequestDetailDialog({
               >
                 {(
                   [
-                    { value: "custom_abutment", label: "커스텀어벗 가공" },
-                    { value: "design_custom_abutment", label: "커스텀어벗 디자인+가공" },
+                    { value: "custom_abutment", label: "커스텀어벗 생산" },
+                    { value: "design_custom_abutment", label: "커스텀어벗 디자인+생산" },
                   ] as const
                 ).map((option) => {
                   const selected = productMode === option.value;
+                  const lockedOut =
+                    (lockDesignProductMode &&
+                      option.value !== "design_custom_abutment") ||
+                    (lockProductionProductMode &&
+                      option.value !== "custom_abutment");
+                  const lockedTitle = lockDesignProductMode
+                    ? "구강 스캔은 디자인+생산만 가능합니다"
+                    : lockProductionProductMode
+                      ? "어벗디자인 파일은 생산만 가능합니다"
+                      : undefined;
                   return (
                     <button
                       key={option.value}
                       type="button"
                       role="radio"
                       aria-checked={selected}
+                      disabled={lockedOut}
+                      title={lockedOut ? lockedTitle : undefined}
                       className={cn(
                         "rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap",
                         selected
-                          ? "bg-blue-600 text-white shadow-sm"
+                          ? "bg-primary-strong text-white shadow-sm"
                           : "text-slate-600 hover:bg-white/70 hover:text-slate-900",
+                        lockedOut && "cursor-not-allowed opacity-50 hover:bg-transparent",
                       )}
                       onClick={() => setProductMode(option.value)}
                     >
@@ -255,28 +306,64 @@ export function NewRequestDetailDialog({
                   );
                 })}
               </div>
+              ) : null}
             </div>
             <DialogDescription className="sr-only">
-              STL 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 다음 케이스로 이동합니다.
+              3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 다음 케이스로 이동합니다.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%]">
-            <div className="app-glass-card app-glass-card--lg flex h-full min-h-[240px] flex-col !p-2">
-              <div className="app-glass-card-content flex-1">
+            <div className="app-glass-card app-glass-card--lg flex h-full min-h-[240px] flex-col !p-2 gap-2">
+              <div className="app-glass-card-content min-h-0 flex-1">
                 {detailFile ? (
                   <StlPreviewViewer
                     file={detailFile}
                     showOverlay={false}
+                    showGrid={false}
                     className="h-full min-h-[240px]"
                     onDiameterComputed={handleDiameterComputed}
                   />
                 ) : (
                   <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
-                    STL Preview
+                    3D Preview
                   </div>
                 )}
               </div>
+              {selectablePreviewIndices.length > 1 ? (
+                <div className="shrink-0 rounded-lg border border-slate-200 bg-white/80">
+                  <ul className="max-h-[7.5rem] overflow-y-auto py-1">
+                    {selectablePreviewIndices.map((fileIndex) => {
+                      const file = files[fileIndex];
+                      if (!file) return null;
+                      const selected = activePreviewIndex === fileIndex;
+                      return (
+                        <li key={`${file.name}:${file.size}:${fileIndex}`}>
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors",
+                              selected
+                                ? "bg-primary/10 font-medium text-primary"
+                                : "text-slate-600 hover:bg-slate-50",
+                            )}
+                            onClick={() => onSelectPreviewIndex?.(fileIndex)}
+                            aria-current={selected ? "true" : undefined}
+                          >
+                            <span
+                              className={cn(
+                                "h-1.5 w-1.5 shrink-0 rounded-full",
+                                selected ? "bg-primary" : "bg-slate-300",
+                              )}
+                            />
+                            <span className="truncate">{file.name}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
             </div>
 
             <div className="flex h-full min-h-0 flex-col">
@@ -346,13 +433,13 @@ export function NewRequestDetailDialog({
                             disabled={!detailFile}
                           >
                             <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="none" id="rg-none" className="border-slate-300 text-blue-600" />
+                              <RadioGroupItem value="none" id="rg-none" className="border-slate-300 text-primary-strong" />
                               <Label htmlFor="rg-none" className="text-sm text-slate-700 cursor-pointer">
                                 없음
                               </Label>
                             </div>
                             <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="deep" id="rg-deep" className="border-slate-300 text-blue-600" />
+                              <RadioGroupItem value="deep" id="rg-deep" className="border-slate-300 text-primary-strong" />
                               <Label htmlFor="rg-deep" className="text-sm text-slate-700 cursor-pointer">
                                 있음
                               </Label>
@@ -362,7 +449,7 @@ export function NewRequestDetailDialog({
 
                         <button
                           type="button"
-                          className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 transition-colors hover:text-blue-800"
+                          className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-strong transition-colors hover:text-primary-strong"
                           aria-label="유지홈 선택 안내"
                           onClick={() => setRetentionGuideModalOpen(true)}
                         >
@@ -371,7 +458,7 @@ export function NewRequestDetailDialog({
                         </button>
                       </div>
 
-                      <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
+                      <div className="flex flex-col gap-2 rounded-lg border border-primary-soft bg-primary-soft/60 px-3 py-2">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-slate-700">찾으시는 임플란트가 없나요?</span>
                           {!showNewSystemForm ? (
@@ -379,7 +466,7 @@ export function NewRequestDetailDialog({
                               type="button"
                               size="sm"
                               variant="secondary"
-                              className="bg-white text-blue-700 border-blue-200 hover:bg-blue-50"
+                              className="bg-white text-primary-strong border-primary-muted hover:bg-primary-soft"
                               onClick={() => setShowNewSystemForm(true)}
                             >
                               신규 임플란트 요청

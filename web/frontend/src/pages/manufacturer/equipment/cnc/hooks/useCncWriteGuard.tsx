@@ -84,7 +84,7 @@ export const useCncWriteGuard = () => {
               onChange={(e) =>
                 setPinInput(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))
               }
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500"
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-primary focus:border-primary"
             />
           </div>
           {pinMode === "setup" && (
@@ -102,11 +102,11 @@ export const useCncWriteGuard = () => {
                     e.target.value.replace(/[^0-9]/g, "").slice(0, 4)
                   )
                 }
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-primary focus:border-primary"
               />
             </div>
           )}
-          {pinError && <div className="text-xs text-red-600">{pinError}</div>}
+          {pinError && <div className="text-xs text-destructive">{pinError}</div>}
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button
@@ -164,7 +164,7 @@ export const useCncWriteGuard = () => {
                 pinResolveRef.current = null;
               }
             }}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors"
+            className="bg-primary hover:bg-primary-strong text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors"
           >
             확인
           </button>

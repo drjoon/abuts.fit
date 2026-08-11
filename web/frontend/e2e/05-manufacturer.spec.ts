@@ -9,7 +9,7 @@ const ACCOUNT = ACCOUNTS.manufacturer;
 
 const MANUFACTURER_PAGES = [
   { path: "/dashboard", label: "대시보드" },
-  { path: "/dashboard/worksheet", label: "작업" },
+  { path: "/dashboard/worksheet", label: "생산" },
   { path: "/dashboard/cnc", label: "장비" },
   { path: "/dashboard/payments", label: "정산" },
   { path: "/dashboard/inquiries", label: "문의" },

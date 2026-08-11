@@ -66,18 +66,18 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
       return {
         label: "스캔 중",
         className:
-          "bg-blue-50 text-blue-700 border-blue-100 before:bg-blue-400",
+          "bg-primary-soft text-primary-strong border-primary-soft before:bg-primary/70",
       };
     if (scanStatus === "ok")
       return {
         label: "정상",
         className:
-          "bg-emerald-50 text-emerald-700 border-emerald-100 before:bg-emerald-500",
+          "bg-primary-soft text-primary-strong border-primary-soft before:bg-primary",
       };
     if (scanStatus === "error")
       return {
         label: "에러",
-        className: "bg-red-50 text-red-700 border-red-100 before:bg-red-500",
+        className: "bg-destructive-soft text-destructive border-destructive-soft before:bg-destructive",
       };
     return {
       label: "대기",
@@ -103,7 +103,7 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
               <button
                 type="button"
                 onClick={onRefresh}
-                className="text-[11px] text-blue-600 hover:text-blue-800 underline-offset-2 hover:underline"
+                className="text-[11px] text-primary-strong hover:text-primary-strong underline-offset-2 hover:underline"
               >
                 다시 스캔
               </button>
@@ -121,9 +121,9 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
             <div
               className={`mt-0.5 text-xs font-semibold ${
                 statusLabel === "OK"
-                  ? "text-emerald-600"
+                  ? "text-primary-strong"
                   : statusLabel === "Error"
-                    ? "text-red-600"
+                    ? "text-destructive"
                     : "text-slate-500"
               }`}
             >
@@ -139,7 +139,7 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
             </div>
             <button
               type="button"
-              className="w-full text-left rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 hover:border-blue-300 hover:bg-blue-50/60 transition-colors"
+              className="w-full text-left rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 hover:border-primary-muted hover:bg-primary-soft/60 transition-colors"
               onClick={() => {
                 if (onOpenProgramDetail && current) {
                   onOpenProgramDetail(current);
@@ -162,7 +162,7 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
             </div>
             <button
               type="button"
-              className="w-full text-left rounded-lg border border-dashed border-gray-200 bg-white px-3 py-2 hover:border-blue-300 hover:bg-blue-50/40 transition-colors disabled:opacity-60"
+              className="w-full text-left rounded-lg border border-dashed border-gray-200 bg-white px-3 py-2 hover:border-primary/70 hover:bg-primary-soft/40 transition-colors disabled:opacity-60"
               onClick={() => {
                 if (onOpenProgramDetail && nextProgram) {
                   onOpenProgramDetail(nextProgram);
@@ -181,7 +181,7 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
           </div>
 
           {scanError && (
-            <div className="mt-1 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <div className="mt-1 text-[11px] text-destructive bg-destructive-soft border border-destructive-muted rounded-lg px-3 py-2">
               {scanError}
             </div>
           )}
@@ -204,12 +204,12 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
                       <div
                         className={`w-2.5 h-2.5 rounded-full border shadow-sm ${
                           h.status === "ok"
-                            ? "bg-emerald-500 border-emerald-600"
-                            : "bg-red-500 border-red-600"
+                            ? "bg-primary border-primary-strong"
+                            : "bg-destructive border-destructive"
                         }`}
                       />
                       {idx === 0 && (
-                        <div className="absolute -top-3 px-1 rounded-full bg-blue-600 text-[9px] text-white">
+                        <div className="absolute -top-3 px-1 rounded-full bg-primary-strong text-[9px] text-white">
                           NOW
                         </div>
                       )}

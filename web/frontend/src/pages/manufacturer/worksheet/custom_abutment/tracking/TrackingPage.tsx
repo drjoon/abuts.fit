@@ -1710,7 +1710,7 @@ export const TrackingInquiryPage = () => {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
+                                  className="border-primary/70 bg-primary-soft text-primary-strong hover:bg-primary-muted/50"
                                   onClick={async () => {
                                     try {
                                       const res = await fetch(
@@ -1869,7 +1869,7 @@ export const TrackingInquiryPage = () => {
               className="space-y-3 overflow-auto flex-1 min-h-0"
             >
               {recallMode && (
-                <div className="rounded-lg border bg-amber-50 p-3 space-y-3">
+                <div className="rounded-lg border bg-accent-soft p-3 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold">
                       재제작 시작 공정:
@@ -2104,7 +2104,7 @@ export const TrackingInquiryPage = () => {
                               </div>
 
                               <div className="mt-2 flex items-center justify-between gap-2 text-xs">
-                                <span className="inline-block bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded whitespace-nowrap">
+                                <span className="inline-block bg-primary-soft text-primary-strong font-semibold px-2 py-0.5 rounded whitespace-nowrap">
                                   {requestCount}건
                                 </span>
                                 <span className="text-gray-500 truncate">
@@ -2199,7 +2199,7 @@ export const TrackingInquiryPage = () => {
                                                 openRequestPreview(req);
                                               }
                                             }}
-                                            className="text-sm bg-white p-2 rounded border border-gray-200 cursor-pointer hover:border-blue-200 hover:bg-blue-50/30 transition-colors"
+                                            className="text-sm bg-white p-2 rounded border border-gray-200 cursor-pointer hover:border-primary-muted hover:bg-primary-soft/30 transition-colors"
                                           >
                                             <div className="flex items-center justify-between">
                                               <div className="flex items-center gap-2">
@@ -2246,7 +2246,7 @@ export const TrackingInquiryPage = () => {
                                                     <Button
                                                       variant="outline"
                                                       size="sm"
-                                                      className="h-6 px-2 text-xs border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
+                                                      className="h-6 px-2 text-xs border-primary/70 bg-primary-soft text-primary-strong hover:bg-primary-muted/50"
                                                       onClick={async (e) => {
                                                         e.stopPropagation();
                                                         try {
@@ -2342,7 +2342,7 @@ export const TrackingInquiryPage = () => {
                                               if (!reqMethod) return null;
                                               return (
                                                 <div
-                                                  className="text-[11px] text-indigo-700"
+                                                  className="text-[11px] text-primary-strong"
                                                   title={reqMethod}
                                                 >
                                                   기타 발송: {reqMethod}

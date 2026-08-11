@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: row(프리뷰) MetaRow는 nowrap으로 환자·일정 줄 2줄 줄바꿈 완화.
 // - 2026-08-06: row 요약에 출고예정·마감 남은시간 인라인 표시(세로 높이 증가 없이 환자 첫 줄에 배치).
 // - 2026-08-04: 환자 줄=`치과명 / 환자명 / 치아`, 기공소명은 상단 1회만. 기공소=치과 동일 시 치과명 중복 생략.
 // - 2026-08-04: layout=row 지원. PreviewModal은 가로 3열, 카드는 stack 유지.
@@ -98,9 +99,19 @@ function Dot() {
   return <span className="text-slate-300 select-none" aria-hidden>•</span>;
 }
 
-function MetaRow({ children }: { children: ReactNode }) {
+function MetaRow({
+  children,
+  nowrap = false,
+}: {
+  children: ReactNode;
+  nowrap?: boolean;
+}) {
   return (
-    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[13px] leading-snug text-slate-700">
+    <div
+      className={`flex items-center gap-x-1.5 gap-y-0.5 text-[13px] leading-snug text-slate-700 ${
+        nowrap ? "flex-nowrap whitespace-nowrap" : "flex-wrap"
+      }`}
+    >
       {children}
     </div>
   );
@@ -221,7 +232,7 @@ export function RequestInfoSummary({
       }
     >
       {(labName || dateLabel || hasScheduleMeta) && (
-        <MetaRow>
+        <MetaRow nowrap={isRow}>
           {labName && (
             <span className="font-medium text-slate-800">{labName}</span>
           )}
@@ -251,7 +262,7 @@ export function RequestInfoSummary({
           )}
         </MetaRow>
       )}
-      <MetaRow>
+      <MetaRow nowrap={isRow}>
         <span>{patientIdentityLine}</span>
       </MetaRow>
     </Section>
@@ -268,7 +279,7 @@ export function RequestInfoSummary({
         .join(" ")}
     >
       {implantLine && (
-        <MetaRow>
+        <MetaRow nowrap={isRow}>
           <span className="font-medium text-slate-800">{implantLine}</span>
           {retention && (
             <InlineGroup>
@@ -279,12 +290,12 @@ export function RequestInfoSummary({
         </MetaRow>
       )}
       {!implantLine && retention && (
-        <MetaRow>
+        <MetaRow nowrap={isRow}>
           <span className="text-slate-600">유지홈 {retention}</span>
         </MetaRow>
       )}
       {geometryItems.length > 0 && (
-        <MetaRow>
+        <MetaRow nowrap={isRow}>
           {geometryItems.map((item, idx) => (
             <InlineGroup key={item}>
               {idx > 0 && <Dot />}
@@ -303,7 +314,7 @@ export function RequestInfoSummary({
         isRow && (hasPatient || hasImplant) ? sectionPadStartClass : ""
       }
     >
-      <MetaRow>
+      <MetaRow nowrap={isRow}>
         {productionItems.map((item, idx) => (
           <InlineGroup key={`${item}-${idx}`}>
             {idx > 0 && <Dot />}

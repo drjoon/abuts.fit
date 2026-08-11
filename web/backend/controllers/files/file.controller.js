@@ -1,9 +1,16 @@
+// change-log:
+// - 2026-08-10: 디자인 파트너가 Request caseInfos 파일 S3 키 다운로드 가능.
+// - 2026-08-11: temp multipart + gzip ContentEncoding 지원, 다운로드 시 gunzip.
 // related files:
 // - web/backend/modules/files/file.routes.js
 // - web/backend/models/file.model.js
 // - web/backend/models/practiceTransfer.model.js
+// - web/backend/utils/designAccess.js
+// - web/backend/utils/s3.utils.js
+// - web/frontend/src/shared/hooks/useS3TempUpload.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/design/DesignPage.tsx
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs/promises";
@@ -16,6 +23,7 @@ import s3Utils from "../../utils/s3.utils.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
+import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
 
 const getFileType = (filename) => {
   const extension = filename.split(".").pop().toLowerCase();
@@ -194,6 +202,10 @@ export const createTempUploadPresign = asyncHandler(async (req, res) => {
     const originalName = normalizeOriginalName(item?.originalName || "");
     const mimetype = String(item?.mimetype || "").trim();
     const size = Number(item?.size || 0);
+    const contentEncoding = String(item?.contentEncoding || "")
+      .trim()
+      .toLowerCase();
+    const encoding = contentEncoding === "gzip" ? "gzip" : "";
     if (!originalName || !mimetype || !Number.isFinite(size) || size <= 0) {
       throw new ApiError(400, "파일 메타 정보가 올바르지 않습니다.");
     }
@@ -212,7 +224,7 @@ export const createTempUploadPresign = asyncHandler(async (req, res) => {
 
     const created = await File.create({
       originalName,
-      encoding: "",
+      encoding: encoding || "",
       mimetype,
       size,
       bucket,
@@ -222,24 +234,179 @@ export const createTempUploadPresign = asyncHandler(async (req, res) => {
       uploadedBy,
       fileType,
       isPublic: false,
+      ...(encoding
+        ? {
+            metadata: {
+              contentEncoding: encoding,
+              uncompressedSize: String(item?.uncompressedSize || ""),
+            },
+          }
+        : {}),
     });
 
-    const uploadUrl = await s3Utils.getUploadSignedUrl(key, mimetype);
-
-    // [수정] 파일명이 확정되기 전(임시 업로드)에는 Rhino 서버로 전송하지 않음.
-    // setTimeout(() => {
-    //   uploadS3ToRhinoServer(key, originalName).catch(() => {});
-    // }, 2000);
+    const uploadUrl = await s3Utils.getUploadSignedUrl(key, mimetype, 900, {
+      contentEncoding: encoding || undefined,
+    });
 
     results.push({
       uploadUrl,
       file: created.toObject(),
+      contentEncoding: encoding || undefined,
     });
   }
 
   return res
     .status(201)
     .json(new ApiResponse(201, results, "업로드 URL이 생성되었습니다."));
+});
+
+const MAX_MULTIPART_PARTS = 10000;
+
+export const createTempMultipartUpload = asyncHandler(async (req, res) => {
+  const uploadedBy = req.user?._id;
+  if (!uploadedBy) {
+    throw new ApiError(401, "인증 정보가 없습니다.");
+  }
+
+  const originalName = normalizeOriginalName(req.body?.originalName || "");
+  const mimetype = String(req.body?.mimetype || "").trim();
+  const size = Number(req.body?.size || 0);
+  const partCount = Math.floor(Number(req.body?.partCount || 0));
+  const contentEncoding = String(req.body?.contentEncoding || "")
+    .trim()
+    .toLowerCase();
+  const encoding = contentEncoding === "gzip" ? "gzip" : "";
+
+  if (!originalName || !mimetype || !Number.isFinite(size) || size <= 0) {
+    throw new ApiError(400, "파일 메타 정보가 올바르지 않습니다.");
+  }
+  if (!Number.isFinite(partCount) || partCount < 1 || partCount > MAX_MULTIPART_PARTS) {
+    throw new ApiError(400, "multipart partCount가 올바르지 않습니다.");
+  }
+
+  const ext = getExtFromName(originalName);
+  const key = `uploads/users/${uploadedBy.toString()}/${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}${ext}`;
+
+  const bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
+  const region = process.env.AWS_REGION || "ap-northeast-2";
+  const location = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+  const fileType =
+    s3Utils.getFileType(originalName) || getFileType(originalName);
+
+  const created = await File.create({
+    originalName,
+    encoding: encoding || "",
+    mimetype,
+    size,
+    bucket,
+    key,
+    location,
+    contentType: mimetype,
+    uploadedBy,
+    fileType,
+    isPublic: false,
+    ...(encoding
+      ? {
+          metadata: {
+            contentEncoding: encoding,
+            uncompressedSize: String(req.body?.uncompressedSize || ""),
+          },
+        }
+      : {}),
+  });
+
+  const { uploadId } = await s3Utils.createMultipartUpload(key, mimetype, {
+    contentEncoding: encoding || undefined,
+  });
+
+  const partUrls = [];
+  for (let partNumber = 1; partNumber <= partCount; partNumber += 1) {
+    const uploadUrl = await s3Utils.getUploadPartSignedUrl(
+      key,
+      uploadId,
+      partNumber,
+      3600,
+    );
+    partUrls.push({ partNumber, uploadUrl });
+  }
+
+  return res.status(201).json(
+    new ApiResponse(
+      201,
+      {
+        uploadId,
+        partUrls,
+        file: created.toObject(),
+        contentEncoding: encoding || undefined,
+      },
+      "multipart 업로드가 시작되었습니다.",
+    ),
+  );
+});
+
+export const completeTempMultipartUpload = asyncHandler(async (req, res) => {
+  const uploadedBy = req.user?._id;
+  if (!uploadedBy) {
+    throw new ApiError(401, "인증 정보가 없습니다.");
+  }
+
+  const fileId = String(req.body?.fileId || "").trim();
+  const uploadId = String(req.body?.uploadId || "").trim();
+  const parts = Array.isArray(req.body?.parts) ? req.body.parts : [];
+
+  if (!fileId || !mongoose.Types.ObjectId.isValid(fileId)) {
+    throw new ApiError(400, "fileId가 올바르지 않습니다.");
+  }
+  if (!uploadId) {
+    throw new ApiError(400, "uploadId가 필요합니다.");
+  }
+
+  const file = await File.findById(fileId);
+  if (!file) {
+    throw new ApiError(404, "파일을 찾을 수 없습니다.");
+  }
+  if (String(file.uploadedBy || "") !== String(uploadedBy)) {
+    throw new ApiError(403, "권한이 없습니다.");
+  }
+
+  await s3Utils.completeMultipartUpload(file.key, uploadId, parts);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { file: file.toObject() }, "multipart 업로드가 완료되었습니다."));
+});
+
+export const abortTempMultipartUpload = asyncHandler(async (req, res) => {
+  const uploadedBy = req.user?._id;
+  if (!uploadedBy) {
+    throw new ApiError(401, "인증 정보가 없습니다.");
+  }
+
+  const fileId = String(req.body?.fileId || "").trim();
+  const uploadId = String(req.body?.uploadId || "").trim();
+
+  if (!fileId || !mongoose.Types.ObjectId.isValid(fileId)) {
+    throw new ApiError(400, "fileId가 올바르지 않습니다.");
+  }
+  if (!uploadId) {
+    throw new ApiError(400, "uploadId가 필요합니다.");
+  }
+
+  const file = await File.findById(fileId);
+  if (!file) {
+    throw new ApiError(404, "파일을 찾을 수 없습니다.");
+  }
+  if (String(file.uploadedBy || "") !== String(uploadedBy)) {
+    throw new ApiError(403, "권한이 없습니다.");
+  }
+
+  await s3Utils.abortMultipartUpload(file.key, uploadId);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { ok: true }, "multipart 업로드가 취소되었습니다."));
 });
 
 export const uploadFile = asyncHandler(async (req, res) => {
@@ -641,6 +808,48 @@ const canUserAccessS3Key = async (req, key) => {
       currentAnchorId === String(practiceTransfer?.practiceBusinessAnchorId || "").trim();
 
     if (isPracticeOwner || isTargetLabMember || isPracticeBusinessMember) {
+      return true;
+    }
+  }
+
+  // Request caseInfos 파일 (원본 STL / 추가 첨부)
+  // - 의뢰 소유 사업자 / 제조사·관리자 / 디자인 파트너
+  const requestWithFile = await Request.findOne({
+    $or: [
+      { "caseInfos.file.s3Key": key },
+      { "caseInfos.files.s3Key": key },
+    ],
+  })
+    .select({
+      businessAnchorId: 1,
+      requestor: 1,
+      "caseInfos.productMode": 1,
+    })
+    .lean();
+
+  if (requestWithFile) {
+    const role = String(req.user?.role || "").trim();
+    if (role === "manufacturer" || role === "admin") {
+      return true;
+    }
+    const currentAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const ownerAnchorId = String(requestWithFile?.businessAnchorId || "").trim();
+    if (currentAnchorId && ownerAnchorId && currentAnchorId === ownerAnchorId) {
+      return true;
+    }
+    const currentUserId = String(req.user?._id || "").trim();
+    if (
+      currentUserId &&
+      currentUserId === String(requestWithFile?.requestor || "").trim()
+    ) {
+      return true;
+    }
+    if (
+      role === "requestor" &&
+      String(requestWithFile?.caseInfos?.productMode || "").trim() ===
+        "design_custom_abutment" &&
+      (await resolveDesignAccessForUser(req.user))
+    ) {
       return true;
     }
   }

@@ -238,6 +238,8 @@ async function run() {
         maxDiameter,
         requestedAt,
         weeklyBatchDays,
+        shippingMode,
+        productMode: row?.caseInfos?.productMode ?? null,
       });
 
       const nextEstimatedShipYmd = nextSchedule?.scheduledShipPickup

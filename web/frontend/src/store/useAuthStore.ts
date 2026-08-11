@@ -11,7 +11,11 @@ import { request } from "@/shared/api/apiClient";
 import type { AppUserRole } from "@/shared/types/role";
 import {
   normalizeRequestorCapabilities,
+  normalizeRequestorKind,
+  normalizeRequestorServices,
   type RequestorCapabilities,
+  type RequestorKind,
+  type RequestorServices,
 } from "@/shared/business/requestorCapabilities";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
@@ -37,6 +41,9 @@ export interface User {
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
   signupChannel?: string | null;
+  requestorKind?: RequestorKind | null;
+  requestorServices?: RequestorServices | null;
+  /** @deprecated requestorKind / requestorServices 사용 */
   requestorCapabilities?: RequestorCapabilities | null;
   practiceProfile?: {
     clinicName?: string;
@@ -55,6 +62,8 @@ export interface User {
     holderName: string;
     updatedAt?: string | null;
   };
+  /** 계정별 최근 대시보드 경로 (pathname+search) */
+  lastDashboardPath?: string | null;
 }
 
 const normalizeApiUser = (u: unknown): User | null => {
@@ -69,6 +78,10 @@ const normalizeApiUser = (u: unknown): User | null => {
   const rawCaps =
     row.requestorCapabilities && typeof row.requestorCapabilities === "object"
       ? (row.requestorCapabilities as Partial<RequestorCapabilities>)
+      : null;
+  const rawServices =
+    row.requestorServices && typeof row.requestorServices === "object"
+      ? (row.requestorServices as Partial<RequestorServices>)
       : null;
   return {
     id,
@@ -87,6 +100,12 @@ const normalizeApiUser = (u: unknown): User | null => {
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
     signupChannel: row.signupChannel ? String(row.signupChannel) : null,
+    requestorKind: normalizeRequestorKind(
+      typeof row.requestorKind === "string" ? row.requestorKind : null,
+    ),
+    requestorServices: rawServices
+      ? normalizeRequestorServices(rawServices)
+      : null,
     requestorCapabilities: rawCaps
       ? normalizeRequestorCapabilities(rawCaps)
       : null,
@@ -132,6 +151,14 @@ const normalizeApiUser = (u: unknown): User | null => {
             updatedAt: pa?.updatedAt ? String(pa.updatedAt) : null,
           }
         : undefined,
+    lastDashboardPath: (() => {
+      const prefs =
+        row.preferences && typeof row.preferences === "object"
+          ? (row.preferences as Record<string, unknown>)
+          : null;
+      const raw = prefs?.lastDashboardPath;
+      return typeof raw === "string" && raw.trim() ? String(raw).trim() : null;
+    })(),
   };
 };
 
@@ -157,6 +184,7 @@ interface AuthState {
     refreshToken?: string | null,
   ) => Promise<boolean>;
   setUser: (user: User | null) => void;
+  setLastDashboardPath: (path: string | null) => void;
   logout: () => void;
 }
 
@@ -433,6 +461,17 @@ export const useAuthStore = create<AuthState>((set, get) => {
         user,
         isAuthenticated: Boolean(state.token && user),
       }));
+    },
+    setLastDashboardPath: (path: string | null) => {
+      const current = get().user;
+      if (!current) return;
+      const next = { ...current, lastDashboardPath: path };
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      set({ user: next });
     },
     logout: () => {
       try {

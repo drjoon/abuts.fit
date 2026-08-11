@@ -412,7 +412,7 @@ export const PhoneStep = ({
       )}
 
       {isExpired && (
-        <p className="text-xs text-amber-500">
+        <p className="text-xs text-accent">
           유효시간이 만료되었습니다. 재발송이 필요합니다.
         </p>
       )}
@@ -462,7 +462,7 @@ export const PhoneStep = ({
       )}
 
       {completed && (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-600">
+        <div className="flex items-center gap-2 rounded-xl border border-primary-muted bg-primary-soft px-4 py-2 text-sm text-primary-strong">
           <Check className="h-4 w-4 shrink-0" /> 휴대전화 인증 완료
         </div>
       )}

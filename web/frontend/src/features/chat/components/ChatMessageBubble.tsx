@@ -187,7 +187,7 @@ export function ChatMessageBubble({
                 "mb-2 block w-full min-w-0 rounded border-l-2 px-2 py-1 text-left transition-opacity",
                 isMine
                   ? "border-primary-foreground/50 bg-primary-foreground/10"
-                  : "border-blue-500 bg-background/60",
+                  : "border-primary bg-background/60",
                 canJumpToReply
                   ? "cursor-pointer hover:opacity-90"
                   : "cursor-default opacity-80",
@@ -265,7 +265,7 @@ export function ChatMessageBubble({
                 className={cn(
                   "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs bg-background shadow-sm transition-colors",
                   group.reactedByMe
-                    ? "border-blue-400 bg-blue-50 text-blue-700"
+                    ? "border-primary/70 bg-primary-soft text-primary-strong"
                     : "border-border text-foreground hover:bg-muted",
                   !onToggleReaction && "cursor-default",
                 )}

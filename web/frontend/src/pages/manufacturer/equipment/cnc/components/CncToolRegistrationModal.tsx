@@ -127,7 +127,7 @@ const AddMode = ({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <label className="text-xs font-semibold text-slate-500">
-            슬롯 번호 <span className="text-red-500">*</span>
+            슬롯 번호 <span className="text-destructive">*</span>
           </label>
           <input
             type="number"
@@ -247,7 +247,7 @@ const SaveMode = ({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-500">
-                템플릿 이름 <span className="text-red-500">*</span>
+                템플릿 이름 <span className="text-destructive">*</span>
               </label>
               <input
                 type="text"
@@ -292,7 +292,7 @@ const SaveMode = ({
       )}
 
       {savedMsg ? (
-        <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+        <div className="rounded-lg bg-primary-soft px-3 py-2 text-xs text-primary-strong">
           {savedMsg}
         </div>
       ) : null}
@@ -459,7 +459,7 @@ const LoadMode = ({
       </p>
 
       {hasExistingTools ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+        <div className="rounded-xl border border-accent-muted bg-accent-soft px-3 py-2.5 text-xs text-accent-strong">
           이미 등록된 공구가 {existingSlotCount}개 있습니다.{" "}
           <span className="font-semibold">공구 전체 삭제</span> 후 다시
           불러오세요.
@@ -553,8 +553,8 @@ const LoadMode = ({
                         onClick={() => requestDelete(t)}
                         className={`rounded px-1.5 py-0.5 text-[11px] ${
                           selected
-                            ? "text-red-300 hover:bg-white/10"
-                            : "text-red-600 hover:bg-red-50"
+                            ? "text-destructive/80 hover:bg-white/10"
+                            : "text-destructive hover:bg-destructive-soft"
                         }`}
                       >
                         삭제
@@ -586,7 +586,7 @@ const LoadMode = ({
           ) : null}
 
           {applyResult ? (
-            <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <div className="rounded-lg bg-primary-soft px-3 py-2 text-xs text-primary-strong">
               {applyResult}
             </div>
           ) : null}

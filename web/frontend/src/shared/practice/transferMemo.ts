@@ -280,6 +280,8 @@ export const normalizeProsthesisTypes = (items: string[]) => {
       const lowered = item.toLowerCase();
       if (lowered === "pontic") return "Pontic";
       if (lowered === "브릿지") return "브리지";
+      const compact = item.replace(/\s+/g, "");
+      if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "어벗 디자인";
       return item;
     });
 
@@ -291,8 +293,15 @@ export const normalizeProsthesisTypes = (items: string[]) => {
 export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" || prosthesisType === "Pontic";
 
+export const isAbutmentDesignProsthesisType = (prosthesisType: string) => {
+  const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
+  return /^(?:커스텀)?어벗디자인$/i.test(compact);
+};
+
 export const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "크라운" || prosthesisType === "브리지";
+  prosthesisType === "크라운" ||
+  prosthesisType === "브리지" ||
+  isAbutmentDesignProsthesisType(prosthesisType);
 
 export const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();

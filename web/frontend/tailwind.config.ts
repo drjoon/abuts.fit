@@ -39,7 +39,10 @@ export default {
 				primary: {
 					DEFAULT: 'hsl(var(--primary))',
 					foreground: 'hsl(var(--primary-foreground))',
-					glow: 'hsl(var(--primary-glow))'
+					glow: 'hsl(var(--primary-glow))',
+					soft: 'hsl(var(--primary-soft))',
+					muted: 'hsl(var(--primary-muted))',
+					strong: 'hsl(var(--primary-strong))'
 				},
 				secondary: {
 					DEFAULT: 'hsl(var(--secondary))',
@@ -47,7 +50,9 @@ export default {
 				},
 				destructive: {
 					DEFAULT: 'hsl(var(--destructive))',
-					foreground: 'hsl(var(--destructive-foreground))'
+					foreground: 'hsl(var(--destructive-foreground))',
+					soft: 'hsl(var(--destructive-soft))',
+					muted: 'hsl(var(--destructive-muted))'
 				},
 				muted: {
 					DEFAULT: 'hsl(var(--muted))',
@@ -56,7 +61,24 @@ export default {
 				accent: {
 					DEFAULT: 'hsl(var(--accent))',
 					foreground: 'hsl(var(--accent-foreground))',
-					glow: 'hsl(var(--accent-glow))'
+					glow: 'hsl(var(--accent-glow))',
+					soft: 'hsl(var(--accent-soft))',
+					muted: 'hsl(var(--accent-muted))',
+					strong: 'hsl(var(--accent-strong))'
+				},
+				service: {
+					gigong: {
+						DEFAULT: 'hsl(var(--service-gigong))',
+						foreground: 'hsl(var(--service-gigong-foreground))',
+						soft: 'hsl(var(--service-gigong-soft))',
+						muted: 'hsl(var(--service-gigong-muted))'
+					},
+					abut: {
+						DEFAULT: 'hsl(var(--service-abut))',
+						foreground: 'hsl(var(--service-abut-foreground))',
+						soft: 'hsl(var(--service-abut-soft))',
+						muted: 'hsl(var(--service-abut-muted))'
+					}
 				},
 				popover: {
 					DEFAULT: 'hsl(var(--popover))',

@@ -379,14 +379,14 @@ export const MailboxContentsModal = ({
             </span>
           </DialogTitle>
         </DialogHeader>
-        <div className="mt-1 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50/70 px-3 py-2.5">
+        <div className="mt-1 flex items-start gap-3 rounded-xl border border-primary-muted bg-primary-soft/70 px-3 py-2.5">
           <Checkbox
             id={`mailbox-force-today-${address}`}
             checked={forceToday}
             onCheckedChange={(checked) =>
               onForceTodayChange?.(Boolean(checked))
             }
-            className="mt-0.5 border-blue-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+            className="mt-0.5 border-primary/70 data-[state=checked]:bg-primary-strong data-[state=checked]:border-primary-strong"
           />
           <div className="min-w-0">
             <Label
@@ -402,7 +402,7 @@ export const MailboxContentsModal = ({
           </div>
         </div>
         {errorMessage ? (
-          <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <div className="mt-2 rounded-lg border border-destructive-muted bg-destructive-soft px-3 py-2 text-sm text-destructive">
             {errorMessage}
           </div>
         ) : null}
@@ -588,7 +588,7 @@ export const MailboxContentsModal = ({
                         const methods = getManualDeliveryMethods(req);
                         if (!methods.length) return null;
                         return (
-                          <div className="text-indigo-700" title={methods.join(", ")}>
+                          <div className="text-primary-strong" title={methods.join(", ")}>
                             기타 발송: {methods.join(", ")}
                           </div>
                         );

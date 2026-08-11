@@ -39,6 +39,7 @@ router.use(authenticate);
 router.use(authorize(["requestor", "manufacturer", "admin"]));
 
 router.post("/finish-line/manual", rhinoController.saveManualFinishLine);
+router.post("/front-point/manual", rhinoController.saveManualFrontPoint);
 
 const upload = multer({
   storage: multer.memoryStorage(),

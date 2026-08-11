@@ -1,28 +1,55 @@
+// change-log:
+// - 2026-08-09: 신규의뢰 V3 로컬 업로드에서도 파일명 AI로 치과/환자/치아 보강.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
-import { useCallback } from "react";
+// - web/frontend/src/pages/requestor/new_request/hooks/usePatientFileGroups.ts
+// - web/frontend/src/pages/requestor/new_request/utils/filenameAiCache.ts
+import { useCallback, useRef } from "react";
 import { saveFile } from "../utils/fileIndexedDB";
 import { getFileKey } from "../utils/localDraftStorage";
 import { addUploadedFiles, filterNewFiles } from "../utils/localFileStorage";
+import {
+  getFilenameAiCache,
+  setFilenameAiCache,
+  toFilenameAiCacheKey,
+} from "../utils/filenameAiCache";
 import { useToast } from "@/shared/hooks/use-toast";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
+import { request } from "@/shared/api/apiClient";
+
+export type LocalUploadParsedMeta = {
+  fileKey: string;
+  clinicName?: string;
+  patientName?: string;
+  tooth?: string;
+};
+
+const trimText = (value: unknown) => String(value || "").trim();
 
 export const useNewRequestLocalFiles = ({
   setFiles,
   setSelectedPreviewIndex,
   updateCaseInfos,
   caseInfosMap,
+  onFilesAdded,
 }: {
   setFiles: React.Dispatch<React.SetStateAction<File[]>>;
   setSelectedPreviewIndex: React.Dispatch<React.SetStateAction<number | null>>;
   updateCaseInfos?: (fileKey: string, updates: any) => void;
   caseInfosMap?: Record<string, any>;
+  onFilesAdded?: (payload: {
+    files: File[];
+    parsed: LocalUploadParsedMeta[];
+  }) => void;
 }) => {
   const { toast } = useToast();
+  const aiQuotaExhaustedRef = useRef(false);
+  const caseInfosMapRef = useRef(caseInfosMap);
+  caseInfosMapRef.current = caseInfosMap;
 
   const normalize = (s: string) => {
     try {
@@ -31,6 +58,164 @@ export const useNewRequestLocalFiles = ({
       return String(s || "");
     }
   };
+
+  const enrichWithAi = useCallback(
+    async (params: {
+      files: File[];
+      parsedByRule: Map<
+        string,
+        { clinicName?: string; patientName?: string; tooth?: string }
+      >;
+    }) => {
+      if (!updateCaseInfos) return [] as LocalUploadParsedMeta[];
+      if (aiQuotaExhaustedRef.current) return [] as LocalUploadParsedMeta[];
+
+      const filenamesForAi: string[] = [];
+      const fileKeysForAi: string[] = [];
+      const aiCacheKeyByFileKey = new Map<string, string>();
+      const enriched: LocalUploadParsedMeta[] = [];
+
+      for (const file of params.files) {
+        const fileKey = getFileKey(file);
+        const current = caseInfosMapRef.current?.[fileKey] || {};
+        const fallback = params.parsedByRule.get(fileKey) || {};
+        const clinicName =
+          trimText(current?.clinicName) || trimText(fallback?.clinicName);
+        const patientName =
+          trimText(current?.patientName) || trimText(fallback?.patientName);
+        const tooth = trimText(current?.tooth) || trimText(fallback?.tooth);
+
+        // 치과명·환자명 중 하나라도 비어 있으면 AI로 보강
+        if (clinicName && patientName) continue;
+
+        const cacheKey = toFilenameAiCacheKey(file.name, file.size);
+        const cached = getFilenameAiCache(cacheKey);
+        const cachedClinic = trimText(cached?.clinicName);
+        const cachedPatient = trimText(cached?.patientName);
+        const cachedTooth = trimText(cached?.tooth);
+
+        if (cachedClinic || cachedPatient || cachedTooth) {
+          const nextClinic = clinicName || cachedClinic || undefined;
+          const nextPatient = patientName || cachedPatient || undefined;
+          const nextTooth = tooth || cachedTooth || undefined;
+          updateCaseInfos(fileKey, {
+            ...(nextClinic ? { clinicName: nextClinic } : {}),
+            ...(nextPatient ? { patientName: nextPatient } : {}),
+            ...(nextTooth ? { tooth: nextTooth } : {}),
+          });
+          enriched.push({
+            fileKey,
+            clinicName: nextClinic,
+            patientName: nextPatient,
+            tooth: nextTooth,
+          });
+          continue;
+        }
+
+        filenamesForAi.push(file.name);
+        fileKeysForAi.push(fileKey);
+        aiCacheKeyByFileKey.set(fileKey, cacheKey);
+      }
+
+      if (filenamesForAi.length === 0) return enriched;
+
+      try {
+        const res = await request<
+          {
+            filename: string;
+            clinicName: string | null;
+            patientName: string | null;
+            tooth: string | null;
+          }[]
+        >({
+          path: "/api/ai/parse-filenames",
+          method: "POST",
+          jsonBody: { filenames: filenamesForAi },
+        });
+
+        const provider = (res.data as any)?.provider;
+        if (provider === "fallback-quota-exceeded") {
+          aiQuotaExhaustedRef.current = true;
+          toast({
+            title: "자동 분석 실패",
+            description:
+              "환자정보를 직접 입력해주세요. (내일 17:00 이후 자동 분석 재개)",
+            variant: "destructive",
+            duration: 4000,
+          });
+          return enriched;
+        }
+
+        const items = (res.data as any)?.data || res.data;
+        if (!Array.isArray(items) || !items.length) return enriched;
+
+        const queueByFilename = new Map<string, number[]>();
+        filenamesForAi.forEach((name, idx) => {
+          const q = queueByFilename.get(name) || [];
+          q.push(idx);
+          queueByFilename.set(name, q);
+        });
+
+        items.forEach((item: any) => {
+          const queue = queueByFilename.get(String(item?.filename || ""));
+          if (!queue || queue.length === 0) return;
+          const idx = queue.shift() as number;
+          const fileKey = fileKeysForAi[idx];
+          if (!fileKey) return;
+
+          const current = caseInfosMapRef.current?.[fileKey] || {};
+          const fallback = params.parsedByRule.get(fileKey) || {};
+          const aiClinicName = trimText(item?.clinicName);
+          const aiPatientName = trimText(item?.patientName);
+          const aiTooth = trimText(item?.tooth);
+
+          const nextClinic =
+            trimText(current?.clinicName) ||
+            aiClinicName ||
+            trimText(fallback?.clinicName) ||
+            undefined;
+          const nextPatient =
+            trimText(current?.patientName) ||
+            aiPatientName ||
+            trimText(fallback?.patientName) ||
+            undefined;
+          const nextTooth =
+            trimText(current?.tooth) ||
+            aiTooth ||
+            trimText(fallback?.tooth) ||
+            undefined;
+
+          if (nextClinic || nextPatient || nextTooth) {
+            updateCaseInfos(fileKey, {
+              ...(nextClinic ? { clinicName: nextClinic } : {}),
+              ...(nextPatient ? { patientName: nextPatient } : {}),
+              ...(nextTooth ? { tooth: nextTooth } : {}),
+            });
+            enriched.push({
+              fileKey,
+              clinicName: nextClinic,
+              patientName: nextPatient,
+              tooth: nextTooth,
+            });
+          }
+
+          const cacheKey = aiCacheKeyByFileKey.get(fileKey);
+          if (cacheKey) {
+            setFilenameAiCache(cacheKey, {
+              clinicName: aiClinicName,
+              patientName: aiPatientName,
+              tooth: aiTooth,
+            });
+          }
+        });
+      } catch (error) {
+        console.warn("[NewRequestLocalFiles] AI parse failed:", error);
+      }
+
+      return enriched;
+    },
+    [toast, updateCaseInfos],
+  );
 
   const handleUpload = useCallback(
     async (filesToUpload: File[]) => {
@@ -86,39 +271,49 @@ export const useNewRequestLocalFiles = ({
 
         setSelectedPreviewIndex((prev) => (prev === null ? 0 : prev));
 
-        if (updateCaseInfos) {
-          normalizedFiles.forEach((file) => {
-            const normalizedName = normalize(file.name);
-            const fileKey = getFileKey(file);
-            const parsed = parseFilenameWithRules(normalizedName);
+        const parsedMeta: LocalUploadParsedMeta[] = [];
+        const parsedByRule = new Map<
+          string,
+          { clinicName?: string; patientName?: string; tooth?: string }
+        >();
 
-            if (!parsed.clinicName && !parsed.patientName && !parsed.tooth) {
-              return;
-            }
+        normalizedFiles.forEach((file) => {
+          const normalizedName = normalize(file.name);
+          const fileKey = getFileKey(file);
+          const parsed = parseFilenameWithRules(normalizedName);
+          const clinicName = trimText(parsed.clinicName) || undefined;
+          const patientName = trimText(parsed.patientName) || undefined;
+          const tooth = trimText(parsed.tooth) || undefined;
 
-            const existing = (caseInfosMap && caseInfosMap[fileKey]) || null;
-            updateCaseInfos(fileKey, {
-              clinicName:
-                String(existing?.clinicName || "").trim() ||
-                String(parsed.clinicName || "").trim() ||
-                undefined,
-              patientName:
-                String(existing?.patientName || "").trim() ||
-                String(parsed.patientName || "").trim() ||
-                undefined,
-              tooth:
-                String(existing?.tooth || "").trim() ||
-                String(parsed.tooth || "").trim() ||
-                undefined,
-            });
+          parsedByRule.set(fileKey, { clinicName, patientName, tooth });
+          parsedMeta.push({ fileKey, clinicName, patientName, tooth });
+
+          if (!updateCaseInfos) return;
+          if (!clinicName && !patientName && !tooth) return;
+
+          const existing = caseInfosMapRef.current?.[fileKey] || null;
+          updateCaseInfos(fileKey, {
+            clinicName: trimText(existing?.clinicName) || clinicName,
+            patientName: trimText(existing?.patientName) || patientName,
+            tooth: trimText(existing?.tooth) || tooth,
           });
-        }
+        });
+
+        onFilesAdded?.({ files: normalizedFiles, parsed: parsedMeta });
 
         toast({
           title: "파일 추가 완료",
           description: `${normalizedFiles.length}개 파일이 추가되었습니다.`,
           duration: 2000,
         });
+
+        // 룰로 치과/환자가 비면 AI로 보강 (구강 스캔처럼 치식 없는 파일명 포함)
+        void enrichWithAi({ files: normalizedFiles, parsedByRule }).then(
+          (enriched) => {
+            if (!enriched.length) return;
+            onFilesAdded?.({ files: normalizedFiles, parsed: enriched });
+          },
+        );
       } catch (error) {
         console.error("[NewRequestLocalFiles] Error:", error);
         toast({
@@ -129,7 +324,14 @@ export const useNewRequestLocalFiles = ({
         });
       }
     },
-    [setFiles, setSelectedPreviewIndex, updateCaseInfos, caseInfosMap, toast],
+    [
+      setFiles,
+      setSelectedPreviewIndex,
+      updateCaseInfos,
+      onFilesAdded,
+      toast,
+      enrichWithAi,
+    ],
   );
 
   return { handleUpload };

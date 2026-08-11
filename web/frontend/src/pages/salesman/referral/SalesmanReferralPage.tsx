@@ -17,6 +17,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useReferralData } from "@/pages/requestor/referralGroups/hooks/useReferralData";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
+import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import {
   Tooltip,
   TooltipContent,
@@ -70,6 +71,7 @@ export const SalesmanReferralPage = () => {
   const { user } = useAuthStore();
   const [copied, setCopied] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
+  const [policyOpen, setPolicyOpen] = useState(false);
 
   const {
     isReferralEligible,
@@ -179,7 +181,7 @@ export const SalesmanReferralPage = () => {
                       type="button"
                       size="sm"
                       onClick={() => void handleCopyCode()}
-                      className="h-9 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+                      className="h-9 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
                     >
                       {codeCopied ? (
                         <>
@@ -197,7 +199,7 @@ export const SalesmanReferralPage = () => {
                       type="button"
                       size="sm"
                       onClick={() => void handleCopyLink()}
-                      className="h-9 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+                      className="h-9 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
                     >
                       {copied ? (
                         <>
@@ -217,7 +219,18 @@ export const SalesmanReferralPage = () => {
 
               <Card className="flex h-full flex-col xl:col-span-7">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-xl">영업자 소개 통계</CardTitle>
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle className="text-xl">영업자 소개 통계</CardTitle>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setPolicyOpen(true)}
+                    >
+                      정책 보기
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col pt-0">
                   {loadingRequestor || loadingDirectMembers || loadingTree ? (
@@ -262,7 +275,7 @@ export const SalesmanReferralPage = () => {
                   <ReferralNetworkChart
                     data={treeData}
                     maxDepth={1}
-                    title="내 소개 네트워크"
+                    title="소개 네트워크"
                     mode="radial-tree"
                     currentBusinessAnchorId={user?.businessAnchorId || null}
                     visibleRoles={["requestor", "salesman"]}
@@ -274,6 +287,12 @@ export const SalesmanReferralPage = () => {
             </div>
           )}
         </div>
+
+        <PricingPolicyDialog
+          open={policyOpen}
+          onOpenChange={setPolicyOpen}
+          variant="salesman"
+        />
       </div>
     </TooltipProvider>
   );

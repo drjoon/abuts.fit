@@ -1,6 +1,10 @@
 // change-log:
-// - 2026-08-06: 묶음 리드타임 (N-1) 복원. 접수 당일을 1일차로 포함(자정 컷오프/
-//   PricingPolicyDialog SSOT). lead=1이면 당일 기준일 → 주간 발송 요일 정렬.
+// - 2026-08-11: 묶음 당일출고 회귀 가드. lead 계산·스케줄 모두 접수 YMD 초과를 강제.
+// - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일·기본 직경 그룹.
+// - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 모두 출고일에
+//   디자인 리드 +1영업일 추가.
+// - 2026-08-10: 묶음 리드타임 SSOT 수정. minBusinessDays=N → 접수 익영업일부터
+//   N영업일 생산(lead=1이면 다음 영업일 출고). 신속은 12시 컷오프로 당일/익일 분기.
 // - 2026-08-06: 스케줄 기준일을 toKstYmd(requestedAt)로 고정. 재계산 시 오늘 기준 밀림 방지.
 // - 2026-08-06: resolveNextWeeklyBatchYmd 요일 판정을 서버 로컬 getDay() 대신
 //   YMD 달력일 기준(UTC noon)으로 바꿔 UTC 서버에서 목→금으로 하루 밀리던 버그 수정.
@@ -65,6 +69,12 @@ const PACKING_CUTOFF_HOUR = 14; // 포장 마감 시각 (14:00)
 const PICKUP_REQUEST_HOUR = 15; // 택배 수거 신청 시각 (15:00)
 const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
 const EXPRESS_CUTOFF_HOUR_KST = 12; // 신속: 낮 12시 이전 당일 발송 목표
+/** 디자인+생산: 디자인 작업 리드 (영업일). 묶음/신속 공통. */
+const DESIGN_LEAD_BUSINESS_DAYS = 1;
+
+export function needsDesignLeadDay(productMode) {
+  return String(productMode || "").trim() === "design_custom_abutment";
+}
 
 function getKstHour(date = new Date()) {
   const hour = Number(
@@ -120,17 +130,33 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
   throw new Error(`Invalid ymd for createKstDateTime: ${ymdString}`);
 }
 
-export function resolveLeadDaysWithSameDayCutoff({ leadDays, requestedAt }) {
+export function resolveLeadDaysWithSameDayCutoff({
+  leadDays,
+  requestedAt,
+  shippingMode = "normal",
+}) {
   const rawDays = Number.isFinite(leadDays) ? Number(leadDays) : 1;
   const baseDays = Math.max(1, Math.floor(rawDays));
 
-  // PricingPolicyDialog / BulkShippingBanner SSOT:
-  // KST 자정(0시)까지 접수분은 접수 당일을 리드타임 1일차로 포함한다.
-  // 예) minBusinessDays=1 → 추가 영업일 0(당일 기준) → 주간 발송 요일로 정렬.
-  // requestedAt은 컷오프 시각 분기용으로 남겨 두되, 자정 정책에서는 당일 전체가
-  // "자정 전"이므로 (N-1)만 적용한다.
+  if (shippingMode === "express") {
+    const at =
+      requestedAt instanceof Date
+        ? requestedAt
+        : new Date(requestedAt || Date.now());
+    const hour = getKstHour(at);
+    // 신속: 12시 이전 당일, 이후 익영업일 (calculateInitialProductionSchedule SSOT)
+    if (hour < EXPRESS_CUTOFF_HOUR_KST) {
+      return Math.max(0, baseDays - 1);
+    }
+    return baseDays;
+  }
+
+  // 묶음출고 SSOT (강제):
+  // - minBusinessDays=N → 접수일 다음 영업일부터 N일 생산 후 주간 발송 요일 정렬
+  // - lead=1 → 익영업일 16:00 출고 가능 (자정 컷오프)
+  // - 절대 (N-1)로 당일 출고하지 않음. same-day cutoff는 신속 전용.
   void requestedAt;
-  return Math.max(0, baseDays - 1);
+  return baseDays;
 }
 
 export function addKstCalendarDays({ startYmd, days }) {
@@ -253,6 +279,7 @@ function getBulkWaitHours(diameterGroup) {
  * @param {Date} params.requestedAt - 의뢰 생성 시각
  * @param {Array} params.weeklyBatchDays - 주간 배치일 (e.g. ["mon", "wed"])
  * @param {"normal"|"express"} [params.shippingMode="normal"]
+ * @param {string} [params.productMode] - design_custom_abutment 이면 출고 +1영업일
  * @returns {Object} productionSchedule
  */
 export async function calculateInitialProductionSchedule({
@@ -260,11 +287,17 @@ export async function calculateInitialProductionSchedule({
   requestedAt,
   weeklyBatchDays,
   shippingMode = "normal",
+  productMode = null,
 }) {
   const mode = shippingMode === "express" ? "express" : "normal";
   const now = requestedAt || new Date();
+  const designMode = needsDesignLeadDay(productMode);
+  const designLeadDays = designMode ? DESIGN_LEAD_BUSINESS_DAYS : 0;
+  // 구강스캔 메시는 직경이 수십 mm라 d12·최대 리드/대기으로 잡힘.
+  // 디자인+생산은 최종 어벗 직경 미정이므로 기본(8mm)·리드 1일로 잡는다.
+  const scheduleMaxDiameter = designMode ? 8 : maxDiameter;
   const { diameter, diameterGroup, preferredMachine } =
-    getDiameterGroupAndMachine(maxDiameter);
+    getDiameterGroupAndMachine(scheduleMaxDiameter);
 
   // Fetch manufacturer settings for lead times
   let manufacturerLeadTimes = null;
@@ -307,6 +340,13 @@ export async function calculateInitialProductionSchedule({
       shipYmd = await addKoreanBusinessDays({
         startYmd: todayYmd,
         days: 1,
+      });
+    }
+    // 디자인+생산: 디자인 1영업일을 출고일에 더한다.
+    if (designLeadDays > 0) {
+      shipYmd = await addKoreanBusinessDays({
+        startYmd: shipYmd,
+        days: designLeadDays,
       });
     }
 
@@ -372,29 +412,57 @@ export async function calculateInitialProductionSchedule({
 
   // 가공 완료 → 배치 처리 (세척/검사/포장)
   // Use manufacturer lead times based on diameter
+  // 디자인+생산(구강스캔): 턱스캔 직경 무시, 생산 리드 1영업일 고정
   const d =
-    typeof maxDiameter === "number" && !isNaN(maxDiameter) ? maxDiameter : 8;
+    typeof scheduleMaxDiameter === "number" && !isNaN(scheduleMaxDiameter)
+      ? scheduleMaxDiameter
+      : 8;
   let diameterKey = "d8";
   if (d <= 6) diameterKey = "d6";
   else if (d <= 8) diameterKey = "d8";
   else if (d <= 10) diameterKey = "d10";
   else diameterKey = "d12";
 
-  const leadDays = manufacturerLeadTimes?.[diameterKey]?.minBusinessDays ?? 1;
-  const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
-    leadDays,
-    requestedAt: now,
-  });
+  const leadDays = designMode
+    ? 1
+    : (manufacturerLeadTimes?.[diameterKey]?.minBusinessDays ?? 1);
+  // 묶음은 당일 출고 금지. (N-1) 회귀 시에도 최소 1영업일을 보장한다.
+  const resolvedLeadDays = Math.max(
+    1,
+    resolveLeadDaysWithSameDayCutoff({
+      leadDays,
+      requestedAt: now,
+      shippingMode: "normal",
+    }),
+  );
 
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
   // 의뢰 시각(now=requestedAt) 기준일. getTodayYmdInKst()만 쓰면 재계산 스크립트가
   // "오늘"로 밀려 출고일이 하루 더해진다.
   const baseBatchStartYmd =
     toKstYmd(now) || getTodayYmdInKst(now) || machiningCompleteYmd;
-  const batchProcessingYmd = await addKoreanBusinessDays({
+  let batchProcessingYmd = await addKoreanBusinessDays({
     startYmd: baseBatchStartYmd,
     days: resolvedLeadDays,
   });
+  // 디자인+생산: 디자인 1영업일 후 주간 발송 요일 정렬.
+  if (designLeadDays > 0) {
+    batchProcessingYmd = await addKoreanBusinessDays({
+      startYmd: batchProcessingYmd,
+      days: designLeadDays,
+    });
+  }
+  // 방어 가드: 묶음 생산완료/출고 기준일이 접수일과 같거나 이전이면 익영업일로 강제.
+  if (
+    baseBatchStartYmd &&
+    batchProcessingYmd &&
+    batchProcessingYmd <= baseBatchStartYmd
+  ) {
+    batchProcessingYmd = await addKoreanBusinessDays({
+      startYmd: baseBatchStartYmd,
+      days: 1,
+    });
+  }
   const scheduledBatchProcessing = createKstDateTime(
     batchProcessingYmd,
     PACKING_CUTOFF_HOUR,
@@ -403,10 +471,24 @@ export async function calculateInitialProductionSchedule({
 
   // 묶음 배송: 리드타임(생산 가능일) 이후, requestor 주간 발송 요일에 맞춰 발송일을 정렬한다.
   // 프론트 신규의뢰 ETA(useLeadTimeForecast)와 동일하게, 가장 가까운 선택 요일로 맞춘다.
-  const resolvedShipPickupYmd = await resolveNextWeeklyBatchYmd({
+  let resolvedShipPickupYmd = await resolveNextWeeklyBatchYmd({
     baseYmd: batchProcessingYmd,
     weeklyBatchDays,
   });
+  if (
+    baseBatchStartYmd &&
+    resolvedShipPickupYmd &&
+    resolvedShipPickupYmd <= baseBatchStartYmd
+  ) {
+    const nextBizYmd = await addKoreanBusinessDays({
+      startYmd: baseBatchStartYmd,
+      days: 1,
+    });
+    resolvedShipPickupYmd = await resolveNextWeeklyBatchYmd({
+      baseYmd: nextBizYmd,
+      weeklyBatchDays,
+    });
+  }
   const scheduledPickupBase = createKstDateTime(
     resolvedShipPickupYmd,
     PACKING_CUTOFF_HOUR,
@@ -634,6 +716,7 @@ export async function recalculateProductionSchedule({
   requestedAt,
   weeklyBatchDays,
   shippingMode = "normal",
+  productMode = null,
 }) {
   // 준비 단계가 아니면 스케줄 변경 불가
   if (currentStage !== "준비") {
@@ -646,6 +729,7 @@ export async function recalculateProductionSchedule({
     requestedAt,
     weeklyBatchDays,
     shippingMode,
+    productMode,
   });
 }
 

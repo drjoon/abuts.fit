@@ -1,39 +1,51 @@
 ---
-description: 디자인+가공 과금(designFee) SSOT — 설정·견적·표시·차감
+description: 디자인+생산 과금(designFee) SSOT — 설정·견적·표시·차감
 globs: "**/creditSettings*|**/AdminCreditSettingsTab*|**/PricingPolicyDialog*|**/expressPrice*|**/designPrice*|**/NewRequestShippingSection*|**/RequestorPricingReferralPolicyCard*|**/systemSettings.model.js"
 alwaysApply: false
 ---
 
-# 디자인+가공 과금 (design_custom_abutment)
+# 디자인+생산 과금 (design_custom_abutment)
 
 ## Policy
 
 - 적용 조건: `caseInfos.productMode === "design_custom_abutment"`.
 - **1 STL에 여러 어벗**이 들어갈 수 있다. 과금 단위는 STL이 아니라 **어벗(치아) 수**.
 - 어벗 수 SSOT: `designPrice.utils.js` `countDesignAbutmentQty`
-  - `toothWorks` 유효 행 수 우선 → 없으면 `tooth` 파싱 → 최소 1.
+  - `toothWorks` 중 **커스텀어벗(`customAbutment`)·임플란트 스펙이 있는 치아만**. Pontic·단순 보철 제외.
+  - 유효 행이 전부 비과금이면 qty=0 (생산·디자인 미부과). toothWorks 없으면 `tooth` 파싱 → 최소 1.
 - 단가:
-  - 가공비: `computePriceForRequest`가 산출한 **1개 단가** (`price.amount` 기준, 할인·리메이크 반영).
+  - 생산비: `computePriceForRequest`가 산출한 **1개 단가** (`price.amount` 기준, 할인·리메이크 반영).
   - 디자인비: `creditSettings.designFee` (스키마 기본 **15,000원 / 1어벗**).
-- **공식**: `(가공 단가 + 디자인비) × 어벗 수`
-  - 예: 어벗 5개, 가공 15,000·디자인 15,000 → `(15,000 + 15,000) × 5 = 150,000`
-- `custom_abutment`(가공만): 기존처럼 **Request/STL 1건 = 가공 1개**. 디자인비·배수 없음.
+- **공식**: `(생산 단가 + 디자인비) × 어벗 수`
+  - 예: 어벗 5개, 생산 15,000·디자인 15,000 → `(15,000 + 15,000) × 5 = 150,000`
+- `custom_abutment`(생산): 기존처럼 **Request/STL 1건 = 생산 1개**. 디자인비·배수 없음.
+- 표시 라벨 SSOT: 전체 `커스텀어벗 생산` / `커스텀어벗 디자인+생산`, 문맥상 생략 가능하면 `생산` / `디자인+생산`.
 - 설정 UI SSOT: 개발·운영사/관리자 **설정 → 요금** (`AdminCreditSettingsTab`).
 - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits`.
 
 ## Quote / charge
 
 - 견적: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`
-  - `price.amount` = `(가공단가 + designFee) × qty`
+  - `price.amount` = `(생산단가 + designFee) × qty`
   - `price.designFee` = `designFee × qty` (총액)
   - `price.abutmentQty` = 적용 어벗 수 (재견적 시 단가 복원용)
-- 적용 순서: **디자인+가공 배수 → 신속비** (`resolveQuotedPriceWithExpressFee`). 신속비는 **건(Request)당**, 어벗 수로 곱하지 않는다.
-- 이중 합산 방지: 기존 `designFee`·`abutmentQty`·`expressFee`를 걷어 가공 단가를 복원한 뒤 다시 적용.
-- 차감: CAM 가공 진입 시 `machining_spend` = `(가공단가 + 디자인비) × qty`. 신속비는 `express_surcharge` 분리.
+- 적용 순서: **디자인+생산 배수 → 신속비** (`resolveQuotedPriceWithExpressFee`).
+  - 생산(`custom_abutment`): 신속비 **건(Request)당 1회**.
+  - 디자인+생산: 신속비도 **어벗 수 배수** (`expressFee × abutmentQty`). `price.expressFee`는 총액.
+- 이중 합산 방지: 기존 `designFee`·`abutmentQty`·`expressFee`를 걷어 생산 단가를 복원한 뒤 다시 적용.
+- 차감: CAM 가공 진입 시 `machining_spend` = `(생산단가 + 디자인비) × qty`. 신속비는 `express_surcharge` 분리(디자인+생산은 총액).
 - 무상/0원 견적(리메이크 무료 등)에는 디자인비·배수를 붙이지 않는다.
+- 출고일: 묶음/신속 모두 디자인 리드 **+1영업일**
+  (`production.utils.js` `needsDesignLeadDay` / 프론트 `estimateShipDate.ts`).
 
 ## UI
 
-- 가격 정책 모달·오늘의 가격: 디자인비는 **1어벗당**, 디자인+가공은 위 공식으로 안내.
-- 의뢰 상세(`RequestDetailDialog`): 비용 세부(가공/디자인/배송·신속)를 표시.
+- 가격 정책 모달: 디자인비는 **1어벗당 · 생산비에 별도 추가**. 합산 공식 `(생산단가 + 디자인비) × 어벗 수`는 디자인비 행이 아닌 안내 문구에 둔다.
+- 오늘의 생산 가격 카드(`RequestorPricingReferralPolicyCard`)에는 디자인비·출고 +1일 안내를 넣지 않는다(생산 단가·할인만).
+- 출고 +1영업일(묶음·신속) 안내는 다음에도 동일하게 유지한다.
+  - `PricingPolicyDialog` (기본 가격·출고 리드타임·출고 방식)
+  - `NewRequestShippingSection` (묶음/신속 카드)
+  - `RequestorBulkShippingBannerCard` `SHIP_OUT_INFO_MESSAGE`
+  - `AdminCreditSettingsTab` 디자인비 도움말
+- 의뢰 상세(`RequestDetailDialog`): 비용 세부(생산/디자인/배송·신속)를 표시.
 - 신규의뢰 우측·의뢰카드에는 디자인비 금액을 넣지 않는다. 의뢰카드는 `+디자인` 뱃지만.

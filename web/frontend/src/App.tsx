@@ -23,6 +23,7 @@ import { useSocket } from "@/shared/hooks/useSocket";
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 
 const Index = lazy(() => import("./pages/public/Index"));
@@ -64,6 +65,11 @@ const ManufacturerWorksheetPage = lazy(() =>
     default: m.ManufacturerWorksheetPage,
   })),
 );
+const DevopsPartnerPage = lazy(() =>
+  import("./pages/devops/DevopsPartnerPage").then((m) => ({
+    default: m.DevopsPartnerPage,
+  })),
+);
 const SettingsPage = lazy(() =>
   import("./features/dashboard/SettingsPage").then((m) => ({
     default: m.SettingsPage,
@@ -94,9 +100,9 @@ import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
+import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage";
 import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
-import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import AdminPaymentsPage from "@/pages/admin/AdminPaymentsPage";
 const CncDashboardPage = lazy(() =>
@@ -227,13 +233,7 @@ const ReferralGroupsRoute = () => {
   const { user } = useAuthStore();
 
   if (!user) return <Navigate to="/dashboard" replace />;
-  if (user.role === "admin") return <AdminReferralGroupsPage />;
-  if (
-    user.role === "requestor" ||
-    user.role === "salesman" ||
-    user.role === "devops"
-  )
-    return <ReferralGroupsPage />;
+  if (user.role === "salesman") return <ReferralGroupsPage />;
   return <Navigate to="/dashboard" replace />;
 };
 
@@ -244,6 +244,15 @@ const PaymentsRoute = () => {
   if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
   if (user.role === "salesman") return <SalesmanPaymentsPage />;
   if (user.role === "admin") return <AdminPaymentsPage />;
+  return <Navigate to="/dashboard" replace />;
+};
+
+const CreditsRoute = () => {
+  const { user } = useAuthStore();
+
+  if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.role === "admin") return <AdminCreditPage />;
+  if (user.role === "requestor") return <RequestorCreditsPage />;
   return <Navigate to="/dashboard" replace />;
 };
 
@@ -259,9 +268,24 @@ const InquiriesRoute = () => {
 
 const SettingsRoute = () => {
   const { user } = useAuthStore();
+  const location = useLocation();
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "practice") {
     return <Navigate to="/practice/settings" replace />;
+  }
+  // 구 북마크: devops 설정 수익분배/요금 → 파트너 페이지
+  if (user.role === "devops") {
+    const tab = new URLSearchParams(location.search).get("tab");
+    if (tab === "payment" || tab === "credits") {
+      return <Navigate to={`/dashboard/partner?tab=${tab}`} replace />;
+    }
+  }
+  // 구 북마크: 의뢰자 설정 결제 → 사이드바 크레딧 충전
+  if (user.role === "requestor") {
+    const tab = new URLSearchParams(location.search).get("tab");
+    if (tab === "payment") {
+      return <Navigate to="/dashboard/credits?tab=charge" replace />;
+    }
   }
   return <SettingsPage />;
 };
@@ -367,7 +391,7 @@ const App = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
+      <TooltipProvider delayDuration={0} skipDelayDuration={0}>
         <BrowserRouter>
           <Toaster />
           <Sonner />
@@ -478,6 +502,25 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["manufacturer"]}>
                         <ManufacturerWorksheetPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="design"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <Navigate
+                          to="/dashboard/practice-transfers?mode=receive"
+                          replace
+                        />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="partner"
+                    element={
+                      <RoleProtectedRoute roles={["devops"]}>
+                        <DevopsPartnerPage />
                       </RoleProtectedRoute>
                     }
                   />
@@ -608,8 +651,8 @@ const App = () => {
                   <Route
                     path="credits"
                     element={
-                      <RoleProtectedRoute roles={["admin"]}>
-                        <AdminCreditPage />
+                      <RoleProtectedRoute roles={["admin", "requestor"]}>
+                        <CreditsRoute />
                       </RoleProtectedRoute>
                     }
                   />
@@ -626,9 +669,7 @@ const App = () => {
                   <Route
                     path="referral-groups"
                     element={
-                      <RoleProtectedRoute
-                        roles={["admin", "requestor", "salesman", "devops"]}
-                      >
+                      <RoleProtectedRoute roles={["salesman"]}>
                         <ReferralGroupsRoute />
                       </RoleProtectedRoute>
                     }

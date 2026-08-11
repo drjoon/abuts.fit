@@ -5,6 +5,8 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// change-log:
+// - 2026-08-11: 아노다이징은 의뢰건 caseInfos 우선, 미설정 시 사업체 기본값(ON) 폴백.
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -150,6 +152,7 @@ export async function createRequest(req, res) {
       requestedAt: new Date(),
       weeklyBatchDays: requestorWeeklyBatchDays,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
+      productMode: normalizedCaseInfos?.productMode ?? null,
     });
 
     const computedPrice = await computePriceForRequest({
@@ -160,20 +163,20 @@ export async function createRequest(req, res) {
       tooth,
     });
 
-    let expressFeePerRequest = 1000;
+    let expressFeePerRequest = 2000;
     let designFeePerTooth = 15000;
     try {
       const creditSettings = await loadCreditSettingsDefaults();
       expressFeePerRequest = Math.max(
         0,
-        Number(creditSettings?.expressFee ?? 1000) || 1000,
+        Number(creditSettings?.expressFee ?? 2000) || 2000,
       );
       designFeePerTooth = Math.max(
         0,
         Number(creditSettings?.designFee ?? 15000) || 15000,
       );
     } catch {
-      expressFeePerRequest = 1000;
+      expressFeePerRequest = 2000;
       designFeePerTooth = 15000;
     }
 
@@ -194,7 +197,10 @@ export async function createRequest(req, res) {
       ...bodyRest,
       caseInfos: {
         ...normalizedCaseInfos,
-        anodizingEnabled: requestorAnodizingEnabled,
+        anodizingEnabled:
+          typeof normalizedCaseInfos?.anodizingEnabled === "boolean"
+            ? normalizedCaseInfos.anodizingEnabled
+            : requestorAnodizingEnabled,
       },
       requestor: req.user._id,
       businessAnchorId:
@@ -231,6 +237,7 @@ export async function createRequest(req, res) {
       requestedAt,
       weeklyBatchDays:
         shippingMode === "normal" ? requestorWeeklyBatchDays : [],
+      productMode: normalizedCaseInfos?.productMode ?? null,
     });
     newRequest.productionSchedule = productionSchedule;
 
@@ -267,11 +274,15 @@ export async function createRequest(req, res) {
       const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
         leadDays,
         requestedAt,
+        shippingMode,
       });
 
       estimatedShipYmdRaw = await addKoreanBusinessDays({
         startYmd: createdYmd,
-        days: resolvedLeadDays,
+        days:
+          shippingMode === "express"
+            ? resolvedLeadDays
+            : Math.max(1, resolvedLeadDays),
       });
     }
 
@@ -647,20 +658,20 @@ export async function createRequestsBulk(req, res) {
     }
 
     // 2. 총 의뢰비 계산 (+ 신속 추가비 + 디자인비)
-    let expressFeePerRequest = 1000;
+    let expressFeePerRequest = 2000;
     let designFeePerTooth = 15000;
     try {
       const creditSettings = await loadCreditSettingsDefaults();
       expressFeePerRequest = Math.max(
         0,
-        Number(creditSettings?.expressFee ?? 1000) || 1000,
+        Number(creditSettings?.expressFee ?? 2000) || 2000,
       );
       designFeePerTooth = Math.max(
         0,
         Number(creditSettings?.designFee ?? 15000) || 15000,
       );
     } catch {
-      expressFeePerRequest = 1000;
+      expressFeePerRequest = 2000;
       designFeePerTooth = 15000;
     }
 
@@ -679,6 +690,7 @@ export async function createRequestsBulk(req, res) {
           weeklyBatchDays: requestorWeeklyBatchDays,
           maxDiameter:
             raw?.caseInfos?.maxDiameter ?? raw?.maxDiameter ?? null,
+          productMode: raw?.caseInfos?.productMode ?? null,
         });
       }),
     );
@@ -992,7 +1004,10 @@ export async function createRequestsBulk(req, res) {
             ...rest,
             caseInfos: {
               ...normalizedCaseInfos,
-              anodizingEnabled: requestorAnodizingEnabled,
+              anodizingEnabled:
+                typeof normalizedCaseInfos?.anodizingEnabled === "boolean"
+                  ? normalizedCaseInfos.anodizingEnabled
+                  : requestorAnodizingEnabled,
             },
             requestor: req.user._id,
             businessAnchorId:
@@ -1028,6 +1043,7 @@ export async function createRequestsBulk(req, res) {
           const schedKey = JSON.stringify({
             shippingMode: itemShippingMode,
             maxDiameter: normalizedCaseInfos?.maxDiameter,
+            productMode: normalizedCaseInfos?.productMode ?? null,
             requestedAt: toKstYmd(requestedAt),
             weeklyBatchDays:
               itemShippingMode === "normal" ? requestorWeeklyBatchDays : [],
@@ -1040,6 +1056,7 @@ export async function createRequestsBulk(req, res) {
               requestedAt,
               weeklyBatchDays:
                 itemShippingMode === "normal" ? requestorWeeklyBatchDays : [],
+              productMode: normalizedCaseInfos?.productMode ?? null,
             });
             scheduleCache.set(schedKey, productionSchedule);
           }
@@ -1075,10 +1092,14 @@ export async function createRequestsBulk(req, res) {
               const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
                 leadDays,
                 requestedAt,
+                shippingMode: itemShippingMode,
               });
               const added = await addKoreanBusinessDays({
                 startYmd: createdYmd,
-                days: resolvedLeadDays,
+                days:
+                  itemShippingMode === "express"
+                    ? resolvedLeadDays
+                    : Math.max(1, resolvedLeadDays),
               });
               estimatedShipYmdRaw = added;
             }

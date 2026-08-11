@@ -1,9 +1,12 @@
+// change-log:
+// - 2026-08-10: 레이아웃·여백 정리, 긴 도움말은 툴팁으로 이동.
+// - 2026-08-09: 디자인비 도움말에 출고 +1영업일(묶음·신속) 안내 추가.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/admin/settings/SettingsPage.tsx
-// - web/frontend/src/pages/devops/DevopsSettingsPage.tsx
+// - web/frontend/src/pages/devops/DevopsPartnerPage.tsx
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/backend/models/systemSettings.model.js
 // - web/backend/utils/creditSettingsDefaults.js
@@ -22,13 +25,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { CreditCard } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { CircleHelp, CreditCard } from "lucide-react";
 
 interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
   expressFee: number;
   designFee: number;
+  abutmentRetailPrice: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
 }
@@ -41,7 +51,62 @@ type CreditSettingsApiResponse = {
 };
 
 const amountInputClassName =
-  "h-9 w-full max-w-[11rem] tabular-nums tracking-tight";
+  "h-9 w-full max-w-[10rem] tabular-nums tracking-tight";
+
+function FieldHelp({ text }: { text: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
+          aria-label="도움말"
+        >
+          <CircleHelp className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-left leading-relaxed">
+        {text}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function AmountField({
+  id,
+  label,
+  value,
+  onChange,
+  disabled,
+  help,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (next: number) => void;
+  disabled?: boolean;
+  help?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={id} className="text-sm">
+          {label}
+        </Label>
+        {help ? <FieldHelp text={help} /> : null}
+      </div>
+      <Input
+        id={id}
+        type="number"
+        min="0"
+        className={amountInputClassName}
+        value={value}
+        onChange={(e) => onChange(Math.max(0, Number(e.target.value)))}
+        disabled={disabled}
+      />
+    </div>
+  );
+}
 
 export const AdminCreditSettingsTab = () => {
   const { token } = useAuthStore();
@@ -79,6 +144,11 @@ export const AdminCreditSettingsTab = () => {
           data.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
         ),
         designFee: Number(data.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
+        abutmentRetailPrice: Number(
+          data.abutmentRetailPrice ??
+            CREDIT_SETTINGS_DEFAULTS.abutmentRetailPrice ??
+            40000,
+        ),
         defaultRequestFreeCredit: Number(
           data.defaultRequestFreeCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
@@ -130,6 +200,9 @@ export const AdminCreditSettingsTab = () => {
           shippingFee: Number(saved.shippingFee ?? settings.shippingFee),
           expressFee: Number(saved.expressFee ?? settings.expressFee),
           designFee: Number(saved.designFee ?? settings.designFee),
+          abutmentRetailPrice: Number(
+            saved.abutmentRetailPrice ?? settings.abutmentRetailPrice,
+          ),
           defaultRequestFreeCredit: Number(
             saved.defaultRequestFreeCredit ?? settings.defaultRequestFreeCredit,
           ),
@@ -166,170 +239,112 @@ export const AdminCreditSettingsTab = () => {
   const hasChanges =
     JSON.stringify(settings) !== JSON.stringify(originalSettings);
 
+  const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
+  const designHelp = `디자인+생산 시 생산비에 별도 추가됩니다. 출고일은 묶음·신속 모두 +1영업일. 기본 ${CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}원.`;
+  const abutmentRetailHelp =
+    "치과 기공의뢰에 포함되는 커스텀어벗 소매가(1어벗당). 치과 유료크레딧 차감·기공소 기공크레딧 분배에 사용됩니다.";
+
   return (
-    <div className="space-y-4">
+    <TooltipProvider delayDuration={0}>
       <Card className="app-glass-card app-glass-card--lg">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-xl">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
             <CreditCard className="h-5 w-5" />
-            결제 · 크레딧 설정
+            요금 · 크레딧
           </CardTitle>
-          <CardDescription className="text-sm leading-relaxed">
-            전역 설정입니다. 신속 배송 추가비·디자인비는 의뢰 생성·표시·차감에
-            동일하게 적용됩니다.
+          <CardDescription>
+            전역 요금입니다. 의뢰 생성·표시·차감에 동일하게 적용됩니다.
           </CardDescription>
         </CardHeader>
+
         <CardContent className="space-y-6">
-          <section className="space-y-3">
-            <h3 className="text-sm font-semibold tracking-tight">
-              최소 요구 크레딧 / 배송 · 디자인 요금
-            </h3>
+          <section className="rounded-xl border border-border/80 bg-background/60 p-4 sm:p-5 space-y-4">
+            <h3 className="text-sm font-semibold tracking-tight">의뢰 · 배송</h3>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="minCreditForRequest" className="text-sm">
-                  신규의뢰 최소 크레딧 (원)
-                </Label>
-                <Input
-                  id="minCreditForRequest"
-                  type="number"
-                  min="0"
-                  className={amountInputClassName}
-                  value={settings.minCreditForRequest}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      minCreditForRequest: Math.max(0, Number(e.target.value)),
-                    })
-                  }
-                  disabled={loading}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="shippingFee" className="text-sm">
-                  배송비 (원)
-                </Label>
-                <Input
-                  id="shippingFee"
-                  type="number"
-                  min="0"
-                  className={amountInputClassName}
-                  value={settings.shippingFee}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      shippingFee: Math.max(0, Number(e.target.value)),
-                    })
-                  }
-                  disabled={loading}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="expressFee" className="text-sm">
-                  신속 배송 추가 의뢰크레딧 (원)
-                </Label>
-                <Input
-                  id="expressFee"
-                  type="number"
-                  min="0"
-                  className={amountInputClassName}
-                  value={settings.expressFee}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      expressFee: Math.max(0, Number(e.target.value)),
-                    })
-                  }
-                  disabled={loading}
-                />
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  신속배송 건당 가공비에 더해지는 추가 의뢰크레딧입니다. 기본값{" "}
-                  {CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}
-                  원.
-                </p>
-              </div>
-              <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-                <Label htmlFor="designFee" className="text-sm">
-                  디자인비 (1어벗당, 원)
-                </Label>
-                <Input
-                  id="designFee"
-                  type="number"
-                  min="0"
-                  className={amountInputClassName}
-                  value={settings.designFee}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      designFee: Math.max(0, Number(e.target.value)),
-                    })
-                  }
-                  disabled={loading}
-                />
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  디자인+가공 의뢰 시 (가공단가+디자인비)×어벗수로 차감됩니다.
-                  기본값{" "}
-                  {CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}
-                  원.
-                </p>
-              </div>
+              <AmountField
+                id="minCreditForRequest"
+                label="신규의뢰 최소 크레딧 (원)"
+                value={settings.minCreditForRequest}
+                onChange={(next) =>
+                  setSettings({ ...settings, minCreditForRequest: next })
+                }
+                disabled={loading}
+              />
+              <AmountField
+                id="shippingFee"
+                label="배송비 (원)"
+                value={settings.shippingFee}
+                onChange={(next) =>
+                  setSettings({ ...settings, shippingFee: next })
+                }
+                disabled={loading}
+              />
+              <AmountField
+                id="expressFee"
+                label="신속 배송 추가 (원)"
+                value={settings.expressFee}
+                onChange={(next) =>
+                  setSettings({ ...settings, expressFee: next })
+                }
+                disabled={loading}
+                help={expressHelp}
+              />
             </div>
           </section>
 
-          <div className="border-t border-slate-200/80" />
+          <section className="rounded-xl border border-border/80 bg-background/60 p-4 sm:p-5 space-y-4">
+            <h3 className="text-sm font-semibold tracking-tight">디자인</h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <AmountField
+                id="designFee"
+                label="디자인비 (1어벗당, 원)"
+                value={settings.designFee}
+                onChange={(next) =>
+                  setSettings({ ...settings, designFee: next })
+                }
+                disabled={loading}
+                help={designHelp}
+              />
+              <AmountField
+                id="abutmentRetailPrice"
+                label="치과 납품 어벗 소매가 (1어벗당, 원)"
+                value={settings.abutmentRetailPrice}
+                onChange={(next) =>
+                  setSettings({ ...settings, abutmentRetailPrice: next })
+                }
+                disabled={loading}
+                help={abutmentRetailHelp}
+              />
+            </div>
+          </section>
 
-          <section className="space-y-3">
+          <section className="rounded-xl border border-border/80 bg-background/60 p-4 sm:p-5 space-y-4">
             <h3 className="text-sm font-semibold tracking-tight">
-              환영 무료 크레딧 지급 설정
+              환영 무료 크레딧
             </h3>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="defaultRequestFreeCredit" className="text-sm">
-                  의뢰비 무료 크레딧 (원)
-                </Label>
-                <Input
-                  id="defaultRequestFreeCredit"
-                  type="number"
-                  min="0"
-                  className={amountInputClassName}
-                  value={settings.defaultRequestFreeCredit}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      defaultRequestFreeCredit: Math.max(
-                        0,
-                        Number(e.target.value),
-                      ),
-                    })
-                  }
-                  disabled={loading}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="defaultShippingFreeCredit" className="text-sm">
-                  배송비 무료 크레딧 (원)
-                </Label>
-                <Input
-                  id="defaultShippingFreeCredit"
-                  type="number"
-                  min="0"
-                  className={amountInputClassName}
-                  value={settings.defaultShippingFreeCredit}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      defaultShippingFreeCredit: Math.max(
-                        0,
-                        Number(e.target.value),
-                      ),
-                    })
-                  }
-                  disabled={loading}
-                />
-              </div>
+              <AmountField
+                id="defaultRequestFreeCredit"
+                label="의뢰비 무료 크레딧 (원)"
+                value={settings.defaultRequestFreeCredit}
+                onChange={(next) =>
+                  setSettings({ ...settings, defaultRequestFreeCredit: next })
+                }
+                disabled={loading}
+              />
+              <AmountField
+                id="defaultShippingFreeCredit"
+                label="배송비 무료 크레딧 (원)"
+                value={settings.defaultShippingFreeCredit}
+                onChange={(next) =>
+                  setSettings({ ...settings, defaultShippingFreeCredit: next })
+                }
+                disabled={loading}
+              />
             </div>
           </section>
 
-          <div className="flex justify-end gap-2 border-t border-slate-200/80 pt-4">
+          <div className="flex justify-end gap-2 border-t border-border/70 pt-4">
             <Button
               variant="outline"
               onClick={handleCancel}
@@ -338,11 +353,11 @@ export const AdminCreditSettingsTab = () => {
               취소
             </Button>
             <Button onClick={handleSave} disabled={loading || !hasChanges}>
-              {loading ? "저장 중..." : "저장"}
+              {loading ? "저장 중…" : "저장"}
             </Button>
           </div>
         </CardContent>
       </Card>
-    </div>
+    </TooltipProvider>
   );
 };
