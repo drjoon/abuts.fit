@@ -10,6 +10,8 @@ import {
   getMyCreditBalance,
   getMyCreditSpendInsights,
   createLabSettlementPayout,
+  getLabSettlementDailySummary,
+  listLabSettlementPayouts,
 } from "../../controllers/credits/credit.controller.js";
 import { listMyCreditLedger } from "../../controllers/credits/creditLedger.controller.js";
 import {
@@ -34,6 +36,8 @@ router.use(authenticate);
 router.get("/balance", getMyCreditBalance);
 router.get("/insights/spend", getMyCreditSpendInsights);
 router.post("/settlement-payout", createLabSettlementPayout);
+router.get("/settlement/daily-summary", getLabSettlementDailySummary);
+router.get("/settlement/payouts", listLabSettlementPayouts);
 router.get("/orders", listMyChargeOrders);
 router.get("/ledger", listMyCreditLedger);
 router.get("/b-plan/orders", listMyChargeOrders);

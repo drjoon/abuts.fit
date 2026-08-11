@@ -27,6 +27,8 @@ type Props = {
   activeTab: string;
   onTabChange: (next: string) => void;
   highlightTabKey?: string;
+  /** 기본: max-w-4xl. 정산 등 넓은 표 UI는 max-w-6xl 등 전달. */
+  contentMaxClassName?: string;
 };
 
 export const SettingsScaffold = ({
@@ -34,10 +36,11 @@ export const SettingsScaffold = ({
   activeTab,
   onTabChange,
   highlightTabKey,
+  contentMaxClassName = "max-w-4xl",
 }: Props) => {
   return (
     <div className="min-h-screen bg-gradient-subtle p-4">
-      <div className="max-w-4xl mx-auto space-y-4">
+      <div className={cn("mx-auto space-y-4", contentMaxClassName)}>
         <TooltipProvider delayDuration={200}>
           <Tabs
             value={activeTab}

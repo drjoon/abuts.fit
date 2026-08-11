@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-11: 대시보드 헤더 [보유 크레딧]을 사이드바 크레딧 페이지로 이전 (내역/충전 탭).
 // - 2026-08-11: 기공소 결제크레딧 정산 탭 추가.
+// - 2026-08-11: 정산 탭을 제조사 정산 UX(일별 집계·입금 내역)로 확장. 넓은 레이아웃 적용.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -74,6 +75,9 @@ export default function RequestorCreditsPage() {
     <SettingsScaffold
       tabs={tabs}
       activeTab={activeTab}
+      contentMaxClassName={
+        activeTab === "settlement" ? "max-w-6xl" : "max-w-4xl"
+      }
       onTabChange={(next) => {
         const nextParams = new URLSearchParams(searchParams);
         nextParams.set("tab", next);
