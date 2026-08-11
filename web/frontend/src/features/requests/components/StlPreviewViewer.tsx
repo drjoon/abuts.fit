@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-11: forceFilled prop — cam 파일명에 filled 없어도 가이드/프론트포인트/경사축 표시.
+// - 2026-08-11: FP 픽 시 frontPoint 메타 변경으로 씬 전체 재생성(카메라 초기화)되지 않게 deps에서 제외.
+// - 2026-08-11: filled STL 카메라는 bbox 중심 lookAt(원점 고정 시 상단 잘림 수정). 오버레이용 여백 제거.
 // - 2026-08-09: 프리뷰 로더가 STL/PLY/OBJ를 지원.
 // - 2026-08-09: 신규의뢰 프리뷰에서 그리드 숨김(showGrid) + FOV 맞춤.
 // - 2026-08-09: STL 프리뷰 카메라를 FOV 기준으로 맞춰 모델이 화면에 거의 꽉 차게 표시.
@@ -86,6 +89,8 @@ type Props = {
   onManualUndo?: () => void;
   className?: string;
   metadata?: StlMetadata | null;
+  /** true면 파일명과 무관하게 filled 가이드/오버레이(FL·축·프론트포인트)를 켠다. */
+  forceFilled?: boolean;
 };
 
 export function StlPreviewViewer({
@@ -101,6 +106,7 @@ export function StlPreviewViewer({
   onManualUndo,
   className,
   metadata,
+  forceFilled = false,
 }: Props) {
   const { metadata: fetchedMetadata, loading: fetchedMetadataLoading } =
     useStlMetadata(metadata ? undefined : requestId);
@@ -206,7 +212,8 @@ export function StlPreviewViewer({
     ? Number(resolvedMetadata?.finishLine?.min_z)
     : finishLineExtremaFromPoints?.min?.z ?? null;
 
-  const isFilledFile = file.name.toLowerCase().includes("filled");
+  const isFilledFile =
+    forceFilled || file.name.toLowerCase().includes("filled");
   const hasTiltAxis = toValidPoint(resolvedMetadata?.tiltAxisVector) !== null;
   const shouldBlockSceneForMetadata =
     shouldWaitForMetadata &&
@@ -370,7 +377,7 @@ export function StlPreviewViewer({
     const scenePosition = point ? resolveFrontPointScenePosition(point) : null;
 
     // 원본 STL은 front point 표시 안함, filled STL만 표시
-    const isFilled = file.name.toLowerCase().includes("filled");
+    const isFilled = isFilledFile;
     if (
       !showOverlay ||
       !isFilled ||
@@ -413,6 +420,7 @@ export function StlPreviewViewer({
     resolvedMetadata?.frontPoint?.x,
     resolvedMetadata?.frontPoint?.y,
     resolvedMetadata?.frontPoint?.z,
+    isFilledFile,
   ]);
 
   // STL 렌더링 및 finish line 시각화
@@ -503,7 +511,7 @@ export function StlPreviewViewer({
         bbox.getCenter(center);
 
         // filled STL은 이미 원점 정렬되어 있으므로 center를 (0,0,0)으로 설정
-        const isFilled = file.name.toLowerCase().includes("filled");
+        const isFilled = isFilledFile;
         centerRef.current = isFilled
           ? new THREE.Vector3(0, 0, 0)
           : center.clone();
@@ -1870,17 +1878,21 @@ export function StlPreviewViewer({
           radius / Math.sin(halfVFov),
           radius / Math.sin(halfHFov),
         );
-        // 화면을 거의 꽉 채우되 살짝 여백. 제조사 오버레이 뷰는 주석/가이드 공간 확보.
-        const padding = showOverlay ? 1.22 : 1.06;
-        const distance = fitDistance * padding;
+        // 오버레이는 absolute라 카메라 여백을 따로 두지 않는다. 모델 전체가 보이게만 맞춤.
+        const distance = fitDistance * 1.08;
 
+        // filled는 메시를 원점 재정렬하지 않으므로 bbox 중심을 바라본다.
+        // (원점 lookAt이면 +Z 치우친 어버트먼트가 위로 밀려 상단이 잘림)
+        const viewTarget = isFilled
+          ? bbox.getCenter(new THREE.Vector3())
+          : new THREE.Vector3(0, 0, 0);
         const viewDir = new THREE.Vector3(1, -1, 0.9).normalize();
-        camera.position.copy(viewDir.multiplyScalar(distance));
+        camera.position.copy(viewTarget.clone().add(viewDir.multiplyScalar(distance)));
         camera.near = Math.max(distance / 200, 0.01);
         camera.far = Math.max(distance * 40, 2000);
         camera.updateProjectionMatrix();
-        camera.lookAt(0, 0, 0);
-        controls.target.set(0, 0, 0);
+        camera.lookAt(viewTarget);
+        controls.target.copy(viewTarget);
         controls.update();
       } catch (e) {
         console.error("[StlPreviewViewer] failed to load 3D model", e);
@@ -2072,11 +2084,11 @@ export function StlPreviewViewer({
     resolvedMetadata?.tiltAxisVector?.x,
     resolvedMetadata?.tiltAxisVector?.y,
     resolvedMetadata?.tiltAxisVector?.z,
-    resolvedMetadata?.frontPoint?.x,
-    resolvedMetadata?.frontPoint?.y,
-    resolvedMetadata?.frontPoint?.z,
+    // frontPoint는 전용 마커 effect로만 갱신한다. deps에 넣으면 FP 더블클릭 픽마다
+    // 씬/카메라가 초기화된다.
     resolvedMetadata?.finishLine?.max_z,
     resolvedMetadata?.finishLine?.min_z,
+    isFilledFile,
   ]);
 
   useEffect(() => {
@@ -2129,7 +2141,7 @@ export function StlPreviewViewer({
       {shouldBlockSceneForMetadata && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-slate-500">
           <div className="flex flex-col items-center gap-2">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
             <span>메타데이터 로딩 중...</span>
           </div>
         </div>

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-11: cam STL 로드 시 파일명에 filled가 없으면 .filled.stl로 정규화(가이드 표시용).
+// - 2026-08-11: 가공(isCamStage) 단일 STL 로드 시 cam 슬롯에도 채워 오른쪽 FL/FP 뷰어가 준비와 동일하게 동작.
 // - 2026-08-06: 가공 큐 스냅샷에 designSoftware/헥스 회전 누락 시 full request로 보강.
 // - 2026-08-06: 출고예정일(estimatedShipYmd)이 없을 때도 summary enrichment 트리거.
 // related files:
@@ -450,10 +452,17 @@ export function usePreviewLoader({
 
         const loadCamStl = async (): Promise<File | null> => {
           if (!requestMongoId) return null;
-          const camName =
+          const rawCamName =
             targetReq.caseInfos?.camFile?.filePath ||
             targetReq.caseInfos?.camFile?.originalName ||
             originalName;
+          const rawBase = String(rawCamName).split("/").pop() || String(rawCamName);
+          // StlPreviewViewer는 파일명에 "filled"가 있어야 가이드/오버레이를 켠다.
+          const camName = /\.filled\./i.test(rawBase) || /filled/i.test(rawBase)
+            ? rawBase
+            : rawBase.toLowerCase().endsWith(".stl")
+              ? rawBase.replace(/\.stl$/i, ".filled.stl")
+              : `${rawBase}.filled.stl`;
           return fetchAsFileWithCache(
             camCacheKey,
             () => fetchSignedUrl(`/api/requests/${requestMongoId}/cam-file-url`),
@@ -570,7 +579,8 @@ export function usePreviewLoader({
 
         setPreviewFiles({
           original: leftStlFile,
-          cam: rightStlFile,
+          // 가공(isCamStage)은 왼쪽에만 STL을 받던 구조였으나, 오른쪽 FL/FP 뷰어에도 동일 filled를 쓴다.
+          cam: shouldUseSingleLeftStl ? leftStlFile : rightStlFile,
           title,
           request: targetReq,
           finishLinePoints: finishLineResult.points,

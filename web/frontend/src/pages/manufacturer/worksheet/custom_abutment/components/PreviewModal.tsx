@@ -1,4 +1,10 @@
 // change-log:
+// - 2026-08-11: FP 저장 후 "NC 코드 재생성할까요?" 컨펌 → 확인 시 Esprit NC 재생성.
+// - 2026-08-11: FP 저장은 DB 메타만 갱신(STL 재로드/forceRefresh 제거). realtime도 manual-front-point 스킵.
+// - 2026-08-11: 가공 왼쪽 filled 편집 뷰어에 forceFilled(준비 오른쪽과 동일 가이드/오버레이).
+// - 2026-08-11: 가공 프리뷰=왼쪽 filled STL 편집(FL/FP)·오른쪽 NC 코드(준비 오른쪽↔가공 왼쪽).
+// - 2026-08-11: 프리뷰 모달 가로폭 확대(max-w-5xl→1680)로 헤더·요약 2줄 줄바꿈 완화.
+// - 2026-08-11: 가공(isCamStage) 오른쪽을 NC textarea 대신 준비와 동일 filled STL+FL/FP/재생성/X로 표시(</>로 NC 유지).
 // - 2026-08-11: [FP] Front Point 수동 픽/저장(FL과 동일 더블클릭 픽 모드).
 // - 2026-08-11: 아노다이징 표시 SSOT는 의뢰건 caseInfos(레거시만 사업체 기본값 폴백).
 // - 2026-08-06: 준비 단계 헥스 회전 기본값을 designSoftware 정책으로 우선(미저장 finalHexRotation STL 오적용 수정).
@@ -528,7 +534,6 @@ export const PreviewModal = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [regenerating, setRegenerating] = useState(false);
-  const [twoPhasing, setTwoPhasing] = useState(false);
   const [unmachinableEditorOpen, setUnmachinableEditorOpen] = useState(false);
   const [unmachinableReasonDraft, setUnmachinableReasonDraft] = useState("");
   const [unmachinableSaving, setUnmachinableSaving] = useState(false);
@@ -562,8 +567,10 @@ export const PreviewModal = ({
   const [hexRotationSaving, setHexRotationSaving] = useState(false);
   const [anodizingSaving, setAnodizingSaving] = useState(false);
   const [approving, setApproving] = useState(false);
-  const [deleteGeneratedConfirmOpen, setDeleteGeneratedConfirmOpen] =
-    useState(false);
+  const [deleteConfirmKind, setDeleteConfirmKind] = useState<
+    null | "filled" | "nc"
+  >(null);
+  const [ncRegenConfirmOpen, setNcRegenConfirmOpen] = useState(false);
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
@@ -612,8 +619,15 @@ export const PreviewModal = ({
 
       // 메타데이터만 먼저 오는 register-stl-metadata는 camFile 전에 full STL reload 하면
       // 이후 filled 갱신을 레이스로 덮어쓸 수 있다. cam 준비 전에는 스킵(useStlMetadata가 수치 반영).
+      // FP/FL 수동 저장도 DB 메타만 바뀌므로 STL 재로드하지 않는다(useStlMetadata가 오버레이 갱신).
       if (evtType === "request:stl-metadata-updated") {
         const source = String(rawPayload.source || "").trim();
+        if (
+          source === "manual-front-point" ||
+          source === "manual-finish-line"
+        ) {
+          return false;
+        }
         if (source === "register-stl-metadata") {
           const eventReq = rawPayload.request as
             | { caseInfos?: { camFile?: { s3Key?: unknown } } }
@@ -699,7 +713,8 @@ export const PreviewModal = ({
   useEffect(() => {
     if (!open) {
       setApproving(false);
-      setDeleteGeneratedConfirmOpen(false);
+      setDeleteConfirmKind(null);
+      setNcRegenConfirmOpen(false);
     }
   }, [open]);
 
@@ -1024,29 +1039,6 @@ export const PreviewModal = ({
     }
   };
 
-  const postJsonWithTimeout = async (
-    url: string,
-    options: {
-      headers: Record<string, string>;
-      body?: string;
-      timeoutMs?: number;
-    },
-  ) => {
-    const controller = new AbortController();
-    const timeoutMs = Number(options.timeoutMs || 15000);
-    const timeoutRef = window.setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, {
-        method: "POST",
-        headers: options.headers,
-        body: options.body,
-        signal: controller.signal,
-      });
-    } finally {
-      window.clearTimeout(timeoutRef);
-    }
-  };
-
   const finishLinePoints = ((guidedFinishLineOverridePoints ??
     previewFiles.finishLinePoints ??
     activeReq?.caseInfos?.finishLine?.points ??
@@ -1230,11 +1222,16 @@ export const PreviewModal = ({
     return raw.split("/").pop() || raw;
   })();
 
+  const filledViewer =
+    previewFiles.cam || (isCamStage ? previewFiles.original : null) || null;
+
   const leftTitle = isNcStage
     ? ncName
-    : isCamStage || isImageStage
-      ? camName
-      : originalName;
+    : isCamStage
+      ? filledViewer?.name || camName
+      : isImageStage
+        ? camName
+        : originalName;
   const rightTitle = isStageFileStage
     ? currentReviewStageKey === "machining"
       ? "로트번호 이미지"
@@ -1243,15 +1240,18 @@ export const PreviewModal = ({
       ? ncName
       : camName;
 
-  const leftViewer =
-    isCamStage || isImageStage
+  const leftViewer = isCamStage
+    ? filledViewer
+    : isImageStage
       ? previewFiles.cam || previewFiles.original || null
       : !isStageFileStage
         ? previewFiles.original
         : null;
 
+  // 준비: 오른쪽 filled 편집. 가공: 왼쪽 filled 편집 + 오른쪽 NC.
   const rightViewer =
     !isCamStage && !isStageFileStage ? previewFiles.cam : null;
+  const guideViewerFile = isCamStage ? filledViewer : rightViewer;
 
   const onUploadRight = (file: File) => {
     if (isStageFileStage) {
@@ -1307,12 +1307,13 @@ export const PreviewModal = ({
       ? activeReq?.caseInfos?.ncFile
       : activeReq?.caseInfos?.camFile;
   const hasRightFile = !!rightMeta?.s3Key;
+  const hasCamFile = !!activeReq?.caseInfos?.camFile?.s3Key;
+  const hasNcFile = !!activeReq?.caseInfos?.ncFile?.s3Key;
 
   const canGuideFinishLine =
     !!token &&
     !isStageFileStage &&
-    !isCamStage &&
-    !!rightViewer &&
+    !!guideViewerFile &&
     !!activeReq?.requestId;
 
   const canGuideFrontPoint = canGuideFinishLine;
@@ -1344,93 +1345,6 @@ export const PreviewModal = ({
     return `${args.requestId}-${args.clinicName || ""}-${args.patientName || ""}-${args.tooth || ""}${ext}`;
   };
 
-  // 2026-06-08: NC 재생성 - Two-Phase가 기본값, One-Phase는 명시적 요청
-  // 기본 NC 재생성 (Two-Phase)
-  const onRegenerateNc = async () => {
-    if (!canRegenerateFilledStl) return;
-    if (!token) {
-      toast({
-        title: "실패",
-        description: "로그인이 필요합니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (twoPhasing || isUploading || hexRotationSaving) {
-      if (hexRotationSaving) {
-        toast({
-          title: "헥스 회전 저장 중",
-          description: "헥스 회전 저장 완료 후 다시 시도해주세요.",
-        });
-      }
-      return;
-    }
-
-    setTwoPhasing(true);
-    try {
-      const requestId = String(activeReq?.requestId || "").trim();
-      if (!requestId) {
-        toast({
-          title: "실패",
-          description: "requestId가 없어 NC 재생성을 진행할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const res = await postJsonWithTimeout(
-        `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({}),
-          timeoutMs: 20000,
-        },
-      );
-      const body: any = await res.json().catch(() => ({}));
-      if (!res.ok || body?.success === false) {
-        const msg =
-          body?.message ||
-          body?.error ||
-          body?.detail ||
-          "NC 재생성 요청에 실패했습니다.";
-        toast({
-          title: "NC 재생성 실패",
-          description: msg,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // NC 재생성 성공 시 캐시 무효화
-      const s3Key = activeReq?.caseInfos?.ncFile?.s3Key;
-      if (s3Key) {
-        await deleteCncProgramCache(s3Key);
-      }
-
-      toast({
-        title: "NC 재생성 요청",
-        description: "Two-Phase NC 재생성 요청을 전송했습니다.",
-      });
-
-      // 요청 성공 시 모달 닫기
-      onOpenChange(false);
-    } catch (err: any) {
-      const isAbort = String(err?.name || "") === "AbortError";
-      toast({
-        title: "NC 재생성 실패",
-        description: isAbort
-          ? "재생성 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
-          : err?.message || "NC 재생성 요청에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setTwoPhasing(false);
-    }
-  };
-
   const onRegenerate = async () => {
     if (!canRegenerateFilledStl) return;
     if (!token) {
@@ -1447,72 +1361,6 @@ export const PreviewModal = ({
           title: "헥스 회전 저장 중",
           description: "헥스 회전 저장 완료 후 다시 시도해주세요.",
         });
-      }
-      return;
-    }
-
-    if (isCamStage) {
-      setRegenerating(true);
-      try {
-        const requestId = String(activeReq?.requestId || "").trim();
-        if (!requestId) {
-          toast({
-            title: "실패",
-            description: "requestId가 없어 재생성을 진행할 수 없습니다.",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        const res = await postJsonWithTimeout(
-          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            timeoutMs: 20000,
-          },
-        );
-        const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) {
-          const msg =
-            body?.message ||
-            body?.error ||
-            body?.detail ||
-            "NC 재생성 요청에 실패했습니다.";
-          toast({
-            title: "재생성 실패",
-            description: msg,
-            variant: "destructive",
-          });
-          return;
-        }
-
-        // NC 재생성 성공 시 캐시 무효화
-        const s3Key = activeReq?.caseInfos?.ncFile?.s3Key;
-        if (s3Key) {
-          await deleteCncProgramCache(s3Key);
-        }
-
-        toast({
-          title: "재생성 요청",
-          description: "NC 재생성을 시작했습니다.",
-        });
-
-        // NC 재생성 성공 시 모달 닫기
-        onOpenChange(false);
-      } catch (err: any) {
-        const isAbort = String(err?.name || "") === "AbortError";
-        toast({
-          title: "재생성 실패",
-          description: isAbort
-            ? "재생성 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
-            : err?.message || "재생성 요청에 실패했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setRegenerating(false);
       }
       return;
     }
@@ -1702,18 +1550,106 @@ export const PreviewModal = ({
     void onDeleteCam(activeReq);
   };
 
-  const canDeleteGeneratedOutput =
-    canRegenerateFilledStl && !isStageFileStage && hasRightFile;
+  const canDeleteFilledOutput =
+    canRegenerateFilledStl && !isStageFileStage && hasCamFile;
+  const canDeleteNcOutput = isCamStage && hasNcFile;
 
-  const onDeleteGeneratedOutput = () => {
-    if (!canDeleteGeneratedOutput || isUploading) return;
+  const onDeleteFilledOutput = () => {
+    if (!canDeleteFilledOutput || isUploading) return;
+    void onDeleteCam(activeReq, { navigate: false });
+  };
 
-    if (isCamStage) {
-      void onDeleteNc(activeReq, { nextStage: "cam", navigate: false });
+  const onDeleteNcOutput = () => {
+    if (!canDeleteNcOutput || isUploading) return;
+    void onDeleteNc(activeReq, { nextStage: "cam", navigate: false });
+  };
+
+  const onRegenerateNc = async () => {
+    if (!token) {
+      toast({
+        title: "실패",
+        description: "로그인이 필요합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (regenerating || isUploading || hexRotationSaving) {
+      if (hexRotationSaving) {
+        toast({
+          title: "헥스 회전 저장 중",
+          description: "헥스 회전 저장 완료 후 다시 시도해주세요.",
+        });
+      }
       return;
     }
 
-    void onDeleteCam(activeReq, { navigate: false });
+    setRegenerating(true);
+    try {
+      const requestId = String(activeReq?.requestId || "").trim();
+      if (!requestId) {
+        toast({
+          title: "실패",
+          description: "requestId가 없어 NC 재생성을 진행할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const controller = new AbortController();
+      const timeoutRef = window.setTimeout(() => controller.abort(), 20000);
+      let res: Response;
+      try {
+        res = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({}),
+            signal: controller.signal,
+          },
+        );
+      } finally {
+        window.clearTimeout(timeoutRef);
+      }
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        toast({
+          title: "NC 재생성 실패",
+          description:
+            body?.message ||
+            body?.error ||
+            body?.detail ||
+            "NC 재생성 요청에 실패했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const s3Key = activeReq?.caseInfos?.ncFile?.s3Key;
+      if (s3Key) {
+        await deleteCncProgramCache(s3Key);
+      }
+
+      toast({
+        title: "NC 재생성 요청",
+        description: "Esprit NC 재생성 요청을 전송했습니다.",
+      });
+      onOpenChange(false);
+    } catch (err: any) {
+      const isAbort = String(err?.name || "") === "AbortError";
+      toast({
+        title: "NC 재생성 실패",
+        description: isAbort
+          ? "재생성 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+          : err?.message || "NC 재생성 요청에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   const toggleReasonSelection = (reasonRaw: string) => {
@@ -1925,9 +1861,13 @@ export const PreviewModal = ({
       setGuidedFrontPointMode(false);
       setGuidedFrontPointPick(null);
 
-      if (onRefreshPreview) {
-        await onRefreshPreview(activeReq, { forceRefresh: true });
-      }
+      // STL 재로드하지 않는다. frontPoint는 DB/메타만 갱신하고 오버레이·마커는 로컬 override로 유지.
+      // request:stl-metadata-updated(manual-front-point)는 useStlMetadata가 수치만 반영한다.
+      toast({
+        title: "저장 완료",
+        description: "Front Point를 저장했습니다.",
+      });
+      setNcRegenConfirmOpen(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "";
       toast({
@@ -2212,7 +2152,7 @@ export const PreviewModal = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className={`w-[92vw] max-w-5xl h-[85vh] overflow-hidden ${
+        className={`w-[96vw] max-w-[1680px] h-[85vh] overflow-hidden ${
           shouldShowUnmachinableWarning || isUnmachinable
             ? "border-accent-muted ring-2 ring-accent-muted/80"
             : ""
@@ -2224,8 +2164,8 @@ export const PreviewModal = ({
         </DialogDescription>
 
         <div className="h-full flex flex-col gap-4 overflow-hidden">
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="flex flex-nowrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0 overflow-x-auto">
+            <div className="flex min-w-0 flex-nowrap items-center gap-2">
               {hasNcMetadata && (
                 <Badge
                   variant="outline"
@@ -2241,17 +2181,17 @@ export const PreviewModal = ({
                 />
               ) : null}
               {fullLotLabel ? (
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-nowrap items-center gap-1.5">
                   <Badge
                     variant="outline"
-                    className="text-[11px] px-2 py-0.5 font-semibold bg-primary-soft text-primary-strong border-primary-muted"
+                    className="text-[11px] px-2 py-0.5 font-semibold bg-primary-soft text-primary-strong border-primary-muted whitespace-nowrap"
                   >
                     {fullLotLabel}
                   </Badge>
                   {generateModelNumber(activeReq?.caseInfos) && (
                     <Badge
                       variant="outline"
-                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-200 bg-slate-50 text-slate-600"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-200 bg-slate-50 text-slate-600 whitespace-nowrap"
                     >
                       {generateModelNumber(activeReq?.caseInfos)}
                     </Badge>
@@ -2259,7 +2199,7 @@ export const PreviewModal = ({
                   {shouldShowUnmachinableBadge && (
                     <Badge
                       variant="outline"
-                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${
+                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border whitespace-nowrap ${
                         isUnmachinable
                           ? "border-accent-muted bg-accent-soft text-accent-strong"
                           : "border-accent-muted bg-accent-soft text-accent-strong"
@@ -2271,7 +2211,7 @@ export const PreviewModal = ({
                   {showLatestContinueBadge && (
                     <Badge
                       variant="outline"
-                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong whitespace-nowrap"
                       title={requestorContinueMessage || "의뢰자가 계속 가공 진행을 요청했습니다."}
                     >
                       불완전가공 진행
@@ -2279,11 +2219,11 @@ export const PreviewModal = ({
                   )}
                 </div>
               ) : isUnmachinable || showLatestContinueBadge ? (
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-nowrap items-center gap-1.5">
                   {shouldShowUnmachinableBadge && (
                     <Badge
                       variant="outline"
-                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${
+                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border whitespace-nowrap ${
                         isUnmachinable
                           ? "border-accent-muted bg-accent-soft text-accent-strong"
                           : "border-accent-muted bg-accent-soft text-accent-strong"
@@ -2295,7 +2235,7 @@ export const PreviewModal = ({
                   {showLatestContinueBadge && (
                     <Badge
                       variant="outline"
-                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong whitespace-nowrap"
                       title={requestorContinueMessage || "의뢰자가 계속 가공 진행을 요청했습니다."}
                     >
                       불완전가공 진행
@@ -2307,7 +2247,7 @@ export const PreviewModal = ({
 
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-nowrap items-center gap-2">
               <label
                 className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
                   canOverrideAnodizing && !approveBusy && !anodizingSaving
@@ -2904,29 +2844,198 @@ export const PreviewModal = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
               <div className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden">
-                <button
-                  type="button"
-                  className="text-sm font-semibold text-primary-strong hover:underline text-left max-w-[320px] truncate"
-                  onClick={() => {
-                    if (isMachiningStage) {
-                      void onDownloadNcFile(activeReq);
-                      return;
-                    }
-                    if (isCamStage || isImageStage) {
-                      void onDownloadCamStl(activeReq);
-                      return;
-                    }
-                    void onDownloadOriginalStl(activeReq);
-                  }}
-                >
-                  {leftTitle}
-                </button>
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-primary-strong hover:underline text-left max-w-[520px] truncate"
+                    onClick={() => {
+                      if (isMachiningStage) {
+                        void onDownloadNcFile(activeReq);
+                        return;
+                      }
+                      if (isCamStage || isImageStage) {
+                        void onDownloadCamStl(activeReq);
+                        return;
+                      }
+                      void onDownloadOriginalStl(activeReq);
+                    }}
+                  >
+                    {leftTitle}
+                  </button>
+                  {isCamStage && (
+                    <div className="flex items-center gap-2">
+                      <TooltipProvider delayDuration={0}>
+                        {canGuideFinishLine && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
+                                  guidedFinishLineMode
+                                    ? "border-accent/80 bg-accent-soft text-accent-strong"
+                                    : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                } ${guidedFinishLineSubmitting || guidedFrontPointSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
+                                disabled={
+                                  guidedFinishLineSubmitting ||
+                                  guidedFrontPointSubmitting ||
+                                  isUploading
+                                }
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleToggleFinishLineEdit();
+                                }}
+                                aria-label={
+                                  guidedFinishLineMode
+                                    ? "Finish Line 수동편집 완료"
+                                    : "Finish Line"
+                                }
+                              >
+                                FL
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              Finish Line
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                        {canGuideFrontPoint && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
+                                  guidedFrontPointMode
+                                    ? "border-accent/80 bg-accent-soft text-accent-strong"
+                                    : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                } ${guidedFrontPointSubmitting || guidedFinishLineSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
+                                disabled={
+                                  guidedFrontPointSubmitting ||
+                                  guidedFinishLineSubmitting ||
+                                  isUploading
+                                }
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleToggleFrontPointEdit();
+                                }}
+                                aria-label={
+                                  guidedFrontPointMode
+                                    ? "Front Point 수동편집 완료"
+                                    : "Front Point"
+                                }
+                              >
+                                FP
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              Front Point
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </TooltipProvider>
+                      {canRegenerateFilledStl && (
+                        <>
+                          <TooltipProvider delayDuration={0}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                                    regenerating || isUploading || hexRotationSaving
+                                      ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                      : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                  }`}
+                                  disabled={
+                                    regenerating || isUploading || hexRotationSaving
+                                  }
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    void onRegenerate();
+                                  }}
+                                  aria-label="filled.stl 재생성"
+                                >
+                                  <RefreshCw
+                                    className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`}
+                                  />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom">
+                                filled.stl 재생성
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <button
+                            type="button"
+                            className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                              !canDeleteFilledOutput ||
+                              isUploading ||
+                              regenerating ||
+                              hexRotationSaving
+                                ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-destructive-soft hover:border-destructive-muted hover:text-destructive"
+                            }`}
+                            disabled={
+                              !canDeleteFilledOutput ||
+                              isUploading ||
+                              regenerating ||
+                              hexRotationSaving
+                            }
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!canDeleteFilledOutput) return;
+                              setDeleteConfirmKind("filled");
+                            }}
+                            aria-label="생성된 filled STL 삭제"
+                            title="생성된 filled STL 삭제"
+                          >
+                            X
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
                 {isNcStage ? (
                   <textarea
                     className="w-full flex-1 min-h-0 rounded-md border border-slate-200 p-3 font-mono text-xs text-slate-700 resize-none overflow-auto"
                     value={previewNcText}
                     readOnly
                   />
+                ) : isCamStage && leftViewer ? (
+                  <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
+                    <StlPreviewViewer
+                      file={leftViewer}
+                      requestId={requestId}
+                      metadata={viewerStlMetadata}
+                      showOverlay={true}
+                      forceFilled
+                      finishLinePoints={finishLinePoints}
+                      enableManualPick={
+                        (canGuideFinishLine && guidedFinishLineMode) ||
+                        (canGuideFrontPoint && guidedFrontPointMode)
+                      }
+                      manualPickPoints={
+                        guidedFinishLineMode
+                          ? guidedFinishLinePoints
+                          : guidedFrontPointMode && guidedFrontPointPick
+                            ? [guidedFrontPointPick]
+                            : null
+                      }
+                      onSurfacePointDoubleClick={
+                        guidedFrontPointMode
+                          ? handleSetGuidedFrontPoint
+                          : handleAddGuidedFinishLinePoint
+                      }
+                      onManualUndo={
+                        guidedFrontPointMode
+                          ? handleUndoGuidedFrontPoint
+                          : handleUndoGuidedFinishLinePoint
+                      }
+                    />
+                  </div>
                 ) : leftViewer ? (
                   <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
                     <StlPreviewViewer
@@ -2963,7 +3072,7 @@ export const PreviewModal = ({
                 <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
-                    className="text-sm font-semibold text-primary-strong hover:underline text-left max-w-[320px] truncate"
+                    className="text-sm font-semibold text-primary-strong hover:underline text-left max-w-[520px] truncate"
                     onClick={onDownload}
                     title={
                       stage === "packing" || stage === "shipping"
@@ -2976,76 +3085,78 @@ export const PreviewModal = ({
                       : fileLabel}
                   </button>
                   <div className="flex items-center gap-2">
-                    <TooltipProvider delayDuration={0}>
-                      {canGuideFinishLine && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
-                                guidedFinishLineMode
-                                  ? "border-accent/80 bg-accent-soft text-accent-strong"
-                                  : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
-                              } ${guidedFinishLineSubmitting || guidedFrontPointSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
-                              disabled={
-                                guidedFinishLineSubmitting ||
-                                guidedFrontPointSubmitting ||
-                                isUploading
-                              }
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleToggleFinishLineEdit();
-                              }}
-                              aria-label={
-                                guidedFinishLineMode
-                                  ? "Finish Line 수동편집 완료"
-                                  : "Finish Line"
-                              }
-                            >
-                              FL
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            Finish Line
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                      {canGuideFrontPoint && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
-                                guidedFrontPointMode
-                                  ? "border-accent/80 bg-accent-soft text-accent-strong"
-                                  : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
-                              } ${guidedFrontPointSubmitting || guidedFinishLineSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
-                              disabled={
-                                guidedFrontPointSubmitting ||
-                                guidedFinishLineSubmitting ||
-                                isUploading
-                              }
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleToggleFrontPointEdit();
-                              }}
-                              aria-label={
-                                guidedFrontPointMode
-                                  ? "Front Point 수동편집 완료"
-                                  : "Front Point"
-                              }
-                            >
-                              FP
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            Front Point
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </TooltipProvider>
+                    {!isCamStage && (
+                      <TooltipProvider delayDuration={0}>
+                        {canGuideFinishLine && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
+                                  guidedFinishLineMode
+                                    ? "border-accent/80 bg-accent-soft text-accent-strong"
+                                    : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                } ${guidedFinishLineSubmitting || guidedFrontPointSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
+                                disabled={
+                                  guidedFinishLineSubmitting ||
+                                  guidedFrontPointSubmitting ||
+                                  isUploading
+                                }
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleToggleFinishLineEdit();
+                                }}
+                                aria-label={
+                                  guidedFinishLineMode
+                                    ? "Finish Line 수동편집 완료"
+                                    : "Finish Line"
+                                }
+                              >
+                                FL
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              Finish Line
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                        {canGuideFrontPoint && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
+                                  guidedFrontPointMode
+                                    ? "border-accent/80 bg-accent-soft text-accent-strong"
+                                    : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                } ${guidedFrontPointSubmitting || guidedFinishLineSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
+                                disabled={
+                                  guidedFrontPointSubmitting ||
+                                  guidedFinishLineSubmitting ||
+                                  isUploading
+                                }
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleToggleFrontPointEdit();
+                                }}
+                                aria-label={
+                                  guidedFrontPointMode
+                                    ? "Front Point 수동편집 완료"
+                                    : "Front Point"
+                                }
+                              >
+                                FP
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              Front Point
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </TooltipProvider>
+                    )}
                     {isCamStage && onOpenCodeEditor && (
                       <button
                         type="button"
@@ -3063,7 +3174,7 @@ export const PreviewModal = ({
                       </button>
                     )}
 
-                    {canRegenerateFilledStl && (
+                    {isCamStage ? (
                       <>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
@@ -3071,71 +3182,121 @@ export const PreviewModal = ({
                               <button
                                 type="button"
                                 className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                                  twoPhasing || regenerating || isUploading || hexRotationSaving
+                                  regenerating || isUploading || hexRotationSaving
                                     ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                                     : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
                                 }`}
                                 disabled={
-                                  twoPhasing || regenerating || isUploading || hexRotationSaving
+                                  regenerating || isUploading || hexRotationSaving
                                 }
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  if (isCamStage) {
-                                    void onRegenerateNc();
-                                    return;
-                                  }
-                                  void onRegenerate();
+                                  void onRegenerateNc();
                                 }}
-                                aria-label={
-                                  isCamStage ? "NC 재생성" : "filled.stl 재생성"
-                                }
+                                aria-label="NC 재생성"
                               >
                                 <RefreshCw
-                                  className={`h-4 w-4 ${twoPhasing || regenerating ? "animate-spin" : ""}`}
+                                  className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`}
                                 />
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="bottom">
-                              {isCamStage ? "NC 재생성" : "filled.stl 재생성"}
+                              NC 재생성
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-
                         <button
                           type="button"
                           className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                            !canDeleteGeneratedOutput || isUploading || twoPhasing || regenerating || hexRotationSaving
+                            !canDeleteNcOutput ||
+                            isUploading ||
+                            regenerating ||
+                            hexRotationSaving
                               ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                               : "border-slate-200 bg-white text-slate-700 hover:bg-destructive-soft hover:border-destructive-muted hover:text-destructive"
                           }`}
                           disabled={
-                            !canDeleteGeneratedOutput ||
+                            !canDeleteNcOutput ||
                             isUploading ||
-                            twoPhasing ||
                             regenerating ||
                             hexRotationSaving
                           }
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            if (!canDeleteGeneratedOutput) return;
-                            setDeleteGeneratedConfirmOpen(true);
+                            if (!canDeleteNcOutput) return;
+                            setDeleteConfirmKind("nc");
                           }}
-                          aria-label={
-                            isCamStage
-                              ? "생성된 NC 파일 삭제"
-                              : "생성된 filled STL 삭제"
-                          }
-                          title={
-                            isCamStage
-                              ? "생성된 NC 파일 삭제"
-                              : "생성된 filled STL 삭제"
-                          }
+                          aria-label="생성된 NC 파일 삭제"
+                          title="생성된 NC 파일 삭제"
                         >
                           X
                         </button>
                       </>
+                    ) : (
+                      canRegenerateFilledStl && (
+                        <>
+                          <TooltipProvider delayDuration={0}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                                    regenerating || isUploading || hexRotationSaving
+                                      ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                      : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                  }`}
+                                  disabled={
+                                    regenerating || isUploading || hexRotationSaving
+                                  }
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    void onRegenerate();
+                                  }}
+                                  aria-label="filled.stl 재생성"
+                                >
+                                  <RefreshCw
+                                    className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`}
+                                  />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom">
+                                filled.stl 재생성
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+
+                          <button
+                            type="button"
+                            className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                              !canDeleteFilledOutput ||
+                              isUploading ||
+                              regenerating ||
+                              hexRotationSaving
+                                ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-destructive-soft hover:border-destructive-muted hover:text-destructive"
+                            }`}
+                            disabled={
+                              !canDeleteFilledOutput ||
+                              isUploading ||
+                              regenerating ||
+                              hexRotationSaving
+                            }
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!canDeleteFilledOutput) return;
+                              setDeleteConfirmKind("filled");
+                            }}
+                            aria-label="생성된 filled STL 삭제"
+                            title="생성된 filled STL 삭제"
+                          >
+                            X
+                          </button>
+                        </>
+                      )
                     )}
 
                     {isStageFileStage && (
@@ -3224,6 +3385,7 @@ export const PreviewModal = ({
                       requestId={requestId}
                       metadata={viewerStlMetadata}
                       showOverlay={true}
+                      forceFilled
                       finishLinePoints={finishLinePoints}
                       enableManualPick={
                         (canGuideFinishLine && guidedFinishLineMode) ||
@@ -3259,19 +3421,36 @@ export const PreviewModal = ({
         </div>
 
         <ConfirmDialog
-          open={deleteGeneratedConfirmOpen}
+          open={deleteConfirmKind !== null}
           title="생성 파일 삭제"
           description={
-            isCamStage
+            deleteConfirmKind === "nc"
               ? "정말 삭제할까요? 생성된 NC 파일이 삭제됩니다."
               : "정말 삭제할까요? 생성된 filled STL 파일이 삭제됩니다."
           }
           confirmLabel="삭제"
           cancelLabel="취소"
-          onCancel={() => setDeleteGeneratedConfirmOpen(false)}
+          onCancel={() => setDeleteConfirmKind(null)}
           onConfirm={async () => {
-            setDeleteGeneratedConfirmOpen(false);
-            onDeleteGeneratedOutput();
+            const kind = deleteConfirmKind;
+            setDeleteConfirmKind(null);
+            if (kind === "nc") {
+              onDeleteNcOutput();
+              return;
+            }
+            onDeleteFilledOutput();
+          }}
+        />
+        <ConfirmDialog
+          open={ncRegenConfirmOpen}
+          title="NC 코드 재생성할까요?"
+          description="Esprit를 다시 실행해 NC 코드를 생성합니다."
+          confirmLabel="재생성"
+          cancelLabel="취소"
+          onCancel={() => setNcRegenConfirmOpen(false)}
+          onConfirm={async () => {
+            setNcRegenConfirmOpen(false);
+            await onRegenerateNc();
           }}
         />
       </DialogContent>
