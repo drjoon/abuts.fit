@@ -1264,7 +1264,21 @@ const NewRequestPageContent = () => {
   };
 
   if (draftStatus === "loading") {
-    return <NewRequestPageSkeleton />;
+    return (
+      <div className="new-request-page bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden">
+        <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
+          <div className="w-full shrink-0">
+            <RequestorWorkspaceHeader
+              onSelectPastRequest={(r) => {
+                setPastRequestDetail(r as RequestDetailDialogRequest);
+                setPastRequestDetailOpen(true);
+              }}
+            />
+          </div>
+          <NewRequestPageSkeleton />
+        </div>
+      </div>
+    );
   }
 
   return (

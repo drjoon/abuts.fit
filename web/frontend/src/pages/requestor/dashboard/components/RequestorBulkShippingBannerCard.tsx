@@ -79,6 +79,7 @@ type Props = {
     post?: ShippingItemApi[];
     waiting?: ShippingItemApi[];
   } | null;
+  loading?: boolean;
   onRefresh?: () => void;
   /** 대시보드 기간 필터. 오늘 출고/대기 내역을 createdAt 기준으로 좁힌다. */
   period?: PeriodFilterValue;
@@ -168,6 +169,7 @@ type ShippingItemApi = {
 export const RequestorBulkShippingBannerCard = ({
   onOpenBulkModal,
   bulkData,
+  loading = false,
   onRefresh,
   period = "30d",
 }: Props) => {
@@ -669,9 +671,19 @@ export const RequestorBulkShippingBannerCard = ({
           </div>
         </CardHeader>
         <CardContent className="pt-0 pb-4 text-sm text-foreground space-y-3">
-          {isShippingSummaryLoading ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-6 text-center text-xs text-slate-500">
-              출고 내역 불러오는 중...
+          {loading || isShippingSummaryLoading ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3.5 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-2">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-7 w-16" />
+                </div>
+                <Skeleton className="h-10 w-px" />
+                <div className="space-y-2 text-right">
+                  <Skeleton className="ml-auto h-3 w-16" />
+                  <Skeleton className="ml-auto h-7 w-14" />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="rounded-xl border border-blue-200/80 bg-gradient-to-br from-blue-50 to-sky-50/80 px-4 py-3.5">

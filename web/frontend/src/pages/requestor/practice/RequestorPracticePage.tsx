@@ -45,6 +45,10 @@ import {
   type PracticeTransferRoleMode,
 } from "@/shared/business/PracticeTransferRoleTabs";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
+import {
+  RequestorPracticePageSkeleton,
+  RequestorPracticeTransferCardsSkeleton,
+} from "@/shared/ui/skeletons/RequestorPracticePageSkeleton";
 import { useNavigate } from "react-router-dom";
 import {
   formatToothWorksForDisplay,
@@ -200,9 +204,7 @@ export default function RequestorPracticePage() {
   ]);
 
   if (loading) {
-    return (
-      <div className="p-6 text-sm text-slate-500">불러오는 중...</div>
-    );
+    return <RequestorPracticePageSkeleton mode={mode} />;
   }
 
   if (!canSendTransfer && !canReceiveTransfer) {
@@ -259,7 +261,7 @@ function RequestorPracticeReceivePage({
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
 
   const [transfers, setTransfers] = useState<ReceivedPracticeTransfer[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [page, setPage] = useState(1);
@@ -1441,7 +1443,9 @@ function RequestorPracticeReceivePage({
             </CardHeader>
             <CardContent>
               {error ? <div className="text-sm text-destructive">{error}</div> : null}
-              {!error && loading ? <div className="text-sm text-muted-foreground">불러오는 중...</div> : null}
+              {!error && loading && transfers.length === 0 ? (
+                <RequestorPracticeTransferCardsSkeleton />
+              ) : null}
               {!error && !loading && sortedFilteredTransfers.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
                   {statusFilter === "all"

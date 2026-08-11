@@ -11,7 +11,6 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import { DashboardShellSkeleton } from "@/shared/ui/dashboard/DashboardShellSkeleton";
 import {
   CheckCircle,
   Factory,
@@ -23,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
   RequestorEditRequestDialog,
@@ -113,7 +113,7 @@ export const RequestorDashboardPage = () => {
   const { data: systemSettings } = useSystemSettings();
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
-  const [creditLedgerOpen, setCreditLedgerOpen] = useState(false);
+  const [, setCreditLedgerOpen] = useState(false);
   const [editingRequest, setEditingRequest] =
     useState<EditingRequestState>(null);
   const [editingDescription, setEditingDescription] = useState("");
@@ -134,7 +134,6 @@ export const RequestorDashboardPage = () => {
 
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
-  const [hasSummaryHydrated, setHasSummaryHydrated] = useState(false);
   const [heavySummaryEnabled, setHeavySummaryEnabled] = useState(false);
   const heavySummaryRefreshTimerRef = useRef<number | null>(null);
   const cardsSummaryRevalidateTimerRef = useRef<number | null>(null);
@@ -468,7 +467,11 @@ export const RequestorDashboardPage = () => {
   const [insufficientShippingCredit, setInsufficientShippingCredit] =
     useState(false);
 
-  const { data: summaryResponse, refetch: refetchSummary } = useQuery({
+  const {
+    data: summaryResponse,
+    refetch: refetchSummary,
+    isLoading: isSummaryLoading,
+  } = useQuery({
     queryKey: summaryQueryKey,
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -789,7 +792,6 @@ export const RequestorDashboardPage = () => {
 
   useEffect(() => {
     setHeavySummaryEnabled(false);
-    setHasSummaryHydrated(false);
   }, [period, user?.id, user?.businessAnchorId]);
 
   useEffect(() => {
@@ -1214,10 +1216,6 @@ export const RequestorDashboardPage = () => {
 
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
   }, [dashboardStatsSource, recentRequests, isUnmachinableRequest]);
-
-  const isInitialLoading =
-    (!cardsSummaryResponse && isCardsSummaryLoading) ||
-    (!bulkResponse && isBulkLoading);
 
   const openEditDialogFromRequest = (request: any) => {
     const mongoId = request._id || request.id;
@@ -1794,12 +1792,6 @@ export const RequestorDashboardPage = () => {
   };
 
   useEffect(() => {
-    if (cardsSummaryResponse?.success || summaryResponse?.success) {
-      setHasSummaryHydrated(true);
-    }
-  }, [cardsSummaryResponse, summaryResponse]);
-
-  useEffect(() => {
     if (!cardsSummaryResponse?.success) return;
     dashDebug("query:cardsSummary updated", {
       stats: cardsSummaryResponse?.data?.stats || null,
@@ -1850,17 +1842,15 @@ export const RequestorDashboardPage = () => {
     }
   }, [cardsSummaryResponse, summaryResponse]);
 
-  // 웹소켓 실시간 업데이트 안정성:
-  // 크레딧 모달 오픈 중에는 스켈레톤 전환으로 모달이 언마운트되지 않도록 차단한다.
-  if (isInitialLoading && !creditLedgerOpen) {
-    return <DashboardShellSkeleton showMain />;
-  }
-
-  const showSkeleton =
-    !hasSummaryHydrated &&
-    isCardsSummaryLoading &&
-    !cardsSummaryResponse &&
-    !creditLedgerOpen;
+  const isStatsLoading = !cardsSummaryResponse && isCardsSummaryLoading;
+  // heavy summary는 period 전환 시 placeholder를 쓰지 않으므로, 데이터 없는 동안만 섹션 스켈레톤.
+  // cards 실패 시에는 빈 상태로 두고, 무한 스켈레톤에 머물지 않는다.
+  const isHeavySectionLoading =
+    !summaryResponse &&
+    (isSummaryLoading ||
+      (!heavySummaryEnabled &&
+        (isCardsSummaryLoading || Boolean(cardsSummaryResponse?.success))));
+  const isBulkSectionLoading = !bulkResponse && isBulkLoading;
 
   const stats: RequestorDashboardStat[] = (() => {
     if (!dashboardStatsSource?.success) {
@@ -1919,10 +1909,6 @@ export const RequestorDashboardPage = () => {
     ];
   })();
 
-  if (showSkeleton) {
-    return <DashboardShellSkeleton />;
-  }
-
   return (
     <div className="h-full min-h-0">
       <div className="max-w-6xl mx-auto w-full space-y-3">
@@ -1965,6 +1951,7 @@ export const RequestorDashboardPage = () => {
         stats={
           <RequestorDashboardStatsCards
             stats={stats}
+            loading={isStatsLoading}
             onCardClick={(stat) => {
               setStatsModalLabel(stat.label);
               setStatsModalOpen(true);
@@ -1980,6 +1967,7 @@ export const RequestorDashboardPage = () => {
               <div className="lg:col-span-3 h-full min-w-0">
                 <RequestorRecentRequestsCard
                   items={recentRequests}
+                  loading={isHeavySectionLoading}
                   onRefresh={() => {
                     refetchSummary();
                     refetchBulk();
@@ -1996,7 +1984,13 @@ export const RequestorDashboardPage = () => {
                   <CardTitle className="text-base font-semibold">불완전 가공</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-2">
-                  {unmachinableRecentRequests.length === 0 ? (
+                  {isHeavySectionLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-5/6" />
+                      <Skeleton className="h-16 w-full" />
+                    </div>
+                  ) : unmachinableRecentRequests.length === 0 ? (
                     <div className="text-sm text-muted-foreground">표시할 불완전 가공 의뢰가 없습니다.</div>
                   ) : (
                     <div className="space-y-2 max-h-[200px] overflow-auto pr-1 pb-1">
@@ -2047,6 +2041,7 @@ export const RequestorDashboardPage = () => {
 
               <RequestorBulkShippingBannerCard
                 bulkData={bulkData}
+                loading={isBulkSectionLoading}
                 period={period}
                 onRefresh={() => {
                   refetchBulk();
@@ -2056,6 +2051,7 @@ export const RequestorDashboardPage = () => {
 
               <RequestorRiskSummaryCard
                 riskSummary={riskSummary}
+                loading={isHeavySectionLoading}
                 disableInnerScroll
                 maxVisibleItems={3}
                 onItemClick={(item) => {

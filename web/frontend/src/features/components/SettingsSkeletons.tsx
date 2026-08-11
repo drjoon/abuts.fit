@@ -32,17 +32,12 @@ export const SettingsCardSkeleton = ({
 
 export const SettingsTabsSkeleton = () => {
   return (
-    <div className="min-h-screen bg-gradient-subtle p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={`tab-${index}`} className="h-12 rounded-xl" />
-          ))}
-        </div>
+    <div className="min-h-screen bg-gradient-subtle p-4">
+      <div className="max-w-4xl mx-auto space-y-4">
+        {/* 탭 크롬은 유지하지 않음(역할에 따라 탭 구성이 달라짐). 데이터 카드만 스켈레톤. */}
         <div className="space-y-4">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <SettingsCardSkeleton key={`settings-skeleton-${index}`} />
-          ))}
+          <SettingsCardSkeleton headerLines={2} bodyLines={6} />
+          <SettingsCardSkeleton bodyLines={4} />
         </div>
       </div>
     </div>

@@ -5,7 +5,7 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { SettingsTabsSkeleton } from "@/features/components/SettingsSkeletons";
+import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
@@ -243,7 +243,20 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (loadingMembership || accessLoading) {
-    return <SettingsTabsSkeleton />;
+    return (
+      <SettingsScaffold
+        tabs={tabs.map((tab) => ({
+          ...tab,
+          content: <SettingsCardSkeleton headerLines={2} bodyLines={6} />,
+        }))}
+        activeTab={activeTab}
+        onTabChange={(next) => {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.set("tab", next);
+          setSearchParams(nextParams, { replace: true });
+        }}
+      />
+    );
   }
 
   return (

@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -196,6 +197,7 @@ const renderStageBadge = (item: RecentRequestCardItem | null) => {
 
 type Props = {
   items: RecentRequestCardItem[];
+  loading?: boolean;
   onRefresh: () => void;
   onEdit: (item: RecentRequestCardItem) => void;
   onCancel: (id: string) => void;
@@ -203,6 +205,7 @@ type Props = {
 
 export const RequestorRecentRequestsCard = ({
   items,
+  loading = false,
   onRefresh,
   onEdit,
   onCancel,
@@ -649,7 +652,28 @@ export const RequestorRecentRequestsCard = ({
               : undefined
           }
         >
-          {visibleItems.map((item) => {
+          {loading ? (
+            <>
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div
+                  key={`recent-skel-${index}`}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border/60 p-3"
+                >
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-40" />
+                    <div className="flex gap-2">
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </div>
+                    <Skeleton className="h-3 w-56" />
+                  </div>
+                  <Skeleton className="h-8 w-14" />
+                </div>
+              ))}
+            </>
+          ) : null}
+          {!loading &&
+            visibleItems.map((item) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
             const displayId = rawRequestId || String(item.id || item._id || "");
