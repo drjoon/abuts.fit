@@ -14,7 +14,7 @@ import { normalizeRequestorKind } from "./requestorCapabilities.js";
 
 /**
  * 거래 치과 등록 기능 출시일(KST).
- * 가입일이 이보다 이르면 창 시작일을 출시일로 올려, 기존 기공소도 30일을 받는다.
+ * 가입일이 이보다 이르면 창 시작일을 출시일로 올려, 기존 기공소도 60일을 받는다.
  */
 export const LAB_TRADING_PARTNER_FEATURE_START_YMD = "2026-08-11";
 
@@ -108,9 +108,9 @@ export async function findActiveTradingPartner({
 
 /**
  * 기공소-치과 관계를 판정한다.
- * - "active": 30일 등록 기간 내 등록된 정식 거래처 (플랫폼 수수료 0%)
- * - "referred": 30일 등록 기간 이후 발급된 초대로 검증 완료된 소개 관계 (플랫폼 수수료 10%)
- * - null: 둘 다 아님 (플랫폼 수수료 20%)
+ * - "active": 60일 등록 기간 내 소개·검증 완료된 소개치과 (플랫폼 수수료 0%)
+ * - "referred": 60일 등록 기간 이후 발급된 초대로 검증 완료 (플랫폼 수수료 10%)
+ * - null: 관계 없음 (플랫폼 수수료 10%)
  */
 export async function findLabPracticeRelationship({
   labAnchorId,

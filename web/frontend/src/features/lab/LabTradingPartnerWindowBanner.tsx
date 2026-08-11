@@ -46,11 +46,11 @@ export const LabTradingPartnerWindowBanner = ({ className }: Props) => {
       </span>
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-base font-semibold leading-snug tracking-tight sm:text-[17px]">
-          거래 치과 등록 {remainingDays}일 남음
+          소개치과 등록 {remainingDays}일 남음
         </p>
         <p className="text-sm leading-relaxed text-primary-strong/85 sm:text-[15px]">
-          기존 거래처 치과를 등록하시는게 기공소에 유리합니다. 자세한 내용은
-          클릭하세요!
+          거래하시던 치과를 소개하여 등록하시면 플랫폼 수수료가 면제됩니다.
+          자세한 내용은 클릭하세요!
         </p>
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />

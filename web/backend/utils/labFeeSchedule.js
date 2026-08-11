@@ -11,7 +11,7 @@ export const LAB_FEE_SCHEDULE_DEFAULTS = {
   pontic: 40000,
 };
 
-export const LAB_TRADING_PARTNER_WINDOW_DAYS = 30;
+export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;
 
 /** 보철 형태 → labFeeSchedule 키 */
 export function resolveLabFeeKeyFromProsthesisType(prosthesisType) {

@@ -28,13 +28,13 @@ const labTradingPartnerSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      // active: 30일 등록 기간 내 초대·검증 완료된 정식 거래처 (플랫폼 수수료 0%)
-      // referred: 30일 등록 기간이 지난 뒤 발급된 초대로 검증 완료된 소개 관계 (플랫폼 수수료 10%, BusinessAnchor.payoutRates.labReferredFeeRate)
+      // active: 60일 등록 기간 내 초대·검증 완료된 소개치과 (플랫폼 수수료 0%)
+      // referred: 60일 등록 기간이 지난 뒤 발급된 초대로 검증 완료 (플랫폼 수수료 10%)
       enum: ["invited", "pending", "active", "referred", "canceled", "expired"],
       default: "invited",
       index: true,
     },
-    // 30일 거래처 등록 기간이 지난 뒤 발급된 초대인지 여부. true면 검증 완료 시 active가 아닌 referred로 승격된다.
+    // 60일 소개치과 등록 기간이 지난 뒤 발급된 초대인지 여부. true면 검증 완료 시 active가 아닌 referred로 승격된다.
     invitedAfterWindow: {
       type: Boolean,
       default: false,

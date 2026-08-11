@@ -193,7 +193,7 @@ export const LabTradingPartnersTab = () => {
       const url = await createInvite();
       if (!url) return;
       const message = canInvite
-        ? `안녕하세요 🙂 어벗츠 거래 치과로 등록하시면 정산·의뢰가 편리합니다.\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`
+        ? `안녕하세요 🙂 어벗츠 소개치과로 등록하시면 플랫폼 수수료가 면제됩니다.\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`
         : `안녕하세요 🙂 어벗츠에 함께해요!\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`;
       await copyText(
         message,
@@ -212,10 +212,11 @@ export const LabTradingPartnersTab = () => {
   const canInvite = Boolean(windowInfo?.canInvite);
   const remaining =
     windowInfo?.remainingDays == null ? null : Number(windowInfo.remainingDays);
-  const feeRatePct = {
-    referred: Math.round(Number(windowInfo?.feeRates?.labReferredFeeRate ?? 0.1) * 100),
-    nonPartner: Math.round(Number(windowInfo?.feeRates?.nonPartnerFeeRate ?? 0.2) * 100),
-  };
+  const windowDays = Number(windowInfo?.windowDays ?? 60);
+  const platformFeePct = Math.round(
+    Number(windowInfo?.feeRates?.nonPartnerFeeRate ?? 0.1) * 100,
+  );
+  const creditPct = 100 - platformFeePct;
 
   return (
     <div className="space-y-4">
@@ -223,48 +224,35 @@ export const LabTradingPartnersTab = () => {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">결제 안내</CardTitle>
           <CardDescription>
-            관계별로 수수료와 결제크레딧 적립 비율이 다릅니다.
+            플랫폼 수수료와 커스텀 어벗 생산 서비스 이용 안내입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-primary-muted bg-primary-soft/40 px-3.5 py-3 space-y-1.5">
-              <p className="font-semibold text-primary-strong">
-                거래 치과 (수수료 0%)
-              </p>
-              <p className="text-[13px] leading-relaxed text-slate-700">
-                치과 결제 금액 전액이 기공소 결제크레딧으로 적립됩니다.
-              </p>
-            </div>
-            <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-1.5">
-              <p className="font-semibold text-slate-900">
-                소개 치과 (수수료 {feeRatePct.referred}%)
-              </p>
-              <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-muted-foreground">
-                <li>30일 등록 기간 이후 기공소 소개로 가입</li>
-                <li>
-                  치과 결제 금액의 {100 - feeRatePct.referred}%가 결제크레딧으로
-                  적립
-                </li>
-              </ul>
-            </div>
-            <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-1.5">
-              <p className="font-semibold text-slate-900">
-                플랫폼 매칭 치과(수수료 {feeRatePct.nonPartner}%)
-              </p>
-              <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-muted-foreground">
-                <li>거래·소개 관계 없이 플랫폼에서 매칭된 치과</li>
-                <li>
-                  치과 결제 금액의 {100 - feeRatePct.nonPartner}%가 결제크레딧으로
-                  적립
-                </li>
-              </ul>
-            </div>
+          <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-2">
+            <p className="font-semibold text-slate-900">
+              플랫폼 수수료 {platformFeePct}%
+            </p>
+            <ul className="list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-muted-foreground">
+              <li>
+                어벗츠가 중개한 모든 의뢰건에 대해 수수료 {platformFeePct}%를
+                제하고 나머지 {creditPct}%를 결제크레딧으로 지급합니다.
+              </li>
+              <li>
+                단, 기공소 가입 후 {windowDays}일간 거래하시던 치과를 소개하여
+                가입하면(소개치과) 수수료를 면제합니다.
+              </li>
+            </ul>
           </div>
 
-          <p className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-2.5 text-[13px] leading-relaxed text-muted-foreground">
-            어벗의뢰비는 기공소가 어벗츠에 별도 납부합니다.
-          </p>
+          <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-1.5">
+            <p className="font-semibold text-slate-900">
+              커스텀 어벗 생산 서비스
+            </p>
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              치과나 기공소는 어벗츠에게 커스텀 어벗 생산을 의뢰할 수 있으며,
+              이 경우 의뢰크레딧이 차감됩니다.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -278,17 +266,17 @@ export const LabTradingPartnersTab = () => {
             {canInvite ? (
               <>
                 <span className="font-semibold text-foreground">
-                  가입 후 30일 이내 등록한 치과
+                  가입 후 {windowDays}일 이내
                 </span>
-                는 거래 치과(수수료 0%)입니다. 아래에서 소개 코드·초대 링크·안내
-                문구를 복사해 치과에 전달하세요. 가입·사업자등록증 검증 후
-                등록됩니다.
+                에 거래하시던 치과를 소개하면 소개치과(수수료 면제)로
+                등록됩니다. 아래에서 소개 코드·초대 링크·안내 문구를 복사해
+                치과에 전달하세요. 가입·사업자등록증 검증 후 등록됩니다.
               </>
             ) : (
               <>
-                30일 등록 기간이 종료되었습니다. 이후 소개 가입 치과는 소개
-                치과(수수료 {feeRatePct.referred}%)입니다. 아래에서 소개
-                코드·초대 링크·안내 문구를 복사해 치과에 전달하세요.
+                {windowDays}일 등록 기간이 종료되었습니다. 이후 소개 가입
+                치과는 플랫폼 수수료 {platformFeePct}%가 적용됩니다. 아래에서
+                소개 코드·초대 링크·안내 문구를 복사해 치과에 전달하세요.
                 가입·사업자등록증 검증 후 등록됩니다.
               </>
             )}
@@ -311,7 +299,7 @@ export const LabTradingPartnersTab = () => {
                       ? "-"
                       : canInvite
                         ? `D-${remaining}일`
-                        : "기간 종료 · 이후 소개 가입은 소개 치과"}
+                        : "기간 종료 · 이후 소개는 수수료 면제 없음"}
                   </span>
                 </div>
                 <p className="text-[13px] leading-relaxed text-muted-foreground">
@@ -407,18 +395,18 @@ export const LabTradingPartnersTab = () => {
                   item.practiceName ||
                   item.practiceHint?.name ||
                   (isActive
-                    ? "거래 치과"
+                    ? "소개치과"
                     : isReferred
-                      ? "소개 치과"
+                      ? "등록 치과"
                       : "가입 진행 중");
                 const address = String(item.practiceAddress || "").trim();
                 const representative = String(
                   item.practiceRepresentativeName || "",
                 ).trim();
                 const badgeLabel = isActive
-                  ? "거래 치과"
+                  ? "소개치과 · 수수료 면제"
                   : isReferred
-                    ? `소개 치과 (${feeRatePct.referred}%)`
+                    ? "등록 치과"
                     : "가입 진행 중";
                 const badgeClassName = isActive
                   ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"

@@ -57,14 +57,14 @@ export const DevopsPayoutAccountTab = () => {
   const [salesmanRate, setSalesmanRate] = useState<string>("10");
   const [adminRate, setAdminRate] = useState<string>("20");
   const [labReferredFeeRate, setLabReferredFeeRate] = useState<string>("10");
-  const [nonPartnerFeeRate, setNonPartnerFeeRate] = useState<string>("20");
+  const [nonPartnerFeeRate, setNonPartnerFeeRate] = useState<string>("10");
   const savedRef = useRef({
     manufacturerRate: "60",
     devopsRate: "10",
     salesmanRate: "10",
     adminRate: "20",
     labReferredFeeRate: "10",
-    nonPartnerFeeRate: "20",
+    nonPartnerFeeRate: "10",
     updatedAt: null as string | null,
   });
 
@@ -488,7 +488,7 @@ export const DevopsPayoutAccountTab = () => {
             </h3>
             <p className="text-sm text-muted-foreground">
               치과 거래 관계별 청구 총액(기공비+어벗) 대비 플랫폼 수수료율.
-              거래처(등록 완료)는 항상 0%이며, 걷힌 수수료는 위 분배율로
+              소개치과(60일 이내 등록)는 0%이며, 걷힌 수수료는 위 분배율로
               제조사·개발운영사·영업자·관리자가 나눕니다.
             </p>
           </div>
@@ -503,7 +503,7 @@ export const DevopsPayoutAccountTab = () => {
                     소개 치과
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    30일 등록 기간 이후 기공소 소개로 등록
+                    60일 등록 기간 이후 기공소 소개로 등록
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
