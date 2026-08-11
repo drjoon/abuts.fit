@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-11: 개발운영사·관리자 사이드·라우트에서 소개 제거(영업자만 유지).
 // - 2026-08-11: 의뢰자 사이드·라우트에서 소개 제거(소개 할인 정책 종료).
 // - 2026-08-11: 작업영역(흰 카드)이 outlet 높이를 채우도록 — 충전 탭 수직 중앙·내역 테이블 스크롤 고정.
 // - 2026-08-11: 잔액 < 충전단위면 사이드바 크레딧에 깜빡이는 충전 뱃지·클릭 시 ?tab=charge.
@@ -203,7 +204,6 @@ const sidebarItems = {
   ],
   devops: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: Users2, label: "파트너", href: "/dashboard/partner" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
@@ -227,7 +227,6 @@ const sidebarItems = {
     { icon: Building2, label: "사업자", href: "/dashboard/businesses" },
     { icon: Users, label: "사용자", href: "/dashboard/users" },
     { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
-    { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
     {
       icon: FileText,
       label: "의뢰",
@@ -322,7 +321,6 @@ const adminSidebarSections: SidebarSection[] = [
       { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
       { icon: Building2, label: "사업자", href: "/dashboard/businesses" },
       { icon: Users, label: "사용자", href: "/dashboard/users" },
-      { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
     ],
   },
   {

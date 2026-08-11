@@ -12,7 +12,6 @@ const ADMIN_PAGES = [
   { path: "/dashboard/businesses", label: "사업자" },
   { path: "/dashboard/users", label: "사용자" },
   { path: "/dashboard/credits", label: "크레딧" },
-  { path: "/dashboard/referral-groups", label: "소개그룹" },
   { path: "/dashboard/monitoring", label: "의룢 모니터링" }, // 의룢
   { path: "/dashboard/payments", label: "정산" },
   { path: "/dashboard/tax-invoices", label: "세금계산서" },
@@ -78,5 +77,12 @@ test.describe("Admin – 전체 페이지", () => {
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(500);
     expect(page.url()).not.toContain("worksheet");
+  });
+
+  test("소개그룹 페이지 접근 차단", async ({ page }) => {
+    await page.goto("/dashboard/referral-groups");
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(500);
+    expect(page.url()).not.toContain("referral-groups");
   });
 });

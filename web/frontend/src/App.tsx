@@ -103,7 +103,6 @@ import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
 import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage";
 import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
-import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import AdminPaymentsPage from "@/pages/admin/AdminPaymentsPage";
 const CncDashboardPage = lazy(() =>
@@ -234,9 +233,7 @@ const ReferralGroupsRoute = () => {
   const { user } = useAuthStore();
 
   if (!user) return <Navigate to="/dashboard" replace />;
-  if (user.role === "admin") return <AdminReferralGroupsPage />;
-  if (user.role === "salesman" || user.role === "devops")
-    return <ReferralGroupsPage />;
+  if (user.role === "salesman") return <ReferralGroupsPage />;
   return <Navigate to="/dashboard" replace />;
 };
 
@@ -672,9 +669,7 @@ const App = () => {
                   <Route
                     path="referral-groups"
                     element={
-                      <RoleProtectedRoute
-                        roles={["admin", "salesman", "devops"]}
-                      >
+                      <RoleProtectedRoute roles={["salesman"]}>
                         <ReferralGroupsRoute />
                       </RoleProtectedRoute>
                     }
