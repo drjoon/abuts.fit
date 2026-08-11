@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/shared/ui/cn";
+import { Separator } from "@/components/ui/separator";
+import { Building2, MapPin, Save } from "lucide-react";
 import { BusinessAddressFields } from "./BusinessAddressFields";
 // SSOT: metadata 사용 (metadata 레거시 제거)
 import {
@@ -219,7 +221,19 @@ export const BusinessForm = ({
   }, [focusFieldKey, focusFirstMissingSignal]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+            <Building2 className="h-4 w-4 text-primary-strong" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">사업자 기본 정보</p>
+            <p className="text-xs text-muted-foreground">
+              등록증에서 인식되거나 직접 입력합니다
+            </p>
+          </div>
+        </div>
       <div className="space-y-2">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-2">
@@ -568,9 +582,24 @@ export const BusinessForm = ({
             </div>
           </div>
         </div>
+      </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+            <MapPin className="h-4 w-4 text-primary-strong" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">사업장 주소</p>
+            <p className="text-xs text-muted-foreground">
+              사업자등록증상 주소와 동일하게 입력합니다
+            </p>
+          </div>
+        </div>
 
         <BusinessAddressFields
-          className="relative rounded-xl p-1"
+          className="relative"
           address={businessData.address}
           addressDetail={businessData.addressDetail}
           zipCode={businessData.zipCode}
@@ -661,10 +690,11 @@ export const BusinessForm = ({
             onAutoSave?.();
           }}
         />
-      </div>
+      </section>
 
-      <div className="space-y-2">
-        <div className="relative rounded-xl p-1">
+      <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 sm:p-5">
+        <div className="space-y-2">
+        <div className="relative">
           {(() => {
             const actionsNode = renderActions?.({ disabled }) ?? null;
             const submitBtn = (
@@ -677,7 +707,10 @@ export const BusinessForm = ({
                   (!isModified && (validationSucceeded || isVerified))
                 }
                 ref={submitRef}
-                className={actionsNode ? "w-full" : undefined}
+                className={cn(
+                  "h-10 gap-1.5 rounded-xl",
+                  actionsNode ? "w-full" : "px-5",
+                )}
                 onClick={async () => {
                   setIsSaving(true);
                   setIsModified(false);
@@ -688,11 +721,12 @@ export const BusinessForm = ({
                   }
                 }}
               >
+                <Save className="h-4 w-4" />
                 {isSaving ? "저장 중..." : "검증 후 제출"}
               </Button>
             );
             return actionsNode ? (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {actionsNode}
                 {submitBtn}
               </div>
@@ -701,10 +735,11 @@ export const BusinessForm = ({
             );
           })()}
           {successNote && (
-            <p className="text-center text-xs font-semibold text-primary-strong flex justify-end mt-2">
+            <p className="text-right text-xs font-semibold text-primary-strong mt-2">
               {successNote}
             </p>
           )}
+        </div>
         </div>
       </div>
     </div>

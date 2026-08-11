@@ -129,21 +129,32 @@ export const RequestorSettingsPage = () => {
         label: "사업자",
         icon: Building2,
         content: (
-          <div className="space-y-3">
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-              <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                  <Building2 className="h-4 w-4 text-primary-strong" />
+                </span>
                 <div>
-                  <p className="text-xs text-slate-500">가입일시</p>
-                  <p className="mt-0.5 font-medium text-slate-900">
+                  <p className="text-sm font-semibold text-slate-900">가입 정보</p>
+                  <p className="text-xs text-muted-foreground">
+                    런칭 이벤트·요금 기준일
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-3">
+                  <p className="text-xs text-muted-foreground">가입일시</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
                     {pricingBaseDate
                       ? formatKstDateTimeToKo(pricingBaseDate)
                       : "-"}
                   </p>
                 </div>
-                <div>
-                  <p className="text-xs text-slate-500">가입 후 경과일</p>
+                <div className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-3">
+                  <p className="text-xs text-muted-foreground">가입 후 경과일</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-slate-900">
+                    <p className="text-sm font-semibold text-slate-900">
                       {pricingElapsedDays == null
                         ? "-"
                         : `${pricingElapsedDays}일`}
@@ -157,7 +168,7 @@ export const RequestorSettingsPage = () => {
                         }`}
                       >
                         {launchEventRemainingDays > 0
-                          ? `런칭 이벤트 종료까지 D-${launchEventRemainingDays}일`
+                          ? `런칭 이벤트 D-${launchEventRemainingDays}일`
                           : "런칭 이벤트 종료"}
                       </span>
                     )}

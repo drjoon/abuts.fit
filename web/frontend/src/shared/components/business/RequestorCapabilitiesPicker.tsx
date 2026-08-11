@@ -24,16 +24,9 @@ type Props = {
   onChange: (next: RequestorProfile) => void;
   disabled?: boolean;
   className?: string;
-  /** 생산의뢰(유료) 선택 시 미검증이면 안내 */
-  paidRequiresLicenseHint?: boolean;
-  /** @deprecated paidRequiresLicenseHint 사용 */
-  labRequiresLicenseHint?: boolean;
   /** 드롭존 최소 가입자 등: practice + free 고정 */
   forcePracticeOnly?: boolean;
-  /**
-   * 가입/온보딩: 이용 서비스 UI 숨김, 기공의뢰서(무료) 고정.
-   * 유료는 이후 사업자등록증 검증으로 연다.
-   */
+  /** 가입/온보딩: 이용 서비스 UI 숨김, 기공의뢰서(무료) 고정 */
   forceFreeServices?: boolean;
 };
 
@@ -42,12 +35,9 @@ export const RequestorCapabilitiesPicker = ({
   onChange,
   disabled = false,
   className,
-  paidRequiresLicenseHint,
-  labRequiresLicenseHint = false,
   forcePracticeOnly = false,
   forceFreeServices = false,
 }: Props) => {
-  const showPaidHint = paidRequiresLicenseHint ?? labRequiresLicenseHint;
   const lockServices = forcePracticeOnly || forceFreeServices;
   const kind: RequestorKind | null = forcePracticeOnly
     ? "practice"
@@ -93,10 +83,10 @@ export const RequestorCapabilitiesPicker = ({
                 key={opt.key}
                 htmlFor={id}
                 className={cn(
-                  "flex h-full cursor-pointer items-start gap-3 rounded-xl border px-5 py-3 transition-colors",
+                  "flex h-full cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3.5 transition-all shadow-sm",
                   checked
-                    ? "border-primary/40 bg-primary/5"
-                    : "border-slate-200 bg-white hover:bg-slate-50",
+                    ? "border-primary-muted/70 bg-primary-soft/35"
+                    : "border-slate-200/80 bg-white/70 hover:border-primary-muted/50 hover:bg-primary-soft/10",
                   (disabled || optionLocked) && "cursor-not-allowed opacity-60",
                 )}
               >
@@ -134,10 +124,6 @@ export const RequestorCapabilitiesPicker = ({
 
       {!lockServices ? (
         <div className="space-y-3">
-          <p className="text-xs leading-relaxed text-slate-500">
-            이용할 서비스를 선택하세요. 생산의뢰(유료)는 사업자등록증 검증이
-            필요합니다.
-          </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {REQUESTOR_SERVICE_OPTIONS.map((opt) => {
               const checked = services[opt.key];
@@ -147,10 +133,10 @@ export const RequestorCapabilitiesPicker = ({
                   key={opt.key}
                   htmlFor={id}
                   className={cn(
-                    "flex h-full cursor-pointer items-start gap-3 rounded-xl border px-5 py-3 transition-colors",
+                    "flex h-full cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3.5 transition-all shadow-sm",
                     checked
-                      ? "border-primary/40 bg-primary/5"
-                      : "border-slate-200 bg-white hover:bg-slate-50",
+                      ? "border-primary-muted/70 bg-primary-soft/35"
+                      : "border-slate-200/80 bg-white/70 hover:border-primary-muted/50 hover:bg-primary-soft/10",
                     disabled && "cursor-not-allowed opacity-60",
                   )}
                 >
@@ -184,13 +170,6 @@ export const RequestorCapabilitiesPicker = ({
           )}
         </div>
       ) : null}
-
-      {showPaidHint && services.paid && (
-        <p className="text-xs text-accent-strong">
-          {REQUESTOR_SERVICE_LABEL.paid}를 선택한 경우 사업자등록증을
-          등록·검증해야 합니다.
-        </p>
-      )}
     </div>
   );
 };

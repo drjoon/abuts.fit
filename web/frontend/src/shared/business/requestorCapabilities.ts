@@ -169,7 +169,7 @@ export const resolveRequestorCapabilities = (args?: {
 }): RequestorCapabilities =>
   legacyCapabilitiesFromProfile(resolveRequestorProfile(args));
 
-/** 생산의뢰(유료) 선택 시 사업자등록증 필수 */
+/** 의뢰자 서비스 이용 시 사업자등록증 필수 */
 export const requiresBusinessLicense = (
   servicesOrCaps?:
     | Partial<RequestorServices>
@@ -181,9 +181,9 @@ export const requiresBusinessLicense = (
     typeof servicesOrCaps === "object" &&
     ("free" in servicesOrCaps || "paid" in servicesOrCaps)
   ) {
-    return Boolean(normalizeRequestorServices(servicesOrCaps).paid);
+    return hasAnyRequestorService(servicesOrCaps);
   }
-  return Boolean(normalizeRequestorCapabilities(servicesOrCaps).lab);
+  return hasAnyRequestorCapability(servicesOrCaps);
 };
 
 export const canUsePaidServices = (args?: {
@@ -368,12 +368,12 @@ export const REQUESTOR_SERVICE_OPTIONS = [
   {
     key: "free" as const,
     label: REQUESTOR_SERVICE_LABEL.free,
-    description: "치과 ↔ 기공소 기공의뢰서 전달·관리 (사업자등록증 선택).",
+    description: "치과 ↔ 기공소 기공의뢰서 전달·관리.",
   },
   {
     key: "paid" as const,
     label: REQUESTOR_SERVICE_LABEL.paid,
-    description: "어벗츠 생산의뢰. 사업자등록증 등록·검증이 필요합니다.",
+    description: "어벗츠 생산의뢰.",
   },
 ];
 

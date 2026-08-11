@@ -11,10 +11,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Shield } from "lucide-react";
+import { Clock, Shield, ShieldCheck, ShieldX } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import { cn } from "@/shared/ui/cn";
 
 const getStatusBadge = (status: string) => {
   if (!status) return null;
@@ -22,7 +23,7 @@ const getStatusBadge = (status: string) => {
   const label = status === "ok" ? "성공" : status;
   if (normalized === "ok" || normalized === "success") {
     return (
-      <Badge className="bg-primary-soft text-primary-strong border-primary-muted">
+      <Badge className="border-0 bg-primary-soft text-primary-strong">
         {label}
       </Badge>
     );
@@ -31,6 +32,11 @@ const getStatusBadge = (status: string) => {
     return <Badge variant="destructive">{label}</Badge>;
   }
   return <Badge variant="outline">{label}</Badge>;
+};
+
+const isSuccessStatus = (status: string) => {
+  const normalized = String(status || "").toLowerCase();
+  return normalized === "ok" || normalized === "success";
 };
 
 export const RequestorSecurity = () => {
@@ -69,62 +75,98 @@ export const RequestorSecurity = () => {
   }, [token, toast]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">보안</h1>
-        <p className="text-muted-foreground mt-1">
-          최근 로그인 기록만 표시합니다.
-        </p>
-      </div>
+    <Card className="app-glass-card app-glass-card--lg">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Shield className="h-5 w-5 text-primary-strong" />
+          보안
+        </CardTitle>
+        <CardDescription className="text-[13px] leading-relaxed">
+          최근 로그인 기록을 확인할 수 있습니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 px-4 py-3.5">
+          <p className="text-[13px] leading-relaxed text-slate-700">
+            마지막 10건의 로그인 시도를 표시합니다. 본인이 아닌 접속이
+            보이면 비밀번호를 변경해 주세요.
+          </p>
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5" />
-            최근 로그인 기록
-          </CardTitle>
-          <CardDescription>
-            마지막 10건의 로그인 시도를 표시합니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {loading && (
-            <div className="text-sm text-muted-foreground">불러오는 중...</div>
-          )}
-          {logs.length > 0 && (
-            <div className="grid gap-3 md:grid-cols-2">
-              {logs.map((log) => (
+        {loading ? (
+          <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-10 text-center text-sm text-muted-foreground">
+            불러오는 중...
+          </div>
+        ) : logs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-10 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
+              <Shield className="h-5 w-5 text-slate-400" />
+            </span>
+            <p className="mt-3 text-sm font-medium text-slate-700">
+              로그인 기록이 없습니다
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {logs.map((log) => {
+              const success = isSuccessStatus(log.status);
+              return (
                 <div
                   key={log._id || log.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
+                  className={cn(
+                    "overflow-hidden rounded-2xl border bg-white/70 shadow-sm",
+                    success
+                      ? "border-primary-muted/60"
+                      : "border-red-200/70",
+                  )}
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">
-                        {log.action || "이벤트"}
-                      </span>
+                  <div
+                    className={cn(
+                      "h-1 w-full",
+                      success ? "bg-primary-strong" : "bg-red-400",
+                    )}
+                  />
+                  <div className="space-y-2.5 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={cn(
+                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ring-1",
+                            success
+                              ? "bg-primary-soft text-primary-strong ring-primary-muted/60"
+                              : "bg-red-50 text-red-600 ring-red-200/80",
+                          )}
+                        >
+                          {success ? (
+                            <ShieldCheck className="h-4 w-4" />
+                          ) : (
+                            <ShieldX className="h-4 w-4" />
+                          )}
+                        </span>
+                        <span className="truncate text-sm font-semibold text-slate-900">
+                          {log.action || "로그인"}
+                        </span>
+                      </div>
                       {log.status ? getStatusBadge(log.status) : null}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <p className="text-[13px] leading-relaxed text-muted-foreground">
                       {log.details?.message || log.details?.reason || "-"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
+                    </p>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5 shrink-0" />
                       {log.createdAt
-                        ? new Date(log.createdAt).toLocaleString()
-                        : ""}
+                        ? new Date(log.createdAt).toLocaleString("ko-KR", {
+                            timeZone: "Asia/Seoul",
+                          })
+                        : "-"}
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-          {!loading && logs.length === 0 && (
-            <div className="text-sm text-muted-foreground">
-              로그가 없습니다.
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 };

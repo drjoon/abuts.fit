@@ -5,6 +5,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -64,6 +71,7 @@ import {
   resolveRequestorProfile,
   type RequestorProfile,
 } from "@/shared/business/requestorCapabilities";
+import { Building2 } from "lucide-react";
 
 interface BusinessTabProps {
   userData?: {
@@ -78,8 +86,6 @@ interface BusinessTabProps {
   }) => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   isOnboarding?: boolean;
-  /** practice-only로 사업자등록증을 건너뛸 때 필수 치과정보 단계로 진입 */
-  onRequirePracticeProfile?: () => void;
 }
 
 export const BusinessTab = ({
@@ -89,7 +95,6 @@ export const BusinessTab = ({
   registerValidationState,
   registerGoNextAction,
   isOnboarding = false,
-  onRequirePracticeProfile,
 }: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user, setUser, loginWithToken } = useAuthStore();
@@ -144,7 +149,6 @@ export const BusinessTab = ({
   const [focusFieldKey, setFocusFieldKey] = useState<FieldKey | null>(null);
   const [requestorProfile, setRequestorProfile] = useState<RequestorProfile>({
     kind: null,
-    // 가입/온보딩 기본: 기공의뢰서(무료). 유료는 이후 사업자등록증 검증으로 연다.
     services: { free: true, paid: false },
   });
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
@@ -157,13 +161,6 @@ export const BusinessTab = ({
       ? { free: true, paid: false }
       : requestorProfile.services,
   );
-  const licenseOptional =
-    isRequestorBusiness &&
-    Boolean(requestorProfile.kind) &&
-    (isOnboarding
-      ? // 가입: 치과만 등록증 선택, 기공소는 필수
-        requestorProfile.kind === "practice"
-      : !services.paid);
 
   const markOnboardingWizardCompleted = useCallback(async () => {
     if (!token || !user) return false;
@@ -340,13 +337,12 @@ export const BusinessTab = ({
         return false;
       }
       if (
-        !isOnboarding &&
         requiresBusinessLicense(normalized.services) &&
         !(businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified)
       ) {
         toast({
           title: "사업자등록증이 필요합니다",
-          description: `${REQUESTOR_SERVICE_LABEL.paid}를 선택하려면 사업자등록증을 등록·검증해야 합니다.`,
+          description: "사업자등록증을 등록·검증해야 합니다.",
           variant: "destructive",
         });
         return false;
@@ -435,13 +431,10 @@ export const BusinessTab = ({
         businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified;
       if (isOnboarding && isRequestorBusiness) {
         const hasKind = Boolean(requestorProfile.kind);
-        // 치과: 등록증 없이 진행 가능. 기공소: 등록·검증 필수.
-        const labOk =
-          requestorProfile.kind !== "lab" ||
-          businessDataMgmt.validationSucceeded ||
-          businessDataMgmt.isVerified;
+        const verified =
+          businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified;
         registerValidationState({
-          passed: hasKind && labOk,
+          passed: hasKind && verified,
           validating: !capabilitiesLoaded || capabilitiesSaving,
         });
         return;
@@ -478,46 +471,21 @@ export const BusinessTab = ({
       return;
     }
     registerGoNextAction(async () => {
-      if (requestorProfile.kind === "lab") {
-        const verified =
-          businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified;
-        if (!verified) {
-          toast({
-            title: "사업자등록증이 필요합니다",
-            description:
-              "기공소는 사업자등록증을 업로드하고 검증을 완료해야 합니다.",
-            variant: "destructive",
-          });
-          return false;
-        }
+      const verified =
+        businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified;
+      if (!verified) {
+        toast({
+          title: "사업자등록증이 필요합니다",
+          description:
+            "사업자등록증을 업로드하고 검증을 완료해야 합니다.",
+          variant: "destructive",
+        });
+        return false;
       }
 
       const ok = await persistRequestorProfile(requestorProfile);
       if (!ok) return false;
 
-      const verified =
-        businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified;
-      // 치과 + 미검증 → 필수 치과정보 페이지로 이동
-      if (
-        licenseOptional &&
-        !verified &&
-        requestorProfile.kind === "practice" &&
-        onRequirePracticeProfile
-      ) {
-        const pp = user?.practiceProfile;
-        const profileReady = Boolean(
-          String(pp?.clinicName || "").trim() &&
-            String(pp?.directorName || "").trim() &&
-            String(pp?.staffName || "").trim() &&
-            String(pp?.phone || "").trim() &&
-            String(pp?.clinicPhone || "").trim() &&
-            String(pp?.address || "").trim() &&
-            String(pp?.zipCode || "").trim(),
-        );
-        if (profileReady) return true;
-        onRequirePracticeProfile();
-        return false;
-      }
       return true;
     });
     return () => registerGoNextAction(null);
@@ -527,13 +495,10 @@ export const BusinessTab = ({
     requestorProfile,
     isOnboarding,
     isRequestorBusiness,
-    licenseOptional,
-    onRequirePracticeProfile,
     persistRequestorProfile,
     registerGoNextAction,
     selectedRole,
     toast,
-    user?.practiceProfile,
   ]);
 
   const updateSetupMode = useCallback(
@@ -546,7 +511,7 @@ export const BusinessTab = ({
     [allowLocalDraft, authUserId],
   );
 
-  // 설정 화면: 사업자 미등록 + 유료(생산의뢰) 선택 시에만 등록증 업로드 경로를 연다.
+  // 설정 화면: 사업자 미등록 시 등록증 업로드 경로를 연다.
   useEffect(() => {
     if (isOnboarding) return;
     if (membershipMgmt.membership !== "none") return;
@@ -907,16 +872,13 @@ export const BusinessTab = ({
     void handleFileUpload(file);
   };
 
-  return (
-    <PageFileDropZone
-      onFiles={handleLicenseFilesDrop}
-      activeClassName="ring-2 ring-primary/30"
-    >
-      <div className="space-y-6">
+  const tabBody = (
+    <div className="space-y-5">
         {isRequestorBusiness &&
           (selectedRole === "owner" ||
             membershipMgmt.membership === "owner" ||
             membershipMgmt.membership === "none") && (
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
             <RequestorCapabilitiesPicker
               value={
                 isOnboarding
@@ -938,14 +900,9 @@ export const BusinessTab = ({
                 String(user?.signupChannel || "").trim() === "practice_dropzone"
               }
               forceFreeServices={isOnboarding}
-              paidRequiresLicenseHint={
-                !isOnboarding &&
-                !(
-                  businessDataMgmt.validationSucceeded ||
-                  businessDataMgmt.isVerified
-                )
-              }
+              className="space-y-4"
             />
+            </div>
           )}
 
         {/* 온보딩에서만 표시. 설정 화면은 RoleStep에서 이미 등록/가입을 선택했으므로 숨김. */}
@@ -1009,6 +966,7 @@ export const BusinessTab = ({
               setupMode === "manual") && (
               <div className="space-y-6">
                 {setupMode !== "manual" && (
+                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
                   <BusinessLicenseUpload
                     ref={licenseUploadRef}
                     membership={membershipMgmt.membership}
@@ -1019,8 +977,8 @@ export const BusinessTab = ({
                     licenseDeleteLoading={licenseDeleteLoading}
                     onFileUpload={handleFileUpload}
                     onDeleteLicense={handleDeleteLicense}
-                    isOptional={licenseOptional && isOnboarding}
                   />
+                  </div>
                 )}
 
                 {(membershipMgmt.membership === "owner" ||
@@ -1133,6 +1091,29 @@ export const BusinessTab = ({
           </div>
         )}
       </div>
+  );
+
+  return (
+    <PageFileDropZone
+      onFiles={handleLicenseFilesDrop}
+      activeClassName="ring-2 ring-primary/30"
+    >
+      {isOnboarding ? (
+        tabBody
+      ) : (
+        <Card className="app-glass-card app-glass-card--lg">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building2 className="h-5 w-5 text-primary-strong" />
+              사업자 정보
+            </CardTitle>
+            <CardDescription className="text-[13px] leading-relaxed">
+              역할·서비스 선택, 사업자등록증 등록 및 검증을 관리합니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>{tabBody}</CardContent>
+        </Card>
+      )}
 
       <AlertDialog
         open={deleteConfirmOpen || verifiedResetConfirmOpen}

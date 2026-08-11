@@ -133,17 +133,16 @@ export const resolveRequestorCapabilities = (args = {}) => {
   return legacyCapabilitiesFromProfile(profile);
 };
 
-/** 생산의뢰(유료) 선택 시 사업자등록증 필수 */
+/** 의뢰자 서비스 이용 시 사업자등록증 필수 */
 export const requiresBusinessLicense = (servicesOrCaps) => {
   if (
     servicesOrCaps &&
     typeof servicesOrCaps === "object" &&
     ("free" in servicesOrCaps || "paid" in servicesOrCaps)
   ) {
-    return Boolean(normalizeRequestorServices(servicesOrCaps).paid);
+    return hasAnyRequestorService(servicesOrCaps);
   }
-  // 레거시: lab이면 필수
-  return Boolean(normalizeRequestorCapabilities(servicesOrCaps).lab);
+  return hasAnyRequestorCapability(servicesOrCaps);
 };
 
 /** 유료 서비스 — paid + 사업자 검증 */

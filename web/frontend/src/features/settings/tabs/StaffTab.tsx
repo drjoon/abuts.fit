@@ -3,7 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
@@ -11,7 +11,7 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
-import { Users } from "lucide-react";
+import { Info, UserCheck, UserPlus, Users } from "lucide-react";
 
 type StaffMember = {
   _id: string;
@@ -346,26 +346,42 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   return (
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-xl">
-          <Users className="h-5 w-5" />
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Users className="h-5 w-5 text-primary-strong" />
           임직원 관리
         </CardTitle>
+        <CardDescription className="text-[13px] leading-relaxed">
+          대표·직원 계정과 가입 신청을 관리합니다.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {membership !== "owner" && (
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm text-muted-foreground">
-            대표 계정만 직원 관리를 할 수 있습니다.
+          <div className="flex gap-3 rounded-2xl border border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              대표 계정만 임직원을 관리할 수 있습니다.
+            </p>
           </div>
         )}
 
         {membership === "owner" && (
           <>
-            <section className="space-y-2.5">
-              <div className="flex items-baseline justify-between gap-3">
-                <h3 className="text-sm font-semibold tracking-tight">
-                  등록된 임직원
-                </h3>
-                <span className="text-xs text-muted-foreground tabular-nums">
+            <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                    <UserCheck className="h-4 w-4 text-primary-strong" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      등록된 임직원
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      대표와 직원 계정
+                    </p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600 ring-1 ring-slate-200/80">
                   {representativeEntries.length + staffEntries.length}명
                 </span>
               </div>
@@ -373,39 +389,47 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
               {loading &&
               representativeEntries.length === 0 &&
               staffEntries.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-sm text-muted-foreground">
+                <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
                   불러오는 중...
                 </div>
               ) : representativeEntries.length === 0 &&
                 staffEntries.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-sm text-muted-foreground">
-                  등록된 임직원이 없습니다.
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-10 text-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
+                    <Users className="h-5 w-5 text-slate-400" />
+                  </span>
+                  <p className="mt-3 text-sm font-medium text-slate-700">
+                    등록된 임직원이 없습니다
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    가입 신청을 승인하면 이곳에 표시됩니다.
+                  </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {representativeEntries.map((entry) => {
                     const name = String(entry.name || "").trim() || entry._id;
                     const email = String(entry.email || "").trim();
                     return (
                       <div
                         key={entry._id}
-                        className="flex items-start gap-2.5 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5"
+                        className="overflow-hidden rounded-2xl border border-primary-muted/70 bg-white/80 shadow-sm"
                       >
-                        <Badge
-                          variant="secondary"
-                          className="shrink-0 rounded-md px-2 py-0.5"
-                        >
-                          대표
-                        </Badge>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium leading-tight">
-                            {name}
-                          </div>
-                          {email ? (
-                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                              {email}
+                        <div className="h-1 w-full bg-primary-strong" />
+                        <div className="flex items-start gap-2.5 px-3.5 py-3">
+                          <Badge className="shrink-0 rounded-md border-0 bg-primary-soft px-2 py-0.5 text-primary-strong">
+                            대표
+                          </Badge>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold leading-tight text-slate-900">
+                              {name}
                             </div>
-                          ) : null}
+                            {email ? (
+                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {email}
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     );
@@ -418,7 +442,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                     return (
                       <FunctionalItemCard
                         key={m._id}
-                        className="rounded-xl border-slate-200/80 bg-white/80 p-0"
+                        className="overflow-hidden rounded-2xl border-slate-200/80 bg-white/80 p-0 shadow-sm"
                         onRemove={() => handleRemoveStaff(m._id)}
                         confirmTitle="직원을 삭제할까요?"
                         confirmDescription={
@@ -430,27 +454,29 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                         cancelLabel="닫기"
                         disabled={actionUserId === m._id}
                       >
-                        <div className="flex items-start gap-2.5 px-3 py-2.5 pr-8">
-                          <Badge
-                            variant="outline"
-                            className="shrink-0 rounded-md px-2 py-0.5"
-                          >
-                            직원
-                          </Badge>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium leading-tight">
-                              {name}
+                        <div className="border-t-4 border-slate-300">
+                          <div className="flex items-start gap-2.5 px-3.5 py-3 pr-8">
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 rounded-md px-2 py-0.5"
+                            >
+                              직원
+                            </Badge>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-semibold leading-tight text-slate-900">
+                                {name}
+                              </div>
+                              {email ? (
+                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                  {email}
+                                </div>
+                              ) : null}
+                              {actionUserId === m._id ? (
+                                <div className="mt-0.5 text-xs text-muted-foreground">
+                                  처리 중...
+                                </div>
+                              ) : null}
                             </div>
-                            {email ? (
-                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                {email}
-                              </div>
-                            ) : null}
-                            {actionUserId === m._id ? (
-                              <div className="mt-0.5 text-xs text-muted-foreground">
-                                처리 중...
-                              </div>
-                            ) : null}
                           </div>
                         </div>
                       </FunctionalItemCard>
@@ -460,28 +486,43 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
               )}
             </section>
 
-            <section className="space-y-2.5">
-              <div className="flex items-baseline justify-between gap-3">
-                <h3 className="text-sm font-semibold tracking-tight">
-                  등록 신청자 관리
-                </h3>
+            <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                    <UserPlus className="h-4 w-4 text-amber-600" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      등록 신청
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      승인 대기 중인 가입 신청
+                    </p>
+                  </div>
+                </div>
                 {pendingEntries.length > 0 ? (
-                  <span className="text-xs text-muted-foreground tabular-nums">
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold tabular-nums text-amber-800 ring-1 ring-amber-200">
                     {pendingEntries.length}건
                   </span>
                 ) : null}
               </div>
 
               {loading && pendingEntries.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-sm text-muted-foreground">
+                <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
                   불러오는 중...
                 </div>
               ) : pendingEntries.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-sm text-muted-foreground">
-                  대기 중인 신청이 없습니다.
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-10 text-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
+                    <UserPlus className="h-5 w-5 text-slate-400" />
+                  </span>
+                  <p className="mt-3 text-sm font-medium text-slate-700">
+                    대기 중인 신청이 없습니다
+                  </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {pendingEntries.map((r, idx) => {
                     const u: any = (r as any)?.user;
                     const userId =
@@ -496,7 +537,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                     return (
                       <FunctionalItemCard
                         key={`${userId}-${idx}`}
-                        className="rounded-xl border-slate-200/80 bg-white/80 p-0"
+                        className="overflow-hidden rounded-2xl border-amber-200/70 bg-white/80 p-0 shadow-sm"
                         onRemove={() => handleReject(userId)}
                         confirmTitle="신청을 거절할까요?"
                         confirmDescription={
@@ -508,48 +549,46 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                         cancelLabel="닫기"
                         disabled={!userId || actionUserId === userId}
                       >
-                        <div className="space-y-2 px-3 py-2.5 pr-8">
-                          <div className="flex items-start gap-2.5">
-                            <Badge
-                              variant="secondary"
-                              className="shrink-0 rounded-md px-2 py-0.5"
-                            >
-                              신청
-                            </Badge>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium leading-tight">
-                                {name || userId}
-                              </div>
-                              {email ? (
-                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                  {email}
+                        <div className="border-t-4 border-amber-400">
+                          <div className="space-y-3 px-3.5 py-3 pr-8">
+                            <div className="flex items-start gap-2.5">
+                              <Badge className="shrink-0 rounded-md border-0 bg-amber-50 px-2 py-0.5 text-amber-800">
+                                신청
+                              </Badge>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-semibold leading-tight text-slate-900">
+                                  {name || userId}
                                 </div>
-                              ) : null}
+                                {email ? (
+                                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                    {email}
+                                  </div>
+                                ) : null}
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex gap-1.5">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-7 flex-1 px-2 text-xs"
-                              onClick={() =>
-                                handleApprove(userId, "representative")
-                              }
-                              disabled={!userId || actionUserId === userId}
-                            >
-                              대표
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-7 flex-1 px-2 text-xs"
-                              onClick={() => handleApprove(userId, "staff")}
-                              disabled={!userId || actionUserId === userId}
-                            >
-                              직원
-                            </Button>
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 flex-1 rounded-lg text-xs"
+                                onClick={() =>
+                                  handleApprove(userId, "representative")
+                                }
+                                disabled={!userId || actionUserId === userId}
+                              >
+                                대표 승인
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-8 flex-1 rounded-lg text-xs"
+                                onClick={() => handleApprove(userId, "staff")}
+                                disabled={!userId || actionUserId === userId}
+                              >
+                                직원 승인
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </FunctionalItemCard>
