@@ -4906,13 +4906,13 @@ export const PracticeFileTransferPage = ({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-3">
                     {roleSwitcher}
-                    <CardTitle className="flex min-w-0 items-center gap-2 text-base">
-                      <UploadCloud className="h-4 w-4 shrink-0 text-primary-strong" />
+                    <CardTitle className="flex min-w-0 items-center gap-2 text-xl font-bold tracking-tight">
+                      <UploadCloud className="h-5 w-5 shrink-0 text-primary-strong" />
                       <span className="shrink-0">기공의뢰</span>
                       {formSyncStatusLabel ? (
                         <span
                           className={cn(
-                            "truncate text-[11px] font-normal",
+                            "truncate text-xs font-normal",
                             formSyncStatus === "error"
                               ? "text-destructive"
                               : "text-muted-foreground",
@@ -4930,7 +4930,7 @@ export const PracticeFileTransferPage = ({
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="h-8"
+                          className="h-9 px-3 text-base"
                           disabled={
                             tempSaving ||
                             requestSubmitting ||
@@ -4957,7 +4957,7 @@ export const PracticeFileTransferPage = ({
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="h-8"
+                          className="h-9 px-3 text-base"
                           onClick={() => void handleStartNewTransfer()}
                         >
                           새로 작성
@@ -4970,7 +4970,7 @@ export const PracticeFileTransferPage = ({
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="pt-10">
+              <CardContent className="pt-5">
                 <PracticeTransferIntakeSection
                   filePaneProps={{
                     acceptedHint: PRACTICE_ACCEPTED_HINT,
