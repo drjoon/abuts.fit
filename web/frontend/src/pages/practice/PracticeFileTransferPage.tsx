@@ -411,6 +411,7 @@ type PracticeTransferSettingsPayload = {
   implantFavorites?: PracticeImplantFavorite[];
   abutmentFavorites?: PracticeAbutmentFavorite[];
   promoNoticeDismissedAt?: string | null;
+  skipDesignConfirm?: boolean;
   updatedAt?: string | null;
 };
 
@@ -1252,6 +1253,7 @@ export const PracticeFileTransferPage = ({
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
     const promoDismissed = String(payload.promoNoticeDismissedAt || "").trim().length > 0;
+    const nextSkipDesignConfirm = Boolean(payload.skipDesignConfirm);
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
@@ -1260,6 +1262,7 @@ export const PracticeFileTransferPage = ({
     setImplantFavorites(nextImplantFavorites);
     setAbutmentFavorites(nextAbutmentFavorites);
     setPromoNoticeVisible(!promoDismissed);
+    setSkipDesignConfirm(nextSkipDesignConfirm);
     setToothWorks((prev) =>
       prev.map((row) => {
         const customAbutment = Boolean(row.customAbutment);
@@ -1289,6 +1292,10 @@ export const PracticeFileTransferPage = ({
         params,
         "promoNoticeDismissedAt",
       );
+      const hasSkipDesignConfirm = Object.prototype.hasOwnProperty.call(
+        params,
+        "skipDesignConfirm",
+      );
 
       const jsonBody: Record<string, unknown> = {};
       if (hasArrivalDefaultDays) {
@@ -1308,6 +1315,9 @@ export const PracticeFileTransferPage = ({
       }
       if (hasPromoNoticeDismissedAt) {
         jsonBody.promoNoticeDismissedAt = params.promoNoticeDismissedAt || null;
+      }
+      if (hasSkipDesignConfirm) {
+        jsonBody.skipDesignConfirm = params.skipDesignConfirm === true;
       }
       if (Object.keys(jsonBody).length === 0) return true;
 
@@ -1358,6 +1368,7 @@ export const PracticeFileTransferPage = ({
                 : abutmentFavorites,
             ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
+            skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
             savedAt: Date.now(),
           }),
         );
@@ -1789,8 +1800,9 @@ export const PracticeFileTransferPage = ({
       if (localFormUpdatedAtRef.current <= 0) {
         applyPracticeTransferSettings(payload);
       } else if (payload) {
-        // 폼 로컬값이 있어도 저장된 문장은 서버 설정을 우선 반영
+        // 폼 로컬값이 있어도 계정 세팅(문장·디자인컨펌생략)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
+        setSkipDesignConfirm(Boolean(payload.skipDesignConfirm));
       }
       try {
         localStorage.setItem(
@@ -1812,6 +1824,7 @@ export const PracticeFileTransferPage = ({
               Array.isArray(payload?.abutmentFavorites) ? payload?.abutmentFavorites : [],
             ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
+            skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
             savedAt: Date.now(),
           }),
         );
@@ -2526,7 +2539,6 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
-    setSkipDesignConfirm(false);
     setOrderDate(todayDate);
     setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
     setToothWorks([]);
@@ -4946,6 +4958,49 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
+  const persistSkipDesignConfirmSetting = useCallback(
+    (next: boolean) => {
+      if (next === skipDesignConfirm) return;
+      setSkipDesignConfirm(next);
+
+      try {
+        const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+        const existing =
+          existingRaw && typeof existingRaw === "string"
+            ? (JSON.parse(existingRaw) as Record<string, unknown>)
+            : {};
+        localStorage.setItem(
+          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+          JSON.stringify({
+            ...existing,
+            arrivalDefaultDays,
+            prosthesisTypes: normalizedProsthesisTypes,
+            memoSnippets,
+            implantFavorites,
+            abutmentFavorites,
+            skipDesignConfirm: next,
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+
+      void savePracticeTransferSettingsToServer({ skipDesignConfirm: next }).catch(() => {
+        // UI 값은 유지하고, 서버 저장 실패는 다음 저장 기회에 재시도
+      });
+    },
+    [
+      abutmentFavorites,
+      arrivalDefaultDays,
+      implantFavorites,
+      memoSnippets,
+      normalizedProsthesisTypes,
+      savePracticeTransferSettingsToServer,
+      skipDesignConfirm,
+    ],
+  );
+
   const handleSaveProsthesisTypeSettings = async () => {
     if (savingProsthesisTypeSettings) return;
     setSavingProsthesisTypeSettings(true);
@@ -5277,7 +5332,7 @@ export const PracticeFileTransferPage = ({
                     <Checkbox
                       id="practice-skip-design-confirm"
                       checked={skipDesignConfirm}
-                      onCheckedChange={(value) => setSkipDesignConfirm(value === true)}
+                      onCheckedChange={(value) => persistSkipDesignConfirmSetting(value === true)}
                       disabled={requestSubmitting}
                     />
                     <span>디자인 컨펌 생략</span>
@@ -5286,7 +5341,7 @@ export const PracticeFileTransferPage = ({
                 <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
                   <p>
                     기공소에서 작업 완료하여 디자인을 올리면 치과에서 확인해야 생산을
-                    시작합니다. 빠른 작업을 치과측 컨펌을 생략합니다.
+                    시작합니다. 빠른 작업을 위해 치과측 컨펌을 생략합니다.
                   </p>
                 </TooltipContent>
               </Tooltip>

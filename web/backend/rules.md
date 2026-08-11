@@ -439,7 +439,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 설정 SSOT:
   - 저장 위치: `BusinessAnchor.practiceTransferSettings`
   - API: `GET/POST /api/practice/transfers/settings`
-  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`
+  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`
   - `memoSnippets`는 의뢰 메모 문장 즐겨찾기(최대 40개, 공백/중복 제거)이며 프론트는 로컬스토리지에도 미러링합니다.
   - 관련 파일:
     - `controllers/practiceTransfers/practiceTransferSettings.controller.js`
