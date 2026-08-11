@@ -119,6 +119,7 @@ type MailboxGridProps = {
   forceTodayMailboxAddresses?: Set<string>;
   clearedForceTodayMailboxAddresses?: Set<string>;
   onBoxClick?: (address: string) => void | Promise<void>;
+  onBoxPrefetch?: (address: string) => void;
   onMailboxError?: (address: string, message: string) => void;
   onRefresh?: (options?: MailboxRefreshOptions) => void | Promise<void>;
 };
@@ -128,6 +129,7 @@ export const MailboxGrid = ({
   forceTodayMailboxAddresses,
   clearedForceTodayMailboxAddresses,
   onBoxClick,
+  onBoxPrefetch,
   onMailboxError,
   onRefresh,
 }: MailboxGridProps) => {
@@ -2423,6 +2425,7 @@ export const MailboxGrid = ({
         handleTouchEnd={handleTouchEnd}
         getMailboxColorClass={getMailboxColorClass}
         onBoxClick={onBoxClick}
+        onBoxPrefetch={onBoxPrefetch}
       />
     </div>
   );

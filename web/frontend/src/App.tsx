@@ -398,7 +398,7 @@ const App = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
+      <TooltipProvider delayDuration={0} skipDelayDuration={0}>
         <BrowserRouter>
           <Toaster />
           <Sonner />

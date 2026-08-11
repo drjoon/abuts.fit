@@ -128,7 +128,7 @@ export const BusinessLicenseUpload = forwardRef<
               JPG, PNG 파일만 가능 (최대 10MB)
             </p>
             {showOptionalHint && (
-              <TooltipProvider delayDuration={200}>
+              <TooltipProvider delayDuration={0}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button

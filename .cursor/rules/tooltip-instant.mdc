@@ -1,0 +1,32 @@
+---
+description: Tooltips must open immediately on hover (no delay)
+alwaysApply: true
+---
+
+# Tooltip Instant Open (강제)
+
+## Policy
+
+- Mouse hover tooltips open **immediately** (`delayDuration={0}`).
+- Do not introduce hover delay for Radix/`@/components/ui/tooltip` tooltips.
+
+## SSOT
+
+- Default: `web/frontend/src/components/ui/tooltip.tsx` — `TooltipProvider` defaults `delayDuration=0`, `skipDelayDuration=0`.
+- App root: `web/frontend/src/App.tsx` wraps with the same values.
+- Nested `TooltipProvider` / `Tooltip` must keep `delayDuration={0}` (or omit and inherit the default). Never set `200`/`300`/etc. for hover UX.
+
+## Do / Don't
+
+```tsx
+// ❌ BAD
+<TooltipProvider delayDuration={200}>
+<Tooltip delayDuration={300}>
+
+// ✅ GOOD
+<TooltipProvider> {/* defaults to 0 */}
+<TooltipProvider delayDuration={0}>
+<Tooltip delayDuration={0}>
+```
+
+Frontend notes: `web/frontend/rules.md` (Tooltip).

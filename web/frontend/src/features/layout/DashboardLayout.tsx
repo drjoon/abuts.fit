@@ -1342,7 +1342,7 @@ export const DashboardLayout = () => {
                   return (
                     <li key={item.href}>
                       {quickTooltip ? (
-                        <TooltipProvider delayDuration={200}>
+                        <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span

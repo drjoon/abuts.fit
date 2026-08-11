@@ -245,7 +245,7 @@ export const AdminCreditSettingsTab = () => {
     "치과 기공의뢰에 포함되는 커스텀어벗 소매가(1어벗당). 거래처 분배·결제크레딧에 사용됩니다.";
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delayDuration={0}>
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">

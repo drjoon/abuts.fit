@@ -36,7 +36,7 @@ export const PracticeTransferRoleTabs = ({
   className,
 }: Props) => {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delayDuration={0}>
       <div
         className={cn(
           "inline-flex shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5",

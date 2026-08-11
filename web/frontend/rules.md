@@ -30,6 +30,11 @@ Notes:
   - raw Tailwind 팔레트(`sky`/`teal`/`violet`/`purple`/`emerald`/`green`/`yellow`/`orange`/`rose`/`indigo`/`cyan` 등)로 의미 색을 새로 쓰지 말 것.
   - SSOT: `src/index.css`, `tailwind.config.ts`, `src/shared/ui/semanticStatus.ts`,
     `src/shared/ui/gigongAbutAccent.ts`, `src/shared/shipping/shippingMode.ts`
+- Tooltip (강제, 앱 전체):
+  - 마우스 호버 툴팁은 **즉시** 표시 (`delayDuration={0}`).
+  - SSOT: `src/components/ui/tooltip.tsx` (`TooltipProvider` 기본값 0),
+    루트 `src/App.tsx`, `.cursor/rules/tooltip-instant.mdc`.
+  - 중첩 `TooltipProvider`/`Tooltip`에 `delayDuration={200}` 등 지연을 두지 말 것.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절
@@ -375,10 +380,15 @@ Notes:
 
 - 포장.발송 우편함 상세 모달 캐시 일관성:
   - `RequestPage`에서 우편함 상세 모달 오픈 시, 요약(`mailboxSummaries.requestCount`)과 캐시 건수가 다르면 캐시를 사용하지 않고 `/api/requests/shipping/mailbox-requests`를 재조회합니다.
+  - stale-while-revalidate: 건수 일치 캐시가 있으면 즉시 모달에 표시하고 백그라운드로 재동기화합니다.
+  - 점유 우편함 hover 시 `onBoxPrefetch`로 상세를 미리 받아 클릭 체감을 줄입니다.
+  - 조회는 요약 `requestIds`를 쿼리로 넘겨 단축 경로를 사용합니다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxShelfGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx`
+    - `web/backend/controllers/requests/shipping.controller.js`
 
 - 세척.패킹/포장.발송 stage 이미지 삭제 후 프리뷰 상태 동기화:
   - 프리뷰 모달의 stage 이미지 삭제 버튼은 `preserveStage` 모드로 호출해 **현재 공정을 유지**하고, 파일/파일명만 즉시 리셋합니다.

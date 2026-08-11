@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: mailbox-requests 성능 — exact mailboxAddress, lean+batch hydrate, 15s 캐시, requestIds 단축 경로
 // - 2026-08-04: 수동 집하 pickedUpAt/deliveredAt을 당일 16:00 고정 → 실제 처리 시각(now)으로 기록
 // - 2026-08-04: 오늘 발송 체크 해제 시 originalEstimatedShipYmd로 발송일 복원 + mailbox-summary 캐시 무효화
 // related files:
@@ -9,6 +10,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 import Request from "../../models/request.model.js";
 import { Types } from "mongoose";
@@ -28,6 +30,7 @@ import {
 import { emitDeliveryUpdated } from "./shipping.Tracking.helpers.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import User from "../../models/user.model.js";
 import { cancelHanjinPickupForReset } from "./shipping.Hanjin.controller.js";
 import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
@@ -100,6 +103,50 @@ const MAILBOX_SUMMARY_CACHE_MAX_ENTRIES = Number(
 );
 const mailboxSummaryCache = new Map();
 
+const MAILBOX_REQUESTS_CACHE_TTL_MS = Number(
+  process.env.MAILBOX_REQUESTS_CACHE_TTL_MS || 15000,
+);
+const MAILBOX_REQUESTS_CACHE_MAX_ENTRIES = Number(
+  process.env.MAILBOX_REQUESTS_CACHE_MAX_ENTRIES || 300,
+);
+const mailboxRequestsCache = new Map();
+
+const MAILBOX_REQUESTS_SELECT = {
+  requestId: 1,
+  manufacturerStage: 1,
+  createdAt: 1,
+  lotNumber: 1,
+  mailboxAddress: 1,
+  shippingPackageId: 1,
+  shippingWorkflow: 1,
+  shippingLabelPrinted: 1,
+  businessAnchorId: 1,
+  referenceIds: 1,
+  source: 1,
+  "rnd.doneAt": 1,
+  "rnd.doneFromStage": 1,
+  "rnd.memo": 1,
+  "rnd.memoUpdatedAt": 1,
+  "rnd.memoUpdatedBy": 1,
+  description: 1,
+  "caseInfos.clinicName": 1,
+  "caseInfos.patientName": 1,
+  "caseInfos.tooth": 1,
+  "caseInfos.anodizingEnabled": 1,
+  "caseInfos.connectionDiameter": 1,
+  "caseInfos.implantManufacturer": 1,
+  "caseInfos.implantBrand": 1,
+  "caseInfos.implantFamily": 1,
+  "caseInfos.implantType": 1,
+  "caseInfos.rollbackCounts": 1,
+  "timeline.forceTodayShipment": 1,
+  "timeline.estimatedShipYmd": 1,
+  "timeline.nextEstimatedShipYmd": 1,
+  "timeline.originalEstimatedShipYmd": 1,
+  requestor: 1,
+  deliveryInfoRef: 1,
+};
+
 function resolveMailboxSummaryCacheTtlMs() {
   const ttl = Number(MAILBOX_SUMMARY_CACHE_TTL_MS);
   if (!Number.isFinite(ttl) || ttl < 0) return 3600000;
@@ -125,6 +172,44 @@ function pruneMailboxSummaryCache() {
   for (let i = 0; i < overflow; i += 1) {
     mailboxSummaryCache.delete(keys[i]);
   }
+}
+
+function resolveMailboxRequestsCacheTtlMs() {
+  const ttl = Number(MAILBOX_REQUESTS_CACHE_TTL_MS);
+  if (!Number.isFinite(ttl) || ttl < 0) return 15000;
+  return ttl;
+}
+
+function pruneMailboxRequestsCache() {
+  const now = Date.now();
+  for (const [key, entry] of mailboxRequestsCache.entries()) {
+    if (!entry || Number(entry.expiresAt || 0) <= now) {
+      mailboxRequestsCache.delete(key);
+    }
+  }
+
+  const maxEntries = Number.isFinite(MAILBOX_REQUESTS_CACHE_MAX_ENTRIES)
+    ? Math.max(20, Math.floor(MAILBOX_REQUESTS_CACHE_MAX_ENTRIES))
+    : 300;
+
+  if (mailboxRequestsCache.size <= maxEntries) return;
+
+  const overflow = mailboxRequestsCache.size - maxEntries;
+  const keys = Array.from(mailboxRequestsCache.keys());
+  for (let i = 0; i < overflow; i += 1) {
+    mailboxRequestsCache.delete(keys[i]);
+  }
+}
+
+function buildMailboxRequestsCacheKey(req, mailboxAddress) {
+  const role = String(req?.user?.role || "").trim();
+  const businessAnchorId = String(req?.user?.businessAnchorId || "").trim();
+  const userId = String(req?.user?._id || "").trim();
+  const scope =
+    role === "manufacturer"
+      ? `manufacturer:${businessAnchorId || userId}`
+      : `${role || "unknown"}:${businessAnchorId || userId || "global"}`;
+  return `${scope}:${mailboxAddress}`;
 }
 
 function buildMailboxSummaryCacheKey(req) {
@@ -153,10 +238,6 @@ function applyMailboxSummaryCacheHeaders(res, etag, ttlMs) {
 function isNotModified(req, etag) {
   const candidate = String(req?.headers?.["if-none-match"] || "").trim();
   return Boolean(candidate && etag && candidate === etag);
-}
-
-function escapeRegex(value = "") {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function getKstDayKey(date = new Date()) {
@@ -605,10 +686,9 @@ export async function getShippingMailboxSummary(req, res) {
 }
 
 export async function getShippingMailboxRequests(req, res) {
+  const perfStartedAt = Date.now();
   try {
-    const role = String(req.user?.role || "").trim();
-    const orgScope =
-      role === "manufacturer" ? await buildManufacturerOrgScopeFilter(req) : {};
+    pruneMailboxRequestsCache();
 
     const mailboxAddress = String(req.query?.mailboxAddress || "")
       .trim()
@@ -620,72 +700,227 @@ export async function getShippingMailboxRequests(req, res) {
       });
     }
 
-    const docs = await Request.find({
+    const forceRefresh =
+      String(req?.query?.refresh || "").trim() === "1" ||
+      String(req?.query?.refresh || "")
+        .trim()
+        .toLowerCase() === "true";
+
+    const cacheKey = buildMailboxRequestsCacheKey(req, mailboxAddress);
+    const now = Date.now();
+    const cacheHit = mailboxRequestsCache.get(cacheKey);
+    if (!forceRefresh && cacheHit && Number(cacheHit.expiresAt || 0) > now) {
+      console.info("[shipping][mailbox-requests][perf]", {
+        cache: "memory-hit",
+        status: 200,
+        totalMs: Date.now() - perfStartedAt,
+        mailboxAddress,
+        requestCount: Array.isArray(cacheHit?.payload?.requests)
+          ? cacheHit.payload.requests.length
+          : 0,
+      });
+      return res.status(200).json({
+        success: true,
+        data: cacheHit.payload,
+        cached: true,
+      });
+    }
+
+    const role = String(req.user?.role || "").trim();
+    const orgScopeStartedAt = Date.now();
+    const orgScope =
+      role === "manufacturer" ? await buildManufacturerOrgScopeFilter(req) : {};
+    const orgScopeMs = Date.now() - orgScopeStartedAt;
+
+    const requestIds = Array.from(
+      new Set(
+        String(req.query?.requestIds || "")
+          .split(",")
+          .map((value) => String(value || "").trim())
+          .filter(Boolean),
+      ),
+    ).slice(0, 200);
+
+    const mailboxFilter = {
       ...orgScope,
-      mailboxAddress: {
-        $regex: `^${escapeRegex(mailboxAddress)}$`,
-        $options: "i",
-      },
+      mailboxAddress,
       manufacturerStage: { $in: ["포장.발송", "추적관리"] },
-    })
-      .sort({ createdAt: -1, _id: -1 })
-      .select({
-        requestId: 1,
-        manufacturerStage: 1,
-        createdAt: 1,
-        lotNumber: 1,
-        mailboxAddress: 1,
-        shippingPackageId: 1,
-        shippingWorkflow: 1,
-        shippingLabelPrinted: 1,
-        businessAnchorId: 1,
-        referenceIds: 1,
-        source: 1,
-        "rnd.doneAt": 1,
-        "rnd.doneFromStage": 1,
-        "rnd.memo": 1,
-        "rnd.memoUpdatedAt": 1,
-        "rnd.memoUpdatedBy": 1,
-        description: 1,
-        "caseInfos.clinicName": 1,
-        "caseInfos.patientName": 1,
-        "caseInfos.tooth": 1,
-        "caseInfos.anodizingEnabled": 1,
-        "caseInfos.connectionDiameter": 1,
-        "caseInfos.implantManufacturer": 1,
-        "caseInfos.implantBrand": 1,
-        "caseInfos.implantFamily": 1,
-        "caseInfos.implantType": 1,
-        "caseInfos.rollbackCounts": 1,
-        timeline: 1,
-        requestor: 1,
-        deliveryInfoRef: 1,
+    };
+
+    const requestsFetchStartedAt = Date.now();
+    let packingDocs = [];
+    let trackingDocs = [];
+
+    if (requestIds.length > 0) {
+      const byIds = await Request.find({
+        ...orgScope,
+        requestId: { $in: requestIds },
+        mailboxAddress,
+        manufacturerStage: { $in: ["포장.발송", "추적관리"] },
       })
-      .populate(
-        "requestor",
-        "name business businessAnchorId address addressText zipCode",
-      )
-      .populate("businessAnchorId", "name metadata shippingPolicy")
-      .populate(
-        "deliveryInfoRef",
-        "shippedAt pickedUpAt deliveredAt carrier trackingNumber updatedAt tracking",
+        .sort({ createdAt: -1, _id: -1 })
+        .select(MAILBOX_REQUESTS_SELECT)
+        .lean();
+      packingDocs = byIds.filter(
+        (doc) => String(doc?.manufacturerStage || "").trim() === "포장.발송",
       );
+      trackingDocs = byIds.filter(
+        (doc) => String(doc?.manufacturerStage || "").trim() === "추적관리",
+      );
+    } else {
+      [packingDocs, trackingDocs] = await Promise.all([
+        Request.find({ ...mailboxFilter, manufacturerStage: "포장.발송" })
+          .sort({ createdAt: -1, _id: -1 })
+          .select(MAILBOX_REQUESTS_SELECT)
+          .lean(),
+        Request.find({
+          ...mailboxFilter,
+          manufacturerStage: "추적관리",
+          deliveryInfoRef: { $exists: true, $ne: null },
+          "shippingWorkflow.code": {
+            $nin: ["picked_up", "completed", "canceled"],
+          },
+        })
+          .sort({ createdAt: -1, _id: -1 })
+          .select(MAILBOX_REQUESTS_SELECT)
+          .lean(),
+      ]);
+    }
+    const requestsQueryMs = Date.now() - requestsFetchStartedAt;
+
+    const prePickupTrackingCandidates = trackingDocs.filter((doc) => {
+      const workflowCode = String(doc?.shippingWorkflow?.code || "").trim();
+      if (
+        workflowCode === "picked_up" ||
+        workflowCode === "completed" ||
+        workflowCode === "canceled"
+      ) {
+        return false;
+      }
+      const statusCode = Number(doc?.shippingWorkflow?.trackingStatusCode);
+      if (Number.isFinite(statusCode) && statusCode >= 11) {
+        return false;
+      }
+      return true;
+    });
+
+    const relatedFetchStartedAt = Date.now();
+    const requestorIds = Array.from(
+      new Set(
+        [...packingDocs, ...prePickupTrackingCandidates]
+          .map((doc) => String(doc?.requestor || "").trim())
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+
+    const anchorIds = Array.from(
+      new Set(
+        [...packingDocs, ...prePickupTrackingCandidates]
+          .map((doc) => String(doc?.businessAnchorId || "").trim())
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+
+    const deliveryIds = Array.from(
+      new Set(
+        prePickupTrackingCandidates
+          .map((doc) => String(doc?.deliveryInfoRef || "").trim())
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+
+    const [requestors, anchors, deliveries] = await Promise.all([
+      requestorIds.length
+        ? User.find({ _id: { $in: requestorIds } })
+            .select("name business businessAnchorId address addressText zipCode")
+            .lean()
+        : Promise.resolve([]),
+      anchorIds.length
+        ? BusinessAnchor.find({ _id: { $in: anchorIds } })
+            .select("name metadata shippingPolicy")
+            .lean()
+        : Promise.resolve([]),
+      deliveryIds.length
+        ? DeliveryInfo.find({ _id: { $in: deliveryIds } })
+            .select(
+              "shippedAt pickedUpAt deliveredAt carrier trackingNumber updatedAt tracking",
+            )
+            .lean()
+        : Promise.resolve([]),
+    ]);
+    const relatedQueryMs = Date.now() - relatedFetchStartedAt;
+
+    const requestorById = new Map(
+      requestors.map((item) => [String(item?._id || "").trim(), item]),
+    );
+    const anchorById = new Map(
+      anchors.map((item) => [String(item?._id || "").trim(), item]),
+    );
+    const deliveryById = new Map(
+      deliveries.map((item) => [String(item?._id || "").trim(), item]),
+    );
+
+    const hydrateDoc = (doc) => {
+      const requestorId = String(doc?.requestor || "").trim();
+      const anchorId = String(doc?.businessAnchorId || "").trim();
+      const deliveryId = String(doc?.deliveryInfoRef || "").trim();
+      return {
+        ...doc,
+        requestor: requestorById.get(requestorId) || doc.requestor || null,
+        businessAnchorId: anchorById.get(anchorId) || doc.businessAnchorId || null,
+        deliveryInfoRef: deliveryById.get(deliveryId) || null,
+      };
+    };
+
+    const processStartedAt = Date.now();
+    const hydratedPacking = packingDocs.map(hydrateDoc);
+    const hydratedTracking = [];
+    for (const doc of prePickupTrackingCandidates) {
+      const hydrated = hydrateDoc(doc);
+      if (!isPrePickupTrackingRequest(hydrated)) continue;
+      hydratedTracking.push(hydrated);
+    }
 
     const normalized = await Promise.all(
-      docs.map((doc) => normalizeWorksheetRequestForResponse(doc)),
+      [...hydratedPacking, ...hydratedTracking].map((doc) =>
+        normalizeWorksheetRequestForResponse(doc),
+      ),
     );
 
     const requests = normalized.filter((requestDoc) => {
       const stage = String(requestDoc?.manufacturerStage || "").trim();
       return stage === "포장.발송" || isPrePickupTrackingRequest(requestDoc);
     });
+    const processMs = Date.now() - processStartedAt;
+
+    const payload = {
+      mailboxAddress,
+      requests,
+    };
+
+    mailboxRequestsCache.set(cacheKey, {
+      payload,
+      expiresAt: Date.now() + resolveMailboxRequestsCacheTtlMs(),
+    });
+
+    console.info("[shipping][mailbox-requests][perf]", {
+      cache: "miss-built",
+      status: 200,
+      orgScopeMs,
+      requestsQueryMs,
+      relatedQueryMs,
+      processMs,
+      totalMs: Date.now() - perfStartedAt,
+      mailboxAddress,
+      packingCount: packingDocs.length,
+      trackingCount: trackingDocs.length,
+      requestCount: requests.length,
+      byRequestIds: requestIds.length > 0,
+    });
 
     return res.status(200).json({
       success: true,
-      data: {
-        mailboxAddress,
-        requests,
-      },
+      data: payload,
     });
   } catch (error) {
     return res.status(500).json({
@@ -1167,6 +1402,7 @@ export async function mockHanjinPickupCompleted(req, res) {
 
 function clearMailboxSummaryCache() {
   mailboxSummaryCache.clear();
+  mailboxRequestsCache.clear();
 }
 
 export async function setMailboxForceTodayShipment(req, res) {

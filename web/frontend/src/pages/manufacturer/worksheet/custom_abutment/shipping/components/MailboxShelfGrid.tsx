@@ -3,7 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/components/ui/tooltip.tsx
+// - web/backend/controllers/requests/shipping.controller.js
 import * as React from "react";
 
 import {
@@ -49,6 +50,7 @@ type MailboxShelfGridProps = {
     earliestEstimatedShipYmd?: string | null;
   }) => string;
   onBoxClick?: (address: string) => void;
+  onBoxPrefetch?: (address: string) => void;
 };
 
 export const MailboxShelfGrid = ({
@@ -68,6 +70,7 @@ export const MailboxShelfGrid = ({
   handleTouchEnd,
   getMailboxColorClass,
   onBoxClick,
+  onBoxPrefetch,
 }: MailboxShelfGridProps) => {
   void scrollContainerRef;
 
@@ -98,7 +101,7 @@ export const MailboxShelfGrid = ({
   };
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={0}>
       <div
         ref={scrollContainerRef}
         className="flex-1 flex gap-3 sm:gap-4 overflow-x-auto overflow-y-auto pb-4 w-full justify-start px-2 scroll-smooth p-1 sm:p-2"
@@ -203,6 +206,11 @@ export const MailboxShelfGrid = ({
                               <div
                                 onClick={handleOpenDetails}
                                 onTouchEnd={handleOpenDetails}
+                                onMouseEnter={() => {
+                                  if (isOccupied && onBoxPrefetch) {
+                                    onBoxPrefetch(address);
+                                  }
+                                }}
                                 data-printed={hasPrinted ? "1" : "0"}
                                 className={`
                                   relative flex flex-col items-center justify-between p-1 rounded border transition-all select-none

@@ -1326,7 +1326,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             : "opacity-0",
                         )}
                       />
-                      <TooltipProvider delayDuration={200}>
+                      <TooltipProvider delayDuration={0}>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div className="min-w-0 flex-1 text-left">

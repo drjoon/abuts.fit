@@ -596,6 +596,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       `services/dashboardRiskSummary.service.js`에서 우선순위 계산을 병렬 처리한다. 전체 populate 금지.
     - `GET /api/requests/assigned/dashboard-summary`: `requestDashboardCache` 짧은 TTL + in-flight coalesce.
       집계는 `getAssignedLikeDashboardSummary`에서 병렬 aggregate.
+    - `GET /api/requests/shipping/mailbox-requests`: case-insensitive regex/`populate` 금지.
+      uppercase exact `mailboxAddress` + lean + User/BusinessAnchor/DeliveryInfo 배치 hydrate,
+      packing/tracking 분리 조회, 선택적 `requestIds` 단축 경로, 15s 메모리 캐시.
+      구현: `controllers/requests/shipping.controller.js` (`getShippingMailboxRequests`).
     - `GET /api/practice/transfers/received-unread-count`: 짧은 TTL 캐시 +
       인덱스 `PracticeTransfer(targetLabAnchorId, status, requestorReadAt)`.
       BusinessAnchor 선행 조회 금지(캐시 히트 경로 경량). 프론트는 소켓

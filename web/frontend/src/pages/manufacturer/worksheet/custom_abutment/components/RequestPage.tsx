@@ -100,8 +100,10 @@ import {
   type RemakeQuickStartStage,
 } from "./RemakeStartQuickModal";
 
-const MAILBOX_DETAILS_CACHE_TTL_MS = 30 * 1000;
-// change-log: 2026-08-07 - 우편함 상세 캐시 TTL 1h→30s, 캐시 hit여도 항상 재조회로 출고일 동기화.
+const MAILBOX_DETAILS_CACHE_TTL_MS = 60 * 1000;
+// change-log:
+// - 2026-08-11: 우편함 상세 stale-while-revalidate + hover prefetch + requestIds 단축 조회
+// - 2026-08-07: 우편함 상세 캐시 TTL 1h→30s, 캐시 hit여도 항상 재조회로 출고일 동기화.
 const MAILBOX_DETAILS_STORAGE_PREFIX = "ca:shipping:mailbox-details:";
 
 export const RequestPage = ({
@@ -167,6 +169,7 @@ export const RequestPage = ({
   const mailboxDetailsInFlightRef = useRef<
     Record<string, Promise<ManufacturerRequest[]>>
   >({});
+  const openMailboxAddressRef = useRef("");
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -608,23 +611,9 @@ export const RequestPage = ({
   // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
   // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
   // - web/backend/controllers/requests/shipping.controller.js
-  const handleOpenMailboxDetails = useCallback(
-    async (address: string) => {
-      const mailboxAddress = String(address || "").trim();
-      if (!mailboxAddress || !token) return;
-
-      const normalizedAddress = mailboxAddress.toUpperCase();
+  const resolveMailboxCacheEntry = useCallback(
+    (normalizedAddress: string) => {
       const storageKey = `${MAILBOX_DETAILS_STORAGE_PREFIX}${normalizedAddress}`;
-      const now = Date.now();
-      const expectedRequestCount = Number(
-        mailboxSummaries.find(
-          (item) =>
-            String(item?.mailboxAddress || "")
-              .trim()
-              .toUpperCase() === normalizedAddress,
-        )?.requestCount || 0,
-      );
-
       const inMemoryCacheEntry =
         mailboxDetailsCacheRef.current[normalizedAddress] || null;
 
@@ -661,7 +650,35 @@ export const RequestPage = ({
       if (cachedEntry && !inMemoryCacheEntry) {
         mailboxDetailsCacheRef.current[normalizedAddress] = cachedEntry;
       }
+      return { cachedEntry, storageKey };
+    },
+    [],
+  );
 
+  const fetchMailboxDetailsRequests = useCallback(
+    async (mailboxAddress: string, options?: { force?: boolean }) => {
+      const normalizedAddress = String(mailboxAddress || "")
+        .trim()
+        .toUpperCase();
+      if (!normalizedAddress || !token) return [];
+
+      const summary = mailboxSummaries.find(
+        (item) =>
+          String(item?.mailboxAddress || "")
+            .trim()
+            .toUpperCase() === normalizedAddress,
+      );
+      const expectedRequestCount = Number(summary?.requestCount || 0);
+      const requestIds = Array.isArray(summary?.requestIds)
+        ? summary!.requestIds
+            .map((id) => String(id || "").trim())
+            .filter(Boolean)
+            .slice(0, 200)
+        : [];
+
+      const { cachedEntry, storageKey } =
+        resolveMailboxCacheEntry(normalizedAddress);
+      const now = Date.now();
       const hasFreshCache =
         Boolean(cachedEntry) &&
         now - Number(cachedEntry?.fetchedAt || 0) <
@@ -671,7 +688,122 @@ export const RequestPage = ({
         : 0;
       const hasCountMismatchWithSummary =
         Boolean(cachedEntry) && cachedRequestCount !== expectedRequestCount;
-      const hasUsableFreshCache = hasFreshCache && !hasCountMismatchWithSummary;
+      const hasUsableFreshCache =
+        hasFreshCache && !hasCountMismatchWithSummary && !options?.force;
+
+      if (hasUsableFreshCache) {
+        return cachedEntry?.requests || [];
+      }
+
+      let inFlight = mailboxDetailsInFlightRef.current[normalizedAddress];
+      if (!inFlight) {
+        inFlight = (async () => {
+          const params = new URLSearchParams({
+            mailboxAddress,
+          });
+          if (requestIds.length > 0) {
+            params.set("requestIds", requestIds.join(","));
+          }
+          const response = await fetch(
+            `/api/requests/shipping/mailbox-requests?${params.toString()}`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+              cache: "no-store",
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error("우편함 상세 조회에 실패했습니다.");
+          }
+
+          const body = await response.json();
+          const detailRequests = Array.isArray(body?.data?.requests)
+            ? (body.data.requests as ManufacturerRequest[])
+            : [];
+
+          const shouldPersistCache =
+            detailRequests.length > 0 || expectedRequestCount === 0;
+
+          if (shouldPersistCache) {
+            const nextCacheEntry = {
+              fetchedAt: Date.now(),
+              requests: detailRequests,
+            };
+
+            mailboxDetailsCacheRef.current[normalizedAddress] = nextCacheEntry;
+            if (typeof window !== "undefined") {
+              try {
+                window.localStorage.setItem(
+                  storageKey,
+                  JSON.stringify(nextCacheEntry),
+                );
+              } catch {
+                // noop
+              }
+            }
+          } else {
+            delete mailboxDetailsCacheRef.current[normalizedAddress];
+            if (typeof window !== "undefined") {
+              try {
+                window.localStorage.removeItem(storageKey);
+              } catch {
+                // noop
+              }
+            }
+          }
+
+          return detailRequests;
+        })().finally(() => {
+          delete mailboxDetailsInFlightRef.current[normalizedAddress];
+        });
+
+        mailboxDetailsInFlightRef.current[normalizedAddress] = inFlight;
+      }
+
+      return inFlight;
+    },
+    [mailboxSummaries, resolveMailboxCacheEntry, token],
+  );
+
+  const handlePrefetchMailboxDetails = useCallback(
+    (address: string) => {
+      const mailboxAddress = String(address || "").trim();
+      if (!mailboxAddress || !token) return;
+      void fetchMailboxDetailsRequests(mailboxAddress).catch(() => {
+        // prefetch 실패는 무시 (클릭 시 재시도)
+      });
+    },
+    [fetchMailboxDetailsRequests, token],
+  );
+
+  const handleOpenMailboxDetails = useCallback(
+    async (address: string) => {
+      const mailboxAddress = String(address || "").trim();
+      if (!mailboxAddress || !token) return;
+
+      const normalizedAddress = mailboxAddress.toUpperCase();
+      const expectedRequestCount = Number(
+        mailboxSummaries.find(
+          (item) =>
+            String(item?.mailboxAddress || "")
+              .trim()
+              .toUpperCase() === normalizedAddress,
+        )?.requestCount || 0,
+      );
+
+      const { cachedEntry } = resolveMailboxCacheEntry(normalizedAddress);
+      const cachedRequestCount = Array.isArray(cachedEntry?.requests)
+        ? cachedEntry!.requests.length
+        : 0;
+      const hasCountMismatchWithSummary =
+        Boolean(cachedEntry) && cachedRequestCount !== expectedRequestCount;
+      const hasUsableStaleCache =
+        Boolean(cachedEntry) &&
+        !hasCountMismatchWithSummary &&
+        cachedRequestCount > 0;
 
       const requestsFromCurrentPage = pageState.requests.filter((req) => {
         const reqMailboxAddress = String(req.mailboxAddress || "")
@@ -680,103 +812,67 @@ export const RequestPage = ({
         return reqMailboxAddress === normalizedAddress;
       });
 
-      const initialRequests = hasUsableFreshCache
+      const initialRequests = hasUsableStaleCache
         ? cachedEntry?.requests || []
         : requestsFromCurrentPage.length > 0
           ? requestsFromCurrentPage
           : [];
 
-      // 클릭 즉시 모달 오픈 (체감 속도). 캐시가 있어도 네트워크로 timeline/출고일을 재동기화한다.
-      mailboxState.setIsMailboxDetailsLoading(!hasUsableFreshCache);
+      // 클릭 즉시 모달 오픈. stale 캐시/페이지 데이터가 있으면 로딩 스피너 없이 표시하고 백그라운드 재동기화.
+      openMailboxAddressRef.current = normalizedAddress;
+      mailboxState.setIsMailboxDetailsLoading(initialRequests.length === 0);
 
       await mailboxState.handleRegisterShipment(
         mailboxAddress,
         initialRequests,
       );
 
-      try {
-        let inFlight = mailboxDetailsInFlightRef.current[normalizedAddress];
-        if (!inFlight) {
-          inFlight = (async () => {
-            const response = await fetch(
-              `/api/requests/shipping/mailbox-requests?mailboxAddress=${encodeURIComponent(mailboxAddress)}`,
-              {
-                method: "GET",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-                cache: "no-store",
-              },
-            );
-
-            if (!response.ok) {
-              throw new Error("우편함 상세 조회에 실패했습니다.");
-            }
-
-            const body = await response.json();
-            const detailRequests = Array.isArray(body?.data?.requests)
-              ? (body.data.requests as ManufacturerRequest[])
-              : [];
-
-            const shouldPersistCache =
-              detailRequests.length > 0 || expectedRequestCount === 0;
-
-            if (shouldPersistCache) {
-              const nextCacheEntry = {
-                fetchedAt: Date.now(),
-                requests: detailRequests,
-              };
-
-              mailboxDetailsCacheRef.current[normalizedAddress] =
-                nextCacheEntry;
-              if (typeof window !== "undefined") {
-                try {
-                  window.localStorage.setItem(
-                    storageKey,
-                    JSON.stringify(nextCacheEntry),
-                  );
-                } catch {
-                  // noop
-                }
-              }
-            } else {
-              delete mailboxDetailsCacheRef.current[normalizedAddress];
-              if (typeof window !== "undefined") {
-                try {
-                  window.localStorage.removeItem(storageKey);
-                } catch {
-                  // noop
-                }
-              }
-            }
-
-            return detailRequests;
-          })().finally(() => {
-            delete mailboxDetailsInFlightRef.current[normalizedAddress];
-          });
-
-          mailboxDetailsInFlightRef.current[normalizedAddress] = inFlight;
-        }
-
-        const detailRequests = await inFlight;
+      const applyDetailRequests = (detailRequests: ManufacturerRequest[]) => {
+        if (openMailboxAddressRef.current !== normalizedAddress) return;
         mailboxState.setMailboxModalRequests(detailRequests);
-      } catch (error) {
-        // 캐시로 이미 열어둔 경우 네트워크 실패는 토스트만 (빈 모달로 만들지 않음)
-        if (!hasUsableFreshCache && initialRequests.length === 0) {
-          toast({
-            title: "우편함 상세 조회 실패",
-            description:
-              error instanceof Error && error.message
-                ? error.message
-                : "우편함 상세 조회 중 오류가 발생했습니다.",
-            variant: "destructive",
+      };
+
+      if (initialRequests.length > 0) {
+        void fetchMailboxDetailsRequests(mailboxAddress, { force: true })
+          .then(applyDetailRequests)
+          .catch(() => {
+            // 이미 표시 중이므로 백그라운드 실패는 무시
+          })
+          .finally(() => {
+            mailboxState.setIsMailboxDetailsLoading(false);
           });
-        }
+        return;
+      }
+
+      try {
+        // 캐시/프리패치로 즉시 표시한 뒤에도 timeline·출고일은 네트워크로 재동기화
+        const detailRequests = await fetchMailboxDetailsRequests(
+          mailboxAddress,
+          { force: true },
+        );
+        applyDetailRequests(detailRequests);
+      } catch (error) {
+        toast({
+          title: "우편함 상세 조회 실패",
+          description:
+            error instanceof Error && error.message
+              ? error.message
+              : "우편함 상세 조회 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
       } finally {
         mailboxState.setIsMailboxDetailsLoading(false);
       }
     },
-    [mailboxState, mailboxSummaries, pageState.requests, toast, token],
+    [
+      fetchMailboxDetailsRequests,
+      mailboxState,
+      mailboxSummaries,
+      pageState.requests,
+      resolveMailboxCacheEntry,
+      toast,
+      token,
+    ],
   );
 
   const currentStageForTab = isMachiningStage
@@ -2497,6 +2593,7 @@ export const RequestPage = ({
                   onBoxClick={(address) => {
                     void handleOpenMailboxDetails(address);
                   }}
+                  onBoxPrefetch={handlePrefetchMailboxDetails}
                   onMailboxError={(address, message) => {
                     const key = String(address || "").trim();
                     if (!key) return;
@@ -2693,6 +2790,7 @@ export const RequestPage = ({
             !mailboxState.isMailboxDetailsLoading
           ) {
             mailboxState.handleShipmentModalClose();
+            openMailboxAddressRef.current = "";
           }
         }}
         address={mailboxState.mailboxModalAddress}
@@ -2732,6 +2830,7 @@ export const RequestPage = ({
               checked,
             );
             mailboxState.handleShipmentModalClose();
+            openMailboxAddressRef.current = "";
           })()
         }
       />

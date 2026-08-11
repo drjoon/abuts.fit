@@ -62,7 +62,7 @@ export const SettingsScaffold = ({
           contentMaxClassName,
         )}
       >
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delayDuration={0}>
           <Tabs
             value={activeTab}
             onValueChange={(next) => {
