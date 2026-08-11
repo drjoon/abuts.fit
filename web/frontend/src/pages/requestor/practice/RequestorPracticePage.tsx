@@ -29,6 +29,7 @@
 // - 2026-08-11: 다운로드→의뢰수락 뱃지/상태. 수락 API 과금. 파일 다운로드는 상태 미전이.
 // - 2026-08-11: 의뢰수락 후 치과 transfer-room 재연결. 모달 폭·lab peer 채팅 연결.
 // - 2026-08-11: 수락 카드에 작업완료/작업취소 버튼. mark-release API.
+// - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
@@ -353,7 +354,7 @@ function RequestorPracticeReceivePage({
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "발송완료" | "수신완료" | "의뢰수락" | "작업완료" | "포장.발송" | "추적관리"
+    "all" | "발송완료" | "의뢰수락" | "작업완료" | "포장.발송" | "추적관리"
   >("all");
   const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
   const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
@@ -934,11 +935,12 @@ function RequestorPracticeReceivePage({
         const status = getTransferDisplayStatus(transfer);
         if (status === "작업완료") acc.completed += 1;
         else if (status === "의뢰수락") acc.accepted += 1;
-        else if (status === "수신완료") acc.read += 1;
-        else if (status !== "자동매칭") acc.sent += 1;
+        // 수신완료는 UI에서 의뢰에 합산(수신 뱃지 제거).
+        else if (status === "발송완료" || status === "수신완료") acc.sent += 1;
+        // 자동매칭·기타는 집계 제외
         return acc;
       },
-      { sent: 0, read: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0 },
+      { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0 },
     );
     // 포장.발송·추적관리는 기공 파이프라인 UI 슬롯(집계 연동 전).
     return counts;
@@ -946,7 +948,13 @@ function RequestorPracticeReceivePage({
 
   const filteredTransfers = useMemo(() => {
     if (statusFilter === "all") return baseFilteredTransfers;
-    return baseFilteredTransfers.filter((transfer) => getTransferDisplayStatus(transfer) === statusFilter);
+    return baseFilteredTransfers.filter((transfer) => {
+      const status = getTransferDisplayStatus(transfer);
+      if (statusFilter === "발송완료") {
+        return status === "발송완료" || status === "수신완료";
+      }
+      return status === statusFilter;
+    });
   }, [baseFilteredTransfers, statusFilter]);
 
   const sortedFilteredTransfers = useMemo(() => {
@@ -1933,26 +1941,7 @@ function RequestorPracticeReceivePage({
                 : "hover:bg-muted/40",
             )}
           >
-            발송 {statusCounts.sent}건
-          </Badge>
-        </button>
-
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() => setStatusFilter((prev) => (prev === "수신완료" ? "all" : "수신완료"))}
-          aria-pressed={statusFilter === "수신완료"}
-        >
-          <Badge
-            variant="outline"
-            className={cn(
-              "cursor-pointer",
-              statusFilter === "수신완료"
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
-            )}
-          >
-            수신 {statusCounts.read}건
+            의뢰 {statusCounts.sent}건
           </Badge>
         </button>
 
@@ -1973,7 +1962,7 @@ function RequestorPracticeReceivePage({
                 : "hover:bg-muted/40",
             )}
           >
-            의뢰수락 {statusCounts.accepted}건
+            수락 {statusCounts.accepted}건
           </Badge>
         </button>
 
@@ -1994,7 +1983,7 @@ function RequestorPracticeReceivePage({
                 : "hover:bg-muted/40",
             )}
           >
-            작업완료 {statusCounts.completed}건
+            완료 {statusCounts.completed}건
           </Badge>
         </button>
 
@@ -2013,7 +2002,7 @@ function RequestorPracticeReceivePage({
                 : "hover:bg-muted/40",
             )}
           >
-            포장.발송 {statusCounts.shipping}건
+            발송 {statusCounts.shipping}건
           </Badge>
         </button>
 

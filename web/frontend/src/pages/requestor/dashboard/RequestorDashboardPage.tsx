@@ -20,7 +20,6 @@ import {
   Package,
   Boxes,
   Send,
-  Inbox,
   Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +75,8 @@ const dashDebug = (label: string, payload?: unknown) => {
 
 // change-log:
 // - 2026-08-11: 대시보드 컨텐츠 max-w-7xl — 기공/어벗 요약카드 가로 여유.
+// - 2026-08-11: 기공 요약 — 의뢰·수락·완료·발송·추적관리 5칸(수신 제거).
+// - 2026-08-11: 기공 요약 — 발송·수락·완료·발송·추적관리 5칸(수신 제거).
 // - 2026-08-11: 기공 요약 — 의뢰수락 오른쪽「작업완료」추가(placeholder).
 // - 2026-08-11: 불완전 가공 프리뷰 File명을 원본 확장자(STL/PLY/OBJ)로 유지.
 // - 2026-08-11: 지연 위험 요약 카드 제거. 지연은 최근 의뢰 빨간 뱃지로 표시.
@@ -1897,33 +1898,28 @@ export const RequestorDashboardPage = () => {
   })();
 
   // 기공(무료 기공의뢰서) 라인 — 집계 API 연동 전 UI 슬롯. 수치는 placeholder.
+  // 뱃지 SSOT: 의뢰 · 수락 · 완료 · 발송 · 추적관리 (수신 제거)
   const practiceTransferStats: RequestorDashboardStat[] = [
     {
-      label: "의뢰서발송",
+      label: "의뢰",
       value: "0",
       icon: Send,
       interactive: false,
     },
     {
-      label: "의뢰서수신",
-      value: "0",
-      icon: Inbox,
-      interactive: false,
-    },
-    {
-      label: "의뢰수락",
+      label: "수락",
       value: "0",
       icon: Download,
       interactive: false,
     },
     {
-      label: "작업완료",
+      label: "완료",
       value: "0",
       icon: ClipboardCheck,
       interactive: false,
     },
     {
-      label: "포장.발송",
+      label: "발송",
       value: "0",
       icon: Package,
       interactive: false,

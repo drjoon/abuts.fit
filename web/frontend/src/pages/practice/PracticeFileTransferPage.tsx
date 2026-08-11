@@ -35,6 +35,7 @@
  * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
  * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 초대/프로모 카피 축소.
  * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
+ * - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -848,7 +849,9 @@ export const PracticeFileTransferPage = ({
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
-  const [recentStatusFilter, setRecentStatusFilter] = useState<"all" | "발송완료" | "수신완료" | "의뢰수락">("all");
+  const [recentStatusFilter, setRecentStatusFilter] = useState<
+    "all" | "발송완료" | "의뢰수락" | "작업완료" | "포장.발송" | "추적관리"
+  >("all");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
@@ -2851,22 +2854,44 @@ export const PracticeFileTransferPage = ({
     return groupedTransfers.reduce(
       (acc, request) => {
         const status = String(request.status || "").trim();
-        if (status === "의뢰수락" || status === "다운로드완료") {
+        if (status === "작업완료") {
+          acc.completed += 1;
+        } else if (status === "의뢰수락" || status === "다운로드완료") {
           acc.accepted += 1;
-        } else if (status === "수신완료") {
-          acc.read += 1;
+        } else if (status === "자동매칭" || status === "취소") {
+          // 상단 뱃지 집계 제외
         } else {
+          // 발송완료·수신완료 및 기타 미수락 → 의뢰
           acc.sent += 1;
         }
         return acc;
       },
-      { sent: 0, read: 0, accepted: 0 },
+      { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0 },
     );
   }, [groupedTransfers]);
 
   const filteredGroupedTransfers = useMemo(() => {
     if (recentStatusFilter === "all") return groupedTransfers;
-    return groupedTransfers.filter((transfer) => String(transfer.status || "").trim() === recentStatusFilter);
+    return groupedTransfers.filter((transfer) => {
+      const status = String(transfer.status || "").trim();
+      if (recentStatusFilter === "발송완료") {
+        return (
+          status === "발송완료" ||
+          status === "수신완료" ||
+          (status !== "의뢰수락" &&
+            status !== "다운로드완료" &&
+            status !== "작업완료" &&
+            status !== "자동매칭" &&
+            status !== "취소" &&
+            status !== "포장.발송" &&
+            status !== "추적관리")
+        );
+      }
+      if (recentStatusFilter === "의뢰수락") {
+        return status === "의뢰수락" || status === "다운로드완료";
+      }
+      return status === recentStatusFilter;
+    });
   }, [groupedTransfers, recentStatusFilter]);
 
   const draftGroupedTransfers = useMemo(() => {
@@ -5279,27 +5304,7 @@ export const PracticeFileTransferPage = ({
                             : "hover:bg-muted/40",
                         )}
                       >
-                        발송 {statusCounts.sent}건
-                      </Badge>
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full"
-                      onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "수신완료" ? "all" : "수신완료"))
-                      }
-                      aria-pressed={recentStatusFilter === "수신완료"}
-                    >
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "cursor-pointer",
-                          recentStatusFilter === "수신완료"
-                            ? "border-primary/70 bg-primary-soft text-primary-strong"
-                            : "hover:bg-muted/40",
-                        )}
-                      >
-                        수신 {statusCounts.read}건
+                        의뢰 {statusCounts.sent}건
                       </Badge>
                     </button>
                     <button
@@ -5319,7 +5324,67 @@ export const PracticeFileTransferPage = ({
                             : "hover:bg-muted/40",
                         )}
                       >
-                        의뢰수락 {statusCounts.accepted}건
+                        수락 {statusCounts.accepted}건
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "작업완료" ? "all" : "작업완료"))
+                      }
+                      aria-pressed={recentStatusFilter === "작업완료"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "작업완료"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        완료 {statusCounts.completed}건
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "포장.발송" ? "all" : "포장.발송"))
+                      }
+                      aria-pressed={recentStatusFilter === "포장.발송"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "포장.발송"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        발송 {statusCounts.shipping}건
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "추적관리" ? "all" : "추적관리"))
+                      }
+                      aria-pressed={recentStatusFilter === "추적관리"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "추적관리"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        추적관리 {statusCounts.tracking}건
                       </Badge>
                     </button>
                   </div>
@@ -5362,7 +5427,17 @@ export const PracticeFileTransferPage = ({
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                     {recentStatusFilter === "all"
                       ? "전송 내역 없음"
-                      : `${recentStatusFilter} 없음`}
+                      : `${
+                          recentStatusFilter === "발송완료"
+                            ? "의뢰"
+                            : recentStatusFilter === "포장.발송"
+                              ? "발송"
+                              : recentStatusFilter === "의뢰수락"
+                                ? "수락"
+                                : recentStatusFilter === "작업완료"
+                                  ? "완료"
+                                  : recentStatusFilter
+                        } 없음`}
                   </div>
                 ) : (
                   <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
