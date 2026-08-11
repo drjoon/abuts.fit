@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: original/cam signed URL 응답에 fileName을 포함해 프론트 프리뷰가 STL/PLY/OBJ 확장자를 유지.
 // - 2026-08-10: 디자인 파트너(designAccessEnabled) 원본 파일 URL 접근 허용.
 // related files:
 // - web/backend/rules.md
@@ -86,7 +87,7 @@ export async function getOriginalFileUrl(req, res) {
     if (!s3Key) {
       return res.status(404).json({
         success: false,
-        message: "원본 STL 파일 정보가 없습니다.",
+        message: "원본 3D 모델 파일 정보가 없습니다.",
       });
     }
 
@@ -100,7 +101,7 @@ export async function getOriginalFileUrl(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: { url },
+      data: { url, fileName },
     });
   } catch (error) {
     res.status(500).json({
@@ -202,7 +203,7 @@ export async function getCamFileUrl(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: { url },
+      data: { url, fileName },
     });
   } catch (error) {
     res.status(500).json({

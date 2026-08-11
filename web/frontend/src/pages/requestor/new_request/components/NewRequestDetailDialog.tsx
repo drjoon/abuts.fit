@@ -326,7 +326,7 @@ export function NewRequestDetailDialog({
                   />
                 ) : (
                   <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
-                    STL Preview
+                    3D Preview
                   </div>
                 )}
               </div>

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 모델 확장자 판별을 shared/files/modelPreviewFile로 통일.
 // - 2026-08-11: forceFilled prop — cam 파일명에 filled 없어도 가이드/프론트포인트/경사축 표시.
 // - 2026-08-11: FP 픽 시 frontPoint 메타 변경으로 씬 전체 재생성(카메라 초기화)되지 않게 deps에서 제외.
 // - 2026-08-11: filled STL 카메라는 bbox 중심 lookAt(원점 고정 시 상단 잘림 수정). 오버레이용 여백 제거.
@@ -9,6 +10,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/files/modelPreviewFile.ts
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -23,14 +25,8 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { cn } from "@/shared/ui/cn";
+import { getModelExtLower } from "@/shared/files/modelPreviewFile";
 import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
-
-const getModelExtLower = (name: string) => {
-  const lower = String(name || "").trim().toLowerCase();
-  const dot = lower.lastIndexOf(".");
-  if (dot < 0) return "";
-  return lower.slice(dot);
-};
 
 const parseModelGeometry = async (file: File): Promise<THREE.BufferGeometry> => {
   const buffer = await file.arrayBuffer();

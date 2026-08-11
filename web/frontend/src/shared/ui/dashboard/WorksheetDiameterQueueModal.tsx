@@ -1,7 +1,10 @@
+// change-log:
+// - 2026-08-11: 프리뷰 File명을 signed URL의 fileName(STL/PLY/OBJ)으로 유지.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/files/modelPreviewFile.ts
 import {
   useCallback,
   useEffect,
@@ -14,6 +17,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
+import { fileFromModelBlob } from "@/shared/files/modelPreviewFile";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { DiameterBucketKey } from "./WorksheetDiameterQueueBar";
 
@@ -166,28 +170,12 @@ export const WorksheetDiameterQueueModal = ({
 
     const endpoint = isRequestStage ? "original-file-url" : "cam-file-url";
     const cacheKey = `stl:${activeItem.id}:${endpoint}`;
-    const filename = isRequestStage
+    const fallbackName = isRequestStage
       ? `${activeItem.id}-original.stl`
       : `${activeItem.id}-cam.stl`;
 
-    const blobToFile = (blob: Blob) =>
-      new File([blob], filename, { type: blob.type || "model/stl" });
-
     const load = async () => {
       try {
-        const cached = await getFileBlob(cacheKey);
-        if (cached) {
-          if (cancelled) return;
-          setStlFile(blobToFile(cached));
-          setStlLoading(false);
-          toast({
-            title: "STL 캐시 사용",
-            description: "IndexedDB 캐시 데이터로 로드했습니다.",
-            duration: 2000,
-          });
-          return;
-        }
-
         const res = await fetch(
           `/api/requests/${encodeURIComponent(activeItem.id)}/${endpoint}`,
           {
@@ -198,14 +186,30 @@ export const WorksheetDiameterQueueModal = ({
         );
         const body: any = await res.json().catch(() => ({}));
         const url = body?.data?.url;
+        const filename =
+          String(body?.data?.fileName || "").trim() || fallbackName;
+
         if (!res.ok || !url) {
           if (cancelled) return;
           setStlLoading(false);
           setStlError(
             isRequestStage
-              ? "원본 STL 파일이 없습니다"
+              ? "원본 3D 모델 파일이 없습니다"
               : "CAM STL 파일이 없습니다",
           );
+          return;
+        }
+
+        const cached = await getFileBlob(cacheKey);
+        if (cached) {
+          if (cancelled) return;
+          setStlFile(fileFromModelBlob(cached, filename));
+          setStlLoading(false);
+          toast({
+            title: "모델 캐시 사용",
+            description: "IndexedDB 캐시 데이터로 로드했습니다.",
+            duration: 2000,
+          });
           return;
         }
 
@@ -213,7 +217,7 @@ export const WorksheetDiameterQueueModal = ({
         if (!r.ok) {
           if (cancelled) return;
           setStlLoading(false);
-          setStlError("STL 파일을 불러오지 못했습니다");
+          setStlError("3D 모델 파일을 불러오지 못했습니다");
           return;
         }
         const blob = await r.blob();
@@ -225,17 +229,17 @@ export const WorksheetDiameterQueueModal = ({
           // ignore cache errors
         }
 
-        setStlFile(blobToFile(blob));
+        setStlFile(fileFromModelBlob(blob, filename));
         setStlLoading(false);
         toast({
-          title: "STL 다운로드",
+          title: "모델 다운로드",
           description: "S3에서 다운로드 후 캐시에 저장했습니다.",
           duration: 2000,
         });
       } catch {
         if (cancelled) return;
         setStlLoading(false);
-        setStlError("STL 파일을 불러오지 못했습니다");
+        setStlError("3D 모델 파일을 불러오지 못했습니다");
       }
     };
 

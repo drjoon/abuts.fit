@@ -14,6 +14,10 @@ import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
+import {
+  fileFromModelBlob,
+  modelFileBasename,
+} from "@/shared/files/modelPreviewFile";
 import { WorksheetStageSearchInput } from "@/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput";
 
 type InspectionRow = {
@@ -756,7 +760,7 @@ export function SelfInspectionReportModal({
     let cancelled = false;
 
     const blobToFile = (blob: Blob, filename: string) =>
-      new File([blob], filename, { type: blob.type || "model/stl" });
+      fileFromModelBlob(blob, filename);
 
     const fetchBlob = async (url: string): Promise<Blob> => {
       const r = await fetch(url);
@@ -788,6 +792,7 @@ export function SelfInspectionReportModal({
           setSummaryTotalLength(parsedTotalLength);
         }
         let camFileName = `${requestId}.filled.stl`;
+        let originalFileName = `${requestId}.stl`;
         if (!cancelled) {
           const pts = data?.caseInfos?.finishLine?.points;
           if (Array.isArray(pts) && pts.length >= 2) setFinishLinePoints(pts);
@@ -797,6 +802,12 @@ export function SelfInspectionReportModal({
             null;
           if (rawCamName)
             camFileName = rawCamName.split("/").pop() || camFileName;
+          originalFileName = modelFileBasename(
+            data?.caseInfos?.file?.filePath ||
+              data?.caseInfos?.file?.originalName ||
+              data?.caseInfos?.file?.fileName,
+            `${requestId}.stl`,
+          );
         }
         if (!mid || cancelled) return;
 
@@ -819,19 +830,21 @@ export function SelfInspectionReportModal({
         const cachedOrig = await getFileBlob(origCacheKey);
         if (cachedOrig) {
           if (cancelled) return;
-          setStlFile(blobToFile(cachedOrig, `${requestId}.stl`));
+          setStlFile(blobToFile(cachedOrig, originalFileName));
           return;
         }
 
         // Step 3: signed URL 취득 (CAM → original fallback)
         let signedUrl = "";
         let isCamFile = false;
+        let apiFileName = "";
         const camRes = await fetch(`/api/requests/${mid}/cam-file-url`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (camRes.ok) {
           const b = await camRes.json().catch(() => ({}));
           signedUrl = String(b?.data?.url || "").trim();
+          apiFileName = String(b?.data?.fileName || "").trim();
           if (signedUrl) isCamFile = true;
         }
         if (!signedUrl) {
@@ -842,6 +855,7 @@ export function SelfInspectionReportModal({
           if (origRes.ok) {
             const b = await origRes.json().catch(() => ({}));
             signedUrl = String(b?.data?.url || "").trim();
+            apiFileName = String(b?.data?.fileName || "").trim();
           }
         }
         if (!signedUrl || cancelled) return;
@@ -858,10 +872,10 @@ export function SelfInspectionReportModal({
         }
 
         const filename = isCamFile
-          ? camFileName.toLowerCase().includes("filled")
-            ? camFileName
-            : camFileName.replace(/\.stl$/i, ".filled.stl")
-          : `${requestId}.stl`;
+          ? (apiFileName || camFileName).toLowerCase().includes("filled")
+            ? apiFileName || camFileName
+            : (apiFileName || camFileName).replace(/\.stl$/i, ".filled.stl")
+          : modelFileBasename(apiFileName || originalFileName, originalFileName);
         setStlFile(blobToFile(blob, filename));
       } catch {
         // ignore

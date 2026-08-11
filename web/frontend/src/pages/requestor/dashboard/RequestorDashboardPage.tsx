@@ -51,6 +51,10 @@ import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
+import {
+  fileFromModelBlob,
+  modelFileBasename,
+} from "@/shared/files/modelPreviewFile";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { RequestorPolicyRemakeHeader } from "./components/RequestorPolicyRemakeHeader";
 
@@ -70,6 +74,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-11: 불완전 가공 프리뷰 File명을 원본 확장자(STL/PLY/OBJ)로 유지.
 // - 2026-08-11: 지연 위험 요약 카드 제거. 지연은 최근 의뢰 빨간 뱃지로 표시.
 // - 2026-08-11: 좌측(출고·불완전가공) + 우측 최근의뢰(동일 높이) 레이아웃.
 // - 2026-08-11: 오늘의 가격 카드 삭제. [정책]·무료 재제작 잔여를 헤더(필터 오른쪽)로 이동.
@@ -1524,32 +1529,43 @@ export const RequestorDashboardPage = () => {
         const requestNo = String(
           activeUnmachinableDecisionItem?.requestId || requestMongoId,
         ).trim();
-        const fileName = `${requestNo || requestMongoId}-original.stl`;
+        const fallbackName = `${requestNo || requestMongoId}-original.stl`;
         const cacheKey = `stl:requestor-unmachinable:${requestMongoId}:original-file-url`;
 
-        const detailPromise = apiFetch<any>({
+        const detailRes = await apiFetch<any>({
           path: `/api/requests/${requestMongoId}`,
           method: "GET",
           token,
         });
+        const detail =
+          detailRes.ok && detailRes.data?.success
+            ? detailRes.data?.data || null
+            : null;
+        if (!cancelled) {
+          setUnmachinableDetailRequest(detail);
+        }
+
+        const resolveFileName = (apiFileName?: unknown) =>
+          modelFileBasename(
+            apiFileName ||
+              detail?.caseInfos?.file?.filePath ||
+              detail?.caseInfos?.file?.originalName ||
+              detail?.caseInfos?.file?.fileName ||
+              (activeUnmachinableDecisionItem as any)?.caseInfos?.file
+                ?.filePath ||
+              (activeUnmachinableDecisionItem as any)?.caseInfos?.file
+                ?.originalName ||
+              fallbackName,
+            fallbackName,
+          );
 
         const cached = await getFileBlob(cacheKey);
         if (cached && !cancelled) {
           setUnmachinablePreviewFile(
-            new File([cached], fileName, { type: cached.type || "model/stl" }),
+            fileFromModelBlob(cached, resolveFileName()),
           );
           setUnmachinablePreviewLoading(false);
-
-          const detailRes = await detailPromise;
-          if (!cancelled && detailRes.ok && detailRes.data?.success) {
-            setUnmachinableDetailRequest(detailRes.data?.data || null);
-          }
           return;
-        }
-
-        const detailRes = await detailPromise;
-        if (!cancelled && detailRes.ok && detailRes.data?.success) {
-          setUnmachinableDetailRequest(detailRes.data?.data || null);
         }
 
         const originalFileRes = await fetch(
@@ -1564,10 +1580,11 @@ export const RequestorDashboardPage = () => {
         );
         const originalFileBody: any = await originalFileRes.json().catch(() => ({}));
         const signedUrl = String(originalFileBody?.data?.url || "").trim();
+        const fileName = resolveFileName(originalFileBody?.data?.fileName);
 
         if (!originalFileRes.ok || !signedUrl) {
           if (cancelled) return;
-          setUnmachinablePreviewError("STL 파일을 찾을 수 없습니다.");
+          setUnmachinablePreviewError("3D 모델 파일을 찾을 수 없습니다.");
           setUnmachinablePreviewLoading(false);
           return;
         }
@@ -1575,7 +1592,7 @@ export const RequestorDashboardPage = () => {
         const fileRes = await fetch(signedUrl, { method: "GET" });
         if (!fileRes.ok) {
           if (cancelled) return;
-          setUnmachinablePreviewError("STL 파일을 불러오지 못했습니다.");
+          setUnmachinablePreviewError("3D 모델 파일을 불러오지 못했습니다.");
           setUnmachinablePreviewLoading(false);
           return;
         }
@@ -1589,14 +1606,12 @@ export const RequestorDashboardPage = () => {
           // ignore cache write errors
         }
 
-        setUnmachinablePreviewFile(
-          new File([blob], fileName, { type: blob.type || "model/stl" }),
-        );
+        setUnmachinablePreviewFile(fileFromModelBlob(blob, fileName));
         setUnmachinablePreviewLoading(false);
       } catch (error) {
         if (cancelled) return;
-        console.error("불완전 가공 STL 로드 실패", error);
-        setUnmachinablePreviewError("STL 파일을 불러오지 못했습니다.");
+        console.error("불완전 가공 3D 모델 로드 실패", error);
+        setUnmachinablePreviewError("3D 모델 파일을 불러오지 못했습니다.");
         setUnmachinablePreviewLoading(false);
       }
     };
@@ -2171,7 +2186,7 @@ export const RequestorDashboardPage = () => {
                   </div>
                 ) : (
                   <div className="flex-1 min-h-0 rounded-md border border-dashed border-slate-300 flex items-center justify-center text-base text-slate-500">
-                    {unmachinablePreviewError || "원본 STL 파일이 없습니다."}
+                    {unmachinablePreviewError || "원본 3D 모델 파일이 없습니다."}
                   </div>
                 )}
 
