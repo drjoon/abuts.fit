@@ -3,6 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/features/lab/LabTradingPartnerWindowBanner.tsx
+// - 2026-08-11: 기공소 소개 상단 — 거래 치과 등록 D-day 배너.
 import { useState } from "react";
 import {
   Card,
@@ -19,6 +21,8 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useReferralData } from "./hooks/useReferralData";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
+import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
 function fmtMoney(n: number) {
   const v = Number(n || 0);
@@ -55,6 +59,8 @@ function MetricCard({
 export const RequestorReferralPage = () => {
   const { toast } = useToast();
   const { user } = useAuthStore();
+  const { kind } = useRequestorBusinessAccess();
+  const isLab = kind === "lab";
   const [policyOpen, setPolicyOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
@@ -130,6 +136,7 @@ export const RequestorReferralPage = () => {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        {isLab ? <LabTradingPartnerWindowBanner /> : null}
         {!isReferralEligible ? (
           <Card>
             <CardContent className="pt-6">
@@ -166,7 +173,7 @@ export const RequestorReferralPage = () => {
                     type="button"
                     size="sm"
                     onClick={() => void handleCopyCode()}
-                    className="h-9 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+                    className="h-9 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
                   >
                     {codeCopied ? (
                       <>
@@ -184,7 +191,7 @@ export const RequestorReferralPage = () => {
                     type="button"
                     size="sm"
                     onClick={() => void handleCopyLink()}
-                    className="h-9 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+                    className="h-9 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
                   >
                     {copied ? (
                       <>
@@ -246,7 +253,7 @@ export const RequestorReferralPage = () => {
                       value={`${fmtMoney(requestorUnitPrice)}원`}
                       subtitle="배송비 별도 · 부가세 없음"
                     />
-                    <div className="rounded-xl bg-blue-50 px-4 py-3.5 text-xs leading-relaxed text-blue-900">
+                    <div className="rounded-xl bg-primary-soft px-4 py-3.5 text-xs leading-relaxed text-primary-strong">
                       <p>
                         신규 가입 이벤트 기간에는 90일간 10,000원으로
                         고정됩니다.

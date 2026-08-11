@@ -1,7 +1,9 @@
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
+// - web/frontend/src/features/lab/LabTradingPartnerWindowBanner.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
+// - 2026-08-11: 거래처 O/X 결제 흐름 안내 카드 추가.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Card,
@@ -165,6 +167,54 @@ export const LabTradingPartnersTab = () => {
 
   return (
     <div className="space-y-4">
+      <Card className="app-glass-card app-glass-card--lg">
+        <CardHeader>
+          <CardTitle className="text-base">결제 안내</CardTitle>
+          <CardDescription>
+            치과 기공의뢰 시, 거래 치과 등록 여부에 따라 커스텀 어벗 요금
+            귀속이 달라집니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="rounded-xl border border-border/80 bg-background/60 p-4 space-y-2">
+            <p className="font-semibold text-slate-900">공통</p>
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+              <li>
+                크라운·브리지·인레이·Pontic 등 보철 기공비 → 기공소
+                결제크레딧
+              </li>
+              <li>
+                기공소가 직접 어벗의뢰할 때 → 기존처럼 생산단가를 어벗츠에
+                납부
+              </li>
+            </ul>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-primary-muted bg-primary-soft/40 p-4 space-y-2">
+              <p className="font-semibold text-primary-strong">
+                거래 치과로 등록된 경우
+              </p>
+              <ul className="list-disc space-y-1 pl-5 text-slate-700">
+                <li>치과가 낸 기공비 전액 → 기공소 몫</li>
+                <li>
+                  기공소는 커스텀 어벗 의뢰시 어벗츠에게 어벗 의뢰 비용 납부
+                </li>
+              </ul>
+            </div>
+            <div className="rounded-xl border border-border/80 bg-background/60 p-4 space-y-2">
+              <p className="font-semibold text-slate-900">
+                거래 치과로 등록되지 않은 경우
+              </p>
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>보철 기공비 → 기공소 배당</li>
+                <li>커스텀 어벗 치과 납품가 → 어벗츠 배당</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

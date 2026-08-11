@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 기공소 어벗의뢰 상단 — 거래 치과 등록 D-day 배너.
 // - 2026-08-11: 상단 헤더(지난 의뢰) 제거 — 대시보드 최근 의뢰 카드로만 제공.
 // - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드에 미반영(신규 업로드만).
 // - 2026-08-11: 아노다이징을 의뢰건 caseInfos SSOT로 저장·뱃지 표시(디자인소프트웨어와 동일). 사업체는 기본값 시드만.
@@ -45,6 +46,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
 import {
@@ -1617,6 +1619,7 @@ const NewRequestPageContent = () => {
       className="new-request-page bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
+        {isLabRequestor ? <LabTradingPartnerWindowBanner /> : null}
         <MultiActionDialog
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={false}

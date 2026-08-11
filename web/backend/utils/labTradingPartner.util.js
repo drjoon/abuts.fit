@@ -12,6 +12,12 @@ import { toKstYmd } from "./krBusinessDays.js";
 import { LAB_TRADING_PARTNER_WINDOW_DAYS } from "./labFeeSchedule.js";
 import { normalizeRequestorKind } from "./requestorCapabilities.js";
 
+/**
+ * 거래 치과 등록 기능 출시일(KST).
+ * 가입일이 이보다 이르면 창 시작일을 출시일로 올려, 기존 기공소도 30일을 받는다.
+ */
+export const LAB_TRADING_PARTNER_FEATURE_START_YMD = "2026-08-11";
+
 function diffKstDays(fromDate, toDate = new Date()) {
   const startYmd = toKstYmd(fromDate);
   const todayYmd = toKstYmd(toDate);
@@ -23,17 +29,32 @@ function diffKstDays(fromDate, toDate = new Date()) {
   return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
 }
 
+function laterKstYmd(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  return a >= b ? a : b;
+}
+
 export async function resolveLabTradingPartnerWindow({ labAnchorId }) {
-  const baseDate = await resolveRequestorPricingBaseDate({
+  const pricingBaseDate = await resolveRequestorPricingBaseDate({
     requestorOrgId: labAnchorId,
   });
-  const elapsedDays = baseDate ? diffKstDays(baseDate) : null;
+  const pricingYmd = pricingBaseDate ? toKstYmd(pricingBaseDate) : null;
+  const windowStartYmd = laterKstYmd(
+    pricingYmd,
+    LAB_TRADING_PARTNER_FEATURE_START_YMD,
+  );
+  const windowStartDate = windowStartYmd
+    ? new Date(`${windowStartYmd}T00:00:00+09:00`)
+    : null;
+  const elapsedDays = windowStartDate ? diffKstDays(windowStartDate) : null;
   const remainingDays =
     elapsedDays == null
       ? null
       : Math.max(0, LAB_TRADING_PARTNER_WINDOW_DAYS - elapsedDays);
   return {
-    pricingBaseDate: baseDate,
+    pricingBaseDate,
+    windowStartYmd,
     elapsedDays,
     remainingDays,
     windowDays: LAB_TRADING_PARTNER_WINDOW_DAYS,

@@ -234,7 +234,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/requests/dashboard.controller.js`
 
 - 기공소 기존 거래처 · 결제크레딧 SSOT:
-  - `LabTradingPartner`: lab `pricingBaseDate`부터 30일간 기존 거래 치과 초대. 만료 후 신규 등록만 불가.
+  - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 기존 거래 치과 초대. 만료 후 신규 등록만 불가.
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active`. API: `/api/lab-trading-partners`
   - 기공비: `BusinessAnchor.labFeeSchedule`. 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops).
   - PracticeTransfer 유료: 치과 소매가 1회 차감 → 거래처면 전액 `LAB_SETTLEMENT_CREDIT`, 아니면 기공비만 결제크레딧·어벗 소매는 `REV_*`.

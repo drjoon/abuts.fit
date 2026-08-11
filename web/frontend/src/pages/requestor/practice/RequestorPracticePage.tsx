@@ -24,8 +24,10 @@
 // - 2026-08-11: 치과 링크 전달 — 파일전송(/p) → 기공소 소개코드 가입 링크.
 // - 2026-08-11: 상단 뱃지에 포장.발송·추적관리 추가(기공 파이프라인 UI).
 // - 2026-08-11: 디자인 큐 빈 목록일 때 하단 전송 내역 영역 미렌더(중복 제거).
+// - 2026-08-11: 기공소 거래 치과 등록 D-day 배너(설정 이동).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -1588,6 +1590,7 @@ function RequestorPracticeReceivePage({
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        <LabTradingPartnerWindowBanner />
         {showDesignQueue && !showTransfers ? (
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-end gap-3">
