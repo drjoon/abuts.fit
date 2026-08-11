@@ -43,6 +43,7 @@ import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
+import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
 import {
   buildStandardStlFileName,
   getBusinessCreditBalanceBreakdown,
@@ -1673,6 +1674,24 @@ export async function createRequestsFromDraft(req, res) {
           .map((row) => String(row?._id || "").trim())
           .filter(Boolean),
       });
+
+      const designQueueCreated = createdRequests.filter(
+        (row) =>
+          String(row?.caseInfos?.productMode || "").trim() ===
+          "design_custom_abutment",
+      );
+      if (designQueueCreated.length > 0) {
+        emitDesignClaimChanged({
+          reason: "created",
+          delta: designQueueCreated.length,
+          requestIds: designQueueCreated
+            .map((row) => String(row?.requestId || "").trim())
+            .filter(Boolean),
+          requestMongoIds: designQueueCreated
+            .map((row) => String(row?._id || "").trim())
+            .filter(Boolean),
+        });
+      }
     }
 
     if (isPracticeRoutingSubmission && createdRequests.length > 0) {

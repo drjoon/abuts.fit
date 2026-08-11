@@ -301,6 +301,10 @@ export function useWorksheetRealtimeStatus({
         }
         return;
       }
+      case "request:design-claim-changed": {
+        if (fetchRequests) void fetchRequests(true);
+        return;
+      }
       case "request:stage-changed": {
         const eventRequest = payload?.request as
           | ManufacturerRequest
@@ -556,6 +560,7 @@ export function useWorksheetRealtimeStatus({
       "request:filled-processing-started",
       "packing:capture-processed",
       "request:stage-changed",
+      "request:design-claim-changed",
       "request:stl-metadata-updated",
       "request:cam-trigger-failed",
       "request:async-action-failed",

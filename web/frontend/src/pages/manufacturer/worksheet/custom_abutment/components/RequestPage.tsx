@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 디자인 클레임 목록 갱신 — 프론트 타이머 제거, websocket(request:design-claim-changed)만 사용.
 // - 2026-08-11: transferChat(의뢰수신) 로딩 중에도「표시할 의뢰가 없습니다.」표시.
 // - 2026-08-10: 디자인 승인=완성 어벗 STL 업로드 후 design-handoff(제조사 가공).
 // - 2026-08-10: detailMode=transferChat — 디자인 큐는 기공의뢰서형 카드·채팅 모달(PreviewModal 미사용).
@@ -2217,15 +2218,6 @@ export const RequestPage = ({
       fetchRequestsCore,
     ],
   );
-
-  // 발표 창/마감 만료 시 목록 재조회 (1분 숨김 · 재공개)
-  useEffect(() => {
-    if (!enableDesignClaim) return;
-    const id = window.setInterval(() => {
-      void fetchRequestsCore(true);
-    }, 15_000);
-    return () => window.clearInterval(id);
-  }, [enableDesignClaim, fetchRequestsCore]);
 
   const { handleDownloadOriginal } = useRequestCardHandlers(
     token,

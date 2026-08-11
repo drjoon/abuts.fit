@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/utils/designClaim.js
+// - web/backend/utils/designClaimRealtime.js
 // - web/backend/models/request.model.js
 // - web/backend/models/systemSettings.model.js
 // - web/backend/modules/requests/request.routes.js
@@ -12,6 +13,7 @@ import {
   DESIGN_CLAIM_HOURS_DEFAULT,
   enrichDesignClaimForViewer,
 } from "../../utils/designClaim.js";
+import { notifyDesignClaimChanged } from "../../utils/designClaimRealtime.js";
 
 async function loadClaimHours() {
   const doc = await SystemSettings.findOne({ key: "global" })
@@ -142,6 +144,8 @@ export async function claimDesignRequest(req, res) {
     }
 
     const designClaimMeta = enrichDesignClaimForViewer(updated.designClaim, userId);
+
+    notifyDesignClaimChanged(updated, "claimed");
 
     return res.status(200).json({
       success: true,
