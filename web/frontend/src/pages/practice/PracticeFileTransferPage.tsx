@@ -257,20 +257,12 @@ const toDraftListSummary = (
 
   const practiceUserId = String(payload.practiceUserId || "").trim();
   const parsed = parsePracticeTransferMemoMetaShared(String(payload.transferMemo || ""));
-  // 파일 없이도 의뢰서 일부(환자명·메모·기공소·치아)만 있으면 임시저장 목록에 올린다.
-  // 날짜 메타만 있는 transferMemo는 내용으로 치지 않는다(백엔드 hasMeaningfulMemo와 동일).
+  // 목록 노출: 환자명·메모·기공소·파일. 치아만 있는 건은 빈 임시저장으로 보지 않는다.
   const hasFormContent =
     Boolean(String(parsed.patientName || "").trim()) ||
     Boolean(String(parsed.memo || "").trim()) ||
     Boolean(String(payload.targetLabName || "").trim()) ||
-    Boolean(String(payload.targetLabAnchorId || "").trim()) ||
-    (Array.isArray(parsed.toothWorks) &&
-      parsed.toothWorks.some(
-        (row) =>
-          String(row.toothNumber || "").trim() ||
-          Boolean(row.customAbutment) ||
-          String(row.implantManufacturer || "").trim(),
-      ));
+    Boolean(String(payload.targetLabAnchorId || "").trim());
   if (files.length === 0 && !hasFormContent) return null;
 
   return {
@@ -2216,18 +2208,26 @@ export const PracticeFileTransferPage = ({
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
       });
-      const hasFormContent =
+      const hasLab =
+        Boolean(String(selectedLab?.name || "").trim()) ||
+        Boolean(toApiLabAnchorId(selectedLab?._id));
+      const hasSubstantialContent =
         Boolean(normalizedPatientName) ||
         Boolean(String(requestMemo || "").trim()) ||
-        Boolean(String(selectedLab?.name || "").trim()) ||
-        Boolean(toApiLabAnchorId(selectedLab?._id)) ||
-        syncToothWorks.some(
-          (row) =>
-            String(row.toothNumber || "").trim() ||
-            Boolean(row.customAbutment) ||
-            String(row.implantManufacturer || "").trim(),
-        );
-      if (filesForSave.length === 0 && !hasFormContent) return;
+        hasLab ||
+        filesForSave.length > 0;
+      const hasToothOnlyContent = syncToothWorks.some(
+        (row) =>
+          String(row.toothNumber || "").trim() ||
+          Boolean(row.customAbutment) ||
+          String(row.implantManufacturer || "").trim(),
+      );
+      // 기존 draft 갱신: 치아만 바뀌어도 동기화. 신규 생성: 환자명·메모·기공소·파일 중 하나 필요.
+      if (!activeDraftIdRef.current) {
+        if (!hasSubstantialContent) return;
+      } else if (filesForSave.length === 0 && !hasSubstantialContent && !hasToothOnlyContent) {
+        return;
+      }
 
       const fingerprintAtSend = currentFormFingerprintRef.current;
       const savedFingerprint = lastSavedFormFingerprintRef.current;
@@ -2363,10 +2363,24 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
-  const hasMeaningfulFormInputForAutosave = useMemo(() => {
+  /** 치아 선택만으로는 목록에 올리지 않음. 환자명·메모·기공소·파일이 있어야 신규 draft 생성. */
+  const hasSubstantialContentForNewDraft = useMemo(() => {
     if (normalizedPatientName) return true;
     if (String(requestMemo || "").trim()) return true;
     if (String(selectedLab?._id || selectedLab?.name || "").trim()) return true;
+    if (draftFiles.length > 0 || files.length > 0) return true;
+    return false;
+  }, [
+    draftFiles.length,
+    files.length,
+    normalizedPatientName,
+    requestMemo,
+    selectedLab?._id,
+    selectedLab?.name,
+  ]);
+
+  const hasMeaningfulFormInputForAutosave = useMemo(() => {
+    if (hasSubstantialContentForNewDraft) return true;
     if (
       toothWorks.some(
         (row) =>
@@ -2378,7 +2392,7 @@ export const PracticeFileTransferPage = ({
       return true;
     }
     return false;
-  }, [normalizedPatientName, requestMemo, selectedLab?._id, selectedLab?.name, toothWorks]);
+  }, [hasSubstantialContentForNewDraft, toothWorks]);
 
   useEffect(() => {
     if (!localFormHydrated) return;
@@ -2398,8 +2412,14 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    // 첫 임시저장(baseline 없음): 의미 있는 의뢰 입력이 있을 때만 서버에 올린다.
-    if (lastSavedFormFingerprint === null && !hasMeaningfulFormInputForAutosave) {
+    // 신규 draft 생성(activeDraftId 없음): 환자명·메모·기공소·파일이 있을 때만.
+    // 「새로 작성」후 baseline이 있어도 치아만 고르면 목록에 쌓이지 않게 한다.
+    if (!activeDraftId && !hasSubstantialContentForNewDraft) {
+      return;
+    }
+
+    // 기존 draft 갱신인데 내용이 전부 비면 서버 POST를 건너뛴다.
+    if (activeDraftId && !hasMeaningfulFormInputForAutosave && draftFiles.length === 0) {
       return;
     }
 
@@ -2432,10 +2452,12 @@ export const PracticeFileTransferPage = ({
   }, [
     FORM_AUTOSAVE_DEBOUNCE_MS,
     FORM_AUTOSAVE_IME_RETRY_MS,
+    activeDraftId,
     authToken,
     currentFormFingerprint,
     draftFiles.length,
     hasMeaningfulFormInputForAutosave,
+    hasSubstantialContentForNewDraft,
     lastSavedFormFingerprint,
     localFormHydrated,
     persistFormDraftAutosave,
@@ -4497,20 +4519,11 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    const hasFormContent =
-      Boolean(normalizedPatientName) ||
-      Boolean(String(requestMemo || "").trim()) ||
-      Boolean(String(selectedLab?._id || selectedLab?.name || "").trim()) ||
-      toothWorks.some(
-        (row) =>
-          String(row.toothNumber || "").trim() ||
-          Boolean(row.customAbutment) ||
-          String(row.implantManufacturer || "").trim(),
-      );
-    if (files.length === 0 && draftFilesRef.current.length === 0 && !hasFormContent) {
+    // 치아만으로는 스냅샷을 만들지 않는다(빈 임시저장 목록 누적 방지).
+    if (!hasSubstantialContentForNewDraft) {
       toast({
         title: "저장할 내용이 없습니다",
-        description: "기공소·환자명·보철물·메모 또는 파일을 입력한 뒤 다시 시도해주세요.",
+        description: "기공소·환자명·메모 또는 파일을 입력한 뒤 다시 시도해주세요.",
         variant: "destructive",
       });
       return;
@@ -4934,11 +4947,8 @@ export const PracticeFileTransferPage = ({
                           disabled={
                             tempSaving ||
                             requestSubmitting ||
-                            (!hasMeaningfulFormInputForAutosave &&
-                              draftFiles.length === 0 &&
-                              files.length === 0) ||
+                            !hasSubstantialContentForNewDraft ||
                             (!activeDraftId &&
-                              files.length === 0 &&
                               lastSavedFormFingerprint !== null &&
                               currentFormFingerprint === lastSavedFormFingerprint)
                           }

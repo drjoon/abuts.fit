@@ -673,21 +673,23 @@ export async function upsertPracticeTransferDraft(req, res) {
     const incomingFiles = Array.isArray(req.body?.files) ? req.body.files : [];
     // transferMemo는 날짜 메타만으로도 비어있지 않을 수 있어, 실질 내용 여부를 본다.
     const memoText = String(transferMemo || "");
-    const hasMeaningfulMemo =
-      /\[\s*환자명\s*:\s*[^\]]+\s*\]/.test(memoText) ||
-      /\[\s*치아보철\s*:\s*[^\]]+\s*\]/.test(memoText) ||
-      Boolean(
-        memoText
-          .split(/\r?\n/)
-          .map((line) => String(line || "").trim())
-          .filter((line) => line && !/^\[/.test(line))
-          .join("")
-          .trim(),
-      );
+    const hasPatientNameInMemo = /\[\s*환자명\s*:\s*[^\]]+\s*\]/.test(memoText);
+    const hasToothWorkInMemo = /\[\s*치아보철\s*:\s*[^\]]+\s*\]/.test(memoText);
+    const hasFreeTextMemo = Boolean(
+      memoText
+        .split(/\r?\n/)
+        .map((line) => String(line || "").trim())
+        .filter((line) => line && !/^\[/.test(line))
+        .join("")
+        .trim(),
+    );
+    const hasLab = Boolean(targetLabName) || Boolean(targetLabAnchorId);
+    // 신규 draft: 환자명·자유메모·기공소·파일만 인정(치아만으로는 목록 누적 방지).
+    const hasSubstantialContent =
+      hasPatientNameInMemo || hasFreeTextMemo || hasLab || incomingFiles.length > 0;
+    // 기존 draft 갱신: 치아 변경도 허용.
     const hasFormContent =
-      hasMeaningfulMemo ||
-      Boolean(targetLabName) ||
-      Boolean(targetLabAnchorId);
+      hasSubstantialContent || hasToothWorkInMemo;
 
     let normalizedDraftFiles = [];
 
@@ -803,6 +805,13 @@ export async function upsertPracticeTransferDraft(req, res) {
 
     if (!doc) {
       // 새 케이스 · stale draftId 폴백: 항상 새 draft 생성
+      // 치아만 고른 빈 의뢰서는 목록에 쌓지 않는다.
+      if (!hasSubstantialContent) {
+        return res.status(400).json({
+          success: false,
+          message: "임시저장할 파일 또는 의뢰서 내용이 없습니다.",
+        });
+      }
       const created = await PracticeTransferDraft.create({
         practiceUserId: req.user?._id,
         practiceBusinessAnchorId: req.user?.businessAnchorId || null,
