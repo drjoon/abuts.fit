@@ -37,6 +37,7 @@
  * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
  * - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
  * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
+ * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 작업완료 시 치과 생산컨펌 자동.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -66,6 +67,7 @@ import {
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -867,6 +869,7 @@ export const PracticeFileTransferPage = ({
     "all" | "발송완료" | "의뢰수락" | "작업완료" | "포장.발송" | "추적관리"
   >("all");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
   const [promoNoticeVisible, setPromoNoticeVisible] = useState(true);
   const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
@@ -2523,6 +2526,7 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
+    setSkipDesignConfirm(false);
     setOrderDate(todayDate);
     setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
     setToothWorks([]);
@@ -4534,6 +4538,8 @@ export const PracticeFileTransferPage = ({
           arrivalDate,
           arrivalDefaultDays,
           transferMemo,
+          toothWorks: syncToothWorks,
+          skipDesignConfirm,
           caseInfos: caseInfosPayload,
         },
       });
@@ -5261,7 +5267,29 @@ export const PracticeFileTransferPage = ({
               </CardContent>
             </Card>
 
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-end gap-4">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <label
+                    htmlFor="practice-skip-design-confirm"
+                    className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 select-none"
+                  >
+                    <Checkbox
+                      id="practice-skip-design-confirm"
+                      checked={skipDesignConfirm}
+                      onCheckedChange={(value) => setSkipDesignConfirm(value === true)}
+                      disabled={requestSubmitting}
+                    />
+                    <span>디자인 컨펌 생략</span>
+                  </label>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                  <p>
+                    기공소에서 작업 완료하여 디자인을 올리면 치과에서 확인해야 생산을
+                    시작합니다. 빠른 작업을 치과측 컨펌을 생략합니다.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="inline-flex">

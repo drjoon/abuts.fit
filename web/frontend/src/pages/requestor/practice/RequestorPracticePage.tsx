@@ -30,7 +30,16 @@
 // - 2026-08-11: 의뢰수락 후 치과 transfer-room 재연결. 모달 폭·lab peer 채팅 연결.
 // - 2026-08-11: 수락 카드에 작업완료/작업취소 버튼. mark-release API.
 // - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+// - 2026-08-12: 수락 카드 — 별도 결과파일 드롭존 제거·카드 점선 외곽·작업완료 왼쪽 드롭 아이콘.
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
 import { Badge } from "@/components/ui/badge";
@@ -47,7 +56,7 @@ import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
-import { Building2, Copy, Download, Link2, Search, Send, X } from "lucide-react";
+import { Building2, Copy, Download, Link2, Search, Send, UploadCloud, X } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import {
   Dialog,
@@ -59,6 +68,11 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   PracticeTransferDetailChatDialog,
   type PracticeTransferDialogFileItem,
@@ -135,6 +149,7 @@ type ReceivedPracticeTransfer = {
   hasCustomAbutment?: boolean;
   production?: {
     shippingMode?: "normal" | "express" | null;
+    skipDesignConfirm?: boolean;
     confirmedAt?: string | null;
     relatedRequestIds?: string[];
   } | null;
@@ -625,6 +640,7 @@ function RequestorPracticeReceivePage({
                   : productionRaw.shippingMode === "normal"
                     ? ("normal" as const)
                     : null,
+              skipDesignConfirm: Boolean(productionRaw.skipDesignConfirm),
               confirmedAt: productionRaw.confirmedAt
                 ? String(productionRaw.confirmedAt)
                 : null,
@@ -1474,18 +1490,32 @@ function RequestorPracticeReceivePage({
             };
           })
           .filter((f) => f.originalName && f.s3Key);
+        const productionRawFromRes =
+          data.production && typeof data.production === "object"
+            ? (data.production as Record<string, unknown>)
+            : null;
+        const autoConfirmedAt = productionRawFromRes?.confirmedAt
+          ? String(productionRawFromRes.confirmedAt)
+          : null;
+        const manufacturerStage =
+          String(data.manufacturerStage || "").trim() === "생산진행" || autoConfirmedAt
+            ? "생산진행"
+            : "작업완료";
         const productionPatch = {
           shippingMode:
             shippingMode ||
-            (data.production &&
-            typeof data.production === "object" &&
-            (data.production as { shippingMode?: string }).shippingMode === "express"
+            (productionRawFromRes?.shippingMode === "express"
               ? ("express" as const)
-              : shippingMode === "normal"
+              : shippingMode === "normal" || productionRawFromRes?.shippingMode === "normal"
                 ? ("normal" as const)
                 : null),
-          confirmedAt: null as string | null,
-          relatedRequestIds: [] as string[],
+          skipDesignConfirm: Boolean(
+            productionRawFromRes?.skipDesignConfirm ?? transfer.production?.skipDesignConfirm,
+          ),
+          confirmedAt: autoConfirmedAt,
+          relatedRequestIds: Array.isArray(productionRawFromRes?.relatedRequestIds)
+            ? productionRawFromRes.relatedRequestIds.map((id) => String(id))
+            : [],
         };
 
         setTransfers((prev) =>
@@ -1494,7 +1524,7 @@ function RequestorPracticeReceivePage({
               ? {
                   ...row,
                   autoMatch: autoMatchPatch,
-                  manufacturerStage: "작업완료",
+                  manufacturerStage,
                   resultFiles: mappedResultFiles,
                   resultFileCount: mappedResultFiles.length,
                   production: productionPatch,
@@ -1508,7 +1538,7 @@ function RequestorPracticeReceivePage({
             ? {
                 ...prev,
                 autoMatch: autoMatchPatch,
-                manufacturerStage: "작업완료",
+                manufacturerStage,
                 resultFiles: mappedResultFiles,
                 resultFileCount: mappedResultFiles.length,
                 production: productionPatch,
@@ -1518,9 +1548,11 @@ function RequestorPracticeReceivePage({
 
         toast({
           title: "작업 완료",
-          description: needsShipping
-            ? "결과 파일을 올렸습니다. 치과 생산 진행 컨펌 후 어벗츠 의뢰가 생성됩니다."
-            : "결과 파일을 올렸습니다. 치과에서 생산 진행을 컨펌하면 됩니다.",
+          description: autoConfirmedAt
+            ? "결과 파일을 올렸습니다. 치과가 디자인 컨펌을 생략해 생산이 자동 진행되었습니다."
+            : needsShipping
+              ? "결과 파일을 올렸습니다. 치과 생산 진행 컨펌 후 어벗츠 의뢰가 생성됩니다."
+              : "결과 파일을 올렸습니다. 치과에서 생산 진행을 컨펌하면 됩니다.",
         });
         return true;
       } catch {
@@ -2304,7 +2336,7 @@ function RequestorPracticeReceivePage({
             const resultCount = Number(transfer.resultFileCount || transfer.resultFiles?.length || 0);
             const completeInputId = `practice-complete-${cardId}`;
 
-            const cardBody = (
+            const renderCardBody = () => (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -2370,55 +2402,89 @@ function RequestorPracticeReceivePage({
                 </p>
 
                 {showWorkActions ? (
-                  <div className="mt-3 space-y-2">
-                    <PracticeTransferFileDropTarget
-                      fileInputId={completeInputId}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={cardBusy}
+                          className="focus-visible:ring-0 focus-visible:ring-offset-0"
+                          onClick={(event) => handleCardComplete(transfer, event)}
+                        >
+                          <UploadCloud className="h-4 w-4" />
+                          {cardBusy ? "처리 중..." : "작업완료"}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs">
+                        {PRACTICE_ACCEPTED_HINT}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
                       disabled={cardBusy}
-                      acceptedHint={PRACTICE_ACCEPTED_HINT}
-                      compact
-                      label={cardBusy ? "처리 중..." : "결과 파일 드롭 또는 클릭 · 작업완료"}
-                      onFiles={(files) => handleCardDropFiles(transfer, files)}
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={cardBusy}
-                        onClick={(event) => handleCardComplete(transfer, event)}
-                      >
-                        {cardBusy ? "처리 중..." : "작업완료"}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={cardBusy}
-                        onClick={(event) => void handleCardRelease(transfer, event)}
-                      >
-                        작업취소
-                      </Button>
-                    </div>
+                      onClick={(event) => void handleCardRelease(transfer, event)}
+                    >
+                      작업취소
+                    </Button>
                   </div>
                 ) : null}
               </>
             );
+
+            const openCardDialog = () => {
+              void openTransferDialog(transfer);
+            };
+
+            const onCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openCardDialog();
+              }
+            };
+
+            if (showWorkActions) {
+              return (
+                <PracticeTransferFileDropTarget
+                  key={transfer._id || transfer.transferId}
+                  fileInputId={completeInputId}
+                  disabled={cardBusy}
+                  acceptedHint={PRACTICE_ACCEPTED_HINT}
+                  showDefaultUi={false}
+                  className={cn(
+                    "w-full cursor-pointer rounded-lg border-2 border-dashed border-slate-300 p-4 text-left transition",
+                    "hover:bg-muted/20",
+                  )}
+                  activeClassName="border-primary bg-primary-soft/40"
+                  onFiles={(files) => handleCardDropFiles(transfer, files)}
+                >
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={openCardDialog}
+                    onKeyDown={onCardKeyDown}
+                    className="focus-visible:outline-none"
+                    data-transfer-card="true"
+                  >
+                    {renderCardBody()}
+                  </div>
+                </PracticeTransferFileDropTarget>
+              );
+            }
 
             return (
               <div
                 key={transfer._id || transfer.transferId}
                 role="button"
                 tabIndex={0}
-                onClick={() => void openTransferDialog(transfer)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    void openTransferDialog(transfer);
-                  }
-                }}
+                onClick={openCardDialog}
+                onKeyDown={onCardKeyDown}
                 className="w-full cursor-pointer rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 data-transfer-card="true"
               >
-                {cardBody}
+                {renderCardBody()}
               </div>
             );
           })}

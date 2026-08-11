@@ -355,6 +355,7 @@ const toVirtualRequestRows = (transferDoc) => {
     production: {
       shippingMode:
         production?.shippingMode === "express" ? "express" : production?.shippingMode === "normal" ? "normal" : null,
+      skipDesignConfirm: Boolean(production?.skipDesignConfirm),
       confirmedAt: production?.confirmedAt || null,
       relatedRequestIds: Array.isArray(production?.relatedRequestIds)
         ? production.relatedRequestIds.map((id) => String(id))
@@ -1361,6 +1362,11 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
+    const skipDesignConfirm =
+      req.body?.skipDesignConfirm === true ||
+      req.body?.skipDesignConfirm === "true" ||
+      practiceRouting?.skipDesignConfirm === true;
+
     // 과금은 기공소 의뢰수락 시점(mark-accepted). 전송 생성은 파일/메타만 저장.
     const transferDoc = await PracticeTransfer.create({
       transferId,
@@ -1385,6 +1391,13 @@ export async function createPracticeTransfer(req, res) {
       status: "active",
       files,
       toothWorks: toothWorksRaw,
+      production: {
+        skipDesignConfirm,
+        shippingMode: null,
+        confirmedAt: null,
+        confirmedBy: null,
+        relatedRequestIds: [],
+      },
     });
 
     // 전송 성공 시 해당 임시저장은 완전 삭제(휴지통 아님). 최근 전송 내역만 남긴다.
@@ -1707,6 +1720,7 @@ export async function getReceivedPracticeTransfers(req, res) {
               : production?.shippingMode === "normal"
                 ? "normal"
                 : null,
+          skipDesignConfirm: Boolean(production?.skipDesignConfirm),
           confirmedAt: production?.confirmedAt || null,
           relatedRequestIds: Array.isArray(production?.relatedRequestIds)
             ? production.relatedRequestIds.map((id) => String(id))
@@ -2449,6 +2463,35 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     }
 
     const now = new Date();
+    const skipDesignConfirm = Boolean(doc.production?.skipDesignConfirm);
+    const resolvedShippingMode = shippingMode || doc.production?.shippingMode || null;
+
+    let relatedRequestIds = [];
+    let confirmedAt = null;
+    let manufacturerStage = "작업완료";
+
+    if (skipDesignConfirm) {
+      if (needsShipping) {
+        try {
+          const created = await createAbutmentRequestsFromPracticeTransfer({
+            transferDoc: doc,
+            shippingMode: resolvedShippingMode,
+            actorUserId: req.user?._id || null,
+          });
+          relatedRequestIds = Array.isArray(created.requestIds) ? created.requestIds : [];
+        } catch (createErr) {
+          return res.status(409).json({
+            success: false,
+            message:
+              String(createErr?.message || "").trim() ||
+              "디자인 컨펌 생략(생산 자동 진행) 중 어벗츠 의뢰 생성에 실패했습니다.",
+          });
+        }
+      }
+      confirmedAt = now;
+      manufacturerStage = "생산진행";
+    }
+
     doc.resultFiles = resultFiles;
     doc.autoMatch = {
       ...(doc.autoMatch && typeof doc.autoMatch === "object" ? doc.autoMatch : {}),
@@ -2457,31 +2500,35 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     };
     doc.production = {
       ...(doc.production && typeof doc.production === "object" ? doc.production : {}),
-      shippingMode: shippingMode || doc.production?.shippingMode || null,
-      confirmedAt: null,
-      confirmedBy: null,
-      relatedRequestIds: Array.isArray(doc.production?.relatedRequestIds)
-        ? doc.production.relatedRequestIds
+      skipDesignConfirm,
+      shippingMode: resolvedShippingMode,
+      confirmedAt,
+      confirmedBy: confirmedAt ? doc.practiceUserId || null : null,
+      relatedRequestIds: confirmedAt
+        ? relatedRequestIds
+            .filter((id) => Types.ObjectId.isValid(id))
+            .map((id) => new Types.ObjectId(id))
         : [],
     };
     await doc.save();
 
     const realtimePayload = {
-      action: "completed",
+      action: confirmedAt ? "production-confirmed" : "completed",
       transferId: String(doc.transferId || "").trim(),
       transferMongoId: String(doc._id || "").trim(),
       targetLabAnchorId: labAnchorId,
       matchingMode: isAuto ? "auto" : "direct",
       practiceUserId: String(doc.practiceUserId || "").trim() || null,
       status: String(doc.status || "active").trim(),
-      manufacturerStage: "작업완료",
+      manufacturerStage,
       updatedAt: doc.updatedAt || now,
       resultFileCount: resultFiles.length,
       hasCustomAbutment: needsShipping,
       production: {
-        shippingMode: doc.production?.shippingMode || null,
-        confirmedAt: null,
-        relatedRequestIds: [],
+        skipDesignConfirm,
+        shippingMode: resolvedShippingMode,
+        confirmedAt,
+        relatedRequestIds: confirmedAt ? relatedRequestIds : [],
       },
       ...toAutoMatchApiFields(doc, labAnchorId),
     };
@@ -2513,10 +2560,12 @@ export async function markReceivedPracticeTransferComplete(req, res) {
           size: item.file.size,
           s3Key: item.file.s3Key,
         })),
+        manufacturerStage,
         production: {
-          shippingMode: doc.production?.shippingMode || null,
-          confirmedAt: null,
-          relatedRequestIds: [],
+          skipDesignConfirm,
+          shippingMode: resolvedShippingMode,
+          confirmedAt,
+          relatedRequestIds: confirmedAt ? relatedRequestIds : [],
         },
         hasCustomAbutment: needsShipping,
         ...toAutoMatchApiFields(doc, labAnchorId),

@@ -105,6 +105,8 @@ const practiceTransferSchema = new mongoose.Schema(
         enum: ["normal", "express", null],
         default: null,
       },
+      // 치과 전송 시 「디자인 컨펌 생략」— 기공소 작업완료 시 생산진행 자동
+      skipDesignConfirm: { type: Boolean, default: false },
       confirmedAt: { type: Date, default: null, index: true },
       confirmedBy: {
         type: mongoose.Schema.Types.ObjectId,

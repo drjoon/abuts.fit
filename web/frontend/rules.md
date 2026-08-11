@@ -513,7 +513,8 @@ Notes:
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」(자동매칭 클레임 중이면 `수락 [남은 시간 …]`)→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서.
   - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto`. 검증·devops ON 기공소만 공개 풀 수신. 선착순 수락(3시간)·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 만료 시 재공개. devops UI: `PracticeTransferAutoMatchTab` (파트너 **기공의뢰 자동매칭** 탭)
-  - 기공소 수신 카드(상태=의뢰수락): `PracticeTransferFileDropTarget`(클릭/로컬드롭) + `[작업완료]`/`[작업취소]` — 결과파일 필수. 커스텀어벗이면 배송선택. 치과 「생산 진행」 후 커스텀어벗은 어벗츠 자동의뢰
+  - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(클릭 픽커·확장자 툴팁)/`[작업취소]` — 결과파일 필수. 커스텀어벗이면 배송선택. 치과 「생산 진행」 후 커스텀어벗은 어벗츠 자동의뢰
+
 
 - 드롭존 가입(치과 전용, requestor+practice+free)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab·paid 선택 UI 없음.
