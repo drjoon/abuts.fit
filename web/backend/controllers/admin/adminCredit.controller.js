@@ -563,11 +563,22 @@ export async function adminGetBusinessLedger(req, res) {
       upsertIfMissing: true,
     });
 
+    const anchorKindDoc = await BusinessAnchor.findById(businessAnchorId)
+      .select({ requestorKind: 1 })
+      .lean();
+    const requestorKind = String(anchorKindDoc?.requestorKind || "")
+      .trim()
+      .toLowerCase();
+    const isLab = requestorKind === "lab";
+
     const currentBalanceSnapshot = {
       balance: Number(balanceSnapshot?.balance || 0),
       paidCredit: Number(balanceSnapshot?.paidCredit || 0),
       freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
       freeShippingCredit: Number(balanceSnapshot?.freeShippingCredit || 0),
+      settlementCredit: Number(balanceSnapshot?.settlementCredit || 0),
+      requestorKind: requestorKind === "practice" || isLab ? requestorKind : null,
+      showSettlementCredit: isLab,
       updatedAt: balanceSnapshot?.updatedAt || null,
     };
 
@@ -579,6 +590,7 @@ export async function adminGetBusinessLedger(req, res) {
           "REQ_PAID_CREDIT",
           "REQ_FREE_REQUEST_CREDIT",
           "REQ_FREE_SHIPPING_CREDIT",
+          "LAB_SETTLEMENT_CREDIT",
         ],
       },
     };

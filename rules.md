@@ -163,8 +163,10 @@
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `LAB_SETTLEMENT_CHARGE`, `ADJUST`, `SETTLEMENT_PAYOUT`
 - 수익·버킷 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
-  - 기공소 기공크레딧 버킷: `LAB_SETTLEMENT_CREDIT` (`creditKind=SETTLEMENT`) — 의뢰/배송 크레딧과 **완전 분리**
-  - 유료/무료 모두 수익 라인을 기록하되, 정산 지급은 유료만 대상. 기공크레딧은 매월 `SETTLEMENT_PAYOUT`으로 기공소 계좌 이체
+  - 역할별 크레딧 버킷 표시 SSOT(강제):
+    - **치과(`practice`)**: 입금·충전 잔액은 **유료크레딧**(`REQ_PAID_CREDIT` / `paidCredit`). 기공의뢰(기공비·어벗 소매가)도 이 유료크레딧에서 차감한다. 치과 UI에 `기공크레딧`/`settlementCredit` 잔액 행·필터를 **표시하지 않는다**(치과는 `LAB_SETTLEMENT_CREDIT` 소유자가 아님).
+    - **기공소(`lab`)**: (1) **유료크레딧** — 기공소가 입금·충전한 `paidCredit`, 생산의뢰·배송 등 앱 내 소비에 사용. (2) **기공크레딧** — 치과에서 받은 정산 대기액 `LAB_SETTLEMENT_CREDIT` (`creditKind=SETTLEMENT`), 의뢰/배송 유료크레딧과 **완전 분리**, 매월 `SETTLEMENT_PAYOUT`으로 기공소 계좌 이체.
+  - 유료/무료 모두 수익 라인을 기록하되, 제조사·역할 정산 지급은 유료만 대상. 기공소 기공크레딧 지급은 `SETTLEMENT_PAYOUT` 경로.
   - 배송비 정책(강제): 배송 크레딧 소비(`SHIPPING_SPEND_COMMIT`)의 수익은 **전액 제조사 귀속**으로 기록
   - paid/free 혼합 소비는 의뢰자 잔액에서 **무료 우선 차감 후 부족분만 유료 차감**을 적용
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
@@ -174,8 +176,8 @@
   - `LabTradingPartner`: lab이 `pricingBaseDate`(기존 90일 런칭과 동일 기준)와 기능 출시일(`2026-08-11`) 중 **늦은 날**부터 **30일**간 기존 거래 치과 초대. 만료 후 **신규 등록만 불가**(active/invited 유지·완료 가능)
   - 초대 링크 → 치과 가입 → 사업자등록증 **검증(`verified`)** 시 `status=active`
   - 가격: 기공비=`BusinessAnchor.labFeeSchedule`(기공소 설정; crown/bridge/inlay/pontic/customAbutmentDesign, 기본 6만/6만/5만/4만/1만), 치과 납품 어벗 소매가=`creditSettings.abutmentRetailPrice`(devops 「요금 · 크레딧」), 생산단가=기존 `computePriceForRequest`. `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과)
-  - 치과는 기공비(+어벗 소매가)를 **기공소 의뢰수락 시** 크레딧 1회 차감. 장부 UI 항목=`기공비`, 기공소 적립 버킷 표시=`기공크레딧`(의뢰크레딧/배송크레딧과 병렬 명명; account=`LAB_SETTLEMENT_CREDIT`)
-  - **거래처 O**: 전액 → 기공소 `LAB_SETTLEMENT_CREDIT`. 커스텀어벗은 기공소가 어벗츠에 생산의뢰하고 **생산단가를 기공소 의뢰크레딧에서 강제 차감**(치과 재차감 금지)
+  - 치과는 기공비(+어벗 소매가)를 **기공소 의뢰수락 시 유료크레딧**에서 1회 차감. 장부 UI 항목=`기공비`. 기공소 적립 버킷 UI=`기공크레딧`(account=`LAB_SETTLEMENT_CREDIT`) — 치과 화면에는 동일 라벨 잔액을 두지 않음
+  - **거래처 O**: 전액 → 기공소 `LAB_SETTLEMENT_CREDIT`. 커스텀어벗은 기공소가 어벗츠에 생산의뢰하고 **생산단가를 기공소 유료크레딧(의뢰)에서 강제 차감**(치과 재차감 금지)
   - **거래처 X**: 기공비만 기공소 기공크레딧, 어벗 소매가는 어벗츠 `REV_*`(직납과 동일)
 - 롤백 원칙:
   - 롤백은 REFUND 추가가 아니라 원본 커밋 이벤트 및 대응 라인의 **물리 삭제**

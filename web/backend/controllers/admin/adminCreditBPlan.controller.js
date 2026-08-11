@@ -542,6 +542,7 @@ export async function adminManualMatch(req, res) {
           [
             {
               chargeOrderId: order._id,
+              userId: order.userId,
               businessAnchorId: order.businessAnchorId,
               status: "PENDING_APPROVAL",
               supplyAmount: Number(order.supplyAmount),

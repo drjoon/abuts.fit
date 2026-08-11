@@ -158,7 +158,8 @@ function pushRevenueLines({
 }
 
 /**
- * 기공의뢰 소매가 1회 차감 + 거래처 여부에 따른 기공크레딧(LAB_SETTLEMENT_CREDIT)/REV_* 분배.
+ * 기공의뢰: 치과 유료크레딧(REQ_PAID_CREDIT) 1회 차감 + 기공소 기공크레딧(LAB_SETTLEMENT_CREDIT)/REV_* 분배.
+ * 치과는 settlement 버킷을 쓰지 않고 유료 잔액으로 기공비를 지불한다.
  * 호출 시점: 기공소 의뢰수락(mark-accepted). 전송 생성 시점이 아님.
  */
 export async function commitPracticeTransferBilling({
@@ -234,7 +235,7 @@ export async function commitPracticeTransferBilling({
     });
     const paidCredit = Number(balance?.paidCredit || 0);
     if (paidCredit < fees.total) {
-      const err = new Error("치과 유료 크레딧이 부족합니다.");
+      const err = new Error("치과 유료크레딧이 부족합니다.");
       err.statusCode = 402;
       err.payload = {
         reason: "insufficient_credit_for_practice_transfer",
@@ -339,8 +340,8 @@ export async function commitPracticeTransferBilling({
       session,
     });
 
-    // 기공소 기공크레딧 충전은 단일 저널로 원자성 유지.
-    // LAB_SETTLEMENT_CHARGE는 표시용 alias(meta.eventAlias).
+    // 기공소 기공크레딧(정산 대기) 충전은 단일 저널로 원자성 유지.
+    // LAB_SETTLEMENT_CHARGE는 표시용 alias(meta.eventAlias). 치과 유료크레딧 차감과 동일 저널.
     if (ownSession) await session.commitTransaction();
 
     return {

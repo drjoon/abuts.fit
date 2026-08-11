@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: balance 응답에 requestorKind·showSettlementCredit(기공크레딧은 lab만 UI 노출).
 // - 2026-08-11: spend insights 추천 충전액을 월사용량/3 반올림으로 변경. 단위는 기공소 50만/치과 100만.
 // - 2026-08-11: 기공소 기공크레딧 일별 정산·지급 내역 API 추가 (제조사 정산 UX 정렬).
 // related files:
@@ -171,18 +172,31 @@ function buildLedgerQuery(scope) {
   return { businessAnchorId: scope.businessAnchorId };
 }
 
-async function getBalanceBreakdown(scope) {
+async function getBalanceBreakdown(scope, requestorKindHint) {
   const snapshot = await getBusinessCreditBalanceSnapshot({
     businessAnchorId: scope.businessAnchorId,
     upsertIfMissing: true,
   });
+
+  let kind = normalizeRequestorKind(requestorKindHint) || null;
+  if (!kind) {
+    const anchor = await BusinessAnchor.findById(scope.businessAnchorId)
+      .select({ requestorKind: 1 })
+      .lean();
+    kind = normalizeRequestorKind(anchor?.requestorKind) || null;
+  }
+  const isLab = kind === "lab";
 
   return {
     balance: Number(snapshot?.balance || 0),
     paidCredit: Number(snapshot?.paidCredit || 0),
     freeRequestCredit: Number(snapshot?.freeRequestCredit || 0),
     freeShippingCredit: Number(snapshot?.freeShippingCredit || 0),
+    // 기공크레딧(LAB_SETTLEMENT_CREDIT)은 기공소가 치과로부터 적립·월정산하는 버킷.
+    // 치과는 유료크레딧으로 기공비를 지불하며 settlement 잔액 UI를 쓰지 않는다.
     settlementCredit: Number(snapshot?.settlementCredit || 0),
+    requestorKind: kind,
+    showSettlementCredit: isLab,
   };
 }
 
@@ -196,7 +210,7 @@ export async function getMyCreditBalance(req, res) {
   }
 
   const scope = { businessAnchorId: String(identity.businessAnchorId || "") };
-  const balanceData = await getBalanceBreakdown(scope);
+  const balanceData = await getBalanceBreakdown(scope, req.user?.requestorKind);
 
   return res.json({
     success: true,
