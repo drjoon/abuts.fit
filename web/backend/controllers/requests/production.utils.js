@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 묶음 당일출고 회귀 가드. lead 계산·스케줄 모두 접수 YMD 초과를 강제.
 // - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일·기본 직경 그룹.
 // - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 모두 출고일에
 //   디자인 리드 +1영업일 추가.
@@ -150,8 +151,10 @@ export function resolveLeadDaysWithSameDayCutoff({
     return baseDays;
   }
 
-  // 묶음출고: minBusinessDays=N → 접수일 다음부터 N영업일 생산 후 출고 요일 정렬
-  // (자정까지 접수 → 익영업일 16:00, RequestorBulkShippingBannerCard SSOT)
+  // 묶음출고 SSOT (강제):
+  // - minBusinessDays=N → 접수일 다음 영업일부터 N일 생산 후 주간 발송 요일 정렬
+  // - lead=1 → 익영업일 16:00 출고 가능 (자정 컷오프)
+  // - 절대 (N-1)로 당일 출고하지 않음. same-day cutoff는 신속 전용.
   void requestedAt;
   return baseDays;
 }
@@ -423,11 +426,15 @@ export async function calculateInitialProductionSchedule({
   const leadDays = designMode
     ? 1
     : (manufacturerLeadTimes?.[diameterKey]?.minBusinessDays ?? 1);
-  const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
-    leadDays,
-    requestedAt: now,
-    shippingMode: "normal",
-  });
+  // 묶음은 당일 출고 금지. (N-1) 회귀 시에도 최소 1영업일을 보장한다.
+  const resolvedLeadDays = Math.max(
+    1,
+    resolveLeadDaysWithSameDayCutoff({
+      leadDays,
+      requestedAt: now,
+      shippingMode: "normal",
+    }),
+  );
 
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
   // 의뢰 시각(now=requestedAt) 기준일. getTodayYmdInKst()만 쓰면 재계산 스크립트가
@@ -445,6 +452,17 @@ export async function calculateInitialProductionSchedule({
       days: designLeadDays,
     });
   }
+  // 방어 가드: 묶음 생산완료/출고 기준일이 접수일과 같거나 이전이면 익영업일로 강제.
+  if (
+    baseBatchStartYmd &&
+    batchProcessingYmd &&
+    batchProcessingYmd <= baseBatchStartYmd
+  ) {
+    batchProcessingYmd = await addKoreanBusinessDays({
+      startYmd: baseBatchStartYmd,
+      days: 1,
+    });
+  }
   const scheduledBatchProcessing = createKstDateTime(
     batchProcessingYmd,
     PACKING_CUTOFF_HOUR,
@@ -453,10 +471,24 @@ export async function calculateInitialProductionSchedule({
 
   // 묶음 배송: 리드타임(생산 가능일) 이후, requestor 주간 발송 요일에 맞춰 발송일을 정렬한다.
   // 프론트 신규의뢰 ETA(useLeadTimeForecast)와 동일하게, 가장 가까운 선택 요일로 맞춘다.
-  const resolvedShipPickupYmd = await resolveNextWeeklyBatchYmd({
+  let resolvedShipPickupYmd = await resolveNextWeeklyBatchYmd({
     baseYmd: batchProcessingYmd,
     weeklyBatchDays,
   });
+  if (
+    baseBatchStartYmd &&
+    resolvedShipPickupYmd &&
+    resolvedShipPickupYmd <= baseBatchStartYmd
+  ) {
+    const nextBizYmd = await addKoreanBusinessDays({
+      startYmd: baseBatchStartYmd,
+      days: 1,
+    });
+    resolvedShipPickupYmd = await resolveNextWeeklyBatchYmd({
+      baseYmd: nextBizYmd,
+      weeklyBatchDays,
+    });
+  }
   const scheduledPickupBase = createKstDateTime(
     resolvedShipPickupYmd,
     PACKING_CUTOFF_HOUR,

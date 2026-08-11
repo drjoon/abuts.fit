@@ -46,7 +46,8 @@ Notes:
      `출고시간 지남`은 16:00 KST 이후만. 기준시각: `estimatedShipYmd` 16:00 KST)
   - 신규의뢰 ETA: `src/pages/requestor/new_request/hooks/useLeadTimeForecast.ts`
     (묶음: `src/shared/shipping/weeklyBatchSchedule.ts` — 백엔드 `resolveNextWeeklyBatchYmd`와 동일 civil YMD 요일)
-    (묶음: 백엔드와 동일하게 접수 당일=1일차 `(N-1)` 후 주간 발송 요일 정렬)
+    (묶음: 백엔드와 동일하게 `minBusinessDays=N` → N영업일 후 출고, lead=1이면 익영업일.
+     당일 출고·`(N-1)` 금지. 이후 주간 발송 요일 정렬)
     (신속: KST 12시 이전=당일, 이후=+1영업일 — 백엔드 `EXPRESS_CUTOFF_HOUR_KST=12`와 동일.
      선택 가능 조건: 신속 ETA YMD < 묶음 ETA YMD — `isExpressShippingSelectable`)
     (디자인+생산 `design_custom_abutment`: 묶음/신속 공통 출고 +1영업일 —

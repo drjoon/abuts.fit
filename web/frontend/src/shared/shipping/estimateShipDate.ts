@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 묶음 (N-1)/당일출고 금지 주석 명시.
 // - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일.
 // - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 출고 +1영업일.
 // - 2026-08-10: 묶음 리드타임 minBusinessDays=N → N영업일 후 출고(lead=1 → 익영업일).
@@ -69,6 +70,7 @@ function addBusinessDaysFromKstYmd(startYmd: string, days: number): string {
 }
 
 function resolveLeadDaysForPickup(leadDays: number): number {
+  // 묶음 SSOT: minBusinessDays=N → N영업일 후(lead=1 → 익영업일). (N-1)/당일 금지.
   if (!Number.isFinite(leadDays) || leadDays <= 0) return 1;
   return Math.max(1, Math.floor(Number(leadDays)));
 }

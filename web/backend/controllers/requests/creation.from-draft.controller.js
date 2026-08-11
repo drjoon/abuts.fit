@@ -1016,7 +1016,7 @@ export async function createRequestsFromDraft(req, res) {
           });
           return addKoreanBusinessDays({
             startYmd: createdYmd,
-            days: resolvedLeadDays,
+            days: Math.max(1, resolvedLeadDays),
           });
         })(),
       ]);
@@ -1496,7 +1496,10 @@ export async function createRequestsFromDraft(req, res) {
 
             const estimatedShipYmd = await addKoreanBusinessDays({
               startYmd: createdYmd,
-              days: resolvedLeadDays,
+              days:
+                shippingMode === "express"
+                  ? resolvedLeadDays
+                  : Math.max(1, resolvedLeadDays),
             });
             newRequest.timeline = newRequest.timeline || {};
             newRequest.timeline.originalEstimatedShipYmd = estimatedShipYmd;

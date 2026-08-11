@@ -279,7 +279,10 @@ export async function createRequest(req, res) {
 
       estimatedShipYmdRaw = await addKoreanBusinessDays({
         startYmd: createdYmd,
-        days: resolvedLeadDays,
+        days:
+          shippingMode === "express"
+            ? resolvedLeadDays
+            : Math.max(1, resolvedLeadDays),
       });
     }
 
@@ -1093,7 +1096,10 @@ export async function createRequestsBulk(req, res) {
               });
               const added = await addKoreanBusinessDays({
                 startYmd: createdYmd,
-                days: resolvedLeadDays,
+                days:
+                  itemShippingMode === "express"
+                    ? resolvedLeadDays
+                    : Math.max(1, resolvedLeadDays),
               });
               estimatedShipYmdRaw = added;
             }

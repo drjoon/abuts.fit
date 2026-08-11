@@ -102,8 +102,9 @@
     - 신속: **KST 12시 이전** 당일 영업일이면 당일 16:00 출고, 이후(또는 휴일)면 +1영업일
     - 신속 **선택 가능**: 신속 ETA YMD < 묶음 ETA YMD (`expressSelectable.utils.js` /
       프론트 `isExpressShippingSelectable`). 이점 없으면 UI 비활성·모드 변경 400·접수 시 normal 강등
-    - 묶음: `resolveLeadDaysWithSameDayCutoff` — 접수 당일=1일차 → `(N-1)` 영업일 후
-      주간 발송 요일 정렬 (`resolveNextWeeklyBatchYmd`)
+    - 묶음: `resolveLeadDaysWithSameDayCutoff` — `minBusinessDays=N`이면 접수
+      **익영업일부터** N영업일 생산 후 주간 발송 요일 정렬 (`resolveNextWeeklyBatchYmd`).
+      lead=1 → 익영업일 16:00 (당일 출고 금지, `(N-1)` 사용 금지)
     - **디자인+생산** (`productMode === "design_custom_abutment"`): 묶음/신속 공통으로
       출고일에 디자인 리드 **+1영업일** (프론트 `estimateShipDate.ts`와 동일).
       안내 UI: `PricingPolicyDialog`, `NewRequestShippingSection`,

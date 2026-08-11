@@ -495,7 +495,7 @@ export async function buildShippingEstimate(req) {
     });
     estimatedShipYmdRaw = await addKoreanBusinessDays({
       startYmd: todayYmd,
-      days: resolvedLeadDays,
+      days: mode === "express" ? resolvedLeadDays : Math.max(1, resolvedLeadDays),
     });
   }
 
