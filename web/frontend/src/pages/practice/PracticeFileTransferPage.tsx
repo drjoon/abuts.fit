@@ -28,6 +28,7 @@
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+ * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
  */
 
@@ -765,12 +766,12 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   if (raw === "취소") return "취소";
   if (raw === "발송완료") return "발송완료";
   if (raw === "수신완료") return "수신완료";
-  if (raw === "다운로드완료") return "다운로드완료";
+  if (raw === "의뢰수락" || raw === "다운로드완료") return "의뢰수락";
 
   // 레거시/과거 데이터 호환
   if (raw === "수신전" || raw === "확인전") return "발송완료";
   if (raw === "확인") return "수신완료";
-  if (lowered === "downloaded") return "다운로드완료";
+  if (lowered === "downloaded" || lowered === "accepted") return "의뢰수락";
   if (raw.includes("전달완료") || raw.includes("배송완료")) return "수신완료";
   if (raw.includes("의뢰") || raw.includes("접수") || raw.includes("대기")) return "발송완료";
 
@@ -849,7 +850,7 @@ export const PracticeFileTransferPage = ({
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
-  const [recentStatusFilter, setRecentStatusFilter] = useState<"all" | "발송완료" | "수신완료" | "다운로드완료">("all");
+  const [recentStatusFilter, setRecentStatusFilter] = useState<"all" | "발송완료" | "수신완료" | "의뢰수락">("all");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
@@ -913,6 +914,8 @@ export const PracticeFileTransferPage = ({
   const draftFilesRef = useRef<DraftTransferFileItem[]>([]);
   const draftSummaryIdRef = useRef<string | null>(null);
   const activeDraftIdRef = useRef<string | null>(null);
+  /** 어벗생산의뢰 등에서 navigate state.prefilledFiles 1회만 소비 */
+  const consumedPrefillLocationKeyRef = useRef<string | null>(null);
   /** 파일 업로드 동기화 중 원격 draft 적용으로 폼이 깜빡이지 않게 한다. */
   const fileSyncInFlightRef = useRef(false);
   const resetIntakeFormAfterTransferRef = useRef<() => Promise<void>>(async () => {});
@@ -1983,6 +1986,25 @@ export const PracticeFileTransferPage = ({
   }, [location.pathname, location.state, navigate, toast]);
 
   useEffect(() => {
+    if (consumedPrefillLocationKeyRef.current === location.key) return;
+
+    const state =
+      location.state && typeof location.state === "object"
+        ? (location.state as { prefilledFiles?: unknown })
+        : null;
+
+    const incomingFiles = Array.isArray(state?.prefilledFiles)
+      ? state.prefilledFiles.filter((item): item is File => item instanceof File)
+      : [];
+
+    consumedPrefillLocationKeyRef.current = location.key;
+
+    if (incomingFiles.length === 0) return;
+
+    handleIncomingFiles(incomingFiles);
+  }, [handleIncomingFiles, location.key, location.state]);
+
+  useEffect(() => {
     try {
       const parsed = adoptDropzoneDraftIntoTransferFormIfNeeded();
       if (!parsed) return;
@@ -2748,8 +2770,8 @@ export const PracticeFileTransferPage = ({
         existing.status = "발송완료";
       } else if (statusSet.has("수신완료")) {
         existing.status = "수신완료";
-      } else if (statusSet.has("다운로드완료")) {
-        existing.status = "다운로드완료";
+      } else if (statusSet.has("의뢰수락") || statusSet.has("다운로드완료")) {
+        existing.status = "의뢰수락";
       } else if (statusSet.has("취소")) {
         existing.status = "취소";
       } else {
@@ -2780,8 +2802,8 @@ export const PracticeFileTransferPage = ({
     return groupedTransfers.reduce(
       (acc, request) => {
         const status = String(request.status || "").trim();
-        if (status === "다운로드완료") {
-          acc.downloaded += 1;
+        if (status === "의뢰수락" || status === "다운로드완료") {
+          acc.accepted += 1;
         } else if (status === "수신완료") {
           acc.read += 1;
         } else {
@@ -2789,7 +2811,7 @@ export const PracticeFileTransferPage = ({
         }
         return acc;
       },
-      { sent: 0, read: 0, downloaded: 0 },
+      { sent: 0, read: 0, accepted: 0 },
     );
   }, [groupedTransfers]);
 
@@ -5386,20 +5408,20 @@ export const PracticeFileTransferPage = ({
                       type="button"
                       className="rounded-full"
                       onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "다운로드완료" ? "all" : "다운로드완료"))
+                        setRecentStatusFilter((prev) => (prev === "의뢰수락" ? "all" : "의뢰수락"))
                       }
-                      aria-pressed={recentStatusFilter === "다운로드완료"}
+                      aria-pressed={recentStatusFilter === "의뢰수락"}
                     >
                       <Badge
                         variant="outline"
                         className={cn(
                           "cursor-pointer",
-                          recentStatusFilter === "다운로드완료"
+                          recentStatusFilter === "의뢰수락"
                             ? "border-primary/70 bg-primary-soft text-primary-strong"
                             : "hover:bg-muted/40",
                         )}
                       >
-                        다운로드 {statusCounts.downloaded}건
+                        의뢰수락 {statusCounts.accepted}건
                       </Badge>
                     </button>
                   </div>

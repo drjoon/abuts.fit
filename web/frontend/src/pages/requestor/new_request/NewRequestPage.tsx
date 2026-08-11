@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(PLY/OBJ는 기공의뢰).
+// - 2026-08-11: 3MB 초과 확인 모달 «기공의뢰» 클릭 시 prefilledFiles로 기공의뢰 페이지에 첨부.
+// - 2026-08-11: 3MB 초과 드롭/오픈 시 3D 프리뷰+ConfirmDialog로 커스텀어벗 여부 확인(구강스캔→기공의뢰 안내).
 // - 2026-08-11: 기공소 어벗의뢰 상단 — 거래 치과 등록 D-day 배너.
 // - 2026-08-11: 상단 헤더(지난 의뢰) 제거 — 대시보드 최근 의뢰 카드로만 제공.
 // - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드에 미반영(신규 업로드만).
@@ -28,7 +31,9 @@ import { useFileVerification } from "./hooks/useFileVerification";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { clearLocalDraft } from "./utils/localDraftStorage";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
+import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
 import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkeleton";
@@ -63,11 +68,14 @@ import {
 // related files:
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - web/frontend/src/features/support/components/ConfirmDialog.tsx
+// - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/models/user.model.js
+// - .cursor/rules/oral-scan-file-size.mdc
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 업로드/매칭은 사용하지 않는다.
 
 
@@ -106,6 +114,9 @@ const NewRequestPageContent = () => {
     useState(false);
   const [anodizingEnabled, setAnodizingEnabled] = useState(true);
   const [anodizingSaving, setAnodizingSaving] = useState(false);
+  /** 3MB 초과(구강스캔 후보) — ConfirmDialog 확인 후 첨부 */
+  const [oversizedPendingFiles, setOversizedPendingFiles] = useState<File[]>([]);
+  const [oversizedPreviewIndex, setOversizedPreviewIndex] = useState(0);
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
@@ -1384,14 +1395,23 @@ const NewRequestPageContent = () => {
         return;
       }
 
-      if (ext === ".stl" || ext === ".ply" || ext === ".obj") {
+      if (ext === ".ply" || ext === ".obj") {
+        rejectedFiles.push({
+          name: file.name,
+          reason:
+            "어벗생산의뢰는 STL만 받을 수 있어요. PLY/OBJ는 기공의뢰를 이용해주세요.",
+        });
+        return;
+      }
+
+      if (ext === ".stl") {
         stlCandidates.push({ id: toNormalizedFileKey(file), file });
         return;
       }
 
       rejectedFiles.push({
         name: file.name,
-        reason: "3D 모델(STL, PLY, OBJ)만 업로드할 수 있어요.",
+        reason: "STL 파일만 업로드할 수 있어요.",
       });
     });
 
@@ -1415,7 +1435,10 @@ const NewRequestPageContent = () => {
     }
   };
 
-  const applyClassifiedBatch = (batch: ClassifiedUploadBatch) => {
+  const applyClassifiedBatch = (
+    batch: ClassifiedUploadBatch,
+    options?: { suppressEmptyToast?: boolean },
+  ) => {
     const stlFiles = batch.stlCandidates.map((item) => item.file);
 
     if (stlFiles.length > 0) {
@@ -1483,7 +1506,7 @@ const NewRequestPageContent = () => {
       });
     }
 
-    if (stlFiles.length === 0) {
+    if (stlFiles.length === 0 && !options?.suppressEmptyToast) {
       toast({
         title: "업로드할 파일이 없습니다",
         description: "선택된 파일 중 업로드 가능한 파일이 없었습니다.",
@@ -1493,10 +1516,55 @@ const NewRequestPageContent = () => {
     }
   };
 
+  const clearOversizedPending = useCallback(() => {
+    setOversizedPendingFiles([]);
+    setOversizedPreviewIndex(0);
+  }, []);
+
   const handleIncomingFiles = (selectedFiles: File[]) => {
     const normalized = dedupeFiles(selectedFiles || []);
     if (!normalized.length) return;
-    applyClassifiedBatch(classifyIncomingFiles(normalized));
+
+    const batch = classifyIncomingFiles(normalized);
+    const smallCandidates: StlSelectionCandidate[] = [];
+    const largeCandidates: StlSelectionCandidate[] = [];
+    for (const candidate of batch.stlCandidates) {
+      if (isLikelyOralScanSize(candidate.file.size)) {
+        largeCandidates.push(candidate);
+      } else {
+        smallCandidates.push(candidate);
+      }
+    }
+
+    applyClassifiedBatch(
+      {
+        stlCandidates: smallCandidates,
+        rejectedFiles: batch.rejectedFiles,
+        ignoredFiles: batch.ignoredFiles,
+      },
+      { suppressEmptyToast: largeCandidates.length > 0 },
+    );
+
+    if (largeCandidates.length > 0) {
+      setOversizedPendingFiles((prev) =>
+        dedupeFiles([...prev, ...largeCandidates.map((item) => item.file)]),
+      );
+      setOversizedPreviewIndex(0);
+    }
+  };
+
+  const confirmOversizedPending = () => {
+    const pending = oversizedPendingFiles;
+    clearOversizedPending();
+    if (!pending.length) return;
+    applyClassifiedBatch({
+      stlCandidates: pending.map((file) => ({
+        id: toNormalizedFileKey(file),
+        file,
+      })),
+      rejectedFiles: [],
+      ignoredFiles: [],
+    });
   };
 
   const checkDesignSoftwareOnDrop = useCallback(() => {
@@ -1612,6 +1680,16 @@ const NewRequestPageContent = () => {
     return <NewRequestPageSkeleton />;
   }
 
+  const oversizedPreviewFile =
+    oversizedPendingFiles[
+      Math.min(
+        oversizedPreviewIndex,
+        Math.max(0, oversizedPendingFiles.length - 1),
+      )
+    ] ?? null;
+  const formatOversizedMb = (bytes: number) =>
+    `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+
   return (
     <PageFileDropZone
       onFiles={handleIncomingDroppedFiles}
@@ -1620,6 +1698,83 @@ const NewRequestPageContent = () => {
     >
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
         {isLabRequestor ? <LabTradingPartnerWindowBanner /> : null}
+        <ConfirmDialog
+          open={oversizedPendingFiles.length > 0}
+          panelClassName="max-w-xl"
+          confirmTone="primary"
+          title="커스텀 어벗 STL이 맞나요?"
+          confirmLabel="이대로 진행"
+          cancelLabel="취소"
+          onConfirm={confirmOversizedPending}
+          onCancel={clearOversizedPending}
+          description={
+            <div className="space-y-3">
+              <p>
+                이 페이지는{" "}
+                <span className="font-semibold">커스텀 어벗 STL</span>만
+                받습니다.
+              </p>
+              <p>
+                구강 스캔이라면{" "}
+                <button
+                  type="button"
+                  className="font-semibold text-primary-strong underline underline-offset-2"
+                  onClick={() => {
+                    const filesToPrefill = [...oversizedPendingFiles];
+                    clearOversizedPending();
+                    navigate("/dashboard/practice-transfers?mode=send", {
+                      state: {
+                        prefilledFiles: filesToPrefill,
+                        source: "new-request-oversized",
+                      },
+                    });
+                  }}
+                >
+                  기공의뢰
+                </button>{" "}
+                페이지를 이용해주세요.
+              </p>
+              {oversizedPendingFiles.length > 1 ? (
+                <ul className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
+                  {oversizedPendingFiles.map((file, index) => (
+                    <li key={`${file.name}:${file.size}:${file.lastModified}`}>
+                      <button
+                        type="button"
+                        className={
+                          index === oversizedPreviewIndex
+                            ? "w-full rounded px-2 py-1 text-left font-medium text-primary-strong bg-primary-soft"
+                            : "w-full rounded px-2 py-1 text-left text-slate-700 hover:bg-white"
+                        }
+                        onClick={() => setOversizedPreviewIndex(index)}
+                      >
+                        {file.name}{" "}
+                        <span className="text-slate-500">
+                          ({formatOversizedMb(file.size)})
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : oversizedPreviewFile ? (
+                <p className="truncate text-xs text-slate-600">
+                  {oversizedPreviewFile.name} (
+                  {formatOversizedMb(oversizedPreviewFile.size)})
+                </p>
+              ) : null}
+              {oversizedPreviewFile ? (
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                  <StlPreviewViewer
+                    file={oversizedPreviewFile}
+                    showOverlay={false}
+                    showGrid={false}
+                    className="h-56 min-h-[14rem]"
+                  />
+                </div>
+              ) : null}
+              <p>그래도 어벗생산의뢰로 첨부할까요?</p>
+            </div>
+          }
+        />
         <MultiActionDialog
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={false}
@@ -1957,7 +2112,7 @@ const NewRequestPageContent = () => {
                   toast({
                     title: "파일이 필요합니다",
                     description:
-                      "최소 1개의 3D 모델(STL, PLY, OBJ)을 추가한 뒤 의뢰해주세요.",
+                      "최소 1개의 STL 파일을 추가한 뒤 의뢰해주세요.",
                     variant: "destructive",
                     duration: 4000,
                   });

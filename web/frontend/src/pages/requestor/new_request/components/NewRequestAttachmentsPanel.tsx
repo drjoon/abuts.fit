@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(accept·드롭존 문구).
 // - 2026-08-11: 상단 버튼·드롭존 카드내 좌우상하 여백 균일(중첩 px 제거, 카드 패딩 SSOT).
 // - 2026-08-11: 디자인소프트웨어·아노다이징 뱃지를 파일 용량 오른쪽으로 이동, 축소. 아노 OFF도 동일 secondary 색.
 // - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드 뱃지에 미반영.
@@ -1097,7 +1098,7 @@ export function NewRequestAttachmentsPanel({
           }
           e.currentTarget.value = "";
         }}
-        accept=".stl,.ply,.obj"
+        accept=".stl,model/stl,application/sla"
       />
 
       <div className="flex flex-col flex-1 min-h-0 gap-3 h-full">
@@ -1155,7 +1156,7 @@ export function NewRequestAttachmentsPanel({
           onClick={() => uploadInputRef.current?.click()}
         >
           <p className="whitespace-nowrap text-xs md:text-sm text-muted-foreground">
-            여기를 클릭하거나 3D 모델(STL, PLY, OBJ)을 드래그해 추가하세요.
+            여기를 클릭하거나 STL 파일을 드래그해 추가하세요.
           </p>
         </div>
 
