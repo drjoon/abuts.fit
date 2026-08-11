@@ -1,4 +1,8 @@
 // change-log:
+// - 2026-08-11: 기공/어벗 라벨 열 폭 확대(5.5rem) — 요약카드는 남은 폭 균등.
+// - 2026-08-11: 요약카드 패딩·라벨·아이콘·간격 완화(답답함 해소).
+// - 2026-08-11: 기공/어벗 — 라벨 고정폭 + 카드 flex로 좌·총폭 정렬(어벗 카드 약간 넓게).
+// - 2026-08-11: 기공 6카드(+작업완료) 한 줄 — 열 수 동적·카드 패딩 축소.
 // - 2026-08-11: 행 악센트 바 제거 → 6카드 가로 연결선. 라벨은 가운데 정렬 유지.
 // - 2026-08-11: 기공/어벗 행 라벨 — 그라데이션·악센트 바·글래스 톤으로 세련화.
 // - 2026-08-11: 요약카드 수직 압축, 전기간대비 제거, 기공/어벗 행 라벨 스타일 정리.
@@ -41,19 +45,19 @@ type Props = {
   onCardClick?: (stat: RequestorDashboardStat, rowLabel?: string) => void;
 };
 
-const ROW_GRID_CLASS =
-  "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2";
+/** 기공/어벗 공통: 라벨 열 폭을 맞춰 카드 영역 시작점을 정렬 */
+const ROW_LABEL_COL_CLASS = "w-full xl:w-[5.5rem] xl:shrink-0";
 
 const resolveRowTheme = (label: string) =>
   GIGONG_ABUT_ACCENT[label as GigongAbutAccentKey] || DEFAULT_GIGONG_ABUT_ACCENT;
 
 const StatCardSkeleton = () => (
-  <Card className="app-glass-card app-glass-card--lg">
-    <CardHeader className="flex flex-row items-center justify-between space-y-0 px-2 pt-1.5 pb-0.5">
-      <Skeleton className="h-3 w-14" />
-      <Skeleton className="h-3 w-3 rounded-full" />
+  <Card className="app-glass-card app-glass-card--lg min-w-0 xl:flex-1">
+    <CardHeader className="flex flex-row items-center justify-between space-y-0 px-2.5 pt-2 pb-1">
+      <Skeleton className="h-3 w-12" />
+      <Skeleton className="h-3.5 w-3.5 rounded-full" />
     </CardHeader>
-    <CardContent className="px-2 pb-1.5 pt-0.5">
+    <CardContent className="px-2.5 pb-2 pt-0.5">
       <Skeleton className="mx-auto h-5 w-12" />
     </CardContent>
   </Card>
@@ -62,10 +66,10 @@ const StatCardSkeleton = () => (
 const RowLabelSlot = ({ label }: { label: string }) => {
   const theme = resolveRowTheme(label);
   return (
-    <div className="flex h-full min-h-[3.25rem] items-center justify-center">
+    <div className="flex h-full min-h-[3.5rem] w-full items-center justify-center">
       <div
         className={cn(
-          "relative inline-flex h-[2.75rem] min-w-[4.5rem] items-center justify-center overflow-hidden rounded-xl border px-3 py-1.5 backdrop-blur-sm",
+          "relative inline-flex h-[3rem] w-full items-center justify-center overflow-hidden rounded-xl border px-2 py-1.5 backdrop-blur-sm",
           theme.shell,
           theme.glow,
         )}
@@ -97,17 +101,17 @@ const StatCard = ({
   const Icon = stat.icon;
   return (
     <Card
-      className={`app-glass-card app-glass-card--lg${onClick ? " cursor-pointer" : ""}`}
+      className={`app-glass-card app-glass-card--lg min-w-0 xl:flex-1${onClick ? " cursor-pointer" : ""}`}
       onClick={onClick}
     >
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 px-2 pt-1.5 pb-0.5">
-        <CardTitle className="text-[11px] sm:text-xs font-medium leading-tight text-foreground">
+      <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 px-2.5 pt-2 pb-1">
+        <CardTitle className="min-w-0 truncate text-[11px] sm:text-xs font-medium leading-tight text-foreground">
           {stat.label}
         </CardTitle>
-        <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-slate-500 flex-shrink-0" />
+        <Icon className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
       </CardHeader>
-      <CardContent className="px-2 pb-1.5 pt-0.5">
-        <div className="w-full flex items-center justify-center text-sm sm:text-base md:text-lg font-bold leading-none text-foreground whitespace-nowrap tracking-tight tabular-nums">
+      <CardContent className="px-2.5 pb-2 pt-0.5">
+        <div className="w-full flex items-center justify-center text-base sm:text-lg font-bold leading-none text-foreground whitespace-nowrap tracking-tight tabular-nums">
           {stat.value}
         </div>
       </CardContent>
@@ -134,6 +138,25 @@ const renderStatCards = (
     );
   });
 
+const StatsRowShell = ({
+  rowLabel,
+  children,
+}: {
+  rowLabel?: string;
+  children: React.ReactNode;
+}) => (
+  <div className="relative z-[1] flex flex-col gap-2 xl:flex-row xl:items-stretch">
+    {rowLabel ? (
+      <div className={ROW_LABEL_COL_CLASS}>
+        <RowLabelSlot label={rowLabel} />
+      </div>
+    ) : null}
+    <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:flex xl:flex-1">
+      {children}
+    </div>
+  </div>
+);
+
 const StatsRow = ({
   row,
   onCardClick,
@@ -149,10 +172,9 @@ const StatsRow = ({
           row.rowLabel as GigongAbutAccentKey,
         )}
       />
-      <div className={cn("relative z-[1]", ROW_GRID_CLASS)}>
-        <RowLabelSlot label={row.rowLabel} />
+      <StatsRowShell rowLabel={row.rowLabel}>
         {renderStatCards(row, onCardClick)}
-      </div>
+      </StatsRowShell>
     </div>
   );
 };
@@ -179,15 +201,19 @@ export const RequestorDashboardStatsCards = ({
                   GIGONG_ABUT_CONNECTOR_THICKNESS_CLASS,
                 )}
               />
-              <div className={cn("relative z-[1]", ROW_GRID_CLASS)}>
-                <div className="flex min-h-[3.25rem] items-center justify-center">
-                  <Skeleton className="h-[2.75rem] w-[4.5rem] rounded-xl" />
+              <div className="relative z-[1] flex flex-col gap-2 xl:flex-row xl:items-stretch">
+                <div className={ROW_LABEL_COL_CLASS}>
+                  <div className="flex min-h-[3.5rem] w-full items-center justify-center">
+                    <Skeleton className="h-[3rem] w-full rounded-xl" />
+                  </div>
                 </div>
-                {Array.from({ length: Math.max(row.stats.length, 5) }).map(
-                  (_, index) => (
-                    <StatCardSkeleton key={`skeleton-${rowIndex}-${index}`} />
-                  ),
-                )}
+                <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:flex xl:flex-1">
+                  {Array.from({ length: Math.max(row.stats.length, 1) }).map(
+                    (_, index) => (
+                      <StatCardSkeleton key={`skeleton-${rowIndex}-${index}`} />
+                    ),
+                  )}
+                </div>
               </div>
             </div>
           ))}

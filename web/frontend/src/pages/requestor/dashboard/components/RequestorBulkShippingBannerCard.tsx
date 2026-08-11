@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 오늘 출고 예정은 건 단위만 표시. 좌측 세로 버튼·우측 요약 배치.
 // - 2026-08-11: 출고 안내 문구를 카드에서 제거하고 Info 빠른 툴팁으로 이동.
 // - 2026-08-09: 디자인+생산 출고 +1영업일 안내를 SHIP_OUT_INFO_MESSAGE에 반영.
 // - 2026-08-06: 출고 카드/모달 문구·레이아웃 정리.
@@ -220,7 +221,6 @@ export const RequestorBulkShippingBannerCard = ({
   const shippingMemo = useMemo(() => {
     if (!shippingSummaryData) {
       return {
-        todayCount: 0,
         todayRequests: [] as ShippingPackageSummaryRequest[],
       };
     }
@@ -238,22 +238,7 @@ export const RequestorBulkShippingBannerCard = ({
         isCreatedAtInPeriod(req?.createdAt, period, { includeMissing: false }),
       );
 
-    // 기간 밖 의뢰만 남은 박스는 카운트에서 제외
-    const todayCount = todayPackages.filter((pkg) => {
-      const requests = Array.isArray((pkg as any).requests)
-        ? (pkg as any).requests
-        : [];
-      if (requests.length === 0) {
-        // 요청 상세가 없으면 패키지 단위는 유지(레거시 응답 호환)
-        return true;
-      }
-      return requests.some((req: ShippingPackageSummaryRequest) =>
-        isCreatedAtInPeriod(req?.createdAt, period, { includeMissing: false }),
-      );
-    }).length;
-
     return {
-      todayCount,
       todayRequests: todayRequests ?? [],
     };
   }, [period, shippingSummaryData]);
@@ -696,69 +681,50 @@ export const RequestorBulkShippingBannerCard = ({
             </div>
           </div>
         </CardHeader>
-        <CardContent className="pt-0 pb-4 text-sm text-foreground space-y-3">
-          {isShippingSummaryLoading ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-6 text-center text-xs text-slate-500">
-              출고 내역 불러오는 중...
+        <CardContent className="pt-0 pb-4 text-sm text-foreground">
+          <div className="grid grid-cols-2 items-stretch gap-3">
+            <div className="flex min-w-0 flex-col gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                className="h-9 w-full px-2 text-xs font-semibold"
+                onClick={handleOpenModal}
+              >
+                출고 대기 내역
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 w-full px-2 text-xs font-semibold bg-white/80"
+                onClick={handleLeadTimeButtonClick}
+                disabled={isLeadTimeLoading}
+              >
+                {isLeadTimeLoading ? "조회 중..." : "리드타임 조회"}
+              </Button>
             </div>
-          ) : (
-            <div className="rounded-xl border border-primary-muted/80 bg-gradient-to-br from-primary-soft to-primary-soft/80 px-4 py-3.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-strong">
-                    오늘 출고 예정
-                  </p>
-                  <p className="mt-1 text-2xl font-bold leading-none text-primary-strong">
-                    {shippingMemo.todayCount.toLocaleString()}
-                    <span className="ml-1 text-sm font-semibold text-primary-strong">
-                      박스
-                    </span>
-                  </p>
-                </div>
-                <div className="h-10 w-px bg-primary-muted/80" />
-                <div className="min-w-0 text-right">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                    박스 구성
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="mt-0.5 h-auto px-0 py-0 text-2xl font-bold leading-none text-slate-900 hover:bg-transparent hover:text-primary-strong"
-                    disabled={
-                      shippingMemo.todayCount === 0 ||
-                      shippingMemo.todayRequests.length === 0
-                    }
-                    onClick={() => setTodayBoxDialogOpen(true)}
-                  >
-                    {shippingMemo.todayRequests.length.toLocaleString()}
-                    <span className="ml-1 text-sm font-semibold text-slate-600">
-                      건
-                    </span>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Button
-              variant="default"
-              size="sm"
-              className="h-9 w-full font-semibold"
-              onClick={handleOpenModal}
-            >
-              출고 대기 내역
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 w-full font-semibold bg-white/80"
-              onClick={handleLeadTimeButtonClick}
-              disabled={isLeadTimeLoading}
-            >
-              {isLeadTimeLoading ? "조회 중..." : "리드타임 조회"}
-            </Button>
+            {isShippingSummaryLoading ? (
+              <div className="flex min-w-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-xs text-slate-500">
+                출고 내역 불러오는 중...
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="min-w-0 rounded-xl border border-primary-muted/80 bg-gradient-to-br from-primary-soft to-primary-soft/80 px-4 py-3 text-center disabled:cursor-default disabled:opacity-100"
+                disabled={shippingMemo.todayRequests.length === 0}
+                onClick={() => setTodayBoxDialogOpen(true)}
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-strong">
+                  오늘 출고 예정
+                </p>
+                <p className="mt-1 text-2xl font-bold leading-none text-primary-strong">
+                  {shippingMemo.todayRequests.length.toLocaleString()}
+                  <span className="ml-1 text-sm font-semibold text-primary-strong">
+                    건
+                  </span>
+                </p>
+              </button>
+            )}
           </div>
         </CardContent>
       </Card>

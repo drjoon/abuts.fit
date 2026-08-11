@@ -14,6 +14,7 @@ import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { DashboardShellSkeleton } from "@/shared/ui/dashboard/DashboardShellSkeleton";
 import {
   CheckCircle,
+  ClipboardCheck,
   Factory,
   FileText,
   Package,
@@ -74,6 +75,8 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-11: 대시보드 컨텐츠 max-w-7xl — 기공/어벗 요약카드 가로 여유.
+// - 2026-08-11: 기공 요약 — 의뢰수락 오른쪽「작업완료」추가(placeholder).
 // - 2026-08-11: 불완전 가공 프리뷰 File명을 원본 확장자(STL/PLY/OBJ)로 유지.
 // - 2026-08-11: 지연 위험 요약 카드 제거. 지연은 최근 의뢰 빨간 뱃지로 표시.
 // - 2026-08-11: 좌측(출고·불완전가공) + 우측 최근의뢰(동일 높이) 레이아웃.
@@ -1914,6 +1917,12 @@ export const RequestorDashboardPage = () => {
       interactive: false,
     },
     {
+      label: "작업완료",
+      value: "0",
+      icon: ClipboardCheck,
+      interactive: false,
+    },
+    {
       label: "포장.발송",
       value: "0",
       icon: Package,
@@ -1938,7 +1947,7 @@ export const RequestorDashboardPage = () => {
 
   return (
     <div className="h-full min-h-0">
-      <div className="max-w-6xl mx-auto w-full space-y-3">
+      <div className="max-w-7xl mx-auto w-full space-y-3">
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
         statsGridClassName="space-y-3"

@@ -1,4 +1,8 @@
 // change-log:
+// - 2026-08-11: 기공/어벗 라벨 열 5.5rem — 요약카드 폭 소폭 축소.
+// - 2026-08-11: 대시보드 스켈레톤 max-w-7xl·요약카드 여백 완화.
+// - 2026-08-11: 기공/어벗 스켈레톤 — 라벨 고정폭 + 카드 flex(총폭·좌정렬 맞춤).
+// - 2026-08-11: 기공 요약 스켈레톤 — 라벨+6카드(작업완료 포함) / 어벗 라벨+5.
 // - 2026-08-11: 지연 위험 요약 스켈레톤 제거. 좌측 출고·불완전가공 2행.
 // - 2026-08-11: 좌측 3행(출고·불완전가공·지연) + 우측 최근의뢰 스켈레톤으로 재배치.
 // - 2026-08-11: 오늘의 가격 카드 스켈레톤 제거. 헤더에 [정책]·무료 재제작 잔여 슬롯 반영.
@@ -30,7 +34,7 @@ const repeat = (count: number) => {
 };
 
 const StatCardSkeleton = () => (
-  <div className="rounded-2xl border border-border bg-muted/30 px-2 pt-1.5 pb-1.5 space-y-1">
+  <div className="min-w-0 space-y-1 rounded-2xl border border-border bg-muted/30 px-2 pt-1.5 pb-1.5 xl:flex-1">
     <div className="flex items-center justify-between">
       <Skeleton className="h-3 w-14" />
       <Skeleton className="h-3 w-3 rounded-full" />
@@ -46,7 +50,7 @@ export const DashboardShellSkeleton = ({
 }: DashboardShellSkeletonProps) => {
   return (
     <div className="h-full min-h-0">
-      <div className="max-w-6xl mx-auto w-full space-y-3">
+      <div className="max-w-7xl mx-auto w-full space-y-3">
         <div className="space-y-3 p-3">
           {/* headerRight: PeriodFilter + [정책] + 무료 재제작 잔여 (+ 불완전가공 알림) */}
           <div className="flex flex-wrap items-center gap-2">
@@ -58,21 +62,25 @@ export const DashboardShellSkeleton = ({
             <Skeleton className="h-8 w-36" />
           </div>
 
-          {/* stats: 기공/어벗 2행 × (라벨 + 5카드), 행 연결선 */}
+          {/* stats: 기공(라벨+6) / 어벗(라벨+5) — 라벨 고정폭, 카드 flex */}
           <div className="space-y-2">
-            {repeat(2).map((rowIdx) => (
+            {[6, 5].map((cardCount, rowIdx) => (
               <div key={`stat-row-${rowIdx}`} className="relative">
                 <div
                   aria-hidden
                   className={`pointer-events-none absolute inset-x-0 bottom-1 z-0 rounded-full bg-slate-200/70 opacity-55 ${GIGONG_ABUT_CONNECTOR_THICKNESS_CLASS}`}
                 />
-                <div className="relative z-[1] grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
-                  <div className="flex min-h-[3.25rem] items-center justify-center">
-                    <Skeleton className="h-[2.75rem] w-[4.5rem] rounded-xl" />
+                <div className="relative z-[1] flex flex-col gap-2 xl:flex-row xl:items-stretch">
+                  <div className="w-full xl:w-[5.5rem] xl:shrink-0">
+                    <div className="flex min-h-[3.5rem] w-full items-center justify-center">
+                      <Skeleton className="h-[3rem] w-full rounded-xl" />
+                    </div>
                   </div>
-                  {repeat(5).map((idx) => (
-                    <StatCardSkeleton key={`stat-${rowIdx}-${idx}`} />
-                  ))}
+                  <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:flex xl:flex-1">
+                    {repeat(cardCount).map((idx) => (
+                      <StatCardSkeleton key={`stat-${rowIdx}-${idx}`} />
+                    ))}
+                  </div>
                 </div>
               </div>
             ))}
