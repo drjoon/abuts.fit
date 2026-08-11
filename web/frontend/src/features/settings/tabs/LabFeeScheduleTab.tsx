@@ -134,13 +134,6 @@ export const LabFeeScheduleTab = () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="rounded-2xl border border-primary-muted/70 bg-primary-soft/30 px-4 py-3.5">
-          <p className="text-[13px] leading-relaxed text-slate-700">
-            등록 치과에 기공의뢰를 보낼 때 아래 수가가 적용됩니다. 어벗 소매가는
-            별도입니다.
-          </p>
-        </div>
-
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {LABELS.map(({ key, label, hint }) => (
             <div
