@@ -89,27 +89,8 @@ async function progressStages() {
 
     for (const req of productionToPackaging) {
       applyStatusMapping(req, "세척.패킹");
-      if (isManufacturerSampleRequest(req)) {
-        req.mailboxAddress = null;
-      } else {
-        try {
-          const requestorOrgId =
-            req.businessAnchorId || req.requestor?.businessAnchorId || null;
-          const nextMailboxAddress = await ensureMailboxAddressForBusiness({
-            requestMongoId: req._id,
-            requestorOrgId,
-            currentMailboxAddress: req.mailboxAddress,
-          });
-          if (nextMailboxAddress) {
-            req.mailboxAddress = nextMailboxAddress;
-          }
-        } catch (error) {
-          console.error("[STAGE_WORKER] mailbox allocation failed", {
-            requestId: req.requestId,
-            message: error?.message || String(error),
-          });
-        }
-      }
+      // 우편함 배정 SSOT: 세척.패킹 진입 시 선배정하지 않는다.
+      req.mailboxAddress = null;
       await req.save();
       updatedCount++;
       console.log(
@@ -124,9 +105,30 @@ async function progressStages() {
       // R&D 샘플은 발송/추적 대상이 아니므로 자동 워커에서도 제외한다.
       source: { $ne: "manufacturer_sample" },
       "price.rule": { $ne: "manufacturer_sample" },
-    });
+    }).populate("requestor", "businessAnchorId");
 
     for (const req of packagingToShipping) {
+      if (!isManufacturerSampleRequest(req)) {
+        try {
+          const requestorOrgId =
+            req.businessAnchorId || req.requestor?.businessAnchorId || null;
+          const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+            requestMongoId: req._id,
+            requestorOrgId,
+            currentMailboxAddress: null,
+          });
+          if (nextMailboxAddress) {
+            req.mailboxAddress = nextMailboxAddress;
+          }
+        } catch (error) {
+          console.error("[STAGE_WORKER] mailbox allocation failed", {
+            requestId: req.requestId,
+            message: error?.message || String(error),
+          });
+        }
+      } else {
+        req.mailboxAddress = null;
+      }
       applyStatusMapping(req, "포장.발송");
       await req.save();
       updatedCount++;
