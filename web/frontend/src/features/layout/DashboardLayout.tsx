@@ -183,7 +183,7 @@ const buildRequestorSidebarItems = (
     transferItem,
     {
       icon: FileText,
-      label: "어벗의뢰",
+      label: "어벗생산의뢰",
       href: "/dashboard/new-request",
       tooltip: ABUTMENT_REQUEST_TOOLTIP,
       accent: "어벗",

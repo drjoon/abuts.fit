@@ -28,7 +28,7 @@ const REQUESTOR = resolveAccount("requestor");
 
 const RELATED_REQUESTOR_PAGES = [
   { path: "/dashboard", label: "대시보드" },
-  { path: "/dashboard/new-request", label: "어벗의뢰" },
+  { path: "/dashboard/new-request", label: "어벗생산의뢰" },
   { path: "/dashboard/practice-transfers", label: "기공의뢰/기공의뢰수신" },
   { path: "/dashboard/settings?tab=business", label: "설정 > 사업자" },
   { path: "/dashboard/credits", label: "크레딧" },

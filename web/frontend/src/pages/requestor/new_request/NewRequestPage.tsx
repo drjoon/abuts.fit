@@ -1950,7 +1950,6 @@ const NewRequestPageContent = () => {
               onWeeklyBatchDaysChange={handleWeeklyBatchDaysChange}
               leadTimes={leadTimes}
               expressProductMode={expressSelectProductMode}
-              showDesignLeadTimeHint={!isLabRequestor}
               defaultShippingMode={defaultShippingMode}
               onDefaultShippingModeChange={handleDefaultShippingModeChange}
               onSubmit={() => {

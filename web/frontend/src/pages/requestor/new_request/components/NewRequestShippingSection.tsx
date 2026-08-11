@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 의뢰하기 위 «디자인까지 의뢰할 경우 1일 추가» 안내 삭제.
 // - 2026-08-11: 묶음/신속 옵션 카드 ring·그림자 잘림 방지(내부 여백 확대).
 // - 2026-08-09: 첨부 건이 디자인+생산이면 신속 선택 판정에 productMode(+1영업일) 반영.
 // - 2026-08-09: 출고 카드 상단 여백 정리(세로 중앙정렬 제거, 상하좌우 패딩 균일).
@@ -50,8 +51,6 @@ type Props = {
   leadTimes?: LeadTimesMap | null;
   /** 첨부 건이 디자인+생산(구강 스캔 묶음 등)이면 +1영업일 반영 */
   expressProductMode?: string | null;
-  /** false: 기공소 — «디자인까지 의뢰할 경우 1일 추가» 숨김 */
-  showDesignLeadTimeHint?: boolean;
   defaultShippingMode: ShippingMode;
   onDefaultShippingModeChange: (mode: ShippingMode) => void;
   onSubmit: () => void;
@@ -73,7 +72,6 @@ export function NewRequestShippingSection({
   onWeeklyBatchDaysChange,
   leadTimes = null,
   expressProductMode = null,
-  showDesignLeadTimeHint = true,
   defaultShippingMode,
   onDefaultShippingModeChange,
   onSubmit,
@@ -434,12 +432,7 @@ export function NewRequestShippingSection({
         </div>
       </div>
 
-      <div className="app-glass-card-content mt-auto shrink-0 space-y-2 px-2">
-        {showDesignLeadTimeHint ? (
-          <div className="text-center text-sm text-slate-600">
-            디자인까지 의뢰할 경우 1일 추가
-          </div>
-        ) : null}
+      <div className="app-glass-card-content mt-auto shrink-0 px-2">
         <div className="flex justify-center">
           <Button
             onClick={onSubmit}
