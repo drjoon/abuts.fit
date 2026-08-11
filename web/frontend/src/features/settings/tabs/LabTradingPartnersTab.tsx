@@ -7,6 +7,8 @@
 // - 2026-08-11: 「치과에 전달하기」중첩 카드 제거, 안내 문구 단순화.
 // - 2026-08-11: 목록 뱃지 — 가입 진행중(pending) / 등록 완료(active).
 // - 2026-08-11: 초대링크·안내문구 복사만으로는 목록 카드 미생성(가입 시작 시 표시).
+// - 2026-08-12: 상단 수수료 안내 — 예시 매출·수수료 다이어그램(프로그레스바)으로 교체.
+// - 2026-08-12: 200만 구간 확대 연결선 + 확대 영역 내부 배분 바로 조정.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Card,
@@ -223,6 +225,23 @@ export const LabTradingPartnersTab = () => {
   const platformFeePct = Math.round(
     Number(windowInfo?.feeRates?.nonPartnerFeeRate ?? 0.1) * 100,
   );
+  // 안내 예시: 기존 거래 1,000만 + 플랫폼 추가 200만 → 수수료는 추가분만
+  const exampleExistingMan = 1000;
+  const examplePlatformMan = 200;
+  const exampleFeeMan = Math.round(
+    (examplePlatformMan * platformFeePct) / 100,
+  );
+  const exampleLabFromPlatformMan = examplePlatformMan - exampleFeeMan;
+  const exampleTotalMan = exampleExistingMan + examplePlatformMan;
+  const existingBarPct = Math.round(
+    (exampleExistingMan / exampleTotalMan) * 100,
+  );
+  const platformBarPct = 100 - existingBarPct;
+  // 200만 구간을 오른쪽으로 확대해 수수료 조각을 읽기 쉽게 표시
+  const zoomPanelStartPct = Math.min(
+    existingBarPct,
+    Math.max(42, existingBarPct - 28),
+  );
   const windowProgressPct =
     remaining == null || windowDays <= 0
       ? 0
@@ -240,56 +259,182 @@ export const LabTradingPartnersTab = () => {
             치과 등록
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
-            치과 등록시 플랫폼 수수료 안내입니다.
+            기존 거래 치과 매출은 전액 기공소 몫이며, 플랫폼으로 늘어난
+            매출에만 수수료가 적용됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 lg:grid-cols-[7.5rem_minmax(0,1fr)]">
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-primary-muted bg-gradient-to-b from-primary-soft/80 to-white px-4 py-5 text-center shadow-sm">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-strong/70">
-                플랫폼
+          <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-slate-600">
+                예시로 보는 수수료
+              </p>
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
+                플랫폼 수수료 {platformFeePct}%
               </span>
-              <span className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-primary-strong">
-                {platformFeePct}%
-              </span>
-              <span className="mt-0.5 text-xs text-muted-foreground">수수료</span>
+            </div>
+            <div className="mt-2 space-y-1 text-[13px] leading-relaxed text-slate-700">
+              <p>
+                기존 거래 치과의 매출이{" "}
+                <span className="font-semibold tabular-nums text-slate-900">
+                  {exampleExistingMan.toLocaleString()}만원
+                </span>
+                이었고, 플랫폼을 쓰며{" "}
+                <span className="font-semibold tabular-nums text-slate-900">
+                  {examplePlatformMan.toLocaleString()}만원
+                </span>
+                이 추가로 생길 경우.
+              </p>
+              <p>
+                수수료는 추가 매출{" "}
+                <span className="font-semibold tabular-nums text-slate-900">
+                  {examplePlatformMan.toLocaleString()}만원
+                </span>
+                에 대한 {platformFeePct}%인{" "}
+                <span className="font-semibold tabular-nums text-primary-strong">
+                  {exampleFeeMan.toLocaleString()}만원
+                </span>
+                입니다.
+              </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-primary-muted/70 bg-primary-soft/35 p-4 shadow-sm">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 ring-1 ring-primary-muted/60">
-                    <ShieldCheck className="h-[18px] w-[18px] text-primary-strong" />
+            <div className="mt-4">
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground">
+                <span>월 매출 구성</span>
+                <span className="tabular-nums">
+                  합계 {exampleTotalMan.toLocaleString()}만원
+                </span>
+              </div>
+
+              <div
+                className="flex h-9 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200/70"
+                role="img"
+                aria-label={`기존 거래 ${exampleExistingMan}만원, 플랫폼 추가 ${examplePlatformMan}만원`}
+              >
+                <div
+                  className="flex items-center justify-center bg-primary-strong px-2 text-[11px] font-semibold tabular-nums text-white"
+                  style={{ width: `${existingBarPct}%` }}
+                >
+                  <span className="truncate">
+                    {exampleExistingMan.toLocaleString()}만
                   </span>
-                  <div className="min-w-0 space-y-1.5">
-                    <p className="text-sm font-semibold text-primary-strong">
-                      소개치과 · 수수료 면제
-                    </p>
-                    <p className="text-[13px] leading-relaxed text-slate-700">
-                      거래하시던 치과를 소개하여 가입하면, 해당 치과 의뢰건은
-                      플랫폼 수수료가 면제됩니다.
-                    </p>
-                    <p className="text-xs font-medium text-primary-strong/80">
-                      기공소 가입 후 {windowDays}일까지 적용
-                    </p>
-                  </div>
+                </div>
+                <div
+                  className="flex items-center justify-center bg-sky-400/90 px-2 text-[11px] font-semibold tabular-nums text-white"
+                  style={{ width: `${platformBarPct}%` }}
+                >
+                  <span className="truncate">
+                    {examplePlatformMan.toLocaleString()}만
+                  </span>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200/80">
-                    <Percent className="h-[18px] w-[18px] text-slate-600" />
-                  </span>
-                  <div className="min-w-0 space-y-1.5">
-                    <p className="text-sm font-semibold text-slate-900">
-                      그 외 의뢰 · {platformFeePct}%
-                    </p>
-                    <p className="text-[13px] leading-relaxed text-muted-foreground">
-                      어벗츠가 중개한 모든 의뢰건에 대해 플랫폼 수수료{" "}
-                      {platformFeePct}%가 발생합니다.
-                    </p>
+              {/* 200만 구간 → 확대 영역 연결선 + 내부 배분 바 */}
+              <div className="relative mt-0.5">
+                <svg
+                  className="h-7 w-full text-sky-300"
+                  viewBox="0 0 100 28"
+                  preserveAspectRatio="none"
+                  aria-hidden
+                >
+                  <polygon
+                    points={`${existingBarPct},0 100,0 100,28 ${zoomPanelStartPct},28`}
+                    fill="currentColor"
+                    opacity="0.18"
+                  />
+                  <line
+                    x1={existingBarPct}
+                    y1="0"
+                    x2={zoomPanelStartPct}
+                    y2="28"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <line
+                    x1="100"
+                    y1="0"
+                    x2="100"
+                    y2="28"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+
+                <div className="flex">
+                  <div
+                    className="shrink-0"
+                    style={{ width: `${zoomPanelStartPct}%` }}
+                    aria-hidden
+                  />
+                  <div
+                    className="min-w-0 space-y-1.5"
+                    style={{ width: `${100 - zoomPanelStartPct}%` }}
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground">
+                      <span>기공소 몫</span>
+                      <span className="tabular-nums text-amber-700">
+                        플랫폼 수수료
+                      </span>
+                    </div>
+                    <div
+                      className="grid h-9 grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-full bg-sky-50 ring-1 ring-sky-200/80"
+                      role="img"
+                      aria-label={`추가 매출 ${examplePlatformMan}만원 중 기공소 ${exampleLabFromPlatformMan}만원, 플랫폼 수수료 ${exampleFeeMan}만원`}
+                    >
+                      <div className="flex min-w-0 items-center px-2.5 text-[11px] font-medium tabular-nums text-sky-900/80">
+                        <span className="truncate">
+                          {exampleLabFromPlatformMan.toLocaleString()}만
+                        </span>
+                      </div>
+                      <div
+                        className="flex items-center justify-center bg-amber-500 px-3 text-[11px] font-semibold tabular-nums text-white whitespace-nowrap"
+                        title={`플랫폼 수수료 ${exampleFeeMan.toLocaleString()}만원`}
+                      >
+                        {exampleFeeMan.toLocaleString()}만
+                      </div>
+                    </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-primary-muted/70 bg-primary-soft/35 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 ring-1 ring-primary-muted/60">
+                  <ShieldCheck className="h-[18px] w-[18px] text-primary-strong" />
+                </span>
+                <div className="min-w-0 space-y-1.5">
+                  <p className="text-sm font-semibold text-primary-strong">
+                    소개치과 · 수수료 면제
+                  </p>
+                  <p className="text-[13px] leading-relaxed text-slate-700">
+                    거래하시던 치과를 소개하여 가입하면, 해당 치과 의뢰건은
+                    플랫폼 수수료가 면제됩니다.
+                  </p>
+                  <p className="text-xs font-medium text-primary-strong/80">
+                    기공소 가입 후 {windowDays}일까지 적용
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200/80">
+                  <Percent className="h-[18px] w-[18px] text-slate-600" />
+                </span>
+                <div className="min-w-0 space-y-1.5">
+                  <p className="text-sm font-semibold text-slate-900">
+                    그 외 의뢰 · {platformFeePct}%
+                  </p>
+                  <p className="text-[13px] leading-relaxed text-muted-foreground">
+                    어벗츠가 중개한 모든 의뢰건에 대해 플랫폼 수수료{" "}
+                    {platformFeePct}%가 발생합니다.
+                  </p>
                 </div>
               </div>
             </div>
