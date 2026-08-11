@@ -2,6 +2,9 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// change-log:
+// - 2026-08-11: fillHeight — 대시보드 작업영역 높이를 채우고 탭 콘텐츠 스크롤/중앙 배치 제어.
+// - 2026-08-11: fillHeight 시 이중 배경·패딩 제거(작업영역 흰 카드 기준).
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
@@ -29,6 +32,11 @@ type Props = {
   highlightTabKey?: string;
   /** 기본: max-w-4xl. 정산 등 넓은 표 UI는 max-w-6xl 등 전달. */
   contentMaxClassName?: string;
+  /**
+   * true면 min-h-screen 대신 부모 높이를 채움(대시보드 outlet).
+   * 탭 콘텐츠 영역이 flex-1이 되어 스크롤/중앙 배치를 탭별로 제어 가능.
+   */
+  fillHeight?: boolean;
 };
 
 export const SettingsScaffold = ({
@@ -37,10 +45,23 @@ export const SettingsScaffold = ({
   onTabChange,
   highlightTabKey,
   contentMaxClassName = "max-w-4xl",
+  fillHeight = false,
 }: Props) => {
   return (
-    <div className="min-h-screen bg-gradient-subtle p-4">
-      <div className={cn("mx-auto space-y-4", contentMaxClassName)}>
+    <div
+      className={cn(
+        fillHeight
+          ? "box-border flex h-full min-h-0 flex-col overflow-hidden"
+          : "min-h-screen bg-gradient-subtle p-4",
+      )}
+    >
+      <div
+        className={cn(
+          "mx-auto w-full",
+          fillHeight ? "flex min-h-0 flex-1 flex-col" : "space-y-4",
+          contentMaxClassName,
+        )}
+      >
         <TooltipProvider delayDuration={200}>
           <Tabs
             value={activeTab}
@@ -49,12 +70,15 @@ export const SettingsScaffold = ({
               if (tab?.disabled) return;
               onTabChange(next);
             }}
-            className="space-y-4"
+            className={cn(
+              fillHeight ? "flex min-h-0 flex-1 flex-col gap-4" : "space-y-4",
+            )}
           >
             <TabsList
               className={cn(
                 "flex h-auto w-full flex-wrap gap-1.5",
                 "px-1.5 py-1.5",
+                fillHeight && "shrink-0",
               )}
             >
               {tabs.map((t) => {
@@ -94,7 +118,14 @@ export const SettingsScaffold = ({
             </TabsList>
 
             {tabs.map((t) => (
-              <TabsContent key={t.key} value={t.key}>
+              <TabsContent
+                key={t.key}
+                value={t.key}
+                className={cn(
+                  fillHeight &&
+                    "mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-[state=inactive]:hidden",
+                )}
+              >
                 {t.disabled ? null : t.content}
               </TabsContent>
             ))}

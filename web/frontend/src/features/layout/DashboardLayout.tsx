@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-11: 작업영역(흰 카드)이 outlet 높이를 채우도록 — 충전 탭 수직 중앙·내역 테이블 스크롤 고정.
 // - 2026-08-11: 잔액 < 충전단위면 사이드바 크레딧에 깜빡이는 충전 뱃지·클릭 시 ?tab=charge.
 // - 2026-08-11: 의뢰자 사이드바에 크레딧 메뉴 추가. 충전 토스트 CTA → /dashboard/credits?tab=charge.
 // - 2026-08-11: 기공/어벗 사이드 — 버튼 그라데이션 제거, 가로 연결선만 적용.
@@ -1722,10 +1723,10 @@ export const DashboardLayout = () => {
                   </div>
                 </div>
               ) : null}
-              <div className="flex-1 min-h-0 overflow-auto">
-                <div className="flex flex-1 min-h-0 flex-col items-stretch p-2 sm:p-4 lg:p-6">
-                  <main className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white/80 p-4 shadow-lg backdrop-blur-xl sm:p-6">
-                    <div className="flex-1 min-h-0 overflow-auto">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex h-full min-h-0 flex-col items-stretch p-2 sm:p-4 lg:p-6">
+                  <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white/80 p-4 shadow-lg backdrop-blur-xl sm:p-6">
+                    <div className="flex h-full min-h-0 flex-1 flex-col overflow-auto">
                       <Outlet
                         context={{
                           worksheetSearch,

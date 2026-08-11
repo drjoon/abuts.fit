@@ -3,7 +3,10 @@
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
-// - 2026-08-11: 제조사 정산 페이지와 동일 UX(요약 카드·기간·일별/입금·정산규칙·정산 요청).
+// - 2026-08-11: 요약 5열(액션 버튼 세로). 일자 입력 제거·검색 상단 이동. 전체/거래처/비거래처를 필터 행으로.
+// - 2026-08-11: 요약 카드 — 하단 보조행 제거, 금액 옆 (N건), 높이 축소·중앙 정렬.
+// - 2026-08-11: 정산 요청 버튼 제거(매월 자동 지급). 안내는 정산규칙 모달에만 표시.
+// - 2026-08-11: 제조사 정산 페이지와 동일 UX(요약 카드·기간·일별/입금·정산규칙).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
@@ -13,9 +16,8 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   ArrowDown,
   ArrowUp,
@@ -25,8 +27,6 @@ import {
   CalendarClock,
   HandCoins,
   Landmark,
-  Loader2,
-  ReceiptText,
 } from "lucide-react";
 import {
   Dialog,
@@ -128,8 +128,6 @@ export const LabSettlementPayoutTab = () => {
 
   const [tab, setTab] = useState<"snapshot" | "payments">("snapshot");
   const { period, setPeriod } = usePeriodStore();
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [q, setQ] = useState("");
   const [partnerFilter, setPartnerFilter] = useState<
     "all" | "partner" | "nonPartner"
@@ -153,17 +151,12 @@ export const LabSettlementPayoutTab = () => {
   const anyLoading = loading || snapLoading;
 
   const [settlementCredit, setSettlementCredit] = useState(0);
-  const [payoutAmount, setPayoutAmount] = useState("");
-  const [payoutOpen, setPayoutOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [balanceLoading, setBalanceLoading] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const loadBalance = useCallback(async () => {
     if (!token) return;
-    setBalanceLoading(true);
     try {
       const res = await request<{
         data?: { settlementCredit?: number };
@@ -173,11 +166,9 @@ export const LabSettlementPayoutTab = () => {
         token,
       });
       if (!res.ok) return;
-      const bal = Number(res.data?.data?.settlementCredit || 0);
-      setSettlementCredit(bal);
-      setPayoutAmount(bal > 0 ? String(bal) : "");
-    } finally {
-      setBalanceLoading(false);
+      setSettlementCredit(Number(res.data?.data?.settlementCredit || 0));
+    } catch {
+      // ignore — summary card stays at last known value
     }
   }, [token]);
 
@@ -185,33 +176,21 @@ export const LabSettlementPayoutTab = () => {
     void loadBalance();
   }, [loadBalance]);
 
-  const resetFilters = () => {
-    setPeriod("30d");
-    setFrom("");
-    setTo("");
-    setQ("");
-    setPartnerFilter("all");
-  };
-
   const buildQueryParams = useCallback(
     (p: number) => {
       const params = new URLSearchParams({
         page: String(p),
         limit: String(PAGE_SIZE),
       });
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
-      if (!from && !to) {
-        const range = periodToYmdRange(period);
-        if (range) {
-          params.set("from", range.from);
-          params.set("to", range.to);
-        }
+      const range = periodToYmdRange(period);
+      if (range) {
+        params.set("from", range.from);
+        params.set("to", range.to);
       }
       if (q.trim()) params.set("q", q.trim());
       return params.toString();
     },
-    [from, to, period, q],
+    [period, q],
   );
 
   const loadPayouts = useCallback(
@@ -249,17 +228,13 @@ export const LabSettlementPayoutTab = () => {
 
   const buildSnapshotParams = useCallback(() => {
     const params = new URLSearchParams({ limit: "60" });
-    if (from) params.set("fromYmd", from);
-    if (to) params.set("toYmd", to);
-    if (!from && !to) {
-      const range = periodToYmdRange(period);
-      if (range) {
-        params.set("fromYmd", range.from);
-        params.set("toYmd", range.to);
-      }
+    const range = periodToYmdRange(period);
+    if (range) {
+      params.set("fromYmd", range.from);
+      params.set("toYmd", range.to);
     }
     return params.toString();
-  }, [period, from, to]);
+  }, [period]);
 
   const loadSnapshots = useCallback(async () => {
     if (!token) return;
@@ -297,7 +272,7 @@ export const LabSettlementPayoutTab = () => {
       return;
     }
     void loadSnapshots();
-  }, [tab, period, from, to, q, loadPayouts, loadSnapshots]);
+  }, [tab, period, q, loadPayouts, loadSnapshots]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -317,45 +292,6 @@ export const LabSettlementPayoutTab = () => {
 
   const handleTabChange = (v: string) => {
     if (v === "snapshot" || v === "payments") setTab(v);
-  };
-
-  const submitPayout = async () => {
-    if (!token) return;
-    const n = Math.round(Number(payoutAmount || 0));
-    if (!Number.isFinite(n) || n <= 0) {
-      toast({
-        title: "정산 금액을 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await request<{
-        success?: boolean;
-        message?: string;
-      }>({
-        path: "/api/credits/settlement-payout",
-        method: "POST",
-        token,
-        jsonBody: { amount: n },
-      });
-      if (!res.ok) {
-        toast({
-          title: "정산 요청 실패",
-          description: res.data?.message || "다시 시도해주세요.",
-          variant: "destructive",
-        });
-        return;
-      }
-      toast({ title: "결제크레딧 정산을 요청했습니다." });
-      setPayoutOpen(false);
-      await loadBalance();
-      if (tab === "snapshot") void loadSnapshots();
-      else void loadPayouts(1, true);
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const snapshotTotals = useMemo(() => {
@@ -481,272 +417,215 @@ export const LabSettlementPayoutTab = () => {
   return (
     <DashboardShell
       title="결제크레딧 정산"
-      subtitle="기공의뢰로 적립된 결제크레딧의 일별 집계와 입금 내역을 확인하세요."
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
-      headerRight={
-        <Dialog open={payoutOpen} onOpenChange={setPayoutOpen}>
-          <DialogTrigger asChild>
-            <Button type="button" className="h-9" disabled={balanceLoading}>
-              <Landmark className="mr-1.5 h-4 w-4" />
-              정산 요청
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>결제크레딧 정산 요청</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 text-sm">
-              <p className="text-muted-foreground">
-                등록된 입금 계좌로 정산합니다. 의뢰·배송 크레딧과 분리되어
-                있습니다.
-              </p>
-              <div>
-                <p className="text-xs text-muted-foreground">결제크레딧 잔액</p>
-                <p className="mt-0.5 text-lg font-semibold tabular-nums">
-                  {settlementCredit.toLocaleString()}원
-                </p>
-              </div>
-              <div>
-                <Label htmlFor="lab-settlement-amount">정산 금액 (원)</Label>
-                <Input
-                  id="lab-settlement-amount"
-                  type="number"
-                  min={0}
-                  className="mt-1"
-                  value={payoutAmount}
-                  onChange={(e) => setPayoutAmount(e.target.value)}
-                />
-              </div>
-              <Button
-                onClick={() => void submitPayout()}
-                disabled={submitting || settlementCredit <= 0}
-              >
-                {submitting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                정산 요청
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      }
+      subtitle=""
+      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
       stats={
         <>
-          <Card className="min-h-[116px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
+          <Card>
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
                 결제크레딧 잔액
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-xl md:text-2xl font-semibold text-primary-strong tabular-nums">
+            <CardContent className="p-3 pt-0">
+              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
                 ₩{settlementCredit.toLocaleString()}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground leading-tight">
-                정산 가능 잔액
               </div>
             </CardContent>
           </Card>
-          <Card className="min-h-[116px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
+          <Card>
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
                 거래처 적립 합계
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-xl md:text-2xl font-semibold text-primary-strong tabular-nums">
+            <CardContent className="p-3 pt-0">
+              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
                 ₩{snapshotTotals.partnerTotal.toLocaleString()}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground tabular-nums leading-tight">
-                {snapshotTotals.partnerCount}건
+                <span className="ml-1 text-sm font-medium text-muted-foreground">
+                  ({snapshotTotals.partnerCount}건)
+                </span>
               </div>
             </CardContent>
           </Card>
-          <Card className="min-h-[116px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
+          <Card>
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
                 비거래처 적립 합계
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-xl md:text-2xl font-semibold text-primary-strong tabular-nums">
+            <CardContent className="p-3 pt-0">
+              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
                 ₩{snapshotTotals.nonPartnerTotal.toLocaleString()}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground tabular-nums leading-tight">
-                {snapshotTotals.nonPartnerCount}건
+                <span className="ml-1 text-sm font-medium text-muted-foreground">
+                  ({snapshotTotals.nonPartnerCount}건)
+                </span>
               </div>
             </CardContent>
           </Card>
-          <Card className="min-h-[116px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
+          <Card>
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
                 지급 합계
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-lg sm:text-xl md:text-2xl font-semibold tabular-nums">
+            <CardContent className="p-3 pt-0">
+              <div className="text-center text-lg font-semibold tabular-nums sm:text-xl">
                 ₩{snapshotTotals.payoutTotal.toLocaleString()}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground tabular-nums leading-tight">
-                지급 ({snapshotTotals.payoutCount})
+                <span className="ml-1 text-sm font-medium text-muted-foreground">
+                  ({snapshotTotals.payoutCount}건)
+                </span>
               </div>
             </CardContent>
           </Card>
+          <div className="flex flex-col justify-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={tab === "snapshot" ? "default" : "outline"}
+              className="h-8 w-full"
+              onClick={() => setTab("snapshot")}
+            >
+              일별 정산
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={tab === "payments" ? "default" : "outline"}
+              className="h-8 w-full"
+              onClick={() => setTab("payments")}
+            >
+              입금 내역
+            </Button>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-full"
+                >
+                  정산규칙
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>기공소 결제크레딧 정산 규칙</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-2 text-sm">
+                  <div className="flex items-start gap-3 rounded-lg border p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
+                      01
+                    </span>
+                    <HandCoins className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">기공의뢰 적립</div>
+                      <div className="text-muted-foreground">
+                        거래 치과면 소매가 전액, 아니면 기공비만 결제크레딧으로
+                        적립
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 rounded-lg border p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
+                      02
+                    </span>
+                    <Building2 className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">버킷 분리</div>
+                      <div className="text-muted-foreground">
+                        의뢰·배송 크레딧과 완전 분리된 결제크레딧으로 관리
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 rounded-lg border p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
+                      03
+                    </span>
+                    <Landmark className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">매월 자동 지급</div>
+                      <div className="text-muted-foreground">
+                        결제크레딧 잔액은 사업자에 등록된 입금 계좌로 매월 자동
+                        지급됩니다. 별도 정산 요청은 필요하지 않습니다.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 rounded-lg border p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
+                      04
+                    </span>
+                    <CalendarClock className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">일별 정산 집계</div>
+                      <div className="text-muted-foreground">
+                        원장 기준 KST 일자별 실시간 집계
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 rounded-lg border p-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
+                      05
+                    </span>
+                    <BookOpenText className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">롤백</div>
+                      <div className="text-muted-foreground">
+                        기공의뢰 취소·롤백 시 해당 적립은 삭제형으로 정리
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </>
       }
       mainLeft={
         <div className="space-y-4">
           <Tabs value={tab} onValueChange={handleTabChange}>
-            <div className="mb-2 flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <PeriodFilter value={period} onChange={setPeriod} />
-                <TabsList className="h-9">
-                  <TabsTrigger value="snapshot">일별 정산</TabsTrigger>
-                  <TabsTrigger value="payments">입금 내역</TabsTrigger>
-                </TabsList>
-
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button type="button" variant="outline" className="h-9">
-                      정산규칙
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-lg">
-                    <DialogHeader>
-                      <DialogTitle>기공소 결제크레딧 정산 규칙</DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-2 text-sm">
-                      <div className="flex items-start gap-3 rounded-lg border p-3">
-                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                          01
-                        </span>
-                        <HandCoins className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="font-medium">기공의뢰 적립</div>
-                          <div className="text-muted-foreground">
-                            거래 치과면 소매가 전액, 아니면 기공비만
-                            결제크레딧으로 적립
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3 rounded-lg border p-3">
-                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                          02
-                        </span>
-                        <Building2 className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="font-medium">버킷 분리</div>
-                          <div className="text-muted-foreground">
-                            의뢰·배송 크레딧과 완전 분리된 결제크레딧으로 관리
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3 rounded-lg border p-3">
-                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                          03
-                        </span>
-                        <ReceiptText className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="font-medium">계좌 정산</div>
-                          <div className="text-muted-foreground">
-                            사업자에 등록된 입금 계좌로 정산 요청·지급
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3 rounded-lg border p-3">
-                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                          04
-                        </span>
-                        <CalendarClock className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="font-medium">일별 정산 집계</div>
-                          <div className="text-muted-foreground">
-                            원장 기준 KST 일자별 실시간 집계
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3 rounded-lg border p-3">
-                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                          05
-                        </span>
-                        <BookOpenText className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="font-medium">롤백</div>
-                          <div className="text-muted-foreground">
-                            기공의뢰 취소·롤백 시 해당 적립은 삭제형으로 정리
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
-                <div className="grow" />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  type="date"
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-                <span className="text-xs text-muted-foreground">~</span>
-                <Input
-                  type="date"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-                <Input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="검색 (계좌/저널ID)"
-                  className="h-9 w-full sm:w-[280px]"
-                />
-                <div className="inline-flex items-center rounded-md border bg-background p-0.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={partnerFilter === "all" ? "default" : "ghost"}
-                    className="h-7 px-2"
-                    onClick={() => setPartnerFilter("all")}
-                    disabled={anyLoading}
-                  >
-                    전체
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={partnerFilter === "partner" ? "default" : "ghost"}
-                    className="h-7 px-2"
-                    onClick={() => setPartnerFilter("partner")}
-                    disabled={anyLoading}
-                  >
-                    거래처
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={
-                      partnerFilter === "nonPartner" ? "default" : "ghost"
-                    }
-                    className="h-7 px-2"
-                    onClick={() => setPartnerFilter("nonPartner")}
-                    disabled={anyLoading}
-                  >
-                    비거래처
-                  </Button>
-                </div>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <PeriodFilter value={period} onChange={setPeriod} />
+              <div className="inline-flex items-center rounded-md border bg-background p-0.5">
                 <Button
                   type="button"
-                  variant="outline"
-                  className="h-9"
-                  onClick={resetFilters}
+                  size="sm"
+                  variant={partnerFilter === "all" ? "default" : "ghost"}
+                  className="h-7 px-2"
+                  onClick={() => setPartnerFilter("all")}
                   disabled={anyLoading}
                 >
-                  초기화
+                  전체
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={partnerFilter === "partner" ? "default" : "ghost"}
+                  className="h-7 px-2"
+                  onClick={() => setPartnerFilter("partner")}
+                  disabled={anyLoading}
+                >
+                  거래처
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={
+                    partnerFilter === "nonPartner" ? "default" : "ghost"
+                  }
+                  className="h-7 px-2"
+                  onClick={() => setPartnerFilter("nonPartner")}
+                  disabled={anyLoading}
+                >
+                  비거래처
                 </Button>
               </div>
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="검색 (계좌/저널ID)"
+                className="h-9 w-full sm:w-[280px]"
+              />
             </div>
 
             <TabsContent value="snapshot" className="mt-0">

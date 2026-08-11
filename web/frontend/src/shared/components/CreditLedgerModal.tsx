@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-11: 중복 일자(from~to) 입력 제거. 검색을 초기화 버튼 우측으로 이동.
+// - 2026-08-11: embedded 무한스크롤 — sentinel 재마운트 시 IntersectionObserver 재연결.
+// - 2026-08-11: embedded 모드에서 "크레딧 내역" 제목 숨김(탭 라벨로 충분). Dialog는 유지.
 // - 2026-08-11: embedded 모드 추가 — 의뢰자 크레딧 페이지에서 Dialog 없이 동일 원장 UI 사용.
 // - 2026-08-09: 잔액 요약 우측에 [충전] 버튼 노출 (chargeNavPath 제공 시).
 // - 2026-08-04: 의뢰 차감 행에 신속/묶음배송 뱃지 표시. (display-only)
@@ -364,8 +367,6 @@ export const CreditLedgerModal = ({
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [type, setType] = useState<"all" | CreditLedgerType>("all");
   const [q, setQ] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<CreditLedgerItem[]>([]);
@@ -391,30 +392,17 @@ export const CreditLedgerModal = ({
     pageRef.current = page;
   }, [page]);
 
-  const resetFilters = () => {
-    setPeriod("30d");
-    setType("all");
-    setQ("");
-    setFrom("");
-    setTo("");
-  };
-
   const buildPath = (pageNum: number) => {
     const params = new URLSearchParams();
-    const hasManualRange = Boolean(from || to);
-    if (!hasManualRange) {
-      if (period === "thisMonth" || period === "lastMonth") {
-        const range = periodToRange(period);
-        if (range?.startDate) params.set("from", range.startDate);
-        if (range?.endDate) params.set("to", range.endDate);
-      } else if (period) {
-        params.set("period", period);
-      }
+    if (period === "thisMonth" || period === "lastMonth") {
+      const range = periodToRange(period);
+      if (range?.startDate) params.set("from", range.startDate);
+      if (range?.endDate) params.set("to", range.endDate);
+    } else if (period) {
+      params.set("period", period);
     }
     if (type && type !== "all") params.set("type", type);
     if (q.trim()) params.set("q", q.trim());
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
     params.set("page", String(pageNum));
     params.set("pageSize", String(PAGE_SIZE));
 
@@ -496,13 +484,13 @@ export const CreditLedgerModal = ({
     hasMoreRef.current = true;
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, period, type, q, from, to, businessAnchorId]);
+  }, [isOpen, period, type, q, businessAnchorId]);
 
   // 무한 스크롤
   useEffect(() => {
     const sentinel = sentinelRef.current;
     const root = scrollRef.current;
-    if (!sentinel || !root || !isOpen) return;
+    if (!sentinel || !root || !isOpen || !hasMore) return;
 
     const io = new IntersectionObserver(
       (entries) => {
@@ -510,14 +498,14 @@ export const CreditLedgerModal = ({
         if (loadingRef.current || !hasMoreRef.current) return;
         const nextPage = pageRef.current + 1;
         setPage(nextPage);
-        load(nextPage, false);
+        void load(nextPage, false);
       },
       { root, rootMargin: "200px", threshold: 0 },
     );
     io.observe(sentinel);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, hasMore, items.length]);
 
   // 웹소켓 실시간 업데이트: 모달이 열린 상태를 유지한 채
   // 동일 모달 내 데이터(목록/잔액 스냅샷)만 갱신한다.
@@ -706,83 +694,54 @@ export const CreditLedgerModal = ({
           ) : null}
         </div>
       ) : null}
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2 py-0.5">
-            <PeriodFilter
-              value={period}
-              onChange={setPeriod}
-              useStoreCustomRange={false}
-            />
+      <div className="flex flex-wrap items-center gap-2 py-0.5">
+        <PeriodFilter
+          value={period}
+          onChange={setPeriod}
+          useStoreCustomRange={false}
+        />
 
-            <div className="w-[140px]">
-              <Select
-                value={type}
-                onValueChange={(v) => setType(v as CreditLedgerType | "all")}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="전체" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  <SelectItem value="SPEND_PAID">사용(유료)</SelectItem>
-                  <SelectItem value="SPEND_FREE_REQUEST">
-                    사용(무료·의뢰)
-                  </SelectItem>
-                  <SelectItem value="SPEND_FREE_SHIPPING">
-                    사용(무료·배송)
-                  </SelectItem>
-                  <SelectItem value="CHARGE_PAID">유료충전</SelectItem>
-                  <SelectItem value="CHARGE_FREE_REQUEST">
-                    무료충전(의뢰)
-                  </SelectItem>
-                  <SelectItem value="CHARGE_FREE_SHIPPING">
-                    무료충전(배송)
-                  </SelectItem>
-                  <SelectItem value="LAB_SETTLEMENT_CHARGE">
-                    결제크레딧 충전
-                  </SelectItem>
-                  <SelectItem value="LAB_SETTLEMENT_PAYOUT">
-                    결제크레딧 정산
-                  </SelectItem>
-                  <SelectItem value="ADJUST">조정</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9"
-              onClick={resetFilters}
-              disabled={loading}
-            >
-              초기화
-            </Button>
-          </div>
+        <div className="w-[140px]">
+          <Select
+            value={type}
+            onValueChange={(v) => setType(v as CreditLedgerType | "all")}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체</SelectItem>
+              <SelectItem value="SPEND_PAID">사용(유료)</SelectItem>
+              <SelectItem value="SPEND_FREE_REQUEST">
+                사용(무료·의뢰)
+              </SelectItem>
+              <SelectItem value="SPEND_FREE_SHIPPING">
+                사용(무료·배송)
+              </SelectItem>
+              <SelectItem value="CHARGE_PAID">유료충전</SelectItem>
+              <SelectItem value="CHARGE_FREE_REQUEST">
+                무료충전(의뢰)
+              </SelectItem>
+              <SelectItem value="CHARGE_FREE_SHIPPING">
+                무료충전(배송)
+              </SelectItem>
+              <SelectItem value="LAB_SETTLEMENT_CHARGE">
+                결제크레딧 충전
+              </SelectItem>
+              <SelectItem value="LAB_SETTLEMENT_PAYOUT">
+                결제크레딧 정산
+              </SelectItem>
+              <SelectItem value="ADJUST">조정</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 py-0.5">
-          <Input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="h-9 w-[150px]"
-          />
-          <span className="text-xs text-muted-foreground">~</span>
-          <Input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="h-9 w-[150px]"
-          />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="검색 (거래내역/코드/refId)"
-            className="h-9 w-full sm:w-[320px]"
-          />
-        </div>
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="검색 (거래내역/코드/refId)"
+          className="h-9 w-full sm:w-[320px]"
+        />
       </div>
 
       <div
@@ -943,9 +902,9 @@ export const CreditLedgerModal = ({
           </TableBody>
         </Table>
 
-        {hasMore && !loading && (
+        {hasMore ? (
           <div ref={sentinelRef} className="h-8" aria-hidden="true" />
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -959,10 +918,11 @@ export const CreditLedgerModal = ({
             className,
           )}
         >
-          <div className="flex items-center justify-between gap-2 shrink-0">
-            <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-            {headerActions}
-          </div>
+          {canCharge && !currentBalanceSnapshot ? (
+            <div className="flex items-center justify-end gap-2 shrink-0">
+              {headerActions}
+            </div>
+          ) : null}
           {body}
         </div>
       ) : (

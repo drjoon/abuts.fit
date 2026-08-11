@@ -1,4 +1,10 @@
 // change-log:
+// - 2026-08-11: 내역 탭 우측 상단 [충전] 버튼 제거(충전 탭으로 이동).
+// - 2026-08-11: 작업영역 높이 채움 + 충전 카드 수직 중앙. 내역 테이블 영역 고정 높이로 무한스크롤.
+// - 2026-08-11: 충전 탭 — 수직 스크롤 없이 남은 영역 수직 중앙 배치(fillHeight).
+// - 2026-08-11: 내역 테이블 높이 — 정산 탭처럼 뷰포트 하단까지 조금 더 길게.
+// - 2026-08-11: 충전 탭 외곽 카드 제거 + 입금정보/금액 패널 수직 중앙 배치.
+// - 2026-08-11: 내역/충전 탭도 정산과 동일 max-w-6xl. 충전 카드만 max-w-4xl 중앙 유지.
 // - 2026-08-11: 대시보드 헤더 [보유 크레딧]을 사이드바 크레딧 페이지로 이전 (내역/충전 탭).
 // - 2026-08-11: 기공소 결제크레딧 정산 탭 추가.
 // - 2026-08-11: 정산 탭을 제조사 정산 UX(일별 집계·입금 내역)로 확장. 넓은 레이아웃 적용.
@@ -25,8 +31,6 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 
 type TabKey = "ledger" | "charge" | "settlement";
 
-const CHARGE_TAB_PATH = "/dashboard/credits?tab=charge";
-
 export default function RequestorCreditsPage() {
   const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,12 +44,8 @@ export default function RequestorCreditsPage() {
         label: "내역",
         icon: Wallet,
         content: (
-          <div className="h-[min(70vh,720px)] min-h-[420px]">
-            <CreditLedgerModal
-              embedded
-              chargeNavPath={CHARGE_TAB_PATH}
-              className="h-full"
-            />
+          <div className="h-full min-h-0 overflow-hidden">
+            <CreditLedgerModal embedded className="h-full" />
           </div>
         ),
       },
@@ -53,7 +53,13 @@ export default function RequestorCreditsPage() {
         key: "charge",
         label: "충전",
         icon: CreditCard,
-        content: <PaymentTab userData={user || {}} />,
+        content: (
+          <div className="flex h-full min-h-0 items-center justify-center overflow-hidden">
+            <div className="mx-auto w-full max-w-4xl">
+              <PaymentTab userData={user || {}} compact />
+            </div>
+          </div>
+        ),
       },
     ];
     if (isLab) {
@@ -61,7 +67,11 @@ export default function RequestorCreditsPage() {
         key: "settlement",
         label: "결제크레딧 정산",
         icon: Landmark,
-        content: <LabSettlementPayoutTab />,
+        content: (
+          <div className="h-full min-h-0 overflow-auto">
+            <LabSettlementPayoutTab />
+          </div>
+        ),
       });
     }
     return list;
@@ -72,17 +82,18 @@ export default function RequestorCreditsPage() {
   const activeTab = allowed.has(tabFromUrl) ? tabFromUrl : "ledger";
 
   return (
-    <SettingsScaffold
-      tabs={tabs}
-      activeTab={activeTab}
-      contentMaxClassName={
-        activeTab === "settlement" ? "max-w-6xl" : "max-w-4xl"
-      }
-      onTabChange={(next) => {
-        const nextParams = new URLSearchParams(searchParams);
-        nextParams.set("tab", next);
-        setSearchParams(nextParams, { replace: true });
-      }}
-    />
+    <div className="h-full min-h-0">
+      <SettingsScaffold
+        tabs={tabs}
+        activeTab={activeTab}
+        contentMaxClassName="max-w-6xl"
+        fillHeight
+        onTabChange={(next) => {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.set("tab", next);
+          setSearchParams(nextParams, { replace: true });
+        }}
+      />
+    </div>
   );
 }
