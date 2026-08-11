@@ -363,7 +363,6 @@ function RequestorPracticeReceivePage({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
-  const [completeBusy, setCompleteBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
@@ -1566,16 +1565,6 @@ function RequestorPracticeReceivePage({
     selectedTransfer,
   ]);
 
-  const handleCompleteTransfer = useCallback(async () => {
-    if (!selectedTransfer || completeBusy) return;
-    setCompleteBusy(true);
-    try {
-      await markTransferComplete(selectedTransfer);
-    } finally {
-      setCompleteBusy(false);
-    }
-  }, [completeBusy, markTransferComplete, selectedTransfer]);
-
   const handleCardComplete = useCallback(
     async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
       event.preventDefault();
@@ -2303,15 +2292,6 @@ function RequestorPracticeReceivePage({
               selectedTransfer.isDownloaded ||
               selectedTransfer.requestorDownloadedAt),
         )}
-        onAccept={() => void handleAcceptTransfer()}
-        completeBusy={completeBusy}
-        completed={Boolean(selectedTransfer?.autoMatch?.completed)}
-        showComplete={Boolean(
-          selectedTransfer?.matchingMode === "auto" &&
-            selectedTransfer?.autoMatch?.mine &&
-            selectedTransfer?.autoMatch?.claimActive &&
-            !selectedTransfer?.autoMatch?.completed,
-        )}
         remainingLabel={
           selectedTransfer?.matchingMode === "auto" &&
           selectedTransfer?.autoMatch?.mine &&
@@ -2320,7 +2300,7 @@ function RequestorPracticeReceivePage({
             ? `남은 시간 ${formatRemainingMs(selectedTransfer.autoMatch?.remainingMs)}`
             : null
         }
-        onComplete={() => void handleCompleteTransfer()}
+        onAccept={() => void handleAcceptTransfer()}
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
         chatMessages={messages}

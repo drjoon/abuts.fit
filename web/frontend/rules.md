@@ -507,9 +507,9 @@ Notes:
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
-  - 기공소 의뢰수락: 상세 다이얼로그 「의뢰수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관.
+  - 기공소 의뢰수락: 상세 다이얼로그 「전체 다운로드」+「수락」(자동매칭 클레임 중이면 `수락 [남은 시간 …]`)→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서.
   - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto`. 검증·devops ON 기공소만 공개 풀 수신. 선착순 수락(3시간)·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 만료 시 재공개. devops UI: `PracticeTransferAutoMatchTab` (파트너 **기공의뢰 자동매칭** 탭)
-  - 기공소 수신 카드(상태=의뢰수락): `[작업완료]` / `[작업취소]` (`RequestorPracticePage`)
+  - 기공소 수신 카드(상태=의뢰수락): `[작업완료]` / `[작업취소]` (`RequestorPracticePage`) — 상세·채팅 모달에는 없음
 
 - 드롭존 가입(치과 전용, requestor+practice+free)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab·paid 선택 UI 없음.

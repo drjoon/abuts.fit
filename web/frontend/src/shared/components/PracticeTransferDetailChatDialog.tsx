@@ -51,16 +51,12 @@ type PracticeTransferDetailChatDialogProps = {
   downloadAllBusy?: boolean;
   onDownloadAllFiles: () => void | Promise<void>;
   onDownloadTransferFile: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
-  /** 기공소 의뢰수락 (수신 페이지에서만 전달) */
+  /** 기공소 의뢰수락 (수신 페이지에서만 전달). 작업완료/취소는 메인 카드에서 처리 */
   acceptBusy?: boolean;
   accepted?: boolean;
-  onAccept?: () => void | Promise<void>;
-  /** 자동매칭 작업 완료 */
-  completeBusy?: boolean;
-  completed?: boolean;
-  showComplete?: boolean;
+  /** 예: "남은 시간 3시간" → 버튼 라벨 `수락 [남은 시간 3시간]` */
   remainingLabel?: string | null;
-  onComplete?: () => void | Promise<void>;
+  onAccept?: () => void | Promise<void>;
   chatLoading: boolean;
   chatError: string;
   chatMessages: ChatMessage[];
@@ -110,11 +106,7 @@ export function PracticeTransferDetailChatDialog({
   acceptBusy = false,
   accepted = false,
   onAccept,
-  completeBusy = false,
-  completed = false,
-  showComplete = false,
   remainingLabel = null,
-  onComplete,
   chatLoading,
   chatError,
   chatMessages,
@@ -181,40 +173,6 @@ export function PracticeTransferDetailChatDialog({
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-muted-foreground">{filesLabel} ({files.length}개)</p>
                   <div className="flex flex-wrap items-center gap-2">
-                    {remainingLabel ? (
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {remainingLabel}
-                      </span>
-                    ) : null}
-                    {onAccept ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => void onAccept()}
-                        disabled={accepted || acceptBusy || completed}
-                      >
-                        {accepted || completed
-                          ? "수락완료"
-                          : acceptBusy
-                            ? "수락 중..."
-                            : "의뢰수락"}
-                      </Button>
-                    ) : null}
-                    {showComplete && onComplete ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => void onComplete()}
-                        disabled={completed || completeBusy}
-                      >
-                        {completed
-                          ? "작업완료"
-                          : completeBusy
-                            ? "완료 중..."
-                            : "작업 완료"}
-                      </Button>
-                    ) : null}
                     <Button
                       type="button"
                       variant="outline"
@@ -224,6 +182,22 @@ export function PracticeTransferDetailChatDialog({
                     >
                       {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
                     </Button>
+                    {onAccept ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void onAccept()}
+                        disabled={accepted || acceptBusy}
+                      >
+                        {acceptBusy
+                          ? "수락 중..."
+                          : remainingLabel
+                            ? `수락 [${remainingLabel}]`
+                            : accepted
+                              ? "수락완료"
+                              : "수락"}
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
                 {files.length ? (
