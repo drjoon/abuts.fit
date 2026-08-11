@@ -1110,6 +1110,8 @@ export async function createPracticeTransfer(req, res) {
           abutmentQty: billingResult.fees?.abutmentQty || 0,
           total: billingResult.fees?.total || 0,
           isTradingPartner: Boolean(billingResult.isPartner),
+          relationshipKind: billingResult.relationshipKind || "none",
+          feeRateApplied: Number(billingResult.feeRateApplied || 0),
           labTradingPartnerId: billingResult.labTradingPartnerId || null,
           labSettlementAmount: billingResult.labSettlementAmount || 0,
           abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,

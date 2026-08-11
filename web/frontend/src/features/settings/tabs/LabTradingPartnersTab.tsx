@@ -50,6 +50,7 @@ type WindowInfo = {
   elapsedDays?: number | null;
   windowDays?: number;
   pricingBaseDate?: string | null;
+  feeRates?: { labReferredFeeRate?: number; nonPartnerFeeRate?: number };
 };
 
 export const LabTradingPartnersTab = () => {
@@ -175,7 +176,6 @@ export const LabTradingPartnersTab = () => {
   };
 
   const handleCreateInviteLink = async () => {
-    if (!windowInfo?.canInvite) return;
     setCreating(true);
     try {
       const url = await createInvite();
@@ -188,12 +188,13 @@ export const LabTradingPartnersTab = () => {
   };
 
   const handleCopyGuideMessage = async () => {
-    if (!windowInfo?.canInvite) return;
     setCreating(true);
     try {
       const url = await createInvite();
       if (!url) return;
-      const message = `안녕하세요 🙂 어벗츠에서 거래 치과로 등록되면 정산·의뢰가 더 원활해져요!\n아래 링크로 가입하신 뒤, 사업자등록증 검증만 완료해 주시면 등록이 끝나요.\n${url}`;
+      const message = canInvite
+        ? `안녕하세요 🙂 어벗츠에서 거래 치과로 등록되면 정산·의뢰가 더 원활해져요!\n아래 링크로 가입하신 뒤, 사업자등록증 검증만 완료해 주시면 등록이 끝나요.\n${url}`
+        : `안녕하세요 🙂 어벗츠에서 함께해요!\n아래 링크로 가입하신 뒤, 사업자등록증 검증만 완료해 주시면 등록이 끝나요.\n${url}`;
       await copyText(
         message,
         "안내 문구를 복사했습니다.",
@@ -211,6 +212,10 @@ export const LabTradingPartnersTab = () => {
   const canInvite = Boolean(windowInfo?.canInvite);
   const remaining =
     windowInfo?.remainingDays == null ? null : Number(windowInfo.remainingDays);
+  const feeRatePct = {
+    referred: Math.round(Number(windowInfo?.feeRates?.labReferredFeeRate ?? 0.1) * 100),
+    nonPartner: Math.round(Number(windowInfo?.feeRates?.nonPartnerFeeRate ?? 0.2) * 100),
+  };
 
   return (
     <div className="space-y-4">
@@ -218,25 +223,36 @@ export const LabTradingPartnersTab = () => {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">결제 안내</CardTitle>
           <CardDescription>
-            기공소 입장에서, 거래 치과 등록 여부에 따라 적립이 달라집니다.
+            기공소 입장에서, 치과와의 관계에 따라 플랫폼 수수료가 달라집니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-primary-muted bg-primary-soft/40 px-3.5 py-3 space-y-1.5">
               <p className="font-semibold text-primary-strong">
-                등록한 거래 치과
+                거래 치과 (수수료 0%)
               </p>
               <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-slate-700">
-                <li>치과가 낸 금액(기공비+어벗)이 결제크레딧으로 들어옵니다</li>
+                <li>치과가 낸 금액(기공비+어벗) 전액이 결제크레딧으로 들어옵니다</li>
                 <li>어벗 생산비는 어벗의뢰 때 기공소가 어벗츠에 납부합니다</li>
               </ul>
             </div>
             <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-1.5">
-              <p className="font-semibold text-slate-900">미등록 치과</p>
+              <p className="font-semibold text-slate-900">
+                소개 치과 (수수료 {feeRatePct.referred}%)
+              </p>
               <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-muted-foreground">
-                <li>보철 기공비만 결제크레딧으로 적립됩니다</li>
-                <li>어벗 금액은 어벗츠 몫입니다</li>
+                <li>등록 기간 이후 소개로 들어온 치과</li>
+                <li>청구 총액의 {100 - feeRatePct.referred}%가 결제크레딧으로 적립됩니다</li>
+              </ul>
+            </div>
+            <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-1.5">
+              <p className="font-semibold text-slate-900">
+                그 외 치과 (수수료 {feeRatePct.nonPartner}%)
+              </p>
+              <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-muted-foreground">
+                <li>거래처 등록·소개 모두 아닌 경우</li>
+                <li>청구 총액의 {100 - feeRatePct.nonPartner}%가 결제크레딧으로 적립됩니다</li>
               </ul>
             </div>
           </div>
@@ -252,117 +268,103 @@ export const LabTradingPartnersTab = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Handshake className="h-5 w-5" />
-            거래 치과 등록
+            거래 치과 등록 / 소개
           </CardTitle>
           <CardDescription>
-            가입 후 30일 동안만 기존 거래 치과를 등록할 수 있습니다. 아래에서
-            소개 코드·초대 링크·안내 문구를 만든 뒤 치과에 전달하세요. 치과가
-            링크로 가입하고 사업자등록증 검증을 완료하면 등록됩니다.
+            {canInvite
+              ? "가입 후 30일 동안 등록한 치과는 정식 거래처(수수료 0%)가 됩니다. 아래에서 소개 코드·초대 링크·안내 문구를 만든 뒤 치과에 전달하세요."
+              : `정식 거래처 등록 기간은 종료되었지만, 소개 링크로 계속 치과를 소개할 수 있습니다. 이 이후 등록되는 치과는 소개 관계(수수료 ${feeRatePct.referred}%)로 등록됩니다.`}
+            {" "}치과가 링크로 가입하고 사업자등록증 검증을 완료하면 등록됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          {canInvite ? (
-            <div className="space-y-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">등록 가능 기간</span>
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold leading-none ${
-                        canInvite
-                          ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
-                          : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"
-                      }`}
-                    >
-                      {remaining == null
-                        ? "-"
-                        : canInvite
-                          ? `D-${remaining}일`
-                          : "기간 종료"}
-                    </span>
-                  </div>
-                  <p className="text-[13px] leading-relaxed text-muted-foreground">
-                    생성·복사한 내용을 치과에 보내 주세요.
-                  </p>
-                </div>
-
-                {referralCode ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleCopyCode()}
-                    className="shrink-0 rounded-xl bg-slate-50 px-4 py-3 text-right transition-colors hover:bg-slate-100 sm:min-w-[10rem]"
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">등록 가능 기간</span>
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold leading-none ${
+                      canInvite
+                        ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
+                        : "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
+                    }`}
                   >
-                    <div className="text-xs font-medium text-slate-500">
-                      소개 코드
-                    </div>
-                    <div className="mt-1 font-mono text-2xl font-semibold tracking-wider text-slate-900">
-                      {referralCode}
-                    </div>
-                  </button>
-                ) : null}
+                    {remaining == null
+                      ? "-"
+                      : canInvite
+                        ? `D-${remaining}일`
+                        : "기간 종료 · 이후 소개는 소개 관계로 등록"}
+                  </span>
+                </div>
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  생성·복사한 내용을 치과에 보내 주세요.
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <Button
+              {referralCode ? (
+                <button
                   type="button"
-                  variant="outline"
                   onClick={() => void handleCopyCode()}
-                  disabled={!referralCode}
-                  className="h-10 gap-1.5"
+                  className="shrink-0 rounded-xl bg-slate-50 px-4 py-3 text-right transition-colors hover:bg-slate-100 sm:min-w-[10rem]"
                 >
-                  {codeCopied ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <Hash className="h-4 w-4" />
-                  )}
-                  {codeCopied ? "복사됨" : "소개 코드"}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => void handleCreateInviteLink()}
-                  disabled={creating}
-                  className="h-10 gap-1.5"
-                >
-                  {creating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : linkCopied ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <Link2 className="h-4 w-4" />
-                  )}
-                  {linkCopied ? "복사됨" : "초대 링크"}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => void handleCopyGuideMessage()}
-                  disabled={creating}
-                  className="h-10 gap-1.5"
-                >
-                  {creating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : messageCopied ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  {messageCopied ? "복사됨" : "안내 문구"}
-                </Button>
-              </div>
+                  <div className="text-xs font-medium text-slate-500">
+                    소개 코드
+                  </div>
+                  <div className="mt-1 font-mono text-2xl font-semibold tracking-wider text-slate-900">
+                    {referralCode}
+                  </div>
+                </button>
+              ) : null}
             </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="text-muted-foreground">등록 가능 기간</span>
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold leading-none text-slate-600 ring-1 ring-slate-200">
-                  {remaining == null ? "-" : "기간 종료"}
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                신규 거래 치과 등록 기간이 종료되었습니다. 이미 등록·초대된 건은
-                유지됩니다.
-              </p>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleCopyCode()}
+                disabled={!referralCode}
+                className="h-10 gap-1.5"
+              >
+                {codeCopied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Hash className="h-4 w-4" />
+                )}
+                {codeCopied ? "복사됨" : "소개 코드"}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleCreateInviteLink()}
+                disabled={creating}
+                className="h-10 gap-1.5"
+              >
+                {creating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : linkCopied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Link2 className="h-4 w-4" />
+                )}
+                {linkCopied ? "복사됨" : "초대 링크"}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleCopyGuideMessage()}
+                disabled={creating}
+                className="h-10 gap-1.5"
+              >
+                {creating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : messageCopied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                {messageCopied ? "복사됨" : "안내 문구"}
+              </Button>
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 
@@ -383,14 +385,29 @@ export const LabTradingPartnersTab = () => {
             <div className="grid gap-3 sm:grid-cols-2">
               {items.map((item) => {
                 const isActive = item.status === "active";
+                const isReferred = item.status === "referred";
                 const name =
                   item.practiceName ||
                   item.practiceHint?.name ||
-                  (isActive ? "거래 치과" : "가입 진행 중");
+                  (isActive
+                    ? "거래 치과"
+                    : isReferred
+                      ? "소개 치과"
+                      : "가입 진행 중");
                 const address = String(item.practiceAddress || "").trim();
                 const representative = String(
                   item.practiceRepresentativeName || "",
                 ).trim();
+                const badgeLabel = isActive
+                  ? "거래처 등록 완료"
+                  : isReferred
+                    ? `소개 등록 완료 (수수료 ${feeRatePct.referred}%)`
+                    : "가입 진행중";
+                const badgeClassName = isActive
+                  ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
+                  : isReferred
+                    ? "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
+                    : "bg-amber-50 text-amber-800 ring-1 ring-amber-200";
 
                 return (
                   <div
@@ -403,13 +420,9 @@ export const LabTradingPartnersTab = () => {
                           {name}
                         </p>
                         <span
-                          className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${
-                            isActive
-                              ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
-                              : "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
-                          }`}
+                          className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${badgeClassName}`}
                         >
-                          {isActive ? "등록 완료" : "가입 진행중"}
+                          {badgeLabel}
                         </span>
                       </div>
                       <dl className="space-y-1 text-[13px] text-muted-foreground">

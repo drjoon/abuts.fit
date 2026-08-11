@@ -45,6 +45,26 @@ export function resolveRatesWithoutSalesman(configuredRates) {
 
 export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_DEFAULT_RATES);
 
+export const DEFAULT_LAB_REFERRED_FEE_RATE = 0.1;
+export const DEFAULT_NON_PARTNER_FEE_RATE = 0.2;
+
+/**
+ * 기공의뢰(practice transfer) 청구 총액 중 플랫폼 수수료 비율을 관계 유형에 따라 정한다.
+ * - "active"(정식 거래처): 0%
+ * - "referred"(30일 등록 기간 이후 소개로 등록): payoutRates.labReferredFeeRate (기본 10%)
+ * - 그 외(관계 없음): payoutRates.nonPartnerFeeRate (기본 20%)
+ * 걷힌 수수료 금액은 resolveRevenueOwnerBaseAllocation()으로 제조사/개발운영사/영업자/관리자에게 다시 분배된다.
+ */
+export function resolvePracticeTransferFeeRate({ relationshipKind, payoutRates }) {
+  if (relationshipKind === "active") return 0;
+  if (relationshipKind === "referred") {
+    const rate = Number(payoutRates?.labReferredFeeRate ?? DEFAULT_LAB_REFERRED_FEE_RATE);
+    return Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : DEFAULT_LAB_REFERRED_FEE_RATE;
+  }
+  const rate = Number(payoutRates?.nonPartnerFeeRate ?? DEFAULT_NON_PARTNER_FEE_RATE);
+  return Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : DEFAULT_NON_PARTNER_FEE_RATE;
+}
+
 export function isShippingSpendRevenueContext({ refType, freeAccountCode }) {
   return (
     String(refType || "") === "SHIPPING_PACKAGE" ||

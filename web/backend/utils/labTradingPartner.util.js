@@ -107,6 +107,33 @@ export async function findActiveTradingPartner({
 }
 
 /**
+ * 기공소-치과 관계를 판정한다.
+ * - "active": 30일 등록 기간 내 등록된 정식 거래처 (플랫폼 수수료 0%)
+ * - "referred": 30일 등록 기간 이후 발급된 초대로 검증 완료된 소개 관계 (플랫폼 수수료 10%)
+ * - null: 둘 다 아님 (플랫폼 수수료 20%)
+ */
+export async function findLabPracticeRelationship({
+  labAnchorId,
+  practiceAnchorId,
+}) {
+  const labId = String(labAnchorId || "").trim();
+  const practiceId = String(practiceAnchorId || "").trim();
+  if (
+    !labId ||
+    !practiceId ||
+    !Types.ObjectId.isValid(labId) ||
+    !Types.ObjectId.isValid(practiceId)
+  ) {
+    return null;
+  }
+  return LabTradingPartner.findOne({
+    labAnchorId: new Types.ObjectId(labId),
+    practiceAnchorId: new Types.ObjectId(practiceId),
+    status: { $in: ["active", "referred"] },
+  }).lean();
+}
+
+/**
  * 사업자 연결: 가입·사업자 저장 시 pending, 검증 완료 시 active.
  * verified=false → pending (가입 진행중), verified=true → active (등록 완료).
  */
@@ -130,12 +157,16 @@ export async function activateLabTradingPartnerInvite({
   if (invite.status === "canceled" || invite.status === "expired") {
     return { activated: false, reason: `invite_${invite.status}` };
   }
-  if (invite.status === "active") {
+  if (invite.status === "active" || invite.status === "referred") {
     if (
       invite.practiceAnchorId &&
       String(invite.practiceAnchorId) === practiceId
     ) {
-      return { activated: true, reason: "already_active", partner: invite };
+      return {
+        activated: true,
+        reason: invite.status === "active" ? "already_active" : "already_referred",
+        partner: invite,
+      };
     }
     return { activated: false, reason: "invite_already_bound" };
   }
@@ -145,7 +176,7 @@ export async function activateLabTradingPartnerInvite({
       String(invite.practiceAnchorId) === practiceId
     ) {
       if (verified) {
-        invite.status = "active";
+        invite.status = invite.invitedAfterWindow ? "referred" : "active";
         invite.activatedAt = new Date();
         await invite.save();
         return { activated: true, reason: "activated", partner: invite };
@@ -158,7 +189,7 @@ export async function activateLabTradingPartnerInvite({
   const existing = await LabTradingPartner.findOne({
     labAnchorId: invite.labAnchorId,
     practiceAnchorId: new Types.ObjectId(practiceId),
-    status: { $in: ["pending", "active"] },
+    status: { $in: ["pending", "active", "referred"] },
     _id: { $ne: invite._id },
   }).lean();
   if (existing) {
@@ -170,7 +201,7 @@ export async function activateLabTradingPartnerInvite({
   if (!invite.boundAt) invite.boundAt = now;
 
   if (verified) {
-    invite.status = "active";
+    invite.status = invite.invitedAfterWindow ? "referred" : "active";
     invite.activatedAt = now;
     await invite.save();
     return { activated: true, reason: "activated", partner: invite };
@@ -193,18 +224,36 @@ export async function activatePendingLabTradingPartnersForPractice({
     return { activated: false, count: 0 };
   }
   const now = new Date();
-  const result = await LabTradingPartner.updateMany(
-    {
-      practiceAnchorId: new Types.ObjectId(practiceId),
-      status: "pending",
-    },
-    {
-      $set: {
-        status: "active",
-        activatedAt: now,
+  const [activeResult, referredResult] = await Promise.all([
+    LabTradingPartner.updateMany(
+      {
+        practiceAnchorId: new Types.ObjectId(practiceId),
+        status: "pending",
+        invitedAfterWindow: { $ne: true },
       },
-    },
-  );
-  const count = Number(result?.modifiedCount || result?.nModified || 0);
+      {
+        $set: {
+          status: "active",
+          activatedAt: now,
+        },
+      },
+    ),
+    LabTradingPartner.updateMany(
+      {
+        practiceAnchorId: new Types.ObjectId(practiceId),
+        status: "pending",
+        invitedAfterWindow: true,
+      },
+      {
+        $set: {
+          status: "referred",
+          activatedAt: now,
+        },
+      },
+    ),
+  ]);
+  const count =
+    Number(activeResult?.modifiedCount || activeResult?.nModified || 0) +
+    Number(referredResult?.modifiedCount || referredResult?.nModified || 0);
   return { activated: count > 0, count };
 }

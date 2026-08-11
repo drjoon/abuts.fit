@@ -80,6 +80,13 @@ const practiceTransferSchema = new mongoose.Schema(
       abutmentQty: { type: Number, default: 0 },
       total: { type: Number, default: 0 },
       isTradingPartner: { type: Boolean, default: false },
+      // "active"(거래처, 0%) | "referred"(소개, labReferredFeeRate) | "none"(그 외, nonPartnerFeeRate)
+      relationshipKind: {
+        type: String,
+        enum: ["active", "referred", "none"],
+        default: "none",
+      },
+      feeRateApplied: { type: Number, default: 0 },
       labTradingPartnerId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "LabTradingPartner",

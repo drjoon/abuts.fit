@@ -21,6 +21,26 @@ import {
   normalizeRequestorKind,
   resolveRequestorProfile,
 } from "../../utils/requestorCapabilities.js";
+import {
+  DEFAULT_LAB_REFERRED_FEE_RATE,
+  DEFAULT_NON_PARTNER_FEE_RATE,
+} from "../../services/creditRevenuePolicy.service.js";
+
+/** 기공소 설정 화면 표시용 플랫폼 수수료율 조회 (개발운영사 설정 SSOT: BusinessAnchor.payoutRates) */
+async function resolvePlatformFeeRatesForDisplay() {
+  const devops = await BusinessAnchor.findOne({ businessType: "devops" })
+    .select({ payoutRates: 1 })
+    .sort({ createdAt: 1 })
+    .lean();
+  return {
+    labReferredFeeRate: Number(
+      devops?.payoutRates?.labReferredFeeRate ?? DEFAULT_LAB_REFERRED_FEE_RATE,
+    ),
+    nonPartnerFeeRate: Number(
+      devops?.payoutRates?.nonPartnerFeeRate ?? DEFAULT_NON_PARTNER_FEE_RATE,
+    ),
+  };
+}
 
 /**
  * 기공소 앵커 해석 — getMyBusiness와 동일하게 User/Anchor 프로필 SSOT 사용.
@@ -128,7 +148,11 @@ export async function getLabTradingPartnerWindow(req, res) {
       });
     }
     const window = await resolveLabTradingPartnerWindow({ labAnchorId });
-    return res.json({ success: true, data: { labAnchorId, ...window } });
+    const feeRates = await resolvePlatformFeeRatesForDisplay();
+    return res.json({
+      success: true,
+      data: { labAnchorId, ...window, feeRates },
+    });
   } catch (e) {
     console.error("[labTradingPartners] window error", e);
     return res.status(500).json({
@@ -148,11 +172,12 @@ export async function listLabTradingPartners(req, res) {
       });
     }
     const window = await resolveLabTradingPartnerWindow({ labAnchorId });
+    const feeRates = await resolvePlatformFeeRatesForDisplay();
     const rows = await LabTradingPartner.find({
       labAnchorId: new Types.ObjectId(labAnchorId),
       // 초대 링크만 만든 invited는 목록에 올리지 않음.
-      // 치과가 가입·사업자 연결을 시작하면 pending → 검증 후 active.
-      status: { $in: ["pending", "active"] },
+      // 치과가 가입·사업자 연결을 시작하면 pending → 검증 후 active(거래처)/referred(소개).
+      status: { $in: ["pending", "active", "referred"] },
     })
       .sort({ invitedAt: -1 })
       .lean();
@@ -218,7 +243,7 @@ export async function listLabTradingPartners(req, res) {
 
     return res.json({
       success: true,
-      data: { items, window: { labAnchorId, ...window } },
+      data: { items, window: { labAnchorId, ...window, feeRates } },
     });
   } catch (e) {
     console.error("[labTradingPartners] list error", e);
@@ -239,15 +264,10 @@ export async function createLabTradingPartnerInvite(req, res) {
       });
     }
     const window = await resolveLabTradingPartnerWindow({ labAnchorId });
-    if (!window.canInvite) {
-      return res.status(403).json({
-        success: false,
-        reason: "window_closed",
-        message:
-          "가입 후 30일이 지나 신규 거래 치과 등록이 불가합니다. 기존 등록은 유지됩니다.",
-        data: window,
-      });
-    }
+    // 30일 등록 기간이 지나도 초대(소개) 발급 자체는 계속 허용한다.
+    // 다만 이 기간 이후 발급된 초대는 검증 완료 시 active(거래처, 수수료 0%)가 아닌
+    // referred(소개, 수수료 10%)로 승격된다.
+    const invitedAfterWindow = !window.canInvite;
 
     // 링크/안내문구 복사용 토큰만 발급. 목록 카드는 치과 가입(pending) 때부터 표시.
     const inviteToken = createInviteToken();
@@ -255,6 +275,7 @@ export async function createLabTradingPartnerInvite(req, res) {
       labAnchorId: new Types.ObjectId(labAnchorId),
       inviteToken,
       status: "invited",
+      invitedAfterWindow,
       practiceHint: { name: "", phone: "", memo: "" },
       invitedAt: new Date(),
       invitedByUserId: req.user?._id || null,
@@ -265,6 +286,7 @@ export async function createLabTradingPartnerInvite(req, res) {
       data: {
         _id: String(doc._id),
         status: doc.status,
+        invitedAfterWindow: doc.invitedAfterWindow,
         inviteToken: doc.inviteToken,
         invitePath: buildInvitePath(doc.inviteToken),
         practiceHint: doc.practiceHint,
@@ -305,7 +327,7 @@ export async function cancelLabTradingPartnerInvite(req, res) {
     if (doc.status === "canceled") {
       return res.json({ success: true, data: { canceled: true, already: true } });
     }
-    if (doc.status === "active") {
+    if (doc.status === "active" || doc.status === "referred") {
       return res.status(409).json({
         success: false,
         message: "등록 완료된 거래처는 이 화면에서 취소할 수 없습니다.",

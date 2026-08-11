@@ -26,6 +26,8 @@ type DevopsSettings = {
   devopsRate?: number;
   salesmanRate?: number;
   adminRate?: number;
+  labReferredFeeRate?: number;
+  nonPartnerFeeRate?: number;
   updatedAt?: string | null;
 };
 
@@ -54,11 +56,15 @@ export const DevopsPayoutAccountTab = () => {
   const [devopsRate, setDevopsRate] = useState<string>("10");
   const [salesmanRate, setSalesmanRate] = useState<string>("10");
   const [adminRate, setAdminRate] = useState<string>("20");
+  const [labReferredFeeRate, setLabReferredFeeRate] = useState<string>("10");
+  const [nonPartnerFeeRate, setNonPartnerFeeRate] = useState<string>("20");
   const savedRef = useRef({
     manufacturerRate: "60",
     devopsRate: "10",
     salesmanRate: "10",
     adminRate: "20",
+    labReferredFeeRate: "10",
+    nonPartnerFeeRate: "20",
     updatedAt: null as string | null,
   });
 
@@ -95,6 +101,12 @@ export const DevopsPayoutAccountTab = () => {
             Math.round(Number(ds?.salesmanRate ?? 0.1) * 100),
           ),
           adminRate: String(Math.round(Number(ds?.adminRate ?? 0.2) * 100)),
+          labReferredFeeRate: String(
+            Math.round(Number(ds?.labReferredFeeRate ?? 0.1) * 100),
+          ),
+          nonPartnerFeeRate: String(
+            Math.round(Number(ds?.nonPartnerFeeRate ?? 0.2) * 100),
+          ),
           updatedAt: ds?.updatedAt ? String(ds.updatedAt) : null,
         };
         savedRef.current = snap;
@@ -102,6 +114,8 @@ export const DevopsPayoutAccountTab = () => {
         setDevopsRate(snap.devopsRate);
         setSalesmanRate(snap.salesmanRate);
         setAdminRate(snap.adminRate);
+        setLabReferredFeeRate(snap.labReferredFeeRate);
+        setNonPartnerFeeRate(snap.nonPartnerFeeRate);
         setUpdatedAt(snap.updatedAt);
       } finally {
         if (mounted) setLoading(false);
@@ -132,7 +146,16 @@ export const DevopsPayoutAccountTab = () => {
     manufacturerRate !== savedRef.current.manufacturerRate ||
     devopsRate !== savedRef.current.devopsRate ||
     salesmanRate !== savedRef.current.salesmanRate ||
-    adminRate !== savedRef.current.adminRate;
+    adminRate !== savedRef.current.adminRate ||
+    labReferredFeeRate !== savedRef.current.labReferredFeeRate ||
+    nonPartnerFeeRate !== savedRef.current.nonPartnerFeeRate;
+
+  const feeRateNums = useMemo(() => {
+    const referred = Number(labReferredFeeRate);
+    const nonPartner = Number(nonPartnerFeeRate);
+    if (![referred, nonPartner].every(Number.isFinite)) return null;
+    return { referred, nonPartner };
+  }, [labReferredFeeRate, nonPartnerFeeRate]);
 
   // 영업자 없을 때: 영업자 분배비의 절반 → 제조사, 나머지 절반 → 관리자
   const withoutSalesmanPreview = useMemo(() => {
@@ -219,6 +242,36 @@ export const DevopsPayoutAccountTab = () => {
       });
       return;
     }
+
+    if (!feeRateNums) {
+      toast({
+        title: "플랫폼 수수료율 오류",
+        description: "수수료율은 숫자여야 합니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return;
+    }
+    const { referred: referredNum, nonPartner: nonPartnerNum } = feeRateNums;
+    if ([referredNum, nonPartnerNum].some((r) => r < 0 || r > 100)) {
+      toast({
+        title: "플랫폼 수수료율 오류",
+        description: "수수료율은 0~100% 범위여야 합니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return;
+    }
+    if (referredNum > nonPartnerNum) {
+      toast({
+        title: "플랫폼 수수료율 오류",
+        description: "소개 수수료율은 미거래처 수수료율보다 클 수 없습니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const res = await request<{ message?: string; [key: string]: unknown }>({
@@ -231,6 +284,8 @@ export const DevopsPayoutAccountTab = () => {
             devopsRate: devopsNum / 100,
             salesmanRate: salesmanNum / 100,
             adminRate: adminNum / 100,
+            labReferredFeeRate: referredNum / 100,
+            nonPartnerFeeRate: nonPartnerNum / 100,
           },
         },
       });
@@ -272,12 +327,16 @@ export const DevopsPayoutAccountTab = () => {
       setDevopsRate(String(devopsNum));
       setSalesmanRate(String(salesmanNum));
       setAdminRate(String(adminNum));
+      setLabReferredFeeRate(String(referredNum));
+      setNonPartnerFeeRate(String(nonPartnerNum));
       setUpdatedAt(now);
       savedRef.current = {
         manufacturerRate: String(mfrNum),
         devopsRate: String(devopsNum),
         salesmanRate: String(salesmanNum),
         adminRate: String(adminNum),
+        labReferredFeeRate: String(referredNum),
+        nonPartnerFeeRate: String(nonPartnerNum),
         updatedAt: now,
       };
     } finally {
@@ -422,6 +481,77 @@ export const DevopsPayoutAccountTab = () => {
           </section>
         ) : null}
 
+        <section className="space-y-3 border-t border-border/70 pt-6">
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-semibold tracking-tight">
+              기공의뢰 플랫폼 수수료율
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              치과 거래 관계별 청구 총액(기공비+어벗) 대비 플랫폼 수수료율.
+              거래처(등록 완료)는 항상 0%이며, 걷힌 수수료는 위 분배율로
+              제조사·개발운영사·영업자·관리자가 나눕니다.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-border/80 bg-background/60 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-0.5">
+                  <Label
+                    htmlFor="rate-lab-referred"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    소개 치과
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    30일 등록 기간 이후 기공소 소개로 등록
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Input
+                    id="rate-lab-referred"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={labReferredFeeRate}
+                    onChange={(e) => setLabReferredFeeRate(e.target.value)}
+                    className="h-9 w-[4.5rem] px-2 text-center text-sm tabular-nums"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border/80 bg-background/60 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-0.5">
+                  <Label
+                    htmlFor="rate-non-partner"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    그 외 (미등록) 치과
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    거래처 등록·소개 모두 아닌 경우
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Input
+                    id="rate-non-partner"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={nonPartnerFeeRate}
+                    onChange={(e) => setNonPartnerFeeRate(e.target.value)}
+                    className="h-9 w-[4.5rem] px-2 text-center text-sm tabular-nums"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
           <div className="text-xs text-muted-foreground">
             {updatedAt
@@ -438,6 +568,8 @@ export const DevopsPayoutAccountTab = () => {
                 setDevopsRate(s.devopsRate);
                 setSalesmanRate(s.salesmanRate);
                 setAdminRate(s.adminRate);
+                setLabReferredFeeRate(s.labReferredFeeRate);
+                setNonPartnerFeeRate(s.nonPartnerFeeRate);
                 setUpdatedAt(s.updatedAt);
               }}
               disabled={saving || !hasChanges}

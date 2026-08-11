@@ -58,6 +58,8 @@ type LabDailySnapshotRow = {
   ymd: string;
   earnPartnerAmount: number;
   earnPartnerCount: number;
+  earnReferredAmount: number;
+  earnReferredCount: number;
   earnNonPartnerAmount: number;
   earnNonPartnerCount: number;
   earnAmount: number;
@@ -79,9 +81,11 @@ type SortDirection = "asc" | "desc";
 type SnapshotSortKey =
   | "ymd"
   | "partner"
+  | "referred"
   | "nonPartner"
   | "deduction"
   | "net";
+type RelationshipFilter = "all" | "partner" | "referred" | "nonPartner";
 type PayoutSortKey = "occurredAt" | "status" | "amount" | "note";
 
 const formatDate = (iso: string) => {
@@ -129,9 +133,7 @@ export const LabSettlementPayoutTab = () => {
   const [tab, setTab] = useState<"snapshot" | "payments">("snapshot");
   const { period, setPeriod } = usePeriodStore();
   const [q, setQ] = useState("");
-  const [partnerFilter, setPartnerFilter] = useState<
-    "all" | "partner" | "nonPartner"
-  >("all");
+  const [partnerFilter, setPartnerFilter] = useState<RelationshipFilter>("all");
   const [snapshotSort, setSnapshotSort] = useState<{
     key: SnapshotSortKey;
     direction: SortDirection;
@@ -297,6 +299,8 @@ export const LabSettlementPayoutTab = () => {
   const snapshotTotals = useMemo(() => {
     let partnerTotal = 0;
     let partnerCount = 0;
+    let referredTotal = 0;
+    let referredCount = 0;
     let nonPartnerTotal = 0;
     let nonPartnerCount = 0;
     let payoutTotal = 0;
@@ -305,10 +309,11 @@ export const LabSettlementPayoutTab = () => {
     for (const row of snapItems) {
       partnerTotal += Number(row.earnPartnerAmount || 0);
       partnerCount += Number(row.earnPartnerCount || 0);
+      referredTotal += Number(row.earnReferredAmount || 0);
+      referredCount += Number(row.earnReferredCount || 0);
       nonPartnerTotal += Number(row.earnNonPartnerAmount || 0);
       nonPartnerCount += Number(row.earnNonPartnerCount || 0);
       const pa = Number(row.payoutAmount || 0);
-      // GL 지급은 음수. 카드/합계는 지급액(절댓값)으로 표시.
       payoutTotal += Math.abs(pa);
       if (pa !== 0) payoutCount += 1;
     }
@@ -316,6 +321,8 @@ export const LabSettlementPayoutTab = () => {
     return {
       partnerTotal,
       partnerCount,
+      referredTotal,
+      referredCount,
       nonPartnerTotal,
       nonPartnerCount,
       payoutTotal,
@@ -342,12 +349,15 @@ export const LabSettlementPayoutTab = () => {
   const sortedSnapItems = useMemo(() => {
     const partnerOf = (r: LabDailySnapshotRow) =>
       Number(r.earnPartnerAmount || 0);
+    const referredOf = (r: LabDailySnapshotRow) =>
+      Number(r.earnReferredAmount || 0);
     const nonPartnerOf = (r: LabDailySnapshotRow) =>
       Number(r.earnNonPartnerAmount || 0);
     const deductionOf = (r: LabDailySnapshotRow) =>
       Number(r.payoutAmount || 0) + Number(r.adjustAmount || 0);
     const netOf = (r: LabDailySnapshotRow) => {
       if (partnerFilter === "partner") return partnerOf(r);
+      if (partnerFilter === "referred") return referredOf(r);
       if (partnerFilter === "nonPartner") return nonPartnerOf(r);
       return Number(r.netAmount || 0);
     };
@@ -362,6 +372,9 @@ export const LabSettlementPayoutTab = () => {
       if (snapshotSort.key === "partner") {
         av = partnerOf(a);
         bv = partnerOf(b);
+      } else if (snapshotSort.key === "referred") {
+        av = referredOf(a);
+        bv = referredOf(b);
       } else if (snapshotSort.key === "nonPartner") {
         av = nonPartnerOf(a);
         bv = nonPartnerOf(b);
@@ -418,7 +431,7 @@ export const LabSettlementPayoutTab = () => {
     <DashboardShell
       title="결제크레딧 정산"
       subtitle=""
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
+      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
       stats={
         <>
           <Card>
@@ -436,7 +449,7 @@ export const LabSettlementPayoutTab = () => {
           <Card>
             <CardHeader className="p-3 pb-1">
               <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                거래처 적립 합계
+                기존 치과 (0%)
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0">
@@ -451,7 +464,22 @@ export const LabSettlementPayoutTab = () => {
           <Card>
             <CardHeader className="p-3 pb-1">
               <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                비거래처 적립 합계
+                소개 치과 (10%)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 pt-0">
+              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
+                ₩{snapshotTotals.referredTotal.toLocaleString()}
+                <span className="ml-1 text-sm font-medium text-muted-foreground">
+                  ({snapshotTotals.referredCount}건)
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="p-3 pb-1">
+              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
+                일반 치과 (20%)
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0">
@@ -521,8 +549,8 @@ export const LabSettlementPayoutTab = () => {
                     <div className="min-w-0">
                       <div className="font-medium">기공의뢰 적립</div>
                       <div className="text-muted-foreground">
-                        거래 치과면 소매가 전액, 아니면 기공비만 결제크레딧으로
-                        적립
+                        기존 치과(0%)는 전액, 소개 치과(10%)·일반 치과(20%)는
+                        플랫폼 수수료를 제외한 금액이 결제크레딧으로 적립됩니다
                       </div>
                     </div>
                   </div>
@@ -605,7 +633,17 @@ export const LabSettlementPayoutTab = () => {
                   onClick={() => setPartnerFilter("partner")}
                   disabled={anyLoading}
                 >
-                  거래처
+                  기존 치과
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={partnerFilter === "referred" ? "default" : "ghost"}
+                  className="h-7 px-2"
+                  onClick={() => setPartnerFilter("referred")}
+                  disabled={anyLoading}
+                >
+                  소개 치과
                 </Button>
                 <Button
                   type="button"
@@ -617,7 +655,7 @@ export const LabSettlementPayoutTab = () => {
                   onClick={() => setPartnerFilter("nonPartner")}
                   disabled={anyLoading}
                 >
-                  비거래처
+                  일반 치과
                 </Button>
               </div>
               <Input
@@ -646,26 +684,39 @@ export const LabSettlementPayoutTab = () => {
                           )}
                         </button>
                       </TableHead>
-                      <TableHead className="min-w-[160px] text-center">
+                      <TableHead className="min-w-[140px] text-center">
                         <button
                           type="button"
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
                           onClick={() => toggleSnapshotSort("partner")}
                         >
-                          거래처 적립
+                          기존 치과 (0%)
                           {renderSortIcon(
                             snapshotSort.key === "partner",
                             snapshotSort.direction,
                           )}
                         </button>
                       </TableHead>
-                      <TableHead className="min-w-[160px] text-center">
+                      <TableHead className="min-w-[140px] text-center">
+                        <button
+                          type="button"
+                          className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
+                          onClick={() => toggleSnapshotSort("referred")}
+                        >
+                          소개 치과 (10%)
+                          {renderSortIcon(
+                            snapshotSort.key === "referred",
+                            snapshotSort.direction,
+                          )}
+                        </button>
+                      </TableHead>
+                      <TableHead className="min-w-[140px] text-center">
                         <button
                           type="button"
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
                           onClick={() => toggleSnapshotSort("nonPartner")}
                         >
-                          비거래처 적립
+                          일반 치과 (20%)
                           {renderSortIcon(
                             snapshotSort.key === "nonPartner",
                             snapshotSort.direction,
@@ -704,6 +755,8 @@ export const LabSettlementPayoutTab = () => {
                     {sortedSnapItems.map((r) => {
                       const partnerAmount = Number(r.earnPartnerAmount || 0);
                       const partnerCount = Number(r.earnPartnerCount || 0);
+                      const referredAmount = Number(r.earnReferredAmount || 0);
+                      const referredCount = Number(r.earnReferredCount || 0);
                       const nonPartnerAmount = Number(
                         r.earnNonPartnerAmount || 0,
                       );
@@ -714,8 +767,17 @@ export const LabSettlementPayoutTab = () => {
                       const payoutAmountAbs = Math.abs(payoutRaw);
                       const adjustAmount = Number(r.adjustAmount || 0);
 
-                      let partnerText = `₩${partnerAmount.toLocaleString()}(${partnerCount})`;
-                      let nonPartnerText = `₩${nonPartnerAmount.toLocaleString()}(${nonPartnerCount})`;
+                      const fmtEarn = (amount: number, count: number) =>
+                        amount > 0 || count > 0
+                          ? `₩${amount.toLocaleString()}(${count})`
+                          : "-";
+
+                      let partnerText = fmtEarn(partnerAmount, partnerCount);
+                      let referredText = fmtEarn(referredAmount, referredCount);
+                      let nonPartnerText = fmtEarn(
+                        nonPartnerAmount,
+                        nonPartnerCount,
+                      );
 
                       const deductionParts: string[] = [];
                       if (payoutRaw !== 0) {
@@ -735,12 +797,18 @@ export const LabSettlementPayoutTab = () => {
                       let netText = `₩${Number(r.netAmount || 0).toLocaleString()}`;
 
                       if (partnerFilter === "partner") {
+                        referredText = "-";
                         nonPartnerText = "-";
                         deductionText = "-";
                         netText = `₩${partnerAmount.toLocaleString()}`;
-                      }
-                      if (partnerFilter === "nonPartner") {
+                      } else if (partnerFilter === "referred") {
                         partnerText = "-";
+                        nonPartnerText = "-";
+                        deductionText = "-";
+                        netText = `₩${referredAmount.toLocaleString()}`;
+                      } else if (partnerFilter === "nonPartner") {
+                        partnerText = "-";
+                        referredText = "-";
                         deductionText = "-";
                         netText = `₩${nonPartnerAmount.toLocaleString()}`;
                       }
@@ -752,6 +820,9 @@ export const LabSettlementPayoutTab = () => {
                           </TableCell>
                           <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
                             {partnerText}
+                          </TableCell>
+                          <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
+                            {referredText}
                           </TableCell>
                           <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
                             {nonPartnerText}
@@ -768,7 +839,7 @@ export const LabSettlementPayoutTab = () => {
                     {snapLoading && (
                       <TableRow>
                         <TableCell
-                          colSpan={5}
+                          colSpan={6}
                           className="py-4 text-center text-sm text-muted-foreground"
                         >
                           불러오는 중...
@@ -778,7 +849,7 @@ export const LabSettlementPayoutTab = () => {
                     {!snapLoading && snapItems.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={5}
+                          colSpan={6}
                           className="py-8 text-center text-sm text-muted-foreground"
                         >
                           조회 결과가 없습니다.

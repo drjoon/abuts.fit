@@ -77,11 +77,7 @@ async function bindLabTradingPartnerFromRequest({
       });
       bound = Boolean(bindResult?.activated);
       if (bound) {
-        status =
-          bindResult?.reason === "pending" ||
-          bindResult?.reason === "already_pending"
-            ? "pending"
-            : "active";
+        status = String(bindResult?.partner?.status || "") || "active";
       }
     } catch (bindErr) {
       console.warn(

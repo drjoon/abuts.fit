@@ -19,6 +19,7 @@ import {
   resolveRevenueOwnerBaseAllocation,
   splitRevenueByCreditKindProRata,
   resolveConfiguredRevenueRates,
+  resolvePracticeTransferFeeRate,
 } from "./creditRevenuePolicy.service.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
@@ -26,7 +27,7 @@ import {
   computePracticeTransferRetailFees,
   normalizeLabFeeSchedule,
 } from "../utils/labFeeSchedule.js";
-import { findActiveTradingPartner } from "../utils/labTradingPartner.util.js";
+import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
 
 async function lockGuard(businessAnchorId, session) {
   const id = new Types.ObjectId(String(businessAnchorId));
@@ -196,16 +197,29 @@ export async function commitPracticeTransferBilling({
     return { billed: false, reason: "zero_fee", fees };
   }
 
-  const partner = await findActiveTradingPartner({
+  const partner = await findLabPracticeRelationship({
     labAnchorId,
     practiceAnchorId,
   });
-  const isPartner = Boolean(partner?._id);
+  const relationshipKind =
+    partner?.status === "active" || partner?.status === "referred"
+      ? partner.status
+      : "none";
+  const isPartner = relationshipKind === "active";
 
-  const labSettlementAmount = isPartner
-    ? fees.total
-    : fees.labFeeTotal;
-  const abutsRevenueAmount = isPartner ? 0 : fees.abutmentRetailTotal;
+  const devopsAnchorForFeeRate = await BusinessAnchor.findOne({
+    businessType: "devops",
+  })
+    .select({ payoutRates: 1 })
+    .sort({ createdAt: 1 })
+    .lean();
+  const feeRateApplied = resolvePracticeTransferFeeRate({
+    relationshipKind,
+    payoutRates: devopsAnchorForFeeRate?.payoutRates,
+  });
+
+  const abutsRevenueAmount = Math.round(fees.total * feeRateApplied);
+  const labSettlementAmount = fees.total - abutsRevenueAmount;
 
   const ownSession = !outerSession;
   const session = outerSession || (await mongoose.startSession());
@@ -251,6 +265,8 @@ export async function commitPracticeTransferBilling({
           abutmentRetail: fees.abutmentRetailTotal,
           abutmentQty: fees.abutmentQty,
           isTradingPartner: isPartner,
+          relationshipKind,
+          feeRateApplied,
           displayKind: "practice_transfer_retail",
         },
       },
@@ -270,6 +286,8 @@ export async function commitPracticeTransferBilling({
         meta: {
           source: "practice_transfer_settlement",
           isTradingPartner: isPartner,
+          relationshipKind,
+          feeRateApplied,
           labFee: fees.labFeeTotal,
           abutmentRetailIncluded: isPartner ? fees.abutmentRetailTotal : 0,
         },
@@ -284,8 +302,13 @@ export async function commitPracticeTransferBilling({
         refType: "PRACTICE_TRANSFER",
         refId: transferId,
         meta: {
-          source: "non_partner_abutment_retail",
-          abutmentRetail: fees.abutmentRetailTotal,
+          source:
+            relationshipKind === "referred"
+              ? "lab_referred_platform_fee"
+              : "non_partner_platform_fee",
+          relationshipKind,
+          feeRateApplied,
+          feeTotal: fees.total,
         },
       });
     }
@@ -301,6 +324,8 @@ export async function commitPracticeTransferBilling({
         labAnchorId: String(labAnchorId),
         labTradingPartnerId: partner?._id ? String(partner._id) : null,
         isTradingPartner: isPartner,
+        relationshipKind,
+        feeRateApplied,
         fees,
         labSettlementAmount,
         abutsRevenueAmount,
@@ -318,6 +343,8 @@ export async function commitPracticeTransferBilling({
       journalId: journal?.journalId || null,
       fees,
       isPartner,
+      relationshipKind,
+      feeRateApplied,
       labSettlementAmount,
       abutsRevenueAmount,
       labTradingPartnerId: partner?._id ? String(partner._id) : null,

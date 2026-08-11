@@ -471,7 +471,7 @@ export async function createLabSettlementPayout(req, res) {
 
 /**
  * 기공소 결제크레딧 일별 정산 집계 (GL LAB_SETTLEMENT_CREDIT, KST).
- * 거래처/비거래처 적립 + 지급·조정을 일자별로 채운다.
+ * 관계별(active/referred/none) 적립 + 지급·조정을 일자별로 채운다.
  */
 export async function getLabSettlementDailySummary(req, res) {
   try {
@@ -537,8 +537,30 @@ export async function getLabSettlementDailySummary(req, res) {
           },
           baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
           eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-          isTradingPartner: {
-            $eq: [{ $ifNull: ["$meta.isTradingPartner", false] }, true],
+          relationshipKind: {
+            $let: {
+              vars: {
+                raw: { $ifNull: ["$meta.relationshipKind", ""] },
+              },
+              in: {
+                $cond: [
+                  { $in: ["$$raw", ["active", "referred", "none"]] },
+                  "$$raw",
+                  {
+                    $cond: [
+                      {
+                        $eq: [
+                          { $ifNull: ["$meta.isTradingPartner", false] },
+                          true,
+                        ],
+                      },
+                      "active",
+                      "none",
+                    ],
+                  },
+                ],
+              },
+            },
           },
           settleRefKey: { $ifNull: ["$refId", "$journalId"] },
         },
@@ -548,7 +570,7 @@ export async function getLabSettlementDailySummary(req, res) {
           _id: {
             ymd: "$ymd",
             eventType: "$eventType",
-            isTradingPartner: "$isTradingPartner",
+            relationshipKind: "$relationshipKind",
             refId: "$settleRefKey",
           },
           amount: { $sum: "$baseAmount" },
@@ -563,7 +585,7 @@ export async function getLabSettlementDailySummary(req, res) {
                 {
                   $and: [
                     { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                    { $eq: ["$_id.isTradingPartner", true] },
+                    { $eq: ["$_id.relationshipKind", "active"] },
                     { $gt: ["$amount", 0] },
                   ],
                 },
@@ -578,7 +600,37 @@ export async function getLabSettlementDailySummary(req, res) {
                 {
                   $and: [
                     { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                    { $eq: ["$_id.isTradingPartner", true] },
+                    { $eq: ["$_id.relationshipKind", "active"] },
+                    { $gt: ["$amount", 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          earnReferredAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
+                    { $eq: ["$_id.relationshipKind", "referred"] },
+                    { $gt: ["$amount", 0] },
+                  ],
+                },
+                "$amount",
+                0,
+              ],
+            },
+          },
+          earnReferredCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
+                    { $eq: ["$_id.relationshipKind", "referred"] },
                     { $gt: ["$amount", 0] },
                   ],
                 },
@@ -593,7 +645,7 @@ export async function getLabSettlementDailySummary(req, res) {
                 {
                   $and: [
                     { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                    { $eq: ["$_id.isTradingPartner", false] },
+                    { $eq: ["$_id.relationshipKind", "none"] },
                     { $gt: ["$amount", 0] },
                   ],
                 },
@@ -608,7 +660,7 @@ export async function getLabSettlementDailySummary(req, res) {
                 {
                   $and: [
                     { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                    { $eq: ["$_id.isTradingPartner", false] },
+                    { $eq: ["$_id.relationshipKind", "none"] },
                     { $gt: ["$amount", 0] },
                   ],
                 },
@@ -686,6 +738,8 @@ export async function getLabSettlementDailySummary(req, res) {
           ymd: "$_id",
           earnPartnerAmount: 1,
           earnPartnerCount: 1,
+          earnReferredAmount: 1,
+          earnReferredCount: 1,
           earnNonPartnerAmount: 1,
           earnNonPartnerCount: 1,
           earnOtherAmount: 1,
@@ -700,6 +754,8 @@ export async function getLabSettlementDailySummary(req, res) {
       ymd,
       earnPartnerAmount: 0,
       earnPartnerCount: 0,
+      earnReferredAmount: 0,
+      earnReferredCount: 0,
       earnNonPartnerAmount: 0,
       earnNonPartnerCount: 0,
       earnAmount: 0,
@@ -711,15 +767,17 @@ export async function getLabSettlementDailySummary(req, res) {
 
     const recompute = (row) => {
       const partner = Number(row.earnPartnerAmount || 0);
+      const referred = Number(row.earnReferredAmount || 0);
       const nonPartner = Number(row.earnNonPartnerAmount || 0);
       const other = Number(row.earnOtherAmount || 0);
       const partnerCount = Number(row.earnPartnerCount || 0);
+      const referredCount = Number(row.earnReferredCount || 0);
       const nonPartnerCount = Number(row.earnNonPartnerCount || 0);
       const otherCount = Number(row.earnOtherCount || 0);
       const payout = Number(row.payoutAmount || 0);
       const adjust = Number(row.adjustAmount || 0);
-      row.earnAmount = partner + nonPartner + other;
-      row.earnCount = partnerCount + nonPartnerCount + otherCount;
+      row.earnAmount = partner + referred + nonPartner + other;
+      row.earnCount = partnerCount + referredCount + nonPartnerCount + otherCount;
       row.netAmount = row.earnAmount + payout + adjust;
       return row;
     };
