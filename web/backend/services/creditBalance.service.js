@@ -42,6 +42,10 @@ export async function computeBusinessCreditBalanceFromLedger({
   businessAnchorId,
   session,
 }) {
+  // 잔액 버킷:
+  // - paidCredit / free*: 의뢰자(치과·기공소) 공용 소비 잔액. 치과 기공비도 paidCredit에서 차감.
+  // - settlementCredit: 기공소 전용 기공크레딧(LAB_SETTLEMENT_CREDIT). 치과 UI에는 노출하지 않음.
+  // - balance: paid+free만 합산(settlement 제외).
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
   if (!anchorObjectId) {
     return {

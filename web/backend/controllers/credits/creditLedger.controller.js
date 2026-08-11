@@ -339,19 +339,13 @@ export async function listMyCreditLedger(req, res) {
                 then: "LAB_SETTLEMENT_CHARGE",
               },
               {
-                case: {
-                  $and: [
-                    { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] },
-                    { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
-                  ],
-                },
+                case: { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] },
                 then: "LAB_SETTLEMENT_PAYOUT",
               },
               {
                 case: {
                   $and: [
                     { $eq: ["$eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                    { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
                     { $gt: ["$amount", 0] },
                   ],
                 },

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 치과는 기공크레딧 UI 미노출(유료크레딧으로 기공비 지불). 기공소만 정산 탭.
 // - 2026-08-11: accessLoading early return 전에 useMemo 호출(Rules of Hooks).
 // - 2026-08-11: access 로딩 시 페이지 스켈레톤.
 // - 2026-08-11: 상단 탭 바를 문의 페이지와 동일 max-w-4xl·상단 고정.

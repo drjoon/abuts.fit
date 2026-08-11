@@ -1,0 +1,39 @@
+---
+description: 치과·기공소 크레딧 버킷(유료크레딧 vs 기공크레딧) SSOT
+globs: "**/CreditLedgerModal*|**/RequestorCreditsPage*|**/LabSettlementPayoutTab*|**/creditBalance*|**/practiceTransferBilling*|**/credit.controller.js|**/creditLedger.controller.js|**/adminCredit.controller.js"
+alwaysApply: false
+---
+
+# 크레딧 버킷: 치과 vs 기공소
+
+## Policy
+
+- **치과(`practice`)**: 입금·충전 잔액 = **유료크레딧** (`paidCredit` / `REQ_PAID_CREDIT`). 기공의뢰(기공비·어벗 소매가)도 이 유료크레딧에서 차감. 치과 UI에 **기공크레딧/`settlementCredit` 잔액 행·정산 필터를 표시하지 않는다**.
+- **기공소(`lab`)**:
+  - **유료크레딧**: 기공소가 입금·충전한 `paidCredit` — 생산의뢰·배송 등 앱 내 소비.
+  - **기공크레딧**: 치과에서 받은 `LAB_SETTLEMENT_CREDIT` (`creditKind=SETTLEMENT`) — 의뢰/배송 유료와 완전 분리, 매월 `SETTLEMENT_PAYOUT`으로 계좌 이체.
+- 장부 라벨: 치과 차감 항목=`기공비`, 기공소 적립 버킷=`기공크레딧`.
+- `balance` 합계는 paid+free만 (settlement 제외).
+
+## Do / Don't
+
+```tsx
+// ❌ BAD — 치과 크레딧 페이지에 기공크레딧 0원 상시 노출
+<div>기공크레딧 {settlementCredit}원</div>
+
+// ✅ GOOD — lab이거나 showSettlementCredit일 때만
+{showSettlementCredit ? <div>기공크레딧 …</div> : null}
+```
+
+```js
+// ❌ BAD — 치과도 LAB_SETTLEMENT_CREDIT 소유자로 취급
+// ✅ GOOD — PracticeTransfer: 치과 REQ_PAID_CREDIT 차감 → 기공소 LAB_SETTLEMENT_CREDIT 적립
+```
+
+## SSOT
+
+- 루트: `rules.md` §2.3
+- Backend: `web/backend/rules.md` (역할별 버킷 · 기공크레딧 SSOT)
+- Frontend: `web/frontend/rules.md` (CreditLedgerModal / 크레딧 페이지)
+- UI: `CreditLedgerModal.tsx`, `LabSettlementPayoutTab.tsx`
+- API: `GET /api/credits/balance`, ledger `currentBalanceSnapshot` → `requestorKind`, `showSettlementCredit`, `settlementCredit`

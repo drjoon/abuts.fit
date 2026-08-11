@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 치과는 기공크레딧 잔액/필터 숨김. 유료→유료크레딧. 기공소만 settlement 버킷 표시.
 // - 2026-08-11: 초기 로드 시 테이블 스켈레톤(텍스트 "불러오는 중..." 대체).
 // - 2026-08-11: 중복 일자(from~to) 입력 제거. 검색을 초기화 버튼 우측으로 이동.
 // - 2026-08-11: embedded 무한스크롤 — sentinel 재마운트 시 IntersectionObserver 재연결.
@@ -16,6 +17,7 @@
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
+// - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
 // - web/backend/controllers/admin/adminCredit.controller.js
 // change-log:
 // - 2026-08-03: CreditLedgerModal: normalize manufacturer stage display labels (의뢰 -> 준비) in transaction rows. (display-only)
@@ -63,6 +65,7 @@ import {
 } from "@/features/requests/components/RequestDetailDialog";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingMode } from "@/shared/shipping/shippingMode";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
 type CreditLedgerType =
   | "CHARGE_PAID"
@@ -131,6 +134,8 @@ type CreditBalanceSnapshot = {
   freeRequestCredit?: number;
   freeShippingCredit?: number;
   settlementCredit?: number;
+  requestorKind?: "practice" | "lab" | null;
+  showSettlementCredit?: boolean;
   updatedAt?: string | null;
 };
 
@@ -358,6 +363,7 @@ export const CreditLedgerModal = ({
   const navigate = useNavigate();
   const { toast } = useToast();
   const { token, user } = useAuthStore();
+  const { kind: accessKind } = useRequestorBusinessAccess();
   const isOpen = embedded ? true : open;
 
   const goCharge = () => {
@@ -382,6 +388,29 @@ export const CreditLedgerModal = ({
     useState<RequestDetailDialogRequest | null>(null);
   const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
     useState<CreditBalanceSnapshot | null>(null);
+
+  const showSettlementCredit = useMemo(() => {
+    if (currentBalanceSnapshot?.showSettlementCredit === true) return true;
+    if (currentBalanceSnapshot?.showSettlementCredit === false) return false;
+    const kind =
+      currentBalanceSnapshot?.requestorKind ||
+      (!businessAnchorId ? accessKind : null);
+    return kind === "lab";
+  }, [
+    accessKind,
+    businessAnchorId,
+    currentBalanceSnapshot?.requestorKind,
+    currentBalanceSnapshot?.showSettlementCredit,
+  ]);
+
+  useEffect(() => {
+    if (
+      !showSettlementCredit &&
+      (type === "LAB_SETTLEMENT_CHARGE" || type === "LAB_SETTLEMENT_PAYOUT")
+    ) {
+      setType("all");
+    }
+  }, [showSettlementCredit, type]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -645,7 +674,12 @@ export const CreditLedgerModal = ({
         <>
       {currentBalanceSnapshot ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <div className="grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-5">
+          <div
+            className={cn(
+              "grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2",
+              showSettlementCredit ? "lg:grid-cols-5" : "lg:grid-cols-4",
+            )}
+          >
             <div className="tabular-nums">
               <span className="text-muted-foreground">현재 잔액</span>{" "}
               <span className="font-semibold text-slate-900">
@@ -653,7 +687,7 @@ export const CreditLedgerModal = ({
               </span>
             </div>
             <div className="tabular-nums">
-              <span className="text-muted-foreground">유료</span>{" "}
+              <span className="text-muted-foreground">유료크레딧</span>{" "}
               <span className="font-semibold text-slate-900">
                 {Number(currentBalanceSnapshot.paidCredit || 0).toLocaleString()}
                 원
@@ -677,15 +711,17 @@ export const CreditLedgerModal = ({
                 원
               </span>
             </div>
-            <div className="tabular-nums">
-              <span className="text-muted-foreground">기공크레딧</span>{" "}
-              <span className="font-semibold text-slate-900">
-                {Number(
-                  currentBalanceSnapshot.settlementCredit ?? 0,
-                ).toLocaleString()}
-                원
-              </span>
-            </div>
+            {showSettlementCredit ? (
+              <div className="tabular-nums">
+                <span className="text-muted-foreground">기공크레딧</span>{" "}
+                <span className="font-semibold text-slate-900">
+                  {Number(
+                    currentBalanceSnapshot.settlementCredit ?? 0,
+                  ).toLocaleString()}
+                  원
+                </span>
+              </div>
+            ) : null}
           </div>
           {canCharge ? (
             <Button
@@ -731,12 +767,16 @@ export const CreditLedgerModal = ({
               <SelectItem value="CHARGE_FREE_SHIPPING">
                 무료충전(배송)
               </SelectItem>
-              <SelectItem value="LAB_SETTLEMENT_CHARGE">
-                기공크레딧 충전
-              </SelectItem>
-              <SelectItem value="LAB_SETTLEMENT_PAYOUT">
-                기공크레딧 정산
-              </SelectItem>
+              {showSettlementCredit ? (
+                <>
+                  <SelectItem value="LAB_SETTLEMENT_CHARGE">
+                    기공크레딧 충전
+                  </SelectItem>
+                  <SelectItem value="LAB_SETTLEMENT_PAYOUT">
+                    기공크레딧 정산
+                  </SelectItem>
+                </>
+              ) : null}
               <SelectItem value="ADJUST">조정</SelectItem>
             </SelectContent>
           </Select>

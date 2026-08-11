@@ -658,7 +658,11 @@ export async function adminGetBusinessLedger(req, res) {
                     {
                       $in: [
                         "$eventType",
-                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                        [
+                          "REQUEST_SPEND_COMMIT",
+                          "SHIPPING_SPEND_COMMIT",
+                          "PRACTICE_TRANSFER_SPEND_COMMIT",
+                        ],
                       ],
                     },
                     { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
@@ -678,7 +682,11 @@ export async function adminGetBusinessLedger(req, res) {
                     {
                       $in: [
                         "$eventType",
-                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                        [
+                          "REQUEST_SPEND_COMMIT",
+                          "SHIPPING_SPEND_COMMIT",
+                          "PRACTICE_TRANSFER_SPEND_COMMIT",
+                        ],
                       ],
                     },
                     {
@@ -720,7 +728,11 @@ export async function adminGetBusinessLedger(req, res) {
                       {
                         $in: [
                           "$eventType",
-                          ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                          [
+                            "REQUEST_SPEND_COMMIT",
+                            "SHIPPING_SPEND_COMMIT",
+                            "PRACTICE_TRANSFER_SPEND_COMMIT",
+                          ],
                         ],
                       },
                       { $gt: ["$spentPaidAmount", 0] },
@@ -735,6 +747,23 @@ export async function adminGetBusinessLedger(req, res) {
                 {
                   case: { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
                   then: "SPEND_FREE_SHIPPING",
+                },
+                {
+                  case: { $eq: ["$eventType", "LAB_SETTLEMENT_CHARGE"] },
+                  then: "LAB_SETTLEMENT_CHARGE",
+                },
+                {
+                  case: { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] },
+                  then: "LAB_SETTLEMENT_PAYOUT",
+                },
+                {
+                  case: {
+                    $and: [
+                      { $eq: ["$eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
+                      { $gt: ["$amount", 0] },
+                    ],
+                  },
+                  then: "LAB_SETTLEMENT_CHARGE",
                 },
                 {
                   case: { $eq: ["$eventType", "ADJUST"] },
@@ -758,6 +787,8 @@ export async function adminGetBusinessLedger(req, res) {
         "SPEND_PAID",
         "SPEND_FREE_REQUEST",
         "SPEND_FREE_SHIPPING",
+        "LAB_SETTLEMENT_CHARGE",
+        "LAB_SETTLEMENT_PAYOUT",
         "ADJUST",
       ].includes(typeRaw)
     ) {

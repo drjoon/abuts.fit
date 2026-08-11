@@ -549,8 +549,9 @@ export const LabSettlementPayoutTab = () => {
                     <div className="min-w-0">
                       <div className="font-medium">기공의뢰 적립</div>
                       <div className="text-muted-foreground">
-                        기존 치과(0%)는 전액, 소개 치과(10%)·일반 치과(20%)는
-                        플랫폼 수수료를 제외한 금액이 기공크레딧으로 적립됩니다
+                        치과가 유료크레딧으로 지불한 기공비에서, 기존 치과(0%)는
+                        전액·소개 치과(10%)·일반 치과(20%)는 플랫폼 수수료를
+                        제외한 금액이 기공크레딧으로 적립됩니다
                       </div>
                     </div>
                   </div>
@@ -560,9 +561,10 @@ export const LabSettlementPayoutTab = () => {
                     </span>
                     <Building2 className="mt-0.5 h-4 w-4 text-muted-foreground" />
                     <div className="min-w-0">
-                      <div className="font-medium">버킷 분리</div>
+                      <div className="font-medium">유료크레딧 · 기공크레딧 분리</div>
                       <div className="text-muted-foreground">
-                        의뢰·배송 크레딧과 완전 분리된 기공크레딧으로 관리
+                        유료크레딧은 기공소가 입금·충전한 잔액(생산의뢰·배송 소비).
+                        기공크레딧은 치과에서 받은 정산 대기액으로 완전 분리 관리
                       </div>
                     </div>
                   </div>
