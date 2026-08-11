@@ -1,7 +1,7 @@
 // change-log:
 // - 2026-08-11: 디자인 어벗 파일 선택은 STL만 허용.
 // - 2026-08-11: 디자인 클레임 목록 갱신 — 프론트 타이머 제거, websocket(request:design-claim-changed)만 사용.
-// - 2026-08-11: transferChat(의뢰수신) 로딩 중에도「표시할 의뢰가 없습니다.」표시.
+// - 2026-08-11: transferChat(의뢰수신) 빈/로딩 시 빈 상태 카드 미표시(상위 전송 내역과 중복 방지).
 // - 2026-08-10: 디자인 승인=완성 어벗 STL 업로드 후 design-handoff(제조사 가공).
 // - 2026-08-10: detailMode=transferChat — 디자인 큐는 기공의뢰서형 카드·채팅 모달(PreviewModal 미사용).
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
@@ -2498,16 +2498,16 @@ export const RequestPage = ({
 
   if (pageState.isLoading) {
     if (isTransferChatDetail) {
-      return (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
-          표시할 의뢰가 없습니다.
-        </div>
-      );
+      return null;
     }
     return <WorksheetLoading />;
   }
 
   const isEmpty = filteredAndSorted.length === 0;
+
+  if (isTransferChatDetail && isEmpty) {
+    return null;
+  }
 
   return (
     <div

@@ -23,7 +23,7 @@
 // - 2026-08-11: 치과초대 우측 상단(9:3)·의뢰수신 상단 필터左/검색右.
 // - 2026-08-11: 치과 링크 전달 — 파일전송(/p) → 기공소 소개코드 가입 링크.
 // - 2026-08-11: 상단 뱃지에 포장.발송·추적관리 추가(기공 파이프라인 UI).
-// - 2026-08-11: 디자인 큐 빈 목록일 때 하단 전송 내역 영역 미렌더(중복 제거).
+// - 2026-08-11: 디자인 큐 빈 상태 카드 제거 — 전송 내역만 표시(둘 다 없으면 안내 문구).
 // - 2026-08-11: 기공소 거래 치과 등록 D-day 배너(설정 이동).
 // - 2026-08-11: [안내 복사] 문구 — 이모티콘·부드러운 말투로 정리.
 // - 2026-08-11: 다운로드→의뢰수락 뱃지/상태. 수락 API 과금. 파일 다운로드는 상태 미전이.
@@ -1834,10 +1834,7 @@ function RequestorPracticeReceivePage({
       sortedFilteredTransfers.length === 0 ? (
         <RequestorPracticeTransferCardsSkeleton />
       ) : null}
-      {!error &&
-      !loading &&
-      !showDesignQueue &&
-      sortedFilteredTransfers.length === 0 ? (
+      {!error && !loading && sortedFilteredTransfers.length === 0 ? (
         <div className="text-sm text-muted-foreground">표시할 의뢰가 없습니다.</div>
       ) : null}
 
@@ -1985,9 +1982,7 @@ function RequestorPracticeReceivePage({
             </CardHeader>
             <CardContent className={showDesignQueue ? "space-y-4 pt-0" : undefined}>
               {showDesignQueue ? <DesignQueueSection /> : null}
-              {showDesignQueue && !error && sortedFilteredTransfers.length === 0
-                ? null
-                : transferListBody}
+              {transferListBody}
             </CardContent>
           </Card>
         </div>
