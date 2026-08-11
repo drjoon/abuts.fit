@@ -16,7 +16,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
-import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
+import { WorksheetCardsSkeleton } from "@/shared/ui/skeletons/DashboardSectionSkeletons";
 import { BodyPortal } from "@/shared/ui/BodyPortal";
 import {
   type ManufacturerRequest,
@@ -1324,7 +1324,11 @@ export const PackingPageContent = ({
           />
         )}
 
-        {isLoading && <WorksheetLoading />}
+        {isLoading && (
+          <div className="py-4">
+            <WorksheetCardsSkeleton />
+          </div>
+        )}
 
         <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 my-2">
           <div className="flex justify-center pt-4 pb-1 px-2">

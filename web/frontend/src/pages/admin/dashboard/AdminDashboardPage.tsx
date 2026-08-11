@@ -22,6 +22,7 @@ import { usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/shared/hooks/use-toast";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
@@ -29,6 +30,10 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
+import {
+  GlassStatCardSkeleton,
+  GlassStatCardsSkeleton,
+} from "@/shared/ui/skeletons/DashboardSectionSkeletons";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
@@ -537,7 +542,7 @@ export const AdminDashboardPage = () => {
     });
   };
 
-  const { data: riskSummaryResponse, refetch: refetchRiskSummary } = useQuery({
+  const { data: riskSummaryResponse, isLoading: isRiskSummaryLoading, refetch: refetchRiskSummary } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
     enabled: Boolean(token) && user?.role === "admin",
     staleTime: 60 * 1000,
@@ -568,7 +573,7 @@ export const AdminDashboardPage = () => {
     retry: false,
   });
 
-  const { data: adminDashboardResponse, refetch: refetchAdminDashboard } = useQuery({
+  const { data: adminDashboardResponse, isLoading: isAdminDashboardLoading, refetch: refetchAdminDashboard } = useQuery({
     queryKey: ["admin-dashboard-page", period],
     enabled: Boolean(token) && user?.role === "admin",
     staleTime: 60 * 1000,
@@ -598,6 +603,9 @@ export const AdminDashboardPage = () => {
     },
     retry: false,
   });
+
+  const isAdminStatsLoading = !adminDashboardResponse && isAdminDashboardLoading;
+  const isAdminRiskLoading = !riskSummaryResponse && isRiskSummaryLoading;
 
   const {
     data: happyCallCompletionsResponse,
@@ -1497,6 +1505,19 @@ export const AdminDashboardPage = () => {
         statsGridClassName="flex flex-col gap-3"
         topSection={undefined}
         stats={
+          isAdminStatsLoading ? (
+            <div className="flex flex-col gap-3">
+              <GlassStatCardsSkeleton
+                count={4}
+                className="grid grid-cols-1 gap-3 lg:grid-cols-4"
+                lines={4}
+              />
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <GlassStatCardSkeleton lines={3} />
+                <GlassStatCardSkeleton lines={4} />
+              </div>
+            </div>
+          ) : (
           <>
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
               {/* 카드1: 진행 / 완료 */}
@@ -1694,6 +1715,13 @@ export const AdminDashboardPage = () => {
                       <AlertCircle className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
+                      {isAdminRiskLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-4 w-5/6" />
+                          <Skeleton className="h-3 w-2/3" />
+                        </div>
+                      ) : (
                       <button
                         type="button"
                         className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
@@ -1719,6 +1747,7 @@ export const AdminDashboardPage = () => {
                           클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
                         </div>
                       </button>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -1981,6 +2010,7 @@ export const AdminDashboardPage = () => {
               </Card>
             </div>
           </>
+          )
         }
         mainLeft={undefined}
       />

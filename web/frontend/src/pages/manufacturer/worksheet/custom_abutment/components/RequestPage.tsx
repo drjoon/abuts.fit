@@ -85,7 +85,7 @@ import { useRequestFiltering } from "@/pages/manufacturer/worksheet/custom_abutm
 import { usePackingSelection } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePackingSelection";
 import { useMailboxSync } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxSync";
 import { useDiameterQueue } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useDiameterQueue";
-import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
+import { WorksheetCardsSkeleton } from "@/shared/ui/skeletons/DashboardSectionSkeletons";
 import { BodyPortal } from "@/shared/ui/BodyPortal";
 import {
   RemakeStartQuickModal,
@@ -2167,11 +2167,7 @@ export const RequestPage = ({
 
   const diameterQueueForReceive = useDiameterQueue(filteredAndSorted);
 
-  if (pageState.isLoading) {
-    return <WorksheetLoading />;
-  }
-
-  const isEmpty = filteredAndSorted.length === 0;
+  const isEmpty = !pageState.isLoading && filteredAndSorted.length === 0;
 
   return (
     <div
@@ -2262,6 +2258,10 @@ export const RequestPage = ({
                   }}
                   onRefresh={handleMailboxGridRefresh}
                 />
+              </div>
+            ) : pageState.isLoading ? (
+              <div className="py-4">
+                <WorksheetCardsSkeleton />
               </div>
             ) : isEmpty ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">

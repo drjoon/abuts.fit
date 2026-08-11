@@ -89,11 +89,16 @@ export function useCommissionDashboard(period: PeriodFilterValue) {
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [data, setData] = useState<CommissionDashboardData | null>(null);
-  const [loading, setLoading] = useState(false);
+  // 토큰 있으면 첫 fetch만 스켈레톤 — 이후 period 전환도 loading true지만 호출부에서 !data 조건과 함께 씀
+  const [loading, setLoading] = useState(Boolean(token));
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setData(null);
     request<{
       success?: boolean;
       message?: string;

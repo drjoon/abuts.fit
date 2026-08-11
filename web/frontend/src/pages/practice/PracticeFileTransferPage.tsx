@@ -64,6 +64,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import {
@@ -5415,8 +5416,20 @@ export const PracticeFileTransferPage = ({
               <CollapsibleContent>
               <CardContent className="space-y-2">
                 {recentRequestsLoading ? (
-                  <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                    최근 전송 내역을 불러오는 중입니다...
+                  <div className="space-y-2">
+                    {Array.from({ length: 4 }).map((_, idx) => (
+                      <div
+                        key={`recent-skel-${idx}`}
+                        className="rounded-lg border px-3 py-2 space-y-2"
+                      >
+                        <Skeleton className="h-4 w-28" />
+                        <div className="flex items-center gap-2">
+                          <Skeleton className="h-3 w-24" />
+                          <Skeleton className="h-5 w-14 rounded-full" />
+                        </div>
+                        <Skeleton className="h-3 w-40" />
+                      </div>
+                    ))}
                   </div>
                 ) : recentRequestsError ? (
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-destructive">

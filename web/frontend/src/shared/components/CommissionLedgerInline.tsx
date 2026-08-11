@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import type { SalesmanLedgerType } from "./SalesmanLedgerModal";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { LedgerTableRowsSkeleton } from "@/shared/ui/skeletons/DashboardSectionSkeletons";
 
 type LedgerItem = {
   _id: string;
@@ -104,7 +105,7 @@ export const CommissionLedgerInline = ({
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<LedgerItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
@@ -429,11 +430,16 @@ export const CommissionLedgerInline = ({
           </TableBody>
         </Table>
         <div ref={sentinelRef} className="h-6" />
-        {loading && (
-          <div className="py-4 text-center text-sm text-muted-foreground">
-            불러오는 중...
+        {loading && items.length === 0 ? (
+          <div className="p-2">
+            <LedgerTableRowsSkeleton rows={6} />
           </div>
-        )}
+        ) : null}
+        {loading && items.length > 0 ? (
+          <div className="py-3 text-center text-sm text-muted-foreground">
+            더 불러오는 중...
+          </div>
+        ) : null}
       </div>
     </div>
   );

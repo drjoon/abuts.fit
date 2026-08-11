@@ -23,6 +23,11 @@ import { Copy, Wallet, Coins, BadgeCheck } from "lucide-react";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import {
+  GlassStatCardsSkeleton,
+  UnmachinableOverviewSkeleton,
+} from "@/shared/ui/skeletons/DashboardSectionSkeletons";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -44,7 +49,10 @@ export const SalesmanDashboardPage = () => {
 
   const { data, loading } = useCommissionDashboard(period);
 
-  const { data: unmachinableOverviewResponse } = useQuery({
+  const {
+    data: unmachinableOverviewResponse,
+    isLoading: isUnmachinableLoading,
+  } = useQuery({
     queryKey: ["salesman-unmachinable-overview", period],
     enabled: Boolean(token),
     queryFn: async () => {
@@ -66,6 +74,10 @@ export const SalesmanDashboardPage = () => {
   });
 
   if (!user) return null;
+
+  const showCommissionSkeleton = loading && !data;
+  const showUnmachinableSkeleton =
+    isUnmachinableLoading && !unmachinableOverviewResponse;
 
   const referralCode = String(data?.referralCode || user.referralCode || "")
     .trim()
@@ -156,6 +168,10 @@ export const SalesmanDashboardPage = () => {
               <CardTitle className="text-sm font-semibold">불완전가공 단계 현황</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
+              {showUnmachinableSkeleton ? (
+                <UnmachinableOverviewSkeleton />
+              ) : (
+                <>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div>가능성 {Number(unmachinableCounts.potentialCount || 0).toLocaleString()}건</div>
                 <div>판정 {Number(unmachinableCounts.judgedCount || 0).toLocaleString()}건</div>
@@ -192,11 +208,20 @@ export const SalesmanDashboardPage = () => {
                   </div>
                 )}
               </div>
+                </>
+              )}
             </CardContent>
           </Card>
         }
         statsGridClassName="grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 lg:grid-cols-3"
         stats={
+          showCommissionSkeleton ? (
+            <GlassStatCardsSkeleton
+              count={3}
+              className="contents"
+              lines={3}
+            />
+          ) : (
           <>
             {/* 내 소개 코드 — 영업자 전용 */}
             <Card className="app-glass-card app-glass-card--lg border-2 border-indigo-500/70 overflow-visible">
@@ -215,7 +240,7 @@ export const SalesmanDashboardPage = () => {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-2xl sm:text-3xl md:text-4xl font-mono font-bold tracking-widest">
-                    {normalizedReferralCode || (loading ? "..." : "-")}
+                    {normalizedReferralCode || "-"}
                   </div>
                   <Button
                     type="button"
@@ -312,6 +337,7 @@ export const SalesmanDashboardPage = () => {
               </CardContent>
             </Card>
           </>
+          )
         }
         mainLeft={
           <div className="space-y-3 p-3">
@@ -323,13 +349,17 @@ export const SalesmanDashboardPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {loading ? (
-                  <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
-                    {[0, 1, 2].map((i) => (
+                {showCommissionSkeleton ? (
+                  <div className="grid gap-2 grid-cols-1 md:grid-cols-2">
+                    {[0, 1].map((i) => (
                       <div
                         key={i}
-                        className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 h-24 animate-pulse"
-                      />
+                        className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 space-y-3"
+                      >
+                        <Skeleton className="h-3 w-20" />
+                        <Skeleton className="h-6 w-24" />
+                        <Skeleton className="h-3 w-full" />
+                      </div>
                     ))}
                   </div>
                 ) : (
