@@ -33,7 +33,7 @@
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
  * - web/frontend/src/shared/hooks/useFilePreUpload.ts
  * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
- * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 초대/프로모 카피 축소.
+ * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 프로모 카피 축소.
  * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
  * - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
  */
@@ -51,9 +51,6 @@ import {
   ChevronsUpDown,
   Check,
   Download,
-  Copy,
-  Link2,
-  Send,
   Plus,
   Settings,
   X,
@@ -854,8 +851,6 @@ export const PracticeFileTransferPage = ({
   >("all");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
-  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
-  const [inviteMessageCopied, setInviteMessageCopied] = useState(false);
   const [promoNoticeVisible, setPromoNoticeVisible] = useState(true);
   const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
   const [tempSaveDirty, setTempSaveDirty] = useState(false);
@@ -1203,8 +1198,6 @@ export const PracticeFileTransferPage = ({
     const draftBytes = draftFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
     return ((localBytes + draftBytes) / (1024 * 1024)).toFixed(1);
   }, [files, draftFiles]);
-
-  const requestorSignupLink = `${typeof window !== "undefined" ? window.location.origin : ""}/signup`;
 
   const combinedDisplayFiles = useMemo(
     () => [
@@ -4829,45 +4822,6 @@ export const PracticeFileTransferPage = ({
     }
   };
 
-  const handleCopyPracticeDropzoneLink = async () => {
-    try {
-      await navigator.clipboard.writeText(requestorSignupLink);
-      setInviteLinkCopied(true);
-      setTimeout(() => setInviteLinkCopied(false), 2000);
-      toast({
-        title: "복사 완료",
-        description: "기공소 초대 링크가 복사되었습니다.",
-        duration: 2000,
-      });
-    } catch {
-      toast({
-        title: "복사 실패",
-        description: "브라우저 권한을 확인하고 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleCopyPracticeInviteMessage = async () => {
-    const message = `안녕하세요 🙂 기공소에서 어벗츠 회원가입을 해주시면 치과에서 파일과 의뢰서를 더 쉽고 빠르게 보낼 수 있습니다.\n아래 링크에서 가입 부탁드립니다.\n${requestorSignupLink}`;
-    try {
-      await navigator.clipboard.writeText(message);
-      setInviteMessageCopied(true);
-      setTimeout(() => setInviteMessageCopied(false), 2000);
-      toast({
-        title: "복사 완료",
-        description: "전송 안내 문구가 복사되었습니다.",
-        duration: 2000,
-      });
-    } catch {
-      toast({
-        title: "복사 실패",
-        description: "브라우저 권한을 확인하고 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleDismissPromoNotice = async () => {
     if (promoNoticeSaving) return;
     if (!authToken) {
@@ -4893,68 +4847,6 @@ export const PracticeFileTransferPage = ({
     }
   };
 
-  const inviteLinkCard = (
-    <Card className="h-fit border-slate-200/80 shadow-sm">
-      <CardHeader className="pb-2 pt-3">
-        <CardTitle className="text-sm font-semibold">기공소 초대</CardTitle>
-      </CardHeader>
-      <CardContent className="pt-0 pb-3">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => void handleCopyPracticeDropzoneLink()}
-                className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
-              >
-                {inviteLinkCopied ? (
-                  <>
-                    <Copy className="h-4 w-4" />
-                    복사됨
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="h-4 w-4" />
-                    링크 복사
-                  </>
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs text-xs">
-              기공소 가입·드롭존 링크를 복사합니다.
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => void handleCopyPracticeInviteMessage()}
-                className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
-              >
-                {inviteMessageCopied ? (
-                  <>
-                    <Copy className="h-4 w-4" />
-                    복사됨
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    안내 복사
-                  </>
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs text-xs">
-              초대 안내 문구를 복사합니다.
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      </CardContent>
-    </Card>
-  );
-
   return (
     <PageFileDropZone
       onFiles={handleIncomingFiles}
@@ -4964,23 +4856,20 @@ export const PracticeFileTransferPage = ({
       <div className="mx-auto h-full min-h-0 max-w-6xl space-y-3 p-4">
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
           {promoNoticeVisible ? (
-            <>
-              <Alert className="relative flex items-center justify-between gap-3 border-primary-muted bg-primary-soft/80 py-2.5 text-primary-strong xl:col-span-5">
-                <AlertTitle className="m-0 pr-8 text-sm font-medium leading-snug">
-                  {PRACTICE_TRANSFER_PROMO_TITLE}
-                </AlertTitle>
-                <button
-                  type="button"
-                  onClick={() => void handleDismissPromoNotice()}
-                  disabled={promoNoticeSaving}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-strong hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label="안내 닫기"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </Alert>
-              <div className="xl:col-span-5">{inviteLinkCard}</div>
-            </>
+            <Alert className="relative flex items-center justify-between gap-3 border-primary-muted bg-primary-soft/80 py-2.5 text-primary-strong xl:col-span-10">
+              <AlertTitle className="m-0 pr-8 text-sm font-medium leading-snug">
+                {PRACTICE_TRANSFER_PROMO_TITLE}
+              </AlertTitle>
+              <button
+                type="button"
+                onClick={() => void handleDismissPromoNotice()}
+                disabled={promoNoticeSaving}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-strong hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="안내 닫기"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </Alert>
           ) : null}
           <div className="flex min-w-0 flex-col gap-3 xl:col-span-7">
             <Card className="border-slate-200/80 shadow-sm">
@@ -5260,8 +5149,6 @@ export const PracticeFileTransferPage = ({
           </div>
 
           <div className="space-y-3 xl:col-span-3">
-            {!promoNoticeVisible ? inviteLinkCard : null}
-
             <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={recentTransfersOpen} onOpenChange={setRecentTransfersOpen}>
               <CardHeader className="pb-2 pt-3">
