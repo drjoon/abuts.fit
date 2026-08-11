@@ -1,9 +1,13 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/hooks/compressMeshFile.ts
+// - web/frontend/src/shared/hooks/usePracticeFilePreUpload.ts
+// - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
+// - web/backend/controllers/files/file.controller.js
+// - web/backend/utils/s3.utils.js
 import { useCallback } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
+import { prepareUploadBlob } from "@/shared/hooks/compressMeshFile";
 
 export interface TempUploadedFile {
   _id: string;
@@ -18,6 +22,14 @@ export interface TempUploadedFile {
 type PresignResponseItem = {
   uploadUrl: string;
   file: TempUploadedFile;
+  contentEncoding?: string;
+};
+
+type MultipartInitResponse = {
+  uploadId: string;
+  partUrls: { partNumber: number; uploadUrl: string }[];
+  file: TempUploadedFile;
+  contentEncoding?: string;
 };
 
 interface UseS3TempUploadOptions {
@@ -26,8 +38,17 @@ interface UseS3TempUploadOptions {
 
 const IMAGE_OPTIMIZE_MIN_BYTES = 1.5 * 1024 * 1024;
 const IMAGE_OPTIMIZE_MAX_DIMENSION = 1800;
+const UPLOAD_CONCURRENCY = 8;
+const MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024;
+const MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024;
+const MAX_PUT_ATTEMPTS = 3;
 
 const isImageFile = (file: File) => file.type.startsWith("image/");
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 const optimizeImageFile = async (file: File): Promise<File> => {
   if (typeof window === "undefined") return file;
@@ -87,8 +108,234 @@ const canvasToBlob = (canvas: HTMLCanvasElement, mimeType: string) =>
     canvas.toBlob((blob) => resolve(blob), mimeType, quality);
   });
 
+type PreparedFile = {
+  source: File;
+  blob: Blob;
+  mimetype: string;
+  originalName: string;
+  contentEncoding?: "gzip";
+  uncompressedSize: number;
+  progressKey: string;
+};
+
+const putBlobWithRetry = async (params: {
+  url: string;
+  blob: Blob;
+  contentType?: string;
+  contentEncoding?: string;
+  onProgress?: (loaded: number, total: number) => void;
+}): Promise<string> => {
+  const { url, blob, contentType, contentEncoding, onProgress } = params;
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= MAX_PUT_ATTEMPTS; attempt += 1) {
+    try {
+      const etag = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", url);
+        if (contentType) {
+          xhr.setRequestHeader("Content-Type", contentType);
+        }
+        if (contentEncoding) {
+          xhr.setRequestHeader("Content-Encoding", contentEncoding);
+        }
+
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable || !onProgress) return;
+          onProgress(event.loaded, event.total || blob.size);
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(String(xhr.getResponseHeader("ETag") || "").trim());
+            return;
+          }
+          reject(new Error(`S3 업로드에 실패했습니다. (${xhr.status})`));
+        };
+
+        xhr.onerror = () => reject(new Error("S3 업로드 중 오류 발생"));
+        xhr.send(blob);
+      });
+      return etag;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err || "upload failed"));
+      if (attempt >= MAX_PUT_ATTEMPTS) break;
+      await sleep(250 * attempt * attempt);
+    }
+  }
+
+  throw lastError || new Error("S3 업로드에 실패했습니다.");
+};
+
+const runWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const runners = Array.from(
+    { length: Math.min(concurrency, Math.max(1, items.length)) },
+    async () => {
+      while (nextIndex < items.length) {
+        const current = nextIndex;
+        nextIndex += 1;
+        results[current] = await worker(items[current], current);
+      }
+    },
+  );
+
+  await Promise.all(runners);
+  return results;
+};
+
 export function useS3TempUpload(options: UseS3TempUploadOptions) {
   const { token } = options;
+
+  const uploadSinglePrepared = useCallback(
+    async (
+      prepared: PreparedFile,
+      onByteProgress?: (loaded: number, total: number) => void,
+    ): Promise<TempUploadedFile> => {
+      const totalBytes = prepared.blob.size;
+
+      if (totalBytes >= MULTIPART_THRESHOLD_BYTES) {
+        const partCount = Math.max(
+          1,
+          Math.ceil(totalBytes / MULTIPART_PART_SIZE_BYTES),
+        );
+
+        const initRes = await apiFetch<any>({
+          path: "/api/files/temp/multipart/init",
+          method: "POST",
+          token,
+          jsonBody: {
+            originalName: prepared.originalName,
+            mimetype: prepared.mimetype,
+            size: totalBytes,
+            partCount,
+            contentEncoding: prepared.contentEncoding,
+            uncompressedSize: prepared.uncompressedSize,
+          },
+        });
+
+        if (!initRes.ok) {
+          throw new Error("multipart 업로드 시작에 실패했습니다.");
+        }
+
+        const initBody = (initRes.data as any)?.data as MultipartInitResponse;
+        const uploadId = String(initBody?.uploadId || "").trim();
+        const partUrls = Array.isArray(initBody?.partUrls) ? initBody.partUrls : [];
+        const file = initBody?.file;
+        if (!uploadId || !file?._id || partUrls.length !== partCount) {
+          throw new Error("multipart 업로드 정보가 올바르지 않습니다.");
+        }
+
+        const partProgress = new Array<number>(partCount).fill(0);
+        const emitProgress = () => {
+          if (!onByteProgress) return;
+          const loaded = partProgress.reduce((sum, n) => sum + n, 0);
+          onByteProgress(Math.min(totalBytes, loaded), totalBytes);
+        };
+
+        try {
+          const completedParts = await runWithConcurrency(
+            partUrls,
+            Math.min(4, partUrls.length),
+            async (part) => {
+              const partNumber = Math.floor(Number(part.partNumber) || 0);
+              const start = (partNumber - 1) * MULTIPART_PART_SIZE_BYTES;
+              const end = Math.min(totalBytes, start + MULTIPART_PART_SIZE_BYTES);
+              const chunk = prepared.blob.slice(start, end);
+
+              const etag = await putBlobWithRetry({
+                url: part.uploadUrl,
+                blob: chunk,
+                onProgress: (loaded) => {
+                  partProgress[partNumber - 1] = loaded;
+                  emitProgress();
+                },
+              });
+
+              if (!etag) {
+                throw new Error(`파트 ${partNumber} ETag를 받지 못했습니다.`);
+              }
+
+              partProgress[partNumber - 1] = chunk.size;
+              emitProgress();
+              return { ETag: etag, PartNumber: partNumber };
+            },
+          );
+
+          const completeRes = await apiFetch<any>({
+            path: "/api/files/temp/multipart/complete",
+            method: "POST",
+            token,
+            jsonBody: {
+              fileId: file._id,
+              uploadId,
+              parts: completedParts,
+            },
+          });
+
+          if (!completeRes.ok) {
+            throw new Error("multipart 업로드 완료에 실패했습니다.");
+          }
+
+          const completedFile =
+            ((completeRes.data as any)?.data?.file as TempUploadedFile) || file;
+          return completedFile;
+        } catch (err) {
+          await apiFetch({
+            path: "/api/files/temp/multipart/abort",
+            method: "POST",
+            token,
+            jsonBody: { fileId: file._id, uploadId },
+          }).catch(() => null);
+          throw err;
+        }
+      }
+
+      const res = await apiFetch<any>({
+        path: "/api/files/temp/presign",
+        method: "POST",
+        token,
+        jsonBody: {
+          files: [
+            {
+              originalName: prepared.originalName,
+              mimetype: prepared.mimetype,
+              size: totalBytes,
+              contentEncoding: prepared.contentEncoding,
+              uncompressedSize: prepared.uncompressedSize,
+            },
+          ],
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error("업로드 URL 생성에 실패했습니다.");
+      }
+
+      const data = (res.data as any)?.data;
+      const item = Array.isArray(data) ? (data[0] as PresignResponseItem) : null;
+      if (!item?.uploadUrl || !item?.file) {
+        throw new Error("업로드 URL 생성에 실패했습니다.");
+      }
+
+      await putBlobWithRetry({
+        url: item.uploadUrl,
+        blob: prepared.blob,
+        contentType: prepared.mimetype,
+        contentEncoding: prepared.contentEncoding,
+        onProgress: onByteProgress,
+      });
+
+      return item.file;
+    },
+    [token],
+  );
 
   const uploadFiles = useCallback(
     async (
@@ -97,85 +344,44 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
     ): Promise<TempUploadedFile[]> => {
       if (!files.length) return [];
 
-      // 일부 환경에서 다량 업로드 시 presign 결과/업로드가 4개로 제한되는 이슈가 있어
-      // 안정성을 위해 chunk 단위로 업로드한다.
-      const CHUNK_SIZE = 4;
-      const chunks: File[][] = [];
-      for (let i = 0; i < files.length; i += CHUNK_SIZE) {
-        chunks.push(files.slice(i, i + CHUNK_SIZE));
+      const preparedList: PreparedFile[] = await Promise.all(
+        files.map(async (file) => {
+          const optimized = await optimizeImageFile(file);
+          const prepared = await prepareUploadBlob(optimized);
+          return {
+            source: file,
+            blob: prepared.blob,
+            mimetype: prepared.mimetype,
+            originalName: prepared.originalName,
+            contentEncoding: prepared.contentEncoding,
+            uncompressedSize: prepared.uncompressedSize,
+            progressKey: `${file.name}:${file.size}`,
+          };
+        }),
+      );
+
+      const progressMap: Record<string, number> = {};
+      for (const row of preparedList) {
+        progressMap[row.progressKey] = 0;
       }
+      onProgress?.({ ...progressMap });
 
-      const allUploaded: TempUploadedFile[] = [];
-      for (const chunk of chunks) {
-        const optimizedChunk = await Promise.all(
-          chunk.map((file) => optimizeImageFile(file)),
-        );
-
-        const res = await apiFetch<any>({
-          path: "/api/files/temp/presign",
-          method: "POST",
-          token,
-          jsonBody: {
-            files: optimizedChunk.map((file) => ({
-              originalName: file.name,
-              mimetype: file.type || "application/octet-stream",
-              size: file.size,
-            })),
-          },
-        });
-
-        if (!res.ok) {
-          throw new Error("업로드 URL 생성에 실패했습니다.");
-        }
-
-        const body = res.data || {};
-        const data = (body as any)?.data;
-        if (!Array.isArray(data)) continue;
-
-        const presigned = data as PresignResponseItem[];
-        const currentProgress: Record<string, number> = {};
-
-        const uploadPromises = presigned.map((item, i) => {
-          const file = optimizedChunk[i];
-          return new Promise<TempUploadedFile>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open("PUT", item.uploadUrl);
-            xhr.setRequestHeader(
-              "Content-Type",
-              file?.type || "application/octet-stream",
-            );
-
-            xhr.upload.onprogress = (event) => {
-              if (event.lengthComputable && onProgress) {
-                const percentComplete = Math.round(
-                  (event.loaded / event.total) * 100,
-                );
-                const k = `${file.name}:${file.size}`;
-                currentProgress[k] = percentComplete;
-                onProgress({ ...currentProgress });
-              }
-            };
-
-            xhr.onload = () => {
-              if (xhr.status >= 200 && xhr.status < 300) {
-                resolve(item.file);
-              } else {
-                reject(new Error("S3 업로드에 실패했습니다."));
-              }
-            };
-
-            xhr.onerror = () => reject(new Error("S3 업로드 중 오류 발생"));
-            xhr.send(file);
+      return runWithConcurrency(
+        preparedList,
+        UPLOAD_CONCURRENCY,
+        async (prepared) => {
+          const uploaded = await uploadSinglePrepared(prepared, (loaded, total) => {
+            const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+            progressMap[prepared.progressKey] = Math.max(0, Math.min(100, pct));
+            onProgress?.({ ...progressMap });
           });
-        });
-
-        const uploaded = await Promise.all(uploadPromises);
-        allUploaded.push(...uploaded);
-      }
-
-      return allUploaded;
+          progressMap[prepared.progressKey] = 100;
+          onProgress?.({ ...progressMap });
+          return uploaded;
+        },
+      );
     },
-    [token],
+    [uploadSinglePrepared],
   );
 
   return { uploadFiles };

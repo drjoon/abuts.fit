@@ -469,6 +469,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 채팅/전송 첨부 다운로드 정책:
   - 다운로드 SSOT 엔드포인트: `GET /api/files/s3/download?key=...&fileName=...`
   - S3 파일은 signed-url 리다이렉트가 아니라 서버 프록시 스트리밍(`pipe`)으로 응답합니다.
+  - gzip으로 저장된 객체(`ContentEncoding=gzip`)는 프록시/버퍼 조회 시 자동 해제해 원본 바이트로 내려줍니다.
+  - temp 업로드:
+    - `POST /api/files/temp/presign` (단건 PUT, optional `contentEncoding`)
+    - `POST /api/files/temp/multipart/init|complete|abort` (8MB+ 대용량)
   - 권한 판정은 다음 중 하나를 만족해야 합니다:
     - 관리자
     - 업로더 본인

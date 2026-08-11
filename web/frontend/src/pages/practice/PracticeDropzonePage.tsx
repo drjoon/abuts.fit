@@ -25,6 +25,8 @@
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/shared/onboarding/wizard/SettingsWizard.tsx
+ * - web/frontend/src/shared/hooks/useS3TempUpload.ts
+ * - web/frontend/src/shared/hooks/usePracticeFilePreUpload.ts
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -58,7 +60,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore, type User } from "@/store/useAuthStore";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
-import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import { usePracticeFilePreUpload } from "@/shared/hooks/usePracticeFilePreUpload";
 import {
   Popover,
   PopoverContent,
@@ -592,7 +594,16 @@ export const PracticeDropzonePage = () => {
 
   const fileCacheMetaKey = PRACTICE_FILE_CACHE_META_KEY;
   const fileCacheMaxTotalBytes = PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES;
-  const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
+  const {
+    ensureFilesUploaded,
+    preUploadFiles,
+    forgetFile,
+    clearPreUploadCache,
+  } = usePracticeFilePreUpload({ token: authToken });
+  const { uploadFilesWithToast } = useUploadWithProgressToast({
+    token: authToken,
+    uploadFiles: ensureFilesUploaded,
+  });
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
 
   const {
@@ -619,6 +630,25 @@ export const PracticeDropzonePage = () => {
     fileCacheMetaKey,
     fileCacheMaxTotalBytes,
   });
+
+  useEffect(() => {
+    if (!authToken || files.length === 0) return;
+    preUploadFiles(files);
+  }, [authToken, files, preUploadFiles]);
+
+  const removeFileWithCache = useCallback(
+    (idx: number) => {
+      const target = files[idx];
+      if (target) forgetFile(target);
+      removeFile(idx);
+    },
+    [files, forgetFile, removeFile],
+  );
+
+  const clearAllFilesWithCache = useCallback(async () => {
+    clearPreUploadCache();
+    await clearAllFiles();
+  }, [clearAllFiles, clearPreUploadCache]);
 
   const todayDate = useMemo(() => toKstDateInputValue(new Date()), []);
   const [orderDate, setOrderDate] = useState(todayDate);
@@ -1605,6 +1635,7 @@ export const PracticeDropzonePage = () => {
 
       suppressDraftPersistRef.current = true;
       await clearPracticeDropzoneCaches();
+      clearPreUploadCache();
 
       setRequestSubmitted(true);
       rememberLab(selectedLab);
@@ -2244,10 +2275,10 @@ export const PracticeDropzonePage = () => {
                         (file, fileIdx) =>
                           `${file.name}:${file.size}:${file.lastModified}:${fileIdx}` === key,
                       );
-                      if (idx >= 0) removeFile(idx);
+                      if (idx >= 0) removeFileWithCache(idx);
                     },
                     onClearAllFiles: () => {
-                      void clearAllFiles();
+                      void clearAllFilesWithCache();
                     },
                   }}
                   requestIntakeProps={{

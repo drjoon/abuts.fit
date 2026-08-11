@@ -531,6 +531,15 @@ Notes:
   - 관련 파일:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/shared/hooks/useS3TempUpload.ts`
+    - `src/shared/hooks/usePracticeFilePreUpload.ts`
+    - `src/shared/hooks/compressMeshFile.ts`
+
+- practice/S3 temp 업로드 가속(SSOT):
+  - 동시 업로드 풀: 최대 8 (`useS3TempUpload`).
+  - 첨부 직후 백그라운드 사전 업로드(`usePracticeFilePreUpload`). 로그인 세션이 있을 때 Dropzone·FileTransfer 공통.
+  - 8MB 이상: S3 multipart (`POST /api/files/temp/multipart/{init,complete,abort}`) + 파트/단건 PUT 재시도.
+  - STL/PLY/OBJ: 클라이언트 gzip(유의미할 때만). S3 `ContentEncoding=gzip`, 원본 파일명 유지.
+  - 다운로드 프록시는 gzip 객체를 풀어 원본 바이트로 응답 (`getObjectStreamFromS3` / `getObjectBufferFromS3`).
 
 - practice 최근 전송 기공소(기공소 선택 드롭다운) SSOT:
   - 서버: `GET /api/practice/transfers/my` 응답의 `caseInfos.practiceRouting.targetLabAnchorId/targetLabName`(최신순)이 권위 소스.

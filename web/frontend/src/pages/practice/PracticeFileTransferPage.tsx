@@ -30,6 +30,8 @@
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
+ * - web/frontend/src/shared/hooks/useS3TempUpload.ts
+ * - web/frontend/src/shared/hooks/usePracticeFilePreUpload.ts
  * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
  */
 
@@ -90,12 +92,14 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
+import { usePracticeFilePreUpload } from "@/shared/hooks/usePracticeFilePreUpload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   PRACTICE_ACCEPTED_HINT,
   getBusinessLabel,
   usePracticeTransferStep1,
+  isAutoMatchLab,
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
@@ -1164,8 +1168,27 @@ export const PracticeFileTransferPage = ({
     });
   }, [toothWorks]);
 
-  const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
+  const {
+    ensureFilesUploaded,
+    preUploadFiles,
+    forgetFile,
+    clearPreUploadCache,
+  } = usePracticeFilePreUpload({ token: authToken });
+  const { uploadFilesWithToast } = useUploadWithProgressToast({
+    token: authToken,
+    uploadFiles: ensureFilesUploaded,
+  });
   const { rooms: chatRooms } = useChatRooms();
+
+  useEffect(() => {
+    if (!authToken || files.length === 0) return;
+    preUploadFiles(files);
+  }, [authToken, files, preUploadFiles]);
+
+  const clearLocalFilesWithCache = useCallback(async () => {
+    clearPreUploadCache();
+    await clearAllFiles();
+  }, [clearAllFiles, clearPreUploadCache]);
 
   const {
     messages: chatMessages,
@@ -2478,7 +2501,7 @@ export const PracticeFileTransferPage = ({
       clearPracticeSharedFormLocalStorage();
     }
 
-    await clearAllFiles();
+    await clearLocalFilesWithCache();
     await clearPracticeFileTransferCaches();
 
     // clearPracticeFileTransferCaches가 form local key를 지우므로, 빈 스냅샷을 다시 쓴다.
@@ -3551,7 +3574,10 @@ export const PracticeFileTransferPage = ({
     draftIndex?: number;
   }) => {
     if (target.kind === "local" && Number.isFinite(Number(target.localIndex))) {
-      removeFile(Number(target.localIndex));
+      const idx = Number(target.localIndex);
+      const targetFile = files[idx];
+      if (targetFile) forgetFile(targetFile);
+      removeFile(idx);
       return;
     }
 
@@ -3575,7 +3601,7 @@ export const PracticeFileTransferPage = ({
   };
 
   const handleClearAllTransferFiles = async () => {
-    await clearAllFiles();
+    await clearLocalFilesWithCache();
     if (draftFiles.length > 0) {
       const prevDraftFiles = [...draftFiles];
       setDraftFiles([]);
@@ -4232,7 +4258,7 @@ export const PracticeFileTransferPage = ({
         }
       }
       // 로컬 대기 파일만 비운다. draftFiles·기공소·환자명 등 작성 중인 폼은 유지한다.
-      await clearAllFiles();
+      await clearLocalFilesWithCache();
       setTempSaveDirty(false);
       void loadPracticeTransferDraftList();
 
@@ -4380,9 +4406,11 @@ export const PracticeFileTransferPage = ({
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
       });
+      const autoMatch = isAutoMatchLab(selectedLab);
       const practiceRouting = {
-        targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
+        targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
         targetLabName: String(selectedLab?.name || "").trim(),
+        matchingMode: autoMatch ? "auto" : "direct",
       };
       const newSystemRequestBase = {
         requested: true,
@@ -4440,7 +4468,8 @@ export const PracticeFileTransferPage = ({
         jsonBody: {
           transferId,
           draftId: String(activeDraftIdRef.current || draftSummary?.id || "").trim() || undefined,
-          targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
+          matchingMode: autoMatch ? "auto" : "direct",
+          targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
           targetLabName: String(selectedLab?.name || "").trim(),
           orderDate,
           arrivalDate,
@@ -4604,7 +4633,7 @@ export const PracticeFileTransferPage = ({
     setToothWorks(nextToothWorks);
 
     // 화면만 비움. 서버 임시저장은 목록에 유지(삭제는 임시저장 카드에서).
-    await clearAllFiles();
+    await clearLocalFilesWithCache();
     setDraftFiles([]);
     setDraftSummary(null);
     setActiveDraftId(null);
@@ -4772,7 +4801,7 @@ export const PracticeFileTransferPage = ({
       setActiveDraftId(null);
       activeDraftSeenInListRef.current = null;
       setTempSaveDirty(false);
-      await clearAllFiles();
+      await clearLocalFilesWithCache();
 
       const fingerprint = currentFormFingerprintRef.current;
       lastSavedFormFingerprintRef.current = fingerprint;
