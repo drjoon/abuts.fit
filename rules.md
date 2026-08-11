@@ -252,7 +252,9 @@
   - 저장 SSOT: `PracticeTransfer` (Request 생성 경유 금지)
   - 유료 기공의뢰: 치과 `paid+verified` 크레딧으로 소매가 차감 후 §2.3 거래처 분배. 파일 라우팅·채팅 권한 SSOT는 유지
   - **자동매칭**: `matchingMode=auto` — devops가 `practiceTransferAutoMatchEnabled` ON한 검증 기공소 공개 풀, 선착순 수락(3h)·작업완료·만료 시 과금 롤백 후 재공개. 지정 기공소(`direct`)는 기존과 동일
-- SSOT API: `POST/GET /api/practice/transfers`, `GET .../received`, `POST .../mark-accepted`, `POST .../mark-complete`, `POST .../cancel-batch`
+  - **작업완료**: 기공소 수락 카드에서 결과파일 업로드 필수(`resultFiles`). 커스텀어벗 포함 시 배송모드(`production.shippingMode`) 선택
+  - **생산 진행**: 치과가 결과파일 확인 후 `POST .../confirm-production`. 커스텀어벗이면 기공소→어벗츠 Request 자동 생성(`partnerBilling` 연동)
+- SSOT API: `POST/GET /api/practice/transfers`, `GET .../received`, `POST .../mark-accepted`, `POST .../mark-complete`, `POST .../confirm-production`, `POST .../cancel-batch`
 - devops 자동매칭 ON: `GET/PATCH /api/devops/practice-transfer-auto-match`
 - 기공소 거래처 API: `POST/GET /api/lab-trading-partners`, `POST .../:id/cancel`
 - 크레딧/정산은 유료(paid+verified) 경로. synthetic BN에는 환영 크레딧 없음(실BN 검증 승격 시 1회)

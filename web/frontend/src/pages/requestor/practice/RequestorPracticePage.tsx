@@ -50,10 +50,25 @@ import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { Building2, Copy, Download, Link2, Search, Send, X } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
   PracticeTransferDetailChatDialog,
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
+import {
+  PracticeTransferFileDropTarget,
+  openPracticeTransferFilePicker,
+} from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   REQUESTOR_KIND_LABEL,
@@ -95,6 +110,7 @@ type ReceivedPracticeTransfer = {
   prosthesisTypes: string[];
   toothWorksSummary: string;
   status: string;
+  manufacturerStage?: string;
   createdAt: string;
   updatedAt: string;
   isRead: boolean;
@@ -116,12 +132,20 @@ type ReceivedPracticeTransfer = {
     remainingMs?: number | null;
     releaseCount?: number;
   } | null;
+  hasCustomAbutment?: boolean;
+  production?: {
+    shippingMode?: "normal" | "express" | null;
+    confirmedAt?: string | null;
+    relatedRequestIds?: string[];
+  } | null;
   practice: {
     businessName: string;
     userName: string;
   };
   fileCount: number;
   files: ReceivedPracticeFile[];
+  resultFileCount?: number;
+  resultFiles?: ReceivedPracticeFile[];
 };
 
 type ReceivedTransfersResponse = {
@@ -194,12 +218,16 @@ const formatRemainingMs = (remainingMs: number | null | undefined) => {
 
 const getTransferDisplayStatus = (transfer: {
   status?: string;
+  manufacturerStage?: string;
   isRead?: boolean;
   isDownloaded?: boolean;
   isAccepted?: boolean;
   requestorDownloadedAt?: string | null;
   requestorAcceptedAt?: string | null;
   matchingMode?: string | null;
+  production?: {
+    confirmedAt?: string | null;
+  } | null;
   autoMatch?: {
     openPool?: boolean;
     completed?: boolean;
@@ -207,7 +235,10 @@ const getTransferDisplayStatus = (transfer: {
     mine?: boolean;
   } | null;
 }) => {
-  if (transfer.autoMatch?.completed) {
+  if (transfer.production?.confirmedAt || transfer.manufacturerStage === "생산진행") {
+    return "생산진행" as const;
+  }
+  if (transfer.autoMatch?.completed || transfer.manufacturerStage === "작업완료") {
     return "작업완료" as const;
   }
   if (
@@ -232,6 +263,15 @@ const getTransferDisplayStatus = (transfer: {
   }
 
   return transfer.isRead ? ("수신완료" as const) : ("발송완료" as const);
+};
+
+const transferHasCustomAbutment = (transfer: ReceivedPracticeTransfer) => {
+  if (typeof transfer.hasCustomAbutment === "boolean") {
+    return transfer.hasCustomAbutment;
+  }
+  return parseToothWorks(transfer.toothWorksSummary).some((row) =>
+    Boolean(row.customAbutment),
+  );
 };
 
 export default function RequestorPracticePage() {
@@ -365,6 +405,13 @@ function RequestorPracticeReceivePage({
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
+  const [completePrompt, setCompletePrompt] = useState<{
+    transfer: ReceivedPracticeTransfer;
+    files: File[];
+  } | null>(null);
+  const [completeShippingMode, setCompleteShippingMode] = useState<"normal" | "express">(
+    "normal",
+  );
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -507,20 +554,26 @@ function RequestorPracticeReceivePage({
             ? (r.practice as Record<string, unknown>)
             : {};
         const filesRaw = Array.isArray(r.files) ? r.files : [];
+        const resultFilesRaw = Array.isArray(r.resultFiles) ? r.resultFiles : [];
+
+        const mapFileRow = (f: unknown, idx: number, prefix = "") => {
+          const item = f && typeof f === "object" ? (f as Record<string, unknown>) : {};
+          return {
+            id: String(item.id || `${String(r._id || "")}${prefix}:${idx + 1}`),
+            patientName: String(item.patientName || "").trim(),
+            tooth: String(item.tooth || "").trim(),
+            originalName: String(item.originalName || "").trim(),
+            mimetype: String(item.mimetype || "application/octet-stream").trim(),
+            size: Number(item.size || 0),
+            s3Key: String(item.s3Key || "").trim(),
+          };
+        };
 
         const files: ReceivedPracticeFile[] = filesRaw
-          .map((f, idx) => {
-            const item = f && typeof f === "object" ? (f as Record<string, unknown>) : {};
-            return {
-              id: String(item.id || `${String(r._id || "")}:${idx + 1}`),
-              patientName: String(item.patientName || "").trim(),
-              tooth: String(item.tooth || "").trim(),
-              originalName: String(item.originalName || "").trim(),
-              mimetype: String(item.mimetype || "application/octet-stream").trim(),
-              size: Number(item.size || 0),
-              s3Key: String(item.s3Key || "").trim(),
-            };
-          })
+          .map((f, idx) => mapFileRow(f, idx))
+          .filter((f) => f.originalName && f.s3Key);
+        const resultFiles: ReceivedPracticeFile[] = resultFilesRaw
+          .map((f, idx) => mapFileRow(f, idx, ":result"))
           .filter((f) => f.originalName && f.s3Key);
 
         const parsedMemo = parsePracticeTransferMemoMeta(String(r.transferMemo || ""));
@@ -560,6 +613,41 @@ function RequestorPracticeReceivePage({
               releaseCount: Number(autoMatchRaw.releaseCount || 0),
             }
           : null;
+        const productionRaw =
+          r.production && typeof r.production === "object"
+            ? (r.production as Record<string, unknown>)
+            : null;
+        const production = productionRaw
+          ? {
+              shippingMode:
+                productionRaw.shippingMode === "express"
+                  ? ("express" as const)
+                  : productionRaw.shippingMode === "normal"
+                    ? ("normal" as const)
+                    : null,
+              confirmedAt: productionRaw.confirmedAt
+                ? String(productionRaw.confirmedAt)
+                : null,
+              relatedRequestIds: Array.isArray(productionRaw.relatedRequestIds)
+                ? productionRaw.relatedRequestIds.map((id) => String(id))
+                : [],
+            }
+          : null;
+        const toothWorksFromApi = Array.isArray(r.toothWorks) ? r.toothWorks : null;
+        const hasCustomAbutment =
+          typeof r.hasCustomAbutment === "boolean"
+            ? r.hasCustomAbutment
+            : toothWorksFromApi
+              ? toothWorksFromApi.some((row) =>
+                  Boolean(
+                    row &&
+                      typeof row === "object" &&
+                      (row as { customAbutment?: boolean }).customAbutment,
+                  ),
+                )
+              : parseToothWorks(parsedMemo.toothWorksSummary).some((row) =>
+                  Boolean(row.customAbutment),
+                );
 
         return {
           _id: String(r._id || "").trim(),
@@ -572,6 +660,7 @@ function RequestorPracticeReceivePage({
           prosthesisTypes: parsedMemo.prosthesisTypes,
           toothWorksSummary: parsedMemo.toothWorksSummary,
           status: String(r.status || "active").trim(),
+          manufacturerStage: String(r.manufacturerStage || "").trim() || undefined,
           createdAt: String(r.createdAt || "").trim(),
           updatedAt: String(r.updatedAt || "").trim(),
           isRead: Boolean(r.isRead),
@@ -596,12 +685,16 @@ function RequestorPracticeReceivePage({
           requestorAcceptedAt: requestorDownloadedAt,
           matchingMode,
           autoMatch,
+          hasCustomAbutment,
+          production,
           practice: {
             businessName: String(practiceRaw.businessName || "").trim(),
             userName: String(practiceRaw.userName || "").trim(),
           },
           fileCount: Number(r.fileCount || files.length || 0),
           files,
+          resultFileCount: Number(r.resultFileCount || resultFiles.length || 0),
+          resultFiles,
         };
       })
       .filter((x) => x.transferId)
@@ -934,6 +1027,7 @@ function RequestorPracticeReceivePage({
       (acc, transfer) => {
         const status = getTransferDisplayStatus(transfer);
         if (status === "작업완료") acc.completed += 1;
+        else if (status === "생산진행") acc.shipping += 1;
         else if (status === "의뢰수락") acc.accepted += 1;
         // 수신완료는 UI에서 의뢰에 합산(수신 뱃지 제거).
         else if (status === "발송완료" || status === "수신완료") acc.sent += 1;
@@ -942,7 +1036,6 @@ function RequestorPracticeReceivePage({
       },
       { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0 },
     );
-    // 포장.발송·추적관리는 기공 파이프라인 UI 슬롯(집계 연동 전).
     return counts;
   }, [baseFilteredTransfers]);
 
@@ -952,6 +1045,9 @@ function RequestorPracticeReceivePage({
       const status = getTransferDisplayStatus(transfer);
       if (statusFilter === "발송완료") {
         return status === "발송완료" || status === "수신완료";
+      }
+      if (statusFilter === "포장.발송") {
+        return status === "생산진행";
       }
       return status === statusFilter;
     });
@@ -1254,15 +1350,69 @@ function RequestorPracticeReceivePage({
   );
 
   const markTransferComplete = useCallback(
-    async (transfer: ReceivedPracticeTransfer) => {
+    async (
+      transfer: ReceivedPracticeTransfer,
+      options: {
+        files: File[];
+        shippingMode?: "normal" | "express" | null;
+      },
+    ) => {
       if (!token) return false;
       if (transfer.autoMatch?.completed) return true;
 
+      const files = Array.isArray(options.files) ? options.files : [];
+      if (files.length === 0) {
+        toast({
+          title: "결과 파일 필요",
+          description: "작업 완료하려면 결과 파일을 선택해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      const needsShipping = transferHasCustomAbutment(transfer);
+      const shippingMode = options.shippingMode || null;
+      if (needsShipping && shippingMode !== "normal" && shippingMode !== "express") {
+        toast({
+          title: "배송설정 필요",
+          description: "커스텀 어벗먼트가 포함되어 일반/신속 배송을 선택해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
       try {
+        const uploadedFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
+        const resultFiles = uploadedFiles
+          .map((f) => ({
+            patientName: "",
+            tooth: "",
+            file: {
+              originalName: String(f.originalName || "").trim(),
+              mimetype: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
+              size: Number(f.size || 0),
+              s3Key: String(f.key || "").trim(),
+            },
+          }))
+          .filter((row) => row.file.originalName && row.file.s3Key);
+
+        if (resultFiles.length === 0) {
+          toast({
+            title: "업로드 실패",
+            description: "결과 파일 업로드에 실패했습니다.",
+            variant: "destructive",
+          });
+          return false;
+        }
+
         const res = await apiFetch<unknown>({
           path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-complete`,
           method: "POST",
           token,
+          body: {
+            resultFiles,
+            ...(shippingMode ? { shippingMode } : {}),
+          },
         });
         if (!res.ok) {
           const body =
@@ -1300,27 +1450,77 @@ function RequestorPracticeReceivePage({
           mine: true,
           remainingMs: null,
         };
+        const mappedResultFiles: ReceivedPracticeFile[] = (
+          Array.isArray(data.resultFiles) ? data.resultFiles : resultFiles
+        )
+          .map((row, idx) => {
+            const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+            const fileObj =
+              item.file && typeof item.file === "object"
+                ? (item.file as Record<string, unknown>)
+                : item;
+            return {
+              id: String(item.id || `${transfer._id}:result:${idx + 1}`),
+              patientName: String(item.patientName || "").trim(),
+              tooth: String(item.tooth || "").trim(),
+              originalName: String(
+                fileObj.originalName || item.originalName || "",
+              ).trim(),
+              mimetype: String(
+                fileObj.mimetype || item.mimetype || "application/octet-stream",
+              ).trim(),
+              size: Number(fileObj.size || item.size || 0),
+              s3Key: String(fileObj.s3Key || item.s3Key || "").trim(),
+            };
+          })
+          .filter((f) => f.originalName && f.s3Key);
+        const productionPatch = {
+          shippingMode:
+            shippingMode ||
+            (data.production &&
+            typeof data.production === "object" &&
+            (data.production as { shippingMode?: string }).shippingMode === "express"
+              ? ("express" as const)
+              : shippingMode === "normal"
+                ? ("normal" as const)
+                : null),
+          confirmedAt: null as string | null,
+          relatedRequestIds: [] as string[],
+        };
 
         setTransfers((prev) =>
           prev.map((row) =>
             row._id === transfer._id || row.transferId === transfer.transferId
-              ? { ...row, autoMatch: autoMatchPatch }
+              ? {
+                  ...row,
+                  autoMatch: autoMatchPatch,
+                  manufacturerStage: "작업완료",
+                  resultFiles: mappedResultFiles,
+                  resultFileCount: mappedResultFiles.length,
+                  production: productionPatch,
+                }
               : row,
           ),
         );
         setSelectedTransfer((prev) =>
           prev &&
           (prev._id === transfer._id || prev.transferId === transfer.transferId)
-            ? { ...prev, autoMatch: autoMatchPatch }
+            ? {
+                ...prev,
+                autoMatch: autoMatchPatch,
+                manufacturerStage: "작업완료",
+                resultFiles: mappedResultFiles,
+                resultFileCount: mappedResultFiles.length,
+                production: productionPatch,
+              }
             : prev,
         );
 
         toast({
           title: "작업 완료",
-          description:
-            transfer.matchingMode === "auto"
-              ? "자동매칭 작업을 완료 처리했습니다."
-              : "기공의뢰 작업을 완료 처리했습니다.",
+          description: needsShipping
+            ? "결과 파일을 올렸습니다. 치과 생산 진행 컨펌 후 어벗츠 의뢰가 생성됩니다."
+            : "결과 파일을 올렸습니다. 치과에서 생산 진행을 컨펌하면 됩니다.",
         });
         return true;
       } catch {
@@ -1332,8 +1532,50 @@ function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [toast, token],
+    [toast, token, uploadFilesWithToast],
   );
+
+  const beginCompleteWithFiles = useCallback(
+    (transfer: ReceivedPracticeTransfer, files: File[]) => {
+      const nextFiles = Array.from(files || []).filter(Boolean);
+      if (!nextFiles.length) return;
+      if (transferHasCustomAbutment(transfer)) {
+        setCompleteShippingMode(
+          transfer.production?.shippingMode === "express" ? "express" : "normal",
+        );
+        setCompletePrompt({ transfer, files: nextFiles });
+        return;
+      }
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || cardActionBusyId) return;
+      setCardActionBusyId(id);
+      void (async () => {
+        try {
+          await markTransferComplete(transfer, { files: nextFiles });
+        } finally {
+          setCardActionBusyId("");
+        }
+      })();
+    },
+    [cardActionBusyId, markTransferComplete],
+  );
+
+  const handleConfirmCompletePrompt = useCallback(async () => {
+    if (!completePrompt || cardActionBusyId) return;
+    const { transfer, files } = completePrompt;
+    const id = String(transfer.transferId || transfer._id || "").trim();
+    if (!id) return;
+    setCardActionBusyId(id);
+    try {
+      const ok = await markTransferComplete(transfer, {
+        files,
+        shippingMode: completeShippingMode,
+      });
+      if (ok) setCompletePrompt(null);
+    } finally {
+      setCardActionBusyId("");
+    }
+  }, [cardActionBusyId, completePrompt, completeShippingMode, markTransferComplete]);
 
   const markTransferRelease = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -1574,19 +1816,21 @@ function RequestorPracticeReceivePage({
   ]);
 
   const handleCardComplete = useCallback(
-    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
+    (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id || cardActionBusyId) return;
-      setCardActionBusyId(id);
-      try {
-        await markTransferComplete(transfer);
-      } finally {
-        setCardActionBusyId("");
-      }
+      openPracticeTransferFilePicker(`practice-complete-${id}`);
     },
-    [cardActionBusyId, markTransferComplete],
+    [cardActionBusyId],
+  );
+
+  const handleCardDropFiles = useCallback(
+    (transfer: ReceivedPracticeTransfer, files: File[]) => {
+      beginCompleteWithFiles(transfer, files);
+    },
+    [beginCompleteWithFiles],
   );
 
   const handleCardRelease = useCallback(
@@ -1661,7 +1905,12 @@ function RequestorPracticeReceivePage({
   );
 
   const handleDownloadAllFiles = useCallback(async () => {
-    const files = Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : [];
+    const files = [
+      ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
+      ...(Array.isArray(selectedTransfer?.resultFiles)
+        ? selectedTransfer.resultFiles
+        : []),
+    ];
     if (!files.length) return;
 
     await Promise.all(files.map((file) => handleDownload(file)));
@@ -2052,21 +2301,11 @@ function RequestorPracticeReceivePage({
             const cardId = String(transfer.transferId || transfer._id || "").trim();
             const cardBusy = Boolean(cardActionBusyId) && cardActionBusyId === cardId;
             const showWorkActions = displayStatus === "의뢰수락";
-            return (
-              <div
-                key={transfer._id || transfer.transferId}
-                role="button"
-                tabIndex={0}
-                onClick={() => void openTransferDialog(transfer)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    void openTransferDialog(transfer);
-                  }
-                }}
-                className="w-full cursor-pointer rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                data-transfer-card="true"
-              >
+            const resultCount = Number(transfer.resultFileCount || transfer.resultFiles?.length || 0);
+            const completeInputId = `practice-complete-${cardId}`;
+
+            const cardBody = (
+              <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Building2 className="h-4 w-4 text-muted-foreground" />
@@ -2085,10 +2324,16 @@ function RequestorPracticeReceivePage({
                       {formatDateTime(transfer.createdAt)}
                     </span>
                     <Badge
-                      variant={displayStatus === "발송완료" || displayStatus === "자동매칭" ? "destructive" : "secondary"}
+                      variant={
+                        displayStatus === "발송완료" || displayStatus === "자동매칭"
+                          ? "destructive"
+                          : "secondary"
+                      }
                       className={cn(
                         "shrink-0 whitespace-nowrap",
-                        displayStatus === "의뢰수락" || displayStatus === "작업완료"
+                        displayStatus === "의뢰수락" ||
+                          displayStatus === "작업완료" ||
+                          displayStatus === "생산진행"
                           ? "bg-primary-soft text-primary-strong hover:bg-primary-soft"
                           : "",
                       )}
@@ -2111,6 +2356,7 @@ function RequestorPracticeReceivePage({
 
                 <p className="mt-2 text-xs text-muted-foreground truncate">
                   파일 {transfer.fileCount}개
+                  {resultCount > 0 ? ` · 결과 ${resultCount}개` : ""}
                   {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
                   {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
                   {toothWorksPreview
@@ -2124,26 +2370,55 @@ function RequestorPracticeReceivePage({
                 </p>
 
                 {showWorkActions ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
+                  <div className="mt-3 space-y-2">
+                    <PracticeTransferFileDropTarget
+                      fileInputId={completeInputId}
                       disabled={cardBusy}
-                      onClick={(event) => void handleCardComplete(transfer, event)}
-                    >
-                      {cardBusy ? "처리 중..." : "작업완료"}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={cardBusy}
-                      onClick={(event) => void handleCardRelease(transfer, event)}
-                    >
-                      작업취소
-                    </Button>
+                      acceptedHint={PRACTICE_ACCEPTED_HINT}
+                      compact
+                      label={cardBusy ? "처리 중..." : "결과 파일 드롭 또는 클릭 · 작업완료"}
+                      onFiles={(files) => handleCardDropFiles(transfer, files)}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={cardBusy}
+                        onClick={(event) => handleCardComplete(transfer, event)}
+                      >
+                        {cardBusy ? "처리 중..." : "작업완료"}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={cardBusy}
+                        onClick={(event) => void handleCardRelease(transfer, event)}
+                      >
+                        작업취소
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
+              </>
+            );
+
+            return (
+              <div
+                key={transfer._id || transfer.transferId}
+                role="button"
+                tabIndex={0}
+                onClick={() => void openTransferDialog(transfer)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    void openTransferDialog(transfer);
+                  }
+                }}
+                className="w-full cursor-pointer rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                data-transfer-card="true"
+              >
+                {cardBody}
               </div>
             );
           })}
@@ -2220,6 +2495,61 @@ function RequestorPracticeReceivePage({
       </div>
 
       {showTransfers ? (
+      <>
+      <Dialog
+        open={Boolean(completePrompt)}
+        onOpenChange={(open) => {
+          if (!open && !cardActionBusyId) setCompletePrompt(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>배송설정 후 작업완료</DialogTitle>
+            <DialogDescription>
+              커스텀 어벗먼트가 포함되어 있습니다. 치과가 생산 진행을 컨펌하면 선택한
+              배송으로 어벗츠에 자동 의뢰됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <RadioGroup
+            value={completeShippingMode}
+            onValueChange={(value) =>
+              setCompleteShippingMode(value === "express" ? "express" : "normal")
+            }
+            className="gap-3"
+          >
+            <div className="flex items-center space-x-2 rounded-md border p-3">
+              <RadioGroupItem value="normal" id="complete-ship-normal" />
+              <Label htmlFor="complete-ship-normal" className="cursor-pointer">
+                일반(묶음) 배송
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2 rounded-md border p-3">
+              <RadioGroupItem value="express" id="complete-ship-express" />
+              <Label htmlFor="complete-ship-express" className="cursor-pointer">
+                신속 배송
+              </Label>
+            </div>
+          </RadioGroup>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(cardActionBusyId)}
+              onClick={() => setCompletePrompt(null)}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              disabled={Boolean(cardActionBusyId)}
+              onClick={() => void handleConfirmCompletePrompt()}
+            >
+              {cardActionBusyId ? "처리 중..." : "작업완료"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <PracticeTransferDetailChatDialog
         open={dialogOpen}
         onOpenChange={(open) => {
@@ -2245,13 +2575,26 @@ function RequestorPracticeReceivePage({
           { label: "환자명", value: selectedTransferPatientName || "-" },
           { label: "주문일", value: selectedTransfer?.orderDate || "-" },
           { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
+          {
+            label: "결과파일",
+            value: `${Number(selectedTransfer?.resultFileCount || selectedTransfer?.resultFiles?.length || 0)}개`,
+          },
         ] satisfies PracticeTransferDialogSummaryItem[]}
         memo={selectedTransferDisplayMemo}
         toothWorks={selectedTransferToothWorks}
         toothWorksKey={selectedTransfer?.transferId || "requestor-transfer"}
-        filesLabel="전송 파일"
+        filesLabel="의뢰 파일"
         files={
           (selectedTransfer?.files || []).map((file) => ({
+            id: file.id,
+            fileName: file.originalName,
+            size: Number(file.size || 0),
+            s3Key: String(file.s3Key || "").trim(),
+          })) satisfies PracticeTransferDialogFileItem[]
+        }
+        resultFilesLabel="작업 결과 파일"
+        resultFiles={
+          (selectedTransfer?.resultFiles || []).map((file) => ({
             id: file.id,
             fileName: file.originalName,
             size: Number(file.size || 0),
@@ -2279,7 +2622,9 @@ function RequestorPracticeReceivePage({
             ) &&
             (selectedTransfer.isAccepted ||
               selectedTransfer.isDownloaded ||
-              selectedTransfer.requestorDownloadedAt),
+              selectedTransfer.requestorDownloadedAt ||
+              selectedTransfer.autoMatch?.completed ||
+              selectedTransfer.production?.confirmedAt),
         )}
         remainingLabel={
           selectedTransfer?.matchingMode === "auto" &&
@@ -2328,6 +2673,7 @@ function RequestorPracticeReceivePage({
           (!chatDraft.trim() && chatAttachedFiles.length === 0)
         }
       />
+      </>
       ) : null}
     </div>
   );

@@ -11,8 +11,11 @@ import {
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+// - web/frontend/src/shared/practice/practiceTransferAccept.ts
 // - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
-export const PRACTICE_ACCEPTED_HINT = "STL · PLY · OBJ · 이미지";
+export {
+  PRACTICE_ACCEPTED_HINT,
+} from "@/shared/practice/practiceTransferAccept";
 
 export type SearchBusinessResult = {
   _id: string;

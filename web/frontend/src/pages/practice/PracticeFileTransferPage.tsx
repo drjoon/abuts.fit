@@ -36,6 +36,7 @@
  * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 프로모 카피 축소.
  * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
  * - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
+ * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -186,6 +187,9 @@ type RecentRequestItem = {
   fileName: string;
   fileS3Key: string;
   fileSize: number;
+  resultFiles?: TransferFileItem[];
+  hasCustomAbutment?: boolean;
+  productionConfirmedAt?: string | null;
 };
 
 type TransferFileItem = {
@@ -296,6 +300,9 @@ type RecentTransferItem = {
   transferMongoIds: string[];
   fileNames: string[];
   files: TransferFileItem[];
+  resultFiles?: TransferFileItem[];
+  hasCustomAbutment?: boolean;
+  productionConfirmedAt?: string | null;
   transferMemo: string;
   /** 메타 태그 포함 원본 메모 — 보철물 차트 파싱용 */
   rawTransferMemo?: string;
@@ -765,6 +772,9 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   if (raw === "의뢰수락" || raw === "다운로드완료") return "의뢰수락";
   if (raw === "자동매칭") return "자동매칭";
   if (raw === "작업완료") return "작업완료";
+  if (raw === "생산진행") return "생산진행";
+  if (raw === "포장.발송") return "포장.발송";
+  if (raw === "추적관리") return "추적관리";
 
   // 레거시/과거 데이터 호환
   if (raw === "수신전" || raw === "확인전") return "발송완료";
@@ -774,6 +784,13 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   if (raw.includes("의뢰") || raw.includes("접수") || raw.includes("대기")) return "발송완료";
 
   return "발송완료";
+};
+
+/** 기공소 의뢰수락 이전만 치과에서 휴지통 이동 가능 */
+const canDeletePracticeTransferByStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  if (s === "임시저장") return true;
+  return s === "발송완료" || s === "수신완료" || s === "자동매칭";
 };
 
 const formatChatTs = (value: unknown) => {
@@ -869,6 +886,7 @@ export const PracticeFileTransferPage = ({
   const [recentRequestsError, setRecentRequestsError] = useState("");
   const [selectedTransfer, setSelectedTransfer] = useState<RecentTransferItem | null>(null);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [productionConfirmBusy, setProductionConfirmBusy] = useState(false);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState("");
@@ -1890,6 +1908,22 @@ export const PracticeFileTransferPage = ({
           const patientName = String(ci.patientName || "").trim() || "-";
           const requestId = String(r.requestId || r._id || "").trim();
           const requestMongoId = String(r.practiceTransferId || r._id || "").trim();
+          const resultFilesRaw = Array.isArray(r.resultFiles) ? r.resultFiles : [];
+          const resultFiles: TransferFileItem[] = resultFilesRaw
+            .map((row) => {
+              const item =
+                row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+              return {
+                fileName: String(item.originalName || item.fileName || "").trim(),
+                s3Key: String(item.s3Key || "").trim(),
+                size: Number(item.size || 0),
+              };
+            })
+            .filter((f) => f.fileName && f.s3Key);
+          const productionRaw =
+            r.production && typeof r.production === "object"
+              ? (r.production as Record<string, unknown>)
+              : null;
 
           return {
             id: requestId,
@@ -1911,6 +1945,11 @@ export const PracticeFileTransferPage = ({
             fileName: String(fileObj.originalName || fileObj.name || "").trim(),
             fileS3Key: String(fileObj.s3Key || "").trim(),
             fileSize: Number(fileObj.size || 0),
+            resultFiles,
+            hasCustomAbutment: Boolean(r.hasCustomAbutment),
+            productionConfirmedAt: productionRaw?.confirmedAt
+              ? String(productionRaw.confirmedAt)
+              : null,
           };
         })
         .filter((item) => Boolean(item.id))
@@ -2725,6 +2764,9 @@ export const PracticeFileTransferPage = ({
           files: hasFile
             ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: Number(req.fileSize || 0) }]
             : [],
+          resultFiles: Array.isArray(req.resultFiles) ? [...req.resultFiles] : [],
+          hasCustomAbutment: Boolean(req.hasCustomAbutment),
+          productionConfirmedAt: req.productionConfirmedAt || null,
           transferMemo: req.transferMemo,
           rawTransferMemo: req.rawTransferMemo,
           unreadCount,
@@ -2787,6 +2829,19 @@ export const PracticeFileTransferPage = ({
       if (!existing.arrivalDate && req.arrivalDate) {
         existing.arrivalDate = req.arrivalDate;
       }
+      if (Array.isArray(req.resultFiles) && req.resultFiles.length > 0) {
+        const byKey = new Map(
+          (existing.resultFiles || []).map((f) => [f.s3Key, f] as const),
+        );
+        for (const f of req.resultFiles) {
+          if (f.s3Key) byKey.set(f.s3Key, f);
+        }
+        existing.resultFiles = Array.from(byKey.values());
+      }
+      if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
+      if (req.productionConfirmedAt) {
+        existing.productionConfirmedAt = req.productionConfirmedAt;
+      }
       if (req.createdAtTs > existing.createdAtTs) {
         existing.createdAtTs = req.createdAtTs;
         existing.createdAt = req.createdAt;
@@ -2811,6 +2866,10 @@ export const PracticeFileTransferPage = ({
       const statusSet = existing._statuses;
       if (statusSet.size === 1) {
         existing.status = [...statusSet][0] || existing.status;
+      } else if (statusSet.has("생산진행")) {
+        existing.status = "생산진행";
+      } else if (statusSet.has("작업완료")) {
+        existing.status = "작업완료";
       } else if (statusSet.has("발송완료")) {
         existing.status = "발송완료";
       } else if (statusSet.has("수신완료")) {
@@ -2849,6 +2908,8 @@ export const PracticeFileTransferPage = ({
         const status = String(request.status || "").trim();
         if (status === "작업완료") {
           acc.completed += 1;
+        } else if (status === "생산진행") {
+          acc.shipping += 1;
         } else if (status === "의뢰수락" || status === "다운로드완료") {
           acc.accepted += 1;
         } else if (status === "자동매칭" || status === "취소") {
@@ -2874,11 +2935,15 @@ export const PracticeFileTransferPage = ({
           (status !== "의뢰수락" &&
             status !== "다운로드완료" &&
             status !== "작업완료" &&
+            status !== "생산진행" &&
             status !== "자동매칭" &&
             status !== "취소" &&
             status !== "포장.발송" &&
             status !== "추적관리")
         );
+      }
+      if (recentStatusFilter === "포장.발송") {
+        return status === "생산진행" || status === "포장.발송";
       }
       if (recentStatusFilter === "의뢰수락") {
         return status === "의뢰수락" || status === "다운로드완료";
@@ -3495,11 +3560,79 @@ export const PracticeFileTransferPage = ({
   );
 
   const handleDownloadAllTransferFiles = useCallback(async () => {
-    const files = Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : [];
+    const files = [
+      ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
+      ...(Array.isArray(selectedTransfer?.resultFiles)
+        ? selectedTransfer.resultFiles
+        : []),
+    ];
     if (!files.length) return;
 
     await Promise.all(files.map((file) => handleDownloadTransferFile(file)));
   }, [handleDownloadTransferFile, selectedTransfer]);
+
+  const handleConfirmProduction = useCallback(async () => {
+    if (!authToken || !selectedTransfer || productionConfirmBusy) return;
+    const transferId = String(selectedTransfer.transferId || "").trim();
+    if (!transferId || transferId === "-" || transferId === PRACTICE_DRAFT_TRANSFER_ID) {
+      return;
+    }
+    setProductionConfirmBusy(true);
+    try {
+      const res = await apiFetch<unknown>({
+        path: `/api/practice/transfers/${encodeURIComponent(transferId)}/confirm-production`,
+        method: "POST",
+        token: authToken,
+      });
+      if (!res.ok) {
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        toast({
+          title: "생산 진행 실패",
+          description: String(body.message || "생산 진행 처리 중 오류가 발생했습니다."),
+          variant: "destructive",
+        });
+        return;
+      }
+      const confirmedAt = new Date().toISOString();
+      setSelectedTransfer((prev) =>
+        prev && prev.transferId === transferId
+          ? {
+              ...prev,
+              status: "생산진행",
+              productionConfirmedAt: confirmedAt,
+            }
+          : prev,
+      );
+      setRecentRequests((prev) =>
+        prev.map((row) =>
+          row.transferId === transferId
+            ? {
+                ...row,
+                status: "생산진행",
+                productionConfirmedAt: confirmedAt,
+              }
+            : row,
+        ),
+      );
+      toast({
+        title: "생산 진행",
+        description: selectedTransfer.hasCustomAbutment
+          ? "생산을 확정했습니다. 커스텀 어벗은 어벗츠에 자동 의뢰됩니다."
+          : "생산을 확정했습니다. 기공소에서 생산을 진행합니다.",
+      });
+    } catch {
+      toast({
+        title: "생산 진행 실패",
+        description: "생산 진행 요청 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setProductionConfirmBusy(false);
+    }
+  }, [authToken, productionConfirmBusy, selectedTransfer, toast]);
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
@@ -3673,6 +3806,18 @@ export const PracticeFileTransferPage = ({
   };
 
   const handleAskDeleteTransfer = (transfer: RecentTransferItem) => {
+    if (
+      transfer.status !== "임시저장" &&
+      transfer.transferId !== PRACTICE_DRAFT_TRANSFER_ID &&
+      !canDeletePracticeTransferByStatus(transfer.status)
+    ) {
+      toast({
+        title: "삭제할 수 없습니다",
+        description: "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     setDeleteTargetTransfer(transfer);
     setDeleteConfirmOpen(true);
   };
@@ -3741,6 +3886,17 @@ export const PracticeFileTransferPage = ({
         setDeleteConfirmOpen(false);
         setDeleteTargetTransfer(null);
       }
+      return;
+    }
+
+    if (!canDeletePracticeTransferByStatus(target.status)) {
+      toast({
+        title: "삭제할 수 없습니다",
+        description: "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다.",
+        variant: "destructive",
+      });
+      setDeleteConfirmOpen(false);
+      setDeleteTargetTransfer(null);
       return;
     }
 
@@ -5388,19 +5544,43 @@ export const PracticeFileTransferPage = ({
                                   {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
                                 </span>
                               ) : null}
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleAskDeleteTransfer(transfer);
-                                }}
-                                aria-label="의뢰서 전송 내역 삭제"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {(() => {
+                                const deleteLocked =
+                                  !canDeletePracticeTransferByStatus(transfer.status);
+                                return (
+                                  <TooltipProvider delayDuration={0}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="inline-flex">
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-destructive disabled:pointer-events-none"
+                                            disabled={deleteLocked}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              void handleAskDeleteTransfer(transfer);
+                                            }}
+                                            aria-label={
+                                              deleteLocked
+                                                ? "의뢰수락 이후 삭제 불가"
+                                                : "의뢰서 전송 내역 삭제"
+                                            }
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left" className="max-w-xs text-xs">
+                                        {deleteLocked
+                                          ? "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다."
+                                          : "휴지통으로 이동"}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -5686,6 +5866,10 @@ export const PracticeFileTransferPage = ({
             { label: "주문일", value: selectedTransfer?.orderDate || "-" },
             { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
             { label: "파일 수", value: `${selectedTransfer?.fileCount || 0}개` },
+            {
+              label: "결과파일",
+              value: `${Number(selectedTransfer?.resultFiles?.length || 0)}개`,
+            },
           ] satisfies PracticeTransferDialogSummaryItem[]}
           memo={selectedTransferDisplayMemo}
           toothWorks={selectedTransferToothWorks}
@@ -5694,7 +5878,7 @@ export const PracticeFileTransferPage = ({
               ? selectedTransfer.transferId
               : selectedTransfer?.id || "practice-transfer"
           }
-          filesLabel="파일"
+          filesLabel="의뢰 파일"
           files={
             (selectedTransfer?.files || []).map((file, idx) => ({
               id: `${file.s3Key}:${idx}`,
@@ -5703,6 +5887,22 @@ export const PracticeFileTransferPage = ({
               s3Key: String(file.s3Key || "").trim(),
             })) satisfies PracticeTransferDialogFileItem[]
           }
+          resultFilesLabel="작업 결과 파일"
+          resultFiles={
+            (selectedTransfer?.resultFiles || []).map((file, idx) => ({
+              id: `${file.s3Key}:result:${idx}`,
+              fileName: file.fileName,
+              size: Number(file.size || 0),
+              s3Key: String(file.s3Key || "").trim(),
+            })) satisfies PracticeTransferDialogFileItem[]
+          }
+          showProductionConfirm={
+            String(selectedTransfer?.status || "").trim() === "작업완료" &&
+            !selectedTransfer?.productionConfirmedAt &&
+            Number(selectedTransfer?.resultFiles?.length || 0) > 0
+          }
+          productionConfirmBusy={productionConfirmBusy}
+          onConfirmProduction={() => void handleConfirmProduction()}
           onDownloadAllFiles={() => void handleDownloadAllTransferFiles()}
           onDownloadTransferFile={(file) =>
             void handleDownloadTransferFile({

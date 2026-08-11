@@ -44,6 +44,13 @@ type PracticeTransferDetailChatDialogProps = {
   toothWorksKey?: string;
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
+  /** 기공소 작업완료 결과 파일 (있을 때만 표시) */
+  resultFilesLabel?: string;
+  resultFiles?: PracticeTransferDialogFileItem[];
+  /** 치과 「생산 진행」 컨펌 (작업완료 후) */
+  productionConfirmBusy?: boolean;
+  showProductionConfirm?: boolean;
+  onConfirmProduction?: () => void | Promise<void>;
   /** 다운로드 진행 중 파일 키(s3Key 또는 id). 재클릭 방지 */
   downloadingFileKeys?: string[];
   /** 파일별 다운로드 진행률 0~100 */
@@ -98,6 +105,11 @@ export function PracticeTransferDetailChatDialog({
   toothWorksKey,
   filesLabel,
   files,
+  resultFilesLabel = "작업 결과 파일",
+  resultFiles = [],
+  productionConfirmBusy = false,
+  showProductionConfirm = false,
+  onConfirmProduction,
   downloadingFileKeys = [],
   downloadProgressByKey = {},
   downloadAllBusy = false,
@@ -235,6 +247,68 @@ export function PracticeTransferDetailChatDialog({
                   <p className="font-medium">-</p>
                 )}
               </div>
+
+              {Array.isArray(resultFiles) && resultFiles.length > 0 ? (
+                <div>
+                  <p className="text-muted-foreground">
+                    {resultFilesLabel} ({resultFiles.length}개)
+                  </p>
+                  <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">
+                    {resultFiles.map((file, idx) => {
+                      const busyKey = String(file.s3Key || file.id || "").trim();
+                      const isBusy =
+                        downloadAllBusy ||
+                        (busyKey
+                          ? downloadingFileKeys.includes(busyKey)
+                          : false);
+                      const progress = busyKey
+                        ? Number(downloadProgressByKey[busyKey] ?? 0)
+                        : 0;
+                      return (
+                        <div
+                          key={`${file.id}:result:${idx}`}
+                          className="rounded border px-2 py-1 space-y-1"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isBusy) return;
+                              void onDownloadTransferFile(file);
+                            }}
+                            disabled={isBusy}
+                            className="block w-full text-left text-sm hover:underline disabled:opacity-60 disabled:pointer-events-none disabled:no-underline"
+                          >
+                            {isBusy
+                              ? `다운로드 중 ${Math.round(progress)}% · `
+                              : ""}
+                            {file.fileName} ·{" "}
+                            {formatFileSize(Number(file.size || 0))}
+                          </button>
+                          {isBusy ? (
+                            <Progress value={progress} className="h-1.5" />
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {showProductionConfirm && onConfirmProduction ? (
+                <div className="rounded-md border border-primary/30 bg-primary-soft/40 p-3">
+                  <p className="text-sm text-primary-strong">
+                    작업 결과를 확인한 뒤 생산을 진행하세요.
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-2"
+                    disabled={productionConfirmBusy}
+                    onClick={() => void onConfirmProduction()}
+                  >
+                    {productionConfirmBusy ? "처리 중..." : "생산 진행"}
+                  </Button>
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-lg border min-h-0 flex flex-col overflow-hidden">

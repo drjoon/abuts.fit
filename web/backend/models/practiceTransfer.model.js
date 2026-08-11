@@ -88,10 +88,38 @@ const practiceTransferSchema = new mongoose.Schema(
       type: [practiceTransferFileSchema],
       default: [],
     },
+    // 기공소 작업완료 결과 파일 (의뢰 원본 files와 분리)
+    resultFiles: {
+      type: [practiceTransferFileSchema],
+      default: [],
+    },
     // 보철 치식(과금·표시). 전송 시점 스냅샷
     toothWorks: {
       type: [mongoose.Schema.Types.Mixed],
       default: [],
+    },
+    // 치과 「생산 진행」 컨펌 + 커스텀어벗 → 어벗츠 자동의뢰 메타
+    production: {
+      shippingMode: {
+        type: String,
+        enum: ["normal", "express", null],
+        default: null,
+      },
+      confirmedAt: { type: Date, default: null, index: true },
+      confirmedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      relatedRequestIds: {
+        type: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Request",
+          },
+        ],
+        default: [],
+      },
     },
     billing: {
       labFeeTotal: { type: Number, default: 0 },

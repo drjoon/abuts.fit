@@ -25,6 +25,7 @@ import {
   markReceivedPracticeTransferComplete,
   markReceivedPracticeTransferRelease,
   markReceivedPracticeTransferDownloaded,
+  confirmPracticeTransferProduction,
   restorePracticeTransfersBatch,
   upsertPracticeTransferDraft,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
@@ -106,6 +107,13 @@ router.post(
   authenticate,
   receiveAuth,
   markReceivedPracticeTransferComplete,
+);
+
+router.post(
+  "/:transferId/confirm-production",
+  authenticate,
+  sendAuth,
+  confirmPracticeTransferProduction,
 );
 
 router.post(

@@ -111,6 +111,9 @@ Notes:
   - `src/pages/practice/PracticeFileTransferPage.tsx`
   - `src/pages/practice/hooks/usePracticeTransferStep1.ts` (최근 기공소 local+서버 merge)
   - `src/shared/components/practice/PracticeTransferFilePane.tsx`
+  - `src/shared/components/practice/PracticeTransferFileDropTarget.tsx`
+  - `src/shared/practice/practiceTransferAccept.ts`
+  - `src/shared/files/extractDroppedFiles.ts`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
     - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운→인레이→어벗 디자인 / 브리지↔Pontic. 어벗 디자인은 커스텀 체크박스(임플란트·스캔바디) 지원. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
@@ -503,14 +506,14 @@ Notes:
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
   - 계정 전환: `AccountSwitcher`
 
-- practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료`
+- practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`
   - 상단 필터 뱃지 UI(기공의뢰·기공의뢰수신·대시보드 기공 행): **의뢰 · 수락 · 완료 · 발송 · 추적관리** (수신 뱃지 없음. `수신완료`는 의뢰 집계에 합산. 발송=`포장.발송` 슬롯)
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」(자동매칭 클레임 중이면 `수락 [남은 시간 …]`)→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서.
   - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto`. 검증·devops ON 기공소만 공개 풀 수신. 선착순 수락(3시간)·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 만료 시 재공개. devops UI: `PracticeTransferAutoMatchTab` (파트너 **기공의뢰 자동매칭** 탭)
-  - 기공소 수신 카드(상태=의뢰수락): `[작업완료]` / `[작업취소]` (`RequestorPracticePage`) — 상세·채팅 모달에는 없음
+  - 기공소 수신 카드(상태=의뢰수락): `PracticeTransferFileDropTarget`(클릭/로컬드롭) + `[작업완료]`/`[작업취소]` — 결과파일 필수. 커스텀어벗이면 배송선택. 치과 「생산 진행」 후 커스텀어벗은 어벗츠 자동의뢰
 
 - 드롭존 가입(치과 전용, requestor+practice+free)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab·paid 선택 UI 없음.
@@ -697,7 +700,12 @@ Notes:
 
 - API 호출은 `src/shared/api/apiClient.ts`의 `apiFetch`를 우선 사용합니다.
 - 서버 상태는 TanStack Query, 전역 UI 상태는 `src/store`를 사용합니다.
-- 파일 드롭은 개별 구현보다 `@/features/requests/components/PageFileDropZone` 재사용을 우선합니다.
+- 파일 드롭은 개별 구현보다 공통 컴포넌트 재사용을 우선합니다.
+  - 페이지 전역: `@/features/requests/components/PageFileDropZone`
+  - 요소(카드/첨부 UI) 클릭+로컬 드롭: `@/shared/components/practice/PracticeTransferFileDropTarget`
+  - 치과 intake 첨부 UI: `@/shared/components/practice/PracticeTransferFilePane` (DropTarget 래핑)
+  - 드롭 파일 추출: `@/shared/files/extractDroppedFiles.ts`
+  - 확장자 SSOT: `@/shared/practice/practiceTransferAccept.ts`
 - UI에서 `requestId`는 서버 문자열을 그대로 표시합니다.
 
 ## 3. 정리 원칙

@@ -1,17 +1,24 @@
-import { UploadCloud, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  PracticeTransferFileDropTarget,
+} from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+// - web/frontend/src/shared/components/practice/PracticeTransferFileDropTarget.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - 2026-08-11: 드롭존·목록을 생산의뢰식 심플 스타일로. 확장자 안내는 즉시툴팁.
 // - 2026-08-11: 첨부 목록 3열 그리드.
+// - 2026-08-12: 클릭/요소드롭은 PracticeTransferFileDropTarget 공통 재사용.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -25,7 +32,7 @@ export const PRACTICE_FILE_LIST_VIEWPORT_CLASS =
   "h-[11.25rem] max-h-[11.25rem] min-h-[11.25rem]";
 
 export type PracticeTransferFilePaneProps = {
-  acceptedHint: string;
+  acceptedHint?: string;
   fileInputId: string;
   files: PracticeTransferFileDisplayItem[];
   totalSizeMb: string;
@@ -33,6 +40,7 @@ export type PracticeTransferFilePaneProps = {
   onRemoveFile: (key: string) => void;
   onClearAllFiles: () => void;
   listViewportClassName?: string;
+  disabled?: boolean;
   /** 대기 중인 로컬 파일을 서버 임시저장으로 업로드 */
   syncUploadLabel?: string;
   syncUploadBusyLabel?: string;
@@ -54,7 +62,7 @@ const formatAttachmentSize = (bytes: number): string => {
 };
 
 export const PracticeTransferFilePane = ({
-  acceptedHint,
+  acceptedHint = PRACTICE_ACCEPTED_HINT,
   fileInputId,
   files,
   totalSizeMb,
@@ -62,6 +70,7 @@ export const PracticeTransferFilePane = ({
   onRemoveFile,
   onClearAllFiles,
   listViewportClassName = PRACTICE_FILE_LIST_VIEWPORT_CLASS,
+  disabled = false,
   syncUploadLabel = "업로드",
   syncUploadBusyLabel = "업로드 중...",
   syncUploadDisabled = false,
@@ -70,53 +79,17 @@ export const PracticeTransferFilePane = ({
   onSyncUpload,
 }: PracticeTransferFilePaneProps) => {
   const hasFiles = files.length > 0;
-  const openPicker = () => {
-    const input = document.getElementById(fileInputId) as HTMLInputElement | null;
-    input?.click();
-  };
 
   return (
     <div className="flex min-h-0 shrink-0 flex-col gap-2.5">
-      <input
-        id={fileInputId}
-        type="file"
-        accept=".stl,.ply,.obj,.png,.jpg,.jpeg,.webp,.bmp,.gif"
-        className="hidden"
-        multiple
-        onChange={(e) => {
-          const nextFiles = Array.from(e.target.files || []);
-          if (nextFiles.length) onPickFiles(nextFiles);
-          e.currentTarget.value = "";
-        }}
+      <PracticeTransferFileDropTarget
+        fileInputId={fileInputId}
+        onFiles={onPickFiles}
+        disabled={disabled}
+        acceptedHint={acceptedHint}
+        compact={hasFiles}
+        label="클릭하거나 파일을 드래그해 추가"
       />
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={openPicker}
-            className={`w-full rounded-2xl border-2 border-dashed text-center transition-colors ${
-              hasFiles
-                ? "min-h-[4.75rem] px-3 py-3"
-                : "min-h-[7rem] px-4 py-5"
-            } border-slate-300 bg-white hover:border-primary/50`}
-          >
-            <div
-              className={`mx-auto flex w-fit items-center justify-center rounded-full bg-primary-soft text-primary-strong ${
-                hasFiles ? "mb-1 p-1.5" : "mb-1.5 p-2"
-              }`}
-            >
-              <UploadCloud className={hasFiles ? "h-4 w-4" : "h-5 w-5"} />
-            </div>
-            <p className="whitespace-nowrap text-sm text-muted-foreground">
-              클릭하거나 파일을 드래그해 추가
-            </p>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
-          {acceptedHint}
-        </TooltipContent>
-      </Tooltip>
 
       {hasFiles ? (
         <>
