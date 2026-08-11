@@ -351,7 +351,7 @@ function RequestorPracticeReceivePage({
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "발송완료" | "수신완료" | "의뢰수락" | "자동매칭" | "작업완료" | "포장.발송" | "추적관리"
+    "all" | "발송완료" | "수신완료" | "의뢰수락" | "작업완료" | "포장.발송" | "추적관리"
   >("all");
   const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
   const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
@@ -933,11 +933,10 @@ function RequestorPracticeReceivePage({
         if (status === "작업완료") acc.completed += 1;
         else if (status === "의뢰수락") acc.accepted += 1;
         else if (status === "수신완료") acc.read += 1;
-        else if (status === "자동매칭") acc.autoMatch += 1;
-        else acc.sent += 1;
+        else if (status !== "자동매칭") acc.sent += 1;
         return acc;
       },
-      { sent: 0, read: 0, accepted: 0, autoMatch: 0, completed: 0, shipping: 0, tracking: 0 },
+      { sent: 0, read: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0 },
     );
     // 포장.발송·추적관리는 기공 파이프라인 UI 슬롯(집계 연동 전).
     return counts;
@@ -1762,27 +1761,6 @@ function RequestorPracticeReceivePage({
             )}
           >
             의뢰수락 {statusCounts.accepted}건
-          </Badge>
-        </button>
-
-        <button
-          type="button"
-          className="rounded-full"
-          onClick={() =>
-            setStatusFilter((prev) => (prev === "자동매칭" ? "all" : "자동매칭"))
-          }
-          aria-pressed={statusFilter === "자동매칭"}
-        >
-          <Badge
-            variant="outline"
-            className={cn(
-              "cursor-pointer",
-              statusFilter === "자동매칭"
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
-            )}
-          >
-            자동매칭 {statusCounts.autoMatch}건
           </Badge>
         </button>
 
