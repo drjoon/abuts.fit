@@ -302,8 +302,8 @@ export const LabTradingPartnersTab = () => {
                 커스텀 어벗 생산
               </p>
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                어벗츠에 직접 커스텀 어벗 생산을 의뢰할 수 있습니다. 치과
-                등록·플랫폼 수수료와 별도이며, 의뢰크레딧이 차감됩니다.
+                어벗츠에 직접 커스텀 어벗 생산을 의뢰할 수 있습니다. 별도의
+                의뢰크레딧이 차감됩니다.
               </p>
             </div>
           </div>
@@ -329,9 +329,9 @@ export const LabTradingPartnersTab = () => {
                 <>
                   가입 후{" "}
                   <span className="font-semibold text-primary-strong">
-                    {windowDays}일 이내
-                  </span>
-                  거래 치과를 소개하면{" "}
+                    {windowDays}일 이내에
+                  </span>{" "}
+                  거래 치과를 소개.등록하면{" "}
                   <span className="font-semibold text-primary-strong">
                     수수료가 면제
                   </span>
