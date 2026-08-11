@@ -16,6 +16,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 // - 2026-08-11: 잔액 < 충전단위면 사이드바 크레딧에 깜빡이는 충전 뱃지·클릭 시 ?tab=charge.
 // - 2026-08-11: 의뢰자 사이드바에 크레딧 메뉴 추가. 충전 토스트 CTA → /dashboard/credits?tab=charge.
 // - 2026-08-11: 기공/어벗 사이드 — 버튼 그라데이션 제거, 가로 연결선만 적용.
+// - 2026-08-11: 기공의뢰/기공의뢰수신 사이드 툴팁에 커스텀어벗 디자인 포함.
 // - 2026-08-11: 기공소 사이드 — 의뢰수신 → 기공의뢰수신.
 // - 2026-08-11: 기공의뢰/기공의뢰수신·어벗의뢰 사이드 메뉴에 기공/어벗 그라데이션 액센트 적용.
 // - 2026-08-11: 의뢰자 사이드 — 디자인 메뉴/페이지 삭제·의뢰수신 통합. 기공의뢰/기공의뢰수신↑·어벗의뢰↓.
@@ -166,7 +167,7 @@ const buildRequestorSidebarItems = (
           label: "기공의뢰수신",
           href: "/dashboard/practice-transfers?mode=receive",
           tooltip:
-            "구강스캔 파일을 받아서 인레이, 크라운, 브리지 등 보철 기공 처리",
+            "구강스캔 파일을 받아서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 처리",
           accent: "기공",
         }
       : {
@@ -174,7 +175,7 @@ const buildRequestorSidebarItems = (
           label: "기공의뢰",
           href: "/dashboard/practice-transfers?mode=send",
           tooltip:
-            "구강스캔 파일을 올려서 인레이, 크라운, 브리지 등 보철 기공 의뢰",
+            "구강스캔 파일을 올려서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 의뢰",
           accent: "기공",
         };
 
