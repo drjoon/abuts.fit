@@ -1,10 +1,14 @@
+// change-log:
+// - 2026-08-12: 입금 계좌를 SystemSettings.bPlanDepositAccount로 이전(EBS 한글 env 깨짐).
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/models/systemSettings.model.js
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
 import {
   ensureOrganizationDepositCode,
   generateChargeOrderDepositCode,
@@ -13,6 +17,12 @@ import {
 const CHARGE_UNIT = 500000;
 const MIN_CHARGE_UNITS = 1;
 const MAX_CHARGE_UNITS = 100;
+
+const B_PLAN_DEPOSIT_ACCOUNT_DEFAULTS = {
+  bankName: "하나은행",
+  accountNumber: "806-910009-00004",
+  holderName: "어벗츠 주식회사",
+};
 
 function validateSupplyAmount(raw) {
   const supplyAmount = Number(raw);
@@ -39,11 +49,32 @@ function validateSupplyAmount(raw) {
   return { ok: true, supplyAmount };
 }
 
-function getDepositAccountInfo() {
+/**
+ * EBS는 한글 환경변수를 UTF-8로 전달하지 못해 "????"로 깨진다.
+ * 한글 포함 입금 계좌는 SystemSettings.bPlanDepositAccount(DB)가 SSOT.
+ * 계좌번호(ASCII)만 env 폴백을 허용한다.
+ */
+async function getDepositAccountInfo() {
+  const doc = await SystemSettings.findOneAndUpdate(
+    { key: "global" },
+    { $setOnInsert: { key: "global" } },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  )
+    .select({ bPlanDepositAccount: 1 })
+    .lean();
+  const info = doc?.bPlanDepositAccount || {};
   return {
-    bankName: String(process.env.B_PLAN_DEPOSIT_BANK_NAME || "").trim(),
-    accountNumber: String(process.env.B_PLAN_DEPOSIT_ACCOUNT_NO || "").trim(),
-    holderName: String(process.env.B_PLAN_DEPOSIT_ACCOUNT_HOLDER || "").trim(),
+    bankName: String(
+      info.bankName || B_PLAN_DEPOSIT_ACCOUNT_DEFAULTS.bankName,
+    ).trim(),
+    accountNumber: String(
+      info.accountNumber ||
+        process.env.B_PLAN_DEPOSIT_ACCOUNT_NO ||
+        B_PLAN_DEPOSIT_ACCOUNT_DEFAULTS.accountNumber,
+    ).trim(),
+    holderName: String(
+      info.holderName || B_PLAN_DEPOSIT_ACCOUNT_DEFAULTS.holderName,
+    ).trim(),
   };
 }
 
@@ -162,7 +193,7 @@ export async function createChargeOrder(req, res) {
           vatAmount: Number(doc.vatAmount || 0),
           amountTotal: Number(doc.amountTotal || doc.supplyAmount || 0),
           expiresAt: doc.expiresAt,
-          depositAccount: getDepositAccountInfo(),
+          depositAccount: await getDepositAccountInfo(),
         },
       });
     }
@@ -178,7 +209,7 @@ export async function createChargeOrder(req, res) {
         vatAmount: Number(current.vatAmount || 0),
         amountTotal: Number(current.amountTotal || current.supplyAmount || 0),
         expiresAt: current.expiresAt,
-        depositAccount: getDepositAccountInfo(),
+        depositAccount: await getDepositAccountInfo(),
       },
     });
   }
@@ -212,7 +243,7 @@ export async function createChargeOrder(req, res) {
       vatAmount: doc.vatAmount,
       amountTotal: doc.amountTotal,
       expiresAt: doc.expiresAt,
-      depositAccount: getDepositAccountInfo(),
+      depositAccount: await getDepositAccountInfo(),
     },
   });
 }
@@ -270,7 +301,7 @@ export async function listMyChargeOrders(req, res) {
   return res.json({
     success: true,
     data: {
-      depositAccount: getDepositAccountInfo(),
+      depositAccount: await getDepositAccountInfo(),
       items,
     },
   });

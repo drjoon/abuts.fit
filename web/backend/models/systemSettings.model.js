@@ -29,6 +29,13 @@ const systemSettingsSchema = new mongoose.Schema(
       defaultRequestFreeCredit: { type: Number, default: 30000 },
       defaultShippingFreeCredit: { type: Number, default: 7000 },
     },
+    // B플랜 충전 입금 계좌: EBS 환경변수 한글 인코딩 버그로 인해 DB에서 관리
+    // (B_PLAN_DEPOSIT_BANK_NAME/HOLDER 를 env로 넣으면 "????"로 깨짐)
+    bPlanDepositAccount: {
+      bankName: { type: String, default: "하나은행" },
+      accountNumber: { type: String, default: "806-910009-00004" },
+      holderName: { type: String, default: "어벗츠 주식회사" },
+    },
     // 한진 송하인 정보: EBS 환경변수 한글 인코딩 버그로 인해 DB에서 관리
     // (환경변수로 읽으난 한글이 "??"로 까짐 → rules.legacy-full.md 섹션 6.7.0 참고)
     hanjinSenderInfo: {

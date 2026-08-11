@@ -633,6 +633,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3):
   - 운영 주체는 면세 사업자. 크레딧 충전·앱 내 과금·정산 모두 부가세 없음.
   - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`.
+    입금 계좌 SSOT는 `SystemSettings.bPlanDepositAccount`(EBS 한글 env 깨짐 방지).
+    계좌번호(ASCII)만 `B_PLAN_DEPOSIT_ACCOUNT_NO` env 폴백 허용.
     구현: `controllers/credits/creditBPlan.controller.js`
   - 수익 라인(`REV_*`) 적재 시 VAT 가산 금지. `amount = amountExcludingVat = base`, `vatAmount = 0`.
     구현: `controllers/requests/common.review.helpers.js`
