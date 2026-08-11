@@ -1,13 +1,10 @@
 // related files:
 // - web/frontend/src/shared/business/requestorCapabilities.ts
 // - web/frontend/src/shared/components/business/settings/BusinessTab.tsx
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
   REQUESTOR_KIND_LABEL,
   REQUESTOR_KIND_OPTIONS,
-  REQUESTOR_SERVICE_LABEL,
-  REQUESTOR_SERVICE_OPTIONS,
   type RequestorKind,
   type RequestorProfile,
   type RequestorServices,
@@ -17,7 +14,7 @@ import {
 } from "@/shared/business/requestorCapabilities";
 import { cn } from "@/shared/ui/cn";
 
-const FREE_ONLY_SERVICES: RequestorServices = { free: true, paid: false };
+const DEFAULT_SERVICES: RequestorServices = { free: true, paid: false };
 
 type Props = {
   value: RequestorProfile;
@@ -26,8 +23,6 @@ type Props = {
   className?: string;
   /** 드롭존 최소 가입자 등: practice + free 고정 */
   forcePracticeOnly?: boolean;
-  /** 가입/온보딩: 이용 서비스 UI 숨김, 기공의뢰서(무료) 고정 */
-  forceFreeServices?: boolean;
 };
 
 export const RequestorCapabilitiesPicker = ({
@@ -36,32 +31,22 @@ export const RequestorCapabilitiesPicker = ({
   disabled = false,
   className,
   forcePracticeOnly = false,
-  forceFreeServices = false,
 }: Props) => {
-  const lockServices = forcePracticeOnly || forceFreeServices;
   const kind: RequestorKind | null = forcePracticeOnly
     ? "practice"
     : normalizeRequestorKind(value.kind);
-  const services: RequestorServices = lockServices
-    ? FREE_ONLY_SERVICES
-    : normalizeRequestorServices(value.services);
+  const services: RequestorServices = (() => {
+    const normalized = normalizeRequestorServices(value.services);
+    return hasAnyRequestorService(normalized)
+      ? normalized
+      : DEFAULT_SERVICES;
+  })();
 
   const setKind = (nextKind: RequestorKind) => {
     if (forcePracticeOnly) return;
     onChange({
       kind: nextKind,
-      services: lockServices ? FREE_ONLY_SERVICES : services,
-    });
-  };
-
-  const toggleService = (key: keyof RequestorServices, checked: boolean) => {
-    if (lockServices) return;
-    onChange({
-      kind,
-      services: normalizeRequestorServices({
-        ...services,
-        [key]: checked,
-      }),
+      services,
     });
   };
 
@@ -121,55 +106,6 @@ export const RequestorCapabilitiesPicker = ({
           </p>
         )}
       </div>
-
-      {!lockServices ? (
-        <div className="space-y-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {REQUESTOR_SERVICE_OPTIONS.map((opt) => {
-              const checked = services[opt.key];
-              const id = `requestor-service-${opt.key}`;
-              return (
-                <label
-                  key={opt.key}
-                  htmlFor={id}
-                  className={cn(
-                    "flex h-full cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3.5 transition-all shadow-sm",
-                    checked
-                      ? "border-primary-muted/70 bg-primary-soft/35"
-                      : "border-slate-200/80 bg-white/70 hover:border-primary-muted/50 hover:bg-primary-soft/10",
-                    disabled && "cursor-not-allowed opacity-60",
-                  )}
-                >
-                  <Checkbox
-                    id={id}
-                    checked={checked}
-                    disabled={disabled}
-                    onCheckedChange={(v) => toggleService(opt.key, v === true)}
-                    className="mt-0.5"
-                  />
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Label
-                      htmlFor={id}
-                      className="cursor-pointer text-sm font-medium text-slate-900"
-                    >
-                      {opt.label}
-                    </Label>
-                    <p className="whitespace-pre-line text-xs leading-relaxed text-slate-500">
-                      {opt.description}
-                    </p>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-          {!hasAnyRequestorService(services) && (
-            <p className="text-xs text-destructive">
-              {REQUESTOR_SERVICE_LABEL.free} 또는 {REQUESTOR_SERVICE_LABEL.paid}{" "}
-              중 하나 이상 선택해주세요.
-            </p>
-          )}
-        </div>
-      ) : null}
     </div>
   );
 };

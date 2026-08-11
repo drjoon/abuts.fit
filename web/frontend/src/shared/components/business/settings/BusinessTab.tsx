@@ -63,9 +63,7 @@ import {
 import { RequestorCapabilitiesPicker } from "@/shared/components/business/RequestorCapabilitiesPicker";
 import {
   REQUESTOR_KIND_LABEL,
-  REQUESTOR_SERVICE_LABEL,
   hasRequestorProfile,
-  normalizeRequestorServices,
   notifyRequestorAccessUpdated,
   requiresBusinessLicense,
   resolveRequestorProfile,
@@ -156,11 +154,6 @@ export const BusinessTab = ({
 
   const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
   const isRequestorBusiness = businessType === "requestor";
-  const services = normalizeRequestorServices(
-    isOnboarding
-      ? { free: true, paid: false }
-      : requestorProfile.services,
-  );
 
   const markOnboardingWizardCompleted = useCallback(async () => {
     if (!token || !user) return false;
@@ -328,10 +321,8 @@ export const BusinessTab = ({
         : next;
       if (!hasRequestorProfile(normalized)) {
         toast({
-          title: isOnboarding ? "역할을 선택해주세요" : "역할·서비스를 선택해주세요",
-          description: isOnboarding
-            ? `${REQUESTOR_KIND_LABEL.practice} 또는 ${REQUESTOR_KIND_LABEL.lab} 중 하나를 선택해주세요.`
-            : `${REQUESTOR_KIND_LABEL.practice} 또는 ${REQUESTOR_KIND_LABEL.lab} 역할과, ${REQUESTOR_SERVICE_LABEL.free} 또는 ${REQUESTOR_SERVICE_LABEL.paid} 중 하나 이상을 선택해주세요.`,
+          title: "역할을 선택해주세요",
+          description: `${REQUESTOR_KIND_LABEL.practice} 또는 ${REQUESTOR_KIND_LABEL.lab} 중 하나를 선택해주세요.`,
           variant: "destructive",
         });
         return false;
@@ -880,14 +871,7 @@ export const BusinessTab = ({
             membershipMgmt.membership === "none") && (
             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
             <RequestorCapabilitiesPicker
-              value={
-                isOnboarding
-                  ? {
-                      kind: requestorProfile.kind,
-                      services: { free: true, paid: false },
-                    }
-                  : requestorProfile
-              }
+              value={requestorProfile}
               onChange={handleCapabilitiesChange}
               disabled={
                 capabilitiesSaving ||
@@ -899,7 +883,6 @@ export const BusinessTab = ({
                 isOnboarding &&
                 String(user?.signupChannel || "").trim() === "practice_dropzone"
               }
-              forceFreeServices={isOnboarding}
               className="space-y-4"
             />
             </div>
@@ -1108,7 +1091,7 @@ export const BusinessTab = ({
               사업자 정보
             </CardTitle>
             <CardDescription className="text-[13px] leading-relaxed">
-              역할·서비스 선택, 사업자등록증 등록 및 검증을 관리합니다.
+              역할 선택, 사업자등록증 등록 및 검증을 관리합니다.
             </CardDescription>
           </CardHeader>
           <CardContent>{tabBody}</CardContent>

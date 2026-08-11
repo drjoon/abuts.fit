@@ -13,7 +13,7 @@ interface BusinessStepProps {
   businessType: string;
   defaultCompleted?: boolean;
   onComplete?: () => void;
-  /** 사업자등록증을 건너뛴 치과(practice-only) 필수정보 단계 */
+  /** @deprecated requestor는 사업자등록증 필수 — 레거시 practice-only 우회 단계 */
   practiceProfilePhase?: boolean;
   onPracticeProfilePhaseChange?: (active: boolean) => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
@@ -100,7 +100,6 @@ export const BusinessStep = ({
         registerValidationState={registerValidationState}
         registerGoNextAction={registerGoNextAction}
         isOnboarding={true}
-        onRequirePracticeProfile={() => onPracticeProfilePhaseChange?.(true)}
       />
     </div>
   );

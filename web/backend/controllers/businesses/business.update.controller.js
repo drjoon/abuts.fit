@@ -352,8 +352,7 @@ export async function updateMyBusiness(req, res) {
         return res.status(400).json({
           success: false,
           reason: "business_license_required",
-          message:
-            "생산의뢰(유료)를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+          message: "사업자등록증을 등록·검증해야 합니다.",
         });
       }
 
@@ -603,8 +602,7 @@ export async function updateMyBusiness(req, res) {
         return res.status(400).json({
           success: false,
           reason: "business_license_required",
-          message:
-            "생산의뢰(유료)를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+          message: "사업자등록증을 등록·검증해야 합니다.",
         });
       }
       Object.assign(patch, requestorProfilePersistFields(nextRequestorProfile));

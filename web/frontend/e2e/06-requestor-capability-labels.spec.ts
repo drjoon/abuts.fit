@@ -157,24 +157,22 @@ test.describe("Requestor capability labels – 실계정 로그인", () => {
     });
   }
 
-  test("설정 > 사업자 – 역할/서비스 라벨 표시", async ({ page }) => {
+  test("설정 > 사업자 – 역할 라벨 표시", async ({ page }) => {
     await page.goto("/dashboard/settings?tab=business");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(1500);
     expect(page.url()).not.toContain("/login");
 
     const body = await assertNoLegacyLabels(page, "설정>사업자");
-    if (body.includes("역할을 하나") || body.includes("이용할 서비스")) {
+    if (body.includes(KIND_PRACTICE) || body.includes(KIND_LAB)) {
       await expect(page.getByText(KIND_PRACTICE, { exact: false })).toBeVisible({
         timeout: 10_000,
       });
       await expect(page.getByText(KIND_LAB, { exact: false })).toBeVisible({
         timeout: 10_000,
       });
-      // 설정 화면에서는 서비스 체크가 보일 수 있음(온보딩은 무료 고정·숨김)
-      await expect(page.getByText(SERVICE_FREE, { exact: false })).toBeVisible({
-        timeout: 10_000,
-      });
+      expect(body.includes(SERVICE_FREE)).toBe(false);
+      expect(body.includes(SERVICE_PAID)).toBe(false);
     }
   });
 

@@ -354,13 +354,13 @@ export const REQUESTOR_KIND_OPTIONS = [
     key: "practice" as const,
     label: REQUESTOR_KIND_LABEL.practice,
     description:
-      "(무료) 기공의뢰서를 발신할 수 있습니다.\n(유료) 구강스캔, 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
+      "구강스캔 3d 모델로 기공소에 의뢰하거나, 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
   },
   {
     key: "lab" as const,
     label: REQUESTOR_KIND_LABEL.lab,
     description:
-      "(무료) 기공의뢰서를 수신할 수 있습니다.\n(유료) 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
+      "치과로부터 의뢰받거나, 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
   },
 ];
 

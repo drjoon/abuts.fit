@@ -118,9 +118,9 @@ type PracticeTransferSettingsPayload = {
 };
 
 const PAGE_SIZE = 10; // 2열 x 5행
-const PRACTICE_TRANSFER_PROMO_TITLE = "무료 서비스로도 이용 가능!";
+const PRACTICE_TRANSFER_PROMO_TITLE = "기공의뢰서로 간편하게 의뢰하세요";
 const PRACTICE_TRANSFER_PROMO_DESC =
-  "사업자등록증 없이도 무료 서비스로 기공의뢰서를 주고할 수 있습니다.";
+  "치과와 기공소 간 기공의뢰서를 전달·관리할 수 있습니다.";
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
