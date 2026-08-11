@@ -2,7 +2,6 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
-// - web/frontend/src/pages/requestor/referralGroups/RequestorReferralPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js

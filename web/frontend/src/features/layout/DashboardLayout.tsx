@@ -10,13 +10,14 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-11: 의뢰자 사이드·라우트에서 소개 제거(소개 할인 정책 종료).
 // - 2026-08-11: 작업영역(흰 카드)이 outlet 높이를 채우도록 — 충전 탭 수직 중앙·내역 테이블 스크롤 고정.
 // - 2026-08-11: 잔액 < 충전단위면 사이드바 크레딧에 깜빡이는 충전 뱃지·클릭 시 ?tab=charge.
 // - 2026-08-11: 의뢰자 사이드바에 크레딧 메뉴 추가. 충전 토스트 CTA → /dashboard/credits?tab=charge.
 // - 2026-08-11: 기공/어벗 사이드 — 버튼 그라데이션 제거, 가로 연결선만 적용.
 // - 2026-08-11: 기공소 사이드 — 의뢰수신 → 기공의뢰수신.
 // - 2026-08-11: 기공의뢰/기공의뢰수신·어벗의뢰 사이드 메뉴에 기공/어벗 그라데이션 액센트 적용.
-// - 2026-08-11: 의뢰자 사이드 — 디자인 메뉴/페이지 삭제·의뢰수신 통합. 소개(치과 포함) 공통. 기공의뢰/기공의뢰수신↑·어벗의뢰↓.
+// - 2026-08-11: 의뢰자 사이드 — 디자인 메뉴/페이지 삭제·의뢰수신 통합. 기공의뢰/기공의뢰수신↑·어벗의뢰↓.
 // - 2026-08-10: 의뢰자·치과 사이드메뉴에서 소개 제거.
 // - 2026-08-10: 의뢰자 사이드메뉴를 kind별로 분기 — practice(디자인 제외·유료게이트), lab(디자인·무게이트).
 // - 2026-08-10: 의뢰자 역할 뱃지를 requestorKind에 따라 의뢰자·치과 / 의뢰자·기공소로 표기.
@@ -151,12 +152,6 @@ const requestorSidebarCommonTail: SidebarItem[] = [
   { icon: Settings, label: "설정", href: "/dashboard/settings" },
 ];
 
-const requestorReferralItem: SidebarItem = {
-  icon: Share2,
-  label: "소개",
-  href: "/dashboard/referral-groups",
-};
-
 const ABUTMENT_REQUEST_TOOLTIP =
   "커스텀어벗 디자인을 올려서 CNC 생산 의뢰";
 
@@ -192,7 +187,6 @@ const buildRequestorSidebarItems = (
       tooltip: ABUTMENT_REQUEST_TOOLTIP,
       accent: "어벗",
     },
-    requestorReferralItem,
     { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
     ...requestorSidebarCommonTail,
   ];

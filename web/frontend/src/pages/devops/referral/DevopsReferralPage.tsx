@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/pages/requestor/referralGroups/RequestorReferralPage.tsx
+// - web/frontend/src/pages/salesman/referral/SalesmanReferralPage.tsx
 import { useState } from "react";
 import {
   Card,

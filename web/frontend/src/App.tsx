@@ -235,11 +235,7 @@ const ReferralGroupsRoute = () => {
 
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "admin") return <AdminReferralGroupsPage />;
-  if (
-    user.role === "requestor" ||
-    user.role === "salesman" ||
-    user.role === "devops"
-  )
+  if (user.role === "salesman" || user.role === "devops")
     return <ReferralGroupsPage />;
   return <Navigate to="/dashboard" replace />;
 };
@@ -677,7 +673,7 @@ const App = () => {
                     path="referral-groups"
                     element={
                       <RoleProtectedRoute
-                        roles={["admin", "requestor", "salesman", "devops"]}
+                        roles={["admin", "salesman", "devops"]}
                       >
                         <ReferralGroupsRoute />
                       </RoleProtectedRoute>

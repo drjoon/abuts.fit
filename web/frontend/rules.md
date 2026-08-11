@@ -135,7 +135,7 @@ Notes:
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - `src/features/settings/tabs/LabTradingPartnersTab.tsx` — 거래처 O/X 결제 안내 + 초대
     - `src/features/settings/tabs/LabFeeScheduleTab.tsx`
-    - 등록 기간 D-day 배너: `LabTradingPartnerWindowBanner` — 기공의뢰수신·어벗의뢰·소개 상단. 클릭 → `?tab=trading-partners`
+    - 등록 기간 D-day 배너: `LabTradingPartnerWindowBanner` — 기공의뢰수신·어벗의뢰 상단. 클릭 → `?tab=trading-partners`
       - `src/features/lab/LabTradingPartnerWindowBanner.tsx`
       - `src/shared/lab/useLabTradingPartnerWindow.ts` (`GET /api/lab-trading-partners/window`)
   - 마감 설정: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감 시간(`designDeadlineSettings.claimHours`, 기본 3시간)
@@ -242,7 +242,7 @@ Notes:
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
   - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
   - 기존 거래 치과 등록은 `max(pricingBaseDate, 2026-08-11)` 기준 **30일**간만 신규 초대 가능(D-day 배지·상단 배너). 탭 라벨: 「거래 치과 등록」.
-  - 기공소 화면(기공의뢰수신·어벗의뢰·소개) 상단에 등록 잔여일 alert 배너 표시(기간 중만). 클릭 시 설정 탭 이동.
+  - 기공소 화면(기공의뢰수신·어벗의뢰) 상단에 등록 잔여일 alert 배너 표시(기간 중만). 클릭 시 설정 탭 이동.
   - 치과 장부 라벨: 기공의뢰비 / 어벗의뢰비 / 배송비. 기공소 결제크레딧은 의뢰·배송 잔액과 분리 표시.
   - 안내 모달/대시보드 헤더([정책]·무료 재제작 잔여) 문구는 동일한 `90일` 기준을 사용해야 합니다.
   - 관련 파일:
@@ -363,7 +363,7 @@ Notes:
     첫 충전 기본 1단위. 2회차부터 기본 추천 = 월사용량(90일/3)의 1/3을 단위로 반올림(0이면 최소 1단위).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage` — 면세·부가세 없음, 환불은 잔여 유료 크레딧(공급가)만.
-  - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드·소개 페이지 — "배송비 별도"만 유지.
+  - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드 — "배송비 별도"만 유지.
   - 제조사 정산규칙 안내: 분배율만 안내하고 "+ VAT 10%" 표기 금지.
   - 관리자 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0).
 

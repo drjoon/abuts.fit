@@ -32,7 +32,6 @@ const RELATED_REQUESTOR_PAGES = [
   { path: "/dashboard/practice-transfers", label: "기공의뢰/기공의뢰수신" },
   { path: "/dashboard/settings?tab=business", label: "설정 > 사업자" },
   { path: "/dashboard/credits", label: "크레딧" },
-  { path: "/dashboard/referral-groups", label: "소개" },
 ];
 
 const capsSource = readFileSync(

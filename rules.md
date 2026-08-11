@@ -254,7 +254,7 @@
 - SSOT API: `POST/GET /api/practice/transfers`, `GET .../received`, `POST .../cancel-batch`
 - 기공소 거래처 API: `POST/GET /api/lab-trading-partners`, `POST .../:id/cancel`
 - 크레딧/정산은 유료(paid+verified) 경로. synthetic BN에는 환영 크레딧 없음(실BN 검증 승격 시 1회)
-- 소개(리퍼럴): 모든 requestor 접근 가능. 유료 혜택은 paid+verified 경로. **거래처(`LabTradingPartner`)는 리퍼럴 트리와 별도 edge**
+- 소개(리퍼럴): 의뢰자 UI/라우트 없음(소개 할인 종료). 영업자·개발운영사·관리자만 소개 메뉴. **거래처(`LabTradingPartner`)는 리퍼럴 트리와 별도 edge**
 - 헬퍼: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`, `paidRequestor.middleware.js`, `requestorOrgAnchor.util.js`
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)
 
