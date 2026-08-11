@@ -166,10 +166,8 @@ export const PracticeToothWorkChartReadOnly = ({
                 : null;
             const chartPrev = chartIdx > 0 ? decade.teeth[chartIdx - 1] : null;
             const nextVisible = visible[visibleIndex + 1];
-            const showBridgeSlot =
-              Boolean(chartNext) &&
-              nextVisible === chartNext &&
-              (byTooth.has(toothNumber) || byTooth.has(chartNext!));
+            const adjacentVisible =
+              Boolean(chartNext) && nextVisible === chartNext;
 
             const linkedTeeth = row
               ? (Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []).filter((t) =>
@@ -191,32 +189,23 @@ export const PracticeToothWorkChartReadOnly = ({
             );
             const linkedChartNext = Boolean(chartNext && linkedTeeth.includes(chartNext));
             const linkedChartPrev = Boolean(chartPrev && linkedTeeth.includes(chartPrev));
+            // Read-only: no + control — only show connector when actually bridged.
+            const showBridgeConnector = adjacentVisible && bridgeLinked;
 
-            const bridgeSlot = showBridgeSlot ? (
+            const bridgeSlot = showBridgeConnector ? (
               <div
-                className={cn(
-                  "relative z-20 flex shrink-0 items-center justify-center self-stretch",
-                  bridgeLinked
-                    ? "w-3.5 border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
-                    : "w-5",
-                )}
+                className="relative z-20 flex w-3.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
               >
-                {bridgeLinked ? (
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
-                  />
-                ) : null}
-                {bridgeLinked ? (
-                  <span
-                    className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
-                    title={`${toothNumber}–${chartNext} 연결`}
-                  >
-                    <span className="h-0.5 w-2.5 rounded-full bg-white" />
-                  </span>
-                ) : (
-                  <span className="w-5" aria-hidden />
-                )}
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
+                />
+                <span
+                  className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
+                  title={`${toothNumber}–${chartNext} 연결`}
+                >
+                  <span className="h-0.5 w-2.5 rounded-full bg-white" />
+                </span>
               </div>
             ) : visibleIndex < visible.length - 1 ? (
               <div className="w-2 shrink-0" aria-hidden />
@@ -253,7 +242,7 @@ export const PracticeToothWorkChartReadOnly = ({
             return (
               <div key={`ro-tooth-slot-${toothNumber}`} className="contents">
                 <div className="relative min-w-0 flex-1">
-                  {linkedChartNext && !showBridgeSlot ? (
+                  {linkedChartNext && !showBridgeConnector ? (
                     <span
                       aria-hidden
                       className="pointer-events-none absolute right-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-l-full bg-primary/80"
