@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-11: [정책 안내] 색을 primary(기간 필터와 동일)로 조정.
+// - 2026-08-11: [정책 안내] primary 색 적용, px-10.
+// - 2026-08-11: [정책] → [정책 안내], 버튼 좌우 여백 확대.
 // - 2026-08-11: [정책]과 무료 재제작 잔여 사이 여백 확보.
 // - 2026-08-11: 오늘의 가격 카드에서 [정책]·무료 재제작 잔여를 대시보드 헤더로 이전.
 // related files:
@@ -72,12 +75,11 @@ export const RequestorPolicyRemakeHeader = () => {
       <div className="inline-flex items-center gap-3">
         <Button
           type="button"
-          variant="outline"
           size="sm"
-          className="h-8 border border-slate-300 bg-white px-3 text-xs text-foreground hover:bg-slate-100 hover:text-slate-700"
+          className="h-8 bg-primary px-10 text-xs text-primary-foreground hover:bg-primary/90"
           onClick={() => setPolicyOpen(true)}
         >
-          정책
+          정책 안내
         </Button>
 
         {showRemakeSkeleton ? (
