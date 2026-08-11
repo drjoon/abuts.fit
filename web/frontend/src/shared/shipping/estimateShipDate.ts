@@ -15,7 +15,7 @@ import {
 } from "@/shared/shipping/weeklyBatchSchedule";
 
 export const EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE =
-  "지금은 신속 출고를 선택할 수 없습니다. 예상 출고일이 묶음 출고와 같아 조기 출고 이점이 없습니다.";
+  "신속 출고일이 묶음 출고일과 같아 선택할 이유가 없습니다.";
 
 export type LeadTimesMap = Partial<
   Record<

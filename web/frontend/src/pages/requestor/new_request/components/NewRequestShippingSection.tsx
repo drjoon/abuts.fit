@@ -427,9 +427,7 @@ export function NewRequestShippingSection({
               </>
             ) : (
               <div className="text-sm text-slate-600 leading-relaxed">
-                지금은 선택 불가합니다.
-                <br />
-                신속 예상 출고일이 묶음 출고와 같아 조기 출고 이점이 없습니다.
+                신속 출고일이 묶음 출고일과 같아 선택할 이유가 없습니다.
               </div>
             )}
           </div>
