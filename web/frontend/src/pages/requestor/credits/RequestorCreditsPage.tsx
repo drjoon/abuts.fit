@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 상단 탭 바를 문의 페이지와 동일 max-w-4xl·상단 고정.
 // - 2026-08-11: 내역 탭 우측 상단 [충전] 버튼 제거(충전 탭으로 이동).
 // - 2026-08-11: 작업영역 높이 채움 + 충전 카드 수직 중앙. 내역 테이블 영역 고정 높이로 무한스크롤.
 // - 2026-08-11: 충전 탭 — 수직 스크롤 없이 남은 영역 수직 중앙 배치(fillHeight).
@@ -86,6 +87,7 @@ export default function RequestorCreditsPage() {
       <SettingsScaffold
         tabs={tabs}
         activeTab={activeTab}
+        tabsMaxClassName="max-w-4xl"
         contentMaxClassName="max-w-6xl"
         fillHeight
         onTabChange={(next) => {
