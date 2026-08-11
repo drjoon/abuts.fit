@@ -27,7 +27,9 @@
 // - 2026-08-11: 기공소 거래 치과 등록 D-day 배너(설정 이동).
 // - 2026-08-11: [안내 복사] 문구 — 이모티콘·부드러운 말투로 정리.
 // - 2026-08-11: 다운로드→의뢰수락 뱃지/상태. 수락 API 과금. 파일 다운로드는 상태 미전이.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// - 2026-08-11: 의뢰수락 후 치과 transfer-room 재연결. 모달 폭·lab peer 채팅 연결.
+// - 2026-08-11: 수락 카드에 작업완료/작업취소 버튼. mark-release API.
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
 import { Badge } from "@/components/ui/badge";
@@ -362,6 +364,7 @@ function RequestorPracticeReceivePage({
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [completeBusy, setCompleteBusy] = useState(false);
+  const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -1307,7 +1310,10 @@ function RequestorPracticeReceivePage({
 
         toast({
           title: "작업 완료",
-          description: "자동매칭 작업을 완료 처리했습니다.",
+          description:
+            transfer.matchingMode === "auto"
+              ? "자동매칭 작업을 완료 처리했습니다."
+              : "기공의뢰 작업을 완료 처리했습니다.",
         });
         return true;
       } catch {
@@ -1322,38 +1328,170 @@ function RequestorPracticeReceivePage({
     [toast, token],
   );
 
-  const handleAcceptTransfer = useCallback(async () => {
-    if (!selectedTransfer || acceptBusy) return;
-    setAcceptBusy(true);
-    try {
-      await markTransferAccepted(selectedTransfer);
-    } finally {
-      setAcceptBusy(false);
-    }
-  }, [acceptBusy, markTransferAccepted, selectedTransfer]);
-
-  const handleCompleteTransfer = useCallback(async () => {
-    if (!selectedTransfer || completeBusy) return;
-    setCompleteBusy(true);
-    try {
-      await markTransferComplete(selectedTransfer);
-    } finally {
-      setCompleteBusy(false);
-    }
-  }, [completeBusy, markTransferComplete, selectedTransfer]);
-
-  const openTransferDialog = useCallback(
+  const markTransferRelease = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
-      if (!token) return;
-      const resolveSeq = ++chatRoomResolveSeqRef.current;
+      if (!token) return false;
+      if (transfer.autoMatch?.completed) return false;
 
-      setSelectedTransfer(transfer);
-      setDialogOpen(true);
-      setChatError("");
-      setChatAttachedFiles([]);
-      setActiveChatRoom(null);
-      setChatMessages([]);
-      void markTransferRead(transfer);
+      try {
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-release`,
+          method: "POST",
+          token,
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "작업 취소 실패",
+            description: String(body.message || "작업 취소 처리 중 오류가 발생했습니다."),
+            variant: "destructive",
+          });
+          return false;
+        }
+
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const data =
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : body;
+        const isAuto = String(transfer.matchingMode || "") === "auto";
+        const autoMatchRaw =
+          data.autoMatch && typeof data.autoMatch === "object"
+            ? (data.autoMatch as Record<string, unknown>)
+            : null;
+
+        if (isAuto) {
+          // 공개 풀로 돌아가면 목록에서 빼거나 openPool로 되돌린다.
+          setTransfers((prev) =>
+            prev
+              .map((row) => {
+                if (row._id !== transfer._id && row.transferId !== transfer.transferId) {
+                  return row;
+                }
+                return {
+                  ...row,
+                  isAccepted: false,
+                  isDownloaded: false,
+                  requestorDownloadedAt: null,
+                  requestorAcceptedAt: null,
+                  targetLabName: "자동 매칭",
+                  autoMatch: {
+                    ...(row.autoMatch || {}),
+                    claimedAt: null,
+                    deadlineAt: null,
+                    completedAt: null,
+                    openPool: true,
+                    claimActive: false,
+                    completed: false,
+                    mine: false,
+                    remainingMs: null,
+                    releaseCount:
+                      autoMatchRaw?.releaseCount != null
+                        ? Number(autoMatchRaw.releaseCount)
+                        : Number(row.autoMatch?.releaseCount || 0) + 1,
+                  },
+                };
+              }),
+          );
+          setSelectedTransfer((prev) => {
+            if (
+              !prev ||
+              (prev._id !== transfer._id && prev.transferId !== transfer.transferId)
+            ) {
+              return prev;
+            }
+            return {
+              ...prev,
+              isAccepted: false,
+              isDownloaded: false,
+              requestorDownloadedAt: null,
+              requestorAcceptedAt: null,
+              targetLabName: "자동 매칭",
+              autoMatch: {
+                ...(prev.autoMatch || {}),
+                claimedAt: null,
+                deadlineAt: null,
+                completedAt: null,
+                openPool: true,
+                claimActive: false,
+                completed: false,
+                mine: false,
+                remainingMs: null,
+              },
+            };
+          });
+        } else {
+          setTransfers((prev) =>
+            prev.map((row) =>
+              row._id === transfer._id || row.transferId === transfer.transferId
+                ? {
+                    ...row,
+                    isAccepted: false,
+                    isDownloaded: false,
+                    requestorDownloadedAt: null,
+                    requestorAcceptedAt: null,
+                    autoMatch: row.autoMatch
+                      ? {
+                          ...row.autoMatch,
+                          completedAt: null,
+                          completed: false,
+                          claimActive: false,
+                        }
+                      : row.autoMatch,
+                  }
+                : row,
+            ),
+          );
+          setSelectedTransfer((prev) =>
+            prev &&
+            (prev._id === transfer._id || prev.transferId === transfer.transferId)
+              ? {
+                  ...prev,
+                  isAccepted: false,
+                  isDownloaded: false,
+                  requestorDownloadedAt: null,
+                  requestorAcceptedAt: null,
+                  autoMatch: prev.autoMatch
+                    ? {
+                        ...prev.autoMatch,
+                        completedAt: null,
+                        completed: false,
+                        claimActive: false,
+                      }
+                    : prev.autoMatch,
+                }
+              : prev,
+          );
+        }
+
+        toast({
+          title: "작업 취소",
+          description: isAuto
+            ? "수락을 취소해 공개 풀로 되돌렸습니다."
+            : "의뢰수락을 취소했습니다.",
+        });
+        return true;
+      } catch {
+        toast({
+          title: "작업 취소 실패",
+          description: "작업 취소 요청 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [toast, token],
+  );
+
+  const resolveTransferChatRoom = useCallback(
+    async (transfer: ReceivedPracticeTransfer, resolveSeq: number) => {
+      if (!token) return;
 
       const transferId = String(transfer.transferId || "").trim();
       const cachedRoom = rooms.find(
@@ -1363,6 +1501,7 @@ function RequestorPracticeReceivePage({
         void prefetchMessages(cachedRoom._id);
         if (resolveSeq !== chatRoomResolveSeqRef.current) return;
         setActiveChatRoom(cachedRoom);
+        setChatError("");
         return;
       }
 
@@ -1375,7 +1514,10 @@ function RequestorPracticeReceivePage({
 
         if (!res.ok) {
           if (resolveSeq !== chatRoomResolveSeqRef.current) return;
-          const body = res.data && typeof res.data === "object" ? (res.data as Record<string, unknown>) : {};
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
           setChatError(String(body.message || "치과 채팅방을 열 수 없습니다."));
           return;
         }
@@ -1393,12 +1535,94 @@ function RequestorPracticeReceivePage({
         }
         if (resolveSeq !== chatRoomResolveSeqRef.current) return;
         setActiveChatRoom(room);
+        setChatError("");
       } catch {
         if (resolveSeq !== chatRoomResolveSeqRef.current) return;
         setChatError("치과 채팅방 조회 중 오류가 발생했습니다.");
       }
     },
-    [markTransferRead, prefetchMessages, rooms, setChatMessages, token],
+    [prefetchMessages, rooms, token],
+  );
+
+  const handleAcceptTransfer = useCallback(async () => {
+    if (!selectedTransfer || acceptBusy) return;
+    setAcceptBusy(true);
+    try {
+      const ok = await markTransferAccepted(selectedTransfer);
+      // 수락으로 targetLab가 잡힌 뒤(자동매칭 포함) 치과 채팅방을 다시 연결한다.
+      if (ok && dialogOpen) {
+        const resolveSeq = ++chatRoomResolveSeqRef.current;
+        setChatError("");
+        await resolveTransferChatRoom(selectedTransfer, resolveSeq);
+      }
+    } finally {
+      setAcceptBusy(false);
+    }
+  }, [
+    acceptBusy,
+    dialogOpen,
+    markTransferAccepted,
+    resolveTransferChatRoom,
+    selectedTransfer,
+  ]);
+
+  const handleCompleteTransfer = useCallback(async () => {
+    if (!selectedTransfer || completeBusy) return;
+    setCompleteBusy(true);
+    try {
+      await markTransferComplete(selectedTransfer);
+    } finally {
+      setCompleteBusy(false);
+    }
+  }, [completeBusy, markTransferComplete, selectedTransfer]);
+
+  const handleCardComplete = useCallback(
+    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || cardActionBusyId) return;
+      setCardActionBusyId(id);
+      try {
+        await markTransferComplete(transfer);
+      } finally {
+        setCardActionBusyId("");
+      }
+    },
+    [cardActionBusyId, markTransferComplete],
+  );
+
+  const handleCardRelease = useCallback(
+    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || cardActionBusyId) return;
+      setCardActionBusyId(id);
+      try {
+        await markTransferRelease(transfer);
+      } finally {
+        setCardActionBusyId("");
+      }
+    },
+    [cardActionBusyId, markTransferRelease],
+  );
+
+  const openTransferDialog = useCallback(
+    async (transfer: ReceivedPracticeTransfer) => {
+      if (!token) return;
+      const resolveSeq = ++chatRoomResolveSeqRef.current;
+
+      setSelectedTransfer(transfer);
+      setDialogOpen(true);
+      setChatError("");
+      setChatAttachedFiles([]);
+      setActiveChatRoom(null);
+      setChatMessages([]);
+      void markTransferRead(transfer);
+      await resolveTransferChatRoom(transfer, resolveSeq);
+    },
+    [markTransferRead, resolveTransferChatRoom, setChatMessages, token],
   );
 
   const handleDownload = useCallback(
@@ -1846,12 +2070,23 @@ function RequestorPracticeReceivePage({
           {sortedFilteredTransfers.map((transfer) => {
             const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
             const toothWorksPreview = formatToothWorksSummary(transfer.toothWorksSummary);
+            const displayStatus = getTransferDisplayStatus(transfer);
+            const cardId = String(transfer.transferId || transfer._id || "").trim();
+            const cardBusy = Boolean(cardActionBusyId) && cardActionBusyId === cardId;
+            const showWorkActions = displayStatus === "의뢰수락";
             return (
-              <button
+              <div
                 key={transfer._id || transfer.transferId}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => void openTransferDialog(transfer)}
-                className="w-full rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    void openTransferDialog(transfer);
+                  }
+                }}
+                className="w-full cursor-pointer rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 data-transfer-card="true"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1871,28 +2106,23 @@ function RequestorPracticeReceivePage({
                     <span className="text-xs text-muted-foreground">
                       {formatDateTime(transfer.createdAt)}
                     </span>
-                    {(() => {
-                      const displayStatus = getTransferDisplayStatus(transfer);
-                      return (
-                        <Badge
-                          variant={displayStatus === "발송완료" || displayStatus === "자동매칭" ? "destructive" : "secondary"}
-                          className={cn(
-                            "shrink-0 whitespace-nowrap",
-                            displayStatus === "의뢰수락" || displayStatus === "작업완료"
-                              ? "bg-primary-soft text-primary-strong hover:bg-primary-soft"
-                              : "",
-                          )}
-                        >
-                          {displayStatus}
-                          {displayStatus === "의뢰수락" &&
-                          transfer.matchingMode === "auto" &&
-                          transfer.autoMatch?.mine &&
-                          transfer.autoMatch?.claimActive
-                            ? ` · ${formatRemainingMs(transfer.autoMatch.remainingMs)}`
-                            : ""}
-                        </Badge>
-                      );
-                    })()}
+                    <Badge
+                      variant={displayStatus === "발송완료" || displayStatus === "자동매칭" ? "destructive" : "secondary"}
+                      className={cn(
+                        "shrink-0 whitespace-nowrap",
+                        displayStatus === "의뢰수락" || displayStatus === "작업완료"
+                          ? "bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                          : "",
+                      )}
+                    >
+                      {displayStatus}
+                      {displayStatus === "의뢰수락" &&
+                      transfer.matchingMode === "auto" &&
+                      transfer.autoMatch?.mine &&
+                      transfer.autoMatch?.claimActive
+                        ? ` · ${formatRemainingMs(transfer.autoMatch.remainingMs)}`
+                        : ""}
+                    </Badge>
                   </div>
                 </div>
 
@@ -1914,7 +2144,29 @@ function RequestorPracticeReceivePage({
                     ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
                     : ""}
                 </p>
-              </button>
+
+                {showWorkActions ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={cardBusy}
+                      onClick={(event) => void handleCardComplete(transfer, event)}
+                    >
+                      {cardBusy ? "처리 중..." : "작업완료"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={cardBusy}
+                      onClick={(event) => void handleCardRelease(transfer, event)}
+                    >
+                      작업취소
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </div>

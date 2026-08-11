@@ -893,6 +893,8 @@ export const PracticeFileTransferPage = ({
   const [localFormHydrated, setLocalFormHydrated] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
+  const transferDialogOpenRef = useRef(false);
+  const selectedTransferIdRef = useRef("");
   const prevFileCountRef = useRef(0);
   const localFormUpdatedAtRef = useRef(0);
   const skipNextArrivalAutoSyncRef = useRef(false);
@@ -3282,6 +3284,8 @@ export const PracticeFileTransferPage = ({
 
     setSelectedTransfer(transfer);
     setTransferDialogOpen(true);
+    transferDialogOpenRef.current = true;
+    selectedTransferIdRef.current = String(transfer.transferId || "").trim();
     setChatDraft("");
     setChatAttachedFiles([]);
     setActiveChatRoom(null);
@@ -3298,69 +3302,78 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    if (!authToken) {
-      setChatError("로그인이 필요합니다.");
-      return;
-    }
-
-    const transferId = String(transfer.transferId || "").trim();
-    if (!transferId || transferId === "-") {
-      setChatError("전송 ID를 확인할 수 없어 채팅방을 열 수 없습니다.");
-      return;
-    }
-
-    const cachedRoom = chatRooms.find(
-      (room) => String(room.relatedPracticeTransferId?.transferId || "").trim() === transferId,
-    );
-    if (cachedRoom?._id) {
-      void prefetchMessages(cachedRoom._id);
-      if (resolveSeq !== chatRoomResolveSeqRef.current) return;
-      setActiveChatRoom(cachedRoom);
-      setChatError("");
-      return;
-    }
-
-    setChatLoading(true);
-    try {
-      const res = await apiFetch<unknown>({
-        path: `/api/chats/practice/transfer-room/${encodeURIComponent(transferId)}`,
-        method: "GET",
-        token: authToken,
-      });
-
-      if (!res.ok) {
-        const body = asApiMessagePayload(res.data);
-        throw new Error(String(body?.message || "채팅방을 불러오지 못했습니다."));
-      }
-
-      const payload = extractDataFromResponse<ChatRoom>(res.data);
-      if (!payload?._id) {
-        throw new Error("채팅방 정보가 올바르지 않습니다.");
-      }
-
-      if (payload?._id) {
-        void prefetchMessages(payload._id);
-      }
-      if (resolveSeq !== chatRoomResolveSeqRef.current) return;
-      setActiveChatRoom(payload);
-      setChatError("");
-    } catch (error) {
-      if (resolveSeq !== chatRoomResolveSeqRef.current) return;
-      setChatError(
-        error instanceof Error
-          ? error.message
-          : "채팅방을 불러오는 중 오류가 발생했습니다.",
-      );
-    } finally {
-      if (resolveSeq === chatRoomResolveSeqRef.current) {
-        setChatLoading(false);
-      }
-    }
+    await resolvePracticeTransferChatRoom(String(transfer.transferId || "").trim(), resolveSeq);
   };
+
+  const resolvePracticeTransferChatRoom = useCallback(
+    async (transferIdRaw: string, resolveSeq: number) => {
+      if (!authToken) {
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setChatError("로그인이 필요합니다.");
+        return;
+      }
+
+      const transferId = String(transferIdRaw || "").trim();
+      if (!transferId || transferId === "-") {
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setChatError("전송 ID를 확인할 수 없어 채팅방을 열 수 없습니다.");
+        return;
+      }
+
+      const cachedRoom = chatRooms.find(
+        (room) => String(room.relatedPracticeTransferId?.transferId || "").trim() === transferId,
+      );
+      if (cachedRoom?._id) {
+        void prefetchMessages(cachedRoom._id);
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setActiveChatRoom(cachedRoom);
+        setChatError("");
+        return;
+      }
+
+      setChatLoading(true);
+      try {
+        const res = await apiFetch<unknown>({
+          path: `/api/chats/practice/transfer-room/${encodeURIComponent(transferId)}`,
+          method: "GET",
+          token: authToken,
+        });
+
+        if (!res.ok) {
+          const body = asApiMessagePayload(res.data);
+          throw new Error(String(body?.message || "채팅방을 불러오지 못했습니다."));
+        }
+
+        const payload = extractDataFromResponse<ChatRoom>(res.data);
+        if (!payload?._id) {
+          throw new Error("채팅방 정보가 올바르지 않습니다.");
+        }
+
+        void prefetchMessages(payload._id);
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setActiveChatRoom(payload);
+        setChatError("");
+      } catch (error) {
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setChatError(
+          error instanceof Error
+            ? error.message
+            : "채팅방을 불러오는 중 오류가 발생했습니다.",
+        );
+      } finally {
+        if (resolveSeq === chatRoomResolveSeqRef.current) {
+          setChatLoading(false);
+        }
+      }
+    },
+    [authToken, chatRooms, prefetchMessages],
+  );
 
   const handleCloseTransferDialog = () => {
     chatRoomResolveSeqRef.current += 1;
     setTransferDialogOpen(false);
+    transferDialogOpenRef.current = false;
+    selectedTransferIdRef.current = "";
     setSelectedTransfer(null);
     setActiveChatRoom(null);
     setChatMessages([]);
@@ -4152,6 +4165,37 @@ export const PracticeFileTransferPage = ({
           }
         }
         void loadPracticeTransferDraftList();
+      }
+
+      // 기공소 의뢰수락 시: 열려 있는 상세 모달에서 기공소명 갱신 + 채팅방 재연결
+      const eventTransferId = String(payload.transferId || "").trim();
+      const isAcceptChatEvent =
+        action === "accepted" ||
+        action === "auto-match-claimed" ||
+        action === "downloaded";
+      if (
+        isAcceptChatEvent &&
+        transferDialogOpenRef.current &&
+        eventTransferId &&
+        eventTransferId === selectedTransferIdRef.current
+      ) {
+        const labName = String(payload.targetLabName || "").trim();
+        const labAnchorId = String(payload.targetLabAnchorId || "").trim();
+        const stage = String(payload.manufacturerStage || "").trim();
+        setSelectedTransfer((prev) => {
+          if (!prev || String(prev.transferId || "").trim() !== eventTransferId) {
+            return prev;
+          }
+          return {
+            ...prev,
+            ...(labName ? { targetLab: labName } : {}),
+            ...(labAnchorId ? { targetLabAnchorId: labAnchorId } : {}),
+            ...(stage ? { status: stage } : {}),
+          };
+        });
+        const resolveSeq = ++chatRoomResolveSeqRef.current;
+        setChatError("");
+        void resolvePracticeTransferChatRoom(eventTransferId, resolveSeq);
       }
     },
   });

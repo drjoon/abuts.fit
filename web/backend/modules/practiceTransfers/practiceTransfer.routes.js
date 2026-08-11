@@ -23,6 +23,7 @@ import {
   markReceivedPracticeTransferRead,
   markReceivedPracticeTransferAccepted,
   markReceivedPracticeTransferComplete,
+  markReceivedPracticeTransferRelease,
   markReceivedPracticeTransferDownloaded,
   restorePracticeTransfersBatch,
   upsertPracticeTransferDraft,
@@ -105,6 +106,13 @@ router.post(
   authenticate,
   receiveAuth,
   markReceivedPracticeTransferComplete,
+);
+
+router.post(
+  "/:transferId/mark-release",
+  authenticate,
+  receiveAuth,
+  markReceivedPracticeTransferRelease,
 );
 
 // 레거시 별칭 — 의뢰수락과 동일 (다운로드로 상태 전이하지 않음; FE는 mark-accepted 사용)

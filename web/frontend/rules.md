@@ -508,7 +508,8 @@ Notes:
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
   - 기공소 의뢰수락: 상세 다이얼로그 「의뢰수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관.
-  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto`. 검증·devops ON 기공소만 공개 풀 수신. 선착순 수락(3시간)·「작업 완료」(`mark-complete`). 만료 시 재공개. devops UI: `PracticeTransferAutoMatchTab` (파트너 **기공의뢰 자동매칭** 탭)
+  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto`. 검증·devops ON 기공소만 공개 풀 수신. 선착순 수락(3시간)·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 만료 시 재공개. devops UI: `PracticeTransferAutoMatchTab` (파트너 **기공의뢰 자동매칭** 탭)
+  - 기공소 수신 카드(상태=의뢰수락): `[작업완료]` / `[작업취소]` (`RequestorPracticePage`)
 
 - 드롭존 가입(치과 전용, requestor+practice+free)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab·paid 선택 UI 없음.
@@ -578,6 +579,9 @@ Notes:
   - practice 화면과 requestor 수신 화면은 모두 `transferId` 기반 채팅(`/api/chats/practice/transfer-room/:transferId`)만 사용합니다.
   - legacy request 기반 practice 채팅 경로(`/api/chats/practice/request-room/:requestId`)는 사용 금지합니다.
   - 동일 치과 practice 구성원은 동료가 보낸 전송 채팅에도 참여할 수 있습니다(백엔드 participants 자동 추가).
+  - 지정 기공소(`targetLabAnchorId`) requestor 구성원도 primaryContact 해석 실패 시 본인으로 lab 참여자를 잡아 치과(`practiceUserId`)와 연결합니다.
+  - 자동매칭 공개 풀: 치과는 「기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다.」, 기공소는 「의뢰수락 후…」 안내. 수락 시 서버가 채팅방을 만들고 치과 모달은 실시간으로 재연결.
+  - 의뢰 상세·채팅 모달(`PracticeTransferDetailChatDialog`) 가로폭: `max-w-[90rem]` (`w-[95vw]`).
   - draft 공동 작성 동기화: `draft-upserted` 이벤트 스냅샷을 즉시 반영(`delayMs=0`, `deferWhenEditing=false`). 동일 계정 다중 탭도 fingerprint/서버 updatedAt LWW로 맞춤(editor echo skip 금지).
   - 한글 IME: 환자명/메모는 `ImeSafeInput`으로 조합 중 로컬 draft 유지. 조합 중 autosave·원격 폼 반영은 미루고, 조합 종료 후 처리.
   - 기공소 전송 성공 후 작성자·동료 모두 의뢰 접수 폼 localStorage(`practice_transfer_form_local_v1`, `practice_dropzone_draft_v2`)와 화면 입력을 초기화한다.

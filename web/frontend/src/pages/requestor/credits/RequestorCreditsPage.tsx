@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: accessLoading early return 전에 useMemo 호출(Rules of Hooks).
 // - 2026-08-11: access 로딩 시 페이지 스켈레톤.
 // - 2026-08-11: 상단 탭 바를 문의 페이지와 동일 max-w-4xl·상단 고정.
 // - 2026-08-11: 내역 탭 우측 상단 [충전] 버튼 제거(충전 탭으로 이동).
@@ -40,14 +41,7 @@ export default function RequestorCreditsPage() {
   const { loading: accessLoading, kind } = useRequestorBusinessAccess();
   const isLab = kind === "lab";
 
-  if (accessLoading) {
-    return (
-      <div className="h-full min-h-0">
-        <RequestorCreditsPageSkeleton tabCount={isLab ? 3 : 2} />
-      </div>
-    );
-  }
-
+  // Hooks must run unconditionally (before accessLoading early return).
   const tabs = useMemo<SettingsTabDef[]>(() => {
     const list: SettingsTabDef[] = [
       {
@@ -87,6 +81,14 @@ export default function RequestorCreditsPage() {
     }
     return list;
   }, [isLab, user]);
+
+  if (accessLoading) {
+    return (
+      <div className="h-full min-h-0">
+        <RequestorCreditsPageSkeleton tabCount={isLab ? 3 : 2} />
+      </div>
+    );
+  }
 
   const tabFromUrl = (searchParams.get("tab") as TabKey | null) || "ledger";
   const allowed = new Set(tabs.map((t) => t.key));
