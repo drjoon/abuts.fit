@@ -46,14 +46,23 @@ export const PracticeTransferAutoMatchTab = () => {
   const [enabledCount, setEnabledCount] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
+  const hasMoreRef = useRef(false);
+  const pageRef = useRef(1);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQ(q.trim()), 250);
     return () => window.clearTimeout(t);
   }, [q]);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
 
   const loadPage = useCallback(
     async (targetPage: number, append: boolean) => {
@@ -112,8 +121,12 @@ export const PracticeTransferAutoMatchTab = () => {
           : [];
 
         setRows((prev) => (append ? [...prev, ...list] : list));
-        setPage(Number(body?.pagination?.page || targetPage));
-        setHasMore(Boolean(body?.pagination?.hasMore));
+        const nextPage = Number(body?.pagination?.page || targetPage);
+        const nextHasMore = Boolean(body?.pagination?.hasMore);
+        setPage(nextPage);
+        setHasMore(nextHasMore);
+        pageRef.current = nextPage;
+        hasMoreRef.current = nextHasMore;
         setTotalCount(Number(body?.pagination?.total || 0));
         setEnabledCount(Number(body?.enabledCount || 0));
       } catch (error) {
@@ -126,6 +139,7 @@ export const PracticeTransferAutoMatchTab = () => {
         if (!append) {
           setRows([]);
           setHasMore(false);
+          hasMoreRef.current = false;
           setTotalCount(0);
           setEnabledCount(0);
         }
@@ -144,30 +158,31 @@ export const PracticeTransferAutoMatchTab = () => {
   useEffect(() => {
     setRows([]);
     setPage(1);
+    pageRef.current = 1;
     setHasMore(false);
+    hasMoreRef.current = false;
     void loadPage(1, false);
   }, [loadPage]);
 
+  // 페이지(뷰포트) 스크롤 무한로드 — 내부 스크롤 컨테이너 없음
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    const root = scrollRef.current;
-    if (!sentinel || !root || !hasMore || loading || loadingMore) return;
+    if (!sentinel || !hasMore || loading || loadingMore) return;
     const io = new IntersectionObserver(
       (entries) => {
         if (
           entries.some((e) => e.isIntersecting) &&
-          hasMore &&
-          !loading &&
+          hasMoreRef.current &&
           !loadingMoreRef.current
         ) {
-          void loadPage(page + 1, true);
+          void loadPage(pageRef.current + 1, true);
         }
       },
-      { root, rootMargin: "160px", threshold: 0 },
+      { root: null, rootMargin: "240px", threshold: 0 },
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [hasMore, loading, loadingMore, page, loadPage]);
+  }, [hasMore, loading, loadingMore, page, rows.length, loadPage]);
 
   const onToggle = async (row: AutoMatchRow, enabled: boolean) => {
     if (!token || savingId) return;
@@ -279,79 +294,74 @@ export const PracticeTransferAutoMatchTab = () => {
           />
         </div>
 
-        <div
-          ref={scrollRef}
-          className="max-h-[min(60vh,560px)] overflow-y-auto overflow-x-hidden rounded-xl border border-border/80 bg-background/60 p-3"
-        >
-          {loading ? (
-            <div className="px-1 py-10 text-center text-sm text-muted-foreground">
-              불러오는 중…
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="px-1 py-10 text-center text-sm text-muted-foreground">
-              해당하는 기공소가 없습니다.
-            </div>
-          ) : (
-            <>
-              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {rows.map((row) => {
-                  const canEnable =
-                    row.verified && row.canReceivePracticeTransfer;
-                  const metaParts = [
-                    row.verified ? "검증" : row.status || null,
-                    !row.canReceivePracticeTransfer
-                      ? "기공의뢰 수신 불가"
-                      : null,
-                    row.representativeName || null,
-                    row.address || null,
-                  ].filter(Boolean);
-                  return (
-                    <li
-                      key={row._id}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 transition-colors",
-                        "hover:bg-muted/40",
-                        row.practiceTransferAutoMatchEnabled &&
-                          "border-primary/20 bg-primary/[0.03]",
-                        !canEnable && "opacity-70",
-                      )}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">
-                          {row.name || "이름 없음"}
-                        </div>
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {metaParts.length > 0
-                            ? metaParts.join(" · ")
-                            : "대표자·주소 없음"}
-                        </div>
+        {loading ? (
+          <div className="px-1 py-10 text-center text-sm text-muted-foreground">
+            불러오는 중…
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="px-1 py-10 text-center text-sm text-muted-foreground">
+            해당하는 기공소가 없습니다.
+          </div>
+        ) : (
+          <>
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {rows.map((row) => {
+                const canEnable =
+                  row.verified && row.canReceivePracticeTransfer;
+                const metaParts = [
+                  row.verified ? "검증" : row.status || null,
+                  !row.canReceivePracticeTransfer
+                    ? "기공의뢰 수신 불가"
+                    : null,
+                  row.representativeName || null,
+                  row.address || null,
+                ].filter(Boolean);
+                return (
+                  <li
+                    key={row._id}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 transition-colors",
+                      "hover:bg-muted/40",
+                      row.practiceTransferAutoMatchEnabled &&
+                        "border-primary/20 bg-primary/[0.03]",
+                      !canEnable && "opacity-70",
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">
+                        {row.name || "이름 없음"}
                       </div>
-                      <Switch
-                        checked={Boolean(row.practiceTransferAutoMatchEnabled)}
-                        disabled={
-                          savingId === row._id ||
-                          (!canEnable &&
-                            !row.practiceTransferAutoMatchEnabled)
-                        }
-                        onCheckedChange={(checked) =>
-                          void onToggle(row, checked)
-                        }
-                        aria-label={`${row.name} 기공의뢰 자동매칭`}
-                        className="shrink-0"
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
-              <div ref={sentinelRef} className="h-4 w-full" aria-hidden />
-              {loadingMore ? (
-                <div className="py-3 text-center text-xs text-muted-foreground">
-                  더 불러오는 중…
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {metaParts.length > 0
+                          ? metaParts.join(" · ")
+                          : "대표자·주소 없음"}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={Boolean(row.practiceTransferAutoMatchEnabled)}
+                      disabled={
+                        savingId === row._id ||
+                        (!canEnable &&
+                          !row.practiceTransferAutoMatchEnabled)
+                      }
+                      onCheckedChange={(checked) =>
+                        void onToggle(row, checked)
+                      }
+                      aria-label={`${row.name} 기공의뢰 자동매칭`}
+                      className="shrink-0"
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+            <div ref={sentinelRef} className="h-4 w-full" aria-hidden />
+            {loadingMore ? (
+              <div className="py-3 text-center text-xs text-muted-foreground">
+                더 불러오는 중…
+              </div>
+            ) : null}
+          </>
+        )}
       </CardContent>
     </Card>
   );

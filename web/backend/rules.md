@@ -347,7 +347,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 의뢰수락 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`(레거시 필드명 유지; API alias `requestorAcceptedAt`/`isAccepted`)
   - 과금 SSOT: `POST /api/practice/transfers/:transferId/mark-accepted`에서 `commitPracticeTransferBilling` (파일 다운로드는 상태·과금에 영향 없음)
   - **자동매칭 SSOT** (`matchingMode: "auto"`):
-    - 생성 시 `targetLabAnchorId=null`, 공개 풀. 자격: `verified` + `practiceTransferAutoMatchEnabled` + lab+free (`utils/practiceTransferAutoMatch.js`)
+    - 생성 시 `targetLabAnchorId=null`, 공개 풀. 자격: `verified` + `practiceTransferAutoMatchEnabled` + lab+free (`utils/practiceTransferAutoMatch.js`). devops 목록/ON은 `verifiedLabCapableAnchorFilter`(kind=lab 또는 레거시 caps.lab)
     - devops ON: `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }`
     - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정·만료 claim). 타인 활성 claim은 숨김
     - 수락=`mark-accepted` 원자 FCFS claim(3시간 `autoMatch.deadlineAt`) + 과금. 작업완료=`POST .../mark-complete`

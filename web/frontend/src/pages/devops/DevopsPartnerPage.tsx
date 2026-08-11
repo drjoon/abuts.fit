@@ -3,7 +3,6 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/pages/devops/DevopsSettingsPage.tsx
 // - web/frontend/src/pages/devops/components/DevopsPayoutAccountTab.tsx
-// - web/frontend/src/pages/devops/components/DesignerAssignmentTab.tsx
 // - web/frontend/src/pages/devops/components/DevopsDesignDeadlineTab.tsx
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
@@ -15,7 +14,6 @@ import {
 } from "@/features/components/SettingsScaffold";
 import { DevopsPayoutAccountTab } from "./components/DevopsPayoutAccountTab";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
-import { DesignerAssignmentTab } from "./components/DesignerAssignmentTab";
 import { DevopsDesignDeadlineTab } from "./components/DevopsDesignDeadlineTab";
 import { PracticeTransferAutoMatchTab } from "./components/PracticeTransferAutoMatchTab";
 import { Landmark, CreditCard, FlaskConical } from "lucide-react";
@@ -46,13 +44,12 @@ export const DevopsPartnerPage = () => {
       },
       {
         key: "autoMatch",
-        label: "기공 자동매칭",
+        label: "기공의뢰 자동매칭",
         icon: FlaskConical,
         content: (
           <div className="space-y-6">
             <DevopsDesignDeadlineTab />
             <PracticeTransferAutoMatchTab />
-            <DesignerAssignmentTab />
           </div>
         ),
       },
