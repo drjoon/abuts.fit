@@ -173,7 +173,7 @@
 - **기공소 기존 거래처 · 기공의뢰 과금 SSOT:**
   - `LabTradingPartner`: lab이 `pricingBaseDate`(기존 90일 런칭과 동일 기준)와 기능 출시일(`2026-08-11`) 중 **늦은 날**부터 **30일**간 기존 거래 치과 초대. 만료 후 **신규 등록만 불가**(active/invited 유지·완료 가능)
   - 초대 링크 → 치과 가입 → 사업자등록증 **검증(`verified`)** 시 `status=active`
-  - 가격: 기공비=`BusinessAnchor.labFeeSchedule`(기공소 설정), 치과 납품 어벗 소매가=`creditSettings.abutmentRetailPrice`(devops 「요금 · 크레딧」), 생산단가=기존 `computePriceForRequest`
+  - 가격: 기공비=`BusinessAnchor.labFeeSchedule`(기공소 설정; crown/bridge/inlay/pontic/customAbutmentDesign, 기본 6만/6만/5만/4만/1만), 치과 납품 어벗 소매가=`creditSettings.abutmentRetailPrice`(devops 「요금 · 크레딧」), 생산단가=기존 `computePriceForRequest`. `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과)
   - 치과는 기공의뢰비+어벗의뢰비를 **소매가 1회** 크레딧 차감. 장부 UI는 `기공의뢰비`/`어벗의뢰비`/`배송비` 단순 표기
   - **거래처 O**: 전액 → 기공소 `LAB_SETTLEMENT_CREDIT`. 커스텀어벗은 기공소가 어벗츠에 생산의뢰하고 **생산단가를 기공소 의뢰크레딧에서 강제 차감**(치과 재차감 금지)
   - **거래처 X**: 기공비만 기공소 결제크레딧, 어벗 소매가는 어벗츠 `REV_*`(직납과 동일)

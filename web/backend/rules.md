@@ -239,7 +239,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 기공소 기존 거래처 · 결제크레딧 SSOT:
   - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 발급된 초대는 검증 완료 시 `status=active`(거래처, 수수료 0%). 30일 경과 후에도 초대 발급은 계속 허용하되(`invitedAfterWindow=true`), 검증 완료 시 `status=referred`(소개)로 승격된다.
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
-  - 기공비: `BusinessAnchor.labFeeSchedule`. 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops).
+  - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic/customAbutmentDesign). 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops). `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과).
   - PracticeTransfer 유료: 치과 청구 총액(기공비+어벗 소매가) 1회 차감 → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 `LAB_SETTLEMENT_CREDIT`.
     - `active`(정식 거래처): 수수료 0% — 전액 기공소 정산.
     - `referred`(30일 경과 후 소개로 등록): 수수료 `BusinessAnchor.payoutRates.labReferredFeeRate`(기본 10%).

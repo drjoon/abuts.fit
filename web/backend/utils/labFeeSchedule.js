@@ -9,6 +9,7 @@ export const LAB_FEE_SCHEDULE_DEFAULTS = {
   bridge: 60000,
   inlay: 50000,
   pontic: 40000,
+  customAbutmentDesign: 10000,
 };
 
 export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;
@@ -17,6 +18,13 @@ export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;
 export function resolveLabFeeKeyFromProsthesisType(prosthesisType) {
   const raw = String(prosthesisType || "").trim();
   if (!raw) return "crown";
+  // 디자인만 — 크라운/브리지 포함 문자열보다 먼저
+  if (
+    /커스텀어벗\s*디자인/i.test(raw) ||
+    /custom\s*abut(?:ment)?\s*design/i.test(raw)
+  ) {
+    return "customAbutmentDesign";
+  }
   if (/^pontic$/i.test(raw)) return "pontic";
   if (raw.includes("인레이") || /^inlay$/i.test(raw)) return "inlay";
   if (raw.includes("브리지") || /^bridge$/i.test(raw)) return "bridge";
@@ -26,6 +34,10 @@ export function resolveLabFeeKeyFromProsthesisType(prosthesisType) {
 
 export function prosthesisIncludesCustomAbutment(prosthesisType) {
   const raw = String(prosthesisType || "").trim();
+  // 커스텀어벗 디자인만: 어벗 소매가 미부과
+  if (resolveLabFeeKeyFromProsthesisType(raw) === "customAbutmentDesign") {
+    return false;
+  }
   return raw.includes("커스텀어벗") || /custom\s*abut/i.test(raw);
 }
 
@@ -40,6 +52,7 @@ export function normalizeLabFeeSchedule(input) {
     bridge: pick("bridge"),
     inlay: pick("inlay"),
     pontic: pick("pontic"),
+    customAbutmentDesign: pick("customAbutmentDesign"),
   };
 }
 

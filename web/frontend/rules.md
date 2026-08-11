@@ -134,7 +134,7 @@ Notes:
   - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「거래 치과 등록」·「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - `src/features/settings/tabs/LabTradingPartnersTab.tsx` — 거래처 O/X 결제 안내 + 초대
-    - `src/features/settings/tabs/LabFeeScheduleTab.tsx`
+    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — crown/bridge/inlay/pontic/customAbutmentDesign(커스텀어벗 디자인, 기본 1만)
     - 등록 기간 D-day 배너: `LabTradingPartnerWindowBanner` — 기공의뢰수신·어벗의뢰 상단. 클릭 → `?tab=trading-partners`
       - `src/features/lab/LabTradingPartnerWindowBanner.tsx`
       - `src/shared/lab/useLabTradingPartnerWindow.ts` (`GET /api/lab-trading-partners/window`)

@@ -219,6 +219,7 @@ const businessAnchorSchema = new mongoose.Schema(
       bridge: { type: Number, default: 60000, min: 0 },
       inlay: { type: Number, default: 50000, min: 0 },
       pontic: { type: Number, default: 40000, min: 0 },
+      customAbutmentDesign: { type: Number, default: 10000, min: 0 },
       updatedAt: { type: Date, default: null },
     },
     practiceTransferSettings: {

@@ -25,6 +25,7 @@ type FeeSchedule = {
   bridge: number;
   inlay: number;
   pontic: number;
+  customAbutmentDesign: number;
 };
 
 const LABELS: { key: keyof FeeSchedule; label: string; hint: string }[] = [
@@ -32,6 +33,11 @@ const LABELS: { key: keyof FeeSchedule; label: string; hint: string }[] = [
   { key: "bridge", label: "브리지", hint: "브리지 단위" },
   { key: "inlay", label: "인레이", hint: "인레이·온레이" },
   { key: "pontic", label: "Pontic", hint: "폰틱 (어벗 없음)" },
+  {
+    key: "customAbutmentDesign",
+    label: "커스텀어벗 디자인",
+    hint: "디자인만. 생산비 별도",
+  },
 ];
 
 function formatWon(value: number) {
@@ -48,6 +54,7 @@ export const LabFeeScheduleTab = () => {
     bridge: 60000,
     inlay: 50000,
     pontic: 40000,
+    customAbutmentDesign: 10000,
   });
 
   const load = useCallback(async () => {
@@ -76,6 +83,7 @@ export const LabFeeScheduleTab = () => {
         bridge: Number(s.bridge ?? 60000),
         inlay: Number(s.inlay ?? 50000),
         pontic: Number(s.pontic ?? 40000),
+        customAbutmentDesign: Number(s.customAbutmentDesign ?? 10000),
       });
     } finally {
       setLoading(false);
