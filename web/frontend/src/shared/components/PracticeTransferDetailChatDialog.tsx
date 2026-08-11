@@ -51,7 +51,7 @@ type PracticeTransferDetailChatDialogProps = {
   downloadAllBusy?: boolean;
   onDownloadAllFiles: () => void | Promise<void>;
   onDownloadTransferFile: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
-  /** 기공소 의뢰수락 (수신 페이지에서만 전달). 작업완료/취소는 메인 카드에서 처리 */
+  /** 기공소 의뢰수락 (수신 페이지에서만 전달). 미수락 시 채팅 창 중앙 CTA. 작업완료/취소는 메인 카드에서 처리 */
   acceptBusy?: boolean;
   accepted?: boolean;
   /** 예: "남은 시간 3시간" → 버튼 라벨 `수락 [남은 시간 3시간]` */
@@ -132,6 +132,16 @@ export function PracticeTransferDetailChatDialog({
   sendDisabled,
 }: PracticeTransferDetailChatDialogProps) {
   const hasToothWorks = Array.isArray(toothWorks) && toothWorks.length > 0;
+  /** 기공소 수락 전: 채팅 영역 중앙에 안내 + 수락 CTA */
+  const showAcceptGate = Boolean(onAccept) && !accepted;
+  const acceptGateMessage =
+    String(chatError || "").trim() ||
+    "의뢰수락 후 치과와 채팅할 수 있습니다.";
+  const acceptButtonLabel = acceptBusy
+    ? "수락 중..."
+    : remainingLabel
+      ? `수락 [${remainingLabel}]`
+      : "수락";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -172,33 +182,15 @@ export function PracticeTransferDetailChatDialog({
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-muted-foreground">{filesLabel} ({files.length}개)</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void onDownloadAllFiles()}
-                      disabled={files.length === 0 || downloadAllBusy}
-                    >
-                      {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
-                    </Button>
-                    {onAccept ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => void onAccept()}
-                        disabled={accepted || acceptBusy}
-                      >
-                        {acceptBusy
-                          ? "수락 중..."
-                          : remainingLabel
-                            ? `수락 [${remainingLabel}]`
-                            : accepted
-                              ? "수락완료"
-                              : "수락"}
-                      </Button>
-                    ) : null}
-                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void onDownloadAllFiles()}
+                    disabled={files.length === 0 || downloadAllBusy}
+                  >
+                    {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                  </Button>
                 </div>
                 {files.length ? (
                   <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">
@@ -250,134 +242,161 @@ export function PracticeTransferDetailChatDialog({
                 {conversationTitle}
               </div>
 
-              <ScrollArea className="min-h-0 flex-1 px-3 py-3">
-                <div className="w-full min-w-0 max-w-full space-y-2">
-                  {chatLoading ? (
-                    <div className="text-center text-sm text-muted-foreground py-4">
-                      채팅을 불러오는 중입니다...
-                    </div>
-                  ) : null}
-
-                  {!chatLoading && chatError ? (
-                    <div className="text-center text-sm text-destructive py-4">
-                      {chatError}
-                    </div>
-                  ) : null}
-
-                  {!chatLoading && !chatError && chatMessages.length === 0 ? (
-                    <div className="text-center text-sm text-muted-foreground py-4">
-                      아직 메시지가 없습니다.
-                    </div>
-                  ) : null}
-
-                  {chatMessages.map((message) => {
-                    const senderId = String(message.sender?._id || "").trim();
-                    return (
-                      <ChatMessageBubble
-                        key={message._id}
-                        message={message}
-                        isMine={isMyMessage(senderId)}
-                        currentUserId={currentUserId}
-                        formatTime={formatChatTime}
-                        formatFileSize={formatFileSize}
-                        onReply={onReplyToMessage}
-                        onToggleReaction={onToggleReaction}
-                        onOpenAttachment={(file) =>
-                          void onDownloadChatAttachment({
-                            fileName: file.fileName,
-                            fileSize: Number(file.fileSize || 0),
-                            s3Key: String(file.s3Key || ""),
-                            s3Url: String(file.s3Url || ""),
-                          })
-                        }
-                      />
-                    );
-                  })}
-                  <div ref={chatBottomRef} />
-                </div>
-              </ScrollArea>
-
-              <div className="shrink-0 border-t bg-background px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6 space-y-2">
-                {replyTo ? (
-                  <MessageReply replyTo={replyTo} onCancelReply={onCancelReply} />
-                ) : null}
-
-                {chatAttachedFiles.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
-                    {chatAttachedFiles.map((file, idx) => (
-                      <span
-                        key={`${file.name}:${file.size}:${file.lastModified}:${idx}`}
-                        className="inline-flex max-w-full items-center gap-1.5 rounded border px-2 py-1 text-xs"
-                      >
-                        <span className="truncate max-w-[14rem] sm:max-w-[18rem]">{file.name}</span>
-                        <span className="text-muted-foreground">{formatFileSize(file.size)}</span>
-                        <button
-                          type="button"
-                          className="opacity-70 hover:opacity-100"
-                          onClick={() => onRemoveAttachedChatFile(idx)}
-                          aria-label="첨부파일 제거"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-
-                <Textarea
-                  value={chatDraft}
-                  onChange={(e) => onChangeChatDraft(e.target.value)}
-                  placeholder={composerPlaceholder}
-                  className="resize-none"
-                  rows={3}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void onSendChatMessage();
-                    }
-                  }}
-                  disabled={inputDisabled}
-                />
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1">
-                    <input
-                      id={attachmentInputId}
-                      type="file"
-                      className="hidden"
-                      multiple
-                      onChange={(e) => {
-                        onAttachChatFiles(e.target.files);
-                        e.currentTarget.value = "";
-                      }}
-                    />
+              {showAcceptGate ? (
+                <div className="min-h-0 flex-1 flex items-center justify-center px-4 py-6">
+                  <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+                    {chatLoading ? (
+                      <p className="text-sm text-muted-foreground">
+                        채팅을 불러오는 중입니다...
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        {acceptGateMessage}
+                      </p>
+                    )}
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9"
-                      onClick={() => {
-                        const input = document.getElementById(attachmentInputId) as HTMLInputElement | null;
-                        input?.click();
-                      }}
-                      disabled={inputDisabled}
-                      aria-label="파일 첨부"
+                      onClick={() => void onAccept?.()}
+                      disabled={acceptBusy}
                     >
-                      <Paperclip className="h-4 w-4" />
+                      {acceptButtonLabel}
                     </Button>
                   </div>
-
-                  <Button
-                    type="button"
-                    size="icon"
-                    className="h-9 w-9"
-                    onClick={() => void onSendChatMessage()}
-                    disabled={sendDisabled}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <ScrollArea className="min-h-0 flex-1 px-3 py-3">
+                    <div className="w-full min-w-0 max-w-full space-y-2">
+                      {chatLoading ? (
+                        <div className="text-center text-sm text-muted-foreground py-4">
+                          채팅을 불러오는 중입니다...
+                        </div>
+                      ) : null}
+
+                      {!chatLoading && chatError ? (
+                        <div className="flex min-h-[12rem] items-center justify-center py-4">
+                          <p className="text-center text-sm text-muted-foreground">
+                            {chatError}
+                          </p>
+                        </div>
+                      ) : null}
+
+                      {!chatLoading && !chatError && chatMessages.length === 0 ? (
+                        <div className="text-center text-sm text-muted-foreground py-4">
+                          아직 메시지가 없습니다.
+                        </div>
+                      ) : null}
+
+                      {chatMessages.map((message) => {
+                        const senderId = String(message.sender?._id || "").trim();
+                        return (
+                          <ChatMessageBubble
+                            key={message._id}
+                            message={message}
+                            isMine={isMyMessage(senderId)}
+                            currentUserId={currentUserId}
+                            formatTime={formatChatTime}
+                            formatFileSize={formatFileSize}
+                            onReply={onReplyToMessage}
+                            onToggleReaction={onToggleReaction}
+                            onOpenAttachment={(file) =>
+                              void onDownloadChatAttachment({
+                                fileName: file.fileName,
+                                fileSize: Number(file.fileSize || 0),
+                                s3Key: String(file.s3Key || ""),
+                                s3Url: String(file.s3Url || ""),
+                              })
+                            }
+                          />
+                        );
+                      })}
+                      <div ref={chatBottomRef} />
+                    </div>
+                  </ScrollArea>
+
+                  <div className="shrink-0 border-t bg-background px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6 space-y-2">
+                    {replyTo ? (
+                      <MessageReply replyTo={replyTo} onCancelReply={onCancelReply} />
+                    ) : null}
+
+                    {chatAttachedFiles.length > 0 ? (
+                      <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
+                        {chatAttachedFiles.map((file, idx) => (
+                          <span
+                            key={`${file.name}:${file.size}:${file.lastModified}:${idx}`}
+                            className="inline-flex max-w-full items-center gap-1.5 rounded border px-2 py-1 text-xs"
+                          >
+                            <span className="truncate max-w-[14rem] sm:max-w-[18rem]">{file.name}</span>
+                            <span className="text-muted-foreground">{formatFileSize(file.size)}</span>
+                            <button
+                              type="button"
+                              className="opacity-70 hover:opacity-100"
+                              onClick={() => onRemoveAttachedChatFile(idx)}
+                              aria-label="첨부파일 제거"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <Textarea
+                      value={chatDraft}
+                      onChange={(e) => onChangeChatDraft(e.target.value)}
+                      placeholder={composerPlaceholder}
+                      className="resize-none"
+                      rows={3}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void onSendChatMessage();
+                        }
+                      }}
+                      disabled={inputDisabled}
+                    />
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <input
+                          id={attachmentInputId}
+                          type="file"
+                          className="hidden"
+                          multiple
+                          onChange={(e) => {
+                            onAttachChatFiles(e.target.files);
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9"
+                          onClick={() => {
+                            const input = document.getElementById(attachmentInputId) as HTMLInputElement | null;
+                            input?.click();
+                          }}
+                          disabled={inputDisabled}
+                          aria-label="파일 첨부"
+                        >
+                          <Paperclip className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      <Button
+                        type="button"
+                        size="icon"
+                        className="h-9 w-9"
+                        onClick={() => void onSendChatMessage()}
+                        disabled={sendDisabled}
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
