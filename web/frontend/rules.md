@@ -112,7 +112,7 @@ Notes:
   - `src/pages/practice/hooks/usePracticeTransferStep1.ts` (최근 기공소 local+서버 merge)
   - `src/shared/components/practice/PracticeTransferFilePane.tsx`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
-    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운↔인레이 / 브리지↔Pontic. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
+    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운→인레이→어벗 디자인 / 브리지↔Pontic. 어벗 디자인은 커스텀 체크박스(임플란트·스캔바디) 지원. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
   - `src/shared/practice/toothWorkDraft.ts`
   - `src/shared/components/PracticeTransferDetailChatDialog.tsx`

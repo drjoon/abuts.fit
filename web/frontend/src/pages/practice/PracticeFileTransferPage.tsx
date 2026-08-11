@@ -336,7 +336,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이", "어벗 디자인"] as const;
 const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 
 type ToothWorkSelection = SharedToothWorkSelection;
@@ -435,8 +435,14 @@ const normalizeArrivalDefaultDays = (value: number) => {
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" || prosthesisType === "Pontic";
 
-const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "크라운" || prosthesisType === "브리지";
+const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
+  const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
+  return (
+    prosthesisType === "크라운" ||
+    prosthesisType === "브리지" ||
+    /^(?:커스텀)?어벗디자인$/i.test(compact)
+  );
+};
 
 const sanitizeProsthesisTypeLabel = (value: string) => {
   const trimmed = String(value || "").trim();
@@ -445,6 +451,7 @@ const sanitizeProsthesisTypeLabel = (value: string) => {
   const compact = trimmed.replace(/\s+/g, "");
   if (/^커스텀어벗\+?크라운$/i.test(compact)) return "크라운";
   if (/^커스텀어벗\+?브리지$/i.test(compact)) return "브리지";
+  if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "어벗 디자인";
   if (/^커스텀어벗$/i.test(compact)) return "";
   return trimmed;
 };

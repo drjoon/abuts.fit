@@ -334,7 +334,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이", "어벗 디자인"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
 
@@ -366,6 +366,7 @@ const sanitizeProsthesisTypeLabel = (value: string) => {
   const compact = trimmed.replace(/\s+/g, "");
   if (/^커스텀어벗\+?크라운$/i.test(compact)) return "크라운";
   if (/^커스텀어벗\+?브리지$/i.test(compact)) return "브리지";
+  if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "어벗 디자인";
   if (/^커스텀어벗$/i.test(compact)) return "";
   return trimmed;
 };
@@ -421,8 +422,14 @@ const toToothSortNumber = (toothNumber: string) => {
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" || prosthesisType === "Pontic";
 
-const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "크라운" || prosthesisType === "브리지";
+const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
+  const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
+  return (
+    prosthesisType === "크라운" ||
+    prosthesisType === "브리지" ||
+    /^(?:커스텀)?어벗디자인$/i.test(compact)
+  );
+};
 
 const normalizeToothWorks = (items: ToothWorkSelection[]) =>
   items
@@ -698,7 +705,7 @@ export const PracticeDropzonePage = () => {
   }, [recoverNewPassword]);
 
   const normalizedProsthesisTypes = useMemo(
-    () => normalizeProsthesisTypes(prosthesisTypes),
+    () => normalizeProsthesisTypes([...PRESET_PROSTHESIS_TYPES, ...prosthesisTypes]),
     [prosthesisTypes],
   );
   const normalizedToothWorks = useMemo(() => normalizeToothWorks(toothWorks), [toothWorks]);
@@ -1015,13 +1022,14 @@ export const PracticeDropzonePage = () => {
               : addDaysToDateInput(restoredOrderDate, restoredArrivalDefaultDays),
           );
         }
-        const restoredProsthesisTypes = normalizeProsthesisTypes(
-          Array.isArray(intake?.prosthesisTypes)
+        const restoredProsthesisTypes = normalizeProsthesisTypes([
+          ...PRESET_PROSTHESIS_TYPES,
+          ...(Array.isArray(intake?.prosthesisTypes)
             ? intake.prosthesisTypes
             : Array.isArray(parsed?.prosthesisTypes)
               ? parsed.prosthesisTypes
-              : [...PRESET_PROSTHESIS_TYPES],
-        );
+              : []),
+        ]);
         setProsthesisTypes(restoredProsthesisTypes);
         const toothWorksSource =
           Array.isArray(intake?.toothWorks) && intake.toothWorks.length > 0

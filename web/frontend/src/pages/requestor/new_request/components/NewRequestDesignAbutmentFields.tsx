@@ -36,14 +36,14 @@ import { cn } from "@/shared/ui/cn";
 import { useAuthStore } from "@/store/useAuthStore";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이", "어벗 디자인"] as const;
 
 const ensurePresetProsthesisTypes = (items: string[] | null | undefined) => {
-  const normalized = normalizeProsthesisTypes(items || []);
-  const withPontic = normalized.includes("Pontic")
-    ? normalized
-    : [...normalized, "Pontic"];
-  return withPontic.length ? withPontic : [...PRESET_PROSTHESIS_TYPES];
+  const normalized = normalizeProsthesisTypes([
+    ...PRESET_PROSTHESIS_TYPES,
+    ...(Array.isArray(items) ? items : []),
+  ]);
+  return normalized.length ? normalized : [...PRESET_PROSTHESIS_TYPES];
 };
 
 const toothNumbersLabelFromWorks = (toothWorks: ToothWorkSelection[]) =>

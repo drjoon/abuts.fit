@@ -272,7 +272,7 @@ const applyBridgeLinksInWorks = (
   return next;
 };
 
-/** 선택 치아 클릭: 크라운↔인레이 / 브리지↔Pontic */
+/** 선택 치아 클릭: 크라운→인레이→어벗 디자인 / 브리지↔Pontic */
 const toggleProsthesisPairInWorks = (
   prev: ToothWorkSelection[],
   toothNumber: string,
@@ -294,9 +294,6 @@ const toggleProsthesisPairInWorks = (
   if (isLinked) {
     if (current === "브리지" && options.includes("Pontic")) nextType = "Pontic";
     else if (/^pontic$/i.test(current) && options.includes("브리지")) nextType = "브리지";
-  } else {
-    if (current === "크라운" && options.includes("인레이")) nextType = "인레이";
-    else if (current === "인레이" && options.includes("크라운")) nextType = "크라운";
   }
   if (!nextType) {
     const currentIdx = options.findIndex((type) => type === current);
@@ -975,7 +972,7 @@ export const PracticeTransferRequestIntakePanel = ({
     return teeth.size;
   }, [toothWorks]);
 
-  // 연결 여부 ↔ 형태(크라운/인레이 vs 브리지/Pontic) 불일치 보정 (드래프트·구버전 데이터)
+  // 연결 여부 ↔ 형태(크라운/인레이/어벗 디자인 vs 브리지/Pontic) 불일치 보정 (드래프트·구버전 데이터)
   const toothWorkLinkTypeMismatch = useMemo(() => {
     return toothWorks.some((row) => {
       const adjacent = getAdjacentTeeth(row.toothNumber);
@@ -1961,7 +1958,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               {row.toothNumber}
                             </span>
 
-                            {/* 2) 치아형태 — 글자 클릭 시에만 크라운↔인레이 / 브리지↔Pontic */}
+                            {/* 2) 치아형태 — 글자 클릭 시에만 크라운→인레이→어벗 디자인 / 브리지↔Pontic */}
                             <button
                               type="button"
                               data-no-tooth-marquee=""
@@ -1969,7 +1966,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               title={
                                 isLinked
                                   ? "클릭: 브리지 ↔ Pontic"
-                                  : "클릭: 크라운 ↔ 인레이"
+                                  : "클릭: 크라운 → 인레이 → 어벗 디자인"
                               }
                               onClick={(e) => {
                                 e.preventDefault();
