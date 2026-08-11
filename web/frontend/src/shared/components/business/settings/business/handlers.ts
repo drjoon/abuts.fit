@@ -293,7 +293,11 @@ export const handleSave = async (
 
     if (res.ok) {
       try {
-        if (res.data?.data?.labTradingPartnerBound) {
+        // 등록 완료(active)일 때만 토큰 제거. pending이면 검증 재시도용으로 유지.
+        if (
+          res.data?.data?.labTradingPartnerBound &&
+          res.data?.data?.labTradingPartnerStatus !== "pending"
+        ) {
           sessionStorage.removeItem("labPartnerInviteToken");
         }
       } catch {

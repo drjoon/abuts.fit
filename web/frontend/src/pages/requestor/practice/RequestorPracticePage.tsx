@@ -25,6 +25,7 @@
 // - 2026-08-11: 상단 뱃지에 포장.발송·추적관리 추가(기공 파이프라인 UI).
 // - 2026-08-11: 디자인 큐 빈 목록일 때 하단 전송 내역 영역 미렌더(중복 제거).
 // - 2026-08-11: 기공소 거래 치과 등록 D-day 배너(설정 이동).
+// - 2026-08-11: [안내 복사] 문구 — 이모티콘·부드러운 말투로 정리.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
@@ -1304,7 +1305,7 @@ function RequestorPracticeReceivePage({
       });
       return;
     }
-    const message = `안녕하세요 🙂 아래 링크로 어벗츠에 가입해 주시면 기공의뢰서를 더 쉽고 빠르게 보낼 수 있습니다.\n${referralSignupLink}`;
+    const message = `안녕하세요 🙂 어벗츠에 가입해 주시면 기공의뢰서를 더 쉽고 편하게 보내실 수 있어요!\n아래 링크로 가볍게 가입해 주세요.\n${referralSignupLink}`;
     try {
       await navigator.clipboard.writeText(message);
       setPracticeMessageCopied(true);

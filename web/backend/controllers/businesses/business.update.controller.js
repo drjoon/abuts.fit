@@ -39,7 +39,75 @@ import {
   normalizeRequestorKind,
 } from "../../utils/requestorCapabilities.js";
 import { isSyntheticPracticeBusinessNumber } from "./requestorOrgAnchor.util.js";
-import { activateLabTradingPartnerInvite } from "../../utils/labTradingPartner.util.js";
+import {
+  activateLabTradingPartnerInvite,
+  activatePendingLabTradingPartnersForPractice,
+} from "../../utils/labTradingPartner.util.js";
+
+function resolveLabPartnerInviteToken(req) {
+  return String(
+    req.body?.labPartnerToken ||
+      req.body?.labPartner ||
+      req.body?.labTradingPartnerToken ||
+      "",
+  ).trim();
+}
+
+async function bindLabTradingPartnerFromRequest({
+  req,
+  businessAnchorId,
+  verified,
+}) {
+  const inviteToken = resolveLabPartnerInviteToken(req);
+  let bound = false;
+  let status = null;
+  if (inviteToken && businessAnchorId) {
+    const kind =
+      normalizeRequestorKind(
+        req.body?.requestorKind ||
+          req.user?.requestorKind ||
+          undefined,
+      ) || "practice";
+    try {
+      const bindResult = await activateLabTradingPartnerInvite({
+        inviteToken,
+        practiceAnchorId: businessAnchorId,
+        practiceKind: kind,
+        verified: Boolean(verified),
+      });
+      bound = Boolean(bindResult?.activated);
+      if (bound) {
+        status =
+          bindResult?.reason === "pending" ||
+          bindResult?.reason === "already_pending"
+            ? "pending"
+            : "active";
+      }
+    } catch (bindErr) {
+      console.warn(
+        "[BusinessAnchor] lab trading partner bind failed",
+        bindErr?.message || bindErr,
+      );
+    }
+  }
+  if (verified && businessAnchorId) {
+    try {
+      const pending = await activatePendingLabTradingPartnersForPractice({
+        practiceAnchorId: businessAnchorId,
+      });
+      if (pending?.activated) {
+        bound = true;
+        status = "active";
+      }
+    } catch (pendErr) {
+      console.warn(
+        "[BusinessAnchor] lab trading partner pending activate failed",
+        pendErr?.message || pendErr,
+      );
+    }
+  }
+  return { bound, status };
+}
 
 // BusinessAnchor를 직접 생성/업데이트하는 헬퍼 함수
 export async function ensureBusinessAnchor({
@@ -876,6 +944,12 @@ export async function updateMyBusiness(req, res) {
             userRole: req.user.role,
           });
 
+        const labTradingPartner = await bindLabTradingPartnerFromRequest({
+          req,
+          businessAnchorId: created._id,
+          verified: Boolean(verificationResult?.verified),
+        });
+
         return res.json({
           success: true,
           data: {
@@ -888,6 +962,8 @@ export async function updateMyBusiness(req, res) {
             requestFreeCreditAmount: Number(requestFreeCreditAmount || 0),
             freeShippingCreditGranted: !!freeShippingCreditAmount,
             freeShippingCreditAmount: Number(freeShippingCreditAmount || 0),
+            labTradingPartnerBound: labTradingPartner.bound,
+            labTradingPartnerStatus: labTradingPartner.status,
           },
         });
       } catch (e) {
@@ -1045,39 +1121,17 @@ export async function updateMyBusiness(req, res) {
       freeShippingCreditGranted = !!freeShippingCreditAmount;
     }
 
-    // 기공소 기존 거래처 초대 토큰 → 사업자 검증 완료 시 active 바인딩
+    // 기공소 기존 거래처 초대: 사업자 저장 시 pending, 검증 완료 시 active
     let labTradingPartnerBound = false;
-    if (verificationResult?.verified && businessAnchor?._id) {
-      const inviteToken = String(
-        req.body?.labPartnerToken ||
-          req.body?.labPartner ||
-          req.body?.labTradingPartnerToken ||
-          "",
-      ).trim();
-      if (inviteToken) {
-        const kind =
-          normalizeRequestorKind(
-            req.body?.requestorKind ||
-              req.user?.requestorKind ||
-              businessAnchor?.requestorKind,
-          ) || "practice";
-        try {
-          const bindResult = await activateLabTradingPartnerInvite({
-            inviteToken,
-            practiceAnchorId: businessAnchor._id,
-            practiceKind: kind,
-          });
-          labTradingPartnerBound = Boolean(bindResult?.activated);
-          if (labTradingPartnerBound) {
-            // FE sessionStorage cleanup is client-side; response flag for UX
-          }
-        } catch (bindErr) {
-          console.warn(
-            "[BusinessAnchor] lab trading partner bind failed",
-            bindErr?.message || bindErr,
-          );
-        }
-      }
+    let labTradingPartnerStatus = null;
+    if (businessAnchor?._id) {
+      const labTradingPartner = await bindLabTradingPartnerFromRequest({
+        req,
+        businessAnchorId: businessAnchor._id,
+        verified: Boolean(verificationResult?.verified),
+      });
+      labTradingPartnerBound = labTradingPartner.bound;
+      labTradingPartnerStatus = labTradingPartner.status;
     }
 
     // 캐시 무효화: 사업자 정보가 업데이트되었으므로 getMyBusiness 캐시 제거
@@ -1092,6 +1146,7 @@ export async function updateMyBusiness(req, res) {
         freeShippingCreditGranted,
         freeShippingCreditAmount: Number(freeShippingCreditAmount || 0),
         labTradingPartnerBound,
+        labTradingPartnerStatus,
         verification: verificationResult
           ? {
               verified: !!verificationResult.verified,

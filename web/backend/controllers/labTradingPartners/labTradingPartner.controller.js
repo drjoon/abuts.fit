@@ -150,7 +150,9 @@ export async function listLabTradingPartners(req, res) {
     const window = await resolveLabTradingPartnerWindow({ labAnchorId });
     const rows = await LabTradingPartner.find({
       labAnchorId: new Types.ObjectId(labAnchorId),
-      status: { $in: ["invited", "active"] },
+      // 초대 링크만 만든 invited는 목록에 올리지 않음.
+      // 치과가 가입·사업자 연결을 시작하면 pending → 검증 후 active.
+      status: { $in: ["pending", "active"] },
     })
       .sort({ invitedAt: -1 })
       .lean();
@@ -166,17 +168,29 @@ export async function listLabTradingPartners(req, res) {
               $in: practiceIds.map((id) => new Types.ObjectId(id)),
             },
           })
-            .select({ _id: 1, name: 1, status: 1, metadata: 1 })
+            .select({
+              _id: 1,
+              name: 1,
+              status: 1,
+              metadata: 1,
+            })
             .lean()
         : [];
     const practiceById = new Map(
       practices.map((p) => [String(p._id), p]),
     );
 
+    const formatPracticeAddress = (meta) => {
+      const line1 = String(meta?.address || "").trim();
+      const line2 = String(meta?.addressDetail || "").trim();
+      return [line1, line2].filter(Boolean).join(" ");
+    };
+
     const items = rows.map((row) => {
       const practice = row.practiceAnchorId
         ? practiceById.get(String(row.practiceAnchorId))
         : null;
+      const meta = practice?.metadata || {};
       return {
         _id: String(row._id),
         status: row.status,
@@ -190,10 +204,15 @@ export async function listLabTradingPartners(req, res) {
           : null,
         practiceName:
           practice?.name ||
-          practice?.metadata?.companyName ||
+          meta?.companyName ||
           row.practiceHint?.name ||
           "",
+        practiceAddress: formatPracticeAddress(meta),
+        practiceRepresentativeName: String(
+          meta?.representativeName || "",
+        ).trim(),
         practiceStatus: practice?.status || null,
+        boundAt: row.boundAt || null,
       };
     });
 
@@ -230,20 +249,13 @@ export async function createLabTradingPartnerInvite(req, res) {
       });
     }
 
-    const name = String(req.body?.name || req.body?.practiceHint?.name || "").trim();
-    const phone = String(
-      req.body?.phone || req.body?.practiceHint?.phone || "",
-    ).trim();
-    const memo = String(
-      req.body?.memo || req.body?.practiceHint?.memo || "",
-    ).trim();
-
+    // 링크/안내문구 복사용 토큰만 발급. 목록 카드는 치과 가입(pending) 때부터 표시.
     const inviteToken = createInviteToken();
     const doc = await LabTradingPartner.create({
       labAnchorId: new Types.ObjectId(labAnchorId),
       inviteToken,
       status: "invited",
-      practiceHint: { name, phone, memo },
+      practiceHint: { name: "", phone: "", memo: "" },
       invitedAt: new Date(),
       invitedByUserId: req.user?._id || null,
     });
@@ -258,6 +270,7 @@ export async function createLabTradingPartnerInvite(req, res) {
         practiceHint: doc.practiceHint,
         invitedAt: doc.invitedAt,
         window,
+        listed: false,
       },
     });
   } catch (e) {
@@ -296,6 +309,13 @@ export async function cancelLabTradingPartnerInvite(req, res) {
       return res.status(409).json({
         success: false,
         message: "등록 완료된 거래처는 이 화면에서 취소할 수 없습니다.",
+      });
+    }
+    if (doc.status === "pending") {
+      return res.status(409).json({
+        success: false,
+        message:
+          "가입 진행 중인 거래처는 취소할 수 없습니다. 사업자 검증이 끝나면 등록 완료됩니다.",
       });
     }
     doc.status = "canceled";
@@ -358,10 +378,18 @@ export async function bindLabTradingPartnerInvite(req, res) {
     const kind = normalizeRequestorKind(
       req.user?.requestorKind || req.body?.requestorKind,
     );
+    let verified = Boolean(req.body?.verified);
+    if (practiceAnchorId && Types.ObjectId.isValid(practiceAnchorId)) {
+      const practice = await BusinessAnchor.findById(practiceAnchorId)
+        .select({ status: 1 })
+        .lean();
+      if (String(practice?.status || "") === "verified") verified = true;
+    }
     const result = await activateLabTradingPartnerInvite({
       inviteToken: token,
       practiceAnchorId,
       practiceKind: kind || "practice",
+      verified,
     });
     if (!result.activated) {
       return res.status(409).json({

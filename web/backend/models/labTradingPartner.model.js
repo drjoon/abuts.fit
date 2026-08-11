@@ -28,7 +28,7 @@ const labTradingPartnerSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["invited", "active", "canceled", "expired"],
+      enum: ["invited", "pending", "active", "canceled", "expired"],
       default: "invited",
       index: true,
     },
@@ -45,6 +45,11 @@ const labTradingPartnerSchema = new mongoose.Schema(
     invitedByUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      default: null,
+    },
+    /** 치과 가입·사업자 연결 시각 (검증 전 pending) */
+    boundAt: {
+      type: Date,
       default: null,
     },
     activatedAt: {
@@ -65,7 +70,7 @@ labTradingPartnerSchema.index(
     unique: true,
     partialFilterExpression: {
       practiceAnchorId: { $type: "objectId" },
-      status: "active",
+      status: { $in: ["pending", "active"] },
     },
   },
 );

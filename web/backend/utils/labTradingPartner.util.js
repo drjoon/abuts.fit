@@ -107,12 +107,14 @@ export async function findActiveTradingPartner({
 }
 
 /**
- * 사업자 검증 완료 시 초대 토큰 → active 바인딩.
+ * 사업자 연결: 가입·사업자 저장 시 pending, 검증 완료 시 active.
+ * verified=false → pending (가입 진행중), verified=true → active (등록 완료).
  */
 export async function activateLabTradingPartnerInvite({
   inviteToken,
   practiceAnchorId,
   practiceKind,
+  verified = true,
 }) {
   const token = String(inviteToken || "").trim();
   const practiceId = String(practiceAnchorId || "").trim();
@@ -137,20 +139,72 @@ export async function activateLabTradingPartnerInvite({
     }
     return { activated: false, reason: "invite_already_bound" };
   }
+  if (invite.status === "pending") {
+    if (
+      invite.practiceAnchorId &&
+      String(invite.practiceAnchorId) === practiceId
+    ) {
+      if (verified) {
+        invite.status = "active";
+        invite.activatedAt = new Date();
+        await invite.save();
+        return { activated: true, reason: "activated", partner: invite };
+      }
+      return { activated: true, reason: "already_pending", partner: invite };
+    }
+    return { activated: false, reason: "invite_already_bound" };
+  }
 
   const existing = await LabTradingPartner.findOne({
     labAnchorId: invite.labAnchorId,
     practiceAnchorId: new Types.ObjectId(practiceId),
-    status: "active",
+    status: { $in: ["pending", "active"] },
     _id: { $ne: invite._id },
   }).lean();
   if (existing) {
     return { activated: false, reason: "already_partner_with_lab" };
   }
 
+  const now = new Date();
   invite.practiceAnchorId = new Types.ObjectId(practiceId);
-  invite.status = "active";
-  invite.activatedAt = new Date();
+  if (!invite.boundAt) invite.boundAt = now;
+
+  if (verified) {
+    invite.status = "active";
+    invite.activatedAt = now;
+    await invite.save();
+    return { activated: true, reason: "activated", partner: invite };
+  }
+
+  invite.status = "pending";
   await invite.save();
-  return { activated: true, reason: "activated", partner: invite };
+  return { activated: true, reason: "pending", partner: invite };
+}
+
+/**
+ * 사업자 검증 완료 시, 해당 치과의 pending 초대를 active로 승격.
+ * (토큰이 sessionStorage에서 유실된 경우 대비)
+ */
+export async function activatePendingLabTradingPartnersForPractice({
+  practiceAnchorId,
+}) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
+    return { activated: false, count: 0 };
+  }
+  const now = new Date();
+  const result = await LabTradingPartner.updateMany(
+    {
+      practiceAnchorId: new Types.ObjectId(practiceId),
+      status: "pending",
+    },
+    {
+      $set: {
+        status: "active",
+        activatedAt: now,
+      },
+    },
+  );
+  const count = Number(result?.modifiedCount || result?.nModified || 0);
+  return { activated: count > 0, count };
 }
