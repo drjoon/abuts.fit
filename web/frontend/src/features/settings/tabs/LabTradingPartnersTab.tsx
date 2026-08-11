@@ -168,50 +168,36 @@ export const LabTradingPartnersTab = () => {
   return (
     <div className="space-y-4">
       <Card className="app-glass-card app-glass-card--lg">
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="text-base">결제 안내</CardTitle>
           <CardDescription>
-            치과 기공의뢰 시, 거래 치과 등록 여부에 따라 커스텀 어벗 요금
-            귀속이 달라집니다.
+            기공소 입장에서, 거래 치과 등록 여부에 따라 적립이 달라집니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="rounded-xl border border-border/80 bg-background/60 p-4 space-y-2">
-            <p className="font-semibold text-slate-900">공통</p>
-            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-              <li>
-                크라운·브리지·인레이·Pontic 등 보철 기공비 → 기공소
-                결제크레딧
-              </li>
-              <li>
-                기공소가 직접 어벗의뢰할 때 → 기존처럼 생산단가를 어벗츠에
-                납부
-              </li>
-            </ul>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-primary-muted bg-primary-soft/40 px-3.5 py-3 space-y-1.5">
+              <p className="font-semibold text-primary-strong">
+                등록한 거래 치과
+              </p>
+              <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-slate-700">
+                <li>치과가 낸 금액(기공비+어벗)이 결제크레딧으로 들어옵니다</li>
+                <li>어벗 생산비는 어벗의뢰 때 기공소가 어벗츠에 납부합니다</li>
+              </ul>
+            </div>
+            <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-1.5">
+              <p className="font-semibold text-slate-900">미등록 치과</p>
+              <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-muted-foreground">
+                <li>보철 기공비만 결제크레딧으로 적립됩니다</li>
+                <li>어벗 금액은 어벗츠 몫입니다</li>
+              </ul>
+            </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-primary-muted bg-primary-soft/40 p-4 space-y-2">
-              <p className="font-semibold text-primary-strong">
-                거래 치과로 등록된 경우
-              </p>
-              <ul className="list-disc space-y-1 pl-5 text-slate-700">
-                <li>치과가 낸 기공비 전액 → 기공소 몫</li>
-                <li>
-                  기공소는 커스텀 어벗 의뢰시 어벗츠에게 어벗 의뢰 비용 납부
-                </li>
-              </ul>
-            </div>
-            <div className="rounded-xl border border-border/80 bg-background/60 p-4 space-y-2">
-              <p className="font-semibold text-slate-900">
-                거래 치과로 등록되지 않은 경우
-              </p>
-              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-                <li>보철 기공비 → 기공소 배당</li>
-                <li>커스텀 어벗 치과 납품가 → 어벗츠 배당</li>
-              </ul>
-            </div>
-          </div>
+          <p className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-2.5 text-[13px] leading-relaxed text-muted-foreground">
+            기공소가 직접 어벗의뢰할 때는 기존처럼 생산단가만 어벗츠에
+            납부합니다.
+          </p>
         </CardContent>
       </Card>
 
