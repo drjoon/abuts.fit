@@ -3,13 +3,7 @@
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
 import { useCallback, useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -116,38 +110,31 @@ export const LabFeeScheduleTab = () => {
           <Banknote className="h-5 w-5" />
           기공비 수가
         </CardTitle>
-        <CardDescription>
-          치과 기공의뢰 시 치식·보철 형태에 따라 적용됩니다. 커스텀어벗 소매가는
-          어벗츠(개발운영사) 요금 설정을 따릅니다.
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <section className="rounded-xl border border-border/80 bg-background/60 p-4 sm:p-5 space-y-4">
-          <h3 className="text-sm font-semibold tracking-tight">보철 수가</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {LABELS.map(({ key, label }) => (
-              <div key={key} className="space-y-2">
-                <Label htmlFor={`fee-${key}`}>{label} (원)</Label>
-                <Input
-                  id={`fee-${key}`}
-                  type="number"
-                  min={0}
-                  step={1000}
-                  value={schedule[key]}
-                  onChange={(e) =>
-                    setSchedule((prev) => ({
-                      ...prev,
-                      [key]: Math.max(
-                        0,
-                        Math.round(Number(e.target.value) || 0),
-                      ),
-                    }))
-                  }
-                />
-              </div>
-            ))}
-          </div>
-        </section>
+        <div className="grid grid-cols-4 gap-4">
+          {LABELS.map(({ key, label }) => (
+            <div key={key} className="space-y-2">
+              <Label htmlFor={`fee-${key}`}>{label} (원)</Label>
+              <Input
+                id={`fee-${key}`}
+                type="number"
+                min={0}
+                step={1000}
+                value={schedule[key]}
+                onChange={(e) =>
+                  setSchedule((prev) => ({
+                    ...prev,
+                    [key]: Math.max(
+                      0,
+                      Math.round(Number(e.target.value) || 0),
+                    ),
+                  }))
+                }
+              />
+            </div>
+          ))}
+        </div>
 
         <div className="flex justify-end gap-2 border-t border-border/70 pt-4">
           <Button onClick={() => void save()} disabled={saving}>
