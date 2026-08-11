@@ -8,7 +8,6 @@ import { useMemo } from "react";
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
   emptyToothWorkCustomSpecs,
-  pickToothWorkCustomSpecs,
   toToothMemoSortNumber,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
@@ -117,22 +116,14 @@ export const resolveProsthesisTypeForLinkState = (
   return options.find((type) => type === "크라운") || options[0] || "크라운";
 };
 
+/** 형태만 변경. 커스텀어벗·임플란트/스캔바디는 유지(인레이 등 UI 비표시 타입 포함 — 크라운/어벗 디자인으로 돌아오면 그대로) */
 export const applyProsthesisTypeToRow = (
   row: ToothWorkSelection,
   prosthesisType: string,
-): ToothWorkSelection => {
-  const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
-    ? Boolean(row.customAbutment)
-    : false;
-  return {
-    ...row,
-    prosthesisType,
-    customAbutment,
-    ...(customAbutment
-      ? pickToothWorkCustomSpecs(row, true)
-      : emptyToothWorkCustomSpecs()),
-  };
-};
+): ToothWorkSelection => ({
+  ...row,
+  prosthesisType,
+});
 
 /** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic vs 크라운/인레이/어벗 디자인) 동기화 */
 export const toggleAdjacentBridgeLink = (
