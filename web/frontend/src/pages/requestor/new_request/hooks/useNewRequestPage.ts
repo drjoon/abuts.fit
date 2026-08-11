@@ -18,6 +18,7 @@ import { useNewRequestLocalFiles } from "./useNewRequestLocalFiles";
 import { usePatientFileGroups } from "./usePatientFileGroups";
 import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { getLocalDraft, initLocalDraft } from "../utils/localDraftStorage";
 import { getFile } from "../utils/fileIndexedDB";
@@ -42,6 +43,7 @@ const normalizeRequestorHexRotation = (
  * - useNewRequestImplant: 임플란트 정보 관리
  * - useNewRequestClinics: 클리닉 프리셋 관리
  * - useNewRequestSubmitV2: 제출/취소 처리
+ * - useFilePreUpload: 첨부 직후 S3 사전 업로드 (제출 시 재사용)
  */
 export const useNewRequestPage = (
   existingRequestId?: string,
@@ -334,6 +336,14 @@ export const useNewRequestPage = (
 
   const prevDraftIdRef = useRef<string | null | undefined>(undefined);
 
+  // 첨부 직후 백그라운드 사전 업로드 (제출 시 ensureFilesUploaded로 재사용)
+  const {
+    ensureFilesUploaded,
+    preUploadFiles,
+    forgetFile,
+    clearPreUploadCache,
+  } = useFilePreUpload({ token });
+
   useEffect(() => {
     // undefined: 초기 마운트 (스킵)
     // null 또는 string: 이후 변경 (처리)
@@ -342,6 +352,7 @@ export const useNewRequestPage = (
       prevDraftIdRef.current !== draftId
     ) {
       // Draft가 바뀌었으면 파일/케이스 관련 상태를 즉시 비움
+      clearPreUploadCache();
       setFiles([]);
       setDraftFiles([]);
       setSelectedPreviewIndex(null);
@@ -350,7 +361,12 @@ export const useNewRequestPage = (
     }
 
     prevDraftIdRef.current = draftId ?? null;
-  }, [draftId]);
+  }, [clearPreUploadCache, draftId]);
+
+  useEffect(() => {
+    if (!token || files.length === 0) return;
+    preUploadFiles(files);
+  }, [token, files, preUploadFiles]);
 
   const normalizeKeyPart = useCallback((s: string) => {
     try {
@@ -703,7 +719,7 @@ export const useNewRequestPage = (
   const {
     files: fileList,
     selectedPreviewIndex: previewIndex,
-    handleRemoveFile,
+    handleRemoveFile: rawHandleRemoveFile,
   } = useNewRequestFilesV2({
     draftId,
     token,
@@ -717,6 +733,15 @@ export const useNewRequestPage = (
     updateCaseInfos,
     removeCaseInfos,
   });
+
+  const handleRemoveFile = useCallback(
+    async (index: number) => {
+      const target = files[index];
+      if (target) forgetFile(target);
+      await rawHandleRemoveFile(index);
+    },
+    [files, forgetFile, rawHandleRemoveFile],
+  );
 
   // V3 드래그 앤 드롭 핸들러
   const [isDragOver, setIsDragOver] = useState(false);
@@ -753,8 +778,8 @@ export const useNewRequestPage = (
 
   const handleUpload = useCallback(
     async (incomingFiles: File[]) => {
-      // V3 방식: 드롭/선택 시 로컬 저장만 수행하고,
-      // 실제 S3 업로드는 제출 시점에만 진행한다.
+      // V3: 드롭/선택은 로컬(+IndexedDB)만. S3는 useFilePreUpload가 백그라운드로,
+      // 제출 시 ensureFilesUploaded로 이어서 올린다.
       await handleLocalUpload(incomingFiles);
     },
     [handleLocalUpload],
@@ -1109,7 +1134,7 @@ export const useNewRequestPage = (
     handleSubmit: rawHandleSubmit,
     handleSubmitWithDuplicateResolutions:
       rawHandleSubmitWithDuplicateResolutions,
-    handleCancel,
+    handleCancel: rawHandleCancel,
   } = useNewRequestSubmitV2({
     existingRequestId,
     draftId,
@@ -1123,8 +1148,14 @@ export const useNewRequestPage = (
     caseInfosMap,
     patientGroups: patientFileGroupsApi.patientGroups,
     patchDraftImmediately,
+    uploadFiles: ensureFilesUploaded,
     onDuplicateDetected: handleServerDuplicateDetected,
   });
+
+  const handleCancel = useCallback(async () => {
+    clearPreUploadCache();
+    await rawHandleCancel();
+  }, [clearPreUploadCache, rawHandleCancel]);
 
   const handleSubmit = useCallback(async () => {
     const ok = await ensureSetupForUpload();

@@ -3,7 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/hooks/useS3TempUpload.ts
-// - web/frontend/src/shared/hooks/usePracticeFilePreUpload.ts
+// - web/frontend/src/shared/hooks/useFilePreUpload.ts
 import React, { useCallback } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import {

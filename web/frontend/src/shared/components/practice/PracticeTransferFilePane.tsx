@@ -11,6 +11,7 @@ import {
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - 2026-08-11: 드롭존·목록을 생산의뢰식 심플 스타일로. 확장자 안내는 즉시툴팁.
+// - 2026-08-11: 첨부 목록 3열 그리드.
 
 export type PracticeTransferFileDisplayItem = {
   key: string;
@@ -19,9 +20,9 @@ export type PracticeTransferFileDisplayItem = {
   metaSuffix?: string;
 };
 
-/** 파일 행 높이 3.5rem × 4 + gap 1.5 × 3 ≈ 15.125rem */
+/** 3열 카드 · 행높이 3.5rem × 3행 + gap 1.5 × 2 ≈ 11.25rem */
 export const PRACTICE_FILE_LIST_VIEWPORT_CLASS =
-  "h-[15.125rem] max-h-[15.125rem] min-h-[15.125rem]";
+  "h-[11.25rem] max-h-[11.25rem] min-h-[11.25rem]";
 
 export type PracticeTransferFilePaneProps = {
   acceptedHint: string;
@@ -32,6 +33,13 @@ export type PracticeTransferFilePaneProps = {
   onRemoveFile: (key: string) => void;
   onClearAllFiles: () => void;
   listViewportClassName?: string;
+  /** 대기 중인 로컬 파일을 서버 임시저장으로 업로드 */
+  syncUploadLabel?: string;
+  syncUploadBusyLabel?: string;
+  syncUploadDisabled?: boolean;
+  syncUploadBusy?: boolean;
+  syncUploadHint?: string;
+  onSyncUpload?: () => void;
 };
 
 const formatAttachmentSize = (bytes: number): string => {
@@ -54,6 +62,12 @@ export const PracticeTransferFilePane = ({
   onRemoveFile,
   onClearAllFiles,
   listViewportClassName = PRACTICE_FILE_LIST_VIEWPORT_CLASS,
+  syncUploadLabel = "업로드",
+  syncUploadBusyLabel = "업로드 중...",
+  syncUploadDisabled = false,
+  syncUploadBusy = false,
+  syncUploadHint,
+  onSyncUpload,
 }: PracticeTransferFilePaneProps) => {
   const hasFiles = files.length > 0;
   const openPicker = () => {
@@ -110,25 +124,49 @@ export const PracticeTransferFilePane = ({
             <p className="truncate text-xs text-muted-foreground">
               {files.length}개 · {totalSizeMb}MB
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={onClearAllFiles}
-            >
-              전체삭제
-            </Button>
+            <div className="flex items-center gap-1.5">
+              {onSyncUpload ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 bg-primary-strong px-2.5 text-xs text-white hover:bg-primary-strong disabled:bg-primary-strong/50"
+                        onClick={onSyncUpload}
+                        disabled={syncUploadDisabled || syncUploadBusy}
+                      >
+                        {syncUploadBusy ? syncUploadBusyLabel : syncUploadLabel}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {syncUploadHint ? (
+                    <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                      {syncUploadHint}
+                    </TooltipContent>
+                  ) : null}
+                </Tooltip>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={onClearAllFiles}
+              >
+                전체삭제
+              </Button>
+            </div>
           </div>
 
           <div className={`${listViewportClassName} overflow-y-auto pr-1`}>
-            <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.5rem]">
+            <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.5rem] sm:grid-cols-2 lg:grid-cols-3">
               {files.map((file) => (
                 <div
                   key={file.key}
-                  className="app-glass-card flex h-[3.5rem] items-center justify-between rounded-xl border border-slate-200/80 bg-white px-3 py-1.5"
+                  className="app-glass-card flex h-[3.5rem] min-w-0 items-center justify-between gap-1 rounded-xl border border-slate-200/80 bg-white px-2.5 py-1.5"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <p className="truncate text-sm font-medium text-slate-900">
@@ -143,7 +181,7 @@ export const PracticeTransferFilePane = ({
                         {file.name}
                       </TooltipContent>
                     </Tooltip>
-                    <p className="text-xs text-slate-500">
+                    <p className="truncate text-xs text-slate-500">
                       {formatAttachmentSize(file.size)}
                       {file.metaSuffix ? ` · ${file.metaSuffix}` : ""}
                     </p>
@@ -154,11 +192,11 @@ export const PracticeTransferFilePane = ({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-slate-500 hover:text-destructive"
+                        className="h-7 w-7 shrink-0 text-slate-500 hover:text-destructive"
                         onClick={() => onRemoveFile(file.key)}
                         aria-label="파일 삭제"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="left" className="text-xs">

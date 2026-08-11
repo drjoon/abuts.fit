@@ -26,7 +26,7 @@
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/shared/onboarding/wizard/SettingsWizard.tsx
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
- * - web/frontend/src/shared/hooks/usePracticeFilePreUpload.ts
+ * - web/frontend/src/shared/hooks/useFilePreUpload.ts
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -60,7 +60,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore, type User } from "@/store/useAuthStore";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
-import { usePracticeFilePreUpload } from "@/shared/hooks/usePracticeFilePreUpload";
+import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import {
   Popover,
   PopoverContent,
@@ -599,7 +599,7 @@ export const PracticeDropzonePage = () => {
     preUploadFiles,
     forgetFile,
     clearPreUploadCache,
-  } = usePracticeFilePreUpload({ token: authToken });
+  } = useFilePreUpload({ token: authToken });
   const { uploadFilesWithToast } = useUploadWithProgressToast({
     token: authToken,
     uploadFiles: ensureFilesUploaded,

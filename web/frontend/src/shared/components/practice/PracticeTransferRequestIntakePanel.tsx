@@ -96,6 +96,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - 2026-08-11: 기공소 선택에 "자동 매칭" 옵션(+빠른툴팁) 추가.
 // - 2026-08-11: 안내문구 최소화 — 플레이스홀더·메모 도움말·커스텀규격 설명을 즉시툴팁으로.
+// - 2026-08-11: 기공의뢰 카드 내 행(섹션) 수직 간격 gap-10.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -1256,7 +1257,7 @@ export const PracticeTransferRequestIntakePanel = ({
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-col gap-3",
+        "flex min-h-0 flex-col gap-10",
         memoOnly && "h-full flex-1",
         variant === "card" &&
           "rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-primary-soft/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]",
@@ -1471,7 +1472,7 @@ export const PracticeTransferRequestIntakePanel = ({
       ) : null}
 
       {showProsthesisSection ? (
-      <div className={cn("space-y-2", showHeaderFields && "mt-4")}>
+      <div className="space-y-2">
         {showInlineToothChartHeader ? (
         <div className="relative flex min-h-8 items-center">
           <div className="flex items-center gap-1">
@@ -2173,7 +2174,6 @@ export const PracticeTransferRequestIntakePanel = ({
       <div
         className={cn(
           "flex min-h-0 flex-col space-y-2",
-          showHeaderFields || showProsthesisSection ? "mt-5" : "mt-2",
           memoOnly && "flex-1",
         )}
       >

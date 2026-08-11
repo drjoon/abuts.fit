@@ -1,7 +1,7 @@
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/shared/hooks/compressMeshFile.ts
-// - web/frontend/src/shared/hooks/usePracticeFilePreUpload.ts
+// - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
 // - web/backend/controllers/files/file.controller.js
 // - web/backend/utils/s3.utils.js

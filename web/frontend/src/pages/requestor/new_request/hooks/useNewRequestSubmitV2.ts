@@ -3,7 +3,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts
+// - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 /**
  * ===== 신규 의뢰 제출 표준 훅 (SSOT) =====
@@ -45,6 +46,11 @@ type UseNewRequestSubmitV2Params = {
   caseInfosMap?: Record<string, CaseInfos>;
   patientGroups?: PatientFileGroup[];
   patchDraftImmediately?: (map: Record<string, CaseInfos>) => Promise<void>;
+  /** 사전 업로드 캐시 재사용 (useFilePreUpload.ensureFilesUploaded) */
+  uploadFiles?: (
+    files: File[],
+    onProgress?: (progress: Record<string, number>) => void,
+  ) => Promise<TempUploadedFile[]>;
   onDuplicateDetected?: (payload: {
     mode: "active" | "tracking";
     duplicates: any[];
@@ -77,6 +83,7 @@ export const useNewRequestSubmitV2 = ({
   caseInfosMap,
   patientGroups = [],
   patchDraftImmediately,
+  uploadFiles,
   onDuplicateDetected,
 }: UseNewRequestSubmitV2Params) => {
   const { toast, dismiss } = useToast();
@@ -85,7 +92,10 @@ export const useNewRequestSubmitV2 = ({
     draftId: string;
     uploadFingerprint: string;
   } | null>(null);
-  const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
+  const { uploadFilesWithToast } = useUploadWithProgressToast({
+    token,
+    uploadFiles,
+  });
   const { data: systemSettings } = useSystemSettings();
 
   const normalizeKeyPart = (s: string) => {

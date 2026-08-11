@@ -31,9 +31,10 @@
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
- * - web/frontend/src/shared/hooks/usePracticeFilePreUpload.ts
+ * - web/frontend/src/shared/hooks/useFilePreUpload.ts
  * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
  * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 초대/프로모 카피 축소.
+ * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -92,7 +93,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
-import { usePracticeFilePreUpload } from "@/shared/hooks/usePracticeFilePreUpload";
+import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
@@ -1173,7 +1174,7 @@ export const PracticeFileTransferPage = ({
     preUploadFiles,
     forgetFile,
     clearPreUploadCache,
-  } = usePracticeFilePreUpload({ token: authToken });
+  } = useFilePreUpload({ token: authToken });
   const { uploadFilesWithToast } = useUploadWithProgressToast({
     token: authToken,
     uploadFiles: ensureFilesUploaded,
@@ -4899,103 +4900,105 @@ export const PracticeFileTransferPage = ({
               <div className="xl:col-span-5">{inviteLinkCard}</div>
             </>
           ) : null}
-          <Card className="border-slate-200/80 shadow-sm xl:col-span-7">
-            <CardHeader className="pb-2 pt-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-3">
-                  {roleSwitcher}
-                  <CardTitle className="flex min-w-0 items-center gap-2 text-base">
-                    <UploadCloud className="h-4 w-4 shrink-0 text-primary-strong" />
-                    <span className="shrink-0">기공의뢰</span>
-                    {formSyncStatusLabel ? (
-                      <span
-                        className={cn(
-                          "truncate text-[11px] font-normal",
-                          formSyncStatus === "error"
-                            ? "text-destructive"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {formSyncStatusLabel}
-                      </span>
-                    ) : null}
-                  </CardTitle>
+          <div className="flex min-w-0 flex-col gap-3 xl:col-span-7">
+            <Card className="border-slate-200/80 shadow-sm">
+              <CardHeader className="pb-2 pt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-3">
+                    {roleSwitcher}
+                    <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+                      <UploadCloud className="h-4 w-4 shrink-0 text-primary-strong" />
+                      <span className="shrink-0">기공의뢰</span>
+                      {formSyncStatusLabel ? (
+                        <span
+                          className={cn(
+                            "truncate text-[11px] font-normal",
+                            formSyncStatus === "error"
+                              ? "text-destructive"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {formSyncStatusLabel}
+                        </span>
+                      ) : null}
+                    </CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
+                          disabled={
+                            tempSaving ||
+                            requestSubmitting ||
+                            (!hasMeaningfulFormInputForAutosave &&
+                              draftFiles.length === 0 &&
+                              files.length === 0) ||
+                            (!activeDraftId &&
+                              files.length === 0 &&
+                              lastSavedFormFingerprint !== null &&
+                              currentFormFingerprint === lastSavedFormFingerprint)
+                          }
+                          onClick={() => void handleManualTempSaveSnapshot()}
+                        >
+                          임시 저장
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs text-xs">
+                        목록에 저장. 이후 수정하면 새 임시저장이 생깁니다.
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => void handleStartNewTransfer()}
+                        >
+                          새로 작성
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs text-xs">
+                        작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        disabled={
-                          tempSaving ||
-                          requestSubmitting ||
-                          (!hasMeaningfulFormInputForAutosave &&
-                            draftFiles.length === 0 &&
-                            files.length === 0) ||
-                          (!activeDraftId &&
-                            files.length === 0 &&
-                            lastSavedFormFingerprint !== null &&
-                            currentFormFingerprint === lastSavedFormFingerprint)
-                        }
-                        onClick={() => void handleManualTempSaveSnapshot()}
-                      >
-                        임시 저장
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-xs text-xs">
-                      목록에 저장. 이후 수정하면 새 임시저장이 생깁니다.
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        onClick={() => void handleStartNewTransfer()}
-                      >
-                        새로 작성
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-xs text-xs">
-                      작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-1">
-              <PracticeTransferIntakeSection
-                filePaneProps={{
-                  acceptedHint: PRACTICE_ACCEPTED_HINT,
-                  fileInputId: "practice-file-transfer-input",
-                  files: combinedDisplayFiles.map((file) => ({
-                    key: file.key,
-                    name: file.name,
-                    size: file.size,
-                    metaSuffix: file.kind === "draft" ? "동기화됨" : "대기",
-                  })),
-                  totalSizeMb: combinedFilesSizeMb,
-                  onPickFiles: handleIncomingFiles,
-                  onRemoveFile: (key) => {
-                    const target = combinedDisplayFiles.find((file) => file.key === key);
-                    if (!target) return;
-                    void handleRemoveCombinedFile({
-                      kind: target.kind,
-                      localIndex: target.kind === "local" ? target.localIndex : undefined,
-                      draftIndex: target.kind === "draft" ? target.draftIndex : undefined,
-                    });
-                  },
-                  onClearAllFiles: () => {
-                    void handleClearAllTransferFiles();
-                  },
-                }}
-                requestIntakeProps={{
-                  selectedLab,
+              </CardHeader>
+              <CardContent className="pt-10">
+                <PracticeTransferIntakeSection
+                  filePaneProps={{
+                    acceptedHint: PRACTICE_ACCEPTED_HINT,
+                    fileInputId: "practice-file-transfer-input",
+                    files: combinedDisplayFiles.map((file) => ({
+                      key: file.key,
+                      name: file.name,
+                      size: file.size,
+                      metaSuffix: file.kind === "draft" ? "동기화됨" : "대기",
+                    })),
+                    totalSizeMb: combinedFilesSizeMb,
+                    onPickFiles: handleIncomingFiles,
+                    onRemoveFile: (key) => {
+                      const target = combinedDisplayFiles.find((file) => file.key === key);
+                      if (!target) return;
+                      void handleRemoveCombinedFile({
+                        kind: target.kind,
+                        localIndex: target.kind === "local" ? target.localIndex : undefined,
+                        draftIndex: target.kind === "draft" ? target.draftIndex : undefined,
+                      });
+                    },
+                    onClearAllFiles: () => {
+                      void handleClearAllTransferFiles();
+                    },
+                  }}
+                  requestIntakeProps={{
+                    variant: "plain",
+                    selectedLab,
                   setSelectedLab,
                   labOpen,
                   setLabOpen,
@@ -5131,50 +5134,51 @@ export const PracticeFileTransferPage = ({
                   showBridgeConnections: true,
                 }}
               />
+              </CardContent>
+            </Card>
 
-              <div className="flex items-center justify-end gap-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex">
-                      <Button
-                        type="button"
-                        className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none"
-                        onClick={() => void handleSubmitPracticeRequest()}
-                        disabled={requestSubmitting || !hasRequiredSubmitFields}
-                      >
-                        {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" align="end" className="max-w-xs text-xs leading-relaxed">
-                    {requestSubmitting ? (
-                      <p>전송 중…</p>
-                    ) : hasRequiredSubmitFields ? (
-                      <p>전송 가능</p>
-                    ) : (
-                      <ul className="space-y-0.5">
-                        {(
-                          [
-                            { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
-                            { key: "환자명", ok: Boolean(normalizedPatientName) },
-                            { key: "보철물", ok: normalizedToothWorks.length > 0 },
-                          ] as const
-                        ).map((item) => (
-                          <li
-                            key={item.key}
-                            className={item.ok ? "text-primary-muted" : "text-accent-muted"}
-                          >
-                            {item.key}
-                            {item.ok ? " ✓" : " · 필요"}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </CardContent>
-          </Card>
+            <div className="flex items-center justify-end">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button
+                      type="button"
+                      className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none"
+                      onClick={() => void handleSubmitPracticeRequest()}
+                      disabled={requestSubmitting || !hasRequiredSubmitFields}
+                    >
+                      {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="end" className="max-w-xs text-xs leading-relaxed">
+                  {requestSubmitting ? (
+                    <p>전송 중…</p>
+                  ) : hasRequiredSubmitFields ? (
+                    <p>전송 가능</p>
+                  ) : (
+                    <ul className="space-y-0.5">
+                      {(
+                        [
+                          { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
+                          { key: "환자명", ok: Boolean(normalizedPatientName) },
+                          { key: "보철물", ok: normalizedToothWorks.length > 0 },
+                        ] as const
+                      ).map((item) => (
+                        <li
+                          key={item.key}
+                          className={item.ok ? "text-primary-muted" : "text-accent-muted"}
+                        >
+                          {item.key}
+                          {item.ok ? " ✓" : " · 필요"}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
 
           <div className="space-y-3 xl:col-span-3">
             {!promoNoticeVisible ? inviteLinkCard : null}
