@@ -1,7 +1,10 @@
+// change-log:
+// - 2026-08-11: 기공소 탭(기공비·치과 등록) 포함해 탭 수·카드 밀도 재생성.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -30,19 +33,28 @@ export const SettingsCardSkeleton = ({
   );
 };
 
-export const SettingsTabsSkeleton = () => {
+type SettingsTabsSkeletonProps = {
+  /** 치과≈5, 기공소≈7. 미지정 시 6 */
+  tabCount?: number;
+};
+
+export const SettingsTabsSkeleton = ({
+  tabCount = 6,
+}: SettingsTabsSkeletonProps) => {
   return (
-    <div className="min-h-screen bg-gradient-subtle p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={`tab-${index}`} className="h-12 rounded-xl" />
+    <div className="min-h-screen bg-gradient-subtle p-4">
+      <div className="max-w-4xl mx-auto space-y-4">
+        <div className="flex h-auto w-full flex-wrap justify-stretch gap-1.5 rounded-xl border border-border bg-muted/30 px-1.5 py-1.5">
+          {Array.from({ length: tabCount }).map((_, index) => (
+            <Skeleton
+              key={`tab-${index}`}
+              className="h-10 min-w-[96px] flex-1 basis-0 rounded-lg"
+            />
           ))}
         </div>
         <div className="space-y-4">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <SettingsCardSkeleton key={`settings-skeleton-${index}`} />
-          ))}
+          <SettingsCardSkeleton headerLines={2} bodyLines={6} />
+          <SettingsCardSkeleton bodyLines={4} />
         </div>
       </div>
     </div>

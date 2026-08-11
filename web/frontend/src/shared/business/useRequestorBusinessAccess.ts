@@ -1,7 +1,9 @@
 // related files:
 // - web/frontend/src/shared/business/requestorCapabilities.ts
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
-import { useCallback, useEffect, useMemo, useState } from "react";
+// change-log:
+// - 2026-08-11: 초기 1회만 loading=true — 이후 refresh는 silent(페이지 스켈레톤 플리커 방지).
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import {
@@ -32,6 +34,7 @@ export const useRequestorBusinessAccess = () => {
   const [profile, setProfile] = useState<RequestorProfile>(emptyProfile);
   const [membership, setMembership] = useState<string>("none");
   const [designAccessEnabled, setDesignAccessEnabled] = useState(false);
+  const hasLoadedOnceRef = useRef(false);
 
   const businessType = useMemo(
     () => resolveBusinessType(user?.role, "requestor"),
@@ -41,6 +44,7 @@ export const useRequestorBusinessAccess = () => {
   const refresh = useCallback(async () => {
     if (!token || user?.role !== "requestor") {
       setLoading(false);
+      hasLoadedOnceRef.current = true;
       setBusinessVerified(Boolean(user?.businessVerified));
       setDesignAccessEnabled(false);
       setProfile(
@@ -55,7 +59,10 @@ export const useRequestorBusinessAccess = () => {
       return;
     }
 
-    setLoading(true);
+    // 초기 진입 1회만 스켈레톤용 loading. 이후 이벤트/캐시 refresh는 silent.
+    if (!hasLoadedOnceRef.current) {
+      setLoading(true);
+    }
     try {
       const data = await loadBusinessMeCached({
         token,
@@ -91,6 +98,7 @@ export const useRequestorBusinessAccess = () => {
         }),
       );
     } finally {
+      hasLoadedOnceRef.current = true;
       setLoading(false);
     }
   }, [

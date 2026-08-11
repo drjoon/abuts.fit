@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: 초기 로드 시 테이블 스켈레톤(텍스트 "불러오는 중..." 대체).
 // - 2026-08-11: 중복 일자(from~to) 입력 제거. 검색을 초기화 버튼 우측으로 이동.
 // - 2026-08-11: embedded 무한스크롤 — sentinel 재마운트 시 IntersectionObserver 재연결.
 // - 2026-08-11: embedded 모드에서 "크레딧 내역" 제목 숨김(탭 라벨로 충분). Dialog는 유지.
@@ -47,6 +48,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CreditLedgerTableSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -368,7 +370,7 @@ export const CreditLedgerModal = ({
   const [type, setType] = useState<"all" | CreditLedgerType>("all");
   const [q, setQ] = useState("");
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(embedded));
   const [items, setItems] = useState<CreditLedgerItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
@@ -637,6 +639,10 @@ export const CreditLedgerModal = ({
 
   const body = (
     <div className="flex flex-col gap-3 min-h-0 flex-1">
+      {loading && items.length === 0 ? (
+        <CreditLedgerTableSkeleton />
+      ) : (
+        <>
       {currentBalanceSnapshot ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
           <div className="grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-5">
@@ -878,7 +884,7 @@ export const CreditLedgerModal = ({
               );
             })}
 
-            {loading && (
+            {loading && rows.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={5}
@@ -906,6 +912,8 @@ export const CreditLedgerModal = ({
           <div ref={sentinelRef} className="h-8" aria-hidden="true" />
         ) : null}
       </div>
+        </>
+      )}
     </div>
   );
 

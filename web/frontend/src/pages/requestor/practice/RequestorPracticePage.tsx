@@ -15,6 +15,7 @@
 // - web/backend/controllers/files/file.controller.js
 // - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-11: 역할 로딩 스켈레톤(발신/수신)·수신 목록 카드 스켈레톤.
 // - 2026-08-11: 디자인 페이지 삭제 — DesignQueueSection을 의뢰수신 UI에 통합(기간필터 공유).
 // - 2026-08-11: 기공소 의뢰수신 — 발신/수신 탭 제거·항상 수신. 디자인 큐를 의뢰수신으로 편입.
 // - 2026-08-11: 치과 기공의뢰 — 발신/수신 탭 제거·항상 발신.
@@ -57,6 +58,10 @@ import {
 } from "@/shared/business/requestorCapabilities";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
 import { DesignQueueSection } from "@/pages/requestor/design/DesignQueueSection";
+import {
+  RequestorPracticePageSkeleton,
+  RequestorPracticeTransferCardsSkeleton,
+} from "@/shared/ui/skeletons/RequestorPracticePageSkeleton";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   formatToothWorksForDisplay,
@@ -199,9 +204,12 @@ export default function RequestorPracticePage() {
   }, [kind, loading, modeParam, searchParams, setSearchParams]);
 
   if (loading) {
-    return (
-      <div className="p-6 text-sm text-slate-500">불러오는 중...</div>
-    );
+    // kind 확정 전: 사이드메뉴 mode 힌트로 발신/수신 스켈레톤 선택
+    const hintMode =
+      modeParam === "receive" || modeParam === "send"
+        ? modeParam
+        : "send";
+    return <RequestorPracticePageSkeleton mode={hintMode} />;
   }
 
   // 기공소: 항상 수신만. 지정 기공소 디자인 큐도 의뢰수신에 통합 표시.
@@ -1501,7 +1509,15 @@ function RequestorPracticeReceivePage({
   const transferListBody = (
     <>
       {error ? <div className="text-sm text-destructive">{error}</div> : null}
-      {!error && !showDesignQueue && sortedFilteredTransfers.length === 0 ? (
+      {!error &&
+      loading &&
+      sortedFilteredTransfers.length === 0 ? (
+        <RequestorPracticeTransferCardsSkeleton />
+      ) : null}
+      {!error &&
+      !loading &&
+      !showDesignQueue &&
+      sortedFilteredTransfers.length === 0 ? (
         <div className="text-sm text-muted-foreground">표시할 의뢰가 없습니다.</div>
       ) : null}
 

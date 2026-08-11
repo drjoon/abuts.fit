@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/features/lab/LabTradingPartnerWindowBanner.tsx
+// - 2026-08-11: 소개 페이지 초기 로드 스켈레톤 연동.
 // - 2026-08-11: 기공소 소개 상단 — 거래 치과 등록 D-day 배너.
 import { useState } from "react";
 import {
@@ -14,7 +15,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import { Check, Copy, Link2 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -23,6 +23,7 @@ import { useReferralData } from "./hooks/useReferralData";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
 import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { RequestorReferralPageSkeleton } from "@/shared/ui/skeletons/RequestorReferralPageSkeleton";
 
 function fmtMoney(n: number) {
   const v = Number(n || 0);
@@ -133,6 +134,16 @@ export const RequestorReferralPage = () => {
       15000,
   );
 
+  const showPageSkeleton =
+    isReferralEligible &&
+    (loadingRequestor || loadingTree) &&
+    !requestorStats &&
+    !treeData;
+
+  if (showPageSkeleton) {
+    return <RequestorReferralPageSkeleton />;
+  }
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
@@ -225,70 +236,50 @@ export const RequestorReferralPage = () => {
                 </div>
               </CardHeader>
               <CardContent className="flex flex-1 flex-col pt-0">
-                {loadingRequestor || loadingTree ? (
-                  <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                    <Skeleton className="h-full min-h-[88px]" />
-                    <Skeleton className="h-full min-h-[88px]" />
-                    <Skeleton className="h-full min-h-[88px]" />
-                    <Skeleton className="h-full min-h-[88px]" />
+                <div className="grid flex-1 gap-3 sm:grid-cols-2">
+                  <MetricCard
+                    title="그룹 사업자 수"
+                    value={`${requestorMembers.toLocaleString()}개소`}
+                    subtitle="본인 포함 그룹 전체"
+                  />
+                  <MetricCard
+                    title="사업자 그룹 합산 (최근 30일)"
+                    value={`${requestorGroupOrders.toLocaleString()}건`}
+                    subtitle={
+                      requestorGroupOrders > 0
+                        ? `내 사업자: ${requestorOrders.toLocaleString()}건`
+                        : undefined
+                    }
+                  />
+                  <MetricCard
+                    title="적용 단가"
+                    value={`${fmtMoney(requestorUnitPrice)}원`}
+                    subtitle="배송비 별도 · 부가세 없음"
+                  />
+                  <div className="rounded-xl bg-primary-soft px-4 py-3.5 text-xs leading-relaxed text-primary-strong">
+                    <p>
+                      신규 가입 이벤트 기간에는 90일간 10,000원으로
+                      고정됩니다.
+                    </p>
+                    <p className="mt-1.5">
+                      소개한 사업자와 주문량을 합산해 할인받을 수 있습니다.
+                    </p>
                   </div>
-                ) : (
-                  <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                    <MetricCard
-                      title="그룹 사업자 수"
-                      value={`${requestorMembers.toLocaleString()}개소`}
-                      subtitle="본인 포함 그룹 전체"
-                    />
-                    <MetricCard
-                      title="사업자 그룹 합산 (최근 30일)"
-                      value={`${requestorGroupOrders.toLocaleString()}건`}
-                      subtitle={
-                        requestorGroupOrders > 0
-                          ? `내 사업자: ${requestorOrders.toLocaleString()}건`
-                          : undefined
-                      }
-                    />
-                    <MetricCard
-                      title="적용 단가"
-                      value={`${fmtMoney(requestorUnitPrice)}원`}
-                      subtitle="배송비 별도 · 부가세 없음"
-                    />
-                    <div className="rounded-xl bg-primary-soft px-4 py-3.5 text-xs leading-relaxed text-primary-strong">
-                      <p>
-                        신규 가입 이벤트 기간에는 90일간 10,000원으로
-                        고정됩니다.
-                      </p>
-                      <p className="mt-1.5">
-                        소개한 사업자와 주문량을 합산해 할인받을 수 있습니다.
-                      </p>
-                    </div>
-                  </div>
-                )}
+                </div>
               </CardContent>
             </Card>
 
             <div className="xl:col-span-12">
-              {loadingTree ? (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-xl">소개 네트워크</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Skeleton className="h-[320px]" />
-                  </CardContent>
-                </Card>
-              ) : (
-                <ReferralNetworkChart
-                  data={treeData}
-                  maxDepth={1}
-                  title="소개 네트워크"
-                  mode="radial-tree"
-                  currentBusinessAnchorId={user?.businessAnchorId || null}
-                  visibleRoles={["requestor"]}
-                  legendRoles={[]}
-                  chartHeight={420}
-                />
-              )}
+              <ReferralNetworkChart
+                data={treeData}
+                maxDepth={1}
+                title="소개 네트워크"
+                mode="radial-tree"
+                currentBusinessAnchorId={user?.businessAnchorId || null}
+                visibleRoles={["requestor"]}
+                legendRoles={[]}
+                chartHeight={420}
+              />
             </div>
           </div>
         )}

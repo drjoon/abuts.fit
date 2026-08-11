@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
@@ -54,6 +54,7 @@ export const RequestorSettingsPage = () => {
 
   const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
   const [pricingBaseDate, setPricingBaseDate] = useState<string | null>(null);
+  const membershipLoadedRef = useRef(false);
 
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
@@ -64,10 +65,13 @@ export const RequestorSettingsPage = () => {
       if (!token) {
         setPricingBaseDate(null);
         setLoadingMembership(false);
+        membershipLoadedRef.current = true;
         return;
       }
 
-      setLoadingMembership(true);
+      if (!membershipLoadedRef.current) {
+        setLoadingMembership(true);
+      }
       try {
         const res = await request<{
           data?: { pricingBaseDate?: string };
@@ -91,6 +95,7 @@ export const RequestorSettingsPage = () => {
       } catch {
         setPricingBaseDate(null);
       } finally {
+        membershipLoadedRef.current = true;
         setLoadingMembership(false);
       }
     };
@@ -240,7 +245,7 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (loadingMembership || accessLoading) {
-    return <SettingsTabsSkeleton />;
+    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 5} />;
   }
 
   return (

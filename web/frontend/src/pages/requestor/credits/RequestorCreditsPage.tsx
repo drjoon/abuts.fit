@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-11: access 로딩 시 페이지 스켈레톤.
 // - 2026-08-11: 상단 탭 바를 문의 페이지와 동일 max-w-4xl·상단 고정.
 // - 2026-08-11: 내역 탭 우측 상단 [충전] 버튼 제거(충전 탭으로 이동).
 // - 2026-08-11: 작업영역 높이 채움 + 충전 카드 수직 중앙. 내역 테이블 영역 고정 높이로 무한스크롤.
@@ -29,14 +30,23 @@ import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPa
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { RequestorCreditsPageSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
 
 type TabKey = "ledger" | "charge" | "settlement";
 
 export default function RequestorCreditsPage() {
   const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { kind } = useRequestorBusinessAccess();
+  const { loading: accessLoading, kind } = useRequestorBusinessAccess();
   const isLab = kind === "lab";
+
+  if (accessLoading) {
+    return (
+      <div className="h-full min-h-0">
+        <RequestorCreditsPageSkeleton tabCount={isLab ? 3 : 2} />
+      </div>
+    );
+  }
 
   const tabs = useMemo<SettingsTabDef[]>(() => {
     const list: SettingsTabDef[] = [
