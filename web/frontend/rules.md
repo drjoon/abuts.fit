@@ -244,10 +244,10 @@ Notes:
   - 기존 거래 치과 등록은 `max(pricingBaseDate, 2026-08-11)` 기준 **30일**간만 신규 초대 가능(D-day 배지·상단 배너). 탭 라벨: 「거래 치과 등록」.
   - 기공소 화면(기공의뢰수신·어벗의뢰·소개) 상단에 등록 잔여일 alert 배너 표시(기간 중만). 클릭 시 설정 탭 이동.
   - 치과 장부 라벨: 기공의뢰비 / 어벗의뢰비 / 배송비. 기공소 결제크레딧은 의뢰·배송 잔액과 분리 표시.
-  - 안내 모달/대시보드 카드 문구는 동일한 `90일` 기준을 사용해야 합니다.
+  - 안내 모달/대시보드 헤더([정책]·무료 재제작 잔여) 문구는 동일한 `90일` 기준을 사용해야 합니다.
   - 관련 파일:
     - `src/shared/ui/PricingPolicyDialog.tsx`
-    - `src/pages/requestor/dashboard/components/RequestorPricingReferralPolicyCard.tsx`
+    - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
 
 - 스커리씁 로트 추적 UI(세척.패킹)는 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
   - 전역 설정 버튼/모달: `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`

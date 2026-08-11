@@ -31,11 +31,6 @@ import {
   type EditingRequestState,
 } from "./components/RequestorEditRequestDialog";
 import { RequestorDashboardStatsCards } from "./components/RequestorDashboardStatsCards";
-import { RequestorPricingReferralPolicyCard } from "./components/RequestorPricingReferralPolicyCard";
-import {
-  RequestorRiskSummaryCard,
-  type RiskSummaryItem,
-} from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { RequestorBulkShippingBannerCard } from "./components/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "./components/RequestorRecentRequestsCard";
 import type {
@@ -48,12 +43,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  RequestDetailDialog,
-  type RequestDetailDialogRequest,
-} from "@/features/requests/components/RequestDetailDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getNormalizedStage, getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -62,6 +52,7 @@ import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewe
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { RequestorPolicyRemakeHeader } from "./components/RequestorPolicyRemakeHeader";
 
 const isDashDebugEnabled = () => {
   if (typeof window === "undefined") return false;
@@ -79,6 +70,9 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-11: 지연 위험 요약 카드 제거. 지연은 최근 의뢰 빨간 뱃지로 표시.
+// - 2026-08-11: 좌측(출고·불완전가공) + 우측 최근의뢰(동일 높이) 레이아웃.
+// - 2026-08-11: 오늘의 가격 카드 삭제. [정책]·무료 재제작 잔여를 헤더(필터 오른쪽)로 이동.
 // - 2026-08-11: 지난 의뢰 버튼을 상단 헤더에서 최근 의뢰 카드로 이동(어벗의뢰 헤더에서도 제거).
 // - 2026-08-11: 헤더 보유 크레딧/원장 모달 제거 → 사이드바 크레딧 페이지로 이전.
 // - 2026-08-11: 요약카드 압축·전기간대비 제거, 오늘의 가격 숨김/출고 툴팁 반영.
@@ -89,10 +83,12 @@ const dashDebug = (label: string, payload?: unknown) => {
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
+// - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/shared/files/stlIndexedDb.ts
@@ -137,13 +133,6 @@ export const RequestorDashboardPage = () => {
   const [editingImplantBrand, setEditingImplantBrand] = useState("");
   const [editingImplantFamily, setEditingImplantFamily] = useState("");
   const [editingImplantType, setEditingImplantType] = useState("");
-  const [selectedRiskSummaryItem, setSelectedRiskSummaryItem] =
-    useState<RiskSummaryItem | null>(null);
-  const [riskSummaryDetail, setRiskSummaryDetail] =
-    useState<RequestDetailDialogRequest | null>(null);
-  const [riskSummaryDetailLoading, setRiskSummaryDetailLoading] =
-    useState(false);
-
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
   const [hasSummaryHydrated, setHasSummaryHydrated] = useState(false);
@@ -1144,35 +1133,6 @@ export const RequestorDashboardPage = () => {
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
 
-  const riskSummary = useMemo(() => {
-    if (!summaryResponse?.success) return null;
-    const baseSummary = summaryResponse.data.riskSummary ?? null;
-    if (!baseSummary) return null;
-
-    const originalItems = Array.isArray(baseSummary.items)
-      ? baseSummary.items
-      : [];
-    const filteredItems = originalItems.filter(
-      (item) => !isCanceledRequest(item) && !isUnmachinableRequest(item),
-    );
-
-    if (filteredItems.length === originalItems.length) {
-      return baseSummary;
-    }
-
-    const delayedCount = filteredItems.filter(
-      (item) => item.riskLevel === "danger",
-    ).length;
-    const warningCount = filteredItems.length - delayedCount;
-
-    return {
-      ...baseSummary,
-      items: filteredItems,
-      delayedCount,
-      warningCount,
-    };
-  }, [summaryResponse, isCanceledRequest, isUnmachinableRequest]);
-  
   const recentRequests = useMemo(() => {
     if (!summaryResponse?.success) return [];
     const requests = Array.isArray(summaryResponse.data.recentRequests)
@@ -1981,6 +1941,7 @@ export const RequestorDashboardPage = () => {
             period={period}
             onPeriodChange={setPeriod}
           >
+            <RequestorPolicyRemakeHeader />
             {unmachinableAlertCount > 0 && (
               <button
                 type="button"
@@ -2007,33 +1968,18 @@ export const RequestorDashboardPage = () => {
           />
         }
         topSection={
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch">
-              <div className="lg:col-span-2 min-w-0 h-full">
-                <RequestorBulkShippingBannerCard
-                  bulkData={bulkData}
-                  period={period}
-                  onRefresh={() => {
-                    refetchBulk();
-                  }}
-                  onOpenBulkModal={() => {}}
-                />
-              </div>
-              <div className="lg:col-span-3 h-full min-w-0">
-                <RequestorRecentRequestsCard
-                  items={recentRequests}
-                  onRefresh={() => {
-                    refetchSummary();
-                    refetchBulk();
-                  }}
-                  onEdit={openEditDialogFromRequest}
-                  onCancel={cancelRequest}
-                />
-              </div>
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch">
+            <div className="lg:col-span-2 min-w-0 flex flex-col gap-3 [&_.app-glass-card]:h-auto">
+              <RequestorBulkShippingBannerCard
+                bulkData={bulkData}
+                period={period}
+                onRefresh={() => {
+                  refetchBulk();
+                }}
+                onOpenBulkModal={() => {}}
+              />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-stretch">
-              <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
+              <Card className="app-glass-card app-glass-card--lg min-w-0">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base font-semibold">불완전 가공</CardTitle>
                 </CardHeader>
@@ -2086,41 +2032,21 @@ export const RequestorDashboardPage = () => {
                   )}
                 </CardContent>
               </Card>
+            </div>
 
-              <div className="min-w-0 h-full">
-                <RequestorPricingReferralPolicyCard />
+            {/* 좌측 2행 높이에 맞추기: lg에서 absolute fill */}
+            <div className="lg:col-span-3 relative min-h-[320px] min-w-0">
+              <div className="h-full min-h-[320px] lg:absolute lg:inset-0">
+                <RequestorRecentRequestsCard
+                  items={recentRequests}
+                  onRefresh={() => {
+                    refetchSummary();
+                    refetchBulk();
+                  }}
+                  onEdit={openEditDialogFromRequest}
+                  onCancel={cancelRequest}
+                />
               </div>
-
-              <RequestorRiskSummaryCard
-                riskSummary={riskSummary}
-                disableInnerScroll
-                maxVisibleItems={3}
-                onItemClick={(item) => {
-                  setSelectedRiskSummaryItem(item);
-                  setRiskSummaryDetailLoading(true);
-                  apiFetch<any>({
-                    path: `/api/requests/${item.id}`,
-                    method: "GET",
-                    token,
-                  })
-                    .then((res) => {
-                      if (!res.ok) {
-                        throw new Error("의뢰 상세 조회에 실패했습니다.");
-                      }
-                      if (!res.data?.success) {
-                        throw new Error("의뢰 상세 데이터가 없습니다.");
-                      }
-                      setRiskSummaryDetail(res.data.data || null);
-                    })
-                    .catch((error) => {
-                      console.error("의뢰 상세 조회 실패", error);
-                      setRiskSummaryDetail(null);
-                    })
-                    .finally(() => {
-                      setRiskSummaryDetailLoading(false);
-                    });
-                }}
-              />
             </div>
           </div>
         }
@@ -2407,39 +2333,6 @@ export const RequestorDashboardPage = () => {
           console.log("[UNMACHINABLE_CANCEL] confirm dialog onConfirm");
           await handleConfirmCancelUnmachinableRequests();
         }}
-      />
-
-      <RequestDetailDialog
-        open={Boolean(selectedRiskSummaryItem)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedRiskSummaryItem(null);
-            setRiskSummaryDetail(null);
-          }
-        }}
-        request={riskSummaryDetail || selectedRiskSummaryItem || null}
-        description={
-          riskSummaryDetailLoading
-            ? "불러오는 중..."
-            : selectedRiskSummaryItem?.message ||
-              "지연 가능 의뢰의 정보를 확인하세요."
-        }
-        extraBadge={
-          selectedRiskSummaryItem ? (
-            <Badge
-              variant={
-                selectedRiskSummaryItem.riskLevel === "danger"
-                  ? "destructive"
-                  : "outline"
-              }
-              className="text-[11px]"
-            >
-              {selectedRiskSummaryItem.riskLevel === "danger"
-                ? "지연확정"
-                : "지연가능"}
-            </Badge>
-          ) : null
-        }
       />
 
       <Dialog open={statsModalOpen} onOpenChange={setStatsModalOpen}>

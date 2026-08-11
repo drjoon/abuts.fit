@@ -8,7 +8,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
-// - web/frontend/src/pages/requestor/dashboard/components/RequestorPricingReferralPolicyCard.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestShippingSection.tsx
 // - web/backend/controllers/requests/common.requests.controller.js

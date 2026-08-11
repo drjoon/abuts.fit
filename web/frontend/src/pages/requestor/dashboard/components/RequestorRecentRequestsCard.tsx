@@ -1,9 +1,7 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,9 +17,10 @@ import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetS
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import { PastRequestsModal } from "@/shared/components/PastRequestsModal";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
-import { getNormalizedStageLabel } from "@/utils/stage";
+import { getNormalizedStage, getNormalizedStageLabel } from "@/utils/stage";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
+import { toKstYmd, kstYmdDiffDays } from "@/shared/date/kst";
 import {
   Dialog,
   DialogContent,
@@ -43,18 +42,22 @@ import {
   resolveProductMode,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import {
+  SEMANTIC_BADGE,
   SEMANTIC_CALLOUT,
   STAGE_BADGE_STYLES,
   getProductModeBadgeClassName,
 } from "@/shared/ui/semanticStatus";
 
 // change-log:
+// - 2026-08-11: 지연(출고예정일 경과·미출고) 케이스를 빨간 뱃지로 표시.
+// - 2026-08-11: 좌측 2행 높이에 맞춰 리스트가 카드 전체 높이를 채우도록 변경(고정 2.5행 maxHeight 제거).
 // - 2026-08-11: 카드 헤더 오른쪽 위에 [지난 의뢰] 버튼·모달 추가(대시보드 상단 헤더에서 이전).
 // - 2026-08-11: 뱃지/불완전가공 색 — semanticStatus Primary/Attention/Danger.
 // - 2026-08-09: 최근 의뢰 커스텀어벗 수= customAbutment·임플란트 치아만(Pontic 제외).
 // - 2026-08-09: 최근 의뢰에 생산/디자인+생산 뱃지. 디자인+생산은 임플란트 대신 치과·환자·어벗 수.
 // related files:
 // - web/frontend/src/shared/ui/semanticStatus.ts
+// - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
@@ -70,10 +73,6 @@ import {
 // - .cursor/rules/design-fee.mdc
 
 const EDITABLE_STATUSES = new Set(["준비", "CAM", "가공"]); // CAM 호환 포함, UI 정책상 준비/가공 단계에서 수정 허용
-
-/** 최근 의뢰 리스트에 한 번에 보여줄 카드 개수(넘치면 스크롤) */
-const RECENT_REQUESTS_VISIBLE_COUNT = 2.5;
-const RECENT_REQUESTS_LIST_GAP_PX = 12; // space-y-3
 
 const STAGE_BADGE_BASE =
   "text-[10px] h-5 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
@@ -132,6 +131,8 @@ type RecentRequestCardItem = {
   manufacturerStage?: string;
   createdAt?: string;
   estimatedShipYmd?: string;
+  nextEstimatedShipYmd?: string | null;
+  originalEstimatedShipYmd?: string | null;
   daysOverdue?: number;
   daysUntilDue?: number;
   price?: {
@@ -145,6 +146,7 @@ type RecentRequestCardItem = {
   caseInfos?: EditableCaseInfos;
   timeline?: {
     estimatedShipYmd?: string;
+    nextEstimatedShipYmd?: string | null;
   };
   deliveryInfoRef?: {
     deliveredAt?: string;
@@ -198,6 +200,44 @@ const isManufacturerSampleRequest = (item: RecentRequestCardItem | null) => {
   const source = String(item?.source || "").trim();
   const priceRule = String(item?.price?.rule || "").trim();
   return source === "manufacturer_sample" || priceRule === "manufacturer_sample";
+};
+
+/** 출고예정일(당일 포함)이 지났는데 아직 포장.발송/추적/취소가 아니면 지연 */
+const resolveDelayBadgeLabel = (
+  item: RecentRequestCardItem | null,
+): string | null => {
+  if (!item) return null;
+  if (item.deliveryInfoRef?.deliveredAt) return null;
+
+  let normalizedStage = "";
+  try {
+    normalizedStage = getNormalizedStage(item);
+  } catch {
+    normalizedStage = String(item.manufacturerStage || "")
+      .trim()
+      .toLowerCase();
+  }
+  if (["shipping", "tracking", "cancel"].includes(normalizedStage)) {
+    return null;
+  }
+
+  const shipYmd = String(
+    item.nextEstimatedShipYmd ||
+      item.timeline?.nextEstimatedShipYmd ||
+      item.timeline?.estimatedShipYmd ||
+      item.estimatedShipYmd ||
+      "",
+  ).trim();
+  if (!shipYmd) return null;
+
+  const todayYmd = toKstYmd(new Date());
+  const daysOverdue = kstYmdDiffDays(shipYmd, todayYmd);
+  if (daysOverdue == null || daysOverdue < 0) return null;
+
+  if (typeof item.daysOverdue === "number" && item.daysOverdue > 0) {
+    return `${item.daysOverdue}일 지연`;
+  }
+  return daysOverdue > 0 ? `${daysOverdue}일 지연` : "지연";
 };
 
 const isDesignCustomAbutmentItem = (item: RecentRequestCardItem | null) => {
@@ -366,10 +406,6 @@ export const RequestorRecentRequestsCard = ({
   const [unmachinableTarget, setUnmachinableTarget] =
     useState<RecentRequestCardItem | null>(null);
   const [pastRequestsOpen, setPastRequestsOpen] = useState(false);
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const [listMaxHeightPx, setListMaxHeightPx] = useState<number | undefined>(
-    undefined,
-  );
 
   const {
     connections,
@@ -422,36 +458,6 @@ export const RequestorRecentRequestsCard = ({
     () => items.filter((it) => !isManufacturerSampleRequest(it)),
     [items],
   );
-
-  useLayoutEffect(() => {
-    const listEl = listRef.current;
-    if (!listEl) return;
-
-    const measure = () => {
-      const firstItem = listEl.firstElementChild as HTMLElement | null;
-      if (!firstItem) {
-        setListMaxHeightPx(undefined);
-        return;
-      }
-      const itemHeight = firstItem.getBoundingClientRect().height;
-      if (!Number.isFinite(itemHeight) || itemHeight <= 0) {
-        setListMaxHeightPx(undefined);
-        return;
-      }
-      const gapCount = Math.floor(RECENT_REQUESTS_VISIBLE_COUNT);
-      setListMaxHeightPx(
-        itemHeight * RECENT_REQUESTS_VISIBLE_COUNT +
-          RECENT_REQUESTS_LIST_GAP_PX * gapCount,
-      );
-    };
-
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(listEl);
-    const firstItem = listEl.firstElementChild;
-    if (firstItem instanceof HTMLElement) observer.observe(firstItem);
-    return () => observer.disconnect();
-  }, [visibleItems]);
 
   const selectedSummary = useMemo(() => {
     if (!selectedRequestId) return null;
@@ -790,16 +796,8 @@ export const RequestorRecentRequestsCard = ({
           지난 의뢰
         </Button>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col justify-between pt-2 min-h-0 overflow-hidden">
-        <div
-          ref={listRef}
-          className="space-y-3 overflow-y-auto pr-1 pl-0.5 pb-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
-          style={
-            listMaxHeightPx != null
-              ? { maxHeight: `${listMaxHeightPx}px` }
-              : undefined
-          }
-        >
+      <CardContent className="flex-1 flex flex-col pt-2 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-1 pl-0.5 pb-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {visibleItems.map((item) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
@@ -813,6 +811,7 @@ export const RequestorRecentRequestsCard = ({
             const isRemakeFixed = item.price?.rule === "remake_fixed_10000";
             const isRemakeMonthlyFree =
               item.price?.rule === "remake_monthly_free_3";
+            const delayBadgeLabel = resolveDelayBadgeLabel(item);
 
             const isUnmachinable = isUnmachinableRequest(item);
             const isUnmachinableConfirmed = Boolean(
@@ -893,6 +892,14 @@ export const RequestorRecentRequestsCard = ({
                     <ShippingModeBadge source={item as any} size="sm" />
                     {renderProductModeBadge(item)}
                     {renderStageBadge(item)}
+                    {delayBadgeLabel && (
+                      <Badge
+                        variant="destructive"
+                        className={`text-[10px] h-5 px-1.5 ${SEMANTIC_BADGE.danger}`}
+                      >
+                        {delayBadgeLabel}
+                      </Badge>
+                    )}
                     {isRemakeFixed && (
                       <Badge variant="secondary" className="text-[10px]">
                         리메이크 1만원
