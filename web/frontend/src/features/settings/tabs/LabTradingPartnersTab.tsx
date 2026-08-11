@@ -250,10 +250,10 @@ export const LabTradingPartnersTab = () => {
             </div>
             <div className="rounded-xl border border-border/80 bg-background/60 px-3.5 py-3 space-y-1.5">
               <p className="font-semibold text-slate-900">
-                그 외 치과 (수수료 {feeRatePct.nonPartner}%)
+                플랫폼 매칭 치과(수수료 {feeRatePct.nonPartner}%)
               </p>
               <ul className="list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-muted-foreground">
-                <li>거래·소개 치과가 아닌 경우</li>
+                <li>거래·소개 관계 없이 플랫폼에서 매칭된 치과</li>
                 <li>
                   치과 결제 금액의 {100 - feeRatePct.nonPartner}%가 결제크레딧으로
                   적립
