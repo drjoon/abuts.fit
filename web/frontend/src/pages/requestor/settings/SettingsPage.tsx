@@ -10,12 +10,16 @@ import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
+import { LabTradingPartnersTab } from "@/features/settings/tabs/LabTradingPartnersTab";
+import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
 import {
   User,
   Building2,
   Bell,
   Users,
   Shield,
+  Handshake,
+  Banknote,
 } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
@@ -31,18 +35,22 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 // 가입일시/경과일/D-day는 신규 기공소 90일 고정가와 동일 기준일(pricingBaseDate)을 사용한다.
 // 2026-08-11: 설정 결제 탭 제거 → 사이드바 크레딧(`/dashboard/credits`)로 이전.
 // 2026-08-11: 설정 의뢰 탭 제거 → 어벗의뢰 좌측 상단(디자인소프트웨어·아노다이징).
+// 2026-08-11: 기공소 전용 「거래 치과 등록」「기공비」탭(알림 왼쪽).
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
+  | "lab-fees"
+  | "trading-partners"
   | "notifications"
   | "security";
 
 export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { loading: accessLoading } = useRequestorBusinessAccess();
+  const { loading: accessLoading, kind } = useRequestorBusinessAccess();
+  const isLab = kind === "lab";
 
   const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
   const [pricingBaseDate, setPricingBaseDate] = useState<string | null>(null);
@@ -109,7 +117,7 @@ export const RequestorSettingsPage = () => {
   }, [pricingElapsedDays]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
-    return [
+    const base: SettingsTabDef[] = [
       {
         key: "account",
         label: "계정",
@@ -167,6 +175,26 @@ export const RequestorSettingsPage = () => {
         icon: Users,
         content: <StaffTab userData={user} />,
       },
+    ];
+
+    if (isLab) {
+      base.push(
+        {
+          key: "lab-fees",
+          label: "기공비",
+          icon: Banknote,
+          content: <LabFeeScheduleTab />,
+        },
+        {
+          key: "trading-partners",
+          label: "거래 치과 등록",
+          icon: Handshake,
+          content: <LabTradingPartnersTab />,
+        },
+      );
+    }
+
+    base.push(
       {
         key: "notifications",
         label: "알림",
@@ -179,8 +207,11 @@ export const RequestorSettingsPage = () => {
         icon: Shield,
         content: <RequestorSecurity />,
       },
-    ];
+    );
+
+    return base;
   }, [
+    isLab,
     launchEventRemainingDays,
     pricingBaseDate,
     pricingElapsedDays,

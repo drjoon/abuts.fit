@@ -159,23 +159,31 @@
 - 기존 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
   **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
 - 필수 이벤트 타입 SSOT(저장형):
-  - `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_COMMIT`
-  - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
-- 수익 계정 SSOT:
+  - `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_COMMIT`, `PRACTICE_TRANSFER_SPEND_COMMIT`
+  - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `LAB_SETTLEMENT_CHARGE`, `ADJUST`, `SETTLEMENT_PAYOUT`
+- 수익·버킷 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
-  - 유료/무료 모두 수익 라인을 기록하되, 정산 지급은 유료만 대상
+  - 기공소 결제크레딧 버킷: `LAB_SETTLEMENT_CREDIT` (`creditKind=SETTLEMENT`) — 의뢰/배송 크레딧과 **완전 분리**
+  - 유료/무료 모두 수익 라인을 기록하되, 정산 지급은 유료만 대상. 결제크레딧은 매월 `SETTLEMENT_PAYOUT`으로 기공소 계좌 이체
   - 배송비 정책(강제): 배송 크레딧 소비(`SHIPPING_SPEND_COMMIT`)의 수익은 **전액 제조사 귀속**으로 기록
   - paid/free 혼합 소비는 의뢰자 잔액에서 **무료 우선 차감 후 부족분만 유료 차감**을 적용
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능
 - 신규 기공소 런칭 이벤트 가격 SSOT: 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 우선 적용
+- **기공소 기존 거래처 · 기공의뢰 과금 SSOT:**
+  - `LabTradingPartner`: lab이 `pricingBaseDate`(기존 90일 런칭과 동일 기준)부터 **30일**간 기존 거래 치과 초대. 만료 후 **신규 등록만 불가**(active/invited 유지·완료 가능)
+  - 초대 링크 → 치과 가입 → 사업자등록증 **검증(`verified`)** 시 `status=active`
+  - 가격: 기공비=`BusinessAnchor.labFeeSchedule`(기공소 설정), 치과 납품 어벗 소매가=`creditSettings.abutmentRetailPrice`(devops 「요금 · 크레딧」), 생산단가=기존 `computePriceForRequest`
+  - 치과는 기공의뢰비+어벗의뢰비를 **소매가 1회** 크레딧 차감. 장부 UI는 `기공의뢰비`/`어벗의뢰비`/`배송비` 단순 표기
+  - **거래처 O**: 전액 → 기공소 `LAB_SETTLEMENT_CREDIT`. 커스텀어벗은 기공소가 어벗츠에 생산의뢰하고 **생산단가를 기공소 의뢰크레딧에서 강제 차감**(치과 재차감 금지)
+  - **거래처 X**: 기공비만 기공소 결제크레딧, 어벗 소매가는 어벗츠 `REV_*`(직납과 동일)
 - 롤백 원칙:
   - 롤백은 REFUND 추가가 아니라 원본 커밋 이벤트 및 대응 라인의 **물리 삭제**
 - 조회/표시 타입 원칙:
-  - 충전은 `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`으로 분리 표기 (`CHARGE` 단일표시 금지)
+  - 충전은 `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING` / `LAB_SETTLEMENT_CHARGE`으로 분리 표기 (`CHARGE` 단일표시 금지)
   - 소비는 `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`으로 분리 표기 (`SPEND` 단일표시 금지)
 - 정산 보존식 SSOT(의뢰 단위):
-  - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `어벗츠/제조사/개발운영사/영업자 수익합`
+  - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `어벗츠/제조사/개발운영사/영업자 수익합` (+ 기공의뢰 분배 시 `LAB_SETTLEMENT_CREDIT` 충전합)
   - 합계 비교는 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`; 면세이므로 VAT 가산분 없음)
 - 제조사/역할 정산 건수 SSOT(강제):
   - 일별·기간 정산의 의뢰/배송 **건수**는 `LedgerLine` 개수가 아니라 `(eventType, creditKind, refId)` 유니크다.
@@ -242,9 +250,11 @@
   - **발신**: `kind===practice && free`
   - **수신**: `kind===lab && free`
   - 저장 SSOT: `PracticeTransfer` (Request 생성 경유 금지)
+  - 유료 기공의뢰: 치과 `paid+verified` 크레딧으로 소매가 차감 후 §2.3 거래처 분배. 파일 라우팅·채팅 권한 SSOT는 유지
 - SSOT API: `POST/GET /api/practice/transfers`, `GET .../received`, `POST .../cancel-batch`
+- 기공소 거래처 API: `POST/GET /api/lab-trading-partners`, `POST .../:id/cancel`
 - 크레딧/정산은 유료(paid+verified) 경로. synthetic BN에는 환영 크레딧 없음(실BN 검증 승격 시 1회)
-- 소개(리퍼럴): 모든 requestor 접근 가능. 유료 혜택은 paid+verified 경로
+- 소개(리퍼럴): 모든 requestor 접근 가능. 유료 혜택은 paid+verified 경로. **거래처(`LabTradingPartner`)는 리퍼럴 트리와 별도 edge**
 - 헬퍼: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`, `paidRequestor.middleware.js`, `requestorOrgAnchor.util.js`
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)
 

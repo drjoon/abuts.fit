@@ -157,7 +157,12 @@ export async function listMyCreditLedger(req, res) {
     ownerRole: "requestor",
     ownerId: anchorObjectId,
     accountCode: {
-      $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
+      $in: [
+        "REQ_PAID_CREDIT",
+        "REQ_FREE_REQUEST_CREDIT",
+        "REQ_FREE_SHIPPING_CREDIT",
+        "LAB_SETTLEMENT_CREDIT",
+      ],
     },
   };
 
@@ -204,7 +209,16 @@ export async function listMyCreditLedger(req, res) {
             $cond: [
               {
                 $and: [
-                  { $in: ["$eventType", ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"]] },
+                  {
+                    $in: [
+                      "$eventType",
+                      [
+                        "REQUEST_SPEND_COMMIT",
+                        "SHIPPING_SPEND_COMMIT",
+                        "PRACTICE_TRANSFER_SPEND_COMMIT",
+                      ],
+                    ],
+                  },
                   { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
                   { $lt: ["$amountBase", 0] },
                 ],
@@ -219,7 +233,16 @@ export async function listMyCreditLedger(req, res) {
             $cond: [
               {
                 $and: [
-                  { $in: ["$eventType", ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"]] },
+                  {
+                    $in: [
+                      "$eventType",
+                      [
+                        "REQUEST_SPEND_COMMIT",
+                        "SHIPPING_SPEND_COMMIT",
+                        "PRACTICE_TRANSFER_SPEND_COMMIT",
+                      ],
+                    ],
+                  },
                   {
                     $in: [
                       "$accountCode",
@@ -234,6 +257,7 @@ export async function listMyCreditLedger(req, res) {
             ],
           },
         },
+        accountCode: { $first: "$accountCode" },
       },
     },
     {
@@ -256,7 +280,11 @@ export async function listMyCreditLedger(req, res) {
                     {
                       $in: [
                         "$eventType",
-                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                        [
+                          "REQUEST_SPEND_COMMIT",
+                          "SHIPPING_SPEND_COMMIT",
+                          "PRACTICE_TRANSFER_SPEND_COMMIT",
+                        ],
                       ],
                     },
                     { $gt: ["$spentPaidAmount", 0] },
@@ -271,6 +299,29 @@ export async function listMyCreditLedger(req, res) {
               {
                 case: { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
                 then: "SPEND_FREE_SHIPPING",
+              },
+              {
+                case: { $eq: ["$eventType", "LAB_SETTLEMENT_CHARGE"] },
+                then: "LAB_SETTLEMENT_CHARGE",
+              },
+              {
+                case: {
+                  $and: [
+                    { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] },
+                    { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
+                  ],
+                },
+                then: "LAB_SETTLEMENT_PAYOUT",
+              },
+              {
+                case: {
+                  $and: [
+                    { $eq: ["$eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
+                    { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
+                    { $gt: ["$amount", 0] },
+                  ],
+                },
+                then: "LAB_SETTLEMENT_CHARGE",
               },
               { case: { $eq: ["$eventType", "ADJUST"] }, then: "ADJUST" },
             ],
@@ -291,6 +342,8 @@ export async function listMyCreditLedger(req, res) {
       "SPEND_PAID",
       "SPEND_FREE_REQUEST",
       "SPEND_FREE_SHIPPING",
+      "LAB_SETTLEMENT_CHARGE",
+      "LAB_SETTLEMENT_PAYOUT",
       "ADJUST",
     ].includes(typeRaw)
   ) {

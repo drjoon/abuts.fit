@@ -487,9 +487,34 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     return;
   }
 
+  const partnerBilling =
+    request?.partnerBilling && typeof request.partnerBilling === "object"
+      ? request.partnerBilling
+      : {};
+  const practicePrepaid = Boolean(partnerBilling.practicePrepaidAbutment);
+  const isTradingPartner = Boolean(partnerBilling.isTradingPartner);
+
+  // 비거래처: 기공의뢰에서 어벗 소매가가 이미 REV_*로 반영됨 → 생산 차감 스킵
+  if (practicePrepaid && !isTradingPartner) {
+    request.price = {
+      ...toPlainRequestPrice(request.price),
+      rule: String(request?.price?.rule || "") || "practice_transfer_prepaid_non_partner",
+    };
+    return;
+  }
+
+  // 거래처: 기공소 의뢰크레딧에서 생산단가 강제 차감
+  let spendAnchorId = businessAnchorId;
+  if (practicePrepaid && isTradingPartner) {
+    const forcedLabAnchor = String(
+      partnerBilling.billingOwnerAnchorId || businessAnchorId || "",
+    ).trim();
+    if (forcedLabAnchor) spendAnchorId = forcedLabAnchor;
+  }
+
   const computedPrice = await computePriceForRequest({
     requestorId: request?.requestor,
-    requestorOrgId: businessAnchorId,
+    requestorOrgId: spendAnchorId,
     clinicName: request?.caseInfos?.clinicName || "",
     patientName: request?.caseInfos?.patientName || "",
     tooth: request?.caseInfos?.tooth || "",
@@ -550,7 +575,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   const spendResult = await spendRequestCreditAtomic({
     request,
-    businessAnchorId,
+    businessAnchorId: spendAnchorId,
     actorUserId,
     session,
     spendKeySuffix: "machining_spend",
@@ -567,14 +592,16 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       requestId: request?.requestId,
       requestMongoId: String(request?._id || ""),
       amount: spentAmount,
-      businessAnchorId: String(businessAnchorId),
+      businessAnchorId: String(spendAnchorId),
+      practicePrepaid: Boolean(practicePrepaid),
+      isTradingPartner: Boolean(isTradingPartner),
     });
 
     const glPostResult = await postSpendCommitGeneralLedger({
       eventType: "REQUEST_SPEND_COMMIT",
       spendUniqueKey: spendResult.uniqueKey,
       request,
-      businessAnchorId,
+      businessAnchorId: spendAnchorId,
       actorUserId,
       amount: Number(spendResult.resolvedAmount || 0),
       fromPaid: Number(spendResult.fromPaid || 0),
@@ -706,7 +733,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   const expressSpendResult = await spendRequestCreditAtomic({
     request,
-    businessAnchorId,
+    businessAnchorId: spendAnchorId,
     actorUserId,
     session,
     spendKeySuffix: "express_surcharge",
@@ -738,7 +765,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     eventType: "REQUEST_SPEND_COMMIT",
     spendUniqueKey: expressSpendResult.uniqueKey,
     request,
-    businessAnchorId,
+    businessAnchorId: spendAnchorId,
     actorUserId,
     amount: Number(expressSpendResult.resolvedAmount || 0),
     fromPaid: Number(expressSpendResult.fromPaid || 0),

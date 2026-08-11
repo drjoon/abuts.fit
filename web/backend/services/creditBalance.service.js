@@ -48,6 +48,7 @@ export async function computeBusinessCreditBalanceFromLedger({
       paidCredit: 0,
       freeRequestCredit: 0,
       freeShippingCredit: 0,
+      settlementCredit: 0,
       balance: 0,
     };
   }
@@ -63,6 +64,7 @@ export async function computeBusinessCreditBalanceFromLedger({
             "REQ_PAID_CREDIT",
             "REQ_FREE_REQUEST_CREDIT",
             "REQ_FREE_SHIPPING_CREDIT",
+            "LAB_SETTLEMENT_CREDIT",
           ],
         },
       },
@@ -78,6 +80,7 @@ export async function computeBusinessCreditBalanceFromLedger({
   let paid = 0;
   let freeRequest = 0;
   let freeShipping = 0;
+  let settlement = 0;
 
   for (const row of glRows || []) {
     const code = String(row?._id || "");
@@ -86,16 +89,19 @@ export async function computeBusinessCreditBalanceFromLedger({
     if (code === "REQ_PAID_CREDIT") paid += total;
     else if (code === "REQ_FREE_REQUEST_CREDIT") freeRequest += total;
     else if (code === "REQ_FREE_SHIPPING_CREDIT") freeShipping += total;
+    else if (code === "LAB_SETTLEMENT_CREDIT") settlement += total;
   }
 
   const paidCredit = Math.max(0, Math.round(paid));
   const freeRequestCredit = Math.max(0, Math.round(freeRequest));
   const freeShippingCredit = Math.max(0, Math.round(freeShipping));
+  const settlementCredit = Math.max(0, Math.round(settlement));
 
   return {
     paidCredit,
     freeRequestCredit,
     freeShippingCredit,
+    settlementCredit,
     balance: paidCredit + freeRequestCredit + freeShippingCredit,
   };
 }
@@ -118,6 +124,7 @@ export async function getBusinessCreditBalanceSnapshot({
       paidCredit: 0,
       freeRequestCredit: 0,
       freeShippingCredit: 0,
+      settlementCredit: 0,
       balance: 0,
       source: "invalid",
     };
@@ -133,6 +140,7 @@ export async function getBusinessCreditBalanceSnapshot({
     paidCredit: Number(glBalance?.paidCredit || 0),
     freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
     freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
+    settlementCredit: Number(glBalance?.settlementCredit || 0),
     balance: Number(glBalance?.balance || 0),
     source: "gl",
   };

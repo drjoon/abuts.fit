@@ -15,11 +15,16 @@ import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
+import User from "../../models/user.model.js";
+import {
+  normalizeRequestorKind,
+  resolveRequestorProfile,
+} from "../../utils/requestorCapabilities.js";
 import {
   MAX_CHARGE_SUPPLY,
   resolveCreditChargeUnit,
 } from "../../utils/creditChargeUnit.js";
+import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 
 // NOTE:
 // - /api/credits/balance 는 GL 집계 SSOT를 즉시 반영해야 하므로
@@ -117,6 +122,7 @@ async function getBalanceBreakdown(scope) {
     paidCredit: Number(snapshot?.paidCredit || 0),
     freeRequestCredit: Number(snapshot?.freeRequestCredit || 0),
     freeShippingCredit: Number(snapshot?.freeShippingCredit || 0),
+    settlementCredit: Number(snapshot?.settlementCredit || 0),
   };
 }
 
@@ -288,3 +294,158 @@ export async function getMyCreditSpendInsights(req, res) {
     },
   });
 }
+
+/**
+ * 기공소 결제크레딧(LAB_SETTLEMENT_CREDIT) 월 정산 인출.
+ * 의뢰/배송 잔액과 분리. SETTLEMENT_PAYOUT으로 차감.
+ */
+export async function createLabSettlementPayout(req, res) {
+  try {
+    const identity = await resolveCreditScopeIdentity(req);
+    if (!identity?.businessAnchorId) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
+    const anchorId = String(identity.businessAnchorId);
+    const anchor = await BusinessAnchor.findById(anchorId)
+      .select({
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+        businessType: 1,
+        status: 1,
+        payoutAccount: 1,
+        name: 1,
+      })
+      .lean();
+    const freshUser = await User.findById(req.user?._id)
+      .select({
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+        role: 1,
+      })
+      .lean();
+    const profile = resolveRequestorProfile({
+      anchorKind: anchor?.requestorKind,
+      anchorServices: anchor?.requestorServices,
+      anchorCaps: anchor?.requestorCapabilities,
+      userKind: freshUser?.requestorKind ?? req.user?.requestorKind,
+      userServices: freshUser?.requestorServices ?? req.user?.requestorServices,
+      userCaps:
+        freshUser?.requestorCapabilities ?? req.user?.requestorCapabilities,
+      userRole: freshUser?.role || req.user?.role,
+      businessVerified: String(anchor?.status || "") === "verified",
+    });
+    if (
+      !anchor ||
+      String(anchor.businessType || "") !== "requestor" ||
+      normalizeRequestorKind(profile.kind) !== "lab"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소만 결제크레딧 정산을 요청할 수 있습니다.",
+      });
+    }
+
+    const amount = Math.round(Number(req.body?.amount || 0));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "정산 금액이 올바르지 않습니다.",
+      });
+    }
+
+    const snapshot = await getBusinessCreditBalanceSnapshot({
+      businessAnchorId: anchorId,
+    });
+    const available = Number(snapshot?.settlementCredit || 0);
+    if (available < amount) {
+      return res.status(400).json({
+        success: false,
+        message: "결제크레딧 잔액이 부족합니다.",
+        data: { available, requested: amount },
+      });
+    }
+
+    const payoutAccount = anchor.payoutAccount || {};
+    if (
+      !String(payoutAccount.bankName || "").trim() ||
+      !String(payoutAccount.accountNumber || "").trim() ||
+      !String(payoutAccount.holderName || "").trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "정산 입금 계좌를 사업자 설정에서 먼저 등록해주세요.",
+      });
+    }
+
+    const now = new Date();
+    const idempotencyKey =
+      String(req.body?.idempotencyKey || "").trim() ||
+      `gl:lab_settlement_payout:${anchorId}:${amount}:${now.getTime()}`;
+
+    const posted = await postGeneralLedgerJournal({
+      idempotencyKey,
+      eventType: "SETTLEMENT_PAYOUT",
+      businessAnchorId: anchorId,
+      refType: "LAB_SETTLEMENT_PAYOUT",
+      refId: null,
+      occurredAt: now,
+      createdBy: req.user?._id || null,
+      meta: {
+        payoutTargetRole: "requestor",
+        payoutKind: "lab_settlement",
+        payoutAmount: amount,
+        payoutAccount: {
+          bankName: payoutAccount.bankName,
+          accountNumber: payoutAccount.accountNumber,
+          holderName: payoutAccount.holderName,
+        },
+      },
+      lines: [
+        {
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          ownerRole: "requestor",
+          ownerId: anchorId,
+          amount: -amount,
+          amountExcludingVat: -amount,
+          vatAmount: 0,
+          amountIncludingVat: -amount,
+          creditKind: "SETTLEMENT",
+          refType: "LAB_SETTLEMENT_PAYOUT",
+          refId: null,
+          meta: {
+            payoutKind: "lab_settlement",
+            displayKind: "lab_settlement_payout",
+          },
+        },
+      ],
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        journalId: posted?.journalId || null,
+        amount,
+        settlementCreditAfter: available - amount,
+        payoutAccount: {
+          bankName: payoutAccount.bankName,
+          accountNumber: payoutAccount.accountNumber,
+          holderName: payoutAccount.holderName,
+        },
+        idempotent: Boolean(posted?.idempotent),
+      },
+    });
+  } catch (error) {
+    console.error("createLabSettlementPayout error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "결제크레딧 정산에 실패했습니다.",
+    });
+  }
+}
+

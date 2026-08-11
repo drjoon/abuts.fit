@@ -36,8 +36,10 @@ import {
   normalizeRequestorProfileInput,
   requestorProfilePersistFields,
   requestorProfileResponseFields,
+  normalizeRequestorKind,
 } from "../../utils/requestorCapabilities.js";
 import { isSyntheticPracticeBusinessNumber } from "./requestorOrgAnchor.util.js";
+import { activateLabTradingPartnerInvite } from "../../utils/labTradingPartner.util.js";
 
 // BusinessAnchor를 직접 생성/업데이트하는 헬퍼 함수
 export async function ensureBusinessAnchor({
@@ -1043,6 +1045,41 @@ export async function updateMyBusiness(req, res) {
       freeShippingCreditGranted = !!freeShippingCreditAmount;
     }
 
+    // 기공소 기존 거래처 초대 토큰 → 사업자 검증 완료 시 active 바인딩
+    let labTradingPartnerBound = false;
+    if (verificationResult?.verified && businessAnchor?._id) {
+      const inviteToken = String(
+        req.body?.labPartnerToken ||
+          req.body?.labPartner ||
+          req.body?.labTradingPartnerToken ||
+          "",
+      ).trim();
+      if (inviteToken) {
+        const kind =
+          normalizeRequestorKind(
+            req.body?.requestorKind ||
+              req.user?.requestorKind ||
+              businessAnchor?.requestorKind,
+          ) || "practice";
+        try {
+          const bindResult = await activateLabTradingPartnerInvite({
+            inviteToken,
+            practiceAnchorId: businessAnchor._id,
+            practiceKind: kind,
+          });
+          labTradingPartnerBound = Boolean(bindResult?.activated);
+          if (labTradingPartnerBound) {
+            // FE sessionStorage cleanup is client-side; response flag for UX
+          }
+        } catch (bindErr) {
+          console.warn(
+            "[BusinessAnchor] lab trading partner bind failed",
+            bindErr?.message || bindErr,
+          );
+        }
+      }
+    }
+
     // 캐시 무효화: 사업자 정보가 업데이트되었으므로 getMyBusiness 캐시 제거
     invalidateMyBusinessCache(req.user._id);
 
@@ -1054,6 +1091,7 @@ export async function updateMyBusiness(req, res) {
         requestFreeCreditAmount: Number(requestFreeCreditAmount || 0),
         freeShippingCreditGranted,
         freeShippingCreditAmount: Number(freeShippingCreditAmount || 0),
+        labTradingPartnerBound,
         verification: verificationResult
           ? {
               verified: !!verificationResult.verified,

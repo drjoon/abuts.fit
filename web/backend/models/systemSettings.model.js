@@ -26,6 +26,8 @@ const systemSettingsSchema = new mongoose.Schema(
       expressFee: { type: Number, default: 2000 },
       // 디자인비 (1어벗당, design_custom_abutment 시 (생산단가+디자인비)×어벗수)
       designFee: { type: Number, default: 15000 },
+      // 치과 납품 커스텀어벗 소매가(1어벗당). 기공의뢰 분배·devops 요금 설정 SSOT
+      abutmentRetailPrice: { type: Number, default: 40000 },
       defaultRequestFreeCredit: { type: Number, default: 30000 },
       defaultShippingFreeCredit: { type: Number, default: 7000 },
     },

@@ -66,6 +66,8 @@ type CreditLedgerType =
   | "SPEND_PAID"
   | "SPEND_FREE_REQUEST"
   | "SPEND_FREE_SHIPPING"
+  | "LAB_SETTLEMENT_CHARGE"
+  | "LAB_SETTLEMENT_PAYOUT"
   | "ADJUST";
 
 type CreditLedgerItem = {
@@ -123,6 +125,7 @@ type CreditBalanceSnapshot = {
   paidCredit: number;
   freeRequestCredit?: number;
   freeShippingCredit?: number;
+  settlementCredit?: number;
   updatedAt?: string | null;
 };
 
@@ -153,6 +156,8 @@ const typeLabel = (t: CreditLedgerType) => {
   if (t === "SPEND_PAID") return "사용(유료)";
   if (t === "SPEND_FREE_REQUEST") return "사용(무료·의뢰)";
   if (t === "SPEND_FREE_SHIPPING") return "사용(무료·배송)";
+  if (t === "LAB_SETTLEMENT_CHARGE") return "결제크레딧 충전";
+  if (t === "LAB_SETTLEMENT_PAYOUT") return "결제크레딧 정산";
   return "조정";
 };
 
@@ -179,6 +184,8 @@ const formatShortCode = (value: string) => {
 const REF_TYPE_LABELS: Record<string, string> = {
   SHIPPING_PACKAGE: "택배비",
   REQUEST: "의뢰",
+  PRACTICE_TRANSFER: "기공의뢰",
+  LAB_SETTLEMENT_PAYOUT: "결제크레딧 정산",
   FREE_REQUEST_CREDIT: "환영 무료 의뢰크레딧",
   REQUEST_FREE_CREDIT: "환영 무료 의뢰크레딧",
   WELCOME_BONUS: "환영 무료 의뢰크레딧",
@@ -260,7 +267,7 @@ const renderTransactionDetail = ({
           {isExpressSurchargeOnly ? (
             <Badge
               variant="outline"
-              className="h-5 px-1.5 text-[10px] leading-none border-amber-400 text-amber-700 bg-amber-50"
+              className="h-5 px-1.5 text-[10px] leading-none border-accent-muted text-accent-strong bg-accent-soft"
             >
               신속추가
             </Badge>
@@ -644,7 +651,7 @@ export const CreditLedgerModal = ({
     <div className="flex flex-col gap-3 min-h-0 flex-1">
       {currentBalanceSnapshot ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <div className="grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-5">
             <div className="tabular-nums">
               <span className="text-muted-foreground">현재 잔액</span>{" "}
               <span className="font-semibold text-slate-900">
@@ -672,6 +679,15 @@ export const CreditLedgerModal = ({
               <span className="font-semibold text-slate-900">
                 {Number(
                   currentBalanceSnapshot.freeShippingCredit ?? 0,
+                ).toLocaleString()}
+                원
+              </span>
+            </div>
+            <div className="tabular-nums">
+              <span className="text-muted-foreground">결제크레딧</span>{" "}
+              <span className="font-semibold text-slate-900">
+                {Number(
+                  currentBalanceSnapshot.settlementCredit ?? 0,
                 ).toLocaleString()}
                 원
               </span>
@@ -722,6 +738,12 @@ export const CreditLedgerModal = ({
                   </SelectItem>
                   <SelectItem value="CHARGE_FREE_SHIPPING">
                     무료충전(배송)
+                  </SelectItem>
+                  <SelectItem value="LAB_SETTLEMENT_CHARGE">
+                    결제크레딧 충전
+                  </SelectItem>
+                  <SelectItem value="LAB_SETTLEMENT_PAYOUT">
+                    결제크레딧 정산
                   </SelectItem>
                   <SelectItem value="ADJUST">조정</SelectItem>
                 </SelectContent>
@@ -858,7 +880,7 @@ export const CreditLedgerModal = ({
                   <TableCell
                     className={cn(
                       "text-center font-medium tabular-nums",
-                      isMinus ? "text-rose-600" : "text-blue-700",
+                      isMinus ? "text-destructive" : "text-primary-strong",
                     )}
                   >
                     {showSplit ? (

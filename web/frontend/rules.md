@@ -124,6 +124,11 @@ Notes:
 - 개발·운영사 설정
   - `src/pages/devops/DevopsSettingsPage.tsx` (계정/사업자/임직원/**결제(입금 계좌)**/알림/보안)
   - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · 디자이너 지정 · **마감 설정**
+    - 요금·크레딧에 치과 납품 어벗 소매가(`abutmentRetailPrice`) 포함
+  - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「거래 치과 등록」·「기공비」 탭
+    - `src/pages/requestor/settings/SettingsPage.tsx`
+    - `src/features/settings/tabs/LabTradingPartnersTab.tsx`
+    - `src/features/settings/tabs/LabFeeScheduleTab.tsx`
   - 마감 설정: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감 시간(`designDeadlineSettings.claimHours`, 기본 3시간)
   - 디자이너 지정: `DesignerAssignmentTab` — `BusinessAnchor.designAccessEnabled` (의뢰자 중 디자인 큐 접근)
   - 영업자 없을 때 분배: 설정된 영업자 분배비의 절반→제조사, 나머지 절반→관리자 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
@@ -227,6 +232,8 @@ Notes:
 
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
   - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
+  - 기존 거래 치과 등록은 동일 `pricingBaseDate` 기준 **30일**간만 신규 초대 가능(D-30 뱃지). 탭 라벨: 「거래 치과 등록」.
+  - 치과 장부 라벨: 기공의뢰비 / 어벗의뢰비 / 배송비. 기공소 결제크레딧은 의뢰·배송 잔액과 분리 표시.
   - 안내 모달/대시보드 카드 문구는 동일한 `90일` 기준을 사용해야 합니다.
   - 관련 파일:
     - `src/shared/ui/PricingPolicyDialog.tsx`

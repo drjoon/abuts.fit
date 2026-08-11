@@ -233,6 +233,15 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/requests/utils.js`
     - `controllers/requests/dashboard.controller.js`
 
+- 기공소 기존 거래처 · 결제크레딧 SSOT:
+  - `LabTradingPartner`: lab `pricingBaseDate`부터 30일간 기존 거래 치과 초대. 만료 후 신규 등록만 불가.
+  - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active`. API: `/api/lab-trading-partners`
+  - 기공비: `BusinessAnchor.labFeeSchedule`. 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops).
+  - PracticeTransfer 유료: 치과 소매가 1회 차감 → 거래처면 전액 `LAB_SETTLEMENT_CREDIT`, 아니면 기공비만 결제크레딧·어벗 소매는 `REV_*`.
+  - 거래처 커스텀어벗 생산의뢰는 기공소 의뢰크레딧에서 생산단가 강제 차감(치과 재차감 금지).
+  - eventType: `PRACTICE_TRANSFER_SPEND_COMMIT`, `LAB_SETTLEMENT_CHARGE`; accountCode: `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`.
+  - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 결제크레딧 → 계좌 이체.
+
 - 스커리씁 로트 추적(세척.패킹)은 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
 - 한진 배송조회 자동동기화 장애 우회 정책:
   - 한진 API가 `403/InvalidApiKeyForGivenResource`를 반환하면 앱 기동/런타임을 중단하지 않고 auto-sync만 blocked mode로 전환합니다.
@@ -512,7 +521,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `eventType`(저장형):
     - `REQUEST_SPEND_COMMIT`
     - `SHIPPING_SPEND_COMMIT`
-    - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
+    - `PRACTICE_TRANSFER_SPEND_COMMIT`
+    - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `LAB_SETTLEMENT_CHARGE`, `ADJUST`, `SETTLEMENT_PAYOUT`
   - `businessAnchorId`(의뢰자 기준 키)
   - `refType`, `refId` (`REQUEST`, `SHIPPING_PACKAGE`, `CHARGE_ORDER` 등)
   - `stageFrom`, `stageTo` (워크시트 승인/롤백 전이 기록)
@@ -523,13 +533,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - LedgerLine 스키마 초안(필수 필드):
   - `journalId`(FK), `lineNo`
   - `accountCode`:
-    - 크레딧 버킷: `REQ_PAID_CREDIT`, `REQ_FREE_REQUEST_CREDIT`, `REQ_FREE_SHIPPING_CREDIT`
+    - 크레딧 버킷: `REQ_PAID_CREDIT`, `REQ_FREE_REQUEST_CREDIT`, `REQ_FREE_SHIPPING_CREDIT`, `LAB_SETTLEMENT_CREDIT`
     - 수익 귀속: `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - `ownerRole` (`requestor|manufacturer|devops|salesman|admin`)
   - `ownerId` (원칙적으로 BusinessAnchor 식별자)
   - `amount`, `amountExcludingVat`, `vatAmount`, `amountIncludingVat`
-  - `creditKind` (`PAID|FREE_REQUEST|FREE_SHIPPING|null`)
-  - `meta` (requestId, shippingPackageId, settlementBatchId 등)
+  - `creditKind` (`PAID|FREE_REQUEST|FREE_SHIPPING|SETTLEMENT|null`)
+  - `meta` (requestId, shippingPackageId, settlementBatchId, practiceTransferId, labFee, abutmentRetail 등)
 
 - 승인/롤백 이벤트 정책(강제):
   - `REQUEST_SPEND_COMMIT`: **가공 진입 승인(준비→가공)** 시 기록

@@ -1013,6 +1013,28 @@ const requestSchema = new mongoose.Schema(
       },
     },
 
+    // 기공소 거래처·기공의뢰 선결제 연동 (치과 소매가 기과금 후 생산차감)
+    // related: web/backend/services/practiceTransferBilling.service.js
+    partnerBilling: {
+      practicePrepaidAbutment: { type: Boolean, default: false },
+      isTradingPartner: { type: Boolean, default: false },
+      labTradingPartnerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "LabTradingPartner",
+        default: null,
+      },
+      relatedPracticeTransferId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "PracticeTransfer",
+        default: null,
+      },
+      billingOwnerAnchorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "BusinessAnchor",
+        default: null,
+      },
+    },
+
     timeline: {
       originalEstimatedShipYmd: String, // 최초 계산된 발송 예정일(YYYY-MM-DD)
       nextEstimatedShipYmd: String, // 재조정된 다음 발송 예정일(YYYY-MM-DD)

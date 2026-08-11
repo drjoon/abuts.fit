@@ -69,6 +69,26 @@ const practiceTransferSchema = new mongoose.Schema(
       type: [practiceTransferFileSchema],
       default: [],
     },
+    // 보철 치식(과금·표시). 전송 시점 스냅샷
+    toothWorks: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: [],
+    },
+    billing: {
+      labFeeTotal: { type: Number, default: 0 },
+      abutmentRetailTotal: { type: Number, default: 0 },
+      abutmentQty: { type: Number, default: 0 },
+      total: { type: Number, default: 0 },
+      isTradingPartner: { type: Boolean, default: false },
+      labTradingPartnerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "LabTradingPartner",
+        default: null,
+      },
+      labSettlementAmount: { type: Number, default: 0 },
+      abutsRevenueAmount: { type: Number, default: 0 },
+      billedAt: { type: Date, default: null },
+    },
     // requestor(수신 기공소) 확인 상태 SSOT
     requestorReadAt: {
       type: Date,

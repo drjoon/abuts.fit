@@ -1402,6 +1402,33 @@ export async function createRequestsFromDraft(req, res) {
             manufacturerStage: "준비",
           };
 
+          // 기공의뢰 선결제·거래처 생산차감 메타 (클라이언트/기공소 연계)
+          const partnerBillingBody =
+            (item?.partnerBilling && typeof item.partnerBilling === "object"
+              ? item.partnerBilling
+              : null) ||
+            (req.body?.partnerBilling &&
+            typeof req.body.partnerBilling === "object"
+              ? req.body.partnerBilling
+              : null);
+          if (partnerBillingBody) {
+            newRequest.partnerBilling = {
+              practicePrepaidAbutment: Boolean(
+                partnerBillingBody.practicePrepaidAbutment,
+              ),
+              isTradingPartner: Boolean(partnerBillingBody.isTradingPartner),
+              labTradingPartnerId:
+                partnerBillingBody.labTradingPartnerId || null,
+              relatedPracticeTransferId:
+                partnerBillingBody.relatedPracticeTransferId || null,
+              billingOwnerAnchorId:
+                partnerBillingBody.billingOwnerAnchorId ||
+                (Boolean(partnerBillingBody.isTradingPartner)
+                  ? req.user?.businessAnchorId || null
+                  : null),
+            };
+          }
+
           newRequest.originalShipping = {
             mode: shippingMode,
             requestedAt,

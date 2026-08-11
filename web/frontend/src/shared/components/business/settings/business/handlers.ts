@@ -271,6 +271,16 @@ export const handleSave = async (
           : {}),
     };
 
+    try {
+      const labPartnerToken = sessionStorage.getItem("labPartnerInviteToken");
+      if (labPartnerToken) {
+        (requestPayload as Record<string, unknown>).labPartnerToken =
+          labPartnerToken;
+      }
+    } catch {
+      // ignore
+    }
+
     console.info("[handleSave] API request payload", requestPayload);
 
     const res = await request<any>({
@@ -280,6 +290,16 @@ export const handleSave = async (
       headers: mockHeaders ?? undefined,
       jsonBody: requestPayload,
     });
+
+    if (res.ok) {
+      try {
+        if (res.data?.data?.labTradingPartnerBound) {
+          sessionStorage.removeItem("labPartnerInviteToken");
+        }
+      } catch {
+        // ignore
+      }
+    }
 
     console.info("[handleSave] API response", {
       ok: res.ok,

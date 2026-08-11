@@ -38,6 +38,7 @@ interface CreditSettings {
   shippingFee: number;
   expressFee: number;
   designFee: number;
+  abutmentRetailPrice: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
 }
@@ -143,6 +144,11 @@ export const AdminCreditSettingsTab = () => {
           data.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
         ),
         designFee: Number(data.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
+        abutmentRetailPrice: Number(
+          data.abutmentRetailPrice ??
+            CREDIT_SETTINGS_DEFAULTS.abutmentRetailPrice ??
+            40000,
+        ),
         defaultRequestFreeCredit: Number(
           data.defaultRequestFreeCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
@@ -194,6 +200,9 @@ export const AdminCreditSettingsTab = () => {
           shippingFee: Number(saved.shippingFee ?? settings.shippingFee),
           expressFee: Number(saved.expressFee ?? settings.expressFee),
           designFee: Number(saved.designFee ?? settings.designFee),
+          abutmentRetailPrice: Number(
+            saved.abutmentRetailPrice ?? settings.abutmentRetailPrice,
+          ),
           defaultRequestFreeCredit: Number(
             saved.defaultRequestFreeCredit ?? settings.defaultRequestFreeCredit,
           ),
@@ -232,6 +241,8 @@ export const AdminCreditSettingsTab = () => {
 
   const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
   const designHelp = `디자인+생산 시 생산비에 별도 추가됩니다. 출고일은 묶음·신속 모두 +1영업일. 기본 ${CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}원.`;
+  const abutmentRetailHelp =
+    "치과 기공의뢰에 포함되는 커스텀어벗 소매가(1어벗당). 거래처 분배·결제크레딧에 사용됩니다.";
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -293,6 +304,16 @@ export const AdminCreditSettingsTab = () => {
                 }
                 disabled={loading}
                 help={designHelp}
+              />
+              <AmountField
+                id="abutmentRetailPrice"
+                label="치과 납품 어벗 소매가 (1어벗당, 원)"
+                value={settings.abutmentRetailPrice}
+                onChange={(next) =>
+                  setSettings({ ...settings, abutmentRetailPrice: next })
+                }
+                disabled={loading}
+                help={abutmentRetailHelp}
               />
             </div>
           </section>

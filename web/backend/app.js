@@ -232,6 +232,7 @@ import snapshotRoutes from "./modules/snapshots/snapshot.routes.js";
 import referralGroupsRoutes from "./modules/referralGroups/referralGroups.routes.js";
 import systemRoutes from "./modules/system/system.routes.js";
 import practiceTransferRoutes from "./modules/practiceTransfers/practiceTransfer.routes.js";
+import labTradingPartnerRoutes from "./modules/labTradingPartners/labTradingPartner.routes.js";
 import designAccessRoutes from "./modules/devops/designAccess.routes.js";
 import designDeadlineRoutes from "./modules/devops/designDeadline.routes.js";
 
@@ -260,6 +261,7 @@ app.use("/api/credits", creditRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/practice/transfers", practiceTransferRoutes);
+app.use("/api/lab-trading-partners", labTradingPartnerRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/manufacturer", manufacturerRoutes);
 app.use("/api/cnc-machines", cncMachineRoutes);

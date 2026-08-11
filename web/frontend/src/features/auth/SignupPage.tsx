@@ -115,6 +115,21 @@ export const SignupPage = () => {
     const code = ref && ref.trim().length > 0 ? ref.trim() : undefined;
     return code;
   }, [searchParams]);
+
+  const labPartnerToken = useMemo(() => {
+    const t = searchParams.get("labPartner");
+    return t && t.trim().length > 0 ? t.trim() : null;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!labPartnerToken) return;
+    try {
+      sessionStorage.setItem("labPartnerInviteToken", labPartnerToken);
+    } catch {
+      // ignore
+    }
+  }, [labPartnerToken]);
+
   const isReferralSignupRoute = location.pathname === "/signup/referral";
   const isStaffSignupRoute = location.pathname === "/signup/staff";
   const oauthReturnTo =
@@ -1194,8 +1209,8 @@ export const SignupPage = () => {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-40 -left-24 h-96 w-96 rounded-full bg-gradient-to-br from-emerald-400/40 to-cyan-500/30 blur-[160px]" />
-        <div className="absolute top-32 right-[-120px] h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-indigo-500/40 via-purple-500/30 to-pink-500/30 blur-[180px]" />
+        <div className="absolute -top-40 -left-24 h-96 w-96 rounded-full bg-gradient-to-br from-primary/40 to-primary/30 blur-[160px]" />
+        <div className="absolute top-32 right-[-120px] h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-primary/40 via-primary/30 to-destructive/30 blur-[180px]" />
         <div
           className="absolute inset-0 opacity-[0.08]"
           style={{
@@ -1213,7 +1228,7 @@ export const SignupPage = () => {
           <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-center">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
               <span>secure access</span>
-              <span className="h-1 w-1 rounded-full bg-emerald-300" />
+              <span className="h-1 w-1 rounded-full bg-primary/70" />
               <span>abuts.fit</span>
             </div>
             {referrerInfo ? (
@@ -1222,7 +1237,7 @@ export const SignupPage = () => {
                   환영합니다.
                 </h1>
                 <h2 className="text-base text-white/80">
-                  <span className="font-semibold text-emerald-300">
+                  <span className="font-semibold text-primary/70">
                     {referrerInfo.business || referrerInfo.name || "소개자"}
                   </span>
                   에서 소개받으셨군요!
@@ -1394,7 +1409,7 @@ export const SignupPage = () => {
                         <span className="text-white/40">(선택)</span>
                       </p>
                       {enteredReferralCode && referrerInfo ? (
-                        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 space-y-1">
+                        <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5 space-y-1">
                           <p className="text-xs text-white/50 uppercase tracking-wider">
                             소개자 확인됨
                           </p>
@@ -1541,7 +1556,7 @@ export const SignupPage = () => {
                         <span className="text-white/40">(선택)</span>
                       </p>
                       {enteredReferralCode && referrerInfo ? (
-                        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 space-y-1">
+                        <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5 space-y-1">
                           <p className="text-xs text-white/50 uppercase tracking-wider">
                             소개자 확인됨
                           </p>

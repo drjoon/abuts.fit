@@ -12,6 +12,10 @@ import {
   invalidateAdminDashboardCaches,
   withRequestPerfInFlight,
 } from "../../services/requestDashboardCache.service.js";
+import {
+  commitPracticeTransferBilling,
+  rollbackPracticeTransferBilling,
+} from "../../services/practiceTransferBilling.service.js";
 // related files:
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -1059,17 +1063,73 @@ export async function createPracticeTransfer(req, res) {
       })
       .filter(Boolean);
 
+    const toothWorksRaw =
+      (Array.isArray(req.body?.toothWorks) && req.body.toothWorks) ||
+      (Array.isArray(first?.toothWorks) && first.toothWorks) ||
+      (Array.isArray(nsr?.toothWorks) && nsr.toothWorks) ||
+      [];
+
+    const practiceAnchorId = req.user?.businessAnchorId || null;
+    if (!practiceAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "치과 사업자 정보가 필요합니다. 사업자 등록 후 다시 시도해주세요.",
+      });
+    }
+    if (!targetLabAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "대상 기공소를 선택해주세요.",
+      });
+    }
+
     const transferDoc = await PracticeTransfer.create({
       transferId,
       practiceUserId: req.user?._id,
-      practiceBusinessAnchorId: req.user?.businessAnchorId || null,
+      practiceBusinessAnchorId: practiceAnchorId,
       targetLabAnchorId,
       targetLabName,
       transferMemo,
       tag,
       status: "active",
       files,
+      toothWorks: toothWorksRaw,
     });
+
+    let billingResult = null;
+    try {
+      billingResult = await commitPracticeTransferBilling({
+        transfer: transferDoc,
+        toothWorks: toothWorksRaw,
+        actorUserId: req.user?._id,
+      });
+      if (billingResult?.billed) {
+        transferDoc.billing = {
+          labFeeTotal: billingResult.fees?.labFeeTotal || 0,
+          abutmentRetailTotal: billingResult.fees?.abutmentRetailTotal || 0,
+          abutmentQty: billingResult.fees?.abutmentQty || 0,
+          total: billingResult.fees?.total || 0,
+          isTradingPartner: Boolean(billingResult.isPartner),
+          labTradingPartnerId: billingResult.labTradingPartnerId || null,
+          labSettlementAmount: billingResult.labSettlementAmount || 0,
+          abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
+          billedAt: new Date(),
+        };
+        await transferDoc.save();
+      }
+    } catch (billingErr) {
+      try {
+        await PracticeTransfer.deleteOne({ _id: transferDoc._id });
+      } catch {
+        // ignore cleanup failure
+      }
+      const status = Number(billingErr?.statusCode || 500);
+      return res.status(status).json({
+        success: false,
+        message: billingErr?.message || "기공의뢰 과금에 실패했습니다.",
+        ...(billingErr?.payload || {}),
+      });
+    }
 
     // 전송 성공 시 해당 임시저장은 완전 삭제(휴지통 아님). 최근 전송 내역만 남긴다.
     const rawDraftId = String(req.body?.draftId || "").trim();
@@ -1164,6 +1224,7 @@ export async function createPracticeTransfer(req, res) {
         transferId,
         count: files.length,
         clearedDraftId,
+        billing: transferDoc?.billing || null,
       },
     });
   } catch (error) {
@@ -1647,6 +1708,15 @@ export async function cancelPracticeTransfersBatch(req, res) {
 
     for (const doc of docs) {
       try {
+        try {
+          await rollbackPracticeTransferBilling({ transferId: doc._id });
+        } catch (rollbackErr) {
+          console.warn(
+            "[practiceTransfer] billing rollback failed",
+            String(doc?._id || ""),
+            rollbackErr?.message || rollbackErr,
+          );
+        }
         doc.status = "canceled";
         doc.canceledAt = new Date();
         doc.canceledBy = req.user?._id || null;

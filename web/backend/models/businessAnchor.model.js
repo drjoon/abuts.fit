@@ -208,6 +208,15 @@ const businessAnchorSchema = new mongoose.Schema(
         default: null,
       },
     },
+    // 기공소 기공비 수가 (원). lab only. 설정 「기공비」탭 SSOT
+    // related: web/backend/utils/labFeeSchedule.js
+    labFeeSchedule: {
+      crown: { type: Number, default: 60000, min: 0 },
+      bridge: { type: Number, default: 60000, min: 0 },
+      inlay: { type: Number, default: 50000, min: 0 },
+      pontic: { type: Number, default: 40000, min: 0 },
+      updatedAt: { type: Date, default: null },
+    },
     practiceTransferSettings: {
       // related files:
       // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
