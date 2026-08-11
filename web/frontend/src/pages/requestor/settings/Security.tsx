@@ -22,7 +22,7 @@ const getStatusBadge = (status: string) => {
   const label = status === "ok" ? "성공" : status;
   if (normalized === "ok" || normalized === "success") {
     return (
-      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+      <Badge className="bg-primary-soft text-primary-strong border-primary-muted">
         {label}
       </Badge>
     );

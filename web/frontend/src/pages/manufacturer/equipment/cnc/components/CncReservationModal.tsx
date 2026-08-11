@@ -172,7 +172,7 @@ export const CncReservationModal = ({
 
         <div className="mt-2 text-sm text-slate-700">
           {machine?.uid && (
-            <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-[12px] text-blue-700">
+            <div className="rounded-lg border border-primary-soft bg-primary-soft/60 px-3 py-2 text-[12px] text-primary-strong">
               업로드한 파일은 원본 파일명 그대로 S3/예약목록(DB)에 저장됩니다.
             </div>
           )}
@@ -185,7 +185,7 @@ export const CncReservationModal = ({
               </div>
               <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
                 <div
-                  className="h-2 rounded-full bg-blue-600"
+                  className="h-2 rounded-full bg-primary-strong"
                   style={{ width: `${uploadProgress.percent}%` }}
                 />
               </div>
@@ -194,7 +194,7 @@ export const CncReservationModal = ({
           <div
             className={`mt-4 rounded-xl border-2 border-dashed overflow-hidden transition-colors cursor-pointer ${
               dropping
-                ? "border-blue-400 bg-blue-50/60"
+                ? "border-primary/70 bg-primary-soft/60"
                 : "border-slate-200 bg-slate-50/80"
             }`}
             onClick={() => {
@@ -234,7 +234,7 @@ export const CncReservationModal = ({
                 <button
                   type="button"
                   disabled={submitting}
-                  className="inline-flex h-9 items-center justify-center rounded-md bg-blue-600 px-4 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
+                  className="inline-flex h-9 items-center justify-center rounded-md bg-primary-strong px-4 text-white text-sm font-semibold hover:bg-primary-strong disabled:opacity-60"
                 >
                   {submitting ? "업로드 중..." : "파일 선택"}
                 </button>

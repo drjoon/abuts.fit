@@ -181,7 +181,7 @@ export const SalesmanReferralPage = () => {
                       type="button"
                       size="sm"
                       onClick={() => void handleCopyCode()}
-                      className="h-9 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+                      className="h-9 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
                     >
                       {codeCopied ? (
                         <>
@@ -199,7 +199,7 @@ export const SalesmanReferralPage = () => {
                       type="button"
                       size="sm"
                       onClick={() => void handleCopyLink()}
-                      className="h-9 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+                      className="h-9 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
                     >
                       {copied ? (
                         <>

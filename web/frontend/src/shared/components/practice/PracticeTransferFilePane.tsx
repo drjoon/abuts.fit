@@ -65,7 +65,7 @@ export const PracticeTransferFilePane = ({
       <div
         className={`${cardClassName} flex min-h-[12rem] flex-col items-center justify-center border-dashed bg-slate-50/50 p-3 text-center sm:min-h-0`}
       >
-        <div className="mx-auto mb-1.5 w-fit rounded-full bg-sky-50 p-2 text-sky-600">
+        <div className="mx-auto mb-1.5 w-fit rounded-full bg-primary-soft p-2 text-primary-strong">
           <UploadCloud className="h-5 w-5" />
         </div>
         <p className="text-sm font-semibold text-slate-900">파일 첨부</p>
@@ -112,7 +112,7 @@ export const PracticeTransferFilePane = ({
                       <Button
                         type="button"
                         size="sm"
-                        className="h-8 rounded-lg bg-blue-600 px-2.5 text-xs text-white hover:bg-blue-700 disabled:bg-blue-600/50"
+                        className="h-8 rounded-lg bg-primary-strong px-2.5 text-xs text-white hover:bg-primary-strong disabled:bg-primary-strong/50"
                         onClick={onSyncUpload}
                         disabled={syncUploadDisabled || syncUploadBusy}
                       >

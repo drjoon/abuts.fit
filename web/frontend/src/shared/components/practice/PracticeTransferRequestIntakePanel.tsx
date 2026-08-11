@@ -1260,7 +1260,7 @@ export const PracticeTransferRequestIntakePanel = ({
         "flex min-h-0 flex-col gap-3",
         memoOnly && "h-full flex-1",
         variant === "card" &&
-          "rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]",
+          "rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-primary-soft/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]",
       )}
     >
       {showHeaderFields && onClearAll ? (
@@ -1692,7 +1692,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       variant="ghost"
                       size="icon"
                       data-no-tooth-marquee=""
-                      className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-sky-50 hover:text-sky-700 disabled:opacity-30"
+                      className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-primary-soft hover:text-primary-strong disabled:opacity-30"
                       disabled={offset <= 0}
                       onClick={() => shiftDecade(decade.key, -1, maxOffset)}
                       aria-label={`${decade.label} 이전`}
@@ -1732,13 +1732,13 @@ export const PracticeTransferRequestIntakePanel = ({
                           className={cn(
                             "flex w-full touch-none flex-col items-center justify-start rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 px-1 pt-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition-all",
                             TOOTH_CARD_HEIGHT_CLASS,
-                            "hover:border-sky-300 hover:from-sky-50/80 hover:to-white hover:shadow-sm hover:shadow-sky-100/60",
+                            "hover:border-primary/70 hover:from-primary-soft/80 hover:to-white hover:shadow-sm hover:shadow-primary-soft/60",
                             toothMarqueePreview?.teeth.has(toothNumber) &&
                               toothMarqueePreview.mode === "select" &&
-                              "border-sky-400 from-sky-50 to-white ring-2 ring-sky-300/70",
+                              "border-primary/70 from-primary-soft to-white ring-2 ring-primary/70",
                             toothMarqueePreview?.teeth.has(toothNumber) &&
                               toothMarqueePreview.mode === "deselect" &&
-                              "border-rose-300 ring-2 ring-rose-300/70",
+                              "border-destructive/80 ring-2 ring-destructive/70",
                           )}
                           onClick={(e) => handleEmptyToothClick(e, toothNumber)}
                         >
@@ -1756,20 +1756,20 @@ export const PracticeTransferRequestIntakePanel = ({
                             className={cn(
                               "relative z-20 flex shrink-0 items-center justify-center self-stretch",
                               bridgeLinked
-                                ? "w-3.5 border-y border-sky-500 bg-gradient-to-b from-sky-100 via-sky-50 to-white"
+                                ? "w-3.5 border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
                                 : "w-5",
                               toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                                 toothMarqueePreview.mode === "select" &&
-                                "bg-sky-100/80",
+                                "bg-primary-soft/80",
                               toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                                 toothMarqueePreview.mode === "deselect" &&
-                                "bg-rose-100/80",
+                                "bg-destructive-soft/80",
                             )}
                           >
                             {bridgeLinked ? (
                               <span
                                 aria-hidden
-                                className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-sky-400/70"
+                                className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
                               />
                             ) : null}
                             <button
@@ -1784,14 +1784,14 @@ export const PracticeTransferRequestIntakePanel = ({
                               className={cn(
                                 "relative z-10 flex h-6 w-6 items-center justify-center rounded-full border shadow-sm transition-colors",
                                 bridgeLinked
-                                  ? "border-sky-500 bg-sky-500 text-white ring-2 ring-sky-100 hover:bg-sky-600"
-                                  : "border-slate-200 bg-white text-slate-500 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700",
+                                  ? "border-primary bg-primary text-white ring-2 ring-primary-soft hover:bg-primary-strong"
+                                  : "border-slate-200 bg-white text-slate-500 hover:border-primary/70 hover:bg-primary-soft hover:text-primary-strong",
                                 toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                                   toothMarqueePreview.mode === "select" &&
-                                  "border-sky-500 bg-sky-100 text-sky-700 ring-2 ring-sky-300",
+                                  "border-primary bg-primary-soft text-primary-strong ring-2 ring-primary/70",
                                 toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                                   toothMarqueePreview.mode === "deselect" &&
-                                  "border-rose-400 bg-rose-100 text-rose-700 ring-2 ring-rose-300",
+                                  "border-destructive/80 bg-destructive-soft text-destructive ring-2 ring-destructive/80",
                               )}
                               onClick={(e) => {
                                 e.preventDefault();
@@ -1856,20 +1856,20 @@ export const PracticeTransferRequestIntakePanel = ({
                           className={cn(
                             "relative z-20 flex shrink-0 items-center justify-center self-stretch",
                             bridgeLinked
-                              ? "w-3.5 border-y border-sky-500 bg-gradient-to-b from-sky-100 via-sky-50 to-white"
+                              ? "w-3.5 border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
                               : "w-5",
                             toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                               toothMarqueePreview.mode === "select" &&
-                              "bg-sky-100/80",
+                              "bg-primary-soft/80",
                             toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                               toothMarqueePreview.mode === "deselect" &&
-                              "bg-rose-100/80",
+                              "bg-destructive-soft/80",
                           )}
                         >
                           {bridgeLinked ? (
                             <span
                               aria-hidden
-                              className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-sky-400/70"
+                              className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
                             />
                           ) : null}
                           <button
@@ -1884,14 +1884,14 @@ export const PracticeTransferRequestIntakePanel = ({
                             className={cn(
                               "relative z-10 flex h-6 w-6 items-center justify-center rounded-full border shadow-sm transition-colors",
                               bridgeLinked
-                                ? "border-sky-500 bg-sky-500 text-white ring-2 ring-sky-100 hover:bg-sky-600"
-                                : "border-slate-200 bg-white text-slate-500 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700",
+                                ? "border-primary bg-primary text-white ring-2 ring-primary-soft hover:bg-primary-strong"
+                                : "border-slate-200 bg-white text-slate-500 hover:border-primary/70 hover:bg-primary-soft hover:text-primary-strong",
                               toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                                 toothMarqueePreview.mode === "select" &&
-                                "border-sky-500 bg-sky-100 text-sky-700 ring-2 ring-sky-300",
+                                "border-primary bg-primary-soft text-primary-strong ring-2 ring-primary/70",
                               toothMarqueePreview?.bridges.has(`${toothNumber}|${chartNext}`) &&
                                 toothMarqueePreview.mode === "deselect" &&
-                                "border-rose-400 bg-rose-100 text-rose-700 ring-2 ring-rose-300",
+                                "border-destructive/80 bg-destructive-soft text-destructive ring-2 ring-destructive/80",
                             )}
                             onClick={(e) => {
                               e.preventDefault();
@@ -1923,13 +1923,13 @@ export const PracticeTransferRequestIntakePanel = ({
                           {linkedChartNext && !showBridgeControl ? (
                             <span
                               aria-hidden
-                              className="pointer-events-none absolute right-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-l-full bg-sky-400/80"
+                              className="pointer-events-none absolute right-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-l-full bg-primary/80"
                             />
                           ) : null}
                           {linkedChartPrev && visible[visibleIndex - 1] !== chartPrev ? (
                             <span
                               aria-hidden
-                              className="pointer-events-none absolute left-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-r-full bg-sky-400/80"
+                              className="pointer-events-none absolute left-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-r-full bg-primary/80"
                             />
                           ) : null}
 
@@ -1940,8 +1940,8 @@ export const PracticeTransferRequestIntakePanel = ({
                               "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-1 pb-1 pt-1.5 shadow-sm",
                               TOOTH_CARD_HEIGHT_CLASS,
                               isLinked
-                                ? "border-sky-500 bg-gradient-to-b from-sky-100 via-sky-50/95 to-white ring-1 ring-sky-300/40"
-                                : "rounded-xl border-sky-300/90 bg-gradient-to-b from-sky-50 via-white to-sky-50/40 ring-1 ring-sky-200/40",
+                                ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
+                                : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40",
                               isLinked && !linkedChartPrev && !linkedChartNext && "rounded-xl",
                               isLinked && linkedChartPrev && linkedChartNext && "rounded-none",
                               isLinked && linkedChartPrev && !linkedChartNext && "rounded-r-xl rounded-l-none",
@@ -1950,10 +1950,10 @@ export const PracticeTransferRequestIntakePanel = ({
                               linkedChartNext && "border-r-0",
                               toothMarqueePreview?.teeth.has(toothNumber) &&
                                 toothMarqueePreview.mode === "select" &&
-                                "ring-2 ring-sky-400/80",
+                                "ring-2 ring-primary/80",
                               toothMarqueePreview?.teeth.has(toothNumber) &&
                                 toothMarqueePreview.mode === "deselect" &&
-                                "ring-2 ring-rose-400/80 opacity-80",
+                                "ring-2 ring-destructive/80 opacity-80",
                             )}
                           >
                             {/* 1) 치아번호 (차트 슬롯으로만 선택 — 번호 변경 팝업 없음) */}
@@ -1965,7 +1965,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             <button
                               type="button"
                               data-no-tooth-marquee=""
-                              className="mt-1.5 flex h-7 w-full min-w-0 cursor-pointer items-center justify-center truncate rounded-md px-0.5 text-center text-[11px] text-slate-600 hover:bg-sky-50 hover:text-sky-800"
+                              className="mt-1.5 flex h-7 w-full min-w-0 cursor-pointer items-center justify-center truncate rounded-md px-0.5 text-center text-[11px] text-slate-600 hover:bg-primary-soft hover:text-primary-strong"
                               title={
                                 isLinked
                                   ? "클릭: 브리지 ↔ Pontic"
@@ -2001,7 +2001,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 <label className="inline-flex h-5 items-center gap-1 text-[11px] leading-none text-slate-500">
                                   <input
                                     type="checkbox"
-                                    className="h-3 w-3 accent-sky-600"
+                                    className="h-3 w-3 accent-primary-strong"
                                     checked={Boolean(row.customAbutment)}
                                     onChange={(e) => {
                                       const checked = Boolean(e.target.checked);
@@ -2042,7 +2042,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                         <TooltipTrigger asChild>
                                           <button
                                             type="button"
-                                            className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-sky-700 hover:bg-sky-100/70 hover:underline"
+                                            className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong hover:bg-primary-soft/70 hover:underline"
                                             onClick={() => openCustomSpecsModal(originalIndex)}
                                           >
                                             {implantCompact || "임플란트"}
@@ -2056,7 +2056,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                         <TooltipTrigger asChild>
                                           <button
                                             type="button"
-                                            className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-teal-700 hover:bg-teal-50 hover:underline"
+                                            className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut hover:bg-service-abut-soft hover:underline"
                                             onClick={() => openCustomSpecsModal(originalIndex)}
                                           >
                                             {abutmentCompact || "스캔바디"}
@@ -2085,7 +2085,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       variant="ghost"
                       size="icon"
                       data-no-tooth-marquee=""
-                      className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-sky-50 hover:text-sky-700 disabled:opacity-30"
+                      className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-primary-soft hover:text-primary-strong disabled:opacity-30"
                       disabled={offset >= maxOffset}
                       onClick={() => shiftDecade(decade.key, 1, maxOffset)}
                       aria-label={`${decade.label} 다음`}
@@ -2126,7 +2126,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       return (
                         <div
                           aria-hidden
-                          className="pointer-events-none absolute z-30 rounded-sm border border-sky-500 bg-sky-400/20"
+                          className="pointer-events-none absolute z-30 rounded-sm border border-primary bg-primary/20"
                           style={{ left, top, width, height }}
                         />
                       );
@@ -2319,9 +2319,9 @@ export const PracticeTransferRequestIntakePanel = ({
                             <button
                               type="button"
                               className={cn(
-                                "flex w-full cursor-pointer items-center px-2.5 py-1.5 text-left hover:bg-sky-50 hover:text-sky-900",
+                                "flex w-full cursor-pointer items-center px-2.5 py-1.5 text-left hover:bg-primary-soft hover:text-primary-strong",
                                 optionIndex === suggestActiveIndex &&
-                                  "bg-sky-50 text-sky-900",
+                                  "bg-primary-soft text-primary-strong",
                               )}
                               tabIndex={-1}
                               onMouseDown={(ev) => {
@@ -2398,7 +2398,7 @@ export const PracticeTransferRequestIntakePanel = ({
                   </div>
                   <button
                     type="button"
-                    className="w-full truncate rounded-md border border-sky-300 bg-white px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-sky-50"
+                    className="w-full truncate rounded-md border border-primary/70 bg-white px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-primary-soft"
                     onClick={() =>
                       applyCustomSpecsToTooth(
                         customSpecsModalTarget,

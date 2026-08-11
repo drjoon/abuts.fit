@@ -32,7 +32,7 @@ export const MailboxActionHeader = ({
 }: MailboxActionHeaderProps) => {
   const getButtonClass = (variant: HeaderActionButton["variant"]) => {
     if (variant === "rose") {
-      return "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 shadow-sm";
+      return "bg-destructive-soft text-destructive border-destructive-muted hover:bg-destructive-soft shadow-sm";
     }
     if (variant === "slate") {
       return "bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm";
@@ -40,7 +40,7 @@ export const MailboxActionHeader = ({
     if (variant === "white") {
       return "bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm";
     }
-    return "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm";
+    return "bg-primary-soft text-primary-strong border-primary-muted hover:bg-primary-soft shadow-sm";
   };
 
   return (

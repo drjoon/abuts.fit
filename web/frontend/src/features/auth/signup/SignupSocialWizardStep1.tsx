@@ -81,7 +81,7 @@ export const SignupSocialWizardStep1 = ({
         <Label htmlFor="name" className="text-sm font-medium text-white/80">
           이름
           {nameError && (
-            <span className="ml-2 text-xs font-medium text-rose-200">
+            <span className="ml-2 text-xs font-medium text-destructive-muted">
               {nameError}
             </span>
           )}
@@ -100,7 +100,7 @@ export const SignupSocialWizardStep1 = ({
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           autoComplete="name"
-          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${nameError ? "border-rose-300" : ""}`}
+          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${nameError ? "border-destructive/80" : ""}`}
         />
       </div>
 
@@ -108,7 +108,7 @@ export const SignupSocialWizardStep1 = ({
         <Label htmlFor="email" className="text-sm font-medium text-white/80">
           이메일
           {emailError && (
-            <span className="ml-2 text-xs font-medium text-rose-200">
+            <span className="ml-2 text-xs font-medium text-destructive-muted">
               {emailError}
             </span>
           )}
@@ -127,7 +127,7 @@ export const SignupSocialWizardStep1 = ({
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           autoComplete="email"
-          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${emailError ? "border-rose-300" : ""}`}
+          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${emailError ? "border-destructive/80" : ""}`}
         />
       </div>
 

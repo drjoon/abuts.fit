@@ -82,7 +82,7 @@ export const PackingPrinterSettingsDialog = ({
               value={printerProfile}
               onChange={(e) => setPrinterProfile(e.target.value)}
               title={printerProfile}
-              className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-primary/70"
               disabled={printerLoading}
             >
               {printerLoading ? (
@@ -99,7 +99,7 @@ export const PackingPrinterSettingsDialog = ({
             </select>
 
             {printerError ? (
-              <div className="text-xs text-rose-600">{printerError}</div>
+              <div className="text-xs text-destructive">{printerError}</div>
             ) : null}
           </div>
 
@@ -113,7 +113,7 @@ export const PackingPrinterSettingsDialog = ({
             <select
               value={paperProfile}
               onChange={(e) => setPaperProfile(e.target.value)}
-              className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-primary/70"
               disabled={paperLoading}
             >
               {paperLoading ? (
@@ -127,7 +127,7 @@ export const PackingPrinterSettingsDialog = ({
               )}
             </select>
             {paperError ? (
-              <div className="text-xs text-rose-600">{paperError}</div>
+              <div className="text-xs text-destructive">{paperError}</div>
             ) : null}
           </div>
 
@@ -144,7 +144,7 @@ export const PackingPrinterSettingsDialog = ({
                 const v = e.target.value;
                 if (v === "image" || v === "label") setPackOutputMode(v);
               }}
-              className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-primary/70"
             >
               <option value="image">이미지(PNG) 저장</option>
               <option value="label">실제 라벨 출력</option>

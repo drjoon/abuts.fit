@@ -142,8 +142,8 @@ export const OAuthCallbackPage = () => {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/40 via-cyan-400/30 to-emerald-300/30 blur-[180px]" />
-        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-orange-400/20 blur-[180px]" />
+        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-primary/40 via-primary/30 to-primary/30 blur-[180px]" />
+        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-primary/40 via-destructive/30 to-accent/20 blur-[180px]" />
         <div
           className="absolute inset-0 opacity-[0.08]"
           style={{

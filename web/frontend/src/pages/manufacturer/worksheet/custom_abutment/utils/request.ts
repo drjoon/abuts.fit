@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import type { RequestBase } from "@/types/request";
+import { getDeadlineSemanticClasses } from "@/shared/ui/semanticStatus";
 
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
@@ -186,16 +187,7 @@ export const getReviewLabel = (status?: string) => {
   return "검토전";
 };
 
-export const getReviewBadgeClassName = (status?: string) => {
-  const s = String(status || "").trim();
-  if (s === "APPROVED") {
-    return "text-[11px] px-2 py-0.5 bg-emerald-50 text-emerald-700 border-emerald-200";
-  }
-  if (s === "REJECTED") {
-    return "text-[11px] px-2 py-0.5 bg-rose-50 text-rose-700 border-rose-200";
-  }
-  return "text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200";
-};
+export { getReviewBadgeClassName } from "@/shared/ui/semanticStatus";
 
 export const getDiameterBucketIndex = (diameter?: number) => {
   if (diameter == null) return -1;
@@ -278,30 +270,8 @@ export const getDeadlineInfo = (
 
   const getColorClasses = (
     hoursRemaining: number,
-  ): { border: string; badge: string } => {
-    if (hoursRemaining > 48) {
-      return {
-        border: "border-green-500 border-2",
-        badge: "bg-green-50 text-green-700 border-green-200",
-      };
-    }
-    if (hoursRemaining > 24) {
-      return {
-        border: "border-yellow-500 border-2",
-        badge: "bg-yellow-50 text-yellow-700 border-yellow-200",
-      };
-    }
-    if (hoursRemaining > 0) {
-      return {
-        border: "border-orange-500 border-2",
-        badge: "bg-orange-50 text-orange-700 border-orange-200",
-      };
-    }
-    return {
-      border: "border-red-500 border-2",
-      badge: "bg-red-50 text-red-700 border-red-200",
-    };
-  };
+  ): { border: string; badge: string } =>
+    getDeadlineSemanticClasses(hoursRemaining);
 
   const colors = getColorClasses(totalHours);
 

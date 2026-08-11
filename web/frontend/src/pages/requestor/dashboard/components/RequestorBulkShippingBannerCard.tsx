@@ -36,6 +36,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
+import { getShippingModeBadgeClassName } from "@/shared/shipping/shippingMode";
 import type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
 import { periodToRange } from "@/store/usePeriodStore";
 
@@ -680,14 +681,14 @@ export const RequestorBulkShippingBannerCard = ({
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge
                 variant="outline"
-                className="gap-1 border-sky-300 bg-sky-50 text-sky-700 font-medium"
+                className={`gap-1 font-medium ${getShippingModeBadgeClassName("normal")}`}
               >
                 <Package className="h-3 w-3" />
                 묶음출고
               </Badge>
               <Badge
                 variant="outline"
-                className="gap-1 border-amber-300 bg-amber-50 text-amber-700 font-medium"
+                className={`gap-1 font-medium ${getShippingModeBadgeClassName("express")}`}
               >
                 <Zap className="h-3 w-3" />
                 신속출고
@@ -701,20 +702,20 @@ export const RequestorBulkShippingBannerCard = ({
               출고 내역 불러오는 중...
             </div>
           ) : (
-            <div className="rounded-xl border border-blue-200/80 bg-gradient-to-br from-blue-50 to-sky-50/80 px-4 py-3.5">
+            <div className="rounded-xl border border-primary-muted/80 bg-gradient-to-br from-primary-soft to-primary-soft/80 px-4 py-3.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-strong">
                     오늘 출고 예정
                   </p>
-                  <p className="mt-1 text-2xl font-bold leading-none text-blue-900">
+                  <p className="mt-1 text-2xl font-bold leading-none text-primary-strong">
                     {shippingMemo.todayCount.toLocaleString()}
-                    <span className="ml-1 text-sm font-semibold text-blue-700">
+                    <span className="ml-1 text-sm font-semibold text-primary-strong">
                       박스
                     </span>
                   </p>
                 </div>
-                <div className="h-10 w-px bg-blue-200/80" />
+                <div className="h-10 w-px bg-primary-muted/80" />
                 <div className="min-w-0 text-right">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                     박스 구성
@@ -723,7 +724,7 @@ export const RequestorBulkShippingBannerCard = ({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="mt-0.5 h-auto px-0 py-0 text-2xl font-bold leading-none text-slate-900 hover:bg-transparent hover:text-blue-700"
+                    className="mt-0.5 h-auto px-0 py-0 text-2xl font-bold leading-none text-slate-900 hover:bg-transparent hover:text-primary-strong"
                     disabled={
                       shippingMemo.todayCount === 0 ||
                       shippingMemo.todayRequests.length === 0
@@ -766,7 +767,7 @@ export const RequestorBulkShippingBannerCard = ({
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Box className="h-5 w-5 text-blue-600" />
+              <Box className="h-5 w-5 text-primary-strong" />
               오늘 출고 박스 내역
             </DialogTitle>
           </DialogHeader>
@@ -806,7 +807,7 @@ export const RequestorBulkShippingBannerCard = ({
                         의뢰번호: {String(req?.requestId || "")}
                       </div>
                       {nextEta && (
-                        <div className="text-[11px] text-blue-600 mt-1">
+                        <div className="text-[11px] text-primary-strong mt-1">
                           다음 출고일: {formatDateWithDay(nextEta)}
                         </div>
                       )}
@@ -879,7 +880,7 @@ export const RequestorBulkShippingBannerCard = ({
                         <span className="font-semibold text-foreground">
                           출고 예정일
                         </span>
-                        <span className="ml-2 font-medium text-blue-700">
+                        <span className="ml-2 font-medium text-primary-strong">
                           {group.etaKey === "-" ? "-" : formatEta(group.etaKey)}
                         </span>
                       </div>

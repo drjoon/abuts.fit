@@ -43,8 +43,8 @@ export const BulkShippingList = ({
           type="button"
           className={`w-full text-left flex items-start gap-2 rounded-md border px-3 py-2 cursor-pointer transition-colors ${
             kind === "pre"
-              ? "border-sky-300 bg-sky-50 hover:border-sky-400 hover:bg-sky-100"
-              : "border-emerald-300 bg-emerald-50 hover:border-emerald-400 hover:bg-emerald-100"
+              ? "border-primary-muted bg-primary-soft hover:border-primary hover:bg-primary-muted/50"
+              : "border-primary bg-primary-muted/40 hover:border-primary-strong hover:bg-primary-muted/60"
           }`}
           onClick={() => {
             const next = { ...selected };
@@ -93,10 +93,10 @@ export const BulkShippingStagingList = ({
         const isSelected = !!selected[item.id];
         const stageColor =
           item.stage === "pre"
-            ? "border-sky-300 bg-sky-50 hover:border-sky-400 hover:bg-sky-100"
+            ? "border-primary-muted bg-primary-soft hover:border-primary hover:bg-primary-muted/50"
             : item.stage === "post"
-            ? "border-emerald-300 bg-emerald-50 hover:border-emerald-400 hover:bg-emerald-100"
-            : "border-border bg-background hover:border-blue-300 hover:bg-blue-50/60";
+            ? "border-primary bg-primary-muted/40 hover:border-primary-strong hover:bg-primary-muted/60"
+            : "border-border bg-background hover:border-primary-muted hover:bg-primary-soft/60";
 
         return (
           <button
@@ -105,7 +105,7 @@ export const BulkShippingStagingList = ({
             className={`w-full text-left flex items-start gap-2 rounded-md border px-3 py-2 cursor-pointer transition-colors ${
               isSelected
                 ? stageColor
-                : "border-border bg-background hover:border-blue-300 hover:bg-blue-50/60"
+                : "border-border bg-background hover:border-primary-muted hover:bg-primary-soft/60"
             }`}
             onClick={() => {
               const next = { ...selected };

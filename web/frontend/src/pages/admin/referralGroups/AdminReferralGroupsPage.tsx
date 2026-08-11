@@ -116,20 +116,20 @@ type ApiGroupListResponse = {
 const roleBadge = (role?: string, requestorKind?: "practice" | "lab" | null) => {
   if (role === "salesman") {
     return (
-      <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+      <span className="rounded-md border border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong">
         영업자
       </span>
     );
   }
   if (role === "devops") {
     return (
-      <span className="rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+      <span className="rounded-md border border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong">
         개발운영사
       </span>
     );
   }
   return (
-    <span className="rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+    <span className="rounded-md border border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong">
       {getRequestorRoleBadgeLabel(requestorKind)}
     </span>
   );

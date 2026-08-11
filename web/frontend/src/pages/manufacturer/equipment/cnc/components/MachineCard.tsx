@@ -567,7 +567,7 @@ export const MachineCard = (props: MachineCardProps) => {
         }
       }}
       className={`app-glass-card app-glass-card--xl flex flex-col cursor-pointer min-h-[240px] sm:min-h-[260px] ${
-        isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"
+        isActive ? "border-primary ring-2 ring-primary-muted" : "border-slate-200"
       }`}
     >
       <div className="app-glass-card-content flex items-start justify-between gap-3">
@@ -605,7 +605,7 @@ export const MachineCard = (props: MachineCardProps) => {
                 </span>
                 {lotBadge && (
                   <div className="flex items-center gap-1">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent-soft text-accent-strong border border-accent-muted">
                       {lotBadge}
                     </span>
                     {generateModelNumber(requestInfo?.caseInfos) && (
@@ -630,7 +630,7 @@ export const MachineCard = (props: MachineCardProps) => {
                 <span>{tooth}</span>
                 {lotBadge && (
                   <div className="flex items-center gap-1">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent-soft text-accent-strong border border-accent-muted">
                       {lotBadge}
                     </span>
                     {generateModelNumber(requestInfo?.caseInfos) && (
@@ -653,7 +653,7 @@ export const MachineCard = (props: MachineCardProps) => {
             <button
               type="button"
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                isDummyEnabled ? "bg-blue-500" : "bg-gray-300"
+                isDummyEnabled ? "bg-primary" : "bg-gray-300"
               } ${!onToggleDummyMachining ? "opacity-50" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
@@ -678,7 +678,7 @@ export const MachineCard = (props: MachineCardProps) => {
             <button
               type="button"
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                machine.allowJobStart !== false ? "bg-blue-500" : "bg-gray-300"
+                machine.allowJobStart !== false ? "bg-primary" : "bg-gray-300"
               } ${!onToggleAllowJobStart ? "opacity-50" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
@@ -701,7 +701,7 @@ export const MachineCard = (props: MachineCardProps) => {
       </div>
 
       {uploadProgress && (
-        <div className="absolute top-2 left-2 right-2 z-20 rounded-2xl border border-blue-200 bg-blue-600/95 px-4 py-3 shadow-[0_18px_45px_rgba(37,99,235,0.35)]">
+        <div className="absolute top-2 left-2 right-2 z-20 rounded-2xl border border-primary-muted bg-primary-strong/95 px-4 py-3 shadow-[0_18px_45px_rgba(37,99,235,0.35)]">
           <div className="flex items-center justify-between gap-2 text-[12px] text-white">
             <span className="truncate font-extrabold">
               업로드 중: {uploadProgress.fileName}
@@ -731,8 +731,8 @@ export const MachineCard = (props: MachineCardProps) => {
         }}
       />
       {dropping && (
-        <div className="absolute inset-0 rounded-2xl border-2 border-dashed border-blue-400 bg-blue-50/60 z-20 flex items-center justify-center">
-          <div className="text-sm font-semibold text-blue-700">
+        <div className="absolute inset-0 rounded-2xl border-2 border-dashed border-primary/70 bg-primary-soft/60 z-20 flex items-center justify-center">
+          <div className="text-sm font-semibold text-primary-strong">
             파일을 놓으면 예약목록에 추가됩니다
           </div>
         </div>
@@ -831,7 +831,7 @@ export const MachineCard = (props: MachineCardProps) => {
               </button>
               <button
                 type="button"
-                className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                className="rounded-full border border-destructive-muted bg-destructive-soft px-3 py-1 text-[11px] font-extrabold text-destructive hover:bg-destructive-soft disabled:opacity-50"
                 disabled={queueAdminLoading}
                 onClick={() => setClearConfirmOpen(true)}
               >
@@ -884,7 +884,7 @@ export const MachineCard = (props: MachineCardProps) => {
       )}
       <div className="relative h-10 -mt-1 mb-2">
         {machine.lastError ? (
-          <div className="absolute inset-x-0 top-0 rounded-2xl bg-red-50 px-3 py-2 text-xs text-red-700 border border-red-200 truncate">
+          <div className="absolute inset-x-0 top-0 rounded-2xl bg-destructive-soft px-3 py-2 text-xs text-destructive border border-destructive-muted truncate">
             마지막 오류: {machine.lastError}
           </div>
         ) : machine.lastUpdated ? (
@@ -898,7 +898,7 @@ export const MachineCard = (props: MachineCardProps) => {
         )}
       </div>
       {machine.startBlockedReason ? (
-        <div className="mb-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="mb-2 rounded-2xl border border-accent-muted bg-accent-soft px-3 py-2 text-xs text-accent-strong">
           가공 시작 안됨 사유: {machine.startBlockedReason}
         </div>
       ) : null}
@@ -963,7 +963,7 @@ export const MachineCard = (props: MachineCardProps) => {
                 <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
                   <span>{MACHINING_SECTION_LABELS.nowPlaying}</span>
                   {!!elapsedLabel && (
-                    <span className="text-blue-600 font-bold">
+                    <span className="text-primary-strong font-bold">
                       {elapsedLabel}
                     </span>
                   )}
@@ -1100,22 +1100,22 @@ export const MachineCard = (props: MachineCardProps) => {
         </div>
 
         {showContinuousInfo && (
-          <div className="mt-2 rounded-lg bg-purple-50 px-3 py-2 text-xs">
+          <div className="mt-2 rounded-lg bg-primary-soft px-3 py-2 text-xs">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold text-purple-700">연속가공</span>
+              <span className="font-semibold text-primary-strong">연속가공</span>
               {continuousState?.isRunning && (
-                <span className="text-purple-600">
+                <span className="text-primary-strong">
                   {continuousElapsedMin}분 경과
                 </span>
               )}
             </div>
-            <div className="mt-1 flex items-center gap-2 text-purple-600">
+            <div className="mt-1 flex items-center gap-2 text-primary-strong">
               <span>현재: O{continuousState?.currentSlot}</span>
               <span>→</span>
               <span>대기: O{continuousState?.nextSlot}</span>
             </div>
             {continuousState?.nextJob && (
-              <div className="mt-1 text-purple-600 truncate">
+              <div className="mt-1 text-primary-strong truncate">
                 다음: {continuousState.nextJob}
               </div>
             )}
@@ -1130,7 +1130,7 @@ export const MachineCard = (props: MachineCardProps) => {
               onOpenJobConfig(e);
             }}
             disabled={loading}
-            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-sky-500 px-4 py-2 text-xs font-extrabold text-white hover:from-blue-700 hover:to-sky-600 disabled:opacity-50 shadow-sm"
+            className="w-full rounded-2xl bg-gradient-to-r from-primary-strong to-primary px-4 py-2 text-xs font-extrabold text-white hover:from-primary-strong hover:to-primary-strong disabled:opacity-50 shadow-sm"
           >
             예약 관리
           </button>
@@ -1150,7 +1150,7 @@ export const MachineCard = (props: MachineCardProps) => {
                   <input
                     value={dummyProgram}
                     onChange={(e) => setDummyProgram(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
                   />
                 </label>
                 <div className="space-y-3">
@@ -1158,7 +1158,7 @@ export const MachineCard = (props: MachineCardProps) => {
                     <span className="font-semibold">더미가공 스케줄</span>
                     <button
                       type="button"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary-soft text-primary-strong hover:bg-primary-soft border border-primary-muted"
                       onClick={() => {
                         const nextId =
                           dummySchedules.reduce(
@@ -1177,7 +1177,7 @@ export const MachineCard = (props: MachineCardProps) => {
                   <label className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-gray-700 border border-slate-100">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 accent-blue-600"
+                      className="h-4 w-4 rounded border-gray-300 text-primary-strong focus:ring-primary accent-primary-strong"
                       checked={dummyExcludeHolidays}
                       onChange={(e) =>
                         setDummyExcludeHolidays(e.target.checked)
@@ -1195,7 +1195,7 @@ export const MachineCard = (props: MachineCardProps) => {
                       >
                         <input
                           type="checkbox"
-                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 accent-blue-600"
+                          className="h-4 w-4 rounded border-gray-300 text-primary-strong focus:ring-primary accent-primary-strong"
                           checked={item.enabled}
                           onChange={(e) =>
                             setDummySchedules((prev) =>
@@ -1220,11 +1220,11 @@ export const MachineCard = (props: MachineCardProps) => {
                               ),
                             )
                           }
-                          className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm font-medium text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm font-medium text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary"
                         />
                         <button
                           type="button"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100 border border-red-200"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-destructive-soft text-destructive hover:bg-destructive-soft border border-destructive-muted"
                           onClick={() =>
                             setDummySchedules((prev) =>
                               prev.filter((s) => s.id !== item.id),
@@ -1245,7 +1245,7 @@ export const MachineCard = (props: MachineCardProps) => {
               </div>
               <button
                 type="button"
-                className="w-full rounded-xl bg-blue-600 text-white font-semibold py-2.5 hover:bg-blue-700 transition-colors disabled:opacity-60"
+                className="w-full rounded-xl bg-primary-strong text-white font-semibold py-2.5 hover:bg-primary-strong transition-colors disabled:opacity-60"
                 disabled={dummySaving}
                 onClick={async () => {
                   if (!token) {

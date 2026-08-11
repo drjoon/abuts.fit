@@ -319,8 +319,8 @@ export const DevopsPayoutAccountTab = () => {
               className={cn(
                 "tabular-nums font-medium",
                 rateTotalOk
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-amber-200 bg-amber-50 text-amber-700",
+                  ? "border-primary-muted bg-primary-soft text-primary-strong"
+                  : "border-accent-muted bg-accent-soft text-accent-strong",
               )}
             >
               합계 {rateTotal === null ? "—" : `${rateTotal}%`}

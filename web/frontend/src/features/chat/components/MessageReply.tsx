@@ -6,6 +6,7 @@ import { Reply, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import { getRoleBadgeClassName } from "@/shared/ui/semanticStatus";
 
 export interface ReplyToMessage {
   _id: string;
@@ -35,20 +36,6 @@ export function MessageReply({
 }: MessageReplyProps) {
   if (!replyTo) return null;
 
-  const getRoleBadgeColor = (role: string) => {
-    switch (role) {
-      case "admin":
-        return "bg-purple-100 text-purple-700";
-      case "manufacturer":
-        return "bg-blue-100 text-blue-700";
-      case "requestor":
-        return "bg-green-100 text-green-700";
-      case "practice":
-        return "bg-indigo-100 text-indigo-700";
-      default:
-        return "bg-gray-100 text-gray-700";
-    }
-  };
 
   const getRoleLabel = (role: string) => {
     switch (role) {
@@ -70,7 +57,7 @@ export function MessageReply({
       <div
         className={cn(
           "flex items-start gap-2 text-xs sm:text-sm min-w-0",
-          !embedded && "p-2 bg-gray-50 rounded border-l-2 border-blue-500",
+          !embedded && "p-2 bg-gray-50 rounded border-l-2 border-primary",
           embedded && "min-w-0",
           className,
         )}
@@ -87,17 +74,17 @@ export function MessageReply({
   return (
     <div
       className={cn(
-        "flex items-start gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200",
+        "flex items-start gap-2 p-3 bg-primary-soft rounded-lg border border-primary-muted",
         className,
       )}
     >
-      <Reply className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+      <Reply className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="font-medium text-gray-900">{replyTo.sender.name}</span>
           {replyTo.sender.role ? (
             <span
-              className={`text-xs px-2 py-0.5 rounded-full ${getRoleBadgeColor(
+              className={`text-xs px-2 py-0.5 rounded-full ${getRoleBadgeClassName(
                 replyTo.sender.role,
               )}`}
             >

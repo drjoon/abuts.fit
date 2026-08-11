@@ -77,7 +77,7 @@ export const FunctionalItemCard = ({
                   e.stopPropagation();
                   onUpdate();
                 }}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-[11px] font-bold text-white shadow-sm"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white shadow-sm"
                 title="수정"
               >
                 U
@@ -87,7 +87,7 @@ export const FunctionalItemCard = ({
               <button
                 type="button"
                 onClick={handleRemoveClick}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white shadow-sm"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-[11px] font-bold text-white shadow-sm"
                 title="삭제"
               >
                 {removeIcon}

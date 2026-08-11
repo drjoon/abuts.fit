@@ -341,7 +341,7 @@ export function SalesmanCreditTab({
                             <span className="text-muted-foreground">
                               소개 수수료
                             </span>
-                            <span className="font-semibold text-blue-700">
+                            <span className="font-semibold text-primary-strong">
                               {Number(
                                 s.performance30d?.commissionAmount ?? 0,
                               ).toLocaleString()}

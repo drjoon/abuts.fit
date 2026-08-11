@@ -394,7 +394,7 @@ export const CommissionLedgerInline = ({
                     {typeLabel(r.type)}
                   </TableCell>
                   <TableCell
-                    className={`text-center text-xs font-semibold tabular-nums whitespace-nowrap ${amount < 0 ? "text-rose-600" : "text-blue-700"}`}
+                    className={`text-center text-xs font-semibold tabular-nums whitespace-nowrap ${amount < 0 ? "text-destructive" : "text-primary-strong"}`}
                   >
                     {amount.toLocaleString()}원
                   </TableCell>

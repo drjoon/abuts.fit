@@ -106,7 +106,7 @@ export function MessageAttachment({
 
   return (
     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 max-w-xs hover:bg-gray-100 transition-colors">
-      <FileIcon className="w-8 h-8 text-blue-500 flex-shrink-0" />
+      <FileIcon className="w-8 h-8 text-primary flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900 truncate">
           {attachment.fileName}

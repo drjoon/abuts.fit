@@ -349,13 +349,13 @@ const getStatusBadge = (status: string) => {
   switch (status) {
     case "active":
       return (
-        <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+        <span className="rounded-md border border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong">
           활성
         </span>
       );
     case "pending":
       return (
-        <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+        <span className="rounded-md border border-accent-muted bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-strong">
           승인대기
         </span>
       );
@@ -367,7 +367,7 @@ const getStatusBadge = (status: string) => {
       );
     case "suspended":
       return (
-        <span className="rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+        <span className="rounded-md border border-destructive-muted bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
           일시정지
         </span>
       );
@@ -387,7 +387,7 @@ const getSubRoleBadge = (user: Pick<UiUserRow, "subRole">) => {
 
   if (subRole === "owner") {
     return (
-      <span className="rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+      <span className="rounded-md border border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong">
         대표
       </span>
     );
@@ -421,7 +421,7 @@ const getRequestorCapabilityBadges = (
         </span>
       ) : null}
       {services?.paid ? (
-        <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+        <span className="rounded-md border border-accent-muted bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-strong">
           {REQUESTOR_SERVICE_LABEL.paid}
         </span>
       ) : null}
@@ -865,8 +865,8 @@ export const AdminUserManagement = () => {
       label: "의뢰자",
       count: totalRequestor,
       icon: FileText,
-      iconWrap: "bg-blue-50",
-      iconClass: "text-blue-600",
+      iconWrap: "bg-primary-soft",
+      iconClass: "text-primary-strong",
       onClick: () => setSelectedRole("requestor"),
       active: selectedRole === "requestor",
     },
@@ -875,8 +875,8 @@ export const AdminUserManagement = () => {
       label: "영업자",
       count: totalSalesman,
       icon: Briefcase,
-      iconWrap: "bg-emerald-50",
-      iconClass: "text-emerald-600",
+      iconWrap: "bg-primary-soft",
+      iconClass: "text-primary-strong",
       onClick: () => setSelectedRole("salesman"),
       active: selectedRole === "salesman",
     },
@@ -885,8 +885,8 @@ export const AdminUserManagement = () => {
       label: "개발운영사",
       count: totalDevops,
       icon: Shield,
-      iconWrap: "bg-violet-50",
-      iconClass: "text-violet-600",
+      iconWrap: "bg-primary-soft",
+      iconClass: "text-primary-strong",
       onClick: () => setSelectedRole("devops"),
       active: selectedRole === "devops",
     },
@@ -895,8 +895,8 @@ export const AdminUserManagement = () => {
       label: "제조사",
       count: totalManufacturer,
       icon: Building2,
-      iconWrap: "bg-sky-50",
-      iconClass: "text-sky-600",
+      iconWrap: "bg-primary-soft",
+      iconClass: "text-primary-strong",
       onClick: () => setSelectedRole("manufacturer"),
       active: selectedRole === "manufacturer",
     },
@@ -905,8 +905,8 @@ export const AdminUserManagement = () => {
       label: "관리자",
       count: totalAdmin,
       icon: Shield,
-      iconWrap: "bg-rose-50",
-      iconClass: "text-rose-600",
+      iconWrap: "bg-destructive-soft",
+      iconClass: "text-destructive",
       onClick: () => setSelectedRole("admin"),
       active: selectedRole === "admin",
     },
@@ -915,8 +915,8 @@ export const AdminUserManagement = () => {
       label: "승인 대기",
       count: totalPending,
       icon: UserCheck,
-      iconWrap: "bg-amber-50",
-      iconClass: "text-amber-600",
+      iconWrap: "bg-accent-soft",
+      iconClass: "text-accent-strong",
       onClick: () => setSelectedStatus("pending"),
       active: selectedStatus === "pending",
     },
@@ -973,7 +973,7 @@ export const AdminUserManagement = () => {
         </div>
 
         {unresolvedUsers.length > 0 && (
-          <div className="rounded-2xl border border-amber-200/80 bg-amber-50/60 px-5 py-4 shadow-sm sm:px-6">
+          <div className="rounded-2xl border border-accent-muted/80 bg-accent-soft/60 px-5 py-4 shadow-sm sm:px-6">
             <div className="mb-3">
               <h2 className="text-sm font-bold tracking-tight text-slate-900">
                 사업자 정보 확인 필요
@@ -986,7 +986,7 @@ export const AdminUserManagement = () => {
               {unresolvedUsers.map((user) => (
                 <div
                   key={user.id}
-                  className="flex items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-white px-3.5 py-2.5"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-accent-muted/80 bg-white px-3.5 py-2.5"
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-slate-900">
@@ -1100,7 +1100,7 @@ export const AdminUserManagement = () => {
                       key={user.id}
                       className={`rounded-xl border bg-white px-3 py-2.5 shadow-sm transition-colors hover:border-slate-300 ${
                         user.unresolvedBusiness
-                          ? "border-amber-200 bg-amber-50/30"
+                          ? "border-accent-muted bg-accent-soft/30"
                           : "border-slate-200/80"
                       }`}
                     >
@@ -1232,7 +1232,7 @@ export const AdminUserManagement = () => {
                             </Badge>
                             {getRequestorCapabilityBadges(user)}
                             {user.unresolvedBusiness ? (
-                              <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                              <span className="rounded-md border border-accent-muted bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-strong">
                                 사업자 확인
                               </span>
                             ) : null}
@@ -1294,7 +1294,7 @@ export const AdminUserManagement = () => {
                               </Badge>
                               {getStatusBadge(selectedUser.status)}
                               {selectedUser.unresolvedBusiness && (
-                                <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+                                <Badge className="bg-accent-soft text-accent-strong border-accent-muted">
                                   사업자 확인 필요
                                 </Badge>
                               )}
@@ -1355,7 +1355,7 @@ export const AdminUserManagement = () => {
                                 </div>
                                 <div className="mt-1 font-medium">
                                   {selectedUser.unresolvedBusiness ? (
-                                    <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+                                    <Badge className="bg-accent-soft text-accent-strong border-accent-muted">
                                       확인 필요
                                     </Badge>
                                   ) : (

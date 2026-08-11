@@ -325,13 +325,13 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
       {/* + 새 장비 추가 카드 */}
       <button
         type="button"
-        className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-white/70 p-6 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/60 transition-colors shadow-sm"
+        className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-white/70 p-6 text-gray-500 hover:border-primary/70 hover:text-primary-strong hover:bg-primary-soft/60 transition-colors shadow-sm"
         onClick={(e) => {
           e.stopPropagation();
           onOpenAddModal();
         }}
       >
-        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-blue-50 text-blue-600 mb-3">
+        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary-soft text-primary-strong mb-3">
           {/* 아이콘은 상위에서 동일하게 Plus를 사용 중이므로, 여기서는 모양만 유지 */}
           <span className="text-3xl font-bold">+</span>
         </div>

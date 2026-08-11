@@ -199,7 +199,7 @@ export const SalesmanDashboardPage = () => {
         stats={
           <>
             {/* 내 소개 코드 — 영업자 전용 */}
-            <Card className="app-glass-card app-glass-card--lg border-2 border-indigo-500/70 overflow-visible">
+            <Card className="app-glass-card app-glass-card--lg border-2 border-primary/70 overflow-visible">
               <CardHeader className="pb-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -221,7 +221,7 @@ export const SalesmanDashboardPage = () => {
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-9 border border-indigo-500 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 hover:border-indigo-600"
+                    className="h-9 border border-primary text-primary-strong hover:bg-primary-soft hover:text-primary-strong hover:border-primary-strong"
                     disabled={!referralLink}
                     onClick={async () => {
                       try {
@@ -425,7 +425,7 @@ export const SalesmanDashboardPage = () => {
                             key={business.businessAnchorId || business.name}
                             className="flex items-start gap-2"
                           >
-                            <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />
+                            <div className="mt-1 h-2 w-2 rounded-full bg-primary" />
                             <div className="flex-1">
                               <div className="font-semibold text-sm">
                                 {business.name || "의뢰자"}
@@ -470,7 +470,7 @@ export const SalesmanDashboardPage = () => {
                             key={salesman.userId}
                             className="flex items-start gap-2"
                           >
-                            <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />
+                            <div className="mt-1 h-2 w-2 rounded-full bg-primary" />
                             <div className="flex-1">
                               <div className="font-semibold text-sm">
                                 {salesman.name || "영업자"}

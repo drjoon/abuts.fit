@@ -128,7 +128,7 @@ export function PracticeTransferDetailChatDialog({
       <DialogContent className="w-[95vw] max-w-6xl h-[86vh] p-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <MessageSquare className="h-4 w-4 text-blue-600" />
+            <MessageSquare className="h-4 w-4 text-primary-strong" />
             {title}
           </DialogTitle>
         </DialogHeader>

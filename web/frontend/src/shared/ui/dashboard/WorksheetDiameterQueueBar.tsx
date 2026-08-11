@@ -40,7 +40,7 @@ export const WorksheetDiameterQueueBar = ({
             <button
               key={label}
               type="button"
-              className="app-surface app-surface--item flex-1 min-w-[130px] max-w-[220px] text-left text-lg hover:border-blue-400 hover:bg-blue-50/60 transition-colors"
+              className="app-surface app-surface--item flex-1 min-w-[130px] max-w-[220px] text-left text-lg hover:border-primary/70 hover:bg-primary-soft/60 transition-colors"
               onClick={() => onBucketClick?.(label)}
             >
               <div className="flex items-center justify-between mb-1 px-2">
@@ -51,7 +51,7 @@ export const WorksheetDiameterQueueBar = ({
               </div>
               <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden px-2">
                 <div
-                  className="h-full bg-blue-500 rounded-full"
+                  className="h-full bg-primary rounded-full"
                   style={{ width: `${percent}%` }}
                 />
               </div>

@@ -41,7 +41,7 @@ const getStatusBadge = (status: string) => {
   switch (status) {
     case "active":
       return (
-        <Badge className="bg-green-100 text-green-700 border-green-200">
+        <Badge className="bg-primary-muted/50 text-primary-strong border-primary-muted">
           활성
         </Badge>
       );
@@ -49,7 +49,7 @@ const getStatusBadge = (status: string) => {
       return <Badge variant="secondary">완료</Badge>;
     case "monitored":
       return (
-        <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">
+        <Badge className="bg-accent-muted/50 text-accent-strong border-accent-muted">
           모니터링
         </Badge>
       );
@@ -536,7 +536,7 @@ export const AdminChatManagement = () => {
                             </div>
                             <div className="shrink-0 flex items-center gap-1.5">
                               {Number(chat.unreadCount || 0) > 0 && (
-                                <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+                                <Badge className="bg-primary-soft text-primary-strong border-primary-muted">
                                   미확인 {Number(chat.unreadCount || 0).toLocaleString()}
                                 </Badge>
                               )}

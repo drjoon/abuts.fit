@@ -254,7 +254,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
                   onClick={() => toggleDay(day)}
                   className={`px-4 py-2 rounded-xl text-base font-medium border transition-all ${
                     active
-                      ? "bg-sky-500 text-white border-sky-500"
+                      ? "bg-primary text-white border-primary"
                       : "bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-800"
                   }`}
                 >

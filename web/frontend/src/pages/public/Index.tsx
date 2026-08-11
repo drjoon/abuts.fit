@@ -103,7 +103,7 @@ const Index = () => {
         <div className="space-y-6 text-center lg:w-1/2 lg:text-left">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.35em] text-white/70">
             <span>platform</span>
-            <span className="h-1 w-1 rounded-full bg-emerald-300" />
+            <span className="h-1 w-1 rounded-full bg-primary/70" />
             <span>abuts.fit</span>
           </div>
           <div className="space-y-4">
@@ -143,12 +143,12 @@ const Index = () => {
         </div>
 
         <div className="lg:w-1/2">
-          <Card className="border-blue-200 bg-gradient-to-br from-white to-blue-50 text-slate-900 shadow-[0_18px_45px_rgba(6,8,20,0.35)] backdrop-blur-2xl">
+          <Card className="border-primary-muted bg-gradient-to-br from-white to-primary-soft text-slate-900 shadow-[0_18px_45px_rgba(6,8,20,0.35)] backdrop-blur-2xl">
             <CardHeader className="space-y-3">
               <CardTitle className="text-xl md:text-2xl">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2.5 py-1 text-xs font-semibold text-primary-strong">
                       <Send className="h-3.5 w-3.5" />
                       간편 작성
                     </span>
@@ -158,7 +158,7 @@ const Index = () => {
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-8 border-blue-300 text-blue-700 hover:bg-blue-500"
+                    className="h-8 border-primary/70 text-primary-strong hover:bg-primary"
                     onClick={() => navigate("/practice/dropzone")}
                   >
                     작성하기
@@ -201,11 +201,11 @@ const Index = () => {
                 }}
                 className={`cursor-pointer rounded-xl border-2 border-dashed p-7 text-center transition-colors ${
                   isQuickDropOver
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-blue-200 bg-white hover:border-blue-400"
+                    ? "border-primary bg-primary-soft"
+                    : "border-primary-muted bg-white hover:border-primary/70"
                 }`}
               >
-                <div className="mx-auto mb-2 w-fit rounded-full bg-blue-100 p-3 text-blue-700">
+                <div className="mx-auto mb-2 w-fit rounded-full bg-primary-soft p-3 text-primary-strong">
                   <UploadCloud className="h-5 w-5" />
                 </div>
                 <p className="text-base font-semibold">여기에 3D 모델 및 그림 파일을 드롭하세요</p>
@@ -252,7 +252,7 @@ const Index = () => {
                 <p className="text-xs uppercase tracking-[0.5em] text-slate-400">
                   {stage.step}
                 </p>
-                <CheckCircle className="h-4 w-4 text-emerald-500" />
+                <CheckCircle className="h-4 w-4 text-primary" />
               </div>
               <CardTitle className="text-lg">{stage.title}</CardTitle>
             </CardHeader>
@@ -268,7 +268,7 @@ const Index = () => {
           <CardHeader className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.4em] text-slate-400">
               support
-              <span className="h-1 w-1 rounded-full bg-emerald-400" />
+              <span className="h-1 w-1 rounded-full bg-primary/70" />
             </div>
             <CardTitle className="text-2xl">운영팀과 바로 연결</CardTitle>
             <CardDescription className="text-base text-slate-600">
@@ -303,19 +303,19 @@ const Index = () => {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-start gap-3">
-              <div className="mt-1 h-2 w-2 rounded-full bg-emerald-400" />
+              <div className="mt-1 h-2 w-2 rounded-full bg-primary/70" />
               <p className="text-sm text-white/80">
                 스테이지 그룹 기반 가시성으로 제조 요청 우선순위를 즉시 조정
               </p>
             </div>
             <div className="flex items-start gap-3">
-              <div className="mt-1 h-2 w-2 rounded-full bg-emerald-400" />
+              <div className="mt-1 h-2 w-2 rounded-full bg-primary/70" />
               <p className="text-sm text-white/80">
                 자동 가상 우편함 배치로 배송 동선과 추적 경험 개선
               </p>
             </div>
             <div className="flex items-start gap-3">
-              <div className="mt-1 h-2 w-2 rounded-full bg-emerald-400" />
+              <div className="mt-1 h-2 w-2 rounded-full bg-primary/70" />
               <p className="text-sm text-white/80">
                 MongoDB·S3에 저장되는 SSOT 구조로 모든 기록을 안전하게 보관
               </p>

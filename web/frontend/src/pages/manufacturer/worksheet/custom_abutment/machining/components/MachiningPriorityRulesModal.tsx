@@ -83,7 +83,7 @@ export function MachiningPriorityRulesModal({
           {loading ? (
             <div className="py-8 text-center text-sm text-slate-500">로딩…</div>
           ) : error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+            <div className="rounded-xl border border-destructive-muted bg-destructive-soft px-3.5 py-2.5 text-sm text-destructive">
               {error}
             </div>
           ) : (

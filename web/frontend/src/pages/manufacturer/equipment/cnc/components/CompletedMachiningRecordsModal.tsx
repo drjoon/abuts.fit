@@ -290,7 +290,7 @@ export const CompletedMachiningRecordsModal = ({
 
           <div className="mt-0 flex max-h-[62vh] flex-col gap-1.5 overflow-auto px-5 py-4 sm:px-6">
             {!!error && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+              <div className="rounded-xl border border-destructive-muted bg-destructive-soft p-3 text-sm text-destructive">
                 {error}
               </div>
             )}

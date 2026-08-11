@@ -261,7 +261,7 @@ export function BizRegOcrUploader({ token, onExtracted }: Props) {
 
       {status === "done" && verifyResult?.message && (
         <p
-          className={`text-xs ${verifyResult.verified ? "text-green-600" : "text-destructive"}`}
+          className={`text-xs ${verifyResult.verified ? "text-primary-strong" : "text-destructive"}`}
         >
           {verifyResult.message}
         </p>

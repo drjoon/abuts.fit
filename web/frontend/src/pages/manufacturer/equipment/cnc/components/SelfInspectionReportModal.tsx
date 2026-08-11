@@ -1225,9 +1225,9 @@ export function SelfInspectionReportModal({
                         colSpan={2}
                         className={`border border-slate-800 px-1.5 py-1 text-center align-middle font-bold ${
                           overallJudgment === "합격"
-                            ? "bg-emerald-100 text-emerald-700"
+                            ? "bg-primary-soft text-primary-strong"
                             : overallJudgment === "불합격"
-                              ? "bg-red-100 text-red-700"
+                              ? "bg-destructive-soft text-destructive"
                               : "bg-[#eef05a] text-slate-700"
                         }`}
                       >
@@ -1265,7 +1265,7 @@ export function SelfInspectionReportModal({
                     className="max-w-none"
                   />
                   {lotSearchNoResult && (
-                    <p className="mt-0.5 text-[10px] text-red-600">
+                    <p className="mt-0.5 text-[10px] text-destructive">
                       일치하는 로트번호 제품이 없습니다.
                     </p>
                   )}
@@ -1335,17 +1335,17 @@ export function SelfInspectionReportModal({
 
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   {!confirmed && (
-                    <p className="text-[10px] text-red-600">
+                    <p className="text-[10px] text-destructive">
                       확정 후 수정할 수 없습니다
                     </p>
                   )}
                   {confirmed && (
-                    <p className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                    <p className="rounded border border-accent-muted bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent-strong">
                       성적서가 확정되었습니다.
                     </p>
                   )}
                   {overallJudgment === "불합격" && !confirmed && (
-                    <p className="text-[10px] text-red-600">
+                    <p className="text-[10px] text-destructive">
                       판정이 불합격이면 확정할 수 없습니다.
                     </p>
                   )}

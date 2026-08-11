@@ -1,7 +1,9 @@
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/shared/ui/semanticStatus.ts
 // change-log:
+// - 2026-08-11: 공정 뱃지 색 — semantic Primary soft/muted (purple/blue raw 제거).
 // - 2026-08-07: 묶음/신속 정시 출고 성공률 표시.
 // - 2026-08-06: 정시 발송 비율 → 정시 출고 비율.
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +14,7 @@ import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateOnly } from "@/utils/dateFormat";
 import { getNormalizedStageLabel } from "@/utils/stage";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { getStageBadgeStyle } from "@/shared/ui/semanticStatus";
 
 export type RiskSummary = {
   delayedCount?: number;
@@ -97,58 +100,24 @@ export const RequestorRiskSummaryCard = ({
       label = String(requestLike?.manufacturerStage || "").trim();
     }
 
-    switch (label) {
-      case "의뢰":
-        return (
-          <Badge variant="outline" className={STAGE_BADGE_BASE}>
-            준비
-          </Badge>
-        );
-      case "CAM":
-      case "가공":
-      case "생산":
-        return (
-          <Badge variant="default" className={STAGE_BADGE_BASE}>
-            가공
-          </Badge>
-        );
-      case "세척.패킹":
-        return (
-          <Badge
-            variant="default"
-            className={`${STAGE_BADGE_BASE} bg-purple-50 text-purple-700 border border-purple-200`}
-          >
-            세척.패킹
-          </Badge>
-        );
-      case "포장.발송":
-        return (
-          <Badge
-            variant="default"
-            className={`${STAGE_BADGE_BASE} bg-blue-50 text-blue-700 border border-blue-200`}
-          >
-            포장.발송
-          </Badge>
-        );
-      case "추적관리":
-        return (
-          <Badge variant="secondary" className={STAGE_BADGE_BASE}>
-            추적관리
-          </Badge>
-        );
-      case "취소":
-        return (
-          <Badge variant="destructive" className={STAGE_BADGE_BASE}>
-            취소
-          </Badge>
-        );
-      default:
-        return (
-          <Badge variant="outline" className={STAGE_BADGE_BASE}>
-            {label}
-          </Badge>
-        );
-    }
+    const display =
+      label === "의뢰"
+        ? "준비"
+        : label === "CAM" || label === "생산"
+          ? "가공"
+          : label;
+    const style = getStageBadgeStyle(
+      label === "생산" || label === "CAM" ? "가공" : label === "의뢰" ? "준비" : label,
+    );
+
+    return (
+      <Badge
+        variant={style.variant}
+        className={`${STAGE_BADGE_BASE} ${style.extra || ""}`}
+      >
+        {display || label}
+      </Badge>
+    );
   };
 
   return (
@@ -252,7 +221,7 @@ export const RequestorRiskSummaryCard = ({
                     </div>
                     <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
                       {originalYmd && (
-                        <span className="text-blue-600 font-medium">
+                        <span className="text-primary-strong font-medium">
                           최초 예정일: {formatDateOnly(originalYmd, "확인 중")}
                         </span>
                       )}

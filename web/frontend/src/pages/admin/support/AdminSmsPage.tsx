@@ -197,7 +197,7 @@ const statusBadge = (status: SmsHistoryItem["status"]) => {
   switch (status) {
     case "SENT":
       return (
-        <Badge className="bg-green-100 text-green-700 border-green-200">
+        <Badge className="bg-primary-muted/50 text-primary-strong border-primary-muted">
           발송됨
         </Badge>
       );
@@ -1112,7 +1112,7 @@ export default function AdminSmsPage() {
                         : ""}
                     </div>
                   ) : (
-                    <div className="text-xs text-amber-700">
+                    <div className="text-xs text-accent-strong">
                       아직 코드가 없습니다. 아래에서 팝빌 승인 템플릿을 고르거나
                       「팝빌 자동 연결」을 눌러 주세요.
                     </div>

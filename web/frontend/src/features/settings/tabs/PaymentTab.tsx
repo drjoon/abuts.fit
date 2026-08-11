@@ -165,7 +165,7 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
 
               <div className="bg-muted/30 rounded-lg p-4 mb-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="h-4 w-4 text-blue-500" />
+                  <AlertCircle className="h-4 w-4 text-primary" />
                   <span className="font-medium">
                     토스페이먼츠 퀵계좌이체 안내
                   </span>
@@ -252,7 +252,7 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
 
               <div className="bg-muted/30 rounded-lg p-4 mb-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="h-4 w-4 text-blue-500" />
+                  <AlertCircle className="h-4 w-4 text-primary" />
                   <span className="font-medium">
                     토스페이먼츠 퀵자동이체 안내
                   </span>
@@ -268,15 +268,15 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
                   <p className="font-medium">자동이체 등록 상태</p>
                 </div>
                 {paymentData.registrationStatus === "registered" ? (
-                  <Badge className="bg-green-100 text-green-800 border-green-200">
+                  <Badge className="bg-primary-muted/50 text-primary-strong border-primary-muted">
                     등록완료
                   </Badge>
                 ) : paymentData.registrationStatus === "pending" ? (
-                  <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
+                  <Badge className="bg-accent-muted/50 text-accent-strong border-accent-muted">
                     처리중
                   </Badge>
                 ) : (
-                  <Badge className="bg-gray-100 text-gray-800 border-gray-200">
+                  <Badge className="bg-secondary text-secondary-foreground border-border">
                     미등록
                   </Badge>
                 )}

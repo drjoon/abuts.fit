@@ -42,12 +42,19 @@ import {
   PRODUCT_MODE,
   resolveProductMode,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  SEMANTIC_CALLOUT,
+  STAGE_BADGE_STYLES,
+  getProductModeBadgeClassName,
+} from "@/shared/ui/semanticStatus";
 
 // change-log:
-// - 2026-08-11: 카드 헤더 오른쪽 위에 [지난 의뢰] 버튼·모달 추가(대시보드/어벗의뢰 상단 헤더에서 이전).
+// - 2026-08-11: 카드 헤더 오른쪽 위에 [지난 의뢰] 버튼·모달 추가(대시보드 상단 헤더에서 이전).
+// - 2026-08-11: 뱃지/불완전가공 색 — semanticStatus Primary/Attention/Danger.
 // - 2026-08-09: 최근 의뢰 커스텀어벗 수= customAbutment·임플란트 치아만(Pontic 제외).
 // - 2026-08-09: 최근 의뢰에 생산/디자인+생산 뱃지. 디자인+생산은 임플란트 대신 치과·환자·어벗 수.
 // related files:
+// - web/frontend/src/shared/ui/semanticStatus.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
@@ -77,37 +84,12 @@ const PRODUCT_MODE_BADGE_STYLES: Record<
 > = {
   [PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT]: {
     label: "디자인+생산",
-    className: "bg-violet-50 text-violet-700 border border-violet-200",
+    className: getProductModeBadgeClassName("design_custom_abutment"),
   },
   [PRODUCT_MODE.CUSTOM_ABUTMENT]: {
     label: "생산",
-    className: "bg-sky-50 text-sky-700 border border-sky-200",
+    className: getProductModeBadgeClassName("custom_abutment"),
   },
-};
-
-
-
-const STAGE_BADGE_STYLES: Record<
-  string,
-  {
-    variant: "outline" | "default" | "secondary" | "destructive";
-    extra?: string;
-  }
-> = {
-  의뢰: { variant: "outline" },
-  준비: { variant: "outline" }, // display alias for '의뢰'
-  CAM: { variant: "default" },
-  가공: { variant: "default" },
-  "세척.패킹": {
-    variant: "default",
-    extra: "bg-purple-50 text-purple-700 border border-purple-200",
-  },
-  "포장.발송": {
-    variant: "default",
-    extra: "bg-blue-50 text-blue-700 border border-blue-200",
-  },
-  추적관리: { variant: "secondary" },
-  취소: { variant: "destructive" },
 };
 
 type EditableCaseInfos = {
@@ -845,7 +827,7 @@ export const RequestorRecentRequestsCard = ({
                 key={stableKey || displayId}
                 className={`flex items-center justify-between p-3 border rounded-lg ${
                   isUnmachinable
-                    ? "border-yellow-300 ring-2 ring-yellow-200 bg-yellow-50/40"
+                    ? SEMANTIC_CALLOUT.attention
                     : "border-border"
                 }`}
                 onClick={(e) => {
@@ -860,7 +842,7 @@ export const RequestorRecentRequestsCard = ({
                   <div className="absolute top-2 right-2 z-10">
                     <button
                       type="button"
-                      className="inline-flex h-7 min-w-[72px] items-center justify-center rounded-full px-2 text-[11px] font-bold leading-none shadow-sm transition-colors bg-yellow-500 text-white hover:bg-yellow-600"
+                      className={`inline-flex h-7 min-w-[72px] items-center justify-center rounded-full px-2 text-[11px] font-bold leading-none shadow-sm transition-colors ${SEMANTIC_CALLOUT.attentionSolid}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         setUnmachinableTarget(item);
@@ -881,7 +863,7 @@ export const RequestorRecentRequestsCard = ({
                               type="button"
                               className={`inline-flex h-7 min-w-[42px] items-center justify-center rounded-full px-2 text-[11px] font-bold leading-none shadow-sm transition-colors ${
                                 canCancel
-                                  ? "bg-red-500 text-white hover:bg-red-600"
+                                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                   : "bg-gray-200 text-gray-500 cursor-not-allowed"
                               }`}
                               disabled={!canCancel}
@@ -926,7 +908,7 @@ export const RequestorRecentRequestsCard = ({
                     {renderRecentRequestSummaryLine(item)}
                   </div>
                   {isUnmachinable && (
-                    <div className="text-[11px] text-yellow-800 mt-1 truncate flex items-center gap-2">
+                    <div className="text-[11px] text-accent-strong mt-1 truncate flex items-center gap-2">
                       <span>불완전 가공 사유: {unmachinableReason || "미등록"}</span>
                       {isUnmachinableConfirmed && (
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5">
@@ -950,7 +932,7 @@ export const RequestorRecentRequestsCard = ({
                         item.estimatedShipYmd;
                       if (!eta) return null;
                       return (
-                        <span className="text-blue-600 font-medium">
+                        <span className="text-primary-strong font-medium">
                           출고 예정: {formatDateWithDay(eta)}
                         </span>
                       );
@@ -959,13 +941,13 @@ export const RequestorRecentRequestsCard = ({
                       item.daysUntilDue >= 0 && (
                         <Badge
                           variant="outline"
-                          className="text-[10px] h-5 px-1.5 text-blue-700 border-blue-200 bg-blue-50"
+                          className="text-[10px] h-5 px-1.5 text-primary-strong border-primary-muted bg-primary-soft"
                         >
                           출고 {item.daysUntilDue}일전
                         </Badge>
                       )}
                     {item.deliveryInfoRef?.deliveredAt && (
-                      <span className="text-green-600 font-medium">
+                      <span className="text-primary-strong font-medium">
                         배송완료: {formatDateOnly(item.deliveryInfoRef.deliveredAt)}
                       </span>
                     )}
@@ -1019,29 +1001,29 @@ export const RequestorRecentRequestsCard = ({
           if (!next) setUnmachinableTarget(null);
         }}
       >
-        <DialogContent className="sm:max-w-md border-yellow-300 ring-2 ring-yellow-200">
+        <DialogContent className="sm:max-w-md border-accent-muted ring-2 ring-accent-muted/80">
           <DialogHeader>
-            <DialogTitle className="text-yellow-700">불완전 가공 안내</DialogTitle>
+            <DialogTitle className="text-accent-strong">불완전 가공 안내</DialogTitle>
             <DialogDescription>
               해당 의뢰는 제조사에서 불완전 가공 판정을 받았습니다.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2">
-              <div className="text-xs font-semibold text-yellow-700 mb-1">상세 사유</div>
+            <div className="rounded-md border border-accent-muted bg-accent-soft px-3 py-2">
+              <div className="text-xs font-semibold text-accent-strong mb-1">상세 사유</div>
               {(() => {
                 const reasonLines = parseUnmachinableReasonLines(
                   getUnmachinableReason(unmachinableTarget),
                 );
                 if (!reasonLines.length) {
                   return (
-                    <div className="text-sm text-yellow-800">
+                    <div className="text-sm text-accent-strong">
                       불완전 가공 사유가 등록되지 않았습니다.
                     </div>
                   );
                 }
                 return (
-                  <div className="text-sm text-yellow-800 space-y-0.5">
+                  <div className="text-sm text-accent-strong space-y-0.5">
                     {reasonLines.map((line, idx) => (
                       <div key={`unmachinable-reason-line-${idx}`}>{line}</div>
                     ))}

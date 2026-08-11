@@ -203,10 +203,10 @@ export function DesignRequestCardGrid({
                   className={cn(
                     "shrink-0 whitespace-nowrap",
                     designClaimMine && !designClaimWarn
-                      ? "bg-sky-100 text-sky-800 hover:bg-sky-100"
+                      ? "bg-primary-soft text-primary-strong hover:bg-primary-soft"
                       : "",
                     designClaimWarn
-                      ? "bg-red-100 text-red-800 hover:bg-red-100"
+                      ? "bg-destructive-soft text-destructive hover:bg-destructive-soft"
                       : "",
                   )}
                 >
@@ -238,8 +238,8 @@ export function DesignRequestCardGrid({
                   variant="outline"
                   className={`text-[11px] px-2 py-0.5 font-semibold ${
                     designClaimWarn
-                      ? "border-red-300 bg-red-50 text-red-700"
-                      : "border-sky-300 bg-sky-50 text-sky-800"
+                      ? "border-destructive/80 bg-destructive-soft text-destructive"
+                      : "border-primary-muted bg-primary-soft text-primary-strong"
                   }`}
                 >
                   {designClaimWarn ? "마감 임박 · " : "작업중 · "}
@@ -250,7 +250,7 @@ export function DesignRequestCardGrid({
                 <span
                   role="button"
                   tabIndex={0}
-                  className={`h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white text-sky-700 shadow-sm transition hover:bg-sky-50 ${
+                  className={`h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white text-primary-strong shadow-sm transition hover:bg-primary-soft ${
                     designClaimBusy ? "opacity-40 cursor-not-allowed" : ""
                   }`}
                   onClick={(e) => {

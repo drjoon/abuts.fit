@@ -328,7 +328,7 @@ export const RequestDetailDialog = ({
     >
       <DialogContent
         className={`w-[min(96vw,880px)] max-w-[880px] max-h-[92vh] overflow-y-auto ${
-          isUnmachinable ? "border-yellow-300 ring-2 ring-yellow-200" : ""
+          isUnmachinable ? "border-accent-muted ring-2 ring-accent-muted/80" : ""
         }`}
       >
         <DialogHeader>
@@ -350,7 +350,7 @@ export const RequestDetailDialog = ({
                   request.manufacturerStage,
                 )}
               {isUnmachinable && (
-                <Badge variant="outline" className="border-yellow-300 bg-yellow-50 text-yellow-700">
+                <Badge variant="outline" className="border-accent-muted bg-accent-soft text-accent-strong">
                   불완전가공
                 </Badge>
               )}
@@ -361,9 +361,9 @@ export const RequestDetailDialog = ({
         <DialogDescription asChild>
           <div className="space-y-3 text-sm text-foreground">
             {isUnmachinable && (
-              <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 space-y-1">
-                <div className="text-xs font-semibold text-yellow-700">불완전가공 판정</div>
-                <div className="text-sm text-yellow-800">
+              <div className="rounded-md border border-accent-muted bg-accent-soft px-3 py-2 space-y-1">
+                <div className="text-xs font-semibold text-accent-strong">불완전가공 판정</div>
+                <div className="text-sm text-accent-strong">
                   {unmachinableReason || "불완전가공 사유가 등록되지 않았습니다."}
                 </div>
               </div>
@@ -373,7 +373,7 @@ export const RequestDetailDialog = ({
               {/* 좌열: 일정·비용 */}
               <div className="space-y-3 min-w-0">
                 {estimatedShipYmd && (
-                  <div className="grid grid-cols-[88px_1fr] gap-2 items-center text-blue-700 font-medium">
+                  <div className="grid grid-cols-[88px_1fr] gap-2 items-center text-primary-strong font-medium">
                     <span>출고 예정일</span>
                     <span>{formatDateWithDay(estimatedShipYmd)}</span>
                   </div>
@@ -395,7 +395,7 @@ export const RequestDetailDialog = ({
                   </div>
                 )}
                 {request?.deliveryInfoRef?.deliveredAt && (
-                  <div className="grid grid-cols-[88px_1fr] gap-2 items-center text-green-700 font-medium">
+                  <div className="grid grid-cols-[88px_1fr] gap-2 items-center text-primary-strong font-medium">
                     <span>배송 완료일</span>
                     <span>
                       {formatTimestamp(request.deliveryInfoRef.deliveredAt)}
@@ -439,7 +439,7 @@ export const RequestDetailDialog = ({
                         <span
                           className={`font-medium tabular-nums text-right ${
                             designFeeTotal > 0
-                              ? "text-violet-700"
+                              ? "text-primary-strong"
                               : "text-slate-500"
                           }`}
                         >
@@ -455,7 +455,7 @@ export const RequestDetailDialog = ({
                       {expressFeeTotal > 0 && (
                         <div className="flex items-baseline justify-between gap-3">
                           <span className="text-slate-600 shrink-0">신속출고</span>
-                          <span className="font-medium tabular-nums text-right text-amber-700">
+                          <span className="font-medium tabular-nums text-right text-accent-strong">
                             {formatUnitTimesQty(
                               expressUnit,
                               expressQty,

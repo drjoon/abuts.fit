@@ -747,7 +747,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             <Button
               type="button"
               variant="outline"
-              className="border-red-400 text-red-400 hover:bg-red-50 hover:text-red-700"
+              className="border-destructive/80 text-destructive/80 hover:bg-destructive-soft hover:text-destructive"
               onClick={() => setWithdrawDialogOpen(true)}
               disabled={withdrawing}
             >
@@ -976,7 +976,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   {phoneVerifiedAt ? (
                     <Button
                       variant="outline"
-                      className="w-full h-10 cursor-default border-green-200 bg-white text-green-600 hover:bg-white hover:text-green-600 disabled:opacity-100"
+                      className="w-full h-10 cursor-default border-primary-muted bg-white text-primary-strong hover:bg-white hover:text-primary-strong disabled:opacity-100"
                       disabled
                     >
                       <Check className="mr-2 h-4 w-4" />

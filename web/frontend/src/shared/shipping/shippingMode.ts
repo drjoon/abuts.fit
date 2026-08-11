@@ -1,7 +1,9 @@
 // change-log:
+// - 2026-08-11: 출고 뱃지 색 — semantic Primary(묶음) / Attention(신속).
 // - 2026-08-09: 표시 금액 — 기록된 expressFee 총액(어벗 배수)을 feeSetting으로 덮어쓰지 않음.
 // - 2026-08-06: 표시 라벨 신속배송/묶음배송 → 신속출고/묶음출고 (제조사 출발일 의미).
 // related files:
+// - web/frontend/src/shared/ui/semanticStatus.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
@@ -75,7 +77,8 @@ export function getBulkExpressShippingLabel(mode: ShippingMode): string {
 }
 
 export function getShippingModeBadgeClassName(mode: ShippingMode): string {
+  // Semantic: express → Attention; normal(묶음) → Primary soft
   return mode === "express"
-    ? "border-amber-400 text-amber-700 bg-amber-50"
-    : "border-sky-300 text-sky-700 bg-sky-50";
+    ? "border-accent-muted text-accent-strong bg-accent-soft"
+    : "border-primary-muted text-primary-strong bg-primary-soft";
 }

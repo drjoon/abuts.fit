@@ -29,7 +29,7 @@ export const BusinessMemberView = ({
     return (
       <div className="space-y-4">
         <div className="app-surface app-surface--panel space-y-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
+          <div className="flex items-center gap-2 text-sm font-medium text-accent-strong">
             <Clock className="h-4 w-4 shrink-0" />
             승인 대기 중
           </div>

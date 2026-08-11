@@ -31,10 +31,10 @@ interface CncMachineActionButtonsProps {
 
 const getToneClass = (level?: CncToolAlertLevel) => {
   if (level === "alarm") {
-    return "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800";
+    return "border-destructive-muted bg-destructive-soft text-destructive hover:bg-destructive-soft hover:text-destructive";
   }
   if (level === "warn") {
-    return "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800";
+    return "border-accent-muted bg-accent-soft text-accent-strong hover:bg-accent-soft hover:text-accent-strong";
   }
   return "border-slate-200 bg-white/80 text-slate-700 hover:bg-white hover:text-slate-900";
 };

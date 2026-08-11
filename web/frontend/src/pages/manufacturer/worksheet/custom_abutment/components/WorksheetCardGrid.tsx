@@ -166,18 +166,18 @@ export const WorksheetCardGrid = ({
 
   const getRealtimeToneClass = (tone?: string | null) => {
     if (tone === "amber") {
-      return "bg-amber-50 text-amber-700 border-amber-200";
+      return "bg-accent-soft text-accent-strong border-accent-muted";
     }
     if (tone === "indigo") {
-      return "bg-indigo-50 text-indigo-700 border-indigo-200";
+      return "bg-primary-soft text-primary-strong border-primary-muted";
     }
     if (tone === "rose") {
-      return "bg-rose-50 text-rose-700 border-rose-200";
+      return "bg-destructive-soft text-destructive border-destructive-muted";
     }
     if (tone === "slate") {
       return "bg-slate-50 text-slate-700 border-slate-200";
     }
-    return "bg-blue-50 text-blue-700 border-blue-200";
+    return "bg-primary-soft text-primary-strong border-primary-muted";
   };
 
   useEffect(() => {
@@ -501,16 +501,16 @@ export const WorksheetCardGrid = ({
           const base =
             "text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border";
           if (s === "CAM") {
-            return `${base} bg-indigo-50 text-indigo-700 border-indigo-200`;
+            return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
           if (s === "가공") {
-            return `${base} bg-blue-50 text-blue-700 border-blue-200`;
+            return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
           if (s === "세척.포장" || s === "세척.패킹") {
-            return `${base} bg-emerald-50 text-emerald-700 border-emerald-200`;
+            return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
           if (s === "발송" || s === "포장.발송") {
-            return `${base} bg-amber-50 text-amber-700 border-amber-200`;
+            return `${base} bg-accent-soft text-accent-strong border-accent-muted`;
           }
           if (s === "추적관리") {
             return `${base} bg-slate-50 text-slate-700 border-slate-200`;
@@ -523,16 +523,16 @@ export const WorksheetCardGrid = ({
           const base =
             "text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border";
           if (s === "CAM") {
-            return `${base} bg-indigo-50 text-indigo-700 border-indigo-200`;
+            return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
           if (s === "가공") {
-            return `${base} bg-blue-50 text-blue-700 border-blue-200`;
+            return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
           if (s === "세척.포장" || s === "세척.패킹") {
-            return `${base} bg-emerald-50 text-emerald-700 border-emerald-200`;
+            return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
           }
           if (s === "발송" || s === "포장.발송") {
-            return `${base} bg-amber-50 text-amber-700 border-amber-200`;
+            return `${base} bg-accent-soft text-accent-strong border-accent-muted`;
           }
           if (s === "추적관리") {
             return `${base} bg-slate-50 text-slate-700 border-slate-200`;
@@ -692,27 +692,27 @@ export const WorksheetCardGrid = ({
             onClick={onToggleSelected ? handleToggleSelected : undefined}
             className={`relative h-full border ${
               isSelected
-                ? "border-blue-500 bg-blue-50/40"
+                ? "border-primary bg-primary-soft/40"
                 : isSampleRequest
                   ? isRndVisualSample
-                    ? "border-purple-300 bg-purple-50/40"
-                    : "border-blue-300 bg-blue-50/40"
+                    ? "border-primary/70 bg-primary-soft/40"
+                    : "border-primary/70 bg-primary-soft/40"
                   : tabStage === "packing" && isPrinted
                     ? "border-slate-300 bg-slate-50/60 opacity-75"
                     : hasInsufficientShippingCredit
-                      ? "border-red-500 border-2 bg-red-50/40"
+                      ? "border-destructive border-2 bg-destructive-soft/40"
                       : isCompletedForCurrentStage
-                        ? "border-emerald-500 bg-emerald-50/30"
+                        ? "border-primary bg-primary-soft/30"
                         : deadlineInfo
                           ? deadlineInfo.borderClass
                           : urgency === "danger"
-                            ? "border-rose-500 border-2"
+                            ? "border-destructive border-2"
                             : urgency === "warning"
-                              ? "border-amber-500 border-2"
+                              ? "border-accent border-2"
                               : "border-slate-200"
             } ${
               isFinishLineMinZRisky || isUnmachinableSample
-                ? "border-yellow-300 ring-2 ring-yellow-200"
+                ? "border-accent-muted ring-2 ring-accent-muted/80"
                 : ""
             } ${onToggleSelected ? "cursor-pointer" : ""}`}
             role={onToggleSelected ? "button" : undefined}
@@ -729,7 +729,7 @@ export const WorksheetCardGrid = ({
                   }}
                   className={`h-7 w-7 rounded-full border flex items-center justify-center text-sm font-semibold transition ${
                     isSelected
-                      ? "bg-blue-500 border-blue-500 text-white"
+                      ? "bg-primary border-primary text-white"
                       : "bg-white border-slate-300 text-slate-500"
                   }`}
                   aria-label={
@@ -746,8 +746,8 @@ export const WorksheetCardGrid = ({
                   variant="outline"
                   className={`text-[11px] px-2 py-0.5 font-semibold h-7 flex items-center ${
                     isRndVisualSample
-                      ? "border-purple-300 bg-purple-50 text-purple-700"
-                      : "border-blue-300 bg-blue-50 text-blue-700"
+                      ? "border-primary/70 bg-primary-soft text-primary-strong"
+                      : "border-primary/70 bg-primary-soft text-primary-strong"
                   }`}
                 >
                   {isRndVisualSample ? "R&D" : "샘플"}
@@ -766,7 +766,7 @@ export const WorksheetCardGrid = ({
                   </Badge>
                 )}
                 {realtimeElapsedLabel && (
-                  <span className="text-[12px] tabular-nums font-bold text-blue-600 whitespace-nowrap">
+                  <span className="text-[12px] tabular-nums font-bold text-primary-strong whitespace-nowrap">
                     {realtimeElapsedLabel}
                   </span>
                 )}
@@ -777,7 +777,7 @@ export const WorksheetCardGrid = ({
                 {designPeerBusy && (
                   <Badge
                     variant="outline"
-                    className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border-amber-300 bg-amber-50 text-amber-800"
+                    className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border-accent-muted bg-accent-soft text-accent-strong"
                   >
                     다른 디자이너 작업중
                   </Badge>
@@ -787,8 +787,8 @@ export const WorksheetCardGrid = ({
                     variant="outline"
                     className={`text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] ${
                       designClaimWarn
-                        ? "border-red-300 bg-red-50 text-red-700"
-                        : "border-sky-300 bg-sky-50 text-sky-800"
+                        ? "border-destructive/80 bg-destructive-soft text-destructive"
+                        : "border-primary-muted bg-primary-soft text-primary-strong"
                     }`}
                     title={
                       designClaimWarn
@@ -806,7 +806,7 @@ export const WorksheetCardGrid = ({
               {enableDesignClaim && designClaimable && onDesignClaim && (
                 <button
                   type="button"
-                  className={`h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-sky-700 shadow-sm transition hover:bg-sky-50 ${
+                  className={`h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-primary-strong shadow-sm transition hover:bg-primary-soft ${
                     designClaimBusy ? "opacity-40 cursor-not-allowed" : ""
                   }`}
                   disabled={designClaimBusy}
@@ -829,8 +829,8 @@ export const WorksheetCardGrid = ({
                   variant="outline"
                   className={`h-7 text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border flex items-center ${
                     isUnmachinableSample
-                      ? "border-yellow-300 bg-yellow-50 text-yellow-700"
-                      : "border-yellow-200 bg-yellow-50 text-yellow-700"
+                      ? "border-accent-muted bg-accent-soft text-accent-strong"
+                      : "border-accent-muted bg-accent-soft text-accent-strong"
                   }`}
                 >
                   {isUnmachinableSample ? "불완전가공" : "불완전가공 확인요망"}
@@ -839,7 +839,7 @@ export const WorksheetCardGrid = ({
               {showLatestContinueBadge && (
                 <Badge
                   variant="outline"
-                  className="h-7 text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-blue-200 bg-blue-50 text-blue-700 flex items-center"
+                  className="h-7 text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong flex items-center"
                   title={requestorContinueMessage || "의뢰자가 계속 가공 진행을 요청했습니다."}
                 >
                   불완전가공 진행요청
@@ -851,7 +851,7 @@ export const WorksheetCardGrid = ({
                   tabStage === "cam") && (
                 <button
                   type="button"
-                  className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-blue-700 shadow-sm transition hover:bg-blue-50"
+                  className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-primary-strong shadow-sm transition hover:bg-primary-soft"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -870,7 +870,7 @@ export const WorksheetCardGrid = ({
                   tabStage === "cam") && (
                 <button
                   type="button"
-                  className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-purple-700 shadow-sm transition hover:bg-purple-50"
+                  className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-primary-strong shadow-sm transition hover:bg-primary-soft"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -912,7 +912,7 @@ export const WorksheetCardGrid = ({
               {onDelete && isSampleRequest && (
                 <button
                   type="button"
-                  className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-red-500 shadow-sm transition hover:bg-red-50"
+                  className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-destructive shadow-sm transition hover:bg-destructive-soft"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -930,7 +930,7 @@ export const WorksheetCardGrid = ({
                 isUnmachinableSample && (
                   <button
                     type="button"
-                    className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-emerald-700 shadow-sm transition hover:bg-emerald-50"
+                    className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-primary-strong shadow-sm transition hover:bg-primary-soft"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -989,7 +989,7 @@ export const WorksheetCardGrid = ({
                 {tabStage === "packing" && resolvedConnectionSpec.screwType && (
                   <Badge
                     variant="outline"
-                    className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-violet-200 bg-violet-50 text-violet-700"
+                    className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong"
                   >
                     스크류 {resolvedConnectionSpec.screwType}
                   </Badge>
@@ -1014,7 +1014,7 @@ export const WorksheetCardGrid = ({
                 {hasNcFile && (
                   <Badge
                     variant="outline"
-                    className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-cyan-200 bg-cyan-50 text-cyan-700 whitespace-nowrap"
+                    className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong whitespace-nowrap"
                   >
                     NC
                   </Badge>
@@ -1045,11 +1045,11 @@ export const WorksheetCardGrid = ({
               <div className="absolute inset-0 z-10 bg-white/80 flex flex-col items-center justify-center p-4 rounded-xl">
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-2">
                   <div
-                    className="bg-blue-500 h-full transition-all duration-300 ease-out"
+                    className="bg-primary h-full transition-all duration-300 ease-out"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <span className="text-xs font-semibold text-blue-600">
+                <span className="text-xs font-semibold text-primary-strong">
                   {progress}% 업로드 중...
                 </span>
               </div>
@@ -1062,7 +1062,7 @@ export const WorksheetCardGrid = ({
                     ? "pt-10"
                     : "pt-6"
               } ${hasBottomFloatingBadges ? "pb-8" : "pb-4"} ${
-                isNewSystemRequest ? "bg-emerald-50/40" : ""
+                isNewSystemRequest ? "bg-primary-soft/40" : ""
               }`}
             >
               <div
@@ -1105,7 +1105,7 @@ export const WorksheetCardGrid = ({
                           {isNewSystemRequest && (
                             <Badge
                               variant="outline"
-                              className="border-emerald-400 text-emerald-700 bg-emerald-50"
+                              className="border-primary/70 text-primary-strong bg-primary-soft"
                             >
                               신규 임플란트
                             </Badge>
@@ -1113,7 +1113,7 @@ export const WorksheetCardGrid = ({
                           {hasInsufficientShippingCredit && (
                             <Badge
                               variant="outline"
-                              className="border-red-300 bg-red-50 text-red-700"
+                              className="border-destructive/80 bg-destructive-soft text-destructive"
                             >
                               배송비 부족
                             </Badge>
@@ -1122,10 +1122,10 @@ export const WorksheetCardGrid = ({
                       )}
                       {!!machiningElapsedLabel && (
                         <div className="flex items-center gap-2 text-[12px] text-slate-500">
-                          <span className="font-semibold text-blue-600">
+                          <span className="font-semibold text-primary-strong">
                             Now Playing
                           </span>
-                          <span className="tabular-nums font-bold text-blue-600">
+                          <span className="tabular-nums font-bold text-primary-strong">
                             {machiningElapsedLabel}
                           </span>
                         </div>
@@ -1141,7 +1141,7 @@ export const WorksheetCardGrid = ({
                   (isMachiningStage &&
                     request.caseInfos?.reviewByStage?.machining?.status ===
                       "REJECTED")) && (
-                  <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600 flex flex-col gap-1">
+                  <div className="mt-2 p-2 bg-destructive-soft border border-destructive-soft rounded-lg text-xs text-destructive flex flex-col gap-1">
                     <div className="font-bold">⚠️ 백그라운드 작업 실패</div>
                     <div>
                       {isCamStage
@@ -1160,8 +1160,8 @@ export const WorksheetCardGrid = ({
                     e.stopPropagation();
                   }}
                 >
-                  <div className="rounded-md border border-purple-200 bg-purple-50/40 p-2 space-y-2">
-                    <div className="text-[11px] font-semibold text-purple-700">
+                  <div className="rounded-md border border-primary-muted bg-primary-soft/40 p-2 space-y-2">
+                    <div className="text-[11px] font-semibold text-primary-strong">
                       메모
                     </div>
                     <Textarea
@@ -1217,7 +1217,7 @@ export const WorksheetCardGrid = ({
                         type="button"
                         className={`h-7 rounded-md border px-2 text-[11px] font-semibold transition ${
                           isRndMemoDirty && !isSavingRndMemo
-                            ? "border-purple-300 bg-white text-purple-700 hover:bg-purple-100"
+                            ? "border-primary/70 bg-white text-primary-strong hover:bg-primary-muted/50"
                             : "border-slate-200 bg-slate-100 text-slate-400"
                         }`}
                         disabled={!isRndMemoDirty || isSavingRndMemo}

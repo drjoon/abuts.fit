@@ -1,7 +1,12 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/src/shared/ui/semanticStatus.ts
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+import {
+  getMachineStatusDotClass as getSemanticMachineDot,
+} from "@/shared/ui/semanticStatus";
+
 export type MachineStatusLevel = "ok" | "warn" | "alarm" | "idle" | "unknown";
 
 export const deriveMachineStatusLevel = (
@@ -17,19 +22,7 @@ export const deriveMachineStatusLevel = (
 };
 
 export const getMachineStatusDotClass = (status?: string | null) => {
-  const level = deriveMachineStatusLevel(status);
-  switch (level) {
-    case "alarm":
-      return "bg-rose-500";
-    case "warn":
-      return "bg-amber-500";
-    case "ok":
-      return "bg-emerald-500";
-    case "idle":
-      return "bg-slate-400";
-    default:
-      return "bg-slate-300";
-  }
+  return getSemanticMachineDot(deriveMachineStatusLevel(status));
 };
 
 export const getMachineStatusLabel = (status?: string | null) => {

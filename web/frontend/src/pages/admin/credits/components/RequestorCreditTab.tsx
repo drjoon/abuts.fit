@@ -262,7 +262,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
             <CardTitle className="text-sm font-medium">미매칭 입금</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600">
+            <div className="text-2xl font-bold text-accent-strong">
               {props.loadingStats
                 ? "..."
                 : props.stats?.newBankTransactions || 0}

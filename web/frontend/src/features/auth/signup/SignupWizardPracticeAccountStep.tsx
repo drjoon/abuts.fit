@@ -84,7 +84,7 @@ export const SignupWizardPracticeAccountStep = ({
           <Label htmlFor="clinicName" className="text-sm font-medium text-white/80">
             치과명
             {errors?.clinicName && (
-              <span className="ml-2 text-xs font-medium text-rose-200">
+              <span className="ml-2 text-xs font-medium text-destructive-muted">
                 {errors.clinicName}
               </span>
             )}
@@ -97,7 +97,7 @@ export const SignupWizardPracticeAccountStep = ({
             onChange={(e) => onChangeField("clinicName", e.target.value)}
             ref={clinicNameRef}
             disabled={isLoading}
-            className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.clinicName ? "border-rose-300" : ""}`}
+            className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.clinicName ? "border-destructive/80" : ""}`}
           />
         </div>
 
@@ -105,7 +105,7 @@ export const SignupWizardPracticeAccountStep = ({
           <Label htmlFor="staffName" className="text-sm font-medium text-white/80">
             담당자명
             {errors?.staffName && (
-              <span className="ml-2 text-xs font-medium text-rose-200">
+              <span className="ml-2 text-xs font-medium text-destructive-muted">
                 {errors.staffName}
               </span>
             )}
@@ -118,7 +118,7 @@ export const SignupWizardPracticeAccountStep = ({
             onChange={(e) => onChangeField("staffName", e.target.value)}
             ref={staffNameRef}
             disabled={isLoading}
-            className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.staffName ? "border-rose-300" : ""}`}
+            className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.staffName ? "border-destructive/80" : ""}`}
           />
         </div>
       </div>
@@ -128,7 +128,7 @@ export const SignupWizardPracticeAccountStep = ({
           <Label htmlFor="phone" className="text-sm font-medium text-white/80">
             전화번호
             {errors?.phone && (
-              <span className="ml-2 text-xs font-medium text-rose-200">{errors.phone}</span>
+              <span className="ml-2 text-xs font-medium text-destructive-muted">{errors.phone}</span>
             )}
           </Label>
           <Input
@@ -139,7 +139,7 @@ export const SignupWizardPracticeAccountStep = ({
             onChange={(e) => onChangeField("phone", e.target.value)}
             ref={phoneRef}
             disabled={isLoading}
-            className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.phone ? "border-rose-300" : ""}`}
+            className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.phone ? "border-destructive/80" : ""}`}
           />
         </div>
 
@@ -147,7 +147,7 @@ export const SignupWizardPracticeAccountStep = ({
           <Label htmlFor="practicePassword" className="text-sm font-medium text-white/80">
             접속 비밀번호
             {errors?.password && (
-              <span className="ml-2 text-xs font-medium text-rose-200">
+              <span className="ml-2 text-xs font-medium text-destructive-muted">
                 {errors.password}
               </span>
             )}
@@ -162,7 +162,7 @@ export const SignupWizardPracticeAccountStep = ({
               ref={passwordRef}
               disabled={isLoading}
               autoComplete="new-password"
-              className={`h-10 border-white/10 bg-white/5 pr-10 text-white placeholder:text-white/40 ${errors?.password ? "border-rose-300" : ""}`}
+              className={`h-10 border-white/10 bg-white/5 pr-10 text-white placeholder:text-white/40 ${errors?.password ? "border-destructive/80" : ""}`}
             />
             <button
               type="button"

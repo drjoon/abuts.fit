@@ -156,7 +156,7 @@ export const BusinessLicenseUpload = forwardRef<
               <div className="flex w-fit max-w-xs items-center justify-between gap-2 rounded-md border bg-slate-50 px-3 py-2 mx-auto">
                 <div className="flex items-center gap-2">
                   {licenseStatus === "ready" && (
-                    <ShieldCheck className="h-4 w-4 text-green-600" />
+                    <ShieldCheck className="h-4 w-4 text-primary-strong" />
                   )}
                   <p className="text-xs text-slate-700">{licenseFileName}</p>
                 </div>

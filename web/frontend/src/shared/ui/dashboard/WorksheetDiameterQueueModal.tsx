@@ -265,8 +265,8 @@ export const WorksheetDiameterQueueModal = ({
                 type="button"
                 className={`min-w-[64px] rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors ${
                   effectiveBucket === label
-                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-blue-50/60"
+                    ? "border-primary bg-primary-soft text-primary-strong"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-primary/70 hover:bg-primary-soft/60"
                 }`}
                 onClick={() => {
                   onSelectBucket(label);
@@ -332,8 +332,8 @@ export const WorksheetDiameterQueueModal = ({
                     onClick={() => setSelectedItemId(item.id)}
                     className={`app-surface app-surface--item w-full text-left px-5 py-4 text-lg transition-colors ${
                       active
-                        ? "border-blue-400 bg-blue-50"
-                        : "bg-slate-50 hover:border-blue-300 hover:bg-blue-50/60"
+                        ? "border-primary/70 bg-primary-soft"
+                        : "bg-slate-50 hover:border-primary-muted hover:bg-primary-soft/60"
                     }`}
                   >
                     <div className="mt-1 text-sm font-semibold text-slate-900">

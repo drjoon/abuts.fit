@@ -80,7 +80,7 @@ export const CncReservationListModal: React.FC<
                     <div key={job.id} className="relative group">
                       <button
                         type="button"
-                        className="absolute top-0.5 right-0.5 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-0.5 right-0.5 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full bg-destructive text-[11px] font-bold text-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={(e) => {
                           e.stopPropagation();
                           onCancelJob(job);
@@ -150,7 +150,7 @@ export const CncReservationListModal: React.FC<
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm"
+                className="px-4 py-2.5 rounded-lg bg-primary-strong text-white text-sm font-semibold hover:bg-primary-strong shadow-sm"
               >
                 닫기
               </button>

@@ -71,7 +71,7 @@ export const ConfirmDialog = ({
               e.stopPropagation();
               void onConfirm();
             }}
-            className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+            className="px-4 py-2 rounded-lg bg-destructive hover:bg-destructive text-white font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-destructive"
           >
             {confirmLabel}
           </button>

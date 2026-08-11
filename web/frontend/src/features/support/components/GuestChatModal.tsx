@@ -85,11 +85,11 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 p-0 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)] sm:max-w-md">
+      <DialogContent className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-primary-soft/60 p-0 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)] sm:max-w-md">
         <div className="border-b border-slate-100 bg-white/70 px-6 py-4">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sky-50 text-sky-600">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary-soft text-primary-strong">
                 <MessageSquare className="h-4 w-4" />
               </span>
               문의 남기기
@@ -152,7 +152,7 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
 
           <Button
             type="submit"
-            className="h-11 w-full rounded-xl bg-sky-600 text-white shadow-sm hover:bg-sky-700"
+            className="h-11 w-full rounded-xl bg-primary-strong text-white shadow-sm hover:bg-primary-strong"
             disabled={loading}
           >
             <Send className="mr-2 h-4 w-4" />

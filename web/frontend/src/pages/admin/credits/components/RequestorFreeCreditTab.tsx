@@ -449,7 +449,7 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-muted-foreground">지급 금액</span>
                         <span
-                          className={`font-semibold ${grantCreditType === "general" ? "text-primary" : "text-amber-600"}`}
+                          className={`font-semibold ${grantCreditType === "general" ? "text-primary" : "text-accent-strong"}`}
                         >
                           {grantCreditType === "general"
                             ? selectedFreeCreditAmount.toLocaleString()
@@ -461,7 +461,7 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                   </div>
 
                   <div
-                    className={`rounded-xl border p-5 ${grantCreditType === "general" ? "border-primary/20 bg-primary/5" : "border-amber-200/30 bg-amber-50/50"}`}
+                    className={`rounded-xl border p-5 ${grantCreditType === "general" ? "border-primary/20 bg-primary/5" : "border-accent-muted/30 bg-accent-soft/50"}`}
                   >
                     <div className="text-sm font-medium">지급 안내</div>
                     <div className="mt-3 space-y-2 text-sm text-muted-foreground">
@@ -582,7 +582,7 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                             </TableCell>
                             <TableCell className="text-xs">
                               {row.hasSpent ? (
-                                <span className="text-amber-600 font-medium">
+                                <span className="text-accent-strong font-medium">
                                   사용됨
                                 </span>
                               ) : (

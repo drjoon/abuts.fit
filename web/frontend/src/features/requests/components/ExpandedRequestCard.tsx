@@ -62,13 +62,11 @@ export const ExpandedRequestCard = ({
   const getRoleColor = (role: string) => {
     switch (role) {
       case "requestor":
-        return "text-blue-600";
       case "manufacturer":
-        return "text-green-600";
       case "admin":
-        return "text-purple-600";
+        return "text-primary-strong";
       default:
-        return "text-gray-600";
+        return "text-muted-foreground";
     }
   };
 
@@ -97,7 +95,7 @@ export const ExpandedRequestCard = ({
           return <Badge variant="default">가공</Badge>;
         case "발송":
           return (
-            <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+            <Badge className="bg-primary-soft text-primary-strong border-primary-muted text-xs">
               발송
             </Badge>
           );
@@ -116,14 +114,14 @@ export const ExpandedRequestCard = ({
         return <Badge variant="default">가공</Badge>;
       case "가공후":
         return (
-          <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
+          <Badge className="bg-primary-soft text-primary-strong border-primary-muted text-xs">
             생산
           </Badge>
         );
       case "배송대기":
       case "배송중":
         return (
-          <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+          <Badge className="bg-primary-soft text-primary-strong border-primary-muted text-xs">
             발송
           </Badge>
         );
@@ -132,7 +130,7 @@ export const ExpandedRequestCard = ({
         return <Badge variant="secondary">추적관리</Badge>;
       case "취소":
         return (
-          <Badge className="bg-red-50 text-red-700 border-red-200 text-xs">
+          <Badge className="bg-destructive-soft text-destructive border-destructive-muted text-xs">
             취소
           </Badge>
         );
@@ -198,26 +196,26 @@ export const ExpandedRequestCard = ({
     switch (status) {
       case "paid":
         return (
-          <Badge className="bg-green-100 text-green-800 border-green-200 flex items-center gap-1">
+          <Badge className="bg-primary-muted/50 text-primary-strong border-primary-muted flex items-center gap-1">
             <CheckCircle2 className="h-3 w-3" /> 결제완료
           </Badge>
         );
       case "pending":
         return (
-          <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 flex items-center gap-1">
+          <Badge className="bg-accent-muted/50 text-accent-strong border-accent-muted flex items-center gap-1">
             <Clock8 className="h-3 w-3" /> 결제중
           </Badge>
         );
       case "failed":
         return (
-          <Badge className="bg-red-100 text-red-800 border-red-200 flex items-center gap-1">
+          <Badge className="bg-destructive-soft text-destructive border-destructive-muted flex items-center gap-1">
             <AlertCircle className="h-3 w-3" /> 결제실패
           </Badge>
         );
       case "unpaid":
       default:
         return (
-          <Badge className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1">
+          <Badge className="bg-secondary text-secondary-foreground border-border flex items-center gap-1">
             <CreditCard className="h-3 w-3" /> 미결제
           </Badge>
         );

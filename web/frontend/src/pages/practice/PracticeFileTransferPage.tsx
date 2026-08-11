@@ -1969,7 +1969,7 @@ export const PracticeFileTransferPage = ({
         "기공소로 의뢰가 접수되었습니다. 작성 폼은 비워 두었으니, 다음 의뢰는 대시보드에서 작성·전송하세요.",
       duration: 10000,
       className:
-        "border-2 border-emerald-500 bg-emerald-50 text-emerald-950 shadow-xl sm:min-w-[360px]",
+        "border-2 border-primary bg-primary-soft text-primary-strong shadow-xl sm:min-w-[360px]",
     });
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, navigate, toast]);
@@ -4947,7 +4947,7 @@ export const PracticeFileTransferPage = ({
             type="button"
             size="sm"
             onClick={() => void handleCopyPracticeDropzoneLink()}
-            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+            className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
           >
             {inviteLinkCopied ? (
               <>
@@ -4965,7 +4965,7 @@ export const PracticeFileTransferPage = ({
             type="button"
             size="sm"
             onClick={() => void handleCopyPracticeInviteMessage()}
-            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+            className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
           >
             {inviteMessageCopied ? (
               <>
@@ -4994,12 +4994,12 @@ export const PracticeFileTransferPage = ({
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
           {promoNoticeVisible ? (
             <>
-              <Alert className="flex flex-col items-center justify-center border-blue-200 bg-blue-50 text-blue-900 text-center xl:col-span-5">
+              <Alert className="flex flex-col items-center justify-center border-primary-muted bg-primary-soft text-primary-strong text-center xl:col-span-5">
                 <button
                   type="button"
                   onClick={() => void handleDismissPromoNotice()}
                   disabled={promoNoticeSaving}
-                  className="absolute right-3 top-3 rounded p-1 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="absolute right-3 top-3 rounded p-1 text-primary-strong hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
                   aria-label="안내 닫기"
                 >
                   <X className="h-4 w-4" />
@@ -5016,7 +5016,7 @@ export const PracticeFileTransferPage = ({
                 <div className="flex min-w-0 items-center gap-3">
                   {roleSwitcher}
                   <CardTitle className="flex min-w-0 items-center gap-2 text-base">
-                    <UploadCloud className="h-4 w-4 shrink-0 text-blue-600" />
+                    <UploadCloud className="h-4 w-4 shrink-0 text-primary-strong" />
                     <span className="shrink-0">기공의뢰</span>
                     {formSyncStatusLabel ? (
                       <span
@@ -5264,7 +5264,7 @@ export const PracticeFileTransferPage = ({
                       <span className="inline-flex">
                         <Button
                           type="button"
-                          className="bg-blue-600 text-white hover:bg-blue-700 disabled:pointer-events-none"
+                          className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none"
                           onClick={() => void handleSubmitPracticeRequest()}
                           disabled={requestSubmitting || !hasRequiredSubmitFields}
                         >
@@ -5290,7 +5290,7 @@ export const PracticeFileTransferPage = ({
                             ).map((item) => (
                               <li
                                 key={item.key}
-                                className={item.ok ? "text-sky-200" : "text-amber-200"}
+                                className={item.ok ? "text-primary-muted" : "text-accent-muted"}
                               >
                                 {item.key}
                                 {item.ok ? " (완료)" : " (미입력)"}
@@ -5315,7 +5315,7 @@ export const PracticeFileTransferPage = ({
                 <CollapsibleTrigger asChild>
                   <button type="button" className="mb-2 flex w-full items-center justify-between gap-2 text-left">
                     <CardTitle className="flex items-center gap-2 text-base">
-                      <ClipboardList className="h-4 w-4 text-blue-600" />
+                      <ClipboardList className="h-4 w-4 text-primary-strong" />
                       최근 전송
                     </CardTitle>
                     <ChevronDown
@@ -5347,7 +5347,7 @@ export const PracticeFileTransferPage = ({
                         className={cn(
                           "cursor-pointer",
                           recentStatusFilter === "발송완료"
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
                             : "hover:bg-muted/40",
                         )}
                       >
@@ -5367,7 +5367,7 @@ export const PracticeFileTransferPage = ({
                         className={cn(
                           "cursor-pointer",
                           recentStatusFilter === "수신완료"
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
                             : "hover:bg-muted/40",
                         )}
                       >
@@ -5387,7 +5387,7 @@ export const PracticeFileTransferPage = ({
                         className={cn(
                           "cursor-pointer",
                           recentStatusFilter === "다운로드완료"
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
                             : "hover:bg-muted/40",
                         )}
                       >
@@ -5480,7 +5480,7 @@ export const PracticeFileTransferPage = ({
                             <div className="flex shrink-0 items-center gap-1.5">
                               {transfer.unreadCount > 0 ? (
                                 <span
-                                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-none text-white"
+                                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold leading-none text-white"
                                   aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
                                 >
                                   {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
@@ -5558,9 +5558,9 @@ export const PracticeFileTransferPage = ({
                           className={cn(
                             "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             transfer.id === activeDraftId
-                              ? "border-blue-400 bg-blue-50 ring-1 ring-blue-200"
+                              ? "border-primary/70 bg-primary-soft ring-1 ring-primary-muted"
                               : transfer.isMineDraft
-                                ? "border-blue-200 bg-blue-50/50"
+                                ? "border-primary-muted bg-primary-soft/50"
                                 : "border-slate-200 bg-slate-50/70",
                           )}
                           onClick={() => handleAdoptDraftTransfer(transfer)}
@@ -5652,7 +5652,7 @@ export const PracticeFileTransferPage = ({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-8 shrink-0 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      className="h-8 shrink-0 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
                       disabled={emptyingTrash}
                       onClick={handleAskEmptyTrash}
                     >
@@ -5731,7 +5731,7 @@ export const PracticeFileTransferPage = ({
                                     type="button"
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8 shrink-0 text-slate-500 hover:text-sky-700"
+                                    className="h-8 w-8 shrink-0 text-slate-500 hover:text-primary-strong"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleAskRestoreTransfer(transfer);

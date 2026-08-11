@@ -15,7 +15,7 @@ export const SignupSocialWizardStep4 = ({
   return (
     <div className="space-y-6 text-center py-8">
       <div className="flex justify-center">
-        <CheckCircle2 className="w-16 h-16 text-green-600" />
+        <CheckCircle2 className="w-16 h-16 text-primary-strong" />
       </div>
 
       <div className="space-y-2">

@@ -16,26 +16,13 @@ import { Badge } from "@/components/ui/badge";
 import { Search, UserPlus } from "lucide-react";
 import { Friend } from "./types";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import { getRoleBadgeClassName, getOnlineDotClass } from "@/shared/ui/semanticStatus";
 
 interface AddFriendModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const getRoleBadgeColor = (role: string) => {
-  switch (role) {
-    case "requestor":
-      return "bg-blue-100 text-blue-800 border-blue-200";
-    case "practice":
-      return "bg-indigo-100 text-indigo-800 border-indigo-200";
-    case "manufacturer":
-      return "bg-green-100 text-green-800 border-green-200";
-    case "admin":
-      return "bg-purple-100 text-purple-800 border-purple-200";
-    default:
-      return "bg-gray-100 text-gray-800 border-gray-200";
-  }
-};
 
 const getRoleLabel = (role: string) => {
   switch (role) {
@@ -140,7 +127,7 @@ export const AddFriendModal = ({ open, onOpenChange }: AddFriendModalProps) => {
                     </Avatar>
                     <div
                       className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-background ${
-                        user.isOnline ? "bg-green-500" : "bg-gray-400"
+                        getOnlineDotClass(user.isOnline)
                       }`}
                     />
                   </div>
@@ -152,7 +139,7 @@ export const AddFriendModal = ({ open, onOpenChange }: AddFriendModalProps) => {
                       </span>
                       <Badge
                         variant="outline"
-                        className={`text-xs ${getRoleBadgeColor(user.role)}`}
+                        className={`text-xs ${getRoleBadgeClassName(user.role)}`}
                       >
                         {getRoleLabel(user.role)}
                       </Badge>

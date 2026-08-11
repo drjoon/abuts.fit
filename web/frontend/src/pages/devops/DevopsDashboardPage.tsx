@@ -197,7 +197,7 @@ export const DevopsDashboardPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-lg sm:text-xl md:text-2xl font-bold text-blue-700 tabular-nums">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-primary-strong tabular-nums">
                   {loading
                     ? "..."
                     : `${formatMoney(overview.payableGrossCommissionAmount)}원`}
@@ -215,7 +215,7 @@ export const DevopsDashboardPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-lg sm:text-xl md:text-2xl font-bold text-violet-700 tabular-nums leading-tight">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-primary-strong tabular-nums leading-tight">
                   {loading ? "..." : `${formatMoney(overview.freeNetAmount)}원`}
                 </div>
                 <div className="text-xs text-muted-foreground tabular-nums leading-tight">

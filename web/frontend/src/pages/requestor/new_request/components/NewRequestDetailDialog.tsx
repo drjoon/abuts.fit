@@ -295,7 +295,7 @@ export function NewRequestDetailDialog({
                       className={cn(
                         "rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap",
                         selected
-                          ? "bg-blue-600 text-white shadow-sm"
+                          ? "bg-primary-strong text-white shadow-sm"
                           : "text-slate-600 hover:bg-white/70 hover:text-slate-900",
                         lockedOut && "cursor-not-allowed opacity-50 hover:bg-transparent",
                       )}
@@ -433,13 +433,13 @@ export function NewRequestDetailDialog({
                             disabled={!detailFile}
                           >
                             <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="none" id="rg-none" className="border-slate-300 text-blue-600" />
+                              <RadioGroupItem value="none" id="rg-none" className="border-slate-300 text-primary-strong" />
                               <Label htmlFor="rg-none" className="text-sm text-slate-700 cursor-pointer">
                                 없음
                               </Label>
                             </div>
                             <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="deep" id="rg-deep" className="border-slate-300 text-blue-600" />
+                              <RadioGroupItem value="deep" id="rg-deep" className="border-slate-300 text-primary-strong" />
                               <Label htmlFor="rg-deep" className="text-sm text-slate-700 cursor-pointer">
                                 있음
                               </Label>
@@ -449,7 +449,7 @@ export function NewRequestDetailDialog({
 
                         <button
                           type="button"
-                          className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 transition-colors hover:text-blue-800"
+                          className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-strong transition-colors hover:text-primary-strong"
                           aria-label="유지홈 선택 안내"
                           onClick={() => setRetentionGuideModalOpen(true)}
                         >
@@ -458,7 +458,7 @@ export function NewRequestDetailDialog({
                         </button>
                       </div>
 
-                      <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
+                      <div className="flex flex-col gap-2 rounded-lg border border-primary-soft bg-primary-soft/60 px-3 py-2">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-slate-700">찾으시는 임플란트가 없나요?</span>
                           {!showNewSystemForm ? (
@@ -466,7 +466,7 @@ export function NewRequestDetailDialog({
                               type="button"
                               size="sm"
                               variant="secondary"
-                              className="bg-white text-blue-700 border-blue-200 hover:bg-blue-50"
+                              className="bg-white text-primary-strong border-primary-muted hover:bg-primary-soft"
                               onClick={() => setShowNewSystemForm(true)}
                             >
                               신규 임플란트 요청

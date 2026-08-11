@@ -701,7 +701,7 @@ export const BusinessForm = ({
             );
           })()}
           {successNote && (
-            <p className="text-center text-xs font-semibold text-sky-600 flex justify-end mt-2">
+            <p className="text-center text-xs font-semibold text-primary-strong flex justify-end mt-2">
               {successNote}
             </p>
           )}

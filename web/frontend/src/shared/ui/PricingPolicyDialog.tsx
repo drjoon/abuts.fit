@@ -470,7 +470,7 @@ export const PricingPolicyDialog = ({
                           최대 +{maxText}영업일
                         </div>
                         {hasSameDayNote ? (
-                          <div className='mt-1.5 text-[11px] leading-snug text-blue-700'>
+                          <div className='mt-1.5 text-[11px] leading-snug text-primary-strong'>
                             묶음 · 자정까지 접수 시 익영업일 16:00 출고
                           </div>
                         ) : null}

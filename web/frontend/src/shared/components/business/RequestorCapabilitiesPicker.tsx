@@ -186,7 +186,7 @@ export const RequestorCapabilitiesPicker = ({
       ) : null}
 
       {showPaidHint && services.paid && (
-        <p className="text-xs text-amber-700">
+        <p className="text-xs text-accent-strong">
           {REQUESTOR_SERVICE_LABEL.paid}를 선택한 경우 사업자등록증을
           등록·검증해야 합니다.
         </p>

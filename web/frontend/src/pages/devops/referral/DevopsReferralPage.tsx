@@ -123,7 +123,7 @@ export const DevopsReferralPage = () => {
                           : undefined
                       }
                     />
-                    <div className="rounded-xl bg-blue-50 px-4 py-3.5 text-xs leading-relaxed text-blue-900 sm:col-span-2 lg:col-span-1">
+                    <div className="rounded-xl bg-primary-soft px-4 py-3.5 text-xs leading-relaxed text-primary-strong sm:col-span-2 lg:col-span-1">
                       <p>
                         영업자 소개 없이 가입한 의뢰자는 자동으로 개발운영사
                         소개로 등록됩니다.
