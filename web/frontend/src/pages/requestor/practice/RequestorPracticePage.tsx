@@ -1329,10 +1329,11 @@ function RequestorPracticeReceivePage({
   const inviteLinkCard = (
     <Card className="h-fit">
       <CardHeader className="pb-2">
-        <CardTitle className="text-xl">치과에 가입 링크 전달</CardTitle>
+        <CardTitle className="text-base">치과 초대</CardTitle>
+        <CardDescription className="text-xs">치과에 가입 링크를 전달하세요.</CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
-        <div className="grid grid-cols-1 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Button
             type="button"
             size="sm"
