@@ -26,6 +26,7 @@
 // - 2026-08-11: 디자인 큐 빈 목록일 때 하단 전송 내역 영역 미렌더(중복 제거).
 // - 2026-08-11: 기공소 거래 치과 등록 D-day 배너(설정 이동).
 // - 2026-08-11: [안내 복사] 문구 — 이모티콘·부드러운 말투로 정리.
+// - 2026-08-11: 다운로드→의뢰수락 뱃지/상태. 수락 API 과금. 파일 다운로드는 상태 미전이.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
@@ -96,7 +97,9 @@ type ReceivedPracticeTransfer = {
   isRead: boolean;
   requestorReadAt: string | null;
   isDownloaded: boolean;
+  isAccepted: boolean;
   requestorDownloadedAt: string | null;
+  requestorAcceptedAt: string | null;
   practice: {
     businessName: string;
     userName: string;
@@ -166,16 +169,22 @@ const getTransferDisplayStatus = (transfer: {
   status?: string;
   isRead?: boolean;
   isDownloaded?: boolean;
+  isAccepted?: boolean;
   requestorDownloadedAt?: string | null;
+  requestorAcceptedAt?: string | null;
 }) => {
   const rawStatus = String(transfer.status || "").trim().toLowerCase();
   if (
+    Boolean(transfer.isAccepted) ||
     Boolean(transfer.isDownloaded) ||
+    Boolean(String(transfer.requestorAcceptedAt || "").trim()) ||
     Boolean(String(transfer.requestorDownloadedAt || "").trim()) ||
     rawStatus === "downloaded" ||
-    rawStatus === "다운로드완료"
+    rawStatus === "accepted" ||
+    rawStatus === "다운로드완료" ||
+    rawStatus === "의뢰수락"
   ) {
-    return "다운로드완료" as const;
+    return "의뢰수락" as const;
   }
 
   return transfer.isRead ? ("수신완료" as const) : ("발송완료" as const);
@@ -301,7 +310,7 @@ function RequestorPracticeReceivePage({
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "발송완료" | "수신완료" | "다운로드완료" | "포장.발송" | "추적관리"
+    "all" | "발송완료" | "수신완료" | "의뢰수락" | "포장.발송" | "추적관리"
   >("all");
   const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
   const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
@@ -310,6 +319,7 @@ function RequestorPracticeReceivePage({
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
+  const [acceptBusy, setAcceptBusy] = useState(false);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -491,10 +501,22 @@ function RequestorPracticeReceivePage({
           requestorReadAt: r.requestorReadAt ? String(r.requestorReadAt) : null,
           isDownloaded:
             Boolean(r.isDownloaded) ||
+            Boolean(r.isAccepted) ||
             Boolean(requestorDownloadedAt) ||
             rawStatus === "downloaded" ||
-            rawStatus === "다운로드완료",
+            rawStatus === "accepted" ||
+            rawStatus === "다운로드완료" ||
+            rawStatus === "의뢰수락",
+          isAccepted:
+            Boolean(r.isAccepted) ||
+            Boolean(r.isDownloaded) ||
+            Boolean(requestorDownloadedAt) ||
+            rawStatus === "downloaded" ||
+            rawStatus === "accepted" ||
+            rawStatus === "다운로드완료" ||
+            rawStatus === "의뢰수락",
           requestorDownloadedAt,
+          requestorAcceptedAt: requestorDownloadedAt,
           practice: {
             businessName: String(practiceRaw.businessName || "").trim(),
             userName: String(practiceRaw.userName || "").trim(),
@@ -654,21 +676,29 @@ function RequestorPracticeReceivePage({
                 ...row,
                 status: status || row.status,
                 isRead:
-                  action === "read" || action === "downloaded"
+                  action === "read" || action === "downloaded" || action === "accepted"
                     ? true
                     : row.isRead,
                 requestorReadAt:
-                  action === "read" || action === "downloaded"
+                  action === "read" || action === "downloaded" || action === "accepted"
                     ? requestorReadAt || row.requestorReadAt
                     : row.requestorReadAt,
                 isDownloaded:
-                  action === "downloaded"
+                  action === "downloaded" || action === "accepted"
                     ? true
                     : row.isDownloaded,
+                isAccepted:
+                  action === "downloaded" || action === "accepted"
+                    ? true
+                    : row.isAccepted,
                 requestorDownloadedAt:
-                  action === "downloaded"
+                  action === "downloaded" || action === "accepted"
                     ? requestorDownloadedAt || row.requestorDownloadedAt
                     : row.requestorDownloadedAt,
+                requestorAcceptedAt:
+                  action === "downloaded" || action === "accepted"
+                    ? requestorDownloadedAt || row.requestorAcceptedAt
+                    : row.requestorAcceptedAt,
               };
             }),
           );
@@ -678,16 +708,23 @@ function RequestorPracticeReceivePage({
             return {
               ...prev,
               status: status || prev.status,
-              isRead: action === "read" || action === "downloaded" ? true : prev.isRead,
+              isRead: action === "read" || action === "downloaded" || action === "accepted" ? true : prev.isRead,
               requestorReadAt:
-                action === "read" || action === "downloaded"
+                action === "read" || action === "downloaded" || action === "accepted"
                   ? requestorReadAt || prev.requestorReadAt
                   : prev.requestorReadAt,
-              isDownloaded: action === "downloaded" ? true : prev.isDownloaded,
+              isDownloaded:
+                action === "downloaded" || action === "accepted" ? true : prev.isDownloaded,
+              isAccepted:
+                action === "downloaded" || action === "accepted" ? true : prev.isAccepted,
               requestorDownloadedAt:
-                action === "downloaded"
+                action === "downloaded" || action === "accepted"
                   ? requestorDownloadedAt || prev.requestorDownloadedAt
                   : prev.requestorDownloadedAt,
+              requestorAcceptedAt:
+                action === "downloaded" || action === "accepted"
+                  ? requestorDownloadedAt || prev.requestorAcceptedAt
+                  : prev.requestorAcceptedAt,
             };
           });
         }
@@ -806,12 +843,12 @@ function RequestorPracticeReceivePage({
     const counts = baseFilteredTransfers.reduce(
       (acc, transfer) => {
         const status = getTransferDisplayStatus(transfer);
-        if (status === "다운로드완료") acc.downloaded += 1;
+        if (status === "의뢰수락") acc.accepted += 1;
         else if (status === "수신완료") acc.read += 1;
         else acc.sent += 1;
         return acc;
       },
-      { sent: 0, read: 0, downloaded: 0, shipping: 0, tracking: 0 },
+      { sent: 0, read: 0, accepted: 0, shipping: 0, tracking: 0 },
     );
     // 포장.발송·추적관리는 기공 파이프라인 UI 슬롯(집계 연동 전).
     return counts;
@@ -980,29 +1017,46 @@ function RequestorPracticeReceivePage({
     [emitUnreadBadgeRefresh, token],
   );
 
-  const markTransferDownloaded = useCallback(
+  const markTransferAccepted = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
-      if (!token) return;
-      if (transfer.isDownloaded || transfer.requestorDownloadedAt) return;
+      if (!token) return false;
+      if (transfer.isAccepted || transfer.isDownloaded || transfer.requestorDownloadedAt) {
+        return true;
+      }
 
       try {
         const res = await apiFetch<unknown>({
-          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-downloaded`,
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-accepted`,
           method: "POST",
           token,
         });
 
-        if (!res.ok) return;
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "의뢰수락 실패",
+            description: String(body.message || "의뢰수락 중 오류가 발생했습니다."),
+            variant: "destructive",
+          });
+          return false;
+        }
 
         const body = res.data && typeof res.data === "object" ? (res.data as Record<string, unknown>) : {};
         const data =
           body.data && typeof body.data === "object"
             ? (body.data as Record<string, unknown>)
             : body;
-        const readAt = data.requestorReadAt ? String(data.requestorReadAt) : transfer.requestorReadAt || new Date().toISOString();
-        const downloadedAt = data.requestorDownloadedAt
-          ? String(data.requestorDownloadedAt)
-          : transfer.requestorDownloadedAt || new Date().toISOString();
+        const readAt = data.requestorReadAt
+          ? String(data.requestorReadAt)
+          : transfer.requestorReadAt || new Date().toISOString();
+        const acceptedAt = data.requestorAcceptedAt
+          ? String(data.requestorAcceptedAt)
+          : data.requestorDownloadedAt
+            ? String(data.requestorDownloadedAt)
+            : transfer.requestorDownloadedAt || new Date().toISOString();
         const unreadCount = Number(data.unreadCount || 0);
 
         setTransfers((prev) =>
@@ -1013,7 +1067,9 @@ function RequestorPracticeReceivePage({
                   isRead: true,
                   requestorReadAt: readAt,
                   isDownloaded: true,
-                  requestorDownloadedAt: downloadedAt,
+                  isAccepted: true,
+                  requestorDownloadedAt: acceptedAt,
+                  requestorAcceptedAt: acceptedAt,
                 }
               : row,
           ),
@@ -1025,18 +1081,40 @@ function RequestorPracticeReceivePage({
                 isRead: true,
                 requestorReadAt: readAt,
                 isDownloaded: true,
-                requestorDownloadedAt: downloadedAt,
+                isAccepted: true,
+                requestorDownloadedAt: acceptedAt,
+                requestorAcceptedAt: acceptedAt,
               }
             : prev,
         );
 
         emitUnreadBadgeRefresh(unreadCount);
+        toast({
+          title: "의뢰수락 완료",
+          description: "기공의뢰를 수락했습니다.",
+        });
+        return true;
       } catch {
-        // ignore
+        toast({
+          title: "의뢰수락 실패",
+          description: "의뢰수락 요청 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
       }
     },
-    [emitUnreadBadgeRefresh, token],
+    [emitUnreadBadgeRefresh, toast, token],
   );
+
+  const handleAcceptTransfer = useCallback(async () => {
+    if (!selectedTransfer || acceptBusy) return;
+    setAcceptBusy(true);
+    try {
+      await markTransferAccepted(selectedTransfer);
+    } finally {
+      setAcceptBusy(false);
+    }
+  }, [acceptBusy, markTransferAccepted, selectedTransfer]);
 
   const openTransferDialog = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -1124,10 +1202,6 @@ function RequestorPracticeReceivePage({
         a.click();
         a.remove();
         URL.revokeObjectURL(objectUrl);
-
-        if (selectedTransfer) {
-          void markTransferDownloaded(selectedTransfer);
-        }
       } catch {
         toast({
           title: "다운로드 실패",
@@ -1136,7 +1210,7 @@ function RequestorPracticeReceivePage({
         });
       }
     },
-    [markTransferDownloaded, selectedTransfer, toast, token],
+    [toast, token],
   );
 
   const handleDownloadAllFiles = useCallback(async () => {
@@ -1447,20 +1521,20 @@ function RequestorPracticeReceivePage({
           type="button"
           className="rounded-full"
           onClick={() =>
-            setStatusFilter((prev) => (prev === "다운로드완료" ? "all" : "다운로드완료"))
+            setStatusFilter((prev) => (prev === "의뢰수락" ? "all" : "의뢰수락"))
           }
-          aria-pressed={statusFilter === "다운로드완료"}
+          aria-pressed={statusFilter === "의뢰수락"}
         >
           <Badge
             variant="outline"
             className={cn(
               "cursor-pointer",
-              statusFilter === "다운로드완료"
+              statusFilter === "의뢰수락"
                 ? "border-primary/70 bg-primary-soft text-primary-strong"
                 : "hover:bg-muted/40",
             )}
           >
-            다운로드 {statusCounts.downloaded}건
+            의뢰수락 {statusCounts.accepted}건
           </Badge>
         </button>
 
@@ -1560,7 +1634,7 @@ function RequestorPracticeReceivePage({
                           variant={displayStatus === "발송완료" ? "destructive" : "secondary"}
                           className={cn(
                             "shrink-0 whitespace-nowrap",
-                            displayStatus === "다운로드완료"
+                            displayStatus === "의뢰수락"
                               ? "bg-primary-soft text-primary-strong hover:bg-primary-soft"
                               : "",
                           )}
@@ -1718,6 +1792,13 @@ function RequestorPracticeReceivePage({
             s3Key: file.s3Key,
           })
         }
+        acceptBusy={acceptBusy}
+        accepted={Boolean(
+          selectedTransfer?.isAccepted ||
+            selectedTransfer?.isDownloaded ||
+            selectedTransfer?.requestorDownloadedAt,
+        )}
+        onAccept={() => void handleAcceptTransfer()}
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
         chatMessages={messages}

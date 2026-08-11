@@ -51,6 +51,10 @@ type PracticeTransferDetailChatDialogProps = {
   downloadAllBusy?: boolean;
   onDownloadAllFiles: () => void | Promise<void>;
   onDownloadTransferFile: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
+  /** 기공소 의뢰수락 (수신 페이지에서만 전달) */
+  acceptBusy?: boolean;
+  accepted?: boolean;
+  onAccept?: () => void | Promise<void>;
   chatLoading: boolean;
   chatError: string;
   chatMessages: ChatMessage[];
@@ -97,6 +101,9 @@ export function PracticeTransferDetailChatDialog({
   downloadAllBusy = false,
   onDownloadAllFiles,
   onDownloadTransferFile,
+  acceptBusy = false,
+  accepted = false,
+  onAccept,
   chatLoading,
   chatError,
   chatMessages,
@@ -162,15 +169,27 @@ export function PracticeTransferDetailChatDialog({
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-muted-foreground">{filesLabel} ({files.length}개)</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void onDownloadAllFiles()}
-                    disabled={files.length === 0 || downloadAllBusy}
-                  >
-                    {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {onAccept ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void onAccept()}
+                        disabled={accepted || acceptBusy}
+                      >
+                        {accepted ? "수락완료" : acceptBusy ? "수락 중..." : "의뢰수락"}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void onDownloadAllFiles()}
+                      disabled={files.length === 0 || downloadAllBusy}
+                    >
+                      {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                    </Button>
+                  </div>
                 </div>
                 {files.length ? (
                   <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">

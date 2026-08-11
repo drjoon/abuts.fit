@@ -242,7 +242,7 @@ export const AdminCreditSettingsTab = () => {
   const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
   const designHelp = `디자인+생산 시 생산비에 별도 추가됩니다. 출고일은 묶음·신속 모두 +1영업일. 기본 ${CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}원.`;
   const abutmentRetailHelp =
-    "치과 기공의뢰에 포함되는 커스텀어벗 소매가(1어벗당). 거래처 분배·결제크레딧에 사용됩니다.";
+    "치과 기공의뢰에 포함되는 커스텀어벗 소매가(1어벗당). 거래처 분배·기공크레딧에 사용됩니다.";
 
   return (
     <TooltipProvider delayDuration={0}>

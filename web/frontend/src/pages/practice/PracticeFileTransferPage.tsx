@@ -30,6 +30,7 @@
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
+ * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";

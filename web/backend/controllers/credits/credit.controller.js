@@ -1,6 +1,6 @@
 // change-log:
 // - 2026-08-11: spend insights 추천 충전액을 월사용량/3 반올림으로 변경. 단위는 기공소 50만/치과 100만.
-// - 2026-08-11: 기공소 결제크레딧 일별 정산·지급 내역 API 추가 (제조사 정산 UX 정렬).
+// - 2026-08-11: 기공소 기공크레딧 일별 정산·지급 내역 API 추가 (제조사 정산 UX 정렬).
 // related files:
 // - web/backend/rules.md
 // - web/backend/services/creditBalance.service.js
@@ -152,7 +152,7 @@ async function resolveLabSettlementScope(req) {
     return {
       ok: false,
       status: 403,
-      message: "기공소만 결제크레딧 정산을 이용할 수 있습니다.",
+      message: "기공소만 기공크레딧 정산을 이용할 수 있습니다.",
     };
   }
 
@@ -356,7 +356,7 @@ export async function getMyCreditSpendInsights(req, res) {
 }
 
 /**
- * 기공소 결제크레딧(LAB_SETTLEMENT_CREDIT) 월 정산 인출.
+ * 기공소 기공크레딧(LAB_SETTLEMENT_CREDIT) 월 정산 인출.
  * 의뢰/배송 잔액과 분리. SETTLEMENT_PAYOUT으로 차감.
  */
 export async function createLabSettlementPayout(req, res) {
@@ -386,7 +386,7 @@ export async function createLabSettlementPayout(req, res) {
     if (available < amount) {
       return res.status(400).json({
         success: false,
-        message: "결제크레딧 잔액이 부족합니다.",
+        message: "기공크레딧 잔액이 부족합니다.",
         data: { available, requested: amount },
       });
     }
@@ -464,13 +464,13 @@ export async function createLabSettlementPayout(req, res) {
     console.error("createLabSettlementPayout error:", error);
     return res.status(500).json({
       success: false,
-      message: "결제크레딧 정산에 실패했습니다.",
+      message: "기공크레딧 정산에 실패했습니다.",
     });
   }
 }
 
 /**
- * 기공소 결제크레딧 일별 정산 집계 (GL LAB_SETTLEMENT_CREDIT, KST).
+ * 기공소 기공크레딧 일별 정산 집계 (GL LAB_SETTLEMENT_CREDIT, KST).
  * 관계별(active/referred/none) 적립 + 지급·조정을 일자별로 채운다.
  */
 export async function getLabSettlementDailySummary(req, res) {
@@ -842,7 +842,7 @@ export async function getLabSettlementDailySummary(req, res) {
 }
 
 /**
- * 기공소 결제크레딧 정산 지급(입금) 내역 — SETTLEMENT_PAYOUT 라인.
+ * 기공소 기공크레딧 정산 지급(입금) 내역 — SETTLEMENT_PAYOUT 라인.
  */
 export async function listLabSettlementPayouts(req, res) {
   try {

@@ -429,7 +429,7 @@ export const LabSettlementPayoutTab = () => {
 
   return (
     <DashboardShell
-      title="결제크레딧 정산"
+      title="기공크레딧 정산"
       subtitle=""
       statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
       stats={
@@ -437,7 +437,7 @@ export const LabSettlementPayoutTab = () => {
           <Card>
             <CardHeader className="p-3 pb-1">
               <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                결제크레딧 잔액
+                기공크레딧 잔액
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0">
@@ -538,7 +538,7 @@ export const LabSettlementPayoutTab = () => {
               </DialogTrigger>
               <DialogContent className="max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>기공소 결제크레딧 정산 규칙</DialogTitle>
+                  <DialogTitle>기공소 기공크레딧 정산 규칙</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-2 text-sm">
                   <div className="flex items-start gap-3 rounded-lg border p-3">
@@ -550,7 +550,7 @@ export const LabSettlementPayoutTab = () => {
                       <div className="font-medium">기공의뢰 적립</div>
                       <div className="text-muted-foreground">
                         기존 치과(0%)는 전액, 소개 치과(10%)·일반 치과(20%)는
-                        플랫폼 수수료를 제외한 금액이 결제크레딧으로 적립됩니다
+                        플랫폼 수수료를 제외한 금액이 기공크레딧으로 적립됩니다
                       </div>
                     </div>
                   </div>
@@ -562,7 +562,7 @@ export const LabSettlementPayoutTab = () => {
                     <div className="min-w-0">
                       <div className="font-medium">버킷 분리</div>
                       <div className="text-muted-foreground">
-                        의뢰·배송 크레딧과 완전 분리된 결제크레딧으로 관리
+                        의뢰·배송 크레딧과 완전 분리된 기공크레딧으로 관리
                       </div>
                     </div>
                   </div>
@@ -574,7 +574,7 @@ export const LabSettlementPayoutTab = () => {
                     <div className="min-w-0">
                       <div className="font-medium">매월 자동 지급</div>
                       <div className="text-muted-foreground">
-                        결제크레딧 잔액은 사업자에 등록된 입금 계좌로 매월 자동
+                        기공크레딧 잔액은 사업자에 등록된 입금 계좌로 매월 자동
                         지급됩니다. 별도 정산 요청은 필요하지 않습니다.
                       </div>
                     </div>

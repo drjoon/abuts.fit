@@ -236,18 +236,18 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/requests/utils.js`
     - `controllers/requests/dashboard.controller.js`
 
-- 기공소 기존 거래처 · 결제크레딧 SSOT:
+- 기공소 기존 거래처 · 기공크레딧 SSOT:
   - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 발급된 초대는 검증 완료 시 `status=active`(거래처, 수수료 0%). 30일 경과 후에도 초대 발급은 계속 허용하되(`invitedAfterWindow=true`), 검증 완료 시 `status=referred`(소개)로 승격된다.
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
   - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic/customAbutmentDesign). 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops). `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과).
-  - PracticeTransfer 유료: 치과 청구 총액(기공비+어벗 소매가) 1회 차감 → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 `LAB_SETTLEMENT_CREDIT`.
+  - PracticeTransfer 유료: **기공소 의뢰수락(`POST .../mark-accepted`)** 시 치과 청구 총액(기공비+어벗 소매가) 1회 차감 → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 `LAB_SETTLEMENT_CREDIT`(UI: 기공크레딧). 전송 생성 시점에는 과금하지 않는다.
     - `active`(정식 거래처): 수수료 0% — 전액 기공소 정산.
     - `referred`(30일 경과 후 소개로 등록): 수수료 `BusinessAnchor.payoutRates.labReferredFeeRate`(기본 10%).
     - 그 외(관계 없음): 수수료 `BusinessAnchor.payoutRates.nonPartnerFeeRate`(기본 20%).
     - 걷힌 수수료 금액은 기존 4자 분배율(`manufacturerRate`/`devopsRate`/`salesmanRate`/`adminRate`)로 다시 나뉜다(영업자 추천 유무에 따른 재배분 로직 동일 적용).
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 의뢰크레딧에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
-  - eventType: `PRACTICE_TRANSFER_SPEND_COMMIT`, `LAB_SETTLEMENT_CHARGE`; accountCode: `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`.
-  - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 결제크레딧 → 계좌 이체.
+  - eventType: `PRACTICE_TRANSFER_SPEND_COMMIT`, `LAB_SETTLEMENT_CHARGE`; accountCode: `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 장부 항목 라벨: `기공비` / 버킷 표시: `기공크레딧`.
+  - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공크레딧 → 계좌 이체.
   - 어벗의뢰(직접 커스텀 어벗 생산 의뢰, `practicePrepaid=false`)는 위 관계 규칙과 무관하게 기존처럼 의뢰자(치과/기공소)가 설정된 비용을 전액 부담하고 4자 분배율로 나뉜다(`controllers/requests/common.review.helpers.js`).
 
 - 스커리씁 로트 추적(세척.패킹)은 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
@@ -342,9 +342,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/requests/common.review.controller.js`
     - `controllers/bg/bg.controller.js`
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
-- practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 다운로드완료`를 사용합니다.
+- practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락`을 사용합니다.
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
-  - 다운로드완료 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`
+  - 의뢰수락 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`(레거시 필드명 유지; API alias `requestorAcceptedAt`/`isAccepted`)
+  - 과금 SSOT: `POST /api/practice/transfers/:transferId/mark-accepted`에서 `commitPracticeTransferBilling` (파일 다운로드는 상태·과금에 영향 없음)
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
   - practice 전송 목록/취소/복구 권한 범위 SSOT: 동일 치과 `practiceBusinessAnchorId`(=`req.user.businessAnchorId`) 구성원 공유.
     구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch` / draft list·DELETE by id).

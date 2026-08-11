@@ -244,7 +244,7 @@ Notes:
   - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
   - 기존 거래 치과 등록은 `max(pricingBaseDate, 2026-08-11)` 기준 **30일**간만 신규 초대 가능(D-day 배지·상단 배너). 탭 라벨: 「거래 치과 등록」.
   - 기공소 화면(기공의뢰수신·어벗의뢰) 상단에 등록 잔여일 alert 배너 표시(기간 중만). 클릭 시 설정 탭 이동.
-  - 치과 장부 라벨: 기공의뢰비 / 어벗의뢰비 / 배송비. 기공소 결제크레딧은 의뢰·배송 잔액과 분리 표시.
+  - 치과 장부 라벨: 기공비 / 어벗의뢰비 / 배송비. 기공소 기공크레딧은 의뢰·배송 잔액과 분리 표시.
   - 안내 모달/대시보드 헤더([정책]·무료 재제작 잔여) 문구는 동일한 `90일` 기준을 사용해야 합니다.
   - 관련 파일:
     - `src/shared/ui/PricingPolicyDialog.tsx`
@@ -501,10 +501,11 @@ Notes:
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
   - 계정 전환: `AccountSwitcher`
 
-- practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 다운로드완료`
+- practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 의뢰수락`
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
-  - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isDownloaded/requestorDownloadedAt`)
+  - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
+  - 기공소 의뢰수락: 상세 다이얼로그 「의뢰수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관.
 
 - 드롭존 가입(치과 전용, requestor+practice+free)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab·paid 선택 UI 없음.

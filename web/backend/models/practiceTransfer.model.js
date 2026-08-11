@@ -107,7 +107,8 @@ const practiceTransferSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
-    // requestor(수신 기공소) 다운로드 상태 SSOT
+    // requestor(수신 기공소) 의뢰수락 상태 SSOT
+    // 레거시 필드명 requestorDownloadedAt 유지 (= 의뢰수락 시각)
     requestorDownloadedAt: {
       type: Date,
       default: null,

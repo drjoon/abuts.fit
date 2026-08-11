@@ -1908,7 +1908,7 @@ export const RequestorDashboardPage = () => {
       interactive: false,
     },
     {
-      label: "파일 다운로드",
+      label: "의뢰수락",
       value: "0",
       icon: Download,
       interactive: false,

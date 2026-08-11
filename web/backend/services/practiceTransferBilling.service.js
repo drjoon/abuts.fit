@@ -158,7 +158,8 @@ function pushRevenueLines({
 }
 
 /**
- * 기공의뢰 소매가 1회 차감 + 거래처 여부에 따른 결제크레딧/REV_* 분배.
+ * 기공의뢰 소매가 1회 차감 + 거래처 여부에 따른 기공크레딧(LAB_SETTLEMENT_CREDIT)/REV_* 분배.
+ * 호출 시점: 기공소 의뢰수락(mark-accepted). 전송 생성 시점이 아님.
  */
 export async function commitPracticeTransferBilling({
   transfer,
@@ -267,7 +268,8 @@ export async function commitPracticeTransferBilling({
           isTradingPartner: isPartner,
           relationshipKind,
           feeRateApplied,
-          displayKind: "practice_transfer_retail",
+          displayKind: "lab_fee",
+          displayLabel: "기공비",
         },
       },
     ];
@@ -290,6 +292,9 @@ export async function commitPracticeTransferBilling({
           feeRateApplied,
           labFee: fees.labFeeTotal,
           abutmentRetailIncluded: isPartner ? fees.abutmentRetailTotal : 0,
+          displayKind: "lab_credit",
+          displayLabel: "기공크레딧",
+          itemLabel: "기공비",
         },
       });
     }
@@ -334,8 +339,8 @@ export async function commitPracticeTransferBilling({
       session,
     });
 
-    // 기공소 결제크레딧 충전은 별도 이벤트 타입으로도 조회 가능하게 meta에 표기.
-    // 단일 저널로 원자성 유지 (LAB_SETTLEMENT_CHARGE는 표시용 alias로 meta.eventAlias).
+    // 기공소 기공크레딧 충전은 단일 저널로 원자성 유지.
+    // LAB_SETTLEMENT_CHARGE는 표시용 alias(meta.eventAlias).
     if (ownSession) await session.commitTransaction();
 
     return {

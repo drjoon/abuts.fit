@@ -161,8 +161,8 @@ const typeLabel = (t: CreditLedgerType) => {
   if (t === "SPEND_PAID") return "사용(유료)";
   if (t === "SPEND_FREE_REQUEST") return "사용(무료·의뢰)";
   if (t === "SPEND_FREE_SHIPPING") return "사용(무료·배송)";
-  if (t === "LAB_SETTLEMENT_CHARGE") return "결제크레딧 충전";
-  if (t === "LAB_SETTLEMENT_PAYOUT") return "결제크레딧 정산";
+  if (t === "LAB_SETTLEMENT_CHARGE") return "기공크레딧 충전";
+  if (t === "LAB_SETTLEMENT_PAYOUT") return "기공크레딧 정산";
   return "조정";
 };
 
@@ -189,8 +189,8 @@ const formatShortCode = (value: string) => {
 const REF_TYPE_LABELS: Record<string, string> = {
   SHIPPING_PACKAGE: "택배비",
   REQUEST: "의뢰",
-  PRACTICE_TRANSFER: "기공의뢰",
-  LAB_SETTLEMENT_PAYOUT: "결제크레딧 정산",
+  PRACTICE_TRANSFER: "기공비",
+  LAB_SETTLEMENT_PAYOUT: "기공크레딧 정산",
   FREE_REQUEST_CREDIT: "환영 무료 의뢰크레딧",
   REQUEST_FREE_CREDIT: "환영 무료 의뢰크레딧",
   WELCOME_BONUS: "환영 무료 의뢰크레딧",
@@ -678,7 +678,7 @@ export const CreditLedgerModal = ({
               </span>
             </div>
             <div className="tabular-nums">
-              <span className="text-muted-foreground">결제크레딧</span>{" "}
+              <span className="text-muted-foreground">기공크레딧</span>{" "}
               <span className="font-semibold text-slate-900">
                 {Number(
                   currentBalanceSnapshot.settlementCredit ?? 0,
@@ -732,10 +732,10 @@ export const CreditLedgerModal = ({
                 무료충전(배송)
               </SelectItem>
               <SelectItem value="LAB_SETTLEMENT_CHARGE">
-                결제크레딧 충전
+                기공크레딧 충전
               </SelectItem>
               <SelectItem value="LAB_SETTLEMENT_PAYOUT">
-                결제크레딧 정산
+                기공크레딧 정산
               </SelectItem>
               <SelectItem value="ADJUST">조정</SelectItem>
             </SelectContent>
