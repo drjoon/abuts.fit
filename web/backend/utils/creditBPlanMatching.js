@@ -315,7 +315,7 @@ async function matchTxWithOrder({ tx, order }) {
       );
       if (normalizedSupplyAmount > 0) {
         const glResult = await postGeneralLedgerJournal({
-          idempotencyKey: `gl:bplan:bankTx:${String(tx._id)}:charge`,
+          idempotencyKey: `gl:bplan:chargeOrder:${String(order._id)}:charge`,
           eventType: "CHARGE_PAID",
           businessAnchorId: order.businessAnchorId,
           refType: "CHARGE_ORDER",
