@@ -760,27 +760,17 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 목적: 동시성 상황에서 중복 insert(11000)로 트랜잭션이 불필요하게 깨지는 것을 예방
   - 파생 조회(제조사 정산/관리자 대시보드/의뢰자 잔액)는 단일 SSOT 장부 집계값만 사용
 - 우편함/배송 무결성 정책(포장.발송):
-  - 우편함 재사용/배정은 **BusinessAnchor 단일 점유**를 반드시 보장합니다.
-  - `businessAnchorId`가 비어 있는 점유 의뢰는 `UNKNOWN`으로 취급하되,
-    같은 주소의 재사용 판정에서 `UNKNOWN`은 혼입 판정에서 제외합니다.
-    (anchor 누락 데이터 때문에 동일 업체 박스가 분할 생성되는 현상 방지)
-  - 우편함 점유(active) 단계는 `세척.패킹`, `포장.발송`, `추적관리`를 공통으로 사용합니다.
-    - 단, `추적관리` 중 `picked_up|completed|canceled` 또는 `trackingStatusCode>=11`(집하완료 이후) 건은 점유에서 제외합니다.
-  - 우편함 배정 시점 SSOT: `세척.패킹` 진입 시 동일 `businessAnchorId`의 활성 점유를 재사용해 선배정합니다.
-    - 목적: 패킹 라벨 출력·각인 인식 전에 메일함 코드가 필요함
-    - `포장.발송` 진입 승인 때도 동일하게 재조회해 우편함을 재결정합니다.
-  - 포장.발송 진입 승인마다 동일 `businessAnchorId`의 다른 활성 점유를 매번 재조회해 우편함을 재결정합니다.
-  - 배송비/패키지 보정 시에도 "현재 의뢰 자신의 과거 shippingPackageId"는 우편함 재결정 근거로 쓰지 않습니다.
-    - 다른 활성 의뢰가 점유한 패키지만 재사용하고, 자기 과거 패키지는 현재 배정 우편함으로 동기화해 재사용합니다.
-  - 롤백/재승인 시 의뢰 문서에 남아있는 기존 `mailboxAddress`는 재사용 근거로 쓰지 않습니다.
-    - 같은 `businessAnchorId`의 "다른 활성 의뢰"가 점유 중이면 그 주소로 수렴
-    - 아니면 현재값이 있어도 무시하고 첫 번째 빈칸을 재할당
-  - `review-status` 승인 트랜잭션에서 우편함 할당 쿼리는 반드시 같은 `session`으로 읽어
-    동일 BusinessAnchor의 직전 배정 주소를 같은 트랜잭션 내에서도 재사용해야 합니다.
-  - BusinessAnchor 비교는 문자열 단순 캐스팅 대신 `_id/id`까지 포함해 정규화한 값으로 판정합니다.
-    (`[object Object]` 형태 오인식으로 인한 재사용 실패 방지)
-    - lot-capture / machiningBridge 등 populate된 `businessAnchorId`를 넘길 때도
-      `normalizeBusinessAnchorId`를 사용한다. (`String(doc)` 금지)
+  - 우편함 배정 SSOT (세척.패킹→포장.발송 승인 포함):
+    1) 같은 `businessAnchorId`가 `세척.패킹`/`포장.발송`에 이미 있으면 그 우편함으로 합류
+    2) 없으면 A1A1부터 순서상 가장 가까운 빈칸 할당
+    - 재사용/빈칸 판정은 `세척.패킹`·`포장.발송` 점유만 본다 (추적관리 잔여로 막지 않음)
+    - 기존 의뢰 자신의 `mailboxAddress`는 근거로 쓰지 않는다
+  - 우편함 점유(active) 단계(요약/집하 등): `세척.패킹`, `포장.발송`, `추적관리`
+    - `추적관리` 중 `picked_up|completed|canceled` 또는 `trackingStatusCode>=11` 건은 점유에서 제외
+  - `review-status` 승인 트랜잭션에서 우편함 할당 쿼리는 같은 `session`으로 읽어
+    동일 BusinessAnchor의 직전 배정 주소를 같은 트랜잭션 내에서도 재사용한다.
+  - BusinessAnchor 비교는 `normalizeBusinessAnchorId`(24hex만)로 한다.
+    - Mongoose Document `String(doc)`은 inspect 덤프라 id로 쓰지 않는다.
   - 택배/배송 그룹핑 및 병합 기준에서 `trackingNumber`를 `shippingPackageId`보다 우선 SSOT로 사용합니다.
   - 수동 집하(`POST /api/requests/shipping/hanjin/manual-pickup-complete`)는 우편함 단위 집하를 강제합니다.
     - packageId 매칭 건 + 미할당(shippingPackageId 없음) 건을 함께 처리합니다.

@@ -33,6 +33,7 @@ import {
   assignMailboxForCleaningPackingEnter,
   ensureMailboxAddressForBusiness,
   isManufacturerSampleRequest,
+  normalizeBusinessAnchorId,
 } from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
@@ -1283,24 +1284,17 @@ export async function updateReviewStatusByStage(req, res) {
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
       if (status === "APPROVED") {
         const resolvedBusinessAnchorId = (() => {
-          const directBusinessAnchorId = request.businessAnchorId;
-          const directBusinessAnchorIdStr = String(
-            directBusinessAnchorId || "",
-          ).trim();
+          const directBusinessAnchorIdStr = normalizeBusinessAnchorId(
+            request.businessAnchorId,
+          );
           if (directBusinessAnchorIdStr) {
-            if (Types.ObjectId.isValid(directBusinessAnchorIdStr)) {
-              return new Types.ObjectId(directBusinessAnchorIdStr);
-            }
-            return null;
+            return new Types.ObjectId(directBusinessAnchorIdStr);
           }
 
-          const requestorBusinessAnchorId = request.requestor?.businessAnchorId;
-          const requestorBusinessAnchorIdStr = String(
-            requestorBusinessAnchorId || "",
-          ).trim();
+          const requestorBusinessAnchorIdStr = normalizeBusinessAnchorId(
+            request.requestor?.businessAnchorId,
+          );
           if (!requestorBusinessAnchorIdStr) return null;
-          if (!Types.ObjectId.isValid(requestorBusinessAnchorIdStr))
-            return null;
           return new Types.ObjectId(requestorBusinessAnchorIdStr);
         })();
 
@@ -1694,8 +1688,7 @@ export async function updateReviewStatusByStage(req, res) {
           // 출고일은 의뢰 시점 약속 고정. 포장.발송 진입으로 날짜를 바꾸거나
           // 신속 추가비를 여기서 취소하지 않는다(자정 이후 shippingOnTimeEvalWorker).
           await updateCurrentEstimatedShipYmdOnPackingEnter(request);
-          // 포장.발송 진입 승인마다 기존값을 신뢰하지 않고
-          // 동일 업체의 "다른 활성 점유"를 재조회해 우편함을 재결정한다.
+          // 포장.발송 진입: BusinessAnchor 기준 재사용 → 없으면 A1A1부터 첫 빈칸.
           request.mailboxAddress = null;
           try {
             const requestorBusinessAnchorId = resolvedBusinessAnchorId;
@@ -1705,7 +1698,7 @@ export async function updateReviewStatusByStage(req, res) {
             const nextMailboxAddress = await ensureMailboxAddressForBusiness({
               requestMongoId: request._id,
               requestorOrgId: requestorBusinessAnchorId,
-              currentMailboxAddress: request.mailboxAddress,
+              currentMailboxAddress: null,
               session,
               scopeFilter: mailboxAllocationScopeFilter,
             });

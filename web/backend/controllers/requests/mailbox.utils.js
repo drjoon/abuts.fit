@@ -24,17 +24,17 @@ const normalizeMailboxAddress = (raw) =>
 
 
 
-const INVALID_BUSINESS_ANCHOR_ID_STRINGS = new Set([
-  "",
-  "[object Object]",
-  "undefined",
-  "null",
-]);
+const OBJECT_ID_HEX_RE = /^[a-fA-F0-9]{24}$/;
+
+const isObjectIdHexString = (value) => OBJECT_ID_HEX_RE.test(String(value || "").trim());
 
 /**
  * BusinessAnchor id 정규화.
- * populated doc / ObjectId / string 모두 허용하고,
- * `String(populated)` 로 생긴 `[object Object]` 는 빈 값으로 취급한다.
+ * populated doc / ObjectId / string 모두 허용한다.
+ *
+ * 주의: Mongoose Document의 String(doc)/toString()은 `[object Object]`가 아니라
+ * util.inspect 형태 전체 덤프를 반환한다. 그래서 객체는 절대 String(doc)을
+ * id로 쓰지 않고 `_id`/`id`만 재귀 추출한다. ObjectId만 String 캐스팅을 허용.
  */
 export const normalizeBusinessAnchorId = (raw, depth = 0) => {
   if (raw == null) return "";
@@ -42,26 +42,19 @@ export const normalizeBusinessAnchorId = (raw, depth = 0) => {
 
   if (typeof raw === "string" || typeof raw === "number") {
     const normalized = String(raw).trim();
-    if (!normalized || INVALID_BUSINESS_ANCHOR_ID_STRINGS.has(normalized)) {
-      return "";
-    }
-    return normalized;
+    return isObjectIdHexString(normalized) ? normalized : "";
   }
 
   if (typeof raw === "object") {
-    const stringified = String(raw || "").trim();
-    if (
-      stringified &&
-      !INVALID_BUSINESS_ANCHOR_ID_STRINGS.has(stringified)
-    ) {
-      return stringified;
-    }
-
     const nestedCandidates = [raw?._id, raw?.id, raw?.businessAnchorId];
     for (const candidate of nestedCandidates) {
       const normalized = normalizeBusinessAnchorId(candidate, depth + 1);
       if (normalized) return normalized;
     }
+
+    // Types.ObjectId 등은 _id가 없고 String(oid)만 24hex를 준다.
+    const stringified = String(raw || "").trim();
+    if (isObjectIdHexString(stringified)) return stringified;
   }
 
   return "";
@@ -132,6 +125,20 @@ const buildMailboxOccupancyByAddress = (activeRequests = []) => {
   return occupancyByAddress;
 };
 
+const isPackingOrShippingStage = (requestDocLike) =>
+  ACTIVE_MAILBOX_OCCUPY_STAGES.includes(
+    String(requestDocLike?.manufacturerStage || "").trim(),
+  );
+
+/**
+ * 동일 BusinessAnchor 우편함 재사용.
+ *
+ * SSOT (포장.발송 진입 포함):
+ * 1) 세척.패킹/포장.발송에 같은 BusinessAnchor가 이미 있으면 그 주소로 합류
+ * 2) 없으면 호출측에서 A1A1부터 첫 빈칸 할당
+ *
+ * 추적관리 잔여·타 업체 추적 혼입은 재사용을 막지 않는다.
+ */
 const findReusableMailboxAddressForBusiness = ({
   activeRequests = [],
   requestorOrgId,
@@ -139,19 +146,15 @@ const findReusableMailboxAddressForBusiness = ({
   const requestorOrgIdStr = normalizeBusinessAnchorId(requestorOrgId);
   if (!requestorOrgIdStr) return "";
 
-  const occupancyByAddress = buildMailboxOccupancyByAddress(activeRequests);
+  const addresses = [];
+  for (const requestDoc of activeRequests) {
+    if (!isPackingOrShippingStage(requestDoc)) continue;
+    if (resolveOccupantAnchorKey(requestDoc) !== requestorOrgIdStr) continue;
+    const address = normalizeMailboxAddress(requestDoc?.mailboxAddress);
+    if (address) addresses.push(address);
+  }
 
-  return (
-    Array.from(occupancyByAddress.entries())
-      // UNKNOWN 점유는 혼입 판정에서 제외한다.
-      // (같은 업체 박스에 anchor 누락 레코드가 섞여 있어도 재사용이 가능해야
-      //  가공→세척.패킹 전환 시 불필요한 신규 박스 생성을 막을 수 있다.)
-      .filter(([_, row]) =>
-        row.concreteOrgKeys.size === 1 && row.concreteOrgKeys.has(requestorOrgIdStr),
-      )
-      .map(([address]) => address)
-      .sort()[0] || ""
-  );
+  return addresses.sort()[0] || "";
 };
 
 const normalizeScopeFilter = (raw) => {
@@ -421,7 +424,11 @@ async function resolveMailboxAddressUnderLock({
     return reusableAddress;
   }
 
-  const occupancyByAddress = buildMailboxOccupancyByAddress(activeRequests);
+  // 빈칸/핸드오프 판정은 세척.패킹·포장.발송 점유만 본다 (A1A1에 가까운 빈칸 우선).
+  const packingShippingRequests = activeRequests.filter(isPackingOrShippingStage);
+  const occupancyByAddress = buildMailboxOccupancyByAddress(
+    packingShippingRequests,
+  );
 
   // 아직 request 문서에 커밋되기 전인 동시 할당 손잡이(짧은 TTL 슬롯)
   const slot = await readMailboxAnchorSlot({
@@ -464,6 +471,7 @@ async function resolveMailboxAddressUnderLock({
     if (address) usedAddresses.add(address);
   }
 
+  // ALL_MAILBOX_ADDRESSES는 A1A1부터 순서대로라 가장 윗쪽 가까운 빈칸이 선택된다.
   const availableAddress = ALL_MAILBOX_ADDRESSES.find(
     (addr) => !usedAddresses.has(addr),
   );
