@@ -115,7 +115,6 @@ const toSettingsResponse = (anchor) => {
     implantFavorites: normalizeImplantFavorites(settings?.implantFavorites),
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
     promoNoticeDismissedAt,
-    skipDesignConfirm: Boolean(settings?.skipDesignConfirm),
     updatedAt: settings?.updatedAt || null,
   };
 };
@@ -181,7 +180,6 @@ export async function upsertPracticeTransferSettings(req, res) {
     const hasImplantFavorites = Object.prototype.hasOwnProperty.call(body, "implantFavorites");
     const hasAbutmentFavorites = Object.prototype.hasOwnProperty.call(body, "abutmentFavorites");
     const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(body, "promoNoticeDismissedAt");
-    const hasSkipDesignConfirm = Object.prototype.hasOwnProperty.call(body, "skipDesignConfirm");
 
     const setPatch = {
       "practiceTransferSettings.updatedAt": new Date(),
@@ -211,10 +209,6 @@ export async function upsertPracticeTransferSettings(req, res) {
         setPatch["practiceTransferSettings.promoNoticeDismissedAt"] =
           Number.isNaN(parsed.getTime()) ? new Date() : parsed;
       }
-    }
-    if (hasSkipDesignConfirm) {
-      setPatch["practiceTransferSettings.skipDesignConfirm"] =
-        body.skipDesignConfirm === true || body.skipDesignConfirm === "true";
     }
 
     const anchor = await BusinessAnchor.findByIdAndUpdate(

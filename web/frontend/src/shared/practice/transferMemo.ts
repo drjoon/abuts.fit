@@ -265,6 +265,8 @@ export type ParsedPracticeTransferMemoMeta = {
   toothWorks: ToothWorkSelection[];
   patientName: string;
   memo: string;
+  /** 의뢰건별 「디자인 컨펌 생략」. 계정 세팅이 아님 */
+  skipDesignConfirm: boolean;
 };
 
 export const DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS = 7;
@@ -757,6 +759,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
   let prosthesisTypes: string[] = [];
   let toothWorks: ToothWorkSelection[] = [];
   let patientName = "";
+  let skipDesignConfirm = false;
 
   for (const line of lines) {
     const trimmed = String(line || "").trim();
@@ -813,6 +816,19 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
       continue;
     }
 
+    const skipDesignConfirmMatch = trimmed.match(/^\[\s*디자인컨펌생략\s*:\s*(.+)\]$/);
+    if (skipDesignConfirmMatch) {
+      const flag = String(skipDesignConfirmMatch[1] || "").trim().toLowerCase();
+      skipDesignConfirm =
+        flag === "y" ||
+        flag === "yes" ||
+        flag === "true" ||
+        flag === "1" ||
+        flag === "생략" ||
+        flag === "예";
+      continue;
+    }
+
     memoLines.push(line);
   }
 
@@ -824,6 +840,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
     toothWorks: normalizeToothWorksForSync(toothWorks),
     patientName,
     memo: memoLines.join("\n").replace(/^\s+|\s+$/g, ""),
+    skipDesignConfirm,
   };
 };
 
@@ -835,6 +852,7 @@ export const buildPracticeTransferMemo = (params: {
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
   patientName?: string;
+  skipDesignConfirm?: boolean;
 }) => {
   const lines = [
     `[주문일: ${String(params.orderDate || "").trim()}]`,
@@ -843,6 +861,7 @@ export const buildPracticeTransferMemo = (params: {
     `[환자명: ${String(params.patientName || "").trim()}]`,
     `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
     `[치아보철: ${serializeToothWorksForSync(params.toothWorks)}]`,
+    `[디자인컨펌생략: ${params.skipDesignConfirm === true ? "Y" : "N"}]`,
   ];
   const memo = String(params.memo || "").trim();
   return memo ? `${lines.join("\n")}\n${memo}` : lines.join("\n");
@@ -860,7 +879,7 @@ export const formatPracticeTransferMemoDetail = (
   if (!source) return "";
 
   const hasKnownMeta =
-    /\[\s*(주문일|도착일|도착기본일수|환자명|보철물형태목록|보철물형태|치아보철)\s*:/i.test(source);
+    /\[\s*(주문일|도착일|도착기본일수|환자명|보철물형태목록|보철물형태|치아보철|디자인컨펌생략)\s*:/i.test(source);
   if (!hasKnownMeta) return formatTransferMemoForDisplay(source);
 
   const parsed = parsePracticeTransferMemoMeta(source);

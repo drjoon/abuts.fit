@@ -1375,7 +1375,8 @@ export async function createPracticeTransfer(req, res) {
     const skipDesignConfirm =
       req.body?.skipDesignConfirm === true ||
       req.body?.skipDesignConfirm === "true" ||
-      practiceRouting?.skipDesignConfirm === true;
+      practiceRouting?.skipDesignConfirm === true ||
+      practiceRouting?.skipDesignConfirm === "true";
 
     // 과금은 기공소 의뢰수락 시점(mark-accepted). 전송 생성은 파일/메타만 저장.
     const transferDoc = await PracticeTransfer.create({

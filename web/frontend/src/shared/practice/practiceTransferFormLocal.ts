@@ -33,6 +33,8 @@ export type PracticeTransferFormLocalDraft = {
   patientName?: string;
   selectedLab?: PracticeTransferFormLocalLab | null;
   toothWorks?: ToothWorkSelection[];
+  /** 의뢰건별 「디자인 컨펌 생략」. 계정 세팅이 아님 */
+  skipDesignConfirm?: boolean;
   /** 전송/삭제된 draft가 localStorage로 다시 복원되지 않도록 추적 */
   activeDraftId?: string | null;
   updatedAt?: number;
@@ -122,6 +124,7 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
   patientName: string;
   selectedLab: PracticeTransferFormLocalLab | null;
   toothWorks: ToothWorkSelection[];
+  skipDesignConfirm?: boolean;
   activeDraftId?: string | null;
 }): number => {
   const existing = readPracticeTransferFormLocal();
@@ -134,6 +137,10 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
     patientName: fields.patientName,
     selectedLab: fields.selectedLab,
     toothWorks: fields.toothWorks,
+    skipDesignConfirm:
+      fields.skipDesignConfirm !== undefined
+        ? fields.skipDesignConfirm === true
+        : Boolean(existing?.skipDesignConfirm),
     activeDraftId:
       fields.activeDraftId !== undefined
         ? fields.activeDraftId
@@ -167,6 +174,7 @@ export const adoptDropzoneDraftIntoTransferFormIfNeeded =
         patientName: String(parsed.patientName || ""),
         selectedLab: parsed.selectedLab || null,
         toothWorks: Array.isArray(parsed.toothWorks) ? parsed.toothWorks : [],
+        skipDesignConfirm: Boolean(existing?.skipDesignConfirm),
         activeDraftId: existing?.activeDraftId ?? null,
         updatedAt: Date.now(),
       };
@@ -203,5 +211,6 @@ export const readPreferredIntakeFormForDropzone = (
     patientName: dropzoneDraft.patientName,
     selectedLab: dropzoneDraft.selectedLab || null,
     toothWorks: dropzoneDraft.toothWorks,
+    skipDesignConfirm: Boolean(transfer?.skipDesignConfirm),
   };
 };
