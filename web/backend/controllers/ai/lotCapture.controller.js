@@ -202,16 +202,17 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
 
   const prompt =
     "너는 치과 임플란트 어벗먼트(또는 유사한 금속 부품) 생산 이미지에서 각인된 시리얼 코드를 읽어 JSON으로 추출하는 도우미야.\n" +
-    "이 시리얼 코드는 보통 영문 대문자 3글자로 구성된 코드(예: ACZ, BDF, QJK 등)이며,\n" +
+    "이 시리얼 코드는 보통 영문 대문자 3글자로 구성된 코드이며,\n" +
     "앞뒤에 다른 문자나 숫자가 섞여 있을 수도 있고, 오직 3글자만 보일 수도 있어.\n" +
-    "이미지 안에서 금속 표면에 가장 뚜렷하게 각인된 3글자 영문 대문자 코드를 찾아서 그대로 lotNumber 로 반환해줘.\n" +
+    "이미지 안에서 금속 표면에 가장 뚜렷하게 각인된 3글자 영문 대문자 코드를 그대로 lotNumber 로 반환해줘.\n" +
+    "흐리거나 저해상도여도 추측/예시 코드로 채우지 말고, 글자 형태를 읽어라.\n" +
+    "읽기 어렵거나 확신이 없으면 confidence 를 low 로 두고, 도저히 읽을 수 없으면 lotNumber 는 빈 문자열로 둬.\n" +
     "만약 여러 개가 보이면 가장 중요한(가장 크게, 중앙에, 선명하게 보이는) 코드를 1개만 선택해.\n" +
-    "적절한 3글자 영문 대문자 코드가 전혀 없으면 lotNumber 는 빈 문자열로 둬.\n" +
     "반드시 JSON만 반환하고 다른 설명은 하지 마.\n\n" +
     "스키마:\n" +
     "{\n" +
     '  "lotNumber": string,\n' +
-    '  "confidence": string\n' +
+    '  "confidence": "high" | "medium" | "low"\n' +
     "}";
 
   const result = await model.generateContent([

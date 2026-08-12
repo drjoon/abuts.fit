@@ -70,22 +70,33 @@ export const usePackingCapture = ({
     return match ? match[0] : "";
   }, []);
 
+  // 업로드 대역폭용 다운스케일. 긴 변만 상한으로 줄이고, 이미 작은 크롭은 절대 축소하지 않는다.
+  // (이전 0.2 고정 배율은 399×221 → 79×44로 만들어 Gemini가 QJK/BDF로 환각했다.)
   const resizeImageFile = useCallback((file: File) => {
+    const MAX_EDGE = 1600;
     return new Promise<File>((resolve) => {
       const reader = new FileReader();
       const image = new Image();
       reader.onload = () => {
         image.onload = () => {
+          const longest = Math.max(image.width, image.height);
+          if (!longest || longest <= MAX_EDGE) return resolve(file);
+          const scale = MAX_EDGE / longest;
           const canvas = document.createElement("canvas");
-          canvas.width = image.width * 0.2;
-          canvas.height = image.height * 0.2;
+          canvas.width = Math.max(1, Math.round(image.width * scale));
+          canvas.height = Math.max(1, Math.round(image.height * scale));
           const ctx = canvas.getContext("2d");
           if (!ctx) return resolve(file);
           ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => {
-            if (!blob) return resolve(file);
-            resolve(new File([blob], file.name, { type: file.type }));
-          }, file.type || "image/jpeg");
+          const mime = file.type || "image/jpeg";
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return resolve(file);
+              resolve(new File([blob], file.name, { type: mime }));
+            },
+            mime,
+            mime === "image/jpeg" ? 0.92 : undefined,
+          );
         };
         image.onerror = () => resolve(file);
         image.src = reader.result as string;
