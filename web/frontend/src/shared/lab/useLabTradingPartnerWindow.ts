@@ -1,4 +1,5 @@
 // related files:
+// - web/frontend/src/features/lab/LabDashboardTopBanners.tsx
 // - web/frontend/src/features/lab/LabTradingPartnerWindowBanner.tsx
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js

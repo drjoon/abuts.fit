@@ -139,8 +139,12 @@ Notes:
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - `src/features/settings/tabs/LabTradingPartnersTab.tsx` — 거래처 O/X 결제 안내 + 초대
     - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — crown/bridge/inlay/pontic/customAbutmentDesign(커스텀어벗 디자인, 기본 1만)
-    - 등록 기간 D-day 배너: `LabTradingPartnerWindowBanner` — 기공의뢰수신·어벗의뢰 상단. 클릭 → `?tab=trading-partners`
+    - 등록 기간 D-day 배너: `LabDashboardTopBanners` — 기공의뢰수신·어벗생산의뢰 상단.
+      - 왼쪽: 소개치과 등록 (`LabTradingPartnerWindowBanner`) → `?tab=trading-partners`
+      - 오른쪽: 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
+      - `src/features/lab/LabDashboardTopBanners.tsx`
       - `src/features/lab/LabTradingPartnerWindowBanner.tsx`
+      - `src/features/lab/LabPlatformBenefitsBanner.tsx`
       - `src/shared/lab/useLabTradingPartnerWindow.ts` (`GET /api/lab-trading-partners/window`)
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab` — 검증 기공소 `BusinessAnchor.practiceTransferAutoMatchEnabled`. 파트너 **기공의뢰 자동매칭** 탭(페이지 무한스크롤, 내부 스크롤 없음)
@@ -249,7 +253,7 @@ Notes:
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
   - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
   - 기존 거래 치과 등록은 `max(pricingBaseDate, 2026-08-11)` 기준 **30일**간만 신규 초대 가능(D-day 배지·상단 배너). 탭 라벨: 「거래 치과 등록」.
-  - 기공소 화면(기공의뢰수신·어벗의뢰) 상단에 등록 잔여일 alert 배너 표시(기간 중만). 클릭 시 설정 탭 이동.
+  - 기공소 화면(기공의뢰수신·어벗생산의뢰) 상단: 등록 잔여일 alert(기간 중만, 왼쪽) + 가입 이유 alert(오른쪽, 클릭 시 모달).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
     - **치과**: 유료크레딧(+무료·의뢰/배송)만 표시. `기공크레딧` 잔액 행·정산 필터 숨김. 기공의뢰 차감은 유료크레딧에서 나가며 장부 항목=`기공비`.
     - **기공소**: 유료크레딧(입금·소비)과 기공크레딧(치과 수취·월 정산, `LAB_SETTLEMENT_CREDIT`)을 분리 표시. 「기공크레딧 정산」 탭은 lab만.

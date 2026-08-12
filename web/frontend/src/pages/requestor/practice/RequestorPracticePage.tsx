@@ -25,6 +25,7 @@
 // - 2026-08-11: 상단 뱃지에 포장.발송·추적관리 추가(기공 파이프라인 UI).
 // - 2026-08-11: 디자인 큐 빈 상태 카드 제거 — 전송 내역만 표시(둘 다 없으면 안내 문구).
 // - 2026-08-11: 기공소 거래 치과 등록 D-day 배너(설정 이동).
+// - 2026-08-12: 상단 기공의뢰서 promo alert 제거. 소개치과+가입이유 2열 배너.
 // - 2026-08-11: [안내 복사] 문구 — 이모티콘·부드러운 말투로 정리.
 // - 2026-08-11: 다운로드→의뢰수락 뱃지/상태. 수락 API 과금. 파일 다운로드는 상태 미전이.
 // - 2026-08-11: 의뢰수락 후 치과 transfer-room 재연결. 모달 폭·lab peer 채팅 연결.
@@ -40,8 +41,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
+import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -56,7 +56,7 @@ import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
-import { Building2, Copy, Download, Link2, Search, Send, UploadCloud, X } from "lucide-react";
+import { Building2, Copy, Download, Link2, Search, Send, UploadCloud } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import {
   Dialog,
@@ -176,14 +176,7 @@ type ReceivedTransfersResponse = {
   };
 };
 
-type PracticeTransferSettingsPayload = {
-  promoNoticeDismissedAt?: string | null;
-};
-
 const PAGE_SIZE = 10; // 2열 x 5행
-const PRACTICE_TRANSFER_PROMO_TITLE = "기공의뢰서로 간편하게 의뢰하세요";
-const PRACTICE_TRANSFER_PROMO_DESC =
-  "치과와 기공소 간 기공의뢰서를 전달·관리할 수 있습니다.";
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -426,8 +419,6 @@ function RequestorPracticeReceivePage({
   >("all");
   const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
   const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
-  const [promoNoticeVisible, setPromoNoticeVisible] = useState(false);
-  const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
@@ -491,58 +482,6 @@ function RequestorPracticeReceivePage({
       }),
     );
   }, []);
-
-  const loadPromoNoticeSettings = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await apiFetch<unknown>({
-        path: "/api/practice/transfers/settings",
-        method: "GET",
-        token,
-      });
-      if (!res.ok) return;
-
-      const body =
-        res.data && typeof res.data === "object"
-          ? (res.data as { data?: unknown })
-          : {};
-      const payload =
-        body.data && typeof body.data === "object"
-          ? (body.data as PracticeTransferSettingsPayload)
-          : null;
-
-      const dismissed = String(payload?.promoNoticeDismissedAt || "").trim().length > 0;
-      setPromoNoticeVisible(!dismissed);
-    } catch {
-      // ignore
-    }
-  }, [token]);
-
-  const handleDismissPromoNotice = useCallback(async () => {
-    if (!token || promoNoticeSaving) return;
-    setPromoNoticeSaving(true);
-    try {
-      const res = await apiFetch<unknown>({
-        path: "/api/practice/transfers/settings",
-        method: "POST",
-        token,
-        jsonBody: { promoNoticeDismissedAt: new Date().toISOString() },
-      });
-      if (!res.ok) {
-        const body = res.data && typeof res.data === "object" ? (res.data as Record<string, unknown>) : {};
-        throw new Error(String(body.message || "안내 저장에 실패했습니다."));
-      }
-      setPromoNoticeVisible(false);
-    } catch (error) {
-      toast({
-        title: "안내 숨김 실패",
-        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setPromoNoticeSaving(false);
-    }
-  }, [promoNoticeSaving, toast, token]);
 
   const parseTransfersBody = useCallback((raw: unknown): ReceivedTransfersResponse => {
     const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -823,11 +762,6 @@ function RequestorPracticeReceivePage({
     }
     void loadFirstPage();
   }, [loadFirstPage, token]);
-
-  useEffect(() => {
-    if (!token) return;
-    void loadPromoNoticeSettings();
-  }, [loadPromoNoticeSettings, token]);
 
   useAppEventListener({
     enabled: Boolean(token),
@@ -2538,7 +2472,7 @@ function RequestorPracticeReceivePage({
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
-        <LabTradingPartnerWindowBanner />
+        <LabDashboardTopBanners />
         {showDesignQueue && !showTransfers ? (
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-end gap-3">
@@ -2555,28 +2489,7 @@ function RequestorPracticeReceivePage({
 
         {showTransfers ? (
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-start">
-          {promoNoticeVisible ? (
-            <Alert className="relative flex flex-col items-center justify-center border-primary-muted bg-primary-soft text-primary-strong text-center xl:col-span-9">
-              <button
-                type="button"
-                onClick={() => void handleDismissPromoNotice()}
-                disabled={promoNoticeSaving}
-                className="absolute right-3 top-3 rounded p-1 text-primary-strong hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label="안내 닫기"
-              >
-                <X className="h-4 w-4" />
-              </button>
-              <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
-              <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
-            </Alert>
-          ) : null}
-
-          <div
-            className={cn(
-              "xl:col-span-3 xl:col-start-10",
-              promoNoticeVisible ? "xl:row-start-1" : "order-first xl:order-none xl:row-start-1",
-            )}
-          >
+          <div className="order-first xl:order-none xl:col-span-3 xl:col-start-10 xl:row-start-1">
             {inviteLinkCard}
           </div>
 
