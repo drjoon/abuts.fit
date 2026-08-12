@@ -15,10 +15,27 @@ import {
 } from "../../utils/creditSettingsDefaults.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
+  normalizeRequestorCapabilities,
+  normalizeRequestorKind,
+} from "../../utils/requestorCapabilities.js";
+import {
   formatBusinessNumber,
   isDuplicateKeyError,
 } from "./business.validation.util.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
+
+/** 환영 무료 크레딧: 의뢰자·기공소(lab)만. 치과(practice) 제외. */
+function isWelcomeFreeCreditEligibleLabAnchor(businessAnchor) {
+  if (String(businessAnchor?.businessType || "") !== "requestor") return false;
+  const kind = normalizeRequestorKind(businessAnchor?.requestorKind);
+  if (kind === "lab") return true;
+  if (kind === "practice") return false;
+  // kind 미기입: 레거시 caps가 lab만인 경우만 허용
+  const caps = normalizeRequestorCapabilities(
+    businessAnchor?.requestorCapabilities,
+  );
+  return caps.lab && !caps.practice;
+}
 
 async function upsertFreeCreditLedger({
   businessAnchorId,
@@ -157,10 +174,15 @@ export async function grantRequestFreeCreditIfEligible({
   if (!businessAnchorId) return null;
   if (userRole !== "requestor") return null;
   const businessAnchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({ businessType: 1, metadata: 1 })
+    .select({
+      businessType: 1,
+      requestorKind: 1,
+      requestorCapabilities: 1,
+      metadata: 1,
+    })
     .lean();
   if (!businessAnchor) return null;
-  if (String(businessAnchor.businessType || "") !== "requestor") return null;
+  if (!isWelcomeFreeCreditEligibleLabAnchor(businessAnchor)) return null;
 
   const normalizedBusinessNumber = formatBusinessNumber(
     businessAnchor?.metadata?.businessNumber,
@@ -219,10 +241,15 @@ export async function grantShippingFreeCreditIfEligible({
   if (!businessAnchorId) return null;
   if (userRole !== "requestor") return null;
   const businessAnchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({ businessType: 1, metadata: 1 })
+    .select({
+      businessType: 1,
+      requestorKind: 1,
+      requestorCapabilities: 1,
+      metadata: 1,
+    })
     .lean();
   if (!businessAnchor) return null;
-  if (String(businessAnchor.businessType || "") !== "requestor") return null;
+  if (!isWelcomeFreeCreditEligibleLabAnchor(businessAnchor)) return null;
 
   const normalizedBusinessNumber = formatBusinessNumber(
     businessAnchor?.metadata?.businessNumber,

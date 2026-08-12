@@ -391,6 +391,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 공개 가입: `POST /api/auth/register`. 발신 프로필: `practiceProfile` → `ensureRequestorOrgAnchor`.
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
   - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
+    환영 무료 크레딧은 `requestorKind=lab`만(치과 practice 제외).
 
 - 드롭존 가입(치과 전용, requestor+practice+free):
   - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.
@@ -593,7 +594,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `GET /api/credits/balance`는 `LedgerLine` 직접 집계(GL SSOT)만 사용합니다.
     - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
   - 가입 환영 무료 크레딧(강제, 1회):
-    - 호출 허용: `business.update.controller.js`에서 **BusinessAnchor를 새로 생성한 분기만**
+    - 대상: 의뢰자·기공소(`requestorKind=lab`)만. 의뢰자·치과(`practice`) 제외
+    - 호출 허용: `business.update.controller.js`에서 **BusinessAnchor를 새로 생성한 분기**
+      및 synthetic→실BN 검증 승격 분기
       (`grantRequestFreeCreditIfEligible` / `grantShippingFreeCreditIfEligible`)
     - 금지: 기존 사업자 정보 업데이트 분기, 기존 앵커 연결(attach), 로그인/설정 저장 등 기타 경로
     - 멱등: `FreeCreditGrant`(물리 컬렉션 `bonusgrants`)를 사업자등록번호당 1건으로 유지.

@@ -932,7 +932,7 @@ export async function updateMyBusiness(req, res) {
           "business-anchor-linked",
         );
 
-        // 환영 무료 크레딧: 의뢰자 BusinessAnchor 신규 생성 시에만 1회 지급
+        // 환영 무료 크레딧: 의뢰자·기공소(lab) BusinessAnchor 신규 생성 시에만 1회 지급
         const requestFreeCreditAmount =
           await grantRequestFreeCreditIfEligible({
             businessAnchorId: created._id,
@@ -1096,7 +1096,7 @@ export async function updateMyBusiness(req, res) {
       }
     }
 
-    // 환영 무료 크레딧: 신규 생성 또는 synthetic→실BN 검증 승격 시에만 (사업자번호당 1회).
+    // 환영 무료 크레딧: 기공소(lab) synthetic→실BN 검증 승격 시에만 (사업자번호당 1회).
     let requestFreeCreditGranted = false;
     let requestFreeCreditAmount = 0;
     let freeShippingCreditGranted = false;

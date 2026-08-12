@@ -179,7 +179,8 @@
   - `GET /api/credits/balance` 및 잔액 파생 조회는 `LedgerLine` 직접 집계값을 사용
   - `BusinessCreditBalance`는 레거시 스냅샷으로 취급하며 런타임 잔액 판정/표시에 사용하지 않음
 - 가입 환영 무료 크레딧(강제):
-  - 의뢰자 `BusinessAnchor` **신규 생성(실 사업자등록번호)** 또는 **synthetic(`practice-*`)→실BN 검증 승격** 시에 `defaultRequestFreeCredit` / `defaultShippingFreeCredit`를 사업자번호당 1회 지급
+  - 의뢰자·기공소(`requestorKind=lab`) `BusinessAnchor` **신규 생성(실 사업자등록번호)** 또는 **synthetic(`practice-*`)→실BN 검증 승격** 시에 `defaultRequestFreeCredit` / `defaultShippingFreeCredit`를 사업자번호당 1회 지급
+  - 의뢰자·치과(`requestorKind=practice`)는 지급 대상에서 제외
   - 구현: `business.update.controller.js` 생성 분기·synthetic 승격 분기 → `business.freeCredit.util.js`
   - 무BN synthetic 앵커 생성만으로는 지급하지 않음. 일반 사업자 정보 수정·재로그인·설정 저장 경로에서는 지급 호출 금지
   - 사업자등록번호당 `FreeCreditGrant`(`REQUEST_FREE_CREDIT`/`SHIPPING_FREE_CREDIT`, legacy `WELCOME_BONUS`/`FREE_SHIPPING_CREDIT` 포함)로 중복 지급 차단
