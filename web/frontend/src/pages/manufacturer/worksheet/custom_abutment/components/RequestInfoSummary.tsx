@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: row(프리뷰)도 열 너비 초과 시 다음 줄로 넘김. nowrap 강제 제거(생산 문구 잘림 수정).
 // - 2026-08-11: row(프리뷰) MetaRow는 nowrap으로 환자·일정 줄 2줄 줄바꿈 완화.
 // - 2026-08-06: row 요약에 출고예정·마감 남은시간 인라인 표시(세로 높이 증가 없이 환자 첫 줄에 배치).
 // - 2026-08-04: 환자 줄=`치과명 / 환자명 / 치아`, 기공소명은 상단 1회만. 기공소=치과 동일 시 치과명 중복 생략.
@@ -99,19 +100,9 @@ function Dot() {
   return <span className="text-slate-300 select-none" aria-hidden>•</span>;
 }
 
-function MetaRow({
-  children,
-  nowrap = false,
-}: {
-  children: ReactNode;
-  nowrap?: boolean;
-}) {
+function MetaRow({ children }: { children: ReactNode }) {
   return (
-    <div
-      className={`flex items-center gap-x-1.5 gap-y-0.5 text-[13px] leading-snug text-slate-700 ${
-        nowrap ? "flex-nowrap whitespace-nowrap" : "flex-wrap"
-      }`}
-    >
+    <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[13px] leading-snug text-slate-700">
       {children}
     </div>
   );
@@ -232,9 +223,11 @@ export function RequestInfoSummary({
       }
     >
       {(labName || dateLabel || hasScheduleMeta) && (
-        <MetaRow nowrap={isRow}>
+        <MetaRow>
           {labName && (
-            <span className="font-medium text-slate-800">{labName}</span>
+            <span className="min-w-0 break-words font-medium text-slate-800">
+              {labName}
+            </span>
           )}
           {dateLabel && (
             <InlineGroup>
@@ -262,8 +255,8 @@ export function RequestInfoSummary({
           )}
         </MetaRow>
       )}
-      <MetaRow nowrap={isRow}>
-        <span>{patientIdentityLine}</span>
+      <MetaRow>
+        <span className="min-w-0 break-words">{patientIdentityLine}</span>
       </MetaRow>
     </Section>
   ) : null;
@@ -279,23 +272,29 @@ export function RequestInfoSummary({
         .join(" ")}
     >
       {implantLine && (
-        <MetaRow nowrap={isRow}>
-          <span className="font-medium text-slate-800">{implantLine}</span>
+        <MetaRow>
+          <span className="min-w-0 break-words font-medium text-slate-800">
+            {implantLine}
+          </span>
           {retention && (
             <InlineGroup>
               <Dot />
-              <span className="text-slate-600">유지홈 {retention}</span>
+              <span className="min-w-0 break-words text-slate-600">
+                유지홈 {retention}
+              </span>
             </InlineGroup>
           )}
         </MetaRow>
       )}
       {!implantLine && retention && (
-        <MetaRow nowrap={isRow}>
-          <span className="text-slate-600">유지홈 {retention}</span>
+        <MetaRow>
+          <span className="min-w-0 break-words text-slate-600">
+            유지홈 {retention}
+          </span>
         </MetaRow>
       )}
       {geometryItems.length > 0 && (
-        <MetaRow nowrap={isRow}>
+        <MetaRow>
           {geometryItems.map((item, idx) => (
             <InlineGroup key={item}>
               {idx > 0 && <Dot />}
@@ -314,12 +313,15 @@ export function RequestInfoSummary({
         isRow && (hasPatient || hasImplant) ? sectionPadStartClass : ""
       }
     >
-      <MetaRow nowrap={isRow}>
+      <MetaRow>
         {productionItems.map((item, idx) => (
-          <InlineGroup key={`${item}-${idx}`}>
-            {idx > 0 && <Dot />}
-            <span className="text-slate-600">{item}</span>
-          </InlineGroup>
+          <span
+            key={`${item}-${idx}`}
+            className="inline-flex min-w-0 max-w-full items-baseline gap-1.5"
+          >
+            {idx > 0 ? <Dot /> : null}
+            <span className="min-w-0 break-words text-slate-600">{item}</span>
+          </span>
         ))}
       </MetaRow>
     </Section>

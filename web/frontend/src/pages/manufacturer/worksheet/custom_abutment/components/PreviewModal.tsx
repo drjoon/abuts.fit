@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 상단 요약(환자/임플란트/생산) 문구가 열 너비를 넘으면 다음 줄로 넘김.
 // - 2026-08-11: FP 저장 후 "NC 코드 재생성할까요?" 컨펌 → 확인 시 Esprit NC 재생성.
 // - 2026-08-11: FP 저장은 DB 메타만 갱신(STL 재로드/forceRefresh 제거). realtime도 manual-front-point 스킵.
 // - 2026-08-11: 가공 왼쪽 filled 편집 뷰어에 forceFilled(준비 오른쪽과 동일 가이드/오버레이).

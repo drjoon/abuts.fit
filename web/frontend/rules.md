@@ -267,7 +267,7 @@ Notes:
   - 카드/프리뷰 본문의 환자·임플란트·생산 정보는 개별 JSX로 흩뿌리지 말고
     `src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx`를 사용합니다.
   - 의미 단위 섹션 고정: **환자** → **임플란트** → **생산**(있을 때만).
-  - 레이아웃: 카드는 `layout="stack"`(기본), PreviewModal은 `layout="row"`(가로 3열)로 요약 높이를 줄여 STL 영역을 확보합니다.
+  - 레이아웃: 카드는 `layout="stack"`(기본), PreviewModal은 `layout="row"`(가로 3열)로 요약 높이를 줄여 STL 영역을 확보합니다. 열 너비를 넘는 문구는 다음 줄로 넘깁니다(1줄 nowrap 강제 금지).
   - 중복 금지 / 배치:
     - 상단 조직 줄: 기공소명(`requestor.business|business.name|requestorBusinessAnchor.name|requestor.name`) · 날짜. 기공소명은 1회만.
     - 환자 줄: `치과명 / 환자명 / 치아` (치과명·환자명 나란히, 옆 치아번호).

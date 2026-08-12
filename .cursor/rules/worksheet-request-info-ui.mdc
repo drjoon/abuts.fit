@@ -17,6 +17,7 @@ alwaysApply: false
 - 기공소명과 치과명이 같거나 포함 관계면 환자 줄에서 치과명 생략(중복 제거)
 - PreviewModal + STL 오버레이 표시 시 커넥션/최대직경/길이는 요약에서 생략
 - 컨테이너/타이포는 `RequestInfoSummary` 토큰 유지 (`slate-50/70`, `text-[13px]`, 섹션 라벨 `text-[10px]`)
+- PreviewModal row: 환자·임플란트·생산 문구가 열 너비를 넘으면 다음 줄로 넘긴다(1줄 nowrap 강제 금지)
 - 기공소명 소스: `requestor.business` → `business.name` → `requestorBusinessAnchor.name` → `requestor.name`
 
 ## Don't
