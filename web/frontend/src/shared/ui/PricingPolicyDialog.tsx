@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 모달 제목을 커스텀 어벗 생산 가격 · 출고 정책 안내로 변경, 디자인 10,000원 행 삭제.
 // - 2026-08-11: 기본가 12,000/디자인 10,000·주문량할인·소개합산·런칭이벤트·디자인+생산 장문 삭제, 출고 안내 단축.
 // - 2026-08-09: 디자인+생산 신속비=어벗 수 배수 안내.
 // - 2026-08-09: 디자인+생산 출고 +1영업일 안내(가격·리드타임·출고 방식).
@@ -174,7 +175,7 @@ export const PricingPolicyDialog = ({
       ? '개발운영사 분배 기준'
       : variant === 'salesman'
         ? '영업자 수수료 정책'
-        : '가격 · 출고 정책 안내';
+        : '커스텀 어벗 생산 가격 · 출고 정책 안내';
 
   const subtitle =
     variant === 'devops'
@@ -273,12 +274,6 @@ export const PricingPolicyDialog = ({
                   <PriceRow
                     label='커스텀 어벗 생산'
                     value='12,000원'
-                    hint='1개당'
-                  />
-                  <div className='h-px bg-slate-100' />
-                  <PriceRow
-                    label='커스텀 어벗 디자인'
-                    value='10,000원'
                     hint='1개당'
                   />
                   <div className='h-px bg-slate-100' />
