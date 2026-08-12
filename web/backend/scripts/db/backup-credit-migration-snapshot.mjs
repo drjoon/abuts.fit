@@ -75,6 +75,8 @@ async function run() {
       "ledgerjournals",
       "ledgerlines",
       "businesscreditbalances",
+      "bonusgrants",
+      "creditbalanceguards",
       "businessanchors",
       "requests",
       "shippingpackages",
