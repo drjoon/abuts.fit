@@ -1,6 +1,6 @@
 // related files:
 // - web/backend/modules/devops/designAccess.routes.js
-// - web/frontend/src/pages/devops/DevopsPartnerPage.tsx
+// - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
 import { useCallback, useEffect, useRef, useState } from "react";
 import {

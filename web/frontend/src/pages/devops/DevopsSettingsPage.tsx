@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/pages/devops/DevopsPartnerPage.tsx
+// - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/pages/devops/components/DevopsDepositAccountTab.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
