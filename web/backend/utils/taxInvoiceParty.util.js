@@ -12,7 +12,9 @@
 export function buildPartySnapshotFromAnchor(anchor, contactUser = null) {
   const metadata = anchor?.metadata || {};
   return {
-    bizNo: anchor?.businessNumberNormalized || "",
+    bizNo: String(
+      anchor?.businessNumberNormalized || metadata.businessNumber || "",
+    ).replace(/\D/g, ""),
     corpName: metadata.companyName || "",
     ceoName: metadata.representativeName || "",
     addr: [metadata.address, metadata.addressDetail].filter(Boolean).join(" "),

@@ -104,6 +104,16 @@ export const BusinessAddressFields = ({
   const { toast } = useToast();
   const [addressPromptActive, setAddressPromptActive] = useState(false);
   const postcodeContainerRef = useRef<HTMLDivElement | null>(null);
+  const selectionHandlersRef = useRef({
+    onChangeAddress,
+    onChangeZipCode,
+    onAddressSelected,
+  });
+  selectionHandlersRef.current = {
+    onChangeAddress,
+    onChangeZipCode,
+    onAddressSelected,
+  };
 
   useEffect(() => {
     void loadPostcodeScript().catch(() => {
@@ -181,11 +191,13 @@ export const BusinessAddressFields = ({
           data.roadAddress || data.jibunAddress || data.address || "";
         const nextZipCode = String(data.zonecode || "").trim();
 
-        if (nextAddress) onChangeAddress(nextAddress);
-        if (nextZipCode) onChangeZipCode(nextZipCode);
-
+        // 부모 상태를 바꾸기 전에 iframe을 닫는다. 그렇지 않으면 부모 재렌더링으로
+        // effect cleanup/embed가 반복되어 주소 검색 화면이 새로고침되는 것처럼 보인다.
         setAddressPromptActive(false);
-        onAddressSelected?.();
+        const handlers = selectionHandlersRef.current;
+        if (nextAddress) handlers.onChangeAddress(nextAddress);
+        if (nextZipCode) handlers.onChangeZipCode(nextZipCode);
+        handlers.onAddressSelected?.();
       },
       onclose: () => setAddressPromptActive(false),
     }) as { embed?: (element: HTMLElement) => void };
@@ -204,7 +216,7 @@ export const BusinessAddressFields = ({
       container.innerHTML = "";
       clearTimeout(langTimer);
     };
-  }, [addressPromptActive, onAddressSelected, onChangeAddress, onChangeZipCode]);
+  }, [addressPromptActive]);
 
   return (
     <div className={cn("space-y-3", className)}>

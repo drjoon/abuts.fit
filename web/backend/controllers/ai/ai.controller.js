@@ -291,6 +291,7 @@ export async function parseBusinessLicense(req, res) {
       "metadata.representativeName": extracted.representativeName,
       "metadata.businessType": extracted.businessType,
       "metadata.businessItem": extracted.businessItem,
+      "metadata.startDate": extracted.startDate,
       verification: {
         ...verification,
         checkedAt: new Date(),

@@ -208,6 +208,7 @@ export async function updateMyBusiness(req, res) {
     const typeFilter = buildBusinessTypeFilter(businessType);
 
     const nextName = String(req.body?.name || "").trim();
+    const businessLicenseInput = req.body?.businessLicense || null;
 
     const representativeNameProvided = hasOwnKey(
       req.body,
@@ -320,7 +321,6 @@ export async function updateMyBusiness(req, res) {
     const startDateRaw = String(req.body?.startDate || "").trim();
     const startDate = normalizeStartDate(startDateRaw);
 
-    const businessLicenseInput = req.body?.businessLicense || null;
     const businessLicense = businessLicenseInput
       ? {
           fileId: businessLicenseInput?.fileId || null,
@@ -345,9 +345,17 @@ export async function updateMyBusiness(req, res) {
       }
 
       const isVerifiedBusiness = businessAnchor?.status === "verified";
+      // 가입 도중 practice 조직용 미검증 앵커가 먼저 생성될 수 있다.
+      // 앵커 존재 여부가 아니라 이번 저장 요청에 등록증이 포함됐는지를 기준으로
+      // 아래의 홈택스 검증·사업자 저장 경로를 허용한다.
+      const hasLicenseInRegistrationRequest = Boolean(
+        businessLicenseInput?.fileId ||
+          String(businessLicenseInput?.s3Key || "").trim(),
+      );
       if (
         requiresBusinessLicense(nextRequestorProfile.services) &&
-        !isVerifiedBusiness
+        !isVerifiedBusiness &&
+        !hasLicenseInRegistrationRequest
       ) {
         return res.status(400).json({
           success: false,
