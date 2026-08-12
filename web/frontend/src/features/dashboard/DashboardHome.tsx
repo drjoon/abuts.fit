@@ -2,7 +2,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { RequestorDashboardPage } from "@/pages/requestor/dashboard/RequestorDashboardPage";
 import { AdminDashboardPage } from "@/pages/admin/dashboard/AdminDashboardPage";
 import { SalesmanDashboardPage } from "@/pages/salesman/SalesmanDashboardPage";
-import { DevopsDashboardPage } from "@/pages/devops/DevopsDashboardPage";
 import { Navigate, useLocation } from "react-router-dom";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
@@ -47,10 +46,6 @@ export const DashboardHome = () => {
 
   if (user.role === "salesman") {
     return <SalesmanDashboardPage />;
-  }
-
-  if (user.role === "devops") {
-    return <DevopsDashboardPage />;
   }
 
   if (user.role === "admin") {

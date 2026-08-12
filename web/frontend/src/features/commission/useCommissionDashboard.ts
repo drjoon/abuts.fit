@@ -3,11 +3,11 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 /**
- * 영업자(salesman)와 개발운영사(devops)가 공통으로 사용하는
+ * 영업자(salesman) 대시보드에서 사용하는
  * /api/salesman/dashboard 데이터 훅 + 타입 + 포매터.
  *
  * 역할별 UI 분기는 이 훅에 두지 않는다.
- * 역할 전용 렌더링은 각자의 페이지 파일(SalesmanDashboardPage, DevopsDashboardPage)에서 담당한다.
+ * 역할 전용 렌더링은 SalesmanDashboardPage에서 담당한다.
  */
 
 import { useEffect, useState } from "react";
@@ -16,7 +16,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 
-// /api/salesman/dashboard 응답 스키마 (영업자/개발운영사 공용)
+// /api/salesman/dashboard 응답 스키마
 export type CommissionDashboardData = {
   ym: string;
   period?: PeriodFilterValue | null;
@@ -80,10 +80,8 @@ export const formatMoney = (n?: number): string => {
 };
 
 /**
- * 영업자/개발운영사 대시보드·정산 데이터 공통 훅.
- * 역할 구분 없이 동일한 /api/salesman/dashboard 엔드포인트를 호출한다.
- * 역할별 수수료 필드 의미 차이는 백엔드가 처리하여 값을 반환하므로,
- * 프론트는 값을 그대로 표시하면 된다.
+ * 영업자 대시보드·정산 데이터 훅.
+ * /api/salesman/dashboard 엔드포인트가 반환한 값을 그대로 표시한다.
  */
 export function useCommissionDashboard(period: PeriodFilterValue) {
   const { token } = useAuthStore();

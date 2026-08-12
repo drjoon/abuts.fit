@@ -1,14 +1,12 @@
 /**
  * 영업자(salesman) 전용 대시보드 페이지.
  *
- * 개발운영사(devops) 대시보드는 pages/devops/DevopsDashboardPage.tsx 참고.
  * 공통 데이터 훅/타입은 features/commission/useCommissionDashboard.ts 참고.
  */
 
 import { useState } from "react";
 
 // related files:
-// - web/frontend/src/pages/devops/DevopsDashboardPage.tsx
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";

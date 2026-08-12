@@ -41,6 +41,8 @@ export function getRoleDefaultDashboardPath(role: string | null | undefined): st
       return "/dashboard/worksheet";
     case "practice":
       return "/practice/dashboard";
+    case "devops":
+      return "/dashboard/settings";
     default:
       return "/dashboard";
   }
@@ -59,9 +61,9 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/practice는 `/dashboard`에 콘텐츠가 없음
+  // manufacturer/practice/devops는 `/dashboard`에 콘텐츠가 없음
   if (
-    (role === "manufacturer" || role === "practice") &&
+    (role === "manufacturer" || role === "practice" || role === "devops") &&
     (last === "/dashboard" || last === "/dashboard/")
   ) {
     return roleDefault;

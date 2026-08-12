@@ -205,7 +205,6 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   devops: [
-    { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   practice: [

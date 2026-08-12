@@ -1,7 +1,9 @@
+// change-log:
+// - 2026-08-13: 결제 탭 제거 — 내용은 플랫폼 설정(커스텀어벗 요금·크레딧)에 유지.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -13,10 +15,9 @@ import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
-import { User, Users, Bell, CreditCard, Building2 } from "lucide-react";
-import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
+import { User, Users, Bell, Building2 } from "lucide-react";
 
-type TabKey = "account" | "business" | "staff" | "notifications" | "payment";
+type TabKey = "account" | "business" | "staff" | "notifications";
 
 export const AdminSettingsPage = () => {
   const { user } = useAuthStore();
@@ -47,12 +48,6 @@ export const AdminSettingsPage = () => {
         label: "알림",
         icon: Bell,
         content: <NotificationsTab />,
-      },
-      {
-        key: "payment",
-        label: "결제",
-        icon: CreditCard,
-        content: <AdminCreditSettingsTab />,
       },
     ],
     [user],

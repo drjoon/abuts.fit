@@ -274,12 +274,14 @@ const SettingsRoute = () => {
   if (user.role === "practice") {
     return <Navigate to="/practice/settings" replace />;
   }
+  const tab = new URLSearchParams(location.search).get("tab");
+  // 구 북마크: 관리자 설정 결제 → 플랫폼 설정(커스텀어벗 요금·크레딧)
+  if (user.role === "admin" && tab === "payment") {
+    return <Navigate to="/dashboard/platform-settings?tab=credits" replace />;
+  }
   // 구 북마크: 의뢰자 설정 결제 → 사이드바 크레딧 충전
-  if (user.role === "requestor") {
-    const tab = new URLSearchParams(location.search).get("tab");
-    if (tab === "payment") {
-      return <Navigate to="/dashboard/credits?tab=charge" replace />;
-    }
+  if (user.role === "requestor" && tab === "payment") {
+    return <Navigate to="/dashboard/credits?tab=charge" replace />;
   }
   return <SettingsPage />;
 };
