@@ -320,16 +320,27 @@ else
   warn "원격 EBS setenv 해시를 찾지 못했습니다. (신규 환경/미설정 가능)"
 fi
 
-if [[ "$CORE_ENV_HASH" != "$PREV_ENV_HASH" || "$CORE_ENV_HASH" != "$REMOTE_ENV_HASH" ]]; then
-  info "EBS 환경변수 동기화 필요 → setenv 단일 실행"
+# Immutable 정책에서는 setenv/deploy 모두 임시 인스턴스 기동·헬스체크에
+# 약 8분이 걸린다. EB CLI 기본 timeout(10분)은 업로드·대기 오버헤드까지
+# 포함하면 중간에 TimeoutError로 끊길 수 있어 여유 있게 둔다.
+EB_CLI_TIMEOUT_MINUTES="${EB_CLI_TIMEOUT_MINUTES:-20}"
+
+# 원격 해시가 SSOT. 로컬 해시 파일은 캐시일 뿐이라, CLI가 timeout으로
+# 실패해도 AWS 쪽 setenv가 이미 끝난 경우 재실행하지 않는다.
+if [[ -z "$REMOTE_ENV_HASH" || "$CORE_ENV_HASH" != "$REMOTE_ENV_HASH" ]]; then
+  info "EBS 환경변수 동기화 필요 → setenv 단일 실행 (timeout ${EB_CLI_TIMEOUT_MINUTES}m)"
 
   # 전체 payload가 4KB 이하일 때 단일 setenv가 안정적이며
   # config deploy/restart 횟수를 줄여 가용성을 높입니다.
-  (cd "$WEB_DIR" && "$EB_CMD" setenv "${ENV_ARGS[@]}") || error "환경변수 설정 실패"
+  (cd "$WEB_DIR" && "$EB_CMD" setenv --timeout "$EB_CLI_TIMEOUT_MINUTES" "${ENV_ARGS[@]}") || error "환경변수 설정 실패"
 
   printf '%s' "$CORE_ENV_HASH" > "$ENV_HASH_FILE"
 else
-  info "EBS 환경변수 변경 없음(로컬/원격 해시 동일) → setenv 스킵"
+  info "EBS 환경변수 변경 없음(원격 해시 동일) → setenv 스킵"
+  if [[ "$CORE_ENV_HASH" != "$PREV_ENV_HASH" ]]; then
+    info "로컬 setenv 해시 파일만 원격과 맞춤"
+    printf '%s' "$CORE_ENV_HASH" > "$ENV_HASH_FILE"
+  fi
 fi
 
 # 1. 앱 배포 (predeploy 훅에서 npm install 실행됨)
@@ -337,7 +348,7 @@ if [[ -n "$EB_ENV_NAME" ]]; then
   ensure_immutable_deploy_options "$EB_ENV_NAME"
 fi
 
-info "EB 배포"
+info "EB 배포 (timeout ${EB_CLI_TIMEOUT_MINUTES}m)"
 if [[ -d "$BACKEND_NODE_MODULES_DIR" ]]; then
   info "EB CLI 패키징 RecursionError 방지를 위해 backend/node_modules 임시 이동"
   rm -rf "$BACKEND_NODE_MODULES_BACKUP_DIR" || true
@@ -349,7 +360,7 @@ if [[ -d "$FRONTEND_NODE_MODULES_DIR" ]]; then
   mv "$FRONTEND_NODE_MODULES_DIR" "$FRONTEND_NODE_MODULES_BACKUP_DIR"
 fi
 
-(cd "$WEB_DIR" && "$EB_CMD" deploy --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)") || error "eb deploy 실패"
+(cd "$WEB_DIR" && "$EB_CMD" deploy --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)" --timeout "$EB_CLI_TIMEOUT_MINUTES") || error "eb deploy 실패"
 
 restore_backend_node_modules
 

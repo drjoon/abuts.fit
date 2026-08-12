@@ -1,4 +1,6 @@
 branch-defaults:
+  fix/ebs-deposit-account-korean:
+    environment: Abutsfit-env
   main:
     environment: Abutsfit-env
     group_suffix: null
