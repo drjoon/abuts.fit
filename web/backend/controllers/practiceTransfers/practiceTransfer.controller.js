@@ -795,34 +795,24 @@ export async function upsertPracticeTransferDraft(req, res) {
     const incomingFiles = Array.isArray(req.body?.files) ? req.body.files : [];
     // transferMemo는 날짜 메타만으로도 비어있지 않을 수 있어, 실질 내용 여부를 본다.
     const memoText = String(transferMemo || "");
-    const hasPatientNameInMemo = /\[\s*환자명\s*:\s*[^\]]+\s*\]/.test(memoText);
-    const hasToothWorkInMemo = /\[\s*치아보철\s*:\s*[^\]]+\s*\]/.test(memoText);
-    const hasFreeTextMemo = Boolean(
-      memoText
-        .split(/\r?\n/)
-        .map((line) => String(line || "").trim())
-        .filter((line) => line && !/^\[/.test(line))
-        .join("")
-        .trim(),
+    const patientNameMatch = memoText.match(/\[\s*환자명\s*:\s*([^\]]*)\]/);
+    const hasPatientNameInMemo = Boolean(
+      String(patientNameMatch?.[1] || "").trim(),
     );
     const hasLab = Boolean(targetLabName) || Boolean(targetLabAnchorId);
-    // 신규 draft: 환자명·자유메모·기공소·파일만 인정(치아만으로는 목록 누적 방지).
-    const hasSubstantialContent =
-      hasPatientNameInMemo || hasFreeTextMemo || hasLab || incomingFiles.length > 0;
-    // 기존 draft 갱신: 치아 변경도 허용.
-    const hasFormContent =
-      hasSubstantialContent || hasToothWorkInMemo;
+    // 임시저장/동기화: 기공소·환자명 둘 다 필수(치아·메모·파일만으로는 목록 누적 방지).
+    const hasLabAndPatient = hasPatientNameInMemo && hasLab;
 
     let normalizedDraftFiles = [];
 
-    if (incomingFiles.length === 0) {
-      if (!hasFormContent) {
-        return res.status(400).json({
-          success: false,
-          message: "임시저장할 파일 또는 의뢰서 내용이 없습니다.",
-        });
-      }
-    } else {
+    if (!hasLabAndPatient) {
+      return res.status(400).json({
+        success: false,
+        message: "기공소와 환자명을 모두 입력한 뒤 임시저장할 수 있습니다.",
+      });
+    }
+
+    if (incomingFiles.length > 0) {
       const uniqueFileIds = [
         ...new Set(
           incomingFiles
@@ -927,13 +917,7 @@ export async function upsertPracticeTransferDraft(req, res) {
 
     if (!doc) {
       // 새 케이스 · stale draftId 폴백: 항상 새 draft 생성
-      // 치아만 고른 빈 의뢰서는 목록에 쌓지 않는다.
-      if (!hasSubstantialContent) {
-        return res.status(400).json({
-          success: false,
-          message: "임시저장할 파일 또는 의뢰서 내용이 없습니다.",
-        });
-      }
+      // 기공소·환자명 게이트는 위에서 이미 통과했다.
       const created = await PracticeTransferDraft.create({
         practiceUserId: req.user?._id,
         practiceBusinessAnchorId: req.user?.businessAnchorId || null,

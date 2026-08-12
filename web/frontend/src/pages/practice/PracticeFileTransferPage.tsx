@@ -39,6 +39,7 @@
  * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
  * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 계정 마지막 설정. 전송 시 의뢰건에 스냅샷.
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
+ * - 2026-08-13: 임시저장/동기화는 기공소·환자명 둘 다 입력된 뒤에만 수행.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -2275,23 +2276,8 @@ export const PracticeFileTransferPage = ({
       const hasLab =
         Boolean(String(selectedLab?.name || "").trim()) ||
         Boolean(toApiLabAnchorId(selectedLab?._id));
-      const hasSubstantialContent =
-        Boolean(normalizedPatientName) ||
-        Boolean(String(requestMemo || "").trim()) ||
-        hasLab ||
-        filesForSave.length > 0;
-      const hasToothOnlyContent = syncToothWorks.some(
-        (row) =>
-          String(row.toothNumber || "").trim() ||
-          Boolean(row.customAbutment) ||
-          String(row.implantManufacturer || "").trim(),
-      );
-      // 기존 draft 갱신: 치아만 바뀌어도 동기화. 신규 생성: 환자명·메모·기공소·파일 중 하나 필요.
-      if (!activeDraftIdRef.current) {
-        if (!hasSubstantialContent) return;
-      } else if (filesForSave.length === 0 && !hasSubstantialContent && !hasToothOnlyContent) {
-        return;
-      }
+      // 기공소·환자명 둘 다 있어야 임시저장/동기화한다(신규·갱신 공통).
+      if (!normalizedPatientName || !hasLab) return;
 
       const fingerprintAtSend = currentFormFingerprintRef.current;
       const savedFingerprint = lastSavedFormFingerprintRef.current;
@@ -2428,36 +2414,13 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
-  /** 치아 선택만으로는 목록에 올리지 않음. 환자명·메모·기공소·파일이 있어야 신규 draft 생성. */
+  /** 기공소·환자명 둘 다 있어야 신규/수동 임시저장·자동 동기화. */
   const hasSubstantialContentForNewDraft = useMemo(() => {
-    if (normalizedPatientName) return true;
-    if (String(requestMemo || "").trim()) return true;
-    if (String(selectedLab?._id || selectedLab?.name || "").trim()) return true;
-    if (draftFiles.length > 0 || files.length > 0) return true;
-    return false;
-  }, [
-    draftFiles.length,
-    files.length,
-    normalizedPatientName,
-    requestMemo,
-    selectedLab?._id,
-    selectedLab?.name,
-  ]);
-
-  const hasMeaningfulFormInputForAutosave = useMemo(() => {
-    if (hasSubstantialContentForNewDraft) return true;
-    if (
-      toothWorks.some(
-        (row) =>
-          String(row.toothNumber || "").trim() ||
-          Boolean(row.customAbutment) ||
-          String(row.implantManufacturer || "").trim(),
-      )
-    ) {
-      return true;
-    }
-    return false;
-  }, [hasSubstantialContentForNewDraft, toothWorks]);
+    const hasLab = Boolean(
+      String(selectedLab?._id || selectedLab?.name || "").trim(),
+    );
+    return Boolean(normalizedPatientName) && hasLab;
+  }, [normalizedPatientName, selectedLab?._id, selectedLab?.name]);
 
   useEffect(() => {
     if (!localFormHydrated) return;
@@ -2477,14 +2440,12 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    // 신규 draft 생성(activeDraftId 없음): 환자명·메모·기공소·파일이 있을 때만.
-    // 「새로 작성」후 baseline이 있어도 치아만 고르면 목록에 쌓이지 않게 한다.
-    if (!activeDraftId && !hasSubstantialContentForNewDraft) {
-      return;
-    }
-
-    // 기존 draft 갱신인데 내용이 전부 비면 서버 POST를 건너뛴다.
-    if (activeDraftId && !hasMeaningfulFormInputForAutosave && draftFiles.length === 0) {
+    // 기공소·환자명이 모두 있을 때만 서버 동기화(치아/메모/파일만으로는 목록에 올리지 않음).
+    if (!hasSubstantialContentForNewDraft) {
+      pendingLocalFormEditRef.current = false;
+      setFormSyncStatus((prev) =>
+        prev === "pending" || prev === "saving" ? "idle" : prev,
+      );
       return;
     }
 
@@ -2517,11 +2478,8 @@ export const PracticeFileTransferPage = ({
   }, [
     FORM_AUTOSAVE_DEBOUNCE_MS,
     FORM_AUTOSAVE_IME_RETRY_MS,
-    activeDraftId,
     authToken,
     currentFormFingerprint,
-    draftFiles.length,
-    hasMeaningfulFormInputForAutosave,
     hasSubstantialContentForNewDraft,
     lastSavedFormFingerprint,
     localFormHydrated,
@@ -3799,6 +3757,12 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
+    const hasLab =
+      Boolean(String(selectedLab?.name || "").trim()) ||
+      Boolean(toApiLabAnchorId(selectedLab?._id));
+    // 파일 반영도 기공소·환자명이 있을 때만 서버 draft를 만든다/갱신한다.
+    if (!normalizedPatientName || !hasLab) return;
+
     const transferMemo = buildPracticeTransferMemo({
       memo: requestMemo,
       orderDate,
@@ -4991,11 +4955,11 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    // 치아만으로는 스냅샷을 만들지 않는다(빈 임시저장 목록 누적 방지).
+    // 기공소·환자명 둘 다 있어야 스냅샷을 만든다.
     if (!hasSubstantialContentForNewDraft) {
       toast({
         title: "저장할 내용이 없습니다",
-        description: "기공소·환자명·메모 또는 파일을 입력한 뒤 다시 시도해주세요.",
+        description: "기공소와 환자명을 모두 입력한 뒤 다시 시도해주세요.",
         variant: "destructive",
       });
       return;
@@ -5329,7 +5293,7 @@ export const PracticeFileTransferPage = ({
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="max-w-xs text-xs">
-                        목록에 저장. 이후 수정하면 새 임시저장이 생깁니다.
+                        기공소와 환자명을 입력하면 목록에 저장됩니다. 이후 수정하면 새 임시저장이 생깁니다.
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>
