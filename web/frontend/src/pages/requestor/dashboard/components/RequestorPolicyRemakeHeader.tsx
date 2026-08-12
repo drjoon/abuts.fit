@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-12: 기공소 — [정책 안내] 오른쪽에 [가입 이유] 버튼(LabPlatformBenefitsDialog).
+// - 2026-08-12: 기공소·치과 — [정책 안내] 오른쪽 [가입 이유] 버튼(PlatformBenefitsDialog).
 // - 2026-08-12: 무료 재제작 잔여를 어벗 요약카드로 이전. 헤더는 [정책 안내]만 유지.
 // - 2026-08-11: [정책 안내] 색을 primary(기간 필터와 동일)로 조정.
 // - 2026-08-11: [정책 안내] primary 색 적용, px-10.
@@ -10,14 +10,17 @@
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
-// - web/frontend/src/features/lab/LabPlatformBenefitsBanner.tsx
+// - web/frontend/src/features/platform/PlatformBenefitsDialog.tsx
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
-import { LabPlatformBenefitsDialog } from "@/features/lab/LabPlatformBenefitsBanner";
+import {
+  LabPlatformBenefitsDialog,
+  PracticePlatformBenefitsDialog,
+} from "@/features/lab/LabPlatformBenefitsBanner";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
 type PricingReferralStats = {
@@ -82,7 +85,8 @@ export const RequestorPolicyRemakeHeader = () => {
   const [policyOpen, setPolicyOpen] = useState(false);
   const [benefitsOpen, setBenefitsOpen] = useState(false);
   const { kind, loading } = useRequestorBusinessAccess();
-  const isLab = !loading && kind === "lab";
+  const showBenefits =
+    !loading && (kind === "lab" || kind === "practice");
 
   return (
     <>
@@ -95,7 +99,7 @@ export const RequestorPolicyRemakeHeader = () => {
         정책 안내
       </Button>
 
-      {isLab ? (
+      {showBenefits ? (
         <Button
           type="button"
           size="sm"
@@ -107,8 +111,14 @@ export const RequestorPolicyRemakeHeader = () => {
       ) : null}
 
       <PricingPolicyDialog open={policyOpen} onOpenChange={setPolicyOpen} />
-      {isLab ? (
+      {kind === "lab" ? (
         <LabPlatformBenefitsDialog
+          open={benefitsOpen}
+          onOpenChange={setBenefitsOpen}
+        />
+      ) : null}
+      {kind === "practice" ? (
+        <PracticePlatformBenefitsDialog
           open={benefitsOpen}
           onOpenChange={setBenefitsOpen}
         />

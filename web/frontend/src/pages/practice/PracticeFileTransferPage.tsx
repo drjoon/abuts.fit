@@ -55,7 +55,6 @@ import {
   Download,
   Plus,
   Settings,
-  X,
   ChevronDown,
 } from "lucide-react";
 import {
@@ -64,7 +63,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -411,7 +409,6 @@ type PracticeTransferSettingsPayload = {
   memoSnippets?: string[];
   implantFavorites?: PracticeImplantFavorite[];
   abutmentFavorites?: PracticeAbutmentFavorite[];
-  promoNoticeDismissedAt?: string | null;
   skipDesignConfirm?: boolean;
   updatedAt?: string | null;
 };
@@ -838,7 +835,6 @@ const formatFileSize = (bytes: number) => {
 };
 
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
-const PRACTICE_TRANSFER_PROMO_TITLE = "유료 서비스 없이 기공의뢰·구강스캔 전송";
 const clearPracticeFileTransferCaches = async () => {
   let keys: string[] = [];
   try {
@@ -891,8 +887,6 @@ export const PracticeFileTransferPage = ({
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
-  const [promoNoticeVisible, setPromoNoticeVisible] = useState(true);
-  const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
   const [tempSaveDirty, setTempSaveDirty] = useState(false);
   const [lastSavedFormFingerprint, setLastSavedFormFingerprint] = useState<string | null>(null);
   const [formSyncStatus, setFormSyncStatus] = useState<
@@ -1271,7 +1265,6 @@ export const PracticeFileTransferPage = ({
     const nextMemoSnippets = normalizeMemoSnippets(payload.memoSnippets);
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
-    const promoDismissed = String(payload.promoNoticeDismissedAt || "").trim().length > 0;
     const nextSkipDesignConfirm = Boolean(payload.skipDesignConfirm);
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
@@ -1280,7 +1273,6 @@ export const PracticeFileTransferPage = ({
     setMemoSnippets(nextMemoSnippets);
     setImplantFavorites(nextImplantFavorites);
     setAbutmentFavorites(nextAbutmentFavorites);
-    setPromoNoticeVisible(!promoDismissed);
     setSkipDesignConfirm(nextSkipDesignConfirm);
     setToothWorks((prev) =>
       prev.map((row) => {
@@ -1307,10 +1299,6 @@ export const PracticeFileTransferPage = ({
       const hasMemoSnippets = Array.isArray(params.memoSnippets);
       const hasImplantFavorites = Array.isArray(params.implantFavorites);
       const hasAbutmentFavorites = Array.isArray(params.abutmentFavorites);
-      const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(
-        params,
-        "promoNoticeDismissedAt",
-      );
       const hasSkipDesignConfirm = Object.prototype.hasOwnProperty.call(
         params,
         "skipDesignConfirm",
@@ -1331,9 +1319,6 @@ export const PracticeFileTransferPage = ({
       }
       if (hasAbutmentFavorites) {
         jsonBody.abutmentFavorites = normalizeAbutmentFavorites(params.abutmentFavorites || []);
-      }
-      if (hasPromoNoticeDismissedAt) {
-        jsonBody.promoNoticeDismissedAt = params.promoNoticeDismissedAt || null;
       }
       if (hasSkipDesignConfirm) {
         jsonBody.skipDesignConfirm = params.skipDesignConfirm === true;
@@ -1386,7 +1371,6 @@ export const PracticeFileTransferPage = ({
                 ? payload?.abutmentFavorites
                 : abutmentFavorites,
             ),
-            promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
             skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
             savedAt: Date.now(),
           }),
@@ -1842,7 +1826,6 @@ export const PracticeFileTransferPage = ({
             abutmentFavorites: normalizeAbutmentFavorites(
               Array.isArray(payload?.abutmentFavorites) ? payload?.abutmentFavorites : [],
             ),
-            promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
             skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
             savedAt: Date.now(),
           }),
@@ -5123,31 +5106,6 @@ export const PracticeFileTransferPage = ({
     }
   };
 
-  const handleDismissPromoNotice = async () => {
-    if (promoNoticeSaving) return;
-    if (!authToken) {
-      setPromoNoticeVisible(false);
-      return;
-    }
-
-    setPromoNoticeSaving(true);
-    try {
-      const ok = await savePracticeTransferSettingsToServer({
-        promoNoticeDismissedAt: new Date().toISOString(),
-      });
-      if (!ok) throw new Error("안내 배너 저장에 실패했습니다.");
-      setPromoNoticeVisible(false);
-    } catch (error) {
-      toast({
-        title: "안내 숨김 실패",
-        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setPromoNoticeSaving(false);
-    }
-  };
-
   return (
     <PageFileDropZone
       onFiles={handleIncomingFiles}
@@ -5156,22 +5114,6 @@ export const PracticeFileTransferPage = ({
     >
       <div className="mx-auto h-full min-h-0 max-w-6xl space-y-3 p-4">
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
-          {promoNoticeVisible ? (
-            <Alert className="relative flex items-center justify-between gap-3 border-primary-muted bg-primary-soft/80 py-2.5 text-primary-strong xl:col-span-10">
-              <AlertTitle className="m-0 pr-8 text-sm font-medium leading-snug">
-                {PRACTICE_TRANSFER_PROMO_TITLE}
-              </AlertTitle>
-              <button
-                type="button"
-                onClick={() => void handleDismissPromoNotice()}
-                disabled={promoNoticeSaving}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-strong hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label="안내 닫기"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </Alert>
-          ) : null}
           <div className="flex min-w-0 flex-col gap-3 xl:col-span-7">
             <Card className="border-slate-200/80 shadow-sm">
               <CardHeader className="pb-2 pt-3">

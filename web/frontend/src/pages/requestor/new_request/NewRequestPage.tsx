@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 치과 첫 진입 안내 모달 — 닫기/다시 보지 않기, CNC 생산 의뢰 문구.
 // - 2026-08-12: 디자인SW 미설정 시 진입 에러 토스트 제거. 파일 첨부 시 설정 모달만 노출(저장 전 첨부 보류).
 // - 2026-08-11: 첨부 직후 S3 사전 업로드(useFilePreUpload) — 기공의뢰와 동일 가속 경로.
 // - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(PLY/OBJ는 기공의뢰).
@@ -81,6 +82,12 @@ import {
 // - .cursor/rules/oral-scan-file-size.mdc
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 업로드/매칭은 사용하지 않는다.
 
+const PRACTICE_NEW_REQUEST_INTRO_SEEN_PREFIX =
+  "abutsfit:practice-new-request-intro-seen:v1:";
+
+const buildPracticeNewRequestIntroSeenKey = (userId: string) =>
+  `${PRACTICE_NEW_REQUEST_INTRO_SEEN_PREFIX}${userId}`;
+
 
 /**
  * New Request 페이지 (리팩터링 버전)
@@ -99,9 +106,10 @@ const NewRequestPageContent = () => {
   const navigate = useNavigate();
 
   const { toast } = useToast();
-  const { token } = useAuthStore();
+  const { token, user: authUser } = useAuthStore();
   const { kind: requestorKind } = useRequestorBusinessAccess();
   const isLabRequestor = requestorKind === "lab";
+  const isPracticeRequestor = requestorKind === "practice";
 
   const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
   const [designSoftwareMode, setDesignSoftwareMode] = useState<
@@ -117,6 +125,7 @@ const NewRequestPageContent = () => {
     useState(false);
   const [anodizingEnabled, setAnodizingEnabled] = useState(true);
   const [anodizingSaving, setAnodizingSaving] = useState(false);
+  const [practiceIntroOpen, setPracticeIntroOpen] = useState(false);
   /** 3MB 초과(구강스캔 후보) — ConfirmDialog 확인 후 첨부 */
   const [oversizedPendingFiles, setOversizedPendingFiles] = useState<File[]>([]);
   const [oversizedPreviewIndex, setOversizedPreviewIndex] = useState(0);
@@ -1347,6 +1356,50 @@ const NewRequestPageContent = () => {
     resolveCaseLeadDiameter,
   ]);
 
+  const practiceAuthUserId = useMemo(
+    () =>
+      String(authUser?.id || (authUser as { _id?: string } | null)?._id || "").trim(),
+    [authUser],
+  );
+
+  const handleClosePracticeIntro = useCallback(() => {
+    setPracticeIntroOpen(false);
+  }, []);
+
+  const handleDismissPracticeIntroForever = useCallback(() => {
+    if (practiceAuthUserId) {
+      try {
+        localStorage.setItem(
+          buildPracticeNewRequestIntroSeenKey(practiceAuthUserId),
+          "1",
+        );
+      } catch {
+        // ignore
+      }
+    }
+    setPracticeIntroOpen(false);
+  }, [practiceAuthUserId]);
+
+  useEffect(() => {
+    if (!isPracticeRequestor) return;
+    if (draftStatus === "loading") return;
+    if (!practiceAuthUserId) return;
+
+    try {
+      if (
+        localStorage.getItem(
+          buildPracticeNewRequestIntroSeenKey(practiceAuthUserId),
+        ) === "1"
+      ) {
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
+    setPracticeIntroOpen(true);
+  }, [isPracticeRequestor, draftStatus, practiceAuthUserId]);
+
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
   type StlSelectionCandidate = {
@@ -1727,6 +1780,38 @@ const NewRequestPageContent = () => {
     >
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
         {isLabRequestor ? <LabDashboardTopBanners /> : null}
+        <Dialog
+          open={practiceIntroOpen}
+          onOpenChange={(next) => {
+            if (next) setPracticeIntroOpen(true);
+          }}
+        >
+          <DialogContent
+            hideClose
+            className="new-request-page sm:max-w-md"
+            onInteractOutside={(e) => e.preventDefault()}
+            onEscapeKeyDown={(e) => e.preventDefault()}
+          >
+            <DialogHeader>
+              <DialogTitle>어벗생산의뢰</DialogTitle>
+              <DialogDescription>
+                커스텀 어벗 디자인(STL) 파일로 CNC 생산을 의뢰하는 메뉴입니다.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClosePracticeIntro}
+              >
+                닫기
+              </Button>
+              <Button type="button" onClick={handleDismissPracticeIntroForever}>
+                다시 보지 않기
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <ConfirmDialog
           open={oversizedPendingFiles.length > 0}
           panelClassName="max-w-xl"
