@@ -261,7 +261,7 @@ export const LabTradingPartnersTab = () => {
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
             기존 거래 치과 매출은 전액 기공소 몫이며, 플랫폼으로 늘어난
-            매출에만 수수료가 적용됩니다.
+            매출에만 수수료가 차감됩니다. (한시 적용)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -410,7 +410,7 @@ export const LabTradingPartnersTab = () => {
                 </span>
                 <div className="min-w-0 space-y-1.5">
                   <p className="text-sm font-semibold text-primary-strong">
-                    소개치과 · 수수료 면제
+                    소개치과 · 수수료 면제 (한시 적용)
                   </p>
                   <p className="text-[13px] leading-relaxed text-slate-700">
                     거래하시던 치과를 소개하여 가입하면, 해당 치과 의뢰건은
@@ -493,7 +493,7 @@ export const LabTradingPartnersTab = () => {
                   </span>{" "}
                   거래 치과를 소개.등록하면{" "}
                   <span className="font-semibold text-primary-strong">
-                    수수료가 면제
+                    수수료가 면제(한시 적용)
                   </span>
                   됩니다. 아래 버튼으로 초대 내용을 복사해 전달하세요.
                 </>
