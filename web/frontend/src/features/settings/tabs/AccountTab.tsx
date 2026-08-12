@@ -1206,7 +1206,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             description={
               (user as any)?.position === "principal" ? (
                 <div className="space-y-2">
-                  <div>잔여 유료 크레딧이 있으면 환불 신청 후 접수됩니다.</div>
+                  <div>잔여 유료 크레딧(기공료 선입금)이 있으면 환불 신청 후 접수됩니다.</div>
                   <div className="text-sm">
                     잔여 유료 크레딧: <b>{paidBalance.toLocaleString()}원</b>
                   </div>

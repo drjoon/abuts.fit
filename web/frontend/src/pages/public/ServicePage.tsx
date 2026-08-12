@@ -1,9 +1,11 @@
 // change-log:
+// - 2026-08-12: 유료 크레딧=기공료 선입금(선납 대금). 선불페이 아님·면세 계산서·환불 안내.
 // - 2026-08-09: 디자인+생산 출고 +1영업일(묶음·신속) 안내 추가.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import {
@@ -31,7 +33,7 @@ export const ServicePage = () => {
             서비스/상품 안내
           </h1>
           <p className="text-white/70">
-            abuts.fit 서비스 내용 및 결제 상품(크레딧) 안내
+            abuts.fit 서비스 내용 및 기공료 선입금(크레딧) 안내
           </p>
         </div>
 
@@ -64,21 +66,25 @@ export const ServicePage = () => {
             <CardContent>
               <div className="space-y-3 text-slate-600">
                 <p>
-                  결제 상품은 abuts.fit 서비스 이용을 위한 <b>유료 크레딧</b>
-                  (공급가 기준)입니다.
+                  결제 상품은 기공물 발주를 위한 <b>기공료 선입금(크레딧)</b>
+                  입니다. 선불전자지급수단(네이버페이·카카오페이 등)이 아니며,
+                  충전 금액은 <b>공급가</b> 기준입니다.
                 </p>
                 <ul className="list-disc list-inside space-y-2 ml-4">
                   <li>
-                    크레딧은 플랫폼 내부 결제에만 사용되며, 사용자간 <b>양도</b>{" "}
-                    또는 현금 <b>출금</b>은 불가합니다.
+                    크레딧은 앱 내 기공물 제작 및 커스텀 어벗먼트 구매 대금
+                    결제에만 사용되며, 사용자간 <b>양도</b> 또는 현금{" "}
+                    <b>출금</b>은 불가합니다.
                   </li>
                   <li>크레딧에는 별도의 사용기한을 두지 않습니다.</li>
                   <li>
-                    환불은 <b>계정 해지</b> 시점에 한하여 진행됩니다.
+                    미사용 기공료 선입금 잔액은 <b>요청 시 전액 환불</b>되며,
+                    기발행 면세 계산서는 마이너스 수정 계산서로 처리됩니다.
                   </li>
                   <li>
                     충전 금액은 <b>공급가</b> 기준이며,{" "}
-                    <b>부가가치세(VAT)는 없습니다</b>(면세).
+                    <b>부가가치세(VAT)는 없습니다</b>(면세). 입금 반영 시 면세
+                    계산서 발행 대상이 됩니다.
                   </li>
                 </ul>
               </div>
@@ -87,7 +93,7 @@ export const ServicePage = () => {
 
           <Card className={PUBLIC_CARD_CLASS}>
             <CardHeader>
-              <CardTitle>3. 크레딧 충전 상품(가격)</CardTitle>
+              <CardTitle>3. 기공료 선입금(크레딧) 충전 상품(가격)</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4 text-slate-600">
@@ -98,7 +104,7 @@ export const ServicePage = () => {
                       className="rounded-2xl border border-white/20 bg-white/85 p-4 text-slate-900"
                     >
                       <div className="text-sm font-medium">
-                        크레딧 충전{" "}
+                        기공료 선입금{" "}
                         {Math.floor(p.supply / 10000).toLocaleString()}만원
                       </div>
                       <div className="mt-2 text-sm">
@@ -140,10 +146,11 @@ export const ServicePage = () => {
                     <li>대시보드 → 설정 → 결제 탭</li>
                     <li>충전 금액 선택 후 계좌이체/가상계좌 결제</li>
                     <li>
-                      결제(입금) 완료 후 크레딧이 즉시~수 분 내 반영되며{" "}
-                      <b>잔여 유료 크레딧(공급가)</b>이 있는 경우 해당 잔액은{" "}
-                      <b>전액 환불</b>
-                      됩니다.
+                      결제(입금) 완료 후 기공료 선입금(크레딧)이 즉시~수 분 내
+                      반영되며, <b>잔여 유료 크레딧(공급가)</b>이 있는 경우 해당
+                      잔액은 요청 시 <b>전액 환불</b>
+                      됩니다. 기발행 면세 계산서는 마이너스 수정 계산서로
+                      처리됩니다.
                     </li>
                     <li>
                       무료/이벤트로 지급된 크레딧(보너스 크레딧)은 환불 대상에서
@@ -163,7 +170,7 @@ export const ServicePage = () => {
                   <ol className="list-decimal list-inside space-y-2 ml-4">
                     <li>의뢰 생성 및 진행</li>
                     <li>정산 단계에서 서비스 이용료/제작비 결제</li>
-                    <li>결제 시 보유 크레딧에서 자동 차감</li>
+                    <li>결제 시 보유 크레딧(기공료 선입금)에서 자동 차감</li>
                   </ol>
                 </div>
               </div>
@@ -238,10 +245,10 @@ export const ServicePage = () => {
                     환불 신청
                   </div>
                   <ol className="list-decimal list-inside space-y-2 ml-4">
-                    <li>계정 해지 신청</li>
-                    <li>잔여 크레딧 확인</li>
+                    <li>고객센터 문의 또는 계정 해지 신청</li>
+                    <li>잔여 기공료 선입금(유료 크레딧) 확인</li>
                     <li>환불 계좌 정보 제출</li>
-                    <li>확인 완료 후 3영업일 이내 환불</li>
+                    <li>확인 완료 후 3영업일 이내 환불 및 마이너스 수정 계산서 발행</li>
                   </ol>
                 </div>
                 <div>
@@ -249,9 +256,9 @@ export const ServicePage = () => {
                     환불 산정 기준
                   </div>
                   <ul className="list-disc list-inside space-y-2 ml-4">
-                    <li>잔여 유료 크레딧(공급가) 100% 환불</li>
+                    <li>잔여 유료 크레딧(기공료 선입금, 공급가) 100% 환불</li>
                     <li>무료/이벤트 크레딧 제외</li>
-                    <li>부가가치세(VAT) 없음(면세)</li>
+                    <li>부가가치세(VAT) 없음(면세). 환불 시 마이너스 수정 계산서</li>
                   </ul>
                 </div>
               </div>

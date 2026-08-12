@@ -227,7 +227,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 관리자 대시보드 진입: `controllers/admin/admin.dashboard.controller.js`
   - 관리자 문자 템플릿 SSOT: `models/adminSmsTemplate.model.js` + `controllers/admin/adminSms.controller.js`
     - `GET/POST /api/admin/sms/templates`, `PUT/DELETE /api/admin/sms/templates/:id`, `POST /api/admin/sms/templates/sync-kakao`
-    - 목록 조회 시 팝빌 알림톡 형식 기본 템플릿 6종 시드(#{변수}/강조표기, seedVersion) + 빈 코드는 팝빌 승인 템플릿명 자동매칭/env(`POPBILL_ATS_*`)로 연결
+    - 목록 조회 시 팝빌 알림톡 형식 기본 템플릿 7종 시드(#{변수}/강조표기, seedVersion) + 빈 코드는 팝빌 승인 템플릿명 자동매칭/env(`POPBILL_ATS_*`)로 연결
+    - `ats_credit_charged`: 입금 매칭 후 기공료 선입금 반영 안내. 자동 발송 `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied`(알림톡 우선, 실패 시 문자). 카카오 승인 템플릿은 팝빌에 동일 문구로 등록 필요.
     - 관리자 문자/알림톡 발송은 큐가 아니라 팝빌 즉시 전송(`sendPopbillXMS` / `sendPopbillKakaoATS`)
 
 - 신규 기공소 런칭 이벤트 가격 SSOT:
@@ -701,6 +702,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3):
   - 운영 주체는 면세 사업자. 크레딧 충전·앱 내 과금·정산 모두 부가세 없음.
+  - 크레딧은 선불전자지급수단이 아니라 **기공료 선입금(선납 대금)**. 충전 화면·FAQ·약관·입금 확인 알림에 동일 용어를 쓴다.
+    프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
+    입금 매칭 알림: `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied` / 템플릿 `ats_credit_charged`
   - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`.
   - 충전 단위: `utils/creditChargeUnit.js` — 기공소 50만원, 치과(practice) 100만원. 절대 상한 5,000만원.
     주문 검증 `creditBPlan.controller.js`, insights(월사용량/3·한 달분) `credit.controller.js`.

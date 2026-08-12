@@ -167,6 +167,7 @@ const FALLBACK_MANUAL_VARS: TemplateVarHint[] = [
   { key: "인증번호", desc: "휴대폰 인증번호" },
   { key: "유효시간", desc: "인증 유효시간(분)" },
   { key: "안내내용", desc: "확인 요청 본문" },
+  { key: "입금금액", desc: "기공료 선입금 입금 금액" },
 ];
 
 const emptyRecipientMeta = {

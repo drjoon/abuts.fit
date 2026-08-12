@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 의뢰자 문의 화면에 기공료 선입금 FAQ 노출.
 // - 2026-08-11: 크레딧 페이지와 동일하게 max-w-4xl·gradient·glass 카드 적용, 역할별 문의 유형 확장.
 // related files:
 // - web/frontend/rules.md
@@ -7,6 +8,7 @@
 // - web/frontend/src/features/components/SettingsScaffold.tsx
 // - web/backend/models/businessRegistrationInquiry.model.js
 // - web/backend/controllers/support/support.controller.js
+// - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 // 문의 페이지는 requestor, salesman, admin 역할에서만 사용됩니다.
 // manufacturer(제조사)와 devops(개발운영사)는 문의 페이지가 불필요하며,
 // 사이드메뉴 및 라우트 접근에서 제외되어 있습니다.
@@ -18,6 +20,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +42,8 @@ import {
 } from "@/shared/lib/contactInfo";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
+import { CREDIT_PREPAID_FAQS } from "@/shared/legal/creditPrepaidCopy";
+import { Link } from "react-router-dom";
 import {
   CheckCircle2,
   Clock,
@@ -364,6 +374,37 @@ export const InquiriesPage = () => {
             </div>
           </CardContent>
         </Card>
+
+        {user?.role === "requestor" ? (
+          <Card className="app-glass-card app-glass-card--lg">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">
+                크레딧 · 기공료 선입금 FAQ
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <Accordion type="multiple" className="w-full">
+                {CREDIT_PREPAID_FAQS.map((item, index) => (
+                  <AccordionItem key={item.q} value={`credit-faq-${index}`}>
+                    <AccordionTrigger className="text-left text-sm hover:no-underline">
+                      {item.q}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
+                      {item.a}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+              <p className="mt-3 text-xs text-muted-foreground">
+                더 자세한 안내는{" "}
+                <Link to="/help" className="underline underline-offset-2">
+                  도움말 센터
+                </Link>
+                와 이용약관 제7조를 확인해 주세요.
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {/* 탭: 새 문의 / 내 문의 내역 */}
         <Tabs

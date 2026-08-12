@@ -4,6 +4,7 @@
 // - web/backend/models/adminSmsTemplate.model.js
 // - web/backend/modules/admin/admin.routes.js
 // - web/frontend/src/pages/admin/support/AdminSmsPage.tsx
+// - web/backend/utils/creditBPlanMatching.js
 import AdminSmsLog from "../../models/adminSmsLog.model.js";
 import AdminSmsTemplate from "../../models/adminSmsTemplate.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -16,7 +17,7 @@ import {
   approxMessageBytes,
 } from "../../utils/popbill.util.js";
 
-const SMS_TEMPLATE_SEED_VERSION = 4;
+const SMS_TEMPLATE_SEED_VERSION = 5;
 
 /**
  * 자동 주입 가능 변수 (수신자/사업자 데이터 기준)
@@ -46,6 +47,7 @@ export const MANUAL_SMS_TEMPLATE_VARS = [
   { key: "인증번호", desc: "휴대폰 인증번호" },
   { key: "유효시간", desc: "인증 유효시간(분)" },
   { key: "안내내용", desc: "확인 요청 본문" },
+  { key: "입금금액", desc: "기공료 선입금 입금 금액" },
 ];
 
 /**
@@ -101,12 +103,25 @@ const DEFAULT_SMS_TEMPLATES = [
     name: "크레딧부족안내",
     emphasizeTitle: "크레딧 잔액 부족",
     kakaoHints: ["크레딧부족", "잔액부족", "크레딧 잔액"],
-    body: `#{사업자명}님, 크레딧 잔액이 부족하여 일부 기능 이용이 제한될 수 있습니다.
+    body: `#{사업자명}님, 기공료 선입금(크레딧) 잔액이 부족하여 일부 기능 이용이 제한될 수 있습니다.
 
 현재 잔액: #{잔액}원
 (유료 #{유료잔액}원 / 무료 #{무료잔액}원)
 
-어벗츠.핏에서 충전 후 이용해 주세요.
+어벗츠.핏에서 기공료 선입금(크레딧) 충전 후 이용해 주세요.
+
+어벗츠 주식회사`,
+  },
+  {
+    code: "ats_credit_charged",
+    name: "기공료선입금반영",
+    emphasizeTitle: "기공료 선입금 반영 완료",
+    kakaoHints: ["기공료 선입금", "선입금 반영", "크레딧 충전"],
+    body: `[어벗츠] 기공료 선입금 반영 완료
+
+#{사업자명}님께서 입금하신 #{입금금액}원이 플랫폼 내 기공료 선입금(크레딧)으로 정상 반영되었습니다.
+
+본 선입금에 대한 면세 계산서는 입금 반영 후 발행됩니다.
 
 어벗츠 주식회사`,
   },

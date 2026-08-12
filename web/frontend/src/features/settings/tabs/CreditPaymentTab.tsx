@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 충전 화면 제목·안내문에 기공료 선입금(선납) 명시. 선불페이와 구분.
 // - 2026-08-11: compact — 크레딧 충전 탭용. 잔액/충전내역 숨기고 입금 패널만 표시(스크롤·중앙 배치).
 // - 2026-08-11: 외곽 glass 카드 제거. 입금정보/입금금액 패널만 남기고 수직 중앙 배치.
 // - 2026-08-11: 페이지 제목(크레딧 결제) 제거 — 탭 라벨로 충분.
@@ -13,6 +14,7 @@
 // - web/backend/utils/creditChargeUnit.js
 // - web/backend/controllers/credits/creditBPlan.controller.js
 // - web/backend/controllers/credits/credit.controller.js
+// - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from "react";
 import { request } from "@/shared/api/apiClient";
@@ -25,6 +27,11 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { ChevronDown, ChevronUp, Copy } from "lucide-react";
+import {
+  CREDIT_CHARGE_NOTICE_BODY,
+  CREDIT_CHARGE_NOTICE_TITLE,
+  CREDIT_PREPAID_BALANCE_LABEL,
+} from "@/shared/legal/creditPrepaidCopy";
 
 type Props = {
   userData: {
@@ -636,8 +643,8 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       }
       await reloadOrders();
       toast({
-        title: "충전 요청이 생성되었습니다",
-        description: "입금 완료 후 크레딧이 자동 충전됩니다.",
+        title: "기공료 선입금 요청이 생성되었습니다",
+        description: "입금 완료 후 기공료 선입금(크레딧)이 자동 반영됩니다.",
       });
     } catch (e: any) {
       toast({
@@ -700,7 +707,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       {!compact && !isFirstCharge && (
         <div className="app-surface app-surface--panel p-4">
           <div className="text-sm text-muted-foreground mb-3">
-            보유 크레딧
+            {CREDIT_PREPAID_BALANCE_LABEL}
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
@@ -731,6 +738,14 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
 
       {/* 입금 정보(좌) + 충전 금액(우) */}
       <div className="w-full overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+        <div className="border-b border-slate-200/80 bg-slate-50/80 px-5 py-3 sm:px-6">
+          <div className="text-sm font-semibold text-slate-800">
+            {CREDIT_CHARGE_NOTICE_TITLE}
+          </div>
+          <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
+            {CREDIT_CHARGE_NOTICE_BODY}
+          </p>
+        </div>
         <div className="grid md:grid-cols-2">
           {/* 왼쪽: 입금 계좌 / 코드 */}
           <div className="space-y-4 border-b border-slate-200/80 p-5 sm:p-6 md:border-b-0 md:border-r">
@@ -868,7 +883,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                   {formatManwon(displayAmount)}
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">
-                  부가세 없음
+                  부가세 없음 · 면세 계산서
                 </div>
               </div>
 
@@ -1006,7 +1021,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-sm font-medium">
-                        크레딧 충전{orderDate ? ` · ${orderDate}` : ""}
+                        기공료 선입금{orderDate ? ` · ${orderDate}` : ""}
                         {shortId ? ` · ${shortId}` : ""}
                       </div>
                       <span
@@ -1046,7 +1061,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
             </div>
           )}
           <div className="text-xs text-muted-foreground">
-            입금 확인 후 자동 충전됩니다.
+            입금 확인 후 기공료 선입금(크레딧)으로 자동 반영됩니다.
           </div>
         </div>
       )}

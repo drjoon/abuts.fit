@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 충전 탭 안내문(기공료 선입금)이 잘리지 않도록 overflow-auto.
 // - 2026-08-12: 치과는 기공크레딧 UI 미노출(유료크레딧으로 기공비 지불). 기공소만 정산 탭.
 // - 2026-08-11: accessLoading early return 전에 useMemo 호출(Rules of Hooks).
 // - 2026-08-11: access 로딩 시 페이지 스켈레톤.
@@ -60,7 +61,7 @@ export default function RequestorCreditsPage() {
         label: "충전",
         icon: CreditCard,
         content: (
-          <div className="flex h-full min-h-0 items-center justify-center overflow-hidden">
+          <div className="flex h-full min-h-0 items-center justify-center overflow-auto">
             <div className="mx-auto w-full max-w-4xl">
               <PaymentTab userData={user || {}} compact />
             </div>

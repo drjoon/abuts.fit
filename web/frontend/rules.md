@@ -93,6 +93,7 @@ Notes:
   - `src/shared/components/RequestorWorkspaceHeader.tsx` (대시보드 기간 필터+알림)
   - `src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx` (지난 의뢰 버튼)
   - `src/pages/requestor/credits/RequestorCreditsPage.tsx` (사이드바 크레딧: 내역/충전)
+  - `src/shared/legal/creditPrepaidCopy.ts` (기공료 선입금 UI/FAQ 카피)
   - `src/shared/shipping/shippingMode.ts`
   - `src/pages/requestor/practice/RequestorPracticePage.tsx`
   - 디자인 큐
@@ -373,11 +374,15 @@ Notes:
 - 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3):
   - 운영 주체는 면세 사업자. 가격·충전·약관·정산 안내에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지.
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
+    화면 제목/안내: **크레딧(기공료 선입금)** — 선불페이(전자금융업)가 아니라 B2B 기공물 대금 선납임을 충전 화면·FAQ·약관에 명시.
+    카피 SSOT: `src/shared/legal/creditPrepaidCopy.ts`
     구현: `src/features/settings/tabs/CreditPaymentTab.tsx`
+    FAQ: `src/pages/public/HelpPage.tsx`, 의뢰자 문의 `InquiriesPage`
+    약관 제7조: `src/pages/public/TermsPage.tsx` (선결제 잔액 표현 금지)
     충전 단위 SSOT: 기공소(`lab`) 50만원, 치과(`practice`) 100만원.
     첫 충전 기본 1단위. 2회차부터 기본 추천 = 월사용량(90일/3)의 1/3을 단위로 반올림(0이면 최소 1단위).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
-  - 공개 안내/약관: `ServicePage`, `TermsPage` — 면세·부가세 없음, 환불은 잔여 유료 크레딧(공급가)만.
+  - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금), 미사용 잔액은 요청 시 환불(마이너스 수정 계산서). 선불페이/선결제 잔액 표현 금지.
   - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드 — "배송비 별도"만 유지.
   - 제조사 정산규칙 안내: 분배율만 안내하고 "+ VAT 10%" 표기 금지.
   - 관리자 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0).

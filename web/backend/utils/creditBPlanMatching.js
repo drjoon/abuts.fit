@@ -2,15 +2,108 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/admin/adminSms.controller.js
+// - web/backend/models/adminSmsTemplate.model.js
 import mongoose from "mongoose";
 import ChargeOrder from "../models/chargeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import User from "../models/user.model.js";
+import AdminSmsTemplate from "../models/adminSmsTemplate.model.js";
 
 import { postGeneralLedgerJournal } from "../services/generalLedger.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "./creditRealtime.js";
 import { enqueueTaxInvoiceIssue } from "./queueClient.js";
+import {
+  sendPopbillKakaoATS,
+  sendPopbillXMS,
+} from "./popbill.util.js";
+
+function fillSmsTemplate(body, vars) {
+  return String(body || "").replace(/#\{([^}]+)\}/g, (_, key) => {
+    const v = vars[String(key || "").trim()];
+    return v != null && String(v) !== "" ? String(v) : "";
+  });
+}
+
+function pickNotifyPhone(...candidates) {
+  for (const raw of candidates) {
+    const digits = String(raw || "").replace(/\D/g, "");
+    if (digits.length >= 10) return digits;
+  }
+  return "";
+}
+
+/** 입금 매칭 후 기공료 선입금 반영 안내(알림톡 우선, 실패 시 문자). 발송 실패는 충전을 막지 않는다. */
+export async function notifyChargePrepaidApplied({
+  userId,
+  businessAnchorId,
+  amount,
+} = {}) {
+  try {
+    const tpl = await AdminSmsTemplate.findOne({
+      code: "ats_credit_charged",
+      active: true,
+    }).lean();
+    if (!tpl?.body) return;
+
+    const [user, org] = await Promise.all([
+      userId
+        ? User.findById(userId)
+            .select({ phoneNumber: 1, phone: 1, name: 1 })
+            .lean()
+        : null,
+      businessAnchorId
+        ? BusinessAnchor.findById(businessAnchorId)
+            .select({
+              "metadata.companyName": 1,
+              "metadata.phoneNumber": 1,
+            })
+            .lean()
+        : null,
+    ]);
+
+    const phone = pickNotifyPhone(
+      user?.phoneNumber,
+      user?.phone,
+      org?.metadata?.phoneNumber,
+    );
+    if (!phone) return;
+
+    const companyName =
+      String(org?.metadata?.companyName || "").trim() ||
+      String(user?.name || "").trim() ||
+      "고객";
+    const amountLabel = Number(amount || 0).toLocaleString("ko-KR");
+    const content = fillSmsTemplate(tpl.body, {
+      사업자명: companyName,
+      입금금액: amountLabel,
+      이름: String(user?.name || companyName),
+    }).trim();
+    if (!content) return;
+
+    const items = [{ phone, content, name: companyName }];
+    const kakaoCode = String(tpl.kakaoTemplateCode || "").trim();
+    if (kakaoCode) {
+      try {
+        await sendPopbillKakaoATS({ items, templateCode: kakaoCode });
+        return;
+      } catch (err) {
+        console.error(
+          "[chargePrepaidNotify] kakao failed, fallback XMS:",
+          err?.message || err,
+        );
+      }
+    }
+    await sendPopbillXMS({
+      items,
+      subject: "기공료 선입금 반영 완료",
+    });
+  } catch (err) {
+    console.error("[chargePrepaidNotify] failed:", err?.message || err);
+  }
+}
 
 export function extractDepositCodeFromText(text) {
   const raw = String(text || "");
@@ -314,6 +407,13 @@ async function matchTxWithOrder({ tx, order }) {
         balanceDelta: matchedChargeDelta,
         reason: "bplan_auto_charge",
         refId: order._id,
+      });
+      notifyChargePrepaidApplied({
+        userId: order.userId,
+        businessAnchorId: order.businessAnchorId,
+        amount: Number(order.amountTotal || matchedChargeDelta || 0),
+      }).catch((err) => {
+        console.error("[autoMatch] charge prepaid notify failed:", err?.message || err);
       });
     }
 

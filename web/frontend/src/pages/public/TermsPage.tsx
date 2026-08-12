@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 제7조 크레딧=기공료 선입금(선납 대금). 선불페이 아님·미사용 잔액 환불·수정계산서.
 // - 2026-08-12: 제13조 부가세법 제26조 면세·법정 계산서(면세용), 세금계산서 오발행 지급 보류.
 // - 2026-08-12: 제3편 기공회원 공급·구상·정산, 제1·2조 역할 정의, 제8조 유통 책임과 정합.
 // - 2026-08-12: 제8조 기공물 품질 책임·리메이크, 제2조 기공물/제작사 정의, 제5조 교차참조.
@@ -6,6 +7,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PublicPageLayout,
@@ -187,22 +189,26 @@ export const TermsPage = () => {
 
           <Card className={PUBLIC_CARD_CLASS}>
             <CardHeader>
-              <CardTitle>제7조 (크레딧 및 환불)</CardTitle>
+              <CardTitle>제7조 (크레딧·기공료 선입금 및 환불)</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4 text-slate-600">
                 <p>
-                  1. 회사는 서비스 이용료 결제를 위해 크레딧(서비스 내부에서만
-                  사용 가능한 선결제 잔액)을 제공합니다.
+                  1. 회사는 기공물(보철물) 구매·발주 대금 결제를 위해
+                  크레딧을 제공합니다. 크레딧은 선불전자지급수단(선불페이)이
+                  아니라, 치과 보철물 유통 계약에 따른 기공료 선입금(선납
+                  대금)이며 서비스 화면에서는 크레딧으로 표시합니다.
                 </p>
                 <p>
-                  2. 크레딧은 서비스 이용료 정산에 한하여 사용되며, 회원 간 양도
-                  또는 현금 출금은 불가합니다.
+                  2. 크레딧은 앱 내 기공물 제작 및 커스텀 어벗먼트 구매 대금
+                  결제에 한하여 사용되며, 회원 간 양도, 환전 또는 현금 출금은
+                  불가합니다. 미사용 잔액의 환불은 제4항에 따릅니다.
                 </p>
                 <p>3. 크레딧에는 별도의 사용기한을 두지 않습니다.</p>
                 <p>
-                  4. 크레딧 환불은 계정 해지 시점에 한하여 진행되며, 계정 해지
-                  이전에는 환불을 신청할 수 없습니다.
+                  4. 거래 계약이 중도 해지되거나 미사용된 기공료 선입금 잔액은
+                  회원의 요청 또는 계정 해지 시 전액 환불합니다. 이 경우
+                  기발행된 면세 계산서는 마이너스(-) 수정 계산서로 처리합니다.
                 </p>
                 <p>
                   5. 환불 금액은 잔여 유료 크레딧(공급가) 기준으로 산정되며,

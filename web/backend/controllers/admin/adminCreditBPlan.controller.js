@@ -1,9 +1,9 @@
 // related files:
 // - web/backend/rules.md
-
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/generalLedger.service.js
+// - web/backend/utils/creditBPlanMatching.js
 // - web/backend/app.js
 // - web/backend/server.js
 import mongoose from "mongoose";
@@ -18,6 +18,7 @@ import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.j
 import {
   upsertBankTransaction,
   autoMatchBankTransactionsOnce,
+  notifyChargePrepaidApplied,
 } from "../../utils/creditBPlanMatching.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 
@@ -589,6 +590,17 @@ export async function adminManualMatch(req, res) {
       tx: { tranAmt: txAmount, depositCode: txCode },
       order: { amountTotal: orderAmountTotal, depositCode: orderCode },
     },
+  });
+
+  notifyChargePrepaidApplied({
+    userId: order.userId,
+    businessAnchorId: order.businessAnchorId,
+    amount: Number(order.amountTotal || orderAmountTotal || 0),
+  }).catch((err) => {
+    console.error(
+      "[adminMatch] charge prepaid notify failed:",
+      err?.message || err,
+    );
   });
 
   return res.json({
