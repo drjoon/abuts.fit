@@ -139,7 +139,7 @@ export function RequestorOrdersTab(props: RequestorOrdersTabProps) {
               충전 주문이 없습니다.
             </div>
           ) : (
-            <div ref={orderScrollRef} className="h-[60vh] overflow-y-auto pr-1">
+            <div ref={orderScrollRef}>
               <Table>
                 <TableHeader>
                   <TableRow>

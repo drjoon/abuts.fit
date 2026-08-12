@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";

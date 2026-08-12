@@ -205,10 +205,7 @@ export function SalesmanCreditTab({
               영업자 데이터가 없습니다.
             </div>
           ) : (
-            <div
-              ref={salesmanScrollRef}
-              className="h-[60vh] overflow-y-auto pr-1"
-            >
+            <div ref={salesmanScrollRef}>
               <div className="grid gap-4 md:grid-cols-3">
                 {[...salesmanRows]
                   .sort((a, b) => {

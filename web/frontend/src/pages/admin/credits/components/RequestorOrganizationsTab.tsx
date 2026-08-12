@@ -70,7 +70,7 @@ export function RequestorOrganizationsTab({
               불러오는 중...
             </div>
           ) : (
-            <div ref={orgScrollRef} className="h-[60vh] overflow-y-auto pr-1">
+            <div ref={orgScrollRef}>
               {requestorBusinesses.length === 0 && !loadingOrgs ? (
                 <div className="text-center py-8 text-muted-foreground">
                   의뢰자가 없습니다.

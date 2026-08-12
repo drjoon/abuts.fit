@@ -537,7 +537,7 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                   </div>
                 </div>
 
-                <div className="mt-4 overflow-x-auto max-h-[400px] overflow-y-auto">
+                <div className="mt-4 overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>

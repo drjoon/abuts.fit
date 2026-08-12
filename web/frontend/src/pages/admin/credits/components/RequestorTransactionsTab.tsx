@@ -151,10 +151,7 @@ export function RequestorTransactionsTab(props: RequestorTransactionsTabProps) {
                   입금 내역이 없습니다.
                 </div>
               ) : (
-                <div
-                  ref={txScrollRef}
-                  className="h-[60vh] overflow-y-auto pr-1"
-                >
+                <div ref={txScrollRef}>
                   <Table>
                     <TableHeader>
                       <TableRow>

@@ -1491,10 +1491,7 @@ export const DashboardLayout = () => {
                 />
               </div>
             )}
-          <div
-            className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-primary-soft"
-            data-dashboard-scroll="1"
-          >
+          <div className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-primary-soft">
             <div className="flex flex-col h-full">
               {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
                 <div className="border-b border-border bg-background/80 sticky top-0 z-10">
@@ -1708,7 +1705,10 @@ export const DashboardLayout = () => {
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex h-full min-h-0 flex-col items-stretch p-2 sm:p-4 lg:p-6">
                   <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white/80 p-4 shadow-lg backdrop-blur-xl sm:p-6">
-                    <div className="flex h-full min-h-0 flex-1 flex-col overflow-auto">
+                    <div
+                      className="custom-scrollbar flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
+                      data-dashboard-scroll="1"
+                    >
                       <Outlet
                         context={{
                           worksheetSearch,

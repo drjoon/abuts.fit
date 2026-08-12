@@ -23,6 +23,9 @@ import type {
 } from "../adminCredit.types";
 import { normalizeDigits } from "../adminCredit.utils";
 
+const getDashboardScrollRoot = (): Element | null =>
+  document.querySelector('[data-dashboard-scroll="1"]');
+
 type ApiMessageResponse = {
   success?: boolean;
   message?: string;
@@ -933,7 +936,7 @@ export function useAdminCreditPage() {
   // 로더 함수는 의도적으로 deps에 고정하지 않는다.
   useEffect(() => {
     const sentinel = orgSentinelRef.current;
-    const root = orgScrollRef.current;
+    const root = getDashboardScrollRoot();
     if (!sentinel || !root || !orgHasMore || loadingOrgsRef.current) return;
     const io = new IntersectionObserver(
       (entries) => {
@@ -952,7 +955,7 @@ export function useAdminCreditPage() {
 
   useEffect(() => {
     const sentinel = salesmanSentinelRef.current;
-    const root = salesmanScrollRef.current;
+    const root = getDashboardScrollRoot();
     if (!sentinel || !root || !salesmanHasMore || loadingSalesmen) return;
     const io = new IntersectionObserver(
       (entries) => {
@@ -971,7 +974,7 @@ export function useAdminCreditPage() {
 
   useEffect(() => {
     const sentinel = orderSentinelRef.current;
-    const root = orderScrollRef.current;
+    const root = getDashboardScrollRoot();
     if (!sentinel || !root || !orderHasMore || loadingOrders) return;
     const io = new IntersectionObserver(
       (entries) => {
@@ -990,7 +993,7 @@ export function useAdminCreditPage() {
 
   useEffect(() => {
     const sentinel = txSentinelRef.current;
-    const root = txScrollRef.current;
+    const root = getDashboardScrollRoot();
     if (!sentinel || !root || !txHasMore || loadingTransactions) return;
     const io = new IntersectionObserver(
       (entries) => {
