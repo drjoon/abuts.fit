@@ -357,7 +357,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정·만료 claim). 타인 활성 claim은 숨김
     - 수락=`mark-accepted` 원자 FCFS claim(3시간 `autoMatch.deadlineAt`) + 과금. 작업완료=`POST .../mark-complete`(결과파일 필수, 커스텀어벗 시 shippingMode). 작업취소=`POST .../mark-release`(auto는 풀 재공개, direct는 수락 해제+과금 롤백)
     - 치과 생산컨펌=`POST .../confirm-production` → 생산진행. 커스텀어벗이면 기공소→어벗츠 Request 자동 생성
-    - 「디자인 컨펌 생략」은 **의뢰건별** `PracticeTransfer.production.skipDesignConfirm`(전송 시 스냅샷). 계정 `practiceTransferSettings`가 아님. 체크된 건은 기공소 `mark-complete` 시 생산컨펌을 자동 처리
+    - 「디자인 컨펌 생략」체크 UI는 계정 `practiceTransferSettings.skipDesignConfirm`(마지막 설정). 전송 시 `PracticeTransfer.production.skipDesignConfirm`으로 의뢰건에 스냅샷. 체크된 건은 기공소 `mark-complete` 시 생산컨펌을 자동 처리
     - 만료 시 lazy release: `rollbackPracticeTransferBilling` 후 풀 재공개(`releaseCount++`). 완료되면 재공개 없음
     - 기공소 수신 카드(의뢰수락): `PracticeTransferFileDropTarget` + `[작업완료]` / `[작업취소]` (`RequestorPracticePage`)
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
@@ -445,7 +445,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 설정 SSOT:
   - 저장 위치: `BusinessAnchor.practiceTransferSettings`
   - API: `GET/POST /api/practice/transfers/settings`
-  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`
+  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`
   - `memoSnippets`는 의뢰 메모 문장 즐겨찾기(최대 40개, 공백/중복 제거)이며 프론트는 로컬스토리지에도 미러링합니다.
   - 관련 파일:
     - `controllers/practiceTransfers/practiceTransferSettings.controller.js`

@@ -37,7 +37,7 @@
  * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
  * - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
  * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
- * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 의뢰건별. 작업완료 시 치과 생산컨펌 자동.
+ * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 계정 마지막 설정. 전송 시 의뢰건에 스냅샷.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -368,7 +368,6 @@ type PracticeTransferFormFingerprintInput = {
   requestMemo?: string | null;
   prosthesisTypes?: string[] | null;
   toothWorks?: ToothWorkSelection[] | null;
-  skipDesignConfirm?: boolean | null;
 };
 
 const isMongoObjectIdString = (value: unknown) =>
@@ -399,7 +398,6 @@ const buildPracticeTransferFormFingerprint = (
     toothWorks: normalizeToothWorksForSync(
       Array.isArray(input.toothWorks) ? input.toothWorks : [],
     ),
-    skipDesignConfirm: input.skipDesignConfirm === true,
   });
 
 const toApiLabAnchorId = (value: unknown): string | null => {
@@ -414,6 +412,7 @@ type PracticeTransferSettingsPayload = {
   implantFavorites?: PracticeImplantFavorite[];
   abutmentFavorites?: PracticeAbutmentFavorite[];
   promoNoticeDismissedAt?: string | null;
+  skipDesignConfirm?: boolean;
   updatedAt?: string | null;
 };
 
@@ -1041,7 +1040,6 @@ export const PracticeFileTransferPage = ({
         requestMemo,
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: syncToothWorks,
-        skipDesignConfirm,
       }),
     [
       selectedLab?._id,
@@ -1053,7 +1051,6 @@ export const PracticeFileTransferPage = ({
       requestMemo,
       normalizedProsthesisTypes,
       syncToothWorks,
-      skipDesignConfirm,
     ],
   );
   const autoClinicName = useMemo(() => {
@@ -1275,6 +1272,7 @@ export const PracticeFileTransferPage = ({
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
     const promoDismissed = String(payload.promoNoticeDismissedAt || "").trim().length > 0;
+    const nextSkipDesignConfirm = Boolean(payload.skipDesignConfirm);
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
@@ -1283,6 +1281,7 @@ export const PracticeFileTransferPage = ({
     setImplantFavorites(nextImplantFavorites);
     setAbutmentFavorites(nextAbutmentFavorites);
     setPromoNoticeVisible(!promoDismissed);
+    setSkipDesignConfirm(nextSkipDesignConfirm);
     setToothWorks((prev) =>
       prev.map((row) => {
         const customAbutment = Boolean(row.customAbutment);
@@ -1312,6 +1311,10 @@ export const PracticeFileTransferPage = ({
         params,
         "promoNoticeDismissedAt",
       );
+      const hasSkipDesignConfirm = Object.prototype.hasOwnProperty.call(
+        params,
+        "skipDesignConfirm",
+      );
 
       const jsonBody: Record<string, unknown> = {};
       if (hasArrivalDefaultDays) {
@@ -1331,6 +1334,9 @@ export const PracticeFileTransferPage = ({
       }
       if (hasPromoNoticeDismissedAt) {
         jsonBody.promoNoticeDismissedAt = params.promoNoticeDismissedAt || null;
+      }
+      if (hasSkipDesignConfirm) {
+        jsonBody.skipDesignConfirm = params.skipDesignConfirm === true;
       }
       if (Object.keys(jsonBody).length === 0) return true;
 
@@ -1381,6 +1387,7 @@ export const PracticeFileTransferPage = ({
                 : abutmentFavorites,
             ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
+            skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
             savedAt: Date.now(),
           }),
         );
@@ -1509,7 +1516,6 @@ export const PracticeFileTransferPage = ({
         requestMemo: parsed.memo,
         prosthesisTypes: parsed.prosthesisTypes,
         toothWorks: parsed.toothWorks,
-        skipDesignConfirm: parsed.skipDesignConfirm,
       });
       const currentFingerprint = currentFormFingerprintRef.current;
       // 서버 updatedAt 기준 LWW. 로컬 입력 중이라도 커밋된 원격 스냅샷이 더 최신이면 반영한다.
@@ -1617,7 +1623,6 @@ export const PracticeFileTransferPage = ({
         }
         setPatientName(String(parsed.patientName || "").normalize("NFC"));
         setRequestMemo(String(parsed.memo || ""));
-        setSkipDesignConfirm(parsed.skipDesignConfirm === true);
 
         const prosthesisTypesForRestore = ensurePresetProsthesisTypes(parsed.prosthesisTypes);
         const fallbackToothRow = {
@@ -1649,7 +1654,6 @@ export const PracticeFileTransferPage = ({
           requestMemo: parsed.memo,
           prosthesisTypes: prosthesisTypesForRestore,
           toothWorks: nextToothWorks,
-          skipDesignConfirm: parsed.skipDesignConfirm === true,
         });
         lastSavedFormFingerprintRef.current = alignedFingerprint;
         setLastSavedFormFingerprint(alignedFingerprint);
@@ -1815,8 +1819,9 @@ export const PracticeFileTransferPage = ({
       if (localFormUpdatedAtRef.current <= 0) {
         applyPracticeTransferSettings(payload);
       } else if (payload) {
-        // 폼 로컬값이 있어도 저장된 문장은 서버 설정을 우선 반영
+        // 폼 로컬값이 있어도 계정 세팅(문장·디자인컨펌생략)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
+        setSkipDesignConfirm(Boolean(payload.skipDesignConfirm));
       }
       try {
         localStorage.setItem(
@@ -1838,6 +1843,7 @@ export const PracticeFileTransferPage = ({
               Array.isArray(payload?.abutmentFavorites) ? payload?.abutmentFavorites : [],
             ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
+            skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
             savedAt: Date.now(),
           }),
         );
@@ -2138,7 +2144,6 @@ export const PracticeFileTransferPage = ({
       setProsthesisTypeCatalogDraft(restoredProsthesisTypes);
       setRequestMemo(restoredMemo);
       setPatientName(restoredPatientName);
-      setSkipDesignConfirm(Boolean(parsed.skipDesignConfirm));
       if (restoredActiveDraftId) {
         setActiveDraftId(restoredActiveDraftId);
       }
@@ -2211,7 +2216,6 @@ export const PracticeFileTransferPage = ({
           }
         : null,
       toothWorks,
-      skipDesignConfirm,
       activeDraftId: String(activeDraftId || "").trim() || null,
       updatedAt,
     };
@@ -2256,7 +2260,6 @@ export const PracticeFileTransferPage = ({
     requestMemo,
     patientName,
     selectedLab,
-    skipDesignConfirm,
     toothWorks,
   ]);
 
@@ -2557,7 +2560,6 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
-    setSkipDesignConfirm(false);
     setOrderDate(todayDate);
     setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
     setToothWorks([]);
@@ -2587,7 +2589,6 @@ export const PracticeFileTransferPage = ({
           patientName: "",
           selectedLab: null,
           toothWorks: [],
-          skipDesignConfirm: false,
           activeDraftId: null,
           updatedAt: Date.now(),
         } satisfies PracticeTransferLocalFormDraft),
@@ -2613,7 +2614,6 @@ export const PracticeFileTransferPage = ({
           patientName: "",
           selectedLab: null,
           toothWorks: [],
-          skipDesignConfirm: false,
           activeDraftId: null,
           updatedAt: Date.now(),
         } satisfies PracticeTransferLocalFormDraft),
@@ -3281,7 +3281,6 @@ export const PracticeFileTransferPage = ({
       setProsthesisTypeCatalogDraft(prosthesisTypesForRestore);
       setPatientName(nextPatientName);
       setRequestMemo(String(parsed.memo || ""));
-      setSkipDesignConfirm(parsed.skipDesignConfirm === true);
 
       const fallbackToothRow = {
         toothNumber: "",
@@ -3316,7 +3315,6 @@ export const PracticeFileTransferPage = ({
         requestMemo: parsed.memo,
         prosthesisTypes: prosthesisTypesForRestore,
         toothWorks: nextToothWorks,
-        skipDesignConfirm: parsed.skipDesignConfirm === true,
       });
       currentFormFingerprintRef.current = fingerprint;
       lastSavedFormFingerprintRef.current = fingerprint;
@@ -3354,7 +3352,6 @@ export const PracticeFileTransferPage = ({
                 }
               : null,
             toothWorks: nextToothWorks,
-            skipDesignConfirm: parsed.skipDesignConfirm === true,
             activeDraftId: draft.id,
             updatedAt: Number.isFinite(ts) && ts > 0 ? ts : Date.now(),
           } satisfies PracticeTransferLocalFormDraft),
@@ -4777,7 +4774,6 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
-    setSkipDesignConfirm(false);
     const nextOrderDate = todayDate;
     const nextArrivalDate = addDaysToDateInput(todayDate, arrivalDefaultDays);
     setOrderDate(nextOrderDate);
@@ -4813,7 +4809,6 @@ export const PracticeFileTransferPage = ({
       requestMemo: "",
       prosthesisTypes: normalizedProsthesisTypes,
       toothWorks: normalizeToothWorksForSync(nextToothWorks),
-      skipDesignConfirm: false,
     });
     lastSavedFormFingerprintRef.current = baselineFingerprint;
     setLastSavedFormFingerprint(baselineFingerprint);
@@ -5044,6 +5039,49 @@ export const PracticeFileTransferPage = ({
       memoSnippets,
       normalizedProsthesisTypes,
       savePracticeTransferSettingsToServer,
+    ],
+  );
+
+  const persistSkipDesignConfirmSetting = useCallback(
+    (next: boolean) => {
+      if (next === skipDesignConfirm) return;
+      setSkipDesignConfirm(next);
+
+      try {
+        const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+        const existing =
+          existingRaw && typeof existingRaw === "string"
+            ? (JSON.parse(existingRaw) as Record<string, unknown>)
+            : {};
+        localStorage.setItem(
+          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+          JSON.stringify({
+            ...existing,
+            arrivalDefaultDays,
+            prosthesisTypes: normalizedProsthesisTypes,
+            memoSnippets,
+            implantFavorites,
+            abutmentFavorites,
+            skipDesignConfirm: next,
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+
+      void savePracticeTransferSettingsToServer({ skipDesignConfirm: next }).catch(() => {
+        // UI 값은 유지하고, 서버 저장 실패는 다음 저장 기회에 재시도
+      });
+    },
+    [
+      abutmentFavorites,
+      arrivalDefaultDays,
+      implantFavorites,
+      memoSnippets,
+      normalizedProsthesisTypes,
+      savePracticeTransferSettingsToServer,
+      skipDesignConfirm,
     ],
   );
 
@@ -5378,7 +5416,7 @@ export const PracticeFileTransferPage = ({
                     <Checkbox
                       id="practice-skip-design-confirm"
                       checked={skipDesignConfirm}
-                      onCheckedChange={(value) => setSkipDesignConfirm(value === true)}
+                      onCheckedChange={(value) => persistSkipDesignConfirmSetting(value === true)}
                       disabled={requestSubmitting}
                     />
                     <span>디자인 컨펌 생략</span>

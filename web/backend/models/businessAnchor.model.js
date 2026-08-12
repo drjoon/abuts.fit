@@ -277,6 +277,11 @@ const businessAnchorSchema = new mongoose.Schema(
         type: Date,
         default: null,
       },
+      // 기공의뢰 「디자인 컨펌 생략」마지막 설정 (계정/앵커 SSOT). 전송 시 의뢰건에 스냅샷.
+      skipDesignConfirm: {
+        type: Boolean,
+        default: false,
+      },
       updatedAt: {
         type: Date,
         default: null,

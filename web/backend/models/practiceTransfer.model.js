@@ -105,7 +105,7 @@ const practiceTransferSchema = new mongoose.Schema(
         enum: ["normal", "express", null],
         default: null,
       },
-      // 의뢰건별 「디자인 컨펌 생략」— 기공소 작업완료 시 생산진행 자동 (계정 세팅 아님)
+      // 전송 시점 스냅샷. 체크 UI 기본값은 계정 practiceTransferSettings.skipDesignConfirm
       skipDesignConfirm: { type: Boolean, default: false },
       confirmedAt: { type: Date, default: null, index: true },
       confirmedBy: {
