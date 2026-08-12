@@ -17,7 +17,7 @@ import {
   approxMessageBytes,
 } from "../../utils/popbill.util.js";
 
-const SMS_TEMPLATE_SEED_VERSION = 5;
+const SMS_TEMPLATE_SEED_VERSION = 6;
 
 /**
  * 자동 주입 가능 변수 (수신자/사업자 데이터 기준)
@@ -117,13 +117,8 @@ const DEFAULT_SMS_TEMPLATES = [
     name: "기공료선입금반영",
     emphasizeTitle: "기공료 선입금 반영 완료",
     kakaoHints: ["기공료 선입금", "선입금 반영", "크레딧 충전"],
-    body: `[어벗츠] 기공료 선입금 반영 완료
-
-#{사업자명}님께서 입금하신 #{입금금액}원이 플랫폼 내 기공료 선입금(크레딧)으로 정상 반영되었습니다.
-
-본 선입금에 대한 면세 계산서는 입금 반영 후 발행됩니다.
-
-어벗츠 주식회사`,
+    // SMS 90byte(한글 45자) 유지. 금액 치환 후에도 단문.
+    body: `[어벗츠] 기공료 선입금 #{입금금액}원 반영`,
   },
   {
     code: "ats_phone_verify",

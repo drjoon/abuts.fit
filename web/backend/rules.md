@@ -228,7 +228,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 관리자 문자 템플릿 SSOT: `models/adminSmsTemplate.model.js` + `controllers/admin/adminSms.controller.js`
     - `GET/POST /api/admin/sms/templates`, `PUT/DELETE /api/admin/sms/templates/:id`, `POST /api/admin/sms/templates/sync-kakao`
     - 목록 조회 시 팝빌 알림톡 형식 기본 템플릿 7종 시드(#{변수}/강조표기, seedVersion) + 빈 코드는 팝빌 승인 템플릿명 자동매칭/env(`POPBILL_ATS_*`)로 연결
-    - `ats_credit_charged`: 입금 매칭 후 기공료 선입금 반영 안내. 자동 발송 `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied`(알림톡 우선, 실패 시 문자). 카카오 승인 템플릿은 팝빌에 동일 문구로 등록 필요.
+    - `ats_credit_charged`: 입금 매칭 후 기공료 선입금 반영 안내. SMS(90byte/한글 45자) 한 줄. 자동 발송 `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied`. 알림톡 코드가 있으면 우선, 없으면 문자.
     - 관리자 문자/알림톡 발송은 큐가 아니라 팝빌 즉시 전송(`sendPopbillXMS` / `sendPopbillKakaoATS`)
 
 - 신규 기공소 런칭 이벤트 가격 SSOT:

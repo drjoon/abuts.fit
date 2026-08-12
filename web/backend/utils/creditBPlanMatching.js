@@ -98,7 +98,7 @@ export async function notifyChargePrepaidApplied({
     }
     await sendPopbillXMS({
       items,
-      subject: "기공료 선입금 반영 완료",
+      subject: "기공료 선입금",
     });
   } catch (err) {
     console.error("[chargePrepaidNotify] failed:", err?.message || err);
