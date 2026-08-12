@@ -1046,7 +1046,7 @@ export function SelfInspectionReportModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(92vh,900px)] w-[96vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]">
+      <DialogContent className="flex h-[92vh] w-[calc(100vw-8vh)] max-w-none flex-col overflow-hidden rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]">
         <DialogHeader className="shrink-0 border-b border-slate-100 px-4 py-2.5 sm:px-5">
           <DialogTitle className="text-base font-bold tracking-tight text-slate-900 sm:text-lg">
             자주검사성적서
