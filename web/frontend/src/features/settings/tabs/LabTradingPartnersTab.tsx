@@ -9,7 +9,7 @@
 // - 2026-08-11: 초대링크·안내문구 복사만으로는 목록 카드 미생성(가입 시작 시 표시).
 // - 2026-08-12: 상단 수수료 안내 — 예시 매출·수수료 다이어그램(프로그레스바)으로 교체.
 // - 2026-08-12: 200만 구간 확대 연결선 + 확대 영역 내부 배분 바로 조정.
-// - 2026-08-12: 커스텀 어벗 생산 안내 위에 수수료 면제 한시 적용 고지 추가.
+// - 2026-08-12: 치과등록 안내 반복 제거, 한시 적용 문구 단일화.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Card,
@@ -203,7 +203,7 @@ export const LabTradingPartnersTab = () => {
       const url = await createInvite();
       if (!url) return;
       const message = canInvite
-        ? `안녕하세요 🙂 어벗츠 소개치과로 등록하시면 플랫폼 수수료가 면제됩니다.\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`
+        ? `안녕하세요 🙂 기존 거래 치과로 등록하시면 플랫폼 수수료가 면제됩니다.\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`
         : `안녕하세요 🙂 어벗츠에 함께해요!\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`;
       await copyText(
         message,
@@ -260,43 +260,25 @@ export const LabTradingPartnersTab = () => {
             치과 등록
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
-            기존 거래 치과 매출은 전액 기공소 몫이며, 플랫폼으로 늘어난
-            매출에만 수수료가 차감됩니다. (한시 적용)
+            거래해오시던 치과를 등록하시면, 해당 치과들에 대해서는 플랫폼
+            수수료가 면제됩니다. (한시 적용)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-semibold text-slate-600">
-                예시로 보는 수수료
+                수수료 예시
               </p>
               <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
                 플랫폼 수수료 {platformFeePct}%
               </span>
             </div>
-            <div className="mt-2 space-y-1 text-[13px] leading-relaxed text-slate-700">
-              <p>
-                기존 거래 치과의 매출이{" "}
-                <span className="font-semibold tabular-nums text-slate-900">
-                  {exampleExistingMan.toLocaleString()}만원
-                </span>
-                이었고, 플랫폼을 쓰며{" "}
-                <span className="font-semibold tabular-nums text-slate-900">
-                  {examplePlatformMan.toLocaleString()}만원
-                </span>
-                이 추가로 생길 경우.
-              </p>
-              <p>
-                수수료는 추가 매출{" "}
-                <span className="font-semibold tabular-nums text-slate-900">
-                  {examplePlatformMan.toLocaleString()}만원
-                </span>
-                에 대한 {platformFeePct}%인{" "}
-                <span className="font-semibold tabular-nums text-primary-strong">
-                  {exampleFeeMan.toLocaleString()}만원
-                </span>
-                입니다.
-              </p>
+            <div className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+              기존 매출 {exampleExistingMan.toLocaleString()}만원, 플랫폼 가입
+              후 추가 매출 {examplePlatformMan.toLocaleString()}만원일 경우,
+              플랫폼 수수료는 {examplePlatformMan.toLocaleString()}만원에 대한{" "}
+              {platformFeePct}%인 {exampleFeeMan.toLocaleString()}만원
             </div>
 
             <div className="mt-4">
@@ -404,39 +386,24 @@ export const LabTradingPartnersTab = () => {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-primary-muted/70 bg-primary-soft/35 p-4 shadow-sm">
-              <div className="flex items-start gap-3">
+              <div className="flex items-center gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 ring-1 ring-primary-muted/60">
                   <ShieldCheck className="h-[18px] w-[18px] text-primary-strong" />
                 </span>
-                <div className="min-w-0 space-y-1.5">
-                  <p className="text-sm font-semibold text-primary-strong">
-                    소개치과 · 수수료 면제 (한시 적용)
-                  </p>
-                  <p className="text-[13px] leading-relaxed text-slate-700">
-                    거래하시던 치과를 소개하여 가입하면, 해당 치과 의뢰건은
-                    플랫폼 수수료가 면제됩니다.
-                  </p>
-                  <p className="text-xs font-medium text-primary-strong/80">
-                    기공소 가입 후 {windowDays}일까지 적용
-                  </p>
-                </div>
+                <p className="text-sm font-semibold text-primary-strong">
+                  등록 치과 · 수수료 면제
+                </p>
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm">
-              <div className="flex items-start gap-3">
+              <div className="flex items-center gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200/80">
                   <Percent className="h-[18px] w-[18px] text-slate-600" />
                 </span>
-                <div className="min-w-0 space-y-1.5">
-                  <p className="text-sm font-semibold text-slate-900">
-                    그 외 의뢰 · {platformFeePct}%
-                  </p>
-                  <p className="text-[13px] leading-relaxed text-muted-foreground">
-                    어벗츠가 중개한 모든 의뢰건에 대해 플랫폼 수수료{" "}
-                    {platformFeePct}%가 발생합니다.
-                  </p>
-                </div>
+                <p className="text-sm font-semibold text-slate-900">
+                  미등록 의뢰 · {platformFeePct}%
+                </p>
               </div>
             </div>
           </div>
@@ -444,67 +411,36 @@ export const LabTradingPartnersTab = () => {
           <div className="space-y-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
             <div className="flex gap-3">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-              <div className="min-w-0 space-y-1">
-                <p className="text-xs font-semibold text-slate-600">
-                  플랫폼 수수료 면제 한시 적용
-                </p>
-                <p className="text-[13px] leading-relaxed text-muted-foreground">
-                  가입 후 {windowDays}일 수수료 면제는 한시 이벤트이며, 정책에
-                  따라 변경·종료될 수 있습니다.
-                </p>
-              </div>
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
+                {windowDays}일 등록·수수료 면제 혜택은 한시 이벤트이며, 정책에
+                따라 변경·종료될 수 있습니다.
+              </p>
             </div>
             <div className="flex gap-3">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-              <div className="min-w-0 space-y-1">
-                <p className="text-xs font-semibold text-slate-600">
-                  커스텀 어벗 생산
-                </p>
-                <p className="text-[13px] leading-relaxed text-muted-foreground">
-                  어벗츠에 직접 커스텀 어벗 생산을 의뢰할 수 있습니다. 별도의
-                  의뢰크레딧이 차감됩니다.
-                </p>
-              </div>
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
+                어벗츠에 직접 커스텀 어벗 생산을 의뢰할 수 있습니다. 별도
+                의뢰크레딧이 차감됩니다.
+              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
       <Card className="app-glass-card app-glass-card--lg">
-        <CardHeader className="space-y-3 pb-2">
+        <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <Handshake className="h-5 w-5 text-primary-strong" />
             치과 등록·소개
           </CardTitle>
-          <div
-            className={cn(
-              "rounded-2xl border px-4 py-3.5",
-              canInvite
-                ? "border-primary-muted bg-primary-soft/40"
-                : "border-amber-200/80 bg-amber-50/50",
-            )}
-          >
-            <p className="text-[13px] leading-relaxed text-slate-700">
-              {canInvite ? (
-                <>
-                  가입 후{" "}
-                  <span className="font-semibold text-primary-strong">
-                    {windowDays}일 이내에
-                  </span>{" "}
-                  거래 치과를 소개.등록하면{" "}
-                  <span className="font-semibold text-primary-strong">
-                    수수료가 면제(한시 적용)
-                  </span>
-                  됩니다. 아래 버튼으로 초대 내용을 복사해 전달하세요.
-                </>
-              ) : (
-                <>
-                  등록 기간({windowDays}일)이 지났습니다. 이후 소개 치과에는
-                  수수료 {platformFeePct}%가 적용됩니다.
-                </>
-              )}
-            </p>
-          </div>
+          {!canInvite ? (
+            <div className="mt-3 rounded-2xl border border-amber-200/80 bg-amber-50/50 px-4 py-3.5">
+              <p className="text-[13px] leading-relaxed text-slate-700">
+                등록 기간({windowDays}일)이 지났습니다. 이후 등록 치과에도
+                수수료 {platformFeePct}%가 적용됩니다.
+              </p>
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-5 pt-2">
           <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
@@ -539,18 +475,8 @@ export const LabTradingPartnersTab = () => {
                         style={{ width: `${windowProgressPct}%` }}
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      가입 후 {windowDays}일 중 {windowDays - remaining}일
-                      경과 · 수수료 면제 혜택 {remaining}일 남음
-                    </p>
                   </div>
-                ) : (
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {canInvite
-                      ? "복사한 내용을 치과에 전달하세요."
-                      : "이후 소개는 수수료 면제 혜택이 적용되지 않습니다."}
-                  </p>
-                )}
+                ) : null}
               </div>
 
               {referralCode ? (
@@ -658,8 +584,8 @@ export const LabTradingPartnersTab = () => {
             등록 목록
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
-            초대 링크로 가입을 시작한 치과가 표시됩니다. 사업자등록증 검증 후
-            등록 완료됩니다.
+            초대 링크로 가입을 시작한 치과가 표시됩니다. 사업자등록증 검증
+            후 등록 완료됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -693,7 +619,7 @@ export const LabTradingPartnersTab = () => {
                   item.practiceRepresentativeName || "",
                 ).trim();
                 const badgeLabel = isActive
-                  ? "소개치과 · 수수료 면제"
+                  ? "등록 치과 · 수수료 면제"
                   : isReferred
                     ? "등록 치과"
                     : "가입 진행 중";
