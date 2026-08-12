@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-12: 세척.패킹 카드 오른쪽 스크류 뱃지 위에 각인코드 3글자 뱃지 표시.
 // - 2026-08-04: 신속/묶음배송 뱃지를 하단(마감시간 옆)으로 이동. API shippingMode projection 누락 수정과 맞춤.
 // - 2026-08-04: 모든 의뢰카드에 신속배송/묶음배송 뱃지 상시 표시.
 // - 2026-08-04: 환자 정보에 기공소명 전달 보강(business/requestorBusinessAnchor fallback).
@@ -276,6 +277,9 @@ export const WorksheetCardGrid = ({
           (request as any)?.rnd?.unmachinableAt,
         );
         const lotCodeSource = String(request.lotNumber?.value || "").trim();
+        const lotShortCode = lotCodeSource
+          ? lotCodeSource.replace(/^CA(P)?/i, "").trim().slice(-3).toUpperCase()
+          : "";
         const camMaterialDiameter = (() => {
           const sched = request.productionSchedule || {};
           const raw = Number(sched.diameter);
@@ -602,8 +606,11 @@ export const WorksheetCardGrid = ({
           reviewStageKey !== "request" &&
           reviewStageKey !== "cam" &&
           Boolean(realtimeBadge || realtimeElapsedLabel);
+        const showPackingLotShortBadge =
+          tabStage === "packing" && Boolean(lotShortCode);
         const showSideSpecBadges =
           shouldShowAnodizingOffBadge ||
+          showPackingLotShortBadge ||
           (tabStage === "packing" && Boolean(resolvedConnectionSpec.screwType));
 
         const hasTopFloatingControls =
@@ -984,6 +991,15 @@ export const WorksheetCardGrid = ({
                     className="text-[16px] px-3 py-1 font-semibold leading-[1.1] border border-slate-300 bg-slate-100 text-slate-700"
                   >
                     아노X
+                  </Badge>
+                )}
+                {showPackingLotShortBadge && (
+                  <Badge
+                    variant="outline"
+                    className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-slate-800 bg-slate-900 text-white tracking-wider"
+                    title={`각인코드 ${lotShortCode}`}
+                  >
+                    {lotShortCode}
                   </Badge>
                 )}
                 {tabStage === "packing" && resolvedConnectionSpec.screwType && (
