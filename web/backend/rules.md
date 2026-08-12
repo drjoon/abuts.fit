@@ -428,6 +428,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       - 응답: `{ draftDeletedCount, transferDeletedCount, draftIds, transferMongoIds }`
       - 성공 시 `practice:transfer-updated` `action: trash-emptied`(치과) / `purged`(기공소) fan-out
     - `GET /api/practice/transfers/drafts` → 활성 목록
+    - `POST /api/practice/transfers/drafts/clear-all` → 활성 임시저장 전체 소프트 삭제(휴지통)
+      - 동일 치과 범위의 `deletedAt: null` draft를 모두 휴지통으로 이동
+      - 응답: `{ draftClearedCount, draftIds }`
+      - 성공 시 `practice:transfer-updated` `action: drafts-cleared` fan-out
     - `GET /api/practice/transfers/drafts?trashed=1` → 휴지통 목록
   - 활성 draft는 사용자당 **여러 건** 허용. `POST`에 `draftId`가 없으면 **항상 새 draft 생성**, 있으면 해당 건 갱신(join).
   - 「임시 저장」은 현재 작성본을 목록에 스냅샷하고 폼을 그 draft에서 분리한다. 이후 내용이 바뀌면 새 임시저장이 생성된다.

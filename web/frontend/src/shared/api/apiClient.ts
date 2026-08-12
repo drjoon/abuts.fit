@@ -26,6 +26,22 @@ export interface ApiRequestOptions extends RequestInit {
    * JSON body를 보낼 때 사용. 객체를 넘기면 JSON.stringify + Content-Type 설정까지 처리합니다.
    */
   jsonBody?: unknown;
+  /**
+   * GET 1초 캐시·동일 요청 in-flight 재사용을 건너뜁니다.
+   * 방금 변이한 목록을 다시 읽을 때 사용합니다.
+   */
+  skipCache?: boolean;
+}
+
+export function invalidateApiGetCache(pathSubstring: string) {
+  const needle = String(pathSubstring || "").trim();
+  if (!needle) return;
+  for (const key of Array.from(SHORT_CACHE.keys())) {
+    if (key.includes(needle)) SHORT_CACHE.delete(key);
+  }
+  for (const key of Array.from(IN_FLIGHT.keys())) {
+    if (key.includes(needle)) IN_FLIGHT.delete(key);
+  }
 }
 
 export interface ApiResponse<T = any> {
@@ -38,7 +54,7 @@ export interface ApiResponse<T = any> {
 export async function apiFetch<T = any>(
   options: ApiRequestOptions,
 ): Promise<ApiResponse<T>> {
-  const { path, method = "GET", token, jsonBody, headers, ...rest } = options;
+  const { path, method = "GET", token, jsonBody, headers, skipCache = false, ...rest } = options;
 
   // path가 절대 URL이면 그대로 사용, 아니면 /api 접두사 추가
   const url = path.startsWith("http")
@@ -81,14 +97,14 @@ export async function apiFetch<T = any>(
     method === "GET" || bodyKey !== "__non_string_body__";
 
   const now = Date.now();
-  if (method === "GET") {
+  if (method === "GET" && !skipCache) {
     const cached = SHORT_CACHE.get(requestKey);
     if (cached && now - cached.ts <= SHORT_CACHE_TTL_MS) {
       return cached.value as ApiResponse<T>;
     }
   }
 
-  if (isDedupeEligible) {
+  if (isDedupeEligible && !skipCache) {
     const existing = IN_FLIGHT.get(requestKey);
     if (existing) {
       return (await existing) as ApiResponse<T>;
@@ -138,13 +154,13 @@ export async function apiFetch<T = any>(
     return out;
   })();
 
-  if (isDedupeEligible) {
+  if (isDedupeEligible && !skipCache) {
     IN_FLIGHT.set(requestKey, exec as Promise<ApiResponse<any>>);
   }
   try {
     return (await exec) as ApiResponse<T>;
   } finally {
-    if (isDedupeEligible) {
+    if (isDedupeEligible && !skipCache) {
       IN_FLIGHT.delete(requestKey);
     }
   }

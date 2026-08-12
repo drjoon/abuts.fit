@@ -11,6 +11,7 @@ import {
 } from "../../middlewares/practiceTransferAuth.middleware.js";
 import {
   cancelPracticeTransfersBatch,
+  clearAllPracticeTransferDrafts,
   clearMyPracticeTransferDraft,
   createPracticeTransfer,
   emptyPracticeTransferTrash,
@@ -64,6 +65,13 @@ router.post(
 router.get("/draft", authenticate, sendAuth, getMyPracticeTransferDraft);
 
 router.get("/drafts", authenticate, sendAuth, listPracticeTransferDrafts);
+
+router.post(
+  "/drafts/clear-all",
+  authenticate,
+  sendAuth,
+  clearAllPracticeTransferDrafts,
+);
 
 router.post("/draft", authenticate, sendAuth, upsertPracticeTransferDraft);
 

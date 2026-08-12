@@ -1052,6 +1052,70 @@ export async function clearMyPracticeTransferDraft(req, res) {
   }
 }
 
+export async function clearAllPracticeTransferDrafts(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    await ensurePracticeTransferDraftIndexes();
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const docs = await PracticeTransferDraft.find({
+      ...scope,
+      deletedAt: null,
+    })
+      .select({ _id: 1, practiceUserId: 1 })
+      .lean();
+
+    const draftIds = docs
+      .map((doc) => String(doc?._id || "").trim())
+      .filter((id) => Types.ObjectId.isValid(id));
+    const now = new Date();
+
+    if (draftIds.length > 0) {
+      await PracticeTransferDraft.updateMany(
+        {
+          _id: { $in: draftIds.map((id) => new Types.ObjectId(id)) },
+          deletedAt: null,
+        },
+        { $set: { deletedAt: now } },
+      );
+    }
+
+    await emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: req.user?.businessAnchorId,
+      type: "practice:transfer-updated",
+      payload: {
+        source: "clearAllPracticeTransferDrafts",
+        action: "drafts-cleared",
+        draftIds,
+        draftClearedCount: draftIds.length,
+        practiceBusinessAnchorId:
+          String(req.user?.businessAnchorId || "").trim() || null,
+        updatedAt: now,
+      },
+      extraUserIds: [req.user?._id],
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "임시저장을 모두 휴지통으로 옮겼습니다.",
+      data: {
+        draftClearedCount: draftIds.length,
+        draftIds,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "임시저장 전체삭제 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
 export async function restorePracticeTransferDraft(req, res) {
   try {
     const role = String(req.user?.role || "").trim();

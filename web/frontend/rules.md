@@ -583,6 +583,12 @@ Notes:
   - response: `data.successCount`, `data.failedIds`
   - 치과 휴지통 복구와 관리자 취소건 되살리기에서 동일 API를 사용합니다.
 
+- practice 임시저장 전체삭제 API 계약(SSOT):
+  - endpoint: `POST /api/practice/transfers/drafts/clear-all`
+  - 동일 치과 범위의 활성 임시저장(`deletedAt: null`)을 모두 휴지통으로 옮깁니다.
+  - response: `data.draftClearedCount`, `data.draftIds`
+  - UI는 확인 없이 호출하고, `drafts-cleared` 실시간 이벤트로 동료 화면을 동기화합니다.
+
 - practice 휴지통 비우기 API 계약(SSOT):
   - endpoint: `POST /api/practice/transfers/trash/empty`
   - 동일 치과 범위의 임시저장 휴지통(`deletedAt != null`)과 취소 전송(`status: "canceled"`)을 영구 삭제합니다.

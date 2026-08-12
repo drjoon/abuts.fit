@@ -38,6 +38,7 @@
  * - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
  * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
  * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 계정 마지막 설정. 전송 시 의뢰건에 스냅샷.
+ * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -90,7 +91,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { apiFetch } from "@/shared/api/apiClient";
+import { apiFetch, invalidateApiGetCache } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
@@ -925,6 +926,7 @@ export const PracticeFileTransferPage = ({
   const [restoringTransfer, setRestoringTransfer] = useState(false);
   const [emptyTrashConfirmOpen, setEmptyTrashConfirmOpen] = useState(false);
   const [emptyingTrash, setEmptyingTrash] = useState(false);
+  const [clearingAllDrafts, setClearingAllDrafts] = useState(false);
   const [localFormHydrated, setLocalFormHydrated] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
@@ -1405,11 +1407,13 @@ export const PracticeFileTransferPage = ({
           path: "/api/practice/transfers/drafts",
           method: "GET",
           token: authToken,
+          skipCache: true,
         }),
         apiFetch<unknown>({
           path: "/api/practice/transfers/drafts?trashed=1",
           method: "GET",
           token: authToken,
+          skipCache: true,
         }),
       ]);
 
@@ -3886,6 +3890,13 @@ export const PracticeFileTransferPage = ({
       });
       return;
     }
+    if (
+      transfer.status === "임시저장" ||
+      transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID
+    ) {
+      void handleDeleteDraftTransfer(transfer);
+      return;
+    }
     setDeleteTargetTransfer(transfer);
     setDeleteConfirmOpen(true);
   };
@@ -3894,6 +3905,54 @@ export const PracticeFileTransferPage = ({
     if (deletingTransfer) return;
     setDeleteConfirmOpen(false);
     setDeleteTargetTransfer(null);
+  };
+
+  const handleDeleteDraftTransfer = async (target: RecentTransferItem) => {
+    if (deletingTransfer) return;
+    if (!authToken) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDeletingTransfer(true);
+    try {
+      const draftId = String(target.id || "").trim();
+      const activeId = String(activeDraftIdRef.current || "").trim();
+      await apiFetch<unknown>({
+        path: draftId
+          ? `/api/practice/transfers/draft?draftId=${encodeURIComponent(draftId)}`
+          : "/api/practice/transfers/draft",
+        method: "DELETE",
+        token: authToken,
+      });
+      if (!activeId || target.id === activeId) {
+        setDraftFiles([]);
+        setDraftSummary(null);
+        setActiveDraftId(null);
+        lastSavedFormFingerprintRef.current = null;
+        setLastSavedFormFingerprint(null);
+        pendingLocalFormEditRef.current = false;
+        setFormSyncStatus("idle");
+      }
+      invalidateApiGetCache("/api/practice/transfers/drafts");
+      await loadPracticeTransferDraftList();
+      toast({
+        title: "휴지통으로 이동",
+        description: "임시저장을 휴지통으로 옮겼습니다. 아래에서 복구할 수 있습니다.",
+      });
+    } catch (error) {
+      toast({
+        title: "휴지통 이동 실패",
+        description:
+          error instanceof Error ? error.message : "임시저장 삭제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingTransfer(false);
+    }
   };
 
   const handleConfirmDeleteTransfer = async () => {
@@ -3917,43 +3976,9 @@ export const PracticeFileTransferPage = ({
       target.status === "임시저장" ||
       target.transferId === PRACTICE_DRAFT_TRANSFER_ID
     ) {
-      setDeletingTransfer(true);
-      try {
-        const draftId = String(target.id || "").trim();
-        const activeId = String(activeDraftIdRef.current || "").trim();
-        await apiFetch<unknown>({
-          path: draftId
-            ? `/api/practice/transfers/draft?draftId=${encodeURIComponent(draftId)}`
-            : "/api/practice/transfers/draft",
-          method: "DELETE",
-          token: authToken,
-        });
-        if (!activeId || target.id === activeId) {
-          setDraftFiles([]);
-          setDraftSummary(null);
-          setActiveDraftId(null);
-          lastSavedFormFingerprintRef.current = null;
-          setLastSavedFormFingerprint(null);
-          pendingLocalFormEditRef.current = false;
-          setFormSyncStatus("idle");
-        }
-        await loadPracticeTransferDraftList();
-        toast({
-          title: "휴지통으로 이동",
-          description: "임시저장을 휴지통으로 옮겼습니다. 아래에서 복구할 수 있습니다.",
-        });
-      } catch (error) {
-        toast({
-          title: "휴지통 이동 실패",
-          description:
-            error instanceof Error ? error.message : "임시저장 삭제 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setDeletingTransfer(false);
-        setDeleteConfirmOpen(false);
-        setDeleteTargetTransfer(null);
-      }
+      setDeleteConfirmOpen(false);
+      setDeleteTargetTransfer(null);
+      void handleDeleteDraftTransfer(target);
       return;
     }
 
@@ -4228,6 +4253,96 @@ export const PracticeFileTransferPage = ({
     }
   };
 
+  const handleAskClearAllDrafts = () => {
+    if (clearingAllDrafts) return;
+    if (draftGroupedTransfers.length === 0) return;
+    void handleClearAllDrafts();
+  };
+
+  const handleClearAllDrafts = async () => {
+    if (clearingAllDrafts) return;
+    if (!authToken) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const previousDrafts = practiceDraftList;
+    const previousActiveId = String(activeDraftIdRef.current || "").trim();
+    const previousDraftFiles = [...draftFiles];
+    const previousDraftSummary = draftSummary;
+
+    skipFormAutosaveRef.current = true;
+    formAutosaveSeqRef.current += 1;
+    if (formAutosaveTimerRef.current) {
+      window.clearTimeout(formAutosaveTimerRef.current);
+      formAutosaveTimerRef.current = null;
+    }
+
+    setPracticeDraftList([]);
+    if (previousActiveId) {
+      setDraftFiles([]);
+      setDraftSummary(null);
+      setActiveDraftId(null);
+      activeDraftIdRef.current = null;
+      draftSummaryIdRef.current = null;
+      activeDraftSeenInListRef.current = null;
+      const fingerprint = currentFormFingerprintRef.current;
+      lastSavedFormFingerprintRef.current = fingerprint;
+      setLastSavedFormFingerprint(fingerprint);
+      pendingLocalFormEditRef.current = false;
+      setFormSyncStatus("idle");
+    }
+
+    setClearingAllDrafts(true);
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/drafts/clear-all",
+        method: "POST",
+        token: authToken,
+      });
+      if (!res.ok) {
+        const body = asApiMessagePayload(res.data);
+        throw new Error(String(body?.message || "임시저장 전체삭제에 실패했습니다."));
+      }
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: { draftClearedCount?: number } })
+          : {};
+      const draftClearedCount = Number(body.data?.draftClearedCount || previousDrafts.length || 0);
+      invalidateApiGetCache("/api/practice/transfers/drafts");
+
+      toast({
+        title: "휴지통으로 이동",
+        description:
+          draftClearedCount > 0
+            ? `임시저장 ${draftClearedCount}건을 휴지통으로 옮겼습니다. 아래에서 복구할 수 있습니다.`
+            : "옮길 임시저장이 없었습니다.",
+      });
+
+      await loadPracticeTransferDraftList();
+    } catch (error) {
+      setPracticeDraftList(previousDrafts);
+      if (previousActiveId) {
+        setDraftFiles(previousDraftFiles);
+        setDraftSummary(previousDraftSummary);
+        setActiveDraftId(previousActiveId);
+      }
+      toast({
+        title: "전체삭제 실패",
+        description:
+          error instanceof Error ? error.message : "임시저장 전체삭제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setClearingAllDrafts(false);
+      skipFormAutosaveRef.current = false;
+    }
+  };
+
   const handleAskEmptyTrash = () => {
     if (emptyingTrash) return;
     if (trashGroupedTransfers.length === 0) return;
@@ -4345,6 +4460,21 @@ export const PracticeFileTransferPage = ({
         );
         void loadPracticeTransferDraftList();
         void loadRecentRequests({ silent: true });
+        return;
+      }
+
+      if (action === "drafts-cleared") {
+        const ids = (Array.isArray(payload.draftIds) ? payload.draftIds : [])
+          .map((id) => String(id || "").trim())
+          .filter(Boolean);
+        setPracticeDraftList((prev) =>
+          ids.length > 0 ? prev.filter((row) => !ids.includes(row.id)) : [],
+        );
+        invalidateApiGetCache("/api/practice/transfers/drafts");
+        void loadPracticeTransferDraftList();
+        if (linkedDraftId && ids.includes(linkedDraftId)) {
+          void resetIntakeFormAfterTransferRef.current();
+        }
         return;
       }
 
@@ -5458,33 +5588,33 @@ export const PracticeFileTransferPage = ({
               <Collapsible open={recentTransfersOpen} onOpenChange={setRecentTransfersOpen}>
               <CardHeader className="pb-2 pt-3">
                 <div className="mb-2 flex w-full items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center">
-                    <CollapsibleTrigger asChild>
-                      <button type="button" className="flex items-center gap-2 text-left">
-                        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                          <ClipboardList className="h-4 w-4 text-primary-strong" />
-                          최근 전송
-                        </CardTitle>
-                      </button>
-                    </CollapsibleTrigger>
+                  <CollapsibleTrigger asChild>
+                    <button type="button" className="flex min-w-0 flex-1 items-center text-left">
+                      <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                        <ClipboardList className="h-4 w-4 text-primary-strong" />
+                        최근 전송
+                      </CardTitle>
+                    </button>
+                  </CollapsibleTrigger>
+                  <div className="flex shrink-0 items-center gap-2">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="ml-2.5 h-7 shrink-0 gap-1.5 text-xs"
+                      className="h-8 gap-1 px-2 border-primary-muted text-primary-strong hover:bg-primary-soft hover:text-primary-strong"
                       onClick={() => setRecentTransfersAllOpen(true)}
                     >
                       <LayoutGrid className="h-3.5 w-3.5" />
                       전체 보기
                     </Button>
+                    <CollapsibleTrigger asChild>
+                      <button type="button" className="shrink-0 text-muted-foreground">
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform ${recentTransfersOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
                   </div>
-                  <CollapsibleTrigger asChild>
-                    <button type="button" className="shrink-0 text-muted-foreground">
-                      <ChevronDown
-                        className={`h-4 w-4 transition-transform ${recentTransfersOpen ? "rotate-180" : ""}`}
-                      />
-                    </button>
-                  </CollapsibleTrigger>
                 </div>
                 <CollapsibleContent>
                 <div className="space-y-2 text-sm text-muted-foreground">
@@ -5785,22 +5915,43 @@ export const PracticeFileTransferPage = ({
             <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={draftsOpen} onOpenChange={setDraftsOpen}>
               <CardHeader className="pb-2 pt-3">
-                <CollapsibleTrigger asChild>
-                  <button type="button" className="flex w-full items-center justify-between gap-2 text-left">
-                    <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                      <BookmarkPlus className="h-4 w-4 text-slate-500" />
-                      임시저장
-                      {draftGroupedTransfers.length > 0 ? (
-                        <Badge variant="secondary" className="ml-1">
-                          {draftGroupedTransfers.length}
-                        </Badge>
-                      ) : null}
-                    </CardTitle>
-                    <ChevronDown
-                      className={`h-4 w-4 text-muted-foreground transition-transform ${draftsOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                </CollapsibleTrigger>
+                <div className="flex items-center justify-between gap-2">
+                  <CollapsibleTrigger asChild>
+                    <button type="button" className="flex min-w-0 flex-1 items-center text-left">
+                      <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                        <BookmarkPlus className="h-4 w-4 text-slate-500" />
+                        임시저장
+                        {draftGroupedTransfers.length > 0 ? (
+                          <Badge variant="secondary" className="ml-1">
+                            {draftGroupedTransfers.length}
+                          </Badge>
+                        ) : null}
+                      </CardTitle>
+                    </button>
+                  </CollapsibleTrigger>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {draftGroupedTransfers.length > 0 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1 px-2 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+                        disabled={clearingAllDrafts}
+                        onClick={handleAskClearAllDrafts}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {clearingAllDrafts ? "삭제 중..." : "전체삭제"}
+                      </Button>
+                    ) : null}
+                    <CollapsibleTrigger asChild>
+                      <button type="button" className="shrink-0 text-muted-foreground">
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform ${draftsOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                  </div>
+                </div>
               </CardHeader>
               <CollapsibleContent>
               <CardContent className="space-y-2">
@@ -5901,7 +6052,7 @@ export const PracticeFileTransferPage = ({
               <CardHeader className="pb-2 pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <CollapsibleTrigger asChild>
-                    <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left">
+                    <button type="button" className="flex min-w-0 flex-1 items-center text-left">
                       <CardTitle className="flex items-center gap-2 text-sm font-semibold">
                         <Trash2 className="h-4 w-4 text-slate-500" />
                         휴지통
@@ -5911,24 +6062,30 @@ export const PracticeFileTransferPage = ({
                           </Badge>
                         ) : null}
                       </CardTitle>
-                      <ChevronDown
-                        className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${trashOpen ? "rotate-180" : ""}`}
-                      />
                     </button>
                   </CollapsibleTrigger>
-                  {trashGroupedTransfers.length > 0 ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 shrink-0 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
-                      disabled={emptyingTrash}
-                      onClick={handleAskEmptyTrash}
-                    >
-                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                      {emptyingTrash ? "비우는 중..." : "휴지통 비우기"}
-                    </Button>
-                  ) : null}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {trashGroupedTransfers.length > 0 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1 px-2 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+                        disabled={emptyingTrash}
+                        onClick={handleAskEmptyTrash}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {emptyingTrash ? "비우는 중..." : "비우기"}
+                      </Button>
+                    ) : null}
+                    <CollapsibleTrigger asChild>
+                      <button type="button" className="shrink-0 text-muted-foreground">
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform ${trashOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                  </div>
                 </div>
               </CardHeader>
               <CollapsibleContent>
@@ -6259,27 +6416,17 @@ export const PracticeFileTransferPage = ({
 
         <ConfirmDialog
           open={deleteConfirmOpen}
-          title={
-            deleteTargetTransfer?.status === "임시저장" ||
-            deleteTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
-              ? "임시저장을 휴지통으로 옮길까요?"
-              : "이 의뢰서를 휴지통으로 이동할까요?"
-          }
+          title="이 의뢰서를 휴지통으로 이동할까요?"
           description={
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">
                 대상:{" "}
                 {deleteTargetTransfer?.transferId && deleteTargetTransfer.transferId !== "-"
-                  ? deleteTargetTransfer.transferId === PRACTICE_DRAFT_TRANSFER_ID
-                    ? deleteTargetTransfer.deleteTargetLabel || "임시저장"
-                    : deleteTargetTransfer.transferId
+                  ? deleteTargetTransfer.transferId
                   : deleteTargetTransfer?.id || "-"}
               </div>
               <div className="text-sm text-muted-foreground">
-                {deleteTargetTransfer?.status === "임시저장" ||
-                deleteTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
-                  ? `첨부 파일 ${deleteTargetTransfer?.fileCount || 0}건과 함께 휴지통으로 이동합니다. 아래에서 다시 복구할 수 있습니다.`
-                  : `첨부 파일 ${deleteTargetTransfer?.fileCount || 0}건과 함께 휴지통으로 이동합니다. 아래에서 다시 복구할 수 있습니다.`}
+                {`첨부 파일 ${deleteTargetTransfer?.fileCount || 0}건과 함께 휴지통으로 이동합니다. 아래에서 다시 복구할 수 있습니다.`}
               </div>
             </div>
           }
