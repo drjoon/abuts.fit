@@ -13,6 +13,7 @@ import {
   withRequestPerfInFlight,
 } from "../../services/requestDashboardCache.service.js";
 import {
+  assertPracticeTransferPaidCreditSufficient,
   commitPracticeTransferBilling,
   rollbackPracticeTransferBilling,
 } from "../../services/practiceTransferBilling.service.js";
@@ -1442,7 +1443,23 @@ export async function createPracticeTransfer(req, res) {
       practiceRouting?.skipDesignConfirm === true ||
       practiceRouting?.skipDesignConfirm === "true";
 
-    // 과금은 기공소 의뢰수락 시점(mark-accepted). 전송 생성은 파일/메타만 저장.
+    // 잔액 검사: 전송 시점. 실제 과금은 기공소 의뢰수락(mark-accepted).
+    try {
+      await assertPracticeTransferPaidCreditSufficient({
+        practiceAnchorId,
+        labAnchorId: targetLabAnchorId,
+        toothWorks: toothWorksRaw,
+      });
+    } catch (creditErr) {
+      const status = Number(creditErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message:
+          creditErr?.message || "기공의뢰 전송 전 유료크레딧 확인에 실패했습니다.",
+        ...(creditErr?.payload || {}),
+      });
+    }
+
     const transferDoc = await PracticeTransfer.create({
       transferId,
       practiceUserId: req.user?._id,

@@ -51,8 +51,8 @@ export const DesignQueueSection = () => {
               </button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs leading-relaxed">
-              작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 플랫폼은 작업 지연에 대한
-              책임을 지지 않습니다.
+              작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 혹시 지연될 경우 치과와
+              미리 상의하시기 바랍니다. 플랫폼은 작업 지연에 대한 책임을 지지 않습니다.
             </TooltipContent>
           </Tooltip>
         </div>

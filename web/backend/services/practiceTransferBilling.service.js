@@ -158,9 +158,66 @@ function pushRevenueLines({
 }
 
 /**
+ * 기공의뢰 전송 전 치과 유료크레딧 잔액 검사(차감 없음).
+ * 자동매칭은 기공소 미정이라 기본 기공비 스케줄로 견적한다.
+ */
+export async function assertPracticeTransferPaidCreditSufficient({
+  practiceAnchorId,
+  labAnchorId = null,
+  toothWorks,
+}) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
+    const err = new Error("치과 사업자 정보가 필요합니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let labFeeSchedule = null;
+  const labId = String(labAnchorId || "").trim();
+  if (labId && Types.ObjectId.isValid(labId)) {
+    const lab = await BusinessAnchor.findById(labId)
+      .select({ labFeeSchedule: 1 })
+      .lean();
+    labFeeSchedule = lab?.labFeeSchedule || null;
+  }
+
+  const creditSettings = await loadCreditSettingsDefaults();
+  const fees = computePracticeTransferRetailFees({
+    toothWorks,
+    labFeeSchedule: normalizeLabFeeSchedule(labFeeSchedule),
+    abutmentRetailPrice: creditSettings.abutmentRetailPrice,
+  });
+
+  if (fees.total <= 0) {
+    return { ok: true, fees, paidCredit: null, required: 0 };
+  }
+
+  const balance = await computeBusinessCreditBalanceFromLedger({
+    businessAnchorId: practiceId,
+  });
+  const paidCredit = Number(balance?.paidCredit || 0);
+  if (paidCredit < fees.total) {
+    const err = new Error(
+      `유료크레딧이 부족합니다. (잔액 ${paidCredit.toLocaleString("ko-KR")}원 / 필요 ${fees.total.toLocaleString("ko-KR")}원)`,
+    );
+    err.statusCode = 402;
+    err.payload = {
+      reason: "insufficient_credit_for_practice_transfer",
+      paidCredit,
+      required: fees.total,
+      fees,
+    };
+    throw err;
+  }
+
+  return { ok: true, fees, paidCredit, required: fees.total };
+}
+
+/**
  * 기공의뢰: 치과 유료크레딧(REQ_PAID_CREDIT) 1회 차감 + 기공소 기공크레딧(LAB_SETTLEMENT_CREDIT)/REV_* 분배.
  * 치과는 settlement 버킷을 쓰지 않고 유료 잔액으로 기공비를 지불한다.
- * 호출 시점: 기공소 의뢰수락(mark-accepted). 전송 생성 시점이 아님.
+ * 잔액 검사: 전송 생성(`createPracticeTransfer`). 실제 차감: 기공소 의뢰수락(`mark-accepted`).
  */
 export async function commitPracticeTransferBilling({
   transfer,

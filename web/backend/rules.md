@@ -247,7 +247,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 발급된 초대는 검증 완료 시 `status=active`(거래처, 수수료 0%). 30일 경과 후에도 초대 발급은 계속 허용하되(`invitedAfterWindow=true`), 검증 완료 시 `status=referred`(소개)로 승격된다.
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
   - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic/customAbutmentDesign). 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops). `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과).
-  - PracticeTransfer 유료: **기공소 의뢰수락(`POST .../mark-accepted`)** 시 치과 **유료크레딧**에서 청구 총액(기공비+어벗 소매가) 1회 차감 → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 기공소 `LAB_SETTLEMENT_CREDIT`(UI: 기공크레딧). 전송 생성 시점에는 과금하지 않는다.
+  - PracticeTransfer 유료: **전송 생성(`POST /api/practice/transfers`)** 시 치과 **유료크레딧** 잔액을 검사하고, **기공소 의뢰수락(`POST .../mark-accepted`)** 시 청구 총액(기공비+어벗 소매가) 1회 차감 → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 기공소 `LAB_SETTLEMENT_CREDIT`(UI: 기공크레딧). 전송 생성 시점에는 차감하지 않는다.
     - `active`/`referred`(등록 치과): 수수료 `BusinessAnchor.payoutRates.partnerFeeRate`(기본 0%).
     - 그 외(미등록): 수수료 `BusinessAnchor.payoutRates.nonPartnerFeeRate`(기본 25%).
     - 걷힌 수수료 금액은 기존 4자 분배율(`manufacturerRate`/`devopsRate`/`salesmanRate`/`adminRate`)로 다시 나뉜다(영업자 추천 유무에 따른 재배분 로직 동일 적용).
@@ -351,6 +351,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`을 사용합니다.
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
   - 의뢰수락 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`(레거시 필드명 유지; API alias `requestorAcceptedAt`/`isAccepted`)
+  - 잔액 검사 SSOT: `POST /api/practice/transfers`에서 `assertPracticeTransferPaidCreditSufficient`
   - 과금 SSOT: `POST /api/practice/transfers/:transferId/mark-accepted`에서 `commitPracticeTransferBilling` (파일 다운로드는 상태·과금에 영향 없음)
   - **자동매칭 SSOT** (`matchingMode: "auto"`):
     - 생성 시 `targetLabAnchorId=null`, 공개 풀. 자격: `verified` + `practiceTransferAutoMatchEnabled` + lab+free (`utils/practiceTransferAutoMatch.js`). devops 목록/ON은 `verifiedLabCapableAnchorFilter`(kind=lab 또는 레거시 caps.lab)
