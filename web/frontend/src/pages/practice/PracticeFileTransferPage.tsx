@@ -56,6 +56,7 @@ import {
   Plus,
   Settings,
   ChevronDown,
+  LayoutGrid,
 } from "lucide-react";
 import {
   Card,
@@ -118,6 +119,7 @@ import {
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
+import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
@@ -882,7 +884,7 @@ export const PracticeFileTransferPage = ({
   const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
   const [recentStatusFilter, setRecentStatusFilter] = useState<
-    "all" | "발송완료" | "의뢰수락" | "작업완료" | "포장.발송" | "추적관리"
+    "all" | "발송완료" | "의뢰수락" | "작업완료" | "취소" | "포장.발송" | "추적관리"
   >("all");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
@@ -927,6 +929,7 @@ export const PracticeFileTransferPage = ({
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
   const transferDialogOpenRef = useRef(false);
+  const returnToAllModalRef = useRef(false);
   const selectedTransferIdRef = useRef("");
   const prevFileCountRef = useRef(0);
   const localFormUpdatedAtRef = useRef(0);
@@ -1002,6 +1005,7 @@ export const PracticeFileTransferPage = ({
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
   const [recentTransfersOpen, setRecentTransfersOpen] = useState(true);
+  const [recentTransfersAllOpen, setRecentTransfersAllOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(true);
   const [trashOpen, setTrashOpen] = useState(true);
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
@@ -2925,7 +2929,7 @@ export const PracticeFileTransferPage = ({
   }, [filteredRecentRequests, chatRooms]);
 
   const statusCounts = useMemo(() => {
-    return groupedTransfers.reduce(
+    const counts = groupedTransfers.reduce(
       (acc, request) => {
         const status = String(request.status || "").trim();
         if (status === "작업완료") {
@@ -2945,12 +2949,27 @@ export const PracticeFileTransferPage = ({
         }
         return acc;
       },
-      { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0 },
+      { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0, canceled: 0 },
     );
-  }, [groupedTransfers]);
+
+    const canceledKeys = new Set<string>();
+    for (const req of trashRecentRequests) {
+      const key =
+        req.transferId && req.transferId !== "-"
+          ? `tid:${req.transferId}`
+          : req.requestMongoId
+            ? `mid:${req.requestMongoId}`
+            : `id:${req.id}`;
+      canceledKeys.add(key);
+    }
+    counts.canceled = canceledKeys.size;
+
+    return counts;
+  }, [groupedTransfers, trashRecentRequests]);
 
   const filteredGroupedTransfers = useMemo(() => {
     if (recentStatusFilter === "all") return groupedTransfers;
+    if (recentStatusFilter === "취소") return [];
     return groupedTransfers.filter((transfer) => {
       const status = String(transfer.status || "").trim();
       if (recentStatusFilter === "발송완료") {
@@ -3036,8 +3055,6 @@ export const PracticeFileTransferPage = ({
       })
       .filter((transfer) => !query || transfer.searchBlob.includes(query));
   }, [practiceDraftList, requestSearchTerm]);
-
-  const displayGroupedTransfers = filteredGroupedTransfers;
 
   const trashGroupedTransfers = useMemo(() => {
     const byKey = new Map<string, RecentTransferItem>();
@@ -3154,6 +3171,19 @@ export const PracticeFileTransferPage = ({
       (a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0),
     );
   }, [trashRecentRequests, trashedDraftList]);
+
+  const canceledGroupedTransfers = useMemo(
+    () =>
+      trashGroupedTransfers.filter(
+        (transfer) => String(transfer.status || "").trim() === "취소",
+      ),
+    [trashGroupedTransfers],
+  );
+
+  const displayGroupedTransfers = useMemo(() => {
+    if (recentStatusFilter === "취소") return canceledGroupedTransfers;
+    return filteredGroupedTransfers;
+  }, [canceledGroupedTransfers, filteredGroupedTransfers, recentStatusFilter]);
 
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -3378,9 +3408,14 @@ export const PracticeFileTransferPage = ({
 
   const handleOpenTransferDialog = async (
     transfer: RecentTransferItem,
-    options?: { fromTrash?: boolean },
+    options?: { fromTrash?: boolean; returnToAllModal?: boolean },
   ) => {
     const fromTrash = Boolean(options?.fromTrash);
+    const returnToAllModal = Boolean(options?.returnToAllModal);
+    returnToAllModalRef.current = returnToAllModal;
+    if (returnToAllModal) {
+      setRecentTransfersAllOpen(false);
+    }
     const isDraftTransfer =
       transfer.status === "임시저장" ||
       transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
@@ -3481,6 +3516,8 @@ export const PracticeFileTransferPage = ({
 
   const handleCloseTransferDialog = () => {
     chatRoomResolveSeqRef.current += 1;
+    const reopenAllModal = returnToAllModalRef.current;
+    returnToAllModalRef.current = false;
     setTransferDialogOpen(false);
     transferDialogOpenRef.current = false;
     selectedTransferIdRef.current = "";
@@ -3491,6 +3528,9 @@ export const PracticeFileTransferPage = ({
     setChatReplyTo(null);
     setChatAttachedFiles([]);
     setChatError("");
+    if (reopenAllModal) {
+      setRecentTransfersAllOpen(true);
+    }
   };
 
   const handleSendChatMessage = async () => {
@@ -5417,17 +5457,35 @@ export const PracticeFileTransferPage = ({
             <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={recentTransfersOpen} onOpenChange={setRecentTransfersOpen}>
               <CardHeader className="pb-2 pt-3">
-                <CollapsibleTrigger asChild>
-                  <button type="button" className="mb-2 flex w-full items-center justify-between gap-2 text-left">
-                    <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                      <ClipboardList className="h-4 w-4 text-primary-strong" />
-                      최근 전송
-                    </CardTitle>
-                    <ChevronDown
-                      className={`h-4 w-4 text-muted-foreground transition-transform ${recentTransfersOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                </CollapsibleTrigger>
+                <div className="mb-2 flex w-full items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center">
+                    <CollapsibleTrigger asChild>
+                      <button type="button" className="flex items-center gap-2 text-left">
+                        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                          <ClipboardList className="h-4 w-4 text-primary-strong" />
+                          최근 전송
+                        </CardTitle>
+                      </button>
+                    </CollapsibleTrigger>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="ml-2.5 h-7 shrink-0 gap-1.5 text-xs"
+                      onClick={() => setRecentTransfersAllOpen(true)}
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                      전체 보기
+                    </Button>
+                  </div>
+                  <CollapsibleTrigger asChild>
+                    <button type="button" className="shrink-0 text-muted-foreground">
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform ${recentTransfersOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                  </CollapsibleTrigger>
+                </div>
                 <CollapsibleContent>
                 <div className="space-y-2 text-sm text-muted-foreground">
                   <div className="flex items-center justify-start">
@@ -5497,6 +5555,26 @@ export const PracticeFileTransferPage = ({
                         )}
                       >
                         완료 {statusCounts.completed}건
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "취소" ? "all" : "취소"))
+                      }
+                      aria-pressed={recentStatusFilter === "취소"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "취소"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        취소 {statusCounts.canceled}건
                       </Badge>
                     </button>
                     <button
@@ -5588,6 +5666,8 @@ export const PracticeFileTransferPage = ({
                                 ? "수락"
                                 : recentStatusFilter === "작업완료"
                                   ? "완료"
+                                  : recentStatusFilter === "취소"
+                                    ? "취소"
                                   : recentStatusFilter
                         } 없음`}
                   </div>
@@ -5949,6 +6029,24 @@ export const PracticeFileTransferPage = ({
             </Card>
           </div>
         </div>
+
+        <PracticeRecentTransfersAllModal
+          open={recentTransfersAllOpen}
+          onOpenChange={setRecentTransfersAllOpen}
+          token={authToken}
+          chatRooms={chatRooms}
+          initialPeriod={period}
+          initialSearch={requestSearchTerm}
+          initialStatusFilter={recentStatusFilter}
+          onSelectTransfer={(transfer) => {
+            void handleOpenTransferDialog(transfer as RecentTransferItem, {
+              returnToAllModal: true,
+            });
+          }}
+          onDeleteTransfer={(transfer) => {
+            handleAskDeleteTransfer(transfer as RecentTransferItem);
+          }}
+        />
 
         <PracticeTransferDetailChatDialog
           open={transferDialogOpen}

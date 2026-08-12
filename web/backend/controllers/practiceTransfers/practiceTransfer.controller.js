@@ -1536,11 +1536,14 @@ export async function getMyPracticeTransfers(req, res) {
 
     const { scope: baseFilter } = await buildPracticeOwnedScope(req);
 
-    const docs = await PracticeTransfer.find(baseFilter)
-      .sort({ createdAt: -1, _id: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    const [docs, totalCount] = await Promise.all([
+      PracticeTransfer.find(baseFilter)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      PracticeTransfer.countDocuments(baseFilter),
+    ]);
 
     const requests = docs.flatMap((doc) => toVirtualRequestRows(doc));
 
@@ -1552,6 +1555,8 @@ export async function getMyPracticeTransfers(req, res) {
           page,
           limit,
           count: requests.length,
+          total: totalCount,
+          hasMore: skip + docs.length < totalCount,
         },
       },
     });
