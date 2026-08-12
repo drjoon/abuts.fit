@@ -1,9 +1,11 @@
 // change-log:
+// - 2026-08-12: 디자인SW 미설정 시 진입 에러 토스트 제거. 파일 첨부 시 설정 모달만 노출(저장 전 첨부 보류).
 // - 2026-08-11: 첨부 직후 S3 사전 업로드(useFilePreUpload) — 기공의뢰와 동일 가속 경로.
 // - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(PLY/OBJ는 기공의뢰).
 // - 2026-08-11: 3MB 초과 확인 모달 «기공의뢰» 클릭 시 prefilledFiles로 기공의뢰 페이지에 첨부.
 // - 2026-08-11: 3MB 초과 드롭/오픈 시 3D 프리뷰+ConfirmDialog로 커스텀어벗 여부 확인(구강스캔→기공의뢰 안내).
 // - 2026-08-11: 기공소 어벗의뢰 상단 — 거래 치과 등록 D-day 배너.
+// - 2026-08-12: 소개치과+가입이유 2열 배너로 교체.
 // - 2026-08-11: 상단 헤더(지난 의뢰) 제거 — 대시보드 최근 의뢰 카드로만 제공.
 // - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드에 미반영(신규 업로드만).
 // - 2026-08-11: 아노다이징을 의뢰건 caseInfos SSOT로 저장·뱃지 표시(디자인소프트웨어와 동일). 사업체는 기본값 시드만.
@@ -52,7 +54,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
+import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
 import {
@@ -118,6 +120,11 @@ const NewRequestPageContent = () => {
   /** 3MB 초과(구강스캔 후보) — ConfirmDialog 확인 후 첨부 */
   const [oversizedPendingFiles, setOversizedPendingFiles] = useState<File[]>([]);
   const [oversizedPreviewIndex, setOversizedPreviewIndex] = useState(0);
+  /** 디자인소프트웨어 미설정 상태에서 첨부 시도한 파일 — 저장 후 이어서 첨부 */
+  const [designSoftwareGatePendingFiles, setDesignSoftwareGatePendingFiles] =
+    useState<File[]>([]);
+  const designSoftwareGatePendingRef = useRef<File[]>([]);
+  const handleIncomingFilesRef = useRef<(files: File[]) => void>(() => {});
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
@@ -326,12 +333,8 @@ const NewRequestPageContent = () => {
           }
         }
 
+        // 미설정이면 진입 토스트 없이 두고, 파일 첨부 시 설정 모달로 유도한다.
         if (!requestorDefault) {
-          toast({
-            title: "디자인 소프트웨어 설정 필요",
-            description: "의뢰자 계정의 디자인 소프트웨어를 먼저 설정해주세요.",
-            variant: "destructive",
-          });
           return;
         }
 
@@ -430,6 +433,14 @@ const NewRequestPageContent = () => {
       if (needsBusinessDesignSoftwareBootstrap) {
         setNeedsBusinessDesignSoftwareBootstrap(false);
       }
+
+      const pending = designSoftwareGatePendingRef.current;
+      designSoftwareGatePendingRef.current = [];
+      setDesignSoftwareGatePendingFiles([]);
+      if (pending.length > 0) {
+        handleIncomingFilesRef.current(pending);
+      }
+
       toast({
         title: "저장 완료",
         description: "의뢰 기본 디자인 소프트웨어가 저장되었습니다.",
@@ -1568,23 +1579,40 @@ const NewRequestPageContent = () => {
     });
   };
 
-  const checkDesignSoftwareOnDrop = useCallback(() => {
-    if (user?.role !== "requestor") return;
-    if (!designSoftwareCanEdit) return;
+  handleIncomingFilesRef.current = handleIncomingFiles;
 
-    const current = String(
-      designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
-    ).trim();
-    if (current) return;
-
+  const openDesignSoftwareGateModal = useCallback(() => {
     setDesignSoftwareMode("3Shape");
     setCustomDesignSoftware("");
     setDesignSoftwareModalOpen(true);
-  }, [caseInfosMap, designSoftwareCanEdit, designSoftwareValue, user?.role]);
+  }, []);
+
+  const clearDesignSoftwareGatePending = useCallback(() => {
+    designSoftwareGatePendingRef.current = [];
+    setDesignSoftwareGatePendingFiles([]);
+  }, []);
 
   const handleIncomingDroppedFiles = (selectedFiles: File[]) => {
-    checkDesignSoftwareOnDrop();
-    handleIncomingFiles(selectedFiles);
+    const normalized = dedupeFiles(selectedFiles || []);
+    if (!normalized.length) return;
+
+    if (user?.role === "requestor" && designSoftwareCanEdit) {
+      const current = String(
+        designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
+      ).trim();
+      if (!current) {
+        const nextPending = dedupeFiles([
+          ...designSoftwareGatePendingRef.current,
+          ...normalized,
+        ]);
+        designSoftwareGatePendingRef.current = nextPending;
+        setDesignSoftwareGatePendingFiles(nextPending);
+        openDesignSoftwareGateModal();
+        return;
+      }
+    }
+
+    handleIncomingFiles(normalized);
   };
 
   const readAllEntries = async (reader: {
@@ -1698,7 +1726,7 @@ const NewRequestPageContent = () => {
       className="new-request-page bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
-        {isLabRequestor ? <LabTradingPartnerWindowBanner /> : null}
+        {isLabRequestor ? <LabDashboardTopBanners /> : null}
         <ConfirmDialog
           open={oversizedPendingFiles.length > 0}
           panelClassName="max-w-xl"
@@ -1894,28 +1922,57 @@ const NewRequestPageContent = () => {
         <Dialog
           open={designSoftwareModalOpen}
           onOpenChange={(next) => {
-            // 의뢰자 기본 설정은 저장 전까지 강제 노출한다.
-            if (!designSoftwareCanEdit) {
-              setDesignSoftwareModalOpen(next);
+            const hasPendingAttach = designSoftwareGatePendingFiles.length > 0;
+            const isUnset = !String(
+              designSoftwareValue ||
+                caseInfosMap?.__default__?.designSoftware ||
+                "",
+            ).trim();
+
+            // 미설정인데 첨부 대기 없이 연 경우(뱃지)만 저장 전까지 강제 노출.
+            // 첨부 게이트는 취소로 대기 파일을 버리고 닫을 수 있다.
+            if (isUnset && !hasPendingAttach && designSoftwareCanEdit) {
+              if (next) setDesignSoftwareModalOpen(true);
               return;
             }
-            if (next) setDesignSoftwareModalOpen(true);
+            if (!next) {
+              clearDesignSoftwareGatePending();
+            }
+            setDesignSoftwareModalOpen(next);
           }}
         >
           <DialogContent
             hideClose
             className="new-request-page sm:max-w-md"
             onInteractOutside={(e) => {
-              if (designSoftwareCanEdit) e.preventDefault();
+              const hasPendingAttach = designSoftwareGatePendingFiles.length > 0;
+              const isUnset = !String(
+                designSoftwareValue ||
+                  caseInfosMap?.__default__?.designSoftware ||
+                  "",
+              ).trim();
+              if (isUnset && !hasPendingAttach && designSoftwareCanEdit) {
+                e.preventDefault();
+              }
             }}
             onEscapeKeyDown={(e) => {
-              if (designSoftwareCanEdit) e.preventDefault();
+              const hasPendingAttach = designSoftwareGatePendingFiles.length > 0;
+              const isUnset = !String(
+                designSoftwareValue ||
+                  caseInfosMap?.__default__?.designSoftware ||
+                  "",
+              ).trim();
+              if (isUnset && !hasPendingAttach && designSoftwareCanEdit) {
+                e.preventDefault();
+              }
             }}
           >
             <DialogHeader>
               <DialogTitle>디자인 소프트웨어 설정</DialogTitle>
               <DialogDescription>
-                신규 의뢰 진행 전에 사용 중인 디자인 소프트웨어를 먼저 설정해주세요.
+                {designSoftwareGatePendingFiles.length > 0
+                  ? "파일 첨부 전에 사용 중인 디자인 소프트웨어를 먼저 설정해주세요."
+                  : "신규 의뢰 진행 전에 사용 중인 디자인 소프트웨어를 먼저 설정해주세요."}
               </DialogDescription>
             </DialogHeader>
 
@@ -1959,14 +2016,25 @@ const NewRequestPageContent = () => {
             </div>
 
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDesignSoftwareModalOpen(false)}
-                disabled={designSoftwareSaving}
-              >
-                취소
-              </Button>
+              {!(
+                !String(
+                  designSoftwareValue ||
+                    caseInfosMap?.__default__?.designSoftware ||
+                    "",
+                ).trim() && designSoftwareGatePendingFiles.length === 0
+              ) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    clearDesignSoftwareGatePending();
+                    setDesignSoftwareModalOpen(false);
+                  }}
+                  disabled={designSoftwareSaving}
+                >
+                  취소
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 onClick={() => {
