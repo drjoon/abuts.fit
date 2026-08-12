@@ -43,11 +43,17 @@ async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
 function buildCurrentBalanceSnapshot(balanceSnapshot, requestorKind) {
   const kind = normalizeRequestorKind(requestorKind) || null;
   const isLab = kind === "lab";
+  const freeRequestCredit = Number(balanceSnapshot?.freeRequestCredit || 0);
+  const freeShippingCredit = Number(balanceSnapshot?.freeShippingCredit || 0);
+  const freeCredit = Number(
+    balanceSnapshot?.freeCredit ?? freeRequestCredit + freeShippingCredit,
+  );
   return {
     paidCredit: Number(balanceSnapshot?.paidCredit || 0),
-    freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
-    freeShippingCredit: Number(balanceSnapshot?.freeShippingCredit || 0),
-    // 기공크레딧은 기공소 전용 버킷. 치과 응답에도 숫자는 포함하되 UI는 requestorKind로 숨긴다.
+    freeRequestCredit,
+    freeShippingCredit,
+    freeCredit,
+    // 기공정산크레딧은 기공소 전용 버킷. 치과 응답에도 숫자는 포함하되 UI는 requestorKind로 숨긴다.
     settlementCredit: Number(balanceSnapshot?.settlementCredit || 0),
     balance: Number(balanceSnapshot?.balance || 0),
     requestorKind: kind,

@@ -438,7 +438,7 @@ export const LabSettlementPayoutTab = () => {
 
   return (
     <DashboardShell
-      title="기공크레딧 정산"
+      title="기공정산크레딧 정산"
       subtitle=""
       statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
       stats={
@@ -446,7 +446,7 @@ export const LabSettlementPayoutTab = () => {
           <Card>
             <CardHeader className="p-3 pb-1">
               <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                기공크레딧 잔액
+                기공정산크레딧 잔액
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0">
@@ -547,7 +547,7 @@ export const LabSettlementPayoutTab = () => {
               </DialogTrigger>
               <DialogContent className="max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>기공소 기공크레딧 정산 규칙</DialogTitle>
+                  <DialogTitle>기공소 기공정산크레딧 정산 규칙</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-2 text-sm">
                   <div className="flex items-start gap-3 rounded-lg border p-3">
@@ -558,9 +558,10 @@ export const LabSettlementPayoutTab = () => {
                     <div className="min-w-0">
                       <div className="font-medium">기공의뢰 적립</div>
                       <div className="text-muted-foreground">
-                        치과가 유료크레딧으로 지불한 기공비에서, 등록 치과(기본
+                        치과가 유료/무료크레딧으로 지불한 기공비에서, 등록 치과(기본
                         0%)·미등록 치과(기본 25%)는 플랫폼 수수료를 제외한
-                        금액이 기공크레딧으로 적립됩니다
+                        금액이 기공정산크레딧으로 적립됩니다. 무료 프로모션 비용은
+                        플랫폼이 부담합니다.
                       </div>
                     </div>
                   </div>
@@ -570,10 +571,10 @@ export const LabSettlementPayoutTab = () => {
                     </span>
                     <Building2 className="mt-0.5 h-4 w-4 text-muted-foreground" />
                     <div className="min-w-0">
-                      <div className="font-medium">유료크레딧 · 기공크레딧 분리</div>
+                      <div className="font-medium">유료/무료크레딧 · 기공정산크레딧 분리</div>
                       <div className="text-muted-foreground">
-                        유료크레딧은 기공소가 입금·충전한 잔액(생산의뢰·배송 소비).
-                        기공크레딧은 치과에서 받은 정산 대기액으로 완전 분리 관리
+                        유료·무료크레딧은 기공소가 앱에서 소비하는 잔액(기공의뢰·생산·배송).
+                        기공정산크레딧은 치과에서 받은 정산 대기액으로 완전 분리 관리
                       </div>
                     </div>
                   </div>
@@ -585,7 +586,7 @@ export const LabSettlementPayoutTab = () => {
                     <div className="min-w-0">
                       <div className="font-medium">매월 자동 지급</div>
                       <div className="text-muted-foreground">
-                        기공크레딧 잔액은 사업자에 등록된 입금 계좌로 매월 자동
+                        기공정산크레딧 잔액은 사업자에 등록된 입금 계좌로 매월 자동
                         지급됩니다. 별도 정산 요청은 필요하지 않습니다.
                       </div>
                     </div>

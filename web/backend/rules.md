@@ -239,21 +239,23 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/requests/dashboard.controller.js`
 
 - 역할별 크레딧 버킷 SSOT(강제):
-  - **치과(`practice`)**: 유료 잔액=`유료크레딧`(`paidCredit`/`REQ_PAID_CREDIT`). 기공의뢰 차감도 동일 유료크레딧. 치과 잔액/장부 UI에 `기공크레딧`/`settlementCredit`을 **노출하지 않음**.
-  - **기공소(`lab`)**: `유료크레딧`=입금·충전·앱 내 소비(`paidCredit`). `기공크레딧`=치과로부터 적립된 `LAB_SETTLEMENT_CREDIT`(정산 전용, 의뢰/배송 유료와 분리) → 매월 `SETTLEMENT_PAYOUT`.
-  - 잔액 API/`currentBalanceSnapshot`은 `requestorKind`를 함께 내려 UI가 기공크레딧 행을 lab에만 그린다. lab일 때만 `settlementCredit`을 의미 있게 표시.
+  - **의뢰자 소비 잔액은 2버킷**: `유료크레딧`(`paidCredit`/`REQ_PAID_CREDIT`) + `무료크레딧`(`freeCredit` = `REQ_FREE_REQUEST_CREDIT` + `REQ_FREE_SHIPPING_CREDIT` 합). 사용처 제한 없음(기공의뢰·어벗생산·배송·신속비 모두 가능). 소진 시 **무료 우선 → 유료**. GL 하위계정(FREE_REQUEST/FREE_SHIPPING)은 원장 추적용으로 유지.
+  - **치과(`practice`)**: 유료/무료크레딧으로 기공비·생산·배송을 지불. 잔액/장부 UI에 `기공정산크레딧`/`settlementCredit`을 **노출하지 않음**.
+  - **기공소(`lab`)**: `유료/무료크레딧`=입금·충전·앱 내 소비. `기공정산크레딧`=치과로부터 적립된 `LAB_SETTLEMENT_CREDIT`(정산 전용, 소비 잔액과 분리) → 매월 `SETTLEMENT_PAYOUT`.
+  - 잔액 API/`currentBalanceSnapshot`은 `freeCredit`·`requestorKind`를 함께 내려 UI가 기공정산크레딧 행을 lab에만 그린다.
+  - 소비 라인 `meta.usageKind`: `practice_transfer` | `abutment_production` | `shipping` | `express_surcharge`.
 
-- 기공소 기존 거래처 · 기공크레딧 SSOT:
+- 기공소 기존 거래처 · 기공정산크레딧 SSOT:
   - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 발급된 초대는 검증 완료 시 `status=active`(거래처, 수수료 0%). 30일 경과 후에도 초대 발급은 계속 허용하되(`invitedAfterWindow=true`), 검증 완료 시 `status=referred`(소개)로 승격된다.
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
   - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic/customAbutmentDesign). 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops). `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과).
-  - PracticeTransfer 유료: **전송 생성(`POST /api/practice/transfers`)** 시 치과 **유료크레딧** 잔액을 검사하고, **기공소 의뢰수락(`POST .../mark-accepted`)** 시 청구 총액(기공비+어벗 소매가) 1회 차감 → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 기공소 `LAB_SETTLEMENT_CREDIT`(UI: 기공크레딧). 전송 생성 시점에는 차감하지 않는다.
+  - PracticeTransfer: **전송 생성(`POST /api/practice/transfers`)** 시 치과 **유료+무료크레딧** 잔액을 검사하고, **기공소 의뢰수락(`POST .../mark-accepted`)** 시 청구 총액(기공비+어벗 소매가) 1회 차감(무료 우선) → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 기공소 `LAB_SETTLEMENT_CREDIT`(UI: 기공정산크레딧). 무료로 지불해도 기공소 정산 적립은 유지(프로모션 비용은 플랫폼 부담). 전송 생성 시점에는 차감하지 않는다.
     - `active`/`referred`(등록 치과): 수수료 `BusinessAnchor.payoutRates.partnerFeeRate`(기본 0%).
     - 그 외(미등록): 수수료 `BusinessAnchor.payoutRates.nonPartnerFeeRate`(기본 25%).
     - 걷힌 수수료 금액은 기존 4자 분배율(`manufacturerRate`/`devopsRate`/`salesmanRate`/`adminRate`)로 다시 나뉜다(영업자 추천 유무에 따른 재배분 로직 동일 적용).
-  - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
-  - eventType: `PRACTICE_TRANSFER_SPEND_COMMIT`, `LAB_SETTLEMENT_CHARGE`; accountCode: `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부 항목 라벨: `기공비` / 기공소 버킷 표시: `기공크레딧`.
-  - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공크레딧 → 계좌 이체.
+  - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
+  - eventType: `PRACTICE_TRANSFER_SPEND_COMMIT`, `LAB_SETTLEMENT_CHARGE`; accountCode: `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부 항목 라벨: `기공비` / 기공소 버킷 표시: `기공정산크레딧`.
+  - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공정산크레딧 → 계좌 이체.
   - 어벗의뢰(직접 커스텀 어벗 생산 의뢰, `practicePrepaid=false`)는 위 관계 규칙과 무관하게 기존처럼 의뢰자(치과/기공소)가 설정된 비용을 전액 부담하고 4자 분배율로 나뉜다(`controllers/requests/common.review.helpers.js`).
 
 - 스커리씁 로트 추적(세척.패킹)은 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
@@ -351,7 +353,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`을 사용합니다.
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
   - 의뢰수락 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`(레거시 필드명 유지; API alias `requestorAcceptedAt`/`isAccepted`)
-  - 잔액 검사 SSOT: `POST /api/practice/transfers`에서 `assertPracticeTransferPaidCreditSufficient`
+  - 잔액 검사 SSOT: `POST /api/practice/transfers`에서 `assertPracticeTransferPaidCreditSufficient`(유료+무료 합산, 함수명 하위호환)
   - 과금 SSOT: `POST /api/practice/transfers/:transferId/mark-accepted`에서 `commitPracticeTransferBilling` (파일 다운로드는 상태·과금에 영향 없음)
   - **자동매칭 SSOT** (`matchingMode: "auto"`):
     - 생성 시 `targetLabAnchorId=null`, 공개 풀. 자격: `verified` + `practiceTransferAutoMatchEnabled` + lab+free (`utils/practiceTransferAutoMatch.js`). devops 목록/ON은 `verifiedLabCapableAnchorFilter`(kind=lab 또는 레거시 caps.lab)
@@ -751,7 +753,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 기존 GL 혼합 소비(paid/free) 분해를 최신 무편향 분해 정책(의뢰자 무료우선 소비 + 수익라인 비례배분)으로 정렬하는 보정은 `scripts/db/rebalance-mixed-spend-free-first.js`로 수행합니다.
 
 - 관리자 크레딧 응답 필드 정책:
-  - `adminCredit` 계열 응답에서 무료 크레딧 SSOT 키는 `freeRequestCredit`, `freeShippingCredit`, `freeBalance`입니다.
+  - `adminCredit`/잔액 응답에서 무료 크레딧 SSOT 키는 `freeCredit`(합), 하위호환으로 `freeRequestCredit`/`freeShippingCredit`/`freeBalance`입니다.
   - `bonus*` 계열 alias 응답/분기/정렬은 제거하고 SSOT 키만 사용합니다.
 
 - 보존식(의뢰 단위) SSOT:

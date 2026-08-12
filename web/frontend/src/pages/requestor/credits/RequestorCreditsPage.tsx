@@ -1,6 +1,6 @@
 // change-log:
 // - 2026-08-12: 충전 탭 안내문(기공료 선입금)이 잘리지 않도록 overflow-auto.
-// - 2026-08-12: 치과는 기공크레딧 UI 미노출(유료크레딧으로 기공비 지불). 기공소만 정산 탭.
+// - 2026-08-12: 치과는 기공정산크레딧 UI 미노출(유료크레딧으로 기공비 지불). 기공소만 정산 탭.
 // - 2026-08-11: accessLoading early return 전에 useMemo 호출(Rules of Hooks).
 // - 2026-08-11: access 로딩 시 페이지 스켈레톤.
 // - 2026-08-11: 상단 탭 바를 문의 페이지와 동일 max-w-4xl·상단 고정.
@@ -11,7 +11,7 @@
 // - 2026-08-11: 충전 탭 외곽 카드 제거 + 입금정보/금액 패널 수직 중앙 배치.
 // - 2026-08-11: 내역/충전 탭도 정산과 동일 max-w-6xl. 충전 카드만 max-w-4xl 중앙 유지.
 // - 2026-08-11: 대시보드 헤더 [보유 크레딧]을 사이드바 크레딧 페이지로 이전 (내역/충전 탭).
-// - 2026-08-11: 기공소 기공크레딧 정산 탭 추가.
+// - 2026-08-11: 기공소 기공정산크레딧 정산 탭 추가.
 // - 2026-08-11: 정산 탭을 제조사 정산 UX(일별 집계·입금 내역)로 확장. 넓은 레이아웃 적용.
 // related files:
 // - web/frontend/rules.md
@@ -72,7 +72,7 @@ export default function RequestorCreditsPage() {
     if (isLab) {
       list.push({
         key: "settlement",
-        label: "기공크레딧 정산",
+        label: "기공정산크레딧 정산",
         icon: Landmark,
         content: (
           <div className="h-full min-h-0 overflow-auto">

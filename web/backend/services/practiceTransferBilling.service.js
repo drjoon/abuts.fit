@@ -8,6 +8,7 @@
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
+  allocateSpendFromCreditBuckets,
   computeBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
 import {
@@ -96,11 +97,19 @@ function pushRevenueLines({
   lines,
   owners,
   spendAmount,
+  freeAmount = 0,
+  fromFreeRequest = 0,
+  fromFreeShipping = 0,
   refType,
   refId,
   meta,
 }) {
   if (spendAmount <= 0) return;
+  const freeTotal = Math.max(0, Math.round(Number(freeAmount || 0)));
+  const freeReq = Math.max(0, Math.round(Number(fromFreeRequest || 0)));
+  const freeShip = Math.max(0, Math.round(Number(fromFreeShipping || 0)));
+  const freeSourceTotal = freeReq + freeShip;
+
   const revenueBaseByOwner = resolveRevenueOwnerBaseAllocation({
     spendAmount,
     hasSalesmanReferrer: owners.hasSalesmanReferrer,
@@ -110,25 +119,72 @@ function pushRevenueLines({
   });
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: revenueBaseByOwner,
-    freeAmount: 0,
+    freeAmount: freeTotal,
   });
 
-  const push = (accountCode, ownerRole, ownerId, paidBase) => {
-    const amount = Math.round(Number(paidBase || 0));
-    if (!ownerId || amount <= 0) return;
-    lines.push({
-      accountCode,
-      ownerRole,
-      ownerId,
-      amount,
-      amountExcludingVat: amount,
-      vatAmount: 0,
-      amountIncludingVat: amount,
-      creditKind: "PAID",
-      refType,
-      refId,
-      meta,
-    });
+  const push = (accountCode, ownerRole, ownerId, paidBase, freeBase) => {
+    if (!ownerId) return;
+    const paid = Math.max(0, Math.round(Number(paidBase || 0)));
+    const free = Math.max(0, Math.round(Number(freeBase || 0)));
+    let freeRequestPart = 0;
+    let freeShippingPart = 0;
+    if (free > 0) {
+      if (freeSourceTotal <= 0 || freeReq <= 0) {
+        freeShippingPart = freeShip > 0 ? free : 0;
+        freeRequestPart = freeShip > 0 ? 0 : free;
+      } else if (freeShip <= 0) {
+        freeRequestPart = free;
+      } else {
+        freeRequestPart = Math.round((free * freeReq) / freeSourceTotal);
+        freeShippingPart = Math.max(0, free - freeRequestPart);
+      }
+    }
+
+    if (freeRequestPart > 0) {
+      lines.push({
+        accountCode,
+        ownerRole,
+        ownerId,
+        amount: freeRequestPart,
+        amountExcludingVat: freeRequestPart,
+        vatAmount: 0,
+        amountIncludingVat: freeRequestPart,
+        creditKind: "FREE_REQUEST",
+        refType,
+        refId,
+        meta,
+      });
+    }
+    if (freeShippingPart > 0) {
+      lines.push({
+        accountCode,
+        ownerRole,
+        ownerId,
+        amount: freeShippingPart,
+        amountExcludingVat: freeShippingPart,
+        vatAmount: 0,
+        amountIncludingVat: freeShippingPart,
+        creditKind: "FREE_SHIPPING",
+        refType,
+        refId,
+        meta,
+      });
+    }
+    if (paid > 0) {
+      lines.push({
+        accountCode,
+        ownerRole,
+        ownerId,
+        amount: paid,
+        amountExcludingVat: paid,
+        vatAmount: 0,
+        amountIncludingVat: paid,
+        creditKind: "PAID",
+        refType,
+        refId,
+        meta,
+      });
+    }
   };
 
   push(
@@ -136,24 +192,28 @@ function pushRevenueLines({
     "manufacturer",
     owners.manufacturerAnchorId,
     revenueKindSplit.manufacturer?.paid,
+    revenueKindSplit.manufacturer?.free,
   );
   push(
     "REV_DEVOPS",
     "devops",
     owners.devopsAnchorId,
     revenueKindSplit.devops?.paid,
+    revenueKindSplit.devops?.free,
   );
   push(
     "REV_SALESMAN",
     "salesman",
     owners.salesmanAnchorId,
     revenueKindSplit.salesman?.paid,
+    revenueKindSplit.salesman?.free,
   );
   push(
     "REV_ADMIN",
     "admin",
     owners.adminAnchorId,
     revenueKindSplit.admin?.paid,
+    revenueKindSplit.admin?.free,
   );
 }
 
@@ -190,33 +250,49 @@ export async function assertPracticeTransferPaidCreditSufficient({
   });
 
   if (fees.total <= 0) {
-    return { ok: true, fees, paidCredit: null, required: 0 };
+    return { ok: true, fees, paidCredit: null, freeCredit: null, required: 0 };
   }
 
   const balance = await computeBusinessCreditBalanceFromLedger({
     businessAnchorId: practiceId,
   });
-  const paidCredit = Number(balance?.paidCredit || 0);
-  if (paidCredit < fees.total) {
+  const split = allocateSpendFromCreditBuckets({
+    amount: fees.total,
+    paidCredit: Number(balance?.paidCredit || 0),
+    freeRequestCredit: Number(balance?.freeRequestCredit || 0),
+    freeShippingCredit: Number(balance?.freeShippingCredit || 0),
+    freeOrder: ["freeRequest", "freeShipping"],
+  });
+  if (!split.ok) {
     const err = new Error(
-      `유료크레딧이 부족합니다. (잔액 ${paidCredit.toLocaleString("ko-KR")}원 / 필요 ${fees.total.toLocaleString("ko-KR")}원)`,
+      `크레딧이 부족합니다. (잔액 ${(split.available).toLocaleString("ko-KR")}원 / 필요 ${fees.total.toLocaleString("ko-KR")}원)`,
     );
     err.statusCode = 402;
     err.payload = {
       reason: "insufficient_credit_for_practice_transfer",
-      paidCredit,
+      paidCredit: split.paidCredit,
+      freeCredit: split.freeCredit,
+      freeRequestCredit: split.freeRequestCredit,
+      freeShippingCredit: split.freeShippingCredit,
+      available: split.available,
       required: fees.total,
       fees,
     };
     throw err;
   }
 
-  return { ok: true, fees, paidCredit, required: fees.total };
+  return {
+    ok: true,
+    fees,
+    paidCredit: split.paidCredit,
+    freeCredit: split.freeCredit,
+    required: fees.total,
+  };
 }
 
 /**
- * 기공의뢰: 치과 유료크레딧(REQ_PAID_CREDIT) 1회 차감 + 기공소 기공크레딧(LAB_SETTLEMENT_CREDIT)/REV_* 분배.
- * 치과는 settlement 버킷을 쓰지 않고 유료 잔액으로 기공비를 지불한다.
+ * 기공의뢰: 치과 유료/무료크레딧 1회 차감 + 기공소 기공정산크레딧(LAB_SETTLEMENT_CREDIT)/REV_* 분배.
+ * 무료 프로모션 비용은 플랫폼이 부담하고, 기공소 정산 적립은 청구 총액 기준으로 유지한다.
  * 잔액 검사: 전송 생성(`createPracticeTransfer`). 실제 차감: 기공소 의뢰수락(`mark-accepted`).
  */
 export async function commitPracticeTransferBilling({
@@ -290,13 +366,23 @@ export async function commitPracticeTransferBilling({
       businessAnchorId: practiceAnchorId,
       session,
     });
-    const paidCredit = Number(balance?.paidCredit || 0);
-    if (paidCredit < fees.total) {
-      const err = new Error("치과 유료크레딧이 부족합니다.");
+    const split = allocateSpendFromCreditBuckets({
+      amount: fees.total,
+      paidCredit: Number(balance?.paidCredit || 0),
+      freeRequestCredit: Number(balance?.freeRequestCredit || 0),
+      freeShippingCredit: Number(balance?.freeShippingCredit || 0),
+      freeOrder: ["freeRequest", "freeShipping"],
+    });
+    if (!split.ok) {
+      const err = new Error("치과 크레딧이 부족합니다.");
       err.statusCode = 402;
       err.payload = {
         reason: "insufficient_credit_for_practice_transfer",
-        paidCredit,
+        paidCredit: split.paidCredit,
+        freeCredit: split.freeCredit,
+        freeRequestCredit: split.freeRequestCredit,
+        freeShippingCredit: split.freeShippingCredit,
+        available: split.available,
         required: fees.total,
         fees,
       };
@@ -308,29 +394,64 @@ export async function commitPracticeTransferBilling({
       session,
     });
 
-    const lines = [
-      {
+    const spendMetaBase = {
+      labFee: fees.labFeeTotal,
+      abutmentRetail: fees.abutmentRetailTotal,
+      abutmentQty: fees.abutmentQty,
+      isTradingPartner: isPartner,
+      relationshipKind,
+      feeRateApplied,
+      displayKind: "lab_fee",
+      displayLabel: "기공비",
+      usageKind: "practice_transfer",
+      fromPaid: split.fromPaid,
+      fromFreeRequest: split.fromFreeRequest,
+      fromFreeShipping: split.fromFreeShipping,
+    };
+
+    const lines = [];
+    if (split.fromFreeRequest > 0) {
+      lines.push({
+        accountCode: "REQ_FREE_REQUEST_CREDIT",
+        ownerRole: "requestor",
+        ownerId: String(practiceAnchorId),
+        amount: -split.fromFreeRequest,
+        amountExcludingVat: -split.fromFreeRequest,
+        vatAmount: 0,
+        creditKind: "FREE_REQUEST",
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: spendMetaBase,
+      });
+    }
+    if (split.fromFreeShipping > 0) {
+      lines.push({
+        accountCode: "REQ_FREE_SHIPPING_CREDIT",
+        ownerRole: "requestor",
+        ownerId: String(practiceAnchorId),
+        amount: -split.fromFreeShipping,
+        amountExcludingVat: -split.fromFreeShipping,
+        vatAmount: 0,
+        creditKind: "FREE_SHIPPING",
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: spendMetaBase,
+      });
+    }
+    if (split.fromPaid > 0) {
+      lines.push({
         accountCode: "REQ_PAID_CREDIT",
         ownerRole: "requestor",
         ownerId: String(practiceAnchorId),
-        amount: -fees.total,
-        amountExcludingVat: -fees.total,
+        amount: -split.fromPaid,
+        amountExcludingVat: -split.fromPaid,
         vatAmount: 0,
         creditKind: "PAID",
         refType: "PRACTICE_TRANSFER",
         refId: transferId,
-        meta: {
-          labFee: fees.labFeeTotal,
-          abutmentRetail: fees.abutmentRetailTotal,
-          abutmentQty: fees.abutmentQty,
-          isTradingPartner: isPartner,
-          relationshipKind,
-          feeRateApplied,
-          displayKind: "lab_fee",
-          displayLabel: "기공비",
-        },
-      },
-    ];
+        meta: spendMetaBase,
+      });
+    }
 
     if (labSettlementAmount > 0) {
       lines.push({
@@ -351,17 +472,35 @@ export async function commitPracticeTransferBilling({
           labFee: fees.labFeeTotal,
           abutmentRetailIncluded: isPartner ? fees.abutmentRetailTotal : 0,
           displayKind: "lab_credit",
-          displayLabel: "기공크레딧",
+          displayLabel: "기공정산크레딧",
           itemLabel: "기공비",
         },
       });
     }
 
     if (abutsRevenueAmount > 0) {
+      // 플랫폼 수수료분도 치과 유료/무료 소진 비중에 맞춰 creditKind를 분해(무료는 지급 제외).
+      const freeShareOfPlatformFee =
+        fees.total > 0
+          ? Math.round((abutsRevenueAmount * split.fromFree) / fees.total)
+          : 0;
+      const freeReqShareOfPlatformFee =
+        split.fromFree > 0
+          ? Math.round(
+              (freeShareOfPlatformFee * split.fromFreeRequest) / split.fromFree,
+            )
+          : 0;
+      const freeShipShareOfPlatformFee = Math.max(
+        0,
+        freeShareOfPlatformFee - freeReqShareOfPlatformFee,
+      );
       pushRevenueLines({
         lines,
         owners,
         spendAmount: abutsRevenueAmount,
+        freeAmount: freeShareOfPlatformFee,
+        fromFreeRequest: freeReqShareOfPlatformFee,
+        fromFreeShipping: freeShipShareOfPlatformFee,
         refType: "PRACTICE_TRANSFER",
         refId: transferId,
         meta: {

@@ -139,18 +139,34 @@ async function postSpendCommitGeneralLedger({
   amount,
   fromPaid,
   fromFree,
+  fromFreeRequest,
+  fromFreeShipping,
   freeAccountCode,
   refType,
   refId,
   stageFrom,
   stageTo,
   session,
+  usageKind = null,
 }) {
   const spendAmount = Math.max(0, Math.round(Number(amount || 0)));
   if (spendAmount <= 0) return { posted: false, reason: "zero_amount" };
 
   const paidAmount = Math.max(0, Math.round(Number(fromPaid || 0)));
-  const freeAmount = Math.max(0, Math.round(Number(fromFree || 0)));
+  // 통합 무료: 두 GL 하위계정에서 각각 소진 가능. 하위호환으로 fromFree+freeAccountCode 유지.
+  let freeRequestAmount = Math.max(0, Math.round(Number(fromFreeRequest || 0)));
+  let freeShippingAmount = Math.max(0, Math.round(Number(fromFreeShipping || 0)));
+  if (freeRequestAmount <= 0 && freeShippingAmount <= 0) {
+    const legacyFree = Math.max(0, Math.round(Number(fromFree || 0)));
+    if (legacyFree > 0) {
+      if (freeAccountCode === "REQ_FREE_SHIPPING_CREDIT") {
+        freeShippingAmount = legacyFree;
+      } else {
+        freeRequestAmount = legacyFree;
+      }
+    }
+  }
+  const freeAmount = freeRequestAmount + freeShippingAmount;
   if (paidAmount <= 0 && freeAmount <= 0) {
     return { posted: false, reason: "zero_split" };
   }
@@ -161,20 +177,34 @@ async function postSpendCommitGeneralLedger({
   }
 
   const lines = [];
+  const spendMeta = {
+    spendUniqueKey,
+    ...(usageKind ? { usageKind: String(usageKind) } : {}),
+  };
 
-  if (freeAmount > 0) {
+  if (freeRequestAmount > 0) {
     lines.push({
-      accountCode: freeAccountCode,
+      accountCode: "REQ_FREE_REQUEST_CREDIT",
       ownerRole: "requestor",
       ownerId: owners.requestorAnchorId,
-      amount: -freeAmount,
-      creditKind:
-        freeAccountCode === "REQ_FREE_SHIPPING_CREDIT"
-          ? "FREE_SHIPPING"
-          : "FREE_REQUEST",
+      amount: -freeRequestAmount,
+      creditKind: "FREE_REQUEST",
       refType,
       refId,
-      meta: { spendUniqueKey },
+      meta: spendMeta,
+    });
+  }
+
+  if (freeShippingAmount > 0) {
+    lines.push({
+      accountCode: "REQ_FREE_SHIPPING_CREDIT",
+      ownerRole: "requestor",
+      ownerId: owners.requestorAnchorId,
+      amount: -freeShippingAmount,
+      creditKind: "FREE_SHIPPING",
+      refType,
+      refId,
+      meta: spendMeta,
     });
   }
 
@@ -187,18 +217,27 @@ async function postSpendCommitGeneralLedger({
       creditKind: "PAID",
       refType,
       refId,
-      meta: { spendUniqueKey },
+      meta: spendMeta,
     });
   }
 
-  const freeCreditKind =
-    freeAccountCode === "REQ_FREE_SHIPPING_CREDIT" ? "FREE_SHIPPING" : "FREE_REQUEST";
+  // 수익 라인 creditKind: 무료 소진 비중에 비례해 FREE_REQUEST/FREE_SHIPPING으로 분해.
+  // shipping 수익 배분 컨텍스트는 배송 소비(refType) 또는 배송무료 소진이 있을 때 적용.
+  const primaryFreeAccountCode =
+    freeShippingAmount > freeRequestAmount
+      ? "REQ_FREE_SHIPPING_CREDIT"
+      : freeRequestAmount > 0
+        ? "REQ_FREE_REQUEST_CREDIT"
+        : freeAccountCode;
   const revenueBaseByOwner = resolveRevenueOwnerBaseAllocation({
     spendAmount,
     hasSalesmanReferrer: owners.hasSalesmanReferrer,
     configuredRates: owners.configuredRates,
     owners,
-    isShippingSpend: isShippingSpendRevenueContext({ refType, freeAccountCode }),
+    isShippingSpend: isShippingSpendRevenueContext({
+      refType,
+      freeAccountCode: primaryFreeAccountCode,
+    }),
   });
 
   const assignManufacturer = revenueBaseByOwner.manufacturer;
@@ -216,26 +255,56 @@ async function postSpendCommitGeneralLedger({
     freeAmount,
   });
 
+  const splitFreeBasesBySource = (freeBase) => {
+    const free = Math.max(0, Math.round(Number(freeBase || 0)));
+    if (free <= 0 || freeAmount <= 0) {
+      return { freeRequest: 0, freeShipping: 0 };
+    }
+    if (freeRequestAmount <= 0) return { freeRequest: 0, freeShipping: free };
+    if (freeShippingAmount <= 0) return { freeRequest: free, freeShipping: 0 };
+    const freeRequestShare = Math.round((free * freeRequestAmount) / freeAmount);
+    return {
+      freeRequest: freeRequestShare,
+      freeShipping: Math.max(0, free - freeRequestShare),
+    };
+  };
+
   const pushRevenueLinesBySplit = ({ accountCode, ownerRole, ownerId, paidBase, freeBase }) => {
     if (!ownerId) return;
 
     const paid = Math.max(0, Math.round(Number(paidBase || 0)));
-    const free = Math.max(0, Math.round(Number(freeBase || 0)));
+    const freeParts = splitFreeBasesBySource(freeBase);
 
     // 면세: 수익 라인은 공급가 그대로 기록 (VAT 가산 없음)
-    if (free > 0) {
+    if (freeParts.freeRequest > 0) {
       lines.push({
         accountCode,
         ownerRole,
         ownerId,
-        amount: free,
-        amountExcludingVat: free,
+        amount: freeParts.freeRequest,
+        amountExcludingVat: freeParts.freeRequest,
         vatAmount: 0,
-        amountIncludingVat: free,
-        creditKind: freeCreditKind,
+        amountIncludingVat: freeParts.freeRequest,
+        creditKind: "FREE_REQUEST",
         refType,
         refId,
-        meta: { spendUniqueKey },
+        meta: spendMeta,
+      });
+    }
+
+    if (freeParts.freeShipping > 0) {
+      lines.push({
+        accountCode,
+        ownerRole,
+        ownerId,
+        amount: freeParts.freeShipping,
+        amountExcludingVat: freeParts.freeShipping,
+        vatAmount: 0,
+        amountIncludingVat: freeParts.freeShipping,
+        creditKind: "FREE_SHIPPING",
+        refType,
+        refId,
+        meta: spendMeta,
       });
     }
 
@@ -251,7 +320,7 @@ async function postSpendCommitGeneralLedger({
         creditKind: "PAID",
         refType,
         refId,
-        meta: { spendUniqueKey },
+        meta: spendMeta,
       });
     }
   };
@@ -605,13 +674,19 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       actorUserId,
       amount: Number(spendResult.resolvedAmount || 0),
       fromPaid: Number(spendResult.fromPaid || 0),
-      fromFree: Number(spendResult.fromBonusRequest || 0),
+      fromFreeRequest: Number(
+        spendResult.fromFreeRequest ?? spendResult.fromBonusRequest ?? 0,
+      ),
+      fromFreeShipping: Number(
+        spendResult.fromFreeShipping ?? spendResult.fromBonusShipping ?? 0,
+      ),
       freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
       refType: "REQUEST",
       refId: request._id,
       stageFrom: "CAM",
       stageTo: "가공",
       session,
+      usageKind: "abutment_production",
     });
 
     if (!glPostResult?.posted) {
@@ -769,13 +844,23 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     actorUserId,
     amount: Number(expressSpendResult.resolvedAmount || 0),
     fromPaid: Number(expressSpendResult.fromPaid || 0),
-    fromFree: Number(expressSpendResult.fromBonusRequest || 0),
+    fromFreeRequest: Number(
+      expressSpendResult.fromFreeRequest ??
+        expressSpendResult.fromBonusRequest ??
+        0,
+    ),
+    fromFreeShipping: Number(
+      expressSpendResult.fromFreeShipping ??
+        expressSpendResult.fromBonusShipping ??
+        0,
+    ),
     freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
     refType: "REQUEST",
     refId: request._id,
     stageFrom: "CAM",
     stageTo: "가공",
     session,
+    usageKind: "express_surcharge",
   });
 
   if (!expressGl?.posted) {
@@ -1342,13 +1427,19 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     actorUserId,
     amount: Number(spendResult.amount || 0),
     fromPaid: Number(spendResult.fromPaid || 0),
-    fromFree: Number(spendResult.fromBonusShipping || 0),
+    fromFreeRequest: Number(
+      spendResult.fromFreeRequest ?? spendResult.fromBonusRequest ?? 0,
+    ),
+    fromFreeShipping: Number(
+      spendResult.fromFreeShipping ?? spendResult.fromBonusShipping ?? 0,
+    ),
     freeAccountCode: "REQ_FREE_SHIPPING_CREDIT",
     refType: "SHIPPING_PACKAGE",
     refId: pkg._id,
     stageFrom: "세척.패킹",
     stageTo: "포장.발송",
     session,
+    usageKind: "shipping",
   });
 
   if (!glPostResult?.posted) {

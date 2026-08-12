@@ -602,12 +602,13 @@ export const RequestorDashboardPage = () => {
 
   // 의뢰비 충전 경고
   // 준비, 가공 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
-  // 의뢰비 결제: 유료 크레딧 + 무료 의뢰비 크레딧 사용 가능 (무료 배송비 크레딧은 사용 불가)
+  // 의뢰비/배송비: 유료크레딧 + 무료크레딧(의뢰·배송 계정 합) 사용 가능
   useEffect(() => {
     if (
       dashboardStatsSource?.success &&
       paidCredit !== null &&
       freeRequestCredit !== null &&
+      freeShippingCredit !== null &&
       systemSettings?.creditSettings
     ) {
       const stats = dashboardStatsSource.data.stats ?? {};
@@ -619,8 +620,8 @@ export const RequestorDashboardPage = () => {
       const inMachining = (stats.inCam || 0) + (stats.inProduction || 0);
       const totalPendingRequests = inRequest + inMachining;
 
-      // 의뢰비는 유료 크레딧 + 무료 의뢰비 크레딧 사용 가능
-      const availableForRequest = paidCredit + freeRequestCredit;
+      const availableForRequest =
+        paidCredit + freeRequestCredit + freeShippingCredit;
       const requiredCredit = totalPendingRequests * pricePerRequest;
 
       if (totalPendingRequests > 0 && availableForRequest < requiredCredit) {
@@ -633,16 +634,17 @@ export const RequestorDashboardPage = () => {
     dashboardStatsSource,
     paidCredit,
     freeRequestCredit,
+    freeShippingCredit,
     systemSettings,
   ]);
 
   // 배송비 충전 경고
   // 묶음 배송 건수를 기준으로 필요한 배송비 계산
-  // 배송비 결제: 유료 크레딧 + 무료 배송비 크레딧 사용 가능
   useEffect(() => {
     if (
       bulkResponse?.success &&
       paidCredit !== null &&
+      freeRequestCredit !== null &&
       freeShippingCredit !== null &&
       systemSettings?.creditSettings
     ) {
@@ -653,8 +655,8 @@ export const RequestorDashboardPage = () => {
       const bulkShippingCandidates = bulkResponse.data?.candidates || [];
       const totalShippingBoxes = bulkShippingCandidates.length;
 
-      // 배송비는 유료 크레딧 + 무료 배송비 크레딧으로 결제
-      const availableForShipping = paidCredit + freeShippingCredit;
+      const availableForShipping =
+        paidCredit + freeRequestCredit + freeShippingCredit;
       const requiredShippingFee = totalShippingBoxes * shippingFeePerBox;
 
       if (
@@ -666,7 +668,13 @@ export const RequestorDashboardPage = () => {
         setInsufficientShippingCredit(false);
       }
     }
-  }, [bulkResponse, freeShippingCredit, paidCredit, systemSettings]);
+  }, [
+    bulkResponse,
+    freeRequestCredit,
+    freeShippingCredit,
+    paidCredit,
+    systemSettings,
+  ]);
 
   type DashboardRefreshPlan = {
     cardsSummary?: boolean;

@@ -295,7 +295,7 @@ export const AdminCreditSettingsTab = () => {
             <div className="grid gap-4 sm:grid-cols-2">
               <AmountField
                 id="defaultRequestFreeCredit"
-                label="의뢰비 무료 크레딧 (원)"
+                label="환영 무료크레딧 A (원)"
                 value={settings.defaultRequestFreeCredit}
                 onChange={(next) =>
                   setSettings({ ...settings, defaultRequestFreeCredit: next })
@@ -304,7 +304,7 @@ export const AdminCreditSettingsTab = () => {
               />
               <AmountField
                 id="defaultShippingFreeCredit"
-                label="배송비 무료 크레딧 (원)"
+                label="환영 무료크레딧 B (원)"
                 value={settings.defaultShippingFreeCredit}
                 onChange={(next) =>
                   setSettings({ ...settings, defaultShippingFreeCredit: next })

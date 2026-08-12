@@ -751,11 +751,11 @@ export default function AdminBusinessPage() {
                           <div className="mt-1 space-y-0.5 text-[10px] text-slate-400">
                             <div>유료 {formatMoney(credit.paidCredit)}</div>
                             <div>
-                              무료(의뢰) {formatMoney(credit.freeRequestCredit)}
-                            </div>
-                            <div>
-                              무료(배송){" "}
-                              {formatMoney(credit.freeShippingCredit)}
+                              무료{" "}
+                              {formatMoney(
+                                Number(credit.freeRequestCredit || 0) +
+                                  Number(credit.freeShippingCredit || 0),
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1039,23 +1039,21 @@ export default function AdminBusinessPage() {
                 <div className="mt-1 text-lg font-semibold">
                   {formatMoney(detailCredit.totalBalance)}원
                 </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <div className="rounded border bg-muted/30 p-2">
-                    <div className="text-[11px] text-muted-foreground">유료 잔액</div>
+                    <div className="text-[11px] text-muted-foreground">유료크레딧</div>
                     <div className="mt-0.5 font-semibold">
                       {formatMoney(detailCredit.paidCredit)}원
                     </div>
                   </div>
                   <div className="rounded border bg-muted/30 p-2">
-                    <div className="text-[11px] text-muted-foreground">무료 잔액 (의뢰)</div>
+                    <div className="text-[11px] text-muted-foreground">무료크레딧</div>
                     <div className="mt-0.5 font-semibold">
-                      {formatMoney(detailCredit.freeRequestCredit)}원
-                    </div>
-                  </div>
-                  <div className="rounded border bg-muted/30 p-2">
-                    <div className="text-[11px] text-muted-foreground">무료 잔액 (배송)</div>
-                    <div className="mt-0.5 font-semibold">
-                      {formatMoney(detailCredit.freeShippingCredit)}원
+                      {formatMoney(
+                        Number(detailCredit.freeRequestCredit || 0) +
+                          Number(detailCredit.freeShippingCredit || 0),
+                      )}
+                      원
                     </div>
                   </div>
                 </div>

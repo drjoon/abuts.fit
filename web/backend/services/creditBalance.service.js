@@ -22,6 +22,64 @@ function normalizeAnchorObjectId(businessAnchorId) {
   return new Types.ObjectId(raw);
 }
 
+/**
+ * 의뢰자 소비 배분 SSOT:
+ * - 잔액 버킷은 유료(paid) + 무료(freeRequest+freeShipping 통합) 2종.
+ * - GL 계정은 하위호환으로 FREE_REQUEST / FREE_SHIPPING을 유지하되, 사용처 제한 없이 소진한다.
+ * - freeOrder: 무료 소진 우선순위(기본 의뢰무료→배송무료).
+ */
+export function allocateSpendFromCreditBuckets({
+  amount,
+  paidCredit = 0,
+  freeRequestCredit = 0,
+  freeShippingCredit = 0,
+  freeOrder = ["freeRequest", "freeShipping"],
+} = {}) {
+  const required = Math.max(0, Math.round(Number(amount || 0)));
+  const paid = Math.max(0, Math.round(Number(paidCredit || 0)));
+  const freeRequest = Math.max(0, Math.round(Number(freeRequestCredit || 0)));
+  const freeShipping = Math.max(0, Math.round(Number(freeShippingCredit || 0)));
+  const freeCredit = freeRequest + freeShipping;
+  const available = paid + freeCredit;
+
+  let remaining = required;
+  let fromFreeRequest = 0;
+  let fromFreeShipping = 0;
+
+  const order = Array.isArray(freeOrder) && freeOrder.length
+    ? freeOrder
+    : ["freeRequest", "freeShipping"];
+
+  for (const key of order) {
+    if (remaining <= 0) break;
+    if (key === "freeRequest") {
+      fromFreeRequest = Math.min(freeRequest, remaining);
+      remaining -= fromFreeRequest;
+    } else if (key === "freeShipping") {
+      fromFreeShipping = Math.min(freeShipping, remaining);
+      remaining -= fromFreeShipping;
+    }
+  }
+
+  const fromPaid = Math.min(paid, remaining);
+  remaining -= fromPaid;
+
+  return {
+    required,
+    paidCredit: paid,
+    freeRequestCredit: freeRequest,
+    freeShippingCredit: freeShipping,
+    freeCredit,
+    available,
+    fromFreeRequest,
+    fromFreeShipping,
+    fromPaid,
+    fromFree: fromFreeRequest + fromFreeShipping,
+    shortfall: Math.max(0, remaining),
+    ok: remaining <= 0,
+  };
+}
+
 async function lockCreditBalanceGuardByAnchor({ businessAnchorId, session }) {
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
   if (!anchorObjectId) return { locked: false, reason: "invalid_anchor" };
@@ -43,8 +101,9 @@ export async function computeBusinessCreditBalanceFromLedger({
   session,
 }) {
   // 잔액 버킷:
-  // - paidCredit / free*: 의뢰자(치과·기공소) 공용 소비 잔액. 치과 기공비도 paidCredit에서 차감.
-  // - settlementCredit: 기공소 전용 기공크레딧(LAB_SETTLEMENT_CREDIT). 치과 UI에는 노출하지 않음.
+  // - paidCredit: 유료크레딧. freeCredit: 무료크레딧(REQ_FREE_REQUEST + REQ_FREE_SHIPPING 합).
+  // - freeRequestCredit/freeShippingCredit: GL 하위계정 잔액(하위호환·원장 추적).
+  // - settlementCredit: 기공소 전용 기공정산크레딧(LAB_SETTLEMENT_CREDIT). 치과 UI 미노출.
   // - balance: paid+free만 합산(settlement 제외).
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
   if (!anchorObjectId) {
@@ -52,6 +111,7 @@ export async function computeBusinessCreditBalanceFromLedger({
       paidCredit: 0,
       freeRequestCredit: 0,
       freeShippingCredit: 0,
+      freeCredit: 0,
       settlementCredit: 0,
       balance: 0,
     };
@@ -99,14 +159,16 @@ export async function computeBusinessCreditBalanceFromLedger({
   const paidCredit = Math.max(0, Math.round(paid));
   const freeRequestCredit = Math.max(0, Math.round(freeRequest));
   const freeShippingCredit = Math.max(0, Math.round(freeShipping));
+  const freeCredit = freeRequestCredit + freeShippingCredit;
   const settlementCredit = Math.max(0, Math.round(settlement));
 
   return {
     paidCredit,
     freeRequestCredit,
     freeShippingCredit,
+    freeCredit,
     settlementCredit,
-    balance: paidCredit + freeRequestCredit + freeShippingCredit,
+    balance: paidCredit + freeCredit,
   };
 }
 
@@ -128,6 +190,7 @@ export async function getBusinessCreditBalanceSnapshot({
       paidCredit: 0,
       freeRequestCredit: 0,
       freeShippingCredit: 0,
+      freeCredit: 0,
       settlementCredit: 0,
       balance: 0,
       source: "invalid",
@@ -144,6 +207,7 @@ export async function getBusinessCreditBalanceSnapshot({
     paidCredit: Number(glBalance?.paidCredit || 0),
     freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
     freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
+    freeCredit: Number(glBalance?.freeCredit || 0),
     settlementCredit: Number(glBalance?.settlementCredit || 0),
     balance: Number(glBalance?.balance || 0),
     source: "gl",
@@ -281,32 +345,38 @@ export async function spendRequestCreditAtomic({
     session,
   });
 
-  const paidCredit = Number(glBalance?.paidCredit || 0);
-  const freeRequestCredit = Number(glBalance?.freeRequestCredit || 0);
-  const availableForMachining = paidCredit + freeRequestCredit;
+  const split = allocateSpendFromCreditBuckets({
+    amount: resolvedAmount,
+    paidCredit: Number(glBalance?.paidCredit || 0),
+    freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
+    freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
+    freeOrder: ["freeRequest", "freeShipping"],
+  });
 
-  if (availableForMachining < resolvedAmount) {
+  if (!split.ok) {
     const err = new Error("의뢰자 잔액 부족으로 가공 진입 불가");
     err.statusCode = 402;
     err.payload = {
       reason: "insufficient_credit_for_machining",
-      paidCredit,
-      freeRequestCredit,
-      availableForMachining,
+      paidCredit: split.paidCredit,
+      freeRequestCredit: split.freeRequestCredit,
+      freeShippingCredit: split.freeShippingCredit,
+      freeCredit: split.freeCredit,
+      availableForMachining: split.available,
       required: resolvedAmount,
       requestId: request?._id ? String(request._id) : null,
     };
     throw err;
   }
 
-  const fromBonusRequest = Math.min(freeRequestCredit, resolvedAmount);
-  const fromPaid = resolvedAmount - fromBonusRequest;
-
   return {
     didSpend: true,
     resolvedAmount,
-    fromPaid,
-    fromBonusRequest,
+    fromPaid: split.fromPaid,
+    fromBonusRequest: split.fromFreeRequest,
+    fromBonusShipping: split.fromFreeShipping,
+    fromFreeRequest: split.fromFreeRequest,
+    fromFreeShipping: split.fromFreeShipping,
     uniqueKey,
   };
 }
@@ -363,31 +433,38 @@ export async function spendShippingCreditAtomic({
     session,
   });
 
-  const paidCredit = Number(glBalance?.paidCredit || 0);
-  const freeShippingCredit = Number(glBalance?.freeShippingCredit || 0);
-  const availableForShipping = paidCredit + freeShippingCredit;
+  const split = allocateSpendFromCreditBuckets({
+    amount,
+    paidCredit: Number(glBalance?.paidCredit || 0),
+    freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
+    freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
+    freeOrder: ["freeShipping", "freeRequest"],
+  });
 
-  if (availableForShipping < amount) {
+  if (!split.ok) {
     const err = new Error("의뢰자 잔액 부족으로 포장.발송 진입 불가");
     err.statusCode = 402;
     err.payload = {
       reason: "insufficient_credit_for_shipping",
-      paidCredit,
-      freeShippingCredit,
+      paidCredit: split.paidCredit,
+      freeRequestCredit: split.freeRequestCredit,
+      freeShippingCredit: split.freeShippingCredit,
+      freeCredit: split.freeCredit,
+      availableForShipping: split.available,
       required: amount,
       shippingPackageId: String(packageObjectId),
     };
     throw err;
   }
 
-  const fromBonusShipping = Math.min(freeShippingCredit, amount);
-  const fromPaid = amount - fromBonusShipping;
-
   return {
     didSpend: true,
     amount,
-    fromPaid,
-    fromBonusShipping,
+    fromPaid: split.fromPaid,
+    fromBonusShipping: split.fromFreeShipping,
+    fromBonusRequest: split.fromFreeRequest,
+    fromFreeRequest: split.fromFreeRequest,
+    fromFreeShipping: split.fromFreeShipping,
     uniqueKey,
     shippingPackageId: String(packageObjectId),
   };
@@ -859,6 +936,7 @@ export async function upsertBusinessCreditBalanceFromLedger({
       paidCredit: 0,
       freeRequestCredit: 0,
       freeShippingCredit: 0,
+      freeCredit: 0,
       balance: 0,
       upserted: false,
     };

@@ -1237,17 +1237,26 @@ export async function createRequestsFromDraft(req, res) {
             totalShippingFee,
           });
 
-          // 의뢰비(+신속 추가)는 의뢰 크레딧, 배송비는 배송 크레딧 기준으로 체크
-          const availableForMachining = paidCredit + freeRequestCredit;
-          const availableForShipping = paidCredit + freeShippingCredit;
+          // 유료+무료 통합 풀에서 의뢰비(+신속)→배송비 순으로 배정해 이중계산을 방지
+          const freeCredit = freeRequestCredit + freeShippingCredit;
+          const totalAvailable = paidCredit + freeCredit;
+          let remaining = totalAvailable;
+          const allocatedMachining = Math.min(remaining, requiredMachiningFee);
+          remaining -= allocatedMachining;
+          const allocatedShipping = Math.min(remaining, totalShippingFee);
+          const availableForMachining = totalAvailable;
+          const availableForShipping = Math.max(
+            0,
+            totalAvailable - allocatedMachining,
+          );
 
           const machiningShortfall =
-            requiredMachiningFee > availableForMachining
-              ? requiredMachiningFee - availableForMachining
+            requiredMachiningFee > allocatedMachining
+              ? requiredMachiningFee - allocatedMachining
               : 0;
           const shippingShortfall =
-            totalShippingFee > availableForShipping
-              ? totalShippingFee - availableForShipping
+            totalShippingFee > allocatedShipping
+              ? totalShippingFee - allocatedShipping
               : 0;
 
           // related files:

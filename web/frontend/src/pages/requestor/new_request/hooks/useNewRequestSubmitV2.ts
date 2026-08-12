@@ -427,6 +427,10 @@ export const useNewRequestSubmitV2 = ({
                   const freeShippingCredit = Number(
                     creditData?.freeShippingCredit ?? 0,
                   );
+                  const freeCredit = Number(
+                    creditData?.freeCredit ??
+                      freeRequestCredit + freeShippingCredit,
+                  );
 
                   const estimatedCaseCount = Math.max(
                     1,
@@ -439,16 +443,31 @@ export const useNewRequestSubmitV2 = ({
                   const estimatedMachiningFee = estimatedCaseCount * 10000;
                   const estimatedShippingFee = boxCount * 3500;
 
-                  const availableForMachining = paidCredit + freeRequestCredit;
-                  const availableForShipping = paidCredit + freeShippingCredit;
+                  // 유료+무료 통합 풀, 의뢰비→배송비 순 배정(이중계산 방지)
+                  const totalAvailable = paidCredit + freeCredit;
+                  let remainingCredit = totalAvailable;
+                  const allocatedMachining = Math.min(
+                    remainingCredit,
+                    estimatedMachiningFee,
+                  );
+                  remainingCredit -= allocatedMachining;
+                  const allocatedShipping = Math.min(
+                    remainingCredit,
+                    estimatedShippingFee,
+                  );
+                  const availableForMachining = totalAvailable;
+                  const availableForShipping = Math.max(
+                    0,
+                    totalAvailable - allocatedMachining,
+                  );
 
                   const machiningShortfall = Math.max(
                     0,
-                    estimatedMachiningFee - availableForMachining,
+                    estimatedMachiningFee - allocatedMachining,
                   );
                   const shippingShortfall = Math.max(
                     0,
-                    estimatedShippingFee - availableForShipping,
+                    estimatedShippingFee - allocatedShipping,
                   );
 
                   if (machiningShortfall > 0 || shippingShortfall > 0) {

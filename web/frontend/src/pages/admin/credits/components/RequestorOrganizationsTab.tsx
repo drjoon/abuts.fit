@@ -143,22 +143,17 @@ export function RequestorOrganizationsTab({
                               <div className="text-xs font-semibold text-muted-foreground">
                                 잔여
                               </div>
-                              <div className="grid grid-cols-3 grid-rows-2 gap-x-2 gap-y-0.5">
+                              <div className="grid grid-cols-2 grid-rows-2 gap-x-2 gap-y-0.5">
                                 <div className="text-[10px] text-muted-foreground">유료</div>
-                                <div className="text-[10px] text-muted-foreground">
-                                  무료·의뢰
-                                </div>
-                                <div className="text-[10px] text-muted-foreground">
-                                  무료·배송
-                                </div>
+                                <div className="text-[10px] text-muted-foreground">무료</div>
                                 <div className="text-xs font-semibold">
                                   {paidCredit.toLocaleString()}원
                                 </div>
                                 <div className="text-xs font-semibold">
-                                  {freeRequestCredit.toLocaleString()}원
-                                </div>
-                                <div className="text-xs font-semibold">
-                                  {freeShippingCredit.toLocaleString()}원
+                                  {(
+                                    freeRequestCredit + freeShippingCredit
+                                  ).toLocaleString()}
+                                  원
                                 </div>
                               </div>
                             </div>
@@ -166,22 +161,17 @@ export function RequestorOrganizationsTab({
                               <div className="text-xs font-semibold text-muted-foreground">
                                 충전
                               </div>
-                              <div className="grid grid-cols-3 grid-rows-2 gap-x-2 gap-y-0.5">
+                              <div className="grid grid-cols-2 grid-rows-2 gap-x-2 gap-y-0.5">
                                 <div className="text-[10px] text-muted-foreground">유료</div>
-                                <div className="text-[10px] text-muted-foreground">
-                                  무료·의뢰
-                                </div>
-                                <div className="text-[10px] text-muted-foreground">
-                                  무료·배송
-                                </div>
+                                <div className="text-[10px] text-muted-foreground">무료</div>
                                 <div className="text-xs font-medium">
                                   {chargedPaid.toLocaleString()}원
                                 </div>
                                 <div className="text-xs font-medium">
-                                  {chargedFreeRequest.toLocaleString()}원
-                                </div>
-                                <div className="text-xs font-medium">
-                                  {chargedFreeShipping.toLocaleString()}원
+                                  {(
+                                    chargedFreeRequest + chargedFreeShipping
+                                  ).toLocaleString()}
+                                  원
                                 </div>
                               </div>
                             </div>
@@ -189,22 +179,17 @@ export function RequestorOrganizationsTab({
                               <div className="text-xs font-semibold text-muted-foreground">
                                 사용
                               </div>
-                              <div className="grid grid-cols-3 grid-rows-2 gap-x-2 gap-y-0.5">
+                              <div className="grid grid-cols-2 grid-rows-2 gap-x-2 gap-y-0.5">
                                 <div className="text-[10px] text-muted-foreground">유료</div>
-                                <div className="text-[10px] text-muted-foreground">
-                                  무료·의뢰
-                                </div>
-                                <div className="text-[10px] text-muted-foreground">
-                                  무료·배송
-                                </div>
+                                <div className="text-[10px] text-muted-foreground">무료</div>
                                 <div className="text-xs font-medium">
                                   {spentPaid.toLocaleString()}원
                                 </div>
                                 <div className="text-xs font-medium">
-                                  {spentFreeRequest.toLocaleString()}원
-                                </div>
-                                <div className="text-xs font-medium">
-                                  {spentFreeShipping.toLocaleString()}원
+                                  {(
+                                    spentFreeRequest + spentFreeShipping
+                                  ).toLocaleString()}
+                                  원
                                 </div>
                               </div>
                             </div>

@@ -133,6 +133,7 @@ type CreditBalanceSnapshot = {
   paidCredit: number;
   freeRequestCredit?: number;
   freeShippingCredit?: number;
+  freeCredit?: number;
   settlementCredit?: number;
   requestorKind?: "practice" | "lab" | null;
   showSettlementCredit?: boolean;
@@ -164,10 +165,10 @@ const typeLabel = (t: CreditLedgerType) => {
   if (t === "CHARGE_FREE_REQUEST") return "무료충전(의뢰)";
   if (t === "CHARGE_FREE_SHIPPING") return "무료충전(배송)";
   if (t === "SPEND_PAID") return "사용(유료)";
-  if (t === "SPEND_FREE_REQUEST") return "사용(무료·의뢰)";
-  if (t === "SPEND_FREE_SHIPPING") return "사용(무료·배송)";
-  if (t === "LAB_SETTLEMENT_CHARGE") return "기공크레딧 충전";
-  if (t === "LAB_SETTLEMENT_PAYOUT") return "기공크레딧 정산";
+  if (t === "SPEND_FREE_REQUEST") return "사용(무료)";
+  if (t === "SPEND_FREE_SHIPPING") return "사용(무료)";
+  if (t === "LAB_SETTLEMENT_CHARGE") return "기공정산크레딧 충전";
+  if (t === "LAB_SETTLEMENT_PAYOUT") return "기공정산크레딧 정산";
   return "조정";
 };
 
@@ -195,12 +196,12 @@ const REF_TYPE_LABELS: Record<string, string> = {
   SHIPPING_PACKAGE: "택배비",
   REQUEST: "의뢰",
   PRACTICE_TRANSFER: "기공비",
-  LAB_SETTLEMENT_PAYOUT: "기공크레딧 정산",
-  FREE_REQUEST_CREDIT: "환영 무료 의뢰크레딧",
-  REQUEST_FREE_CREDIT: "환영 무료 의뢰크레딧",
-  WELCOME_BONUS: "환영 무료 의뢰크레딧",
-  FREE_SHIPPING_CREDIT: "환영 무료 배송크레딧",
-  SHIPPING_FREE_CREDIT: "환영 무료 배송크레딧",
+  LAB_SETTLEMENT_PAYOUT: "기공정산크레딧 정산",
+  FREE_REQUEST_CREDIT: "환영 무료크레딧",
+  REQUEST_FREE_CREDIT: "환영 무료크레딧",
+  WELCOME_BONUS: "환영 무료크레딧",
+  FREE_SHIPPING_CREDIT: "환영 무료크레딧",
+  SHIPPING_FREE_CREDIT: "환영 무료크레딧",
   SEED_REQUESTOR_CHARGE: "시드 초기 충전",
 };
 
@@ -677,7 +678,7 @@ export const CreditLedgerModal = ({
           <div
             className={cn(
               "grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2",
-              showSettlementCredit ? "lg:grid-cols-5" : "lg:grid-cols-4",
+              showSettlementCredit ? "lg:grid-cols-4" : "lg:grid-cols-3",
             )}
           >
             <div className="tabular-nums">
@@ -694,26 +695,19 @@ export const CreditLedgerModal = ({
               </span>
             </div>
             <div className="tabular-nums">
-              <span className="text-muted-foreground">무료·의뢰</span>{" "}
+              <span className="text-muted-foreground">무료크레딧</span>{" "}
               <span className="font-semibold text-slate-900">
                 {Number(
-                  currentBalanceSnapshot.freeRequestCredit ?? 0,
-                ).toLocaleString()}
-                원
-              </span>
-            </div>
-            <div className="tabular-nums">
-              <span className="text-muted-foreground">무료·배송</span>{" "}
-              <span className="font-semibold text-slate-900">
-                {Number(
-                  currentBalanceSnapshot.freeShippingCredit ?? 0,
+                  currentBalanceSnapshot.freeCredit ??
+                    Number(currentBalanceSnapshot.freeRequestCredit ?? 0) +
+                      Number(currentBalanceSnapshot.freeShippingCredit ?? 0),
                 ).toLocaleString()}
                 원
               </span>
             </div>
             {showSettlementCredit ? (
               <div className="tabular-nums">
-                <span className="text-muted-foreground">기공크레딧</span>{" "}
+                <span className="text-muted-foreground">기공정산크레딧</span>{" "}
                 <span className="font-semibold text-slate-900">
                   {Number(
                     currentBalanceSnapshot.settlementCredit ?? 0,
@@ -754,26 +748,22 @@ export const CreditLedgerModal = ({
             <SelectContent>
               <SelectItem value="all">전체</SelectItem>
               <SelectItem value="SPEND_PAID">사용(유료)</SelectItem>
-              <SelectItem value="SPEND_FREE_REQUEST">
-                사용(무료·의뢰)
-              </SelectItem>
+              <SelectItem value="SPEND_FREE_REQUEST">사용(무료)</SelectItem>
               <SelectItem value="SPEND_FREE_SHIPPING">
-                사용(무료·배송)
+                사용(무료·배송계정)
               </SelectItem>
               <SelectItem value="CHARGE_PAID">유료충전</SelectItem>
-              <SelectItem value="CHARGE_FREE_REQUEST">
-                무료충전(의뢰)
-              </SelectItem>
+              <SelectItem value="CHARGE_FREE_REQUEST">무료충전</SelectItem>
               <SelectItem value="CHARGE_FREE_SHIPPING">
-                무료충전(배송)
+                무료충전(배송계정)
               </SelectItem>
               {showSettlementCredit ? (
                 <>
                   <SelectItem value="LAB_SETTLEMENT_CHARGE">
-                    기공크레딧 충전
+                    기공정산크레딧 충전
                   </SelectItem>
                   <SelectItem value="LAB_SETTLEMENT_PAYOUT">
-                    기공크레딧 정산
+                    기공정산크레딧 정산
                   </SelectItem>
                 </>
               ) : null}

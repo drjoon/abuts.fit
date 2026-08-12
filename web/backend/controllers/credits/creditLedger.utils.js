@@ -55,12 +55,12 @@ export function buildFreeCreditGrantReason(grant) {
   const overrideReason = String(grant?.overrideReason || "").trim();
   const grantType = String(grant?.type || "").trim().toUpperCase();
 
-  let reason = "환영 무료 의뢰크레딧";
+  let reason = "환영 무료크레딧";
   if (
     grantType === "SHIPPING_FREE_CREDIT" ||
     grantType === "FREE_SHIPPING_CREDIT"
   ) {
-    reason = "환영 무료 배송크레딧";
+    reason = "환영 무료크레딧";
   }
 
   if (source === "admin") {

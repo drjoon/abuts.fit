@@ -754,17 +754,23 @@ export async function createRequestsBulk(req, res) {
       freeShippingCredit,
     });
 
-    // 5. 크레딧 부족 체크
-    const availableForMachining = paidCredit + freeRequestCredit;
-    const availableForShipping = paidCredit + freeShippingCredit;
+    // 5. 크레딧 부족 체크 (유료+무료 통합 풀, 의뢰비→배송비 순 배정)
+    const freeCredit = freeRequestCredit + freeShippingCredit;
+    const totalAvailable = paidCredit + freeCredit;
+    let remaining = totalAvailable;
+    const allocatedMachining = Math.min(remaining, totalMachiningFee);
+    remaining -= allocatedMachining;
+    const allocatedShipping = Math.min(remaining, totalShippingFee);
+    const availableForMachining = totalAvailable;
+    const availableForShipping = Math.max(0, totalAvailable - allocatedMachining);
 
     const machiningShortfall =
-      totalMachiningFee > availableForMachining
-        ? totalMachiningFee - availableForMachining
+      totalMachiningFee > allocatedMachining
+        ? totalMachiningFee - allocatedMachining
         : 0;
     const shippingShortfall =
-      totalShippingFee > availableForShipping
-        ? totalShippingFee - availableForShipping
+      totalShippingFee > allocatedShipping
+        ? totalShippingFee - allocatedShipping
         : 0;
 
     if (machiningShortfall > 0 || shippingShortfall > 0) {

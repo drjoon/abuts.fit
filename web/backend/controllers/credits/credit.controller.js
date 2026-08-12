@@ -155,7 +155,7 @@ async function resolveLabSettlementScope(req) {
     return {
       ok: false,
       status: 403,
-      message: "기공소만 기공크레딧 정산을 이용할 수 있습니다.",
+      message: "기공소만 기공정산크레딧 정산을 이용할 수 있습니다.",
     };
   }
 
@@ -189,13 +189,19 @@ async function getBalanceBreakdown(scope, requestorKindHint) {
   }
   const isLab = kind === "lab";
 
+  const freeRequestCredit = Number(snapshot?.freeRequestCredit || 0);
+  const freeShippingCredit = Number(snapshot?.freeShippingCredit || 0);
   return {
     balance: Number(snapshot?.balance || 0),
     paidCredit: Number(snapshot?.paidCredit || 0),
-    freeRequestCredit: Number(snapshot?.freeRequestCredit || 0),
-    freeShippingCredit: Number(snapshot?.freeShippingCredit || 0),
-    // 기공크레딧(LAB_SETTLEMENT_CREDIT)은 기공소가 치과로부터 적립·월정산하는 버킷.
-    // 치과는 유료크레딧으로 기공비를 지불하며 settlement 잔액 UI를 쓰지 않는다.
+    freeRequestCredit,
+    freeShippingCredit,
+    // 무료크레딧 = FREE_REQUEST + FREE_SHIPPING 통합 잔액(사용처 제한 없음).
+    freeCredit: Number(
+      snapshot?.freeCredit ?? freeRequestCredit + freeShippingCredit,
+    ),
+    // 기공정산크레딧(LAB_SETTLEMENT_CREDIT)은 기공소가 치과로부터 적립·월정산하는 버킷.
+    // 치과는 유료/무료크레딧으로 기공비를 지불하며 settlement 잔액 UI를 쓰지 않는다.
     settlementCredit: Number(snapshot?.settlementCredit || 0),
     requestorKind: kind,
     showSettlementCredit: isLab,
@@ -402,7 +408,7 @@ export async function createLabSettlementPayout(req, res) {
     if (available < amount) {
       return res.status(400).json({
         success: false,
-        message: "기공크레딧 잔액이 부족합니다.",
+        message: "기공정산크레딧 잔액이 부족합니다.",
         data: { available, requested: amount },
       });
     }
@@ -480,7 +486,7 @@ export async function createLabSettlementPayout(req, res) {
     console.error("createLabSettlementPayout error:", error);
     return res.status(500).json({
       success: false,
-      message: "기공크레딧 정산에 실패했습니다.",
+      message: "기공정산크레딧 정산에 실패했습니다.",
     });
   }
 }
