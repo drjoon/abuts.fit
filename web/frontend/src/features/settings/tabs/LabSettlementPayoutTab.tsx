@@ -48,8 +48,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 type PayoutItem = {
   _id: string;
   amount: number;
-  occurredAt: string;
-  status: "CONFIRMED" | "PENDING" | "CANCELLED";
+  createdAt?: string;
+  paidAt?: string | null;
+  status: "CONFIRMED" | "PENDING" | "EXCLUDED_NO_ACCOUNT" | "PAID" | "CANCELLED";
+  batchId?: {
+    periodStart?: string;
+    periodEnd?: string;
+    status?: string;
+  };
   note?: string;
   externalId?: string;
 };
@@ -104,6 +110,8 @@ const formatDate = (iso: string) => {
 const statusLabel = (s: string) => {
   if (s === "CONFIRMED") return "확정";
   if (s === "PENDING") return "대기";
+  if (s === "EXCLUDED_NO_ACCOUNT") return "계좌 확인 필요";
+  if (s === "PAID") return "지급완료";
   if (s === "CANCELLED") return "취소";
   return s;
 };
@@ -111,6 +119,7 @@ const statusLabel = (s: string) => {
 const statusColor = (s: string) => {
   if (s === "CONFIRMED") return "text-primary-strong";
   if (s === "PENDING") return "text-accent-strong";
+  if (s === "PAID") return "text-primary-strong";
   if (s === "CANCELLED") return "text-destructive";
   return "";
 };
@@ -212,7 +221,7 @@ export const LabSettlementPayoutTab = () => {
           ? res.data.data
           : [];
         setItems((prev) => (reset ? fetched : [...prev, ...fetched]));
-        setHasMore(fetched.length >= PAGE_SIZE);
+        setHasMore(false);
         setPage(p);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "조회 실패";
@@ -393,8 +402,8 @@ export const LabSettlementPayoutTab = () => {
   const sortedPayoutItems = useMemo(() => {
     return [...items].sort((a, b) => {
       if (payoutSort.key === "occurredAt") {
-        const av = new Date(a.occurredAt || 0).getTime();
-        const bv = new Date(b.occurredAt || 0).getTime();
+        const av = new Date(a.paidAt || a.createdAt || 0).getTime();
+        const bv = new Date(b.paidAt || b.createdAt || 0).getTime();
         return payoutSort.direction === "asc" ? av - bv : bv - av;
       }
       if (payoutSort.key === "status") {
@@ -929,7 +938,7 @@ export const LabSettlementPayoutTab = () => {
                     {sortedPayoutItems.map((r) => (
                       <TableRow key={r._id}>
                         <TableCell className="text-center text-xs whitespace-nowrap">
-                          {formatDate(String(r.occurredAt || ""))}
+                          {formatDate(String(r.paidAt || r.createdAt || ""))}
                         </TableCell>
                         <TableCell
                           className={`text-center text-xs font-medium whitespace-nowrap ${statusColor(r.status)}`}
@@ -940,7 +949,9 @@ export const LabSettlementPayoutTab = () => {
                           ₩{Number(r.amount || 0).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-center text-xs text-muted-foreground">
-                          {r.note || r.externalId || "-"}
+                          {r.batchId?.periodStart
+                            ? `${toKstYmd(new Date(r.batchId.periodStart))} 정산`
+                            : "-"}
                         </TableCell>
                       </TableRow>
                     ))}

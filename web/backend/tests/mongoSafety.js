@@ -87,6 +87,36 @@ export function assertLocalJestMongoUri(uri) {
   }
 }
 
+/**
+ * Remote Jest is permitted only for an explicitly named disposable Atlas DB.
+ * This is intentionally opt-in: ordinary `npm test` never wipes a remote DB.
+ */
+export function isExplicitRemoteJestDbAllowed(uri) {
+  const allow = String(process.env.ALLOW_REMOTE_JEST_DB || "").toLowerCase();
+  if (!["1", "true", "yes"].includes(allow)) return false;
+  const expected = String(
+    process.env.REMOTE_JEST_DB_NAME || "abutsFitJest",
+  ).trim();
+  return (
+    Boolean(expected) &&
+    getDbNameFromMongoUri(uri) === expected &&
+    !isLocalMongoUri(uri)
+  );
+}
+
+export function assertSafeJestMongoUri(uri) {
+  if (isLocalMongoUri(uri) || isExplicitRemoteJestDbAllowed(uri)) return;
+  const dbName = getDbNameFromMongoUri(uri) || "unknown";
+  throw new Error(
+    [
+      "Jest refuses to connect/wipe this MongoDB.",
+      `uri=${redactMongoUri(uri)} db=${dbName}`,
+      "Use a local URI, or set ALLOW_REMOTE_JEST_DB=true with a dedicated",
+      "REMOTE_JEST_DB_NAME (default: abutsFitJest) embedded in MONGODB_URI_TEST.",
+    ].join(" "),
+  );
+}
+
 export function resolveJestMongoUri() {
   return (
     process.env.MONGODB_URI_TEST ||

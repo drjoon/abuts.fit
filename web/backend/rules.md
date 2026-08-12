@@ -190,6 +190,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 메타/뱃지: `productionSchedule.fastMachiningRebalance` → 프론트 「빠른 가공 재배치」
 - Alert: `SystemSettings.lastExpressDeadlineRebalance` + socket `machining:express-rebalance`
   - API: `GET /api/cnc-machines/queues/express-rebalance-alert`, queues `meta.expressRebalanceAlert`
+  - 프론트는 모달/칩 닫기 시 Alert `id`를 dismissed로 저장하고, 같은 건은 새로고침해도 재표시하지 않는다.
 - 가공시간 예측: `machiningDurationEstimate.utils.js` — 최근 완료건 `(duration/totalLength)` 최댓값(보수적)
 
 #### D. 적용 경로
@@ -702,6 +703,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     구현: `controllers/requests/common.review.helpers.js`
   - 정산/잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가.
   - 세금계산서 드래프트의 세액 기본값은 0(면세). 자동 10% 세액 계산 금지.
+
+- (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
+  - `ABUTS_TO_CUSTOMER`(기존 크레딧 충전 계산서, 치과·기공소→어벗츠 결제의 반대방향): `taxType="면세"`, `issuanceMode="SELF"`(어벗츠가 실제 공급자).
+  - `LAB_TO_PRACTICE`(①치과→기공소 기공의뢰비의 반대방향, 월합계): `taxType="면세"`, `issuanceMode="TRUSTEE"`. 실제 공급자는 기공소이지만 기공소는 팝빌 회원가입/인증서가 불필요하고, 어벗츠가 수탁자로 위수탁발행한다(치과·기공소·어벗츠 3자 모두 부가세 면세 원칙 — 어벗츠 공동대표가 기공사라 기공소로 간주).
+  - `AFFILIATE_TO_ABUTS`(④어벗츠→관계사 정산의 반대방향): `taxType="과세"`(부가세 10%), `issuanceMode="TRUSTEE"`. 관계사(제조사/영업자/개발운영사)가 실제 공급자이지만 소규모/1인 사업자가 많아 팝빌 가입 부담을 줄이기 위해 어벗츠가 수탁자로 위수탁발행한다.
+  - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.
+  - 구현: `utils/popbill.util.js`(`buildTaxinvoiceObject`의 `issuanceMode`/`seller`/`taxType`), `models/taxInvoiceDraft.model.js`.
 
 - 정산/지급 정책:
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.

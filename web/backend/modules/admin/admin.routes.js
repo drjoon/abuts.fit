@@ -102,6 +102,16 @@ import {
   adminValidateBizNumber,
   adminDirectIssueTaxInvoice,
 } from "../../controllers/admin/adminTaxInvoice.controller.js";
+import { adminGenerateLabToPracticeInvoiceDrafts } from "../../controllers/admin/adminPracticeLabInvoice.controller.js";
+import {
+  adminCancelSettlementBatch,
+  adminConfirmSettlementBatch,
+  adminCreateSettlementBatch,
+  adminGetSettlementBatch,
+  adminListSettlementBatches,
+  adminMarkAllSettlementBatchItemsPaid,
+  adminMarkSettlementBatchItemPaid,
+} from "../../controllers/admin/adminSettlementBatch.controller.js";
 import {
   adminGetQueueStats,
   adminListQueueTasks,
@@ -136,7 +146,6 @@ import {
   adminGetSalesmanCreditsOverview,
   adminGetSalesmanCredits,
   adminGetSalesmanLedger,
-  adminCreateSalesmanPayout,
   adminGetManufacturerSummary,
   adminGetAdminCredits,
   adminGetAdminLedger,
@@ -253,7 +262,6 @@ router.get("/credits/manufacturer/summary", adminGetManufacturerSummary);
 router.get("/credits/salesmen/overview", adminGetSalesmanCreditsOverview);
 router.get("/credits/salesmen", adminGetSalesmanCredits);
 router.get("/credits/salesmen/:id/ledger", adminGetSalesmanLedger);
-router.post("/credits/salesmen/:id/payout", adminCreateSalesmanPayout);
 router.get("/credits/admins", adminGetAdminCredits);
 router.get("/credits/admins/:id/ledger", adminGetAdminLedger);
 router.get("/credits/b-plan/charge-orders", adminListChargeOrders);
@@ -401,6 +409,25 @@ router.get("/tax-invoices/status", adminGetTaxInvoiceStatus);
 router.post("/tax-invoices/cancel", adminCancelIssuedTaxInvoice);
 router.post("/tax-invoices/validate-biz-number", adminValidateBizNumber);
 router.post("/tax-invoices/direct-issue", adminDirectIssueTaxInvoice);
+router.post(
+  "/tax-invoices/lab-to-practice/generate",
+  adminGenerateLabToPracticeInvoiceDrafts,
+);
+
+// 월 정산 배치 — 관리자 확정 후 실제 송금을 마친 항목만 지급완료 처리한다.
+router.get("/settlement-batches", adminListSettlementBatches);
+router.post("/settlement-batches", adminCreateSettlementBatch);
+router.get("/settlement-batches/:id", adminGetSettlementBatch);
+router.post("/settlement-batches/:id/confirm", adminConfirmSettlementBatch);
+router.post("/settlement-batches/:id/cancel", adminCancelSettlementBatch);
+router.post(
+  "/settlement-batches/:id/items/:itemId/mark-paid",
+  adminMarkSettlementBatchItemPaid,
+);
+router.post(
+  "/settlement-batches/:id/mark-all-paid",
+  adminMarkAllSettlementBatchItemsPaid,
+);
 
 // 팝빌 큐 관리
 router.get("/popbill/queue/stats", adminGetQueueStats);

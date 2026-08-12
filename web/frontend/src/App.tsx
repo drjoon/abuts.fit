@@ -97,6 +97,7 @@ import AdminSmsPage from "@/pages/admin/support/AdminSmsPage";
 import { AdminChatManagement } from "@/pages/admin/support/AdminChatManagement";
 import AdminInquiriesPage from "@/pages/admin/support/AdminBusinessRegistrationInquiryPage";
 import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
+import AdminSettlementBatches from "@/pages/admin/system/AdminSettlementBatches";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
@@ -629,6 +630,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
                         <AdminTaxInvoices />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="settlement-batches"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminSettlementBatches />
                       </RoleProtectedRoute>
                     }
                   />

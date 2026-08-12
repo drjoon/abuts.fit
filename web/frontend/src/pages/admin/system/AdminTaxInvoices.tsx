@@ -48,6 +48,10 @@ type TaxInvoiceDraft = {
   chargeOrderId: string;
   businessAnchorId?: string;
   status: DraftStatus;
+  direction?: "ABUTS_TO_CUSTOMER" | "LAB_TO_PRACTICE" | "AFFILIATE_TO_ABUTS";
+  issuanceMode?: "SELF" | "TRUSTEE";
+  taxType?: "과세" | "면세";
+  seller?: { corpName?: string; bizNo?: string };
   supplyAmount: number;
   vatAmount: number;
   totalAmount: number;
@@ -951,6 +955,9 @@ function DraftCard({
           <div className="space-y-1 min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <StatusBadge status={d.status} />
+              <Badge variant="outline" className="text-xs">
+                {d.taxType || "면세"} · {d.issuanceMode === "TRUSTEE" ? "위수탁" : "정발행"}
+              </Badge>
               {d.buyer?.corpName ? (
                 <span className="text-sm font-medium truncate">
                   {d.buyer.corpName}
@@ -963,6 +970,7 @@ function DraftCard({
             </div>
             <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
               {d.buyer?.bizNo && <span>사업자: {d.buyer.bizNo}</span>}
+              {d.seller?.corpName && <span>공급자: {d.seller.corpName}</span>}
               {d.buyer?.ceoName && <span>대표: {d.buyer.ceoName}</span>}
               {d.sentAt && <span>발행일: {fmtDate(d.sentAt)}</span>}
               <span className="opacity-60">생성: {fmtDate(d.createdAt)}</span>

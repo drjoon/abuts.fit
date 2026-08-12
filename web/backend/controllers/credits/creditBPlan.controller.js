@@ -18,6 +18,7 @@ import {
 } from "../../utils/depositCode.utils.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { validateCreditSupplyAmount } from "../../utils/creditChargeUnit.js";
+import { buildPartySnapshotFromAnchor } from "../../utils/taxInvoiceParty.util.js";
 
 async function resolveRequestorKindForCharge(req, businessAnchorId) {
   const anchor = await BusinessAnchor.findById(businessAnchorId)
@@ -412,24 +413,17 @@ export async function requestTaxInvoice(req, res) {
       });
     }
 
-    const metadata = anchor.metadata || {};
-    const buyer = {
-      bizNo: anchor.businessNumberNormalized || "",
-      corpName: metadata.companyName || "",
-      ceoName: metadata.representativeName || "",
-      addr: metadata.address || "",
-      bizType: metadata.businessItem || "",
-      bizClass: metadata.businessCategory || "",
-      contactName: req.user?.name || "",
-      contactEmail: req.user?.email || "",
-      contactTel: req.user?.phone || "",
-    };
+    const buyer = buildPartySnapshotFromAnchor(anchor, req.user);
 
     const draft = await TaxInvoiceDraft.create({
       chargeOrderId,
       businessAnchorId,
       userId,
       status: "PENDING_APPROVAL",
+      direction: "ABUTS_TO_CUSTOMER",
+      issuanceMode: "SELF",
+      taxType: "면세",
+      itemName: "치과기공소 솔루션 이용료",
       supplyAmount: chargeOrder.supplyAmount || 0,
       vatAmount: chargeOrder.vatAmount || 0,
       totalAmount: chargeOrder.amountTotal || 0,

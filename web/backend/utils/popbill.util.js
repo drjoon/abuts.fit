@@ -324,42 +324,89 @@ function formatDateYYYYMMDD(d) {
   return kstDate.replace(/-/g, "");
 }
 
+/**
+ * 팝빌 수탁자(어벗츠) 정보 — 위수탁발행 시 trustee* 필드 및
+ * SELF(정발행) 모드의 invoicer* 필드에 공통으로 쓰인다.
+ */
+const getAbutsTrusteeInfo = () => ({
+  corpNum: (
+    process.env.POPBILL_SUPPLIER_CORP_NUM ||
+    process.env.POPBILL_CORP_NUM ||
+    ""
+  ).replace(/-/g, ""),
+  corpName: process.env.POPBILL_SUPPLIER_CORP_NAME || "어벗츠 주식회사",
+  ceoName: process.env.POPBILL_SUPPLIER_CEO_NAME || "",
+  addr: process.env.POPBILL_SUPPLIER_ADDR || "",
+  bizType: process.env.POPBILL_SUPPLIER_BIZ_TYPE || "서비스업",
+  bizClass: process.env.POPBILL_SUPPLIER_BIZ_CLASS || "소프트웨어 개발",
+  contactName: process.env.POPBILL_SUPPLIER_CONTACT_NAME || "",
+  email: process.env.POPBILL_SUPPLIER_EMAIL || "",
+});
+
+/**
+ * 세금계산서/계산서 객체 생성.
+ * - issuanceMode "SELF"(기본): 어벗츠가 실제 공급자로서 정발행 (기존 동작, 하위호환).
+ * - issuanceMode "TRUSTEE": 어벗츠가 수탁자로서 위수탁발행. 실제 공급자(기공소/관계사) 정보는
+ *   draft.seller에서 가져오고, 어벗츠는 trustee* 필드로 들어간다.
+ *   [참고] 위수탁발행은 수탁자(어벗츠)만 팝빌 회원이면 되고, 실제 공급자는 팝빌 가입/인증서가 필요 없다.
+ * - taxType: draft.taxType이 있으면 그대로 사용(과세/면세), 없으면 "과세"(하위호환).
+ */
 export const buildTaxinvoiceObject = ({
   draft,
   mgtKey,
   writeDate: writeDateOverride,
 }) => {
   const buyer = draft.buyer || {};
-  const supplierCorpNum = (
-    process.env.POPBILL_SUPPLIER_CORP_NUM ||
-    process.env.POPBILL_CORP_NUM ||
-    ""
-  ).replace(/-/g, "");
+  const seller = draft.seller || {};
+  const issuanceMode = draft.issuanceMode === "TRUSTEE" ? "TRUSTEE" : "SELF";
+  const taxType = draft.taxType === "면세" ? "면세" : "과세";
+  const trustee = getAbutsTrusteeInfo();
+
+  const invoicer = issuanceMode === "TRUSTEE"
+    ? {
+        corpNum: (seller.bizNo || "").replace(/-/g, ""),
+        corpName: seller.corpName || "",
+        ceoName: seller.ceoName || "",
+        addr: seller.addr || "",
+        bizType: seller.bizType || "",
+        bizClass: seller.bizClass || "",
+        contactName: seller.contactName || "",
+        email: seller.contactEmail || "",
+      }
+    : {
+        corpNum: trustee.corpNum,
+        corpName: trustee.corpName,
+        ceoName: trustee.ceoName,
+        addr: trustee.addr,
+        bizType: trustee.bizType,
+        bizClass: trustee.bizClass,
+        contactName: trustee.contactName,
+        email: trustee.email,
+      };
+
   const supplyAmt = String(Math.round(Number(draft.supplyAmount) || 0));
   const taxAmt = String(Math.round(Number(draft.vatAmount) || 0));
   const totalAmt = String(Math.round(Number(draft.totalAmount) || 0));
 
-  return {
+  const taxinvoice = {
     writeDate: writeDateOverride
       ? String(writeDateOverride).replace(/-/g, "").slice(0, 8)
       : formatDateYYYYMMDD(draft.writeDate || draft.createdAt),
     chargeDirection: "정과금",
-    issueType: "정발행",
+    issueType: issuanceMode === "TRUSTEE" ? "위수탁" : "정발행",
     purposeType: "영수",
     issueTiming: "직접발행",
-    taxType: "과세",
+    taxType,
 
-    invoicerCorpNum: supplierCorpNum,
+    invoicerCorpNum: invoicer.corpNum,
     invoicerMgtKey: mgtKey,
-    invoicerCorpName:
-      process.env.POPBILL_SUPPLIER_CORP_NAME || "어벗츠 주식회사",
-    invoicerCEOName: process.env.POPBILL_SUPPLIER_CEO_NAME || "",
-    invoicerAddr: process.env.POPBILL_SUPPLIER_ADDR || "",
-    invoicerBizType: process.env.POPBILL_SUPPLIER_BIZ_TYPE || "서비스업",
-    invoicerBizClass:
-      process.env.POPBILL_SUPPLIER_BIZ_CLASS || "소프트웨어 개발",
-    invoicerContactName: process.env.POPBILL_SUPPLIER_CONTACT_NAME || "",
-    invoicerEmail: process.env.POPBILL_SUPPLIER_EMAIL || "",
+    invoicerCorpName: invoicer.corpName,
+    invoicerCEOName: invoicer.ceoName,
+    invoicerAddr: invoicer.addr,
+    invoicerBizType: invoicer.bizType,
+    invoicerBizClass: invoicer.bizClass,
+    invoicerContactName: invoicer.contactName,
+    invoicerEmail: invoicer.email,
     invoicerSMSSendYN: false,
 
     invoiceeType: "사업자",
@@ -381,7 +428,7 @@ export const buildTaxinvoiceObject = ({
       {
         serialNum: 1,
         purchaseDT: formatDateYYYYMMDD(draft.createdAt),
-        itemName: "치과기공소 솔루션 이용료",
+        itemName: draft.itemName || "치과기공소 솔루션 이용료",
         qty: "1",
         unitCost: supplyAmt,
         supplyCost: supplyAmt,
@@ -390,6 +437,20 @@ export const buildTaxinvoiceObject = ({
       },
     ],
   };
+
+  if (issuanceMode === "TRUSTEE") {
+    taxinvoice.trusteeCorpNum = trustee.corpNum;
+    // 수탁자 문서번호는 수탁자인 어벗츠의 관리 키다. 위탁자 문서번호와
+    // 동일한 플랫폼 키를 사용해도 되지만, 팝빌의 TRUSTEE 문서 조회/취소에 필요하다.
+    taxinvoice.trusteeMgtKey = mgtKey;
+    taxinvoice.trusteeCorpName = trustee.corpName;
+    taxinvoice.trusteeCEOName = trustee.ceoName;
+    taxinvoice.trusteeAddr = trustee.addr;
+    taxinvoice.trusteeBizType = trustee.bizType;
+    taxinvoice.trusteeBizClass = trustee.bizClass;
+  }
+
+  return taxinvoice;
 };
 
 export const registIssueInvoice = ({ corpNum, taxinvoice }) => {
@@ -410,12 +471,17 @@ export const registIssueInvoice = ({ corpNum, taxinvoice }) => {
   });
 };
 
-export const cancelIssuedInvoice = ({ corpNum, mgtKey, memo = "발행취소" }) => {
+export const cancelIssuedInvoice = ({
+  corpNum,
+  mgtKey,
+  memo = "발행취소",
+  mgtKeyType = "SELL",
+}) => {
   const cleanCorpNum = String(corpNum || "").replace(/-/g, "");
   return new Promise((resolve, reject) => {
     taxinvoiceService.cancelIssue(
       cleanCorpNum,
-      "SELL",
+      mgtKeyType,
       mgtKey,
       memo,
       "",

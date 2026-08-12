@@ -80,6 +80,8 @@ export async function adminListTaxInvoiceDrafts(req, res) {
     .trim()
     .toUpperCase();
   const search = String(req.query.search || "").trim();
+  const direction = String(req.query.direction || "").trim().toUpperCase();
+  const taxType = String(req.query.taxType || "").trim();
   const from = req.query.from ? new Date(req.query.from) : null;
   const to = req.query.to ? new Date(req.query.to) : null;
 
@@ -96,6 +98,16 @@ export async function adminListTaxInvoiceDrafts(req, res) {
     ].includes(status)
   ) {
     match.status = status;
+  }
+  if (
+    ["ABUTS_TO_CUSTOMER", "LAB_TO_PRACTICE", "AFFILIATE_TO_ABUTS"].includes(
+      direction,
+    )
+  ) {
+    match.direction = direction;
+  }
+  if (["과세", "면세"].includes(taxType)) {
+    match.taxType = taxType;
   }
 
   if (from || to) {
@@ -187,7 +199,12 @@ export async function adminCancelTaxInvoiceDraft(req, res) {
     }
     const mgtKey = String(id).slice(0, 24);
     try {
-      await cancelIssuedInvoice({ corpNum, mgtKey });
+      await cancelIssuedInvoice({
+        corpNum,
+        mgtKey,
+        mgtKeyType:
+          draft.issuanceMode === "TRUSTEE" ? "TRUSTEE" : "SELL",
+      });
     } catch (popbillError) {
       const errMsg =
         popbillError?.ErrMsg || popbillError?.message || String(popbillError);
@@ -436,6 +453,10 @@ export async function adminDirectIssueTaxInvoice(req, res) {
       businessAnchorId: null,
       status: "APPROVED",
       approvedAt: now,
+      direction: "ABUTS_TO_CUSTOMER",
+      issuanceMode: "SELF",
+      taxType: req.body?.taxType === "과세" ? "과세" : "면세",
+      itemName: itemName || "서비스 이용료",
       supplyAmount: Math.round(Number(supplyAmount) || 0),
       vatAmount: Math.round(Number(vatAmount) || 0),
       totalAmount: Math.round(Number(totalAmount) || 0),

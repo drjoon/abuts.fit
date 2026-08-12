@@ -7,8 +7,12 @@ export default {
   verbose: true,
   setupFilesAfterEnv: ['./tests/setup.js'],
   testMatch: ['**/__tests__/**/*.js', '**/?(*.)+(spec|test).js'],
+  // Backend package is native ESM. Keep import/export (and import.meta) intact
+  // while Jest executes modules through Node's VM-module runtime.
   transform: {
-    '^.+\\.js$': 'babel-jest'
+    '^.+\\.js$': ['babel-jest', {
+      presets: [['@babel/preset-env', { targets: { node: 'current' }, modules: false }]],
+    }],
   },
   collectCoverage: true,
   coverageDirectory: 'coverage',

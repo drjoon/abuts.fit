@@ -5,8 +5,10 @@
 // - web/backend/server.js
 import mongoose from "mongoose";
 import { config } from "dotenv";
+import { jest } from "@jest/globals";
 import {
-  assertLocalJestMongoUri,
+  assertSafeJestMongoUri,
+  isExplicitRemoteJestDbAllowed,
   isLocalHostName,
   isLocalMongoUri,
   redactMongoUri,
@@ -19,15 +21,27 @@ config({ path: ".env.test" });
 let jestMongoReady = false;
 let jestMongoUri = "";
 
-function assertConnectedHostIsLocal() {
+// Atlas의 네트워크 왕복 시간은 로컬 Mongo와 달리 afterEach 정리와 개별 fixture
+// 생성이 5초를 넘길 수 있다. 명시적으로 허용한 전용 DB에서만 제한을 늘린다.
+if (isExplicitRemoteJestDbAllowed(resolveJestMongoUri())) {
+  jest.setTimeout(120000);
+}
+
+function assertConnectedHostIsSafe() {
   const host = String(mongoose.connection?.host || "").trim();
-  if (!isLocalHostName(host)) {
+  const isLocal = isLocalHostName(host);
+  const isExplicitRemote = isExplicitRemoteJestDbAllowed(jestMongoUri);
+  if (!isLocal && !isExplicitRemote) {
     throw new Error(
-      `Jest refuses to wipe MongoDB host=${host || "unknown"} (non-local).`,
+      `Jest refuses to wipe MongoDB host=${host || "unknown"}.`,
     );
   }
-  // belt-and-suspenders: URI we connected with must still be local
-  if (jestMongoUri && !isLocalMongoUri(jestMongoUri)) {
+  // belt-and-suspenders: URI must be local or an explicitly approved disposable DB.
+  if (
+    jestMongoUri &&
+    !isLocalMongoUri(jestMongoUri) &&
+    !isExplicitRemoteJestDbAllowed(jestMongoUri)
+  ) {
     throw new Error(
       `Jest refuses to wipe non-local URI ${redactMongoUri(jestMongoUri)}.`,
     );
@@ -38,7 +52,7 @@ async function clearCollections() {
   if (!jestMongoReady) return;
   if (mongoose.connection.readyState !== 1) return;
 
-  assertConnectedHostIsLocal();
+  assertConnectedHostIsSafe();
 
   const collections = mongoose.connection.collections;
   for (const key in collections) {
@@ -46,13 +60,13 @@ async function clearCollections() {
   }
 }
 
-// 테스트 전 MongoDB 연결 — 로컬 전용. Atlas/공유 DB면 즉시 실패(삭제 없음).
+// 테스트 전 MongoDB 연결 — 로컬 기본. Atlas는 전용 DB명 + 명시적 opt-in일 때만 허용.
 beforeAll(async () => {
   jestMongoUri = resolveJestMongoUri();
-  assertLocalJestMongoUri(jestMongoUri);
+  assertSafeJestMongoUri(jestMongoUri);
 
   await mongoose.connect(jestMongoUri);
-  assertConnectedHostIsLocal();
+  assertConnectedHostIsSafe();
   jestMongoReady = true;
 });
 

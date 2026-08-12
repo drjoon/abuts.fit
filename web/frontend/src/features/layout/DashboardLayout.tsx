@@ -234,6 +234,7 @@ const sidebarItems = {
       href: "/dashboard/monitoring",
     },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
+    { icon: Wallet, label: "정산 배치", href: "/dashboard/settlement-batches" },
     { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
     {
       icon: MessageSquare,

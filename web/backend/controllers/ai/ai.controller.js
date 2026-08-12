@@ -8,6 +8,10 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { assertBusinessRole } from "../businesses/businessRole.util.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 import sharp from "sharp";
+import {
+  getGenAI as getSharedGenAI,
+  extractBusinessLicenseFields,
+} from "../../services/businessLicenseOcr.service.js";
 
 // 지연 초기화: dotenv 로드 후 첫 호출 시 초기화
 let _apiKey = null;
@@ -189,7 +193,7 @@ export async function parseBusinessLicense(req, res) {
       });
     }
 
-    const genAI = getGenAI();
+    const genAI = getSharedGenAI();
     if (!genAI) {
       const extracted = {};
       const verification = {
@@ -246,124 +250,14 @@ export async function parseBusinessLicense(req, res) {
       });
     }
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.2,
-      },
-    });
-
-    // 이미지 전처리: 인식 정확도 우선 (원본 해상도 유지, 그레이스케일 + 고품질 압축)
-    const { buffer: processedBuffer, mimeType } =
-      await preprocessImageForGemini(buffer, {
-        maxWidth: 4096, // 원본 해상도 유지 (대부분의 스캔 이미지보다 큰 값)
-        grayscale: true,
-        quality: 95, // 고품질 압축으로 텍스트 선명도 유지
-      });
-    const imageBase64 = processedBuffer.toString("base64");
-
-    const prompt =
-      "너는 한국 사업자등록증 이미지를 읽어 필요한 정보를 JSON으로만 추출하는 도우미야.\n" +
-      '아래 스키마를 정확히 따르고, 값이 불확실하면 빈 문자열("")로 둬.\n' +
-      "반드시 JSON만 반환하고 다른 설명은 하지 마.\n\n" +
-      "스키마:\n" +
-      "{\n" +
-      '  "companyName": string,\n' +
-      '  "businessNumber": string,\n' +
-      '  "representativeName": string,\n' +
-      '  "address": string,\n' +
-      '  "phoneNumber": string,\n' +
-      '  "email": string,\n' +
-      '  "businessType": string,\n' +
-      '  "businessItem": string,\n' +
-      '  "startDate": string   // 개업연월일, YYYYMMDD 8자리로 반환\n' +
-      "}";
-
-    const result = await model.generateContent([
-      { text: prompt },
-      {
-        inlineData: {
-          data: imageBase64,
-          mimeType,
-        },
-      },
-    ]);
-
-    const text = result?.response?.text?.() || "";
-
-    let cleaned = String(text || "").trim();
-    if (cleaned.startsWith("```")) {
-      const firstNewline = cleaned.indexOf("\n");
-      const lastFence = cleaned.lastIndexOf("```");
-      if (firstNewline !== -1 && lastFence !== -1 && lastFence > firstNewline) {
-        cleaned = cleaned.slice(firstNewline + 1, lastFence).trim();
-      }
-    }
-
-    const tryParseJsonObject = (input) => {
-      if (!input) return null;
-      const s = String(input).trim();
-      try {
-        return JSON.parse(s);
-      } catch {}
-
-      const firstBrace = s.indexOf("{");
-      const lastBrace = s.lastIndexOf("}");
-      if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-        return null;
-      }
-      const slice = s.slice(firstBrace, lastBrace + 1);
-      try {
-        return JSON.parse(slice);
-      } catch {
-        return null;
-      }
-    };
-
-    const parsed = tryParseJsonObject(cleaned);
-    const parseOk =
-      !!parsed && typeof parsed === "object" && !Array.isArray(parsed);
+    const { ok: parseOk, extracted, normalizedBusinessNumber } =
+      await extractBusinessLicenseFields(buffer);
     if (!parseOk) {
       console.error("[AI] parseBusinessLicense: JSON parse failed", {
         originalName,
         s3Key: key,
-        sample: cleaned.slice(0, 400),
       });
     }
-
-    const normalizeStartDate = (input) => {
-      const digits = String(input || "").replace(/\D/g, "");
-      if (digits.length !== 8) return "";
-      return digits;
-    };
-
-    const extracted = {
-      companyName: String((parseOk ? parsed.companyName : "") || "").trim(),
-      businessNumber: String(
-        (parseOk ? parsed.businessNumber : "") || "",
-      ).trim(),
-      address: String((parseOk ? parsed.address : "") || "").trim(),
-      phoneNumber: String((parseOk ? parsed.phoneNumber : "") || "").trim(),
-      email: String((parseOk ? parsed.email : "") || "").trim(),
-      representativeName: String(
-        (parseOk ? parsed.representativeName : "") || "",
-      ).trim(),
-      businessType: String((parseOk ? parsed.businessType : "") || "").trim(),
-      businessItem: String((parseOk ? parsed.businessItem : "") || "").trim(),
-      startDate: normalizeStartDate(parseOk ? parsed.startDate : ""),
-    };
-
-    const normalizeBusinessNumber = (input) => {
-      const raw = String(input || "").trim();
-      if (!raw) return "";
-      const digits = raw.replace(/\D/g, "");
-      return digits;
-    };
-
-    const normalizedBusinessNumber = normalizeBusinessNumber(
-      extracted.businessNumber,
-    );
 
     const verification = {
       verified: false,

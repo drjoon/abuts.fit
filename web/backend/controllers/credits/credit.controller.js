@@ -29,6 +29,8 @@ import {
 } from "../../utils/creditChargeUnit.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
+import SettlementBatchItem from "../../models/settlementBatchItem.model.js";
+import SettlementBatch from "../../models/settlementBatch.model.js";
 
 // NOTE:
 // - /api/credits/balance 는 GL 집계 SSOT를 즉시 반영해야 하므로
@@ -1012,6 +1014,40 @@ export async function listLabSettlementPayouts(req, res) {
     return res.status(500).json({
       success: false,
       message: "기공소 정산 지급 내역 조회에 실패했습니다.",
+    });
+  }
+}
+
+/**
+ * 기공소에 노출하는 정산 배치 지급 내역.
+ * 수시 인출은 폐지되었고, 이 목록은 관리자가 확정/송금 처리한 월 정산 항목의 SSOT다.
+ */
+export async function listMyLabSettlementBatchItems(req, res) {
+  try {
+    const scope = await resolveLabSettlementScope(req);
+    if (!scope.ok) {
+      return res.status(scope.status).json({
+        success: false,
+        message: scope.message,
+      });
+    }
+    const items = await SettlementBatchItem.find({
+      role: "lab",
+      businessAnchorId: scope.anchorId,
+    })
+      .sort({ createdAt: -1 })
+      .populate({
+        path: "batchId",
+        model: SettlementBatch,
+        select: "periodStart periodEnd status confirmedAt completedAt",
+      })
+      .lean();
+    return res.json({ success: true, data: items });
+  } catch (error) {
+    console.error("listMyLabSettlementBatchItems error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "기공소 정산 배치 내역 조회에 실패했습니다.",
     });
   }
 }
