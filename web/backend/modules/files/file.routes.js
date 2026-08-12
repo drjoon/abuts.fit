@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/s3.utils.js
+// - web/frontend/src/shared/hooks/useS3TempUpload.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 import { Router } from "express";
@@ -32,6 +34,24 @@ router.post(
   "/temp/presign",
   authenticate,
   fileController.createTempUploadPresign,
+);
+
+router.post(
+  "/temp/multipart/init",
+  authenticate,
+  fileController.createTempMultipartUpload,
+);
+
+router.post(
+  "/temp/multipart/complete",
+  authenticate,
+  fileController.completeTempMultipartUpload,
+);
+
+router.post(
+  "/temp/multipart/abort",
+  authenticate,
+  fileController.abortTempMultipartUpload,
 );
 
 // 전체 파일 목록 조회 (관리자) 또는 의뢰 ID로 필터링

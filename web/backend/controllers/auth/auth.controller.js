@@ -1025,6 +1025,7 @@ async function practiceLogin(req, res) {
             {
               role: "requestor",
               $or: [
+                { requestorKind: "practice" },
                 { "requestorCapabilities.practice": true },
                 // 마이그레이션 전 레거시 키
                 { "requestorCapabilities.clinic": true },
@@ -1222,7 +1223,8 @@ async function practiceRegister(req, res) {
       subRole: "owner",
       referralCode,
       referredByAnchorId: referredByAnchorId || null,
-      requestorCapabilities: { practice: true, lab: false },
+      requestorKind: "practice",
+      requestorServices: { free: true, paid: false },
       signupChannel: "practice_dropzone",
       onboardingWizardCompleted: false,
       approvedAt: new Date(),
@@ -1543,6 +1545,64 @@ async function getCurrentUser(req, res) {
     res.status(500).json({
       success: false,
       message: "사용자 정보 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 로그인 비밀번호 확인 (민감 정보 잠금 해제용)
+ * @route POST /api/auth/verify-password
+ */
+async function verifyPassword(req, res) {
+  try {
+    const password = String(req.body?.password || "");
+    const userId = req.user._id;
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: "비밀번호를 입력해주세요.",
+      });
+    }
+
+    const user = await User.findById(userId).select("+password");
+    if (!user?.password) {
+      return res.status(400).json({
+        success: false,
+        message: "비밀번호가 설정되지 않은 계정입니다.",
+      });
+    }
+
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      await logAuthFailure(req, "VERIFY_PASSWORD_BAD", user);
+      return res.status(401).json({
+        success: false,
+        message: "비밀번호가 올바르지 않습니다.",
+      });
+    }
+
+    await logSecurityEvent({
+      userId: user._id,
+      action: "VERIFY_PASSWORD_SUCCESS",
+      severity: "info",
+      status: "success",
+      details: { userId, email: user.email },
+      ipAddress: clientIp,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "비밀번호가 확인되었습니다.",
+    });
+  } catch (error) {
+    await logAuthFailure(req, "VERIFY_PASSWORD_ERROR", req.user);
+    return res.status(500).json({
+      success: false,
+      message: "비밀번호 확인 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -2139,6 +2199,7 @@ export default {
   getCurrentUser,
   listColleagues,
   switchAccount,
+  verifyPassword,
   changePassword,
   forgotPassword,
   resetPassword,

@@ -10,7 +10,6 @@ const ACCOUNT = ACCOUNTS.requestor;
 const REQUESTOR_PAGES = [
   { path: "/dashboard", label: "대시보드" },
   { path: "/dashboard/new-request", label: "새 의뢰" },
-  { path: "/dashboard/referral-groups", label: "소개" },
   { path: "/dashboard/inquiries", label: "문의" },
   { path: "/dashboard/settings", label: "설정" },
 ];
@@ -46,11 +45,11 @@ test.describe("Requestor – 전체 페이지", () => {
     );
   });
 
-  test("소개 대시보드 – 소개 링크/그룹 표시", async ({ page }) => {
+  test("소개 페이지 접근 차단", async ({ page }) => {
     await page.goto("/dashboard/referral-groups");
     await page.waitForLoadState("networkidle");
-    const body = await page.evaluate(() => document.body?.innerText ?? "");
-    expect(body.length).toBeGreaterThan(10);
+    await page.waitForTimeout(500);
+    expect(page.url()).not.toContain("referral-groups");
   });
 
   test("타 롤 접근 차단 – admin 전용 페이지", async ({ page }) => {

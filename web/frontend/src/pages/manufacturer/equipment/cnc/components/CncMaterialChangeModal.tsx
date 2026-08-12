@@ -147,24 +147,24 @@ export const CncMaterialChangeModal = ({
 
           {/* 예약된 교체 정보 */}
           {scheduledChange && (
-            <div className="bg-white p-3 rounded-md border-2 border-yellow-500 dark:border-yellow-600">
+            <div className="bg-white p-3 rounded-md border-2 border-accent dark:border-accent-strong">
               <div className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-500 mt-0.5" />
+                <AlertCircle className="h-4 w-4 text-accent-strong dark:text-accent mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                  <p className="text-sm font-medium text-accent-strong dark:text-accent-muted">
                     예약된 교체
                   </p>
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                  <p className="text-sm text-accent-strong dark:text-accent/80 mt-1">
                     {new Date(scheduledChange.targetTime).toLocaleString(
                       "ko-KR",
                     )}
                   </p>
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                  <p className="text-sm text-accent-strong dark:text-accent/80">
                     새 소재: {scheduledChange.newDiameter}mm (
                     {scheduledChange.newDiameterGroup})
                   </p>
                   {scheduledChange.notes && (
-                    <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                    <p className="text-xs text-accent-strong dark:text-accent/80 mt-1">
                       메모: {scheduledChange.notes}
                     </p>
                   )}

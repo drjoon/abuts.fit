@@ -28,9 +28,9 @@ interface MultiActionDialogProps {
 const getButtonClass = (variant: DialogAction["variant"]) => {
   switch (variant) {
     case "primary":
-      return "bg-blue-600 hover:bg-blue-700 text-white";
+      return "bg-primary-strong hover:bg-primary-strong text-white";
     case "danger":
-      return "bg-red-500 hover:bg-red-600 text-white";
+      return "bg-destructive hover:bg-destructive text-white";
     case "ghost":
       return "bg-transparent hover:bg-gray-100 text-gray-700";
     case "secondary":

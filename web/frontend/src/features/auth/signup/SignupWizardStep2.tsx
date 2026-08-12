@@ -124,8 +124,8 @@ export const SignupWizardStep2 = ({
     return (
       <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5">
         <div className="flex items-start gap-3">
-          <div className="rounded-full bg-cyan-500/20 p-2">
-            <Mail className="h-5 w-5 text-cyan-400" />
+          <div className="rounded-full bg-primary/20 p-2">
+            <Mail className="h-5 w-5 text-primary/70" />
           </div>
           <div className="flex-1 space-y-1 text-sm">
             <p className="font-medium text-white">
@@ -148,7 +148,7 @@ export const SignupWizardStep2 = ({
               onKeyDown={handleCodeKeyDown}
               ref={codeInputRef}
               disabled={isVerifying}
-              className={`h-12 flex-1 border-white/10 bg-white/5 text-center text-2xl font-semibold tracking-[0.5em] text-white placeholder:text-white/30 ${codeError ? "border-rose-300" : ""}`}
+              className={`h-12 flex-1 border-white/10 bg-white/5 text-center text-2xl font-semibold tracking-[0.5em] text-white placeholder:text-white/30 ${codeError ? "border-destructive/80" : ""}`}
               maxLength={4}
             />
             <Button
@@ -206,13 +206,13 @@ export const SignupWizardStep2 = ({
             >
               이메일
               {emailError && (
-                <span className="ml-2 text-xs font-medium text-rose-200">
+                <span className="ml-2 text-xs font-medium text-destructive-muted">
                   {emailError}
                 </span>
               )}
             </Label>
             {emailVerifiedAt && (
-              <div className="flex items-center gap-1 text-xs text-green-400">
+              <div className="flex items-center gap-1 text-xs text-primary/70">
                 <CheckCircle2 className="h-4 w-4" />
                 인증 완료
               </div>
@@ -232,7 +232,7 @@ export const SignupWizardStep2 = ({
               ref={emailInputRef}
               onKeyDown={handleEmailFieldKeyDown}
               disabled={isLoading || !!emailVerifiedAt}
-              className={`h-11 flex-1 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${emailError ? "border-rose-300" : ""}`}
+              className={`h-11 flex-1 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${emailError ? "border-destructive/80" : ""}`}
             />
             {!emailVerifiedAt && (
               <Button

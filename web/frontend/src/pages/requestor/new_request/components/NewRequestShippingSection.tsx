@@ -1,4 +1,13 @@
 // change-log:
+// - 2026-08-11: 의뢰하기 위 «디자인까지 의뢰할 경우 1일 추가» 안내 삭제.
+// - 2026-08-11: 묶음/신속 옵션 카드 ring·그림자 잘림 방지(내부 여백 확대).
+// - 2026-08-09: 첨부 건이 디자인+생산이면 신속 선택 판정에 productMode(+1영업일) 반영.
+// - 2026-08-09: 출고 카드 상단 여백 정리(세로 중앙정렬 제거, 상하좌우 패딩 균일).
+// - 2026-08-09: 묶음/신속 카피 정리, 디자인+1일 안내를 의뢰하기 버튼 바로 위로.
+// - 2026-08-09: 디자인+1일 안내를 신속 카드 밖으로 이동(묶음/신속 내부 카피 삭제).
+// - 2026-08-09: 신속 카피 «디자인까지 의뢰할 경우 1일 추가».
+// - 2026-08-09: 출고 카드 max-h 제거·왼쪽과 동일 높이로 의뢰하기 버튼 잘림 방지.
+// - 2026-08-09: 디자인+생산 출고 +1영업일 안내(묶음/신속 카피).
 // - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일).
 // - 2026-08-08: weeklyBatchDays prop SSOT — selectedDays 이중 상태 제거, optimistic 반영.
 // - 2026-08-08: 신속 선택 = 신속 ETA < 묶음 ETA일 때만 (조기 이점 없으면 비활성).
@@ -40,6 +49,8 @@ type Props = {
   weeklyBatchDays: string[];
   onWeeklyBatchDaysChange?: (days: string[]) => void;
   leadTimes?: LeadTimesMap | null;
+  /** 첨부 건이 디자인+생산(구강 스캔 묶음 등)이면 +1영업일 반영 */
+  expressProductMode?: string | null;
   defaultShippingMode: ShippingMode;
   onDefaultShippingModeChange: (mode: ShippingMode) => void;
   onSubmit: () => void;
@@ -60,6 +71,7 @@ export function NewRequestShippingSection({
   weeklyBatchDays,
   onWeeklyBatchDaysChange,
   leadTimes = null,
+  expressProductMode = null,
   defaultShippingMode,
   onDefaultShippingModeChange,
   onSubmit,
@@ -102,9 +114,10 @@ export function NewRequestShippingSection({
         weeklyBatchDays: selectedDays,
         leadTimes,
         diameter: null,
+        productMode: expressProductMode,
         requestedAt: now,
       }),
-    [selectedDays, leadTimes, now],
+    [selectedDays, leadTimes, expressProductMode, now],
   );
 
   // 저장된 기본값(preference)은 유지하고, 선택 불가 구간에서는 표시·적용만 묶음으로 본다.
@@ -297,9 +310,9 @@ export function NewRequestShippingSection({
   return (
     <div
       ref={containerRef}
-      className="app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-4 border-2 p-4 md:p-6 transition-all border-gray-300 h-full max-h-[500px]"
+      className="app-glass-card app-glass-card--lg relative flex flex-1 min-h-0 h-full flex-col gap-4 border-2 p-5 md:p-7 transition-all border-gray-300"
     >
-      <div className="app-glass-card-content flex flex-col items-center gap-3">
+      <div className="app-glass-card-content flex min-h-0 flex-1 flex-col items-center justify-start gap-3 overflow-y-auto p-2">
         <div
           className="w-full flex flex-col gap-4"
           role="radiogroup"
@@ -330,7 +343,7 @@ export function NewRequestShippingSection({
                 ref={weekdaysRef}
                 className={`flex gap-1 rounded-md px-1 py-1 transition-all ${
                   pulse
-                    ? "bg-red-50 border border-red-300 ring-2 ring-red-200"
+                    ? "bg-destructive-soft border border-destructive/80 ring-2 ring-destructive-muted"
                     : ""
                 }`}
                 onClick={(e) => e.stopPropagation()}
@@ -356,9 +369,9 @@ export function NewRequestShippingSection({
                 ))}
               </div>
             </div>
-            <div className="text-sm text-red-500">적어도 2-3개 요일 선택 권장</div>
+            <div className="text-sm text-destructive">적어도 2-3개 요일 선택 권장</div>
             <div className="text-sm text-slate-600 leading-relaxed">
-              디자인하시는대로 바로 바로 의뢰해주세요.
+              준비되는대로 바로 의뢰해주세요.
               <br />
               지정된 요일에 일괄 출고해드립니다.
             </div>
@@ -396,7 +409,7 @@ export function NewRequestShippingSection({
             }}
           >
             <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
-              <Zap className="w-5 h-5 text-amber-500" />
+              <Zap className="w-5 h-5 text-accent" />
               신속 출고
             </div>
             {expressSelectable ? (
@@ -407,21 +420,19 @@ export function NewRequestShippingSection({
                 <div className="text-sm text-slate-600 leading-relaxed">
                   의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
                   <br />
-                  단, 생산지연시 내일 출고되고, 추가 의뢰크레딧은 취소됩니다.
+                  (생산지연시 내일 출고·추가 크레딧 없음)
                 </div>
               </>
             ) : (
               <div className="text-sm text-slate-600 leading-relaxed">
-                지금은 선택 불가합니다.
-                <br />
-                신속 예상 출고일이 묶음 출고와 같아 조기 출고 이점이 없습니다.
+                신속 출고일이 묶음 출고일과 같아 선택할 이유가 없습니다.
               </div>
             )}
           </div>
         </div>
       </div>
 
-      <div className="app-glass-card-content pt-1">
+      <div className="app-glass-card-content mt-auto shrink-0 px-2">
         <div className="flex justify-center">
           <Button
             onClick={onSubmit}

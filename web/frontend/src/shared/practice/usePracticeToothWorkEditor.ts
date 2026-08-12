@@ -8,22 +8,37 @@ import { useMemo } from "react";
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
   emptyToothWorkCustomSpecs,
-  pickToothWorkCustomSpecs,
   toToothMemoSortNumber,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 
-export const STANDALONE_PROSTHESIS_TYPES = ["크라운", "인레이"] as const;
+/** 단독 치아 형태 토글 라벨(크라운↔인레이↔어벗 디자인) */
+export const ABUTMENT_DESIGN_PROSTHESIS_TYPE = "어벗 디자인";
+
+export const STANDALONE_PROSTHESIS_TYPES = [
+  "크라운",
+  "인레이",
+  ABUTMENT_DESIGN_PROSTHESIS_TYPE,
+] as const;
 export const LINKED_PROSTHESIS_TYPES = ["브리지", "Pontic"] as const;
 
 export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" || prosthesisType === "Pontic";
 
+export const isAbutmentDesignProsthesisType = (prosthesisType: string) => {
+  const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
+  return /^(?:커스텀)?어벗디자인$/i.test(compact);
+};
+
 export const isStandaloneProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "크라운" || prosthesisType === "인레이";
+  prosthesisType === "크라운" ||
+  prosthesisType === "인레이" ||
+  isAbutmentDesignProsthesisType(prosthesisType);
 
 export const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "크라운" || prosthesisType === "브리지";
+  prosthesisType === "크라운" ||
+  prosthesisType === "브리지" ||
+  isAbutmentDesignProsthesisType(prosthesisType);
 
 export const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
@@ -81,6 +96,7 @@ export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: strin
   );
   return catalog.filter((type) => {
     if (allowed.has(type)) return true;
+    if (!isLinked && isAbutmentDesignProsthesisType(type)) return true;
     if (isLinked && /^pontic$/i.test(type)) return true;
     return false;
   });
@@ -100,24 +116,16 @@ export const resolveProsthesisTypeForLinkState = (
   return options.find((type) => type === "크라운") || options[0] || "크라운";
 };
 
+/** 형태만 변경. 커스텀어벗·임플란트/스캔바디는 유지(인레이 등 UI 비표시 타입 포함 — 크라운/어벗 디자인으로 돌아오면 그대로) */
 export const applyProsthesisTypeToRow = (
   row: ToothWorkSelection,
   prosthesisType: string,
-): ToothWorkSelection => {
-  const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
-    ? Boolean(row.customAbutment)
-    : false;
-  return {
-    ...row,
-    prosthesisType,
-    customAbutment,
-    ...(customAbutment
-      ? pickToothWorkCustomSpecs(row, true)
-      : emptyToothWorkCustomSpecs()),
-  };
-};
+): ToothWorkSelection => ({
+  ...row,
+  prosthesisType,
+});
 
-/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic vs 크라운/인레이) 동기화 */
+/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic vs 크라운/인레이/어벗 디자인) 동기화 */
 export const toggleAdjacentBridgeLink = (
   rows: ToothWorkSelection[],
   originalIndex: number,

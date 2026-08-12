@@ -99,7 +99,13 @@ const requestSchema = new mongoose.Schema(
         x: Number,
         y: Number,
         z: Number,
+        // "frontend-manual" | undefined(auto/rhino)
+        source: String,
       },
+      // Front Face 끝점 오프셋(mm): Face.RightX = FrontPointX + 이 값
+      // - 수동 Front Point 지정 시 0 (찍은 점이 Face 끝)
+      // - 미지정 시 Esprit 기본값 1.0 사용
+      frontFaceEndOffsetMm: Number,
       hexRotation: {
         version: Number,
         moduleVersion: String,
@@ -144,7 +150,7 @@ const requestSchema = new mongoose.Schema(
       faceHolePrcFileName: String,
       connectionPrcFileName: String,
       workType: String,
-      // 신규의뢰 상세 모달: 커스텀어벗 | 디자인+커스텀어벗
+      // 신규의뢰 상세 모달: 커스텀어벗 생산 | 커스텀어벗 디자인+생산
       productMode: {
         type: String,
         enum: ["custom_abutment", "design_custom_abutment"],
@@ -161,8 +167,13 @@ const requestSchema = new mongoose.Schema(
         type: [mongoose.Schema.Types.Mixed],
         default: undefined,
       },
-      // 기공소(사업체) 의뢰 기본 설정에서 신규 생성 시 스냅샷되는 아노다이징 여부.
+      // 의뢰건 아노다이징 SSOT(신규의뢰 카드 → 생성 시 스냅샷).
+      // 미설정 레거시는 사업체 requestSettings.anodizingEnabled(기본 true)로 보정.
       // false이면 제조사 워크시트 카드에 "아노다이징 X" 배지를 노출한다.
+      // related files:
+      // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+      // - web/backend/controllers/requests/creation.from-draft.controller.js
+      // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
       anodizingEnabled: {
         type: Boolean,
         default: true,
@@ -391,6 +402,43 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
+      // 디자인+생산: 환자 단위로 묶인 구강 스캔 등 추가 첨부
+      files: {
+        type: [
+          {
+            originalName: String,
+            fileType: String,
+            fileSize: Number,
+            filePath: String,
+            s3Key: String,
+            s3Url: String,
+            uploadedAt: {
+              type: Date,
+              default: Date.now,
+            },
+          },
+        ],
+        default: undefined,
+      },
+
+      // 디자인 핸드오프 전 구강스캔/원본 primary 스냅샷 (생산 primary 교체 후 보존)
+      designSourceFiles: {
+        type: [
+          {
+            originalName: String,
+            fileType: String,
+            fileSize: Number,
+            filePath: String,
+            s3Key: String,
+            s3Url: String,
+            uploadedAt: {
+              type: Date,
+              default: Date.now,
+            },
+          },
+        ],
+        default: undefined,
+      },
 
       camFile: {
         fileName: String,
@@ -591,6 +639,49 @@ const requestSchema = new mongoose.Schema(
         ref: "User",
         default: null,
       },
+    },
+
+    // 디자인 파트너 클레임 (design_custom_abutment 준비 큐)
+    // 활성 = claimedAt 존재 && deadlineAt > now (만료는 lazy)
+    designClaim: {
+      claimedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      claimedByName: {
+        type: String,
+        default: null,
+      },
+      claimedAt: {
+        type: Date,
+        default: null,
+      },
+      deadlineAt: {
+        type: Date,
+        default: null,
+      },
+      claimHours: {
+        type: Number,
+        default: null,
+      },
+    },
+
+    // 디자인 완료 핸드오프 스냅샷 (가공 진입 시 기공소 주문내역 스코프용)
+    designLabBusinessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
+      index: true,
+    },
+    designCompletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    designCompletedAt: {
+      type: Date,
+      default: null,
     },
 
     manufacturerStage: {
@@ -915,9 +1006,31 @@ const requestSchema = new mongoose.Schema(
         type: Number,
         default: null,
       },
-      // 디자인+가공 적용 어벗 수. 재견적 시 가공 단가 복원용.
+      // 디자인+생산 적용 어벗 수. 재견적 시 생산 단가 복원용.
       abutmentQty: {
         type: Number,
+        default: null,
+      },
+    },
+
+    // 기공소 거래처·기공의뢰 선결제 연동 (치과 소매가 기과금 후 생산차감)
+    // related: web/backend/services/practiceTransferBilling.service.js
+    partnerBilling: {
+      practicePrepaidAbutment: { type: Boolean, default: false },
+      isTradingPartner: { type: Boolean, default: false },
+      labTradingPartnerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "LabTradingPartner",
+        default: null,
+      },
+      relatedPracticeTransferId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "PracticeTransfer",
+        default: null,
+      },
+      billingOwnerAnchorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "BusinessAnchor",
         default: null,
       },
     },
@@ -1138,6 +1251,12 @@ requestSchema.index({
   mailboxAddress: 1,
   caManufacturer: 1,
   createdAt: -1,
+});
+
+// 디자인 클레임 목록 필터
+requestSchema.index({
+  "designClaim.claimedBy": 1,
+  "designClaim.deadlineAt": 1,
 });
 
 // 추적관리(pre-pickup 후보) 조회 최적화

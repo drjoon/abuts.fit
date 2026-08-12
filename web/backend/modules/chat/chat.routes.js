@@ -1,8 +1,11 @@
+// change-log:
+// - 2026-08-10: request-room — 디자인 파트너↔기공소 채팅(DesignPage).
 // related files:
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/pages/requestor/design/DesignRequestTransferView.tsx
 import express from "express";
 const router = express.Router();
 import chatController from "../../controllers/chats/chat.controller.js";

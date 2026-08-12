@@ -54,7 +54,7 @@ export const CncMachineManagerModal = ({
               type="text"
               value={form.name}
               onChange={(e) => onChange("name", e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-primary focus:border-primary transition"
               placeholder="예: M1"
             />
           </div>
@@ -66,7 +66,7 @@ export const CncMachineManagerModal = ({
               type="text"
               value={form.ip}
               onChange={(e) => onChange("ip", e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-primary focus:border-primary transition"
               placeholder="예: 172.22.60.30"
             />
           </div>
@@ -76,7 +76,7 @@ export const CncMachineManagerModal = ({
             {mode === "edit" && onRequestDelete && (
               <button
                 onClick={onRequestDelete}
-                className="bg-red-50 hover:bg-red-100 text-red-600 font-medium py-2.5 px-4 rounded-lg text-sm transition-colors"
+                className="bg-destructive-soft hover:bg-destructive-soft text-destructive font-medium py-2.5 px-4 rounded-lg text-sm transition-colors"
               >
                 장비 삭제
               </button>
@@ -91,7 +91,7 @@ export const CncMachineManagerModal = ({
             </button>
             <button
               onClick={() => void onSubmit()}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 px-5 rounded-lg text-sm transition-colors"
+              className="bg-primary hover:bg-primary-strong text-white font-medium py-2.5 px-5 rounded-lg text-sm transition-colors"
               disabled={loading}
             >
               {loading ? "처리 중..." : mode === "create" ? "추가" : "저장"}

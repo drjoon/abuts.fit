@@ -116,7 +116,13 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
         .lean();
 
       if (order?._id) {
-        const ok = await matchTxWithOrder({ tx, order }).catch(() => false);
+        const ok = await matchTxWithOrder({ tx, order }).catch((err) => {
+          console.error(
+            "[autoMatch] depositCode match failed:",
+            err?.message || err,
+          );
+          return false;
+        });
         if (ok) matched += 1;
         continue;
       }
@@ -153,7 +159,13 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
     if (!matchedOrder) continue;
 
     const ok = await matchTxWithOrder({ tx, order: matchedOrder }).catch(
-      () => false,
+      (err) => {
+        console.error(
+          "[autoMatch] depositorName match failed:",
+          err?.message || err,
+        );
+        return false;
+      },
     );
     if (ok) matched += 1;
   }
@@ -267,21 +279,23 @@ async function matchTxWithOrder({ tx, order }) {
           [
             {
               chargeOrderId: order._id,
+              userId: order.userId,
               businessAnchorId: order.businessAnchorId,
               status: "APPROVED",
               supplyAmount: Number(order.supplyAmount),
               vatAmount: Number(order.vatAmount || 0),
               totalAmount: Number(order.amountTotal || 0),
+              // SSOT: metadata 사용 (extracted 레거시 제거)
               buyer: {
-                bizNo: org?.extracted?.businessNumber || "",
-                corpName: org?.extracted?.companyName || "",
-                ceoName: org?.extracted?.representativeName || "",
-                addr: org?.extracted?.address || "",
-                bizType: org?.extracted?.businessType || "",
-                bizClass: org?.extracted?.businessItem || "",
-                contactEmail: org?.extracted?.email || "",
-                contactTel: org?.extracted?.phoneNumber || "",
-                contactName: org?.extracted?.representativeName || "",
+                bizNo: org?.metadata?.businessNumber || "",
+                corpName: org?.metadata?.companyName || "",
+                ceoName: org?.metadata?.representativeName || "",
+                addr: org?.metadata?.address || "",
+                bizType: org?.metadata?.businessType || "",
+                bizClass: org?.metadata?.businessItem || "",
+                contactEmail: org?.metadata?.email || "",
+                contactTel: org?.metadata?.phoneNumber || "",
+                contactName: org?.metadata?.representativeName || "",
               },
             },
           ],

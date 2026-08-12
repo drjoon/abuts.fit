@@ -22,7 +22,6 @@ import { usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/shared/hooks/use-toast";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
@@ -30,10 +29,6 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import {
-  GlassStatCardSkeleton,
-  GlassStatCardsSkeleton,
-} from "@/shared/ui/skeletons/DashboardSectionSkeletons";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
@@ -339,12 +334,12 @@ const UNMACHINABLE_DETAIL_BADGE_VARIANT = (
 const getAlertIcon = (type: string) => {
   switch (type) {
     case "success":
-      return <CheckCircle className="h-4 w-4 text-green-500" />;
+      return <CheckCircle className="h-4 w-4 text-primary" />;
     case "warning":
-      return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+      return <AlertCircle className="h-4 w-4 text-accent" />;
     case "info":
     default:
-      return <AlertCircle className="h-4 w-4 text-blue-500" />;
+      return <AlertCircle className="h-4 w-4 text-primary" />;
   }
 };
 
@@ -542,7 +537,7 @@ export const AdminDashboardPage = () => {
     });
   };
 
-  const { data: riskSummaryResponse, isLoading: isRiskSummaryLoading, refetch: refetchRiskSummary } = useQuery({
+  const { data: riskSummaryResponse, refetch: refetchRiskSummary } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
     enabled: Boolean(token) && user?.role === "admin",
     staleTime: 60 * 1000,
@@ -573,7 +568,7 @@ export const AdminDashboardPage = () => {
     retry: false,
   });
 
-  const { data: adminDashboardResponse, isLoading: isAdminDashboardLoading, refetch: refetchAdminDashboard } = useQuery({
+  const { data: adminDashboardResponse, refetch: refetchAdminDashboard } = useQuery({
     queryKey: ["admin-dashboard-page", period],
     enabled: Boolean(token) && user?.role === "admin",
     staleTime: 60 * 1000,
@@ -603,9 +598,6 @@ export const AdminDashboardPage = () => {
     },
     retry: false,
   });
-
-  const isAdminStatsLoading = !adminDashboardResponse && isAdminDashboardLoading;
-  const isAdminRiskLoading = !riskSummaryResponse && isRiskSummaryLoading;
 
   const {
     data: happyCallCompletionsResponse,
@@ -918,30 +910,30 @@ export const AdminDashboardPage = () => {
   ) => {
     if (category === "3shape") {
       return {
-        panel: "bg-blue-50/60",
-        bar: "bg-blue-500",
-        count: "text-blue-700",
-        item: "border-blue-200 bg-blue-50/60 hover:bg-blue-100/60",
-        badge: "border-blue-200 bg-blue-100 text-blue-700",
+        panel: "bg-primary-soft/60",
+        bar: "bg-primary",
+        count: "text-primary-strong",
+        item: "border-primary-muted bg-primary-soft/60 hover:bg-primary-soft/60",
+        badge: "border-primary-muted bg-primary-soft text-primary-strong",
       };
     }
 
     if (category === "exocad") {
       return {
-        panel: "bg-emerald-50/60",
-        bar: "bg-emerald-500",
-        count: "text-emerald-700",
-        item: "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/60",
-        badge: "border-emerald-200 bg-emerald-100 text-emerald-700",
+        panel: "bg-primary-soft/60",
+        bar: "bg-primary",
+        count: "text-primary-strong",
+        item: "border-primary-muted bg-primary-soft/60 hover:bg-primary-soft/60",
+        badge: "border-primary-muted bg-primary-soft text-primary-strong",
       };
     }
 
     return {
-      panel: "bg-violet-50/60",
-      bar: "bg-violet-500",
-      count: "text-violet-700",
-      item: "border-violet-200 bg-violet-50/60 hover:bg-violet-100/60",
-      badge: "border-violet-200 bg-violet-100 text-violet-700",
+      panel: "bg-primary-soft/60",
+      bar: "bg-primary",
+      count: "text-primary-strong",
+      item: "border-primary-muted bg-primary-soft/60 hover:bg-primary-muted/60",
+      badge: "border-primary-muted bg-primary-muted/50 text-primary-strong",
     };
   };
 
@@ -1505,19 +1497,6 @@ export const AdminDashboardPage = () => {
         statsGridClassName="flex flex-col gap-3"
         topSection={undefined}
         stats={
-          isAdminStatsLoading ? (
-            <div className="flex flex-col gap-3">
-              <GlassStatCardsSkeleton
-                count={4}
-                className="grid grid-cols-1 gap-3 lg:grid-cols-4"
-                lines={4}
-              />
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <GlassStatCardSkeleton lines={3} />
-                <GlassStatCardSkeleton lines={4} />
-              </div>
-            </div>
-          ) : (
           <>
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
               {/* 카드1: 진행 / 완료 */}
@@ -1531,11 +1510,11 @@ export const AdminDashboardPage = () => {
                     <div className="text-xs text-muted-foreground">진행</div>
                     <div className="text-right text-lg font-bold">{inProgressRequestCount.toLocaleString()}</div>
                     <div className="text-xs text-muted-foreground">묶음배송</div>
-                    <div className="text-right text-base font-semibold text-sky-700">
+                    <div className="text-right text-base font-semibold text-primary-strong">
                       {inProgressNormalCount.toLocaleString()}건
                     </div>
                     <div className="text-xs text-muted-foreground">신속배송</div>
-                    <div className="text-right text-base font-semibold text-amber-700">
+                    <div className="text-right text-base font-semibold text-accent-strong">
                       {inProgressExpressCount.toLocaleString()}건
                     </div>
                     <div className="text-xs text-muted-foreground">완료(유료)</div>
@@ -1570,7 +1549,7 @@ export const AdminDashboardPage = () => {
                   >
                     <div className="flex items-end justify-between gap-2">
                       <div className="text-xs text-muted-foreground">해피콜 대상 의뢰자</div>
-                      <div className="text-3xl font-bold text-blue-700 leading-none">
+                      <div className="text-3xl font-bold text-primary-strong leading-none">
                         {Number(happyCallSummary?.totalRequestorCount || 0).toLocaleString()}개
                       </div>
                     </div>
@@ -1607,11 +1586,11 @@ export const AdminDashboardPage = () => {
                       </div>
                       <div>
                         <div className="text-[11px] text-muted-foreground">치과</div>
-                        <div className="text-lg font-semibold text-blue-700">{practiceTransferTotalPractices.toLocaleString()}곳</div>
+                        <div className="text-lg font-semibold text-primary-strong">{practiceTransferTotalPractices.toLocaleString()}곳</div>
                       </div>
                       <div>
                         <div className="text-[11px] text-muted-foreground">기공소</div>
-                        <div className="text-lg font-semibold text-emerald-700">{practiceTransferTotalLabs.toLocaleString()}곳</div>
+                        <div className="text-lg font-semibold text-primary-strong">{practiceTransferTotalLabs.toLocaleString()}곳</div>
                       </div>
                     </div>
                   </button>
@@ -1637,7 +1616,7 @@ export const AdminDashboardPage = () => {
                         type="button"
                         className={`text-lg font-bold focus:outline-none ${
                           commBadgeCounts.chat > 0
-                            ? "text-blue-600 hover:text-blue-700 hover:underline"
+                            ? "text-primary-strong hover:text-primary-strong hover:underline"
                             : "text-slate-900 hover:underline"
                         }`}
                         onClick={() => navigate("/dashboard/chat-management?unread=1")}
@@ -1655,7 +1634,7 @@ export const AdminDashboardPage = () => {
                         type="button"
                         className={`text-lg font-bold focus:outline-none ${
                           commBadgeCounts.sms > 0
-                            ? "text-blue-600 hover:text-blue-700 hover:underline"
+                            ? "text-primary-strong hover:text-primary-strong hover:underline"
                             : "text-slate-900 hover:underline"
                         }`}
                         onClick={() => navigate("/dashboard/sms")}
@@ -1673,7 +1652,7 @@ export const AdminDashboardPage = () => {
                         type="button"
                         className={`text-lg font-bold focus:outline-none ${
                           commBadgeCounts.mail > 0
-                            ? "text-blue-600 hover:text-blue-700 hover:underline"
+                            ? "text-primary-strong hover:text-primary-strong hover:underline"
                             : "text-slate-900 hover:underline"
                         }`}
                         onClick={() => navigate("/dashboard/mail?unread=1")}
@@ -1691,7 +1670,7 @@ export const AdminDashboardPage = () => {
                         type="button"
                         className={`text-lg font-bold focus:outline-none ${
                           commBadgeCounts.inquiry > 0
-                            ? "text-blue-600 hover:text-blue-700 hover:underline"
+                            ? "text-primary-strong hover:text-primary-strong hover:underline"
                             : "text-slate-900 hover:underline"
                         }`}
                         onClick={() => navigate("/dashboard/inquiries?status=open")}
@@ -1715,13 +1694,6 @@ export const AdminDashboardPage = () => {
                       <AlertCircle className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      {isAdminRiskLoading ? (
-                        <div className="space-y-2">
-                          <Skeleton className="h-4 w-full" />
-                          <Skeleton className="h-4 w-5/6" />
-                          <Skeleton className="h-3 w-2/3" />
-                        </div>
-                      ) : (
                       <button
                         type="button"
                         className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
@@ -1747,7 +1719,6 @@ export const AdminDashboardPage = () => {
                           클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
                         </div>
                       </button>
-                      )}
                     </CardContent>
                   </Card>
 
@@ -1891,7 +1862,7 @@ export const AdminDashboardPage = () => {
                         data.systemAlerts.map((alert) => (
                           <div
                             key={alert.id}
-                            className="rounded border bg-amber-50/60 px-2 py-1.5"
+                            className="rounded border bg-accent-soft/60 px-2 py-1.5"
                           >
                             <div className="flex items-start gap-2">
                               <div className="mt-0.5">{getAlertIcon(alert.type)}</div>
@@ -1925,15 +1896,15 @@ export const AdminDashboardPage = () => {
                         {Number(unmachinableSummary?.potentialCount || 0).toLocaleString()}
                       </div>
                     </div>
-                    <div className="rounded-md border px-2 py-2 border-yellow-200 bg-yellow-50/60">
+                    <div className="rounded-md border px-2 py-2 border-accent-muted bg-accent-soft/60">
                       <div className="text-[11px] text-muted-foreground">판정</div>
-                      <div className="text-lg font-semibold text-yellow-700">
+                      <div className="text-lg font-semibold text-accent-strong">
                         {Number(unmachinableSummary?.judgedCount || 0).toLocaleString()}
                       </div>
                     </div>
-                    <div className="rounded-md border px-2 py-2 border-blue-200 bg-blue-50/60">
+                    <div className="rounded-md border px-2 py-2 border-primary-muted bg-primary-soft/60">
                       <div className="text-[11px] text-muted-foreground">확인</div>
-                      <div className="text-lg font-semibold text-blue-700">
+                      <div className="text-lg font-semibold text-primary-strong">
                         {Number(unmachinableSummary?.confirmedCount || 0).toLocaleString()}
                       </div>
                     </div>
@@ -1980,7 +1951,7 @@ export const AdminDashboardPage = () => {
                                 variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
                                 className={`text-[10px] ${
                                   code === "judged" || code === "potential"
-                                    ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                                    ? "border-accent-muted bg-accent-soft text-accent-strong"
                                     : ""
                                 }`}
                               >
@@ -2010,7 +1981,6 @@ export const AdminDashboardPage = () => {
               </Card>
             </div>
           </>
-          )
         }
         mainLeft={undefined}
       />
@@ -2031,7 +2001,7 @@ export const AdminDashboardPage = () => {
                 onClick={() => setDesignSoftwareStatsFilter("all")}
                 className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
                   designSoftwareStatsFilter === "all"
-                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    ? "border-primary/70 bg-primary-soft text-primary-strong"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
@@ -2042,7 +2012,7 @@ export const AdminDashboardPage = () => {
                 onClick={() => setDesignSoftwareStatsFilter("3shape")}
                 className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
                   designSoftwareStatsFilter === "3shape"
-                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    ? "border-primary/70 bg-primary-soft text-primary-strong"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
@@ -2053,7 +2023,7 @@ export const AdminDashboardPage = () => {
                 onClick={() => setDesignSoftwareStatsFilter("exocad")}
                 className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
                   designSoftwareStatsFilter === "exocad"
-                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    ? "border-primary/70 bg-primary-soft text-primary-strong"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
@@ -2064,7 +2034,7 @@ export const AdminDashboardPage = () => {
                 onClick={() => setDesignSoftwareStatsFilter("other")}
                 className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
                   designSoftwareStatsFilter === "other"
-                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    ? "border-primary/70 bg-primary-soft text-primary-strong"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
@@ -2153,14 +2123,14 @@ export const AdminDashboardPage = () => {
                 {
                   label: "치과",
                   value: `${practiceTransferTotalPractices.toLocaleString()}곳`,
-                  className: "border-blue-200 bg-blue-50/70",
-                  valueClassName: "text-blue-700",
+                  className: "border-primary-muted bg-primary-soft/70",
+                  valueClassName: "text-primary-strong",
                 },
                 {
                   label: "기공소",
                   value: `${practiceTransferTotalLabs.toLocaleString()}곳`,
-                  className: "border-emerald-200 bg-emerald-50/70",
-                  valueClassName: "text-emerald-700",
+                  className: "border-primary-muted bg-primary-soft/70",
+                  valueClassName: "text-primary-strong",
                 },
                 {
                   label: "활성",
@@ -2171,8 +2141,8 @@ export const AdminDashboardPage = () => {
                 {
                   label: "취소",
                   value: `${practiceTransferCanceled.toLocaleString()}건`,
-                  className: "border-rose-200 bg-rose-50/80",
-                  valueClassName: "text-rose-700",
+                  className: "border-destructive-muted bg-destructive-soft/80",
+                  valueClassName: "text-destructive",
                 },
               ].map((item) => (
                 <div
@@ -2242,7 +2212,7 @@ export const AdminDashboardPage = () => {
                           key={`${String(row?.labAnchorId || "")}-${idx}`}
                           className="flex items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-2"
                         >
-                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[11px] font-semibold text-emerald-700">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-soft text-[11px] font-semibold text-primary-strong">
                             {idx + 1}
                           </div>
                           <div className="min-w-0 flex-1">
@@ -2308,7 +2278,7 @@ export const AdminDashboardPage = () => {
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 border-rose-200 px-2 text-[11px] text-rose-700 hover:bg-rose-50"
+                                className="h-7 border-destructive-muted px-2 text-[11px] text-destructive hover:bg-destructive-soft"
                                 onClick={() =>
                                   setDeleteTransferTarget({
                                     transferId: transferId === "-" ? "" : transferId,
@@ -2335,10 +2305,10 @@ export const AdminDashboardPage = () => {
                 </div>
               </div>
 
-              <div className="flex min-h-0 flex-col rounded-xl border border-rose-200 bg-rose-50/30 p-3">
+              <div className="flex min-h-0 flex-col rounded-xl border border-destructive-muted bg-destructive-soft/30 p-3">
                 <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-rose-800">취소건</div>
-                  <Badge className="border-rose-200 bg-rose-100 text-[10px] text-rose-800 hover:bg-rose-100">
+                  <div className="text-xs font-semibold text-destructive">취소건</div>
+                  <Badge className="border-destructive-muted bg-destructive-soft text-[10px] text-destructive hover:bg-destructive-soft">
                     {practiceTransferRecentCanceled.length}건
                   </Badge>
                 </div>
@@ -2353,7 +2323,7 @@ export const AdminDashboardPage = () => {
                       return (
                         <div
                           key={`canceled-${transferId}-${idx}`}
-                          className="rounded-lg border border-rose-100 bg-white px-3 py-2"
+                          className="rounded-lg border border-destructive-soft bg-white px-3 py-2"
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -2373,7 +2343,7 @@ export const AdminDashboardPage = () => {
                             <div className="flex shrink-0 flex-col items-end gap-1.5">
                               <Badge
                                 variant="secondary"
-                                className="bg-rose-100 text-[10px] text-rose-800"
+                                className="bg-destructive-soft text-[10px] text-destructive"
                               >
                                 취소
                               </Badge>
@@ -2381,7 +2351,7 @@ export const AdminDashboardPage = () => {
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 border-rose-200 px-2 text-[11px] text-rose-700 hover:bg-rose-50"
+                                className="h-7 border-destructive-muted px-2 text-[11px] text-destructive hover:bg-destructive-soft"
                                 onClick={() =>
                                   setRestoreTransferTarget({
                                     transferId: transferId === "-" ? "" : transferId,
@@ -2399,7 +2369,7 @@ export const AdminDashboardPage = () => {
                       );
                     })
                   ) : (
-                    <div className="flex h-full min-h-[8rem] items-center justify-center rounded-lg border border-dashed border-rose-200 bg-white/70 text-xs text-muted-foreground">
+                    <div className="flex h-full min-h-[8rem] items-center justify-center rounded-lg border border-dashed border-destructive-muted bg-white/70 text-xs text-muted-foreground">
                       취소건이 없습니다.
                     </div>
                   )}
@@ -2498,7 +2468,7 @@ export const AdminDashboardPage = () => {
                         variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
                         className={`text-[10px] ${
                           code === "judged" || code === "potential"
-                            ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                            ? "border-accent-muted bg-accent-soft text-accent-strong"
                             : ""
                         }`}
                       >
@@ -2671,7 +2641,7 @@ export const AdminDashboardPage = () => {
                   onClick={() => setHappyCallDialogTab("targets")}
                   className={`inline-flex h-8 items-center rounded-md px-3 text-xs font-semibold transition ${
                     happyCallDialogTab === "targets"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-primary-strong text-white"
                       : "text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -2682,7 +2652,7 @@ export const AdminDashboardPage = () => {
                   onClick={() => setHappyCallDialogTab("completed")}
                   className={`inline-flex h-8 items-center rounded-md px-3 text-xs font-semibold transition ${
                     happyCallDialogTab === "completed"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-primary-strong text-white"
                       : "text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -2705,7 +2675,7 @@ export const AdminDashboardPage = () => {
                     onClick={() => setHappyCallReasonFilter("all_requestors")}
                     className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
                       happyCallReasonFilter === "all_requestors"
-                        ? "border-blue-300 bg-blue-50 text-blue-700"
+                        ? "border-primary/70 bg-primary-soft text-primary-strong"
                         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     }`}
                     aria-label="전체 의뢰자"
@@ -2724,7 +2694,7 @@ export const AdminDashboardPage = () => {
                     onClick={() => setHappyCallReasonFilter("all")}
                     className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
                       happyCallReasonFilter === "all"
-                        ? "border-blue-300 bg-blue-50 text-blue-700"
+                        ? "border-primary/70 bg-primary-soft text-primary-strong"
                         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     }`}
                   >
@@ -2747,7 +2717,7 @@ export const AdminDashboardPage = () => {
                         onClick={() => setHappyCallReasonFilter(code || "all")}
                         className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
                           isActive
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
                             : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                         }`}
                       >
@@ -2787,7 +2757,7 @@ export const AdminDashboardPage = () => {
                     return (
                       <div
                         key={anchorId || item.businessName}
-                        className="rounded-md border px-3 py-2.5 bg-white cursor-pointer hover:border-blue-300 hover:bg-blue-50/20 transition"
+                        className="rounded-md border px-3 py-2.5 bg-white cursor-pointer hover:border-primary/70 hover:bg-primary-soft/20 transition"
                         role="button"
                         tabIndex={0}
                         onClick={() => openHappyCallBusinessDetail(item)}
@@ -2828,7 +2798,7 @@ export const AdminDashboardPage = () => {
                               <div className="flex flex-col items-end gap-1.5 shrink-0">
                                 <button
                                   type="button"
-                                  className="inline-flex h-8 items-center rounded-md border border-blue-600 bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+                                  className="inline-flex h-8 items-center rounded-md border border-primary-strong bg-primary-strong px-3 text-xs font-semibold text-white hover:bg-primary-strong"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setPhoneConfirm({
@@ -2875,7 +2845,7 @@ export const AdminDashboardPage = () => {
                               type="button"
                               className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold transition shrink-0 ${
                                 memoExists
-                                  ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                  ? "border-accent-muted bg-accent-soft text-accent-strong hover:bg-accent-soft"
                                   : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
                               }`}
                               onClick={(e) => {
@@ -2896,7 +2866,7 @@ export const AdminDashboardPage = () => {
                               className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold transition shrink-0 ${
                                 completingHappyCallByAnchor[anchorId]
                                   ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                                  : "border-blue-400 bg-white text-blue-700 hover:bg-blue-50"
+                                  : "border-primary/70 bg-white text-primary-strong hover:bg-primary-soft"
                               }`}
                               disabled={Boolean(completingHappyCallByAnchor[anchorId])}
                               onClick={(e) => {
@@ -2956,7 +2926,7 @@ export const AdminDashboardPage = () => {
                         onClick={() => setHappyCallCompletionPeriod(opt.value)}
                         className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold transition ${
                           isActive
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
                             : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                         }`}
                       >
@@ -2970,7 +2940,7 @@ export const AdminDashboardPage = () => {
                     value={happyCallCompletionSearch}
                     onChange={(e) => setHappyCallCompletionSearch(String(e.target.value || ""))}
                     placeholder="의뢰자명/회사명 검색"
-                    className="h-8 min-w-[220px] rounded-md border border-slate-300 px-2.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    className="h-8 min-w-[220px] rounded-md border border-slate-300 px-2.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-muted"
                   />
                 </div>
 
@@ -2992,7 +2962,7 @@ export const AdminDashboardPage = () => {
                       return (
                         <div
                           key={row.id || `${row.businessAnchorId}-${row.completedAt}`}
-                          className="rounded-md border bg-white px-3 py-2.5 cursor-pointer hover:border-blue-300 hover:bg-blue-50/20 transition"
+                          className="rounded-md border bg-white px-3 py-2.5 cursor-pointer hover:border-primary/70 hover:bg-primary-soft/20 transition"
                           role="button"
                           tabIndex={0}
                           onClick={() => openHappyCallBusinessDetail(row)}
@@ -3017,7 +2987,7 @@ export const AdminDashboardPage = () => {
                                 type="button"
                                 className={`inline-flex h-7 items-center rounded-md border px-2 text-xs font-semibold transition ${
                                   memoEntries.length
-                                    ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                    ? "border-accent-muted bg-accent-soft text-accent-strong hover:bg-accent-soft"
                                     : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
                                 }`}
                                 onClick={(e) => {
@@ -3039,7 +3009,7 @@ export const AdminDashboardPage = () => {
                                 className={`inline-flex h-7 items-center rounded-md border px-2.5 text-xs font-semibold transition ${
                                   reverting
                                     ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                                    : "border-amber-300 bg-white text-amber-700 hover:bg-amber-50"
+                                    : "border-accent-muted bg-white text-accent-strong hover:bg-accent-soft"
                                 }`}
                                 disabled={reverting || !rowAnchorId}
                                 onClick={(e) => {
@@ -3213,7 +3183,7 @@ export const AdminDashboardPage = () => {
                                 onClick={() => setHappyCallSelectedMemoId(entry.id)}
                                 className={`w-full rounded-md border px-2.5 py-2 text-left transition ${
                                   isActive
-                                    ? "border-blue-300 bg-blue-50"
+                                    ? "border-primary/70 bg-primary-soft"
                                     : "border-slate-200 bg-white hover:bg-slate-50"
                                 }`}
                               >
@@ -3255,7 +3225,7 @@ export const AdminDashboardPage = () => {
                       onChange={(e) =>
                         setHappyCallMemoDraft(String(e.target.value || "").slice(0, 500))
                       }
-                      className="w-full min-h-[260px] rounded-md border border-slate-300 px-2.5 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-y"
+                      className="w-full min-h-[260px] rounded-md border border-slate-300 px-2.5 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-muted resize-y"
                     />
                     <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
                       <span className="truncate">저장 시 현재 시각이 자동 기록됩니다.</span>

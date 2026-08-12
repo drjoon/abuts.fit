@@ -20,7 +20,6 @@ import {
 } from "@/components/ui/table";
 import type { SalesmanLedgerType } from "./SalesmanLedgerModal";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { LedgerTableRowsSkeleton } from "@/shared/ui/skeletons/DashboardSectionSkeletons";
 
 type LedgerItem = {
   _id: string;
@@ -105,7 +104,7 @@ export const CommissionLedgerInline = ({
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<LedgerItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
@@ -395,7 +394,7 @@ export const CommissionLedgerInline = ({
                     {typeLabel(r.type)}
                   </TableCell>
                   <TableCell
-                    className={`text-center text-xs font-semibold tabular-nums whitespace-nowrap ${amount < 0 ? "text-rose-600" : "text-blue-700"}`}
+                    className={`text-center text-xs font-semibold tabular-nums whitespace-nowrap ${amount < 0 ? "text-destructive" : "text-primary-strong"}`}
                   >
                     {amount.toLocaleString()}원
                   </TableCell>
@@ -430,16 +429,11 @@ export const CommissionLedgerInline = ({
           </TableBody>
         </Table>
         <div ref={sentinelRef} className="h-6" />
-        {loading && items.length === 0 ? (
-          <div className="p-2">
-            <LedgerTableRowsSkeleton rows={6} />
+        {loading && (
+          <div className="py-4 text-center text-sm text-muted-foreground">
+            불러오는 중...
           </div>
-        ) : null}
-        {loading && items.length > 0 ? (
-          <div className="py-3 text-center text-sm text-muted-foreground">
-            더 불러오는 중...
-          </div>
-        ) : null}
+        )}
       </div>
     </div>
   );

@@ -84,7 +84,7 @@ export const CncMachineInfoModal: React.FC<CncMachineInfoModalProps> = ({
             {loading ? (
               <div className="text-sm text-slate-600">조회 중...</div>
             ) : error ? (
-              <div className="text-sm text-red-600">{error}</div>
+              <div className="text-sm text-destructive">{error}</div>
             ) : (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -117,24 +117,24 @@ export const CncMachineInfoModal: React.FC<CncMachineInfoModalProps> = ({
                     ALARM
                   </div>
                   {alarms.length === 0 ? (
-                    <div className="text-sm text-emerald-700">알람 없음</div>
+                    <div className="text-sm text-primary-strong">알람 없음</div>
                   ) : (
                     <div className="space-y-1">
                       {alarms.map((a, idx) => (
                         <div
                           key={`${a.type}-${a.no}-${idx}`}
-                          className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-800"
+                          className="rounded-lg border border-destructive-soft bg-destructive-soft px-3 py-2 text-sm text-destructive"
                         >
                           <div className="font-semibold">
                             {a.displayText ||
                               a.message ||
                               `${formatAlarmHead(a.headType)} 알람`}
                           </div>
-                          <div className="mt-1 text-xs text-red-700/90">
+                          <div className="mt-1 text-xs text-destructive/90">
                             type={String(a.type)} · no={String(a.no)}
                           </div>
                           {a.source ? (
-                            <div className="mt-1 text-[11px] text-red-600/80">
+                            <div className="mt-1 text-[11px] text-destructive/80">
                               source={a.source}
                             </div>
                           ) : null}
@@ -149,7 +149,7 @@ export const CncMachineInfoModal: React.FC<CncMachineInfoModalProps> = ({
                         type="button"
                         disabled={!!clearing}
                         onClick={onClearAlarms}
-                        className="inline-flex h-9 items-center justify-center rounded-md bg-red-600 px-4 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+                        className="inline-flex h-9 items-center justify-center rounded-md bg-destructive px-4 text-white text-sm font-semibold hover:bg-destructive disabled:opacity-60"
                       >
                         {clearing ? "해제 중..." : "알람 해제"}
                       </button>

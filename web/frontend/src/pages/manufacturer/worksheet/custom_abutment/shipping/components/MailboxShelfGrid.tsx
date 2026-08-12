@@ -3,7 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/components/ui/tooltip.tsx
+// - web/backend/controllers/requests/shipping.controller.js
 import * as React from "react";
 
 import {
@@ -49,6 +50,7 @@ type MailboxShelfGridProps = {
     earliestEstimatedShipYmd?: string | null;
   }) => string;
   onBoxClick?: (address: string) => void;
+  onBoxPrefetch?: (address: string) => void;
 };
 
 export const MailboxShelfGrid = ({
@@ -68,6 +70,7 @@ export const MailboxShelfGrid = ({
   handleTouchEnd,
   getMailboxColorClass,
   onBoxClick,
+  onBoxPrefetch,
 }: MailboxShelfGridProps) => {
   void scrollContainerRef;
 
@@ -98,7 +101,7 @@ export const MailboxShelfGrid = ({
   };
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={0}>
       <div
         ref={scrollContainerRef}
         className="flex-1 flex gap-3 sm:gap-4 overflow-x-auto overflow-y-auto pb-4 w-full justify-start px-2 scroll-smooth p-1 sm:p-2"
@@ -203,10 +206,15 @@ export const MailboxShelfGrid = ({
                               <div
                                 onClick={handleOpenDetails}
                                 onTouchEnd={handleOpenDetails}
+                                onMouseEnter={() => {
+                                  if (isOccupied && onBoxPrefetch) {
+                                    onBoxPrefetch(address);
+                                  }
+                                }}
                                 data-printed={hasPrinted ? "1" : "0"}
                                 className={`
                                   relative flex flex-col items-center justify-between p-1 rounded border transition-all select-none
-                                  ${isNotTodayShip ? "bg-amber-50 border-amber-300" : "bg-white border-slate-200"}
+                                  ${isNotTodayShip ? "bg-accent-soft border-accent-muted" : "bg-white border-slate-200"}
                                   ${isOccupied ? "cursor-pointer hover:shadow-md" : ""}
                                 `}
                                 style={{
@@ -216,27 +224,27 @@ export const MailboxShelfGrid = ({
                                 }}
                               >
                                 {showSuccessBorder ? (
-                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-blue-600" />
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-primary-strong" />
                                 ) : null}
                                 {showAcceptedBorder ? (
-                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-dashed border-blue-600" />
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-dashed border-primary-strong" />
                                 ) : null}
                                 {showPrintedBorder ? (
                                   <div className="pointer-events-none absolute inset-0 rounded border-2 border-dashed border-slate-900" />
                                 ) : null}
                                 {showFailedBorder ? (
-                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-red-600" />
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-destructive" />
                                 ) : null}
                                 {isNotTodayShip &&
                                 !showSuccessBorder &&
                                 !showAcceptedBorder &&
                                 !showPrintedBorder &&
                                 !showFailedBorder ? (
-                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-dashed border-amber-500" />
+                                  <div className="pointer-events-none absolute inset-0 rounded border-2 border-dashed border-accent" />
                                 ) : null}
                                 {isNotTodayShip && nextShippingDayLabel ? (
                                   <div
-                                    className="pointer-events-none absolute -top-1 -right-1 px-1 rounded bg-amber-500 text-white font-bold leading-none"
+                                    className="pointer-events-none absolute -top-1 -right-1 px-1 rounded bg-accent text-white font-bold leading-none"
                                     style={{
                                       fontSize: "8px",
                                       padding: "1px 3px",
@@ -248,20 +256,20 @@ export const MailboxShelfGrid = ({
                                 <div
                                   className={`font-mono font-bold leading-none text-center w-full pointer-events-none ${
                                     showAcceptedBorder
-                                      ? "text-blue-700"
+                                      ? "text-primary-strong"
                                       : showSuccessBorder
-                                        ? "text-blue-700"
+                                        ? "text-primary-strong"
                                         : showPrintedBorder
                                           ? "text-slate-900"
                                           : isOccupied
                                             ? getMailboxColorClass(
                                                 summary,
-                                              ).includes("bg-blue")
-                                              ? "text-blue-800"
+                                              ).includes("bg-primary")
+                                              ? "text-primary-strong"
                                               : getMailboxColorClass(
                                                     summary,
-                                                  ).includes("bg-red")
-                                                ? "text-red-800"
+                                                  ).includes("bg-destructive")
+                                                ? "text-destructive"
                                                 : "text-slate-700"
                                             : "text-slate-400"
                                   }`}
@@ -276,19 +284,19 @@ export const MailboxShelfGrid = ({
                                       onClick={handleOpenDetails}
                                       className={`font-bold leading-none ${
                                         showSuccessBorder
-                                          ? "text-blue-700"
+                                          ? "text-primary-strong"
                                           : showAcceptedBorder
-                                            ? "text-blue-700"
+                                            ? "text-primary-strong"
                                             : showPrintedBorder
                                               ? "text-slate-900"
                                               : getMailboxColorClass(
                                                     summary,
-                                                  ).includes("bg-blue")
-                                                ? "text-blue-700"
+                                                  ).includes("bg-primary")
+                                                ? "text-primary-strong"
                                                 : getMailboxColorClass(
                                                       summary,
-                                                    ).includes("bg-red")
-                                                  ? "text-red-700"
+                                                    ).includes("bg-destructive")
+                                                  ? "text-destructive"
                                                   : "text-slate-700"
                                       }`}
                                       style={{ fontSize: "18px" }}

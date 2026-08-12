@@ -68,7 +68,7 @@ export function MessageReadReceipt({
             {isReadByOthers ? (
               <CheckCheck
                 className={`w-4 h-4 ${
-                  allRead ? "text-blue-500" : "text-gray-400"
+                  allRead ? "text-primary" : "text-gray-400"
                 }`}
               />
             ) : (

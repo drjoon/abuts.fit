@@ -37,6 +37,9 @@ export interface ChatMessage {
     name: string;
     role: string;
   };
+  /** user(기본) | system(작업취소 등 상태 기록) */
+  messageKind?: "user" | "system" | string;
+  systemEvent?: string | null;
   content: string;
   attachments?: Array<{
     fileId?: string;

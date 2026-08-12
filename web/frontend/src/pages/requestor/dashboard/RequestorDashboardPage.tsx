@@ -11,44 +11,40 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   CheckCircle,
+  ClipboardCheck,
   Factory,
   FileText,
   Package,
   Boxes,
-  AlertTriangle,
+  RotateCcw,
+  Send,
+  Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
   RequestorEditRequestDialog,
   type EditingRequestState,
 } from "./components/RequestorEditRequestDialog";
 import { RequestorDashboardStatsCards } from "./components/RequestorDashboardStatsCards";
-import { RequestorPricingReferralPolicyCard } from "./components/RequestorPricingReferralPolicyCard";
-import {
-  RequestorRiskSummaryCard,
-  type RiskSummaryItem,
-} from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { RequestorBulkShippingBannerCard } from "./components/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "./components/RequestorRecentRequestsCard";
-import type { RequestorDashboardStat } from "./components/RequestorDashboardStatsCards";
+import type {
+  RequestorDashboardStat,
+  RequestorDashboardStatRow,
+} from "./components/RequestorDashboardStatsCards";
 import { RequestorWorkspaceHeader } from "@/shared/components/RequestorWorkspaceHeader";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  RequestDetailDialog,
-  type RequestDetailDialogRequest,
-} from "@/features/requests/components/RequestDetailDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getNormalizedStage, getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -56,7 +52,15 @@ import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
+import {
+  fileFromModelBlob,
+  modelFileBasename,
+} from "@/shared/files/modelPreviewFile";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import {
+  RequestorPolicyRemakeHeader,
+  useRequestorMonthlyRemakeFreeRemaining,
+} from "./components/RequestorPolicyRemakeHeader";
 
 const isDashDebugEnabled = () => {
   if (typeof window === "undefined") return false;
@@ -73,13 +77,32 @@ const dashDebug = (label: string, payload?: unknown) => {
   console.log(`[RequestorDashboardDebug][${ts}] ${label}`, payload);
 };
 
+// change-log:
+// - 2026-08-12: 무료 재제작 잔여를 헤더에서 어벗 라인 요약카드로 이동.
+// - 2026-08-11: 대시보드 컨텐츠 max-w-7xl — 기공/어벗 요약카드 가로 여유.
+// - 2026-08-11: 기공 요약 — 의뢰·수락·완료·발송·추적관리 5칸(수신 제거).
+// - 2026-08-11: 기공 요약 — 발송·수락·완료·발송·추적관리 5칸(수신 제거).
+// - 2026-08-11: 기공 요약 — 의뢰수락 오른쪽「작업완료」추가(placeholder).
+// - 2026-08-11: 불완전 가공 프리뷰 File명을 원본 확장자(STL/PLY/OBJ)로 유지.
+// - 2026-08-11: 지연 위험 요약 카드 제거. 지연은 최근 의뢰 빨간 뱃지로 표시.
+// - 2026-08-11: 좌측(출고·불완전가공) + 우측 최근의뢰(동일 높이) 레이아웃.
+// - 2026-08-11: 오늘의 가격 카드 삭제. [정책]·무료 재제작 잔여를 헤더(필터 오른쪽)로 이동.
+// - 2026-08-11: 지난 의뢰 버튼을 상단 헤더에서 최근 의뢰 카드로 이동(어벗의뢰 헤더에서도 제거).
+// - 2026-08-11: 헤더 보유 크레딧/원장 모달 제거 → 사이드바 크레딧 페이지로 이전.
+// - 2026-08-11: 요약카드 압축·전기간대비 제거, 오늘의 가격 숨김/출고 툴팁 반영.
+// - 2026-08-11: 치과·기공소 공통 — 기공/어벗 2행 요약, 오늘의 생산가격↔출고 위치 교체.
+// - 2026-08-11: 치과(practice) 상단 요약 — 기공/어벗 2행, 좌측 행 라벨, 불완전 가공 카드 제거.
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
+// - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
+// - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/shared/files/stlIndexedDb.ts
@@ -111,9 +134,12 @@ export const RequestorDashboardPage = () => {
     freeShippingCredit,
   } = useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
+  const {
+    monthlyRemakeFreeRemaining,
+    isLoading: isRemakeRemainingLoading,
+  } = useRequestorMonthlyRemakeFreeRemaining();
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
-  const [, setCreditLedgerOpen] = useState(false);
   const [editingRequest, setEditingRequest] =
     useState<EditingRequestState>(null);
   const [editingDescription, setEditingDescription] = useState("");
@@ -125,15 +151,9 @@ export const RequestorDashboardPage = () => {
   const [editingImplantBrand, setEditingImplantBrand] = useState("");
   const [editingImplantFamily, setEditingImplantFamily] = useState("");
   const [editingImplantType, setEditingImplantType] = useState("");
-  const [selectedRiskSummaryItem, setSelectedRiskSummaryItem] =
-    useState<RiskSummaryItem | null>(null);
-  const [riskSummaryDetail, setRiskSummaryDetail] =
-    useState<RequestDetailDialogRequest | null>(null);
-  const [riskSummaryDetailLoading, setRiskSummaryDetailLoading] =
-    useState(false);
-
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
+  const [hasSummaryHydrated, setHasSummaryHydrated] = useState(false);
   const [heavySummaryEnabled, setHeavySummaryEnabled] = useState(false);
   const heavySummaryRefreshTimerRef = useRef<number | null>(null);
   const cardsSummaryRevalidateTimerRef = useRef<number | null>(null);
@@ -467,11 +487,7 @@ export const RequestorDashboardPage = () => {
   const [insufficientShippingCredit, setInsufficientShippingCredit] =
     useState(false);
 
-  const {
-    data: summaryResponse,
-    refetch: refetchSummary,
-    isLoading: isSummaryLoading,
-  } = useQuery({
+  const { data: summaryResponse, refetch: refetchSummary } = useQuery({
     queryKey: summaryQueryKey,
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -792,6 +808,7 @@ export const RequestorDashboardPage = () => {
 
   useEffect(() => {
     setHeavySummaryEnabled(false);
+    setHasSummaryHydrated(false);
   }, [period, user?.id, user?.businessAnchorId]);
 
   useEffect(() => {
@@ -1134,35 +1151,6 @@ export const RequestorDashboardPage = () => {
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
 
-  const riskSummary = useMemo(() => {
-    if (!summaryResponse?.success) return null;
-    const baseSummary = summaryResponse.data.riskSummary ?? null;
-    if (!baseSummary) return null;
-
-    const originalItems = Array.isArray(baseSummary.items)
-      ? baseSummary.items
-      : [];
-    const filteredItems = originalItems.filter(
-      (item) => !isCanceledRequest(item) && !isUnmachinableRequest(item),
-    );
-
-    if (filteredItems.length === originalItems.length) {
-      return baseSummary;
-    }
-
-    const delayedCount = filteredItems.filter(
-      (item) => item.riskLevel === "danger",
-    ).length;
-    const warningCount = filteredItems.length - delayedCount;
-
-    return {
-      ...baseSummary,
-      items: filteredItems,
-      delayedCount,
-      warningCount,
-    };
-  }, [summaryResponse, isCanceledRequest, isUnmachinableRequest]);
-  
   const recentRequests = useMemo(() => {
     if (!summaryResponse?.success) return [];
     const requests = Array.isArray(summaryResponse.data.recentRequests)
@@ -1216,6 +1204,11 @@ export const RequestorDashboardPage = () => {
 
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
   }, [dashboardStatsSource, recentRequests, isUnmachinableRequest]);
+
+  // 데이터가 바뀌는 섹션만 스켈레톤 처리한다(헤더·사이드바 등 chrome은 항상 유지).
+  const isStatsLoading = !cardsSummaryResponse && isCardsSummaryLoading;
+  const isBulkSectionLoading = !bulkResponse && isBulkLoading;
+  const isHeavySectionLoading = !hasSummaryHydrated;
 
   const openEditDialogFromRequest = (request: any) => {
     const mongoId = request._id || request.id;
@@ -1306,7 +1299,7 @@ export const RequestorDashboardPage = () => {
         title: "의뢰가 취소되었습니다",
         duration: 2000,
       });
-      // 최근의뢰 목록은 request:stage-changed, 헤더 보유크레딧은 credit:balance-updated
+      // 최근의뢰 목록은 request:stage-changed, 크레딧 잔액은 credit:balance-updated
       // 웹소켓 수신 후 silent refetch로 무플리커 반영한다. (optimistic 금지)
     } catch (error) {
       console.error("의뢰 취소 중 오류", error);
@@ -1550,32 +1543,43 @@ export const RequestorDashboardPage = () => {
         const requestNo = String(
           activeUnmachinableDecisionItem?.requestId || requestMongoId,
         ).trim();
-        const fileName = `${requestNo || requestMongoId}-original.stl`;
+        const fallbackName = `${requestNo || requestMongoId}-original.stl`;
         const cacheKey = `stl:requestor-unmachinable:${requestMongoId}:original-file-url`;
 
-        const detailPromise = apiFetch<any>({
+        const detailRes = await apiFetch<any>({
           path: `/api/requests/${requestMongoId}`,
           method: "GET",
           token,
         });
+        const detail =
+          detailRes.ok && detailRes.data?.success
+            ? detailRes.data?.data || null
+            : null;
+        if (!cancelled) {
+          setUnmachinableDetailRequest(detail);
+        }
+
+        const resolveFileName = (apiFileName?: unknown) =>
+          modelFileBasename(
+            apiFileName ||
+              detail?.caseInfos?.file?.filePath ||
+              detail?.caseInfos?.file?.originalName ||
+              detail?.caseInfos?.file?.fileName ||
+              (activeUnmachinableDecisionItem as any)?.caseInfos?.file
+                ?.filePath ||
+              (activeUnmachinableDecisionItem as any)?.caseInfos?.file
+                ?.originalName ||
+              fallbackName,
+            fallbackName,
+          );
 
         const cached = await getFileBlob(cacheKey);
         if (cached && !cancelled) {
           setUnmachinablePreviewFile(
-            new File([cached], fileName, { type: cached.type || "model/stl" }),
+            fileFromModelBlob(cached, resolveFileName()),
           );
           setUnmachinablePreviewLoading(false);
-
-          const detailRes = await detailPromise;
-          if (!cancelled && detailRes.ok && detailRes.data?.success) {
-            setUnmachinableDetailRequest(detailRes.data?.data || null);
-          }
           return;
-        }
-
-        const detailRes = await detailPromise;
-        if (!cancelled && detailRes.ok && detailRes.data?.success) {
-          setUnmachinableDetailRequest(detailRes.data?.data || null);
         }
 
         const originalFileRes = await fetch(
@@ -1590,10 +1594,11 @@ export const RequestorDashboardPage = () => {
         );
         const originalFileBody: any = await originalFileRes.json().catch(() => ({}));
         const signedUrl = String(originalFileBody?.data?.url || "").trim();
+        const fileName = resolveFileName(originalFileBody?.data?.fileName);
 
         if (!originalFileRes.ok || !signedUrl) {
           if (cancelled) return;
-          setUnmachinablePreviewError("STL 파일을 찾을 수 없습니다.");
+          setUnmachinablePreviewError("3D 모델 파일을 찾을 수 없습니다.");
           setUnmachinablePreviewLoading(false);
           return;
         }
@@ -1601,7 +1606,7 @@ export const RequestorDashboardPage = () => {
         const fileRes = await fetch(signedUrl, { method: "GET" });
         if (!fileRes.ok) {
           if (cancelled) return;
-          setUnmachinablePreviewError("STL 파일을 불러오지 못했습니다.");
+          setUnmachinablePreviewError("3D 모델 파일을 불러오지 못했습니다.");
           setUnmachinablePreviewLoading(false);
           return;
         }
@@ -1615,14 +1620,12 @@ export const RequestorDashboardPage = () => {
           // ignore cache write errors
         }
 
-        setUnmachinablePreviewFile(
-          new File([blob], fileName, { type: blob.type || "model/stl" }),
-        );
+        setUnmachinablePreviewFile(fileFromModelBlob(blob, fileName));
         setUnmachinablePreviewLoading(false);
       } catch (error) {
         if (cancelled) return;
-        console.error("불완전 가공 STL 로드 실패", error);
-        setUnmachinablePreviewError("STL 파일을 불러오지 못했습니다.");
+        console.error("불완전 가공 3D 모델 로드 실패", error);
+        setUnmachinablePreviewError("3D 모델 파일을 불러오지 못했습니다.");
         setUnmachinablePreviewLoading(false);
       }
     };
@@ -1792,6 +1795,12 @@ export const RequestorDashboardPage = () => {
   };
 
   useEffect(() => {
+    if (cardsSummaryResponse?.success || summaryResponse?.success) {
+      setHasSummaryHydrated(true);
+    }
+  }, [cardsSummaryResponse, summaryResponse]);
+
+  useEffect(() => {
     if (!cardsSummaryResponse?.success) return;
     dashDebug("query:cardsSummary updated", {
       stats: cardsSummaryResponse?.data?.stats || null,
@@ -1842,17 +1851,16 @@ export const RequestorDashboardPage = () => {
     }
   }, [cardsSummaryResponse, summaryResponse]);
 
-  const isStatsLoading = !cardsSummaryResponse && isCardsSummaryLoading;
-  // heavy summary는 period 전환 시 placeholder를 쓰지 않으므로, 데이터 없는 동안만 섹션 스켈레톤.
-  // cards 실패 시에는 빈 상태로 두고, 무한 스켈레톤에 머물지 않는다.
-  const isHeavySectionLoading =
-    !summaryResponse &&
-    (isSummaryLoading ||
-      (!heavySummaryEnabled &&
-        (isCardsSummaryLoading || Boolean(cardsSummaryResponse?.success))));
-  const isBulkSectionLoading = !bulkResponse && isBulkLoading;
+  const remakeRemainingStat: RequestorDashboardStat = {
+    label: "무료 재제작 잔여",
+    value: isRemakeRemainingLoading
+      ? "…"
+      : `${monthlyRemakeFreeRemaining.toLocaleString()}건`,
+    icon: RotateCcw,
+    interactive: false,
+  };
 
-  const stats: RequestorDashboardStat[] = (() => {
+  const abutmentStats: RequestorDashboardStat[] = (() => {
     if (!dashboardStatsSource?.success) {
       return [
         { label: "준비", value: "0", icon: FileText },
@@ -1860,7 +1868,7 @@ export const RequestorDashboardPage = () => {
         { label: "세척.패킹", value: "0", icon: Boxes },
         { label: "포장.발송", value: "0건/0박스", icon: Package },
         { label: "추적관리", value: "0건/0박스", icon: CheckCircle },
-        { label: "불완전 가공", value: "0", icon: AlertTriangle },
+        remakeRemainingStat,
       ];
     }
 
@@ -1873,48 +1881,78 @@ export const RequestorDashboardPage = () => {
       {
         label: "준비",
         value: `${s.totalRequests ?? 0}`,
-        change: `${s.totalRequestsChange ?? "+0%"}`,
         icon: FileText,
       },
       {
         label: "가공",
         value: String((s.inCam ?? 0) + (s.inProduction ?? 0)),
-        change: s.inProductionChange ?? "+0%",
         icon: Factory,
       },
       {
         label: "세척.패킹",
         value: String(s.inPacking ?? 0),
-        change: s.inPackingChange ?? "+0%",
         icon: Boxes,
       },
       {
         label: "포장.발송",
         value: `${shippingProductCount}건/${shippingBoxCount}박스`,
-        change: s.inShippingChange ?? "+0%",
         icon: Package,
       },
       {
         label: "추적관리",
         value: `${trackingProductCount}건/${trackingBoxCount}박스`,
-        change: s.inTrackingChange ?? "+0%",
         icon: CheckCircle,
       },
-      {
-        label: "불완전 가공",
-        value: String(unmachinableRecordedCount),
-        change: "+0%",
-        icon: AlertTriangle,
-      },
+      remakeRemainingStat,
     ];
   })();
 
+  // 기공(무료 기공의뢰서) 라인 — 집계 API 연동 전 UI 슬롯. 수치는 placeholder.
+  // 뱃지 SSOT: 의뢰 · 수락 · 완료 · 발송 · 추적관리 (수신 제거)
+  const practiceTransferStats: RequestorDashboardStat[] = [
+    {
+      label: "의뢰",
+      value: "0",
+      icon: Send,
+      interactive: false,
+    },
+    {
+      label: "수락",
+      value: "0",
+      icon: Download,
+      interactive: false,
+    },
+    {
+      label: "완료",
+      value: "0",
+      icon: ClipboardCheck,
+      interactive: false,
+    },
+    {
+      label: "발송",
+      value: "0",
+      icon: Package,
+      interactive: false,
+    },
+    {
+      label: "추적관리",
+      value: "0",
+      icon: CheckCircle,
+      interactive: false,
+    },
+  ];
+
+  const requestorStatRows: RequestorDashboardStatRow[] = [
+    { rowLabel: "기공", stats: practiceTransferStats },
+    { rowLabel: "어벗", stats: abutmentStats },
+  ];
+
   return (
     <div className="h-full min-h-0">
-      <div className="max-w-6xl mx-auto w-full space-y-3">
+      <div className="max-w-7xl mx-auto w-full space-y-3">
       <DashboardShell
-        title={`안녕하세요, ${user.name}님!`}
-        statsGridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3"
+        title={`안녕하세요, ${user?.name ?? ""}님!`}
+        statsGridClassName="space-y-3"
         subtitle={
           insufficientCredit && insufficientShippingCredit
             ? "의뢰비와 배송비 크레딧 부족. 충전해주세요"
@@ -1928,11 +1966,8 @@ export const RequestorDashboardPage = () => {
           <RequestorWorkspaceHeader
             period={period}
             onPeriodChange={setPeriod}
-            insufficientCredit={insufficientCredit}
-            insufficientShippingCredit={insufficientShippingCredit}
-            onCreditLedgerOpenChange={setCreditLedgerOpen}
-            onSelectPastRequest={openEditDialogFromRequest}
           >
+            <RequestorPolicyRemakeHeader />
             {unmachinableAlertCount > 0 && (
               <button
                 type="button"
@@ -1940,7 +1975,7 @@ export const RequestorDashboardPage = () => {
                   setFocusedUnmachinableRequestId(null);
                   setUnmachinableAlertModalOpen(true);
                 }}
-                className="inline-flex h-8 items-center rounded-md border border-yellow-300 bg-yellow-50 px-3 text-sm font-semibold text-yellow-700 ring-2 ring-yellow-200 hover:bg-yellow-100"
+                className="inline-flex h-8 items-center rounded-md border border-accent-muted bg-accent-soft px-3 text-sm font-semibold text-accent-strong ring-2 ring-accent-muted/80 hover:bg-accent-muted/50"
                 title="불완전 가공 의뢰 목록을 확인합니다"
               >
                 불완전 가공 의뢰 {unmachinableAlertCount}건 발생
@@ -1950,36 +1985,29 @@ export const RequestorDashboardPage = () => {
         }
         stats={
           <RequestorDashboardStatsCards
-            stats={stats}
+            rows={requestorStatRows}
             loading={isStatsLoading}
-            onCardClick={(stat) => {
+            onCardClick={(stat, rowLabel) => {
+              if (rowLabel === "기공") return;
               setStatsModalLabel(stat.label);
               setStatsModalOpen(true);
             }}
           />
         }
         topSection={
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch">
-              <div className="lg:col-span-2 min-w-0 h-full">
-                <RequestorPricingReferralPolicyCard />
-              </div>
-              <div className="lg:col-span-3 h-full min-w-0">
-                <RequestorRecentRequestsCard
-                  items={recentRequests}
-                  loading={isHeavySectionLoading}
-                  onRefresh={() => {
-                    refetchSummary();
-                    refetchBulk();
-                  }}
-                  onEdit={openEditDialogFromRequest}
-                  onCancel={cancelRequest}
-                />
-              </div>
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch">
+            <div className="lg:col-span-2 min-w-0 flex flex-col gap-3 [&_.app-glass-card]:h-auto">
+              <RequestorBulkShippingBannerCard
+                bulkData={bulkData}
+                loading={isBulkSectionLoading}
+                period={period}
+                onRefresh={() => {
+                  refetchBulk();
+                }}
+                onOpenBulkModal={() => {}}
+              />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-stretch">
-              <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
+              <Card className="app-glass-card app-glass-card--lg min-w-0">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base font-semibold">불완전 가공</CardTitle>
                 </CardHeader>
@@ -2008,7 +2036,7 @@ export const RequestorDashboardPage = () => {
                           <button
                             key={requestMongoId || requestId}
                             type="button"
-                            className="w-full text-left rounded-md border border-yellow-300 bg-yellow-50/50 px-3 py-2 hover:bg-yellow-100/50"
+                            className="w-full text-left rounded-md border border-accent-muted bg-accent-soft/50 px-3 py-2 hover:bg-accent-muted/40"
                             onClick={() => {
                               handleOpenUnmachinableDecisionModal(requestMongoId);
                             }}
@@ -2019,7 +2047,7 @@ export const RequestorDashboardPage = () => {
                                 <ShippingModeBadge source={item} size="sm" />
                                 <Badge
                                   variant="outline"
-                                  className="text-[10px] border-yellow-300 text-yellow-700"
+                                  className="text-[10px] border-accent-muted text-accent-strong"
                                 >
                                   {confirmed ? "확인됨" : "미확인"}
                                 </Badge>
@@ -2027,7 +2055,7 @@ export const RequestorDashboardPage = () => {
                               <div className="text-xs text-muted-foreground truncate">
                                 의뢰번호: {requestId}
                               </div>
-                              <div className="text-xs text-yellow-800 truncate">
+                              <div className="text-xs text-accent-strong truncate">
                                 불완전 가공 사유: {reason || "미등록"}
                               </div>
                             </div>
@@ -2038,48 +2066,22 @@ export const RequestorDashboardPage = () => {
                   )}
                 </CardContent>
               </Card>
+            </div>
 
-              <RequestorBulkShippingBannerCard
-                bulkData={bulkData}
-                loading={isBulkSectionLoading}
-                period={period}
-                onRefresh={() => {
-                  refetchBulk();
-                }}
-                onOpenBulkModal={() => {}}
-              />
-
-              <RequestorRiskSummaryCard
-                riskSummary={riskSummary}
-                loading={isHeavySectionLoading}
-                disableInnerScroll
-                maxVisibleItems={3}
-                onItemClick={(item) => {
-                  setSelectedRiskSummaryItem(item);
-                  setRiskSummaryDetailLoading(true);
-                  apiFetch<any>({
-                    path: `/api/requests/${item.id}`,
-                    method: "GET",
-                    token,
-                  })
-                    .then((res) => {
-                      if (!res.ok) {
-                        throw new Error("의뢰 상세 조회에 실패했습니다.");
-                      }
-                      if (!res.data?.success) {
-                        throw new Error("의뢰 상세 데이터가 없습니다.");
-                      }
-                      setRiskSummaryDetail(res.data.data || null);
-                    })
-                    .catch((error) => {
-                      console.error("의뢰 상세 조회 실패", error);
-                      setRiskSummaryDetail(null);
-                    })
-                    .finally(() => {
-                      setRiskSummaryDetailLoading(false);
-                    });
-                }}
-              />
+            {/* 좌측 2행 높이에 맞추기: lg에서 absolute fill */}
+            <div className="lg:col-span-3 relative min-h-[320px] min-w-0">
+              <div className="h-full min-h-[320px] lg:absolute lg:inset-0">
+                <RequestorRecentRequestsCard
+                  items={recentRequests}
+                  loading={isHeavySectionLoading}
+                  onRefresh={() => {
+                    refetchSummary();
+                    refetchBulk();
+                  }}
+                  onEdit={openEditDialogFromRequest}
+                  onCancel={cancelRequest}
+                />
+              </div>
             </div>
           </div>
         }
@@ -2204,7 +2206,7 @@ export const RequestorDashboardPage = () => {
                   </div>
                 ) : (
                   <div className="flex-1 min-h-0 rounded-md border border-dashed border-slate-300 flex items-center justify-center text-base text-slate-500">
-                    {unmachinablePreviewError || "원본 STL 파일이 없습니다."}
+                    {unmachinablePreviewError || "원본 3D 모델 파일이 없습니다."}
                   </div>
                 )}
 
@@ -2251,7 +2253,7 @@ export const RequestorDashboardPage = () => {
                     : "-";
 
                 return (
-                  <div className="rounded-lg border border-yellow-300 bg-yellow-50/60 p-3.5 flex flex-col min-h-0 overflow-hidden">
+                  <div className="rounded-lg border border-accent-muted bg-accent-soft/60 p-3.5 flex flex-col min-h-0 overflow-hidden">
                     <div className="space-y-2.5 overflow-auto pr-1">
                       <div className="text-sm text-slate-600">의뢰번호: {requestId}</div>
 
@@ -2276,20 +2278,20 @@ export const RequestorDashboardPage = () => {
                     </div>
 
                     <div className="mt-4 space-y-1">
-                        <div className="text-sm font-semibold text-yellow-900">불완전 가공 사유</div>
+                        <div className="text-sm font-semibold text-accent-strong">불완전 가공 사유</div>
                         {reasonItems.length > 0 ? (
                           <div className="space-y-0.5">
                             {reasonItems.map((reasonItem, idx) => (
                               <div
                                 key={`unmachinable-reason-${idx}`}
-                                className="text-[15px] leading-6 text-yellow-900 break-words font-medium"
+                                className="text-[15px] leading-6 text-accent-strong break-words font-medium"
                               >
                                 • {reasonItem}
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="text-[15px] leading-6 text-yellow-900 break-words font-medium">
+                          <div className="text-[15px] leading-6 text-accent-strong break-words font-medium">
                             • 미등록
                           </div>
                         )}
@@ -2314,7 +2316,7 @@ export const RequestorDashboardPage = () => {
                       <Button
                         type="button"
                         variant="outline"
-                        className="border-red-400 text-red-400 hover:bg-red-500"
+                        className="border-destructive text-destructive hover:bg-destructive"
                         onClick={() => {
                           if (!canDecide) return;
                           console.log("[UNMACHINABLE_CANCEL] open confirm", {
@@ -2368,39 +2370,6 @@ export const RequestorDashboardPage = () => {
         }}
       />
 
-      <RequestDetailDialog
-        open={Boolean(selectedRiskSummaryItem)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedRiskSummaryItem(null);
-            setRiskSummaryDetail(null);
-          }
-        }}
-        request={riskSummaryDetail || selectedRiskSummaryItem || null}
-        description={
-          riskSummaryDetailLoading
-            ? "불러오는 중..."
-            : selectedRiskSummaryItem?.message ||
-              "지연 가능 의뢰의 정보를 확인하세요."
-        }
-        extraBadge={
-          selectedRiskSummaryItem ? (
-            <Badge
-              variant={
-                selectedRiskSummaryItem.riskLevel === "danger"
-                  ? "destructive"
-                  : "outline"
-              }
-              className="text-[11px]"
-            >
-              {selectedRiskSummaryItem.riskLevel === "danger"
-                ? "지연확정"
-                : "지연가능"}
-            </Badge>
-          ) : null
-        }
-      />
-
       <Dialog open={statsModalOpen} onOpenChange={setStatsModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -2433,7 +2402,7 @@ export const RequestorDashboardPage = () => {
                     type="button"
                     className={`w-full text-left rounded-md border px-3 py-2 hover:bg-gray-50 ${
                       isUnmachinable
-                        ? "border-yellow-300 ring-2 ring-yellow-200 bg-yellow-50/40"
+                        ? "border-accent-muted ring-2 ring-accent-muted/80 bg-accent-soft/40"
                         : "border-gray-200 bg-white"
                     }`}
                     onClick={() => {
@@ -2444,7 +2413,7 @@ export const RequestorDashboardPage = () => {
                     <div className="text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
                       <span className="truncate">{title}</span>
                       {isUnmachinable && (
-                        <Badge variant="outline" className="text-[10px] h-5 border-yellow-300 text-yellow-700 bg-yellow-50">
+                        <Badge variant="outline" className="text-[10px] h-5 border-accent-muted text-accent-strong bg-accent-soft">
                           불완전 가공
                         </Badge>
                       )}
@@ -2454,7 +2423,7 @@ export const RequestorDashboardPage = () => {
                     </div>
 
                     {isUnmachinable && (
-                      <div className="text-[11px] text-yellow-800 truncate mt-1">
+                      <div className="text-[11px] text-accent-strong truncate mt-1">
                         불완전 가공 사유: {unmachinableReason || "미등록"}
                       </div>
                     )}

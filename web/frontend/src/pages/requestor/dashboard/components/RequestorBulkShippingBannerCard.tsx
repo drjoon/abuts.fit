@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-11: 오늘 출고 예정은 건 단위만 표시. 좌측 세로 버튼·우측 요약 배치.
+// - 2026-08-11: 출고 안내 문구를 카드에서 제거하고 Info 빠른 툴팁으로 이동.
+// - 2026-08-09: 디자인+생산 출고 +1영업일 안내를 SHIP_OUT_INFO_MESSAGE에 반영.
 // - 2026-08-06: 출고 카드/모달 문구·레이아웃 정리.
 // - 2026-08-06: 카드 제목/설명 정리. 대기수량·다음출고 예정 제거.
 // - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일).
@@ -8,7 +11,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Box, Clock, Package, Zap } from "lucide-react";
+import { Box, Clock, Info, Package, Zap } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -25,10 +28,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
+import { getShippingModeBadgeClassName } from "@/shared/shipping/shippingMode";
 import type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
 import { periodToRange } from "@/store/usePeriodStore";
 
@@ -79,10 +88,11 @@ type Props = {
     post?: ShippingItemApi[];
     waiting?: ShippingItemApi[];
   } | null;
-  loading?: boolean;
   onRefresh?: () => void;
   /** 대시보드 기간 필터. 오늘 출고/대기 내역을 createdAt 기준으로 좁힌다. */
   period?: PeriodFilterValue;
+  /** true면 카드 chrome은 유지하고 "오늘 출고 예정" 수치 영역만 스켈레톤 처리 */
+  loading?: boolean;
 };
 
 const periodToShippingSummaryDays = (period: PeriodFilterValue): number => {
@@ -145,7 +155,7 @@ const DIAMETER_LABELS: Record<DiameterKey, string> = {
 };
 
 const SHIP_OUT_INFO_MESSAGE =
-  "출고일은 리드타임 기준으로 계산됩니다. 묶음출고는 자정까지 접수시 다음 날 오후 4시 출고, 신속출고는 정오까지 접수시 당일 오후 4시 출고됩니다.";
+  "출고일은 리드타임 기준으로 계산됩니다. 묶음출고는 자정까지 접수시 다음 날 오후 4시 출고, 신속출고는 정오까지 접수시 당일 오후 4시 출고됩니다. 디자인+생산은 묶음·신속 모두 +1영업일입니다.";
 
 type ShippingItemApi = {
   id: string;
@@ -169,9 +179,9 @@ type ShippingItemApi = {
 export const RequestorBulkShippingBannerCard = ({
   onOpenBulkModal,
   bulkData,
-  loading = false,
   onRefresh,
   period = "30d",
+  loading = false,
 }: Props) => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
@@ -214,7 +224,6 @@ export const RequestorBulkShippingBannerCard = ({
   const shippingMemo = useMemo(() => {
     if (!shippingSummaryData) {
       return {
-        todayCount: 0,
         todayRequests: [] as ShippingPackageSummaryRequest[],
       };
     }
@@ -232,22 +241,7 @@ export const RequestorBulkShippingBannerCard = ({
         isCreatedAtInPeriod(req?.createdAt, period, { includeMissing: false }),
       );
 
-    // 기간 밖 의뢰만 남은 박스는 카운트에서 제외
-    const todayCount = todayPackages.filter((pkg) => {
-      const requests = Array.isArray((pkg as any).requests)
-        ? (pkg as any).requests
-        : [];
-      if (requests.length === 0) {
-        // 요청 상세가 없으면 패키지 단위는 유지(레거시 응답 호환)
-        return true;
-      }
-      return requests.some((req: ShippingPackageSummaryRequest) =>
-        isCreatedAtInPeriod(req?.createdAt, period, { includeMissing: false }),
-      );
-    }).length;
-
     return {
-      todayCount,
       todayRequests: todayRequests ?? [],
     };
   }, [period, shippingSummaryData]);
@@ -649,20 +643,40 @@ export const RequestorBulkShippingBannerCard = ({
       <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold text-foreground">
-              출고
-            </CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle className="text-base font-semibold text-foreground">
+                출고
+              </CardTitle>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="출고 안내"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="bottom"
+                  align="start"
+                  className="max-w-xs text-xs leading-relaxed break-keep"
+                >
+                  {SHIP_OUT_INFO_MESSAGE}
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge
                 variant="outline"
-                className="gap-1 border-sky-300 bg-sky-50 text-sky-700 font-medium"
+                className={`gap-1 font-medium ${getShippingModeBadgeClassName("normal")}`}
               >
                 <Package className="h-3 w-3" />
                 묶음출고
               </Badge>
               <Badge
                 variant="outline"
-                className="gap-1 border-amber-300 bg-amber-50 text-amber-700 font-medium"
+                className={`gap-1 font-medium ${getShippingModeBadgeClassName("express")}`}
               >
                 <Zap className="h-3 w-3" />
                 신속출고
@@ -670,73 +684,13 @@ export const RequestorBulkShippingBannerCard = ({
             </div>
           </div>
         </CardHeader>
-        <CardContent className="pt-0 pb-4 text-sm text-foreground space-y-3">
-          {loading || isShippingSummaryLoading ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3.5 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-2">
-                  <Skeleton className="h-3 w-20" />
-                  <Skeleton className="h-7 w-16" />
-                </div>
-                <Skeleton className="h-10 w-px" />
-                <div className="space-y-2 text-right">
-                  <Skeleton className="ml-auto h-3 w-16" />
-                  <Skeleton className="ml-auto h-7 w-14" />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-blue-200/80 bg-gradient-to-br from-blue-50 to-sky-50/80 px-4 py-3.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">
-                    오늘 출고 예정
-                  </p>
-                  <p className="mt-1 text-2xl font-bold leading-none text-blue-900">
-                    {shippingMemo.todayCount.toLocaleString()}
-                    <span className="ml-1 text-sm font-semibold text-blue-700">
-                      박스
-                    </span>
-                  </p>
-                </div>
-                <div className="h-10 w-px bg-blue-200/80" />
-                <div className="min-w-0 text-right">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                    박스 구성
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="mt-0.5 h-auto px-0 py-0 text-2xl font-bold leading-none text-slate-900 hover:bg-transparent hover:text-blue-700"
-                    disabled={
-                      shippingMemo.todayCount === 0 ||
-                      shippingMemo.todayRequests.length === 0
-                    }
-                    onClick={() => setTodayBoxDialogOpen(true)}
-                  >
-                    {shippingMemo.todayRequests.length.toLocaleString()}
-                    <span className="ml-1 text-sm font-semibold text-slate-600">
-                      건
-                    </span>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3.5 space-y-3">
-            <div className="flex items-start gap-2.5">
-              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-              <p className="text-xs leading-relaxed text-slate-600">
-                {SHIP_OUT_INFO_MESSAGE}
-              </p>
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <CardContent className="pt-0 pb-4 text-sm text-foreground">
+          <div className="grid grid-cols-2 items-stretch gap-3">
+            <div className="flex min-w-0 flex-col gap-2">
               <Button
                 variant="default"
                 size="sm"
-                className="h-9 w-full font-semibold"
+                className="h-9 w-full px-2 text-xs font-semibold"
                 onClick={handleOpenModal}
               >
                 출고 대기 내역
@@ -744,13 +698,36 @@ export const RequestorBulkShippingBannerCard = ({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-9 w-full font-semibold bg-white/80"
+                className="h-9 w-full px-2 text-xs font-semibold bg-white/80"
                 onClick={handleLeadTimeButtonClick}
                 disabled={isLeadTimeLoading}
               >
                 {isLeadTimeLoading ? "조회 중..." : "리드타임 조회"}
               </Button>
             </div>
+
+            {loading || isShippingSummaryLoading ? (
+              <div className="flex min-w-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                <Skeleton className="h-12 w-full" />
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="min-w-0 rounded-xl border border-primary-muted/80 bg-gradient-to-br from-primary-soft to-primary-soft/80 px-4 py-3 text-center disabled:cursor-default disabled:opacity-100"
+                disabled={shippingMemo.todayRequests.length === 0}
+                onClick={() => setTodayBoxDialogOpen(true)}
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-strong">
+                  오늘 출고 예정
+                </p>
+                <p className="mt-1 text-2xl font-bold leading-none text-primary-strong">
+                  {shippingMemo.todayRequests.length.toLocaleString()}
+                  <span className="ml-1 text-sm font-semibold text-primary-strong">
+                    건
+                  </span>
+                </p>
+              </button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -759,7 +736,7 @@ export const RequestorBulkShippingBannerCard = ({
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Box className="h-5 w-5 text-blue-600" />
+              <Box className="h-5 w-5 text-primary-strong" />
               오늘 출고 박스 내역
             </DialogTitle>
           </DialogHeader>
@@ -799,7 +776,7 @@ export const RequestorBulkShippingBannerCard = ({
                         의뢰번호: {String(req?.requestId || "")}
                       </div>
                       {nextEta && (
-                        <div className="text-[11px] text-blue-600 mt-1">
+                        <div className="text-[11px] text-primary-strong mt-1">
                           다음 출고일: {formatDateWithDay(nextEta)}
                         </div>
                       )}
@@ -872,7 +849,7 @@ export const RequestorBulkShippingBannerCard = ({
                         <span className="font-semibold text-foreground">
                           출고 예정일
                         </span>
-                        <span className="ml-2 font-medium text-blue-700">
+                        <span className="ml-2 font-medium text-primary-strong">
                           {group.etaKey === "-" ? "-" : formatEta(group.etaKey)}
                         </span>
                       </div>

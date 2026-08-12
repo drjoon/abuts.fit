@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from "react";
+import { useState } from "react";
 import { GuestChatModal } from "@/features/support/components/GuestChatModal";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,54 +10,34 @@ import {
 } from "@/components/ui/card";
 import {
   Shield,
-  Zap,
   Clock8,
   MessageSquare,
   ArrowRight,
   Layers,
   CheckCircle,
   Send,
-  UploadCloud,
-  Building2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { PublicPageLayout } from "./components/PublicPageLayout";
 
 // related files:
-// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/App.tsx
+// - web/frontend/src/shared/navigation/lastDashboardPath.ts
 
 const Index = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);
-  const [isQuickDropOver, setIsQuickDropOver] = useState(false);
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const entryPath = resolveEntryDashboardPath(user);
 
-  const moveToPracticeDropzoneWithFiles = (files: File[]) => {
-    const nextFiles = Array.from(files || []);
-    if (!nextFiles.length) {
-      navigate("/practice/dropzone");
-      return;
-    }
-
-    navigate("/practice/dropzone", {
-      state: {
-        prefilledFiles: nextFiles,
-        source: "public-index-quick-drop",
-      },
-    });
-  };
-
-  const handleQuickDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setIsQuickDropOver(false);
-
-    const dropped = Array.from(event.dataTransfer.files || []);
-    moveToPracticeDropzoneWithFiles(dropped);
-  };
-
+  const stats = [
+    { label: "월간 케이스", value: "1,500+" },
+    { label: "평균 처리 시간", value: "24h 이내" },
+    { label: "동기화 성공률", value: "98.7%" },
+  ];
 
   const features = [
     {
@@ -99,7 +79,7 @@ const Index = () => {
         <div className="space-y-6 text-center lg:w-1/2 lg:text-left">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.35em] text-white/70">
             <span>platform</span>
-            <span className="h-1 w-1 rounded-full bg-emerald-300" />
+            <span className="h-1 w-1 rounded-full bg-primary/70" />
             <span>abuts.fit</span>
           </div>
           <div className="space-y-4">
@@ -119,7 +99,7 @@ const Index = () => {
               size="lg"
               className="flex-1 basis-[calc(50%-0.75rem)] h-14 rounded-full bg-white text-slate-900 hover:bg-white/90 sm:basis-auto"
               onClick={() =>
-                navigate(isAuthenticated ? "/dashboard" : "/signup")
+                navigate(isAuthenticated ? entryPath : "/signup")
               }
             >
               지금 가입하기
@@ -130,7 +110,7 @@ const Index = () => {
               variant="outline"
               className="flex-1 basis-[calc(50%-0.75rem)] h-14 rounded-full border-white/40 bg-transparent text-white hover:bg-white/10 sm:basis-auto"
               onClick={() =>
-                navigate(isAuthenticated ? "/dashboard" : "/login")
+                navigate(isAuthenticated ? entryPath : "/login")
               }
             >
               로그인
@@ -139,75 +119,28 @@ const Index = () => {
         </div>
 
         <div className="lg:w-1/2">
-          <Card className="border-blue-200 bg-gradient-to-br from-white to-blue-50 text-slate-900 shadow-[0_18px_45px_rgba(6,8,20,0.35)] backdrop-blur-2xl">
-            <CardHeader className="space-y-3">
-              <CardTitle className="text-xl md:text-2xl">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                      <Send className="h-3.5 w-3.5" />
-                      간편 작성
-                    </span>
-                    <span>편리한 기공의뢰서</span>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 border-blue-300 text-blue-700 hover:bg-blue-500"
-                    onClick={() => navigate("/practice/dropzone")}
-                  >
-                    작성하기
-                    <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </CardTitle>
+          <Card className="border-white/15 bg-white/90 text-slate-900 shadow-[0_25px_65px_rgba(7,7,19,0.35)] backdrop-blur-2xl">
+            <CardHeader>
+              <CardTitle className="text-xl">abuts.fit Snapshot</CardTitle>
+              <CardDescription className="text-sm text-slate-500">
+                제조 파트너들이 매일 확인하는 핵심 지표
+              </CardDescription>
             </CardHeader>
-            <CardContent className="">
-              <input
-                id="public-practice-quick-drop-input"
-                type="file"
-                multiple
-                accept=".stl,.ply,.obj,.png,.jpg,.jpeg,.webp,.bmp,.gif"
-                className="hidden"
-                onChange={(e) => {
-                  const selected = Array.from(e.currentTarget.files || []);
-                  moveToPracticeDropzoneWithFiles(selected);
-                  e.currentTarget.value = "";
-                }}
-              />
-
-              <div
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setIsQuickDropOver(true);
-                }}
-                onDragLeave={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setIsQuickDropOver(false);
-                }}
-                onDrop={handleQuickDrop}
-                onClick={() => {
-                  const input = document.getElementById(
-                    "public-practice-quick-drop-input",
-                  ) as HTMLInputElement | null;
-                  input?.click();
-                }}
-                className={`cursor-pointer rounded-xl border-2 border-dashed p-7 text-center transition-colors ${
-                  isQuickDropOver
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-blue-200 bg-white hover:border-blue-400"
-                }`}
-              >
-                <div className="mx-auto mb-2 w-fit rounded-full bg-blue-100 p-3 text-blue-700">
-                  <UploadCloud className="h-5 w-5" />
-                </div>
-                <p className="text-base font-semibold">여기에 3D 모델 및 그림 파일을 드롭하세요</p>
-                <p className="mt-1 text-sm text-slate-600">
-                  비회원도 드롭 가능
-                </p>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {stats.map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="rounded-2xl border border-slate-200/60 bg-white/80 p-4 text-center"
+                  >
+                    <p className="text-3xl font-semibold text-slate-900">
+                      {stat.value}
+                    </p>
+                    <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
+                      {stat.label}
+                    </p>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -248,7 +181,7 @@ const Index = () => {
                 <p className="text-xs uppercase tracking-[0.5em] text-slate-400">
                   {stage.step}
                 </p>
-                <CheckCircle className="h-4 w-4 text-emerald-500" />
+                <CheckCircle className="h-4 w-4 text-primary" />
               </div>
               <CardTitle className="text-lg">{stage.title}</CardTitle>
             </CardHeader>
@@ -264,7 +197,7 @@ const Index = () => {
           <CardHeader className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.4em] text-slate-400">
               support
-              <span className="h-1 w-1 rounded-full bg-emerald-400" />
+              <span className="h-1 w-1 rounded-full bg-primary/70" />
             </div>
             <CardTitle className="text-2xl">운영팀과 바로 연결</CardTitle>
             <CardDescription className="text-base text-slate-600">
@@ -299,19 +232,19 @@ const Index = () => {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-start gap-3">
-              <div className="mt-1 h-2 w-2 rounded-full bg-emerald-400" />
+              <div className="mt-1 h-2 w-2 rounded-full bg-primary/70" />
               <p className="text-sm text-white/80">
                 스테이지 그룹 기반 가시성으로 제조 요청 우선순위를 즉시 조정
               </p>
             </div>
             <div className="flex items-start gap-3">
-              <div className="mt-1 h-2 w-2 rounded-full bg-emerald-400" />
+              <div className="mt-1 h-2 w-2 rounded-full bg-primary/70" />
               <p className="text-sm text-white/80">
                 자동 가상 우편함 배치로 배송 동선과 추적 경험 개선
               </p>
             </div>
             <div className="flex items-start gap-3">
-              <div className="mt-1 h-2 w-2 rounded-full bg-emerald-400" />
+              <div className="mt-1 h-2 w-2 rounded-full bg-primary/70" />
               <p className="text-sm text-white/80">
                 MongoDB·S3에 저장되는 SSOT 구조로 모든 기록을 안전하게 보관
               </p>

@@ -42,12 +42,17 @@ export async function computeBusinessCreditBalanceFromLedger({
   businessAnchorId,
   session,
 }) {
+  // 잔액 버킷:
+  // - paidCredit / free*: 의뢰자(치과·기공소) 공용 소비 잔액. 치과 기공비도 paidCredit에서 차감.
+  // - settlementCredit: 기공소 전용 기공크레딧(LAB_SETTLEMENT_CREDIT). 치과 UI에는 노출하지 않음.
+  // - balance: paid+free만 합산(settlement 제외).
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
   if (!anchorObjectId) {
     return {
       paidCredit: 0,
       freeRequestCredit: 0,
       freeShippingCredit: 0,
+      settlementCredit: 0,
       balance: 0,
     };
   }
@@ -63,6 +68,7 @@ export async function computeBusinessCreditBalanceFromLedger({
             "REQ_PAID_CREDIT",
             "REQ_FREE_REQUEST_CREDIT",
             "REQ_FREE_SHIPPING_CREDIT",
+            "LAB_SETTLEMENT_CREDIT",
           ],
         },
       },
@@ -78,6 +84,7 @@ export async function computeBusinessCreditBalanceFromLedger({
   let paid = 0;
   let freeRequest = 0;
   let freeShipping = 0;
+  let settlement = 0;
 
   for (const row of glRows || []) {
     const code = String(row?._id || "");
@@ -86,16 +93,19 @@ export async function computeBusinessCreditBalanceFromLedger({
     if (code === "REQ_PAID_CREDIT") paid += total;
     else if (code === "REQ_FREE_REQUEST_CREDIT") freeRequest += total;
     else if (code === "REQ_FREE_SHIPPING_CREDIT") freeShipping += total;
+    else if (code === "LAB_SETTLEMENT_CREDIT") settlement += total;
   }
 
   const paidCredit = Math.max(0, Math.round(paid));
   const freeRequestCredit = Math.max(0, Math.round(freeRequest));
   const freeShippingCredit = Math.max(0, Math.round(freeShipping));
+  const settlementCredit = Math.max(0, Math.round(settlement));
 
   return {
     paidCredit,
     freeRequestCredit,
     freeShippingCredit,
+    settlementCredit,
     balance: paidCredit + freeRequestCredit + freeShippingCredit,
   };
 }
@@ -118,6 +128,7 @@ export async function getBusinessCreditBalanceSnapshot({
       paidCredit: 0,
       freeRequestCredit: 0,
       freeShippingCredit: 0,
+      settlementCredit: 0,
       balance: 0,
       source: "invalid",
     };
@@ -133,6 +144,7 @@ export async function getBusinessCreditBalanceSnapshot({
     paidCredit: Number(glBalance?.paidCredit || 0),
     freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
     freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
+    settlementCredit: Number(glBalance?.settlementCredit || 0),
     balance: Number(glBalance?.balance || 0),
     source: "gl",
   };
@@ -421,7 +433,7 @@ export async function deleteRequestSpendAtomicOnRollback({
       hasSession: !!session,
     });
 
-    // 1) canonical unique keys(idempotency) — 가공비 + 신속 추가비
+    // 1) canonical unique keys(idempotency) — 생산비 + 신속 추가비
     for (const uniqueKey of uniqueKeys) {
       const byUnique = await findCommitJournalBySpendKey({
         spendUniqueKey: uniqueKey,

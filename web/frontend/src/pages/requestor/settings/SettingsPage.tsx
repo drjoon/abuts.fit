@@ -1,66 +1,60 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
+import { SettingsTabsSkeleton } from "@/features/components/SettingsSkeletons";
 import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
-import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { RequestTab } from "@/features/settings/tabs/RequestTab";
+import { LabTradingPartnersTab } from "@/features/settings/tabs/LabTradingPartnersTab";
+import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
 import {
   User,
   Building2,
-  CreditCard,
   Bell,
   Users,
-  FileText,
+  Shield,
+  Handshake,
+  Banknote,
 } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
-import { Shield } from "lucide-react";
-import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import {
-  PAID_ACCESS_DISABLED_HINT,
-} from "@/shared/business/requestorCapabilities";
 
 // related files:
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/controllers/requests/utils.js
+// - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // 가입일시/경과일/D-day는 신규 기공소 90일 고정가와 동일 기준일(pricingBaseDate)을 사용한다.
+// 2026-08-11: 설정 결제 탭 제거 → 사이드바 크레딧(`/dashboard/credits`)로 이전.
+// 2026-08-11: 설정 의뢰 탭 제거 → 어벗의뢰 좌측 상단(디자인소프트웨어·아노다이징).
+// 2026-08-11: 기공소 전용 「치과 등록」「기공비」탭(알림 왼쪽).
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
-  | "request"
-  | "payment"
+  | "lab-fees"
+  | "trading-partners"
   | "notifications"
   | "security";
 
 export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { toast } = useToast();
-  const { loading: accessLoading, canUsePaid } = useRequestorBusinessAccess();
+  const { loading: accessLoading, kind } = useRequestorBusinessAccess();
+  const isLab = kind === "lab";
 
-  const [membership, setMembership] = useState<
-    "owner" | "member" | "pending" | "none" | "unknown"
-  >(token ? "unknown" : "none");
-  const [canManageStaff, setCanManageStaff] = useState(false);
   const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
   const [pricingBaseDate, setPricingBaseDate] = useState<string | null>(null);
-
-  const mockHeaders = useMemo(() => {
-    return {} as Record<string, string>;
-  }, []);
+  const membershipLoadedRef = useRef(false);
 
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
@@ -69,16 +63,20 @@ export const RequestorSettingsPage = () => {
   useEffect(() => {
     const load = async () => {
       if (!token) {
-        setMembership("none");
-        setCanManageStaff(false);
         setPricingBaseDate(null);
         setLoadingMembership(false);
+        membershipLoadedRef.current = true;
         return;
       }
 
-      setLoadingMembership(true);
+      if (!membershipLoadedRef.current) {
+        setLoadingMembership(true);
+      }
       try {
-        const res = await request<any>({
+        const res = await request<{
+          data?: { pricingBaseDate?: string };
+          pricingBaseDate?: string;
+        }>({
           path: `/api/businesses/me?businessType=${encodeURIComponent(
             businessType,
           )}`,
@@ -86,25 +84,18 @@ export const RequestorSettingsPage = () => {
           token,
         });
         if (!res.ok) {
-          setMembership("none");
-          setCanManageStaff(false);
           setPricingBaseDate(null);
           return;
         }
-        const body: any = res.data || {};
+        const body = res.data || {};
         const data = body.data || body;
-        const next = String(data?.membership || "none") as
-          "owner" | "member" | "pending" | "none";
-        setMembership(next);
-        setCanManageStaff(next === "owner");
         setPricingBaseDate(
           data?.pricingBaseDate ? String(data.pricingBaseDate) : null,
         );
       } catch {
-        setMembership("none");
-        setCanManageStaff(false);
         setPricingBaseDate(null);
       } finally {
+        membershipLoadedRef.current = true;
         setLoadingMembership(false);
       }
     };
@@ -131,11 +122,6 @@ export const RequestorSettingsPage = () => {
   }, [pricingElapsedDays]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
-    const paidDisabled = !canUsePaid;
-    const paidTabProps = paidDisabled
-      ? { disabled: true, disabledHint: PAID_ACCESS_DISABLED_HINT }
-      : {};
-
     const base: SettingsTabDef[] = [
       {
         key: "account",
@@ -148,33 +134,46 @@ export const RequestorSettingsPage = () => {
         label: "사업자",
         icon: Building2,
         content: (
-          <div className="space-y-3">
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-              <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                  <Building2 className="h-4 w-4 text-primary-strong" />
+                </span>
                 <div>
-                  <p className="text-xs text-slate-500">가입일시</p>
-                  <p className="mt-0.5 font-medium text-slate-900">
+                  <p className="text-sm font-semibold text-slate-900">가입 정보</p>
+                  <p className="text-xs text-muted-foreground">
+                    런칭 이벤트·요금 기준일
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-3">
+                  <p className="text-xs text-muted-foreground">가입일시</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
                     {pricingBaseDate
                       ? formatKstDateTimeToKo(pricingBaseDate)
                       : "-"}
                   </p>
                 </div>
-                <div>
-                  <p className="text-xs text-slate-500">가입 후 경과일</p>
+                <div className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-3">
+                  <p className="text-xs text-muted-foreground">가입 후 경과일</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-slate-900">
-                      {pricingElapsedDays == null ? "-" : `${pricingElapsedDays}일`}
+                    <p className="text-sm font-semibold text-slate-900">
+                      {pricingElapsedDays == null
+                        ? "-"
+                        : `${pricingElapsedDays}일`}
                     </p>
                     {launchEventRemainingDays != null && (
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold leading-none ${
                           launchEventRemainingDays > 0
-                            ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
+                            ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
                             : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"
                         }`}
                       >
                         {launchEventRemainingDays > 0
-                          ? `런칭 이벤트 종료까지 D-${launchEventRemainingDays}일`
+                          ? `런칭 이벤트 D-${launchEventRemainingDays}일`
                           : "런칭 이벤트 종료"}
                       </span>
                     )}
@@ -192,23 +191,26 @@ export const RequestorSettingsPage = () => {
         icon: Users,
         content: <StaffTab userData={user} />,
       },
-      {
-        key: "request",
-        label: "의뢰",
-        icon: FileText,
-        content: <RequestTab />,
-        ...paidTabProps,
-      },
     ];
 
+    if (isLab) {
+      base.push(
+        {
+          key: "lab-fees",
+          label: "기공비",
+          icon: Banknote,
+          content: <LabFeeScheduleTab />,
+        },
+        {
+          key: "trading-partners",
+          label: "치과 등록",
+          icon: Handshake,
+          content: <LabTradingPartnersTab />,
+        },
+      );
+    }
+
     base.push(
-      {
-        key: "payment",
-        label: "결제",
-        icon: CreditCard,
-        content: <PaymentTab userData={user} />,
-        ...paidTabProps,
-      },
       {
         key: "notifications",
         label: "알림",
@@ -225,7 +227,7 @@ export const RequestorSettingsPage = () => {
 
     return base;
   }, [
-    canUsePaid,
+    isLab,
     launchEventRemainingDays,
     pricingBaseDate,
     pricingElapsedDays,
@@ -243,33 +245,18 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (loadingMembership || accessLoading) {
-    return (
-      <SettingsScaffold
-        tabs={tabs.map((tab) => ({
-          ...tab,
-          content: <SettingsCardSkeleton headerLines={2} bodyLines={6} />,
-        }))}
-        activeTab={activeTab}
-        onTabChange={(next) => {
-          const nextParams = new URLSearchParams(searchParams);
-          nextParams.set("tab", next);
-          setSearchParams(nextParams, { replace: true });
-        }}
-      />
-    );
+    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 5} />;
   }
 
   return (
-    <>
-      <SettingsScaffold
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={(next) => {
-          const nextParams = new URLSearchParams(searchParams);
-          nextParams.set("tab", next);
-          setSearchParams(nextParams, { replace: true });
-        }}
-      />
-    </>
+    <SettingsScaffold
+      tabs={tabs}
+      activeTab={activeTab}
+      onTabChange={(next) => {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.set("tab", next);
+        setSearchParams(nextParams, { replace: true });
+      }}
+    />
   );
 };

@@ -34,6 +34,11 @@ const draftCaseSchema = new mongoose.Schema(
       {
         // 이 case 에 연결된 파일 메타정보 (임시 업로드 파일)
         file: draftFileSchema,
+        // 디자인+생산: 환자 단위로 묶인 구강 스캔 파일들 (대표 file 포함 가능)
+        files: {
+          type: [draftFileSchema],
+          default: undefined,
+        },
 
         clinicName: String,
         patientName: String,
@@ -87,25 +92,25 @@ const draftCaseSchema = new mongoose.Schema(
           type: String,
           enum: ["abutment", "crown"],
         },
-        // 신규의뢰 상세 모달: 커스텀어벗 | 디자인+커스텀어벗
+        // 신규의뢰 상세 모달: 커스텀어벗 생산 | 커스텀어벗 디자인+생산
         productMode: {
           type: String,
           enum: ["custom_abutment", "design_custom_abutment"],
           default: "custom_abutment",
         },
-        // 디자인+커스텀어벗: 보철물 형태
+        // 디자인+생산: 보철물 형태
         prosthesisType: {
           type: String,
           trim: true,
           default: "",
         },
-        // 디자인+커스텀어벗: 자유 메모
+        // 디자인+생산: 자유 메모
         memo: {
           type: String,
           trim: true,
           default: "",
         },
-        // 디자인+커스텀어벗: practice transfers 보철물 치식
+        // 디자인+생산: practice transfers 보철물 치식
         toothWorks: {
           type: [mongoose.Schema.Types.Mixed],
           default: [],
@@ -125,6 +130,10 @@ const draftCaseSchema = new mongoose.Schema(
           type: String,
           trim: true,
           maxlength: 120,
+        },
+        // 의뢰건 아노다이징(신규의뢰 카드 단위 SSOT). 미설정 시 생성 시 사업체 기본값(ON) 적용
+        anodizingEnabled: {
+          type: Boolean,
         },
         // 의뢰자 헥스 회전 선택값(canonical)
         requestorHexRotation: {

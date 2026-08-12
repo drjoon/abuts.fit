@@ -1,4 +1,10 @@
 // change-log:
+// - 2026-08-12: 치과는 기공크레딧 잔액/필터 숨김. 유료→유료크레딧. 기공소만 settlement 버킷 표시.
+// - 2026-08-11: 초기 로드 시 테이블 스켈레톤(텍스트 "불러오는 중..." 대체).
+// - 2026-08-11: 중복 일자(from~to) 입력 제거. 검색을 초기화 버튼 우측으로 이동.
+// - 2026-08-11: embedded 무한스크롤 — sentinel 재마운트 시 IntersectionObserver 재연결.
+// - 2026-08-11: embedded 모드에서 "크레딧 내역" 제목 숨김(탭 라벨로 충분). Dialog는 유지.
+// - 2026-08-11: embedded 모드 추가 — 의뢰자 크레딧 페이지에서 Dialog 없이 동일 원장 UI 사용.
 // - 2026-08-09: 잔액 요약 우측에 [충전] 버튼 노출 (chargeNavPath 제공 시).
 // - 2026-08-04: 의뢰 차감 행에 신속/묶음배송 뱃지 표시. (display-only)
 // - 2026-08-03: Credit ledger detail row의 공정 배지 표시를 normalizeStageLabel 기반으로 정규화(의뢰 -> 준비). (display-only)
@@ -6,10 +12,12 @@
 // - web/frontend/rules.md
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
+// - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
 // - web/backend/controllers/admin/adminCredit.controller.js
 // change-log:
 // - 2026-08-03: CreditLedgerModal: normalize manufacturer stage display labels (의뢰 -> 준비) in transaction rows. (display-only)
@@ -42,6 +50,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CreditLedgerTableSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -56,6 +65,7 @@ import {
 } from "@/features/requests/components/RequestDetailDialog";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingMode } from "@/shared/shipping/shippingMode";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
 type CreditLedgerType =
   | "CHARGE_PAID"
@@ -64,6 +74,8 @@ type CreditLedgerType =
   | "SPEND_PAID"
   | "SPEND_FREE_REQUEST"
   | "SPEND_FREE_SHIPPING"
+  | "LAB_SETTLEMENT_CHARGE"
+  | "LAB_SETTLEMENT_PAYOUT"
   | "ADJUST";
 
 type CreditLedgerItem = {
@@ -121,18 +133,25 @@ type CreditBalanceSnapshot = {
   paidCredit: number;
   freeRequestCredit?: number;
   freeShippingCredit?: number;
+  settlementCredit?: number;
+  requestorKind?: "practice" | "lab" | null;
+  showSettlementCredit?: boolean;
   updatedAt?: string | null;
 };
 
 export type CreditLedgerModalProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** embedded=false(기본)일 때 Dialog open. embedded면 무시하고 항상 로드 */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   /** 관리자가 특정 조직의 원장을 볼 때 사용. 없으면 로그인 유저 기준 */
   businessAnchorId?: string;
   /** 모달 제목 suffix (예: "· org-001") */
   titleSuffix?: string;
   /** 충전하기 버튼 클릭 시 이동할 경로. 없으면 버튼 숨김 */
   chargeNavPath?: string;
+  /** true면 Dialog 없이 페이지 패널로 렌더 */
+  embedded?: boolean;
+  className?: string;
 };
 
 const PAGE_SIZE = 50;
@@ -147,6 +166,8 @@ const typeLabel = (t: CreditLedgerType) => {
   if (t === "SPEND_PAID") return "사용(유료)";
   if (t === "SPEND_FREE_REQUEST") return "사용(무료·의뢰)";
   if (t === "SPEND_FREE_SHIPPING") return "사용(무료·배송)";
+  if (t === "LAB_SETTLEMENT_CHARGE") return "기공크레딧 충전";
+  if (t === "LAB_SETTLEMENT_PAYOUT") return "기공크레딧 정산";
   return "조정";
 };
 
@@ -173,6 +194,8 @@ const formatShortCode = (value: string) => {
 const REF_TYPE_LABELS: Record<string, string> = {
   SHIPPING_PACKAGE: "택배비",
   REQUEST: "의뢰",
+  PRACTICE_TRANSFER: "기공비",
+  LAB_SETTLEMENT_PAYOUT: "기공크레딧 정산",
   FREE_REQUEST_CREDIT: "환영 무료 의뢰크레딧",
   REQUEST_FREE_CREDIT: "환영 무료 의뢰크레딧",
   WELCOME_BONUS: "환영 무료 의뢰크레딧",
@@ -254,7 +277,7 @@ const renderTransactionDetail = ({
           {isExpressSurchargeOnly ? (
             <Badge
               variant="outline"
-              className="h-5 px-1.5 text-[10px] leading-none border-amber-400 text-amber-700 bg-amber-50"
+              className="h-5 px-1.5 text-[10px] leading-none border-accent-muted text-accent-strong bg-accent-soft"
             >
               신속추가
             </Badge>
@@ -329,23 +352,31 @@ const renderTransactionDetail = ({
 };
 
 export const CreditLedgerModal = ({
-  open,
+  open = false,
   onOpenChange,
   businessAnchorId,
   titleSuffix,
   chargeNavPath,
+  embedded = false,
+  className,
 }: CreditLedgerModalProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { token, user } = useAuthStore();
+  const { kind: accessKind } = useRequestorBusinessAccess();
+  const isOpen = embedded ? true : open;
+
+  const goCharge = () => {
+    if (!chargeNavPath) return;
+    if (!embedded) onOpenChange?.(false);
+    navigate(chargeNavPath);
+  };
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [type, setType] = useState<"all" | CreditLedgerType>("all");
   const [q, setQ] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(embedded));
   const [items, setItems] = useState<CreditLedgerItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
@@ -358,6 +389,29 @@ export const CreditLedgerModal = ({
   const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
     useState<CreditBalanceSnapshot | null>(null);
 
+  const showSettlementCredit = useMemo(() => {
+    if (currentBalanceSnapshot?.showSettlementCredit === true) return true;
+    if (currentBalanceSnapshot?.showSettlementCredit === false) return false;
+    const kind =
+      currentBalanceSnapshot?.requestorKind ||
+      (!businessAnchorId ? accessKind : null);
+    return kind === "lab";
+  }, [
+    accessKind,
+    businessAnchorId,
+    currentBalanceSnapshot?.requestorKind,
+    currentBalanceSnapshot?.showSettlementCredit,
+  ]);
+
+  useEffect(() => {
+    if (
+      !showSettlementCredit &&
+      (type === "LAB_SETTLEMENT_CHARGE" || type === "LAB_SETTLEMENT_PAYOUT")
+    ) {
+      setType("all");
+    }
+  }, [showSettlementCredit, type]);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const pageRef = useRef(page);
@@ -369,30 +423,17 @@ export const CreditLedgerModal = ({
     pageRef.current = page;
   }, [page]);
 
-  const resetFilters = () => {
-    setPeriod("30d");
-    setType("all");
-    setQ("");
-    setFrom("");
-    setTo("");
-  };
-
   const buildPath = (pageNum: number) => {
     const params = new URLSearchParams();
-    const hasManualRange = Boolean(from || to);
-    if (!hasManualRange) {
-      if (period === "thisMonth" || period === "lastMonth") {
-        const range = periodToRange(period);
-        if (range?.startDate) params.set("from", range.startDate);
-        if (range?.endDate) params.set("to", range.endDate);
-      } else if (period) {
-        params.set("period", period);
-      }
+    if (period === "thisMonth" || period === "lastMonth") {
+      const range = periodToRange(period);
+      if (range?.startDate) params.set("from", range.startDate);
+      if (range?.endDate) params.set("to", range.endDate);
+    } else if (period) {
+      params.set("period", period);
     }
     if (type && type !== "all") params.set("type", type);
     if (q.trim()) params.set("q", q.trim());
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
     params.set("page", String(pageNum));
     params.set("pageSize", String(PAGE_SIZE));
 
@@ -467,20 +508,20 @@ export const CreditLedgerModal = ({
 
   // 필터 변경 시 초기화
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
     setPage(1);
     pageRef.current = 1;
     setHasMore(true);
     hasMoreRef.current = true;
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, period, type, q, from, to, businessAnchorId]);
+  }, [isOpen, period, type, q, businessAnchorId]);
 
   // 무한 스크롤
   useEffect(() => {
     const sentinel = sentinelRef.current;
     const root = scrollRef.current;
-    if (!sentinel || !root || !open) return;
+    if (!sentinel || !root || !isOpen || !hasMore) return;
 
     const io = new IntersectionObserver(
       (entries) => {
@@ -488,19 +529,19 @@ export const CreditLedgerModal = ({
         if (loadingRef.current || !hasMoreRef.current) return;
         const nextPage = pageRef.current + 1;
         setPage(nextPage);
-        load(nextPage, false);
+        void load(nextPage, false);
       },
       { root, rootMargin: "200px", threshold: 0 },
     );
     io.observe(sentinel);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [isOpen, hasMore, items.length]);
 
   // 웹소켓 실시간 업데이트: 모달이 열린 상태를 유지한 채
   // 동일 모달 내 데이터(목록/잔액 스냅샷)만 갱신한다.
   useAppEventDebouncedReload({
-    enabled: Boolean(open && token),
+    enabled: Boolean(isOpen && token),
     eventTypes: ["credit:balance-updated"],
     delayMs: 80,
     deferWhenEditing: false,
@@ -607,319 +648,344 @@ export const CreditLedgerModal = ({
     },
   });
 
-  return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader className="pb-2">
-            <div className="flex items-center justify-between gap-2">
-              <DialogTitle className="text-lg">
-                크레딧 내역{titleSuffix ? ` · ${titleSuffix}` : ""}
-              </DialogTitle>
-              {canCharge && !currentBalanceSnapshot && (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 shrink-0 px-4 font-semibold"
-                  onClick={() => {
-                    onOpenChange(false);
-                    navigate(chargeNavPath!);
-                  }}
-                  disabled={loading}
-                >
-                  충전
-                </Button>
-              )}
-            </div>
-          </DialogHeader>
+  const title = `크레딧 내역${titleSuffix ? ` · ${titleSuffix}` : ""}`;
 
-          <div className="flex flex-col gap-3 min-h-0 flex-1">
-            {currentBalanceSnapshot ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
-                <div className="grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="tabular-nums">
-                    <span className="text-muted-foreground">현재 잔액</span>{" "}
-                    <span className="font-semibold text-slate-900">
-                      {Number(currentBalanceSnapshot.balance || 0).toLocaleString()}원
-                    </span>
-                  </div>
-                  <div className="tabular-nums">
-                    <span className="text-muted-foreground">유료</span>{" "}
-                    <span className="font-semibold text-slate-900">
-                      {Number(currentBalanceSnapshot.paidCredit || 0).toLocaleString()}원
-                    </span>
-                  </div>
-                  <div className="tabular-nums">
-                    <span className="text-muted-foreground">무료·의뢰</span>{" "}
-                    <span className="font-semibold text-slate-900">
-                      {Number(
-                        currentBalanceSnapshot.freeRequestCredit ?? 0,
-                      ).toLocaleString()}
-                      원
-                    </span>
-                  </div>
-                  <div className="tabular-nums">
-                    <span className="text-muted-foreground">무료·배송</span>{" "}
-                    <span className="font-semibold text-slate-900">
-                      {Number(
-                        currentBalanceSnapshot.freeShippingCredit ?? 0,
-                      ).toLocaleString()}
-                      원
-                    </span>
-                  </div>
-                </div>
-                {canCharge && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-8 shrink-0 px-4 font-semibold"
-                    onClick={() => {
-                      onOpenChange(false);
-                      navigate(chargeNavPath!);
-                    }}
-                    disabled={loading}
-                  >
-                    충전
-                  </Button>
-                )}
+  const headerActions = (
+    <>
+      {canCharge && !currentBalanceSnapshot ? (
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 shrink-0 px-4 font-semibold"
+          onClick={goCharge}
+          disabled={loading}
+        >
+          충전
+        </Button>
+      ) : null}
+    </>
+  );
+
+  const body = (
+    <div className="flex flex-col gap-3 min-h-0 flex-1">
+      {loading && items.length === 0 ? (
+        <CreditLedgerTableSkeleton />
+      ) : (
+        <>
+      {currentBalanceSnapshot ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
+          <div
+            className={cn(
+              "grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2",
+              showSettlementCredit ? "lg:grid-cols-5" : "lg:grid-cols-4",
+            )}
+          >
+            <div className="tabular-nums">
+              <span className="text-muted-foreground">현재 잔액</span>{" "}
+              <span className="font-semibold text-slate-900">
+                {Number(currentBalanceSnapshot.balance || 0).toLocaleString()}원
+              </span>
+            </div>
+            <div className="tabular-nums">
+              <span className="text-muted-foreground">유료크레딧</span>{" "}
+              <span className="font-semibold text-slate-900">
+                {Number(currentBalanceSnapshot.paidCredit || 0).toLocaleString()}
+                원
+              </span>
+            </div>
+            <div className="tabular-nums">
+              <span className="text-muted-foreground">무료·의뢰</span>{" "}
+              <span className="font-semibold text-slate-900">
+                {Number(
+                  currentBalanceSnapshot.freeRequestCredit ?? 0,
+                ).toLocaleString()}
+                원
+              </span>
+            </div>
+            <div className="tabular-nums">
+              <span className="text-muted-foreground">무료·배송</span>{" "}
+              <span className="font-semibold text-slate-900">
+                {Number(
+                  currentBalanceSnapshot.freeShippingCredit ?? 0,
+                ).toLocaleString()}
+                원
+              </span>
+            </div>
+            {showSettlementCredit ? (
+              <div className="tabular-nums">
+                <span className="text-muted-foreground">기공크레딧</span>{" "}
+                <span className="font-semibold text-slate-900">
+                  {Number(
+                    currentBalanceSnapshot.settlementCredit ?? 0,
+                  ).toLocaleString()}
+                  원
+                </span>
               </div>
             ) : null}
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2 py-0.5">
-                  <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
-
-                  <div className="w-[140px]">
-                    <Select
-                      value={type}
-                      onValueChange={(v) =>
-                        setType(v as CreditLedgerType | "all")
-                      }
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="전체" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">전체</SelectItem>
-                        <SelectItem value="SPEND_PAID">사용(유료)</SelectItem>
-                        <SelectItem value="SPEND_FREE_REQUEST">
-                          사용(무료·의뢰)
-                        </SelectItem>
-                        <SelectItem value="SPEND_FREE_SHIPPING">
-                          사용(무료·배송)
-                        </SelectItem>
-                        <SelectItem value="CHARGE_PAID">유료충전</SelectItem>
-                        <SelectItem value="CHARGE_FREE_REQUEST">
-                          무료충전(의뢰)
-                        </SelectItem>
-                        <SelectItem value="CHARGE_FREE_SHIPPING">
-                          무료충전(배송)
-                        </SelectItem>
-                        <SelectItem value="ADJUST">조정</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9"
-                    onClick={resetFilters}
-                    disabled={loading}
-                  >
-                    초기화
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 py-0.5">
-                <Input
-                  type="date"
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-                <span className="text-xs text-muted-foreground">~</span>
-                <Input
-                  type="date"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-                <Input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="검색 (거래내역/코드/refId)"
-                  className="h-9 w-full sm:w-[320px]"
-                />
-              </div>
-            </div>
-
-            <div
-              ref={scrollRef}
-              className="flex-1 min-h-0 overflow-y-auto overflow-x-auto rounded-md border"
-            >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[190px] text-center">
-                      <button
-                        type="button"
-                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                        onClick={() => toggleSort("createdAt")}
-                      >
-                        일시
-                        {renderSortIcon(sort.key === "createdAt", sort.direction)}
-                      </button>
-                    </TableHead>
-                    <TableHead className="w-[110px] text-center">
-                      <button
-                        type="button"
-                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                        onClick={() => toggleSort("type")}
-                      >
-                        유형
-                        {renderSortIcon(sort.key === "type", sort.direction)}
-                      </button>
-                    </TableHead>
-                    <TableHead className="min-w-[160px] text-center">
-                      <button
-                        type="button"
-                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                        onClick={() => toggleSort("amount")}
-                      >
-                        금액
-                        {renderSortIcon(sort.key === "amount", sort.direction)}
-                      </button>
-                    </TableHead>
-                    <TableHead className="w-[150px] text-center">
-                      <button
-                        type="button"
-                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                        onClick={() => toggleSort("balanceAfter")}
-                      >
-                        행 시점 잔액
-                        {renderSortIcon(sort.key === "balanceAfter", sort.direction)}
-                      </button>
-                    </TableHead>
-                    <TableHead className="min-w-[240px] text-center">
-                      <button
-                        type="button"
-                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                        onClick={() => toggleSort("detail")}
-                      >
-                        거래내역
-                        {renderSortIcon(sort.key === "detail", sort.direction)}
-                      </button>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedRows.map((r) => {
-                    const amount = Number(r.amount || 0);
-                    const isMinus = amount < 0;
-                    const spentPaid = Number(r.spentPaidAmount || 0);
-                    const spentFree = Number(r.spentFreeAmount ?? 0);
-                    const showSplit =
-                      (String(r.type) === "SPEND_PAID" ||
-                        String(r.type) === "SPEND_FREE_REQUEST" ||
-                        String(r.type) === "SPEND_FREE_SHIPPING") &&
-                      (spentPaid > 0 || spentFree > 0);
-                    const safeRef = r.refRequestId
-                      ? formatRequestIdSafe(
-                          r.refRequestId,
-                          `${String(r.refId || "")}::${String(r.uniqueKey || "")}`,
-                        )
-                      : "";
-                    const freeSpendLabel = (() => {
-                      if (r.type === "SPEND_FREE_REQUEST") return "무료(의뢰)";
-                      if (r.type === "SPEND_FREE_SHIPPING") return "무료(배송)";
-                      const refType = String(r.refType || "");
-                      if (refType === "REQUEST") return "무료(의뢰)";
-                      if (refType === "SHIPPING_PACKAGE") return "무료(배송)";
-                      return "무료";
-                    })();
-                    return (
-                      <TableRow key={r._id}>
-                        <TableCell className="text-center text-xs whitespace-nowrap">
-                          {formatDate(String(r.createdAt || ""))}
-                        </TableCell>
-                        <TableCell className="text-center text-xs font-medium whitespace-nowrap">
-                          {typeLabel(r.type)}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-center font-medium tabular-nums",
-                            isMinus ? "text-rose-600" : "text-blue-700",
-                          )}
-                        >
-                          {showSplit ? (
-                            <div className="flex flex-col items-center leading-4">
-                              {spentPaid > 0 && (
-                                <div className="tabular-nums text-xs">
-                                  유료 -{spentPaid.toLocaleString()}원
-                                </div>
-                              )}
-                              {spentFree > 0 && (
-                                <div className="tabular-nums text-xs">
-                                  {freeSpendLabel} -{spentFree.toLocaleString()}원
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            `${amount.toLocaleString()}원`
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                          {r.balanceAfter !== undefined
-                            ? `${Number(r.balanceAfter).toLocaleString()}원`
-                            : "-"}
-                        </TableCell>
-                        <TableCell className="text-center text-xs">
-                          <div className="flex flex-col items-center leading-4">
-                            {renderTransactionDetail({
-                              item: r,
-                              safeRef,
-                              onOpenRequestDetail: () =>
-                                setSelectedDetail(toRequestDetail(r)),
-                            })}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-
-                  {loading && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="text-center text-sm text-muted-foreground py-4"
-                      >
-                        불러오는 중...
-                      </TableCell>
-                    </TableRow>
-                  )}
-
-                  {!loading && rows.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="text-center text-sm text-muted-foreground py-8"
-                      >
-                        조회 결과가 없습니다.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-
-              {hasMore && !loading && (
-                <div ref={sentinelRef} className="h-8" aria-hidden="true" />
-              )}
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+          {canCharge ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 shrink-0 px-4 font-semibold"
+              onClick={goCharge}
+              disabled={loading}
+            >
+              충전
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2 py-0.5">
+        <PeriodFilter
+          value={period}
+          onChange={setPeriod}
+          useStoreCustomRange={false}
+        />
+
+        <div className="w-[140px]">
+          <Select
+            value={type}
+            onValueChange={(v) => setType(v as CreditLedgerType | "all")}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체</SelectItem>
+              <SelectItem value="SPEND_PAID">사용(유료)</SelectItem>
+              <SelectItem value="SPEND_FREE_REQUEST">
+                사용(무료·의뢰)
+              </SelectItem>
+              <SelectItem value="SPEND_FREE_SHIPPING">
+                사용(무료·배송)
+              </SelectItem>
+              <SelectItem value="CHARGE_PAID">유료충전</SelectItem>
+              <SelectItem value="CHARGE_FREE_REQUEST">
+                무료충전(의뢰)
+              </SelectItem>
+              <SelectItem value="CHARGE_FREE_SHIPPING">
+                무료충전(배송)
+              </SelectItem>
+              {showSettlementCredit ? (
+                <>
+                  <SelectItem value="LAB_SETTLEMENT_CHARGE">
+                    기공크레딧 충전
+                  </SelectItem>
+                  <SelectItem value="LAB_SETTLEMENT_PAYOUT">
+                    기공크레딧 정산
+                  </SelectItem>
+                </>
+              ) : null}
+              <SelectItem value="ADJUST">조정</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="검색 (거래내역/코드/refId)"
+          className="h-9 w-full sm:w-[320px]"
+        />
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-auto rounded-md border"
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[190px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("createdAt")}
+                >
+                  일시
+                  {renderSortIcon(sort.key === "createdAt", sort.direction)}
+                </button>
+              </TableHead>
+              <TableHead className="w-[110px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("type")}
+                >
+                  유형
+                  {renderSortIcon(sort.key === "type", sort.direction)}
+                </button>
+              </TableHead>
+              <TableHead className="min-w-[160px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("amount")}
+                >
+                  금액
+                  {renderSortIcon(sort.key === "amount", sort.direction)}
+                </button>
+              </TableHead>
+              <TableHead className="w-[150px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("balanceAfter")}
+                >
+                  행 시점 잔액
+                  {renderSortIcon(sort.key === "balanceAfter", sort.direction)}
+                </button>
+              </TableHead>
+              <TableHead className="min-w-[240px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("detail")}
+                >
+                  거래내역
+                  {renderSortIcon(sort.key === "detail", sort.direction)}
+                </button>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedRows.map((r) => {
+              const amount = Number(r.amount || 0);
+              const isMinus = amount < 0;
+              const spentPaid = Number(r.spentPaidAmount || 0);
+              const spentFree = Number(r.spentFreeAmount ?? 0);
+              const showSplit =
+                (String(r.type) === "SPEND_PAID" ||
+                  String(r.type) === "SPEND_FREE_REQUEST" ||
+                  String(r.type) === "SPEND_FREE_SHIPPING") &&
+                (spentPaid > 0 || spentFree > 0);
+              const safeRef = r.refRequestId
+                ? formatRequestIdSafe(
+                    r.refRequestId,
+                    `${String(r.refId || "")}::${String(r.uniqueKey || "")}`,
+                  )
+                : "";
+              const freeSpendLabel = (() => {
+                if (r.type === "SPEND_FREE_REQUEST") return "무료(의뢰)";
+                if (r.type === "SPEND_FREE_SHIPPING") return "무료(배송)";
+                const refType = String(r.refType || "");
+                if (refType === "REQUEST") return "무료(의뢰)";
+                if (refType === "SHIPPING_PACKAGE") return "무료(배송)";
+                return "무료";
+              })();
+              return (
+                <TableRow key={r._id}>
+                  <TableCell className="text-center text-xs whitespace-nowrap">
+                    {formatDate(String(r.createdAt || ""))}
+                  </TableCell>
+                  <TableCell className="text-center text-xs font-medium whitespace-nowrap">
+                    {typeLabel(r.type)}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      "text-center font-medium tabular-nums",
+                      isMinus ? "text-destructive" : "text-primary-strong",
+                    )}
+                  >
+                    {showSplit ? (
+                      <div className="flex flex-col items-center leading-4">
+                        {spentPaid > 0 && (
+                          <div className="tabular-nums text-xs">
+                            유료 -{spentPaid.toLocaleString()}원
+                          </div>
+                        )}
+                        {spentFree > 0 && (
+                          <div className="tabular-nums text-xs">
+                            {freeSpendLabel} -{spentFree.toLocaleString()}원
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      `${amount.toLocaleString()}원`
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                    {r.balanceAfter !== undefined
+                      ? `${Number(r.balanceAfter).toLocaleString()}원`
+                      : "-"}
+                  </TableCell>
+                  <TableCell className="text-center text-xs">
+                    <div className="flex flex-col items-center leading-4">
+                      {renderTransactionDetail({
+                        item: r,
+                        safeRef,
+                        onOpenRequestDetail: () =>
+                          setSelectedDetail(toRequestDetail(r)),
+                      })}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+
+            {loading && rows.length > 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="text-center text-sm text-muted-foreground py-4"
+                >
+                  불러오는 중...
+                </TableCell>
+              </TableRow>
+            )}
+
+            {!loading && rows.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="text-center text-sm text-muted-foreground py-8"
+                >
+                  조회 결과가 없습니다.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+
+        {hasMore ? (
+          <div ref={sentinelRef} className="h-8" aria-hidden="true" />
+        ) : null}
+      </div>
+        </>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      {embedded ? (
+        <div
+          className={cn(
+            "flex h-full min-h-0 flex-col gap-3 overflow-hidden",
+            className,
+          )}
+        >
+          {canCharge && !currentBalanceSnapshot ? (
+            <div className="flex items-center justify-end gap-2 shrink-0">
+              {headerActions}
+            </div>
+          ) : null}
+          {body}
+        </div>
+      ) : (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+          <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+            <DialogHeader className="pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <DialogTitle className="text-lg">{title}</DialogTitle>
+                {headerActions}
+              </div>
+            </DialogHeader>
+            {body}
+          </DialogContent>
+        </Dialog>
+      )}
 
       <RequestDetailDialog
         open={Boolean(selectedDetail)}

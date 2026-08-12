@@ -426,6 +426,10 @@ export async function buildShippingEstimate(req) {
       : typeof maxDiameterRaw === "number"
         ? maxDiameterRaw
         : null;
+  const productMode =
+    typeof req.query.productMode === "string"
+      ? req.query.productMode.trim()
+      : null;
 
   if (!mode || !["express", "normal"].includes(mode)) {
     throw Object.assign(new Error("유효하지 않은 mode 입니다."), {
@@ -460,6 +464,7 @@ export async function buildShippingEstimate(req) {
     requestedAt,
     weeklyBatchDays,
     shippingMode: mode,
+    productMode,
   });
   const pickupYmdRaw = schedule?.scheduledShipPickup
     ? toKstYmd(schedule.scheduledShipPickup)
@@ -486,10 +491,11 @@ export async function buildShippingEstimate(req) {
     const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
       leadDays,
       requestedAt,
+      shippingMode: mode,
     });
     estimatedShipYmdRaw = await addKoreanBusinessDays({
       startYmd: todayYmd,
-      days: resolvedLeadDays,
+      days: mode === "express" ? resolvedLeadDays : Math.max(1, resolvedLeadDays),
     });
   }
 
@@ -585,10 +591,12 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
       const originalLeadDays = resolveLeadDaysWithSameDayCutoff({
         leadDays: baseLeadDays,
         requestedAt: requestedAtOriginal,
+        shippingMode: "express",
       });
       const nextLeadDays = resolveLeadDaysWithSameDayCutoff({
         leadDays: baseLeadDays,
         requestedAt: requestedAtForNext,
+        shippingMode: "express",
       });
       const signature = `${signatureBase}:${originalLeadDays}:${nextLeadDays}`;
       const cachedSignature = estimatedShipYmdsBySignature.get(signature);
@@ -645,10 +653,12 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
     const originalLeadDays = resolveLeadDaysWithSameDayCutoff({
       leadDays,
       requestedAt: requestedAtOriginal,
+      shippingMode: "normal",
     });
     const nextLeadDays = resolveLeadDaysWithSameDayCutoff({
       leadDays,
       requestedAt: requestedAtForNext,
+      shippingMode: "normal",
     });
     const signature = `${signatureBase}:${originalLeadDays}:${nextLeadDays}`;
     const cachedSignature = estimatedShipYmdsBySignature.get(signature);

@@ -213,7 +213,7 @@ export const CncDashboardPageView = (props: any) => {
           <div
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-black tracking-wide border ${
               globalDummyEnabled
-                ? "bg-blue-50 text-blue-700 border-blue-200"
+                ? "bg-primary-soft text-primary-strong border-primary-muted"
                 : "bg-slate-50 text-slate-700 border-slate-200"
             }`}
             title={
@@ -231,7 +231,7 @@ export const CncDashboardPageView = (props: any) => {
           <button
             type="button"
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              globalDummyEnabled ? "bg-blue-500" : "bg-gray-300"
+              globalDummyEnabled ? "bg-primary" : "bg-gray-300"
             }`}
             onClick={(e) => {
               e.stopPropagation();
@@ -254,7 +254,7 @@ export const CncDashboardPageView = (props: any) => {
           <button
             type="button"
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              globalRemoteEnabled ? "bg-blue-500" : "bg-gray-300"
+              globalRemoteEnabled ? "bg-primary" : "bg-gray-300"
             }`}
             onClick={(e) => {
               e.stopPropagation();
@@ -276,14 +276,14 @@ export const CncDashboardPageView = (props: any) => {
             <div className="mt-2 grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
               <button
                 type="button"
-                className="app-surface app-surface--panel flex flex-col items-center justify-center border-2 border-dashed border-gray-300 p-6 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/60 transition-colors"
+                className="app-surface app-surface--panel flex flex-col items-center justify-center border-2 border-dashed border-gray-300 p-6 text-gray-500 hover:border-primary/70 hover:text-primary-strong hover:bg-primary-soft/60 transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
                   setAddModalMode("create");
                   setAddModalOpen(true);
                 }}
               >
-                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-blue-50 text-blue-600 mb-3">
+                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary-soft text-primary-strong mb-3">
                   <Plus className="w-6 h-6" />
                 </div>
               </button>

@@ -142,7 +142,7 @@ export const PracticeToothWorkChartReadOnly = ({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-sky-50 hover:text-sky-700 disabled:opacity-30"
+            className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-primary-soft hover:text-primary-strong disabled:opacity-30"
             disabled={offset <= 0}
             onClick={() =>
               setToothChartOffsets((prev) => ({
@@ -166,10 +166,8 @@ export const PracticeToothWorkChartReadOnly = ({
                 : null;
             const chartPrev = chartIdx > 0 ? decade.teeth[chartIdx - 1] : null;
             const nextVisible = visible[visibleIndex + 1];
-            const showBridgeSlot =
-              Boolean(chartNext) &&
-              nextVisible === chartNext &&
-              (byTooth.has(toothNumber) || byTooth.has(chartNext!));
+            const adjacentVisible =
+              Boolean(chartNext) && nextVisible === chartNext;
 
             const linkedTeeth = row
               ? (Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []).filter((t) =>
@@ -191,32 +189,23 @@ export const PracticeToothWorkChartReadOnly = ({
             );
             const linkedChartNext = Boolean(chartNext && linkedTeeth.includes(chartNext));
             const linkedChartPrev = Boolean(chartPrev && linkedTeeth.includes(chartPrev));
+            // Read-only: no + control — only show connector when actually bridged.
+            const showBridgeConnector = adjacentVisible && bridgeLinked;
 
-            const bridgeSlot = showBridgeSlot ? (
+            const bridgeSlot = showBridgeConnector ? (
               <div
-                className={cn(
-                  "relative z-20 flex shrink-0 items-center justify-center self-stretch",
-                  bridgeLinked
-                    ? "w-3.5 border-y border-sky-500 bg-gradient-to-b from-sky-100 via-sky-50 to-white"
-                    : "w-5",
-                )}
+                className="relative z-20 flex w-3.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
               >
-                {bridgeLinked ? (
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-sky-400/70"
-                  />
-                ) : null}
-                {bridgeLinked ? (
-                  <span
-                    className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-sky-500 bg-sky-500 text-white ring-2 ring-sky-100"
-                    title={`${toothNumber}–${chartNext} 연결`}
-                  >
-                    <span className="h-0.5 w-2.5 rounded-full bg-white" />
-                  </span>
-                ) : (
-                  <span className="w-5" aria-hidden />
-                )}
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
+                />
+                <span
+                  className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
+                  title={`${toothNumber}–${chartNext} 연결`}
+                >
+                  <span className="h-0.5 w-2.5 rounded-full bg-white" />
+                </span>
               </div>
             ) : visibleIndex < visible.length - 1 ? (
               <div className="w-2 shrink-0" aria-hidden />
@@ -253,16 +242,16 @@ export const PracticeToothWorkChartReadOnly = ({
             return (
               <div key={`ro-tooth-slot-${toothNumber}`} className="contents">
                 <div className="relative min-w-0 flex-1">
-                  {linkedChartNext && !showBridgeSlot ? (
+                  {linkedChartNext && !showBridgeConnector ? (
                     <span
                       aria-hidden
-                      className="pointer-events-none absolute right-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-l-full bg-sky-400/80"
+                      className="pointer-events-none absolute right-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-l-full bg-primary/80"
                     />
                   ) : null}
                   {linkedChartPrev && visible[visibleIndex - 1] !== chartPrev ? (
                     <span
                       aria-hidden
-                      className="pointer-events-none absolute left-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-r-full bg-sky-400/80"
+                      className="pointer-events-none absolute left-0 top-1/2 z-20 h-8 w-1.5 -translate-y-1/2 rounded-r-full bg-primary/80"
                     />
                   ) : null}
 
@@ -271,8 +260,8 @@ export const PracticeToothWorkChartReadOnly = ({
                       "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-1 pb-1 pt-1.5 shadow-sm",
                       TOOTH_CARD_HEIGHT_CLASS,
                       isLinked
-                        ? "border-sky-500 bg-gradient-to-b from-sky-100 via-sky-50/95 to-white ring-1 ring-sky-300/40"
-                        : "rounded-xl border-sky-300/90 bg-gradient-to-b from-sky-50 via-white to-sky-50/40 ring-1 ring-sky-200/40",
+                        ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
+                        : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40",
                       isLinked && !linkedChartPrev && !linkedChartNext && "rounded-xl",
                       isLinked && linkedChartPrev && linkedChartNext && "rounded-none",
                       isLinked && linkedChartPrev && !linkedChartNext && "rounded-r-xl rounded-l-none",
@@ -285,20 +274,20 @@ export const PracticeToothWorkChartReadOnly = ({
                       {row.toothNumber}
                     </span>
 
-                    <div className="mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-sky-200/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600">
+                    <div className="mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-primary-muted/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600">
                       <span className="block w-full truncate px-0.5">{row.prosthesisType || "-"}</span>
                     </div>
 
                     {canShowCustom ? (
                       <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
-                        <span className="inline-flex h-5 items-center text-[11px] leading-none text-sky-700">
+                        <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
                           커스텀
                         </span>
                         <TooltipProvider delayDuration={0}>
                           <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-sky-700">
+                                <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
                                   {implantCompact || "임플란트"}
                                 </span>
                               </TooltipTrigger>
@@ -308,7 +297,7 @@ export const PracticeToothWorkChartReadOnly = ({
                             </Tooltip>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-teal-700">
+                                <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
                                   {abutmentCompact || "스캔바디"}
                                 </span>
                               </TooltipTrigger>
@@ -333,7 +322,7 @@ export const PracticeToothWorkChartReadOnly = ({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-sky-50 hover:text-sky-700 disabled:opacity-30"
+            className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-primary-soft hover:text-primary-strong disabled:opacity-30"
             disabled={offset >= maxOffset}
             onClick={() =>
               setToothChartOffsets((prev) => ({

@@ -51,12 +51,12 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 ];
 
 const STAGE_CHIP: Record<string, string> = {
-  준비: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  가공: "border-cyan-200 bg-cyan-50 text-cyan-700",
-  "세척.패킹": "border-violet-200 bg-violet-50 text-violet-700",
-  "포장.발송": "border-orange-200 bg-orange-50 text-orange-700",
+  준비: "border-primary-muted bg-primary-soft text-primary-strong",
+  가공: "border-primary-muted bg-primary-soft text-primary-strong",
+  "세척.패킹": "border-primary-muted bg-primary-soft text-primary-strong",
+  "포장.발송": "border-accent-muted bg-accent-soft text-accent-strong",
   추적관리: "border-slate-200 bg-slate-50 text-slate-600",
-  취소: "border-rose-200 bg-rose-50 text-rose-700",
+  취소: "border-destructive-muted bg-destructive-soft text-destructive",
 };
 
 /** 전체 목록에서 진행중 건이 카운트와 맞게 상단에 보이도록 */
@@ -423,32 +423,32 @@ export const AdminRequestMonitoring = () => {
       label: "준비",
       count: receiveCount,
       icon: FileText,
-      iconWrap: "bg-emerald-50",
-      iconClass: "text-emerald-600",
+      iconWrap: "bg-primary-soft",
+      iconClass: "text-primary-strong",
     },
     {
       key: "가공",
       label: "가공",
       count: machiningCount,
       icon: Clock,
-      iconWrap: "bg-cyan-50",
-      iconClass: "text-cyan-600",
+      iconWrap: "bg-primary-soft",
+      iconClass: "text-primary-strong",
     },
     {
       key: "세척.패킹",
       label: "세척.패킹",
       count: packagingCount,
       icon: Package,
-      iconWrap: "bg-violet-50",
-      iconClass: "text-violet-600",
+      iconWrap: "bg-primary-soft",
+      iconClass: "text-primary-strong",
     },
     {
       key: "포장.발송",
       label: "포장.발송",
       count: shippingCount,
       icon: Truck,
-      iconWrap: "bg-orange-50",
-      iconClass: "text-orange-600",
+      iconWrap: "bg-accent-soft",
+      iconClass: "text-accent-strong",
     },
     {
       key: "추적관리",
@@ -611,7 +611,7 @@ export const AdminRequestMonitoring = () => {
                               ) : null}
                             </h3>
                             {showPriority ? (
-                              <span className="shrink-0 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                              <span className="shrink-0 rounded-md border border-destructive-muted bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
                                 {priority}
                               </span>
                             ) : null}
@@ -655,7 +655,7 @@ export const AdminRequestMonitoring = () => {
                                   )
                                 }
                                 disabled={isActionPending}
-                                className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-destructive-soft hover:text-destructive"
                                 title="의뢰 취소"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />

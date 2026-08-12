@@ -58,8 +58,8 @@ export const ForgotPasswordPage = () => {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/40 via-cyan-400/30 to-emerald-300/30 blur-[180px]" />
-        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-orange-400/20 blur-[180px]" />
+        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-primary/40 via-primary/30 to-primary/30 blur-[180px]" />
+        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-primary/40 via-destructive/30 to-accent/20 blur-[180px]" />
         <div
           className="absolute inset-0 opacity-[0.08]"
           style={{
@@ -74,7 +74,7 @@ export const ForgotPasswordPage = () => {
         <div className="space-y-4">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
             <span>account</span>
-            <span className="h-1 w-1 rounded-full bg-emerald-300" />
+            <span className="h-1 w-1 rounded-full bg-primary/70" />
             <span>support</span>
           </div>
           <div className="space-y-2">

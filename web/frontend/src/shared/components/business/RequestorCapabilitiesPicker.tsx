@@ -1,24 +1,27 @@
 // related files:
 // - web/frontend/src/shared/business/requestorCapabilities.ts
 // - web/frontend/src/shared/components/business/settings/BusinessTab.tsx
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
-  REQUESTOR_CAPABILITY_LABEL,
-  REQUESTOR_CAPABILITY_OPTIONS,
-  type RequestorCapabilities,
-  normalizeRequestorCapabilities,
+  REQUESTOR_KIND_LABEL,
+  REQUESTOR_KIND_OPTIONS,
+  type RequestorKind,
+  type RequestorProfile,
+  type RequestorServices,
+  hasAnyRequestorService,
+  normalizeRequestorKind,
+  normalizeRequestorServices,
 } from "@/shared/business/requestorCapabilities";
 import { cn } from "@/shared/ui/cn";
 
+const DEFAULT_SERVICES: RequestorServices = { free: true, paid: false };
+
 type Props = {
-  value: RequestorCapabilities;
-  onChange: (next: RequestorCapabilities) => void;
+  value: RequestorProfile;
+  onChange: (next: RequestorProfile) => void;
   disabled?: boolean;
   className?: string;
-  /** 수신자(lab) 선택 시 미검증이면 안내 */
-  labRequiresLicenseHint?: boolean;
-  /** 드롭존 최소 가입자 등: practice 고정, lab 선택 불가 */
+  /** 드롭존 최소 가입자 등: practice + free 고정 */
   forcePracticeOnly?: boolean;
 };
 
@@ -27,82 +30,82 @@ export const RequestorCapabilitiesPicker = ({
   onChange,
   disabled = false,
   className,
-  labRequiresLicenseHint = false,
   forcePracticeOnly = false,
 }: Props) => {
-  const caps = forcePracticeOnly
-    ? { practice: true, lab: false }
-    : normalizeRequestorCapabilities(value);
+  const kind: RequestorKind | null = forcePracticeOnly
+    ? "practice"
+    : normalizeRequestorKind(value.kind);
+  const services: RequestorServices = (() => {
+    const normalized = normalizeRequestorServices(value.services);
+    return hasAnyRequestorService(normalized)
+      ? normalized
+      : DEFAULT_SERVICES;
+  })();
 
-  const toggle = (key: keyof RequestorCapabilities, checked: boolean) => {
+  const setKind = (nextKind: RequestorKind) => {
     if (forcePracticeOnly) return;
-    onChange(
-      normalizeRequestorCapabilities({
-        ...caps,
-        [key]: checked,
-      }),
-    );
+    onChange({
+      kind: nextKind,
+      services,
+    });
   };
 
   return (
-    <div className={cn("space-y-4", className)}>
-      <p className="text-xs leading-relaxed text-slate-500">
-        {forcePracticeOnly
-          ? "드롭존으로 가입한 계정은 의뢰 발신자(치과)로 고정됩니다. 수신(lab)은 나중에 설정에서 추가할 수 있습니다."
-          : "해당하는 항목을 모두 선택하세요."}
-      </p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {REQUESTOR_CAPABILITY_OPTIONS.map((opt) => {
-          const checked = caps[opt.key];
-          const id = `requestor-cap-${opt.key}`;
-          const optionLocked =
-            forcePracticeOnly && (opt.key === "practice" || opt.key === "lab");
-          return (
-            <label
-              key={opt.key}
-              htmlFor={id}
-              className={cn(
-                "flex h-full cursor-pointer items-start gap-3 rounded-xl border px-5 py-3 transition-colors",
-                checked
-                  ? "border-primary/40 bg-primary/5"
-                  : "border-slate-200 bg-white hover:bg-slate-50",
-                (disabled || optionLocked) && "cursor-not-allowed opacity-60",
-              )}
-            >
-              <Checkbox
-                id={id}
-                checked={checked}
-                disabled={disabled || optionLocked}
-                onCheckedChange={(v) => toggle(opt.key, v === true)}
-                className="mt-0.5"
-              />
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <Label
-                  htmlFor={id}
-                  className="cursor-pointer text-sm font-medium text-slate-900"
-                >
-                  {opt.label}
-                </Label>
-                <p className="whitespace-pre-line text-xs leading-relaxed text-slate-500">
-                  {opt.description}
-                </p>
-              </div>
-            </label>
-          );
-        })}
+    <div className={cn("space-y-6", className)}>
+      <div className="space-y-3">
+        {forcePracticeOnly ? (
+          <p className="text-xs leading-relaxed text-slate-500">
+            드롭존으로 가입한 계정은 치과(기공실)로 고정됩니다.
+          </p>
+        ) : null}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {REQUESTOR_KIND_OPTIONS.map((opt) => {
+            const checked = kind === opt.key;
+            const id = `requestor-kind-${opt.key}`;
+            const optionLocked = forcePracticeOnly;
+            return (
+              <label
+                key={opt.key}
+                htmlFor={id}
+                className={cn(
+                  "flex h-full cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3.5 transition-all shadow-sm",
+                  checked
+                    ? "border-primary-muted/70 bg-primary-soft/35"
+                    : "border-slate-200/80 bg-white/70 hover:border-primary-muted/50 hover:bg-primary-soft/10",
+                  (disabled || optionLocked) && "cursor-not-allowed opacity-60",
+                )}
+              >
+                <input
+                  id={id}
+                  type="radio"
+                  name="requestor-kind"
+                  className="mt-1"
+                  checked={checked}
+                  disabled={disabled || optionLocked}
+                  onChange={() => setKind(opt.key)}
+                />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <Label
+                    htmlFor={id}
+                    className="cursor-pointer text-sm font-medium text-slate-900"
+                  >
+                    {opt.label}
+                  </Label>
+                  <p className="whitespace-pre-line text-xs leading-relaxed text-slate-500">
+                    {opt.description}
+                  </p>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        {!kind && (
+          <p className="text-xs text-destructive">
+            {REQUESTOR_KIND_LABEL.practice} 또는 {REQUESTOR_KIND_LABEL.lab} 중
+            하나를 선택해주세요.
+          </p>
+        )}
       </div>
-      {labRequiresLicenseHint && caps.lab && (
-        <p className="text-xs text-amber-700">
-          {REQUESTOR_CAPABILITY_LABEL.lab}을 선택한 경우 사업자등록증을
-          등록·검증해야 합니다.
-        </p>
-      )}
-      {!caps.practice && !caps.lab && (
-        <p className="text-xs text-destructive">
-          {REQUESTOR_CAPABILITY_LABEL.practice} 또는{" "}
-          {REQUESTOR_CAPABILITY_LABEL.lab} 중 하나 이상 선택해주세요.
-        </p>
-      )}
     </div>
   );
 };

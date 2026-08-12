@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-10: worksheet select에 caseInfos.memo/toothWorks/prosthesisType/files 추가(디자인 큐).
 // related files:
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
@@ -7,6 +9,7 @@
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/requestor/design/DesignPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
@@ -26,6 +29,10 @@ import SystemSettings from "../../models/systemSettings.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
+import {
+  buildDesignClaimListVisibilityFilter,
+  enrichDesignClaimForViewer,
+} from "../../utils/designClaim.js";
 import {
   applyStatusMapping,
   canAccessRequestAsRequestor,
@@ -1292,6 +1299,42 @@ export async function getAllRequests(req, res) {
     }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
+    // caseInfos.productMode: 커스텀어벗 생산 vs 디자인+생산 분기
+    // - productMode=design_custom_abutment → 디자인 페이지
+    // - productModeNe=design_custom_abutment → 가공작업(준비)에서 디자인+생산 제외
+    if (typeof req.query.productMode === "string") {
+      const productMode = String(req.query.productMode || "").trim();
+      if (productMode) {
+        filter["caseInfos.productMode"] = productMode;
+      }
+    }
+    if (typeof req.query.productModeNe === "string") {
+      const productModeNe = String(req.query.productModeNe || "").trim();
+      if (productModeNe) {
+        // $ne는 필드 누락(레거시 생산)도 포함한다.
+        filter["caseInfos.productMode"] = { $ne: productModeNe };
+      }
+    }
+
+    // 디자인 파트너 큐: 활성 클레임 가시성 (본인 / 발표 1분 / 미클레임·만료)
+    const productModeFilter = String(req.query.productMode || "").trim();
+    const isDesignPartnerQueue =
+      Boolean(req.__designPartner) &&
+      productModeFilter === "design_custom_abutment";
+    if (isDesignPartnerQueue) {
+      const claimVisibility = buildDesignClaimListVisibilityFilter(
+        req.user?._id,
+        new Date(),
+      );
+      if (Array.isArray(filter.$and)) {
+        filter.$and = [...filter.$and, claimVisibility];
+      } else if (Object.keys(filter).length === 0) {
+        filter = claimVisibility;
+      } else {
+        filter = { $and: [filter, claimVisibility] };
+      }
+    }
+
     // 생성일 범위 필터 (관리자 모니터링/대시보드와 동일 파서 사용)
     const createdAtFilter = buildCreatedAtFilterFromQuery(req.query);
     if (createdAtFilter) {
@@ -1392,7 +1435,13 @@ export async function getAllRequests(req, res) {
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
+      "caseInfos.productMode",
       "caseInfos.designSoftware",
+      "caseInfos.memo",
+      "caseInfos.toothWorks",
+      "caseInfos.prosthesisType",
+      "caseInfos.files",
+      "designClaim",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
       "caseInfos.requestorHexRotation",
@@ -1791,6 +1840,25 @@ export async function getAllRequests(req, res) {
           },
         };
         item.requestorBusinessAnchor = item.business;
+      }
+    }
+
+    if (isDesignPartnerQueue && Array.isArray(requests)) {
+      const nowMs = Date.now();
+      const viewerId = req.user?._id;
+      for (const item of requests) {
+        if (!item || typeof item !== "object") continue;
+        const meta = enrichDesignClaimForViewer(
+          item.designClaim,
+          viewerId,
+          nowMs,
+        );
+        item.designClaimMeta = meta;
+        item.designClaimPeerBusy = meta.peerBusy;
+        item.designClaimClaimable = meta.claimable;
+        item.designClaimMine = meta.mine;
+        item.designClaimRemainingMs = meta.remainingMs;
+        item.designClaimWarn = meta.warn;
       }
     }
 

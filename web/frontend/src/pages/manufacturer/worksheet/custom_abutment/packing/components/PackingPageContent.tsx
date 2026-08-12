@@ -16,7 +16,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
-import { WorksheetCardsSkeleton } from "@/shared/ui/skeletons/DashboardSectionSkeletons";
+import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import { BodyPortal } from "@/shared/ui/BodyPortal";
 import {
   type ManufacturerRequest,
@@ -1324,11 +1324,7 @@ export const PackingPageContent = ({
           />
         )}
 
-        {isLoading && (
-          <div className="py-4">
-            <WorksheetCardsSkeleton />
-          </div>
-        )}
+        {isLoading && <WorksheetLoading />}
 
         <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 my-2">
           <div className="flex justify-center pt-4 pb-1 px-2">
@@ -1336,7 +1332,7 @@ export const PackingPageContent = ({
               <button
                 type="button"
                 onClick={handleOpenScrewLotSettings}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/70 bg-primary-soft px-3 py-1.5 text-xs font-semibold text-primary-strong hover:bg-primary-muted/50"
               >
                 스크류 로트번호 설정
               </button>
@@ -1358,7 +1354,7 @@ export const PackingPageContent = ({
                   isPrintingPackingLabels ||
                   selectedPackingRequestIds.length === 0
                     ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                    : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
+                    : "bg-primary-soft text-primary-strong border-primary-muted hover:bg-primary-soft shadow-sm"
                 }`}
               >
                 {isPrintingPackingLabels
@@ -1374,7 +1370,7 @@ export const PackingPageContent = ({
                 className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                   !unprintedPackingRequestIds.length
                     ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                    : "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+                    : "bg-accent-soft text-accent-strong border-accent-muted hover:bg-accent-soft"
                 }`}
               >
                 미출력만 ({unprintedPackingRequestIds.length})
@@ -1451,10 +1447,10 @@ export const PackingPageContent = ({
                 return (
                   <div
                     key={`${item.requestId}-${idx}`}
-                    className="rounded-lg border border-blue-200 bg-blue-50 shadow-sm px-4 py-2 text-sm min-w-[160px] max-w-[220px]"
+                    className="rounded-lg border border-primary-muted bg-primary-soft shadow-sm px-4 py-2 text-sm min-w-[160px] max-w-[220px]"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-blue-700 tracking-widest text-lg">
+                      <span className="font-bold text-primary-strong tracking-widest text-lg">
                         {lotSuffix}
                       </span>
                       <span className="text-xs text-slate-400">{timeStr}</span>
@@ -1465,7 +1461,7 @@ export const PackingPageContent = ({
                       {patientName && ` · ${patientName}`}
                       {tooth && ` · ${tooth}`}
                     </div>
-                    <div className="text-xs text-blue-500 mt-0.5">
+                    <div className="text-xs text-primary mt-0.5">
                       → 포장.발송 이동
                     </div>
                   </div>
@@ -1572,7 +1568,7 @@ export const PackingPageContent = ({
                   <button
                     type="button"
                     onClick={() => handleRemoveScrewLotRow(idx)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 text-red-600 hover:bg-red-50"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-destructive-muted text-destructive hover:bg-destructive-soft"
                     aria-label={`스크류 타입 ${idx + 1} 삭제`}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1614,7 +1610,7 @@ export const PackingPageContent = ({
                   className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
                     screwLotSaving || screwLotLoading
                       ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
-                      : "border border-violet-300 bg-violet-600 text-white hover:bg-violet-700"
+                      : "border border-primary/70 bg-primary-strong text-white hover:bg-primary-strong"
                   }`}
                 >
                   {screwLotSaving ? "저장 중..." : "저장"}
@@ -1695,7 +1691,7 @@ export const PackingPageContent = ({
           <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20">
             <div className="rounded-xl bg-white/90 px-4 py-3 text-sm font-semibold text-slate-800 shadow flex items-center gap-2">
               {ocrProcessing && (
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
               )}
               <span>{overlayText}</span>
             </div>

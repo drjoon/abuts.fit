@@ -113,10 +113,10 @@ function fmtDate(d?: string | null) {
 
 function StatusBadge({ status }: { status: DraftStatus }) {
   const map: Record<DraftStatus, string> = {
-    PENDING_APPROVAL: "bg-yellow-100 text-yellow-800 border-yellow-200",
-    APPROVED: "bg-blue-100 text-blue-800 border-blue-200",
-    SENT: "bg-green-100 text-green-800 border-green-200",
-    FAILED: "bg-red-100 text-red-800 border-red-200",
+    PENDING_APPROVAL: "bg-accent-muted/50 text-accent-strong border-accent-muted",
+    APPROVED: "bg-primary-soft text-primary-strong border-primary-muted",
+    SENT: "bg-primary-muted/50 text-primary-strong border-primary-muted",
+    FAILED: "bg-destructive-soft text-destructive border-destructive-muted",
     REJECTED: "bg-gray-100 text-gray-700 border-gray-200",
     CANCELLED: "bg-slate-100 text-slate-500 border-slate-200",
   };

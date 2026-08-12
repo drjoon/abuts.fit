@@ -199,6 +199,7 @@ async function run() {
         requestedAt,
         weeklyBatchDays,
         shippingMode,
+        productMode: row?.caseInfos?.productMode ?? null,
       });
 
       const nextPickupYmdRaw = nextSchedule?.scheduledShipPickup

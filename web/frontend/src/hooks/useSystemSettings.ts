@@ -17,6 +17,7 @@ export interface CreditSettings {
   shippingFee: number;
   expressFee: number;
   designFee: number;
+  abutmentRetailPrice: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
 }
@@ -24,8 +25,9 @@ export interface CreditSettings {
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   minCreditForRequest: 10000,
   shippingFee: 3500,
-  expressFee: 1000,
+  expressFee: 2000,
   designFee: 15000,
+  abutmentRetailPrice: 40000,
   defaultRequestFreeCredit: 30000,
   defaultShippingFreeCredit: 7000,
 };
@@ -56,6 +58,9 @@ export const useSystemSettings = () => {
           raw.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
         ),
         designFee: Number(raw.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
+        abutmentRetailPrice: Number(
+          raw.abutmentRetailPrice ?? CREDIT_SETTINGS_DEFAULTS.abutmentRetailPrice,
+        ),
         defaultRequestFreeCredit: Number(
           raw.defaultRequestFreeCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,

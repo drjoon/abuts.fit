@@ -24,10 +24,6 @@ import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import { CommissionLedgerInline } from "@/shared/components/CommissionLedgerInline";
 import {
-  GlassStatCardsSkeleton,
-  UnmachinableOverviewSkeleton,
-} from "@/shared/ui/skeletons/DashboardSectionSkeletons";
-import {
   useCommissionDashboard,
   formatMoney,
   type CommissionDashboardData,
@@ -41,10 +37,7 @@ export const DevopsDashboardPage = () => {
 
   const { data, loading } = useCommissionDashboard(period);
 
-  const {
-    data: unmachinableOverviewResponse,
-    isLoading: isUnmachinableLoading,
-  } = useQuery({
+  const { data: unmachinableOverviewResponse } = useQuery({
     queryKey: ["devops-unmachinable-overview", period],
     enabled: Boolean(token),
     queryFn: async () => {
@@ -66,10 +59,6 @@ export const DevopsDashboardPage = () => {
   });
 
   if (!user) return null;
-
-  const showCommissionSkeleton = loading && !data;
-  const showUnmachinableSkeleton =
-    isUnmachinableLoading && !unmachinableOverviewResponse;
 
   const overview: CommissionDashboardData["overview"] = data?.overview ?? {
     referredOrganizationCount: 0,
@@ -117,10 +106,6 @@ export const DevopsDashboardPage = () => {
               <CardTitle className="text-sm font-medium">불완전가공 단계 현황</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {showUnmachinableSkeleton ? (
-                <UnmachinableOverviewSkeleton />
-              ) : (
-                <>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div>가능성 {Number(unmachinableCounts.potentialCount || 0).toLocaleString()}건</div>
                 <div>판정 {Number(unmachinableCounts.judgedCount || 0).toLocaleString()}건</div>
@@ -157,30 +142,23 @@ export const DevopsDashboardPage = () => {
                   </div>
                 )}
               </div>
-                </>
-              )}
             </CardContent>
           </Card>
         }
         stats={
-          showCommissionSkeleton ? (
-            <GlassStatCardsSkeleton
-              count={5}
-              className="contents"
-              lines={2}
-            />
-          ) : (
           <>
             {/* 기본 X%: 소개 의뢰자 수수료 */}
             <Card className="app-glass-card app-glass-card--lg min-h-[116px]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
-                  기본 {`${baseRatePct}%`}
+                  기본 {loading ? "..." : `${baseRatePct}%`}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
                 <div className="text-lg sm:text-xl md:text-2xl font-bold">
-                  {`${formatMoney(overview.directCommissionAmount)}원`}
+                  {loading
+                    ? "..."
+                    : `${formatMoney(overview.directCommissionAmount)}원`}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   소개 의뢰자 수수료
@@ -193,14 +171,18 @@ export const DevopsDashboardPage = () => {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
                   영업자 미설정 의뢰자 분배
-                  <span className="ml-1 font-normal text-muted-foreground">
-                    ({unaffiliatedRatePct}%)
-                  </span>
+                  {!loading && (
+                    <span className="ml-1 font-normal text-muted-foreground">
+                      ({unaffiliatedRatePct}%)
+                    </span>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
                 <div className="text-lg sm:text-xl md:text-2xl font-bold">
-                  {`${formatMoney(overview.unaffiliatedCommissionAmount)}원`}
+                  {loading
+                    ? "..."
+                    : `${formatMoney(overview.unaffiliatedCommissionAmount)}원`}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   영업자 미설정 의뢰자 수수료
@@ -215,8 +197,10 @@ export const DevopsDashboardPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-lg sm:text-xl md:text-2xl font-bold text-blue-700 tabular-nums">
-                  {`${formatMoney(overview.payableGrossCommissionAmount)}원`}
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-primary-strong tabular-nums">
+                  {loading
+                    ? "..."
+                    : `${formatMoney(overview.payableGrossCommissionAmount)}원`}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   아직 지급되지 않은 유료 정산 누적 금액
@@ -231,11 +215,13 @@ export const DevopsDashboardPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-lg sm:text-xl md:text-2xl font-bold text-violet-700 tabular-nums leading-tight">
-                  {`${formatMoney(overview.freeNetAmount)}원`}
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-primary-strong tabular-nums leading-tight">
+                  {loading ? "..." : `${formatMoney(overview.freeNetAmount)}원`}
                 </div>
                 <div className="text-xs text-muted-foreground tabular-nums leading-tight">
-                  {`의뢰 ${formatMoney(overview.freeNetRequestAmount)}원 / 배송 ${formatMoney(overview.freeNetShippingAmount)}원`}
+                  {loading
+                    ? "..."
+                    : `의뢰 ${formatMoney(overview.freeNetRequestAmount)}원 / 배송 ${formatMoney(overview.freeNetShippingAmount)}원`}
                 </div>
               </CardContent>
             </Card>
@@ -249,7 +235,9 @@ export const DevopsDashboardPage = () => {
               </CardHeader>
               <CardContent className="space-y-1">
                 <div className="text-lg sm:text-xl md:text-2xl font-bold">
-                  {`${formatMoney(overview.paidNetCommissionAmount)}원`}
+                  {loading
+                    ? "..."
+                    : `${formatMoney(overview.paidNetCommissionAmount)}원`}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   지급 완료 처리된 정산 누적 금액
@@ -257,7 +245,6 @@ export const DevopsDashboardPage = () => {
               </CardContent>
             </Card>
           </>
-          )
         }
         mainLeft={<CommissionLedgerInline mode="self" period={period} />}
         mainRight={null}

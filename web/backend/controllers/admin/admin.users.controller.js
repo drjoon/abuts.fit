@@ -467,7 +467,8 @@ export async function changeUserRole(req, res) {
     const previousRole = user.role;
     user.role = normalizedRole;
     if (role === "practice" || previousRole === "practice") {
-      user.requestorCapabilities = { practice: true, lab: false };
+      user.requestorKind = "practice";
+      user.requestorServices = { free: true, paid: false };
     }
     if (subRole !== undefined) {
       user.subRole = subRole;
@@ -479,7 +480,8 @@ export async function changeUserRole(req, res) {
       data: {
         userId: user._id,
         role: user.role,
-        requestorCapabilities: user.requestorCapabilities || null,
+        requestorKind: user.requestorKind || null,
+        requestorServices: user.requestorServices || null,
       },
     });
   } catch (error) {

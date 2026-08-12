@@ -2040,6 +2040,11 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     "caseInfos.coordinateError": coordinateError || null,
   };
 
+  // rhino 자동 재계산 시 수동 Front Point Face 오프셋 오버라이드 해제
+  const metadataUnsetPayload = {
+    "caseInfos.frontFaceEndOffsetMm": "",
+  };
+
   if (hexRotation && typeof hexRotation === "object") {
     metadataSetPayload["caseInfos.hexRotation"] = hexRotation;
   }
@@ -2056,7 +2061,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
   // 전체 save() 대신 변경 경로만 $set 업데이트를 사용한다.
   const updatedRequest = await Request.findByIdAndUpdate(
     request._id,
-    { $set: metadataSetPayload },
+    { $set: metadataSetPayload, $unset: metadataUnsetPayload },
     { new: true, runValidators: false },
   );
 
@@ -2161,6 +2166,7 @@ export const getStlMetadata = asyncHandler(async (req, res) => {
     taperAngle: request.caseInfos?.taperAngle,
     tiltAxisVector: request.caseInfos?.tiltAxisVector,
     frontPoint: request.caseInfos?.frontPoint,
+    frontFaceEndOffsetMm: request.caseInfos?.frontFaceEndOffsetMm,
     taperGuide: request.caseInfos?.taperGuide,
     hexRotation: request.caseInfos?.hexRotation,
     // PreviewModal(useStlMetadata)에서 finishline extrema를 바로 사용하도록 포함

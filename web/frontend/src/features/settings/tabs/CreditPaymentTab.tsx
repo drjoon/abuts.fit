@@ -1,14 +1,25 @@
+// change-log:
+// - 2026-08-11: compact — 크레딧 충전 탭용. 잔액/충전내역 숨기고 입금 패널만 표시(스크롤·중앙 배치).
+// - 2026-08-11: 외곽 glass 카드 제거. 입금정보/입금금액 패널만 남기고 수직 중앙 배치.
+// - 2026-08-11: 페이지 제목(크레딧 결제) 제거 — 탭 라벨로 충분.
+// - 2026-08-11: 1회차 판별 — MATCHED/AUTO_MATCHED 반영, variant 미결정 시 2회차 기본(3) 적용 방지.
+// - 2026-08-11: 2회차 충전 기본 배수 3(단위≈월사용량 1/3 → 한 달분). 추천 버튼은 월사용량 반올림.
+// - 2026-08-11: 충전 단위 — 기공소 50만원, 치과 100만원. 2회차 추천은 월사용량/3 반올림.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
+// - web/backend/utils/creditChargeUnit.js
+// - web/backend/controllers/credits/creditBPlan.controller.js
+// - web/backend/controllers/credits/credit.controller.js
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -21,6 +32,8 @@ type Props = {
     name?: string;
     email?: string;
   };
+  /** true면 잔액 요약·충전 내역을 숨기고 입금/충전 패널만 표시 */
+  compact?: boolean;
 };
 
 type CreditOrderResponse = {
@@ -64,29 +77,46 @@ type CreditSpendInsightsResponse = {
     avgMonthlySpendSupply: number;
     estimatedDaysFor500k: number | null;
     hasUsageData: boolean;
+    chargeUnit?: number;
+    requestorKind?: "practice" | "lab" | null;
     recommended: {
+      chargeSupply?: number;
       oneMonthSupply: number;
+      oneMonthFullSupply?: number;
       threeMonthsSupply: number;
     };
   };
   message?: string;
 };
 
-const CHARGE_UNIT = 500000;
+const CHARGE_UNIT_LAB = 500_000;
+const CHARGE_UNIT_PRACTICE = 1_000_000;
+const MAX_CHARGE_SUPPLY = 50_000_000;
 const MIN_CHARGE_UNITS = 1;
-const MAX_CHARGE_UNITS = 100;
+/** 2회차부터: 단위≈월사용량 1/3이므로 기본 배수 3(약 한 달분). */
+const DEFAULT_REGULAR_CHARGE_UNITS = 3;
 
-function clampChargeUnits(raw: number) {
-  if (!Number.isFinite(raw)) return MIN_CHARGE_UNITS;
-  return Math.min(
-    MAX_CHARGE_UNITS,
-    Math.max(MIN_CHARGE_UNITS, Math.round(raw)),
-  );
+function resolveChargeUnit(kind: "practice" | "lab" | null | undefined) {
+  return kind === "practice" ? CHARGE_UNIT_PRACTICE : CHARGE_UNIT_LAB;
 }
 
-function unitsFromSupply(supply: number) {
-  if (!Number.isFinite(supply) || supply <= 0) return MIN_CHARGE_UNITS;
-  return clampChargeUnits(Math.round(supply / CHARGE_UNIT));
+function maxChargeUnitsFor(unit: number) {
+  if (!Number.isFinite(unit) || unit <= 0) return 1;
+  return Math.max(1, Math.floor(MAX_CHARGE_SUPPLY / unit));
+}
+
+function clampChargeUnits(raw: number, maxUnits: number) {
+  if (!Number.isFinite(raw)) return MIN_CHARGE_UNITS;
+  return Math.min(maxUnits, Math.max(MIN_CHARGE_UNITS, Math.round(raw)));
+}
+
+/** 공급가 → 배수 (반올림). 0이 되면 최소 1단위 */
+function unitsFromSupply(supply: number, unit: number, maxUnits: number) {
+  if (!Number.isFinite(supply) || !(unit > 0)) {
+    return MIN_CHARGE_UNITS;
+  }
+  if (supply <= 0) return MIN_CHARGE_UNITS;
+  return clampChargeUnits(Math.round(supply / unit), maxUnits);
 }
 
 function formatManwon(amount: number) {
@@ -112,18 +142,17 @@ function formatKoreanDate(value?: string | null) {
   return `${yyyy}.${mm}.${dd}`;
 }
 
-function validateSupplyAmount(supply: number) {
+function validateSupplyAmount(supply: number, unit: number) {
   if (!Number.isFinite(supply) || supply <= 0)
     return "유효하지 않은 금액입니다.";
 
-  const MIN = CHARGE_UNIT * MIN_CHARGE_UNITS;
-  const MAX = CHARGE_UNIT * MAX_CHARGE_UNITS;
-  if (supply < MIN || supply > MAX) {
-    return "크레딧 충전 금액은 50만원 ~ 5,000만원 범위여야 합니다.";
+  const unitLabel = formatManwon(unit);
+  if (supply < unit || supply > MAX_CHARGE_SUPPLY) {
+    return `크레딧 충전 금액은 ${unitLabel} ~ 5,000만원 범위여야 합니다.`;
   }
 
-  if (supply % CHARGE_UNIT !== 0)
-    return "크레딧 충전 금액은 50만원 단위로만 충전할 수 있습니다.";
+  if (supply % unit !== 0)
+    return `크레딧 충전 금액은 ${unitLabel} 단위로만 충전할 수 있습니다.`;
 
   return null;
 }
@@ -142,9 +171,25 @@ function formatRemaining(ms: number) {
   return `${minutes}분 ${String(seconds).padStart(2, "0")}초`;
 }
 
-export const CreditPaymentTab = ({ userData }: Props) => {
+export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
+  const { kind: accessKind } = useRequestorBusinessAccess();
+
+  const requestorKind =
+    accessKind ||
+    (user?.requestorKind === "practice" || user?.requestorKind === "lab"
+      ? user.requestorKind
+      : null);
+
+  const chargeUnit = useMemo(
+    () => resolveChargeUnit(requestorKind),
+    [requestorKind],
+  );
+  const maxChargeUnits = useMemo(
+    () => maxChargeUnitsFor(chargeUnit),
+    [chargeUnit],
+  );
 
   const [pendingOrder, setPendingOrder] = useState<
     CreditOrderResponse["data"] | null
@@ -163,10 +208,6 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   const [orders, setOrders] = useState<CreditOrderItem[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [ordersPeriod, setOrdersPeriod] = useState<PeriodFilterValue>("30d");
-
-  const [chargeVariant, setChargeVariant] = useState<
-    "first" | "regular" | null
-  >(null);
 
   const [spendInsights, setSpendInsights] = useState<
     CreditSpendInsightsResponse["data"] | null
@@ -235,14 +276,14 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     useState(false);
 
   const applyChargeUnits = (raw: number) => {
-    const next = clampChargeUnits(raw);
+    const next = clampChargeUnits(raw, maxChargeUnits);
     setChargeUnits(next);
     setUnitsDraft(String(next));
   };
 
   const supplyAmount = useMemo(
-    () => chargeUnits * CHARGE_UNIT,
-    [chargeUnits],
+    () => chargeUnits * chargeUnit,
+    [chargeUnits, chargeUnit],
   );
   const totalAmount = supplyAmount;
   const displayAmount = pendingOrder
@@ -255,10 +296,29 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       : depositAccount;
 
   const recommendedUnits = useMemo(() => {
-    const oneMonth = Number(spendInsights?.recommended?.oneMonthSupply || 0);
-    if (!(oneMonth > 0)) return null;
-    return unitsFromSupply(oneMonth);
-  }, [spendInsights?.recommended?.oneMonthSupply]);
+    // 추천 버튼: 한 달 사용량(단위 반올림). 기본 배수는 DEFAULT_REGULAR_CHARGE_UNITS.
+    const fromApi = Number(
+      spendInsights?.recommended?.oneMonthFullSupply ??
+        spendInsights?.avgMonthlySpendSupply ??
+        0,
+    );
+    if (fromApi > 0) {
+      return unitsFromSupply(fromApi, chargeUnit, maxChargeUnits);
+    }
+    return DEFAULT_REGULAR_CHARGE_UNITS;
+  }, [
+    chargeUnit,
+    maxChargeUnits,
+    spendInsights?.avgMonthlySpendSupply,
+    spendInsights?.recommended?.oneMonthFullSupply,
+  ]);
+
+  // 단위가 바뀌면(치과/기공소) 배수·추천 적용 상태를 다시 맞춘다.
+  useEffect(() => {
+    setDidApplyRecommendedUnits(false);
+    applyChargeUnits(MIN_CHARGE_UNITS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chargeUnit]);
 
   const filteredOrders = useMemo(() => {
     const now = Date.now();
@@ -429,7 +489,11 @@ export const CreditPaymentTab = ({ userData }: Props) => {
             },
           };
         });
-        const units = unitsFromSupply(Number(pending.supplyAmount || 0));
+        const units = unitsFromSupply(
+          Number(pending.supplyAmount || 0),
+          chargeUnit,
+          maxChargeUnits,
+        );
         setChargeUnits(units);
         setUnitsDraft(String(units));
       } else {
@@ -451,7 +515,13 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
   const hasChargedBefore = useMemo(() => {
     return orders.some((o) =>
-      ["DONE", "REFUND_REQUESTED", "REFUNDED"].includes(String(o.status)),
+      [
+        "DONE",
+        "MATCHED",
+        "AUTO_MATCHED",
+        "REFUND_REQUESTED",
+        "REFUNDED",
+      ].includes(String(o.status)),
     );
   }, [orders]);
 
@@ -468,6 +538,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       [
         "DONE",
         "MATCHED",
+        "AUTO_MATCHED",
         "EXPIRED",
         "CANCELED",
         "REFUND_REQUESTED",
@@ -478,38 +549,23 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     }
   }, [orders, pendingOrder?.id]);
 
-  const isFirstCharge = useMemo(() => {
-    return chargeVariant === "first";
-  }, [chargeVariant]);
+  // 주문 목록 로딩 전에는 1회차로 간주(미결정 시 2회차 UI/배수 3 적용 방지).
+  const isFirstCharge = loadingOrders || !hasChargedBefore;
 
   useEffect(() => {
-    if (chargeVariant) return;
     if (loadingOrders) return;
-    setChargeVariant(hasChargedBefore ? "regular" : "first");
-  }, [chargeVariant, hasChargedBefore, loadingOrders]);
-
-  useEffect(() => {
-    if (!chargeVariant) return;
-    if (chargeVariant === "first" && hasChargedBefore) {
-      setChargeVariant("regular");
-    }
-  }, [chargeVariant, hasChargedBefore]);
-
-  useEffect(() => {
-    if (loadingOrders || loadingInsights) return;
     if (pendingOrder) return;
-    if (isFirstCharge || didApplyRecommendedUnits) return;
-    if (!recommendedUnits) return;
-    applyChargeUnits(recommendedUnits);
+    if (didApplyRecommendedUnits) return;
+    applyChargeUnits(
+      hasChargedBefore ? DEFAULT_REGULAR_CHARGE_UNITS : MIN_CHARGE_UNITS,
+    );
     setDidApplyRecommendedUnits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     didApplyRecommendedUnits,
-    isFirstCharge,
-    loadingInsights,
+    hasChargedBefore,
     loadingOrders,
     pendingOrder,
-    recommendedUnits,
   ]);
 
   const handleCharge = async () => {
@@ -540,7 +596,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       return;
     }
 
-    const validationError = validateSupplyAmount(supplyAmount);
+    const validationError = validateSupplyAmount(supplyAmount, chargeUnit);
     if (validationError) {
       toast({
         title: "금액을 확인해주세요",
@@ -626,74 +682,70 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   };
 
   const statusLabel: Record<string, { text: string; cls: string }> = {
-    PENDING: { text: "입금 대기", cls: "bg-amber-100 text-amber-700" },
-    DONE: { text: "충전 완료", cls: "bg-blue-100 text-blue-700" },
-    MATCHED: { text: "충전 완료", cls: "bg-blue-100 text-blue-700" },
+    PENDING: { text: "입금 대기", cls: "bg-accent-soft text-accent-strong" },
+    DONE: { text: "충전 완료", cls: "bg-primary-soft text-primary-strong" },
+    MATCHED: { text: "충전 완료", cls: "bg-primary-soft text-primary-strong" },
     EXPIRED: { text: "만료", cls: "bg-gray-100 text-gray-500" },
     CANCELED: { text: "취소", cls: "bg-gray-100 text-gray-500" },
     REFUND_REQUESTED: {
       text: "환불 신청",
-      cls: "bg-orange-100 text-orange-700",
+      cls: "bg-accent-soft text-accent-strong",
     },
     REFUNDED: { text: "환불 완료", cls: "bg-gray-100 text-gray-500" },
   };
 
   return (
-    <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader>
-        <CardTitle>크레딧 결제</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* 잔액 요약 */}
-        {!isFirstCharge && (
-          <div className="app-surface app-surface--panel p-4">
-            <div className="text-sm text-muted-foreground mb-3">
-              보유 크레딧
+    <div className="space-y-6">
+      {/* 잔액 요약 */}
+      {!compact && !isFirstCharge && (
+        <div className="app-surface app-surface--panel p-4">
+          <div className="text-sm text-muted-foreground mb-3">
+            보유 크레딧
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <div className="text-xs text-muted-foreground">
+                총 보유(공급가)
+              </div>
+              <div className="text-2xl font-semibold">
+                {loadingBalance ? "..." : `${balance.toLocaleString()}원`}
+              </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <div className="text-xs text-muted-foreground">
-                  총 보유(공급가)
-                </div>
-                <div className="text-2xl font-semibold">
-                  {loadingBalance ? "..." : `${balance.toLocaleString()}원`}
-                </div>
+            <div>
+              <div className="text-xs text-muted-foreground">구매 크레딧</div>
+              <div className="text-lg font-semibold">
+                {loadingBalance ? "..." : `${paidBalance.toLocaleString()}원`}
               </div>
-              <div>
-                <div className="text-xs text-muted-foreground">구매 크레딧</div>
-                <div className="text-lg font-semibold">
-                  {loadingBalance ? "..." : `${paidBalance.toLocaleString()}원`}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">무료 크레딧</div>
-                <div className="text-lg font-semibold">
-                  {loadingBalance
-                    ? "..."
-                    : `${freeBalance.toLocaleString()}원`}
-                </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">무료 크레딧</div>
+              <div className="text-lg font-semibold">
+                {loadingBalance
+                  ? "..."
+                  : `${freeBalance.toLocaleString()}원`}
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* 입금 정보(좌) + 충전 금액(우) */}
-        <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <div className="grid md:grid-cols-2">
-            {/* 왼쪽: 입금 계좌 / 코드 */}
-            <div className="space-y-4 border-b border-slate-200/80 p-5 sm:p-6 md:border-b-0 md:border-r">
+      {/* 입금 정보(좌) + 충전 금액(우) */}
+      <div className="w-full overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+        <div className="grid md:grid-cols-2">
+          {/* 왼쪽: 입금 계좌 / 코드 */}
+          <div className="space-y-4 border-b border-slate-200/80 p-5 sm:p-6 md:border-b-0 md:border-r">
               <div className="flex items-center justify-between gap-3">
                 {pendingOrder ? (
                   <>
                     <div className="flex items-center gap-2">
                       <span className="relative flex h-2.5 w-2.5">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
-                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/80 opacity-75" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-accent" />
                       </span>
                       <span className="text-sm font-semibold">입금 대기중</span>
                     </div>
                     {pendingRemainingLabel ? (
-                      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                      <span className="rounded-full bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent-strong">
                         {pendingRemainingLabel}
                       </span>
                     ) : null}
@@ -743,14 +795,14 @@ export const CreditPaymentTab = ({ userData }: Props) => {
               <div
                 className={
                   pendingOrder
-                    ? "rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3"
+                    ? "rounded-xl border border-accent-muted bg-accent-soft/70 px-4 py-3"
                     : "rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-4 py-3"
                 }
               >
                 <div
                   className={
                     pendingOrder
-                      ? "text-xs font-medium text-amber-800"
+                      ? "text-xs font-medium text-accent-strong"
                       : "text-xs text-muted-foreground"
                   }
                 >
@@ -758,7 +810,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                 </div>
                 {pendingOrder ? (
                   <div className="mt-2 flex items-center justify-between gap-3">
-                    <span className="text-2xl font-bold tracking-[0.2em] text-amber-700">
+                    <span className="text-2xl font-bold tracking-[0.2em] text-accent-strong">
                       {pendingOrder.depositCode}
                     </span>
                     <Button
@@ -781,7 +833,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                 <div
                   className={
                     pendingOrder
-                      ? "mt-2 text-xs leading-relaxed text-amber-800/80"
+                      ? "mt-2 text-xs leading-relaxed text-accent-strong/80"
                       : "mt-2 text-xs leading-relaxed text-muted-foreground"
                   }
                 >
@@ -807,7 +859,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
             </div>
 
             {/* 오른쪽: 금액 선택 / 충전 */}
-            <div className="flex flex-col justify-between gap-6 bg-gradient-to-b from-sky-50/50 to-white p-5 sm:p-6">
+            <div className="flex flex-col justify-between gap-6 bg-gradient-to-b from-primary-soft/50 to-white p-5 sm:p-6">
               <div>
                 <div className="text-xs font-medium text-muted-foreground">
                   입금 금액
@@ -835,7 +887,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                         if (!raw) return;
                         const parsed = Number(raw);
                         if (!Number.isFinite(parsed)) return;
-                        setChargeUnits(clampChargeUnits(parsed));
+                        setChargeUnits(clampChargeUnits(parsed, maxChargeUnits));
                       }}
                       onBlur={() => {
                         const parsed = Number(unitsDraft);
@@ -862,7 +914,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                         className="flex flex-1 items-center justify-center text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={
                           Boolean(pendingOrder) ||
-                          chargeUnits >= MAX_CHARGE_UNITS
+                          chargeUnits >= maxChargeUnits
                         }
                         onClick={() => applyChargeUnits(chargeUnits + 1)}
                       >
@@ -884,7 +936,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                   </div>
 
                   <div className="flex h-12 min-w-0 flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white text-base font-semibold text-slate-700 shadow-sm">
-                    × 50만원
+                    × {formatManwon(chargeUnit)}
                   </div>
                 </div>
 
@@ -918,88 +970,87 @@ export const CreditPaymentTab = ({ userData }: Props) => {
           </div>
         </div>
 
-        {/* 충전 내역 */}
-        {!isFirstCharge && (
-          <div className="space-y-3">
-            <Separator />
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-base font-semibold">충전 내역</div>
-              <PeriodFilter value={ordersPeriod} onChange={setOrdersPeriod} useStoreCustomRange={false} />
+      {/* 충전 내역 */}
+      {!compact && !isFirstCharge && (
+        <div className="space-y-3">
+          <Separator />
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-base font-semibold">충전 내역</div>
+            <PeriodFilter value={ordersPeriod} onChange={setOrdersPeriod} useStoreCustomRange={false} />
+          </div>
+          {loadingOrders ? (
+            <div className="text-sm text-muted-foreground">
+              불러오는 중...
             </div>
-            {loadingOrders ? (
-              <div className="text-sm text-muted-foreground">
-                불러오는 중...
-              </div>
-            ) : filteredOrders.length === 0 ? (
-              <div className="text-sm text-muted-foreground">
-                해당 기간에 충전 내역이 없습니다.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {filteredOrders.slice(0, 10).map((o) => {
-                  const canCancel = o.status === "PENDING";
-                  const orderDate = formatKoreanDate(
-                    o.createdAt || o.matchedAt || null,
-                  );
-                  const shortId = formatOrderShortId(String(o._id || ""));
-                  const sl = statusLabel[o.status] ?? {
-                    text: o.status,
-                    cls: "bg-gray-100 text-gray-500",
-                  };
+          ) : filteredOrders.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              해당 기간에 충전 내역이 없습니다.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredOrders.slice(0, 10).map((o) => {
+                const canCancel = o.status === "PENDING";
+                const orderDate = formatKoreanDate(
+                  o.createdAt || o.matchedAt || null,
+                );
+                const shortId = formatOrderShortId(String(o._id || ""));
+                const sl = statusLabel[o.status] ?? {
+                  text: o.status,
+                  cls: "bg-gray-100 text-gray-500",
+                };
 
-                  return (
-                    <div
-                      key={String(o._id || shortId || orderDate)}
-                      className="app-surface app-surface--panel p-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium">
-                          크레딧 충전{orderDate ? ` · ${orderDate}` : ""}
-                          {shortId ? ` · ${shortId}` : ""}
-                        </div>
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${sl.cls}`}
-                        >
-                          {sl.text}
+                return (
+                  <div
+                    key={String(o._id || shortId || orderDate)}
+                    className="app-surface app-surface--panel p-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium">
+                        크레딧 충전{orderDate ? ` · ${orderDate}` : ""}
+                        {shortId ? ` · ${shortId}` : ""}
+                      </div>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${sl.cls}`}
+                      >
+                        {sl.text}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between">
+                      <div className="text-sm">
+                        결제금액{" "}
+                        <span className="font-semibold">
+                          {Number(o.amountTotal || 0).toLocaleString()}원
                         </span>
                       </div>
-                      <div className="mt-1 flex items-center justify-between">
-                        <div className="text-sm">
-                          결제금액{" "}
-                          <span className="font-semibold">
-                            {Number(o.amountTotal || 0).toLocaleString()}원
-                          </span>
-                        </div>
-                        {o.depositCode && (
-                          <div className="text-xs text-muted-foreground">
-                            코드 {o.depositCode}
-                          </div>
-                        )}
-                      </div>
-                      {canCancel && (
-                        <div className="mt-3">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => cancelOrder(String(o._id || ""))}
-                          >
-                            주문 취소
-                          </Button>
+                      {o.depositCode && (
+                        <div className="text-xs text-muted-foreground">
+                          코드 {o.depositCode}
                         </div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
-            <div className="text-xs text-muted-foreground">
-              입금 확인 후 자동 충전됩니다.
+                    {canCancel && (
+                      <div className="mt-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => cancelOrder(String(o._id || ""))}
+                        >
+                          주문 취소
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+          )}
+          <div className="text-xs text-muted-foreground">
+            입금 확인 후 자동 충전됩니다.
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
   );
 };
 

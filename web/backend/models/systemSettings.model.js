@@ -22,10 +22,12 @@ const systemSettingsSchema = new mongoose.Schema(
     creditSettings: {
       minCreditForRequest: { type: Number, default: 10000 },
       shippingFee: { type: Number, default: 3500 },
-      // 신속 배송 추가 의뢰크레딧 (건당, 가공 진입 시 차감)
-      expressFee: { type: Number, default: 1000 },
-      // 디자인비 (1어벗당, design_custom_abutment 시 (가공단가+디자인비)×어벗수)
+      // 신속 배송 추가 의뢰크레딧 (생산=건당, 디자인+생산=1어벗당, 가공 진입 시 차감)
+      expressFee: { type: Number, default: 2000 },
+      // 디자인비 (1어벗당, design_custom_abutment 시 (생산단가+디자인비)×어벗수)
       designFee: { type: Number, default: 15000 },
+      // 치과 납품 커스텀어벗 소매가(1어벗당). 기공의뢰 분배·devops 요금 설정 SSOT
+      abutmentRetailPrice: { type: Number, default: 40000 },
       defaultRequestFreeCredit: { type: Number, default: 30000 },
       defaultShippingFreeCredit: { type: Number, default: 7000 },
     },
@@ -122,6 +124,10 @@ const systemSettingsSchema = new mongoose.Schema(
         { type: "D", lotNumber: "" },
         { type: "E", lotNumber: "" },
       ],
+    },
+    // 디자인 클레임 마감 (파트너 → 마감 설정). 클레임 시각 + claimHours.
+    designDeadlineSettings: {
+      claimHours: { type: Number, default: 3 },
     },
     // 신속배송 14:00 빠른 가공 재배치 최근 Alert 스냅샷
     // related: controllers/requests/expressDeadlineRebalance.utils.js

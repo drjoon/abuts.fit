@@ -3,13 +3,29 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Bell } from "lucide-react";
+import {
+  Bell,
+  CreditCard,
+  FileText,
+  Mail,
+  Megaphone,
+  MessageSquare,
+  RefreshCw,
+} from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { cn } from "@/shared/ui/cn";
+import type { LucideIcon } from "lucide-react";
 
 type NotificationSettingsV2 = {
   methods: {
@@ -38,6 +54,64 @@ const defaultSettings: NotificationSettingsV2 = {
     payments: true,
   },
 };
+
+type ToggleRowProps = {
+  id: string;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onCheckedChange: () => void;
+};
+
+const ToggleRow = ({
+  id,
+  icon: Icon,
+  title,
+  description,
+  checked,
+  disabled,
+  onCheckedChange,
+}: ToggleRowProps) => (
+  <div
+    className={cn(
+      "flex items-center justify-between gap-4 rounded-2xl border px-4 py-3.5 transition-colors",
+      checked
+        ? "border-primary-muted/70 bg-primary-soft/25"
+        : "border-slate-200/80 bg-white/70",
+      disabled && "opacity-60",
+    )}
+  >
+    <div className="flex min-w-0 items-start gap-3">
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1",
+          checked
+            ? "bg-white text-primary-strong ring-primary-muted/60"
+            : "bg-slate-100 text-slate-500 ring-slate-200/80",
+        )}
+      >
+        <Icon className="h-[18px] w-[18px]" />
+      </span>
+      <div className="min-w-0">
+        <Label htmlFor={id} className="text-sm font-semibold text-slate-900">
+          {title}
+        </Label>
+        <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
+          {description}
+        </p>
+      </div>
+    </div>
+    <Switch
+      id={id}
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={onCheckedChange}
+      className="shrink-0"
+    />
+  </div>
+);
 
 export const NotificationsTab = () => {
   const { toast } = useToast();
@@ -168,124 +242,105 @@ export const NotificationsTab = () => {
 
   return (
     <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bell className="h-5 w-5" />
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Bell className="h-5 w-5 text-primary-strong" />
           알림 설정
         </CardTitle>
+        <CardDescription className="text-[13px] leading-relaxed">
+          수신 방법과 알림 유형을 선택합니다. 변경 시 자동 저장됩니다.
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid grid-cols-1 gap-20 lg:grid-cols-2 m-6">
-          {/* Notification Methods */}
-          <div>
-            <h3 className="text-lg font-medium mb-4">알림 수신 방법</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="emailNotifications" className="font-medium">
-                    이메일 알림
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    중요 알림을 이메일로 받습니다
-                  </p>
-                </div>
-                <Switch
-                  id="emailNotifications"
-                  checked={settings.methods.emailNotifications}
-                  onCheckedChange={() => toggleMethod("emailNotifications")}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="smsNotifications" className="font-medium">
-                    SMS 알림
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    중요 알림을 SMS로 받습니다
-                  </p>
-                </div>
-                <Switch
-                  id="smsNotifications"
-                  checked={settings.methods.smsNotifications}
-                  onCheckedChange={() => toggleMethod("smsNotifications")}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="marketingEmails" className="font-medium">
-                    마케팅 이메일
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    프로모션 및 마케팅 정보를 받습니다
-                  </p>
-                </div>
-                <Switch
-                  id="marketingEmails"
-                  checked={settings.methods.marketingEmails}
-                  onCheckedChange={() => toggleMethod("marketingEmails")}
-                />
-              </div>
+      <CardContent className="space-y-5">
+        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+              <MessageSquare className="h-4 w-4 text-primary-strong" />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                알림 수신 방법
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                어떤 채널로 받을지 선택하세요
+              </p>
             </div>
           </div>
+          <div className="space-y-2.5">
+            <ToggleRow
+              id="emailNotifications"
+              icon={Mail}
+              title="이메일 알림"
+              description="중요 알림을 이메일로 받습니다"
+              checked={settings.methods.emailNotifications}
+              disabled={isLoading}
+              onCheckedChange={() => toggleMethod("emailNotifications")}
+            />
+            <ToggleRow
+              id="smsNotifications"
+              icon={MessageSquare}
+              title="SMS 알림"
+              description="중요 알림을 문자로 받습니다"
+              checked={settings.methods.smsNotifications}
+              disabled={isLoading}
+              onCheckedChange={() => toggleMethod("smsNotifications")}
+            />
+            <ToggleRow
+              id="marketingEmails"
+              icon={Megaphone}
+              title="마케팅 이메일"
+              description="프로모션·이벤트 정보를 받습니다"
+              checked={settings.methods.marketingEmails}
+              disabled={isLoading}
+              onCheckedChange={() => toggleMethod("marketingEmails")}
+            />
+          </div>
+        </section>
 
-          {/* Notification Types */}
-          <div>
-            <h3 className="text-lg font-medium mb-4">알림 유형</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="newRequests" className="font-medium">
-                    새 의뢰 알림
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    새로운 의뢰가 접수되면 알림을 받습니다
-                  </p>
-                </div>
-                <Switch
-                  id="newRequests"
-                  checked={settings.types.newRequests}
-                  onCheckedChange={() => toggleType("newRequests")}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="statusUpdates" className="font-medium">
-                    상태 업데이트 알림
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    의뢰 상태가 변경되면 알림을 받습니다
-                  </p>
-                </div>
-                <Switch
-                  id="statusUpdates"
-                  checked={settings.types.statusUpdates}
-                  onCheckedChange={() => toggleType("statusUpdates")}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="payments" className="font-medium">
-                    결제 알림
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    결제 관련 정보를 알림으로 받습니다
-                  </p>
-                </div>
-                <Switch
-                  id="payments"
-                  checked={settings.types.payments}
-                  onCheckedChange={() => toggleType("payments")}
-                />
-              </div>
+        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+              <Bell className="h-4 w-4 text-primary-strong" />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                알림 유형
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                받고 싶은 알림 종류를 선택하세요
+              </p>
             </div>
           </div>
-        </div>
-
-        <div className="hidden" aria-hidden />
+          <div className="space-y-2.5">
+            <ToggleRow
+              id="newRequests"
+              icon={FileText}
+              title="새 의뢰 알림"
+              description="새 의뢰가 접수되면 알려드립니다"
+              checked={settings.types.newRequests}
+              disabled={isLoading}
+              onCheckedChange={() => toggleType("newRequests")}
+            />
+            <ToggleRow
+              id="statusUpdates"
+              icon={RefreshCw}
+              title="상태 업데이트"
+              description="의뢰 진행 상태가 바뀌면 알려드립니다"
+              checked={settings.types.statusUpdates}
+              disabled={isLoading}
+              onCheckedChange={() => toggleType("statusUpdates")}
+            />
+            <ToggleRow
+              id="payments"
+              icon={CreditCard}
+              title="결제 알림"
+              description="결제·정산 관련 소식을 받습니다"
+              checked={settings.types.payments}
+              disabled={isLoading}
+              onCheckedChange={() => toggleType("payments")}
+            />
+          </div>
+        </section>
       </CardContent>
     </Card>
   );

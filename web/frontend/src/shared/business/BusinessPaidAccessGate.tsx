@@ -3,6 +3,7 @@
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import { Navigate } from "react-router-dom";
+import { shouldGatePaidRequestorAccess } from "@/shared/business/requestorCapabilities";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
 type Props = {
@@ -22,10 +23,14 @@ export const BusinessPaidAccessGate = ({
   loadingFallback = null,
   fallbackPath = "/dashboard/practice-transfers",
 }: Props) => {
-  const { loading, canUsePaid } = useRequestorBusinessAccess();
+  const { loading, canUsePaid, kind } = useRequestorBusinessAccess();
 
   if (loading) return <>{loadingFallback}</>;
-  if (canUsePaid) return <>{children}</>;
+  if (
+    !shouldGatePaidRequestorAccess({ kind, canUsePaid })
+  ) {
+    return <>{children}</>;
+  }
 
   return <Navigate to={fallbackPath} replace />;
 };

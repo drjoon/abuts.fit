@@ -318,7 +318,7 @@ export const useCncToolPanels = ({
                   onBlur={() => {
                     scheduleSave();
                   }}
-                  className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-blue-500 focus:border-blue-500"
+                  className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-primary focus:border-primary"
                 />
               </div>
             ))}
@@ -345,7 +345,7 @@ export const useCncToolPanels = ({
                   onBlur={() => {
                     scheduleSave();
                   }}
-                  className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-blue-500 focus:border-blue-500"
+                  className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-primary focus:border-primary"
                 />
               </div>
             ))}
@@ -367,7 +367,7 @@ export const useCncToolPanels = ({
               onBlur={() => {
                 scheduleSave();
               }}
-              className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-blue-500 focus:border-blue-500"
+              className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-primary focus:border-primary"
             />
           </div>
 
@@ -429,7 +429,7 @@ export const useCncToolPanels = ({
             </button>
             <button
               type="button"
-              className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors"
+              className="bg-primary hover:bg-primary-strong text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors"
               onClick={() => {
                 if (toolOffsetSaveTimeoutRef.current) {
                   clearTimeout(toolOffsetSaveTimeoutRef.current);
@@ -526,7 +526,7 @@ export const useCncToolPanels = ({
               }}
               className={`rounded-xl border px-3 py-3 text-left ${
                 replacementKind === "normal"
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  ? "border-primary bg-primary-muted/40 text-primary-strong"
                   : "border-slate-200 bg-white text-slate-600"
               }`}
             >
@@ -541,7 +541,7 @@ export const useCncToolPanels = ({
               }}
               className={`rounded-xl border px-3 py-3 text-left ${
                 replacementKind === "abnormal"
-                  ? "border-rose-300 bg-rose-50 text-rose-700"
+                  ? "border-destructive/80 bg-destructive-soft text-destructive"
                   : "border-slate-200 bg-white text-slate-600"
               }`}
             >
@@ -560,7 +560,7 @@ export const useCncToolPanels = ({
               onChange={(e) => {
                 nextConfigCount = e.target.value;
               }}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary"
               placeholder="기존 설정값 유지"
             />
           </div>
@@ -573,7 +573,7 @@ export const useCncToolPanels = ({
               onChange={(e) => {
                 replacementNote = e.target.value;
               }}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-300 focus:border-blue-500 focus:ring-blue-500"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-300 focus:border-primary focus:ring-primary"
               placeholder="교체 사유, 파손 위치, 알람 번호 등을 남겨주세요."
             />
           </div>
@@ -672,7 +672,7 @@ export const useCncToolPanels = ({
                   }
                 })();
               }}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="rounded-lg bg-primary-strong px-4 py-2 text-sm font-medium text-white hover:bg-primary-strong"
             >
               교체 기록 + 초기화
             </button>
@@ -744,11 +744,11 @@ export const useCncToolPanels = ({
 
                   const levelColor =
                     rowLevel === "alarm"
-                      ? "bg-red-50"
+                      ? "bg-destructive-soft"
                       : rowLevel === "warn"
-                        ? "bg-amber-50"
+                        ? "bg-accent-soft"
                         : rowLevel === "ok"
-                          ? "bg-emerald-50"
+                          ? "bg-primary-soft"
                           : "bg-gray-50";
 
                   const remainPercent =
@@ -776,7 +776,7 @@ export const useCncToolPanels = ({
                           onClick={() =>
                             openToolOffsetEditor(t.toolNum ?? idx + 1)
                           }
-                          className="inline-flex items-center justify-center px-2 py-1 rounded-md border border-blue-200 bg-blue-50 text-[11px] text-blue-700 hover:bg-blue-100 hover:border-blue-300"
+                          className="inline-flex items-center justify-center px-2 py-1 rounded-md border border-primary-muted bg-primary-soft text-[11px] text-primary-strong hover:bg-primary-soft hover:border-primary/70"
                         >
                           수정
                         </button>
@@ -808,7 +808,7 @@ export const useCncToolPanels = ({
                           onBlur={() => {
                             scheduleToolLifeSaveRef.current?.();
                           }}
-                          className="w-full bg-white border border-gray-200 rounded-md px-1 py-0.5 text-[11px] text-center focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full bg-white border border-gray-200 rounded-md px-1 py-0.5 text-[11px] text-center focus:ring-primary focus:border-primary"
                         />
                       </td>
                       <td className="px-2 py-1.5 text-center font-mono text-gray-800">
@@ -1011,7 +1011,7 @@ export const useCncToolPanels = ({
         </div>
 
         {isAlreadyRemoving ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <div className="rounded-xl border border-accent-muted bg-accent-soft px-4 py-3 text-xs text-accent-strong">
             <span className="font-semibold">이미 해제 요청됨.</span>{" "}
             {slot?.removalRequestedByName
               ? `${slot.removalRequestedByName}가 `
@@ -1022,7 +1022,7 @@ export const useCncToolPanels = ({
             <span className="font-semibold">교체 완료 기록</span>을 진행하세요.
           </div>
         ) : (
-          <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-xs text-orange-800">
+          <div className="rounded-xl border border-accent-muted bg-accent-soft px-4 py-3 text-xs text-accent-strong">
             웹앱에서 해제 요청 후{" "}
             <span className="font-semibold">장비에서 직접 공구를 교체</span>
             하세요.
@@ -1048,7 +1048,7 @@ export const useCncToolPanels = ({
             <button
               type="button"
               onClick={() => openCompleteReplacement(targetRow, slot)}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="rounded-lg bg-primary-strong px-4 py-2 text-sm font-medium text-white hover:bg-primary-strong"
             >
               교체 완료 기록
             </button>
@@ -1066,7 +1066,7 @@ export const useCncToolPanels = ({
                   }
                 })();
               }}
-              className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600"
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-strong"
             >
               공구 해제 요청
             </button>
@@ -1086,12 +1086,12 @@ export const useCncToolPanels = ({
   const openRemovalPending = (targetRow: any, toolNum: number) => {
     const body = (
       <div className="space-y-4 text-sm text-gray-700">
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 space-y-2 text-center">
+        <div className="rounded-xl border border-accent-muted bg-accent-soft px-5 py-4 space-y-2 text-center">
           <div className="text-2xl">🔧</div>
-          <div className="text-sm font-extrabold text-amber-900">
+          <div className="text-sm font-extrabold text-accent-strong">
             장비에서 공구를 교체하세요
           </div>
-          <div className="text-xs text-amber-700 leading-relaxed">
+          <div className="text-xs text-accent-strong leading-relaxed">
             웹앱에서 공구 해제 요청이 완료됐습니다.
             <br />
             지금 장비에서 공구 #{toolNum}을 실제로 교체하세요.
@@ -1113,7 +1113,7 @@ export const useCncToolPanels = ({
           <button
             type="button"
             onClick={() => openCompleteReplacement(targetRow, null)}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-lg bg-primary-strong px-4 py-2 text-sm font-medium text-white hover:bg-primary-strong"
           >
             교체 완료 기록 →
           </button>
@@ -1171,7 +1171,7 @@ export const useCncToolPanels = ({
               }}
               className={`rounded-xl border px-3 py-3 text-left ${
                 replacementKind === "normal"
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  ? "border-primary bg-primary-muted/40 text-primary-strong"
                   : "border-slate-200 bg-white text-slate-600"
               }`}
             >
@@ -1186,7 +1186,7 @@ export const useCncToolPanels = ({
               }}
               className={`rounded-xl border px-3 py-3 text-left ${
                 replacementKind === "abnormal"
-                  ? "border-rose-300 bg-rose-50 text-rose-700"
+                  ? "border-destructive/80 bg-destructive-soft text-destructive"
                   : "border-slate-200 bg-white text-slate-600"
               }`}
             >
@@ -1210,7 +1210,7 @@ export const useCncToolPanels = ({
             onChange={(e) => {
               newToolName = e.target.value;
             }}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary"
             placeholder="공구 이름 (예: 드릴 1.2mm)"
           />
         </div>
@@ -1224,7 +1224,7 @@ export const useCncToolPanels = ({
             onChange={(e) => {
               replacementNote = e.target.value;
             }}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-300 focus:border-blue-500 focus:ring-blue-500"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-300 focus:border-primary focus:ring-primary"
             placeholder="교체 사유, 파손 위치, 알람 번호 등을 남겨주세요."
           />
         </div>
@@ -1286,7 +1286,7 @@ export const useCncToolPanels = ({
                 }
               })();
             }}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            className="rounded-lg bg-primary-strong px-4 py-2 text-sm font-medium text-white hover:bg-primary-strong"
           >
             교체 완료 확인 ✓
           </button>
@@ -1663,8 +1663,8 @@ export const useCncToolPanels = ({
                     <span
                       className={
                         item?.kind === "abnormal"
-                          ? "font-medium text-rose-600"
-                          : "font-medium text-emerald-700"
+                          ? "font-medium text-destructive"
+                          : "font-medium text-primary-strong"
                       }
                     >
                       {item?.kind === "abnormal" ? "비정상" : "정상"}

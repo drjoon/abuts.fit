@@ -41,13 +41,13 @@ const getMachineStatusChip = (status: string) => {
   let label = "대기";
 
   if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
-    color = "bg-emerald-500";
+    color = "bg-primary";
     label = "생산 중";
   } else if (["WARN", "WARNING"].some((k) => s.includes(k))) {
-    color = "bg-amber-400";
+    color = "bg-accent/80";
     label = "주의";
   } else if (["ALARM", "ERROR", "FAULT"].some((k) => s.includes(k))) {
-    color = "bg-red-500";
+    color = "bg-destructive";
     label = "알람";
   } else if (["STOP", "IDLE"].some((k) => s.includes(k))) {
     color = "bg-slate-400";
@@ -67,11 +67,11 @@ const getMachineStatusChip = (status: string) => {
 const getHealthColorClass = (level: HealthLevel) => {
   switch (level) {
     case "ok":
-      return "text-emerald-500";
+      return "text-primary";
     case "warn":
-      return "text-amber-500";
+      return "text-accent";
     case "alarm":
-      return "text-red-500";
+      return "text-destructive";
     default:
       return "text-slate-400";
   }
@@ -250,22 +250,22 @@ const WorksheetCncMachineCard = ({
       </div>
 
       {showContinuousInfo && (
-        <div className="app-glass-card-content mt-3 rounded-lg bg-purple-50 px-3 py-2 text-xs">
+        <div className="app-glass-card-content mt-3 rounded-lg bg-primary-soft px-3 py-2 text-xs">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-semibold text-purple-700">연속가공</span>
+            <span className="font-semibold text-primary-strong">연속가공</span>
             {continuousState?.isRunning && (
-              <span className="text-purple-600">
+              <span className="text-primary-strong">
                 {continuousElapsedMin}분 경과
               </span>
             )}
           </div>
-          <div className="mt-1 flex items-center gap-2 text-purple-600">
+          <div className="mt-1 flex items-center gap-2 text-primary-strong">
             <span>현재: O{continuousState?.currentSlot}</span>
             <span>→</span>
             <span>대기: O{continuousState?.nextSlot}</span>
           </div>
           {continuousState?.nextJob && (
-            <div className="mt-1 text-purple-600 truncate">
+            <div className="mt-1 text-primary-strong truncate">
               다음: {continuousState.nextJob}
             </div>
           )}
@@ -305,7 +305,7 @@ const WorksheetCncMachineCard = ({
               disabled={!continuousState?.currentJob}
               className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
                 continuousState?.isRunning
-                  ? "bg-blue-50 border-blue-300 text-blue-600 animate-pulse"
+                  ? "bg-primary-soft border-primary/70 text-primary-strong animate-pulse"
                   : !continuousState?.currentJob
                     ? "bg-slate-200 border-slate-500 text-slate-700 shadow-sm"
                     : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm"

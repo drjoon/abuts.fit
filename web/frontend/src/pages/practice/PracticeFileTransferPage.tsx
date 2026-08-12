@@ -28,7 +28,16 @@
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+ * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
+ * - web/frontend/src/shared/hooks/useS3TempUpload.ts
+ * - web/frontend/src/shared/hooks/useFilePreUpload.ts
+ * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
+ * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 프로모 카피 축소.
+ * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
+ * - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
+ * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
+ * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 작업완료 시 치과 생산컨펌 자동.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -44,9 +53,6 @@ import {
   ChevronsUpDown,
   Check,
   Download,
-  Copy,
-  Link2,
-  Send,
   Plus,
   Settings,
   X,
@@ -57,14 +63,13 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import {
@@ -82,18 +87,21 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { cn } from "@/shared/ui/cn";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
+import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   PRACTICE_ACCEPTED_HINT,
   getBusinessLabel,
   usePracticeTransferStep1,
+  isAutoMatchLab,
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
@@ -181,6 +189,9 @@ type RecentRequestItem = {
   fileName: string;
   fileS3Key: string;
   fileSize: number;
+  resultFiles?: TransferFileItem[];
+  hasCustomAbutment?: boolean;
+  productionConfirmedAt?: string | null;
 };
 
 type TransferFileItem = {
@@ -250,20 +261,12 @@ const toDraftListSummary = (
 
   const practiceUserId = String(payload.practiceUserId || "").trim();
   const parsed = parsePracticeTransferMemoMetaShared(String(payload.transferMemo || ""));
-  // 파일 없이도 의뢰서 일부(환자명·메모·기공소·치아)만 있으면 임시저장 목록에 올린다.
-  // 날짜 메타만 있는 transferMemo는 내용으로 치지 않는다(백엔드 hasMeaningfulMemo와 동일).
+  // 목록 노출: 환자명·메모·기공소·파일. 치아만 있는 건은 빈 임시저장으로 보지 않는다.
   const hasFormContent =
     Boolean(String(parsed.patientName || "").trim()) ||
     Boolean(String(parsed.memo || "").trim()) ||
     Boolean(String(payload.targetLabName || "").trim()) ||
-    Boolean(String(payload.targetLabAnchorId || "").trim()) ||
-    (Array.isArray(parsed.toothWorks) &&
-      parsed.toothWorks.some(
-        (row) =>
-          String(row.toothNumber || "").trim() ||
-          Boolean(row.customAbutment) ||
-          String(row.implantManufacturer || "").trim(),
-      ));
+    Boolean(String(payload.targetLabAnchorId || "").trim());
   if (files.length === 0 && !hasFormContent) return null;
 
   return {
@@ -299,6 +302,9 @@ type RecentTransferItem = {
   transferMongoIds: string[];
   fileNames: string[];
   files: TransferFileItem[];
+  resultFiles?: TransferFileItem[];
+  hasCustomAbutment?: boolean;
+  productionConfirmedAt?: string | null;
   transferMemo: string;
   /** 메타 태그 포함 원본 메모 — 보철물 차트 파싱용 */
   rawTransferMemo?: string;
@@ -336,10 +342,8 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이", "어벗 디자인"] as const;
 const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
-const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
-const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
 
@@ -407,6 +411,7 @@ type PracticeTransferSettingsPayload = {
   implantFavorites?: PracticeImplantFavorite[];
   abutmentFavorites?: PracticeAbutmentFavorite[];
   promoNoticeDismissedAt?: string | null;
+  skipDesignConfirm?: boolean;
   updatedAt?: string | null;
 };
 
@@ -437,8 +442,14 @@ const normalizeArrivalDefaultDays = (value: number) => {
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" || prosthesisType === "Pontic";
 
-const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "크라운" || prosthesisType === "브리지";
+const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
+  const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
+  return (
+    prosthesisType === "크라운" ||
+    prosthesisType === "브리지" ||
+    /^(?:커스텀)?어벗디자인$/i.test(compact)
+  );
+};
 
 const sanitizeProsthesisTypeLabel = (value: string) => {
   const trimmed = String(value || "").trim();
@@ -447,6 +458,7 @@ const sanitizeProsthesisTypeLabel = (value: string) => {
   const compact = trimmed.replace(/\s+/g, "");
   if (/^커스텀어벗\+?크라운$/i.test(compact)) return "크라운";
   if (/^커스텀어벗\+?브리지$/i.test(compact)) return "브리지";
+  if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "어벗 디자인";
   if (/^커스텀어벗$/i.test(compact)) return "";
   return trimmed;
 };
@@ -758,18 +770,44 @@ const toStatusLabel = (manufacturerStage: unknown) => {
 
   // 정확값 우선
   if (raw === "취소") return "취소";
+  // 기공소 작업취소 — 휴지통(취소)과 구분. 뱃지 표시는 toStatusBadgeLabel에서 「취소」
+  if (raw === "작업취소") return "작업취소";
   if (raw === "발송완료") return "발송완료";
   if (raw === "수신완료") return "수신완료";
-  if (raw === "다운로드완료") return "다운로드완료";
+  if (raw === "의뢰수락" || raw === "다운로드완료") return "의뢰수락";
+  if (raw === "자동매칭") return "자동매칭";
+  if (raw === "작업완료") return "작업완료";
+  if (raw === "생산진행") return "생산진행";
+  if (raw === "포장.발송") return "포장.발송";
+  if (raw === "추적관리") return "추적관리";
 
   // 레거시/과거 데이터 호환
   if (raw === "수신전" || raw === "확인전") return "발송완료";
   if (raw === "확인") return "수신완료";
-  if (lowered === "downloaded") return "다운로드완료";
+  if (lowered === "downloaded" || lowered === "accepted") return "의뢰수락";
   if (raw.includes("전달완료") || raw.includes("배송완료")) return "수신완료";
   if (raw.includes("의뢰") || raw.includes("접수") || raw.includes("대기")) return "발송완료";
 
   return "발송완료";
+};
+
+/** 목록/카드 뱃지 라벨. 작업취소는 UI에서 「취소」로 표기 */
+const toStatusBadgeLabel = (status: unknown) => {
+  const s = String(status || "").trim();
+  if (s === "작업취소") return "취소";
+  return s || "-";
+};
+
+/** 기공소 의뢰수락 이전만 치과에서 휴지통 이동 가능 */
+const canDeletePracticeTransferByStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  if (s === "임시저장") return true;
+  return (
+    s === "발송완료" ||
+    s === "수신완료" ||
+    s === "자동매칭" ||
+    s === "작업취소"
+  );
 };
 
 const formatChatTs = (value: unknown) => {
@@ -795,9 +833,7 @@ const formatFileSize = (bytes: number) => {
 };
 
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
-const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 유료서비스를 쓰지 않더라도 이용 가능!";
-const PRACTICE_TRANSFER_PROMO_DESC = "무료로 구강스캔 파일전송, 기공의뢰서 관리하세요.";
-
+const PRACTICE_TRANSFER_PROMO_TITLE = "유료 서비스 없이 기공의뢰·구강스캔 전송";
 const clearPracticeFileTransferCaches = async () => {
   let keys: string[] = [];
   try {
@@ -844,11 +880,12 @@ export const PracticeFileTransferPage = ({
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
-  const [recentStatusFilter, setRecentStatusFilter] = useState<"all" | "발송완료" | "수신완료" | "다운로드완료">("all");
+  const [recentStatusFilter, setRecentStatusFilter] = useState<
+    "all" | "발송완료" | "의뢰수락" | "작업완료" | "포장.발송" | "추적관리"
+  >("all");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
-  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
-  const [inviteMessageCopied, setInviteMessageCopied] = useState(false);
   const [promoNoticeVisible, setPromoNoticeVisible] = useState(true);
   const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
   const [tempSaveDirty, setTempSaveDirty] = useState(false);
@@ -867,6 +904,7 @@ export const PracticeFileTransferPage = ({
   const [recentRequestsError, setRecentRequestsError] = useState("");
   const [selectedTransfer, setSelectedTransfer] = useState<RecentTransferItem | null>(null);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [productionConfirmBusy, setProductionConfirmBusy] = useState(false);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState("");
@@ -889,6 +927,8 @@ export const PracticeFileTransferPage = ({
   const [localFormHydrated, setLocalFormHydrated] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
+  const transferDialogOpenRef = useRef(false);
+  const selectedTransferIdRef = useRef("");
   const prevFileCountRef = useRef(0);
   const localFormUpdatedAtRef = useRef(0);
   const skipNextArrivalAutoSyncRef = useRef(false);
@@ -908,6 +948,8 @@ export const PracticeFileTransferPage = ({
   const draftFilesRef = useRef<DraftTransferFileItem[]>([]);
   const draftSummaryIdRef = useRef<string | null>(null);
   const activeDraftIdRef = useRef<string | null>(null);
+  /** 어벗생산의뢰 등에서 navigate state.prefilledFiles 1회만 소비 */
+  const consumedPrefillLocationKeyRef = useRef<string | null>(null);
   /** 파일 업로드 동기화 중 원격 draft 적용으로 폼이 깜빡이지 않게 한다. */
   const fileSyncInFlightRef = useRef(false);
   const resetIntakeFormAfterTransferRef = useRef<() => Promise<void>>(async () => {});
@@ -1155,8 +1197,27 @@ export const PracticeFileTransferPage = ({
     });
   }, [toothWorks]);
 
-  const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
+  const {
+    ensureFilesUploaded,
+    preUploadFiles,
+    forgetFile,
+    clearPreUploadCache,
+  } = useFilePreUpload({ token: authToken });
+  const { uploadFilesWithToast } = useUploadWithProgressToast({
+    token: authToken,
+    uploadFiles: ensureFilesUploaded,
+  });
   const { rooms: chatRooms } = useChatRooms();
+
+  useEffect(() => {
+    if (!authToken || files.length === 0) return;
+    preUploadFiles(files);
+  }, [authToken, files, preUploadFiles]);
+
+  const clearLocalFilesWithCache = useCallback(async () => {
+    clearPreUploadCache();
+    await clearAllFiles();
+  }, [clearAllFiles, clearPreUploadCache]);
 
   const {
     messages: chatMessages,
@@ -1173,8 +1234,6 @@ export const PracticeFileTransferPage = ({
     const draftBytes = draftFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
     return ((localBytes + draftBytes) / (1024 * 1024)).toFixed(1);
   }, [files, draftFiles]);
-
-  const requestorSignupLink = `${typeof window !== "undefined" ? window.location.origin : ""}/signup`;
 
   const combinedDisplayFiles = useMemo(
     () => [
@@ -1208,6 +1267,7 @@ export const PracticeFileTransferPage = ({
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
     const promoDismissed = String(payload.promoNoticeDismissedAt || "").trim().length > 0;
+    const nextSkipDesignConfirm = Boolean(payload.skipDesignConfirm);
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
@@ -1216,6 +1276,7 @@ export const PracticeFileTransferPage = ({
     setImplantFavorites(nextImplantFavorites);
     setAbutmentFavorites(nextAbutmentFavorites);
     setPromoNoticeVisible(!promoDismissed);
+    setSkipDesignConfirm(nextSkipDesignConfirm);
     setToothWorks((prev) =>
       prev.map((row) => {
         const customAbutment = Boolean(row.customAbutment);
@@ -1245,6 +1306,10 @@ export const PracticeFileTransferPage = ({
         params,
         "promoNoticeDismissedAt",
       );
+      const hasSkipDesignConfirm = Object.prototype.hasOwnProperty.call(
+        params,
+        "skipDesignConfirm",
+      );
 
       const jsonBody: Record<string, unknown> = {};
       if (hasArrivalDefaultDays) {
@@ -1264,6 +1329,9 @@ export const PracticeFileTransferPage = ({
       }
       if (hasPromoNoticeDismissedAt) {
         jsonBody.promoNoticeDismissedAt = params.promoNoticeDismissedAt || null;
+      }
+      if (hasSkipDesignConfirm) {
+        jsonBody.skipDesignConfirm = params.skipDesignConfirm === true;
       }
       if (Object.keys(jsonBody).length === 0) return true;
 
@@ -1314,6 +1382,7 @@ export const PracticeFileTransferPage = ({
                 : abutmentFavorites,
             ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
+            skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
             savedAt: Date.now(),
           }),
         );
@@ -1745,8 +1814,9 @@ export const PracticeFileTransferPage = ({
       if (localFormUpdatedAtRef.current <= 0) {
         applyPracticeTransferSettings(payload);
       } else if (payload) {
-        // 폼 로컬값이 있어도 저장된 문장은 서버 설정을 우선 반영
+        // 폼 로컬값이 있어도 계정 세팅(문장·디자인컨펌생략)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
+        setSkipDesignConfirm(Boolean(payload.skipDesignConfirm));
       }
       try {
         localStorage.setItem(
@@ -1768,6 +1838,7 @@ export const PracticeFileTransferPage = ({
               Array.isArray(payload?.abutmentFavorites) ? payload?.abutmentFavorites : [],
             ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
+            skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
             savedAt: Date.now(),
           }),
         );
@@ -1867,6 +1938,22 @@ export const PracticeFileTransferPage = ({
           const patientName = String(ci.patientName || "").trim() || "-";
           const requestId = String(r.requestId || r._id || "").trim();
           const requestMongoId = String(r.practiceTransferId || r._id || "").trim();
+          const resultFilesRaw = Array.isArray(r.resultFiles) ? r.resultFiles : [];
+          const resultFiles: TransferFileItem[] = resultFilesRaw
+            .map((row) => {
+              const item =
+                row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+              return {
+                fileName: String(item.originalName || item.fileName || "").trim(),
+                s3Key: String(item.s3Key || "").trim(),
+                size: Number(item.size || 0),
+              };
+            })
+            .filter((f) => f.fileName && f.s3Key);
+          const productionRaw =
+            r.production && typeof r.production === "object"
+              ? (r.production as Record<string, unknown>)
+              : null;
 
           return {
             id: requestId,
@@ -1888,6 +1975,11 @@ export const PracticeFileTransferPage = ({
             fileName: String(fileObj.originalName || fileObj.name || "").trim(),
             fileS3Key: String(fileObj.s3Key || "").trim(),
             fileSize: Number(fileObj.size || 0),
+            resultFiles,
+            hasCustomAbutment: Boolean(r.hasCustomAbutment),
+            productionConfirmedAt: productionRaw?.confirmedAt
+              ? String(productionRaw.confirmedAt)
+              : null,
           };
         })
         .filter((item) => Boolean(item.id))
@@ -1972,10 +2064,29 @@ export const PracticeFileTransferPage = ({
         "기공소로 의뢰가 접수되었습니다. 작성 폼은 비워 두었으니, 다음 의뢰는 대시보드에서 작성·전송하세요.",
       duration: 10000,
       className:
-        "border-2 border-emerald-500 bg-emerald-50 text-emerald-950 shadow-xl sm:min-w-[360px]",
+        "border-2 border-primary bg-primary-soft text-primary-strong shadow-xl sm:min-w-[360px]",
     });
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, navigate, toast]);
+
+  useEffect(() => {
+    if (consumedPrefillLocationKeyRef.current === location.key) return;
+
+    const state =
+      location.state && typeof location.state === "object"
+        ? (location.state as { prefilledFiles?: unknown })
+        : null;
+
+    const incomingFiles = Array.isArray(state?.prefilledFiles)
+      ? state.prefilledFiles.filter((item): item is File => item instanceof File)
+      : [];
+
+    consumedPrefillLocationKeyRef.current = location.key;
+
+    if (incomingFiles.length === 0) return;
+
+    handleIncomingFiles(incomingFiles);
+  }, [handleIncomingFiles, location.key, location.state]);
 
   useEffect(() => {
     try {
@@ -2164,18 +2275,26 @@ export const PracticeFileTransferPage = ({
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
       });
-      const hasFormContent =
+      const hasLab =
+        Boolean(String(selectedLab?.name || "").trim()) ||
+        Boolean(toApiLabAnchorId(selectedLab?._id));
+      const hasSubstantialContent =
         Boolean(normalizedPatientName) ||
         Boolean(String(requestMemo || "").trim()) ||
-        Boolean(String(selectedLab?.name || "").trim()) ||
-        Boolean(toApiLabAnchorId(selectedLab?._id)) ||
-        syncToothWorks.some(
-          (row) =>
-            String(row.toothNumber || "").trim() ||
-            Boolean(row.customAbutment) ||
-            String(row.implantManufacturer || "").trim(),
-        );
-      if (filesForSave.length === 0 && !hasFormContent) return;
+        hasLab ||
+        filesForSave.length > 0;
+      const hasToothOnlyContent = syncToothWorks.some(
+        (row) =>
+          String(row.toothNumber || "").trim() ||
+          Boolean(row.customAbutment) ||
+          String(row.implantManufacturer || "").trim(),
+      );
+      // 기존 draft 갱신: 치아만 바뀌어도 동기화. 신규 생성: 환자명·메모·기공소·파일 중 하나 필요.
+      if (!activeDraftIdRef.current) {
+        if (!hasSubstantialContent) return;
+      } else if (filesForSave.length === 0 && !hasSubstantialContent && !hasToothOnlyContent) {
+        return;
+      }
 
       const fingerprintAtSend = currentFormFingerprintRef.current;
       const savedFingerprint = lastSavedFormFingerprintRef.current;
@@ -2311,10 +2430,24 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
-  const hasMeaningfulFormInputForAutosave = useMemo(() => {
+  /** 치아 선택만으로는 목록에 올리지 않음. 환자명·메모·기공소·파일이 있어야 신규 draft 생성. */
+  const hasSubstantialContentForNewDraft = useMemo(() => {
     if (normalizedPatientName) return true;
     if (String(requestMemo || "").trim()) return true;
     if (String(selectedLab?._id || selectedLab?.name || "").trim()) return true;
+    if (draftFiles.length > 0 || files.length > 0) return true;
+    return false;
+  }, [
+    draftFiles.length,
+    files.length,
+    normalizedPatientName,
+    requestMemo,
+    selectedLab?._id,
+    selectedLab?.name,
+  ]);
+
+  const hasMeaningfulFormInputForAutosave = useMemo(() => {
+    if (hasSubstantialContentForNewDraft) return true;
     if (
       toothWorks.some(
         (row) =>
@@ -2326,7 +2459,7 @@ export const PracticeFileTransferPage = ({
       return true;
     }
     return false;
-  }, [normalizedPatientName, requestMemo, selectedLab?._id, selectedLab?.name, toothWorks]);
+  }, [hasSubstantialContentForNewDraft, toothWorks]);
 
   useEffect(() => {
     if (!localFormHydrated) return;
@@ -2346,8 +2479,14 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    // 첫 임시저장(baseline 없음): 의미 있는 의뢰 입력이 있을 때만 서버에 올린다.
-    if (lastSavedFormFingerprint === null && !hasMeaningfulFormInputForAutosave) {
+    // 신규 draft 생성(activeDraftId 없음): 환자명·메모·기공소·파일이 있을 때만.
+    // 「새로 작성」후 baseline이 있어도 치아만 고르면 목록에 쌓이지 않게 한다.
+    if (!activeDraftId && !hasSubstantialContentForNewDraft) {
+      return;
+    }
+
+    // 기존 draft 갱신인데 내용이 전부 비면 서버 POST를 건너뛴다.
+    if (activeDraftId && !hasMeaningfulFormInputForAutosave && draftFiles.length === 0) {
       return;
     }
 
@@ -2380,10 +2519,12 @@ export const PracticeFileTransferPage = ({
   }, [
     FORM_AUTOSAVE_DEBOUNCE_MS,
     FORM_AUTOSAVE_IME_RETRY_MS,
+    activeDraftId,
     authToken,
     currentFormFingerprint,
     draftFiles.length,
     hasMeaningfulFormInputForAutosave,
+    hasSubstantialContentForNewDraft,
     lastSavedFormFingerprint,
     localFormHydrated,
     persistFormDraftAutosave,
@@ -2450,7 +2591,7 @@ export const PracticeFileTransferPage = ({
       clearPracticeSharedFormLocalStorage();
     }
 
-    await clearAllFiles();
+    await clearLocalFilesWithCache();
     await clearPracticeFileTransferCaches();
 
     // clearPracticeFileTransferCaches가 form local key를 지우므로, 빈 스냅샷을 다시 쓴다.
@@ -2653,6 +2794,9 @@ export const PracticeFileTransferPage = ({
           files: hasFile
             ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: Number(req.fileSize || 0) }]
             : [],
+          resultFiles: Array.isArray(req.resultFiles) ? [...req.resultFiles] : [],
+          hasCustomAbutment: Boolean(req.hasCustomAbutment),
+          productionConfirmedAt: req.productionConfirmedAt || null,
           transferMemo: req.transferMemo,
           rawTransferMemo: req.rawTransferMemo,
           unreadCount,
@@ -2715,6 +2859,19 @@ export const PracticeFileTransferPage = ({
       if (!existing.arrivalDate && req.arrivalDate) {
         existing.arrivalDate = req.arrivalDate;
       }
+      if (Array.isArray(req.resultFiles) && req.resultFiles.length > 0) {
+        const byKey = new Map(
+          (existing.resultFiles || []).map((f) => [f.s3Key, f] as const),
+        );
+        for (const f of req.resultFiles) {
+          if (f.s3Key) byKey.set(f.s3Key, f);
+        }
+        existing.resultFiles = Array.from(byKey.values());
+      }
+      if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
+      if (req.productionConfirmedAt) {
+        existing.productionConfirmedAt = req.productionConfirmedAt;
+      }
       if (req.createdAtTs > existing.createdAtTs) {
         existing.createdAtTs = req.createdAtTs;
         existing.createdAt = req.createdAt;
@@ -2739,12 +2896,18 @@ export const PracticeFileTransferPage = ({
       const statusSet = existing._statuses;
       if (statusSet.size === 1) {
         existing.status = [...statusSet][0] || existing.status;
+      } else if (statusSet.has("생산진행")) {
+        existing.status = "생산진행";
+      } else if (statusSet.has("작업완료")) {
+        existing.status = "작업완료";
       } else if (statusSet.has("발송완료")) {
         existing.status = "발송완료";
       } else if (statusSet.has("수신완료")) {
         existing.status = "수신완료";
-      } else if (statusSet.has("다운로드완료")) {
-        existing.status = "다운로드완료";
+      } else if (statusSet.has("의뢰수락") || statusSet.has("다운로드완료")) {
+        existing.status = "의뢰수락";
+      } else if (statusSet.has("작업취소")) {
+        existing.status = "작업취소";
       } else if (statusSet.has("취소")) {
         existing.status = "취소";
       } else {
@@ -2775,22 +2938,55 @@ export const PracticeFileTransferPage = ({
     return groupedTransfers.reduce(
       (acc, request) => {
         const status = String(request.status || "").trim();
-        if (status === "다운로드완료") {
-          acc.downloaded += 1;
-        } else if (status === "수신완료") {
-          acc.read += 1;
+        if (status === "작업완료") {
+          acc.completed += 1;
+        } else if (status === "생산진행") {
+          acc.shipping += 1;
+        } else if (status === "의뢰수락" || status === "다운로드완료") {
+          acc.accepted += 1;
+        } else if (status === "자동매칭" || status === "취소") {
+          // 상단 뱃지 집계 제외
+        } else if (status === "작업취소") {
+          // 기공소 작업취소 — 의뢰로 집계(재작업 가능)
+          acc.sent += 1;
         } else {
+          // 발송완료·수신완료 및 기타 미수락 → 의뢰
           acc.sent += 1;
         }
         return acc;
       },
-      { sent: 0, read: 0, downloaded: 0 },
+      { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0 },
     );
   }, [groupedTransfers]);
 
   const filteredGroupedTransfers = useMemo(() => {
     if (recentStatusFilter === "all") return groupedTransfers;
-    return groupedTransfers.filter((transfer) => String(transfer.status || "").trim() === recentStatusFilter);
+    return groupedTransfers.filter((transfer) => {
+      const status = String(transfer.status || "").trim();
+      if (recentStatusFilter === "발송완료") {
+        return (
+          status === "발송완료" ||
+          status === "수신완료" ||
+          status === "작업취소" ||
+          (status !== "의뢰수락" &&
+            status !== "다운로드완료" &&
+            status !== "작업완료" &&
+            status !== "생산진행" &&
+            status !== "자동매칭" &&
+            status !== "취소" &&
+            status !== "작업취소" &&
+            status !== "포장.발송" &&
+            status !== "추적관리")
+        );
+      }
+      if (recentStatusFilter === "포장.발송") {
+        return status === "생산진행" || status === "포장.발송";
+      }
+      if (recentStatusFilter === "의뢰수락") {
+        return status === "의뢰수락" || status === "다운로드완료";
+      }
+      return status === recentStatusFilter;
+    });
   }, [groupedTransfers, recentStatusFilter]);
 
   const draftGroupedTransfers = useMemo(() => {
@@ -3208,6 +3404,8 @@ export const PracticeFileTransferPage = ({
 
     setSelectedTransfer(transfer);
     setTransferDialogOpen(true);
+    transferDialogOpenRef.current = true;
+    selectedTransferIdRef.current = String(transfer.transferId || "").trim();
     setChatDraft("");
     setChatAttachedFiles([]);
     setActiveChatRoom(null);
@@ -3224,69 +3422,78 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    if (!authToken) {
-      setChatError("로그인이 필요합니다.");
-      return;
-    }
-
-    const transferId = String(transfer.transferId || "").trim();
-    if (!transferId || transferId === "-") {
-      setChatError("전송 ID를 확인할 수 없어 채팅방을 열 수 없습니다.");
-      return;
-    }
-
-    const cachedRoom = chatRooms.find(
-      (room) => String(room.relatedPracticeTransferId?.transferId || "").trim() === transferId,
-    );
-    if (cachedRoom?._id) {
-      void prefetchMessages(cachedRoom._id);
-      if (resolveSeq !== chatRoomResolveSeqRef.current) return;
-      setActiveChatRoom(cachedRoom);
-      setChatError("");
-      return;
-    }
-
-    setChatLoading(true);
-    try {
-      const res = await apiFetch<unknown>({
-        path: `/api/chats/practice/transfer-room/${encodeURIComponent(transferId)}`,
-        method: "GET",
-        token: authToken,
-      });
-
-      if (!res.ok) {
-        const body = asApiMessagePayload(res.data);
-        throw new Error(String(body?.message || "채팅방을 불러오지 못했습니다."));
-      }
-
-      const payload = extractDataFromResponse<ChatRoom>(res.data);
-      if (!payload?._id) {
-        throw new Error("채팅방 정보가 올바르지 않습니다.");
-      }
-
-      if (payload?._id) {
-        void prefetchMessages(payload._id);
-      }
-      if (resolveSeq !== chatRoomResolveSeqRef.current) return;
-      setActiveChatRoom(payload);
-      setChatError("");
-    } catch (error) {
-      if (resolveSeq !== chatRoomResolveSeqRef.current) return;
-      setChatError(
-        error instanceof Error
-          ? error.message
-          : "채팅방을 불러오는 중 오류가 발생했습니다.",
-      );
-    } finally {
-      if (resolveSeq === chatRoomResolveSeqRef.current) {
-        setChatLoading(false);
-      }
-    }
+    await resolvePracticeTransferChatRoom(String(transfer.transferId || "").trim(), resolveSeq);
   };
+
+  const resolvePracticeTransferChatRoom = useCallback(
+    async (transferIdRaw: string, resolveSeq: number) => {
+      if (!authToken) {
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setChatError("로그인이 필요합니다.");
+        return;
+      }
+
+      const transferId = String(transferIdRaw || "").trim();
+      if (!transferId || transferId === "-") {
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setChatError("전송 ID를 확인할 수 없어 채팅방을 열 수 없습니다.");
+        return;
+      }
+
+      const cachedRoom = chatRooms.find(
+        (room) => String(room.relatedPracticeTransferId?.transferId || "").trim() === transferId,
+      );
+      if (cachedRoom?._id) {
+        void prefetchMessages(cachedRoom._id);
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setActiveChatRoom(cachedRoom);
+        setChatError("");
+        return;
+      }
+
+      setChatLoading(true);
+      try {
+        const res = await apiFetch<unknown>({
+          path: `/api/chats/practice/transfer-room/${encodeURIComponent(transferId)}`,
+          method: "GET",
+          token: authToken,
+        });
+
+        if (!res.ok) {
+          const body = asApiMessagePayload(res.data);
+          throw new Error(String(body?.message || "채팅방을 불러오지 못했습니다."));
+        }
+
+        const payload = extractDataFromResponse<ChatRoom>(res.data);
+        if (!payload?._id) {
+          throw new Error("채팅방 정보가 올바르지 않습니다.");
+        }
+
+        void prefetchMessages(payload._id);
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setActiveChatRoom(payload);
+        setChatError("");
+      } catch (error) {
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setChatError(
+          error instanceof Error
+            ? error.message
+            : "채팅방을 불러오는 중 오류가 발생했습니다.",
+        );
+      } finally {
+        if (resolveSeq === chatRoomResolveSeqRef.current) {
+          setChatLoading(false);
+        }
+      }
+    },
+    [authToken, chatRooms, prefetchMessages],
+  );
 
   const handleCloseTransferDialog = () => {
     chatRoomResolveSeqRef.current += 1;
     setTransferDialogOpen(false);
+    transferDialogOpenRef.current = false;
+    selectedTransferIdRef.current = "";
     setSelectedTransfer(null);
     setActiveChatRoom(null);
     setChatMessages([]);
@@ -3390,11 +3597,79 @@ export const PracticeFileTransferPage = ({
   );
 
   const handleDownloadAllTransferFiles = useCallback(async () => {
-    const files = Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : [];
+    const files = [
+      ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
+      ...(Array.isArray(selectedTransfer?.resultFiles)
+        ? selectedTransfer.resultFiles
+        : []),
+    ];
     if (!files.length) return;
 
     await Promise.all(files.map((file) => handleDownloadTransferFile(file)));
   }, [handleDownloadTransferFile, selectedTransfer]);
+
+  const handleConfirmProduction = useCallback(async () => {
+    if (!authToken || !selectedTransfer || productionConfirmBusy) return;
+    const transferId = String(selectedTransfer.transferId || "").trim();
+    if (!transferId || transferId === "-" || transferId === PRACTICE_DRAFT_TRANSFER_ID) {
+      return;
+    }
+    setProductionConfirmBusy(true);
+    try {
+      const res = await apiFetch<unknown>({
+        path: `/api/practice/transfers/${encodeURIComponent(transferId)}/confirm-production`,
+        method: "POST",
+        token: authToken,
+      });
+      if (!res.ok) {
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        toast({
+          title: "생산 진행 실패",
+          description: String(body.message || "생산 진행 처리 중 오류가 발생했습니다."),
+          variant: "destructive",
+        });
+        return;
+      }
+      const confirmedAt = new Date().toISOString();
+      setSelectedTransfer((prev) =>
+        prev && prev.transferId === transferId
+          ? {
+              ...prev,
+              status: "생산진행",
+              productionConfirmedAt: confirmedAt,
+            }
+          : prev,
+      );
+      setRecentRequests((prev) =>
+        prev.map((row) =>
+          row.transferId === transferId
+            ? {
+                ...row,
+                status: "생산진행",
+                productionConfirmedAt: confirmedAt,
+              }
+            : row,
+        ),
+      );
+      toast({
+        title: "생산 진행",
+        description: selectedTransfer.hasCustomAbutment
+          ? "생산을 확정했습니다. 커스텀 어벗은 어벗츠에 자동 의뢰됩니다."
+          : "생산을 확정했습니다. 기공소에서 생산을 진행합니다.",
+      });
+    } catch {
+      toast({
+        title: "생산 진행 실패",
+        description: "생산 진행 요청 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setProductionConfirmBusy(false);
+    }
+  }, [authToken, productionConfirmBusy, selectedTransfer, toast]);
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
@@ -3523,7 +3798,10 @@ export const PracticeFileTransferPage = ({
     draftIndex?: number;
   }) => {
     if (target.kind === "local" && Number.isFinite(Number(target.localIndex))) {
-      removeFile(Number(target.localIndex));
+      const idx = Number(target.localIndex);
+      const targetFile = files[idx];
+      if (targetFile) forgetFile(targetFile);
+      removeFile(idx);
       return;
     }
 
@@ -3547,7 +3825,7 @@ export const PracticeFileTransferPage = ({
   };
 
   const handleClearAllTransferFiles = async () => {
-    await clearAllFiles();
+    await clearLocalFilesWithCache();
     if (draftFiles.length > 0) {
       const prevDraftFiles = [...draftFiles];
       setDraftFiles([]);
@@ -3565,6 +3843,18 @@ export const PracticeFileTransferPage = ({
   };
 
   const handleAskDeleteTransfer = (transfer: RecentTransferItem) => {
+    if (
+      transfer.status !== "임시저장" &&
+      transfer.transferId !== PRACTICE_DRAFT_TRANSFER_ID &&
+      !canDeletePracticeTransferByStatus(transfer.status)
+    ) {
+      toast({
+        title: "삭제할 수 없습니다",
+        description: "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     setDeleteTargetTransfer(transfer);
     setDeleteConfirmOpen(true);
   };
@@ -3633,6 +3923,17 @@ export const PracticeFileTransferPage = ({
         setDeleteConfirmOpen(false);
         setDeleteTargetTransfer(null);
       }
+      return;
+    }
+
+    if (!canDeletePracticeTransferByStatus(target.status)) {
+      toast({
+        title: "삭제할 수 없습니다",
+        description: "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다.",
+        variant: "destructive",
+      });
+      setDeleteConfirmOpen(false);
+      setDeleteTargetTransfer(null);
       return;
     }
 
@@ -4076,6 +4377,89 @@ export const PracticeFileTransferPage = ({
         }
         void loadPracticeTransferDraftList();
       }
+
+      // 기공소 작업취소(수락 해제): 토스트 + 열린 상세 모달 상태 갱신
+      // (자동매칭 데드라인 만료 auto-match-released는 제외)
+      const releaseSource = String(payload.source || "").trim();
+      const isWorkCancelRelease =
+        action === "accept-released" ||
+        (action === "auto-match-released" && releaseSource === "workCancelRelease");
+      if (isWorkCancelRelease) {
+        const releaseLabName =
+          String(payload.previousLabName || "").trim() ||
+          String(payload.targetLabName || "").trim();
+        toast({
+          title: "작업 취소",
+          description: releaseLabName
+            ? `기공소「${releaseLabName}」이(가) 작업을 취소했습니다. 다시 의뢰할 수 있습니다.`
+            : "기공소가 작업을 취소했습니다. 다시 의뢰할 수 있습니다.",
+        });
+        const releaseTransferId = String(payload.transferId || "").trim();
+        const stageRaw = String(payload.manufacturerStage || "작업취소").trim() || "작업취소";
+        const stage = toStatusLabel(stageRaw);
+        if (releaseTransferId) {
+          setRecentRequests((prev) =>
+            prev.map((row) =>
+              String(row.transferId || "").trim() === releaseTransferId
+                ? { ...row, status: stage }
+                : row,
+            ),
+          );
+        }
+        if (
+          transferDialogOpenRef.current &&
+          releaseTransferId &&
+          releaseTransferId === selectedTransferIdRef.current
+        ) {
+          const labName = String(payload.targetLabName || "").trim();
+          const labAnchorId =
+            payload.targetLabAnchorId != null
+              ? String(payload.targetLabAnchorId).trim()
+              : "";
+          setSelectedTransfer((prev) => {
+            if (!prev || String(prev.transferId || "").trim() !== releaseTransferId) {
+              return prev;
+            }
+            return {
+              ...prev,
+              status: stage,
+              ...(labName ? { targetLab: labName } : {}),
+              targetLabAnchorId: labAnchorId,
+            };
+          });
+        }
+      }
+
+      // 기공소 의뢰수락 시: 열려 있는 상세 모달에서 기공소명 갱신 + 채팅방 재연결
+      const eventTransferId = String(payload.transferId || "").trim();
+      const isAcceptChatEvent =
+        action === "accepted" ||
+        action === "auto-match-claimed" ||
+        action === "downloaded";
+      if (
+        isAcceptChatEvent &&
+        transferDialogOpenRef.current &&
+        eventTransferId &&
+        eventTransferId === selectedTransferIdRef.current
+      ) {
+        const labName = String(payload.targetLabName || "").trim();
+        const labAnchorId = String(payload.targetLabAnchorId || "").trim();
+        const stage = String(payload.manufacturerStage || "").trim();
+        setSelectedTransfer((prev) => {
+          if (!prev || String(prev.transferId || "").trim() !== eventTransferId) {
+            return prev;
+          }
+          return {
+            ...prev,
+            ...(labName ? { targetLab: labName } : {}),
+            ...(labAnchorId ? { targetLabAnchorId: labAnchorId } : {}),
+            ...(stage ? { status: stage } : {}),
+          };
+        });
+        const resolveSeq = ++chatRoomResolveSeqRef.current;
+        setChatError("");
+        void resolvePracticeTransferChatRoom(eventTransferId, resolveSeq);
+      }
     },
   });
 
@@ -4087,188 +4471,6 @@ export const PracticeFileTransferPage = ({
     }
     prevFileCountRef.current = nextCount;
   }, [files]);
-
-  const handleTempSaveDraft = async () => {
-    if (tempSaving || fileSyncInFlightRef.current) return;
-    if (!authToken) {
-      toast({
-        title: "로그인이 필요합니다",
-        description: "다시 로그인 후 시도해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 업로드 버튼: 대기 중인 로컬 파일이 있을 때만 동작
-    if (files.length === 0) return;
-
-    setTempSaving(true);
-    fileSyncInFlightRef.current = true;
-    suppressLocalFormPersistRef.current = true;
-    skipFormAutosaveRef.current = true;
-    formAutosaveSeqRef.current += 1;
-    if (formAutosaveTimerRef.current) {
-      window.clearTimeout(formAutosaveTimerRef.current);
-      formAutosaveTimerRef.current = null;
-    }
-
-    try {
-      const uploadedTempFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
-
-      // 업로드 중 원격/autosave로 draftFiles가 바뀌었을 수 있으므로 ref 기준으로 병합한다.
-      const mergedDraftFiles = [
-        ...draftFilesRef.current,
-        ...uploadedTempFiles.map((f) => ({
-          fileId: String(f._id || "").trim(),
-          originalName: String(f.originalName || "").trim(),
-          mimetype: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
-          size: Number(f.size || 0),
-          s3Key: String(f.key || "").trim(),
-          location: String(f.location || "").trim(),
-        })),
-      ].filter((row) => row.fileId && row.originalName && row.s3Key);
-
-      const dedupedDraftFiles = Array.from(
-        new Map(mergedDraftFiles.map((row) => [toDraftFileKey(row), row])).values(),
-      );
-
-      const transferMemo = buildPracticeTransferMemo({
-        memo: requestMemo,
-        orderDate,
-        arrivalDate,
-        arrivalDefaultDays,
-        prosthesisTypes: normalizedProsthesisTypes,
-        toothWorks: syncToothWorks,
-        patientName: normalizedPatientName,
-      });
-
-      // 파일 업로드 저장 중에는 폼 autosave가 끼어들지 않게 한다. (상단에서 이미 seq bump)
-      const res = await apiFetch<unknown>({
-        path: "/api/practice/transfers/draft",
-        method: "POST",
-        token: authToken,
-        jsonBody: {
-          draftId: activeDraftIdRef.current || undefined,
-          targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
-          targetLabName: String(selectedLab?.name || "").trim(),
-          orderDate,
-          arrivalDate,
-          arrivalDefaultDays,
-          transferMemo,
-          files: dedupedDraftFiles.map((row) => ({
-            fileId: row.fileId,
-          })),
-          forceResync: true,
-        },
-      });
-
-      if (!res.ok) {
-        const body = asApiMessagePayload(res.data);
-        throw new Error(String(body?.message || "임시저장에 실패했습니다."));
-      }
-
-      const body =
-        res.data && typeof res.data === "object"
-          ? (res.data as { data?: unknown })
-          : {};
-      const payload =
-        body.data && typeof body.data === "object"
-          ? (body.data as PracticeTransferDraftPayload)
-          : null;
-
-      const nextDraftFiles = Array.isArray(payload?.files)
-        ? payload.files
-            .map((row) => ({
-              fileId: String(row?.fileId || "").trim(),
-              originalName: String(row?.originalName || "").trim(),
-              mimetype: String(row?.mimetype || "application/octet-stream").trim(),
-              size: Number(row?.size || 0),
-              s3Key: String(row?.s3Key || "").trim(),
-              location: String(row?.location || "").trim(),
-            }))
-            .filter((row) => row.fileId && row.originalName && row.s3Key)
-        : dedupedDraftFiles;
-
-      setDraftFiles(nextDraftFiles);
-      {
-        const nextSummary = buildOwnDraftSummary(payload, nextDraftFiles, transferMemo);
-        setDraftSummary(nextSummary);
-        if (nextSummary?.id) {
-          setActiveDraftId(nextSummary.id);
-          // 목록 fetch 전에 폼이 비워지지 않도록, 방금 저장한 케이스를 목록에 먼저 반영한다.
-          activeDraftSeenInListRef.current = nextSummary.id;
-          setPracticeDraftList((prev) => {
-            const without = prev.filter((row) => row.id !== nextSummary.id);
-            return [nextSummary, ...without];
-          });
-        }
-      }
-      // 로컬 대기 파일만 비운다. draftFiles·기공소·환자명 등 작성 중인 폼은 유지한다.
-      await clearAllFiles();
-      setTempSaveDirty(false);
-      void loadPracticeTransferDraftList();
-
-      const savedFingerprint = buildPracticeTransferFormFingerprint({
-        targetLabAnchorId: selectedLab?._id,
-        targetLabName: selectedLab?.name,
-        patientName: normalizedPatientName,
-        orderDate,
-        arrivalDate,
-        arrivalDefaultDays,
-        requestMemo,
-        prosthesisTypes: normalizedProsthesisTypes,
-        toothWorks: syncToothWorks,
-      });
-      lastSavedFormFingerprintRef.current = savedFingerprint;
-      setLastSavedFormFingerprint(savedFingerprint);
-      currentFormFingerprintRef.current = savedFingerprint;
-      pendingLocalFormEditRef.current = false;
-      const serverUpdatedAt = payload?.updatedAt
-        ? new Date(String(payload.updatedAt)).getTime()
-        : Date.now();
-      if (Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0) {
-        lastAppliedServerUpdatedAtRef.current = serverUpdatedAt;
-        localFormUpdatedAtRef.current = serverUpdatedAt;
-      }
-      setFormSyncStatus("saved");
-
-      try {
-        localStorage.setItem(
-          PRACTICE_TRANSFER_TEMP_DRAFT_KEY,
-          JSON.stringify({ savedAt: Date.now(), source: "server" }),
-        );
-      } catch {
-        // ignore
-      }
-      toast({
-        title: "업로드됨",
-        description:
-          "파일이 임시저장에 반영되었습니다. 의뢰서 입력은 자동으로 동기화되며 동료·다른 PC에도 맞춰집니다.",
-      });
-    } catch (error) {
-      toast({
-        title: "업로드 실패",
-        description: error instanceof Error ? error.message : "파일 업로드 중 오류가 발생했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      fileSyncInFlightRef.current = false;
-      setTempSaving(false);
-      window.setTimeout(() => {
-        suppressLocalFormPersistRef.current = false;
-        skipFormAutosaveRef.current = false;
-        const pending = pendingDraftApplyRef.current;
-        if (pending) {
-          pendingDraftApplyRef.current = null;
-          applyPracticeDraftPayload(pending, {
-            forceResync: Boolean(
-              (pending as PracticeTransferDraftPayload & { forceResync?: boolean }).forceResync,
-            ),
-          });
-        }
-      }, 0);
-    }
-  };
 
   const handleSubmitPracticeRequest = async () => {
     if (requestSubmitting) return;
@@ -4352,9 +4554,11 @@ export const PracticeFileTransferPage = ({
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
       });
+      const autoMatch = isAutoMatchLab(selectedLab);
       const practiceRouting = {
-        targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
+        targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
         targetLabName: String(selectedLab?.name || "").trim(),
+        matchingMode: autoMatch ? "auto" : "direct",
       };
       const newSystemRequestBase = {
         requested: true,
@@ -4412,12 +4616,15 @@ export const PracticeFileTransferPage = ({
         jsonBody: {
           transferId,
           draftId: String(activeDraftIdRef.current || draftSummary?.id || "").trim() || undefined,
-          targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
+          matchingMode: autoMatch ? "auto" : "direct",
+          targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
           targetLabName: String(selectedLab?.name || "").trim(),
           orderDate,
           arrivalDate,
           arrivalDefaultDays,
           transferMemo,
+          toothWorks: syncToothWorks,
+          skipDesignConfirm,
           caseInfos: caseInfosPayload,
         },
       });
@@ -4465,9 +4672,6 @@ export const PracticeFileTransferPage = ({
       setRequestSubmitting(false);
     }
   };
-
-  const canUploadPendingFiles =
-    !requestSubmitting && !tempSaving && files.length > 0;
 
   const formSyncStatusLabel =
     formSyncStatus === "pending"
@@ -4576,7 +4780,7 @@ export const PracticeFileTransferPage = ({
     setToothWorks(nextToothWorks);
 
     // 화면만 비움. 서버 임시저장은 목록에 유지(삭제는 임시저장 카드에서).
-    await clearAllFiles();
+    await clearLocalFilesWithCache();
     setDraftFiles([]);
     setDraftSummary(null);
     setActiveDraftId(null);
@@ -4624,20 +4828,11 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    const hasFormContent =
-      Boolean(normalizedPatientName) ||
-      Boolean(String(requestMemo || "").trim()) ||
-      Boolean(String(selectedLab?._id || selectedLab?.name || "").trim()) ||
-      toothWorks.some(
-        (row) =>
-          String(row.toothNumber || "").trim() ||
-          Boolean(row.customAbutment) ||
-          String(row.implantManufacturer || "").trim(),
-      );
-    if (files.length === 0 && draftFilesRef.current.length === 0 && !hasFormContent) {
+    // 치아만으로는 스냅샷을 만들지 않는다(빈 임시저장 목록 누적 방지).
+    if (!hasSubstantialContentForNewDraft) {
       toast({
         title: "저장할 내용이 없습니다",
-        description: "기공소·환자명·보철물·메모 또는 파일을 입력한 뒤 다시 시도해주세요.",
+        description: "기공소·환자명·메모 또는 파일을 입력한 뒤 다시 시도해주세요.",
         variant: "destructive",
       });
       return;
@@ -4744,7 +4939,7 @@ export const PracticeFileTransferPage = ({
       setActiveDraftId(null);
       activeDraftSeenInListRef.current = null;
       setTempSaveDirty(false);
-      await clearAllFiles();
+      await clearLocalFilesWithCache();
 
       const fingerprint = currentFormFingerprintRef.current;
       lastSavedFormFingerprintRef.current = fingerprint;
@@ -4836,6 +5031,49 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
+  const persistSkipDesignConfirmSetting = useCallback(
+    (next: boolean) => {
+      if (next === skipDesignConfirm) return;
+      setSkipDesignConfirm(next);
+
+      try {
+        const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+        const existing =
+          existingRaw && typeof existingRaw === "string"
+            ? (JSON.parse(existingRaw) as Record<string, unknown>)
+            : {};
+        localStorage.setItem(
+          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+          JSON.stringify({
+            ...existing,
+            arrivalDefaultDays,
+            prosthesisTypes: normalizedProsthesisTypes,
+            memoSnippets,
+            implantFavorites,
+            abutmentFavorites,
+            skipDesignConfirm: next,
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+
+      void savePracticeTransferSettingsToServer({ skipDesignConfirm: next }).catch(() => {
+        // UI 값은 유지하고, 서버 저장 실패는 다음 저장 기회에 재시도
+      });
+    },
+    [
+      abutmentFavorites,
+      arrivalDefaultDays,
+      implantFavorites,
+      memoSnippets,
+      normalizedProsthesisTypes,
+      savePracticeTransferSettingsToServer,
+      skipDesignConfirm,
+    ],
+  );
+
   const handleSaveProsthesisTypeSettings = async () => {
     if (savingProsthesisTypeSettings) return;
     setSavingProsthesisTypeSettings(true);
@@ -4874,45 +5112,6 @@ export const PracticeFileTransferPage = ({
     }
   };
 
-  const handleCopyPracticeDropzoneLink = async () => {
-    try {
-      await navigator.clipboard.writeText(requestorSignupLink);
-      setInviteLinkCopied(true);
-      setTimeout(() => setInviteLinkCopied(false), 2000);
-      toast({
-        title: "복사 완료",
-        description: "기공소 초대 링크가 복사되었습니다.",
-        duration: 2000,
-      });
-    } catch {
-      toast({
-        title: "복사 실패",
-        description: "브라우저 권한을 확인하고 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleCopyPracticeInviteMessage = async () => {
-    const message = `안녕하세요 🙂 기공소에서 어벗츠 회원가입을 해주시면 치과에서 파일과 의뢰서를 더 쉽고 빠르게 보낼 수 있습니다.\n아래 링크에서 가입 부탁드립니다.\n${requestorSignupLink}`;
-    try {
-      await navigator.clipboard.writeText(message);
-      setInviteMessageCopied(true);
-      setTimeout(() => setInviteMessageCopied(false), 2000);
-      toast({
-        title: "복사 완료",
-        description: "전송 안내 문구가 복사되었습니다.",
-        duration: 2000,
-      });
-    } catch {
-      toast({
-        title: "복사 실패",
-        description: "브라우저 권한을 확인하고 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleDismissPromoNotice = async () => {
     if (promoNoticeSaving) return;
     if (!authToken) {
@@ -4938,120 +5137,66 @@ export const PracticeFileTransferPage = ({
     }
   };
 
-  const inviteLinkCard = (
-    <Card className="h-fit">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">기공소 초대</CardTitle>
-        <CardDescription className="text-xs">기공소에 기공의뢰서 링크를 전달하세요</CardDescription>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void handleCopyPracticeDropzoneLink()}
-            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {inviteLinkCopied ? (
-              <>
-                <Copy className="h-4 w-4" />
-                복사됨
-              </>
-            ) : (
-              <>
-                <Link2 className="h-4 w-4" />
-                링크 복사
-              </>
-            )}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void handleCopyPracticeInviteMessage()}
-            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {inviteMessageCopied ? (
-              <>
-                <Copy className="h-4 w-4" />
-                복사됨
-              </>
-            ) : (
-              <>
-                <Send className="h-4 w-4" />
-                안내 복사
-              </>
-            )}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-
   return (
     <PageFileDropZone
       onFiles={handleIncomingFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="h-full min-h-0"
+      className="h-full min-h-0 bg-gradient-subtle"
     >
-      <div className="h-full min-h-0 p-4 space-y-3">
+      <div className="mx-auto h-full min-h-0 max-w-6xl space-y-3 p-4">
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
           {promoNoticeVisible ? (
-            <>
-              <Alert className="flex flex-col items-center justify-center border-blue-200 bg-blue-50 text-blue-900 text-center xl:col-span-5">
-                <button
-                  type="button"
-                  onClick={() => void handleDismissPromoNotice()}
-                  disabled={promoNoticeSaving}
-                  className="absolute right-3 top-3 rounded p-1 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label="안내 닫기"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-                <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
-                <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
-              </Alert>
-              <div className="xl:col-span-5">{inviteLinkCard}</div>
-            </>
+            <Alert className="relative flex items-center justify-between gap-3 border-primary-muted bg-primary-soft/80 py-2.5 text-primary-strong xl:col-span-10">
+              <AlertTitle className="m-0 pr-8 text-sm font-medium leading-snug">
+                {PRACTICE_TRANSFER_PROMO_TITLE}
+              </AlertTitle>
+              <button
+                type="button"
+                onClick={() => void handleDismissPromoNotice()}
+                disabled={promoNoticeSaving}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-strong hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="안내 닫기"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </Alert>
           ) : null}
-          <Card className="xl:col-span-7">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-3">
-                  {roleSwitcher}
-                  <CardTitle className="flex min-w-0 items-center gap-2 text-base">
-                    <UploadCloud className="h-4 w-4 shrink-0 text-blue-600" />
-                    <span className="shrink-0">기공의뢰</span>
-                    {formSyncStatusLabel ? (
-                      <span
-                        className={cn(
-                          "truncate text-[11px] font-normal",
-                          formSyncStatus === "error"
-                            ? "text-destructive"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {formSyncStatusLabel}
-                      </span>
-                    ) : null}
-                  </CardTitle>
-                </div>
-                <div className="flex items-center gap-2">
-                  <TooltipProvider delayDuration={0}>
+          <div className="flex min-w-0 flex-col gap-3 xl:col-span-7">
+            <Card className="border-slate-200/80 shadow-sm">
+              <CardHeader className="pb-2 pt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-3">
+                    {roleSwitcher}
+                    <CardTitle className="flex min-w-0 items-center gap-2 text-xl font-bold tracking-tight">
+                      <UploadCloud className="h-5 w-5 shrink-0 text-primary-strong" />
+                      <span className="shrink-0">기공의뢰</span>
+                      {formSyncStatusLabel ? (
+                        <span
+                          className={cn(
+                            "truncate text-xs font-normal",
+                            formSyncStatus === "error"
+                              ? "text-destructive"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {formSyncStatusLabel}
+                        </span>
+                      ) : null}
+                    </CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="h-8"
+                          className="h-9 px-3 text-base"
                           disabled={
                             tempSaving ||
                             requestSubmitting ||
-                            (!hasMeaningfulFormInputForAutosave &&
-                              draftFiles.length === 0 &&
-                              files.length === 0) ||
+                            !hasSubstantialContentForNewDraft ||
                             (!activeDraftId &&
-                              files.length === 0 &&
                               lastSavedFormFingerprint !== null &&
                               currentFormFingerprint === lastSavedFormFingerprint)
                           }
@@ -5060,70 +5205,58 @@ export const PracticeFileTransferPage = ({
                           임시 저장
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                        작성 중인 의뢰서를 목록에 저장합니다. 이후 내용을 바꾸면 새 임시저장이
-                        만들어집니다.
+                      <TooltipContent side="bottom" className="max-w-xs text-xs">
+                        목록에 저장. 이후 수정하면 새 임시저장이 생깁니다.
                       </TooltipContent>
                     </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider delayDuration={0}>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="h-8"
+                          className="h-9 px-3 text-base"
                           onClick={() => void handleStartNewTransfer()}
                         >
                           새로 작성
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                        작성 화면만 비웁니다. 임시저장은 오른쪽 목록에 남습니다.
+                      <TooltipContent side="bottom" className="max-w-xs text-xs">
+                        작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
                       </TooltipContent>
                     </Tooltip>
-                  </TooltipProvider>
+                  </div>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <PracticeTransferIntakeSection
-                filePaneProps={{
-                  acceptedHint: PRACTICE_ACCEPTED_HINT,
-                  fileInputId: "practice-file-transfer-input",
-                  files: combinedDisplayFiles.map((file) => ({
-                    key: file.key,
-                    name: file.name,
-                    size: file.size,
-                    metaSuffix: file.kind === "draft" ? "동기화됨" : "대기",
-                  })),
-                  totalSizeMb: combinedFilesSizeMb,
-                  onPickFiles: handleIncomingFiles,
-                  onRemoveFile: (key) => {
-                    const target = combinedDisplayFiles.find((file) => file.key === key);
-                    if (!target) return;
-                    void handleRemoveCombinedFile({
-                      kind: target.kind,
-                      localIndex: target.kind === "local" ? target.localIndex : undefined,
-                      draftIndex: target.kind === "draft" ? target.draftIndex : undefined,
-                    });
-                  },
-                  onClearAllFiles: () => {
-                    void handleClearAllTransferFiles();
-                  },
-                  syncUploadLabel: "업로드",
-                  syncUploadBusyLabel: "업로드 중...",
-                  syncUploadDisabled: !canUploadPendingFiles,
-                  syncUploadBusy: tempSaving,
-                  syncUploadHint:
-                    "대기 중인 파일을 서버에 올려 임시저장합니다. 의뢰서 입력(기공소·환자명·치아·메모 등)은 입력하는 즉시 자동으로 동기화됩니다.",
-                  onSyncUpload: () => {
-                    void handleTempSaveDraft();
-                  },
-                }}
-                requestIntakeProps={{
-                  selectedLab,
+              </CardHeader>
+              <CardContent className="pt-5">
+                <PracticeTransferIntakeSection
+                  filePaneProps={{
+                    acceptedHint: PRACTICE_ACCEPTED_HINT,
+                    fileInputId: "practice-file-transfer-input",
+                    files: combinedDisplayFiles.map((file) => ({
+                      key: file.key,
+                      name: file.name,
+                      size: file.size,
+                      metaSuffix: file.kind === "draft" ? "동기화됨" : "대기",
+                    })),
+                    totalSizeMb: combinedFilesSizeMb,
+                    onPickFiles: handleIncomingFiles,
+                    onRemoveFile: (key) => {
+                      const target = combinedDisplayFiles.find((file) => file.key === key);
+                      if (!target) return;
+                      void handleRemoveCombinedFile({
+                        kind: target.kind,
+                        localIndex: target.kind === "local" ? target.localIndex : undefined,
+                        draftIndex: target.kind === "draft" ? target.draftIndex : undefined,
+                      });
+                    },
+                    onClearAllFiles: () => {
+                      void handleClearAllTransferFiles();
+                    },
+                  }}
+                  requestIntakeProps={{
+                    variant: "plain",
+                    selectedLab,
                   setSelectedLab,
                   labOpen,
                   setLabOpen,
@@ -5257,70 +5390,84 @@ export const PracticeFileTransferPage = ({
                   },
                   prosthesisTypeSelectWidthClassName: "w-[7rem]",
                   showBridgeConnections: true,
-                  toothTensOptions: TOOTH_TENS_OPTIONS,
-                  toothOnesOptions: TOOTH_ONES_OPTIONS,
                 }}
               />
+              </CardContent>
+            </Card>
 
-              <div className="flex items-center justify-end gap-2">
-                <TooltipProvider delayDuration={0}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <Button
-                          type="button"
-                          className="bg-blue-600 text-white hover:bg-blue-700 disabled:pointer-events-none"
-                          onClick={() => void handleSubmitPracticeRequest()}
-                          disabled={requestSubmitting || !hasRequiredSubmitFields}
+            <div className="flex items-center justify-end gap-4">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <label
+                    htmlFor="practice-skip-design-confirm"
+                    className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 select-none"
+                  >
+                    <Checkbox
+                      id="practice-skip-design-confirm"
+                      checked={skipDesignConfirm}
+                      onCheckedChange={(value) => persistSkipDesignConfirmSetting(value === true)}
+                      disabled={requestSubmitting}
+                    />
+                    <span>디자인 컨펌 생략</span>
+                  </label>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                  <p>
+                    기공소에서 작업 완료하여 디자인을 올리면 치과에서 확인해야 생산을
+                    시작합니다. 빠른 작업을 위해 치과측 컨펌을 생략합니다.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button
+                      type="button"
+                      className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none"
+                      onClick={() => void handleSubmitPracticeRequest()}
+                      disabled={requestSubmitting || !hasRequiredSubmitFields}
+                    >
+                      {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="end" className="max-w-xs text-xs leading-relaxed">
+                  {requestSubmitting ? (
+                    <p>전송 중…</p>
+                  ) : hasRequiredSubmitFields ? (
+                    <p>전송 가능</p>
+                  ) : (
+                    <ul className="space-y-0.5">
+                      {(
+                        [
+                          { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
+                          { key: "환자명", ok: Boolean(normalizedPatientName) },
+                          { key: "보철물", ok: normalizedToothWorks.length > 0 },
+                        ] as const
+                      ).map((item) => (
+                        <li
+                          key={item.key}
+                          className={item.ok ? "text-primary-muted" : "text-accent-muted"}
                         >
-                          {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" align="end" className="max-w-xs text-xs leading-relaxed">
-                      {requestSubmitting ? (
-                        <p>기공소로 전송 중입니다.</p>
-                      ) : hasRequiredSubmitFields ? (
-                        <p>기공소 · 환자명 · 보철물 입력이 완료되어 전송할 수 있습니다.</p>
-                      ) : (
-                        <div className="space-y-1">
-                          <p>다음을 모두 입력하면 전송할 수 있습니다.</p>
-                          <ul className="list-disc space-y-0.5 pl-3.5">
-                            {(
-                              [
-                                { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
-                                { key: "환자명", ok: Boolean(normalizedPatientName) },
-                                { key: "보철물", ok: normalizedToothWorks.length > 0 },
-                              ] as const
-                            ).map((item) => (
-                              <li
-                                key={item.key}
-                                className={item.ok ? "text-sky-200" : "text-amber-200"}
-                              >
-                                {item.key}
-                                {item.ok ? " (완료)" : " (미입력)"}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            </CardContent>
-          </Card>
+                          {item.key}
+                          {item.ok ? " ✓" : " · 필요"}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
 
           <div className="space-y-3 xl:col-span-3">
-            {!promoNoticeVisible ? inviteLinkCard : null}
-
-            <Card>
+            <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={recentTransfersOpen} onOpenChange={setRecentTransfersOpen}>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-2 pt-3">
                 <CollapsibleTrigger asChild>
                   <button type="button" className="mb-2 flex w-full items-center justify-between gap-2 text-left">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <ClipboardList className="h-4 w-4 text-blue-600" />
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                      <ClipboardList className="h-4 w-4 text-primary-strong" />
                       최근 전송
                     </CardTitle>
                     <ChevronDown
@@ -5352,51 +5499,91 @@ export const PracticeFileTransferPage = ({
                         className={cn(
                           "cursor-pointer",
                           recentStatusFilter === "발송완료"
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
                             : "hover:bg-muted/40",
                         )}
                       >
-                        발송 {statusCounts.sent}건
+                        의뢰 {statusCounts.sent}건
                       </Badge>
                     </button>
                     <button
                       type="button"
                       className="rounded-full"
                       onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "수신완료" ? "all" : "수신완료"))
+                        setRecentStatusFilter((prev) => (prev === "의뢰수락" ? "all" : "의뢰수락"))
                       }
-                      aria-pressed={recentStatusFilter === "수신완료"}
+                      aria-pressed={recentStatusFilter === "의뢰수락"}
                     >
                       <Badge
                         variant="outline"
                         className={cn(
                           "cursor-pointer",
-                          recentStatusFilter === "수신완료"
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                          recentStatusFilter === "의뢰수락"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
                             : "hover:bg-muted/40",
                         )}
                       >
-                        수신 {statusCounts.read}건
+                        수락 {statusCounts.accepted}건
                       </Badge>
                     </button>
                     <button
                       type="button"
                       className="rounded-full"
                       onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "다운로드완료" ? "all" : "다운로드완료"))
+                        setRecentStatusFilter((prev) => (prev === "작업완료" ? "all" : "작업완료"))
                       }
-                      aria-pressed={recentStatusFilter === "다운로드완료"}
+                      aria-pressed={recentStatusFilter === "작업완료"}
                     >
                       <Badge
                         variant="outline"
                         className={cn(
                           "cursor-pointer",
-                          recentStatusFilter === "다운로드완료"
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                          recentStatusFilter === "작업완료"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
                             : "hover:bg-muted/40",
                         )}
                       >
-                        다운로드 {statusCounts.downloaded}건
+                        완료 {statusCounts.completed}건
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "포장.발송" ? "all" : "포장.발송"))
+                      }
+                      aria-pressed={recentStatusFilter === "포장.발송"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "포장.발송"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        발송 {statusCounts.shipping}건
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "추적관리" ? "all" : "추적관리"))
+                      }
+                      aria-pressed={recentStatusFilter === "추적관리"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "추적관리"
+                            ? "border-primary/70 bg-primary-soft text-primary-strong"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        추적관리 {statusCounts.tracking}건
                       </Badge>
                     </button>
                   </div>
@@ -5417,7 +5604,7 @@ export const PracticeFileTransferPage = ({
               <CardContent className="space-y-2">
                 {recentRequestsLoading ? (
                   <div className="space-y-2">
-                    {Array.from({ length: 4 }).map((_, idx) => (
+                    {Array.from({ length: 3 }).map((_, idx) => (
                       <div
                         key={`recent-skel-${idx}`}
                         className="rounded-lg border px-3 py-2 space-y-2"
@@ -5438,8 +5625,18 @@ export const PracticeFileTransferPage = ({
                 ) : displayGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                     {recentStatusFilter === "all"
-                      ? "검색 조건에 맞는 의뢰서 전송 내역이 없습니다."
-                      : `${recentStatusFilter} 상태의 의뢰서 전송 내역이 없습니다.`}
+                      ? "전송 내역 없음"
+                      : `${
+                          recentStatusFilter === "발송완료"
+                            ? "의뢰"
+                            : recentStatusFilter === "포장.발송"
+                              ? "발송"
+                              : recentStatusFilter === "의뢰수락"
+                                ? "수락"
+                                : recentStatusFilter === "작업완료"
+                                  ? "완료"
+                                  : recentStatusFilter
+                        } 없음`}
                   </div>
                 ) : (
                   <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
@@ -5478,7 +5675,7 @@ export const PracticeFileTransferPage = ({
                               <div className="mt-0.5 flex items-center gap-2">
                                 <p className="truncate text-xs text-muted-foreground">{transfer.createdAt}</p>
                                 <Badge variant="outline" className="whitespace-nowrap">
-                                  {transfer.status}
+                                  {toStatusBadgeLabel(transfer.status)}
                                 </Badge>
                               </div>
                               <p className="truncate text-xs text-muted-foreground">{targetLabText}</p>
@@ -5497,25 +5694,49 @@ export const PracticeFileTransferPage = ({
                             <div className="flex shrink-0 items-center gap-1.5">
                               {transfer.unreadCount > 0 ? (
                                 <span
-                                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-none text-white"
+                                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold leading-none text-white"
                                   aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
                                 >
                                   {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
                                 </span>
                               ) : null}
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleAskDeleteTransfer(transfer);
-                                }}
-                                aria-label="의뢰서 전송 내역 삭제"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {(() => {
+                                const deleteLocked =
+                                  !canDeletePracticeTransferByStatus(transfer.status);
+                                return (
+                                  <TooltipProvider delayDuration={0}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="inline-flex">
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-destructive disabled:pointer-events-none"
+                                            disabled={deleteLocked}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              void handleAskDeleteTransfer(transfer);
+                                            }}
+                                            aria-label={
+                                              deleteLocked
+                                                ? "의뢰수락 이후 삭제 불가"
+                                                : "의뢰서 전송 내역 삭제"
+                                            }
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left" className="max-w-xs text-xs">
+                                        {deleteLocked
+                                          ? "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다."
+                                          : "휴지통으로 이동"}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -5528,14 +5749,14 @@ export const PracticeFileTransferPage = ({
               </Collapsible>
             </Card>
 
-            <Card>
+            <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={draftsOpen} onOpenChange={setDraftsOpen}>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-2 pt-3">
                 <CollapsibleTrigger asChild>
                   <button type="button" className="flex w-full items-center justify-between gap-2 text-left">
-                    <CardTitle className="flex items-center gap-2 text-base">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold">
                       <BookmarkPlus className="h-4 w-4 text-slate-500" />
-                      작성중인 의뢰서 임시저장
+                      임시저장
                       {draftGroupedTransfers.length > 0 ? (
                         <Badge variant="secondary" className="ml-1">
                           {draftGroupedTransfers.length}
@@ -5552,7 +5773,7 @@ export const PracticeFileTransferPage = ({
               <CardContent className="space-y-2">
                 {draftGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-                    작성중인 의뢰서 없음
+                    없음
                   </div>
                 ) : (
                   <div className="max-h-[15.25rem] space-y-2 overflow-y-auto pr-1">
@@ -5575,9 +5796,9 @@ export const PracticeFileTransferPage = ({
                           className={cn(
                             "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             transfer.id === activeDraftId
-                              ? "border-blue-400 bg-blue-50 ring-1 ring-blue-200"
+                              ? "border-primary/70 bg-primary-soft ring-1 ring-primary-muted"
                               : transfer.isMineDraft
-                                ? "border-blue-200 bg-blue-50/50"
+                                ? "border-primary-muted bg-primary-soft/50"
                                 : "border-slate-200 bg-slate-50/70",
                           )}
                           onClick={() => handleAdoptDraftTransfer(transfer)}
@@ -5626,10 +5847,8 @@ export const PracticeFileTransferPage = ({
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
-                                  이 임시저장을 휴지통으로 보냅니다. 활성 목록·동기화에서
-                                  제외되며, 아래 휴지통에서 복구할 수 있습니다. (「새로 작성」과
-                                  달리 서버에서도 활성 임시저장이 제거됩니다.)
+                                <TooltipContent side="left" className="max-w-xs text-xs">
+                                  휴지통으로 이동
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
@@ -5644,13 +5863,13 @@ export const PracticeFileTransferPage = ({
               </Collapsible>
             </Card>
 
-            <Card>
+            <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={trashOpen} onOpenChange={setTrashOpen}>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-2 pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <CollapsibleTrigger asChild>
                     <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left">
-                      <CardTitle className="flex items-center gap-2 text-base">
+                      <CardTitle className="flex items-center gap-2 text-sm font-semibold">
                         <Trash2 className="h-4 w-4 text-slate-500" />
                         휴지통
                         {trashGroupedTransfers.length > 0 ? (
@@ -5669,7 +5888,7 @@ export const PracticeFileTransferPage = ({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-8 shrink-0 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      className="h-8 shrink-0 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
                       disabled={emptyingTrash}
                       onClick={handleAskEmptyTrash}
                     >
@@ -5683,7 +5902,7 @@ export const PracticeFileTransferPage = ({
               <CardContent className="space-y-2">
                 {trashGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-                    휴지통이 비어 있습니다.
+                    비어 있음
                   </div>
                 ) : (
                   <div className="max-h-[18.25rem] space-y-2 overflow-y-auto pr-1">
@@ -5748,7 +5967,7 @@ export const PracticeFileTransferPage = ({
                                     type="button"
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8 shrink-0 text-slate-500 hover:text-sky-700"
+                                    className="h-8 w-8 shrink-0 text-slate-500 hover:text-primary-strong"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleAskRestoreTransfer(transfer);
@@ -5803,6 +6022,10 @@ export const PracticeFileTransferPage = ({
             { label: "주문일", value: selectedTransfer?.orderDate || "-" },
             { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
             { label: "파일 수", value: `${selectedTransfer?.fileCount || 0}개` },
+            {
+              label: "결과파일",
+              value: `${Number(selectedTransfer?.resultFiles?.length || 0)}개`,
+            },
           ] satisfies PracticeTransferDialogSummaryItem[]}
           memo={selectedTransferDisplayMemo}
           toothWorks={selectedTransferToothWorks}
@@ -5811,7 +6034,7 @@ export const PracticeFileTransferPage = ({
               ? selectedTransfer.transferId
               : selectedTransfer?.id || "practice-transfer"
           }
-          filesLabel="파일"
+          filesLabel="의뢰 파일"
           files={
             (selectedTransfer?.files || []).map((file, idx) => ({
               id: `${file.s3Key}:${idx}`,
@@ -5820,6 +6043,22 @@ export const PracticeFileTransferPage = ({
               s3Key: String(file.s3Key || "").trim(),
             })) satisfies PracticeTransferDialogFileItem[]
           }
+          resultFilesLabel="작업 결과 파일"
+          resultFiles={
+            (selectedTransfer?.resultFiles || []).map((file, idx) => ({
+              id: `${file.s3Key}:result:${idx}`,
+              fileName: file.fileName,
+              size: Number(file.size || 0),
+              s3Key: String(file.s3Key || "").trim(),
+            })) satisfies PracticeTransferDialogFileItem[]
+          }
+          showProductionConfirm={
+            String(selectedTransfer?.status || "").trim() === "작업완료" &&
+            !selectedTransfer?.productionConfirmedAt &&
+            Number(selectedTransfer?.resultFiles?.length || 0) > 0
+          }
+          productionConfirmBusy={productionConfirmBusy}
+          onConfirmProduction={() => void handleConfirmProduction()}
           onDownloadAllFiles={() => void handleDownloadAllTransferFiles()}
           onDownloadTransferFile={(file) =>
             void handleDownloadTransferFile({

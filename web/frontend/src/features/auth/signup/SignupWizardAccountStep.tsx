@@ -60,7 +60,7 @@ export const SignupWizardAccountStep = ({
         <Label htmlFor="name" className="text-sm font-medium text-white/80">
           사용자 이름 (직원명)
           {errors?.name && (
-            <span className="ml-2 text-xs font-medium text-rose-200">
+            <span className="ml-2 text-xs font-medium text-destructive-muted">
               {errors.name}
             </span>
           )}
@@ -75,7 +75,7 @@ export const SignupWizardAccountStep = ({
           ref={nameRef}
           disabled={isLoading}
           autoComplete="name"
-          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.name ? "border-rose-300" : ""}`}
+          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.name ? "border-destructive/80" : ""}`}
         />
       </div>
 
@@ -83,7 +83,7 @@ export const SignupWizardAccountStep = ({
         <Label htmlFor="password" className="text-sm font-medium text-white/80">
           비밀번호
           {errors?.password && (
-            <span className="ml-2 text-xs font-medium text-rose-200">
+            <span className="ml-2 text-xs font-medium text-destructive-muted">
               {errors.password}
             </span>
           )}
@@ -99,7 +99,7 @@ export const SignupWizardAccountStep = ({
             ref={passwordRef}
             disabled={isLoading}
             autoComplete="new-password"
-            className={`h-10 border-white/10 bg-white/5 pr-10 text-white placeholder:text-white/40 ${errors?.password ? "border-rose-300" : ""}`}
+            className={`h-10 border-white/10 bg-white/5 pr-10 text-white placeholder:text-white/40 ${errors?.password ? "border-destructive/80" : ""}`}
           />
           <button
             type="button"

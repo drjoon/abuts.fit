@@ -14,6 +14,10 @@ import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
+import {
+  fileFromModelBlob,
+  modelFileBasename,
+} from "@/shared/files/modelPreviewFile";
 import { WorksheetStageSearchInput } from "@/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput";
 
 type InspectionRow = {
@@ -756,7 +760,7 @@ export function SelfInspectionReportModal({
     let cancelled = false;
 
     const blobToFile = (blob: Blob, filename: string) =>
-      new File([blob], filename, { type: blob.type || "model/stl" });
+      fileFromModelBlob(blob, filename);
 
     const fetchBlob = async (url: string): Promise<Blob> => {
       const r = await fetch(url);
@@ -788,6 +792,7 @@ export function SelfInspectionReportModal({
           setSummaryTotalLength(parsedTotalLength);
         }
         let camFileName = `${requestId}.filled.stl`;
+        let originalFileName = `${requestId}.stl`;
         if (!cancelled) {
           const pts = data?.caseInfos?.finishLine?.points;
           if (Array.isArray(pts) && pts.length >= 2) setFinishLinePoints(pts);
@@ -797,6 +802,12 @@ export function SelfInspectionReportModal({
             null;
           if (rawCamName)
             camFileName = rawCamName.split("/").pop() || camFileName;
+          originalFileName = modelFileBasename(
+            data?.caseInfos?.file?.filePath ||
+              data?.caseInfos?.file?.originalName ||
+              data?.caseInfos?.file?.fileName,
+            `${requestId}.stl`,
+          );
         }
         if (!mid || cancelled) return;
 
@@ -819,19 +830,21 @@ export function SelfInspectionReportModal({
         const cachedOrig = await getFileBlob(origCacheKey);
         if (cachedOrig) {
           if (cancelled) return;
-          setStlFile(blobToFile(cachedOrig, `${requestId}.stl`));
+          setStlFile(blobToFile(cachedOrig, originalFileName));
           return;
         }
 
         // Step 3: signed URL 취득 (CAM → original fallback)
         let signedUrl = "";
         let isCamFile = false;
+        let apiFileName = "";
         const camRes = await fetch(`/api/requests/${mid}/cam-file-url`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (camRes.ok) {
           const b = await camRes.json().catch(() => ({}));
           signedUrl = String(b?.data?.url || "").trim();
+          apiFileName = String(b?.data?.fileName || "").trim();
           if (signedUrl) isCamFile = true;
         }
         if (!signedUrl) {
@@ -842,6 +855,7 @@ export function SelfInspectionReportModal({
           if (origRes.ok) {
             const b = await origRes.json().catch(() => ({}));
             signedUrl = String(b?.data?.url || "").trim();
+            apiFileName = String(b?.data?.fileName || "").trim();
           }
         }
         if (!signedUrl || cancelled) return;
@@ -858,10 +872,10 @@ export function SelfInspectionReportModal({
         }
 
         const filename = isCamFile
-          ? camFileName.toLowerCase().includes("filled")
-            ? camFileName
-            : camFileName.replace(/\.stl$/i, ".filled.stl")
-          : `${requestId}.stl`;
+          ? (apiFileName || camFileName).toLowerCase().includes("filled")
+            ? apiFileName || camFileName
+            : (apiFileName || camFileName).replace(/\.stl$/i, ".filled.stl")
+          : modelFileBasename(apiFileName || originalFileName, originalFileName);
         setStlFile(blobToFile(blob, filename));
       } catch {
         // ignore
@@ -1225,9 +1239,9 @@ export function SelfInspectionReportModal({
                         colSpan={2}
                         className={`border border-slate-800 px-1.5 py-1 text-center align-middle font-bold ${
                           overallJudgment === "합격"
-                            ? "bg-emerald-100 text-emerald-700"
+                            ? "bg-primary-soft text-primary-strong"
                             : overallJudgment === "불합격"
-                              ? "bg-red-100 text-red-700"
+                              ? "bg-destructive-soft text-destructive"
                               : "bg-[#eef05a] text-slate-700"
                         }`}
                       >
@@ -1265,7 +1279,7 @@ export function SelfInspectionReportModal({
                     className="max-w-none"
                   />
                   {lotSearchNoResult && (
-                    <p className="mt-0.5 text-[10px] text-red-600">
+                    <p className="mt-0.5 text-[10px] text-destructive">
                       일치하는 로트번호 제품이 없습니다.
                     </p>
                   )}
@@ -1335,17 +1349,17 @@ export function SelfInspectionReportModal({
 
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   {!confirmed && (
-                    <p className="text-[10px] text-red-600">
+                    <p className="text-[10px] text-destructive">
                       확정 후 수정할 수 없습니다
                     </p>
                   )}
                   {confirmed && (
-                    <p className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                    <p className="rounded border border-accent-muted bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent-strong">
                       성적서가 확정되었습니다.
                     </p>
                   )}
                   {overallJudgment === "불합격" && !confirmed && (
-                    <p className="text-[10px] text-red-600">
+                    <p className="text-[10px] text-destructive">
                       판정이 불합격이면 확정할 수 없습니다.
                     </p>
                   )}

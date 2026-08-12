@@ -1,4 +1,9 @@
 // change-log:
+// - 2026-08-11: 디자인 어벗 파일 선택은 STL만 허용.
+// - 2026-08-11: 디자인 클레임 목록 갱신 — 프론트 타이머 제거, websocket(request:design-claim-changed)만 사용.
+// - 2026-08-11: transferChat(의뢰수신) 빈/로딩 시 빈 상태 카드 미표시(상위 전송 내역과 중복 방지).
+// - 2026-08-10: 디자인 승인=완성 어벗 STL 업로드 후 design-handoff(제조사 가공).
+// - 2026-08-10: detailMode=transferChat — 디자인 큐는 기공의뢰서형 카드·채팅 모달(PreviewModal 미사용).
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-03: 제조사 워크시트의 공정 필터 기본값 및 탭 라벨을 '준비'로 표시되도록 수정함. (display-only)
 // - 2026-08-03: request(준비) 탭 API 조회를 `manufacturerStageIn=준비` 단일값으로 정리.
@@ -14,6 +19,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/requestor/design/DesignPage.tsx
+// - web/frontend/src/pages/requestor/design/DesignRequestTransferView.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
@@ -37,6 +44,7 @@ import {
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   type ManufacturerRequest,
@@ -47,6 +55,7 @@ import {
   isAnySampleRequest,
   isRndSampleRequest,
   getWorksheetStageFilterForTab,
+  PRODUCT_MODE,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import {
   filterRequestsByStage,
@@ -68,6 +77,7 @@ import { MailboxContentsModal } from "../shipping/components/MailboxContentsModa
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
 import { MachiningQueueBoard } from "../machining/MachiningQueueBoard";
 import { PreviewModal } from "./PreviewModal";
+import { DesignRequestTransferView } from "@/pages/requestor/design/DesignRequestTransferView";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useStageDropHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useStageDropHandlers";
@@ -85,26 +95,48 @@ import { useRequestFiltering } from "@/pages/manufacturer/worksheet/custom_abutm
 import { usePackingSelection } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePackingSelection";
 import { useMailboxSync } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxSync";
 import { useDiameterQueue } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useDiameterQueue";
-import { WorksheetCardsSkeleton } from "@/shared/ui/skeletons/DashboardSectionSkeletons";
+import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import { BodyPortal } from "@/shared/ui/BodyPortal";
 import {
   RemakeStartQuickModal,
   type RemakeQuickStartStage,
 } from "./RemakeStartQuickModal";
 
-const MAILBOX_DETAILS_CACHE_TTL_MS = 30 * 1000;
-// change-log: 2026-08-07 - 우편함 상세 캐시 TTL 1h→30s, 캐시 hit여도 항상 재조회로 출고일 동기화.
+const MAILBOX_DETAILS_CACHE_TTL_MS = 60 * 1000;
+// change-log:
+// - 2026-08-11: 우편함 상세 stale-while-revalidate + hover prefetch + requestIds 단축 조회
+// - 2026-08-07: 우편함 상세 캐시 TTL 1h→30s, 캐시 hit여도 항상 재조회로 출고일 동기화.
 const MAILBOX_DETAILS_STORAGE_PREFIX = "ca:shipping:mailbox-details:";
 
 export const RequestPage = ({
   showQueueBar = true,
+  showBulkCamRegenerate = true,
   filterRequests,
+  productMode,
+  productModeNe,
+  useManufacturerQueueList = false,
+  detailMode = "preview",
 }: {
   showQueueBar?: boolean;
+  /** 준비/CAM 탭의 전체 Filled STL·가공 준비 재생성 버튼 */
+  showBulkCamRegenerate?: boolean;
   filterRequests?: (req: ManufacturerRequest) => boolean;
+  /** API: caseInfos.productMode 일치 (디자인 페이지) */
+  productMode?: string;
+  /** API: caseInfos.productMode 제외 (가공작업 준비) */
+  productModeNe?: string;
+  /** 지정 의뢰자(디자인 파트너)도 제조사 큐 `/api/requests/all` 사용 */
+  useManufacturerQueueList?: boolean;
+  /** preview=제조 PreviewModal, transferChat=기공의뢰서형 상세/채팅(디자인 큐) */
+  detailMode?: "preview" | "transferChat";
 }) => {
+  const isTransferChatDetail = detailMode === "transferChat";
   const queryClient = useQueryClient();
   const { user, token } = useAuthStore();
+  const canUseManufacturerQueue =
+    user?.role === "manufacturer" ||
+    user?.role === "admin" ||
+    (useManufacturerQueueList && user?.role === "requestor");
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
     showCompleted: boolean;
@@ -139,6 +171,7 @@ export const RequestPage = ({
   const mailboxDetailsInFlightRef = useRef<
     Record<string, Promise<ManufacturerRequest[]>>
   >({});
+  const openMailboxAddressRef = useRef("");
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -154,6 +187,7 @@ export const RequestPage = ({
   }, []);
 
   const { toast } = useToast();
+  const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const pendingStageTransitionToastRef = useRef<
     Record<
       string,
@@ -178,7 +212,7 @@ export const RequestPage = ({
         const basePath =
           user?.role === "admin"
             ? "/api/admin/requests"
-            : user?.role === "manufacturer"
+            : canUseManufacturerQueue
               ? "/api/requests/all"
               : "/api/requests";
         const stageFilterForTab = getWorksheetStageFilterForTab(
@@ -328,6 +362,12 @@ export const RequestPage = ({
             for (const stage of stageFilterForTab) {
               url.searchParams.append("manufacturerStageIn", stage);
             }
+          }
+          if (productMode) {
+            url.searchParams.set("productMode", productMode);
+          }
+          if (productModeNe) {
+            url.searchParams.set("productModeNe", productModeNe);
           }
           return url.pathname + url.search;
         };
@@ -493,6 +533,7 @@ export const RequestPage = ({
     [
       token,
       user?.role,
+      canUseManufacturerQueue,
       toast,
       tabStage,
       rawTabStage,
@@ -500,6 +541,9 @@ export const RequestPage = ({
       showCompleted,
       effectivePageLimit,
       pageState,
+      productMode,
+      productModeNe,
+      queryClient,
     ],
   );
 
@@ -569,23 +613,9 @@ export const RequestPage = ({
   // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
   // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
   // - web/backend/controllers/requests/shipping.controller.js
-  const handleOpenMailboxDetails = useCallback(
-    async (address: string) => {
-      const mailboxAddress = String(address || "").trim();
-      if (!mailboxAddress || !token) return;
-
-      const normalizedAddress = mailboxAddress.toUpperCase();
+  const resolveMailboxCacheEntry = useCallback(
+    (normalizedAddress: string) => {
       const storageKey = `${MAILBOX_DETAILS_STORAGE_PREFIX}${normalizedAddress}`;
-      const now = Date.now();
-      const expectedRequestCount = Number(
-        mailboxSummaries.find(
-          (item) =>
-            String(item?.mailboxAddress || "")
-              .trim()
-              .toUpperCase() === normalizedAddress,
-        )?.requestCount || 0,
-      );
-
       const inMemoryCacheEntry =
         mailboxDetailsCacheRef.current[normalizedAddress] || null;
 
@@ -622,7 +652,35 @@ export const RequestPage = ({
       if (cachedEntry && !inMemoryCacheEntry) {
         mailboxDetailsCacheRef.current[normalizedAddress] = cachedEntry;
       }
+      return { cachedEntry, storageKey };
+    },
+    [],
+  );
 
+  const fetchMailboxDetailsRequests = useCallback(
+    async (mailboxAddress: string, options?: { force?: boolean }) => {
+      const normalizedAddress = String(mailboxAddress || "")
+        .trim()
+        .toUpperCase();
+      if (!normalizedAddress || !token) return [];
+
+      const summary = mailboxSummaries.find(
+        (item) =>
+          String(item?.mailboxAddress || "")
+            .trim()
+            .toUpperCase() === normalizedAddress,
+      );
+      const expectedRequestCount = Number(summary?.requestCount || 0);
+      const requestIds = Array.isArray(summary?.requestIds)
+        ? summary!.requestIds
+            .map((id) => String(id || "").trim())
+            .filter(Boolean)
+            .slice(0, 200)
+        : [];
+
+      const { cachedEntry, storageKey } =
+        resolveMailboxCacheEntry(normalizedAddress);
+      const now = Date.now();
       const hasFreshCache =
         Boolean(cachedEntry) &&
         now - Number(cachedEntry?.fetchedAt || 0) <
@@ -632,7 +690,122 @@ export const RequestPage = ({
         : 0;
       const hasCountMismatchWithSummary =
         Boolean(cachedEntry) && cachedRequestCount !== expectedRequestCount;
-      const hasUsableFreshCache = hasFreshCache && !hasCountMismatchWithSummary;
+      const hasUsableFreshCache =
+        hasFreshCache && !hasCountMismatchWithSummary && !options?.force;
+
+      if (hasUsableFreshCache) {
+        return cachedEntry?.requests || [];
+      }
+
+      let inFlight = mailboxDetailsInFlightRef.current[normalizedAddress];
+      if (!inFlight) {
+        inFlight = (async () => {
+          const params = new URLSearchParams({
+            mailboxAddress,
+          });
+          if (requestIds.length > 0) {
+            params.set("requestIds", requestIds.join(","));
+          }
+          const response = await fetch(
+            `/api/requests/shipping/mailbox-requests?${params.toString()}`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+              cache: "no-store",
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error("우편함 상세 조회에 실패했습니다.");
+          }
+
+          const body = await response.json();
+          const detailRequests = Array.isArray(body?.data?.requests)
+            ? (body.data.requests as ManufacturerRequest[])
+            : [];
+
+          const shouldPersistCache =
+            detailRequests.length > 0 || expectedRequestCount === 0;
+
+          if (shouldPersistCache) {
+            const nextCacheEntry = {
+              fetchedAt: Date.now(),
+              requests: detailRequests,
+            };
+
+            mailboxDetailsCacheRef.current[normalizedAddress] = nextCacheEntry;
+            if (typeof window !== "undefined") {
+              try {
+                window.localStorage.setItem(
+                  storageKey,
+                  JSON.stringify(nextCacheEntry),
+                );
+              } catch {
+                // noop
+              }
+            }
+          } else {
+            delete mailboxDetailsCacheRef.current[normalizedAddress];
+            if (typeof window !== "undefined") {
+              try {
+                window.localStorage.removeItem(storageKey);
+              } catch {
+                // noop
+              }
+            }
+          }
+
+          return detailRequests;
+        })().finally(() => {
+          delete mailboxDetailsInFlightRef.current[normalizedAddress];
+        });
+
+        mailboxDetailsInFlightRef.current[normalizedAddress] = inFlight;
+      }
+
+      return inFlight;
+    },
+    [mailboxSummaries, resolveMailboxCacheEntry, token],
+  );
+
+  const handlePrefetchMailboxDetails = useCallback(
+    (address: string) => {
+      const mailboxAddress = String(address || "").trim();
+      if (!mailboxAddress || !token) return;
+      void fetchMailboxDetailsRequests(mailboxAddress).catch(() => {
+        // prefetch 실패는 무시 (클릭 시 재시도)
+      });
+    },
+    [fetchMailboxDetailsRequests, token],
+  );
+
+  const handleOpenMailboxDetails = useCallback(
+    async (address: string) => {
+      const mailboxAddress = String(address || "").trim();
+      if (!mailboxAddress || !token) return;
+
+      const normalizedAddress = mailboxAddress.toUpperCase();
+      const expectedRequestCount = Number(
+        mailboxSummaries.find(
+          (item) =>
+            String(item?.mailboxAddress || "")
+              .trim()
+              .toUpperCase() === normalizedAddress,
+        )?.requestCount || 0,
+      );
+
+      const { cachedEntry } = resolveMailboxCacheEntry(normalizedAddress);
+      const cachedRequestCount = Array.isArray(cachedEntry?.requests)
+        ? cachedEntry!.requests.length
+        : 0;
+      const hasCountMismatchWithSummary =
+        Boolean(cachedEntry) && cachedRequestCount !== expectedRequestCount;
+      const hasUsableStaleCache =
+        Boolean(cachedEntry) &&
+        !hasCountMismatchWithSummary &&
+        cachedRequestCount > 0;
 
       const requestsFromCurrentPage = pageState.requests.filter((req) => {
         const reqMailboxAddress = String(req.mailboxAddress || "")
@@ -641,103 +814,67 @@ export const RequestPage = ({
         return reqMailboxAddress === normalizedAddress;
       });
 
-      const initialRequests = hasUsableFreshCache
+      const initialRequests = hasUsableStaleCache
         ? cachedEntry?.requests || []
         : requestsFromCurrentPage.length > 0
           ? requestsFromCurrentPage
           : [];
 
-      // 클릭 즉시 모달 오픈 (체감 속도). 캐시가 있어도 네트워크로 timeline/출고일을 재동기화한다.
-      mailboxState.setIsMailboxDetailsLoading(!hasUsableFreshCache);
+      // 클릭 즉시 모달 오픈. stale 캐시/페이지 데이터가 있으면 로딩 스피너 없이 표시하고 백그라운드 재동기화.
+      openMailboxAddressRef.current = normalizedAddress;
+      mailboxState.setIsMailboxDetailsLoading(initialRequests.length === 0);
 
       await mailboxState.handleRegisterShipment(
         mailboxAddress,
         initialRequests,
       );
 
-      try {
-        let inFlight = mailboxDetailsInFlightRef.current[normalizedAddress];
-        if (!inFlight) {
-          inFlight = (async () => {
-            const response = await fetch(
-              `/api/requests/shipping/mailbox-requests?mailboxAddress=${encodeURIComponent(mailboxAddress)}`,
-              {
-                method: "GET",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-                cache: "no-store",
-              },
-            );
-
-            if (!response.ok) {
-              throw new Error("우편함 상세 조회에 실패했습니다.");
-            }
-
-            const body = await response.json();
-            const detailRequests = Array.isArray(body?.data?.requests)
-              ? (body.data.requests as ManufacturerRequest[])
-              : [];
-
-            const shouldPersistCache =
-              detailRequests.length > 0 || expectedRequestCount === 0;
-
-            if (shouldPersistCache) {
-              const nextCacheEntry = {
-                fetchedAt: Date.now(),
-                requests: detailRequests,
-              };
-
-              mailboxDetailsCacheRef.current[normalizedAddress] =
-                nextCacheEntry;
-              if (typeof window !== "undefined") {
-                try {
-                  window.localStorage.setItem(
-                    storageKey,
-                    JSON.stringify(nextCacheEntry),
-                  );
-                } catch {
-                  // noop
-                }
-              }
-            } else {
-              delete mailboxDetailsCacheRef.current[normalizedAddress];
-              if (typeof window !== "undefined") {
-                try {
-                  window.localStorage.removeItem(storageKey);
-                } catch {
-                  // noop
-                }
-              }
-            }
-
-            return detailRequests;
-          })().finally(() => {
-            delete mailboxDetailsInFlightRef.current[normalizedAddress];
-          });
-
-          mailboxDetailsInFlightRef.current[normalizedAddress] = inFlight;
-        }
-
-        const detailRequests = await inFlight;
+      const applyDetailRequests = (detailRequests: ManufacturerRequest[]) => {
+        if (openMailboxAddressRef.current !== normalizedAddress) return;
         mailboxState.setMailboxModalRequests(detailRequests);
-      } catch (error) {
-        // 캐시로 이미 열어둔 경우 네트워크 실패는 토스트만 (빈 모달로 만들지 않음)
-        if (!hasUsableFreshCache && initialRequests.length === 0) {
-          toast({
-            title: "우편함 상세 조회 실패",
-            description:
-              error instanceof Error && error.message
-                ? error.message
-                : "우편함 상세 조회 중 오류가 발생했습니다.",
-            variant: "destructive",
+      };
+
+      if (initialRequests.length > 0) {
+        void fetchMailboxDetailsRequests(mailboxAddress, { force: true })
+          .then(applyDetailRequests)
+          .catch(() => {
+            // 이미 표시 중이므로 백그라운드 실패는 무시
+          })
+          .finally(() => {
+            mailboxState.setIsMailboxDetailsLoading(false);
           });
-        }
+        return;
+      }
+
+      try {
+        // 캐시/프리패치로 즉시 표시한 뒤에도 timeline·출고일은 네트워크로 재동기화
+        const detailRequests = await fetchMailboxDetailsRequests(
+          mailboxAddress,
+          { force: true },
+        );
+        applyDetailRequests(detailRequests);
+      } catch (error) {
+        toast({
+          title: "우편함 상세 조회 실패",
+          description:
+            error instanceof Error && error.message
+              ? error.message
+              : "우편함 상세 조회 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
       } finally {
         mailboxState.setIsMailboxDetailsLoading(false);
       }
     },
-    [mailboxState, mailboxSummaries, pageState.requests, toast, token],
+    [
+      fetchMailboxDetailsRequests,
+      mailboxState,
+      mailboxSummaries,
+      pageState.requests,
+      resolveMailboxCacheEntry,
+      toast,
+      token,
+    ],
   );
 
   const currentStageForTab = isMachiningStage
@@ -1891,6 +2028,198 @@ export const RequestPage = ({
     tabStage === "tracking" ||
     tabStage === "request";
 
+  const enableDesignClaim =
+    productMode === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT &&
+    user?.role === "requestor";
+
+  const [designClaimBusyIds, setDesignClaimBusyIds] = useState<
+    Record<string, boolean>
+  >({});
+
+  const handleDesignClaim = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!token || !req?._id) return;
+      const id = String(req._id);
+      setDesignClaimBusyIds((prev) => ({ ...prev, [id]: true }));
+      try {
+        const res = await fetch(`/api/requests/${id}/design-claim`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.success) {
+        toast({
+          title: "수락 실패",
+          description:
+            json?.message ||
+            (res.status === 409
+              ? "다른 디자이너가 이미 작업 중입니다."
+              : "디자인 수락에 실패했습니다."),
+          variant: "destructive",
+        });
+        if (res.status === 409) {
+          void fetchRequestsCore(true);
+        }
+        return;
+      }
+      const claimed = json?.data?.request;
+      const meta = json?.data?.designClaimMeta;
+      pageState.setRequests((prev) =>
+        prev.map((row) => {
+          if (String(row._id) !== id) return row;
+          return {
+            ...row,
+            designClaim: claimed?.designClaim || row.designClaim,
+            designClaimMeta: meta || row.designClaimMeta,
+            designClaimMine: true,
+            designClaimPeerBusy: false,
+            designClaimClaimable: false,
+            designClaimRemainingMs: meta?.remainingMs ?? null,
+            designClaimWarn: Boolean(meta?.warn),
+          };
+        }),
+      );
+      toast({
+        title: "수락됨",
+        description: "이 디자인을 수락했습니다. 마감 전에 승인해 주세요.",
+      });
+    } catch (error) {
+      toast({
+        title: "수락 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "디자인 수락에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+        setDesignClaimBusyIds((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    },
+    [token, toast, fetchRequestsCore, pageState],
+  );
+
+  const pickDesignAbutmentFile = useCallback((): Promise<File | null> => {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".stl,model/stl,application/sla";
+      input.style.display = "none";
+      let settled = false;
+      const finish = (file: File | null) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener("focus", onWindowFocus);
+        input.removeEventListener("change", onChange);
+        input.remove();
+        resolve(file);
+      };
+      const onChange = () => {
+        finish(input.files?.[0] || null);
+      };
+      const onWindowFocus = () => {
+        window.setTimeout(() => {
+          if (!settled) finish(input.files?.[0] || null);
+        }, 400);
+      };
+      input.addEventListener("change", onChange);
+      window.addEventListener("focus", onWindowFocus);
+      document.body.appendChild(input);
+      input.click();
+    });
+  }, []);
+
+  const handleDesignHandoffApprove = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!token || !req?._id) return;
+      const id = String(req._id);
+      if (designClaimBusyIds[id]) return;
+
+      const file = await pickDesignAbutmentFile();
+      if (!file) {
+        toast({
+          title: "승인 취소",
+          description: "완성 어벗 STL을 선택해야 제조사로 넘길 수 있습니다.",
+        });
+        return;
+      }
+
+      setDesignClaimBusyIds((prev) => ({ ...prev, [id]: true }));
+      try {
+        const uploaded = await uploadFilesWithToast([file]);
+        const temp = uploaded?.[0];
+        const s3Key = String(temp?.key || "").trim();
+        if (!s3Key) {
+          throw new Error("파일 업로드에 실패했습니다.");
+        }
+
+        const res = await fetch(`/api/requests/${id}/design-handoff`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            file: {
+              originalName: temp.originalName || file.name,
+              size: temp.size ?? file.size,
+              mimetype: temp.mimetype || file.type || "application/octet-stream",
+              s3Key,
+              s3Url: temp.location || "",
+            },
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.success) {
+          throw new Error(
+            String(json?.message || "디자인 승인(핸드오프)에 실패했습니다."),
+          );
+        }
+
+        pageState.setRequests((prev) =>
+          prev.filter((row) => String(row._id) !== id),
+        );
+        toast({
+          title: "제조사로 전달됨",
+          description:
+            "완성 어벗이 업로드되어 커스텀어벗 생산(가공)으로 넘어갔습니다.",
+        });
+        void fetchRequestsCore(true);
+      } catch (error) {
+        toast({
+          title: "승인 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "디자인 승인에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setDesignClaimBusyIds((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    },
+    [
+      token,
+      toast,
+      designClaimBusyIds,
+      pickDesignAbutmentFile,
+      uploadFilesWithToast,
+      pageState,
+      fetchRequestsCore,
+    ],
+  );
+
   const { handleDownloadOriginal } = useRequestCardHandlers(
     token,
     isMachiningStage,
@@ -1908,7 +2237,7 @@ export const RequestPage = ({
       false,
       tabStage === "shipping" ? { forceMailboxRefresh: true } : undefined,
     );
-  }, [tabStage, showCompleted]);
+  }, [tabStage, showCompleted, productMode, productModeNe]);
 
   const { filteredBase, filteredAndSorted, getFilteredAndSortedRequests } =
     useRequestFiltering(
@@ -2167,7 +2496,18 @@ export const RequestPage = ({
 
   const diameterQueueForReceive = useDiameterQueue(filteredAndSorted);
 
-  const isEmpty = !pageState.isLoading && filteredAndSorted.length === 0;
+  if (pageState.isLoading) {
+    if (isTransferChatDetail) {
+      return null;
+    }
+    return <WorksheetLoading />;
+  }
+
+  const isEmpty = filteredAndSorted.length === 0;
+
+  if (isTransferChatDetail && isEmpty) {
+    return null;
+  }
 
   return (
     <div
@@ -2200,9 +2540,9 @@ export const RequestPage = ({
       >
         {isCamStage && isDraggingOver && (
           <BodyPortal>
-          <div className="fixed inset-0 z-[100] bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-solid border-blue-500 text-center">
-              <div className="text-2xl font-bold text-blue-700 mb-2">
+          <div className="fixed inset-0 z-[100] bg-primary/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-solid border-primary text-center">
+              <div className="text-2xl font-bold text-primary-strong mb-2">
                 NC 파일을 드롭하세요
               </div>
               <div className="text-sm text-slate-600">
@@ -2246,6 +2586,7 @@ export const RequestPage = ({
                   onBoxClick={(address) => {
                     void handleOpenMailboxDetails(address);
                   }}
+                  onBoxPrefetch={handlePrefetchMailboxDetails}
                   onMailboxError={(address, message) => {
                     const key = String(address || "").trim();
                     if (!key) return;
@@ -2259,17 +2600,14 @@ export const RequestPage = ({
                   onRefresh={handleMailboxGridRefresh}
                 />
               </div>
-            ) : pageState.isLoading ? (
-              <div className="py-4">
-                <WorksheetCardsSkeleton />
-              </div>
             ) : isEmpty ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
                 표시할 의뢰가 없습니다.
               </div>
             ) : (
               <>
-                {(isCamStage || tabStage === "request") && (
+                {showBulkCamRegenerate &&
+                  (isCamStage || tabStage === "request") && (
                   <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
                     <Button
                       type="button"
@@ -2328,61 +2666,99 @@ export const RequestPage = ({
                     </div>
                   </div>
                 )}
-                <WorksheetCardGrid
-                  requests={paginatedRequests}
-                  selectedRequestIds={
-                    tabStage === "packing"
-                      ? pageState.selectedPackingRequestIds
-                      : []
-                  }
-                  onToggleSelected={
-                    tabStage === "packing"
-                      ? handleTogglePackingRequest
-                      : undefined
-                  }
-                  onDownload={handleDownloadOriginal}
-                  onOpenPreview={(req) => {
-                    void handleOpenPreviewWithSameReopenGuard(req);
-                  }}
-                  onDeleteCam={handleDeleteCam}
-                  onDeleteNc={handleDeleteNc}
-                  onCloneSample={
-                    tabStage === "request"
-                      ? handleCloneSampleForProduction
-                      : undefined
-                  }
-                  onSaveToRnd={
-                    tabStage === "request" ? handleSaveToRnd : undefined
-                  }
-                  onRollback={
-                    enableCardRollback ? handleCardRollbackForTab : undefined
-                  }
-                  onApprove={enableCardApprove ? handleCardApprove : undefined}
-                  onDelete={handleCardDelete}
-                  onDone={handleCardDone}
-                  onRestoreUnmachinable={handleRestoreUnmachinable}
-                  onUploadNc={handleUploadNc}
-                  uploadProgress={pageState.uploadProgress}
-                  uploading={pageState.uploading}
-                  deletingCam={pageState.deletingCam}
-                  deletingNc={pageState.deletingNc}
-                  isCamStage={isCamStage}
-                  isMachiningStage={isMachiningStage}
-                  downloading={pageState.downloading}
-                  currentStageOrder={currentStageOrder}
-                  tabStage={tabStage}
-                  onSaveRndMemo={handleSaveRndMemo}
-                  rndMemoSaving={rndMemoSaving}
-                />
+                {isTransferChatDetail ? (
+                  <DesignRequestTransferView
+                    requests={paginatedRequests}
+                    hasMoreLabel={
+                      pageState.visibleCount >= filteredAndSorted.length
+                        ? "모든 의뢰를 표시했습니다."
+                        : "스크롤하여 더보기"
+                    }
+                    sentinelRef={pageState.sentinelRef}
+                    onDesignClaim={
+                      enableDesignClaim ? handleDesignClaim : undefined
+                    }
+                    onApprove={
+                      enableDesignClaim
+                        ? handleDesignHandoffApprove
+                        : enableCardApprove
+                          ? handleCardApprove
+                          : undefined
+                    }
+                    designClaimBusyIds={designClaimBusyIds}
+                  />
+                ) : (
+                  <>
+                    <WorksheetCardGrid
+                      requests={paginatedRequests}
+                      selectedRequestIds={
+                        tabStage === "packing"
+                          ? pageState.selectedPackingRequestIds
+                          : []
+                      }
+                      onToggleSelected={
+                        tabStage === "packing"
+                          ? handleTogglePackingRequest
+                          : undefined
+                      }
+                      onDownload={handleDownloadOriginal}
+                      onOpenPreview={(req) => {
+                        void handleOpenPreviewWithSameReopenGuard(req);
+                      }}
+                      onDeleteCam={handleDeleteCam}
+                      onDeleteNc={handleDeleteNc}
+                      onCloneSample={
+                        tabStage === "request"
+                          ? handleCloneSampleForProduction
+                          : undefined
+                      }
+                      onSaveToRnd={
+                        tabStage === "request" ? handleSaveToRnd : undefined
+                      }
+                      onRollback={
+                        enableCardRollback
+                          ? handleCardRollbackForTab
+                          : undefined
+                      }
+                      onApprove={
+                        enableDesignClaim
+                          ? handleDesignHandoffApprove
+                          : enableCardApprove
+                            ? handleCardApprove
+                            : undefined
+                      }
+                      onDesignClaim={
+                        enableDesignClaim ? handleDesignClaim : undefined
+                      }
+                      enableDesignClaim={enableDesignClaim}
+                      designClaimBusyIds={designClaimBusyIds}
+                      onDelete={handleCardDelete}
+                      onDone={handleCardDone}
+                      onRestoreUnmachinable={handleRestoreUnmachinable}
+                      onUploadNc={handleUploadNc}
+                      uploadProgress={pageState.uploadProgress}
+                      uploading={pageState.uploading}
+                      deletingCam={pageState.deletingCam}
+                      deletingNc={pageState.deletingNc}
+                      isCamStage={isCamStage}
+                      isMachiningStage={isMachiningStage}
+                      downloading={pageState.downloading}
+                      currentStageOrder={currentStageOrder}
+                      tabStage={tabStage}
+                      onSaveRndMemo={handleSaveRndMemo}
+                      rndMemoSaving={rndMemoSaving}
+                    />
 
-                <div
-                  ref={pageState.sentinelRef}
-                  className="py-4 text-center text-gray-500"
-                >
-                  {pageState.visibleCount >= filteredAndSorted.length
-                    ? "모든 의뢰를 표시했습니다."
-                    : "스크롤하여 더보기"}
-                </div>
+                    <div
+                      ref={pageState.sentinelRef}
+                      className="py-4 text-center text-gray-500"
+                    >
+                      {pageState.visibleCount >= filteredAndSorted.length
+                        ? "모든 의뢰를 표시했습니다."
+                        : "스크롤하여 더보기"}
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -2407,6 +2783,7 @@ export const RequestPage = ({
             !mailboxState.isMailboxDetailsLoading
           ) {
             mailboxState.handleShipmentModalClose();
+            openMailboxAddressRef.current = "";
           }
         }}
         address={mailboxState.mailboxModalAddress}
@@ -2446,43 +2823,46 @@ export const RequestPage = ({
               checked,
             );
             mailboxState.handleShipmentModalClose();
+            openMailboxAddressRef.current = "";
           })()
         }
       />
 
-      <PreviewModal
-        open={pageState.previewOpen}
-        onOpenChange={handlePreviewOpenChange}
-        previewLoading={pageState.previewLoading}
-        previewFiles={pageState.previewFiles}
-        previewNcText={pageState.previewNcText}
-        previewNcName={pageState.previewNcName}
-        previewStageUrl={pageState.previewStageUrl}
-        previewStageName={pageState.previewStageName}
-        uploading={pageState.uploading}
-        reviewSaving={pageState.reviewSaving}
-        stage={tabStage}
-        isCamStage={isCamStage}
-        isMachiningStage={isMachiningStage}
-        onUpdateReviewStatus={handleUpdateReviewStatus}
-        onDeleteCam={handleDeleteCam}
-        onDeleteNc={handleDeleteNc}
-        onDeleteStageFile={handleDeleteStageFile}
-        onUploadCam={handleUploadCam}
-        onUploadNc={handleUploadNc}
-        onUploadStageFile={handleUploadStageFile}
-        onDownloadOriginalStl={handleDownloadOriginalStl}
-        onDownloadCamStl={handleDownloadCamStl}
-        onDownloadNcFile={handleDownloadNcFile}
-        onDownloadStageFile={handleDownloadStageFile}
-        onRefreshPreview={handleOpenPreviewWithSameReopenGuard}
-        onMarkUnmachinable={handleMarkUnmachinable}
-        onRestoreUnmachinable={handleRestoreUnmachinable}
-        onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
-        onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
-        onOpenNextRequest={handleOpenNextRequest}
-        setSearchParams={setSearchParams}
-      />
+      {!isTransferChatDetail ? (
+        <PreviewModal
+          open={pageState.previewOpen}
+          onOpenChange={handlePreviewOpenChange}
+          previewLoading={pageState.previewLoading}
+          previewFiles={pageState.previewFiles}
+          previewNcText={pageState.previewNcText}
+          previewNcName={pageState.previewNcName}
+          previewStageUrl={pageState.previewStageUrl}
+          previewStageName={pageState.previewStageName}
+          uploading={pageState.uploading}
+          reviewSaving={pageState.reviewSaving}
+          stage={tabStage}
+          isCamStage={isCamStage}
+          isMachiningStage={isMachiningStage}
+          onUpdateReviewStatus={handleUpdateReviewStatus}
+          onDeleteCam={handleDeleteCam}
+          onDeleteNc={handleDeleteNc}
+          onDeleteStageFile={handleDeleteStageFile}
+          onUploadCam={handleUploadCam}
+          onUploadNc={handleUploadNc}
+          onUploadStageFile={handleUploadStageFile}
+          onDownloadOriginalStl={handleDownloadOriginalStl}
+          onDownloadCamStl={handleDownloadCamStl}
+          onDownloadNcFile={handleDownloadNcFile}
+          onDownloadStageFile={handleDownloadStageFile}
+          onRefreshPreview={handleOpenPreviewWithSameReopenGuard}
+          onMarkUnmachinable={handleMarkUnmachinable}
+          onRestoreUnmachinable={handleRestoreUnmachinable}
+          onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
+          onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
+          onOpenNextRequest={handleOpenNextRequest}
+          setSearchParams={setSearchParams}
+        />
+      ) : null}
 
       <RemakeStartQuickModal
         open={remakeDialogOpen}

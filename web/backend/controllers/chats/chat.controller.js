@@ -1,12 +1,18 @@
+// change-log:
+// - 2026-08-11: 기공소 수락 시 치과↔기공소 채팅방 생성. 치과 모달 실시간 재연결.
+// - 2026-08-10: 디자인 큐 request-room은 발신 의뢰자(치과)와 연결. 기공소/제조사 폴백 금지.
+// - 2026-08-10: 디자인 파트너가 request-room에서 의뢰 기공소와 1:1 채팅 가능.
 // related files:
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - web/backend/utils/designAccess.js
+// - web/backend/utils/designClaim.js
 // - web/backend/socket.js
-// - web/frontend/src/pages/admin/support/AdminChatManagement.tsx
 // - web/frontend/src/shared/hooks/useChatRooms.ts
 // - web/frontend/src/shared/hooks/useChatMessages.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/pages/requestor/design/DesignPage.tsx
 import { Types } from "mongoose";
 import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";
@@ -14,6 +20,8 @@ import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
+import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { emitAppEventToUser, emitToUser } from "../../socket.js";
 
 const __chatPerfCache = new Map();
@@ -128,6 +136,8 @@ const CHAT_MESSAGE_LIST_SELECT = {
   _id: 1,
   roomId: 1,
   sender: 1,
+  messageKind: 1,
+  systemEvent: 1,
   content: 1,
   attachments: 1,
   replyTo: 1,
@@ -368,6 +378,29 @@ const canJoinPracticeTransferAsPracticePeer = async ({
   return peerIds.includes(practiceUserId);
 };
 
+/**
+ * 지정된 기공소(requestor businessAnchor) 구성원이면 primaryContact 해석 실패해도 채팅 참여 가능.
+ * - transfer.targetLabAnchorId === currentUser.businessAnchorId
+ */
+const canJoinPracticeTransferAsLabPeer = ({
+  currentUserId,
+  currentUserRole,
+  currentUserBusinessAnchorId,
+  transferDoc,
+}) => {
+  if (String(currentUserRole || "").trim() !== "requestor") return false;
+
+  const userId = String(currentUserId || "").trim();
+  if (!userId) return false;
+
+  const userAnchorId = String(currentUserBusinessAnchorId || "").trim();
+  const targetLabAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+  if (!userAnchorId || !Types.ObjectId.isValid(userAnchorId)) return false;
+  if (!targetLabAnchorId || !Types.ObjectId.isValid(targetLabAnchorId)) return false;
+
+  return userAnchorId === targetLabAnchorId;
+};
+
 const ensureChatRoomParticipant = async (roomId, userId) => {
   const rid = String(roomId || "").trim();
   const uid = String(userId || "").trim();
@@ -381,7 +414,7 @@ const ensureChatRoomParticipant = async (roomId, userId) => {
 };
 
 /**
- * practice 전송 채팅방: 참여자이거나 동일 치과 practice 동료면 접근 허용.
+ * practice 전송 채팅방: 참여자이거나 동일 치과/기공소 동료면 접근 허용.
  * 동료 최초 접근 시 participants에 추가한다.
  */
 const resolvePracticeTransferRoomAccess = async (req, room) => {
@@ -399,17 +432,23 @@ const resolvePracticeTransferRoomAccess = async (req, room) => {
   }
 
   const transferDoc = await PracticeTransfer.findById(room.relatedPracticeTransferId)
-    .select({ practiceUserId: 1, practiceBusinessAnchorId: 1 })
+    .select({ practiceUserId: 1, practiceBusinessAnchorId: 1, targetLabAnchorId: 1 })
     .lean();
   if (!transferDoc) return { ok: false, added: false };
 
-  const allowed = await canJoinPracticeTransferAsPracticePeer({
+  const isPracticePeer = await canJoinPracticeTransferAsPracticePeer({
     currentUserId: userId,
     currentUserRole: req.user?.role,
     currentUserBusinessAnchorId: req.user?.businessAnchorId,
     transferDoc,
   });
-  if (!allowed) return { ok: false, added: false };
+  const isLabPeer = canJoinPracticeTransferAsLabPeer({
+    currentUserId: userId,
+    currentUserRole: req.user?.role,
+    currentUserBusinessAnchorId: req.user?.businessAnchorId,
+    transferDoc,
+  });
+  if (!isPracticePeer && !isLabPeer) return { ok: false, added: false };
 
   await ensureChatRoomParticipant(room._id, userId);
   invalidateChatPerfForUsers([
@@ -678,6 +717,7 @@ export async function getSupportRoom(req, res) {
  * related files:
  * - web/backend/modules/chat/chat.routes.js
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+ * - web/frontend/src/pages/requestor/design/DesignPage.tsx
  * @route GET /api/chats/request-room/:requestId
  */
 export async function getOrCreateRequestChatRoom(req, res) {
@@ -708,11 +748,15 @@ export async function getOrCreateRequestChatRoom(req, res) {
         requestId: 1,
         requestor: 1,
         caManufacturer: 1,
+        "caseInfos.productMode": 1,
         "caseInfos.practiceRouting.targetLabAnchorId": 1,
         "caseInfos.practiceRouting.targetLabName": 1,
         "caseInfos.newSystemRequest.tag": 1,
         "caseInfos.newSystemRequest.manufacturer": 1,
         "caseInfos.newSystemRequest.message": 1,
+        "designClaim.claimedBy": 1,
+        "designClaim.deadlineAt": 1,
+        "designClaim.claimedAt": 1,
       })
       .lean();
 
@@ -725,6 +769,105 @@ export async function getOrCreateRequestChatRoom(req, res) {
 
     const requestorId = String(targetRequest.requestor || "").trim();
     const currentManufacturerId = String(targetRequest.caManufacturer || "").trim();
+    const productMode = String(targetRequest?.caseInfos?.productMode || "").trim();
+    const isDesignCustomAbutment = productMode === "design_custom_abutment";
+    const callerRole = String(req.user?.role || "").trim();
+    const hasDesignAccess =
+      callerRole === "requestor" && (await resolveDesignAccessForUser(req.user));
+
+    // 디자인 큐: 디자인 담당 ↔ 발신 의뢰자(치과). 제조사/기공소 라우팅으로 떨어지지 않는다.
+    if (isDesignCustomAbutment && callerRole === "requestor") {
+      if (!hasDesignAccess && currentUserId !== requestorId) {
+        return res.status(403).json({
+          success: false,
+          message: "이 의뢰 채팅방에 접근할 권한이 없습니다.",
+        });
+      }
+
+      let counterpartUserId = "";
+      if (currentUserId && requestorId && currentUserId !== requestorId) {
+        // 디자인 파트너 → 발신 의뢰자(치과)
+        counterpartUserId = requestorId;
+      } else if (
+        currentUserId &&
+        currentUserId === requestorId &&
+        isDesignClaimActive(targetRequest.designClaim)
+      ) {
+        // 발신 의뢰자 → 활성 디자인 담당자
+        counterpartUserId = String(
+          targetRequest?.designClaim?.claimedBy || "",
+        ).trim();
+      }
+
+      if (!counterpartUserId || !Types.ObjectId.isValid(counterpartUserId)) {
+        return res.status(409).json({
+          success: false,
+          message:
+            currentUserId === requestorId
+              ? "아직 디자인 담당자가 지정되지 않았습니다."
+              : "아직 연결 가능한 치과가 지정되지 않았습니다.",
+        });
+      }
+
+      if (counterpartUserId === currentUserId) {
+        return res.status(409).json({
+          success: false,
+          message: "아직 연결 가능한 치과가 지정되지 않았습니다.",
+        });
+      }
+
+      const participantObjectIds = [currentUserId, counterpartUserId].map(
+        (id) => new Types.ObjectId(id),
+      );
+
+      let room = await ChatRoom.findOne({
+        relatedRequestId: targetRequest._id,
+        participants: {
+          $all: participantObjectIds,
+          $size: participantObjectIds.length,
+        },
+        isArchived: false,
+      })
+        .populate("participants", "name email role business")
+        .populate("relatedRequestId", "requestId title");
+
+      if (!room) {
+        const title = `의뢰 ${String(targetRequest.requestId || "").trim() || ""} 디자인 소통`;
+        const created = await ChatRoom.create({
+          participants: participantObjectIds,
+          roomType: "direct",
+          title,
+          relatedRequestId: targetRequest._id,
+          status: "active",
+        });
+
+        room = await ChatRoom.findById(created._id)
+          .populate("participants", "name email role business")
+          .populate("relatedRequestId", "requestId title");
+      }
+
+      const [unreadCount, lastMessage] = await Promise.all([
+        Chat.countDocuments({
+          roomId: room._id,
+          isDeleted: false,
+          sender: { $ne: req.user._id },
+          "readBy.userId": { $ne: req.user._id },
+        }),
+        Chat.findOne({ roomId: room._id, isDeleted: false })
+          .sort({ createdAt: -1 })
+          .populate("sender", "name role")
+          .lean(),
+      ]);
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          ...room.toObject(),
+          unreadCount: unreadCount || 0,
+          lastMessage: lastMessage || null,
+        },
+      });
+    }
 
     const nsrTag = String(targetRequest?.caseInfos?.newSystemRequest?.tag || "").trim();
     const isPracticeRouteTag =
@@ -820,7 +963,9 @@ export async function getOrCreateRequestChatRoom(req, res) {
     if (!requestorId || !counterpartUserId) {
       return res.status(409).json({
         success: false,
-        message: "아직 연결 가능한 기공소가 지정되지 않았습니다.",
+        message: !requestorId
+          ? "아직 연결 가능한 치과가 지정되지 않았습니다."
+          : "아직 연결 가능한 기공소가 지정되지 않았습니다.",
       });
     }
 
@@ -1083,11 +1228,21 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       }
     }
 
-    if (!practiceUserId || !counterpartUserId) {
-      return res.status(409).json({
-        success: false,
-        message: "아직 연결 가능한 기공소가 지정되지 않았습니다.",
-      });
+    // 의뢰자(기공소)가 수신 화면에서 열 때: anchor primaryContact 해석 실패해도
+    // 지정 기공소 소속이면 본인을 lab 참여자로 두고 치과(practiceUserId)와 연결한다.
+    const isLabPeer = canJoinPracticeTransferAsLabPeer({
+      currentUserId,
+      currentUserRole,
+      currentUserBusinessAnchorId,
+      transferDoc,
+    });
+    if (
+      !counterpartUserId &&
+      isLabPeer &&
+      currentUserId &&
+      currentUserId !== practiceUserId
+    ) {
+      counterpartUserId = currentUserId;
     }
 
     const isPracticePeer = await canJoinPracticeTransferAsPracticePeer({
@@ -1097,10 +1252,42 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       transferDoc,
     });
 
+    if (!practiceUserId) {
+      return res.status(409).json({
+        success: false,
+        message: "아직 연결 가능한 치과가 지정되지 않았습니다.",
+      });
+    }
+
+    const isPracticeSide =
+      currentUserId === practiceUserId || Boolean(isPracticePeer);
+    const isAutoOpenPool =
+      String(transferDoc?.matchingMode || "").trim() === "auto" && !targetLabAnchorId;
+
+    // 기공소가 지정됐지만 사용자 해석 실패: 치과 쪽은 practice-only 방으로 열고
+    // 기공소 구성원이 나중에 isLabPeer로 합류한다.
+    const allowPracticeOnlyRoom =
+      !counterpartUserId && isPracticeSide && Boolean(targetLabAnchorId);
+
+    if (!counterpartUserId && !allowPracticeOnlyRoom) {
+      return res.status(409).json({
+        success: false,
+        message:
+          currentUserRole === "requestor"
+            ? isAutoOpenPool
+              ? "의뢰수락 후 치과와 채팅할 수 있습니다."
+              : "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다."
+            : isAutoOpenPool
+              ? "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다."
+              : "아직 연결 가능한 기공소가 지정되지 않았습니다.",
+      });
+    }
+
     const canAccess =
       currentUserId === practiceUserId ||
       currentUserId === counterpartUserId ||
-      isPracticePeer;
+      isPracticePeer ||
+      isLabPeer;
 
     if (!canAccess) {
       return res.status(403).json({
@@ -1109,8 +1296,9 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       });
     }
 
-    const participantIdSet = new Set([practiceUserId, counterpartUserId]);
-    if (isPracticePeer) participantIdSet.add(currentUserId);
+    const participantIdSet = new Set([practiceUserId]);
+    if (counterpartUserId) participantIdSet.add(counterpartUserId);
+    if (isPracticePeer || isLabPeer) participantIdSet.add(currentUserId);
 
     const participantObjectIds = [...participantIdSet]
       .filter((id) => Types.ObjectId.isValid(id))
@@ -1133,8 +1321,11 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       });
       roomMeta = { _id: created._id };
       invalidateChatPerfForUsers([...participantIdSet]);
-    } else if (isPracticePeer) {
+    } else if (isPracticePeer || isLabPeer || (counterpartUserId && isPracticeSide)) {
       await ensureChatRoomParticipant(roomMeta._id, currentUserId);
+      if (counterpartUserId) {
+        await ensureChatRoomParticipant(roomMeta._id, counterpartUserId);
+      }
       invalidateChatPerfForUsers([...participantIdSet]);
     }
 
@@ -1486,10 +1677,12 @@ export async function sendChatMessage(req, res) {
       });
     }
 
-    // 메시지 생성
+    // 메시지 생성 (클라이언트가 messageKind/systemEvent를 주입하지 못함)
     const newMessage = new Chat({
       roomId,
       sender: userId,
+      messageKind: "user",
+      systemEvent: null,
       content: normalizedContent || "[파일 첨부]",
       attachments: normalizedAttachments,
       replyTo: replyToId,
@@ -1589,6 +1782,13 @@ export async function toggleChatMessageReaction(req, res) {
       return res.status(404).json({
         success: false,
         message: "메시지를 찾을 수 없습니다.",
+      });
+    }
+
+    if (String(message.messageKind || "").trim() === "system") {
+      return res.status(400).json({
+        success: false,
+        message: "시스템 메시지에는 리액션할 수 없습니다.",
       });
     }
 

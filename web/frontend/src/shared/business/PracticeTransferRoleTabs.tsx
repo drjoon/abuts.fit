@@ -25,7 +25,7 @@ const ENABLE_HINT =
   "비활성화를 활성화하려면 설정-사업자에서 설정 변경.";
 
 /**
- * 기공의뢰서 발신(의뢰 발신자·치과) / 수신(의뢰 수신자·기공소와 기공실) 전환.
+ * 기공의뢰서 발신(치과·기공실) / 수신(기공소) 전환.
  * 가능한 유형만 활성화하고, 불가한 쪽은 disabled.
  */
 export const PracticeTransferRoleTabs = ({
@@ -36,7 +36,7 @@ export const PracticeTransferRoleTabs = ({
   className,
 }: Props) => {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delayDuration={0}>
       <div
         className={cn(
           "inline-flex shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5",

@@ -2,8 +2,14 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/files/extractDroppedFiles.ts
+// - web/frontend/src/shared/components/practice/PracticeTransferFileDropTarget.tsx
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/shared/ui/cn";
+import {
+  dataTransferHasFiles,
+  extractDroppedFiles,
+} from "@/shared/files/extractDroppedFiles";
 
 type PageFileDropZoneChildren =
   | ReactNode
@@ -17,123 +23,10 @@ type PageFileDropZoneProps = {
   children: PageFileDropZoneChildren;
 };
 
-const hasFiles = (event: DragEvent) => {
-  const types = Array.from(event.dataTransfer?.types || []);
-  return types.includes("Files");
-};
-
-type WebkitFileSystemEntry = {
-  isFile: boolean;
-  isDirectory: boolean;
-  file?: (callback: (file: File) => void) => void;
-  createReader?: () => {
-    readEntries: (callback: (entries: WebkitFileSystemEntry[]) => void) => void;
-  };
-};
-
-type DataTransferItemWithEntry = DataTransferItem & {
-  webkitGetAsEntry?: () => WebkitFileSystemEntry | null;
-};
-
-const dedupeFiles = (input: File[]) => {
-  const map = new Map<string, File>();
-  for (const file of input) {
-    const key = `${file.name}:${file.size}:${file.lastModified}`;
-    if (!map.has(key)) map.set(key, file);
-  }
-  return [...map.values()];
-};
-
-const readAllEntries = async (reader: {
-  readEntries: (callback: (entries: WebkitFileSystemEntry[]) => void) => void;
-}): Promise<WebkitFileSystemEntry[]> => {
-  const all: WebkitFileSystemEntry[] = [];
-
-  while (true) {
-    const chunk = await new Promise<WebkitFileSystemEntry[]>((resolve) => {
-      reader.readEntries((entries) => resolve(entries || []));
-    });
-    if (!chunk.length) break;
-    all.push(...chunk);
-  }
-
-  return all;
-};
-
-const traverseDroppedEntry = async (
-  entry: WebkitFileSystemEntry,
-): Promise<File[]> => {
-  if (entry.isFile && entry.file) {
-    const file = await new Promise<File | null>((resolve) => {
-      try {
-        entry.file?.((f) => resolve(f));
-      } catch {
-        resolve(null);
-      }
-    });
-    return file ? [file] : [];
-  }
-
-  if (entry.isDirectory && entry.createReader) {
-    const reader = entry.createReader();
-    const entries = await readAllEntries(reader);
-    const nested = await Promise.all(entries.map((child) => traverseDroppedEntry(child)));
-    return nested.flat();
-  }
-
-  return [];
-};
-
-const extractDroppedFiles = async (
-  droppedItems: DataTransferItem[],
-  droppedDirectFiles: File[],
-) => {
-  const items = Array.from(droppedItems || []);
-
-  if (!items.length) {
-    return dedupeFiles(Array.from(droppedDirectFiles || []));
-  }
-
-  const all: File[] = [];
-
-  for (const item of items) {
-    const withHandle = item as DataTransferItem & {
-      getAsFileSystemHandle?: () => Promise<unknown>;
-    };
-    if (typeof withHandle.getAsFileSystemHandle === "function") {
-      try {
-        const handle = await withHandle.getAsFileSystemHandle();
-        if (
-          handle &&
-          (handle as { kind?: string }).kind === "file" &&
-          typeof (handle as { getFile?: () => Promise<File> }).getFile === "function"
-        ) {
-          const file = await (handle as { getFile: () => Promise<File> }).getFile();
-          if (file) {
-            all.push(file);
-            continue;
-          }
-        }
-      } catch {
-        // fallback to webkit/dataTransfer path
-      }
-    }
-
-    const withEntry = item as DataTransferItemWithEntry;
-    const entry = withEntry.webkitGetAsEntry?.();
-    if (entry) {
-      const filesFromEntry = await traverseDroppedEntry(entry);
-      all.push(...filesFromEntry);
-      continue;
-    }
-    const file = item.getAsFile();
-    if (file) all.push(file);
-  }
-
-  const directFiles = Array.from(droppedDirectFiles || []);
-  return dedupeFiles([...all, ...directFiles]);
-};
-
+/**
+ * 페이지 전역(window) 파일 드롭.
+ * 카드/첨부 UI 로컬 드롭은 PracticeTransferFileDropTarget 사용.
+ */
 export function PageFileDropZone({
   onFiles,
   disabled,
@@ -153,19 +46,19 @@ export function PageFileDropZone({
     if (disabled) return;
 
     const handleDragEnter = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!dataTransferHasFiles(event)) return;
       event.preventDefault();
       dragCounterRef.current += 1;
       setIsDragActive(true);
     };
 
     const handleDragOver = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!dataTransferHasFiles(event)) return;
       event.preventDefault();
     };
 
     const handleDragLeave = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!dataTransferHasFiles(event)) return;
       event.preventDefault();
       dragCounterRef.current -= 1;
       if (dragCounterRef.current <= 0) {
@@ -175,7 +68,7 @@ export function PageFileDropZone({
     };
 
     const handleDrop = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!dataTransferHasFiles(event)) return;
       if (event.defaultPrevented) return;
       event.preventDefault();
       dragCounterRef.current = 0;
@@ -217,7 +110,7 @@ export function PageFileDropZone({
       className={cn(
         "relative",
         className,
-        isDragActive ? activeClassName : undefined
+        isDragActive ? activeClassName : undefined,
       )}
     >
       {content}

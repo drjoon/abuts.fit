@@ -1,6 +1,12 @@
 const UNKNOWN_ANCHOR_KEY = "__UNKNOWN_BUSINESS_ANCHOR__";
 const ACTIVE_MAILBOX_OCCUPY_STAGES = ["세척.패킹", "포장.발송"];
 const TRACKING_ACTIVE_EXCLUDED_CODES = ["picked_up", "completed", "canceled"];
+const MAILBOX_ALLOC_LOCK_LEASE_MS = 15_000;
+const MAILBOX_ALLOC_LOCK_HEARTBEAT_MS = 5_000;
+const MAILBOX_ALLOC_LOCK_MAX_ATTEMPTS = 40;
+const MAILBOX_ALLOC_LOCK_RETRY_MS = 50;
+// 미커밋 동시 할당 손잡이. TTL 슬롯보다 짧게 잡아 재승인 시 첫 빈칸 정책을 지킨다.
+const MAILBOX_SLOT_HANDOFF_MAX_AGE_MS = 60_000;
 
 // related files (request category SSOT):
 // - web/backend/models/request.model.js
@@ -111,7 +117,7 @@ const findReusableMailboxAddressForBusiness = ({
   activeRequests = [],
   requestorOrgId,
 }) => {
-  const requestorOrgIdStr = String(requestorOrgId || "").trim();
+  const requestorOrgIdStr = normalizeBusinessAnchorId(requestorOrgId);
   if (!requestorOrgIdStr) return "";
 
   const occupancyByAddress = buildMailboxOccupancyByAddress(activeRequests);
@@ -205,12 +211,7 @@ const buildActiveMailboxOccupancyFilter = ({
   return base;
 };
 
-export async function allocateVirtualMailboxAddress(
-  requestorOrgId,
-  options = {},
-) {
-  const { default: Request } = await import("../../models/request.model.js");
-
+const buildAllMailboxAddresses = () => {
   // 선반(Shelf)은 실제 운용 중인 A부터 I까지 9개를 사용한다.
   const shelfNames = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
   // 선반 내 수직 위치(Row)는 1, 2, 3, 4 (위에서부터 1번. 사진의 2번째 줄이 1번, 맨 아랫줄이 4번)
@@ -230,25 +231,48 @@ export async function allocateVirtualMailboxAddress(
       }
     }
   }
+  return allAddresses;
+};
 
-  const excludeRequestMongoId = String(
-    options?.excludeRequestMongoId || "",
-  ).trim();
-  const session = options?.session || null;
-  const scopeFilter = normalizeScopeFilter(options?.scopeFilter);
+const ALL_MAILBOX_ADDRESSES = buildAllMailboxAddresses();
 
-  // 현재 점유(active)는 세척.패킹/포장.발송 + 집하 전 추적관리만 포함한다.
-  // - 집하 이후(picked_up/completed/canceled, trackingStatusCode>=11)는 점유에서 제외
-  // - 제조사 조직 스코프를 받은 경우 해당 범위 내에서만 점유를 계산
+const sleep = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const isAddressFreeOrOwnedByBusiness = ({
+  address,
+  occupancyByAddress,
+  requestorOrgIdStr,
+}) => {
+  const normalized = normalizeMailboxAddress(address);
+  if (!normalized) return false;
+  const row = occupancyByAddress.get(normalized);
+  if (!row) return true;
+  if (row.concreteOrgKeys.size === 0) return true;
+  return (
+    row.concreteOrgKeys.size === 1 &&
+    row.concreteOrgKeys.has(requestorOrgIdStr)
+  );
+};
+
+async function loadActiveMailboxOccupancy({
+  Request,
+  scopeFilter = {},
+  excludeRequestMongoId = "",
+  session = null,
+}) {
   let activeRequestsQuery = Request.find(
     buildActiveMailboxOccupancyFilter({
       requestCategory: REQUEST_CATEGORY.ORDER,
       scopeFilter,
+      excludeRequestMongoId,
     }),
   )
     .select(
       // manufacturerStage 필수: isMailboxOccupancyCandidate가 stage로 점유 여부를 판정한다.
-      // select 누락 시 점유가 전부 제외되어 서로 다른 업체가 A1A1 등 동일 우편함에 섞인다.
+      // select 누락 시 점유가 가짜로 제외되어 서로 다른 업체가 A1A1 등 동일 우편함에 섞인다.
       "_id mailboxAddress businessAnchorId requestor manufacturerStage deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode",
     )
     .populate("requestor", "businessAnchorId")
@@ -263,31 +287,165 @@ export async function allocateVirtualMailboxAddress(
   }
 
   const activeRequestsRaw = await activeRequestsQuery;
+  return activeRequestsRaw.filter((row) => isMailboxOccupancyCandidate(row));
+}
 
-  const activeRequests = (excludeRequestMongoId
-    ? activeRequestsRaw.filter(
-        (row) => String(row?._id || "").trim() !== excludeRequestMongoId,
-      )
-    : activeRequestsRaw
-  ).filter((row) => isMailboxOccupancyCandidate(row));
+async function syncMailboxAnchorSlot({
+  MailboxAnchorSlot,
+  requestorOrgIdStr,
+  mailboxAddress,
+}) {
+  const address = normalizeMailboxAddress(mailboxAddress);
+  if (!requestorOrgIdStr || !address) return;
 
-  // 같은 의뢰자가 이미 할당받은 우편함이 있는지 확인
-  // 단, "다른 의뢰자와 섞인 우편함"은 재사용하지 않는다.
+  await MailboxAnchorSlot.findOneAndUpdate(
+    { businessAnchorId: requestorOrgIdStr },
+    {
+      $set: {
+        mailboxAddress: address,
+        updatedAt: new Date(),
+      },
+      $setOnInsert: {
+        businessAnchorId: requestorOrgIdStr,
+      },
+    },
+    { upsert: true, new: true },
+  );
+}
+
+async function readMailboxAnchorSlot({
+  MailboxAnchorSlot,
+  requestorOrgIdStr,
+}) {
+  if (!requestorOrgIdStr) return null;
+  const slot = await MailboxAnchorSlot.findOne({
+    businessAnchorId: requestorOrgIdStr,
+  }).lean();
+  if (!slot) return null;
+  const address = normalizeMailboxAddress(slot.mailboxAddress);
+  if (!address) return null;
+  return { ...slot, mailboxAddress: address };
+}
+
+async function withMailboxAllocationLock(requestorOrgIdStr, task) {
+  const { runWithJobLock } = await import("../../utils/distributedJobLock.js");
+  const lockName = `mailbox-alloc:${requestorOrgIdStr}`;
+  const ownerId = `mailbox-${process.pid}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+
+  for (let attempt = 0; attempt < MAILBOX_ALLOC_LOCK_MAX_ATTEMPTS; attempt += 1) {
+    const locked = await runWithJobLock({
+      name: lockName,
+      ownerId,
+      leaseMs: MAILBOX_ALLOC_LOCK_LEASE_MS,
+      heartbeatMs: MAILBOX_ALLOC_LOCK_HEARTBEAT_MS,
+      task,
+    });
+    if (locked?.acquired) {
+      return locked.result;
+    }
+    await sleep(MAILBOX_ALLOC_LOCK_RETRY_MS + Math.floor(Math.random() * 40));
+  }
+
+  throw new Error("우편함 할당 잠금을 획득하지 못했습니다. 잠시 후 다시 시도해주세요.");
+}
+
+async function resolveMailboxAddressUnderLock({
+  Request,
+  MailboxAnchorSlot,
+  requestorOrgIdStr,
+  excludeRequestMongoId = "",
+  session = null,
+  scopeFilter = {},
+}) {
+  // 커밋된 점유 뷰를 우선 읽는다.
+  // (review-status 트랜잭션 스냅샷만 보면, 직전 병렬 배정이 아직 안 보여
+  //  같은 업체에 빈 우편함을 중복 할당하는 레이스가 난다.)
+  const committedActiveRequests = await loadActiveMailboxOccupancy({
+    Request,
+    scopeFilter,
+    excludeRequestMongoId,
+    session: null,
+  });
+
+  let activeRequests = committedActiveRequests;
+
+  // 같은 트랜잭션 안에서 직전에 배정한 주소도 재사용할 수 있도록 session 뷰를 병합한다.
+  if (session) {
+    const sessionActiveRequests = await loadActiveMailboxOccupancy({
+      Request,
+      scopeFilter,
+      excludeRequestMongoId,
+      session,
+    });
+    const byId = new Map();
+    for (const row of committedActiveRequests) {
+      byId.set(String(row?._id || ""), row);
+    }
+    for (const row of sessionActiveRequests) {
+      byId.set(String(row?._id || ""), row);
+    }
+    activeRequests = Array.from(byId.values());
+  }
+
   const reusableAddress = findReusableMailboxAddressForBusiness({
     activeRequests,
-    requestorOrgId,
+    requestorOrgId: requestorOrgIdStr,
   });
   if (reusableAddress) {
+    await syncMailboxAnchorSlot({
+      MailboxAnchorSlot,
+      requestorOrgIdStr,
+      mailboxAddress: reusableAddress,
+    });
     return reusableAddress;
   }
 
-  // 사용 중인 우편함 주소 목록
-  const usedAddresses = new Set(
-    Array.from(buildMailboxOccupancyByAddress(activeRequests).keys()).filter(Boolean),
-  );
+  const occupancyByAddress = buildMailboxOccupancyByAddress(activeRequests);
 
-  // 사용 중이지 않은 첫 번째 주소 찾기
-  const availableAddress = allAddresses.find(
+  // 아직 request 문서에 커밋되기 전인 동시 할당 손잡이(짧은 TTL 슬롯)
+  const slot = await readMailboxAnchorSlot({
+    MailboxAnchorSlot,
+    requestorOrgIdStr,
+  });
+  const slotAgeMs = slot?.updatedAt
+    ? Date.now() - new Date(slot.updatedAt).getTime()
+    : Number.POSITIVE_INFINITY;
+  if (
+    slot?.mailboxAddress &&
+    Number.isFinite(slotAgeMs) &&
+    slotAgeMs >= 0 &&
+    slotAgeMs <= MAILBOX_SLOT_HANDOFF_MAX_AGE_MS &&
+    isAddressFreeOrOwnedByBusiness({
+      address: slot.mailboxAddress,
+      occupancyByAddress,
+      requestorOrgIdStr,
+    })
+  ) {
+    await syncMailboxAnchorSlot({
+      MailboxAnchorSlot,
+      requestorOrgIdStr,
+      mailboxAddress: slot.mailboxAddress,
+    });
+    return slot.mailboxAddress;
+  }
+
+  const usedAddresses = new Set(
+    Array.from(occupancyByAddress.keys()).filter(Boolean),
+  );
+  // 다른 업체의 미커밋 슬롯도 사용 중으로 본다.
+  const foreignSlots = await MailboxAnchorSlot.find({
+    businessAnchorId: { $ne: requestorOrgIdStr },
+  })
+    .select("mailboxAddress")
+    .lean();
+  for (const foreign of foreignSlots) {
+    const address = normalizeMailboxAddress(foreign?.mailboxAddress);
+    if (address) usedAddresses.add(address);
+  }
+
+  const availableAddress = ALL_MAILBOX_ADDRESSES.find(
     (addr) => !usedAddresses.has(addr),
   );
 
@@ -295,7 +453,44 @@ export async function allocateVirtualMailboxAddress(
     throw new Error("할당 가능한 빈 우편함이 없습니다.");
   }
 
+  await syncMailboxAnchorSlot({
+    MailboxAnchorSlot,
+    requestorOrgIdStr,
+    mailboxAddress: availableAddress,
+  });
   return availableAddress;
+}
+
+export async function allocateVirtualMailboxAddress(
+  requestorOrgId,
+  options = {},
+) {
+  const requestorOrgIdStr = normalizeBusinessAnchorId(requestorOrgId);
+  if (!requestorOrgIdStr) {
+    throw new Error("우편함 할당에 businessAnchorId가 필요합니다.");
+  }
+
+  const { default: Request } = await import("../../models/request.model.js");
+  const { default: MailboxAnchorSlot } = await import(
+    "../../models/mailboxAnchorSlot.model.js"
+  );
+
+  const excludeRequestMongoId = String(
+    options?.excludeRequestMongoId || "",
+  ).trim();
+  const session = options?.session || null;
+  const scopeFilter = normalizeScopeFilter(options?.scopeFilter);
+
+  return withMailboxAllocationLock(requestorOrgIdStr, async () =>
+    resolveMailboxAddressUnderLock({
+      Request,
+      MailboxAnchorSlot,
+      requestorOrgIdStr,
+      excludeRequestMongoId,
+      session,
+      scopeFilter,
+    }),
+  );
 }
 
 export async function ensureMailboxAddressForBusiness({
@@ -306,6 +501,9 @@ export async function ensureMailboxAddressForBusiness({
   scopeFilter = {},
 }) {
   const { default: Request } = await import("../../models/request.model.js");
+  const { default: MailboxAnchorSlot } = await import(
+    "../../models/mailboxAnchorSlot.model.js"
+  );
 
   let requestorOrgIdStr = normalizeBusinessAnchorId(requestorOrgId);
   const currentMailboxAddressStr = normalizeMailboxAddress(
@@ -338,55 +536,16 @@ export async function ensureMailboxAddressForBusiness({
 
   const normalizedScopeFilter = normalizeScopeFilter(scopeFilter);
 
-  let activeRequestsQuery = Request.find(
-    buildActiveMailboxOccupancyFilter({
-      requestCategory: REQUEST_CATEGORY.ORDER,
-      scopeFilter: normalizedScopeFilter,
+  return withMailboxAllocationLock(requestorOrgIdStr, async () =>
+    resolveMailboxAddressUnderLock({
+      Request,
+      MailboxAnchorSlot,
+      requestorOrgIdStr,
       excludeRequestMongoId: requestMongoId
         ? String(requestMongoId || "").trim()
         : "",
+      session,
+      scopeFilter: normalizedScopeFilter,
     }),
-  )
-    .select(
-      // manufacturerStage 필수: isMailboxOccupancyCandidate가 stage로 점유 여부를 판정한다.
-      // select 누락 시 점유가 전부 제외되어 서로 다른 업체가 A1A1 등 동일 우편함에 섞인다.
-      "_id mailboxAddress businessAnchorId requestor manufacturerStage deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode",
-    )
-    .populate("requestor", "businessAnchorId")
-    .populate(
-      "deliveryInfoRef",
-      "trackingNumber shippedAt deliveredAt tracking.lastStatusCode tracking.lastStatusText",
-    )
-    .lean();
-
-  if (session) {
-    activeRequestsQuery = activeRequestsQuery.session(session);
-  }
-
-  const activeRequestsRaw = await activeRequestsQuery;
-  const activeRequests = activeRequestsRaw.filter((row) =>
-    isMailboxOccupancyCandidate(row),
   );
-
-  const reusableAddress = findReusableMailboxAddressForBusiness({
-    activeRequests,
-    requestorOrgId: requestorOrgIdStr,
-  });
-
-  // 핵심 정책: 같은 businessAnchor의 활성 의뢰가 이미 쓰는 우편함이 있으면
-  // 현재 의뢰의 mailboxAddress가 달라도 그 주소로 수렴시킨다.
-  // (세척.패킹 -> 포장.발송 전환 중 기존 서로 다른 주소를 유지해 박스가 분할되는 현상 방지)
-  if (reusableAddress) {
-    return reusableAddress;
-  }
-
-  // 중요: 현재 의뢰에 남아 있는 mailboxAddress는 재사용 근거가 아니다.
-  // - 롤백/재승인 시 과거 주소가 남아 있으면 빈칸 우선 원칙(첫 번째 빈칸)을 위반하게 된다.
-  // - 동일 businessAnchor의 다른 활성 점유가 있을 때만 reusableAddress로 수렴한다.
-  // 따라서 reusableAddress가 없으면 현재값 존재 여부와 무관하게 첫 번째 빈칸을 새로 할당한다.
-  return allocateVirtualMailboxAddress(requestorOrgIdStr, {
-    excludeRequestMongoId: requestMongoId,
-    session,
-    scopeFilter: normalizedScopeFilter,
-  });
 }

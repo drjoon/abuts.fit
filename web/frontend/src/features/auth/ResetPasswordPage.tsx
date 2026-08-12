@@ -92,8 +92,8 @@ export const ResetPasswordPage = () => {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/40 via-cyan-400/30 to-emerald-300/30 blur-[180px]" />
-        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-orange-400/20 blur-[180px]" />
+        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-primary/40 via-primary/30 to-primary/30 blur-[180px]" />
+        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-primary/40 via-destructive/30 to-accent/20 blur-[180px]" />
         <div
           className="absolute inset-0 opacity-[0.08]"
           style={{
@@ -108,7 +108,7 @@ export const ResetPasswordPage = () => {
         <div className="space-y-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
             <span>account</span>
-            <span className="h-1 w-1 rounded-full bg-emerald-300" />
+            <span className="h-1 w-1 rounded-full bg-primary/70" />
             <span>security</span>
           </div>
           <h1 className="text-3xl font-semibold text-white">
@@ -132,7 +132,7 @@ export const ResetPasswordPage = () => {
                 </p>
               )}
               {isTokenMissing && (
-                <p className="text-sm text-amber-300">
+                <p className="text-sm text-accent/80">
                   재설정 토큰이 유효하지 않습니다. 이메일 링크를 다시
                   확인해주세요.
                 </p>

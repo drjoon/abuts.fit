@@ -89,6 +89,15 @@ const normalizeFinishLinePayload = (finishLine) => {
   };
 };
 
+const normalizeFrontPointPayload = (frontPoint) => {
+  if (!frontPoint || typeof frontPoint !== "object") return null;
+  const x = Number(frontPoint.x);
+  const y = Number(frontPoint.y);
+  const z = Number(frontPoint.z);
+  if (![x, y, z].every((v) => Number.isFinite(v))) return null;
+  return { x, y, z };
+};
+
 // [정책] uploadBufferToRhino / ensureStlOnRhinoStore 제거
 // 백엔드가 rhino-server에 직접 파일을 전송하던 방식 삭제.
 // rhino-server의 /api/rhino/process-file 호출 시 파일이 없으면
@@ -260,6 +269,85 @@ export const saveManualFinishLine = asyncHandler(async (req, res) => {
       requestId: request.requestId,
       filePath,
       finishLine: request.caseInfos.finishLine,
+    },
+  });
+});
+
+export const saveManualFrontPoint = asyncHandler(async (req, res) => {
+  const requestId = String(req.body?.requestId || "").trim();
+  const filePath = String(req.body?.filePath || req.body?.fileName || "").trim();
+  const frontPointRaw =
+    req.body?.frontPoint && typeof req.body.frontPoint === "object"
+      ? req.body.frontPoint
+      : null;
+
+  if (!requestId) {
+    throw new ApiError(400, "requestId is required");
+  }
+  if (!filePath) {
+    throw new ApiError(400, "filePath is required");
+  }
+
+  const normalized = normalizeFrontPointPayload(frontPointRaw);
+  if (!normalized) {
+    throw new ApiError(400, "frontPoint must be a valid {x,y,z} point");
+  }
+
+  const request = await Request.findOne({ requestId });
+  if (!request) {
+    throw new ApiError(404, "Request not found");
+  }
+
+  request.caseInfos = request.caseInfos || {};
+  // 수동 Front Point:
+  // - FrontPointX(Splitline_1) SSOT로 사용
+  // - Face.RightX = FrontPointX + frontFaceEndOffsetMm
+  //   (수동 시 offset=0 → Face 끝이 찍은 Front Point에 정렬)
+  request.caseInfos.frontPoint = {
+    ...normalized,
+    source: "frontend-manual",
+  };
+  request.caseInfos.frontFaceEndOffsetMm = 0;
+  request.caseInfos.stlMetadataUpdatedAt = new Date();
+  await request.save();
+
+  let normalizedUpdatedRequest = null;
+  try {
+    normalizedUpdatedRequest = await normalizeRequestForResponse(request);
+  } catch {
+    normalizedUpdatedRequest = null;
+  }
+
+  const eventMetadata = {
+    maxDiameter: request.caseInfos?.maxDiameter,
+    connectionDiameter: request.caseInfos?.connectionDiameter,
+    totalLength: request.caseInfos?.totalLength,
+    updatedAt: request.caseInfos?.stlMetadataUpdatedAt,
+    l1: request.caseInfos?.l1,
+    taperAngle: request.caseInfos?.taperAngle,
+    tiltAxisVector: request.caseInfos?.tiltAxisVector,
+    frontPoint: request.caseInfos.frontPoint,
+    frontFaceEndOffsetMm: request.caseInfos.frontFaceEndOffsetMm,
+    taperGuide: request.caseInfos?.taperGuide,
+    hexRotation: request.caseInfos?.hexRotation,
+    finishLine: request.caseInfos?.finishLine || null,
+  };
+
+  emitAppEventToRoles(["manufacturer", "admin"], "request:stl-metadata-updated", {
+    source: "manual-front-point",
+    requestId: request.requestId,
+    requestMongoId: String(request._id || "").trim() || null,
+    metadata: eventMetadata,
+    request: normalizedUpdatedRequest,
+  });
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      filePath,
+      frontPoint: request.caseInfos.frontPoint,
+      frontFaceEndOffsetMm: request.caseInfos.frontFaceEndOffsetMm,
     },
   });
 });

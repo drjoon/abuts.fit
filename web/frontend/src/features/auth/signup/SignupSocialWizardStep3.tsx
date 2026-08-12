@@ -97,8 +97,8 @@ export const SignupSocialWizardStep2 = ({
     return (
       <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5">
         <div className="flex items-start gap-3">
-          <div className="rounded-full bg-cyan-500/20 p-2">
-            <Mail className="h-5 w-5 text-cyan-400" />
+          <div className="rounded-full bg-primary/20 p-2">
+            <Mail className="h-5 w-5 text-primary/70" />
           </div>
           <div className="flex-1 space-y-1 text-sm">
             <p className="font-medium text-white">
@@ -191,7 +191,7 @@ export const SignupSocialWizardStep2 = ({
               이메일
             </Label>
             {emailVerifiedAt && (
-              <div className="flex items-center gap-1 text-xs text-green-600">
+              <div className="flex items-center gap-1 text-xs text-primary-strong">
                 <CheckCircle2 className="w-4 h-4" />
                 인증 완료
               </div>

@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import type { RequestBase } from "@/types/request";
+import { getDeadlineSemanticClasses } from "@/shared/ui/semanticStatus";
 
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
@@ -57,6 +58,26 @@ export type ManufacturerRequest = RequestBase & {
     elapsedSeconds?: number | null;
     tone?: "blue" | "amber" | "slate" | "indigo" | "rose" | null;
   } | null;
+  designClaim?: {
+    claimedBy?: string | { _id?: string } | null;
+    claimedByName?: string | null;
+    claimedAt?: string | null;
+    deadlineAt?: string | null;
+    claimHours?: number | null;
+  } | null;
+  designClaimMeta?: {
+    active?: boolean;
+    mine?: boolean;
+    peerBusy?: boolean;
+    claimable?: boolean;
+    remainingMs?: number | null;
+    warn?: boolean;
+  } | null;
+  designClaimPeerBusy?: boolean;
+  designClaimClaimable?: boolean;
+  designClaimMine?: boolean;
+  designClaimRemainingMs?: number | null;
+  designClaimWarn?: boolean;
 };
 
 export type ReviewStageKey =
@@ -108,7 +129,32 @@ export const isCopiedSampleRequest = (req?: ManufacturerRequest | null) => {
   return resolveRequestCategory(req) === REQUEST_CATEGORY.COPIED_SAMPLE;
 };
 
+/** caseInfos.productMode SSOT: 커스텀어벗 생산 vs 디자인+생산 */
+export const PRODUCT_MODE = {
+  CUSTOM_ABUTMENT: "custom_abutment",
+  DESIGN_CUSTOM_ABUTMENT: "design_custom_abutment",
+} as const;
+
+export type ProductMode =
+  (typeof PRODUCT_MODE)[keyof typeof PRODUCT_MODE];
+
+export const resolveProductMode = (
+  req?: ManufacturerRequest | null,
+): ProductMode => {
+  const raw = String(req?.caseInfos?.productMode || "").trim();
+  if (raw === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT) {
+    return PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT;
+  }
+  return PRODUCT_MODE.CUSTOM_ABUTMENT;
+};
+
+export const isDesignCustomAbutmentRequest = (
+  req?: ManufacturerRequest | null,
+) => resolveProductMode(req) === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT;
+
 // change-log (getDeadlineInfo):
+// - 2026-08-10: 마감 경과 문구 "출고일 지남" → "출고시간 지남".
+// - 2026-08-10: 마감 1시간 미만(remainingMs>0)은 "출고시간 지남"이 아니라 "출고 0시간전".
 // - 2026-08-06: 남은시간 뱃지 문구 "출고 N일 N시간" → "출고 N일전"(+시간).
 // - 2026-08-06: 남은시간 뱃지 문구 "마감 …" → "출고 …".
 // - 2026-08-06: createdAt 필수 조건 제거. 큐 아이템처럼 estimatedShipYmd만 있어도 마감 뱃지 계산.
@@ -141,16 +187,7 @@ export const getReviewLabel = (status?: string) => {
   return "검토전";
 };
 
-export const getReviewBadgeClassName = (status?: string) => {
-  const s = String(status || "").trim();
-  if (s === "APPROVED") {
-    return "text-[11px] px-2 py-0.5 bg-emerald-50 text-emerald-700 border-emerald-200";
-  }
-  if (s === "REJECTED") {
-    return "text-[11px] px-2 py-0.5 bg-rose-50 text-rose-700 border-rose-200";
-  }
-  return "text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200";
-};
+export { getReviewBadgeClassName } from "@/shared/ui/semanticStatus";
 
 export const getDiameterBucketIndex = (diameter?: number) => {
   if (diameter == null) return -1;
@@ -214,15 +251,12 @@ export const getDeadlineInfo = (
   const totalHours = countHoursRemaining(now, shipDateDeadline);
 
   const formatTimeRemaining = (hoursRemaining: number): string => {
-    if (remainingMs <= 0) return "출고일 지남";
+    // 16:00 KST 이후만 "출고시간 지남". 그 전(1시간 미만 포함)은 남은 시간으로 표시.
+    if (remainingMs <= 0) return "출고시간 지남";
 
     const hours = Math.max(0, Math.floor(hoursRemaining));
     const days = Math.floor(hours / 24);
     const restHours = hours % 24;
-
-    if (hours <= 0) {
-      return "출고일 지남";
-    }
 
     if (days > 0) {
       return restHours > 0
@@ -230,35 +264,14 @@ export const getDeadlineInfo = (
         : `출고 ${days}일전`;
     }
 
+    // 1시간 미만(0 ≤ floor < 1) → "출고 0시간전"
     return `출고 ${restHours}시간전`;
   };
 
   const getColorClasses = (
     hoursRemaining: number,
-  ): { border: string; badge: string } => {
-    if (hoursRemaining > 48) {
-      return {
-        border: "border-green-500 border-2",
-        badge: "bg-green-50 text-green-700 border-green-200",
-      };
-    }
-    if (hoursRemaining > 24) {
-      return {
-        border: "border-yellow-500 border-2",
-        badge: "bg-yellow-50 text-yellow-700 border-yellow-200",
-      };
-    }
-    if (hoursRemaining > 0) {
-      return {
-        border: "border-orange-500 border-2",
-        badge: "bg-orange-50 text-orange-700 border-orange-200",
-      };
-    }
-    return {
-      border: "border-red-500 border-2",
-      badge: "bg-red-50 text-red-700 border-red-200",
-    };
-  };
+  ): { border: string; badge: string } =>
+    getDeadlineSemanticClasses(hoursRemaining);
 
   const colors = getColorClasses(totalHours);
 

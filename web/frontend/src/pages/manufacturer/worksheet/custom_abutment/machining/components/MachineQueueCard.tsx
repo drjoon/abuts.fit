@@ -56,7 +56,7 @@ const getNcPreloadBadge = (slot: QueueItem | null) => {
     return (
       <Badge
         variant="outline"
-        className="shrink-0 rounded-md border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+        className="shrink-0 rounded-md border-accent-muted bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-strong"
       >
         업로드중
       </Badge>
@@ -66,7 +66,7 @@ const getNcPreloadBadge = (slot: QueueItem | null) => {
     return (
       <Badge
         variant="outline"
-        className="shrink-0 rounded-md border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+        className="shrink-0 rounded-md border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong"
       >
         준비됨
       </Badge>
@@ -76,7 +76,7 @@ const getNcPreloadBadge = (slot: QueueItem | null) => {
     return (
       <Badge
         variant="outline"
-        className="shrink-0 rounded-md border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700"
+        className="shrink-0 rounded-md border-destructive-muted bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
       >
         실패
       </Badge>
@@ -512,7 +512,7 @@ export const MachineQueueCard = ({
             <button
               type="button"
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                assignOn ? "bg-emerald-500" : "bg-slate-300"
+                assignOn ? "bg-primary" : "bg-slate-300"
               }`}
               onClick={(e) => {
                 e.stopPropagation();
@@ -532,7 +532,7 @@ export const MachineQueueCard = ({
             <button
               type="button"
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                autoEnabled ? "bg-emerald-500" : "bg-slate-300"
+                autoEnabled ? "bg-primary" : "bg-slate-300"
               }`}
               onClick={(e) => {
                 e.stopPropagation();
@@ -638,7 +638,7 @@ export const MachineQueueCard = ({
               </button>
               <button
                 type="button"
-                className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                className="rounded-lg border border-destructive-muted bg-white px-2.5 py-1 text-[11px] font-semibold text-destructive hover:bg-destructive-soft disabled:opacity-50"
                 disabled={queueAdminLoading}
                 onClick={() => setClearConfirmOpen(true)}
               >
@@ -804,7 +804,7 @@ export const MachineQueueCard = ({
               !currentSlot
                 ? "border-slate-200 bg-white text-slate-400 cursor-not-allowed"
                 : isNowPlayingMachining
-                  ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-50 cursor-pointer"
+                  ? "border-primary-muted bg-primary-soft/60 hover:bg-primary-soft cursor-pointer"
                   : "border-slate-200 bg-slate-50 hover:bg-white cursor-pointer"
             } px-3 py-2.5`}
             onClick={(e) => {
@@ -844,7 +844,7 @@ export const MachineQueueCard = ({
                 </span>
                 {nowPlayingAnodizingOff ? (
                   <span
-                    className={`${chipSm} border-rose-200 bg-rose-50 text-rose-700`}
+                    className={`${chipSm} border-destructive-muted bg-destructive-soft text-destructive`}
                   >
                     아노 X
                   </span>
@@ -965,7 +965,7 @@ export const MachineQueueCard = ({
                 </span>
                 {nextUpAnodizingOff ? (
                   <span
-                    className={`${chipSm} border-rose-200 bg-rose-50 text-rose-700`}
+                    className={`${chipSm} border-destructive-muted bg-destructive-soft text-destructive`}
                   >
                     아노 X
                   </span>

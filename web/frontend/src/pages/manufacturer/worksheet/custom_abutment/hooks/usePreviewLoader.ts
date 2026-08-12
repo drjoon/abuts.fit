@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-11: 원본 프리뷰 File MIME/확장자를 STL/PLY/OBJ에 맞게 유지.
+// - 2026-08-11: cam STL 로드 시 파일명에 filled가 없으면 .filled.stl로 정규화(가이드 표시용).
+// - 2026-08-11: 가공(isCamStage) 단일 STL 로드 시 cam 슬롯에도 채워 오른쪽 FL/FP 뷰어가 준비와 동일하게 동작.
 // - 2026-08-06: 가공 큐 스냅샷에 designSoftware/헥스 회전 누락 시 full request로 보강.
 // - 2026-08-06: 출고예정일(estimatedShipYmd)이 없을 때도 summary enrichment 트리거.
 // related files:
@@ -7,17 +10,19 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/cnc/production.js
 import { useCallback, useRef } from "react";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
+import { fileFromModelBlob } from "@/shared/files/modelPreviewFile";
 import {
   getReviewStageKeyByTab,
   type ManufacturerRequest,
 } from "../utils/request";
 import { toast as toastFn, useToast } from "@/shared/hooks/use-toast";
 
-const inFlightSignedUrlMap = new Map<string, Promise<string>>();
+const inFlightSignedUrlMap = new Map<string, Promise<{ url: string; fileName?: string }>>();
 const inFlightBlobMap = new Map<string, Promise<Blob>>();
 
 
@@ -135,9 +140,7 @@ export function usePreviewLoader({
         }
 
         const blobToFile = (blob: Blob, filename: string) =>
-          new File([blob], filename, {
-            type: blob.type || "model/stl",
-          });
+          fileFromModelBlob(blob, filename);
 
         const fetchSignedUrl = async (path: string) => {
           const dedupeKey = `signed-url:${path}`;
@@ -150,7 +153,10 @@ export function usePreviewLoader({
               });
               if (!res.ok) throw new Error(`signed url failed: ${path}`);
               const body = await res.json();
-              return String(body?.data?.url || "").trim();
+              return {
+                url: String(body?.data?.url || "").trim(),
+                fileName: String(body?.data?.fileName || "").trim() || undefined,
+              };
             },
           );
         };
@@ -160,7 +166,9 @@ export function usePreviewLoader({
 
         const fetchAsFileWithCache = async (
           cacheKey: string | null,
-          signedUrlOrResolver: string | (() => Promise<string>),
+          signedUrlOrResolver:
+            | string
+            | (() => Promise<string | { url: string; fileName?: string }>),
           filename: string,
           fetchOpts?: { disableCache?: boolean },
         ) => {
@@ -175,10 +183,19 @@ export function usePreviewLoader({
           }
 
           cacheMissCount += 1;
-          const signedUrl =
+          const resolved =
             typeof signedUrlOrResolver === "function"
               ? await signedUrlOrResolver()
               : signedUrlOrResolver;
+          const signedUrl =
+            typeof resolved === "string"
+              ? resolved
+              : String(resolved?.url || "").trim();
+          const resolvedName =
+            typeof resolved === "string"
+              ? ""
+              : String(resolved?.fileName || "").trim();
+          const effectiveName = resolvedName || filename;
           if (!signedUrl) throw new Error("signed url missing");
           const blobDedupeKey = `blob:${cacheKey || signedUrl}`;
           const blob = await getOrCreateInFlight(
@@ -199,7 +216,7 @@ export function usePreviewLoader({
             }
           }
 
-          return blobToFile(blob, filename);
+          return blobToFile(blob, effectiveName);
         };
 
         let targetReq = req;
@@ -450,10 +467,17 @@ export function usePreviewLoader({
 
         const loadCamStl = async (): Promise<File | null> => {
           if (!requestMongoId) return null;
-          const camName =
+          const rawCamName =
             targetReq.caseInfos?.camFile?.filePath ||
             targetReq.caseInfos?.camFile?.originalName ||
             originalName;
+          const rawBase = String(rawCamName).split("/").pop() || String(rawCamName);
+          // StlPreviewViewer는 파일명에 "filled"가 있어야 가이드/오버레이를 켠다.
+          const camName = /\.filled\./i.test(rawBase) || /filled/i.test(rawBase)
+            ? rawBase
+            : rawBase.toLowerCase().endsWith(".stl")
+              ? rawBase.replace(/\.stl$/i, ".filled.stl")
+              : `${rawBase}.filled.stl`;
           return fetchAsFileWithCache(
             camCacheKey,
             () => fetchSignedUrl(`/api/requests/${requestMongoId}/cam-file-url`),
@@ -546,11 +570,12 @@ export function usePreviewLoader({
                 const stageMeta =
                   targetReq.caseInfos?.stageFiles?.[effectiveStageKey];
                 if (!requestMongoId || !stageMeta?.s3Key) return;
-                const signedUrl = await fetchSignedUrl(
+                const signed = await fetchSignedUrl(
                   `/api/requests/${requestMongoId}/stage-file-url?stage=${encodeURIComponent(
                     effectiveStageKey,
                   )}`,
-                ).catch(() => "");
+                ).catch(() => null);
+                const signedUrl = String(signed?.url || "").trim();
                 if (!signedUrl) return;
                 setPreviewStageUrl(signedUrl);
                 setPreviewStageName(
@@ -570,7 +595,8 @@ export function usePreviewLoader({
 
         setPreviewFiles({
           original: leftStlFile,
-          cam: rightStlFile,
+          // 가공(isCamStage)은 왼쪽에만 STL을 받던 구조였으나, 오른쪽 FL/FP 뷰어에도 동일 filled를 쓴다.
+          cam: shouldUseSingleLeftStl ? leftStlFile : rightStlFile,
           title,
           request: targetReq,
           finishLinePoints: finishLineResult.points,

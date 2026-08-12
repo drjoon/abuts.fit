@@ -1172,7 +1172,7 @@ export const MachiningQueueBoard = ({
               variant="outline"
               className={`shrink-0 border px-2 py-0.5 text-[11px] font-semibold ${
                 isMockFromBackend === true
-                  ? "border-violet-200 bg-violet-50 text-violet-700"
+                  ? "border-primary-muted bg-primary-soft text-primary-strong"
                   : "border-slate-200 bg-slate-50 text-slate-700"
               }`}
               title={
@@ -1240,7 +1240,7 @@ export const MachiningQueueBoard = ({
           ) : null}
           {machiningAlerts.length > 0 ? (
             <div
-              className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700"
+              className="flex items-center gap-1 rounded-lg border border-destructive-muted bg-destructive-soft px-2 py-1 text-[11px] font-semibold text-destructive"
               title={machiningAlerts
                 .slice(0, 3)
                 .map(
@@ -1253,7 +1253,7 @@ export const MachiningQueueBoard = ({
               <span>Alert {machiningAlerts.length}</span>
               <button
                 type="button"
-                className="inline-flex h-4 w-4 items-center justify-center rounded text-red-600 hover:bg-red-100"
+                className="inline-flex h-4 w-4 items-center justify-center rounded text-destructive hover:bg-destructive-soft"
                 onClick={() => clearMachiningAlerts()}
                 title="알람 뱃지 지우기"
               >
@@ -1265,7 +1265,7 @@ export const MachiningQueueBoard = ({
           {expressRebalanceAlert &&
           Array.isArray(expressRebalanceAlert.moved) &&
           expressRebalanceAlert.moved.length > 0 ? (
-            <div className="flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800">
+            <div className="flex items-center gap-1 rounded-lg border border-primary-muted bg-primary-soft px-2 py-1 text-[11px] font-semibold text-primary-strong">
               <button
                 type="button"
                 className="inline-flex items-center gap-1 hover:underline"
@@ -1279,7 +1279,7 @@ export const MachiningQueueBoard = ({
               </button>
               <button
                 type="button"
-                className="inline-flex h-4 w-4 items-center justify-center rounded text-violet-700 hover:bg-violet-100"
+                className="inline-flex h-4 w-4 items-center justify-center rounded text-primary-strong hover:bg-primary-muted/50"
                 onClick={() => clearExpressRebalanceAlert()}
                 title="재배치 Alert 지우기"
               >
@@ -1336,7 +1336,7 @@ export const MachiningQueueBoard = ({
             <button
               type="button"
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                globalAutoEnabled ? "bg-emerald-500" : "bg-slate-300"
+                globalAutoEnabled ? "bg-primary" : "bg-slate-300"
               }`}
               onClick={() => {
                 void setGlobalAutoEnabled(!globalAutoEnabled);
@@ -1533,7 +1533,7 @@ export const MachiningQueueBoard = ({
             {machineInfoLoading ? (
               <div className="text-slate-500">불러오는 중…</div>
             ) : machineInfoError ? (
-              <div className="text-red-600">{machineInfoError}</div>
+              <div className="text-destructive">{machineInfoError}</div>
             ) : (
               <>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">

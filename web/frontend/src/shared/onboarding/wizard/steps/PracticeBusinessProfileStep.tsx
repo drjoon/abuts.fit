@@ -485,7 +485,7 @@ export const PracticeBusinessProfileStep = ({
                 errors.phone ? "border-destructive" : "",
               )}
             />
-            <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-emerald-600">
+            <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-primary-strong">
               <CheckCircle2 className="h-3.5 w-3.5" />
               인증됨
             </span>

@@ -35,7 +35,7 @@ export const MaterialDiameterChip: React.FC<MaterialDiameterChipProps> = ({
 
   const commonClass =
     tone === "danger"
-      ? "inline-flex items-center justify-center bg-red-50 text-red-700 border border-red-300 hover:bg-red-100 hover:text-red-800 transition-colors disabled:opacity-40 shadow-sm text-[10px] font-extrabold"
+      ? "inline-flex items-center justify-center bg-destructive-soft text-destructive border border-destructive/80 hover:bg-destructive-soft hover:text-destructive transition-colors disabled:opacity-40 shadow-sm text-[10px] font-extrabold"
       : "inline-flex items-center justify-center bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm text-[10px] font-extrabold";
 
   if (variant === "pill") {

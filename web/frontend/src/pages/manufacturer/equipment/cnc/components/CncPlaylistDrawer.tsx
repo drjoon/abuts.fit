@@ -125,7 +125,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
       }
     >
       {readOnly ? (
-        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+        <div className="mb-3 rounded-xl border border-accent-muted bg-accent-soft px-3.5 py-2.5 text-xs text-accent-strong">
           {readOnlyMessage ||
             "브리지 서버가 오프라인이라 예약목록을 DB에서 조회했습니다. 현재는 읽기 전용입니다."}
         </div>
@@ -239,14 +239,14 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                     ) : null}
                     {job.anodizingEnabled === false ? (
                       <span
-                        className={`${chipSm} border-rose-200 bg-rose-50 text-rose-700`}
+                        className={`${chipSm} border-destructive-muted bg-destructive-soft text-destructive`}
                       >
                         아노 X
                       </span>
                     ) : null}
                     {hasNc ? (
                       <span
-                        className={`${chipSm} border-cyan-200 bg-cyan-50 text-cyan-700`}
+                        className={`${chipSm} border-primary-muted bg-primary-soft text-primary-strong`}
                       >
                         NC
                       </span>
@@ -257,7 +257,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                     ) : null}
                     {job.paused ? (
                       <span
-                        className={`${chipSm} border-amber-200 bg-amber-50 text-amber-800`}
+                        className={`${chipSm} border-accent-muted bg-accent-soft text-accent-strong`}
                       >
                         일시정지
                       </span>

@@ -139,6 +139,14 @@ export async function triggerEspritForNc({
       TaperAngle: Number(request?.caseInfos?.taperAngle || 0),
       TiltAxisVector: request?.caseInfos?.tiltAxisVector || null,
       FrontPoint: request?.caseInfos?.frontPoint || null,
+      // 수동 Front Point 시 Face 끝 오프셋(mm). 없으면 Esprit 기본 +1.0mm.
+      FrontFaceEndOffsetMm: (() => {
+        const raw = Number(request?.caseInfos?.frontFaceEndOffsetMm);
+        return Number.isFinite(raw) ? raw : null;
+      })(),
+      FrontPointManual:
+        String(request?.caseInfos?.frontPoint?.source || "").trim() ===
+        "frontend-manual",
       // One-Phase 제어 플래그 (2026-06-08): Two-Phase가 기본값, One-Phase는 명시적 요청
       OnePhase: Boolean(onePhase),
     };

@@ -80,13 +80,15 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
 
   const [requestorStats, setRequestorStats] =
     useState<RequestorReferralStats | null>(null);
-  const [loadingRequestor, setLoadingRequestor] = useState(false);
+  const [loadingRequestor, setLoadingRequestor] = useState(Boolean(fetchStats));
 
   const [directMembers, setDirectMembers] = useState<DirectMemberRow[]>([]);
-  const [loadingDirectMembers, setLoadingDirectMembers] = useState(false);
+  const [loadingDirectMembers, setLoadingDirectMembers] = useState(
+    Boolean(fetchDirectMembers),
+  );
 
   const [treeData, setTreeData] = useState<ReferralTreeNode | null>(null);
-  const [loadingTree, setLoadingTree] = useState(false);
+  const [loadingTree, setLoadingTree] = useState(Boolean(fetchTree));
   const [treeMemberCount, setTreeMemberCount] = useState<number | null>(null);
 
   const isReferralEligible =
@@ -107,7 +109,10 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
   }, [referralCode]);
 
   useEffect(() => {
-    if (!token || !isReferralEligible || !fetchStats) return;
+    if (!fetchStats || !token || !isReferralEligible) {
+      setLoadingRequestor(false);
+      return;
+    }
 
     setLoadingRequestor(true);
     request<any>({
@@ -133,7 +138,10 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
   }, [fetchStats, isReferralEligible, toast, token]);
 
   useEffect(() => {
-    if (!token || !isReferralEligible || !fetchDirectMembers) return;
+    if (!fetchDirectMembers || !token || !isReferralEligible) {
+      setLoadingDirectMembers(false);
+      return;
+    }
 
     setLoadingDirectMembers(true);
     request<any>({
@@ -160,12 +168,13 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
 
   useEffect(() => {
     if (
+      !fetchTree ||
       !token ||
       !isReferralEligible ||
       !user?.id ||
-      !user?.businessAnchorId ||
-      !fetchTree
+      !user?.businessAnchorId
     ) {
+      setLoadingTree(false);
       return;
     }
 
@@ -199,6 +208,7 @@ export const useReferralData = (options?: UseReferralDataOptions) => {
     toast,
     token,
     user?.businessAnchorId,
+    user?.id,
     user?.role,
   ]);
 

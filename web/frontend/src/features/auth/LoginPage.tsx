@@ -16,11 +16,16 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
+import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 type DevAccount = {
   label: string;
   email: string;
   password: string;
+};
+
+const resolvePostLoginPath = () => {
+  return resolveEntryDashboardPath(useAuthStore.getState().user);
 };
 
 const isDev = import.meta.env.DEV;
@@ -113,7 +118,7 @@ export const LoginPage = () => {
     try {
       const result = await login(credential, password);
       if (result.success) {
-        navigate("/dashboard", { replace: true });
+        navigate(resolvePostLoginPath(), { replace: true });
       } else {
         toast({
           title: "로그인 실패",
@@ -142,7 +147,7 @@ export const LoginPage = () => {
     try {
       const result = await login(account.email, account.password);
       if (result.success) {
-        navigate("/dashboard", { replace: true });
+        navigate(resolvePostLoginPath(), { replace: true });
       } else {
         toast({
           title: "로그인 실패",
@@ -165,8 +170,8 @@ export const LoginPage = () => {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/40 via-cyan-400/30 to-emerald-300/30 blur-[180px]" />
-        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-orange-400/20 blur-[180px]" />
+        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-primary/40 via-primary/30 to-primary/30 blur-[180px]" />
+        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-primary/40 via-destructive/30 to-accent/20 blur-[180px]" />
         <div
           className="absolute inset-0 opacity-[0.08]"
           style={{
@@ -181,7 +186,7 @@ export const LoginPage = () => {
         <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-left">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
             <span>secure access</span>
-            <span className="h-1 w-1 rounded-full bg-emerald-300" />
+            <span className="h-1 w-1 rounded-full bg-primary/70" />
             <span>abuts.fit</span>
           </div>
           <div className="space-y-4">
@@ -356,7 +361,7 @@ export const LoginPage = () => {
                       </button>
                       <Link
                         to="/forgot-password"
-                        className="text-emerald-300 hover:text-emerald-200"
+                        className="text-primary/70 hover:text-primary-muted"
                       >
                         비밀번호를 잊으셨나요?
                       </Link>
@@ -413,7 +418,7 @@ export const LoginPage = () => {
                 <button
                   key={acc.email}
                   type="button"
-                  className="rounded-2xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-emerald-300/60"
+                  className="rounded-2xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-primary/60"
                   disabled={isLoading}
                   onClick={() => handleDevLogin(acc)}
                 >

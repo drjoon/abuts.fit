@@ -19,6 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { cn } from "@/shared/ui/cn";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import {
@@ -26,6 +28,7 @@ import {
   Camera,
   KeyRound,
   Link2,
+  Phone,
   RefreshCcw,
   Check,
   ChevronsUpDown,
@@ -67,6 +70,7 @@ interface AccountTabProps {
 export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
   const { token, user, logout, loginWithToken } = useAuthStore();
+  const { kind: requestorKind } = useRequestorBusinessAccess();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
@@ -711,158 +715,186 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   }
 
   return (
-    <div className="space-y-6">
-      <Card className="app-glass-card app-glass-card--lg">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <User className="h-5 w-5" />
+    <Card className="app-glass-card app-glass-card--lg">
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              <User className="h-5 w-5 text-primary-strong" />
               계정 설정
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant={
-                    userData?.role === "admin" ? "destructive" : "default"
-                  }
-                >
-                  {userData?.role === "requestor"
-                    ? "의뢰자"
-                    : userData?.role === "manufacturer"
-                      ? "제조사"
-                      : "어벗츠.핏"}
-                </Badge>
-              </div>
+              <Badge
+                variant={
+                  userData?.role === "admin" ? "destructive" : "default"
+                }
+                className="rounded-md"
+              >
+                {userData?.role === "requestor" ||
+                userData?.role === "practice"
+                  ? getRequestorRoleBadgeLabel(
+                      requestorKind ??
+                        (userData?.role === "practice" ? "practice" : null),
+                    )
+                  : userData?.role === "manufacturer"
+                    ? "제조사"
+                    : userData?.role === "salesman"
+                      ? "영업자"
+                      : userData?.role === "devops"
+                        ? "개발운영사"
+                        : "어벗츠.핏"}
+              </Badge>
+            </CardTitle>
+            <CardDescription className="text-[13px] leading-relaxed">
+              프로필, 연락처, 로그인 방식을 관리합니다.
+            </CardDescription>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 shrink-0 rounded-xl border-destructive/80 text-destructive/80 hover:bg-destructive-soft hover:text-destructive"
+            onClick={() => setWithdrawDialogOpen(true)}
+            disabled={withdrawing}
+          >
+            <UserX className="h-4 w-4" />
+            {withdrawing ? "처리 중..." : "계정 해지"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+              <Camera className="h-4 w-4 text-primary-strong" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">프로필 이미지</p>
+              <p className="text-xs text-muted-foreground">
+                아바타를 선택하거나 새 그룹을 불러옵니다
+              </p>
             </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              className="border-red-400 text-red-400 hover:bg-red-50 hover:text-red-700"
-              onClick={() => setWithdrawDialogOpen(true)}
-              disabled={withdrawing}
-            >
-              <UserX className="h-4 w-4" />
-              {withdrawing ? "처리 중..." : "계정 해지"}
-            </Button>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-6">
-            {/* Profile Image */}
-            <div className="space-y-2">
-              <Label>프로필 이미지</Label>
-              <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage
-                    src={accountData.profileImage || undefined}
-                    alt={accountData.name}
-                  />
-                  <AvatarFallback className="bg-primary/10">
-                    <Camera className="h-8 w-8 text-primary" />
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <div className="grid grid-cols-5 gap-2">
-                    {avatarOptions.map((opt) => (
-                      <button
-                        key={opt.url}
-                        type="button"
-                        className={cn(
-                          "rounded-full border bg-white/80 p-0.5 transition-colors",
-                          accountData.profileImage === opt.url
-                            ? "border-primary"
-                            : "border-border hover:border-muted-foreground/40",
-                        )}
-                        onClick={() => {
-                          setAccountData((prev) => ({
-                            ...prev,
-                            profileImage: opt.url,
-                          }));
-                          scheduleSave();
-                        }}
-                      >
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage
-                            seed={opt.seed || avatarSeedFromUrl(opt.url)}
-                            fallbackInitial={accountData.name}
-                            src={opt.url}
-                            alt={accountData.name}
-                          />
-                          <AvatarFallback />
-                        </Avatar>
-                      </button>
-                    ))}
-
-                    <button
-                      type="button"
-                      className={cn(
-                        "rounded-full border bg-white/80 p-0.5 transition-colors",
-                        isPrefetchReady
-                          ? "border-border hover:border-muted-foreground/40"
-                          : "border-dashed border-border opacity-70",
-                      )}
-                      onClick={refreshAvatars}
-                      aria-label="새 이미지 그룹 불러오기"
-                    >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
-                        <RefreshCcw className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <span>기본 정보</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">이름</Label>
-                <Input
-                  id="name"
-                  value={accountData.name}
+          </div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <Avatar className="h-20 w-20 ring-2 ring-white shadow-sm">
+              <AvatarImage
+                src={accountData.profileImage || undefined}
+                alt={accountData.name}
+              />
+              <AvatarFallback className="bg-primary-soft">
+                <Camera className="h-8 w-8 text-primary-strong" />
+              </AvatarFallback>
+            </Avatar>
+            <div className="grid grid-cols-5 gap-2">
+              {avatarOptions.map((opt) => (
+                <button
+                  key={opt.url}
+                  type="button"
                   className={cn(
-                    fieldErrors.name
-                      ? "border-destructive focus-visible:ring-destructive"
-                      : "",
+                    "rounded-full border bg-white/80 p-0.5 transition-all shadow-sm",
+                    accountData.profileImage === opt.url
+                      ? "border-primary-strong ring-2 ring-primary-muted"
+                      : "border-slate-200/80 hover:border-primary-muted",
                   )}
-                  onChange={(e) =>
+                  onClick={() => {
                     setAccountData((prev) => ({
                       ...prev,
-                      name: e.target.value,
-                    }))
-                  }
-                  onChangeCapture={() =>
-                    setFieldErrors((prev) => ({ ...prev, name: undefined }))
-                  }
-                  onBlur={() => {
-                    const savedKey = JSON.stringify({
-                      name: accountData.name,
-                      phoneNumber: phoneValidation.normalized,
-                      profileImage: accountData.profileImage,
-                    });
-                    if (savedKey !== lastSavedKeyRef.current) {
-                      scheduleSave();
-                    }
+                      profileImage: opt.url,
+                    }));
+                    scheduleSave();
                   }}
-                />
-                {!!fieldErrors.name && (
-                  <p className="text-xs text-destructive">{fieldErrors.name}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">이메일</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={accountData.email}
-                  readOnly
-                />
-              </div>
-              <div className="hidden md:block" />
-            </div>
+                >
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage
+                      seed={opt.seed || avatarSeedFromUrl(opt.url)}
+                      fallbackInitial={accountData.name}
+                      src={opt.url}
+                      alt={accountData.name}
+                    />
+                    <AvatarFallback />
+                  </Avatar>
+                </button>
+              ))}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <button
+                type="button"
+                className={cn(
+                  "rounded-full border bg-white/80 p-0.5 transition-colors shadow-sm",
+                  isPrefetchReady
+                    ? "border-slate-200/80 hover:border-primary-muted"
+                    : "border-dashed border-slate-200 opacity-70",
+                )}
+                onClick={refreshAvatars}
+                aria-label="새 이미지 그룹 불러오기"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
+                  <RefreshCcw className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+              <User className="h-4 w-4 text-primary-strong" />
+            </span>
+            <p className="text-sm font-semibold text-slate-900">기본 정보</p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="name">이름</Label>
+              <Input
+                id="name"
+                value={accountData.name}
+                className={cn(
+                  "h-10 rounded-xl",
+                  fieldErrors.name &&
+                    "border-destructive focus-visible:ring-destructive",
+                )}
+                onChange={(e) =>
+                  setAccountData((prev) => ({
+                    ...prev,
+                    name: e.target.value,
+                  }))
+                }
+                onChangeCapture={() =>
+                  setFieldErrors((prev) => ({ ...prev, name: undefined }))
+                }
+                onBlur={() => {
+                  const savedKey = JSON.stringify({
+                    name: accountData.name,
+                    phoneNumber: phoneValidation.normalized,
+                    profileImage: accountData.profileImage,
+                  });
+                  if (savedKey !== lastSavedKeyRef.current) {
+                    scheduleSave();
+                  }
+                }}
+              />
+              {!!fieldErrors.name && (
+                <p className="text-xs text-destructive">{fieldErrors.name}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">이메일</Label>
+              <Input
+                id="email"
+                type="email"
+                value={accountData.email}
+                readOnly
+                className="h-10 rounded-xl bg-white/60"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+              <Phone className="h-4 w-4 text-primary-strong" />
+            </span>
+            <p className="text-sm font-semibold text-slate-900">휴대폰 인증</p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label>국가</Label>
                 <Popover open={countryOpen} onOpenChange={setCountryOpen}>
@@ -965,7 +997,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   {phoneVerifiedAt ? (
                     <Button
                       variant="outline"
-                      className="w-full h-10 cursor-default border-green-200 bg-white text-green-600 hover:bg-white hover:text-green-600 disabled:opacity-100"
+                      className="w-full h-10 cursor-default border-primary-muted bg-white text-primary-strong hover:bg-white hover:text-primary-strong disabled:opacity-100"
                       disabled
                     >
                       <Check className="mr-2 h-4 w-4" />
@@ -1014,7 +1046,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                     <Button
                       type="button"
                       variant="outline"
-                      className="w-full h-10"
+                      className="h-10 w-full rounded-xl"
                       onClick={handleSendPhoneVerification}
                       disabled={!canSendPhoneVerification}
                     >
@@ -1025,19 +1057,28 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   )}
                 </div>
               </div>
-            </div>
           </div>
           {!!phoneValidation.message && !phoneValidation.ok && (
-            <p className="text-xs text-destructive -mt-4">
+            <p className="text-xs text-destructive">
               {phoneValidation.message}
             </p>
           )}
+        </section>
 
-          {hasAnyAuthMethod && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-3">
-                <Label>로그인 방식</Label>
-                <div className="flex flex-wrap gap-2 pt-1">
+        {hasAnyAuthMethod && (
+          <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                <KeyRound className="h-4 w-4 text-primary-strong" />
+              </span>
+              <p className="text-sm font-semibold text-slate-900">
+                로그인 · 보안
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+              <div className="space-y-2">
+                <Label>연결된 로그인</Label>
+                <div className="flex flex-wrap gap-2">
                   {authMethods.email && (
                     <Badge
                       variant="secondary"
@@ -1068,12 +1109,11 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               {authMethods.email && (
                 <>
                   {!showPasswordFields ? (
-                    <div className="space-y-2 md:col-span-3 lg:col-span-3">
-                      <Label className="opacity-0">변경</Label>
+                    <div className="space-y-2 lg:col-span-3">
                       <Button
                         type="button"
                         variant="outline"
-                        className="w-full h-10"
+                        className="h-10 w-full rounded-xl"
                         onClick={() => {
                           setShowPasswordFields(true);
                           setTimeout(() => {
@@ -1139,11 +1179,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="opacity-0">변경</Label>
                         <Button
                           type="submit"
                           variant="outline"
-                          className="w-full h-10"
+                          className="h-10 w-full rounded-xl"
                           disabled={
                             !passwordData.currentPassword ||
                             !passwordData.newPassword
@@ -1158,9 +1197,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                 </>
               )}
             </div>
-          )}
+          </section>
+        )}
 
-          <MultiActionDialog
+        <MultiActionDialog
             open={withdrawDialogOpen}
             title="정말 계정을 해지하시겠어요?"
             description={
@@ -1191,8 +1231,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               },
             ]}
           />
-        </CardContent>
-      </Card>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

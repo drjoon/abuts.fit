@@ -1,0 +1,46 @@
+// related files:
+// - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
+// - web/frontend/src/shared/components/practice/PracticeTransferFileDropTarget.tsx
+// - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
+// - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+
+export const PRACTICE_TRANSFER_ACCEPT =
+  ".stl,.ply,.obj,.png,.jpg,.jpeg,.webp,.bmp,.gif";
+
+export const PRACTICE_TRANSFER_MODEL_EXTENSIONS = new Set([
+  ".stl",
+  ".ply",
+  ".obj",
+]);
+
+export const PRACTICE_TRANSFER_IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".bmp",
+  ".gif",
+]);
+
+export const PRACTICE_TRANSFER_ALLOWED_EXTENSIONS = new Set([
+  ...PRACTICE_TRANSFER_MODEL_EXTENSIONS,
+  ...PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
+]);
+
+/** 기공의뢰 첨부 확장자 안내 (치과 intake · 기공소 결과파일 공통) */
+export const PRACTICE_ACCEPTED_HINT = "STL · PLY · OBJ · 이미지";
+
+export const getPracticeTransferFileExtension = (fileName: string) => {
+  const name = String(fileName || "").trim().toLowerCase();
+  const idx = name.lastIndexOf(".");
+  if (idx < 0) return "";
+  return name.slice(idx);
+};
+
+export const isPracticeTransferAcceptedFile = (file: File) => {
+  const ext = getPracticeTransferFileExtension(file.name);
+  return PRACTICE_TRANSFER_ALLOWED_EXTENSIONS.has(ext);
+};
+
+export const filterPracticeTransferFiles = (files: File[]) =>
+  files.filter((file) => isPracticeTransferAcceptedFile(file));

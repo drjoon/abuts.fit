@@ -179,7 +179,7 @@ export const CncSimpleProgramEditorModal: React.FC<
         onClick={(e) => e.stopPropagation()}
       >
         <header className="relative px-5 py-4 border-b border-slate-100">
-          <div className="absolute inset-0 bg-gradient-to-br from-sky-50 via-white to-violet-50" />
+          <div className="absolute inset-0 bg-gradient-to-br from-primary-soft via-white to-primary-soft" />
           <div className="relative flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="truncate text-[15px] font-extrabold text-slate-900">
@@ -209,7 +209,7 @@ export const CncSimpleProgramEditorModal: React.FC<
         </header>
 
         {error && (
-          <div className="px-5 py-2 text-xs text-red-700 bg-red-50 border-b border-red-200">
+          <div className="px-5 py-2 text-xs text-destructive bg-destructive-soft border-b border-destructive-muted">
             {error}
           </div>
         )}

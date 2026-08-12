@@ -129,13 +129,16 @@ export function ChatMessageBubble({
   const [pickerOpen, setPickerOpen] = useState(false);
   const senderName = String(message.sender?.name || "알 수 없음").trim();
   const myId = String(currentUserId || "").trim();
+  const isSystem = String(message.messageKind || "").trim() === "system";
   const replyPreview = normalizeReplyTo(message);
   const reactionGroups = useMemo(
     () => groupReactions(message.reactions, myId),
     [message.reactions, myId],
   );
 
-  const canInteract = typeof onReply === "function" || typeof onToggleReaction === "function";
+  const canInteract =
+    !isSystem &&
+    (typeof onReply === "function" || typeof onToggleReaction === "function");
   const replyTargetId = String(replyPreview?._id || "").trim();
   const canJumpToReply = Boolean(replyTargetId) && replyPreview?.content !== "삭제된 메시지입니다.";
 
@@ -149,6 +152,29 @@ export function ChatMessageBubble({
     if (!canJumpToReply) return;
     scrollToChatMessage(replyTargetId);
   };
+
+  if (isSystem) {
+    return (
+      <div
+        id={chatMessageDomId(String(message._id || ""))}
+        className="flex w-full justify-center scroll-mt-4 py-1.5"
+      >
+        <div
+          className={cn(
+            "max-w-[min(92%,28rem)] rounded-md bg-muted/70 px-3 py-1.5 text-center text-muted-foreground",
+            compact ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm",
+          )}
+        >
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug">
+            {message.content}
+          </p>
+          <p className={cn("mt-0.5 opacity-70", compact ? "text-[10px]" : "text-[11px]")}>
+            {formatTime(message.createdAt)}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -187,7 +213,7 @@ export function ChatMessageBubble({
                 "mb-2 block w-full min-w-0 rounded border-l-2 px-2 py-1 text-left transition-opacity",
                 isMine
                   ? "border-primary-foreground/50 bg-primary-foreground/10"
-                  : "border-blue-500 bg-background/60",
+                  : "border-primary bg-background/60",
                 canJumpToReply
                   ? "cursor-pointer hover:opacity-90"
                   : "cursor-default opacity-80",
@@ -265,7 +291,7 @@ export function ChatMessageBubble({
                 className={cn(
                   "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs bg-background shadow-sm transition-colors",
                   group.reactedByMe
-                    ? "border-blue-400 bg-blue-50 text-blue-700"
+                    ? "border-primary/70 bg-primary-soft text-primary-strong"
                     : "border-border text-foreground hover:bg-muted",
                   !onToggleReaction && "cursor-default",
                 )}

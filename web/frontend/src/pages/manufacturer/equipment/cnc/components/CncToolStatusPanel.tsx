@@ -91,16 +91,16 @@ function summaryLine(summary: ToolingSummary | null): string {
 }
 
 const STATUS_DOT: Record<HealthLevel, string> = {
-  ok: "bg-emerald-500",
-  warn: "bg-amber-400",
-  alarm: "bg-red-500",
+  ok: "bg-primary",
+  warn: "bg-accent/80",
+  alarm: "bg-destructive",
   unknown: "bg-slate-300",
 };
 
 const ROW_TINT: Record<HealthLevel, string> = {
-  ok: "bg-emerald-50/70",
-  warn: "bg-amber-50/80",
-  alarm: "bg-red-50/80",
+  ok: "bg-primary-soft/70",
+  warn: "bg-accent-soft/80",
+  alarm: "bg-destructive-soft/80",
   unknown: "bg-white",
 };
 
@@ -201,7 +201,7 @@ export function CncToolStatusPanel({
             <button
               type="button"
               onClick={() => setConfirmClearOpen(true)}
-              className="inline-flex items-center rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+              className="inline-flex items-center rounded-lg border border-destructive-muted bg-white px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive-soft"
             >
               공구 전체 삭제
             </button>
@@ -229,7 +229,7 @@ export function CncToolStatusPanel({
       </div>
 
       {pendingSlots.length > 0 ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+        <div className="rounded-xl border border-accent-muted bg-accent-soft px-3.5 py-2.5 text-xs text-accent-strong">
           <div className="font-semibold">교체 진행 중</div>
           <ul className="mt-1.5 space-y-1">
             {pendingSlots.map((s) => (
@@ -237,8 +237,8 @@ export function CncToolStatusPanel({
                 <span
                   className={`inline-block h-1.5 w-1.5 rounded-full ${
                     s.replacementStatus === "removing"
-                      ? "bg-amber-500"
-                      : "bg-red-500"
+                      ? "bg-accent"
+                      : "bg-destructive"
                   }`}
                 />
                 <span>
@@ -365,10 +365,10 @@ export function CncToolStatusPanel({
                               <span
                                 className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                                   isRemoving || isRemoved
-                                    ? "bg-amber-100 text-amber-800"
+                                    ? "bg-accent-soft text-accent-strong"
                                     : toolMeta?.status === "alarm"
-                                      ? "bg-red-100 text-red-700"
-                                      : "bg-amber-100 text-amber-800"
+                                      ? "bg-destructive-soft text-destructive"
+                                      : "bg-accent-soft text-accent-strong"
                                 }`}
                               >
                                 {statusLabel}
@@ -425,10 +425,10 @@ export function CncToolStatusPanel({
                                 <div
                                   className={`h-full rounded-full ${
                                     health === "alarm"
-                                      ? "bg-red-500"
+                                      ? "bg-destructive"
                                       : health === "warn"
-                                        ? "bg-amber-400"
-                                        : "bg-emerald-500"
+                                        ? "bg-accent/80"
+                                        : "bg-primary"
                                   }`}
                                   style={{
                                     width: `${Math.round(remain * 100)}%`,
@@ -443,7 +443,7 @@ export function CncToolStatusPanel({
                             <button
                               type="button"
                               onClick={() => onCompleteReplacement(t, slot)}
-                              className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                              className="rounded-md border border-primary bg-primary-muted/40 px-2 py-1 text-[11px] font-semibold text-primary-strong hover:bg-primary-soft"
                             >
                               완료
                             </button>
@@ -453,7 +453,7 @@ export function CncToolStatusPanel({
                               onClick={() => onRequestRemoval(t, slot)}
                               className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
                                 canBeginRemoval
-                                  ? "border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100"
+                                  ? "border-accent-muted bg-accent-soft text-accent-strong hover:bg-accent-soft"
                                   : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                               }`}
                             >
@@ -466,7 +466,7 @@ export function CncToolStatusPanel({
                             <button
                               type="button"
                               onClick={() => setPendingDeleteToolNum(toolNum)}
-                              className="rounded-md border border-red-200 bg-white px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50"
+                              className="rounded-md border border-destructive-muted bg-white px-2 py-1 text-[11px] font-semibold text-destructive hover:bg-destructive-soft"
                             >
                               삭제
                             </button>
@@ -482,15 +482,15 @@ export function CncToolStatusPanel({
 
           <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
               정상
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              <span className="h-1.5 w-1.5 rounded-full bg-accent/80" />
               주의
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
               교체 필요
             </span>
           </div>

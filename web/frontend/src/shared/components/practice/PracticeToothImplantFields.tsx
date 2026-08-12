@@ -366,8 +366,8 @@ export const PracticeToothImplantFields = ({
             : mode === "presets"
               ? "space-y-2"
               : stretchList
-                ? "flex min-h-0 flex-1 flex-col space-y-2 border-t border-sky-100 pt-3"
-                : "space-y-2 border-t border-sky-100 pt-3"
+                ? "flex min-h-0 flex-1 flex-col space-y-2 border-t border-primary-soft pt-3"
+                : "space-y-2 border-t border-primary-soft pt-3"
         }
       >
         {mode !== "presets" ? (
@@ -413,7 +413,7 @@ export const PracticeToothImplantFields = ({
                 return (
                   <div
                     key={`edit-${fav.id}`}
-                    className="grid grid-cols-2 gap-1.5 rounded-lg border border-sky-200 bg-white p-2 sm:grid-cols-4"
+                    className="grid grid-cols-2 gap-1.5 rounded-lg border border-primary-muted bg-white p-2 sm:grid-cols-4"
                   >
                     {(
                       [
@@ -477,13 +477,13 @@ export const PracticeToothImplantFields = ({
                   key={fav.id}
                   className={
                     isActive
-                      ? "flex items-center gap-1 rounded-lg border border-sky-400 bg-sky-100 px-2 py-1.5"
+                      ? "flex items-center gap-1 rounded-lg border border-primary/70 bg-primary-soft px-2 py-1.5"
                       : "flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5"
                   }
                 >
                   <button
                     type="button"
-                    className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-sm font-medium text-slate-800 hover:text-sky-700"
+                    className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-sm font-medium text-slate-800 hover:text-primary-strong"
                     title={favoriteLabel(fav)}
                     onClick={() => applyFavorite(fav)}
                   >
@@ -536,7 +536,7 @@ export const PracticeToothImplantFields = ({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-xl border border-sky-200/80 bg-sky-50/50 p-3 sm:p-4",
+        "flex flex-col gap-3 rounded-xl border border-primary-muted/80 bg-primary-soft/50 p-3 sm:p-4",
         className,
       )}
     >

@@ -25,6 +25,8 @@
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/shared/onboarding/wizard/SettingsWizard.tsx
+ * - web/frontend/src/shared/hooks/useS3TempUpload.ts
+ * - web/frontend/src/shared/hooks/useFilePreUpload.ts
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -58,7 +60,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore, type User } from "@/store/useAuthStore";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
-import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import {
   Popover,
   PopoverContent,
@@ -95,7 +97,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import {
   canSendPracticeTransfer,
-  resolveRequestorCapabilities,
+  resolveRequestorProfile,
 } from "@/shared/business/requestorCapabilities";
 import {
   formatPhoneNumberInput,
@@ -240,7 +242,9 @@ const canUseDropzoneSenderAccount = (user: User | null | undefined) => {
   if (user.role === "practice") return true;
   if (user.role !== "requestor") return false;
   return canSendPracticeTransfer(
-    resolveRequestorCapabilities({
+    resolveRequestorProfile({
+      userKind: user.requestorKind,
+      userServices: user.requestorServices,
       userCaps: user.requestorCapabilities,
       userRole: user.role,
       businessVerified: user.businessVerified,
@@ -332,9 +336,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
-const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
-const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이", "어벗 디자인"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
 
@@ -366,6 +368,7 @@ const sanitizeProsthesisTypeLabel = (value: string) => {
   const compact = trimmed.replace(/\s+/g, "");
   if (/^커스텀어벗\+?크라운$/i.test(compact)) return "크라운";
   if (/^커스텀어벗\+?브리지$/i.test(compact)) return "브리지";
+  if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "어벗 디자인";
   if (/^커스텀어벗$/i.test(compact)) return "";
   return trimmed;
 };
@@ -421,8 +424,14 @@ const toToothSortNumber = (toothNumber: string) => {
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" || prosthesisType === "Pontic";
 
-const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "크라운" || prosthesisType === "브리지";
+const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
+  const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
+  return (
+    prosthesisType === "크라운" ||
+    prosthesisType === "브리지" ||
+    /^(?:커스텀)?어벗디자인$/i.test(compact)
+  );
+};
 
 const normalizeToothWorks = (items: ToothWorkSelection[]) =>
   items
@@ -585,7 +594,16 @@ export const PracticeDropzonePage = () => {
 
   const fileCacheMetaKey = PRACTICE_FILE_CACHE_META_KEY;
   const fileCacheMaxTotalBytes = PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES;
-  const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
+  const {
+    ensureFilesUploaded,
+    preUploadFiles,
+    forgetFile,
+    clearPreUploadCache,
+  } = useFilePreUpload({ token: authToken });
+  const { uploadFilesWithToast } = useUploadWithProgressToast({
+    token: authToken,
+    uploadFiles: ensureFilesUploaded,
+  });
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
 
   const {
@@ -612,6 +630,25 @@ export const PracticeDropzonePage = () => {
     fileCacheMetaKey,
     fileCacheMaxTotalBytes,
   });
+
+  useEffect(() => {
+    if (!authToken || files.length === 0) return;
+    preUploadFiles(files);
+  }, [authToken, files, preUploadFiles]);
+
+  const removeFileWithCache = useCallback(
+    (idx: number) => {
+      const target = files[idx];
+      if (target) forgetFile(target);
+      removeFile(idx);
+    },
+    [files, forgetFile, removeFile],
+  );
+
+  const clearAllFilesWithCache = useCallback(async () => {
+    clearPreUploadCache();
+    await clearAllFiles();
+  }, [clearAllFiles, clearPreUploadCache]);
 
   const todayDate = useMemo(() => toKstDateInputValue(new Date()), []);
   const [orderDate, setOrderDate] = useState(todayDate);
@@ -698,7 +735,7 @@ export const PracticeDropzonePage = () => {
   }, [recoverNewPassword]);
 
   const normalizedProsthesisTypes = useMemo(
-    () => normalizeProsthesisTypes(prosthesisTypes),
+    () => normalizeProsthesisTypes([...PRESET_PROSTHESIS_TYPES, ...prosthesisTypes]),
     [prosthesisTypes],
   );
   const normalizedToothWorks = useMemo(() => normalizeToothWorks(toothWorks), [toothWorks]);
@@ -1015,13 +1052,14 @@ export const PracticeDropzonePage = () => {
               : addDaysToDateInput(restoredOrderDate, restoredArrivalDefaultDays),
           );
         }
-        const restoredProsthesisTypes = normalizeProsthesisTypes(
-          Array.isArray(intake?.prosthesisTypes)
+        const restoredProsthesisTypes = normalizeProsthesisTypes([
+          ...PRESET_PROSTHESIS_TYPES,
+          ...(Array.isArray(intake?.prosthesisTypes)
             ? intake.prosthesisTypes
             : Array.isArray(parsed?.prosthesisTypes)
               ? parsed.prosthesisTypes
-              : [...PRESET_PROSTHESIS_TYPES],
-        );
+              : []),
+        ]);
         setProsthesisTypes(restoredProsthesisTypes);
         const toothWorksSource =
           Array.isArray(intake?.toothWorks) && intake.toothWorks.length > 0
@@ -1597,6 +1635,7 @@ export const PracticeDropzonePage = () => {
 
       suppressDraftPersistRef.current = true;
       await clearPracticeDropzoneCaches();
+      clearPreUploadCache();
 
       setRequestSubmitted(true);
       rememberLab(selectedLab);
@@ -1728,7 +1767,7 @@ export const PracticeDropzonePage = () => {
         toast({
           title: "의뢰인(치과 발신) 계정만 이용 가능합니다",
           description:
-            "의뢰 발신자(치과) 유형의 의뢰인 계정으로 로그인해 주세요.",
+            "치과(기공실) 역할의 의뢰인 계정으로 로그인해 주세요.",
           variant: "destructive",
         });
         return;
@@ -2161,7 +2200,7 @@ export const PracticeDropzonePage = () => {
       className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
       <div className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-2.5">
-        <Card className="border-blue-100 bg-gradient-to-br from-white to-blue-50/70 shadow-sm">
+        <Card className="border-primary-soft bg-gradient-to-br from-white to-primary-soft/70 shadow-sm">
           <CardHeader className="px-6 py-2.5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-h-[52px] items-center">
@@ -2186,8 +2225,8 @@ export const PracticeDropzonePage = () => {
                           <div
                             className={cn(
                               "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
-                              isActive && "border-blue-600 bg-blue-600 text-white",
-                              !isActive && isDone && "border-emerald-600 bg-emerald-600 text-white",
+                              isActive && "border-primary-strong bg-primary-strong text-white",
+                              !isActive && isDone && "border-primary-strong bg-primary-strong text-white",
                               !isActive && !isDone && "border-slate-300 bg-white text-slate-500",
                             )}
                           >
@@ -2199,8 +2238,8 @@ export const PracticeDropzonePage = () => {
                             <p
                               className={cn(
                                 "truncate text-sm font-semibold",
-                                isActive && "text-blue-700",
-                                !isActive && isDone && "text-emerald-700",
+                                isActive && "text-primary-strong",
+                                !isActive && isDone && "text-primary-strong",
                                 !isActive && !isDone && "text-slate-600",
                               )}
                             >
@@ -2236,10 +2275,10 @@ export const PracticeDropzonePage = () => {
                         (file, fileIdx) =>
                           `${file.name}:${file.size}:${file.lastModified}:${fileIdx}` === key,
                       );
-                      if (idx >= 0) removeFile(idx);
+                      if (idx >= 0) removeFileWithCache(idx);
                     },
                     onClearAllFiles: () => {
-                      void clearAllFiles();
+                      void clearAllFilesWithCache();
                     },
                   }}
                   requestIntakeProps={{
@@ -2283,8 +2322,6 @@ export const PracticeDropzonePage = () => {
                     memoInputId: "practice-request-memo",
                     prosthesisTypeSelectWidthClassName: "w-[110px]",
                     showBridgeConnections: false,
-                    toothTensOptions: TOOTH_TENS_OPTIONS,
-                    toothOnesOptions: TOOTH_ONES_OPTIONS,
                     onClearAll: handleClearRequestIntakeCache,
                     implantConnections,
                     implantFavorites,
@@ -2316,11 +2353,11 @@ export const PracticeDropzonePage = () => {
                 className="space-y-5"
                 onSubmit={handlePracticeAuthFormSubmit}
               >
-                <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
+                <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-primary-soft/60 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
                   <div className="border-b border-slate-100 bg-white/70 px-5 py-4 backdrop-blur-sm">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-strong">
                           Step 2
                         </p>
                         <h2 className="mt-1 text-lg font-semibold text-slate-900">
@@ -2370,21 +2407,21 @@ export const PracticeDropzonePage = () => {
                         className={cn(
                           "rounded-xl border px-4 py-4 text-sm",
                           requestSubmitted
-                            ? "border-emerald-200 bg-emerald-50/90 text-emerald-800"
-                            : "border-emerald-200 bg-emerald-50/90 text-emerald-800",
+                            ? "border-primary-muted bg-primary-soft/90 text-primary-strong"
+                            : "border-primary-muted bg-primary-soft/90 text-primary-strong",
                         )}
                       >
                         {requestSubmitted ? (
                           <>
                             <p className="font-medium">기공의뢰서를 전송했습니다.</p>
-                            <p className="mt-1 text-emerald-700/90">
+                            <p className="mt-1 text-primary-strong/90">
                               다음 의뢰부터는 치과 정보를 등록한 뒤 이용할 수 있습니다.
                               {email ? ` (${email})` : ""}
                             </p>
                             {userNeedsOnboarding(authUser) ? (
                               <Button
                                 type="button"
-                                className="mt-3 h-9 rounded-lg bg-sky-600 px-4 text-white hover:bg-sky-700"
+                                className="mt-3 h-9 rounded-lg bg-primary-strong px-4 text-white hover:bg-primary-strong"
                                 onClick={() =>
                                   navigate("/dashboard/wizard?mode=account")
                                 }
@@ -2396,7 +2433,7 @@ export const PracticeDropzonePage = () => {
                         ) : (
                           <>
                             <p className="font-medium">로그인 세션이 확인되었습니다.</p>
-                            <p className="mt-1 text-emerald-700/90">
+                            <p className="mt-1 text-primary-strong/90">
                               추가 입력 없이 바로 의뢰서를 전송할 수 있습니다.
                               {email ? ` (${email})` : ""}
                             </p>
@@ -2543,7 +2580,7 @@ export const PracticeDropzonePage = () => {
                           </div>
                           <Button
                             type="button"
-                            className="h-10 rounded-xl bg-sky-600 px-5 text-white hover:bg-sky-700"
+                            className="h-10 rounded-xl bg-primary-strong px-5 text-white hover:bg-primary-strong"
                             onClick={() => void handlePracticePasswordChange()}
                             disabled={authSubmitting || !canSubmitRecover}
                           >
@@ -2631,14 +2668,14 @@ export const PracticeDropzonePage = () => {
                                 placeholder="name@clinic.com"
                               />
                               {emailVerified ? (
-                                <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-emerald-600">
+                                <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-primary-strong">
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   인증 완료
                                 </span>
                               ) : (
                                 <button
                                   type="button"
-                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-sky-600 px-2.5 text-xs font-medium leading-none text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-primary-strong px-2.5 text-xs font-medium leading-none text-white hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-50"
                                   disabled={!isEmailValid || emailSending}
                                   onClick={() => void handleSendEmailVerification()}
                                 >
@@ -2676,7 +2713,7 @@ export const PracticeDropzonePage = () => {
                                 />
                                 <button
                                   type="button"
-                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-sky-600 px-3 text-xs font-medium leading-none text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-primary-strong px-3 text-xs font-medium leading-none text-white hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-50"
                                   disabled={emailCode.length !== 4 || emailVerifying}
                                   onClick={() => void handleVerifyEmailCode()}
                                 >
@@ -2756,14 +2793,14 @@ export const PracticeDropzonePage = () => {
                                 placeholder="010-1234-5678"
                               />
                               {phoneVerified ? (
-                                <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-emerald-600">
+                                <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-primary-strong">
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   인증 완료
                                 </span>
                               ) : (
                                 <button
                                   type="button"
-                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-sky-600 px-2.5 text-xs font-medium leading-none text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-primary-strong px-2.5 text-xs font-medium leading-none text-white hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-50"
                                   disabled={!isPhoneValid || phoneSending}
                                   onClick={() => void handleSendPhoneVerification()}
                                 >
@@ -2801,7 +2838,7 @@ export const PracticeDropzonePage = () => {
                                 />
                                 <button
                                   type="button"
-                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-sky-600 px-3 text-xs font-medium leading-none text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-primary-strong px-3 text-xs font-medium leading-none text-white hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-50"
                                   disabled={phoneCode.length !== 4 || phoneVerifying}
                                   onClick={() => void handleVerifyPhoneCode()}
                                 >
@@ -2979,7 +3016,7 @@ export const PracticeDropzonePage = () => {
               <Button
                 type="submit"
                 form="practice-auth-form"
-                className="h-11 rounded-xl bg-sky-600 px-6 text-base text-white shadow-sm hover:bg-sky-700"
+                className="h-11 rounded-xl bg-primary-strong px-6 text-base text-white shadow-sm hover:bg-primary-strong"
                 disabled={
                   !canPrimaryAction ||
                   signupSubmitting ||

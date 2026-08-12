@@ -2,6 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/hooks/useS3TempUpload.ts
+// - web/frontend/src/shared/hooks/useFilePreUpload.ts
 import React, { useCallback } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
@@ -12,14 +14,20 @@ import { UploadProgressToast } from "@/features/requests/components/UploadProgre
 
 interface UseUploadWithProgressToastOptions {
   token?: string | null;
+  /** 사전 업로드 캐시 등을 쓰려면 override */
+  uploadFiles?: (
+    files: File[],
+    onProgress?: (progress: Record<string, number>) => void,
+  ) => Promise<TempUploadedFile[]>;
 }
 
 export function useUploadWithProgressToast(
   options: UseUploadWithProgressToastOptions,
 ) {
-  const { token } = options;
+  const { token, uploadFiles: uploadFilesOverride } = options;
   const { toast } = useToast();
-  const { uploadFiles } = useS3TempUpload({ token });
+  const { uploadFiles: defaultUploadFiles } = useS3TempUpload({ token });
+  const uploadFiles = uploadFilesOverride || defaultUploadFiles;
 
   const uploadFilesWithToast = useCallback(
     async (files: File[]): Promise<TempUploadedFile[]> => {

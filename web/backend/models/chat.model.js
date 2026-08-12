@@ -17,6 +17,20 @@ const chatSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    // user: 일반 말풍선 / system: 상태 변경 기록(작업취소 등). UI는 messageKind로 분기.
+    messageKind: {
+      type: String,
+      enum: ["user", "system"],
+      default: "user",
+      index: true,
+    },
+    // system 전용 이벤트 키. 예: work_cancel
+    systemEvent: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 64,
+    },
     content: {
       type: String,
       required: true,

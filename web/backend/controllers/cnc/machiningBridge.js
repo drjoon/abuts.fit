@@ -30,10 +30,6 @@ import {
   invalidateBridgeFlagsCache,
   buildBusinessNameByAnchorIdMap,
 } from "./shared.js";
-import {
-  ensureMailboxAddressForBusiness,
-  isManufacturerSampleRequest,
-} from "../requests/mailbox.utils.js";
 import { compareMachiningQueueOrder } from "../requests/production.utils.js";
 import {
   appendMachiningJobStats,
@@ -2037,7 +2033,6 @@ export async function recordMachiningCompleteForBridge(req, res) {
         const requestorAnchorIdStr = String(
           request.requestor?.businessAnchorId || "",
         ).trim();
-        const effectiveAnchorIdStr = requestAnchorIdStr || requestorAnchorIdStr;
 
         // request 문서의 businessAnchorId가 비어 있는 경우에만 requestor anchor로 보정
         if (!requestAnchorIdStr && requestorAnchorIdStr) {
@@ -2045,26 +2040,9 @@ export async function recordMachiningCompleteForBridge(req, res) {
         }
 
         // R&D 샘플은 배송 비대상이므로 우편함을 배정하지 않는다.
-        if (isManufacturerSampleRequest(request)) {
-          request.mailboxAddress = null;
-        } else {
-          try {
-            const nextMailboxAddress = await ensureMailboxAddressForBusiness({
-              requestMongoId: request._id,
-              requestorOrgId: effectiveAnchorIdStr,
-              currentMailboxAddress: request.mailboxAddress,
-            });
-            if (nextMailboxAddress) {
-              request.mailboxAddress = nextMailboxAddress;
-            }
-          } catch (err) {
-            console.error("[MAILBOX_ALLOCATION_ERROR]", {
-              requestId,
-              machineId: mid,
-              message: err?.message || String(err),
-            });
-          }
-        }
+        // 일반 의뢰도 세척.패킹 진입 시점에는 선배정하지 않는다.
+        // (우편함 배정 SSOT: 포장.발송 진입 승인 시점에만 배정)
+        request.mailboxAddress = null;
         await request.save();
         console.log(
           "[bridge:machining:complete] request/record updated",

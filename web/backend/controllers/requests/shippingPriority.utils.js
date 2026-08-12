@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-10: 마감 경과 라벨 "출고일 지남" → "출고시간 지남".
 // - 2026-08-06: 우선순위 라벨 "마감 …" → "출고 …일전/시간전".
 // related files:
 // - web/backend/rules.md
@@ -157,7 +158,7 @@ export async function computeShippingPriority({ request, now }) {
 
   const label = (() => {
     if (typeof minutesLeft !== "number") return "";
-    if (minutesLeft < 0) return "출고일 지남";
+    if (minutesLeft < 0) return "출고시간 지남";
     if (minutesLeft < 60) return `출고 ${minutesLeft}분전`;
     const h = Math.ceil(minutesLeft / 60);
     if (h < 24) return `출고 ${h}시간전`;
