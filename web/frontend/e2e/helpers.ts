@@ -251,66 +251,12 @@ export async function loginAndSkipWizard(
     return;
   }
 
-  if (preferDevQuickLogin) {
-    const quick = page.getByRole("button", { name: /DEV QUICK LOGIN/i });
+  if (preferDevQuickLogin && account.role === "admin") {
+    const quick = page.getByRole("button", { name: /ADMIN QUICK LOGIN/i });
     if (await quick.isVisible().catch(() => false)) {
       await quick.click();
-      await page.waitForTimeout(300);
-      const roleHints =
-        account.role === "admin"
-          ? [/관리자/, /admin/i]
-          : account.role === "requestor"
-            ? [/의뢰/, /requestor/i, /치과/, /발신/]
-            : [new RegExp(account.role, "i")];
-      let clicked = false;
-      for (const hint of roleHints) {
-        const btn = page.getByRole("button", { name: hint }).first();
-        if (await btn.isVisible().catch(() => false)) {
-          await btn.click();
-          clicked = true;
-          break;
-        }
-      }
-      if (!clicked) {
-        const byEmail = page
-          .locator(`button:has-text("${account.email}")`)
-          .first();
-        if (await byEmail.isVisible().catch(() => false)) {
-          await byEmail.click();
-          clicked = true;
-        }
-      }
-      if (clicked) {
-        await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
-        if (page.url().includes("wizard")) {
-          const token = await page.evaluate(() =>
-            localStorage.getItem("abuts_auth_token"),
-          );
-          if (token) {
-            await page.evaluate(async (t) => {
-              await fetch("/api/users/profile", {
-                method: "PUT",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${t}`,
-                },
-                body: JSON.stringify({ onboardingWizardCompleted: true }),
-              });
-              try {
-                const raw = localStorage.getItem("abuts_auth_user");
-                if (raw) {
-                  const u = JSON.parse(raw);
-                  u.onboardingWizardCompleted = true;
-                  localStorage.setItem("abuts_auth_user", JSON.stringify(u));
-                }
-              } catch {}
-            }, token);
-            await page.goto("/dashboard");
-            await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
-          }
-        }
-        return;
-      }
+      await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+      return;
     }
   }
 

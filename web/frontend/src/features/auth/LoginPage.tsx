@@ -5,12 +5,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Link, useNavigate } from "react-router-dom";
@@ -52,6 +46,9 @@ const parseDevAccounts = (rawValue: string | undefined): DevAccount[] => {
 };
 
 const DEV_ACCOUNTS = parseDevAccounts(import.meta.env.VITE_DEV_LOGIN_ACCOUNTS);
+const DEV_ADMIN_ACCOUNT = DEV_ACCOUNTS.find(({ label }) =>
+  /관리자|admin/i.test(label),
+);
 
 const isValidEmail = (value: string) => {
   const email = String(value || "").trim();
@@ -66,7 +63,6 @@ export const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [columnHeight, setColumnHeight] = useState(0);
-  const [devModalOpen, setDevModalOpen] = useState(false);
   const columnRef = useRef<HTMLDivElement>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
   const { login } = useAuthStore();
@@ -138,7 +134,6 @@ export const LoginPage = () => {
   };
 
   const handleDevLogin = async (account: DevAccount) => {
-
     setEmail(account.email);
     setPassword(account.password);
     setStep("password");
@@ -147,7 +142,7 @@ export const LoginPage = () => {
     try {
       const result = await login(account.email, account.password);
       if (result.success) {
-        navigate(resolvePostLoginPath(), { replace: true });
+        navigate("/dashboard", { replace: true });
       } else {
         toast({
           title: "로그인 실패",
@@ -387,15 +382,16 @@ export const LoginPage = () => {
                   </Button>
                 </div>
 
-                {isDev && DEV_ACCOUNTS.length > 0 && (
+                {isDev && DEV_ADMIN_ACCOUNT && (
                   <div className="mt-6 flex items-center justify-end">
                     <Button
                       type="button"
                       variant="link"
                       className="text-xs uppercase tracking-[0.35em] text-white/60 hover:text-white"
-                      onClick={() => setDevModalOpen(true)}
+                      disabled={isLoading}
+                      onClick={() => handleDevLogin(DEV_ADMIN_ACCOUNT)}
                     >
-                      DEV QUICK LOGIN
+                      ADMIN QUICK LOGIN
                     </Button>
                   </div>
                 )}
@@ -405,35 +401,6 @@ export const LoginPage = () => {
         </section>
       </main>
 
-      {isDev && DEV_ACCOUNTS.length > 0 && (
-        <Dialog open={devModalOpen} onOpenChange={setDevModalOpen}>
-          <DialogContent className="max-w-lg bg-slate-950/95 text-white backdrop-blur-xl border-white/10">
-            <DialogHeader>
-              <DialogTitle className="text-center tracking-[0.4em] text-xs text-white/60 uppercase">
-                DEV QUICK LOGIN
-              </DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {DEV_ACCOUNTS.map((acc) => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  className="rounded-2xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-primary/60"
-                  disabled={isLoading}
-                  onClick={() => handleDevLogin(acc)}
-                >
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">
-                    {acc.label}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-white break-all">
-                    {acc.email}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 };
