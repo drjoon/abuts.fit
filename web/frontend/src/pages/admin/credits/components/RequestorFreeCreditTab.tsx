@@ -1,16 +1,12 @@
+// change-log:
+// - 2026-08-13: 일반/배송 무료크레딧 통합 — 단일 지급 UI, 문구·스타일 정리.
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx
+// - web/frontend/src/pages/admin/credits/creditPageUi.tsx
+import { Gift, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -22,12 +18,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TabsContent } from "@/components/ui/tabs";
+import { cn } from "@/shared/ui/cn";
 import type {
   FreeCreditGrantHistoryRow,
   BusinessCredit,
   FreeCreditAmount,
 } from "../adminCredit.types";
 import { formatBusinessSelectLabel, formatDate } from "../adminCredit.utils";
+import {
+  CreditFilterChip,
+  CreditPanel,
+  CreditSectionHeader,
+} from "../creditPageUi";
+
+type FreeCreditMenu = "grant" | "grant-cancel" | "grant-history" | "usage-history";
 
 type RequestorFreeCreditTabProps = {
   businesses: BusinessCredit[];
@@ -37,38 +41,15 @@ type RequestorFreeCreditTabProps = {
   setFreeCreditGrantSearch: (value: string) => void;
   loadFreeCreditGrantHistory: () => void | Promise<void>;
   loadingFreeCreditGrantRows: boolean;
-  freeCreditMenu:
-    | "grant"
-    | "grant-cancel"
-    | "grant-history"
-    | "usage-history"
-    | "shipping-credit";
-  setFreeCreditMenu: (
-    value:
-      | "grant"
-      | "grant-cancel"
-      | "grant-history"
-      | "usage-history"
-      | "shipping-credit",
-  ) => void;
-  grantCreditType: "general" | "shipping";
-  setGrantCreditType: (value: "general" | "shipping") => void;
-  selectedShippingCreditBusinessAnchorId: string;
-  setSelectedShippingCreditBusinessAnchorId: (value: string) => void;
+  freeCreditMenu: FreeCreditMenu;
+  setFreeCreditMenu: (value: FreeCreditMenu) => void;
   selectedFreeCreditAmount: FreeCreditAmount;
   setSelectedFreeCreditAmount: (value: FreeCreditAmount) => void;
-  selectedShippingCreditAmount: number;
-  setSelectedShippingCreditAmount: (value: number) => void;
   freeCreditReason: string;
   setFreeCreditReason: (value: string) => void;
-  shippingCreditReason: string;
-  setShippingCreditReason: (value: string) => void;
   handleGrantFreeCredit: () => void | Promise<void>;
-  handleGrantShippingCredit: () => void | Promise<void>;
   grantingFreeCredit: boolean;
-  grantingShippingCredit: boolean;
   selectedFreeCreditBusiness: BusinessCredit | null;
-  selectedShippingCreditBusiness: BusinessCredit | null;
   cancelStartDate: string;
   setCancelStartDate: (value: string) => void;
   cancelEndDate: string;
@@ -93,6 +74,39 @@ type RequestorFreeCreditTabProps = {
   filteredFreeCreditUsageRows: BusinessCredit[];
 };
 
+const FREE_CREDIT_AMOUNTS: FreeCreditAmount[] = [
+  7000, 30000, 50000, 300000, 500000,
+];
+
+function getFreeBalance(business: BusinessCredit) {
+  const freeCredit = Number(business.freeCredit ?? NaN);
+  if (Number.isFinite(freeCredit)) return freeCredit;
+  const freeBalance = Number(business.freeBalance ?? NaN);
+  if (Number.isFinite(freeBalance)) return freeBalance;
+  return (
+    Number(business.freeRequestCredit ?? 0) +
+    Number(business.freeShippingCredit ?? 0)
+  );
+}
+
+function getSpentFreeTotal(business: BusinessCredit) {
+  const spentFreeAmount = Number(business.spentFreeAmount ?? 0);
+  if (spentFreeAmount > 0) return spentFreeAmount;
+  return (
+    Number(business.spentFreeRequestAmount ?? 0) +
+    Number(business.spentFreeShippingAmount ?? 0)
+  );
+}
+
+function getChargedFreeTotal(business: BusinessCredit) {
+  const chargedFreeAmount = Number(business.chargedFreeAmount ?? 0);
+  if (chargedFreeAmount > 0) return chargedFreeAmount;
+  return (
+    Number(business.chargedFreeRequestAmount ?? 0) +
+    Number(business.chargedFreeShippingAmount ?? 0)
+  );
+}
+
 export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
   const {
     businesses,
@@ -104,24 +118,13 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
     loadingFreeCreditGrantRows,
     freeCreditMenu,
     setFreeCreditMenu,
-    grantCreditType,
-    setGrantCreditType,
-    selectedShippingCreditBusinessAnchorId,
-    setSelectedShippingCreditBusinessAnchorId,
     selectedFreeCreditAmount,
     setSelectedFreeCreditAmount,
-    selectedShippingCreditAmount,
-    setSelectedShippingCreditAmount,
     freeCreditReason,
     setFreeCreditReason,
-    shippingCreditReason,
-    setShippingCreditReason,
     handleGrantFreeCredit,
-    handleGrantShippingCredit,
     grantingFreeCredit,
-    grantingShippingCredit,
     selectedFreeCreditBusiness,
-    selectedShippingCreditBusiness,
     cancelStartDate,
     setCancelStartDate,
     cancelEndDate,
@@ -141,411 +144,215 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
     freeCreditGrantRows,
     filteredFreeCreditUsageRows,
   } = props;
-  const generalFreeCreditAmounts: FreeCreditAmount[] = [
-    30000, 50000, 300000, 500000,
-  ];
+
   const eligibleBusinesses = businesses.filter((business) => {
     if (typeof business.isFreeCreditEligible === "boolean") {
       return business.isFreeCreditEligible;
     }
     return String(business.businessType || "").trim() === "requestor";
   });
-  const selectedBusinessAnchorId =
-    grantCreditType === "general"
-      ? selectedFreeCreditBusinessAnchorId
-      : selectedShippingCreditBusinessAnchorId;
-  const getSpentFreeTotal = (business: BusinessCredit) => {
-    const spentFreeAmount = Number(business.spentFreeAmount ?? 0);
-    if (spentFreeAmount > 0) return spentFreeAmount;
 
-    const spentFreeRequest = Number(business.spentFreeRequestAmount ?? 0);
-    const spentFreeShipping = Number(business.spentFreeShippingAmount ?? 0);
-    return spentFreeRequest + spentFreeShipping;
-  };
-  const getChargedFreeTotal = (business: BusinessCredit) => {
-    const chargedFreeAmount = Number(business.chargedFreeAmount ?? 0);
-    if (chargedFreeAmount > 0) return chargedFreeAmount;
-
-    const chargedFreeRequest = Number(business.chargedFreeRequestAmount ?? 0);
-    const chargedFreeShipping = Number(business.chargedFreeShippingAmount ?? 0);
-    return chargedFreeRequest + chargedFreeShipping;
-  };
+  const menuItems: { id: FreeCreditMenu; label: string }[] = [
+    { id: "grant", label: "지급" },
+    { id: "grant-cancel", label: "회수" },
+    { id: "grant-history", label: "지급 내역" },
+    { id: "usage-history", label: "사용 현황" },
+  ];
 
   return (
     <TabsContent value="free-credit" className="space-y-4">
-      <Card>
-        <CardHeader className="space-y-4">
-          <div className="flex flex-col gap-2">
-            <CardTitle>무료 크레딧</CardTitle>
-            <CardDescription>
-              대상 사업자를 선택하고 지급, 지급 내역, 사용 내역을 메뉴별로
-              확인합니다.
-            </CardDescription>
-          </div>
+      <CreditPanel>
+        <div className="space-y-5 p-5 sm:p-6">
+          <CreditSectionHeader
+            icon={Gift}
+            title="무료 크레딧"
+            description="의뢰·배송 구분 없이 하나의 무료 잔액으로 지급·회수합니다."
+            trailing={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-xl"
+                onClick={loadFreeCreditGrantHistory}
+                disabled={loadingFreeCreditGrantRows}
+              >
+                <RefreshCw
+                  className={cn(
+                    "mr-1.5 h-3.5 w-3.5",
+                    loadingFreeCreditGrantRows && "animate-spin",
+                  )}
+                />
+                새로고침
+              </Button>
+            }
+          />
 
-          <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-            <Button
-              type="button"
-              variant={freeCreditMenu === "grant" ? "default" : "outline"}
-              onClick={() => setFreeCreditMenu("grant")}
-              size="sm"
-            >
-              지급
-            </Button>
-            <Button
-              type="button"
-              variant={
-                freeCreditMenu === "grant-cancel" ? "default" : "outline"
-              }
-              onClick={() => setFreeCreditMenu("grant-cancel")}
-              size="sm"
-            >
-              지급 취소
-            </Button>
-            <Button
-              type="button"
-              variant={
-                freeCreditMenu === "grant-history" ? "default" : "outline"
-              }
-              onClick={() => setFreeCreditMenu("grant-history")}
-              size="sm"
-            >
-              지급 내역
-            </Button>
-            <Button
-              type="button"
-              variant={
-                freeCreditMenu === "usage-history" ? "default" : "outline"
-              }
-              onClick={() => setFreeCreditMenu("usage-history")}
-              size="sm"
-            >
-              사용 내역
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {menuItems.map((item) => (
+              <CreditFilterChip
+                key={item.id}
+                active={freeCreditMenu === item.id}
+                onClick={() => setFreeCreditMenu(item.id)}
+              >
+                {item.label}
+              </CreditFilterChip>
+            ))}
             <Input
-              className="h-8 w-48 text-sm"
+              className="h-8 w-52 rounded-full border-slate-200 text-sm"
               value={freeCreditGrantSearch}
               onChange={(e) => setFreeCreditGrantSearch(e.target.value)}
-              placeholder="사업자번호, 사유, 구분"
+              placeholder="사업자번호 · 사유 검색"
             />
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 px-3"
-              onClick={loadFreeCreditGrantHistory}
-              disabled={loadingFreeCreditGrantRows}
+          </div>
+
+          <div className="max-w-xl space-y-2">
+            <Label htmlFor="free-credit-business" className="text-sm">
+              대상 사업자
+            </Label>
+            <select
+              id="free-credit-business"
+              className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/60 px-3 text-sm"
+              value={selectedFreeCreditBusinessAnchorId}
+              onChange={(e) =>
+                setSelectedFreeCreditBusinessAnchorId(e.target.value)
+              }
             >
-              {loadingFreeCreditGrantRows ? "새로고침 중..." : "새로고침"}
-            </Button>
+              <option value="">전체 사업자</option>
+              {[...eligibleBusinesses]
+                .sort((a, b) =>
+                  String(a.name || "").localeCompare(String(b.name || ""), "ko"),
+                )
+                .map((business) => (
+                  <option key={business._id} value={business._id}>
+                    {formatBusinessSelectLabel(business)}
+                  </option>
+                ))}
+            </select>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="free-credit-business" className="text-sm">
-                대상 사업자
-              </Label>
-              <div className="relative">
-                <select
-                  id="free-credit-business"
-                  className="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-sm"
-                  value={selectedBusinessAnchorId}
-                  onChange={(e) => {
-                    setSelectedFreeCreditBusinessAnchorId(e.target.value);
-                    setSelectedShippingCreditBusinessAnchorId(e.target.value);
-                  }}
-                >
-                  <option value="">전체 사업자</option>
-                  {[...eligibleBusinesses]
-                    .sort((a, b) =>
-                      String(a.name || "").localeCompare(
-                        String(b.name || ""),
-                        "ko",
-                      ),
-                    )
-                    .map((business) => (
-                      <option key={business._id} value={business._id}>
-                        {formatBusinessSelectLabel(business)}
-                      </option>
-                    ))}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
-                  <span className="text-xs">▼</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent>
           {freeCreditMenu === "grant" ? (
-            <div className="space-y-4">
-              <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+              <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50/40 p-5">
                 <div className="space-y-2">
-                  <Label>크레딧 종류</Label>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Button
-                      type="button"
-                      className="h-11"
-                      variant={
-                        grantCreditType === "general" ? "default" : "outline"
-                      }
-                      onClick={() => {
-                        setGrantCreditType("general");
-                        setFreeCreditReason("");
-                        setSelectedFreeCreditAmount(30000);
-                      }}
-                    >
-                      일반 무료 크레딧
-                    </Button>
-                    <Button
-                      type="button"
-                      className="h-11"
-                      variant={
-                        grantCreditType === "shipping" ? "default" : "outline"
-                      }
-                      onClick={() => {
-                        setGrantCreditType("shipping");
-                        setShippingCreditReason("");
-                        setSelectedShippingCreditAmount(7000);
-                      }}
-                    >
-                      배송비 무료 크레딧
-                    </Button>
+                  <Label>금액</Label>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    {FREE_CREDIT_AMOUNTS.map((amount) => (
+                      <Button
+                        key={amount}
+                        type="button"
+                        className="h-11 rounded-xl"
+                        variant={
+                          selectedFreeCreditAmount === amount
+                            ? "default"
+                            : "outline"
+                        }
+                        onClick={() => setSelectedFreeCreditAmount(amount)}
+                      >
+                        {amount.toLocaleString()}원
+                      </Button>
+                    ))}
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="free-credit-reason">지급 사유</Label>
+                  <Input
+                    id="free-credit-reason"
+                    className="h-11 rounded-xl bg-white"
+                    value={freeCreditReason}
+                    onChange={(e) => setFreeCreditReason(e.target.value)}
+                    placeholder="예: CS 보상, 운영 정책"
+                  />
+                </div>
+
+                <Button
+                  className="h-11 w-full rounded-xl"
+                  onClick={handleGrantFreeCredit}
+                  disabled={
+                    grantingFreeCredit || !selectedFreeCreditBusinessAnchorId
+                  }
+                >
+                  {grantingFreeCredit ? "지급 중…" : "무료 크레딧 지급"}
+                </Button>
               </div>
 
-              <div className="grid gap-4 xl:grid-cols-[minmax(460px,1.15fr)_minmax(360px,0.85fr)]">
-                <div className="flex flex-col gap-4 rounded-xl border border-primary/30 bg-primary/5 p-5 shadow-sm">
-                  <div className="space-y-2">
-                    <Label>
-                      {grantCreditType === "general"
-                        ? "일반 무료 크레딧 금액"
-                        : "배송비 무료 크레딧 금액"}
-                    </Label>
-
-                    <div className="grid grid-cols-5 gap-2">
-                      {(grantCreditType === "general"
-                        ? generalFreeCreditAmounts
-                        : [7000, 14000, 35000, 70000]
-                      ).map((amount) => (
-                        <Button
-                          key={amount}
-                          type="button"
-                          className="h-12 w-full"
-                          variant={
-                            grantCreditType === "general"
-                              ? selectedFreeCreditAmount === amount
-                                ? "default"
-                                : "outline"
-                              : selectedShippingCreditAmount === amount
-                                ? "default"
-                                : "outline"
-                          }
-                          onClick={() => {
-                            if (grantCreditType === "general")
-                              setSelectedFreeCreditAmount(
-                                amount as FreeCreditAmount,
-                              );
-                            else setSelectedShippingCreditAmount(amount);
-                          }}
-                        >
-                          {amount.toLocaleString()}원
-                        </Button>
-                      ))}
-                    </div>
+              <div className="rounded-2xl border border-slate-200/80 bg-white p-5">
+                <div className="text-sm font-semibold text-slate-900">요약</div>
+                <div className="mt-3 space-y-2.5 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">사업자</span>
+                    <span className="text-right font-medium">
+                      {selectedFreeCreditBusiness?.name || "미선택"}
+                    </span>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="free-credit-reason">
-                      {grantCreditType === "general"
-                        ? "충전 이유"
-                        : "지급 이유"}
-                    </Label>
-                    <Input
-                      id="free-credit-reason"
-                      className="h-12 bg-background"
-                      value={
-                        grantCreditType === "general"
-                          ? freeCreditReason
-                          : shippingCreditReason
-                      }
-                      onChange={(e) => {
-                        if (grantCreditType === "general")
-                          setFreeCreditReason(e.target.value);
-                        else setShippingCreditReason(e.target.value);
-                      }}
-                      placeholder={
-                        grantCreditType === "general"
-                          ? "예: CS 보상, 수동 보정, 운영 정책 지급"
-                          : "예: 배송비 예외 처리, 운영 정책"
-                      }
-                    />
-                    <div className="rounded-lg bg-background/70 p-3 text-xs text-muted-foreground ring-1 ring-primary/10">
-                      {grantCreditType === "general"
-                        ? "지급 사유는 최소 1자 이상 입력해야 하며, 내부 운영 로그에 기록됩니다."
-                        : "배송비 무료 크레딧은 배송비 결제 시에만 사용되며, 의뢰 비용으로는 사용할 수 없습니다."}
-                    </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">사업자번호</span>
+                    <span className="font-mono text-xs">
+                      {selectedFreeCreditBusiness?.businessNumber || "-"}
+                    </span>
                   </div>
-
-                  <Button
-                    className="h-12 justify-center"
-                    onClick={
-                      grantCreditType === "general"
-                        ? handleGrantFreeCredit
-                        : handleGrantShippingCredit
-                    }
-                    disabled={
-                      grantCreditType === "general"
-                        ? grantingFreeCredit || !selectedFreeCreditBusinessAnchorId
-                        : grantingShippingCredit ||
-                          !selectedShippingCreditBusinessAnchorId
-                    }
-                  >
-                    {grantCreditType === "general"
-                      ? grantingFreeCredit
-                        ? "지급 중..."
-                        : "무료 크레딧 지급"
-                      : grantingShippingCredit
-                        ? "지급 중..."
-                        : "배송비 무료 크레딧 지급"}
-                  </Button>
-                </div>
-
-                <div className="flex flex-col gap-4">
-                  <div className="rounded-xl border border-border/60 bg-muted/20 p-5">
-                    <div className="text-sm font-medium">지급 요약</div>
-                    <div className="mt-3 space-y-2 text-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-muted-foreground">
-                          선택 사업자
-                        </span>
-                        <span className="text-right font-medium">
-                          {grantCreditType === "general"
-                            ? selectedFreeCreditBusiness?.name || "미선택"
-                            : selectedShippingCreditBusiness?.name || "미선택"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-muted-foreground">
-                          사업자번호
-                        </span>
-                        <span className="font-mono">
-                          {grantCreditType === "general"
-                            ? selectedFreeCreditBusiness?.businessNumber || "-"
-                            : selectedShippingCreditBusiness?.businessNumber ||
-                              "-"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-muted-foreground">사업자 ID</span>
-                        <span className="font-mono text-xs">
-                          {grantCreditType === "general"
-                            ? selectedFreeCreditBusiness?.businessAnchorId || "-"
-                            : selectedShippingCreditBusiness?.businessAnchorId ||
-                              "-"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-muted-foreground">지급 금액</span>
-                        <span
-                          className={`font-semibold ${grantCreditType === "general" ? "text-primary" : "text-accent-strong"}`}
-                        >
-                          {grantCreditType === "general"
-                            ? selectedFreeCreditAmount.toLocaleString()
-                            : selectedShippingCreditAmount.toLocaleString()}
-                          원
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`rounded-xl border p-5 ${grantCreditType === "general" ? "border-primary/20 bg-primary/5" : "border-accent-muted/30 bg-accent-soft/50"}`}
-                  >
-                    <div className="text-sm font-medium">지급 안내</div>
-                    <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                      {grantCreditType === "general" ? (
-                        <>
-                          <div>
-                            선택한 사업자에 즉시 무료 크레딧이 반영됩니다.
-                          </div>
-                          <div>
-                            지급 사유는 운영 로그와 지급 내역에 함께 기록됩니다.
-                          </div>
-                          <div>
-                            내역 메뉴에서 지급 기록과 사용 기록을 바로 확인할 수
-                            있습니다.
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div>
-                            배송비 무료 크레딧은 배송비 결제 시에만 사용됩니다.
-                          </div>
-                          <div>
-                            의뢰 비용이나 다른 수수료로는 사용할 수 없습니다.
-                          </div>
-                          <div>지급 사유는 운영 로그에 기록됩니다.</div>
-                        </>
-                      )}
-                    </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">금액</span>
+                    <span className="font-semibold text-primary">
+                      {selectedFreeCreditAmount.toLocaleString()}원
+                    </span>
                   </div>
                 </div>
+                <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                  지급 즉시 무료 잔액에 반영되며, 의뢰·배송 어디서든 사용할 수
+                  있습니다.
+                </p>
               </div>
             </div>
           ) : freeCreditMenu === "grant-cancel" ? (
-            <div className="grid gap-4 xl:grid-cols-[minmax(460px,1.15fr)_minmax(360px,0.85fr)]">
-              <div className="rounded-xl border border-border/60 bg-muted/20 p-5">
-                <div className="text-sm font-medium">취소 가능 지급 내역</div>
-                <div className="mt-4 space-y-3">
-                  <div className="grid gap-2 grid-cols-2">
-                    <div className="space-y-1">
-                      <Label htmlFor="cancel-start-date" className="text-xs">
-                        시작일
-                      </Label>
-                      <Input
-                        id="cancel-start-date"
-                        type="date"
-                        className="h-10 text-sm"
-                        value={cancelStartDate}
-                        onChange={(e) => {
-                          setCancelStartDate(e.target.value);
-                          setCancelSkip(0);
-                          setFreeCreditGrantRows([]);
-                          setCancelHasMore(true);
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor="cancel-end-date" className="text-xs">
-                        종료일
-                      </Label>
-                      <Input
-                        id="cancel-end-date"
-                        type="date"
-                        className="h-10 text-sm"
-                        value={cancelEndDate}
-                        onChange={(e) => {
-                          setCancelEndDate(e.target.value);
-                          setCancelSkip(0);
-                          setFreeCreditGrantRows([]);
-                          setCancelHasMore(true);
-                        }}
-                      />
-                    </div>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+              <div className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-5">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="cancel-start-date" className="text-xs">
+                      시작일
+                    </Label>
+                    <Input
+                      id="cancel-start-date"
+                      type="date"
+                      className="h-10 rounded-xl text-sm"
+                      value={cancelStartDate}
+                      onChange={(e) => {
+                        setCancelStartDate(e.target.value);
+                        setCancelSkip(0);
+                        setFreeCreditGrantRows([]);
+                        setCancelHasMore(true);
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="cancel-end-date" className="text-xs">
+                      종료일
+                    </Label>
+                    <Input
+                      id="cancel-end-date"
+                      type="date"
+                      className="h-10 rounded-xl text-sm"
+                      value={cancelEndDate}
+                      onChange={(e) => {
+                        setCancelEndDate(e.target.value);
+                        setCancelSkip(0);
+                        setFreeCreditGrantRows([]);
+                        setCancelHasMore(true);
+                      }}
+                    />
                   </div>
                 </div>
 
-                <div className="mt-4 overflow-x-auto">
+                <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200/80 bg-white">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[80px]">선택</TableHead>
+                        <TableHead className="w-[64px]">선택</TableHead>
                         <TableHead>지급일시</TableHead>
                         <TableHead>사업자번호</TableHead>
                         <TableHead className="text-right">금액</TableHead>
-                        <TableHead className="w-[60px]">상태</TableHead>
+                        <TableHead className="w-[72px]">상태</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -554,7 +361,11 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                         .map((row) => (
                           <TableRow
                             key={row._id}
-                            className={`cursor-pointer ${selectedCancelGrantId === String(row._id) ? "bg-primary/10" : ""}`}
+                            className={cn(
+                              "cursor-pointer",
+                              selectedCancelGrantId === String(row._id) &&
+                                "bg-primary/10",
+                            )}
                             onClick={() =>
                               setSelectedCancelGrantId(String(row._id))
                             }
@@ -577,12 +388,12 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                             <TableCell className="font-mono text-sm">
                               {row.businessNumber || "-"}
                             </TableCell>
-                            <TableCell className="text-right font-medium">
+                            <TableCell className="text-right font-medium tabular-nums">
                               {Number(row.amount || 0).toLocaleString()}원
                             </TableCell>
                             <TableCell className="text-xs">
                               {row.hasSpent ? (
-                                <span className="text-accent-strong font-medium">
+                                <span className="font-medium text-accent-strong">
                                   사용됨
                                 </span>
                               ) : (
@@ -597,62 +408,55 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                   </Table>
                 </div>
 
-                {cancelHasMore && (
+                {cancelHasMore ? (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="mt-4 w-full h-10"
+                    className="mt-4 h-10 w-full rounded-xl"
                     onClick={loadMoreCancelGrants}
                     disabled={loadingFreeCreditGrantRows}
                   >
                     {loadingFreeCreditGrantRows
-                      ? "더 불러오는 중..."
-                      : "더 이전 내역 보기"}
+                      ? "불러오는 중…"
+                      : "이전 내역 더보기"}
                   </Button>
-                )}
+                ) : null}
               </div>
 
-              <div className="flex flex-col gap-4">
+              <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-white p-5">
                 <div className="space-y-2">
-                  <Label htmlFor="cancel-reason" className="text-sm">
-                    취소 사유
-                  </Label>
+                  <Label htmlFor="cancel-reason">회수 사유</Label>
                   <Input
                     id="cancel-reason"
-                    className="h-11"
+                    className="h-11 rounded-xl"
                     value={cancelGrantReason}
                     onChange={(e) => setCancelGrantReason(e.target.value)}
-                    placeholder="예: 중복 지급, 사용자 요청, 오류 수정"
+                    placeholder="예: 중복 지급, 오류 수정"
                   />
                 </div>
-
-                <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
-                  <div className="text-xs font-medium">선택 정보</div>
-                  <div className="mt-3 space-y-2 text-xs">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground">선택 건</span>
-                      <span className="font-mono">
-                        {selectedCancelGrantId ? "1건" : "미선택"}
+                <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-sm">
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">선택</span>
+                    <span className="font-medium">
+                      {selectedCancelGrantId ? "1건" : "미선택"}
+                    </span>
+                  </div>
+                  {selectedCancelGrantId ? (
+                    <div className="mt-1.5 flex justify-between gap-2">
+                      <span className="text-muted-foreground">금액</span>
+                      <span className="font-semibold tabular-nums text-primary">
+                        {Number(
+                          freeCreditGrantRows.find(
+                            (r) => String(r._id) === selectedCancelGrantId,
+                          )?.amount || 0,
+                        ).toLocaleString()}
+                        원
                       </span>
                     </div>
-                    {selectedCancelGrantId && (
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-muted-foreground">취소 금액</span>
-                        <span className="font-semibold text-primary">
-                          {Number(
-                            freeCreditGrantRows.find(
-                              (r) => String(r._id) === selectedCancelGrantId,
-                            )?.amount || 0,
-                          ).toLocaleString()}
-                          원
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  ) : null}
                 </div>
-
                 <Button
-                  className="h-11 justify-center"
+                  className="h-11 w-full rounded-xl"
                   onClick={handleCancelFreeCredit}
                   disabled={
                     cancelingGrant ||
@@ -660,36 +464,30 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                     !cancelGrantReason.trim()
                   }
                 >
-                  {cancelingGrant ? "취소 중..." : "지급 취소"}
+                  {cancelingGrant ? "회수 중…" : "지급 회수"}
                 </Button>
               </div>
             </div>
           ) : freeCreditMenu === "grant-history" ? (
             loadingFreeCreditGrantRows ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                불러오는 중...
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                불러오는 중…
               </div>
             ) : filteredFreeCreditGrantRows.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                무료 크레딧 지급 내역이 없습니다.
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                지급 내역이 없습니다.
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200/80">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>지급일시</TableHead>
                       <TableHead>사업자번호</TableHead>
                       <TableHead className="text-right">금액</TableHead>
-                      <TableHead className="w-[140px] whitespace-nowrap">
-                        구분
-                      </TableHead>
-                      <TableHead className="w-[320px] whitespace-nowrap">
-                        사유
-                      </TableHead>
-                      <TableHead className="w-[100px] whitespace-nowrap text-right">
-                        회수
-                      </TableHead>
+                      <TableHead>구분</TableHead>
+                      <TableHead>사유</TableHead>
+                      <TableHead className="text-right">회수</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -699,10 +497,10 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                         <TableCell className="font-mono">
                           {row.businessNumber || "-"}
                         </TableCell>
-                        <TableCell className="text-right font-medium">
+                        <TableCell className="text-right font-medium tabular-nums">
                           {Number(row.amount || 0).toLocaleString()}원
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
+                        <TableCell>
                           <Badge
                             variant={
                               row.isOverride || row.source === "admin"
@@ -711,18 +509,18 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                             }
                           >
                             {row.source === "admin"
-                              ? "관리자 지급"
-                              : "자동 지급"}
+                              ? "관리자"
+                              : "자동"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="w-[320px] whitespace-nowrap text-sm">
+                        <TableCell className="max-w-[240px] truncate text-sm">
                           {String(row.overrideReason || "").trim() || "-"}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-8"
+                            className="h-8 rounded-lg"
                             disabled={Boolean(row.canceledAt)}
                             onClick={() => {
                               setSelectedCancelGrantId(String(row._id));
@@ -740,25 +538,19 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
               </div>
             )
           ) : filteredFreeCreditUsageRows.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              무료 크레딧 사용 내역이 없습니다.
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              사용 내역이 없습니다.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200/80">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>사업자명</TableHead>
+                    <TableHead>사업자</TableHead>
                     <TableHead>사업자번호</TableHead>
-                    <TableHead className="text-right">
-                      사용크레딧(무료)
-                    </TableHead>
-                    <TableHead className="text-right">
-                      잔여크레딧(무료)
-                    </TableHead>
-                    <TableHead className="text-right">
-                      충전크레딧(무료)
-                    </TableHead>
+                    <TableHead className="text-right">사용</TableHead>
+                    <TableHead className="text-right">잔여</TableHead>
+                    <TableHead className="text-right">충전</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -773,13 +565,13 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                       <TableCell className="font-mono">
                         {org.businessNumber || "-"}
                       </TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-right font-medium tabular-nums">
                         {getSpentFreeTotal(org).toLocaleString()}원
                       </TableCell>
-                      <TableCell className="text-right">
-                        {Number(org.freeBalance ?? 0).toLocaleString()}원
+                      <TableCell className="text-right tabular-nums">
+                        {getFreeBalance(org).toLocaleString()}원
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right tabular-nums">
                         {getChargedFreeTotal(org).toLocaleString()}원
                       </TableCell>
                     </TableRow>
@@ -788,8 +580,8 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
               </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </CreditPanel>
     </TabsContent>
   );
 }

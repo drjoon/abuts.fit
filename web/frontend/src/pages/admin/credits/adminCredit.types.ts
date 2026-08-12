@@ -133,6 +133,7 @@ export type BusinessCredit = {
   paidBalance: number;
   freeBalance?: number;
   paidCredit?: number;
+  freeCredit?: number;
   freeRequestCredit?: number;
   freeShippingCredit?: number;
   spentAmount?: number;
@@ -175,7 +176,7 @@ export type BankTransaction = {
   matchedAt?: string;
 };
 
-export type FreeCreditAmount = 30000 | 50000 | 300000 | 500000;
+export type FreeCreditAmount = 7000 | 30000 | 50000 | 300000 | 500000;
 
 export type FreeCreditGrantHistoryRow = {
   _id: string;

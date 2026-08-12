@@ -8,6 +8,8 @@
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - web/frontend/src/pages/devops/DevopsSettingsPage.tsx
 import SystemSettings from "../../models/systemSettings.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
+import { Types } from "mongoose";
 import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
   getDeliveryEtaLeadDays,
@@ -35,6 +37,14 @@ function normalizeCreditSettings(raw = {}) {
     minCreditForRequest: Number(
       raw.minCreditForRequest ?? CREDIT_SETTINGS_DEFAULTS.minCreditForRequest,
     ),
+    specialRequestorPrices: Array.isArray(raw.specialRequestorPrices)
+      ? raw.specialRequestorPrices
+          .map((item) => ({
+            requestorAnchorId: String(item?.requestorAnchorId || "").trim(),
+            amount: Math.max(0, Number(item?.amount) || 0),
+          }))
+          .filter((item) => item.requestorAnchorId)
+      : [],
     shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
     expressFee: Number(raw.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee),
     designFee: Number(raw.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
@@ -289,6 +299,7 @@ export async function getPublicCreditSettings(req, res) {
     const doc = await SystemSettings.findOne({ key: "global" }).lean();
 
     const creditSettings = normalizeCreditSettings(doc?.creditSettings || {});
+    delete creditSettings.specialRequestorPrices;
     res.status(200).json({
       success: true,
       data: {
@@ -315,6 +326,27 @@ export async function updateCreditSettings(req, res) {
     const abutmentRetailPrice = Number(payload.abutmentRetailPrice);
     const defaultRequestFreeCredit = Number(payload.defaultRequestFreeCredit);
     const defaultShippingFreeCredit = Number(payload.defaultShippingFreeCredit);
+    const specialRequestorPrices = Array.isArray(payload.specialRequestorPrices)
+      ? payload.specialRequestorPrices
+          .map((item) => {
+            const requestorAnchorId = String(
+              item?.requestorAnchorId || "",
+            ).trim();
+            const amount = Number(item?.amount);
+            if (
+              !Types.ObjectId.isValid(requestorAnchorId) ||
+              !Number.isFinite(amount) ||
+              amount < 0
+            ) {
+              return null;
+            }
+            return {
+              requestorAnchorId: new Types.ObjectId(requestorAnchorId),
+              amount,
+            };
+          })
+          .filter(Boolean)
+      : null;
 
     const sanitized = {};
     if (!Number.isNaN(minCreditForRequest) && minCreditForRequest >= 0) {
@@ -341,18 +373,44 @@ export async function updateCreditSettings(req, res) {
     ) {
       sanitized.defaultShippingFreeCredit = defaultShippingFreeCredit;
     }
+    if (specialRequestorPrices) {
+      const uniquePrices = new Map();
+      specialRequestorPrices.forEach((item) => {
+        uniquePrices.set(String(item.requestorAnchorId), item);
+      });
+      sanitized.specialRequestorPrices = Array.from(uniquePrices.values());
+    }
 
     const existing = await SystemSettings.findOne({ key: "global" }).lean();
-    const merged = normalizeCreditSettings({
+    const mergedRaw = {
       ...(existing?.creditSettings || {}),
       ...sanitized,
-    });
+    };
+    // 응답/공개용 정규화와 저장용을 분리: 저장 시 ObjectId를 유지한다.
+    const mergedForSave = {
+      ...normalizeCreditSettings(mergedRaw),
+      specialRequestorPrices: Array.isArray(mergedRaw.specialRequestorPrices)
+        ? mergedRaw.specialRequestorPrices
+            .map((item) => {
+              const id = String(item?.requestorAnchorId || "").trim();
+              const amount = Number(item?.amount);
+              if (!Types.ObjectId.isValid(id) || !Number.isFinite(amount) || amount < 0) {
+                return null;
+              }
+              return {
+                requestorAnchorId: new Types.ObjectId(id),
+                amount,
+              };
+            })
+            .filter(Boolean)
+        : [],
+    };
 
     const doc = await SystemSettings.findOneAndUpdate(
       { key: "global" },
       {
         $setOnInsert: { key: "global" },
-        $set: { creditSettings: merged },
+        $set: { creditSettings: mergedForSave },
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
@@ -369,6 +427,84 @@ export async function updateCreditSettings(req, res) {
     res.status(500).json({
       success: false,
       message: "크레딧 설정 업데이트 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function listCreditPriceRequestors(req, res) {
+  try {
+    const q = String(req.query?.q || "")
+      .trim()
+      .toLowerCase();
+    const items = await BusinessAnchor.find({
+      businessType: "requestor",
+      status: { $ne: "merged" },
+    })
+      .sort({ name: 1, createdAt: 1 })
+      .select({
+        _id: 1,
+        name: 1,
+        requestorKind: 1,
+        status: 1,
+        metadata: 1,
+        businessNumberNormalized: 1,
+      })
+      .lean();
+
+    const mapped = items.map((item) => {
+      const name =
+        String(item.name || "").trim() ||
+        String(item.metadata?.companyName || "").trim() ||
+        "이름 없는 의뢰자";
+      const representativeName = String(
+        item.metadata?.representativeName || "",
+      ).trim();
+      const businessNumber = String(
+        item.businessNumberNormalized || "",
+      ).trim();
+      const address = [
+        String(item.metadata?.address || "").trim(),
+        String(item.metadata?.addressDetail || "").trim(),
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return {
+        id: String(item._id),
+        name,
+        representativeName,
+        businessNumber,
+        address,
+        requestorKind: item.requestorKind || null,
+        status: item.status || null,
+      };
+    });
+
+    const filtered = q
+      ? mapped.filter((item) => {
+          const haystack = [
+            item.name,
+            item.representativeName,
+            item.businessNumber,
+            item.address,
+            item.id,
+          ]
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(q);
+        })
+      : mapped;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        items: filtered,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "의뢰자 목록을 조회하지 못했습니다.",
       error: error.message,
     });
   }

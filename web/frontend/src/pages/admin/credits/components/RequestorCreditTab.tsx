@@ -1,10 +1,10 @@
+// change-log:
+// - 2026-08-13: 무료(의뢰/배송) 통합 표시, 스탯·탭 스타일 모던화.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
-// - web/frontend/src/pages/admin/credits/components/RequestorOrganizationsTab.tsx
-// - web/frontend/src/components/ui/input.tsx
+// - web/frontend/src/pages/admin/credits/creditPageUi.tsx
 import type { RefObject } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AutoMatchVerificationTab } from "./AutoMatchVerificationTab";
@@ -12,6 +12,7 @@ import { RequestorFreeCreditTab } from "./RequestorFreeCreditTab";
 import { RequestorOrdersTab } from "./RequestorOrdersTab";
 import { RequestorOrganizationsTab } from "./RequestorOrganizationsTab";
 import { RequestorTransactionsTab } from "./RequestorTransactionsTab";
+import { CreditStatTile } from "../creditPageUi";
 import type {
   BankTransaction,
   FreeCreditGrantHistoryRow,
@@ -20,6 +21,8 @@ import type {
   CreditStats,
   FreeCreditAmount,
 } from "../adminCredit.types";
+
+type FreeCreditMenu = "grant" | "grant-cancel" | "grant-history" | "usage-history";
 
 type RequestorCreditTabProps = {
   loadingStats: boolean;
@@ -42,38 +45,15 @@ type RequestorCreditTabProps = {
   setFreeCreditGrantSearch: (value: string) => void;
   loadFreeCreditGrantHistory: () => void | Promise<void>;
   loadingFreeCreditGrantRows: boolean;
-  freeCreditMenu:
-    | "grant"
-    | "grant-cancel"
-    | "grant-history"
-    | "usage-history"
-    | "shipping-credit";
-  setFreeCreditMenu: (
-    value:
-      | "grant"
-      | "grant-cancel"
-      | "grant-history"
-      | "usage-history"
-      | "shipping-credit",
-  ) => void;
-  grantCreditType: "general" | "shipping";
-  setGrantCreditType: (value: "general" | "shipping") => void;
-  selectedShippingCreditBusinessAnchorId: string;
-  setSelectedShippingCreditBusinessAnchorId: (value: string) => void;
+  freeCreditMenu: FreeCreditMenu;
+  setFreeCreditMenu: (value: FreeCreditMenu) => void;
   selectedFreeCreditAmount: FreeCreditAmount;
   setSelectedFreeCreditAmount: (value: FreeCreditAmount) => void;
-  selectedShippingCreditAmount: number;
-  setSelectedShippingCreditAmount: (value: number) => void;
   freeCreditReason: string;
   setFreeCreditReason: (value: string) => void;
-  shippingCreditReason: string;
-  setShippingCreditReason: (value: string) => void;
   handleGrantFreeCredit: () => void | Promise<void>;
-  handleGrantShippingCredit: () => void | Promise<void>;
   grantingFreeCredit: boolean;
-  grantingShippingCredit: boolean;
   selectedFreeCreditBusiness: BusinessCredit | null;
-  selectedShippingCreditBusiness: BusinessCredit | null;
   cancelStartDate: string;
   setCancelStartDate: (value: string) => void;
   cancelEndDate: string;
@@ -137,6 +117,10 @@ type RequestorCreditTabProps = {
   matching: boolean;
 };
 
+function won(n: number) {
+  return `${n.toLocaleString()}원`;
+}
+
 export function RequestorCreditTab(props: RequestorCreditTabProps) {
   const requestorBusinesses = (
     props.allRequestorBusinesses.length > 0
@@ -150,142 +134,95 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
   });
 
   const totalChargedPaid = Number(props.stats?.totalCharged || 0);
-  const totalChargedFreeRequest = Number(props.stats?.totalFreeRequest ?? 0);
-  const totalChargedFreeShipping = Number(props.stats?.totalFreeShipping ?? 0);
   const totalChargedFree = Number(
     props.stats?.totalChargedFreeAmount ??
-      totalChargedFreeRequest + totalChargedFreeShipping,
+      Number(props.stats?.totalFreeRequest ?? 0) +
+        Number(props.stats?.totalFreeShipping ?? 0),
   );
   const totalPaidCredit = Number(props.stats?.totalPaidCredit || 0);
-  const totalFreeRequestCredit = Number(
+  const totalFreeCredit = Number(
     props.stats?.totalFreeRequestCredit ?? 0,
-  );
-  const totalFreeShippingCredit = Number(
-    props.stats?.totalFreeShippingCredit ?? 0,
-  );
+  ) + Number(props.stats?.totalFreeShippingCredit ?? 0);
   const totalSpentPaid = Number(props.stats?.totalSpentPaidAmount || 0);
-  const totalSpentFreeRequest = Number(
-    props.stats?.totalSpentFreeRequestAmount ?? 0,
-  );
-  const totalSpentFreeShipping = Number(
-    props.stats?.totalSpentFreeShippingAmount ?? 0,
-  );
   const totalSpentFree = Number(
     props.stats?.totalSpentFreeAmount ??
-      totalSpentFreeRequest + totalSpentFreeShipping,
+      Number(props.stats?.totalSpentFreeRequestAmount ?? 0) +
+        Number(props.stats?.totalSpentFreeShippingAmount ?? 0),
   );
+
+  const loading = props.loadingStats;
 
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 사업자 수</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {props.loadingStats
-                ? "..."
-                : requestorBusinesses.length.toLocaleString()}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">크레딧 충전액</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {props.loadingStats
-                ? "..."
-                : `${(totalChargedPaid + totalChargedFree).toLocaleString()}원`}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              유료 {totalChargedPaid.toLocaleString()}원
-            </div>
-            <div className="text-xs text-muted-foreground">
-              무료(의뢰) {totalChargedFreeRequest.toLocaleString()}원
-            </div>
-            <div className="text-xs text-muted-foreground">
-              무료(배송) {totalChargedFreeShipping.toLocaleString()}원
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">크레딧 잔여액</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {props.loadingStats
-                ? "..."
-                : `${(
-                    totalPaidCredit +
-                    totalFreeRequestCredit +
-                    totalFreeShippingCredit
-                  ).toLocaleString()}원`}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              유료 {totalPaidCredit.toLocaleString()}원
-            </div>
-            <div className="text-xs text-muted-foreground">
-              무료(의뢰) {totalFreeRequestCredit.toLocaleString()}원
-            </div>
-            <div className="text-xs text-muted-foreground">
-              무료(배송) {totalFreeShippingCredit.toLocaleString()}원
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">크레딧 사용액</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {props.loadingStats
-                ? "..."
-                : `${(totalSpentPaid + totalSpentFree).toLocaleString()}원`}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              유료 {totalSpentPaid.toLocaleString()}원
-            </div>
-            <div className="text-xs text-muted-foreground">
-              무료(의뢰) {totalSpentFreeRequest.toLocaleString()}원
-            </div>
-            <div className="text-xs text-muted-foreground">
-              무료(배송) {totalSpentFreeShipping.toLocaleString()}원
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">미매칭 입금</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-accent-strong">
-              {props.loadingStats
-                ? "..."
-                : props.stats?.newBankTransactions || 0}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <CreditStatTile
+          label="의뢰자"
+          value={loading ? "…" : requestorBusinesses.length.toLocaleString()}
+        />
+        <CreditStatTile
+          label="충전"
+          value={
+            loading ? "…" : won(totalChargedPaid + totalChargedFree)
+          }
+          hint={
+            <>
+              <div>유료 {won(totalChargedPaid)}</div>
+              <div>무료 {won(totalChargedFree)}</div>
+            </>
+          }
+        />
+        <CreditStatTile
+          label="잔여"
+          value={loading ? "…" : won(totalPaidCredit + totalFreeCredit)}
+          hint={
+            <>
+              <div>유료 {won(totalPaidCredit)}</div>
+              <div>무료 {won(totalFreeCredit)}</div>
+            </>
+          }
+        />
+        <CreditStatTile
+          label="사용"
+          value={loading ? "…" : won(totalSpentPaid + totalSpentFree)}
+          hint={
+            <>
+              <div>유료 {won(totalSpentPaid)}</div>
+              <div>무료 {won(totalSpentFree)}</div>
+            </>
+          }
+        />
+        <CreditStatTile
+          label="미매칭 입금"
+          value={loading ? "…" : props.stats?.newBankTransactions || 0}
+          tone="accent"
+        />
       </div>
 
       <Tabs defaultValue="organizations" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <TabsList>
-            <TabsTrigger value="organizations">사업자별 크레딧</TabsTrigger>
-            <TabsTrigger value="free-credit">무료 크레딧</TabsTrigger>
-            <TabsTrigger value="verification">자동 매칭 검증</TabsTrigger>
-            <TabsTrigger value="orders">충전 주문</TabsTrigger>
-            <TabsTrigger value="transactions">입금 내역</TabsTrigger>
+          <TabsList className="h-11 rounded-xl bg-slate-100/80 p-1">
+            <TabsTrigger value="organizations" className="rounded-lg px-4">
+              사업자
+            </TabsTrigger>
+            <TabsTrigger value="free-credit" className="rounded-lg px-4">
+              무료 크레딧
+            </TabsTrigger>
+            <TabsTrigger value="verification" className="rounded-lg px-4">
+              자동 매칭
+            </TabsTrigger>
+            <TabsTrigger value="orders" className="rounded-lg px-4">
+              충전 주문
+            </TabsTrigger>
+            <TabsTrigger value="transactions" className="rounded-lg px-4">
+              입금 내역
+            </TabsTrigger>
           </TabsList>
-          <div className="w-full md:w-[360px]">
+          <div className="w-full md:w-[340px]">
             <Input
               value={props.searchQuery}
               onChange={(e) => props.setSearchQuery(e.target.value)}
-              placeholder="사업자명 / 사업자번호 / 대표자 / anchor ID 검색"
-              className="h-10"
+              placeholder="사업자명 · 번호 · 대표자 검색"
+              className="h-10 rounded-xl border-slate-200"
             />
           </div>
         </div>
@@ -302,7 +239,9 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
 
         <RequestorFreeCreditTab
           businesses={requestorBusinesses}
-          selectedFreeCreditBusinessAnchorId={props.selectedFreeCreditBusinessAnchorId}
+          selectedFreeCreditBusinessAnchorId={
+            props.selectedFreeCreditBusinessAnchorId
+          }
           setSelectedFreeCreditBusinessAnchorId={
             props.setSelectedFreeCreditBusinessAnchorId
           }
@@ -312,30 +251,13 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
           loadingFreeCreditGrantRows={props.loadingFreeCreditGrantRows}
           freeCreditMenu={props.freeCreditMenu}
           setFreeCreditMenu={props.setFreeCreditMenu}
-          grantCreditType={props.grantCreditType}
-          setGrantCreditType={props.setGrantCreditType}
-          selectedShippingCreditBusinessAnchorId={
-            props.selectedShippingCreditBusinessAnchorId
-          }
-          setSelectedShippingCreditBusinessAnchorId={
-            props.setSelectedShippingCreditBusinessAnchorId
-          }
           selectedFreeCreditAmount={props.selectedFreeCreditAmount}
           setSelectedFreeCreditAmount={props.setSelectedFreeCreditAmount}
-          selectedShippingCreditAmount={props.selectedShippingCreditAmount}
-          setSelectedShippingCreditAmount={
-            props.setSelectedShippingCreditAmount
-          }
           freeCreditReason={props.freeCreditReason}
           setFreeCreditReason={props.setFreeCreditReason}
-          shippingCreditReason={props.shippingCreditReason}
-          setShippingCreditReason={props.setShippingCreditReason}
           handleGrantFreeCredit={props.handleGrantFreeCredit}
-          handleGrantShippingCredit={props.handleGrantShippingCredit}
           grantingFreeCredit={props.grantingFreeCredit}
-          grantingShippingCredit={props.grantingShippingCredit}
           selectedFreeCreditBusiness={props.selectedFreeCreditBusiness}
-          selectedShippingCreditBusiness={props.selectedShippingCreditBusiness}
           cancelStartDate={props.cancelStartDate}
           setCancelStartDate={props.setCancelStartDate}
           cancelEndDate={props.cancelEndDate}

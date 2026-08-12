@@ -1,17 +1,13 @@
+// change-log:
+// - 2026-08-13: 충전 주문 탭 스타일·카피 모던화.
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx
+// - web/frontend/src/pages/admin/credits/creditPageUi.tsx
 import type { RefObject } from "react";
+import { Receipt } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -23,6 +19,11 @@ import {
 import { TabsContent } from "@/components/ui/tabs";
 import type { ChargeOrder } from "../adminCredit.types";
 import { formatDate, getStatusBadge } from "../adminCredit.utils";
+import {
+  CreditFilterChip,
+  CreditPanel,
+  CreditSectionHeader,
+} from "../creditPageUi";
 
 type RequestorOrdersTabProps = {
   orderStatusFilter: string;
@@ -43,6 +44,13 @@ type RequestorOrdersTabProps = {
   setRejectModalOpen: (open: boolean) => void;
 };
 
+const FILTERS: { value: string; label: string }[] = [
+  { value: "", label: "전체" },
+  { value: "PENDING", label: "대기" },
+  { value: "MATCHED", label: "매칭" },
+  { value: "AUTO_MATCHED", label: "자동매칭" },
+];
+
 export function RequestorOrdersTab(props: RequestorOrdersTabProps) {
   const {
     orderStatusFilter,
@@ -60,86 +68,46 @@ export function RequestorOrdersTab(props: RequestorOrdersTabProps) {
     setRejectModalOpen,
   } = props;
 
+  const applyFilter = (status: string) => {
+    setOrderStatusFilter(status);
+    setOrderSkip(0);
+    setOrderHasMore(true);
+    loadChargeOrders(status || undefined, { reset: true });
+  };
+
   return (
     <TabsContent value="orders" className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle>충전 주문</CardTitle>
-              <CardDescription>
-                입금 매칭된 주문을 승인하거나 거절합니다.
-              </CardDescription>
-            </div>
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                variant={orderStatusFilter === "" ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  setOrderStatusFilter("");
-                  setOrderSkip(0);
-                  setOrderHasMore(true);
-                  loadChargeOrders(undefined, { reset: true });
-                }}
-              >
-                전체
-              </Button>
-              <Button
-                variant={
-                  orderStatusFilter === "PENDING" ? "default" : "outline"
-                }
-                size="sm"
-                onClick={() => {
-                  setOrderStatusFilter("PENDING");
-                  setOrderSkip(0);
-                  setOrderHasMore(true);
-                  loadChargeOrders("PENDING", { reset: true });
-                }}
-              >
-                대기중
-              </Button>
-              <Button
-                variant={
-                  orderStatusFilter === "MATCHED" ? "default" : "outline"
-                }
-                size="sm"
-                onClick={() => {
-                  setOrderStatusFilter("MATCHED");
-                  setOrderSkip(0);
-                  setOrderHasMore(true);
-                  loadChargeOrders("MATCHED", { reset: true });
-                }}
-              >
-                매칭완료
-              </Button>
-              <Button
-                variant={
-                  orderStatusFilter === "AUTO_MATCHED" ? "default" : "outline"
-                }
-                size="sm"
-                onClick={() => {
-                  setOrderStatusFilter("AUTO_MATCHED");
-                  setOrderSkip(0);
-                  setOrderHasMore(true);
-                  loadChargeOrders("AUTO_MATCHED", { reset: true });
-                }}
-              >
-                자동매칭
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loadingOrders ? (
-            <div className="text-center py-8 text-muted-foreground">
-              불러오는 중...
+      <CreditPanel>
+        <div className="space-y-5 p-5 sm:p-6">
+          <CreditSectionHeader
+            icon={Receipt}
+            title="충전 주문"
+            description="입금 매칭된 주문을 승인하거나 거절합니다."
+            trailing={
+              <div className="flex flex-wrap gap-1.5">
+                {FILTERS.map((f) => (
+                  <CreditFilterChip
+                    key={f.value || "all"}
+                    active={orderStatusFilter === f.value}
+                    onClick={() => applyFilter(f.value)}
+                  >
+                    {f.label}
+                  </CreditFilterChip>
+                ))}
+              </div>
+            }
+          />
+
+          {loadingOrders && chargeOrders.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              불러오는 중…
             </div>
           ) : chargeOrders.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
+            <div className="py-10 text-center text-sm text-muted-foreground">
               충전 주문이 없습니다.
             </div>
           ) : (
-            <div ref={orderScrollRef}>
+            <div ref={orderScrollRef} className="overflow-x-auto rounded-2xl border border-slate-200/80">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -147,93 +115,97 @@ export function RequestorOrdersTab(props: RequestorOrdersTabProps) {
                     <TableHead>입금코드</TableHead>
                     <TableHead className="text-right">공급가</TableHead>
                     <TableHead className="text-right">총액</TableHead>
-                    <TableHead>승인 상태</TableHead>
-                    <TableHead>승인자/시각</TableHead>
-                    <TableHead>생성일</TableHead>
-                    <TableHead>만료일</TableHead>
-                    <TableHead>매칭일</TableHead>
+                    <TableHead>승인</TableHead>
+                    <TableHead>승인자</TableHead>
+                    <TableHead>생성</TableHead>
+                    <TableHead>만료</TableHead>
+                    <TableHead>매칭</TableHead>
                     <TableHead className="text-right">액션</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {chargeOrders.map((order) => (
-                    <TableRow key={order._id}>
-                      <TableCell>{getStatusBadge(order.status)}</TableCell>
-                      <TableCell className="font-mono">
-                        {order.depositCode}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {order.supplyAmount.toLocaleString()}원
-                      </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {order.amountTotal.toLocaleString()}원
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            order.adminApprovalStatus === "APPROVED"
-                              ? "default"
-                              : order.adminApprovalStatus === "REJECTED"
-                                ? "destructive"
-                                : "outline"
-                          }
-                        >
-                          {order.adminApprovalStatus || "PENDING"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {order.adminApprovalBy?.name
-                          ? `${order.adminApprovalBy.name} (${order.adminApprovalBy.email || "-"})`
-                          : "-"}
-                        <div className="text-xs text-muted-foreground">
-                          {formatDate(order.adminApprovalAt)}
-                        </div>
-                      </TableCell>
-                      <TableCell>{formatDate(order.createdAt)}</TableCell>
-                      <TableCell>{formatDate(order.expiresAt)}</TableCell>
-                      <TableCell>{formatDate(order.matchedAt)}</TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={
-                            order.adminApprovalStatus !== "PENDING" ||
-                            order.status === "CANCELED" ||
-                            order.status === "EXPIRED"
-                          }
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setApproveModalOpen(true);
-                          }}
-                        >
-                          승인
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={
-                            order.adminApprovalStatus !== "PENDING" ||
-                            order.status === "CANCELED" ||
-                            order.status === "EXPIRED"
-                          }
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setRejectNote("");
-                            setRejectModalOpen(true);
-                          }}
-                        >
-                          거절
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {chargeOrders.map((order) => {
+                    const canAct =
+                      order.adminApprovalStatus === "PENDING" &&
+                      order.status !== "CANCELED" &&
+                      order.status !== "EXPIRED";
+                    return (
+                      <TableRow key={order._id}>
+                        <TableCell>{getStatusBadge(order.status)}</TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {order.depositCode}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {order.supplyAmount.toLocaleString()}원
+                        </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">
+                          {order.amountTotal.toLocaleString()}원
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              order.adminApprovalStatus === "APPROVED"
+                                ? "default"
+                                : order.adminApprovalStatus === "REJECTED"
+                                  ? "destructive"
+                                  : "outline"
+                            }
+                          >
+                            {order.adminApprovalStatus || "PENDING"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {order.adminApprovalBy?.name || "-"}
+                          <div className="text-xs text-muted-foreground">
+                            {formatDate(order.adminApprovalAt)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {formatDate(order.createdAt)}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {formatDate(order.expiresAt)}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {formatDate(order.matchedAt)}
+                        </TableCell>
+                        <TableCell className="space-x-1.5 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 rounded-lg"
+                            disabled={!canAct}
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setApproveModalOpen(true);
+                            }}
+                          >
+                            승인
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-8 rounded-lg"
+                            disabled={!canAct}
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setRejectNote("");
+                              setRejectModalOpen(true);
+                            }}
+                          >
+                            거절
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
               <div ref={orderSentinelRef} className="h-10" />
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </CreditPanel>
     </TabsContent>
   );
 }

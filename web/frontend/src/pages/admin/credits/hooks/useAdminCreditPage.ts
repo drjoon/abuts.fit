@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-13: 배송 전용 무료크레딧 지급 UI/상태 제거(일반·배송 통합).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
@@ -123,29 +125,14 @@ export function useAdminCreditPage() {
     useState<FreeCreditAmount>(30000);
   const [freeCreditReason, setFreeCreditReason] = useState("");
   const [grantingFreeCredit, setGrantingFreeCredit] = useState(false);
-  const [grantCreditType, setGrantCreditType] = useState<
-    "general" | "shipping"
-  >("general");
   const [freeCreditGrantRows, setFreeCreditGrantRows] = useState<FreeCreditGrantHistoryRow[]>(
     [],
   );
   const [loadingFreeCreditGrantRows, setLoadingFreeCreditGrantRows] = useState(false);
   const [freeCreditGrantSearch, setFreeCreditGrantSearch] = useState("");
   const [freeCreditMenu, setFreeCreditMenu] = useState<
-    | "grant"
-    | "grant-cancel"
-    | "grant-history"
-    | "usage-history"
-    | "shipping-credit"
+    "grant" | "grant-cancel" | "grant-history" | "usage-history"
   >("grant");
-  const [
-    selectedShippingCreditBusinessAnchorId,
-    setSelectedShippingCreditBusinessAnchorId,
-  ] = useState("");
-  const [selectedShippingCreditAmount, setSelectedShippingCreditAmount] =
-    useState(7000);
-  const [shippingCreditReason, setShippingCreditReason] = useState("");
-  const [grantingShippingCredit, setGrantingShippingCredit] = useState(false);
   const [selectedCancelGrantId, setSelectedCancelGrantId] = useState("");
   const [cancelGrantReason, setCancelGrantReason] = useState("");
   const [cancelingGrant, setCancelingGrant] = useState(false);
@@ -546,93 +533,6 @@ export function useAdminCreditPage() {
       });
     } finally {
       setGrantingFreeCredit(false);
-    }
-  };
-
-  const handleGrantShippingCredit = async () => {
-    if (!token) return;
-    const businessAnchorId = String(
-      selectedShippingCreditBusinessAnchorId || "",
-    ).trim();
-    const freeCreditBusinessPool =
-      allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
-    const reason = String(shippingCreditReason || "").trim();
-    if (!businessAnchorId) {
-      toast({
-        title: "지급 대상 선택 필요",
-        description: "배송비 무료 크레딧을 지급할 사업자를 선택해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!reason) {
-      toast({
-        title: "지급 이유 입력 필요",
-        description: "배송비 무료 크레딧 지급 이유를 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const targetBusiness = freeCreditBusinessPool.find(
-      (business) => String(business._id) === businessAnchorId,
-    );
-    if (!isFreeCreditEligibleBusiness(targetBusiness || null)) {
-      toast({
-        title: "지급 대상 제한",
-        description:
-          "배송비 무료 크레딧은 의뢰자 사업자에게만 지급할 수 있습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const businessNumber = String(targetBusiness?.businessNumber || "").trim();
-    if (!businessNumber) {
-      toast({
-        title: "사업자등록번호 없음",
-        description: "선택한 사업자의 사업자등록번호를 확인할 수 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setGrantingShippingCredit(true);
-    try {
-      const res = await request<ApiMessageResponse>({
-        path: "/api/admin/free-credit-grants/free-shipping-credit/grant",
-        method: "POST",
-        token,
-        jsonBody: {
-          businessAnchorId,
-          businessNumber,
-          amount: selectedShippingCreditAmount,
-          reason,
-        },
-      });
-      if (!res.ok) {
-        throw new Error(
-          getResponseMessage(
-            res.data,
-            "배송비 무료 크레딧 지급에 실패했습니다.",
-          ),
-        );
-      }
-      toast({
-        title: "배송비 무료 크레딧 지급 완료",
-        description: `${selectedShippingCreditAmount.toLocaleString()}원이 지급되었습니다.`,
-      });
-      setShippingCreditReason("");
-      setSelectedShippingCreditAmount(7000);
-      setSelectedShippingCreditBusinessAnchorId("");
-      setOrgSkip(0);
-      setOrgHasMore(true);
-      await Promise.all([loadStats(), loadOrganizations({ reset: true })]);
-    } catch (error: unknown) {
-      toast({
-        title: "배송비 무료 크레딧 지급 실패",
-        description: getErrorMessage(error, "다시 시도해주세요."),
-        variant: "destructive",
-      });
-    } finally {
-      setGrantingShippingCredit(false);
     }
   };
 
@@ -1058,20 +958,6 @@ export function useAdminCreditPage() {
       ) || null
     );
   }, [allRequestorBusinesses, businesses, selectedFreeCreditBusinessAnchorId]);
-  const selectedShippingCreditBusiness = useMemo(() => {
-    const pool =
-      allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
-    return (
-      pool.find(
-        (business) =>
-          String(business._id) === selectedShippingCreditBusinessAnchorId,
-      ) || null
-    );
-  }, [
-    allRequestorBusinesses,
-    businesses,
-    selectedShippingCreditBusinessAnchorId,
-  ]);
 
   const filteredFreeCreditGrantRows = useMemo(() => {
     const selectedBusinessNumberDigits = normalizeDigits(
@@ -1210,8 +1096,6 @@ export function useAdminCreditPage() {
     freeCreditReason,
     setFreeCreditReason,
     grantingFreeCredit,
-    grantCreditType,
-    setGrantCreditType,
     freeCreditGrantRows,
     setFreeCreditGrantRows,
     loadingFreeCreditGrantRows,
@@ -1219,13 +1103,6 @@ export function useAdminCreditPage() {
     setFreeCreditGrantSearch,
     freeCreditMenu,
     setFreeCreditMenu,
-    selectedShippingCreditBusinessAnchorId,
-    setSelectedShippingCreditBusinessAnchorId,
-    selectedShippingCreditAmount,
-    setSelectedShippingCreditAmount,
-    shippingCreditReason,
-    setShippingCreditReason,
-    grantingShippingCredit,
     selectedCancelGrantId,
     setSelectedCancelGrantId,
     cancelGrantReason,
@@ -1272,7 +1149,6 @@ export function useAdminCreditPage() {
     loadBankTransactions,
     handleManualMatch,
     handleGrantFreeCredit,
-    handleGrantShippingCredit,
     loadFreeCreditGrantHistory,
     handleCancelFreeCredit,
     loadMoreCancelGrants,
@@ -1280,7 +1156,6 @@ export function useAdminCreditPage() {
     handleReject,
     salesmanSummary,
     selectedFreeCreditBusiness,
-    selectedShippingCreditBusiness,
     filteredFreeCreditGrantRows,
     filteredFreeCreditUsageRows,
   };

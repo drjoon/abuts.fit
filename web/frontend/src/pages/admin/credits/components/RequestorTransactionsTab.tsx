@@ -1,16 +1,12 @@
+// change-log:
+// - 2026-08-13: 입금 내역 탭 스타일·카피 모던화.
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx
+// - web/frontend/src/pages/admin/credits/creditPageUi.tsx
 import type { RefObject } from "react";
+import { Landmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -22,8 +18,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/shared/ui/cn";
 import type { BankTransaction, ChargeOrder } from "../adminCredit.types";
 import { formatDate, getStatusBadge } from "../adminCredit.utils";
+import {
+  CreditFilterChip,
+  CreditPanel,
+  CreditSectionHeader,
+} from "../creditPageUi";
 
 type RequestorTransactionsTabProps = {
   txTab: "auto" | "manual";
@@ -54,6 +56,12 @@ type RequestorTransactionsTabProps = {
   matching: boolean;
 };
 
+const FILTERS: { value: string; label: string }[] = [
+  { value: "", label: "전체" },
+  { value: "NEW", label: "미매칭" },
+  { value: "MATCHED", label: "매칭완료" },
+];
+
 export function RequestorTransactionsTab(props: RequestorTransactionsTabProps) {
   const {
     txTab,
@@ -81,77 +89,62 @@ export function RequestorTransactionsTab(props: RequestorTransactionsTabProps) {
     matching,
   } = props;
 
+  const applyFilter = (status: string) => {
+    setTxStatusFilter(status);
+    setTxSkip(0);
+    setTxHasMore(true);
+    loadBankTransactions(status || undefined, { reset: true });
+  };
+
   return (
     <TabsContent value="transactions" className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <CardTitle>입금 내역</CardTitle>
-              <CardDescription>
-                팝빌 웹훅으로 수신된 입금 내역을 기반으로 자동 매칭을
-                처리합니다.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={txTab} onValueChange={(v) => setTxTab(v as any)}>
-            <TabsList>
-              <TabsTrigger value="auto">자동 매칭</TabsTrigger>
-              <TabsTrigger value="manual">수동 연결(예외)</TabsTrigger>
+      <CreditPanel>
+        <div className="space-y-5 p-5 sm:p-6">
+          <CreditSectionHeader
+            icon={Landmark}
+            title="입금 내역"
+            description="팝빌 웹훅 입금 기준으로 자동 매칭합니다. 실패 건만 수동 연결하세요."
+          />
+
+          <Tabs
+            value={txTab}
+            onValueChange={(v) => setTxTab(v as "auto" | "manual")}
+          >
+            <TabsList className="h-10 rounded-xl bg-slate-100/80 p-1">
+              <TabsTrigger value="auto" className="rounded-lg px-4">
+                자동 매칭
+              </TabsTrigger>
+              <TabsTrigger value="manual" className="rounded-lg px-4">
+                수동 연결
+              </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="auto" className="pt-4">
-              <div className="flex gap-2 flex-wrap justify-end pb-3">
-                <Button
-                  variant={txStatusFilter === "" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => {
-                    setTxStatusFilter("");
-                    setTxSkip(0);
-                    setTxHasMore(true);
-                    loadBankTransactions(undefined, { reset: true });
-                  }}
-                >
-                  전체
-                </Button>
-                <Button
-                  variant={txStatusFilter === "NEW" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => {
-                    setTxStatusFilter("NEW");
-                    setTxSkip(0);
-                    setTxHasMore(true);
-                    loadBankTransactions("NEW", { reset: true });
-                  }}
-                >
-                  미매칭
-                </Button>
-                <Button
-                  variant={txStatusFilter === "MATCHED" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => {
-                    setTxStatusFilter("MATCHED");
-                    setTxSkip(0);
-                    setTxHasMore(true);
-                    loadBankTransactions("MATCHED", { reset: true });
-                  }}
-                >
-                  매칭완료
-                </Button>
+            <TabsContent value="auto" className="mt-4 space-y-3">
+              <div className="flex flex-wrap justify-end gap-1.5">
+                {FILTERS.map((f) => (
+                  <CreditFilterChip
+                    key={f.value || "all"}
+                    active={txStatusFilter === f.value}
+                    onClick={() => applyFilter(f.value)}
+                  >
+                    {f.label}
+                  </CreditFilterChip>
+                ))}
               </div>
 
-              {loadingTransactions ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  불러오는 중...
+              {loadingTransactions && bankTransactions.length === 0 ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  불러오는 중…
                 </div>
               ) : bankTransactions.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
+                <div className="py-10 text-center text-sm text-muted-foreground">
                   입금 내역이 없습니다.
                 </div>
               ) : (
-                <div ref={txScrollRef}>
+                <div
+                  ref={txScrollRef}
+                  className="overflow-x-auto rounded-2xl border border-slate-200/80"
+                >
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -159,23 +152,27 @@ export function RequestorTransactionsTab(props: RequestorTransactionsTabProps) {
                         <TableHead>입금코드</TableHead>
                         <TableHead className="text-right">금액</TableHead>
                         <TableHead>입금자</TableHead>
-                        <TableHead>발생일</TableHead>
-                        <TableHead>매칭일</TableHead>
+                        <TableHead>발생</TableHead>
+                        <TableHead>매칭</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {bankTransactions.map((tx) => (
                         <TableRow key={tx._id}>
                           <TableCell>{getStatusBadge(tx.status)}</TableCell>
-                          <TableCell className="font-mono">
+                          <TableCell className="font-mono text-sm">
                             {tx.depositCode || "-"}
                           </TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell className="text-right font-semibold tabular-nums">
                             {tx.tranAmt.toLocaleString()}원
                           </TableCell>
                           <TableCell>{tx.printedContent}</TableCell>
-                          <TableCell>{formatDate(tx.occurredAt)}</TableCell>
-                          <TableCell>{formatDate(tx.matchedAt)}</TableCell>
+                          <TableCell className="text-sm">
+                            {formatDate(tx.occurredAt)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {formatDate(tx.matchedAt)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -185,188 +182,181 @@ export function RequestorTransactionsTab(props: RequestorTransactionsTabProps) {
               )}
             </TabsContent>
 
-            <TabsContent value="manual" className="pt-4 space-y-4">
+            <TabsContent value="manual" className="mt-4 space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>미매칭 입금 내역</CardTitle>
-                    <CardDescription>
-                      기본은 자동 매칭입니다. 자동 매칭이 실패한 케이스만
-                      예외적으로 수동 연결하세요.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-4">
+                  <div className="text-sm font-semibold text-slate-900">
+                    미매칭 입금
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    자동 매칭 실패 건만 선택하세요.
+                  </p>
+                  <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
                     {loadingTransactions ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        불러오는 중...
+                      <div className="py-8 text-center text-sm text-muted-foreground">
+                        불러오는 중…
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {bankTransactions
-                          .filter((tx) => tx.status === "NEW")
-                          .map((tx) => (
-                            <div
-                              key={tx._id}
-                              className={`rounded-lg border p-3 cursor-pointer transition-colors ${selectedTx?._id === tx._id ? "border-primary bg-primary/5" : "hover:bg-gray-50"}`}
-                              onClick={() => setSelectedTx(tx)}
-                            >
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <div className="font-medium">
-                                    {tx.printedContent}
-                                  </div>
-                                  <div className="text-sm text-muted-foreground">
-                                    코드: {tx.depositCode || "없음"}
-                                  </div>
+                      bankTransactions
+                        .filter((tx) => tx.status === "NEW")
+                        .map((tx) => (
+                          <button
+                            key={tx._id}
+                            type="button"
+                            onClick={() => setSelectedTx(tx)}
+                            className={cn(
+                              "w-full rounded-xl border p-3 text-left transition-colors",
+                              selectedTx?._id === tx._id
+                                ? "border-primary bg-primary/5"
+                                : "border-slate-200 bg-white hover:bg-slate-50",
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate font-medium">
+                                  {tx.printedContent}
                                 </div>
-                                <div className="text-right">
-                                  <div className="font-semibold">
-                                    {tx.tranAmt.toLocaleString()}원
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {formatDate(tx.occurredAt)}
-                                  </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {tx.depositCode || "코드 없음"}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <div className="font-semibold tabular-nums">
+                                  {tx.tranAmt.toLocaleString()}원
+                                </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  {formatDate(tx.occurredAt)}
                                 </div>
                               </div>
                             </div>
-                          ))}
-                      </div>
+                          </button>
+                        ))
                     )}
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>대기중인 충전 주문</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-4">
+                  <div className="text-sm font-semibold text-slate-900">
+                    대기 충전 주문
+                  </div>
+                  <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
                     {loadingOrders ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        불러오는 중...
+                      <div className="py-8 text-center text-sm text-muted-foreground">
+                        불러오는 중…
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {chargeOrders
-                          .filter((order) => order.status === "PENDING")
-                          .map((order) => (
-                            <div
-                              key={order._id}
-                              className={`rounded-lg border p-3 cursor-pointer transition-colors ${selectedOrder?._id === order._id ? "border-primary bg-primary/5" : "hover:bg-gray-50"}`}
-                              onClick={() => setSelectedOrder(order)}
-                            >
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <div className="font-medium font-mono">
-                                    {order.depositCode}
-                                  </div>
-                                  <div className="text-sm text-muted-foreground">
-                                    공급가:{" "}
-                                    {order.supplyAmount.toLocaleString()}원
-                                  </div>
+                      chargeOrders
+                        .filter((order) => order.status === "PENDING")
+                        .map((order) => (
+                          <button
+                            key={order._id}
+                            type="button"
+                            onClick={() => setSelectedOrder(order)}
+                            className={cn(
+                              "w-full rounded-xl border p-3 text-left transition-colors",
+                              selectedOrder?._id === order._id
+                                ? "border-primary bg-primary/5"
+                                : "border-slate-200 bg-white hover:bg-slate-50",
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="font-mono text-sm font-medium">
+                                  {order.depositCode}
                                 </div>
-                                <div className="text-right">
-                                  <div className="font-semibold">
-                                    {order.amountTotal.toLocaleString()}원
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {formatDate(order.createdAt)}
-                                  </div>
+                                <div className="text-xs text-muted-foreground">
+                                  공급가 {order.supplyAmount.toLocaleString()}원
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-semibold tabular-nums">
+                                  {order.amountTotal.toLocaleString()}원
+                                </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  {formatDate(order.createdAt)}
                                 </div>
                               </div>
                             </div>
-                          ))}
-                      </div>
+                          </button>
+                        ))
                     )}
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>수동 연결 실행</CardTitle>
-                  <CardDescription>
-                    입금 내역과 충전 주문을 직접 연결합니다. 금액/코드가
-                    불일치하면 기본적으로 막히며, 예외 허용을 켜면 강제 연결할
-                    수 있습니다.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {selectedTx && selectedOrder ? (
-                    <>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label>선택된 입금 내역</Label>
-                          <div className="rounded-lg border p-3 bg-gray-50">
-                            <div className="font-medium">
-                              {selectedTx.printedContent}
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              금액: {selectedTx.tranAmt.toLocaleString()}원
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              코드: {selectedTx.depositCode || "없음"}
-                            </div>
-                          </div>
+              <div className="rounded-2xl border border-slate-200/80 bg-white p-5">
+                <div className="text-sm font-semibold text-slate-900">
+                  수동 연결
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  금액·코드 불일치는 기본적으로 막힙니다. 예외 허용 시에만 강제
+                  연결됩니다.
+                </p>
+
+                {selectedTx && selectedOrder ? (
+                  <div className="mt-4 space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl bg-slate-50 p-3 text-sm">
+                        <div className="text-xs text-muted-foreground">입금</div>
+                        <div className="mt-1 font-medium">
+                          {selectedTx.printedContent}
                         </div>
-                        <div className="space-y-2">
-                          <Label>선택된 충전 주문</Label>
-                          <div className="rounded-lg border p-3 bg-gray-50">
-                            <div className="font-medium font-mono">
-                              {selectedOrder.depositCode}
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              금액: {selectedOrder.amountTotal.toLocaleString()}
-                              원
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              생성: {formatDate(selectedOrder.createdAt)}
-                            </div>
-                          </div>
+                        <div className="tabular-nums text-muted-foreground">
+                          {selectedTx.tranAmt.toLocaleString()}원 ·{" "}
+                          {selectedTx.depositCode || "코드 없음"}
                         </div>
                       </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="match-note">메모</Label>
-                        <Input
-                          id="match-note"
-                          value={matchNote}
-                          onChange={(e) => setMatchNote(e.target.value)}
-                          placeholder="(선택) 메모"
-                        />
+                      <div className="rounded-xl bg-slate-50 p-3 text-sm">
+                        <div className="text-xs text-muted-foreground">주문</div>
+                        <div className="mt-1 font-mono font-medium">
+                          {selectedOrder.depositCode}
+                        </div>
+                        <div className="tabular-nums text-muted-foreground">
+                          {selectedOrder.amountTotal.toLocaleString()}원
+                        </div>
                       </div>
-
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id="match-force"
-                          checked={matchForce}
-                          onChange={(e) => setMatchForce(e.target.checked)}
-                          className="rounded"
-                        />
-                        <Label htmlFor="match-force" className="cursor-pointer">
-                          예외 허용 (금액/코드 불일치 허용)
-                        </Label>
-                      </div>
-
-                      <Button
-                        onClick={handleManualMatch}
-                        disabled={matching}
-                        className="w-full"
-                      >
-                        {matching ? "연결 중..." : "연결 실행"}
-                      </Button>
-                    </>
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      입금 내역과 충전 주문을 각각 선택하세요.
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="match-note">메모</Label>
+                      <Input
+                        id="match-note"
+                        className="h-10 rounded-xl"
+                        value={matchNote}
+                        onChange={(e) => setMatchNote(e.target.value)}
+                        placeholder="(선택)"
+                      />
+                    </div>
+
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        id="match-force"
+                        checked={matchForce}
+                        onChange={(e) => setMatchForce(e.target.checked)}
+                        className="rounded"
+                      />
+                      예외 허용 (금액/코드 불일치)
+                    </label>
+
+                    <Button
+                      onClick={handleManualMatch}
+                      disabled={matching}
+                      className="h-11 w-full rounded-xl"
+                    >
+                      {matching ? "연결 중…" : "연결 실행"}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="mt-6 py-6 text-center text-sm text-muted-foreground">
+                    입금과 주문을 각각 선택하세요.
+                  </div>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
-        </CardContent>
-      </Card>
+        </div>
+      </CreditPanel>
     </TabsContent>
   );
 }

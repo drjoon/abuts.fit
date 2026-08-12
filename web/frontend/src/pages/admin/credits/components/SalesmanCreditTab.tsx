@@ -1,12 +1,19 @@
+// change-log:
+// - 2026-08-13: 영업자 크레딧 탭 스타일·카피 모던화.
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
+// - web/frontend/src/pages/admin/credits/creditPageUi.tsx
 import type { RefObject } from "react";
+import { Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabsContent } from "@/components/ui/tabs";
 import type { SalesmanCreditRow } from "../adminCredit.types";
+import {
+  CreditPanel,
+  CreditSectionHeader,
+  CreditStatTile,
+} from "../creditPageUi";
 
 type SalesmanSummary = {
   totalSalesmen: number;
@@ -31,9 +38,12 @@ type SalesmanCreditTabProps = {
   onOpenLedger: (row: SalesmanCreditRow) => void;
 };
 
+function won(n: number) {
+  return `${n.toLocaleString()}원`;
+}
+
 export function SalesmanCreditTab({
   loadingSalesmanOverview,
-  salesmanSummary,
   salesmanSortKey,
   setSalesmanSortKey,
   loadingSalesmen,
@@ -72,110 +82,66 @@ export function SalesmanCreditTab({
     ),
   };
 
+  const loading = loadingSalesmanOverview;
+  const commissionRate = (() => {
+    const base = Number(summaryForView.totalReferredRevenue30d || 0);
+    const comm = Number(summaryForView.totalEarned || 0);
+    if (base <= 0) return "-";
+    return `${((comm / base) * 100).toFixed(1)}%`;
+  })();
+
   return (
     <TabsContent value="salesman" className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 영업자 수</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingSalesmanOverview
-                ? "..."
-                : summaryForView.totalSalesmen.toLocaleString()}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              소개 매출 (기간)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingSalesmanOverview
-                ? "..."
-                : `${(
-                    Number(summaryForView.totalReferredRevenue30d || 0) +
-                    Number(summaryForView.totalReferredBonus30d || 0)
-                  ).toLocaleString()}원`}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              유료{" "}
-              {Number(
-                summaryForView.totalReferredRevenue30d || 0,
-              ).toLocaleString()}
-              원
-            </div>
-            <div className="text-xs text-muted-foreground">
-              무료{" "}
-              {Number(
-                summaryForView.totalReferredBonus30d || 0,
-              ).toLocaleString()}
-              원
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">수수료</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingSalesmanOverview
-                ? "..."
-                : `${summaryForView.totalEarned.toLocaleString()}원`}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              수수료율{" "}
-              {(() => {
-                const base = Number(
-                  summaryForView.totalReferredRevenue30d || 0,
-                );
-                const comm = Number(summaryForView.totalEarned || 0);
-                if (base <= 0) return "-";
-                return `${((comm / base) * 100).toFixed(1)}%`;
-              })()}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">기간 잔액</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingSalesmanOverview
-                ? "..."
-                : `${summaryForView.totalBalance.toLocaleString()}원`}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 정산</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingSalesmanOverview
-                ? "..."
-                : `${summaryForView.totalPaidOut.toLocaleString()}원`}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <CreditStatTile
+          label="영업자"
+          value={loading ? "…" : summaryForView.totalSalesmen.toLocaleString()}
+        />
+        <CreditStatTile
+          label="소개 매출"
+          value={
+            loading
+              ? "…"
+              : won(
+                  Number(summaryForView.totalReferredRevenue30d || 0) +
+                    Number(summaryForView.totalReferredBonus30d || 0),
+                )
+          }
+          hint={
+            <>
+              <div>
+                유료 {won(Number(summaryForView.totalReferredRevenue30d || 0))}
+              </div>
+              <div>
+                무료 {won(Number(summaryForView.totalReferredBonus30d || 0))}
+              </div>
+            </>
+          }
+        />
+        <CreditStatTile
+          label="수수료"
+          value={loading ? "…" : won(summaryForView.totalEarned)}
+          hint={<>수수료율 {commissionRate}</>}
+        />
+        <CreditStatTile
+          label="기간 잔액"
+          value={loading ? "…" : won(summaryForView.totalBalance)}
+        />
+        <CreditStatTile
+          label="정산"
+          value={loading ? "…" : won(summaryForView.totalPaidOut)}
+        />
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <CardTitle>영업자 크레딧</CardTitle>
-            </div>
-            <div className="w-[170px]">
+      <CreditPanel>
+        <div className="space-y-5 p-5 sm:p-6">
+          <CreditSectionHeader
+            icon={Users}
+            title="영업자 크레딧"
+            description="기간 잔액·수수료·소개 매출입니다. 카드를 누르면 원장을 엽니다."
+            trailing={
               <select
-                className="h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm"
                 value={salesmanSortKey}
                 onChange={(e) =>
                   setSalesmanSortKey(
@@ -187,26 +153,25 @@ export function SalesmanCreditTab({
                   )
                 }
               >
-                <option value="balance">정렬: 잔액순</option>
-                <option value="commission">정렬: 수수료순</option>
-                <option value="revenue">정렬: 매출순</option>
-                <option value="name">정렬: 이름순</option>
+                <option value="balance">잔액순</option>
+                <option value="commission">수수료순</option>
+                <option value="revenue">매출순</option>
+                <option value="name">이름순</option>
               </select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loadingSalesmen ? (
-            <div className="text-center py-8 text-muted-foreground">
-              불러오는 중...
+            }
+          />
+
+          {loadingSalesmen && salesmanRows.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              불러오는 중…
             </div>
           ) : salesmanRows.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
+            <div className="py-10 text-center text-sm text-muted-foreground">
               영업자 데이터가 없습니다.
             </div>
           ) : (
             <div ref={salesmanScrollRef}>
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {[...salesmanRows]
                   .sort((a, b) => {
                     if (salesmanSortKey === "balance") {
@@ -233,131 +198,100 @@ export function SalesmanCreditTab({
                     );
                   })
                   .map((s) => (
-                    <Card
+                    <button
                       key={s.salesmanId}
-                      className="border-muted cursor-pointer"
+                      type="button"
                       onClick={() => onOpenLedger(s)}
+                      className="rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50/60"
                     >
-                      <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <CardTitle className="text-base">
-                              {s.name}
-                            </CardTitle>
-                            <div className="space-y-1 text-sm text-muted-foreground">
-                              <div>{s.email}</div>
-                              <div className="font-mono">
-                                code: {s.referralCode || "-"}
-                              </div>
-                            </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-slate-900">
+                            {s.name}
                           </div>
-                          <Badge variant={s.active ? "default" : "secondary"}>
-                            {s.active ? "활성" : "비활성"}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3 text-sm">
-                        <div className="grid grid-cols-3 gap-2">
-                          <div>
-                            <div className="text-muted-foreground text-xs">
-                              기간 잔액
-                            </div>
-                            <div className="font-semibold">
-                              {Number(
-                                s.wallet?.balanceAmountPeriod || 0,
-                              ).toLocaleString()}
-                              원
-                            </div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {s.email}
                           </div>
-                          <div>
-                            <div className="text-muted-foreground text-xs">
-                              기간 적립
-                            </div>
-                            <div className="font-medium">
-                              {Number(
-                                s.wallet?.earnedAmountPeriod || 0,
-                              ).toLocaleString()}
-                              원
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground text-xs">
-                              기간 정산
-                            </div>
-                            <div className="font-medium">
-                              {Number(
-                                s.wallet?.paidOutAmountPeriod || 0,
-                              ).toLocaleString()}
-                              원
-                            </div>
+                          <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                            {s.referralCode || "-"}
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <div className="text-muted-foreground text-xs">
-                              소개 조직수
-                            </div>
-                            <div className="font-medium">
-                              {Number(s.performance30d?.referredOrgCount || 0)}
-                            </div>
+                        <Badge variant={s.active ? "default" : "secondary"}>
+                          {s.active ? "활성" : "비활성"}
+                        </Badge>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-slate-50/80 px-2.5 py-2">
+                        <div>
+                          <div className="text-[10px] text-muted-foreground">
+                            잔액
                           </div>
-                          <div>
-                            <div className="text-muted-foreground text-xs">
-                              소개 영업자수
-                            </div>
-                            <div className="font-medium">
-                              {Number(s.referredSalesmanCount || 0)}
-                            </div>
+                          <div className="text-xs font-semibold tabular-nums">
+                            {Number(
+                              s.wallet?.balanceAmountPeriod || 0,
+                            ).toLocaleString()}
                           </div>
                         </div>
-                        <div className="rounded-md bg-muted/40 px-3 py-2 space-y-0.5">
-                          <div className="text-xs font-semibold text-muted-foreground mb-1">
-                            소개 수수료
+                        <div>
+                          <div className="text-[10px] text-muted-foreground">
+                            적립
                           </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">
-                              소개 유료 매출{" "}
-                              {Number(
-                                s.performance30d?.revenueAmount || 0,
-                              ).toLocaleString()}
-                              원
-                              {Number(s.performance30d?.bonusAmount || 0) >
-                                0 && (
-                                <span className="text-muted-foreground/70">
-                                  {" "}
-                                  (무료{" "}
-                                  {Number(
-                                    s.performance30d?.bonusAmount || 0,
-                                  ).toLocaleString()}
-                                  원)
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">
-                              소개 수수료
-                            </span>
-                            <span className="font-semibold text-primary-strong">
-                              {Number(
-                                s.performance30d?.commissionAmount ?? 0,
-                              ).toLocaleString()}
-                              원
-                              <span className="text-muted-foreground font-normal ml-1">
-                                (매출 × 10%)
-                              </span>
-                            </span>
+                          <div className="text-xs font-medium tabular-nums">
+                            {Number(
+                              s.wallet?.earnedAmountPeriod || 0,
+                            ).toLocaleString()}
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
+                        <div>
+                          <div className="text-[10px] text-muted-foreground">
+                            정산
+                          </div>
+                          <div className="text-xs font-medium tabular-nums">
+                            {Number(
+                              s.wallet?.paidOutAmountPeriod || 0,
+                            ).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 space-y-1 text-xs">
+                        <div className="flex justify-between gap-2 text-muted-foreground">
+                          <span>소개 조직 / 영업자</span>
+                          <span className="font-medium text-slate-700">
+                            {Number(s.performance30d?.referredOrgCount || 0)} /{" "}
+                            {Number(s.referredSalesmanCount || 0)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-2 text-muted-foreground">
+                          <span>소개 매출</span>
+                          <span className="tabular-nums text-slate-700">
+                            {Number(
+                              s.performance30d?.revenueAmount || 0,
+                            ).toLocaleString()}
+                            원
+                            {Number(s.performance30d?.bonusAmount || 0) > 0
+                              ? ` (+무료 ${Number(s.performance30d?.bonusAmount || 0).toLocaleString()})`
+                              : ""}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">수수료</span>
+                          <span className="font-semibold tabular-nums text-primary-strong">
+                            {Number(
+                              s.performance30d?.commissionAmount ?? 0,
+                            ).toLocaleString()}
+                            원
+                          </span>
+                        </div>
+                      </div>
+                    </button>
                   ))}
               </div>
               <div ref={salesmanSentinelRef} className="h-10" />
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </CreditPanel>
     </TabsContent>
   );
 }

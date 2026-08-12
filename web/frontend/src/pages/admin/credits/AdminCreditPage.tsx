@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-13: 무료 일반/배송 통합에 맞춰 페이지 props·탭 스타일 정리.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx
@@ -79,46 +81,43 @@ export default function AdminCreditPage() {
   }, [state.salesmen, normalizedSearch]);
 
   return (
-    <div className="min-h-0 space-y-6 p-4">
+    <div className="min-h-0 space-y-5 p-4">
       <Tabs
         value={state.creditTab}
         onValueChange={(v) => state.setCreditTab(v as "requestor" | "salesman")}
       >
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <TabsList className="h-12">
-              <TabsTrigger value="requestor" className="px-6 text-base">
-                의뢰자
-              </TabsTrigger>
-              <TabsTrigger value="salesman" className="px-6 text-base">
-                영업자
-              </TabsTrigger>
-            </TabsList>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TabsList className="h-11 rounded-xl bg-slate-100/80 p-1">
+            <TabsTrigger value="requestor" className="rounded-lg px-5 text-sm">
+              의뢰자
+            </TabsTrigger>
+            <TabsTrigger value="salesman" className="rounded-lg px-5 text-sm">
+              영업자
+            </TabsTrigger>
+          </TabsList>
 
-          </div>
-
-          {state.creditTab === "salesman" ? (
-            <div className="w-full sm:w-[320px] lg:w-[420px]">
+          <div className="flex flex-wrap items-center gap-2">
+            {state.creditTab === "salesman" ? (
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="영업자명 / 이메일 / 추천코드 검색"
-                className="h-10"
+                placeholder="영업자명 · 이메일 · 추천코드"
+                className="h-10 w-full rounded-xl border-slate-200 sm:w-[280px] lg:w-[360px]"
               />
-            </div>
-          ) : null}
-
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => navigate("/dashboard/businesses?reconcile=1")}
-          >
-            <Wrench className="mr-2 h-4 w-4" />
-            크레딧 업데이트
-          </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 rounded-xl"
+              onClick={() => navigate("/dashboard/businesses?reconcile=1")}
+            >
+              <Wrench className="mr-2 h-4 w-4" />
+              크레딧 업데이트
+            </Button>
+          </div>
         </div>
 
-        <TabsContent value="requestor" className="space-y-4">
+        <TabsContent value="requestor" className="mt-4 space-y-4">
           <RequestorCreditTab
             loadingStats={state.loadingStats}
             stats={state.stats}
@@ -135,7 +134,9 @@ export default function AdminCreditPage() {
               state.setOrgLedgerBusiness(business);
               state.setOrgLedgerOpen(true);
             }}
-            selectedFreeCreditBusinessAnchorId={state.selectedFreeCreditBusinessAnchorId}
+            selectedFreeCreditBusinessAnchorId={
+              state.selectedFreeCreditBusinessAnchorId
+            }
             setSelectedFreeCreditBusinessAnchorId={
               state.setSelectedFreeCreditBusinessAnchorId
             }
@@ -145,32 +146,13 @@ export default function AdminCreditPage() {
             loadingFreeCreditGrantRows={state.loadingFreeCreditGrantRows}
             freeCreditMenu={state.freeCreditMenu}
             setFreeCreditMenu={state.setFreeCreditMenu}
-            grantCreditType={state.grantCreditType}
-            setGrantCreditType={state.setGrantCreditType}
-            selectedShippingCreditBusinessAnchorId={
-              state.selectedShippingCreditBusinessAnchorId
-            }
-            setSelectedShippingCreditBusinessAnchorId={
-              state.setSelectedShippingCreditBusinessAnchorId
-            }
             selectedFreeCreditAmount={state.selectedFreeCreditAmount}
             setSelectedFreeCreditAmount={state.setSelectedFreeCreditAmount}
-            selectedShippingCreditAmount={state.selectedShippingCreditAmount}
-            setSelectedShippingCreditAmount={
-              state.setSelectedShippingCreditAmount
-            }
             freeCreditReason={state.freeCreditReason}
             setFreeCreditReason={state.setFreeCreditReason}
-            shippingCreditReason={state.shippingCreditReason}
-            setShippingCreditReason={state.setShippingCreditReason}
             handleGrantFreeCredit={state.handleGrantFreeCredit}
-            handleGrantShippingCredit={state.handleGrantShippingCredit}
             grantingFreeCredit={state.grantingFreeCredit}
-            grantingShippingCredit={state.grantingShippingCredit}
             selectedFreeCreditBusiness={state.selectedFreeCreditBusiness}
-            selectedShippingCreditBusiness={
-              state.selectedShippingCreditBusiness
-            }
             cancelStartDate={state.cancelStartDate}
             setCancelStartDate={state.setCancelStartDate}
             cancelEndDate={state.cancelEndDate}

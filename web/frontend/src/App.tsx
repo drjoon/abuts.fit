@@ -65,9 +65,9 @@ const ManufacturerWorksheetPage = lazy(() =>
     default: m.ManufacturerWorksheetPage,
   })),
 );
-const DevopsPartnerPage = lazy(() =>
-  import("./pages/devops/DevopsPartnerPage").then((m) => ({
-    default: m.DevopsPartnerPage,
+const AdminPlatformSettingsPage = lazy(() =>
+  import("./pages/admin/system/AdminPlatformSettingsPage").then((m) => ({
+    default: m.AdminPlatformSettingsPage,
   })),
 );
 const SettingsPage = lazy(() =>
@@ -274,13 +274,6 @@ const SettingsRoute = () => {
   if (user.role === "practice") {
     return <Navigate to="/practice/settings" replace />;
   }
-  // 구 북마크: devops 설정 수익분배/요금 → 파트너 페이지
-  if (user.role === "devops") {
-    const tab = new URLSearchParams(location.search).get("tab");
-    if (tab === "payment" || tab === "credits") {
-      return <Navigate to={`/dashboard/partner?tab=${tab}`} replace />;
-    }
-  }
   // 구 북마크: 의뢰자 설정 결제 → 사이드바 크레딧 충전
   if (user.role === "requestor") {
     const tab = new URLSearchParams(location.search).get("tab");
@@ -289,6 +282,20 @@ const SettingsRoute = () => {
     }
   }
   return <SettingsPage />;
+};
+
+const LegacyPartnerRedirect = () => {
+  const { user } = useAuthStore();
+  const location = useLocation();
+  if (user?.role === "admin") {
+    return (
+      <Navigate
+        to={`/dashboard/platform-settings${location.search || ""}`}
+        replace
+      />
+    );
+  }
+  return <Navigate to="/dashboard" replace />;
 };
 
 const SignupEntryRoute = () => {
@@ -518,11 +525,20 @@ const App = () => {
                     }
                   />
                   <Route
+                    path="platform-settings"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminPlatformSettingsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  {/* 호환용: 구 개발운영사 파트너 경로 */}
+                  <Route
                     path="partner"
                     element={
-                      <RoleProtectedRoute roles={["devops"]}>
-                        <DevopsPartnerPage />
-                      </RoleProtectedRoute>
+                      <ProtectedRoute>
+                        <LegacyPartnerRedirect />
+                      </ProtectedRoute>
                     }
                   />
                   <Route

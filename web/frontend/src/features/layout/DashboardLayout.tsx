@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-13: 파트너 페이지 → 관리자「플랫폼 설정」이전. 개발운영사 파트너 메뉴 제거. 설정 그룹(플랫폼 설정·설정).
 // - 2026-08-11: 개발운영사·관리자 사이드·라우트에서 소개 제거(영업자만 유지).
 // - 2026-08-11: 의뢰자 사이드·라우트에서 소개 제거(소개 할인 정책 종료).
 // - 2026-08-11: 작업영역(흰 카드)이 outlet 높이를 채우도록 — 충전 탭 수직 중앙·내역 테이블 스크롤 고정.
@@ -98,7 +99,6 @@ import {
   Building2,
   Wallet,
   Shield,
-  Users2,
   ClipboardList,
   Printer,
   Search,
@@ -108,6 +108,7 @@ import {
   Boxes,
   Package,
   CheckCircle,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
@@ -205,7 +206,6 @@ const sidebarItems = {
   ],
   devops: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: Users2, label: "파트너", href: "/dashboard/partner" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   practice: [
@@ -256,6 +256,7 @@ const sidebarItems = {
       label: "문의",
       href: "/dashboard/inquiries",
     },
+    { icon: SlidersHorizontal, label: "플랫폼 설정", href: "/dashboard/platform-settings" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
 } as const;
@@ -348,7 +349,15 @@ const adminSidebarSections: SidebarSection[] = [
     ],
   },
   {
-    items: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
+    title: "설정",
+    items: [
+      {
+        icon: SlidersHorizontal,
+        label: "플랫폼 설정",
+        href: "/dashboard/platform-settings",
+      },
+      { icon: Settings, label: "설정", href: "/dashboard/settings" },
+    ],
   },
 ];
 

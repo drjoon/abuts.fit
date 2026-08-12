@@ -21,6 +21,20 @@ const systemSettingsSchema = new mongoose.Schema(
     },
     creditSettings: {
       minCreditForRequest: { type: Number, default: 12000 },
+      // 개발운영사 지정 의뢰자별 커스텀 어벗 의뢰비. 미지정 의뢰자는 minCreditForRequest를 사용한다.
+      specialRequestorPrices: {
+        type: [
+          {
+            requestorAnchorId: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "BusinessAnchor",
+              required: true,
+            },
+            amount: { type: Number, required: true, min: 0 },
+          },
+        ],
+        default: [],
+      },
       shippingFee: { type: Number, default: 3500 },
       // 신속 배송 추가 의뢰크레딧 (생산=건당, 디자인+생산=1어벗당, 가공 진입 시 차감)
       expressFee: { type: Number, default: 2000 },

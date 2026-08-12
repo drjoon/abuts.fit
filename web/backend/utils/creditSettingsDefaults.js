@@ -31,6 +31,14 @@ export async function loadCreditSettingsDefaults() {
     minCreditForRequest: Number(
       creditSettings.minCreditForRequest ?? SCHEMA_DEFAULTS.minCreditForRequest,
     ),
+    specialRequestorPrices: Array.isArray(creditSettings.specialRequestorPrices)
+      ? creditSettings.specialRequestorPrices
+          .map((item) => ({
+            requestorAnchorId: String(item?.requestorAnchorId || "").trim(),
+            amount: Math.max(0, Number(item?.amount) || 0),
+          }))
+          .filter((item) => item.requestorAnchorId)
+      : [],
     shippingFee: Number(creditSettings.shippingFee ?? SCHEMA_DEFAULTS.shippingFee),
     expressFee: Number(
       creditSettings.expressFee ?? SCHEMA_DEFAULTS.expressFee,

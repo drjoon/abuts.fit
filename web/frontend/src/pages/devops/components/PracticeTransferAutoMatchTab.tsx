@@ -1,18 +1,16 @@
+// change-log:
+// - 2026-08-13: 목록·검색·카드 UI를 최신 파트너 설정 스타일로 정리.
 // related files:
 // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
-// - web/frontend/src/pages/devops/DevopsPartnerPage.tsx
+// - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { FlaskConical, Search } from "lucide-react";
+import { Building2, FlaskConical, Search } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -99,9 +97,18 @@ export const PracticeTransferAutoMatchTab = () => {
         if (!res.ok) {
           throw new Error("목록 조회 실패");
         }
-        const body: any = res.data || {};
+        const body = (res.data || {}) as {
+          data?: AutoMatchRow[];
+          pagination?: {
+            page?: number;
+            limit?: number;
+            total?: number;
+            hasMore?: boolean;
+          };
+          enabledCount?: number;
+        };
         const list: AutoMatchRow[] = Array.isArray(body.data)
-          ? body.data.map((row: any) => ({
+          ? body.data.map((row) => ({
               _id: String(row?._id || ""),
               name: String(row?.name || ""),
               businessNumberNormalized: String(
@@ -164,7 +171,6 @@ export const PracticeTransferAutoMatchTab = () => {
     void loadPage(1, false);
   }, [loadPage]);
 
-  // 페이지(뷰포트) 스크롤 무한로드 — 내부 스크롤 컨테이너 없음
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || !hasMore || loading || loadingMore) return;
@@ -227,11 +233,13 @@ export const PracticeTransferAutoMatchTab = () => {
       if (!res.ok) {
         throw new Error("저장 실패");
       }
-      const body: any = res.data || {};
+      const body = (res.data || {}) as {
+        data?: Partial<AutoMatchRow> & { _id?: string };
+      };
       if (body?.data?._id) {
         setRows((cur) =>
           cur.map((r) =>
-            r._id === body.data._id
+            r._id === body.data?._id
               ? {
                   ...r,
                   ...body.data,
@@ -263,93 +271,139 @@ export const PracticeTransferAutoMatchTab = () => {
   };
 
   return (
-    <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader className="pb-4">
+    <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+      <CardContent className="space-y-5 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1.5">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FlaskConical className="h-5 w-5" />
-              기공소 매칭
-            </CardTitle>
-            <CardDescription>
-              ON한 검증 기공소만 자동매칭 공개 풀을 보고 선착순 수락할 수 있습니다.
-            </CardDescription>
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
+              <FlaskConical className="h-5 w-5 text-primary-strong" />
+            </span>
+            <div className="min-w-0 space-y-1">
+              <h3 className="text-base font-semibold tracking-tight text-slate-900">
+                기공소 매칭
+              </h3>
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
+                ON한 검증 기공소만 자동매칭 공개 풀을 보고 선착순 수락할 수
+                있습니다.
+              </p>
+            </div>
           </div>
           {!loading && totalCount > 0 ? (
-            <Badge variant="secondary" className="tabular-nums">
+            <span className="inline-flex items-center rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold tabular-nums text-primary-strong ring-1 ring-primary-muted">
               지정 {enabledCount} / {totalCount}
-            </Badge>
+            </span>
           ) : null}
         </div>
-      </CardHeader>
 
-      <CardContent className="space-y-4">
         <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="기공소명 또는 사업자번호"
-            className="pl-9"
+            className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm"
           />
         </div>
 
         {loading ? (
-          <div className="px-1 py-10 text-center text-sm text-muted-foreground">
+          <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center text-sm text-muted-foreground">
             불러오는 중…
           </div>
         ) : rows.length === 0 ? (
-          <div className="px-1 py-10 text-center text-sm text-muted-foreground">
-            해당하는 기공소가 없습니다.
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
+              <Building2 className="h-5 w-5 text-slate-400" />
+            </span>
+            <p className="mt-3 text-sm font-medium text-slate-700">
+              해당하는 기공소가 없습니다
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              검색어를 바꾸거나 다른 기공소를 확인해 보세요.
+            </p>
           </div>
         ) : (
           <>
-            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {rows.map((row) => {
                 const canEnable =
                   row.verified && row.canReceivePracticeTransfer;
-                const metaParts = [
-                  row.verified ? "검증" : row.status || null,
-                  !row.canReceivePracticeTransfer
-                    ? "기공의뢰 수신 불가"
-                    : null,
-                  row.representativeName || null,
-                  row.address || null,
-                ].filter(Boolean);
+                const enabled = Boolean(row.practiceTransferAutoMatchEnabled);
                 return (
                   <li
                     key={row._id}
                     className={cn(
-                      "flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 transition-colors",
-                      "hover:bg-muted/40",
-                      row.practiceTransferAutoMatchEnabled &&
-                        "border-primary/20 bg-primary/[0.03]",
-                      !canEnable && "opacity-70",
+                      "overflow-hidden rounded-2xl border bg-white/80 shadow-sm transition-shadow hover:shadow-md",
+                      enabled
+                        ? "border-primary-muted/70"
+                        : "border-slate-200/80",
+                      !canEnable && !enabled && "opacity-70",
                     )}
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">
-                        {row.name || "이름 없음"}
-                      </div>
-                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {metaParts.length > 0
-                          ? metaParts.join(" · ")
-                          : "대표자·주소 없음"}
-                      </div>
-                    </div>
-                    <Switch
-                      checked={Boolean(row.practiceTransferAutoMatchEnabled)}
-                      disabled={
-                        savingId === row._id ||
-                        (!canEnable &&
-                          !row.practiceTransferAutoMatchEnabled)
-                      }
-                      onCheckedChange={(checked) =>
-                        void onToggle(row, checked)
-                      }
-                      aria-label={`${row.name} 기공의뢰 자동매칭`}
-                      className="shrink-0"
+                    <div
+                      className={cn(
+                        "h-1 w-full",
+                        enabled
+                          ? "bg-primary-strong"
+                          : row.verified
+                            ? "bg-slate-300"
+                            : "bg-amber-400",
+                      )}
                     />
+                    <div className="flex items-start gap-3 px-4 py-3.5">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate font-semibold text-slate-900">
+                            {row.name || "이름 없음"}
+                          </p>
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                              enabled
+                                ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
+                                : row.verified
+                                  ? "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
+                                  : "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
+                            )}
+                          >
+                            {enabled
+                              ? "매칭 ON"
+                              : row.verified
+                                ? "검증"
+                                : row.status || "미검증"}
+                          </span>
+                        </div>
+                        <dl className="space-y-1.5 text-[13px]">
+                          <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+                            <dt className="text-slate-500">대표</dt>
+                            <dd className="min-w-0 truncate text-slate-700">
+                              {row.representativeName || "—"}
+                            </dd>
+                          </div>
+                          <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+                            <dt className="text-slate-500">주소</dt>
+                            <dd className="min-w-0 break-words text-slate-700">
+                              {row.address || "—"}
+                            </dd>
+                          </div>
+                          {!row.canReceivePracticeTransfer ? (
+                            <p className="text-[11px] text-amber-700">
+                              기공의뢰 수신 불가
+                            </p>
+                          ) : null}
+                        </dl>
+                      </div>
+                      <Switch
+                        checked={enabled}
+                        disabled={
+                          savingId === row._id || (!canEnable && !enabled)
+                        }
+                        onCheckedChange={(checked) =>
+                          void onToggle(row, checked)
+                        }
+                        aria-label={`${row.name} 기공의뢰 자동매칭`}
+                        className="mt-1 shrink-0"
+                      />
+                    </div>
                   </li>
                 );
               })}

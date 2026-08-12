@@ -53,6 +53,7 @@ import {
   updateSecuritySettings,
   getCreditSettings,
   updateCreditSettings,
+  listCreditPriceRequestors,
 } from "../../controllers/admin/admin.settings.controller.js";
 import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
@@ -171,6 +172,26 @@ import {
 
 // Brevo 인바운드 이메일 webhook (인증 불필요 - 미들웨어 전에 정의)
 router.post("/inbound-email/webhook", handleInboundEmailWebhook);
+
+// 크레딧 설정: admin + devops (전역 admin-only 미들웨어보다 먼저 등록)
+router.get(
+  "/settings/credits",
+  authenticate,
+  authorize(["admin", "devops"]),
+  getCreditSettings,
+);
+router.patch(
+  "/settings/credits",
+  authenticate,
+  authorize(["admin", "devops"]),
+  updateCreditSettings,
+);
+router.get(
+  "/settings/credits/requestors",
+  authenticate,
+  authorize(["admin", "devops"]),
+  listCreditPriceRequestors,
+);
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -335,18 +356,6 @@ router.get("/activity-logs", authorize(["admin"]), getActivityLogs);
 // 시스템 설정
 router.get("/settings", authorize(["admin"]), getSystemSettings);
 router.put("/settings", authorize(["admin"]), updateSystemSettings);
-
-// 크레딧 설정 (admin + devops)
-router.get(
-  "/settings/credits",
-  authorize(["admin", "devops"]),
-  getCreditSettings,
-);
-router.patch(
-  "/settings/credits",
-  authorize(["admin", "devops"]),
-  updateCreditSettings,
-);
 
 // 보안 설정
 router.get("/security-settings", authorize(["admin"]), getSecuritySettings);

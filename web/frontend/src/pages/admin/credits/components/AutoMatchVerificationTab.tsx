@@ -1,12 +1,15 @@
+// change-log:
+// - 2026-08-13: 자동 매칭 검증 탭 스타일·카피 모던화.
+// - 2026-08-03: Hook dependency fix — wrapped loadOrders in useCallback and adjusted useEffect dependency to avoid missing-deps warning.
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx
+// - web/frontend/src/pages/admin/credits/creditPageUi.tsx
 import { useCallback, useEffect, useState } from "react";
+import { ShieldCheck } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "../adminCredit.utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +31,11 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import {
+  CreditFilterChip,
+  CreditPanel,
+  CreditSectionHeader,
+} from "../creditPageUi";
 
 type ChargeOrder = {
   _id: string;
@@ -51,8 +59,6 @@ type ChargeOrder = {
   } | null;
 };
 
-// change-log:
-// - 2026-08-03: Hook dependency fix — wrapped loadOrders in useCallback and adjusted useEffect dependency to avoid missing-deps warning.
 export function AutoMatchVerificationTab() {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -206,170 +212,184 @@ export function AutoMatchVerificationTab() {
     return true;
   });
 
+  const unverifiedCount = orders.filter(
+    (o) => !o.adminVerified && !o.isLocked,
+  ).length;
+  const verifiedCount = orders.filter(
+    (o) => o.adminVerified && !o.isLocked,
+  ).length;
+  const lockedCount = orders.filter((o) => o.isLocked).length;
+
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>자동 매칭 검증</CardTitle>
-            <div className="flex gap-2">
-              <Button
-                variant={filter === "unverified" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilter("unverified")}
-              >
-                미검증 (
-                {orders.filter((o) => !o.adminVerified && !o.isLocked).length})
-              </Button>
-              <Button
-                variant={filter === "verified" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilter("verified")}
-              >
-                검증완료 (
-                {orders.filter((o) => o.adminVerified && !o.isLocked).length})
-              </Button>
-              <Button
-                variant={filter === "locked" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilter("locked")}
-              >
-                잠김 ({orders.filter((o) => o.isLocked).length})
-              </Button>
-              <Button
-                variant={filter === "all" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilter("all")}
-              >
-                전체
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
+    <>
+      <CreditPanel>
+        <div className="space-y-5 p-5 sm:p-6">
+          <CreditSectionHeader
+            icon={ShieldCheck}
+            title="자동 매칭 검증"
+            description="자동 매칭된 충전 주문을 검증하거나 잠급니다."
+            trailing={
+              <div className="flex flex-wrap gap-1.5">
+                <CreditFilterChip
+                  active={filter === "unverified"}
+                  onClick={() => setFilter("unverified")}
+                >
+                  미검증 ({unverifiedCount})
+                </CreditFilterChip>
+                <CreditFilterChip
+                  active={filter === "verified"}
+                  onClick={() => setFilter("verified")}
+                >
+                  검증 ({verifiedCount})
+                </CreditFilterChip>
+                <CreditFilterChip
+                  active={filter === "locked"}
+                  onClick={() => setFilter("locked")}
+                >
+                  잠김 ({lockedCount})
+                </CreditFilterChip>
+                <CreditFilterChip
+                  active={filter === "all"}
+                  onClick={() => setFilter("all")}
+                >
+                  전체
+                </CreditFilterChip>
+              </div>
+            }
+          />
+
           {loading ? (
-            <div className="text-center py-8 text-muted-foreground">
-              불러오는 중...
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              불러오는 중…
             </div>
           ) : filteredOrders.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              {filter === "unverified" && "검증이 필요한 주문이 없습니다."}
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              {filter === "unverified" && "검증할 주문이 없습니다."}
               {filter === "verified" && "검증된 주문이 없습니다."}
               {filter === "locked" && "잠긴 주문이 없습니다."}
-              {filter === "all" && "자동 매칭된 주문이 없습니다."}
+              {filter === "all" && "자동 매칭 주문이 없습니다."}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>상태</TableHead>
-                  <TableHead>기공소</TableHead>
-                  <TableHead>입금자명</TableHead>
-                  <TableHead className="text-right">금액</TableHead>
-                  <TableHead>매칭일</TableHead>
-                  <TableHead>검증일</TableHead>
-                  <TableHead className="text-right">작업</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredOrders.map((order) => (
-                  <TableRow key={order._id}>
-                    <TableCell>
-                      {order.isLocked ? (
-                        <Badge variant="destructive">잠김</Badge>
-                      ) : order.adminVerified ? (
-                        <Badge variant="default">검증완료</Badge>
-                      ) : (
-                        <Badge variant="secondary">미검증</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {typeof order.businessAnchorId === "object" &&
-                      order.businessAnchorId
-                        ? order.businessAnchorId?.metadata?.companyName ||
-                          order.businessAnchorId?.name
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {order.depositorName}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold">
-                      {order.amountTotal.toLocaleString()}원
-                    </TableCell>
-                    <TableCell>{formatDate(order.matchedAt)}</TableCell>
-                    <TableCell>{formatDate(order.adminVerifiedAt)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex gap-2 justify-end">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200/80">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>상태</TableHead>
+                    <TableHead>사업자</TableHead>
+                    <TableHead>입금자</TableHead>
+                    <TableHead className="text-right">금액</TableHead>
+                    <TableHead>매칭</TableHead>
+                    <TableHead>검증</TableHead>
+                    <TableHead className="text-right">작업</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredOrders.map((order) => (
+                    <TableRow key={order._id}>
+                      <TableCell>
                         {order.isLocked ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedOrder(order);
-                                setUnlockModalOpen(true);
-                              }}
-                              disabled={processing}
-                            >
-                              잠금 해제
-                            </Button>
-                            <div className="text-xs text-muted-foreground max-w-[200px]">
-                              {order.lockedReason}
-                            </div>
-                          </>
+                          <Badge variant="destructive">잠김</Badge>
+                        ) : order.adminVerified ? (
+                          <Badge variant="default">검증</Badge>
                         ) : (
-                          <>
-                            {!order.adminVerified && (
+                          <Badge variant="secondary">미검증</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {typeof order.businessAnchorId === "object" &&
+                        order.businessAnchorId
+                          ? order.businessAnchorId?.metadata?.companyName ||
+                            order.businessAnchorId?.name
+                          : "-"}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {order.depositorName}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums">
+                        {order.amountTotal.toLocaleString()}원
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {formatDate(order.matchedAt)}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {formatDate(order.adminVerifiedAt)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1.5">
+                          {order.isLocked ? (
+                            <>
                               <Button
                                 size="sm"
-                                onClick={() => handleVerify(order._id)}
+                                variant="outline"
+                                className="h-8 rounded-lg"
+                                onClick={() => {
+                                  setSelectedOrder(order);
+                                  setUnlockModalOpen(true);
+                                }}
                                 disabled={processing}
                               >
-                                검증
+                                해제
                               </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => {
-                                setSelectedOrder(order);
-                                setLockModalOpen(true);
-                              }}
-                              disabled={processing}
-                            >
-                              잠금
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                              {order.lockedReason ? (
+                                <span className="max-w-[160px] truncate text-xs text-muted-foreground self-center">
+                                  {order.lockedReason}
+                                </span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>
+                              {!order.adminVerified ? (
+                                <Button
+                                  size="sm"
+                                  className="h-8 rounded-lg"
+                                  onClick={() => handleVerify(order._id)}
+                                  disabled={processing}
+                                >
+                                  검증
+                                </Button>
+                              ) : null}
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="h-8 rounded-lg"
+                                onClick={() => {
+                                  setSelectedOrder(order);
+                                  setLockModalOpen(true);
+                                }}
+                                disabled={processing}
+                              >
+                                잠금
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </CreditPanel>
 
-      {/* Lock Modal */}
       <Dialog open={lockModalOpen} onOpenChange={setLockModalOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>충전 주문 잠금</DialogTitle>
             <DialogDescription>
-              이 충전 주문을 잠그면 해당 조직의 크레딧 사용이 제한됩니다.
+              잠그면 해당 사업자의 크레딧 사용이 제한됩니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>잠금 사유</Label>
-              <Textarea
-                placeholder="잠금 사유를 입력하세요 (예: 오입금 확인 필요)"
-                value={lockReason}
-                onChange={(e) => setLockReason(e.target.value)}
-                rows={3}
-              />
-            </div>
+          <div className="space-y-2 py-2">
+            <Label>사유</Label>
+            <Textarea
+              placeholder="예: 오입금 확인 필요"
+              value={lockReason}
+              onChange={(e) => setLockReason(e.target.value)}
+              rows={3}
+              className="rounded-xl"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLockModalOpen(false)}>
@@ -380,19 +400,18 @@ export function AutoMatchVerificationTab() {
               onClick={handleLock}
               disabled={processing}
             >
-              {processing ? "처리 중..." : "잠금"}
+              {processing ? "처리 중…" : "잠금"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Unlock Modal */}
       <Dialog open={unlockModalOpen} onOpenChange={setUnlockModalOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>충전 주문 잠금 해제</DialogTitle>
+            <DialogTitle>잠금 해제</DialogTitle>
             <DialogDescription>
-              이 충전 주문의 잠금을 해제하시겠습니까?
+              이 충전 주문의 잠금을 해제할까요?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -400,11 +419,11 @@ export function AutoMatchVerificationTab() {
               취소
             </Button>
             <Button onClick={handleUnlock} disabled={processing}>
-              {processing ? "처리 중..." : "잠금 해제"}
+              {processing ? "처리 중…" : "해제"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
