@@ -21,6 +21,7 @@ import {
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
 import { ensureDeliveryInfoShippedAtNow } from "../../controllers/requests/common.review.helpers.js";
+import { assignMailboxForCleaningPackingEnter } from "../../controllers/requests/mailbox.utils.js";
 import Machine from "../../models/machine.model.js";
 import {
   BRIDGE_BASE,
@@ -2039,10 +2040,15 @@ export async function recordMachiningCompleteForBridge(req, res) {
           request.businessAnchorId = request.requestor.businessAnchorId;
         }
 
-        // R&D 샘플은 배송 비대상이므로 우편함을 배정하지 않는다.
-        // 일반 의뢰도 세척.패킹 진입 시점에는 선배정하지 않는다.
-        // (우편함 배정 SSOT: 포장.발송 진입 승인 시점에만 배정)
-        request.mailboxAddress = null;
+        // 우편함 배정 SSOT: 세척.패킹 진입 시 동일 업체 활성 점유를 재사용해 선배정한다.
+        const effectiveAnchorId =
+          String(request.businessAnchorId || "").trim() ||
+          requestorAnchorIdStr ||
+          null;
+        await assignMailboxForCleaningPackingEnter({
+          request,
+          requestorOrgId: effectiveAnchorId,
+        });
         await request.save();
         console.log(
           "[bridge:machining:complete] request/record updated",
@@ -2051,6 +2057,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
             requestId,
             recordId: record?._id,
             stage: "세척.패킹",
+            mailboxAddress: request.mailboxAddress || null,
           }),
         );
 

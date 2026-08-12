@@ -30,6 +30,7 @@ import {
   buildManufacturerOrgScopeFilter,
 } from "./utils.js";
 import {
+  assignMailboxForCleaningPackingEnter,
   ensureMailboxAddressForBusiness,
   isManufacturerSampleRequest,
 } from "./mailbox.utils.js";
@@ -1628,9 +1629,14 @@ export async function updateReviewStatusByStage(req, res) {
               );
             }
             applyStatusMapping(request, "세척.패킹");
-            // 우편함 배정은 포장.발송 진입 승인 시점에만 수행한다.
-            // 세척.패킹 진입 단계에서는 우편함을 선배정하지 않는다.
-            request.mailboxAddress = null;
+            // 우편함 배정 SSOT: 세척.패킹 진입 시 동일 업체 활성 점유를 재사용해 선배정한다.
+            // (패킹 라벨 출력·각인 인식 전에도 메일함 코드가 필요하다)
+            await assignMailboxForCleaningPackingEnter({
+              request,
+              requestorOrgId: resolvedBusinessAnchorId,
+              session,
+              scopeFilter: mailboxAllocationScopeFilter,
+            });
           } else if (effectiveStage === "packing") {
             // 샘플 의뢰도 일반 의뢰와 동일하게 포장.발송 단계로 진행한다.
             // (차이는 크레딧 미차감 정책뿐)

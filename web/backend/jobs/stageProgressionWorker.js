@@ -11,6 +11,7 @@ import {
   applyStatusMapping,
 } from "../controllers/requests/utils.js";
 import {
+  assignMailboxForCleaningPackingEnter,
   ensureMailboxAddressForBusiness,
   isManufacturerSampleRequest,
 } from "../controllers/requests/mailbox.utils.js";
@@ -89,12 +90,17 @@ async function progressStages() {
 
     for (const req of productionToPackaging) {
       applyStatusMapping(req, "세척.패킹");
-      // 우편함 배정 SSOT: 세척.패킹 진입 시 선배정하지 않는다.
-      req.mailboxAddress = null;
+      // 우편함 배정 SSOT: 세척.패킹 진입 시 동일 업체 활성 점유를 재사용해 선배정한다.
+      const requestorOrgId =
+        req.businessAnchorId || req.requestor?.businessAnchorId || null;
+      await assignMailboxForCleaningPackingEnter({
+        request: req,
+        requestorOrgId,
+      });
       await req.save();
       updatedCount++;
       console.log(
-        `  [가공→세척.패킹] ${req.requestId} (SHIP: ${req.timeline.estimatedShipYmd})`,
+        `  [가공→세척.패킹] ${req.requestId} mailbox=${req.mailboxAddress || "-"} (SHIP: ${req.timeline.estimatedShipYmd})`,
       );
     }
 

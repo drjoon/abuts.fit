@@ -493,6 +493,47 @@ export async function allocateVirtualMailboxAddress(
   );
 }
 
+/**
+ * 세척.패킹 진입 시 우편함 배정.
+ * - 동일 businessAnchor의 활성 점유(세척.패킹/포장.발송/추적관리)가 있으면 그 주소를 재사용
+ * - 없으면 첫 빈칸 할당
+ * - 기존 request.mailboxAddress는 재사용 근거로 쓰지 않는다
+ */
+export async function assignMailboxForCleaningPackingEnter({
+  request,
+  requestorOrgId,
+  session = null,
+  scopeFilter = {},
+}) {
+  if (!request) return null;
+
+  if (isManufacturerSampleRequest(request)) {
+    request.mailboxAddress = null;
+    return null;
+  }
+
+  request.mailboxAddress = null;
+  try {
+    const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+      requestMongoId: request._id,
+      requestorOrgId,
+      currentMailboxAddress: null,
+      session,
+      scopeFilter,
+    });
+    if (nextMailboxAddress) {
+      request.mailboxAddress = nextMailboxAddress;
+    }
+    return nextMailboxAddress || null;
+  } catch (err) {
+    console.error("[MAILBOX_ALLOCATION_ERROR] cleaning-packing-enter", {
+      requestId: request?.requestId || null,
+      message: err?.message || String(err),
+    });
+    return null;
+  }
+}
+
 export async function ensureMailboxAddressForBusiness({
   requestMongoId,
   requestorOrgId,
