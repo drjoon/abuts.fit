@@ -779,6 +779,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     동일 BusinessAnchor의 직전 배정 주소를 같은 트랜잭션 내에서도 재사용해야 합니다.
   - BusinessAnchor 비교는 문자열 단순 캐스팅 대신 `_id/id`까지 포함해 정규화한 값으로 판정합니다.
     (`[object Object]` 형태 오인식으로 인한 재사용 실패 방지)
+    - lot-capture / machiningBridge 등 populate된 `businessAnchorId`를 넘길 때도
+      `normalizeBusinessAnchorId`를 사용한다. (`String(doc)` 금지)
   - 택배/배송 그룹핑 및 병합 기준에서 `trackingNumber`를 `shippingPackageId`보다 우선 SSOT로 사용합니다.
   - 수동 집하(`POST /api/requests/shipping/hanjin/manual-pickup-complete`)는 우편함 단위 집하를 강제합니다.
     - packageId 매칭 건 + 미할당(shippingPackageId 없음) 건을 함께 처리합니다.

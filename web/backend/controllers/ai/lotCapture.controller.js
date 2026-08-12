@@ -17,7 +17,10 @@ import {
   ensureFinishedLotNumberForPacking,
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
-import { ensureMailboxAddressForBusiness } from "../requests/mailbox.utils.js";
+import {
+  ensureMailboxAddressForBusiness,
+  normalizeBusinessAnchorId,
+} from "../requests/mailbox.utils.js";
 import sharp from "sharp";
 
 let _apiKey = null;
@@ -408,10 +411,14 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
   await ensureFinishedLotNumberForPacking(request);
 
-  const requestAnchorIdStr = String(request.businessAnchorId || "").trim();
-  const requestorAnchorIdStr = String(
-    request.requestor?.businessAnchorId || "",
-  ).trim();
+  // populate된 businessAnchorId를 String()하면 "[object Object]"가 되어
+  // 동일 업체 우편함 재사용이 깨진다. _id까지 정규화한 값만 사용한다.
+  const requestAnchorIdStr = normalizeBusinessAnchorId(
+    request.businessAnchorId,
+  );
+  const requestorAnchorIdStr = normalizeBusinessAnchorId(
+    request.requestor?.businessAnchorId,
+  );
   const effectiveAnchorIdStr = requestAnchorIdStr || requestorAnchorIdStr;
 
   if (!requestAnchorIdStr && requestorAnchorIdStr) {

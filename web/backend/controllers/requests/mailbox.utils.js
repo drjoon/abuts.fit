@@ -24,17 +24,36 @@ const normalizeMailboxAddress = (raw) =>
 
 
 
-const normalizeBusinessAnchorId = (raw, depth = 0) => {
+const INVALID_BUSINESS_ANCHOR_ID_STRINGS = new Set([
+  "",
+  "[object Object]",
+  "undefined",
+  "null",
+]);
+
+/**
+ * BusinessAnchor id 정규화.
+ * populated doc / ObjectId / string 모두 허용하고,
+ * `String(populated)` 로 생긴 `[object Object]` 는 빈 값으로 취급한다.
+ */
+export const normalizeBusinessAnchorId = (raw, depth = 0) => {
   if (raw == null) return "";
   if (depth > 2) return "";
 
   if (typeof raw === "string" || typeof raw === "number") {
-    return String(raw).trim();
+    const normalized = String(raw).trim();
+    if (!normalized || INVALID_BUSINESS_ANCHOR_ID_STRINGS.has(normalized)) {
+      return "";
+    }
+    return normalized;
   }
 
   if (typeof raw === "object") {
     const stringified = String(raw || "").trim();
-    if (stringified && stringified !== "[object Object]") {
+    if (
+      stringified &&
+      !INVALID_BUSINESS_ANCHOR_ID_STRINGS.has(stringified)
+    ) {
       return stringified;
     }
 

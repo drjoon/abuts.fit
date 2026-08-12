@@ -21,7 +21,10 @@ import {
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
 import { ensureDeliveryInfoShippedAtNow } from "../../controllers/requests/common.review.helpers.js";
-import { assignMailboxForCleaningPackingEnter } from "../../controllers/requests/mailbox.utils.js";
+import {
+  assignMailboxForCleaningPackingEnter,
+  normalizeBusinessAnchorId,
+} from "../../controllers/requests/mailbox.utils.js";
 import Machine from "../../models/machine.model.js";
 import {
   BRIDGE_BASE,
@@ -2028,12 +2031,12 @@ export async function recordMachiningCompleteForBridge(req, res) {
         // CNC 가공 완료 시 제조 단계는 세척/패킹 단계로 전환한다.
         // status/manufacturerStage enum 은 '세척.패킹' 을 사용한다.
         applyStatusMapping(request, "세척.패킹");
-        const requestAnchorIdStr = String(
-          request.businessAnchorId || "",
-        ).trim();
-        const requestorAnchorIdStr = String(
-          request.requestor?.businessAnchorId || "",
-        ).trim();
+        const requestAnchorIdStr = normalizeBusinessAnchorId(
+          request.businessAnchorId,
+        );
+        const requestorAnchorIdStr = normalizeBusinessAnchorId(
+          request.requestor?.businessAnchorId,
+        );
 
         // request 문서의 businessAnchorId가 비어 있는 경우에만 requestor anchor로 보정
         if (!requestAnchorIdStr && requestorAnchorIdStr) {
@@ -2042,9 +2045,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
 
         // 우편함 배정 SSOT: 세척.패킹 진입 시 동일 업체 활성 점유를 재사용해 선배정한다.
         const effectiveAnchorId =
-          String(request.businessAnchorId || "").trim() ||
-          requestorAnchorIdStr ||
-          null;
+          requestAnchorIdStr || requestorAnchorIdStr || null;
         await assignMailboxForCleaningPackingEnter({
           request,
           requestorOrgId: effectiveAnchorId,
