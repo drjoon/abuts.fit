@@ -1188,7 +1188,7 @@ export const DashboardLayout = () => {
                           <li key={item.href}>
                             <Button
                               variant="ghost"
-                              className={`w-full h-10 lg:h-11 text-sm lg:text-base transition-all ${
+                              className={`w-full h-10 lg:h-11 gap-1.5 text-sm lg:text-base transition-all ${
                                 isCollapsed
                                   ? "justify-center px-2"
                                   : "justify-start px-3 lg:px-4"
@@ -1202,11 +1202,7 @@ export const DashboardLayout = () => {
                               }}
                               aria-current={isActive ? "page" : undefined}
                             >
-                              <item.icon
-                                className={`h-4 w-4 flex-shrink-0 ${
-                                  isCollapsed ? "" : "mr-2 lg:mr-3"
-                                }`}
-                              />
+                              <item.icon className="h-4 w-4 flex-shrink-0" />
                               {!isCollapsed && (
                                 <span className="truncate flex-1">
                                   {item.label}
@@ -1260,7 +1256,7 @@ export const DashboardLayout = () => {
                     <Button
                       variant="ghost"
                       disabled={paidLocked}
-                      className={`relative z-[1] w-full h-10 lg:h-11 text-sm lg:text-base transition-all ${
+                      className={`relative z-[1] w-full h-10 lg:h-11 gap-1.5 text-sm lg:text-base transition-all ${
                         isCollapsed
                           ? "justify-center px-2"
                           : "justify-start px-3 lg:px-4"
@@ -1282,11 +1278,7 @@ export const DashboardLayout = () => {
                           : undefined
                       }
                     >
-                      <item.icon
-                        className={`h-4 w-4 flex-shrink-0 ${
-                          isCollapsed ? "" : "mr-2 lg:mr-3"
-                        }`}
-                      />
+                      <item.icon className="h-4 w-4 flex-shrink-0" />
                       {!isCollapsed && (
                         <span className="truncate flex-1">{item.label}</span>
                       )}
@@ -1378,15 +1370,11 @@ export const DashboardLayout = () => {
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  className={`w-full p-2 h-auto transition-all ${
+                  className={`w-full p-2 h-auto gap-1.5 transition-all ${
                     isCollapsed ? "justify-center" : "justify-start"
                   }`}
                 >
-                  <Avatar
-                    className={`h-6 w-6 lg:h-8 lg:w-8 flex-shrink-0 ${
-                      isCollapsed ? "" : "mr-2 lg:mr-3"
-                    }`}
-                  >
+                  <Avatar className="h-6 w-6 lg:h-8 lg:w-8 flex-shrink-0">
                     <AvatarImage
                       seed={user.email || user.id}
                       fallbackInitial={user.name}
