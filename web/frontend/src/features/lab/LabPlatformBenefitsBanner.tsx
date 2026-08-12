@@ -1,8 +1,9 @@
 // related files:
 // - web/frontend/src/features/lab/LabDashboardTopBanners.tsx
 // - web/frontend/src/features/lab/LabTradingPartnerWindowBanner.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - 2026-08-12: 기공소 가입 이유 배너·모달.
-// - 2026-08-12: 이유 모달 본문 2열 → 1열.
+// - 2026-08-12: 모달 분리(배너·대시보드 버튼 공용). 기간 종료 시 배너만 숨김.
 import { useState } from "react";
 import {
   ChevronRight,
@@ -23,8 +24,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-type Props = {
+type BannerProps = {
   className?: string;
+};
+
+type DialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 };
 
 const BENEFITS = [
@@ -70,7 +76,73 @@ const BENEFITS = [
   },
 ] as const;
 
-export const LabPlatformBenefitsBanner = ({ className }: Props) => {
+export const LabPlatformBenefitsDialog = ({
+  open,
+  onOpenChange,
+}: DialogProps) => {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader className="space-y-2 text-left">
+          <DialogTitle className="text-xl tracking-tight">
+            기공소가 어벗츠를 쓰는 이유
+          </DialogTitle>
+          <DialogDescription className="text-[15px] leading-relaxed text-slate-600">
+            이메일·정산·신규 거래·커스텀어벗 생산까지, 기공소 업무를 한곳에서
+            이어줍니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="mt-1 space-y-3">
+          {BENEFITS.map((item, index) => {
+            const Icon = item.icon;
+            return (
+              <section
+                key={item.title}
+                className="rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3.5"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-sky-700 ring-1 ring-sky-100">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <h3 className="flex items-baseline gap-2 text-[15px] font-semibold tracking-tight text-slate-900">
+                      <span className="tabular-nums text-sky-600">
+                        {index + 1}.
+                      </span>
+                      {item.title}
+                    </h3>
+                    <ul className="space-y-1.5">
+                      {item.points.map((point) => (
+                        <li
+                          key={point}
+                          className="flex gap-2 text-sm leading-relaxed text-slate-600"
+                        >
+                          <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sky-400" />
+                          <span className="min-w-0">{point}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            );
+          })}
+
+          <p className="flex items-start gap-2 rounded-xl border border-dashed border-sky-200 bg-sky-50/60 px-4 py-3 text-sm leading-relaxed text-slate-700">
+            <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+            <span>
+              궁금한 점이 있으면 채팅·문의로 편하게 말씀해 주세요. 함께
+              맞춰가겠습니다.
+            </span>
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export const LabPlatformBenefitsBanner = ({ className }: BannerProps) => {
   const [open, setOpen] = useState(false);
 
   return (
@@ -104,64 +176,7 @@ export const LabPlatformBenefitsBanner = ({ className }: Props) => {
         <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader className="space-y-2 text-left">
-            <DialogTitle className="text-xl tracking-tight">
-              기공소가 어벗츠를 쓰는 이유
-            </DialogTitle>
-            <DialogDescription className="text-[15px] leading-relaxed text-slate-600">
-              이메일·정산·신규 거래·커스텀어벗 생산까지, 기공소 업무를 한곳에서
-              이어줍니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="mt-1 grid grid-cols-1 gap-3">
-            {BENEFITS.map((item, index) => {
-              const Icon = item.icon;
-              return (
-                <section
-                  key={item.title}
-                  className="rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3.5"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-sky-700 ring-1 ring-sky-100">
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <h3 className="flex items-baseline gap-2 text-[15px] font-semibold tracking-tight text-slate-900">
-                        <span className="tabular-nums text-sky-600">
-                          {index + 1}.
-                        </span>
-                        {item.title}
-                      </h3>
-                      <ul className="space-y-1.5">
-                        {item.points.map((point) => (
-                          <li
-                            key={point}
-                            className="flex gap-2 text-sm leading-relaxed text-slate-600"
-                          >
-                            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sky-400" />
-                            <span className="min-w-0">{point}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </section>
-              );
-            })}
-
-            <p className="flex items-start gap-2 rounded-xl border border-dashed border-sky-200 bg-sky-50/60 px-4 py-3 text-sm leading-relaxed text-slate-700">
-              <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-              <span>
-                궁금한 점이 있으면 채팅·문의로 편하게 말씀해 주세요. 함께
-                맞춰가겠습니다.
-              </span>
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <LabPlatformBenefitsDialog open={open} onOpenChange={setOpen} />
     </>
   );
 };
