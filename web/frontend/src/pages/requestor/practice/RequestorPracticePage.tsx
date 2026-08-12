@@ -1076,7 +1076,6 @@ function RequestorPracticeReceivePage({
         .toothWorks,
     [selectedTransfer?.rawTransferMemo],
   );
-
   const recalculateTransferCardsMaxHeight = useCallback(() => {
     const grid = transferCardsGridRef.current;
     if (!grid) {
@@ -1309,7 +1308,7 @@ function RequestorPracticeReceivePage({
           title: "의뢰수락 완료",
           description:
             transfer.matchingMode === "auto"
-              ? "선착순 수락되었습니다. 3시간 안에 작업을 완료해주세요."
+              ? "선착순 수락되었습니다."
               : "기공의뢰를 수락했습니다.",
         });
         return true;
@@ -2642,6 +2641,11 @@ function RequestorPracticeReceivePage({
               selectedTransfer.production?.confirmedAt),
         )}
         chatUnlocked={Boolean(activeChatRoom?._id)}
+        workCanceled={Boolean(
+          String(selectedTransfer?.workCanceledAt || "").trim() ||
+            selectedTransfer?.manufacturerStage === "작업취소" ||
+            selectedTransfer?.manufacturerStage === "취소",
+        )}
         remainingLabel={
           selectedTransfer?.matchingMode === "auto" &&
           selectedTransfer?.autoMatch?.mine &&

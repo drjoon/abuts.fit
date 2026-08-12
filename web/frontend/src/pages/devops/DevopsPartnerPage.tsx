@@ -3,7 +3,6 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/pages/devops/DevopsSettingsPage.tsx
 // - web/frontend/src/pages/devops/components/DevopsPayoutAccountTab.tsx
-// - web/frontend/src/pages/devops/components/DevopsDesignDeadlineTab.tsx
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 import { useMemo } from "react";
@@ -12,13 +11,12 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { DevopsPayoutAccountTab } from "./components/DevopsPayoutAccountTab";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
-import { DevopsDesignDeadlineTab } from "./components/DevopsDesignDeadlineTab";
 import { PracticeTransferAutoMatchTab } from "./components/PracticeTransferAutoMatchTab";
-import { Landmark, CreditCard, FlaskConical } from "lucide-react";
+import { DevopsPlatformFeeTab } from "./components/DevopsPlatformFeeTab";
+import { CreditCard, FlaskConical } from "lucide-react";
 
-type TabKey = "payment" | "credits" | "autoMatch";
+type TabKey = "credits" | "autoMatch";
 
 const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
   design: "autoMatch",
@@ -31,24 +29,18 @@ export const DevopsPartnerPage = () => {
   const tabs: SettingsTabDef[] = useMemo(
     () => [
       {
-        key: "payment",
-        label: "입금",
-        icon: Landmark,
-        content: <DevopsPayoutAccountTab />,
-      },
-      {
         key: "credits",
-        label: "요금 · 크레딧",
+        label: "커스텀어벗 요금 · 크레딧",
         icon: CreditCard,
         content: <AdminCreditSettingsTab />,
       },
       {
         key: "autoMatch",
-        label: "기공의뢰 자동매칭",
+        label: "기공소 매칭",
         icon: FlaskConical,
         content: (
           <div className="space-y-6">
-            <DevopsDesignDeadlineTab />
+            <DevopsPlatformFeeTab />
             <PracticeTransferAutoMatchTab />
           </div>
         ),

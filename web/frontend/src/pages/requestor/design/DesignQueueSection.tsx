@@ -9,11 +9,18 @@
 // - web/frontend/src/pages/requestor/design/DesignRequestTransferView.tsx
 // - web/frontend/src/pages/requestor/design/DesignRequestCardGrid.tsx
 import { Suspense, lazy } from "react";
+import { CircleHelp } from "lucide-react";
 import {
   deriveStageForFilter,
   isDesignCustomAbutmentRequest,
   PRODUCT_MODE,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const RequestPage = lazy(() =>
   import(
@@ -30,6 +37,26 @@ const RequestPage = lazy(() =>
 export const DesignQueueSection = () => {
   return (
     <div className="w-full min-h-0 flex flex-col items-stretch">
+      <TooltipProvider delayDuration={0}>
+        <div className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground">
+          <span>커스텀 어벗 디자인은 1일 내 작업 완료</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex hover:text-foreground"
+                aria-label="커스텀 어벗 디자인 책임 안내"
+              >
+                <CircleHelp className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs leading-relaxed">
+              작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 플랫폼은 작업 지연에 대한
+              책임을 지지 않습니다.
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </TooltipProvider>
       <Suspense fallback={null}>
         <RequestPage
           showQueueBar={false}

@@ -5,7 +5,7 @@
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 import type { RefObject } from "react";
-import { Paperclip, Send, X, MessageSquare } from "lucide-react";
+import { CircleHelp, Paperclip, Send, X, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,6 +19,12 @@ import {
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { Progress } from "@/components/ui/progress";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export type PracticeTransferDialogSummaryItem = {
   label: string;
@@ -63,9 +69,11 @@ type PracticeTransferDetailChatDialogProps = {
   accepted?: boolean;
   /**
    * 이미 채팅방이 연결된 경우(수락 이력·작업취소 후 등).
-   * true면 수락 게이트로 채팅을 가리지 않고, 미수락이면 상단에 재수락 CTA를 둔다.
+   * true면 채팅을 유지할 수 있다. 재수락 CTA는 workCanceled일 때만 표시한다.
    */
   chatUnlocked?: boolean;
+  /** 기공소 작업취소 후 재수락이 필요한 상태 */
+  workCanceled?: boolean;
   /** 예: "남은 시간 3시간" → 버튼 라벨 `수락 [남은 시간 3시간]` */
   remainingLabel?: string | null;
   onAccept?: () => void | Promise<void>;
@@ -123,6 +131,7 @@ export function PracticeTransferDetailChatDialog({
   acceptBusy = false,
   accepted = false,
   chatUnlocked = false,
+  workCanceled = false,
   onAccept,
   remainingLabel = null,
   chatLoading,
@@ -150,10 +159,14 @@ export function PracticeTransferDetailChatDialog({
   sendDisabled,
 }: PracticeTransferDetailChatDialogProps) {
   const hasToothWorks = Array.isArray(toothWorks) && toothWorks.length > 0;
-  /** 최초 미수락·채팅방 없음: 중앙 수락 CTA. 작업취소 후 방이 남아 있으면 채팅 유지 */
-  const showAcceptGate = Boolean(onAccept) && !accepted && !chatUnlocked;
-  /** 작업취소 등으로 수락이 풀렸지만 채팅은 이어갈 때 */
-  const showReacceptBar = Boolean(onAccept) && !accepted && chatUnlocked;
+  const hasCustomAbutment = Boolean(
+    toothWorks?.some((work) => Boolean(work.customAbutment)),
+  );
+  /** 최초 미수락: 중앙 수락 CTA (채팅방만 있다고 재수락으로 보지 않음) */
+  const showAcceptGate = Boolean(onAccept) && !accepted && !workCanceled;
+  /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
+  const showReacceptBar =
+    Boolean(onAccept) && !accepted && workCanceled;
   const acceptGateMessage =
     String(chatError || "").trim() ||
     "의뢰수락 후 치과와 채팅할 수 있습니다.";
@@ -167,7 +180,6 @@ export function PracticeTransferDetailChatDialog({
     : remainingLabel
       ? `다시 수락 [${remainingLabel}]`
       : "다시 수락";
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-[90rem] h-[86vh] p-0 overflow-hidden flex flex-col">
@@ -341,6 +353,28 @@ export function PracticeTransferDetailChatDialog({
                         {acceptGateMessage}
                       </p>
                     )}
+                    {hasCustomAbutment ? (
+                      <TooltipProvider delayDuration={0}>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span>커스텀 어벗 디자인은 1일 내 작업 완료</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex hover:text-foreground"
+                                aria-label="커스텀 어벗 디자인 책임 안내"
+                              >
+                                <CircleHelp className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs leading-relaxed">
+                              작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 플랫폼은 작업
+                              지연에 대한 책임을 지지 않습니다.
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TooltipProvider>
+                    ) : null}
                     <Button
                       type="button"
                       onClick={() => void onAccept?.()}
@@ -358,15 +392,16 @@ export function PracticeTransferDetailChatDialog({
                         작업이 취소된 상태입니다. 채팅은 이어갈 수 있고, 다시 수락하면 작업을
                         진행할 수 있습니다.
                       </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="shrink-0 self-end sm:self-auto"
-                        onClick={() => void onAccept?.()}
-                        disabled={acceptBusy}
-                      >
-                        {reacceptButtonLabel}
-                      </Button>
+                      <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void onAccept?.()}
+                          disabled={acceptBusy}
+                        >
+                          {reacceptButtonLabel}
+                        </Button>
+                      </div>
                     </div>
                   ) : null}
                   <ScrollArea className="min-h-0 flex-1 px-3 py-3">

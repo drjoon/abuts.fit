@@ -269,7 +269,7 @@ export const PracticeTransferAutoMatchTab = () => {
           <div className="space-y-1.5">
             <CardTitle className="flex items-center gap-2 text-lg">
               <FlaskConical className="h-5 w-5" />
-              기공의뢰 자동매칭
+              기공소 매칭
             </CardTitle>
             <CardDescription>
               ON한 검증 기공소만 자동매칭 공개 풀을 보고 선착순 수락할 수 있습니다.

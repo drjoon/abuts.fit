@@ -60,7 +60,7 @@ type WindowInfo = {
   elapsedDays?: number | null;
   windowDays?: number;
   pricingBaseDate?: string | null;
-  feeRates?: { labReferredFeeRate?: number; nonPartnerFeeRate?: number };
+  feeRates?: { partnerFeeRate?: number; nonPartnerFeeRate?: number };
 };
 
 export const LabTradingPartnersTab = () => {
@@ -224,7 +224,7 @@ export const LabTradingPartnersTab = () => {
     windowInfo?.remainingDays == null ? null : Number(windowInfo.remainingDays);
   const windowDays = Number(windowInfo?.windowDays ?? 60);
   const platformFeePct = Math.round(
-    Number(windowInfo?.feeRates?.nonPartnerFeeRate ?? 0.1) * 100,
+    Number(windowInfo?.feeRates?.nonPartnerFeeRate ?? 0.25) * 100,
   );
   // 안내 예시: 기존 거래 1,000만 + 플랫폼 추가 200만 → 수수료는 추가분만
   const exampleExistingMan = 1000;

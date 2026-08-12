@@ -488,7 +488,7 @@ export const LabSettlementPayoutTab = () => {
           <Card>
             <CardHeader className="p-3 pb-1">
               <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                일반 치과 (20%)
+                일반 치과 (25%)
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0">
@@ -558,9 +558,9 @@ export const LabSettlementPayoutTab = () => {
                     <div className="min-w-0">
                       <div className="font-medium">기공의뢰 적립</div>
                       <div className="text-muted-foreground">
-                        치과가 유료크레딧으로 지불한 기공비에서, 기존 치과(0%)는
-                        전액·소개 치과(10%)·일반 치과(20%)는 플랫폼 수수료를
-                        제외한 금액이 기공크레딧으로 적립됩니다
+                        치과가 유료크레딧으로 지불한 기공비에서, 등록 치과(기본
+                        0%)·미등록 치과(기본 25%)는 플랫폼 수수료를 제외한
+                        금액이 기공크레딧으로 적립됩니다
                       </div>
                     </div>
                   </div>
@@ -727,7 +727,7 @@ export const LabSettlementPayoutTab = () => {
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
                           onClick={() => toggleSnapshotSort("nonPartner")}
                         >
-                          일반 치과 (20%)
+                          일반 치과 (25%)
                           {renderSortIcon(
                             snapshotSort.key === "nonPartner",
                             snapshotSort.direction,

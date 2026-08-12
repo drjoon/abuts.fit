@@ -309,8 +309,8 @@ export async function commitPracticeTransferBilling({
         refId: transferId,
         meta: {
           source:
-            relationshipKind === "referred"
-              ? "lab_referred_platform_fee"
+            relationshipKind === "active" || relationshipKind === "referred"
+              ? "partner_platform_fee"
               : "non_partner_platform_fee",
           relationshipKind,
           feeRateApplied,

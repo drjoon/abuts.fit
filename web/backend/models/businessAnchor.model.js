@@ -143,10 +143,11 @@ const businessAnchorSchema = new mongoose.Schema(
       devopsRate: { type: Number, default: 0.1, min: 0, max: 1 },
       salesmanRate: { type: Number, default: 0.1, min: 0, max: 1 },
       adminRate: { type: Number, default: 0.2, min: 0, max: 1 },
-      // 기공의뢰(practice transfer) 플랫폼 수수료율. 거래처(active)=0%, 소개(referred)=labReferredFeeRate,
-      // 그 외(none)=nonPartnerFeeRate. 걷힌 수수료 총액은 위 4자 배분율로 다시 나뉜다.
-      labReferredFeeRate: { type: Number, default: 0.1, min: 0, max: 1 },
-      nonPartnerFeeRate: { type: Number, default: 0.2, min: 0, max: 1 },
+      // 기공의뢰(practice transfer) 플랫폼 수수료율(2단계).
+      // 등록 치과(active|referred)=partnerFeeRate, 미등록=nonPartnerFeeRate.
+      // 걷힌 수수료 총액은 위 4자 배분율로 다시 나뉜다.
+      partnerFeeRate: { type: Number, default: 0, min: 0, max: 1 },
+      nonPartnerFeeRate: { type: Number, default: 0.25, min: 0, max: 1 },
       updatedAt: { type: Date, default: null },
     },
     shippingPolicy: {

@@ -240,17 +240,13 @@ export const AdminCreditSettingsTab = () => {
     JSON.stringify(settings) !== JSON.stringify(originalSettings);
 
   const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
-  const designHelp = `디자인+생산 시 생산비에 별도 추가됩니다. 출고일은 묶음·신속 모두 +1영업일. 기본 ${CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}원.`;
-  const abutmentRetailHelp =
-    "치과 기공의뢰에 포함되는 커스텀어벗 소매가(1어벗당). 치과 유료크레딧 차감·기공소 기공크레딧 분배에 사용됩니다.";
-
   return (
     <TooltipProvider delayDuration={0}>
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
             <CreditCard className="h-5 w-5" />
-            요금 · 크레딧
+            커스텀어벗 요금 · 크레딧
           </CardTitle>
           <CardDescription>
             전역 요금입니다. 의뢰 생성·표시·차감에 동일하게 적용됩니다.
@@ -263,7 +259,7 @@ export const AdminCreditSettingsTab = () => {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <AmountField
                 id="minCreditForRequest"
-                label="신규의뢰 최소 크레딧 (원)"
+                label="어벗 의뢰비 (원)"
                 value={settings.minCreditForRequest}
                 onChange={(next) =>
                   setSettings({ ...settings, minCreditForRequest: next })
@@ -281,39 +277,13 @@ export const AdminCreditSettingsTab = () => {
               />
               <AmountField
                 id="expressFee"
-                label="신속 배송 추가 (원)"
+                label="신속 배송비 (원)"
                 value={settings.expressFee}
                 onChange={(next) =>
                   setSettings({ ...settings, expressFee: next })
                 }
                 disabled={loading}
                 help={expressHelp}
-              />
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-border/80 bg-background/60 p-4 sm:p-5 space-y-4">
-            <h3 className="text-sm font-semibold tracking-tight">디자인</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <AmountField
-                id="designFee"
-                label="디자인비 (1어벗당, 원)"
-                value={settings.designFee}
-                onChange={(next) =>
-                  setSettings({ ...settings, designFee: next })
-                }
-                disabled={loading}
-                help={designHelp}
-              />
-              <AmountField
-                id="abutmentRetailPrice"
-                label="치과 납품 어벗 소매가 (1어벗당, 원)"
-                value={settings.abutmentRetailPrice}
-                onChange={(next) =>
-                  setSettings({ ...settings, abutmentRetailPrice: next })
-                }
-                disabled={loading}
-                help={abutmentRetailHelp}
               />
             </div>
           </section>

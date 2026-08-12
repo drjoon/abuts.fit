@@ -23,7 +23,7 @@ export interface CreditSettings {
 }
 
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
-  minCreditForRequest: 10000,
+  minCreditForRequest: 12000,
   shippingFee: 3500,
   expressFee: 2000,
   designFee: 15000,

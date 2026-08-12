@@ -22,7 +22,7 @@ import {
   resolveRequestorProfile,
 } from "../../utils/requestorCapabilities.js";
 import {
-  DEFAULT_LAB_REFERRED_FEE_RATE,
+  DEFAULT_PARTNER_FEE_RATE,
   DEFAULT_NON_PARTNER_FEE_RATE,
 } from "../../services/creditRevenuePolicy.service.js";
 
@@ -33,8 +33,8 @@ async function resolvePlatformFeeRatesForDisplay() {
     .sort({ createdAt: 1 })
     .lean();
   return {
-    labReferredFeeRate: Number(
-      devops?.payoutRates?.labReferredFeeRate ?? DEFAULT_LAB_REFERRED_FEE_RATE,
+    partnerFeeRate: Number(
+      devops?.payoutRates?.partnerFeeRate ?? DEFAULT_PARTNER_FEE_RATE,
     ),
     nonPartnerFeeRate: Number(
       devops?.payoutRates?.nonPartnerFeeRate ?? DEFAULT_NON_PARTNER_FEE_RATE,
@@ -264,9 +264,9 @@ export async function createLabTradingPartnerInvite(req, res) {
       });
     }
     const window = await resolveLabTradingPartnerWindow({ labAnchorId });
-    // 30일 등록 기간이 지나도 초대(소개) 발급 자체는 계속 허용한다.
-    // 다만 이 기간 이후 발급된 초대는 검증 완료 시 active(거래처, 수수료 0%)가 아닌
-    // referred(소개, 수수료 10%)로 승격된다.
+    // 등록 기간이 지나도 초대(소개) 발급 자체는 계속 허용한다.
+    // 다만 이 기간 이후 발급된 초대는 검증 완료 시 active(등록 치과)가 아닌
+    // referred(기간 후 등록)로 승격된다. 플랫폼 수수료는 둘 다 partnerFeeRate(기본 0%).
     const invitedAfterWindow = !window.canInvite;
 
     // 링크/안내문구 복사용 토큰만 발급. 목록 카드는 치과 가입(pending) 때부터 표시.

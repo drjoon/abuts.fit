@@ -28,8 +28,9 @@ const labTradingPartnerSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      // active: 60일 등록 기간 내 초대·검증 완료된 소개치과 (플랫폼 수수료 0%)
-      // referred: 60일 등록 기간이 지난 뒤 발급된 초대로 검증 완료 (플랫폼 수수료 10%)
+      // active: 등록 기간 내 초대·검증 완료된 등록 치과 (플랫폼 수수료 partnerFeeRate, 기본 0%)
+      // referred: 등록 기간이 지난 뒤 발급된 초대로 검증 완료 (동일하게 partnerFeeRate)
+      // 관계 없음: 플랫폼 수수료 nonPartnerFeeRate (기본 25%, 개발운영사 파트너 페이지에서 설정)
       enum: ["invited", "pending", "active", "referred", "canceled", "expired"],
       default: "invited",
       index: true,

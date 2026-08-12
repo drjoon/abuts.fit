@@ -10,7 +10,7 @@ import {
   resolveRequestorProfile,
 } from "./requestorCapabilities.js";
 
-/** 자동매칭 수락 후 작업 가능 시간 (고정) */
+/** 기존 자동매칭 수락 건의 예상 소요 시간 기본값 */
 export const PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS = 3;
 
 export const AUTO_MATCH_LAB_DISPLAY_NAME = "자동 매칭";

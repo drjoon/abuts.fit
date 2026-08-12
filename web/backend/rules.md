@@ -248,9 +248,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
   - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic/customAbutmentDesign). 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops). `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과).
   - PracticeTransfer 유료: **기공소 의뢰수락(`POST .../mark-accepted`)** 시 치과 **유료크레딧**에서 청구 총액(기공비+어벗 소매가) 1회 차감 → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 기공소 `LAB_SETTLEMENT_CREDIT`(UI: 기공크레딧). 전송 생성 시점에는 과금하지 않는다.
-    - `active`(정식 거래처): 수수료 0% — 전액 기공소 정산.
-    - `referred`(30일 경과 후 소개로 등록): 수수료 `BusinessAnchor.payoutRates.labReferredFeeRate`(기본 10%).
-    - 그 외(관계 없음): 수수료 `BusinessAnchor.payoutRates.nonPartnerFeeRate`(기본 20%).
+    - `active`/`referred`(등록 치과): 수수료 `BusinessAnchor.payoutRates.partnerFeeRate`(기본 0%).
+    - 그 외(미등록): 수수료 `BusinessAnchor.payoutRates.nonPartnerFeeRate`(기본 25%).
     - 걷힌 수수료 금액은 기존 4자 분배율(`manufacturerRate`/`devopsRate`/`salesmanRate`/`adminRate`)로 다시 나뉜다(영업자 추천 유무에 따른 재배분 로직 동일 적용).
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
   - eventType: `PRACTICE_TRANSFER_SPEND_COMMIT`, `LAB_SETTLEMENT_CHARGE`; accountCode: `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부 항목 라벨: `기공비` / 기공소 버킷 표시: `기공크레딧`.

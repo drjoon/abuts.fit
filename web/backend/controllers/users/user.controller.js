@@ -61,7 +61,18 @@ async function getProfile(req, res) {
         }
 
         data.salesmanPayoutAccount = payoutAccount || {};
-        data.devopsPayoutSettings = payoutRates || {};
+        // 플랫폼 수수료 2단계 SSOT: partnerFeeRate / nonPartnerFeeRate
+        const rates = payoutRates || {};
+        data.devopsPayoutSettings = {
+          ...rates,
+          partnerFeeRate: Number(
+            rates.partnerFeeRate ?? 0,
+          ),
+          nonPartnerFeeRate: Number(
+            rates.nonPartnerFeeRate ?? 0.25,
+          ),
+        };
+        delete data.devopsPayoutSettings.labReferredFeeRate;
       }
     }
 
@@ -456,20 +467,23 @@ async function updateProfile(req, res) {
           });
         }
 
-        // 기공의뢰(practice transfer) 플랫폼 수수료율: 4자 분배율과 별개의 독립 비율.
-        const labReferredFeeRate = Number(raw?.labReferredFeeRate ?? 0.1);
-        const nonPartnerFeeRate = Number(raw?.nonPartnerFeeRate ?? 0.2);
-        const feeRates = [labReferredFeeRate, nonPartnerFeeRate];
+        // 기공의뢰(practice transfer) 플랫폼 수수료율(2단계): 등록/미등록.
+        // partnerFeeRate 미전송 시 레거시 labReferredFeeRate는 무시하고 기본 0%를 쓴다.
+        const partnerFeeRate = Number(
+          raw?.partnerFeeRate ?? 0,
+        );
+        const nonPartnerFeeRate = Number(raw?.nonPartnerFeeRate ?? 0.25);
+        const feeRates = [partnerFeeRate, nonPartnerFeeRate];
         if (feeRates.some((r) => !Number.isFinite(r) || r < 0 || r > 1)) {
           return res.status(400).json({
             success: false,
             message: "플랫폼 수수료율은 0~100% 범위여야 합니다.",
           });
         }
-        if (labReferredFeeRate > nonPartnerFeeRate) {
+        if (partnerFeeRate > nonPartnerFeeRate) {
           return res.status(400).json({
             success: false,
-            message: "소개 수수료율은 미거래처 수수료율보다 클 수 없습니다.",
+            message: "등록 치과 수수료율은 미등록 수수료율보다 클 수 없습니다.",
           });
         }
 
@@ -484,7 +498,7 @@ async function updateProfile(req, res) {
                   devopsRate,
                   salesmanRate,
                   adminRate,
-                  labReferredFeeRate,
+                  partnerFeeRate,
                   nonPartnerFeeRate,
                   updatedAt: new Date(),
                 },
