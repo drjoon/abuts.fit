@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-06: 큐→프리뷰에 designSoftware·헥스 회전(rnd/caseInfos) 전달. 가공 단계 누락 수정.
 // - 2026-08-06: 출고예정·마감 뱃지용 estimatedShipYmd를 큐→프리뷰로 전달.
+// - 2026-08-12: 빠른 가공 재배치 Alert 닫기 시 확인 처리. 같은 건은 새로고침 후 재표시하지 않음.
 // - 2026-08-05: 신속배송 14:00 빠른 가공 재배치 Alert/우선순위 룰 모달·뱃지.
 // - 2026-08-04: 재생목록 클릭 → PreviewModal 오픈. 큐→프리뷰에 shippingMode 전달.
 // - 2026-08-03: MachiningQueueBoard: 작업 공정의 display label 정규화(의뢰 -> 준비) 영향 반영(주로 로컬 저장/복구 키/주석). UI 텍스트 변경은 없었음.
@@ -354,6 +355,36 @@ export const MachiningQueueBoard = ({
   const [expressRebalanceModalOpen, setExpressRebalanceModalOpen] =
     useState(false);
   const [priorityRulesModalOpen, setPriorityRulesModalOpen] = useState(false);
+  const lastAutoOpenedExpressRebalanceIdRef = useRef<string>("");
+
+  useEffect(() => {
+    const hasAlert =
+      Boolean(expressRebalanceAlert) &&
+      Array.isArray(expressRebalanceAlert?.moved) &&
+      Number(expressRebalanceAlert?.moved?.length || 0) > 0;
+    if (!hasAlert) {
+      lastAutoOpenedExpressRebalanceIdRef.current = "";
+      setExpressRebalanceModalOpen(false);
+      return;
+    }
+    const identity = String(expressRebalanceAlert?.id || expressRebalanceAlert?.createdAt || "");
+    if (
+      identity &&
+      identity === lastAutoOpenedExpressRebalanceIdRef.current
+    ) {
+      return;
+    }
+    if (identity) lastAutoOpenedExpressRebalanceIdRef.current = identity;
+    setExpressRebalanceModalOpen(true);
+  }, [expressRebalanceAlert]);
+
+  const handleExpressRebalanceModalOpenChange = useCallback(
+    (open: boolean) => {
+      setExpressRebalanceModalOpen(open);
+      if (!open) clearExpressRebalanceAlert();
+    },
+    [clearExpressRebalanceAlert],
+  );
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -2078,7 +2109,7 @@ export const MachiningQueueBoard = ({
 
       <ExpressRebalanceAlertModal
         open={expressRebalanceModalOpen}
-        onOpenChange={setExpressRebalanceModalOpen}
+        onOpenChange={handleExpressRebalanceModalOpenChange}
         alert={expressRebalanceAlert as any}
       />
 

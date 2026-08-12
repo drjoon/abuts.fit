@@ -239,6 +239,7 @@ Notes:
 - 신속배송 14:00 빠른 가공 재배치:
   - socket `machining:express-rebalance` / queues `meta.expressRebalanceAlert`
   - Alert 칩 클릭 → `ExpressRebalanceAlertModal` (장비별 배정·예상 가공시간·예상 완료·예측 기준)
+  - 모달/칩 닫기 = 확인. 같은 Alert `id`는 `localStorage` dismissed 목록에 남아 새로고침해도 재표시하지 않음. 새 재배치는 다시 Alert.
   - 재배치 건 뱃지: `fastMachiningRebalance` → `MachiningRequestLabel` 「빠른 가공 재배치」
 - 신속/묶음 뱃지: 가공카드(Complete/Now Playing/Next Up)·재생목록·프리뷰(`PreviewModal`)에 `ShippingModeBadge` 상시 표시
   - `MachiningRequestLabel.tsx`, `CncPlaylistDrawer.tsx`, `PreviewModal.tsx`

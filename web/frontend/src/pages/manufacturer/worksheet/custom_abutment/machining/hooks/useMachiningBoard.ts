@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-12: 빠른 가공 재배치 Alert 확인(닫기) 후 같은 id는 새로고침해도 재표시하지 않음.
 // - 2026-08-07: 예약목록 PlaylistJobItem에 의뢰자명·치과/환자 구조화 필드 전달.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -88,8 +89,65 @@ export type ExpressRebalanceAlertState = {
 
 const MACHINING_ALERT_STORAGE_KEY = "abuts:machining-alert-map";
 const EXPRESS_REBALANCE_ALERT_STORAGE_KEY = "abuts:express-rebalance-alert";
+const EXPRESS_REBALANCE_ALERT_DISMISSED_KEY =
+  "abuts:express-rebalance-alert-dismissed-ids";
+const EXPRESS_REBALANCE_ALERT_DISMISSED_LIMIT = 30;
 const GHOST_HINT_CLEAR_GRACE_SECONDS = 8;
 const GHOST_HINT_SWEEP_INTERVAL_MS = 2000;
+
+const getExpressRebalanceAlertIdentity = (
+  alert: ExpressRebalanceAlertState | null | undefined,
+): string => {
+  if (!alert || typeof alert !== "object") return "";
+  const id = String(alert.id || "").trim();
+  if (id) return id;
+  const createdAt = String(alert.createdAt || "").trim();
+  if (createdAt) return createdAt;
+  const moved = Array.isArray(alert.moved) ? alert.moved : [];
+  return moved
+    .map((item) => String(item?.requestId || "").trim())
+    .filter(Boolean)
+    .join("|");
+};
+
+const readDismissedExpressRebalanceAlertIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem(EXPRESS_REBALANCE_ALERT_DISMISSED_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((value) => String(value || "").trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+};
+
+const writeDismissedExpressRebalanceAlertIds = (ids: string[]) => {
+  try {
+    localStorage.setItem(
+      EXPRESS_REBALANCE_ALERT_DISMISSED_KEY,
+      JSON.stringify(ids.slice(-EXPRESS_REBALANCE_ALERT_DISMISSED_LIMIT)),
+    );
+  } catch {
+    // noop
+  }
+};
+
+const isExpressRebalanceAlertDismissed = (
+  alert: ExpressRebalanceAlertState | null | undefined,
+): boolean => {
+  const identity = getExpressRebalanceAlertIdentity(alert);
+  if (!identity) return false;
+  return readDismissedExpressRebalanceAlertIds().includes(identity);
+};
+
+const isVisibleExpressRebalanceAlert = (
+  alert: unknown,
+): alert is ExpressRebalanceAlertState => {
+  if (!alert || typeof alert !== "object") return false;
+  const moved = (alert as ExpressRebalanceAlertState).moved;
+  return Array.isArray(moved) && moved.length > 0;
+};
 
 export const useMachiningBoard = ({
   token,
@@ -159,6 +217,8 @@ export const useMachiningBoard = ({
   >({});
   const [expressRebalanceAlert, setExpressRebalanceAlert] =
     useState<ExpressRebalanceAlertState | null>(null);
+  const [expressRebalanceHydrated, setExpressRebalanceHydrated] =
+    useState(false);
 
   useEffect(() => {
     try {
@@ -175,12 +235,21 @@ export const useMachiningBoard = ({
   useEffect(() => {
     try {
       const raw = localStorage.getItem(EXPRESS_REBALANCE_ALERT_STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return;
-      setExpressRebalanceAlert(parsed as ExpressRebalanceAlertState);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          isVisibleExpressRebalanceAlert(parsed) &&
+          !isExpressRebalanceAlertDismissed(parsed)
+        ) {
+          setExpressRebalanceAlert(parsed);
+        } else {
+          localStorage.removeItem(EXPRESS_REBALANCE_ALERT_STORAGE_KEY);
+        }
+      }
     } catch {
       // noop
+    } finally {
+      setExpressRebalanceHydrated(true);
     }
   }, []);
 
@@ -196,6 +265,7 @@ export const useMachiningBoard = ({
   }, [machiningAlertMap]);
 
   useEffect(() => {
+    if (!expressRebalanceHydrated) return;
     try {
       if (!expressRebalanceAlert) {
         localStorage.removeItem(EXPRESS_REBALANCE_ALERT_STORAGE_KEY);
@@ -208,7 +278,7 @@ export const useMachiningBoard = ({
     } catch {
       // noop
     }
-  }, [expressRebalanceAlert]);
+  }, [expressRebalanceAlert, expressRebalanceHydrated]);
 
   const upsertMachiningAlert = useCallback(
     (payload: {
@@ -274,8 +344,29 @@ export const useMachiningBoard = ({
     });
   }, []);
 
+  const applyExpressRebalanceAlert = useCallback((incoming: unknown) => {
+    if (!isVisibleExpressRebalanceAlert(incoming)) return;
+    if (isExpressRebalanceAlertDismissed(incoming)) return;
+    setExpressRebalanceAlert((prev) => {
+      const nextId = getExpressRebalanceAlertIdentity(incoming);
+      const prevId = getExpressRebalanceAlertIdentity(prev);
+      if (prev && nextId && prevId === nextId) return prev;
+      return incoming;
+    });
+  }, []);
+
   const clearExpressRebalanceAlert = useCallback(() => {
-    setExpressRebalanceAlert(null);
+    setExpressRebalanceAlert((prev) => {
+      const identity = getExpressRebalanceAlertIdentity(prev);
+      if (identity) {
+        const nextIds = readDismissedExpressRebalanceAlertIds().filter(
+          (id) => id !== identity,
+        );
+        nextIds.push(identity);
+        writeDismissedExpressRebalanceAlertIds(nextIds);
+      }
+      return null;
+    });
   }, []);
 
   const updateMachineAuto = useCallback(
@@ -509,15 +600,7 @@ export const useMachiningBoard = ({
       const body: any = await res.json().catch(() => ({}));
       if (!res.ok || body?.success === false) return;
       const map = body?.data && typeof body.data === "object" ? body.data : {};
-      const rebalanceAlert = body?.meta?.expressRebalanceAlert;
-      if (
-        rebalanceAlert &&
-        typeof rebalanceAlert === "object" &&
-        Array.isArray(rebalanceAlert?.moved) &&
-        rebalanceAlert.moved.length > 0
-      ) {
-        setExpressRebalanceAlert(rebalanceAlert as ExpressRebalanceAlertState);
-      }
+      applyExpressRebalanceAlert(body?.meta?.expressRebalanceAlert);
 
       const normalized: QueueMap = {};
       Object.entries(map || {}).forEach(([mid, list]) => {
@@ -550,7 +633,7 @@ export const useMachiningBoard = ({
     } catch {
       // ignore
     }
-  }, [token, reconcileMachiningTimersFromQueues]);
+  }, [token, reconcileMachiningTimersFromQueues, applyExpressRebalanceAlert]);
 
   const ncQueueVerifyTimerRef = useRef<number | null>(null);
   const scheduleNcQueueVerifyRefresh = useCallback(() => {
@@ -988,7 +1071,7 @@ export const useMachiningBoard = ({
 
       if (type === "machining:express-rebalance") {
         if (payload && typeof payload === "object") {
-          setExpressRebalanceAlert(payload as ExpressRebalanceAlertState);
+          applyExpressRebalanceAlert(payload);
           void refreshProductionQueues();
         }
         return;
