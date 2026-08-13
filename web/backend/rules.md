@@ -86,7 +86,7 @@
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
-    - 디자인비: `creditSettings.designFee`(기본 5000, **1어벗당**). 안내 정가 생산만 멤버십 1.5만원·일반 2.5만원 / 디자인+생산 멤버십 2.0만원·일반 3.5만원. 배송비 별도·박스당 과금. 치과 멤버십 `practiceMembershipMonthlyFee`(기본 55,000원).
+    - 디자인비: `creditSettings.designFee`(기본 5000, **1어벗당**). 안내 정가 생산만 멤버십 1.5만원·일반 2.0만원 / 디자인+생산 멤버십 2.5만원·일반 4.0만원. 배송비 별도·박스당 과금. 치과 멤버십 `practiceMembershipMonthlyFee`(기본 55,000원). 해지 시 다음 결제일까지 유지, 그 다음 결제는 없음(`practiceMembershipCancelAtPeriodEnd`).
     - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic·작업X 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
       - `price.amount` = `(생산단가 + designFee) × qty`

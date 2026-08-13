@@ -274,7 +274,7 @@
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 디자인비: `creditSettings.designFee`(기본 **5,000원 / 1어벗**). 안내 정가 생산만 멤버십 1.5만원·일반 2.5만원 / 디자인+생산 멤버십 2.0만원·일반 3.5만원. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 55,000원).
+  - 디자인비: `creditSettings.designFee`(기본 **5,000원 / 1어벗**). 안내 정가 생산만 멤버십 1.5만원·일반 2.0만원 / 디자인+생산 멤버십 2.5만원·일반 4.0만원. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 55,000원).
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`

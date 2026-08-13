@@ -2,6 +2,7 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/services/practiceMembership.service.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
@@ -43,6 +44,11 @@ import {
   activateLabTradingPartnerInvite,
   activatePendingLabTradingPartnersForPractice,
 } from "../../utils/labTradingPartner.util.js";
+import {
+  applyPracticeMembershipCancel,
+  applyPracticeMembershipJoin,
+  practiceMembershipResponseFields,
+} from "../../services/practiceMembership.service.js";
 
 function resolveLabPartnerInviteToken(req) {
   return String(
@@ -1165,17 +1171,10 @@ export async function updateMyBusiness(req, res) {
 }
 
 export async function setMyPracticeMembership(req, res) {
+  const wantActive = req.body?.active !== false;
   try {
     const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
-
-    const wantActive = req.body?.active !== false;
-    if (wantActive !== true) {
-      return res.status(400).json({
-        success: false,
-        message: "멤버십 해지는 아직 지원하지 않습니다.",
-      });
-    }
 
     const freshUser = await User.findById(req.user._id)
       .select({
@@ -1222,30 +1221,49 @@ export async function setMyPracticeMembership(req, res) {
       });
     }
 
-    if (anchor.practiceMembershipActive) {
+    if (wantActive !== true) {
+      if (!anchor.practiceMembershipActive) {
+        return res.status(400).json({
+          success: false,
+          message: "이용 중인 멤버십이 없습니다.",
+        });
+      }
+      const { anchor: next, expiredNow } = await applyPracticeMembershipCancel(
+        anchor,
+      );
       return res.json({
         success: true,
-        message: "이미 멤버십을 이용 중입니다.",
-        data: { practiceMembershipActive: true },
+        message: expiredNow
+          ? "멤버십이 해지되었습니다."
+          : "멤버십 해지가 예약되었습니다. 다음 결제일까지 유지됩니다.",
+        data: practiceMembershipResponseFields(next, { kind: "practice" }),
       });
     }
 
-    await BusinessAnchor.updateOne(
-      { _id: anchor._id },
-      { $set: { practiceMembershipActive: true } },
-    );
-    invalidateMyBusinessCache(anchor._id);
+    if (anchor.practiceMembershipActive && !anchor.practiceMembershipCancelAtPeriodEnd) {
+      return res.json({
+        success: true,
+        message: "이미 멤버십을 이용 중입니다.",
+        data: practiceMembershipResponseFields(anchor, { kind: "practice" }),
+      });
+    }
 
+    const next = await applyPracticeMembershipJoin(anchor);
+    const resumed = Boolean(anchor.practiceMembershipCancelAtPeriodEnd);
     return res.json({
       success: true,
-      message: "치과 멤버십에 가입되었습니다.",
-      data: { practiceMembershipActive: true },
+      message: resumed
+        ? "멤버십 해지가 취소되었습니다."
+        : "치과 멤버십에 가입되었습니다.",
+      data: practiceMembershipResponseFields(next, { kind: "practice" }),
     });
   } catch (error) {
     console.error("[setMyPracticeMembership]", error);
     return res.status(500).json({
       success: false,
-      message: "멤버십 가입 중 오류가 발생했습니다.",
+      message: wantActive
+        ? "멤버십 가입 중 오류가 발생했습니다."
+        : "멤버십 해지 중 오류가 발생했습니다.",
     });
   }
 }

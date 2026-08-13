@@ -1,8 +1,11 @@
 // change-log:
+// - 2026-08-13: 생산 일반 2.0만→멤버십 1.5만, 디자인+생산 일반 4.0만→멤버십 2.5만. 단가 글자 확대.
+// - 2026-08-13: 이용 중/해지 예약 클릭 시 멤버십 모달.
+// - 2026-08-13: 생산·디자인+생산 일반가 취소선, 멤버십 단가 강조.
 // - 2026-08-13: 치과 멤버십 가입 → 가입 모달.
 // - 2026-08-13: 가입 축하 크레딧 — 치과 숨김, 기공소는 금액·1회 지급만 표시.
 // - 2026-08-13: 기본 가격 제목 삭제. 멤버십 단가+일반 소형 병기, 치과 멤버십 자동결제 안내.
-// - 2026-08-13: 생산만 15,000·디자인+생산 20,000 기재, 배송비 박스단위 별도.
+// - 2026-08-13: 생산만 15,000·디자인+생산 25,000 기재, 배송비 박스단위 별도.
 // - 2026-08-12: 모달 제목을 커스텀 어벗 생산 가격 · 출고 정책 안내로 변경, 디자인 10,000원 행 삭제.
 // - 2026-08-11: 기본가 12,000/디자인 10,000·주문량할인·소개합산·런칭이벤트·디자인+생산 장문 삭제, 출고 안내 단축.
 // - 2026-08-09: 디자인+생산 신속비=어벗 수 배수 안내.
@@ -37,7 +40,7 @@ import {
   CREDIT_SETTINGS_DEFAULTS,
   useSystemSettings
 } from '@/hooks/useSystemSettings';
-import { useAbutsAbutmentPricingTier } from '@/shared/pricing/useAbutsAbutmentPricingTier';
+import { usePracticeMembershipStatus } from '@/shared/pricing/useAbutsAbutmentPricingTier';
 import { PracticeMembershipJoinDialog } from '@/features/platform/PracticeMembershipJoinDialog';
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
@@ -91,6 +94,7 @@ function PriceRow({
   value,
   unitLabel,
   secondaryValue,
+  strikeValue,
   note,
   noteAction
 }: {
@@ -98,6 +102,7 @@ function PriceRow({
   value: string;
   unitLabel?: string;
   secondaryValue?: string;
+  strikeValue?: string;
   note?: string;
   noteAction?: ReactNode;
 }) {
@@ -105,8 +110,15 @@ function PriceRow({
     <div className='space-y-0.5'>
       <div className='flex items-baseline justify-between gap-3'>
         <div className='min-w-0 text-sm text-slate-600'>{label}</div>
-        <div className='shrink-0 text-base font-semibold tabular-nums text-slate-900'>
-          {value}
+        <div className='flex shrink-0 items-baseline gap-2 tabular-nums'>
+          {strikeValue ? (
+            <span className='text-base font-normal text-slate-400 line-through'>
+              {strikeValue}
+            </span>
+          ) : null}
+          <div className='text-xl font-semibold tracking-tight text-slate-900'>
+            {value}
+          </div>
         </div>
       </div>
       {unitLabel || secondaryValue ? (
@@ -152,10 +164,11 @@ export const PricingPolicyDialog = ({
 }: Props) => {
   const { token } = useAuthStore();
   const { kind } = useRequestorBusinessAccess();
-  const abutmentPricingTier = useAbutsAbutmentPricingTier();
+  const membership = usePracticeMembershipStatus();
   const showWelcomeCredit = kind === 'lab';
   const showMembershipJoin = kind === 'practice';
-  const isPracticeMember = abutmentPricingTier === 'membership';
+  const isPracticeMember = membership.active;
+  const cancelScheduled = isPracticeMember && membership.cancelAtPeriodEnd;
   const [membershipOpen, setMembershipOpen] = useState(false);
   const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
   const { data: systemSettings } = useSystemSettings();
@@ -324,24 +337,24 @@ export const PricingPolicyDialog = ({
                 <div className='space-y-3'>
                   <PriceRow
                     label='생산만'
+                    strikeValue={formatAbutsManwon(
+                      ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE
+                    )}
                     value={`멤버십 ${formatAbutsManwon(
                       ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
                     )}`}
                     unitLabel='1개당'
-                    secondaryValue={`(일반 ${formatAbutsManwon(
-                      ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE
-                    )})`}
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='디자인+생산 의뢰'
+                    strikeValue={formatAbutsManwon(
+                      ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE
+                    )}
                     value={`멤버십 ${formatAbutsManwon(
                       ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
                     )}`}
                     unitLabel='1개당'
-                    secondaryValue={`(일반 ${formatAbutsManwon(
-                      ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE
-                    )})`}
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
@@ -349,13 +362,22 @@ export const PricingPolicyDialog = ({
                     value={`월 ${formatAbutsAbutmentServiceWon(
                       membershipMonthlyFee
                     )}`}
-                    note='매월 구독료 자동 결제'
+                    note={
+                      cancelScheduled
+                        ? '해지 예약 · 다음 결제일까지 유지'
+                        : '매월 구독료 자동 결제'
+                    }
                     noteAction={
                       showMembershipJoin ? (
                         isPracticeMember ? (
-                          <span className='shrink-0 text-xs font-medium text-primary'>
-                            이용 중
-                          </span>
+                          <Button
+                            type='button'
+                            variant='link'
+                            className='h-auto shrink-0 px-0 py-0 text-xs font-semibold'
+                            onClick={() => setMembershipOpen(true)}
+                          >
+                            {cancelScheduled ? '해지 예약' : '이용 중'}
+                          </Button>
                         ) : (
                           <Button
                             type='button'

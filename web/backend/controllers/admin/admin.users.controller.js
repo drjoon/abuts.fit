@@ -9,7 +9,10 @@ import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { generateRandomPassword } from "./admin.shared.controller.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
-import { invalidateMyBusinessCache } from "../businesses/business.controller.js";
+import {
+  applyPracticeMembershipForceOff,
+  applyPracticeMembershipJoin,
+} from "../../services/practiceMembership.service.js";
 
 export async function getAllUsers(req, res) {
   try {
@@ -382,11 +385,16 @@ export async function updateUser(req, res) {
       updatedUser.businessAnchorId &&
       Types.ObjectId.isValid(String(updatedUser.businessAnchorId))
     ) {
-      await BusinessAnchor.updateOne(
-        { _id: updatedUser.businessAnchorId },
-        { $set: { practiceMembershipActive: nextPracticeMembershipActive } },
-      );
-      invalidateMyBusinessCache(updatedUser.businessAnchorId);
+      const anchor = await BusinessAnchor.findById(
+        updatedUser.businessAnchorId,
+      ).lean();
+      if (anchor) {
+        if (nextPracticeMembershipActive) {
+          await applyPracticeMembershipJoin(anchor);
+        } else {
+          await applyPracticeMembershipForceOff(anchor);
+        }
+      }
     }
     res.status(200).json({
       success: true,

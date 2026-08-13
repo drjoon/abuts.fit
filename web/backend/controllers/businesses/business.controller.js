@@ -37,6 +37,7 @@ import {
   ensureRequestorOrgAnchor,
   isSyntheticPracticeBusinessNumber,
 } from "./requestorOrgAnchor.util.js";
+import { practiceMembershipResponseFields } from "../../services/practiceMembership.service.js";
 export { updateMyBusiness, setMyPracticeMembership };
 
 export async function checkBusinessNumberDuplicate(req, res) {
@@ -357,7 +358,7 @@ export async function getMyBusiness(req, res) {
           payoutAccount: {},
           pricingBaseDate: pricingBaseDate || null,
           ...requestorProfileResponseFields(profile),
-          practiceMembershipActive: false,
+          ...practiceMembershipResponseFields(null, { kind: profile.kind }),
           designAccessEnabled: false,
         },
       });
@@ -495,10 +496,9 @@ export async function getMyBusiness(req, res) {
         shippingPolicy: anchor?.shippingPolicy || null,
         pricingBaseDate: pricingBaseDate || null,
         ...requestorProfileResponseFields(requestorProfile),
-        practiceMembershipActive:
-          requestorProfile.kind === "practice"
-            ? Boolean(anchor?.practiceMembershipActive)
-            : false,
+        ...practiceMembershipResponseFields(anchor, {
+          kind: requestorProfile.kind,
+        }),
         designAccessEnabled:
           businessType === "requestor"
             ? Boolean(anchor?.designAccessEnabled)

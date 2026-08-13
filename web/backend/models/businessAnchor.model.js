@@ -49,10 +49,29 @@ const businessAnchorSchema = new mongoose.Schema(
       paid: { type: Boolean, default: false },
     },
     // 치과(practice) 커스텀어벗 멤버십. 기공소는 무시하고 일반가.
+    // 해지(cancelAtPeriodEnd) 시 다음 결제일까지 유지, 그 다음 결제는 하지 않음.
     practiceMembershipActive: {
       type: Boolean,
       default: false,
       index: true,
+    },
+    practiceMembershipCancelAtPeriodEnd: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    practiceMembershipNextBillingAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    practiceMembershipStartedAt: {
+      type: Date,
+      default: null,
+    },
+    practiceMembershipCanceledAt: {
+      type: Date,
+      default: null,
     },
     // 레거시 — normalize/백필·resolve 폴백만. 신규 쓰기 금지.
     requestorCapabilities: {

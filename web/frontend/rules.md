@@ -191,7 +191,7 @@ Notes:
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 `creditSettings.designFee`(기본 5,000원 / 1어벗). 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
-    - 안내 정가 SSOT (`src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.5만원, 디자인+생산 멤버십 2.0만원·일반 3.5만원. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 55,000원, 관리자 플랫폼 설정).
+    - 안내 정가 SSOT (`src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.0만원, 디자인+생산 멤버십 2.5만원·일반 4.0만원. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 55,000원, 관리자 플랫폼 설정). 해지 시 다음 결제일까지 유지, 이후 결제 없음.
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).

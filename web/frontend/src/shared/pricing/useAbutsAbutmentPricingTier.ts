@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
 // - web/backend/models/businessAnchor.model.js
 // change-log:
+// - 2026-08-13: 해지 예약·다음 결제일 상태 노출.
 // - 2026-08-13: 멤버십 가입 후 단가 즉시 반영(access updated).
 // - 2026-08-13: 로그인 치과 멤버십 여부로 커스텀어벗 안내 단가 결정.
 import { useEffect, useMemo, useState } from "react";
@@ -16,13 +17,22 @@ import {
   type AbutsAbutmentPricingTier,
 } from "@/shared/pricing/abutsAbutmentService";
 
-export const useAbutsAbutmentPricingTier = (): AbutsAbutmentPricingTier => {
+export type PracticeMembershipStatus = {
+  tier: AbutsAbutmentPricingTier;
+  active: boolean;
+  cancelAtPeriodEnd: boolean;
+  nextBillingAt: string | null;
+};
+
+export const usePracticeMembershipStatus = (): PracticeMembershipStatus => {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const [requestorKind, setRequestorKind] = useState<string | null>(
     () => user?.requestorKind || null,
   );
   const [practiceMembershipActive, setPracticeMembershipActive] = useState(false);
+  const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
+  const [nextBillingAt, setNextBillingAt] = useState<string | null>(null);
 
   const businessType = useMemo(
     () => resolveBusinessType(user?.role, "requestor"),
@@ -36,6 +46,8 @@ export const useAbutsAbutmentPricingTier = (): AbutsAbutmentPricingTier => {
   useEffect(() => {
     if (!token) {
       setPracticeMembershipActive(false);
+      setCancelAtPeriodEnd(false);
+      setNextBillingAt(null);
       return;
     }
     let cancelled = false;
@@ -53,6 +65,12 @@ export const useAbutsAbutmentPricingTier = (): AbutsAbutmentPricingTier => {
           setRequestorKind(kind);
         }
         setPracticeMembershipActive(Boolean(data?.practiceMembershipActive));
+        setCancelAtPeriodEnd(Boolean(data?.practiceMembershipCancelAtPeriodEnd));
+        setNextBillingAt(
+          data?.practiceMembershipNextBillingAt
+            ? String(data.practiceMembershipNextBillingAt)
+            : null,
+        );
       });
     };
     load();
@@ -64,8 +82,16 @@ export const useAbutsAbutmentPricingTier = (): AbutsAbutmentPricingTier => {
     };
   }, [businessType, token, user?.requestorKind]);
 
-  return resolveAbutsAbutmentPricingTier({
-    requestorKind,
-    practiceMembershipActive,
-  });
+  return {
+    tier: resolveAbutsAbutmentPricingTier({
+      requestorKind,
+      practiceMembershipActive,
+    }),
+    active: practiceMembershipActive,
+    cancelAtPeriodEnd,
+    nextBillingAt,
+  };
 };
+
+export const useAbutsAbutmentPricingTier = (): AbutsAbutmentPricingTier =>
+  usePracticeMembershipStatus().tier;
