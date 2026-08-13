@@ -141,7 +141,7 @@ Notes:
   - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「거래 치과 등록」·「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - `src/features/settings/tabs/LabTradingPartnersTab.tsx` — 거래처 O/X 결제 안내 + 초대
-    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — crown/bridge/inlay/pontic/customAbutmentDesign(커스텀어벗 디자인, 기본 1만)
+    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·원가/리메이크). 임시치아는 임시치아1(3치 이하 3만)·임시치아2(6치 이하 5만)로 분리. 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산.
     - 등록 기간 D-day 배너: `LabDashboardTopBanners` — 기공의뢰수신·어벗생산의뢰 상단.
       - 소개치과 등록 기간 중만 표시(종료 시 두 alert 모두 숨김)
       - 왼쪽: 소개치과 등록 (`LabTradingPartnerWindowBanner`) → `?tab=trading-partners`

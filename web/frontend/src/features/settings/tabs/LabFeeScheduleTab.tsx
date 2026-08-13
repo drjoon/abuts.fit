@@ -7,37 +7,31 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Banknote, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/shared/ui/cn";
 import {
   LAB_FEE_ITEM_UNIT_LABELS,
   MAX_LAB_FEE_ITEMS,
-  MAX_LAB_FEE_ITEM_TIERS,
   normalizeLabFeeItem,
   normalizeLabFeeItems,
   type LabFeeItem,
   type LabFeeItemUnit,
   type LabFeeSchedule,
 } from "@/shared/practice/labFeeSchedule";
+
+const UNIT_OPTIONS = Object.keys(LAB_FEE_ITEM_UNIT_LABELS) as LabFeeItemUnit[];
 
 const newItemId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
@@ -78,8 +72,8 @@ function WonInput({
       <Label
         htmlFor={id}
         className={cn(
-          "mb-1 block text-center text-[11px] font-medium",
-          remake ? "text-amber-800" : "text-slate-600",
+          "mb-1.5 block text-[11px] font-medium",
+          remake ? "text-amber-800" : "text-slate-500",
         )}
       >
         {label}
@@ -94,11 +88,11 @@ function WonInput({
           disabled={disabled}
           onChange={(e) => onChange(toWon(Number(e.target.value)))}
           className={cn(
-            "h-10 rounded-xl px-2 pr-7 text-right tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50",
-            remake && "border-amber-200/80",
+            "h-11 rounded-xl border-slate-200 bg-slate-50/70 px-3 pr-8 text-right text-base font-semibold tabular-nums tracking-tight disabled:cursor-not-allowed disabled:bg-slate-50",
+            remake && "border-amber-200/80 bg-amber-50/40",
           )}
         />
-        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground">
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[11px] font-medium text-slate-400">
           원
         </span>
       </div>
@@ -117,6 +111,19 @@ export const LabFeeScheduleTab = () => {
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     );
+  };
+
+  const patchTier = (
+    item: LabFeeItem,
+    patch: Partial<{ n: number; price: number; remake: number }>,
+  ) => {
+    const current = item.tiers[0] || { n: 3, price: item.price, remake: item.remake };
+    const next = { ...current, ...patch };
+    patchItem(item.id, {
+      price: next.price,
+      remake: next.remake,
+      tiers: [next],
+    });
   };
 
   const load = useCallback(async () => {
@@ -147,9 +154,7 @@ export const LabFeeScheduleTab = () => {
       const payload = res.data?.data;
       if (Array.isArray(payload?.items)) {
         setItems(
-          payload.items.length
-            ? payload.items.map((row, index) => normalizeLabFeeItem(row, index))
-            : [],
+          payload.items.length ? normalizeLabFeeItems({ items: payload.items }) : [],
         );
       } else {
         setItems(
@@ -188,7 +193,7 @@ export const LabFeeScheduleTab = () => {
         return;
       }
       if (Array.isArray(res.data?.data?.items)) {
-        setItems(res.data.data.items.map((row, index) => normalizeLabFeeItem(row, index)));
+        setItems(normalizeLabFeeItems({ items: res.data.data.items }));
       }
       toast({ title: "기공비를 저장했습니다." });
     } finally {
@@ -202,231 +207,178 @@ export const LabFeeScheduleTab = () => {
 
   return (
     <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Banknote className="h-5 w-5 text-primary-strong" />
+          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
+            <Banknote className="h-4 w-4 text-primary-strong" />
+          </span>
           기공비 수가
         </CardTitle>
-        <p className="pt-1 text-xs text-muted-foreground">
-          항목 이름은 의뢰서 보철 형태와 같아야 청구됩니다. 단위는 치아 1개당, 치아 n개당, 1세트당 중에서 고릅니다.
-        </p>
+        <CardDescription className="pt-1 text-[13px] leading-relaxed">
+          항목 이름은 의뢰서 보철 형태와 같아야 청구됩니다. 임시치아1·2는 의뢰서
+          「임시치아」에 치아 수 구간으로 합산됩니다.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {items.map((item) => {
             const isProvided = item.enabled !== false;
+            const tier = item.tiers[0] || {
+              n: 3,
+              price: item.price,
+              remake: item.remake,
+            };
             return (
               <div
                 key={item.id}
                 className={cn(
-                  "rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm transition-opacity",
-                  !isProvided && "opacity-55",
+                  "flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm transition-all",
+                  isProvided
+                    ? "hover:border-primary-muted/80 hover:shadow-md"
+                    : "opacity-60",
                 )}
               >
-                <div className="mb-3 flex min-w-0 items-start gap-2">
-                  <Checkbox
+                <div className="flex items-start gap-2.5">
+                  <Switch
                     id={`fee-enabled-${item.id}`}
                     checked={isProvided}
                     onCheckedChange={(checked) =>
                       patchItem(item.id, { enabled: checked === true })
                     }
-                    className="mt-2.5"
+                    className="mt-2"
                     aria-label={`${item.name || "항목"} 제공`}
                   />
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <Input
-                      value={item.name}
-                      placeholder="항목 이름 (예: 크라운)"
-                      disabled={!isProvided}
-                      onChange={(e) => patchItem(item.id, { name: e.target.value })}
-                      className="h-10 rounded-xl"
-                    />
-                    <Select
-                      value={item.unit}
-                      disabled={!isProvided}
-                      onValueChange={(value) => {
-                        const unit = value as LabFeeItemUnit;
-                        if (unit === "perNTeeth") {
-                          patchItem(item.id, {
-                            unit,
-                            tiers:
-                              item.tiers.length > 0
-                                ? item.tiers
-                                : [{ n: 3, price: item.price, remake: item.remake }],
-                          });
-                          return;
-                        }
-                        patchItem(item.id, {
-                          unit,
-                          price: item.price || item.tiers[0]?.price || 0,
-                          remake: item.remake || item.tiers[0]?.remake || 0,
-                          tiers: [],
-                        });
-                      }}
-                    >
-                      <SelectTrigger className="h-9 rounded-xl text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(Object.keys(LAB_FEE_ITEM_UNIT_LABELS) as LabFeeItemUnit[]).map(
-                          (unit) => (
-                            <SelectItem key={unit} value={unit}>
-                              {LAB_FEE_ITEM_UNIT_LABELS[unit]}
-                            </SelectItem>
-                          ),
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <Input
+                    value={item.name}
+                    placeholder="항목 이름 (예: 크라운)"
+                    disabled={!isProvided}
+                    onChange={(e) => patchItem(item.id, { name: e.target.value })}
+                    className="h-10 rounded-xl border-slate-200 bg-white text-[15px] font-semibold tracking-tight"
+                  />
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="mt-0.5 h-9 w-9 shrink-0 text-slate-400 hover:text-destructive"
-                    onClick={() => setItems((prev) => prev.filter((row) => row.id !== item.id))}
+                    className="mt-0.5 h-9 w-9 shrink-0 text-slate-400 hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() =>
+                      setItems((prev) => prev.filter((row) => row.id !== item.id))
+                    }
                     aria-label="항목 삭제"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
 
-                {item.unit === "perNTeeth" ? (
-                  <div className="space-y-2">
-                    {item.tiers.map((tier, tierIndex) => (
-                      <div key={`${item.id}-tier-${tierIndex}`} className="space-y-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <div className="relative w-[4.5rem] shrink-0">
-                            <Input
-                              type="number"
-                              min={1}
-                              max={32}
-                              value={tier.n}
-                              disabled={!isProvided}
-                              onChange={(e) => {
-                                const n = Math.max(
-                                  1,
-                                  Math.min(32, Math.round(Number(e.target.value) || 1)),
-                                );
-                                const tiers = item.tiers.map((row, index) =>
-                                  index === tierIndex ? { ...row, n } : row,
-                                );
-                                patchItem(item.id, { tiers });
-                              }}
-                              className="h-8 rounded-lg px-1.5 pr-6 text-center text-xs tabular-nums"
-                              aria-label="치아 수"
-                            />
-                            <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[10px] text-muted-foreground">
-                              치
-                            </span>
-                          </div>
-                          <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
-                            이하
-                          </span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            disabled={!isProvided || item.tiers.length <= 1}
-                            className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
-                            onClick={() =>
-                              patchItem(item.id, {
-                                tiers: item.tiers.filter((_, index) => index !== tierIndex),
-                              })
-                            }
-                            aria-label="구간 삭제"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <WonInput
-                            id={`fee-${item.id}-${tierIndex}`}
-                            label="원가"
-                            value={tier.price}
-                            disabled={!isProvided}
-                            onChange={(price) => {
-                              const tiers = item.tiers.map((row, index) =>
-                                index === tierIndex ? { ...row, price } : row,
-                              );
-                              patchItem(item.id, { tiers });
-                            }}
-                          />
-                          <WonInput
-                            id={`fee-remake-${item.id}-${tierIndex}`}
-                            label="리메이크"
-                            remake
-                            value={tier.remake}
-                            disabled={!isProvided}
-                            onChange={(remake) => {
-                              const tiers = item.tiers.map((row, index) =>
-                                index === tierIndex ? { ...row, remake } : row,
-                              );
-                              patchItem(item.id, { tiers });
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                    {item.tiers.length < MAX_LAB_FEE_ITEM_TIERS ? (
-                      <Button
+                <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100/80 p-1">
+                  {UNIT_OPTIONS.map((unit) => {
+                    const selected = item.unit === unit;
+                    return (
+                      <button
+                        key={unit}
                         type="button"
-                        variant="outline"
-                        size="sm"
                         disabled={!isProvided}
-                        className="h-8 w-full rounded-lg text-xs"
                         onClick={() => {
-                          const lastN = item.tiers[item.tiers.length - 1]?.n || 3;
+                          if (unit === "perNTeeth") {
+                            patchItem(item.id, {
+                              unit,
+                              tiers:
+                                item.tiers.length > 0
+                                  ? [item.tiers[0]]
+                                  : [{ n: 3, price: item.price, remake: item.remake }],
+                            });
+                            return;
+                          }
                           patchItem(item.id, {
-                            tiers: [
-                              ...item.tiers,
-                              { n: Math.min(32, lastN + 3), price: 0, remake: 0 },
-                            ],
+                            unit,
+                            price: item.price || item.tiers[0]?.price || 0,
+                            remake: item.remake || item.tiers[0]?.remake || 0,
+                            tiers: [],
                           });
                         }}
+                        className={cn(
+                          "h-8 rounded-lg px-1 text-[11px] font-medium transition-all disabled:cursor-not-allowed",
+                          selected
+                            ? "bg-white text-slate-900 shadow-sm"
+                            : "text-slate-500 hover:text-slate-700",
+                        )}
                       >
-                        <Plus className="mr-1 h-3.5 w-3.5" />
-                        구간 추가
-                      </Button>
-                    ) : null}
+                        {LAB_FEE_ITEM_UNIT_LABELS[unit]}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {item.unit === "perNTeeth" ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2">
+                    <div className="relative w-[4.75rem] shrink-0">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={32}
+                        value={tier.n}
+                        disabled={!isProvided}
+                        onChange={(e) => {
+                          const n = Math.max(
+                            1,
+                            Math.min(32, Math.round(Number(e.target.value) || 1)),
+                          );
+                          patchTier(item, { n });
+                        }}
+                        className="h-9 rounded-lg border-slate-200 bg-white px-2 pr-6 text-center text-sm font-semibold tabular-nums"
+                        aria-label="치아 수"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-slate-400">
+                        치
+                      </span>
+                    </div>
+                    <span className="text-[13px] font-medium text-slate-600">이하</span>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    <WonInput
-                      id={`fee-${item.id}`}
-                      label="원가"
-                      value={item.price}
-                      disabled={!isProvided}
-                      onChange={(price) => patchItem(item.id, { price })}
-                    />
-                    <WonInput
-                      id={`fee-remake-${item.id}`}
-                      label="리메이크"
-                      remake
-                      value={item.remake}
-                      disabled={!isProvided}
-                      onChange={(remake) => patchItem(item.id, { remake })}
-                    />
-                  </div>
-                )}
+                ) : null}
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <WonInput
+                    id={`fee-${item.id}`}
+                    label="원가"
+                    value={item.unit === "perNTeeth" ? tier.price : item.price}
+                    disabled={!isProvided}
+                    onChange={(price) =>
+                      item.unit === "perNTeeth"
+                        ? patchTier(item, { price })
+                        : patchItem(item.id, { price })
+                    }
+                  />
+                  <WonInput
+                    id={`fee-remake-${item.id}`}
+                    label="리메이크"
+                    remake
+                    value={item.unit === "perNTeeth" ? tier.remake : item.remake}
+                    disabled={!isProvided}
+                    onChange={(remake) =>
+                      item.unit === "perNTeeth"
+                        ? patchTier(item, { remake })
+                        : patchItem(item.id, { remake })
+                    }
+                  />
+                </div>
               </div>
             );
           })}
+
+          {items.length < MAX_LAB_FEE_ITEMS ? (
+            <button
+              type="button"
+              onClick={() => setItems((prev) => [...prev, createFeeItem()])}
+              className="flex min-h-[11.5rem] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-4 py-6 text-sm font-medium text-slate-500 transition-colors hover:border-primary-muted hover:bg-primary-soft/30 hover:text-primary-strong"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
+                <Plus className="h-4 w-4" />
+              </span>
+              항목 추가
+            </button>
+          ) : null}
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          disabled={items.length >= MAX_LAB_FEE_ITEMS}
-          className="h-10 w-full rounded-xl"
-          onClick={() => setItems((prev) => [...prev, createFeeItem()])}
-        >
-          <Plus className="mr-1.5 h-4 w-4" />
-          항목 추가
-        </Button>
-
-        <Separator className="bg-slate-200/70" />
-
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-1">
           <Button
             onClick={() => void save()}
             disabled={saving}

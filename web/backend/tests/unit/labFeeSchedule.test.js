@@ -4,6 +4,7 @@ import {
   computePracticeTransferRetailFees,
   LAB_FEE_SCHEDULE_DEFAULTS,
   LAB_FEE_SCHEDULE_ZEROS,
+  normalizeLabFeeItems,
   resolveLabFeeKeyFromProsthesisType,
   splitPracticeTransferSettlement,
 } from "../../utils/labFeeSchedule.js";
@@ -179,6 +180,84 @@ describe("labFeeSchedule", () => {
     expect(fees.labFeeTotal).toBe(35000);
     expect(fees.abutmentRetailTotal).toBe(0);
     expect(fees.total).toBe(35000);
+  });
+
+  test("기본 수가의 임시치아는 3치·6치 카드로 분리된다", () => {
+    const items = normalizeLabFeeItems(LAB_FEE_SCHEDULE_DEFAULTS);
+    const temps = items.filter((item) => /^임시치아\d+$/.test(item.name));
+    expect(temps).toHaveLength(2);
+    expect(temps[0]).toMatchObject({
+      name: "임시치아1",
+      unit: "perNTeeth",
+    });
+    expect(temps[0].tiers[0]).toMatchObject({ n: 3, price: 30000, remake: 0 });
+    expect(temps[1]).toMatchObject({
+      name: "임시치아2",
+      unit: "perNTeeth",
+    });
+    expect(temps[1].tiers[0]).toMatchObject({ n: 6, price: 50000, remake: 0 });
+  });
+
+  test("임시치아1·임시치아2 카드는 의뢰서 임시치아에 구간으로 합산한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "16", prosthesisType: "임시치아" },
+        { toothNumber: "15", prosthesisType: "임시치아" },
+        { toothNumber: "14", prosthesisType: "임시치아" },
+        { toothNumber: "13", prosthesisType: "임시치아" },
+      ],
+      labFeeSchedule: {
+        items: [
+          {
+            id: "temp1",
+            name: "임시치아1",
+            unit: "perNTeeth",
+            price: 30000,
+            remake: 0,
+            enabled: true,
+            tiers: [{ n: 3, price: 30000, remake: 0 }],
+          },
+          {
+            id: "temp2",
+            name: "임시치아2",
+            unit: "perNTeeth",
+            price: 50000,
+            remake: 0,
+            enabled: true,
+            tiers: [{ n: 6, price: 50000, remake: 0 }],
+          },
+        ],
+      },
+    });
+    expect(fees.labFeeTotal).toBe(50000);
+  });
+
+  test("한 항목에 묶인 임시치아 구간도 카드 분리 후 동일하게 합산한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "16", prosthesisType: "임시치아" },
+        { toothNumber: "15", prosthesisType: "임시치아" },
+        { toothNumber: "14", prosthesisType: "임시치아" },
+        { toothNumber: "13", prosthesisType: "임시치아" },
+      ],
+      labFeeSchedule: {
+        items: [
+          {
+            id: "temp",
+            name: "임시치아",
+            unit: "perNTeeth",
+            enabled: true,
+            price: 30000,
+            remake: 0,
+            tiers: [
+              { n: 3, price: 30000, remake: 0 },
+              { n: 6, price: 50000, remake: 0 },
+            ],
+          },
+        ],
+      },
+    });
+    expect(fees.labFeeTotal).toBe(50000);
   });
 
   test("유지장치는 악궁당 1세트, 임시치아는 치아 수 구간으로 합산한다", () => {

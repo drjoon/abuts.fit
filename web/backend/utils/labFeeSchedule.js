@@ -4,6 +4,8 @@
 // - web/backend/utils/abutsAbutmentService.js
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - web/frontend/src/shared/practice/labFeeSchedule.ts
+// - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 import {
   resolveAbutsAbutmentPricingTier,
   resolveAbutsAbutmentUnitPrice,
@@ -105,6 +107,18 @@ export function isRemovableTempProsthesisType(prosthesisType) {
   return (
     compact === "가철성임시치아" ||
     compact === "임시치아" ||
+    /가철성\s*임시/i.test(raw)
+  );
+}
+
+/** 기공비 항목명: 임시치아 · 임시치아1 · 임시치아2 */
+export function isRemovableTempFeeName(name) {
+  const raw = String(name || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    compact === "가철성임시치아" ||
+    compact === "임시치아" ||
+    /^임시치아\d+$/.test(compact) ||
     /가철성\s*임시/i.test(raw)
   );
 }
@@ -218,7 +232,9 @@ export function normalizeLabFeeItem(input, index = 0) {
 
 function migrateLegacyLabFeeItems(input) {
   const schedule = normalizeLabFeeSchedule(input);
-  const remake = normalizeLabFeeRemakeSchedule(input);
+  const remake = normalizeLabFeeRemakeSchedule(
+    input && typeof input === "object" && input.remake ? input : { remake: {} },
+  );
   const enabled = normalizeLabFeeScheduleEnabled(input);
   return [
     {
@@ -267,10 +283,10 @@ function migrateLegacyLabFeeItems(input) {
       tiers: [],
     },
     {
-      id: "temp",
-      name: "임시치아",
+      id: "temp1",
+      name: "임시치아1",
       unit: "perNTeeth",
-      enabled: enabled.removableTemp3 !== false || enabled.removableTemp6 !== false,
+      enabled: enabled.removableTemp3 !== false,
       price: schedule.removableTemp3,
       remake: remake.removableTemp3,
       tiers: [
@@ -279,6 +295,16 @@ function migrateLegacyLabFeeItems(input) {
           price: schedule.removableTemp3,
           remake: remake.removableTemp3,
         },
+      ],
+    },
+    {
+      id: "temp2",
+      name: "임시치아2",
+      unit: "perNTeeth",
+      enabled: enabled.removableTemp6 !== false,
+      price: schedule.removableTemp6,
+      remake: remake.removableTemp6,
+      tiers: [
         {
           n: 6,
           price: schedule.removableTemp6,
@@ -287,6 +313,48 @@ function migrateLegacyLabFeeItems(input) {
       ],
     },
   ];
+}
+
+function numberedTempName(name, index) {
+  const raw = String(name || "").trim() || "임시치아";
+  const compact = raw.replace(/\s+/g, "");
+  const base = compact.replace(/\d+$/, "") || "임시치아";
+  if (isRemovableTempFeeName(name)) return `${base}${index + 1}`;
+  return raw;
+}
+
+function expandPerNTeethTierItems(items) {
+  const seen = new Set();
+  const out = [];
+  const takeId = (wanted, fallbackIndex) => {
+    let id = String(wanted || "").trim() || `item-${fallbackIndex + 1}`;
+    if (!seen.has(id)) {
+      seen.add(id);
+      return id;
+    }
+    let n = 2;
+    while (seen.has(`${id}-${n}`)) n += 1;
+    id = `${id}-${n}`;
+    seen.add(id);
+    return id;
+  };
+  for (const item of Array.isArray(items) ? items : []) {
+    if (item.unit !== "perNTeeth" || item.tiers.length <= 1) {
+      out.push({ ...item, id: takeId(item.id, out.length) });
+      continue;
+    }
+    item.tiers.forEach((tier, index) => {
+      out.push({
+        ...item,
+        id: takeId(`${item.id}-${index + 1}`, out.length),
+        name: numberedTempName(item.name, index),
+        price: tier.price,
+        remake: tier.remake,
+        tiers: [tier],
+      });
+    });
+  }
+  return out.slice(0, MAX_LAB_FEE_ITEMS);
 }
 
 export function normalizeLabFeeItems(input) {
@@ -308,7 +376,7 @@ export function normalizeLabFeeItems(input) {
       seen.add(id);
       out.push({ ...item, id });
     }
-    return out;
+    return expandPerNTeethTierItems(out);
   }
   return migrateLegacyLabFeeItems(src);
 }
@@ -320,7 +388,7 @@ function legacyKeyFromItemName(name) {
   if (canon === "인레이") return "inlay";
   if (canon === "Pontic") return "pontic";
   if (canon === "유지장치") return "retainer";
-  if (canon === "임시치아") return "removableTemp";
+  if (canon === "임시치아" || isRemovableTempFeeName(name)) return "removableTemp";
   return null;
 }
 
@@ -329,19 +397,12 @@ export function legacyLabFeeScheduleFromItems(items, base) {
   const schedule = normalizeLabFeeSchedule(base);
   const remake = normalizeLabFeeRemakeSchedule(base);
   const enabled = normalizeLabFeeScheduleEnabled(base);
+  const tempItems = [];
   for (const item of Array.isArray(items) ? items : []) {
     const key = legacyKeyFromItemName(item.name);
     if (!key) continue;
     if (key === "removableTemp") {
-      const tiers = [...(item.tiers || [])].sort((a, b) => a.n - b.n);
-      const first = tiers[0] || { n: 3, price: item.price, remake: item.remake };
-      const second = tiers.find((tier) => tier.n !== first.n) || first;
-      schedule.removableTemp3 = first.price;
-      schedule.removableTemp6 = second.price;
-      remake.removableTemp3 = first.remake;
-      remake.removableTemp6 = second.remake;
-      enabled.removableTemp3 = item.enabled !== false;
-      enabled.removableTemp6 = item.enabled !== false;
+      tempItems.push(item);
       continue;
     }
     schedule[key] = item.unit === "perNTeeth"
@@ -352,17 +413,60 @@ export function legacyLabFeeScheduleFromItems(items, base) {
       : item.remake;
     enabled[key] = item.enabled !== false;
   }
+  if (tempItems.length) {
+    const tiers = tempItems
+      .flatMap((item) =>
+        item.unit === "perNTeeth" && item.tiers?.length
+          ? item.tiers.map((tier) => ({
+              n: tier.n,
+              price: tier.price,
+              remake: tier.remake,
+              enabled: item.enabled !== false,
+            }))
+          : [
+              {
+                n: 3,
+                price: item.price,
+                remake: item.remake,
+                enabled: item.enabled !== false,
+              },
+            ],
+      )
+      .sort((a, b) => a.n - b.n);
+    const first = tiers[0] || { n: 3, price: 0, remake: 0, enabled: true };
+    const second = tiers.find((tier) => tier.n !== first.n) || first;
+    schedule.removableTemp3 = first.price;
+    schedule.removableTemp6 = second.price;
+    remake.removableTemp3 = first.remake;
+    remake.removableTemp6 = second.remake;
+    enabled.removableTemp3 = first.enabled !== false;
+    enabled.removableTemp6 = second.enabled !== false;
+  }
   return { schedule, remake, enabled };
 }
 
 export function findLabFeeItemForProsthesisType(items, prosthesisType) {
   const canon = canonicalizeFeeItemName(prosthesisType);
   if (!canon) return null;
-  return (
-    (Array.isArray(items) ? items : []).find(
-      (item) => item.enabled !== false && canonicalizeFeeItemName(item.name) === canon,
-    ) || null
-  );
+  const matches = (Array.isArray(items) ? items : []).filter((item) => {
+    if (item.enabled === false) return false;
+    if (isRemovableTempProsthesisType(prosthesisType)) {
+      return isRemovableTempFeeName(item.name);
+    }
+    return canonicalizeFeeItemName(item.name) === canon;
+  });
+  if (!matches.length) return null;
+  if (matches.length === 1) return matches[0];
+  const perN = matches.filter((item) => item.unit === "perNTeeth");
+  if (perN.length) {
+    const tiers = perN.flatMap((item) =>
+      item.tiers?.length
+        ? item.tiers
+        : [{ n: 3, price: item.price, remake: item.remake }],
+    );
+    return { ...perN[0], tiers };
+  }
+  return matches[0];
 }
 
 /** 보철 형태 → labFeeSchedule 키. 작업X·커스텀어벗(어벗츠 단가)·묶음수가 항목은 null */
