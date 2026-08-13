@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-14: 5섹션(환영 무료 크레딧·어벗·어벗 추가 요청·멤버십·배송·특별 공급가). 의뢰·배송→어벗.
+// - 2026-08-14: 카드=큰제목, 안쪽 그룹=작은제목으로 계층 고정. 환영 크레딧 A/B 라벨 정리.
 // - 2026-08-14: 의뢰·배송에 CNC/환봉 라벨 분리, 환봉방식 커스텀어벗 요청 목록 포함.
 // - 2026-08-13: 디자인비 항목을 디자인+생산으로 교체. 생산만·디자인+생산을 멤버십/일반 단가로 분리.
 // - 2026-08-13: 치과 멤버십 월 구독료(practiceMembershipMonthlyFee) 추가.
@@ -393,6 +395,32 @@ function SectionHeader({
   );
 }
 
+function SubSectionHeader({
+  title,
+  description,
+  trailing,
+}: {
+  title: string;
+  description?: string;
+  trailing?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 space-y-0.5">
+        <h4 className="text-sm font-semibold tracking-tight text-slate-800">
+          {title}
+        </h4>
+        {description ? (
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {trailing}
+    </div>
+  );
+}
+
 export const AdminCreditSettingsTab = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -445,7 +473,7 @@ export const AdminCreditSettingsTab = () => {
     }
     setSettings({
       ...settings,
-                  specialRequestorPrices: [
+      specialRequestorPrices: [
         ...settings.specialRequestorPrices,
         {
           requestorAnchorId: requestor.id,
@@ -570,28 +598,30 @@ export const AdminCreditSettingsTab = () => {
             <SectionHeader
               icon={Gift}
               title="환영 무료 크레딧"
-              description="신규 의뢰자에게 지급되는 환영 크레딧입니다."
+              description="기공소(의뢰 수신자) 신규 가입 시 1회 지급합니다. 치과에는 지급하지 않습니다."
             />
             <div className="grid gap-3 sm:grid-cols-2">
               <AmountField
                 id="defaultRequestFreeCredit"
-                label="환영 무료크레딧 A"
+                label="의뢰 크레딧"
                 icon={Gift}
                 value={settings.defaultRequestFreeCredit}
                 onChange={(next) =>
                   setSettings({ ...settings, defaultRequestFreeCredit: next })
                 }
                 disabled={loading}
+                help="원장에는 의뢰용으로 기록됩니다. 사용처는 배송 크레딧과 통합됩니다."
               />
               <AmountField
                 id="defaultShippingFreeCredit"
-                label="환영 무료크레딧 B"
+                label="배송 크레딧"
                 icon={Truck}
                 value={settings.defaultShippingFreeCredit}
                 onChange={(next) =>
                   setSettings({ ...settings, defaultShippingFreeCredit: next })
                 }
                 disabled={loading}
+                help="원장에는 배송용으로 기록됩니다. 사용처는 의뢰 크레딧과 통합됩니다."
               />
             </div>
           </CardContent>
@@ -601,107 +631,130 @@ export const AdminCreditSettingsTab = () => {
           <CardContent className="space-y-5 p-5 sm:p-6">
             <SectionHeader
               icon={Package}
-              title="의뢰 · 배송"
+              title="어벗"
               description="기본 요금입니다. 특별 공급가가 없으면 이 금액이 적용됩니다."
             />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <DualTierAmountField
-                label="CNC어벗 생산만"
-                icon={Package}
-                membershipId="membershipProductionPrice"
-                regularId="regularProductionPrice"
-                membershipValue={settings.membershipProductionPrice}
-                regularValue={settings.regularProductionPrice}
-                onMembershipChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    membershipProductionPrice: next,
-                    minCreditForRequest: next,
-                    designFee: Math.max(
-                      0,
-                      settings.membershipDesignAndProductionPrice - next,
-                    ),
-                  })
-                }
-                onRegularChange={(next) =>
-                  setSettings({ ...settings, regularProductionPrice: next })
-                }
-                disabled={loading}
-                help={productionHelp}
-              />
-              <DualTierAmountField
-                label="CNC어벗 디자인+생산"
-                icon={PenLine}
-                membershipId="membershipDesignAndProductionPrice"
-                regularId="regularDesignAndProductionPrice"
-                membershipValue={settings.membershipDesignAndProductionPrice}
-                regularValue={settings.regularDesignAndProductionPrice}
-                onMembershipChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    membershipDesignAndProductionPrice: next,
-                    designFee: Math.max(
-                      0,
-                      next - settings.membershipProductionPrice,
-                    ),
-                  })
-                }
-                onRegularChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    regularDesignAndProductionPrice: next,
-                  })
-                }
-                disabled={loading}
-                help={designAndProductionHelp}
-              />
-              <DualTierAmountField
-                label="환봉어벗 생산만"
-                icon={Hexagon}
-                membershipId="membershipRoundBarProductionPrice"
-                regularId="regularRoundBarProductionPrice"
-                membershipValue={settings.membershipRoundBarProductionPrice}
-                regularValue={settings.regularRoundBarProductionPrice}
-                onMembershipChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    membershipRoundBarProductionPrice: next,
-                  })
-                }
-                onRegularChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    regularRoundBarProductionPrice: next,
-                  })
-                }
-                disabled={loading}
-                help="1어벗당. 0원이면 가격 별도 고지."
-              />
-              <DualTierAmountField
-                label="환봉어벗 디자인+생산"
-                icon={Hexagon}
-                membershipId="membershipRoundBarDesignAndProductionPrice"
-                regularId="regularRoundBarDesignAndProductionPrice"
-                membershipValue={
-                  settings.membershipRoundBarDesignAndProductionPrice
-                }
-                regularValue={settings.regularRoundBarDesignAndProductionPrice}
-                onMembershipChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    membershipRoundBarDesignAndProductionPrice: next,
-                  })
-                }
-                onRegularChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    regularRoundBarDesignAndProductionPrice: next,
-                  })
-                }
-                disabled={loading}
-                help="1어벗당. 0원이면 가격 별도 고지."
-              />
+
+            <div className="space-y-3">
+              <SubSectionHeader title="CNC어벗" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <DualTierAmountField
+                  label="생산만"
+                  icon={Package}
+                  membershipId="membershipProductionPrice"
+                  regularId="regularProductionPrice"
+                  membershipValue={settings.membershipProductionPrice}
+                  regularValue={settings.regularProductionPrice}
+                  onMembershipChange={(next) =>
+                    setSettings({
+                      ...settings,
+                      membershipProductionPrice: next,
+                      minCreditForRequest: next,
+                      designFee: Math.max(
+                        0,
+                        settings.membershipDesignAndProductionPrice - next,
+                      ),
+                    })
+                  }
+                  onRegularChange={(next) =>
+                    setSettings({ ...settings, regularProductionPrice: next })
+                  }
+                  disabled={loading}
+                  help={productionHelp}
+                />
+                <DualTierAmountField
+                  label="디자인+생산"
+                  icon={PenLine}
+                  membershipId="membershipDesignAndProductionPrice"
+                  regularId="regularDesignAndProductionPrice"
+                  membershipValue={settings.membershipDesignAndProductionPrice}
+                  regularValue={settings.regularDesignAndProductionPrice}
+                  onMembershipChange={(next) =>
+                    setSettings({
+                      ...settings,
+                      membershipDesignAndProductionPrice: next,
+                      designFee: Math.max(
+                        0,
+                        next - settings.membershipProductionPrice,
+                      ),
+                    })
+                  }
+                  onRegularChange={(next) =>
+                    setSettings({
+                      ...settings,
+                      regularDesignAndProductionPrice: next,
+                    })
+                  }
+                  disabled={loading}
+                  help={designAndProductionHelp}
+                />
+              </div>
             </div>
+
+            <div className="space-y-3">
+              <SubSectionHeader
+                title="환봉어벗"
+                description="1어벗당. 0원이면 가격 별도 고지."
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <DualTierAmountField
+                  label="생산만"
+                  icon={Hexagon}
+                  membershipId="membershipRoundBarProductionPrice"
+                  regularId="regularRoundBarProductionPrice"
+                  membershipValue={settings.membershipRoundBarProductionPrice}
+                  regularValue={settings.regularRoundBarProductionPrice}
+                  onMembershipChange={(next) =>
+                    setSettings({
+                      ...settings,
+                      membershipRoundBarProductionPrice: next,
+                    })
+                  }
+                  onRegularChange={(next) =>
+                    setSettings({
+                      ...settings,
+                      regularRoundBarProductionPrice: next,
+                    })
+                  }
+                  disabled={loading}
+                />
+                <DualTierAmountField
+                  label="디자인+생산"
+                  icon={Hexagon}
+                  membershipId="membershipRoundBarDesignAndProductionPrice"
+                  regularId="regularRoundBarDesignAndProductionPrice"
+                  membershipValue={
+                    settings.membershipRoundBarDesignAndProductionPrice
+                  }
+                  regularValue={settings.regularRoundBarDesignAndProductionPrice}
+                  onMembershipChange={(next) =>
+                    setSettings({
+                      ...settings,
+                      membershipRoundBarDesignAndProductionPrice: next,
+                    })
+                  }
+                  onRegularChange={(next) =>
+                    setSettings({
+                      ...settings,
+                      regularRoundBarDesignAndProductionPrice: next,
+                    })
+                  }
+                  disabled={loading}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <AdminRoundBarAbutmentTab />
+
+        <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+          <CardContent className="space-y-5 p-5 sm:p-6">
+            <SectionHeader
+              icon={Crown}
+              title="멤버십 · 배송"
+              description="치과 멤버십 구독료와 배송 요금입니다."
+            />
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <AmountField
                 id="practiceMembershipMonthlyFee"
@@ -709,7 +762,10 @@ export const AdminCreditSettingsTab = () => {
                 icon={Crown}
                 value={settings.practiceMembershipMonthlyFee}
                 onChange={(next) =>
-                  setSettings({ ...settings, practiceMembershipMonthlyFee: next })
+                  setSettings({
+                    ...settings,
+                    practiceMembershipMonthlyFee: next,
+                  })
                 }
                 disabled={loading}
                 help={membershipHelp}
@@ -737,25 +793,21 @@ export const AdminCreditSettingsTab = () => {
                 help={expressHelp}
               />
             </div>
+          </CardContent>
+        </Card>
 
-            <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/50 p-4 sm:p-5">
-              <AdminRoundBarAbutmentTab embedded />
-            </div>
-
-            <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/50 p-4 sm:p-5">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <h4 className="text-sm font-semibold text-slate-900">
-                    특별 공급가
-                  </h4>
-                  <p className="text-[13px] leading-relaxed text-muted-foreground">
-                    의뢰자를 검색해 추가한 뒤 커스텀어벗 가격을 입력하세요.
-                  </p>
-                </div>
+        <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+          <CardContent className="space-y-5 p-5 sm:p-6">
+            <SectionHeader
+              icon={Search}
+              title="특별 공급가"
+              description="의뢰자를 검색해 추가한 뒤 커스텀어벗 가격을 입력하세요."
+              trailing={
                 <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
                   {settings.specialRequestorPrices.length}곳
                 </span>
-              </div>
+              }
+            />
 
               <div className="space-y-3">
                 {settings.specialRequestorPrices.length === 0 ? (
@@ -941,7 +993,6 @@ export const AdminCreditSettingsTab = () => {
                   </PopoverContent>
                 </Popover>
               </div>
-            </div>
           </CardContent>
         </Card>
       </div>

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-14: 섹션 제목을「어벗 추가 요청」으로 변경. 요금·크레딧에서는 독립 카드로 표시.
+// - 2026-08-14: 요금·크레딧에 임베드 시 작은제목(제조사 추가요청)만 쓰고 큰제목 아이콘 헤더는 숨김.
 // - 2026-08-14: 치과 제조사 추가요청(환봉방식 커스텀어벗) 목록·편집·도입/되돌리기.
 // related files:
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
@@ -168,29 +170,49 @@ export const AdminRoundBarAbutmentTab = ({
     }
   };
 
+  const countBadge =
+    !loading && rows.length > 0 ? (
+      <span className="inline-flex items-center rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold tabular-nums text-primary-strong ring-1 ring-primary-muted">
+        대기 {rows.filter((row) => !row.adopted).length} / {rows.length}
+      </span>
+    ) : null;
+
+  const header = embedded ? (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 space-y-0.5">
+        <h4 className="text-sm font-semibold tracking-tight text-slate-800">
+          어벗 추가 요청
+        </h4>
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          치과에서 요청한 제조사·브랜드·패밀리입니다. 도입하면 해당 치과
+          프리셋에 정식 채택됩니다.
+        </p>
+      </div>
+      {countBadge}
+    </div>
+  ) : (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
+          <Hexagon className="h-5 w-5 text-primary-strong" />
+        </span>
+        <div className="min-w-0 space-y-1">
+          <h3 className="text-base font-semibold tracking-tight text-slate-900">
+            어벗 추가 요청
+          </h3>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            치과에서 요청한 제조사·브랜드·패밀리를 확인하고, 도입하면 해당 치과
+            프리셋에 정식 채택됩니다.
+          </p>
+        </div>
+      </div>
+      {countBadge}
+    </div>
+  );
+
   const body = (
       <div className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
-              <Hexagon className="h-5 w-5 text-primary-strong" />
-            </span>
-            <div className="min-w-0 space-y-1">
-              <h3 className="text-base font-semibold tracking-tight text-slate-900">
-                환봉방식 커스텀어벗
-              </h3>
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
-                치과에서 요청한 제조사·브랜드·패밀리를 확인하고, 도입하면 해당 치과
-                프리셋에 정식 채택됩니다.
-              </p>
-            </div>
-          </div>
-          {!loading && rows.length > 0 ? (
-            <span className="inline-flex items-center rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold tabular-nums text-primary-strong ring-1 ring-primary-muted">
-              대기 {rows.filter((row) => !row.adopted).length} / {rows.length}
-            </span>
-          ) : null}
-        </div>
+        {header}
 
         <div className="relative max-w-md">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
