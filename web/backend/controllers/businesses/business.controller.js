@@ -24,6 +24,9 @@ import { findBusinessByAnchors } from "./business.find.util.js";
 import { updateMyBusiness } from "./business.update.controller.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
+  matchesRequestedRequestorKind,
+  normalizeRequestorKind,
+  requestorKindCapableAnchorFilter,
   resolveRequestorProfile,
   requestorProfileResponseFields,
 } from "../../utils/requestorCapabilities.js";
@@ -581,6 +584,9 @@ export async function searchBusinesses(req, res) {
       !businessType && userRole !== "admin"
         ? { businessType: { $ne: "admin" } }
         : null;
+    // 기공소 검색(requestorKind=lab)은 치과(practice) 앵커를 제외
+    const requestedKind = normalizeRequestorKind(req.query?.requestorKind);
+    const kindFilter = requestorKindCapableAnchorFilter(requestedKind);
 
     const q = String(req.query?.q || "").trim();
     if (!q) {
@@ -607,6 +613,7 @@ export async function searchBusinesses(req, res) {
     const andClauses = [nameOrIdClauses];
     if (Object.keys(typeFilter).length > 0) andClauses.push(typeFilter);
     if (adminExcludeFilter) andClauses.push(adminExcludeFilter);
+    if (kindFilter) andClauses.push(kindFilter);
     const searchQuery =
       andClauses.length === 1 ? andClauses[0] : { $and: andClauses };
     const anchors = await BusinessAnchor.find(searchQuery)
@@ -616,6 +623,10 @@ export async function searchBusinesses(req, res) {
         businessNumberNormalized: 1,
         businessType: 1,
         primaryContactUserId: 1,
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+        status: 1,
       })
       .limit(20)
       .lean();
@@ -635,6 +646,7 @@ export async function searchBusinesses(req, res) {
 
     const searchingPractice = String(businessType || "") === "practice";
     const searchingRequestor = String(businessType || "") === "requestor";
+    const searchingLabs = requestedKind === "lab";
     const data = (anchors || [])
       .filter((a) => {
         const bn = String(a?.businessNumberNormalized || "")
@@ -649,27 +661,46 @@ export async function searchBusinesses(req, res) {
         ) {
           return false;
         }
+        if (searchingLabs && isSyntheticPracticeBusinessNumber(bn)) {
+          return false;
+        }
 
         const ownerId = String(a?.primaryContactUserId || "");
         const isPracticeOwner = ownerPracticeMap.get(ownerId) === true;
         if (!searchingPractice && !searchingRequestor && isPracticeOwner) {
           return false;
         }
+        if (searchingLabs && isPracticeOwner) {
+          return false;
+        }
+        if (!matchesRequestedRequestorKind(a, requestedKind)) {
+          return false;
+        }
 
         return true;
       })
-      .map((a) => ({
-        _id: a._id,
-        name: a.name,
-        representativeName: a?.metadata?.representativeName || "",
-        businessNumber: isSyntheticPracticeBusinessNumber(
-          a?.businessNumberNormalized,
-        )
-          ? ""
-          : a?.businessNumberNormalized || "",
-        address: a?.metadata?.address || "",
-        businessType: a?.businessType || a?.metadata?.businessType || "",
-      }));
+      .map((a) => {
+        const profile = resolveRequestorProfile({
+          anchorKind: a.requestorKind,
+          anchorServices: a.requestorServices,
+          anchorCaps: a.requestorCapabilities,
+          businessVerified: String(a.status || "").trim() === "verified",
+        });
+        return {
+          _id: a._id,
+          name: a.name,
+          representativeName: a?.metadata?.representativeName || "",
+          businessNumber: isSyntheticPracticeBusinessNumber(
+            a?.businessNumberNormalized,
+          )
+            ? ""
+            : a?.businessNumberNormalized || "",
+          address: a?.metadata?.address || "",
+          businessType: a?.businessType || a?.metadata?.businessType || "",
+          requestorKind:
+            normalizeRequestorKind(a.requestorKind) || profile.kind,
+        };
+      });
 
     return res.json({ success: true, data });
   } catch (error) {

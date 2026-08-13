@@ -7,6 +7,7 @@ import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   canReceivePracticeTransfer,
+  requestorKindCapableAnchorFilter,
   resolveRequestorProfile,
 } from "./requestorCapabilities.js";
 
@@ -25,21 +26,7 @@ export const isPracticeTransferAutoMatchEnabled = (anchor) =>
 export const verifiedLabCapableAnchorFilter = () => ({
   businessType: "requestor",
   status: "verified",
-  $or: [
-    { requestorKind: "lab" },
-    {
-      $and: [
-        {
-          $or: [
-            { requestorKind: { $exists: false } },
-            { requestorKind: null },
-            { requestorKind: "" },
-          ],
-        },
-        { "requestorCapabilities.lab": true },
-      ],
-    },
-  ],
+  ...requestorKindCapableAnchorFilter("lab"),
 });
 
 /**

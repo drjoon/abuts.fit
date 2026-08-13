@@ -24,6 +24,7 @@ export type SearchBusinessResult = {
   businessNumber?: string;
   address?: string;
   businessType?: string;
+  requestorKind?: "practice" | "lab" | null;
 };
 
 /** 기공소 선택 — 서버가 검증 기공소 중 한 곳을 연결할 때 쓰는 센티널 */
@@ -59,7 +60,7 @@ type Options = {
 
 const DEFAULT_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const DEFAULT_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024;
-const PRACTICE_RECENT_LABS_STORAGE_KEY = "practice_recent_labs_v2";
+const PRACTICE_RECENT_LABS_STORAGE_KEY = "practice_recent_labs_v3";
 const PRACTICE_RECENT_LABS_MAX = 8;
 
 const toPracticeFileKey = (file: File) =>
@@ -107,6 +108,14 @@ const readRecentLabs = (): SearchBusinessResult[] => {
           (item as { businessType?: unknown }).businessType || "requestor",
         ).trim();
         if (businessType && businessType !== "requestor") return null;
+        const requestorKindRaw = String(
+          (item as { requestorKind?: unknown }).requestorKind || "",
+        ).trim();
+        const requestorKind =
+          requestorKindRaw === "lab" || requestorKindRaw === "practice"
+            ? requestorKindRaw
+            : undefined;
+        if (requestorKind === "practice") return null;
 
         return {
           _id: id || `recent:${name}`,
@@ -119,6 +128,7 @@ const readRecentLabs = (): SearchBusinessResult[] => {
           ).trim() || undefined,
           address: String((item as { address?: unknown }).address || "").trim() || undefined,
           businessType: "requestor",
+          requestorKind,
         } as SearchBusinessResult;
       })
       .filter((row): row is SearchBusinessResult => Boolean(row));
@@ -139,6 +149,11 @@ const normalizeRecentLab = (lab: SearchBusinessResult | null | undefined): Searc
   if (!lab || !String(lab.name || "").trim()) return null;
   if (isAutoMatchLab(lab)) return null;
   const name = String(lab.name || "").trim();
+  const requestorKind =
+    lab.requestorKind === "lab" || lab.requestorKind === "practice"
+      ? lab.requestorKind
+      : undefined;
+  if (requestorKind === "practice") return null;
   return {
     _id: String(lab._id || `recent:${name}`).trim(),
     name,
@@ -146,6 +161,7 @@ const normalizeRecentLab = (lab: SearchBusinessResult | null | undefined): Searc
     businessNumber: String(lab.businessNumber || "").trim() || undefined,
     address: String(lab.address || "").trim() || undefined,
     businessType: "requestor",
+    requestorKind,
   };
 };
 
@@ -519,7 +535,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
       setLabSearching(true);
       try {
         const res = await apiFetch<unknown>({
-          path: `/api/businesses/search-public?q=${encodeURIComponent(q)}&businessType=${encodeURIComponent("requestor")}`,
+          path: `/api/businesses/search-public?q=${encodeURIComponent(q)}&businessType=${encodeURIComponent("requestor")}&requestorKind=${encodeURIComponent("lab")}`,
           method: "GET",
         });
         if (!res.ok) {
@@ -548,6 +564,9 @@ export const usePracticeTransferStep1 = (options?: Options) => {
 
                 const bn = String(item.businessNumber || "").trim().toLowerCase();
                 if (bn.startsWith("practice-")) return false;
+
+                const kind = String(item.requestorKind || "").trim();
+                if (kind && kind !== "lab") return false;
 
                 return true;
               })

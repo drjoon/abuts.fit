@@ -19,6 +19,34 @@ export const normalizeRequestorKind = (raw) => {
   return null;
 };
 
+const missingRequestorKindClause = {
+  $or: [
+    { requestorKind: { $exists: false } },
+    { requestorKind: null },
+    { requestorKind: "" },
+  ],
+};
+
+/**
+ * 앵커 kind 검색 필터.
+ * requestorKind 우선, kind 미백필이면 레거시 caps로 폴백.
+ */
+export const requestorKindCapableAnchorFilter = (kind) => {
+  const k = normalizeRequestorKind(kind);
+  if (!k) return null;
+  return {
+    $or: [
+      { requestorKind: k },
+      {
+        $and: [
+          missingRequestorKindClause,
+          { [`requestorCapabilities.${k}`]: true },
+        ],
+      },
+    ],
+  };
+};
+
 export const normalizeRequestorServices = (raw) => ({
   free: Boolean(raw?.free),
   paid: Boolean(raw?.paid),
@@ -65,6 +93,19 @@ export const profileFromLegacyCapabilities = (
   const free = true;
   const paid = Boolean(c.lab && businessVerified);
   return { kind, services: { free, paid } };
+};
+
+/** 검색 결과 후처리 — 듀얼 caps·미백필 앵커를 resolve 결과와 맞춤 */
+export const matchesRequestedRequestorKind = (anchor, requestedKind) => {
+  const kind = normalizeRequestorKind(requestedKind);
+  if (!kind) return true;
+  const fromAnchor = normalizeRequestorKind(anchor?.requestorKind);
+  if (fromAnchor) return fromAnchor === kind;
+  const fromLegacy = profileFromLegacyCapabilities(anchor?.requestorCapabilities, {
+    businessVerified: String(anchor?.status || "").trim() === "verified",
+  });
+  if (fromLegacy.kind) return fromLegacy.kind === kind;
+  return false;
 };
 
 /** kind/services → 레거시 caps (응답 호환·이중 읽기) */
