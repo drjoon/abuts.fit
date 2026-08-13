@@ -4,12 +4,14 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/hooks/useS3TempUpload.ts
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
+// - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 import React, { useCallback } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   useS3TempUpload,
   TempUploadedFile,
 } from "@/shared/hooks/useS3TempUpload";
+import { toTempUploadFileKey } from "@/shared/hooks/useFilePreUpload";
 import { UploadProgressToast } from "@/features/requests/components/UploadProgressToast";
 
 interface UseUploadWithProgressToastOptions {
@@ -77,8 +79,7 @@ export function useUploadWithProgressToast(
 
       // 전체 파일에 대해 0%로 초기화하여 평균 진행률이 안정적으로 표시되도록 함
       for (const f of files) {
-        const k = `${f.name}:${f.size}`;
-        progressMap[k] = 0;
+        progressMap[toTempUploadFileKey(f)] = 0;
       }
       update();
 

@@ -4,6 +4,8 @@
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // - web/backend/controllers/chats/chat.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
+// - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -28,9 +30,9 @@ import type { ChatRoom } from "@/shared/hooks/useChatRooms";
 import { cn } from "@/shared/ui/cn";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
-  useS3TempUpload,
-  type TempUploadedFile,
-} from "@/shared/hooks/useS3TempUpload";
+  toChatMessageAttachments,
+  useBackgroundTempUpload,
+} from "@/shared/hooks/useBackgroundTempUpload";
 import {
   ChatComposer,
   type RequestPickItem,
@@ -122,8 +124,7 @@ export const AdminChatManagement = () => {
   const [roomsError, setRoomsError] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<TempUploadedFile[]>([]);
-  const { uploadFiles } = useS3TempUpload({ token });
+  const chatUploads = useBackgroundTempUpload({ token });
 
   const {
     messages: activeMessages,
@@ -213,6 +214,10 @@ export const AdminChatManagement = () => {
     });
     return () => window.cancelAnimationFrame(raf);
   }, [activeChat, messagesLoading, activeMessages?.length]);
+
+  useEffect(() => {
+    chatUploads.clear();
+  }, [selectedChatId, chatUploads.clear]);
 
   useEffect(() => {
     if (filteredChats.length === 0) {
@@ -310,62 +315,37 @@ export const AdminChatManagement = () => {
     if (!selectedChatId || isSending) return;
 
     const text = messageInput.trim();
-    const attachments = pendingFiles
-      .map((f) => {
-        const fileId = String(f._id || "").trim();
-        const s3Key = String(f.key || "").trim();
-        const s3Url = String(f.location || "").trim();
-        if (!s3Key || !s3Url) return null;
-        return {
-          fileId,
-          fileName: String(f.originalName || "").trim(),
-          fileType: String(f.mimetype || "").trim(),
-          fileSize: Number(f.size || 0),
-          s3Key,
-          s3Url,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => !!x);
-
-    const content = text || (attachments.length ? "파일 첨부" : "");
-    if (!content.trim()) return;
+    if (!text && chatUploads.items.length === 0) return;
 
     setIsSending(true);
     try {
+      let attachments = toChatMessageAttachments([]);
+      if (chatUploads.items.length > 0) {
+        const uploaded = await chatUploads.ensureUploaded();
+        attachments = toChatMessageAttachments(uploaded);
+        if (!attachments.length) {
+          throw new Error("파일 업로드에 실패했습니다.");
+        }
+      }
+
+      const content = text || (attachments.length ? "파일 첨부" : "");
+      if (!content.trim()) return;
+
       await sendMessage(content, attachments, {
         replyTo: replyTo?._id || null,
       });
       setMessageInput("");
       setReplyTo(null);
-      setPendingFiles([]);
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const handlePickFiles = async (files: File[]) => {
-    if (!files.length) return;
-    try {
-      const uploaded = await uploadFiles(files);
-      if (!uploaded.length) return;
-      setPendingFiles((prev) => {
-        const map = new Map<string, TempUploadedFile>();
-        [...prev, ...uploaded].forEach((f) => {
-          map.set(f._id, f);
-        });
-        return Array.from(map.values());
-      });
+      chatUploads.clear();
     } catch (e: any) {
       toast({
         title: "업로드 실패",
         description: e?.message || "파일 업로드 중 오류가 발생했습니다.",
         variant: "destructive",
       });
+    } finally {
+      setIsSending(false);
     }
-  };
-
-  const removePendingFile = (fileId: string) => {
-    setPendingFiles((prev) => prev.filter((f) => f._id !== fileId));
   };
 
   const insertRequestId = (requestId: string) => {
@@ -678,9 +658,10 @@ export const AdminChatManagement = () => {
                 placeholder="어벗츠.핏 이름으로 메시지를 입력하세요"
                 disabled={!activeChat}
                 isSending={isSending}
-                pendingFiles={pendingFiles}
-                onPickFiles={(files) => void handlePickFiles(files)}
-                onRemovePendingFile={removePendingFile}
+                pendingUploads={chatUploads.items}
+                onPickFiles={chatUploads.addFiles}
+                onRemovePendingFile={chatUploads.removeItem}
+                onRetryPendingFile={chatUploads.retryItem}
                 requestPicks={requestPicks}
                 onInsertRequestId={insertRequestId}
                 replyTo={replyTo}

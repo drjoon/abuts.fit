@@ -2,10 +2,13 @@
 // - 2026-08-10: 의뢰 메모는 자유 메모만(치아/임플란트 폴백 제거). 파일 목록 s3Key 중복 제거.
 // - 2026-08-10: 개별/전체 다운로드 중 재클릭 방지. 채팅 라벨·상대를 치과(발신 의뢰자)로 정렬.
 // - 2026-08-10: 디자인 큐 기공의뢰서형 카드 + 상세/채팅 모달 호스트.
+// - 2026-08-13: 채팅 첨부 즉시 백그라운드 업로드 + 칩 프로그레스바.
 // related files:
 // - web/frontend/src/pages/requestor/design/DesignPage.tsx
 // - web/frontend/src/pages/requestor/design/DesignRequestCardGrid.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
+// - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/chats/chat.controller.js
 import {
@@ -21,8 +24,10 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
-import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
-import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import {
+  toChatMessageAttachments,
+  useBackgroundTempUpload,
+} from "@/shared/hooks/useBackgroundTempUpload";
 import {
   PracticeTransferDetailChatDialog,
   type PracticeTransferDialogFileItem,
@@ -159,7 +164,7 @@ export function DesignRequestTransferView({
 }: DesignRequestTransferViewProps) {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
-  const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
+  const chatUploads = useBackgroundTempUpload({ token });
   const { rooms } = useChatRooms();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -174,7 +179,6 @@ export function DesignRequestTransferView({
     sender: { name: string; role: string };
     content: string;
   } | null>(null);
-  const [chatAttachedFiles, setChatAttachedFiles] = useState<File[]>([]);
   const [chatSending, setChatSending] = useState(false);
   const [downloadingKeys, setDownloadingKeys] = useState<string[]>([]);
   const [downloadProgressByKey, setDownloadProgressByKey] = useState<
@@ -215,7 +219,7 @@ export function DesignRequestTransferView({
       setSelectedRequest(request);
       setDialogOpen(true);
       setChatError("");
-      setChatAttachedFiles([]);
+      chatUploads.clear();
       setActiveChatRoom(null);
       setChatMessages([]);
 
@@ -380,41 +384,24 @@ export function DesignRequestTransferView({
 
   const handleAttachChatFiles = useCallback((files: FileList | null) => {
     if (!files?.length) return;
-    setChatAttachedFiles((prev) => [...prev, ...Array.from(files)]);
-  }, []);
-
-  const handleRemoveAttachedChatFile = useCallback((index: number) => {
-    setChatAttachedFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+    chatUploads.addFiles(Array.from(files));
+  }, [chatUploads.addFiles]);
 
   const handleSendChat = useCallback(async () => {
     const text = chatDraft.trim();
-    const files = [...chatAttachedFiles];
-    if ((!text && files.length === 0) || !activeChatRoom?._id || chatSending) return;
+    if ((!text && chatUploads.items.length === 0) || !activeChatRoom?._id || chatSending) {
+      return;
+    }
 
     setChatSending(true);
     try {
-      let attachments: Array<{
-        fileId?: string;
-        fileName: string;
-        fileType: string;
-        fileSize: number;
-        s3Key: string;
-        s3Url: string;
-      }> = [];
-
-      if (files.length > 0) {
-        const uploadedFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
-        attachments = uploadedFiles
-          .map((f) => ({
-            fileId: String(f._id || "").trim() || undefined,
-            fileName: String(f.originalName || "").trim(),
-            fileType: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
-            fileSize: Number(f.size || 0),
-            s3Key: String(f.key || "").trim(),
-            s3Url: String(f.location || "").trim(),
-          }))
-          .filter((row) => row.fileName && row.s3Key);
+      let attachments = toChatMessageAttachments([]);
+      if (chatUploads.items.length > 0) {
+        const uploadedFiles = await chatUploads.ensureUploaded();
+        attachments = toChatMessageAttachments(uploadedFiles);
+        if (!attachments.length) {
+          throw new Error("파일 업로드에 실패했습니다.");
+        }
       }
 
       const sent = await sendMessage(text, attachments, {
@@ -423,19 +410,28 @@ export function DesignRequestTransferView({
       if (sent) {
         setChatDraft("");
         setChatReplyTo(null);
-        setChatAttachedFiles([]);
+        chatUploads.clear();
       }
+    } catch (error) {
+      toast({
+        title: "업로드 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "파일 업로드 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
     } finally {
       setChatSending(false);
     }
   }, [
     activeChatRoom?._id,
-    chatAttachedFiles,
     chatDraft,
     chatReplyTo?._id,
     chatSending,
+    chatUploads,
     sendMessage,
-    uploadFilesWithToast,
+    toast,
   ]);
 
   useEffect(() => {
@@ -513,7 +509,7 @@ export function DesignRequestTransferView({
             setChatMessages([]);
             setChatDraft("");
             setChatReplyTo(null);
-            setChatAttachedFiles([]);
+            chatUploads.clear();
             setChatError("");
             setDownloadingKeys([]);
             setDownloadProgressByKey({});
@@ -547,8 +543,9 @@ export function DesignRequestTransferView({
         formatFileSize={formatBytes}
         onDownloadChatAttachment={handleDownloadChatAttachment}
         chatBottomRef={chatBottomRef}
-        chatAttachedFiles={chatAttachedFiles}
-        onRemoveAttachedChatFile={handleRemoveAttachedChatFile}
+        chatAttachedFiles={chatUploads.items}
+        onRemoveAttachedChatFile={chatUploads.removeItem}
+        onRetryAttachedChatFile={chatUploads.retryItem}
         onAttachChatFiles={handleAttachChatFiles}
         attachmentInputId="design-request-chat-attachment-input"
         chatDraft={chatDraft}
@@ -573,7 +570,7 @@ export function DesignRequestTransferView({
           chatLoading ||
           chatSending ||
           !activeChatRoom?._id ||
-          (!chatDraft.trim() && chatAttachedFiles.length === 0)
+          (!chatDraft.trim() && chatUploads.items.length === 0)
         }
       />
     </>

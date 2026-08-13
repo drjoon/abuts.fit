@@ -555,13 +555,20 @@ Notes:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/shared/hooks/useS3TempUpload.ts`
     - `src/shared/hooks/useFilePreUpload.ts`
+    - `src/shared/hooks/useBackgroundTempUpload.ts`
+    - `src/shared/components/upload/BackgroundUploadList.tsx`
     - `src/shared/hooks/compressMeshFile.ts`
 
 - S3 temp 업로드 가속(SSOT) — 기공의뢰·어벗생산의뢰 공통:
   - 동시 업로드 풀: 최대 8 (`useS3TempUpload`).
   - 첨부 직후 백그라운드 사전 업로드(`useFilePreUpload`). 로그인 세션이 있을 때:
-    - 기공의뢰: Dropzone·FileTransfer
+    - 기공의뢰: Dropzone·FileTransfer. 파일카드에 `uploadProgress` 프로그레스바.
     - 생산의뢰: `useNewRequestPage` → 제출 시 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`)
+    - 채팅 첨부: `useBackgroundTempUpload` + `BackgroundUploadList`
+      (첨부 즉시 백그라운드 업로드, 칩 프로그레스바. 전송 시 `ensureUploaded` 재사용)
+      - 지원 채팅: `ChatComposer` / `NewChatWidget` / `AdminChatManagement`
+      - 기공의뢰·디자인 상세 채팅: `PracticeTransferDetailChatDialog`
+  - 진행률 키: `name:size:lastModified` (`toTempUploadFileKey`).
   - 8MB 이상: S3 multipart (`POST /api/files/temp/multipart/{init,complete,abort}`) + 파트/단건 PUT 재시도.
   - STL/PLY/OBJ: 클라이언트 gzip(유의미할 때만). S3 `ContentEncoding=gzip`, 원본 파일명 유지.
   - 다운로드 프록시는 gzip 객체를 풀어 원본 바이트로 응답 (`getObjectStreamFromS3` / `getObjectBufferFromS3`).
@@ -671,6 +678,8 @@ Notes:
       - 조회 경로: `GET /api/admin/credits/businesses?businessAnchorId=:id&limit=1&skip=0`
   - 채팅방 목록 실시간 동기화: `src/shared/hooks/useChatRooms.ts`
   - 채팅 메시지 실시간 동기화: `src/shared/hooks/useChatMessages.ts`
+  - 채팅 첨부 백그라운드 업로드: `src/shared/hooks/useBackgroundTempUpload.ts`
+    + `src/shared/components/upload/BackgroundUploadList.tsx`
   - 채팅 role 라벨/뱃지 표시에서는 레거시 `practice` role을 `의뢰자`로 매핑합니다(치과는 requestorCapabilities.practice).
   - 페이지 반영 지점:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
@@ -724,7 +733,9 @@ Notes:
 - 파일 드롭은 개별 구현보다 공통 컴포넌트 재사용을 우선합니다.
   - 페이지 전역: `@/features/requests/components/PageFileDropZone`
   - 요소(카드/첨부 UI) 클릭+로컬 드롭: `@/shared/components/practice/PracticeTransferFileDropTarget`
-  - 치과 intake 첨부 UI: `@/shared/components/practice/PracticeTransferFilePane` (DropTarget 래핑)
+  - 치과 intake 첨부 UI: `@/shared/components/practice/PracticeTransferFilePane`
+    - 기공의뢰 전송(`/dashboard/practice-transfers?mode=send`): 점선 드롭존 없음(`showDropzone=false`). 전역 드롭 + 「파일 추가」. 카드에 사전 업로드 프로그레스바.
+    - 공개 드롭존(`PracticeDropzonePage`)만 점선 DropTarget 유지.
   - 드롭 파일 추출: `@/shared/files/extractDroppedFiles.ts`
   - 확장자 SSOT: `@/shared/practice/practiceTransferAccept.ts`
 - UI에서 `requestId`는 서버 문자열을 그대로 표시합니다.

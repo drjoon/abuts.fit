@@ -32,6 +32,8 @@
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
  * - web/frontend/src/shared/hooks/useFilePreUpload.ts
+ * - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
+ * - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
  * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
  * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 프로모 카피 축소.
  * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
@@ -41,6 +43,8 @@
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
  * - 2026-08-13: 임시저장/동기화는 기공소·환자명 둘 다 입력된 뒤에만 수행.
  * - 2026-08-13: 최근전송 취소 뱃지=기공소 작업취소만(치과 휴지통 제외). 6뱃지 빠른툴팁.
+ * - 2026-08-13: 첨부 점선 드롭존 제거. 파일카드에 사전 업로드 프로그레스바.
+ * - 2026-08-13: 채팅 첨부도 즉시 백그라운드 업로드 + 칩 프로그레스바.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -96,7 +100,11 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch, invalidateApiGetCache } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
-import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
+import { toTempUploadFileKey, useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
+import {
+  toChatMessageAttachments,
+  useBackgroundTempUpload,
+} from "@/shared/hooks/useBackgroundTempUpload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
@@ -948,8 +956,8 @@ export const PracticeFileTransferPage = ({
     sender: { name: string; role: string };
     content: string;
   } | null>(null);
-  const [chatAttachedFiles, setChatAttachedFiles] = useState<File[]>([]);
   const [chatSending, setChatSending] = useState(false);
+  const chatUploads = useBackgroundTempUpload({ token: authToken });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
@@ -1239,6 +1247,7 @@ export const PracticeFileTransferPage = ({
     preUploadFiles,
     forgetFile,
     clearPreUploadCache,
+    uploadProgress,
   } = useFilePreUpload({ token: authToken });
   const { uploadFilesWithToast } = useUploadWithProgressToast({
     token: authToken,
@@ -3354,7 +3363,7 @@ export const PracticeFileTransferPage = ({
     transferDialogOpenRef.current = true;
     selectedTransferIdRef.current = String(transfer.transferId || "").trim();
     setChatDraft("");
-    setChatAttachedFiles([]);
+    chatUploads.clear();
     setActiveChatRoom(null);
     setChatMessages([]);
     setChatError("");
@@ -3448,7 +3457,7 @@ export const PracticeFileTransferPage = ({
     setChatMessages([]);
     setChatDraft("");
     setChatReplyTo(null);
-    setChatAttachedFiles([]);
+    chatUploads.clear();
     setChatError("");
     if (reopenAllModal) {
       setRecentTransfersAllOpen(true);
@@ -3459,32 +3468,17 @@ export const PracticeFileTransferPage = ({
     if (!activeChatRoom?._id || chatSending) return;
 
     const content = String(chatDraft || "").trim();
-    const files = [...chatAttachedFiles];
-    if (!content && files.length === 0) return;
+    if (!content && chatUploads.items.length === 0) return;
 
     setChatSending(true);
     try {
-      let attachments: Array<{
-        fileId?: string;
-        fileName: string;
-        fileType: string;
-        fileSize: number;
-        s3Key: string;
-        s3Url: string;
-      }> = [];
-
-      if (files.length > 0) {
-        const uploadedFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
-        attachments = uploadedFiles
-          .map((f) => ({
-            fileId: String(f._id || "").trim() || undefined,
-            fileName: String(f.originalName || "").trim(),
-            fileType: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
-            fileSize: Number(f.size || 0),
-            s3Key: String(f.key || "").trim(),
-            s3Url: String(f.location || "").trim(),
-          }))
-          .filter((row) => row.fileName && row.s3Key);
+      let attachments = toChatMessageAttachments([]);
+      if (chatUploads.items.length > 0) {
+        const uploadedFiles = await chatUploads.ensureUploaded();
+        attachments = toChatMessageAttachments(uploadedFiles);
+        if (!attachments.length) {
+          throw new Error("파일 업로드에 실패했습니다.");
+        }
       }
 
       const sent = await sendMessage(content, attachments, {
@@ -3493,8 +3487,17 @@ export const PracticeFileTransferPage = ({
       if (sent) {
         setChatDraft("");
         setChatReplyTo(null);
-        setChatAttachedFiles([]);
+        chatUploads.clear();
       }
+    } catch (error) {
+      toast({
+        title: "업로드 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "파일 업로드 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
     } finally {
       setChatSending(false);
     }
@@ -3680,19 +3683,7 @@ export const PracticeFileTransferPage = ({
   const handleAttachChatFiles = (inputFiles: FileList | null) => {
     const nextFiles = Array.from(inputFiles || []);
     if (!nextFiles.length) return;
-
-    setChatAttachedFiles((prev) => {
-      const map = new Map<string, File>();
-      for (const f of [...prev, ...nextFiles]) {
-        const key = `${f.name}:${f.size}:${f.lastModified}`;
-        if (!map.has(key)) map.set(key, f);
-      }
-      return [...map.values()];
-    });
-  };
-
-  const handleRemoveAttachedChatFile = (idx: number) => {
-    setChatAttachedFiles((prev) => prev.filter((_, i) => i !== idx));
+    chatUploads.addFiles(nextFiles);
   };
 
   const syncDraftFilesToServer = async (nextDraftFiles: DraftTransferFileItem[]) => {
@@ -5280,12 +5271,23 @@ export const PracticeFileTransferPage = ({
                   filePaneProps={{
                     acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-file-transfer-input",
-                    files: combinedDisplayFiles.map((file) => ({
-                      key: file.key,
-                      name: file.name,
-                      size: file.size,
-                      metaSuffix: file.kind === "draft" ? "동기화됨" : "대기",
-                    })),
+                    showDropzone: false,
+                    files: combinedDisplayFiles.map((file) => {
+                      const localFile =
+                        file.kind === "local" ? files[file.localIndex] : null;
+                      const progress = localFile
+                        ? uploadProgress[toTempUploadFileKey(localFile)]
+                        : undefined;
+                      return {
+                        key: file.key,
+                        name: file.name,
+                        size: file.size,
+                        metaSuffix: file.kind === "draft" ? "동기화됨" : "대기",
+                        uploadPercent: progress?.percent,
+                        uploadStatus:
+                          file.kind === "draft" ? "done" : progress?.status,
+                      };
+                    }),
                     totalSizeMb: combinedFilesSizeMb,
                     onPickFiles: handleIncomingFiles,
                     onRemoveFile: (key) => {
@@ -6119,8 +6121,9 @@ export const PracticeFileTransferPage = ({
           formatFileSize={formatFileSize}
           onDownloadChatAttachment={handleDownloadChatAttachment}
           chatBottomRef={chatBottomRef}
-          chatAttachedFiles={chatAttachedFiles}
-          onRemoveAttachedChatFile={handleRemoveAttachedChatFile}
+          chatAttachedFiles={chatUploads.items}
+          onRemoveAttachedChatFile={chatUploads.removeItem}
+          onRetryAttachedChatFile={chatUploads.retryItem}
           onAttachChatFiles={handleAttachChatFiles}
           attachmentInputId="practice-transfer-chat-attachment-input"
           chatDraft={chatDraft}
@@ -6146,7 +6149,7 @@ export const PracticeFileTransferPage = ({
             chatMessagesLoading ||
             chatSending ||
             !activeChatRoom?._id ||
-            (!String(chatDraft || "").trim() && chatAttachedFiles.length === 0)
+            (!String(chatDraft || "").trim() && chatUploads.items.length === 0)
           }
         />
 

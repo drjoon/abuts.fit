@@ -4,8 +4,10 @@
 // - web/frontend/src/shared/hooks/useChatRooms.ts
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/frontend/src/features/chat/components/MessageReply.tsx
+// - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
+// - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 import type { RefObject } from "react";
-import { CircleHelp, Paperclip, Send, X, MessageSquare } from "lucide-react";
+import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,6 +21,8 @@ import {
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { Progress } from "@/components/ui/progress";
+import type { BackgroundUploadItem } from "@/shared/hooks/useBackgroundTempUpload";
+import { BackgroundUploadList } from "@/shared/components/upload/BackgroundUploadList";
 import {
   Tooltip,
   TooltipContent,
@@ -91,8 +95,9 @@ type PracticeTransferDetailChatDialogProps = {
     s3Url: string;
   }) => void | Promise<void>;
   chatBottomRef: RefObject<HTMLDivElement | null>;
-  chatAttachedFiles: File[];
-  onRemoveAttachedChatFile: (index: number) => void;
+  chatAttachedFiles: BackgroundUploadItem[];
+  onRemoveAttachedChatFile: (id: string) => void;
+  onRetryAttachedChatFile?: (id: string) => void;
   onAttachChatFiles: (files: FileList | null) => void;
   attachmentInputId: string;
   chatDraft: string;
@@ -145,6 +150,7 @@ export function PracticeTransferDetailChatDialog({
   chatBottomRef,
   chatAttachedFiles,
   onRemoveAttachedChatFile,
+  onRetryAttachedChatFile,
   onAttachChatFiles,
   attachmentInputId,
   chatDraft,
@@ -460,24 +466,13 @@ export function PracticeTransferDetailChatDialog({
                     ) : null}
 
                     {chatAttachedFiles.length > 0 ? (
-                      <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
-                        {chatAttachedFiles.map((file, idx) => (
-                          <span
-                            key={`${file.name}:${file.size}:${file.lastModified}:${idx}`}
-                            className="inline-flex max-w-full items-center gap-1.5 rounded border px-2 py-1 text-xs"
-                          >
-                            <span className="truncate max-w-[14rem] sm:max-w-[18rem]">{file.name}</span>
-                            <span className="text-muted-foreground">{formatFileSize(file.size)}</span>
-                            <button
-                              type="button"
-                              className="opacity-70 hover:opacity-100"
-                              onClick={() => onRemoveAttachedChatFile(idx)}
-                              aria-label="첨부파일 제거"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ))}
+                      <div className="max-h-28 overflow-y-auto pr-1">
+                        <BackgroundUploadList
+                          items={chatAttachedFiles}
+                          onRemove={onRemoveAttachedChatFile}
+                          onRetry={onRetryAttachedChatFile}
+                          formatFileSize={formatFileSize}
+                        />
                       </div>
                     ) : null}
 

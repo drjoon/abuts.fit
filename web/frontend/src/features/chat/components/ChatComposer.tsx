@@ -2,6 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
+// - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,8 +12,9 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Hash, Paperclip, Send, X } from "lucide-react";
-import type { TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import { Hash, Paperclip, Send } from "lucide-react";
+import type { BackgroundUploadItem } from "@/shared/hooks/useBackgroundTempUpload";
+import { BackgroundUploadList } from "@/shared/components/upload/BackgroundUploadList";
 import {
   MessageReply,
   type ReplyToMessage,
@@ -32,9 +35,10 @@ type Props = {
   isSending?: boolean;
   placeholder?: string;
 
-  pendingFiles?: TempUploadedFile[];
+  pendingUploads?: BackgroundUploadItem[];
   onPickFiles?: (files: File[]) => void;
-  onRemovePendingFile?: (fileId: string) => void;
+  onRemovePendingFile?: (id: string) => void;
+  onRetryPendingFile?: (id: string) => void;
 
   requestPicks?: RequestPickItem[];
   onInsertRequestId?: (requestId: string) => void;
@@ -51,9 +55,10 @@ export const ChatComposer = (props: Props) => {
     disabled,
     isSending,
     placeholder,
-    pendingFiles,
+    pendingUploads,
     onPickFiles,
     onRemovePendingFile,
+    onRetryPendingFile,
     requestPicks,
     onInsertRequestId,
     replyTo,
@@ -64,7 +69,7 @@ export const ChatComposer = (props: Props) => {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
 
-  const hasFiles = Array.isArray(pendingFiles) && pendingFiles.length > 0;
+  const hasFiles = Array.isArray(pendingUploads) && pendingUploads.length > 0;
   const hasRequestPicks =
     Array.isArray(requestPicks) && requestPicks.length > 0;
   const canPickFiles = typeof onPickFiles === "function";
@@ -79,28 +84,13 @@ export const ChatComposer = (props: Props) => {
         <MessageReply replyTo={replyTo} onCancelReply={onCancelReply} />
       ) : null}
 
-      {hasFiles && (
-        <div className="flex flex-wrap gap-2">
-          {pendingFiles!.map((f) => (
-            <div
-              key={f._id}
-              className="flex items-center gap-2 rounded border px-2 py-1 text-xs"
-            >
-              <span className="max-w-[220px] truncate">{f.originalName}</span>
-              {typeof onRemovePendingFile === "function" && (
-                <button
-                  type="button"
-                  className="opacity-70 hover:opacity-100"
-                  onClick={() => onRemovePendingFile(f._id)}
-                  aria-label="첨부 제거"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {hasFiles ? (
+        <BackgroundUploadList
+          items={pendingUploads!}
+          onRemove={onRemovePendingFile}
+          onRetry={onRetryPendingFile}
+        />
+      ) : null}
 
       <Textarea
         ref={textareaRef}

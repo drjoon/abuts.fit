@@ -2,9 +2,11 @@
 // - web/frontend/rules.md
 // - web/frontend/src/shared/hooks/compressMeshFile.ts
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
+// - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
 // - web/backend/controllers/files/file.controller.js
 // - web/backend/utils/s3.utils.js
+// - 2026-08-13: 진행률 키에 lastModified 포함(파일카드·토스트 공통).
 import { useCallback } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { prepareUploadBlob } from "@/shared/hooks/compressMeshFile";
@@ -355,7 +357,7 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
             originalName: prepared.originalName,
             contentEncoding: prepared.contentEncoding,
             uncompressedSize: prepared.uncompressedSize,
-            progressKey: `${file.name}:${file.size}`,
+            progressKey: `${file.name}:${file.size}:${file.lastModified}`,
           };
         }),
       );

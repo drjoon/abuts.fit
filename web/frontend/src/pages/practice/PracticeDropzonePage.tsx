@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/onboarding/wizard/SettingsWizard.tsx
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
  * - web/frontend/src/shared/hooks/useFilePreUpload.ts
+ * - 2026-08-13: 파일카드에 사전 업로드 프로그레스바.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -60,7 +61,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore, type User } from "@/store/useAuthStore";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
-import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
+import { toTempUploadFileKey, useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import {
   Popover,
   PopoverContent,
@@ -624,6 +625,7 @@ export const PracticeDropzonePage = () => {
     preUploadFiles,
     forgetFile,
     clearPreUploadCache,
+    uploadProgress,
   } = useFilePreUpload({ token: authToken });
   const { uploadFilesWithToast } = useUploadWithProgressToast({
     token: authToken,
@@ -2288,11 +2290,16 @@ export const PracticeDropzonePage = () => {
                   filePaneProps={{
                     acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-scan-file-input",
-                    files: files.map((file, index) => ({
-                      key: `${file.name}:${file.size}:${file.lastModified}:${index}`,
-                      name: file.name,
-                      size: file.size,
-                    })),
+                    files: files.map((file, index) => {
+                      const progress = uploadProgress[toTempUploadFileKey(file)];
+                      return {
+                        key: `${file.name}:${file.size}:${file.lastModified}:${index}`,
+                        name: file.name,
+                        size: file.size,
+                        uploadPercent: progress?.percent,
+                        uploadStatus: progress?.status,
+                      };
+                    }),
                     totalSizeMb,
                     onPickFiles: handleIncomingFiles,
                     onRemoveFile: (key) => {

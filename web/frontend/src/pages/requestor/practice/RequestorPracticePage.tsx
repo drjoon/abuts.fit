@@ -13,6 +13,8 @@
 // - web/backend/modules/files/file.routes.js
 // - web/backend/controllers/files/file.controller.js
 // - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
+// - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
+// - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-11: 역할 로딩 스켈레톤(발신/수신)·수신 목록 카드 스켈레톤.
 // - 2026-08-11: 디자인 페이지 삭제 — DesignQueueSection을 의뢰수신 UI에 통합(기간필터 공유).
@@ -34,6 +36,7 @@
 // - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·추적관리(작업취소는 취소 집계).
 // - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
 // - 2026-08-12: 수락 카드 — 별도 결과파일 드롭존 제거·카드 점선 외곽·작업완료 왼쪽 드롭 아이콘.
+// - 2026-08-13: 채팅 첨부 즉시 백그라운드 업로드 + 칩 프로그레스바.
 import {
   useCallback,
   useEffect,
@@ -57,6 +60,10 @@ import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
+import {
+  toChatMessageAttachments,
+  useBackgroundTempUpload,
+} from "@/shared/hooks/useBackgroundTempUpload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { Building2, Search, UploadCloud } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
@@ -408,6 +415,7 @@ function RequestorPracticeReceivePage({
   const { toast } = useToast();
   const { rooms } = useChatRooms();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
+  const chatUploads = useBackgroundTempUpload({ token });
 
   const [transfers, setTransfers] = useState<ReceivedPracticeTransfer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -439,7 +447,6 @@ function RequestorPracticeReceivePage({
     sender: { name: string; role: string };
     content: string;
   } | null>(null);
-  const [chatAttachedFiles, setChatAttachedFiles] = useState<File[]>([]);
   const [chatSending, setChatSending] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -1780,7 +1787,7 @@ function RequestorPracticeReceivePage({
       setSelectedTransfer(transfer);
       setDialogOpen(true);
       setChatError("");
-      setChatAttachedFiles([]);
+      chatUploads.clear();
       setActiveChatRoom(null);
       setChatMessages([]);
       void markTransferRead(transfer);
@@ -1896,49 +1903,24 @@ function RequestorPracticeReceivePage({
   const handleAttachChatFiles = useCallback((inputFiles: FileList | null) => {
     const nextFiles = Array.from(inputFiles || []);
     if (!nextFiles.length) return;
-
-    setChatAttachedFiles((prev) => {
-      const map = new Map<string, File>();
-      for (const f of [...prev, ...nextFiles]) {
-        const key = `${f.name}:${f.size}:${f.lastModified}`;
-        if (!map.has(key)) map.set(key, f);
-      }
-      return [...map.values()];
-    });
-  }, []);
-
-  const handleRemoveAttachedChatFile = useCallback((idx: number) => {
-    setChatAttachedFiles((prev) => prev.filter((_, i) => i !== idx));
-  }, []);
+    chatUploads.addFiles(nextFiles);
+  }, [chatUploads.addFiles]);
 
   const handleSendChat = useCallback(async () => {
     const text = chatDraft.trim();
-    const files = [...chatAttachedFiles];
-    if ((!text && files.length === 0) || !activeChatRoom?._id || chatSending) return;
+    if ((!text && chatUploads.items.length === 0) || !activeChatRoom?._id || chatSending) {
+      return;
+    }
 
     setChatSending(true);
     try {
-      let attachments: Array<{
-        fileId?: string;
-        fileName: string;
-        fileType: string;
-        fileSize: number;
-        s3Key: string;
-        s3Url: string;
-      }> = [];
-
-      if (files.length > 0) {
-        const uploadedFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
-        attachments = uploadedFiles
-          .map((f) => ({
-            fileId: String(f._id || "").trim() || undefined,
-            fileName: String(f.originalName || "").trim(),
-            fileType: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
-            fileSize: Number(f.size || 0),
-            s3Key: String(f.key || "").trim(),
-            s3Url: String(f.location || "").trim(),
-          }))
-          .filter((row) => row.fileName && row.s3Key);
+      let attachments = toChatMessageAttachments([]);
+      if (chatUploads.items.length > 0) {
+        const uploadedFiles = await chatUploads.ensureUploaded();
+        attachments = toChatMessageAttachments(uploadedFiles);
+        if (!attachments.length) {
+          throw new Error("파일 업로드에 실패했습니다.");
+        }
       }
 
       const sent = await sendMessage(text, attachments, {
@@ -1947,19 +1929,28 @@ function RequestorPracticeReceivePage({
       if (sent) {
         setChatDraft("");
         setChatReplyTo(null);
-        setChatAttachedFiles([]);
+        chatUploads.clear();
       }
+    } catch (error) {
+      toast({
+        title: "업로드 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "파일 업로드 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
     } finally {
       setChatSending(false);
     }
   }, [
     activeChatRoom?._id,
-    chatAttachedFiles,
     chatDraft,
     chatReplyTo?._id,
     chatSending,
+    chatUploads,
     sendMessage,
-    uploadFilesWithToast,
+    toast,
   ]);
 
   const transferSearchAndBadges = (
@@ -2405,7 +2396,7 @@ function RequestorPracticeReceivePage({
             setChatMessages([]);
             setChatDraft("");
             setChatReplyTo(null);
-            setChatAttachedFiles([]);
+            chatUploads.clear();
             setChatError("");
           }
         }}
@@ -2494,8 +2485,9 @@ function RequestorPracticeReceivePage({
         formatFileSize={formatBytes}
         onDownloadChatAttachment={handleDownloadChatAttachment}
         chatBottomRef={chatBottomRef}
-        chatAttachedFiles={chatAttachedFiles}
-        onRemoveAttachedChatFile={handleRemoveAttachedChatFile}
+        chatAttachedFiles={chatUploads.items}
+        onRemoveAttachedChatFile={chatUploads.removeItem}
+        onRetryAttachedChatFile={chatUploads.retryItem}
         onAttachChatFiles={handleAttachChatFiles}
         attachmentInputId="requestor-practice-chat-attachment-input"
         chatDraft={chatDraft}
@@ -2520,7 +2512,7 @@ function RequestorPracticeReceivePage({
           chatLoading ||
           chatSending ||
           !activeChatRoom?._id ||
-          (!chatDraft.trim() && chatAttachedFiles.length === 0)
+          (!chatDraft.trim() && chatUploads.items.length === 0)
         }
       />
       </>

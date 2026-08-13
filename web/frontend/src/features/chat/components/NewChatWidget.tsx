@@ -2,6 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
+// - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,9 +15,9 @@ import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import type { ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
-  useS3TempUpload,
-  type TempUploadedFile,
-} from "@/shared/hooks/useS3TempUpload";
+  toChatMessageAttachments,
+  useBackgroundTempUpload,
+} from "@/shared/hooks/useBackgroundTempUpload";
 import {
   ChatComposer,
   type RequestPickItem,
@@ -41,11 +43,10 @@ export const NewChatWidget = () => {
     content: string;
   } | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<TempUploadedFile[]>([]);
   const [requestPicks, setRequestPicks] = useState<RequestPickItem[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const didRefreshUnreadRef = useRef(false);
-  const { uploadFiles } = useS3TempUpload({ token });
+  const chatUploads = useBackgroundTempUpload({ token });
 
   useEffect(() => {
     const onOpen = (evt?: Event) => {
@@ -240,65 +241,40 @@ export const NewChatWidget = () => {
   const handleSend = async () => {
     if (!roomId || isSending) return;
     const text = draft.trim();
-    const attachments = pendingFiles
-      .map((f) => {
-        const fileId = String(f._id || "").trim();
-        const s3Key = String(f.key || "").trim();
-        const s3Url = String(f.location || "").trim();
-        if (!s3Key || !s3Url) return null;
-        return {
-          fileId,
-          fileName: String(f.originalName || "").trim(),
-          fileType: String(f.mimetype || "").trim(),
-          fileSize: Number(f.size || 0),
-          s3Key,
-          s3Url,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => !!x);
-
-    const content = text || (attachments.length ? "파일 첨부" : "");
-    if (!content.trim()) return;
+    if (!text && chatUploads.items.length === 0) return;
 
     setIsSending(true);
     try {
+      let attachments = toChatMessageAttachments([]);
+      if (chatUploads.items.length > 0) {
+        const uploaded = await chatUploads.ensureUploaded();
+        attachments = toChatMessageAttachments(uploaded);
+        if (!attachments.length) {
+          throw new Error("파일 업로드에 실패했습니다.");
+        }
+      }
+
+      const content = text || (attachments.length ? "파일 첨부" : "");
+      if (!content.trim()) return;
+
       const sent = await sendMessage(content, attachments, {
         replyTo: replyTo?._id || null,
       });
       if (sent) {
         setDraft("");
         setReplyTo(null);
-        setPendingFiles([]);
+        chatUploads.clear();
         setRoom((prev) => (prev ? { ...prev, unreadCount: 0 } : prev));
       }
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const handlePickFiles = async (files: File[]) => {
-    if (!files.length) return;
-    try {
-      const uploaded = await uploadFiles(files);
-      if (!uploaded.length) return;
-      setPendingFiles((prev) => {
-        const map = new Map<string, TempUploadedFile>();
-        [...prev, ...uploaded].forEach((f) => {
-          map.set(f._id, f);
-        });
-        return Array.from(map.values());
-      });
     } catch (e: any) {
       toast({
         title: "업로드 실패",
         description: e?.message || "파일 업로드 중 오류가 발생했습니다.",
         variant: "destructive",
       });
+    } finally {
+      setIsSending(false);
     }
-  };
-
-  const removePendingFile = (fileId: string) => {
-    setPendingFiles((prev) => prev.filter((f) => f._id !== fileId));
   };
 
   const insertRequestId = (requestId: string) => {
@@ -464,9 +440,10 @@ export const NewChatWidget = () => {
                     placeholder="문의 내용을 입력하세요"
                     disabled={!roomId}
                     isSending={isSending}
-                    pendingFiles={pendingFiles}
-                    onPickFiles={(files) => void handlePickFiles(files)}
-                    onRemovePendingFile={removePendingFile}
+                    pendingUploads={chatUploads.items}
+                    onPickFiles={chatUploads.addFiles}
+                    onRemovePendingFile={chatUploads.removeItem}
+                    onRetryPendingFile={chatUploads.retryItem}
                     requestPicks={requestPicks}
                     onInsertRequestId={
                       user.role === "requestor" ? insertRequestId : undefined
