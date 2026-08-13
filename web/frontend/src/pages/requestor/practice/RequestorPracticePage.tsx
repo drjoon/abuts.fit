@@ -20,6 +20,7 @@
 // - 2026-08-11: 치과 기공의뢰 — 발신/수신 탭 제거·항상 발신.
 // - 2026-08-11: 사이드메뉴 딥링크용 ?mode=send|receive 동기화.
 // - 2026-08-11: 기공소 기공의뢰수신 — 내역 카드 제거·검색/뱃지를 의뢰수신으로 통합·제목 삭제.
+// - 2026-08-13: 치과초대 우측 카드 제거·작업영역 카드가 화면 남은 높이를 채움.
 // - 2026-08-11: 치과초대 우측 상단(9:3)·의뢰수신 상단 필터左/검색右.
 // - 2026-08-11: 치과 링크 전달 — 파일전송(/p) → 기공소 소개코드 가입 링크.
 // - 2026-08-11: 상단 뱃지에 포장.발송·추적관리 추가(기공 파이프라인 UI).
@@ -56,7 +57,7 @@ import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
-import { Building2, Copy, Download, Link2, Search, Send, UploadCloud } from "lucide-react";
+import { Building2, Search, UploadCloud } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import {
   Dialog,
@@ -417,8 +418,6 @@ function RequestorPracticeReceivePage({
   const [statusFilter, setStatusFilter] = useState<
     "all" | "발송완료" | "의뢰수락" | "작업완료" | "포장.발송" | "추적관리"
   >("all");
-  const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
-  const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
@@ -441,10 +440,8 @@ function RequestorPracticeReceivePage({
   } | null>(null);
   const [chatAttachedFiles, setChatAttachedFiles] = useState<File[]>([]);
   const [chatSending, setChatSending] = useState(false);
-  const [transferCardsMaxHeightPx, setTransferCardsMaxHeightPx] = useState<number | null>(null);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const transferCardsGridRef = useRef<HTMLDivElement | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
 
@@ -1076,72 +1073,6 @@ function RequestorPracticeReceivePage({
         .toothWorks,
     [selectedTransfer?.rawTransferMemo],
   );
-  const recalculateTransferCardsMaxHeight = useCallback(() => {
-    const grid = transferCardsGridRef.current;
-    if (!grid) {
-      setTransferCardsMaxHeightPx(null);
-      return;
-    }
-
-    const cardEls = Array.from(grid.querySelectorAll<HTMLElement>("[data-transfer-card='true']"));
-    if (cardEls.length === 0) {
-      setTransferCardsMaxHeightPx(null);
-      return;
-    }
-
-    const gridStyle = window.getComputedStyle(grid);
-    const rowGap = Number.parseFloat(gridStyle.rowGap || "0") || 0;
-    const templateColumns = String(gridStyle.gridTemplateColumns || "");
-    const repeatMatch = templateColumns.match(/repeat\((\d+),/);
-    const columnCount = repeatMatch
-      ? Number(repeatMatch[1] || 1)
-      : templateColumns
-          .split(" ")
-          .map((token) => token.trim())
-          .filter(Boolean).length || 1;
-
-    const targetRows = columnCount >= 2 ? 3 : 6;
-
-    const rowMaxHeightByTop = new Map<number, number>();
-    for (const card of cardEls) {
-      const top = card.offsetTop;
-      const h = card.offsetHeight;
-      const prev = rowMaxHeightByTop.get(top) || 0;
-      if (h > prev) rowMaxHeightByTop.set(top, h);
-    }
-
-    const rowTops = [...rowMaxHeightByTop.keys()].sort((a, b) => a - b);
-    const visibleRowCount = Math.min(targetRows, rowTops.length);
-    const visibleRowsHeight = rowTops
-      .slice(0, visibleRowCount)
-      .reduce((sum, top) => sum + Number(rowMaxHeightByTop.get(top) || 0), 0);
-    const totalGapHeight = Math.max(0, visibleRowCount - 1) * rowGap;
-
-    setTransferCardsMaxHeightPx(Math.ceil(visibleRowsHeight + totalGapHeight));
-  }, []);
-
-  useEffect(() => {
-    recalculateTransferCardsMaxHeight();
-
-    const grid = transferCardsGridRef.current;
-    if (!grid || typeof ResizeObserver === "undefined") return;
-
-    const observer = new ResizeObserver(() => {
-      recalculateTransferCardsMaxHeight();
-    });
-
-    observer.observe(grid);
-    for (const child of Array.from(grid.children)) {
-      observer.observe(child);
-    }
-
-    window.addEventListener("resize", recalculateTransferCardsMaxHeight);
-    return () => {
-      window.removeEventListener("resize", recalculateTransferCardsMaxHeight);
-      observer.disconnect();
-    };
-  }, [recalculateTransferCardsMaxHeight, sortedFilteredTransfers]);
-
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token || transfer.isRead) return;
@@ -2038,121 +1969,6 @@ function RequestorPracticeReceivePage({
     uploadFilesWithToast,
   ]);
 
-  const referralCode = String(user?.referralCode || "")
-    .trim()
-    .toUpperCase();
-  const referralSignupLink = referralCode
-    ? `${window.location.origin}/signup/referral?ref=${encodeURIComponent(referralCode)}`
-    : "";
-
-  const handleCopyPracticeDropzoneLink = async () => {
-    if (!referralSignupLink) {
-      toast({
-        title: "복사 실패",
-        description: "소개 코드를 확인할 수 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(referralSignupLink);
-      setPracticeLinkCopied(true);
-      setTimeout(() => setPracticeLinkCopied(false), 2000);
-      toast({
-        title: "복사 완료",
-        description: "가입 링크가 복사되었습니다.",
-        duration: 2000,
-      });
-    } catch {
-      toast({
-        title: "복사 실패",
-        description: "브라우저 권한을 확인해주세요.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleCopyPracticeMessage = async () => {
-    if (!referralSignupLink) {
-      toast({
-        title: "복사 실패",
-        description: "소개 코드를 확인할 수 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const message = `안녕하세요 🙂 어벗츠에 가입해 주시면 기공의뢰서를 더 쉽고 편하게 보내실 수 있어요!\n아래 링크로 가볍게 가입해 주세요.\n${referralSignupLink}`;
-    try {
-      await navigator.clipboard.writeText(message);
-      setPracticeMessageCopied(true);
-      setTimeout(() => setPracticeMessageCopied(false), 2000);
-      toast({
-        title: "복사 완료",
-        description: "가입 안내 문구가 복사되었습니다.",
-        duration: 2000,
-      });
-    } catch {
-      toast({
-        title: "복사 실패",
-        description: "브라우저 권한을 확인해주세요.",
-        variant: "destructive",
-      });
-    }
-  };
-
-
-
-  const inviteLinkCard = (
-    <Card className="h-fit">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">치과 초대</CardTitle>
-        <CardDescription className="text-xs">치과에 가입 링크를 전달하세요.</CardDescription>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void handleCopyPracticeDropzoneLink()}
-            disabled={!referralSignupLink}
-            className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
-          >
-            {practiceLinkCopied ? (
-              <>
-                <Copy className="h-4 w-4" />
-                복사됨
-              </>
-            ) : (
-              <>
-                <Link2 className="h-4 w-4" />
-                링크 복사
-              </>
-            )}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void handleCopyPracticeMessage()}
-            disabled={!referralSignupLink}
-            className="h-8 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong"
-          >
-            {practiceMessageCopied ? (
-              <>
-                <Copy className="h-4 w-4" />
-                복사됨
-              </>
-            ) : (
-              <>
-                <Send className="h-4 w-4" />
-                안내 복사
-              </>
-            )}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-
   const transferSearchAndBadges = (
     <div className="space-y-3">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -2277,22 +2093,19 @@ function RequestorPracticeReceivePage({
   );
 
   const transferListBody = (
-    <>
-      {error ? <div className="text-sm text-destructive">{error}</div> : null}
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {error ? <div className="shrink-0 text-sm text-destructive">{error}</div> : null}
       {!error &&
       loading &&
       sortedFilteredTransfers.length === 0 ? (
         <RequestorPracticeTransferCardsSkeleton />
       ) : null}
       {!error && !loading && sortedFilteredTransfers.length === 0 ? (
-        <div className="text-sm text-muted-foreground">표시할 의뢰가 없습니다.</div>
+        <div className="shrink-0 text-sm text-muted-foreground">표시할 의뢰가 없습니다.</div>
       ) : null}
 
-      <div
-        className="overflow-y-auto pr-1"
-        style={transferCardsMaxHeightPx ? { maxHeight: `${transferCardsMaxHeightPx}px` } : undefined}
-      >
-        <div ref={transferCardsGridRef} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {sortedFilteredTransfers.map((transfer) => {
             const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
             const toothWorksPreview = formatToothWorksSummary(transfer.toothWorksSummary);
@@ -2458,22 +2271,24 @@ function RequestorPracticeReceivePage({
             );
           })}
         </div>
-      </div>
 
-      {!error && hasMore ? (
-        <div ref={loadMoreRef} className="py-4 text-center text-xs text-muted-foreground">
-          {loadingMore ? "더 불러오는 중..." : "아래로 스크롤하면 더 불러옵니다."}
-        </div>
-      ) : null}
-    </>
+        {!error && hasMore ? (
+          <div ref={loadMoreRef} className="py-4 text-center text-xs text-muted-foreground">
+            {loadingMore ? "더 불러오는 중..." : "아래로 스크롤하면 더 불러옵니다."}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
-        <LabDashboardTopBanners />
+    <div className="flex h-full min-h-0 flex-col overflow-hidden p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <div className="shrink-0">
+          <LabDashboardTopBanners />
+        </div>
         {showDesignQueue && !showTransfers ? (
-          <div className="flex flex-col gap-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
             <div className="flex flex-wrap items-center justify-end gap-3">
               <PeriodFilter
                 value={period}
@@ -2487,24 +2302,27 @@ function RequestorPracticeReceivePage({
         ) : null}
 
         {showTransfers ? (
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-start">
-          <div className="order-first xl:order-none xl:col-span-3 xl:col-start-10 xl:row-start-1">
-            {inviteLinkCard}
-          </div>
-
-          <Card className="xl:col-span-9 xl:col-start-1">
-            <CardHeader className="space-y-3">
+          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <CardHeader className="shrink-0 space-y-3">
               {roleSwitcher ? (
                 <div className="flex flex-wrap items-center gap-3">{roleSwitcher}</div>
               ) : null}
               {transferSearchAndBadges}
             </CardHeader>
-            <CardContent className={showDesignQueue ? "space-y-4 pt-0" : undefined}>
-              {showDesignQueue ? <DesignQueueSection /> : null}
+            <CardContent
+              className={cn(
+                "flex min-h-0 flex-1 flex-col overflow-hidden pt-0",
+                showDesignQueue && "gap-4",
+              )}
+            >
+              {showDesignQueue ? (
+                <div className="shrink-0">
+                  <DesignQueueSection />
+                </div>
+              ) : null}
               {transferListBody}
             </CardContent>
           </Card>
-        </div>
         ) : null}
       </div>
 

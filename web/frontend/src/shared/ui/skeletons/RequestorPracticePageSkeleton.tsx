@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 수신 스켈레톤 — 치과초대 제거·작업영역 카드 전체 높이.
 // - 2026-08-11: 기공의뢰(발신)·기공의뢰수신 레이아웃에 맞춘 페이지 스켈레톤 신설.
 // related files:
 // - web/frontend/rules.md
@@ -82,19 +83,10 @@ const SendSkeleton = () => (
 );
 
 const ReceiveSkeleton = () => (
-  <div className="flex h-full min-h-0 flex-col">
-    <div className="flex-1 min-h-0 overflow-hidden p-4 space-y-3">
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-start">
-        <div className="order-first rounded-2xl border border-border bg-muted/30 p-4 space-y-3 xl:order-none xl:col-span-3 xl:col-start-10 xl:row-start-1">
-          <Skeleton className="h-5 w-28" />
-          <Skeleton className="h-10 w-full rounded-xl" />
-          <div className="grid grid-cols-2 gap-2">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-4 xl:col-span-9 xl:col-start-1">
+  <div className="flex h-full min-h-0 flex-col overflow-hidden p-4">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-muted/30 p-4">
+        <div className="shrink-0 space-y-3 pb-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <Skeleton className="h-8 w-44" />
             <Skeleton className="h-9 w-full md:max-w-md rounded-xl" />
@@ -104,8 +96,10 @@ const ReceiveSkeleton = () => (
               <Skeleton key={`badge-${key}`} className="h-6 w-20 rounded-full" />
             ))}
           </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {repeat(4).map((key) => (
+            {repeat(6).map((key) => (
               <TransferCardSkeleton key={`card-${key}`} />
             ))}
           </div>
