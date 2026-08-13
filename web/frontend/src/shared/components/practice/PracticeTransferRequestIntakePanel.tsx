@@ -67,7 +67,6 @@ import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCa
 import {
   ABUTMENT_PRODUCT_MODE,
   ABUTMENT_PRODUCT_MODE_LABEL,
-  ABUTMENT_PRODUCT_MODE_SHORT_LABEL,
   DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
   emptyToothWorkCustomSpecs,
   formatAbutmentCompact,
@@ -147,6 +146,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 연결 형태 클릭 순환에 유지장치·임시치아 추가.
 // - 2026-08-13: 유지장치=연결 전용. 임시치아=단독·연결.
 // - 2026-08-13: 어벗 체크·커스텀어벗인데 프리셋 미선택이면 치식 카드 빨강.
+// - 2026-08-13: 기공의뢰 치식 카드에서 디자인+생산 라벨 제거(모드는 디자인+생산 고정).
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -2386,7 +2386,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               </label>
                             ) : null}
 
-                            {/* 4) 커스텀어벗 · 임플란트 · 스캔바디 */}
+                            {/* 4) 임플란트 · 스캔바디. 기공의뢰는 디자인+생산 고정이라 모드 라벨 없음 */}
                             {showCustomDetails ? (
                               <div
                                 data-no-tooth-marquee=""
@@ -2395,27 +2395,6 @@ export const PracticeTransferRequestIntakePanel = ({
                                   showAbutmentCheckbox ? "mt-0.5" : "mt-2",
                                 )}
                               >
-                                <button
-                                  type="button"
-                                  className={cn(
-                                    "h-5 w-full truncate px-0.5 text-center text-[10px] leading-none hover:underline",
-                                    missingAbutmentPreset
-                                      ? "text-destructive hover:bg-destructive-soft"
-                                      : "text-primary-strong hover:bg-primary-soft/70",
-                                  )}
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    openCustomSpecsModal(originalIndex);
-                                  }}
-                                >
-                                  {
-                                    ABUTMENT_PRODUCT_MODE_SHORT_LABEL[
-                                      lockedMode ??
-                                        resolveToothAbutmentProductMode(row)
-                                    ]
-                                  }
-                                </button>
                                 <TooltipProvider delayDuration={0}>
                                   <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
                                     <Tooltip>

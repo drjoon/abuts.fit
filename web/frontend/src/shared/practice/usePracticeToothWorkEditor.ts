@@ -10,6 +10,7 @@ import { useMemo } from "react";
 // - 2026-08-13: 연결 형태 토글에 유지장치·임시치아 추가(단독 토글도 유지).
 // - 2026-08-13: 유지장치=브리지 계열(2치+). 임시치아=단독 1치부터 연결 n치.
 // - 2026-08-13: 연결 스팬의 유지장치·임시치아는 한쪽 변경 시 전체 동일 형태.
+// - 2026-08-13: 유지장치·임시치아 스팬 전환 시 커스텀어벗 플래그·규격은 유지. 브리지로 되돌리면 복구.
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
@@ -224,7 +225,8 @@ export const resolveProsthesisTypeForLinkState = (
   return options.find((type) => type === "크라운") || options[0] || "크라운";
 };
 
-/** 형태 변경. 커스텀어벗↔인레이/크라운은 플래그·규격을 맞추고, 브리지는 기존 커스텀 유지 */
+/** 형태 변경. 커스텀어벗↔인레이/크라운은 플래그·규격을 맞추고, 브리지는 기존 커스텀 유지.
+ * 유지장치·임시치아는 연결 스팬 전체에 적용되므로 커스텀을 지우지 않는다(브리지 복귀 시 유지). */
 export const applyProsthesisTypeToRow = (
   row: ToothWorkSelection,
   prosthesisType: string,
@@ -247,12 +249,7 @@ export const applyProsthesisTypeToRow = (
     };
   }
   if (nextType === "크라운" || nextType === "브리지") {
-    const keepCustom =
-      Boolean(row.customAbutment) &&
-      (row.prosthesisType === "크라운" ||
-        row.prosthesisType === "브리지" ||
-        isCustomAbutmentProsthesisType(row.prosthesisType));
-    if (keepCustom) {
+    if (row.customAbutment) {
       return { ...row, prosthesisType: nextType };
     }
     return {
@@ -263,11 +260,11 @@ export const applyProsthesisTypeToRow = (
       ...emptyToothWorkCustomSpecs(),
     };
   }
+  if (isRetainerProsthesisType(nextType) || isTemporaryToothProsthesisType(nextType)) {
+    return { ...row, prosthesisType: nextType };
+  }
   if (
     nextType === "인레이" ||
-    nextType === "유지장치" ||
-    nextType === "임시치아" ||
-    nextType === "가철성 임시치아" ||
     isMissingToothProsthesisType(nextType) ||
     /^pontic$/i.test(nextType)
   ) {

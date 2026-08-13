@@ -285,6 +285,30 @@ describe("labFeeSchedule", () => {
     expect(fees.total).toBe(130000);
   });
 
+  test("유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "16",
+          prosthesisType: "유지장치",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["15"],
+        },
+        {
+          toothNumber: "15",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          bridgeLinkedTeeth: ["16"],
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.abutmentRetailTotal).toBe(0);
+    expect(fees.abutmentQty).toBe(0);
+  });
+
   test("유지장치는 같은 악궁이어도 연결이 끊기면 스팬당 1세트다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [

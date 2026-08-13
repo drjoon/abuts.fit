@@ -6,10 +6,11 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
-// - 2026-08-13: 미저장(updatedAt 없음) 기공비는 0원·전부 off. 한 번 저장해야 설정 완료.
+// - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
+// - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다.
 import {
   resolveAbutsAbutmentPricingTier,
   resolveAbutsAbutmentUnitPrice,
@@ -27,13 +28,8 @@ export const LAB_FEE_SCHEDULE_KEYS = [
   "customAbutmentDesignAndProduction",
 ];
 
-/** 운영 디폴트·미설정 수가. 기공소가 한 번 저장하기 전에는 0원 */
-export const LAB_FEE_SCHEDULE_DEFAULTS = Object.fromEntries(
-  LAB_FEE_SCHEDULE_KEYS.map((key) => [key, 0]),
-);
-
-/** 테스트·예시용 샘플 수가(운영 디폴트는 0원) */
-export const LAB_FEE_SCHEDULE_SAMPLE = {
+/** 기공비 기본 수가(원). 마스터 스위치가 꺼져 있으면 청구하지 않는다. */
+export const LAB_FEE_SCHEDULE_DEFAULTS = {
   crown: 60000,
   bridge: 60000,
   inlay: 50000,
@@ -44,6 +40,9 @@ export const LAB_FEE_SCHEDULE_SAMPLE = {
   customAbutmentDesign: 10000,
   customAbutmentDesignAndProduction: 35000,
 };
+
+/** @deprecated LAB_FEE_SCHEDULE_DEFAULTS와 동일 */
+export const LAB_FEE_SCHEDULE_SAMPLE = LAB_FEE_SCHEDULE_DEFAULTS;
 
 /** 리메이크 수가. 미설정 시 0원(기공소가 항목별로 지정) */
 export const LAB_FEE_REMAKE_SCHEDULE_DEFAULTS = Object.fromEntries(
@@ -65,11 +64,18 @@ export const LAB_FEE_SCHEDULE_UNSET_ENABLED = Object.fromEntries(
   LAB_FEE_SCHEDULE_KEYS.map((key) => [key, false]),
 );
 
-export function isLabFeeScheduleConfigured(schedule) {
+function hasLabFeeUpdatedAt(schedule) {
   const raw = schedule?.updatedAt;
   if (raw == null || raw === "") return false;
   const t = raw instanceof Date ? raw.getTime() : new Date(raw).getTime();
   return Number.isFinite(t);
+}
+
+/** 마스터 스위치(active)가 켜져야 설정 완료. 레거시는 updatedAt만 있으면 완료. */
+export function isLabFeeScheduleConfigured(schedule) {
+  if (!schedule || typeof schedule !== "object") return false;
+  if (typeof schedule.active === "boolean") return schedule.active === true;
+  return hasLabFeeUpdatedAt(schedule);
 }
 
 export function buildUnsetLabFeeSchedule() {
@@ -77,11 +83,36 @@ export function buildUnsetLabFeeSchedule() {
     ...LAB_FEE_SCHEDULE_ZEROS,
     remake: { ...LAB_FEE_REMAKE_SCHEDULE_DEFAULTS },
     enabled: { ...LAB_FEE_SCHEDULE_UNSET_ENABLED },
+    active: false,
     updatedAt: null,
   };
 }
 
-/** 미저장 스케줄은 스키마 잔여값 대신 0원·전부 off */
+export function buildDefaultLabFeeSchedule() {
+  return {
+    ...LAB_FEE_SCHEDULE_DEFAULTS,
+    remake: { ...LAB_FEE_REMAKE_SCHEDULE_DEFAULTS },
+    enabled: { ...LAB_FEE_SCHEDULE_ENABLED_DEFAULTS },
+    active: false,
+    updatedAt: null,
+  };
+}
+
+/** 설정 UI용. 미설정이어도 기본 수가·항목 on을 보여 준다. */
+export function resolveLabFeeScheduleForSettings(schedule) {
+  const hasItems =
+    Array.isArray(schedule?.items) && schedule.items.length > 0;
+  if (hasItems || isLabFeeScheduleConfigured(schedule)) {
+    return schedule;
+  }
+  const hasPrice = LAB_FEE_SCHEDULE_KEYS.some(
+    (key) => Math.round(Number(schedule?.[key] || 0)) > 0,
+  );
+  if (hasPrice) return schedule;
+  return buildDefaultLabFeeSchedule();
+}
+
+/** 청구용. 마스터가 꺼져 있으면 0원 */
 export function resolveLabFeeScheduleSource(schedule) {
   return isLabFeeScheduleConfigured(schedule)
     ? schedule
@@ -125,12 +156,9 @@ export function isCustomAbutmentWork(row) {
   if (!prosthesisType || isMissingToothProsthesisType(prosthesisType)) {
     return false;
   }
-  if (/^pontic$/i.test(prosthesisType)) return false;
-  return (
-    isCustomAbutmentProsthesisType(prosthesisType) ||
-    Boolean(row?.hasCustomAbutment) ||
-    Boolean(row?.customAbutment)
-  );
+  if (isCustomAbutmentProsthesisType(prosthesisType)) return true;
+  if (prosthesisType !== "크라운" && prosthesisType !== "브리지") return false;
+  return Boolean(row?.hasCustomAbutment) || Boolean(row?.customAbutment);
 }
 
 export function isRetainerProsthesisType(prosthesisType) {

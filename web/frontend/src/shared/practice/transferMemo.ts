@@ -11,6 +11,7 @@
 // - 2026-08-13: 연결 보철에 유지장치·임시치아 추가. 링크 직렬화는 isLinkableProsthesisType.
 // - 2026-08-13: 유지장치=브리지 계열(2치+). 임시치아=단독·연결 모두.
 // - 2026-08-13: 어벗 체크 시 임플란트·스캔바디 프리셋 필수. 미선택이면 전송 불가.
+// - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 프리셋 필수로 보지 않는다.
 export const ABUTMENT_PRODUCT_MODE = {
   PRODUCTION: "custom_abutment",
   DESIGN_AND_PRODUCTION: "design_custom_abutment",
@@ -529,9 +530,13 @@ export const hasCompleteAbutmentPresets = (
 
 export const isAbutmentPresetRequired = (
   row: Partial<ToothWorkSelection> | null | undefined,
-) =>
-  Boolean(row?.customAbutment) ||
-  isCustomAbutmentProsthesisType(String(row?.prosthesisType || ""));
+) => {
+  const type = String(row?.prosthesisType || "");
+  if (isCustomAbutmentProsthesisType(type)) return true;
+  return (
+    Boolean(row?.customAbutment) && isCustomAbutmentSupportedProsthesisType(type)
+  );
+};
 
 export const isAbutmentPresetMissing = (
   row: Partial<ToothWorkSelection> | null | undefined,

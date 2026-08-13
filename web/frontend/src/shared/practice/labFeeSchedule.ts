@@ -4,10 +4,11 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/backend/tests/unit/labFeeSchedule.test.js
-// - 2026-08-13: 미저장(updatedAt 없음) 기공비는 0원·전부 off. 한 번 저장해야 설정 완료.
+// - 2026-08-13: 마스터 active(기본 off)가 켜져야 설정 완료. 수가 디폴트는 기본값·항목 on.
 // - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
+// - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다.
 import {
   normalizeAbutsAbutmentCreditPrices,
   type AbutsAbutmentCreditPrices,
@@ -30,8 +31,21 @@ export type LabFeeScheduleKey = (typeof LAB_FEE_SCHEDULE_KEYS)[number];
 
 export type LabFeeSchedule = Record<LabFeeScheduleKey, number>;
 
-/** 운영 디폴트·미설정 수가. 기공소가 한 번 저장하기 전에는 0원 */
+/** 기공비 기본 수가(원). 마스터 스위치가 꺼져 있으면 청구하지 않는다. */
 export const LAB_FEE_SCHEDULE_DEFAULTS: LabFeeSchedule = {
+  crown: 60000,
+  bridge: 60000,
+  inlay: 50000,
+  pontic: 40000,
+  retainer: 40000,
+  removableTemp3: 30000,
+  removableTemp6: 50000,
+  customAbutmentDesign: 10000,
+  customAbutmentDesignAndProduction: 35000,
+};
+
+/** 기공소 미지정(자동매칭) 견적 — 기본수가 없음 */
+export const LAB_FEE_SCHEDULE_ZEROS: LabFeeSchedule = {
   crown: 0,
   bridge: 0,
   inlay: 0,
@@ -43,18 +57,13 @@ export const LAB_FEE_SCHEDULE_DEFAULTS: LabFeeSchedule = {
   customAbutmentDesignAndProduction: 0,
 };
 
-/** 기공소 미지정(자동매칭) 견적 — 기본수가 없음 */
-export const LAB_FEE_SCHEDULE_ZEROS: LabFeeSchedule = {
-  ...LAB_FEE_SCHEDULE_DEFAULTS,
-};
-
 export const LAB_FEE_SCHEDULE_UNSET_ENABLED: Record<LabFeeScheduleKey, boolean> =
   Object.fromEntries(LAB_FEE_SCHEDULE_KEYS.map((key) => [key, false])) as Record<
     LabFeeScheduleKey,
     boolean
   >;
 
-export const isLabFeeScheduleConfigured = (
+const hasLabFeeUpdatedAt = (
   schedule?: { updatedAt?: string | Date | null } | null,
 ) => {
   const raw = schedule?.updatedAt;
@@ -63,14 +72,26 @@ export const isLabFeeScheduleConfigured = (
   return Number.isFinite(t);
 };
 
+/** 마스터 스위치(active)가 켜져야 설정 완료. 레거시는 updatedAt만 있으면 완료. */
+export const isLabFeeScheduleConfigured = (
+  schedule?: { active?: boolean | null; updatedAt?: string | Date | null } | null,
+) => {
+  if (!schedule || typeof schedule !== "object") return false;
+  if (typeof schedule.active === "boolean") return schedule.active === true;
+  return hasLabFeeUpdatedAt(schedule);
+};
+
 export const buildUnsetLabFeeSchedule = () => ({
   ...LAB_FEE_SCHEDULE_ZEROS,
   remake: { ...LAB_FEE_SCHEDULE_ZEROS },
   enabled: { ...LAB_FEE_SCHEDULE_UNSET_ENABLED },
+  active: false,
   updatedAt: null as string | Date | null,
 });
 
-export const resolveLabFeeScheduleSource = <T extends { updatedAt?: string | Date | null }>(
+export const resolveLabFeeScheduleSource = <
+  T extends { active?: boolean | null; updatedAt?: string | Date | null },
+>(
   schedule?: T | null,
 ) => (isLabFeeScheduleConfigured(schedule) ? schedule : buildUnsetLabFeeSchedule());
 
@@ -110,12 +131,9 @@ export const isCustomAbutmentWork = (row?: {
 } | null) => {
   const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
   if (!prosthesisType || isMissingToothProsthesisType(prosthesisType)) return false;
-  if (/^pontic$/i.test(prosthesisType)) return false;
-  return (
-    isCustomAbutmentProsthesisType(prosthesisType) ||
-    Boolean(row?.hasCustomAbutment) ||
-    Boolean(row?.customAbutment)
-  );
+  if (isCustomAbutmentProsthesisType(prosthesisType)) return true;
+  if (prosthesisType !== "크라운" && prosthesisType !== "브리지") return false;
+  return Boolean(row?.hasCustomAbutment) || Boolean(row?.customAbutment);
 };
 
 export const isRetainerProsthesisType = (prosthesisType: string) => {

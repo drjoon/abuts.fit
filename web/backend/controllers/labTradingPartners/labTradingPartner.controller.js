@@ -22,7 +22,7 @@ import {
   normalizeLabFeeItems,
   legacyLabFeeScheduleFromItems,
   isLabFeeScheduleConfigured,
-  resolveLabFeeScheduleSource,
+  resolveLabFeeScheduleForSettings,
 } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRequestorKind,
@@ -459,7 +459,7 @@ export async function getLabFeeSchedule(req, res) {
       .select({ labFeeSchedule: 1 })
       .lean();
     const configured = isLabFeeScheduleConfigured(lab?.labFeeSchedule);
-    const source = resolveLabFeeScheduleSource(lab?.labFeeSchedule);
+    const source = resolveLabFeeScheduleForSettings(lab?.labFeeSchedule);
     const items = normalizeLabFeeItems(source);
     const schedule = normalizeLabFeeSchedule(source);
     const remake = normalizeLabFeeRemakeSchedule(source);
@@ -471,6 +471,7 @@ export async function getLabFeeSchedule(req, res) {
         schedule,
         remake,
         enabled,
+        active: configured,
         configured,
         updatedAt: lab?.labFeeSchedule?.updatedAt || null,
       },
@@ -515,6 +516,10 @@ export async function updateLabFeeSchedule(req, res) {
       remake: remakeFallback,
       enabled: enabledFallback,
     });
+    const active =
+      typeof req.body?.active === "boolean"
+        ? req.body.active
+        : isLabFeeScheduleConfigured(existing?.labFeeSchedule);
     const updated = await BusinessAnchor.findByIdAndUpdate(
       labAnchorId,
       {
@@ -530,12 +535,14 @@ export async function updateLabFeeSchedule(req, res) {
               ...legacy.enabled,
             },
             items,
+            active,
             updatedAt: new Date(),
           },
         },
       },
       { new: true, select: { labFeeSchedule: 1 } },
     ).lean();
+    const configured = isLabFeeScheduleConfigured(updated?.labFeeSchedule);
     return res.json({
       success: true,
       data: {
@@ -543,7 +550,8 @@ export async function updateLabFeeSchedule(req, res) {
         schedule: normalizeLabFeeSchedule(updated?.labFeeSchedule),
         remake: normalizeLabFeeRemakeSchedule(updated?.labFeeSchedule),
         enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
-        configured: isLabFeeScheduleConfigured(updated?.labFeeSchedule),
+        active: configured,
+        configured,
         updatedAt: updated?.labFeeSchedule?.updatedAt || null,
       },
     });
