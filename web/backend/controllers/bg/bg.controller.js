@@ -8,6 +8,9 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 import { Types } from "mongoose";
 import s3Utils from "../../utils/s3.utils.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -1197,6 +1200,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
       // Rhino filled STL 수신: 제조사 PreviewModal이 구독하는 메타 이벤트로도 알려
       // 열린 프리뷰가 silent forceRefresh로 cam/finishLine을 무플리커 갱신하게 한다.
+      // 준비 탭 카드는 camFile.s3Key 패치로 「라이노 작업중」 블러를 해제한다.
       if (step === "2-filled") {
         const caseInfos = normalizedUpdatedRequest?.caseInfos || {};
         emitAppEventToRoles(

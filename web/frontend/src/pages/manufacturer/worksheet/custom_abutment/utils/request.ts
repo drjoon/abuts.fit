@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 준비 탭 라이노 완료 SSOT — `caseInfos.camFile.s3Key`(2-filled). 없으면 카드 블러·클릭 차단.
 // - 2026-08-03: 준비 탭 카드 미표시 버그 수정 - `deriveStageForFilter`의 request 단계 정규화를 `준비` 단일값으로 통일.
 // - 2026-08-03: manufacturerStage request 단계 레거시 값(`의뢰`, `request`) 의존을 제거하고 `준비` 기준으로 정리.
 // related files:
@@ -6,7 +7,10 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/bg/bg.controller.js
 import type { RequestBase } from "@/types/request";
 import { getDeadlineSemanticClasses } from "@/shared/ui/semanticStatus";
 
@@ -151,6 +155,19 @@ export const resolveProductMode = (
 export const isDesignCustomAbutmentRequest = (
   req?: ManufacturerRequest | null,
 ) => resolveProductMode(req) === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT;
+
+/** Filled STL(2-filled) 존재 = 라이노 작업 완료 SSOT */
+export const hasFilledStl = (req?: ManufacturerRequest | null) =>
+  Boolean(String(req?.caseInfos?.camFile?.s3Key || "").trim());
+
+/**
+ * 제조사 생산 준비 카드: filled STL 수신 전.
+ * 디자인+생산 큐는 DesignRequestTransferView를 쓰므로 WorksheetCardGrid 준비 탭에서만 판정한다.
+ */
+export const isRhinoWorkPending = (
+  req?: ManufacturerRequest | null,
+  tabStage?: string,
+) => String(tabStage || "").trim() === "request" && !hasFilledStl(req);
 
 // change-log (getDeadlineInfo):
 // - 2026-08-10: 마감 경과 문구 "출고일 지남" → "출고시간 지남".

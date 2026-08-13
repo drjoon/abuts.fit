@@ -4,9 +4,12 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions.ts
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/bg/bg.controller.js
 import {
   useCallback,
   useEffect,
@@ -660,14 +663,47 @@ export function useWorksheetRealtimeStatus({
             }
             if (sourceStep === "2-filled") {
               delete realtimeBaseRef.current[requestId];
+              const isSuccess =
+                String(status || "").trim().toLowerCase() === "success";
+              const incomingS3Key = isSuccess
+                ? String(notification?.data?.s3Key || "").trim()
+                : "";
+              const incomingFileName = isSuccess
+                ? String(notification?.data?.fileName || "").trim()
+                : "";
+              const prevCaseInfos = ((r as any)?.caseInfos ||
+                {}) as Record<string, any>;
+              const prevCamFile = (prevCaseInfos?.camFile ||
+                (r as any)?.camFile ||
+                {}) as Record<string, any>;
+              const normalizedFilePath = incomingFileName
+                ? incomingFileName.replace(/^2-filled\//i, "")
+                : String(prevCamFile?.filePath || "").trim();
+              const nextCamFile = incomingS3Key
+                ? {
+                    ...prevCamFile,
+                    s3Key: incomingS3Key,
+                    ...(normalizedFilePath
+                      ? { filePath: normalizedFilePath }
+                      : {}),
+                  }
+                : prevCamFile;
+              const nextCaseInfos = incomingS3Key
+                ? { ...prevCaseInfos, camFile: nextCamFile }
+                : prevCaseInfos;
               return {
                 ...(r as any),
-                realtimeProgress: {
-                  badge: "Filled STL 수신",
-                  elapsedSeconds: null,
-                  startedAt: null,
-                  tone: "blue",
-                },
+                ...(incomingS3Key
+                  ? { caseInfos: nextCaseInfos, camFile: nextCamFile }
+                  : {}),
+                realtimeProgress: incomingS3Key
+                  ? null
+                  : {
+                      badge: "Filled STL 수신",
+                      elapsedSeconds: null,
+                      startedAt: null,
+                      tone: "blue",
+                    },
               } as any;
             }
             if (sourceStep === "3-nc") {

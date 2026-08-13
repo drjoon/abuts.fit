@@ -62,6 +62,10 @@ grep -R "window.location.reload\|location.reload\|navigate(0)" web/frontend/src 
 
 ### app-event 수신 주요 페이지/훅
 - `src/features/layout/DashboardLayout.tsx`
+- 제조사 준비 탭 라이노 완료: `request:stage-changed`(source=`bg-file-processed`) /
+  `request:stl-metadata-updated`(source=`bg-file-processed:2-filled`) /
+  notification `bg-file-processed`(step=`2-filled`) → `caseInfos.camFile.s3Key` 패치 후 카드 블러 해제
+  (`useWorksheetRealtimeStatus` + `WorksheetCardGrid`)
 - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
 - `src/pages/admin/AdminPaymentsPage.tsx`
 - `src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx`

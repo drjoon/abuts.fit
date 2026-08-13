@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 준비 탭 라이노 미완료 카드 블러 + 「라이노 작업중」 오버레이, 클릭 차단. 완료 SSOT=camFile.s3Key.
 // - 2026-08-12: 세척.패킹 카드 오른쪽 스크류 뱃지 위에 각인코드 3글자 뱃지 표시.
 // - 2026-08-04: 신속/묶음배송 뱃지를 하단(마감시간 옆)으로 이동. API shippingMode projection 누락 수정과 맞춤.
 // - 2026-08-04: 모든 의뢰카드에 신속배송/묶음배송 뱃지 상시 표시.
@@ -13,10 +14,13 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
 // - web/frontend/src/shared/shipping/shippingMode.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/shippingPriority.utils.js
+// - web/backend/controllers/bg/bg.controller.js
 import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +43,7 @@ import {
   stageOrder,
   isAnySampleRequest,
   isRndSampleRequest,
+  isRhinoWorkPending,
 } from "../utils/request";
 import { RequestInfoSummary } from "./RequestInfoSummary";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
@@ -265,7 +270,7 @@ export const WorksheetCardGrid = ({
           ? caseInfos.ncFile?.filePath || caseInfos.ncFile?.originalName || ""
           : formatDisplayName(camFileName || originalFileName);
 
-        const hasCamFile = !!caseInfos.camFile?.s3Key;
+        const rhinoWorkPending = isRhinoWorkPending(request, tabStage);
         const isDeletingCam = !!deletingCam[request._id];
 
         const hasNcFile = !!caseInfos.ncFile?.s3Key;
@@ -684,20 +689,28 @@ export const WorksheetCardGrid = ({
         const handleToggleSelected = (e: React.MouseEvent) => {
           e.preventDefault();
           e.stopPropagation();
+          if (rhinoWorkPending) return;
           onToggleSelected?.(request);
         };
 
         const handleOpenCardPreview = (e: React.MouseEvent) => {
           e.preventDefault();
           e.stopPropagation();
+          if (rhinoWorkPending) return;
           onOpenPreview(request);
         };
 
         return (
           <Card
             key={String(request._id || request.requestId || "")}
-            onClick={onToggleSelected ? handleToggleSelected : undefined}
-            className={`relative h-full border ${
+            onClick={
+              rhinoWorkPending
+                ? undefined
+                : onToggleSelected
+                  ? handleToggleSelected
+                  : undefined
+            }
+            className={`relative h-full border ${rhinoWorkPending ? "overflow-hidden" : ""} ${
               isSelected
                 ? "border-primary bg-primary-soft/40"
                 : isSampleRequest
@@ -721,10 +734,32 @@ export const WorksheetCardGrid = ({
               isFinishLineMinZRisky || isUnmachinableSample
                 ? "border-accent-muted ring-2 ring-accent-muted/80"
                 : ""
-            } ${onToggleSelected ? "cursor-pointer" : ""}`}
-            role={onToggleSelected ? "button" : undefined}
-            aria-pressed={onToggleSelected ? isSelected : undefined}
+            } ${onToggleSelected && !rhinoWorkPending ? "cursor-pointer" : ""}`}
+            role={onToggleSelected && !rhinoWorkPending ? "button" : undefined}
+            aria-pressed={
+              onToggleSelected && !rhinoWorkPending ? isSelected : undefined
+            }
           >
+            {rhinoWorkPending ? (
+              <div
+                className="absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-white/55 backdrop-blur-[6px] cursor-not-allowed"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                role="status"
+                aria-live="polite"
+                aria-label="라이노 작업중"
+              >
+                <span className="rounded-full border border-primary-muted bg-primary-soft/90 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
+                  라이노 작업중
+                </span>
+              </div>
+            ) : null}
             <div className="absolute left-2 top-2 z-20 flex items-center gap-1">
               {onToggleSelected ? (
                 <button
