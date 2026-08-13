@@ -26,6 +26,7 @@ type FeeSchedule = {
   inlay: number;
   pontic: number;
   customAbutmentDesign: number;
+  customAbutmentDesignAndProduction: number;
 };
 
 const LABELS: { key: keyof FeeSchedule; label: string; hint: string }[] = [
@@ -37,6 +38,11 @@ const LABELS: { key: keyof FeeSchedule; label: string; hint: string }[] = [
     key: "customAbutmentDesign",
     label: "커스텀어벗 디자인",
     hint: "디자인만. 생산비 별도",
+  },
+  {
+    key: "customAbutmentDesignAndProduction",
+    label: "커스텀어벗 디자인+생산",
+    hint: "디자인 및 생산",
   },
 ];
 
@@ -55,6 +61,7 @@ export const LabFeeScheduleTab = () => {
     inlay: 50000,
     pontic: 40000,
     customAbutmentDesign: 10000,
+    customAbutmentDesignAndProduction: 35000,
   });
 
   const load = useCallback(async () => {
@@ -84,6 +91,9 @@ export const LabFeeScheduleTab = () => {
         inlay: Number(s.inlay ?? 50000),
         pontic: Number(s.pontic ?? 40000),
         customAbutmentDesign: Number(s.customAbutmentDesign ?? 10000),
+        customAbutmentDesignAndProduction: Number(
+          s.customAbutmentDesignAndProduction ?? 35000,
+        ),
       });
     } finally {
       setLoading(false);

@@ -10,6 +10,7 @@ export const LAB_FEE_SCHEDULE_DEFAULTS = {
   inlay: 50000,
   pontic: 40000,
   customAbutmentDesign: 10000,
+  customAbutmentDesignAndProduction: 35000,
 };
 
 export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;
@@ -53,6 +54,9 @@ export function normalizeLabFeeSchedule(input) {
     inlay: pick("inlay"),
     pontic: pick("pontic"),
     customAbutmentDesign: pick("customAbutmentDesign"),
+    customAbutmentDesignAndProduction: pick(
+      "customAbutmentDesignAndProduction",
+    ),
   };
 }
 
