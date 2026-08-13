@@ -77,10 +77,14 @@ import {
 } from "@/shared/practice/transferMemo";
 import {
   applyProsthesisTypeToRow,
+  collectAdjacentBridgeLinks,
   getAdjacentTeeth,
   getProsthesisTypesForLinkState,
   isBridgeLikeProsthesisType,
   isCustomAbutmentSupportedProsthesisType,
+  isMissingToothProsthesisType,
+  NO_WORK_PROSTHESIS_TYPE,
+  NO_WORK_PROSTHESIS_TOOLTIP,
   resolveProsthesisTypeForLinkState,
   toggleAdjacentBridgeLink,
   type ToothWorkSelection,
@@ -275,7 +279,15 @@ const applyBridgeLinksInWorks = (
   return next;
 };
 
-/** 선택 치아 클릭: 크라운→인레이→어벗 디자인 / 브리지↔Pontic */
+const LINKED_PROSTHESIS_TOGGLE_CYCLE = ["브리지", "Pontic", NO_WORK_PROSTHESIS_TYPE] as const;
+
+const matchesLinkedToggleType = (current: string, type: string) => {
+  if (type === "Pontic") return /^pontic$/i.test(current);
+  if (type === NO_WORK_PROSTHESIS_TYPE) return isMissingToothProsthesisType(current);
+  return current === type;
+};
+
+/** 선택 치아 클릭: 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X */
 const toggleProsthesisPairInWorks = (
   prev: ToothWorkSelection[],
   toothNumber: string,
@@ -284,10 +296,7 @@ const toggleProsthesisPairInWorks = (
   const idx = prev.findIndex((row) => String(row.toothNumber || "").trim() === toothNumber);
   if (idx < 0) return prev;
   const row = prev[idx];
-  const adjacent = getAdjacentTeeth(row.toothNumber);
-  const links = Array.isArray(row.bridgeLinkedTeeth)
-    ? row.bridgeLinkedTeeth.filter((t) => adjacent.includes(t))
-    : [];
+  const links = collectAdjacentBridgeLinks(prev, row.toothNumber);
   const isLinked = links.length > 0;
   const options = getProsthesisTypesForLinkState(isLinked, prosthesisTypes);
   if (options.length === 0) return prev;
@@ -295,8 +304,13 @@ const toggleProsthesisPairInWorks = (
   const current = String(row.prosthesisType || "").trim();
   let nextType: string | null = null;
   if (isLinked) {
-    if (current === "브리지" && options.includes("Pontic")) nextType = "Pontic";
-    else if (/^pontic$/i.test(current) && options.includes("브리지")) nextType = "브리지";
+    const cycle = LINKED_PROSTHESIS_TOGGLE_CYCLE.filter((type) =>
+      options.some((option) => matchesLinkedToggleType(option, type)),
+    );
+    if (cycle.length > 0) {
+      const currentIdx = cycle.findIndex((type) => matchesLinkedToggleType(current, type));
+      nextType = cycle[(currentIdx >= 0 ? currentIdx + 1 : 0) % cycle.length]!;
+    }
   }
   if (!nextType) {
     const currentIdx = options.findIndex((type) => type === current);
@@ -975,13 +989,10 @@ export const PracticeTransferRequestIntakePanel = ({
     return teeth.size;
   }, [toothWorks]);
 
-  // 연결 여부 ↔ 형태(크라운/인레이/어벗 디자인 vs 브리지/Pontic) 불일치 보정 (드래프트·구버전 데이터)
+  // 연결 여부 ↔ 형태(크라운/인레이/어벗 디자인 vs 브리지/Pontic/작업X) 불일치 보정 (드래프트·구버전 데이터)
   const toothWorkLinkTypeMismatch = useMemo(() => {
     return toothWorks.some((row) => {
-      const adjacent = getAdjacentTeeth(row.toothNumber);
-      const links = Array.isArray(row.bridgeLinkedTeeth)
-        ? row.bridgeLinkedTeeth.filter((t) => adjacent.includes(t))
-        : [];
+      const links = collectAdjacentBridgeLinks(toothWorks, row.toothNumber);
       const isLinked = links.length > 0;
       const prevType = String(row.prosthesisType || "").trim();
       const prevLinks = Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [];
@@ -1004,10 +1015,7 @@ export const PracticeTransferRequestIntakePanel = ({
     setToothWorks((prev) => {
       let changed = false;
       const next = prev.map((row) => {
-        const adjacent = getAdjacentTeeth(row.toothNumber);
-        const links = Array.isArray(row.bridgeLinkedTeeth)
-          ? row.bridgeLinkedTeeth.filter((t) => adjacent.includes(t))
-          : [];
+        const links = collectAdjacentBridgeLinks(prev, row.toothNumber);
         const isLinked = links.length > 0;
         const prevType = String(row.prosthesisType || "").trim();
         const prosthesisType =
@@ -1832,11 +1840,9 @@ export const PracticeTransferRequestIntakePanel = ({
                       }
 
                       const { row, originalIndex } = configured;
-                      const adjacentTeeth = getAdjacentTeeth(row.toothNumber);
-                      const linkedTeeth = Array.isArray(row.bridgeLinkedTeeth)
-                        ? row.bridgeLinkedTeeth.filter((t) => adjacentTeeth.includes(t))
-                        : [];
+                      const linkedTeeth = collectAdjacentBridgeLinks(toothWorks, row.toothNumber);
                       const isLinked = linkedTeeth.length > 0;
+                      const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
                       const canSelectCustomAbutment = isCustomAbutmentSupportedProsthesisType(
                         row.prosthesisType,
                       );
@@ -1847,11 +1853,20 @@ export const PracticeTransferRequestIntakePanel = ({
                       const implantCompact = formatImplantCompact(row);
                       const abutmentCompact = formatAbutmentCompact(row);
                       const chartPrev = chartIdx > 0 ? decade.teeth[chartIdx - 1] : null;
+                      const prevConfigured = chartPrev ? byTooth.get(chartPrev) : undefined;
                       const linkedChartNext = Boolean(
-                        chartNext && linkedTeeth.includes(chartNext),
+                        chartNext &&
+                          (linkedTeeth.includes(chartNext) ||
+                            (nextConfigured &&
+                              Array.isArray(nextConfigured.row.bridgeLinkedTeeth) &&
+                              nextConfigured.row.bridgeLinkedTeeth.includes(toothNumber))),
                       );
                       const linkedChartPrev = Boolean(
-                        chartPrev && linkedTeeth.includes(chartPrev),
+                        chartPrev &&
+                          (linkedTeeth.includes(chartPrev) ||
+                            (prevConfigured &&
+                              Array.isArray(prevConfigured.row.bridgeLinkedTeeth) &&
+                              prevConfigured.row.bridgeLinkedTeeth.includes(toothNumber))),
                       );
 
                       const bridgeControl = showBridgeControl ? (
@@ -1944,7 +1959,11 @@ export const PracticeTransferRequestIntakePanel = ({
                             className={cn(
                               "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-1 pb-1 pt-1.5 shadow-sm",
                               TOOTH_CARD_HEIGHT_CLASS,
-                              isLinked
+                              isMissingTooth
+                                ? isLinked
+                                  ? "border-primary bg-slate-50"
+                                  : "rounded-xl border-slate-300 bg-slate-50"
+                                : isLinked
                                 ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
                                 : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40",
                               isLinked && !linkedChartPrev && !linkedChartNext && "rounded-xl",
@@ -1961,41 +1980,92 @@ export const PracticeTransferRequestIntakePanel = ({
                                 "ring-2 ring-destructive/80 opacity-80",
                             )}
                           >
+                            {isMissingTooth ? (
+                              <svg
+                                aria-hidden
+                                viewBox="0 0 100 100"
+                                preserveAspectRatio="none"
+                                className="pointer-events-none absolute inset-x-2 top-9 bottom-3 z-[5] text-slate-300/40"
+                              >
+                                <line
+                                  x1="8"
+                                  y1="8"
+                                  x2="92"
+                                  y2="92"
+                                  stroke="currentColor"
+                                  strokeWidth="10"
+                                  strokeLinecap="round"
+                                />
+                                <line
+                                  x1="92"
+                                  y1="8"
+                                  x2="8"
+                                  y2="92"
+                                  stroke="currentColor"
+                                  strokeWidth="10"
+                                  strokeLinecap="round"
+                                />
+                              </svg>
+                            ) : null}
+
                             {/* 1) 치아번호 (차트 슬롯으로만 선택 — 번호 변경 팝업 없음) */}
-                            <span className="flex h-10 shrink-0 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
+                            <span className="relative z-[1] flex h-10 shrink-0 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
                               {row.toothNumber}
                             </span>
 
-                            {/* 2) 치아형태 — 글자 클릭 시에만 크라운→인레이→어벗 디자인 / 브리지↔Pontic */}
-                            <button
-                              type="button"
-                              data-no-tooth-marquee=""
-                              className="mt-1.5 flex h-7 w-full min-w-0 cursor-pointer items-center justify-center truncate rounded-md px-0.5 text-center text-[11px] text-slate-600 hover:bg-primary-soft hover:text-primary-strong"
-                              title={
-                                isLinked
-                                  ? "클릭: 브리지 ↔ Pontic"
-                                  : "클릭: 크라운 → 인레이 → 어벗 디자인"
-                              }
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                if (suppressToothClickRef.current) return;
-                                setToothWorks((prev) =>
-                                  toggleProsthesisPairInWorks(
-                                    prev,
-                                    toothNumber,
+                            {/* 2) 치아형태 — 글자 클릭 시에만 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X */}
+                            {(() => {
+                              const typeLabel = isMissingTooth
+                                ? NO_WORK_PROSTHESIS_TYPE
+                                : row.prosthesisType ||
+                                  resolveProsthesisTypeForLinkState(
+                                    "",
+                                    isLinked,
                                     normalizedProsthesisTypes,
-                                  ),
-                                );
-                              }}
-                            >
-                              {row.prosthesisType ||
-                                resolveProsthesisTypeForLinkState(
-                                  "",
-                                  isLinked,
-                                  normalizedProsthesisTypes,
-                                )}
-                            </button>
+                                  );
+                              const typeButton = (
+                                <button
+                                  type="button"
+                                  data-no-tooth-marquee=""
+                                  className={cn(
+                                    "relative mt-1.5 flex h-7 w-full min-w-0 cursor-pointer items-center justify-center truncate rounded-md px-0.5 text-center text-[11px]",
+                                    isMissingTooth
+                                      ? "z-20 bg-transparent text-slate-500 hover:bg-transparent"
+                                      : "z-[1] text-slate-600 hover:bg-primary-soft hover:text-primary-strong",
+                                  )}
+                                  title={
+                                    isMissingTooth
+                                      ? undefined
+                                      : isLinked
+                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X"
+                                        : "클릭: 크라운 → 인레이 → 어벗 디자인"
+                                  }
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (suppressToothClickRef.current) return;
+                                    setToothWorks((prev) =>
+                                      toggleProsthesisPairInWorks(
+                                        prev,
+                                        toothNumber,
+                                        normalizedProsthesisTypes,
+                                      ),
+                                    );
+                                  }}
+                                >
+                                  {typeLabel}
+                                </button>
+                              );
+                              if (!isMissingTooth) return typeButton;
+                              return (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>{typeButton}</TooltipTrigger>
+                                  <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                                    {NO_WORK_PROSTHESIS_TOOLTIP}
+                                  </TooltipContent>
+                                </Tooltip>
+                              );
+                            })()}
 
                             {/* 3) 커스텀어벗 · 임플란트 · 스캔바디 */}
                             {canSelectCustomAbutment ? (

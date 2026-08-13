@@ -87,7 +87,7 @@
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
     - 디자인비: `creditSettings.designFee`(기본 15000, **1어벗당**)
-    - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic 제외 → `tooth` → 1)
+    - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic·작업X 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
       - `price.amount` = `(생산단가 + designFee) × qty`
       - `price.designFee` = 디자인 총액, `price.abutmentQty` = qty (재견적 단가 복원)
@@ -248,7 +248,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 기공소 기존 거래처 · 기공정산크레딧 SSOT:
   - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 발급된 초대는 검증 완료 시 `status=active`(거래처, 수수료 0%). 30일 경과 후에도 초대 발급은 계속 허용하되(`invitedAfterWindow=true`), 검증 완료 시 `status=referred`(소개)로 승격된다.
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
-  - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic/customAbutmentDesign). 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops). `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과).
+  - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic/customAbutmentDesign). 치과 납품 어벗 소매가: `creditSettings.abutmentRetailPrice`(devops). `커스텀어벗 디자인`은 기공비만(어벗 소매가 미부과). 브리지 스팬의 `작업X`는 보철이 아니므로 기공비·어벗 소매가·디자인 과금에서 제외.
   - PracticeTransfer: **전송 생성(`POST /api/practice/transfers`)** 시 치과 **유료+무료크레딧** 잔액을 검사하고, **기공소 의뢰수락(`POST .../mark-accepted`)** 시 청구 총액(기공비+어벗 소매가) 1회 차감(무료 우선) → 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`, `services/creditRevenuePolicy.service.js`)만큼 `REV_*`로 분배되고 나머지는 전액 기공소 `LAB_SETTLEMENT_CREDIT`(UI: 기공정산크레딧). 무료로 지불해도 기공소 정산 적립은 유지(프로모션 비용은 플랫폼 부담). 전송 생성 시점에는 차감하지 않는다.
     - `active`/`referred`(등록 치과): 수수료 `BusinessAnchor.payoutRates.partnerFeeRate`(기본 0%).
     - 그 외(미등록): 수수료 `BusinessAnchor.payoutRates.nonPartnerFeeRate`(기본 25%).
@@ -487,8 +487,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 채팅/전송 정책:
   - practice 채팅방 연결은 `GET /api/chats/practice/transfer-room/:transferId`만 사용합니다.
   - legacy request-room 경로(`/api/chats/practice/request-room/:requestId`)는 제거 대상이며 신규 코드에서 사용 금지합니다.
-  - 채팅 권한 SSOT: 전송 작성자·대상 기공소뿐 아니라 **동일 치과(`practiceBusinessAnchorId`) practice 구성원**도
-    transfer-room 조회와 메시지 조회/발송에 참여할 수 있습니다. 동료가 처음 열면 해당 채팅방 `participants`에 추가합니다.
+  - 채팅 권한 SSOT: 전송 작성자·대상 기공소뿐 아니라 **동일 치과(`practiceBusinessAnchorId`) 구성원**(레거시 `role=practice` 및 `role=requestor`+practice)도
+    transfer-room 조회와 메시지 조회/발송에 참여할 수 있습니다. 작성자·수락 담당자는 기존 방 `participants`에 없어도 합류합니다. 동료가 처음 열면 해당 채팅방 `participants`에 추가합니다.
 - practice 채팅/전송 첨부 다운로드 정책:
   - 다운로드 SSOT 엔드포인트: `GET /api/files/s3/download?key=...&fileName=...`
   - S3 파일은 signed-url 리다이렉트가 아니라 서버 프록시 스트리밍(`pipe`)으로 응답합니다.

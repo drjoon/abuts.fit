@@ -271,6 +271,27 @@ export type ParsedPracticeTransferMemoMeta = {
 
 export const DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS = 7;
 
+/** 브리지 스팬에서 작업하지 않는 칸. 표시·저장 SSOT */
+export const NO_WORK_PROSTHESIS_TYPE = "작업X";
+export const NO_WORK_PROSTHESIS_TOOLTIP =
+  "작업하지 않으며, 크레딧도 소비되지 않습니다.";
+
+export const isMissingToothProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    raw === NO_WORK_PROSTHESIS_TYPE ||
+    raw === "상실치" ||
+    compact.toLowerCase() === "작업x" ||
+    /^missing(?:tooth)?$/i.test(compact)
+  );
+};
+
+export const toCanonicalProsthesisType = (prosthesisType: string) =>
+  isMissingToothProsthesisType(prosthesisType)
+    ? NO_WORK_PROSTHESIS_TYPE
+    : String(prosthesisType || "").trim();
+
 export const normalizeArrivalDefaultDays = (value: number) =>
   Math.max(0, Math.floor(Number(value || 0)));
 
@@ -282,18 +303,32 @@ export const normalizeProsthesisTypes = (items: string[]) => {
       const lowered = item.toLowerCase();
       if (lowered === "pontic") return "Pontic";
       if (lowered === "브릿지") return "브리지";
+      if (
+        lowered === "작업x" ||
+        lowered === "상실치" ||
+        lowered === "missing" ||
+        lowered === "missing tooth"
+      ) {
+        return NO_WORK_PROSTHESIS_TYPE;
+      }
       const compact = item.replace(/\s+/g, "");
       if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "어벗 디자인";
+      if (/^missing(?:tooth)?$/i.test(compact)) return NO_WORK_PROSTHESIS_TYPE;
       return item;
     });
 
   const deduped = Array.from(new Set(canonical));
   if (!deduped.some((item) => /^pontic$/i.test(item))) deduped.push("Pontic");
+  if (!deduped.some((item) => isMissingToothProsthesisType(item))) {
+    deduped.push(NO_WORK_PROSTHESIS_TYPE);
+  }
   return deduped;
 };
 
 export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "브리지" || prosthesisType === "Pontic";
+  prosthesisType === "브리지" ||
+  prosthesisType === "Pontic" ||
+  isMissingToothProsthesisType(prosthesisType);
 
 export const isAbutmentDesignProsthesisType = (prosthesisType: string) => {
   const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
@@ -343,7 +378,9 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
   items
     .map((row) => {
       const toothNumber = String(row?.toothNumber || "").trim();
-      const prosthesisType = String(row?.prosthesisType || "").trim();
+      const prosthesisType = toCanonicalProsthesisType(
+        String(row?.prosthesisType || "").trim(),
+      );
       const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
         ? Boolean(row?.customAbutment)
         : false;
@@ -377,7 +414,9 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
           ? ""
           : rawTooth;
       // 형태 미선택이어도 치아번호는 동료에게 전달. 직렬화 시 기본 형태로 채운다.
-      const prosthesisType = String(row?.prosthesisType || "").trim() || (toothNumber ? "크라운" : "");
+      const prosthesisType = toCanonicalProsthesisType(
+        String(row?.prosthesisType || "").trim() || (toothNumber ? "크라운" : ""),
+      );
       const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
         ? Boolean(row?.customAbutment)
         : false;
@@ -447,7 +486,9 @@ export const parseToothWorks = (value: string) =>
         customAbutment = true;
       }
 
-      const prosthesisType = withoutLinked || (toothNumber ? "크라운" : "");
+      const prosthesisType = toCanonicalProsthesisType(
+        withoutLinked || (toothNumber ? "크라운" : ""),
+      );
       const bridgeLinkedTeeth = linkedRaw
         ? linkedRaw
             .split("-")

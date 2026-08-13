@@ -29,6 +29,9 @@ import {
 import {
   getAdjacentTeeth,
   isCustomAbutmentSupportedProsthesisType,
+  isMissingToothProsthesisType,
+  NO_WORK_PROSTHESIS_TYPE,
+  NO_WORK_PROSTHESIS_TOOLTIP,
 } from "@/shared/practice/usePracticeToothWorkEditor";
 
 const TOOTH_CHART_VISIBLE = 6;
@@ -169,26 +172,29 @@ export const PracticeToothWorkChartReadOnly = ({
             const adjacentVisible =
               Boolean(chartNext) && nextVisible === chartNext;
 
+            const nextRow = chartNext ? byTooth.get(chartNext) : undefined;
+            const prevRow = chartPrev ? byTooth.get(chartPrev) : undefined;
             const linkedTeeth = row
               ? (Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []).filter((t) =>
                   getAdjacentTeeth(row.toothNumber).includes(t),
                 )
               : [];
-            const isLinked = linkedTeeth.length > 0;
-            const bridgeLinked = Boolean(
+            const linkedChartNext = Boolean(
               chartNext &&
-                ((row && linkedTeeth.includes(chartNext)) ||
-                  (() => {
-                    const nextRow = chartNext ? byTooth.get(chartNext) : undefined;
-                    return (
-                      nextRow &&
-                      Array.isArray(nextRow.bridgeLinkedTeeth) &&
-                      nextRow.bridgeLinkedTeeth.includes(toothNumber)
-                    );
-                  })()),
+                (linkedTeeth.includes(chartNext) ||
+                  (nextRow &&
+                    Array.isArray(nextRow.bridgeLinkedTeeth) &&
+                    nextRow.bridgeLinkedTeeth.includes(toothNumber))),
             );
-            const linkedChartNext = Boolean(chartNext && linkedTeeth.includes(chartNext));
-            const linkedChartPrev = Boolean(chartPrev && linkedTeeth.includes(chartPrev));
+            const linkedChartPrev = Boolean(
+              chartPrev &&
+                (linkedTeeth.includes(chartPrev) ||
+                  (prevRow &&
+                    Array.isArray(prevRow.bridgeLinkedTeeth) &&
+                    prevRow.bridgeLinkedTeeth.includes(toothNumber))),
+            );
+            const isLinked = linkedTeeth.length > 0 || linkedChartPrev || linkedChartNext;
+            const bridgeLinked = linkedChartNext;
             // Read-only: no + control — only show connector when actually bridged.
             const showBridgeConnector = adjacentVisible && bridgeLinked;
 
@@ -231,7 +237,9 @@ export const PracticeToothWorkChartReadOnly = ({
               );
             }
 
+            const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
             const canShowCustom =
+              !isMissingTooth &&
               isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
               Boolean(row.customAbutment);
             const implantSummary = formatImplantSummary(row);
@@ -259,7 +267,11 @@ export const PracticeToothWorkChartReadOnly = ({
                     className={cn(
                       "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-1 pb-1 pt-1.5 shadow-sm",
                       TOOTH_CARD_HEIGHT_CLASS,
-                      isLinked
+                      isMissingTooth
+                        ? isLinked
+                          ? "border-primary bg-slate-50"
+                          : "rounded-xl border-slate-300 bg-slate-50"
+                        : isLinked
                         ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
                         : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40",
                       isLinked && !linkedChartPrev && !linkedChartNext && "rounded-xl",
@@ -270,13 +282,62 @@ export const PracticeToothWorkChartReadOnly = ({
                       linkedChartNext && "border-r-0",
                     )}
                   >
-                    <span className="flex h-10 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
+                    {isMissingTooth ? (
+                      <svg
+                        aria-hidden
+                        viewBox="0 0 100 100"
+                        preserveAspectRatio="none"
+                        className="pointer-events-none absolute inset-x-2 top-9 bottom-3 z-[5] text-slate-300/40"
+                      >
+                        <line
+                          x1="8"
+                          y1="8"
+                          x2="92"
+                          y2="92"
+                          stroke="currentColor"
+                          strokeWidth="10"
+                          strokeLinecap="round"
+                        />
+                        <line
+                          x1="92"
+                          y1="8"
+                          x2="8"
+                          y2="92"
+                          stroke="currentColor"
+                          strokeWidth="10"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    ) : null}
+
+                    <span className="relative z-[1] flex h-10 items-center text-xl font-bold tabular-nums tracking-tight text-slate-800">
                       {row.toothNumber}
                     </span>
 
-                    <div className="mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-primary-muted/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600">
-                      <span className="block w-full truncate px-0.5">{row.prosthesisType || "-"}</span>
-                    </div>
+                    {isMissingTooth ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="relative z-20 mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md bg-transparent px-0.5 text-center text-[11px] text-slate-500"
+                          >
+                            <span className="block w-full truncate px-0.5">
+                              {NO_WORK_PROSTHESIS_TYPE}
+                            </span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                          {NO_WORK_PROSTHESIS_TOOLTIP}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <div
+                        className="relative z-[1] mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-primary-muted/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600"
+                      >
+                        <span className="block w-full truncate px-0.5">
+                          {row.prosthesisType || "-"}
+                        </span>
+                      </div>
+                    )}
 
                     {canShowCustom ? (
                       <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">

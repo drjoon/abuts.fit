@@ -2,6 +2,7 @@
 // - 2026-08-09: 디자인+생산 신속비도 커스텀어벗 수만큼 배수.
 // - 2026-08-09: 과금 어벗= customAbutment(임플란트) 치아만. Pontic 등 제외.
 // - 2026-08-09: Pontic은 커스텀어벗 디자인·생산 대상이 아니므로 과금 어벗 수에서 제외.
+// - 2026-08-13: 작업X(상실치)도 보철이 아니므로 과금 어벗 수에서 제외.
 // related files:
 // - web/backend/controllers/requests/expressPrice.utils.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
@@ -19,6 +20,18 @@ export function isPonticProsthesisType(prosthesisType) {
   return /^pontic$/i.test(String(prosthesisType || "").trim());
 }
 
+/** 작업X(상실치): 보철 아님 → 기공비·디자인·생산 과금 제외 */
+export function isMissingToothProsthesisType(prosthesisType) {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    raw === "작업X" ||
+    raw === "상실치" ||
+    compact.toLowerCase() === "작업x" ||
+    /^missing(?:tooth)?$/i.test(compact)
+  );
+}
+
 function hasImplantSpec(row) {
   return Boolean(
     String(row?.implantManufacturer || "").trim() ||
@@ -31,13 +44,14 @@ function hasImplantSpec(row) {
 /**
  * 디자인+생산에서 실제로 디자인·생산하는 커스텀어벗 치아.
  * - customAbutment === true, 또는 임플란트 스펙이 채워진 행
- * - Pontic 제외
+ * - Pontic·작업X 제외
  */
 export function isBillableDesignAbutmentRow(row) {
   const toothNumber = String(row?.toothNumber || "").trim();
   const prosthesisType = String(row?.prosthesisType || "").trim();
   if (!/^[1-4][1-8]$/.test(toothNumber) || !prosthesisType) return false;
   if (isPonticProsthesisType(prosthesisType)) return false;
+  if (isMissingToothProsthesisType(prosthesisType)) return false;
   if (row?.customAbutment === true) return true;
   return hasImplantSpec(row);
 }
@@ -60,7 +74,7 @@ export function listDesignAbutmentToothNumbers(caseInfos) {
 /**
  * 디자인+생산 어벗 수 SSOT.
  * - productMode !== design_custom_abutment → 0
- * - toothWorks 중 커스텀어벗(임플란트) 치아만. Pontic·단순 보철 제외
+ * - toothWorks 중 커스텀어벗(임플란트) 치아만. Pontic·작업X·단순 보철 제외
  * - 유효 toothWorks가 있는데 과금 행이 없으면 0
  * - toothWorks 유효 행이 없으면 tooth 문자열 파싱, 최소 1
  */

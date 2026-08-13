@@ -252,6 +252,17 @@ const isDesignCustomAbutmentItem = (item: RecentRequestCardItem | null) => {
 const isPonticProsthesisType = (prosthesisType: unknown) =>
   /^pontic$/i.test(String(prosthesisType || "").trim());
 
+const isMissingToothProsthesisType = (prosthesisType: unknown) => {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    raw === "작업X" ||
+    raw === "상실치" ||
+    compact.toLowerCase() === "작업x" ||
+    /^missing(?:tooth)?$/i.test(compact)
+  );
+};
+
 const isBillableDesignAbutmentRow = (row: {
   toothNumber?: string | null;
   prosthesisType?: string | null;
@@ -265,6 +276,7 @@ const isBillableDesignAbutmentRow = (row: {
   const prosthesisType = String(row?.prosthesisType || "").trim();
   if (!/^[1-4][1-8]$/.test(toothNumber) || !prosthesisType) return false;
   if (isPonticProsthesisType(prosthesisType)) return false;
+  if (isMissingToothProsthesisType(prosthesisType)) return false;
   if (row?.customAbutment === true) return true;
   return Boolean(
     String(row?.implantManufacturer || "").trim() ||

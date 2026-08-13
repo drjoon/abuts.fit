@@ -336,7 +336,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이", "어벗 디자인"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "작업X", "인레이", "어벗 디자인"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
 
@@ -381,12 +381,21 @@ const normalizeProsthesisTypes = (items: string[]) => {
         .filter(Boolean)
         .map((item) => {
           if (/^pontic$/i.test(item)) return ["pontic", "Pontic"] as const;
+          if (
+            item === "작업X" ||
+            item === "상실치" ||
+            /^작업x$/i.test(item) ||
+            /^missing(?:\s*tooth)?$/i.test(item)
+          ) {
+            return ["작업x", "작업X"] as const;
+          }
           return [item.toLowerCase(), item] as const;
         }),
     ).values(),
   );
 
   if (!deduped.some((item) => /^pontic$/i.test(item))) deduped.push("Pontic");
+  if (!deduped.some((item) => item === "작업X" || item === "상실치")) deduped.push("작업X");
   return deduped;
 };
 
@@ -421,8 +430,21 @@ const toToothSortNumber = (toothNumber: string) => {
   return Number(raw);
 };
 
+const isMissingToothProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    raw === "작업X" ||
+    raw === "상실치" ||
+    compact.toLowerCase() === "작업x" ||
+    /^missing(?:tooth)?$/i.test(compact)
+  );
+};
+
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "브리지" || prosthesisType === "Pontic";
+  prosthesisType === "브리지" ||
+  prosthesisType === "Pontic" ||
+  isMissingToothProsthesisType(prosthesisType);
 
 const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
   const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
@@ -437,7 +459,10 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
   items
     .map((row) => {
       const toothNumber = String(row?.toothNumber || "").trim();
-      const prosthesisType = String(row?.prosthesisType || "").trim();
+      const prosthesisTypeRaw = String(row?.prosthesisType || "").trim();
+      const prosthesisType = isMissingToothProsthesisType(prosthesisTypeRaw)
+        ? "작업X"
+        : prosthesisTypeRaw;
       const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
         ? Boolean(row?.customAbutment)
         : false;

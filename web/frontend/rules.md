@@ -116,7 +116,7 @@ Notes:
   - `src/shared/practice/practiceTransferAccept.ts`
   - `src/shared/files/extractDroppedFiles.ts`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
-    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운→인레이→어벗 디자인 / 브리지↔Pontic. 어벗 디자인은 커스텀 체크박스(임플란트·스캔바디) 지원. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
+    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 어벗 디자인은 커스텀 체크박스(임플란트·스캔바디) 지원. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
   - `src/shared/practice/toothWorkDraft.ts`
   - `src/shared/components/PracticeTransferDetailChatDialog.tsx`
@@ -188,7 +188,7 @@ Notes:
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
-    - 디자인비는 `creditSettings.designFee`(기본 15,000원 / 1어벗). 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic 제외).
+    - 디자인비는 `creditSettings.designFee`(기본 15,000원 / 1어벗). 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
@@ -603,7 +603,7 @@ Notes:
 - practice 채팅 라우팅 SSOT:
   - practice 화면과 requestor 수신 화면은 모두 `transferId` 기반 채팅(`/api/chats/practice/transfer-room/:transferId`)만 사용합니다.
   - legacy request 기반 practice 채팅 경로(`/api/chats/practice/request-room/:requestId`)는 사용 금지합니다.
-  - 동일 치과 practice 구성원은 동료가 보낸 전송 채팅에도 참여할 수 있습니다(백엔드 participants 자동 추가).
+  - 동일 치과 구성원(레거시 practice 및 requestor+practice)은 동료가 보낸 전송 채팅에도 참여할 수 있습니다(백엔드 participants 자동 추가). 수락 후 기존 방이 있어도 작성자·수락 기공소는 403 없이 합류합니다.
   - 지정 기공소(`targetLabAnchorId`) requestor 구성원도 primaryContact 해석 실패 시 본인으로 lab 참여자를 잡아 치과(`practiceUserId`)와 연결합니다.
   - 자동매칭 공개 풀: 치과는 「기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다.」, 기공소는 「의뢰수락 후…」 안내. 수락 시 서버가 채팅방을 만들고 치과 모달은 실시간으로 재연결.
   - 의뢰 상세·채팅 모달(`PracticeTransferDetailChatDialog`) 가로폭: `max-w-[90rem]` (`w-[95vw]`).

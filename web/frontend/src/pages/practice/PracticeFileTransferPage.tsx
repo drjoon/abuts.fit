@@ -351,7 +351,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이", "어벗 디자인"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "작업X", "인레이", "어벗 디자인"] as const;
 const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 
 type ToothWorkSelection = SharedToothWorkSelection;
@@ -448,8 +448,21 @@ const normalizeArrivalDefaultDays = (value: number) => {
   return Math.max(0, Math.min(365, Math.floor(Number(value))));
 };
 
+const isMissingToothProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    raw === "작업X" ||
+    raw === "상실치" ||
+    compact.toLowerCase() === "작업x" ||
+    /^missing(?:tooth)?$/i.test(compact)
+  );
+};
+
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "브리지" || prosthesisType === "Pontic";
+  prosthesisType === "브리지" ||
+  prosthesisType === "Pontic" ||
+  isMissingToothProsthesisType(prosthesisType);
 
 const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
   const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
@@ -478,6 +491,14 @@ const normalizeProsthesisTypes = (items: string[]) => {
     .filter(Boolean)
     .map((item) => {
       if (/^pontic$/i.test(item)) return "Pontic";
+      if (
+        item === "작업X" ||
+        item === "상실치" ||
+        /^작업x$/i.test(item) ||
+        /^missing(?:\s*tooth)?$/i.test(item)
+      ) {
+        return "작업X";
+      }
       return item;
     });
 
@@ -487,6 +508,7 @@ const normalizeProsthesisTypes = (items: string[]) => {
 
   const withPontic = [...deduped];
   if (!withPontic.some((item) => /^pontic$/i.test(item))) withPontic.push("Pontic");
+  if (!withPontic.some((item) => item === "작업X" || item === "상실치")) withPontic.push("작업X");
   return withPontic.length ? withPontic : [...PRESET_PROSTHESIS_TYPES];
 };
 
@@ -546,7 +568,10 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
   items
     .map((row) => {
       const toothNumber = String(row?.toothNumber || "").trim();
-      const prosthesisType = String(row?.prosthesisType || "").trim();
+      const prosthesisTypeRaw = String(row?.prosthesisType || "").trim();
+      const prosthesisType = isMissingToothProsthesisType(prosthesisTypeRaw)
+        ? "작업X"
+        : prosthesisTypeRaw;
       const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
         ? Boolean(row?.customAbutment)
         : false;
@@ -4578,8 +4603,8 @@ export const PracticeFileTransferPage = ({
     );
     if (hasBridgeLikeWithoutLinkedTooth) {
       toast({
-        title: "브리지/Pontic 연결 치아를 선택해주세요",
-        description: "브리지 또는 Pontic 형태는 인접 치아를 최소 1개 연결해야 합니다.",
+        title: "브리지/Pontic/작업X 연결 치아를 선택해주세요",
+        description: "브리지, Pontic, 작업X 형태는 인접 치아를 최소 1개 연결해야 합니다.",
         variant: "destructive",
       });
       return;

@@ -8,9 +8,20 @@ import { useMemo } from "react";
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
   emptyToothWorkCustomSpecs,
+  isBridgeLikeProsthesisType,
+  isMissingToothProsthesisType,
+  NO_WORK_PROSTHESIS_TYPE,
+  NO_WORK_PROSTHESIS_TOOLTIP,
   toToothMemoSortNumber,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
+
+export {
+  isBridgeLikeProsthesisType,
+  isMissingToothProsthesisType,
+  NO_WORK_PROSTHESIS_TYPE,
+  NO_WORK_PROSTHESIS_TOOLTIP,
+};
 
 /** 단독 치아 형태 토글 라벨(크라운↔인레이↔어벗 디자인) */
 export const ABUTMENT_DESIGN_PROSTHESIS_TYPE = "어벗 디자인";
@@ -20,10 +31,7 @@ export const STANDALONE_PROSTHESIS_TYPES = [
   "인레이",
   ABUTMENT_DESIGN_PROSTHESIS_TYPE,
 ] as const;
-export const LINKED_PROSTHESIS_TYPES = ["브리지", "Pontic"] as const;
-
-export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "브리지" || prosthesisType === "Pontic";
+export const LINKED_PROSTHESIS_TYPES = ["브리지", "Pontic", NO_WORK_PROSTHESIS_TYPE] as const;
 
 export const isAbutmentDesignProsthesisType = (prosthesisType: string) => {
   const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
@@ -90,16 +98,45 @@ export const splitAdjacentTeethAboveBelow = (toothNumber: string) => {
   };
 };
 
+/** 본인 연결 + 인접 치아가 이쪽을 가리키는 연결을 합친다(한쪽만 있어도 브리지로 본다). */
+export const collectAdjacentBridgeLinks = (
+  rows: ToothWorkSelection[],
+  toothNumber: string,
+): string[] => {
+  const tooth = String(toothNumber || "").trim();
+  const adjacent = new Set(getAdjacentTeeth(tooth));
+  const links = new Set<string>();
+  const self = rows.find((row) => String(row.toothNumber || "").trim() === tooth);
+  for (const linked of Array.isArray(self?.bridgeLinkedTeeth) ? self.bridgeLinkedTeeth : []) {
+    const other = String(linked || "").trim();
+    if (adjacent.has(other)) links.add(other);
+  }
+  for (const row of rows) {
+    const other = String(row.toothNumber || "").trim();
+    if (!other || other === tooth || !adjacent.has(other)) continue;
+    const otherLinks = Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [];
+    if (otherLinks.some((value) => String(value || "").trim() === tooth)) links.add(other);
+  }
+  return [...links];
+};
+
 export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: string[]) => {
   const allowed = new Set<string>(
     isLinked ? LINKED_PROSTHESIS_TYPES : STANDALONE_PROSTHESIS_TYPES,
   );
-  return catalog.filter((type) => {
+  const next = catalog.filter((type) => {
     if (allowed.has(type)) return true;
     if (!isLinked && isAbutmentDesignProsthesisType(type)) return true;
     if (isLinked && /^pontic$/i.test(type)) return true;
+    if (isLinked && isMissingToothProsthesisType(type)) return true;
     return false;
   });
+  if (isLinked && !next.some((type) => type === "브리지")) next.unshift("브리지");
+  if (isLinked && !next.some((type) => /^pontic$/i.test(type))) next.push("Pontic");
+  if (isLinked && !next.some((type) => isMissingToothProsthesisType(type))) {
+    next.push(NO_WORK_PROSTHESIS_TYPE);
+  }
+  return next;
 };
 
 export const resolveProsthesisTypeForLinkState = (
@@ -110,6 +147,14 @@ export const resolveProsthesisTypeForLinkState = (
   const options = getProsthesisTypesForLinkState(isLinked, catalog);
   const current = String(currentType || "").trim();
   if (current && options.some((type) => type === current)) return current;
+  if (isLinked && isMissingToothProsthesisType(current)) {
+    return (
+      options.find((type) => isMissingToothProsthesisType(type)) || NO_WORK_PROSTHESIS_TYPE
+    );
+  }
+  if (isLinked && /^pontic$/i.test(current)) {
+    return options.find((type) => /^pontic$/i.test(type)) || "Pontic";
+  }
   if (isLinked) {
     return options.find((type) => type === "브리지") || options[0] || "브리지";
   }
@@ -125,7 +170,7 @@ export const applyProsthesisTypeToRow = (
   prosthesisType,
 });
 
-/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic vs 크라운/인레이/어벗 디자인) 동기화 */
+/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic/작업X vs 크라운/인레이/어벗 디자인) 동기화 */
 export const toggleAdjacentBridgeLink = (
   rows: ToothWorkSelection[],
   originalIndex: number,

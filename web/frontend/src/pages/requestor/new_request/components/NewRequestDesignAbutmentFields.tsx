@@ -36,7 +36,7 @@ import { cn } from "@/shared/ui/cn";
 import { useAuthStore } from "@/store/useAuthStore";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이", "어벗 디자인"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "작업X", "인레이", "어벗 디자인"] as const;
 
 const ensurePresetProsthesisTypes = (items: string[] | null | undefined) => {
   const normalized = normalizeProsthesisTypes([

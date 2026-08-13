@@ -29,10 +29,22 @@ export const LAB_FEE_SCHEDULE_ENABLED_DEFAULTS = Object.fromEntries(
 
 export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;
 
-/** 보철 형태 → labFeeSchedule 키 */
+export function isMissingToothProsthesisType(prosthesisType) {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    raw === "작업X" ||
+    raw === "상실치" ||
+    compact.toLowerCase() === "작업x" ||
+    /^missing(?:tooth)?$/i.test(compact)
+  );
+}
+
+/** 보철 형태 → labFeeSchedule 키. 작업X(상실치)는 과금 대상이 아니므로 null */
 export function resolveLabFeeKeyFromProsthesisType(prosthesisType) {
   const raw = String(prosthesisType || "").trim();
   if (!raw) return "crown";
+  if (isMissingToothProsthesisType(raw)) return null;
   // 디자인만 — 크라운/브리지 포함 문자열보다 먼저
   if (
     /어벗\s*디자인/i.test(raw) ||
@@ -122,8 +134,11 @@ export function computePracticeTransferRetailFees({
       row?.prosthesisType || row?.type || "",
     ).trim();
     if (!prosthesisType) continue;
+    // 작업X(상실치): 보철 아님 → 기공비·어벗 소매가 모두 제외
+    if (isMissingToothProsthesisType(prosthesisType)) continue;
     // Pontic은 기공비만 (어벗 없음)
     const feeKey = resolveLabFeeKeyFromProsthesisType(prosthesisType);
+    if (!feeKey) continue;
     const labFee = Math.max(0, Math.round(Number(schedule[feeKey] || 0)));
     // 어벗 디자인: 기공비만. customAbutment 스펙 체크와 무관하게 소매가 미부과
     const isDesignOnly = feeKey === "customAbutmentDesign";
