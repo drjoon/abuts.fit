@@ -31,6 +31,7 @@
 // - 2026-08-11: 다운로드→의뢰수락 뱃지/상태. 수락 API 과금. 파일 다운로드는 상태 미전이.
 // - 2026-08-11: 의뢰수락 후 치과 transfer-room 재연결. 모달 폭·lab peer 채팅 연결.
 // - 2026-08-11: 수락 카드에 작업완료/작업취소 버튼. mark-release API.
+// - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·추적관리(작업취소는 취소 집계).
 // - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
 // - 2026-08-12: 수락 카드 — 별도 결과파일 드롭존 제거·카드 점선 외곽·작업완료 왼쪽 드롭 아이콘.
 import {
@@ -416,7 +417,7 @@ function RequestorPracticeReceivePage({
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "발송완료" | "의뢰수락" | "작업완료" | "포장.발송" | "추적관리"
+    "all" | "발송완료" | "의뢰수락" | "작업완료" | "취소" | "포장.발송" | "추적관리"
   >("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -990,18 +991,14 @@ function RequestorPracticeReceivePage({
         if (status === "작업완료") acc.completed += 1;
         else if (status === "생산진행") acc.shipping += 1;
         else if (status === "의뢰수락") acc.accepted += 1;
-        // 수신완료·작업취소(취소 뱃지)는 UI에서 의뢰에 합산
-        else if (
-          status === "발송완료" ||
-          status === "수신완료" ||
-          status === "취소"
-        ) {
+        else if (status === "취소") acc.canceled += 1;
+        else if (status === "발송완료" || status === "수신완료") {
           acc.sent += 1;
         }
         // 자동매칭·기타는 집계 제외
         return acc;
       },
-      { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0 },
+      { sent: 0, accepted: 0, completed: 0, canceled: 0, shipping: 0, tracking: 0 },
     );
     return counts;
   }, [baseFilteredTransfers]);
@@ -1011,11 +1008,7 @@ function RequestorPracticeReceivePage({
     return baseFilteredTransfers.filter((transfer) => {
       const status = getTransferDisplayStatus(transfer);
       if (statusFilter === "발송완료") {
-        return (
-          status === "발송완료" ||
-          status === "수신완료" ||
-          status === "취소"
-        );
+        return status === "발송완료" || status === "수신완료";
       }
       if (statusFilter === "포장.발송") {
         return status === "생산진행";
@@ -2048,6 +2041,25 @@ function RequestorPracticeReceivePage({
             )}
           >
             완료 {statusCounts.completed}건
+          </Badge>
+        </button>
+
+        <button
+          type="button"
+          className="rounded-full"
+          onClick={() => setStatusFilter((prev) => (prev === "취소" ? "all" : "취소"))}
+          aria-pressed={statusFilter === "취소"}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === "취소"
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            취소 {statusCounts.canceled}건
           </Badge>
         </button>
 

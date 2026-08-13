@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 수신 스켈레톤 상태 뱃지 5→6(취소 추가).
 // - 2026-08-13: 수신 스켈레톤 — 치과초대 제거·작업영역 카드 전체 높이.
 // - 2026-08-11: 기공의뢰(발신)·기공의뢰수신 레이아웃에 맞춘 페이지 스켈레톤 신설.
 // related files:
@@ -92,7 +93,7 @@ const ReceiveSkeleton = () => (
             <Skeleton className="h-9 w-full md:max-w-md rounded-xl" />
           </div>
           <div className="flex flex-wrap gap-2">
-            {repeat(5).map((key) => (
+            {repeat(6).map((key) => (
               <Skeleton key={`badge-${key}`} className="h-6 w-20 rounded-full" />
             ))}
           </div>
