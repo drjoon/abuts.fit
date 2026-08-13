@@ -6,6 +6,7 @@
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
 // - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
 // - 2026-08-13: 기공비 GET은 미저장이면 0원·전부 off + configured=false.
+// - 2026-08-14: 기공비 저장 시 quote-context 캐시 무효화.
 import { Types } from "mongoose";
 import LabTradingPartner from "../../models/labTradingPartner.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -32,6 +33,7 @@ import {
   DEFAULT_PARTNER_FEE_RATE,
   DEFAULT_NON_PARTNER_FEE_RATE,
 } from "../../services/creditRevenuePolicy.service.js";
+import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
 
 /** 기공소 설정 화면 표시용 플랫폼 수수료율 조회 (개발운영사 설정 SSOT: BusinessAnchor.payoutRates) */
 async function resolvePlatformFeeRatesForDisplay() {
@@ -543,6 +545,7 @@ export async function updateLabFeeSchedule(req, res) {
       { new: true, select: { labFeeSchedule: 1 } },
     ).lean();
     const configured = isLabFeeScheduleConfigured(updated?.labFeeSchedule);
+    invalidatePracticeTransferQuoteCaches(labAnchorId);
     return res.json({
       success: true,
       data: {

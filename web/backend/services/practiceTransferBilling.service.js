@@ -10,6 +10,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-14: 목록 견적 조회(devops/단가/기공소/거래처) parallel + 60s 캐시.
+// - 2026-08-14: quote-context — 기공소/티어/단가/거래처/수수료율 parallel + 60s 캐시(5회 직렬 RTT 제거).
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -46,6 +47,7 @@ import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js"
 import { isAutoMatchOpenPool } from "../utils/practiceTransferAutoMatch.js";
 import {
   getRequestPerfCacheValue,
+  invalidateRequestPerfCacheByPrefix,
   setRequestPerfCacheValue,
   withRequestPerfInFlight,
 } from "./requestDashboardCache.service.js";
@@ -140,12 +142,26 @@ async function resolvePracticeAbutmentPricingTier(
 ) {
   const id = String(practiceAnchorId || "").trim();
   if (!id || !Types.ObjectId.isValid(id)) return "regular";
-  const practice = await BusinessAnchor.findById(id)
-    .select({ practiceMembershipActive: 1 })
-    .session(session || null)
-    .lean();
-  return resolveAbutsAbutmentPricingTier({
-    practiceMembershipActive: Boolean(practice?.practiceMembershipActive),
+
+  const load = async () => {
+    const practice = await BusinessAnchor.findById(id)
+      .select({ practiceMembershipActive: 1 })
+      .session(session || null)
+      .lean();
+    return resolveAbutsAbutmentPricingTier({
+      practiceMembershipActive: Boolean(practice?.practiceMembershipActive),
+    });
+  };
+
+  if (session) return load();
+
+  const cacheKey = `practice-transfer:abutment-tier:${id}`;
+  const cached = getRequestPerfCacheValue(cacheKey);
+  if (cached === "regular" || cached === "membership") return cached;
+  return withRequestPerfInFlight(cacheKey, async () => {
+    const tier = await load();
+    setRequestPerfCacheValue(cacheKey, tier, QUOTE_LOOKUP_CACHE_TTL_MS);
+    return tier;
   });
 }
 
@@ -808,6 +824,18 @@ export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } =
   });
 }
 
+/** 기공비 저장 시 quote-context 캐시 무효화. */
+export function invalidatePracticeTransferQuoteCaches(labAnchorId = null) {
+  const labId = String(labAnchorId || "").trim();
+  if (labId) {
+    invalidateRequestPerfCacheByPrefix(
+      `practice-transfer:quote-context:${labId}:`,
+    );
+    return;
+  }
+  invalidateRequestPerfCacheByPrefix("practice-transfer:quote-context:");
+}
+
 /**
  * 기공의뢰 견적(치과 크레딧 소비액 + 기공소 수령액).
  * labAnchorId 없으면 기본수가 없음(0원).
@@ -817,7 +845,7 @@ export async function buildPracticeTransferQuote({
   labAnchorId = null,
   toothWorks,
   labFeeSchedule = undefined,
-  abutmentRetailPrice = undefined,
+  abutmentRetailPrice: _abutmentRetailPrice = undefined,
   payoutRates = undefined,
   relationshipKind = undefined,
   labTradingPartnerId = undefined,
@@ -827,15 +855,25 @@ export async function buildPracticeTransferQuote({
   const labId = String(labAnchorId || "").trim();
   const usedDefaultSchedule = !labId;
   const loadedFromDb = schedule == null;
+  const needLab = loadedFromDb && labId && Types.ObjectId.isValid(labId);
+  const needPartner = relationshipKind == null;
+  const needRates = payoutRates == null;
+
+  const [lab, abutmentPricingTier, abutmentPrices, partner, cachedRates] =
+    await Promise.all([
+      needLab
+        ? BusinessAnchor.findById(labId).select({ labFeeSchedule: 1 }).lean()
+        : Promise.resolve(null),
+      resolvePracticeAbutmentPricingTier(practiceAnchorId),
+      loadCachedAbutmentCreditPrices(),
+      needPartner
+        ? findLabPracticeRelationship({ labAnchorId, practiceAnchorId })
+        : Promise.resolve(null),
+      needRates ? loadCachedDevopsPayoutRates() : Promise.resolve(payoutRates),
+    ]);
+
   if (schedule == null) {
-    if (labId && Types.ObjectId.isValid(labId)) {
-      const lab = await BusinessAnchor.findById(labId)
-        .select({ labFeeSchedule: 1 })
-        .lean();
-      schedule = lab?.labFeeSchedule || null;
-    } else {
-      schedule = null;
-    }
+    schedule = lab?.labFeeSchedule || null;
   }
 
   const labFeeConfigured = usedDefaultSchedule
@@ -849,9 +887,6 @@ export async function buildPracticeTransferQuote({
   }
 
   const useRemake = Boolean(remake);
-  const abutmentPricingTier =
-    await resolvePracticeAbutmentPricingTier(practiceAnchorId);
-  const abutmentPrices = await loadAbutmentCreditPrices();
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     labFeeSchedule: schedule,
@@ -865,22 +900,11 @@ export async function buildPracticeTransferQuote({
   let partnerId =
     labTradingPartnerId != null ? labTradingPartnerId : null;
   if (kind == null) {
-    const partner = await findLabPracticeRelationship({
-      labAnchorId,
-      practiceAnchorId,
-    });
     kind = relationshipKindFromPartner(partner);
     partnerId = partner?._id ? String(partner._id) : null;
   }
 
-  let rates = payoutRates;
-  if (rates == null) {
-    const devops = await BusinessAnchor.findOne({ businessType: "devops" })
-      .select({ payoutRates: 1 })
-      .sort({ createdAt: 1 })
-      .lean();
-    rates = devops?.payoutRates;
-  }
+  const rates = cachedRates;
 
   const feeRateApplied = resolvePracticeTransferFeeRate({
     relationshipKind: kind,
@@ -936,22 +960,30 @@ export async function loadPracticeTransferQuoteContext({
   labAnchorId = null,
   practiceAnchorId = null,
 }) {
-  const quote = await buildPracticeTransferQuote({
-    labAnchorId,
-    practiceAnchorId,
-    toothWorks: [],
+  const cacheKey = `practice-transfer:quote-context:${String(labAnchorId || "none")}:${String(practiceAnchorId || "none")}`;
+  const cached = getRequestPerfCacheValue(cacheKey);
+  if (cached && typeof cached === "object") return cached;
+
+  return withRequestPerfInFlight(cacheKey, async () => {
+    const quote = await buildPracticeTransferQuote({
+      labAnchorId,
+      practiceAnchorId,
+      toothWorks: [],
+    });
+    const context = {
+      schedule: quote.schedule,
+      remakeSchedule: quote.remakeSchedule || LAB_FEE_SCHEDULE_ZEROS,
+      items: quote.items || normalizeLabFeeItems(quote.schedule),
+      abutmentRetailPrice: quote.abutmentRetailPrice,
+      abutmentPricingTier: quote.abutmentPricingTier || "regular",
+      relationshipKind: quote.relationshipKind,
+      feeRateApplied: quote.feeRateApplied,
+      usedDefaultSchedule: quote.usedDefaultSchedule,
+      labFeeConfigured: quote.labFeeConfigured !== false,
+    };
+    setRequestPerfCacheValue(cacheKey, context, QUOTE_LOOKUP_CACHE_TTL_MS);
+    return context;
   });
-  return {
-    schedule: quote.schedule,
-    remakeSchedule: quote.remakeSchedule || LAB_FEE_SCHEDULE_ZEROS,
-    items: quote.items || normalizeLabFeeItems(quote.schedule),
-    abutmentRetailPrice: quote.abutmentRetailPrice,
-    abutmentPricingTier: quote.abutmentPricingTier || "regular",
-    relationshipKind: quote.relationshipKind,
-    feeRateApplied: quote.feeRateApplied,
-    usedDefaultSchedule: quote.usedDefaultSchedule,
-    labFeeConfigured: quote.labFeeConfigured !== false,
-  };
 }
 
 function billingLooksStored(billing) {

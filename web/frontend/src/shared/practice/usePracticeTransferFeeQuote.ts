@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
+// - 2026-08-14: quote-context 인 inflight 합류 — intake/치아차트 중복 GET 방지.
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import {
@@ -16,8 +17,43 @@ import { useAuthStore } from "@/store/useAuthStore";
 
 const AUTO_MATCH_LAB_ID = "__auto_match__";
 const contextCache = new Map<string, PracticeTransferQuoteContext>();
+const contextInflight = new Map<string, Promise<PracticeTransferQuoteContext>>();
 
 const cacheKeyForLab = (labAnchorId: string | null) => labAnchorId || "__default__";
+
+const loadQuoteContext = (
+  cacheKey: string,
+  labAnchorId: string | null,
+  token: string,
+): Promise<PracticeTransferQuoteContext> => {
+  const cached = contextCache.get(cacheKey);
+  if (cached) return Promise.resolve(cached);
+  const pending = contextInflight.get(cacheKey);
+  if (pending) return pending;
+
+  const query = labAnchorId
+    ? `?labAnchorId=${encodeURIComponent(labAnchorId)}`
+    : "";
+  const request = apiFetch<{ data?: unknown }>({
+    path: `/api/practice/transfers/quote-context${query}`,
+    method: "GET",
+    token,
+  })
+    .then((res) => {
+      const body = res.ok && res.data && typeof res.data === "object" ? res.data : null;
+      const parsed = parsePracticeTransferQuoteContext(
+        body && "data" in body ? (body as { data?: unknown }).data : body,
+      );
+      contextCache.set(cacheKey, parsed);
+      return parsed;
+    })
+    .finally(() => {
+      contextInflight.delete(cacheKey);
+    });
+
+  contextInflight.set(cacheKey, request);
+  return request;
+};
 
 export const usePracticeTransferFeeQuote = (params: {
   enabled?: boolean;
@@ -51,20 +87,8 @@ export const usePracticeTransferFeeQuote = (params: {
       return;
     }
     let cancelled = false;
-    const query = labAnchorId
-      ? `?labAnchorId=${encodeURIComponent(labAnchorId)}`
-      : "";
-    void apiFetch<{ data?: unknown }>({
-      path: `/api/practice/transfers/quote-context${query}`,
-      method: "GET",
-      token,
-    }).then((res) => {
+    void loadQuoteContext(cacheKey, labAnchorId, token).then((parsed) => {
       if (cancelled) return;
-      const body = res.ok && res.data && typeof res.data === "object" ? res.data : null;
-      const parsed = parsePracticeTransferQuoteContext(
-        body && "data" in body ? (body as { data?: unknown }).data : body,
-      );
-      contextCache.set(cacheKey, parsed);
       setContext(parsed);
       setContextReady(true);
     });

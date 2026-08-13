@@ -2,6 +2,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-08-14: /my 정렬용 compound index (anchor+createdAt+_id, legacy user).
 import mongoose from "mongoose";
 
 const practiceTransferFileSchema = new mongoose.Schema(
@@ -211,7 +212,16 @@ const practiceTransferSchema = new mongoose.Schema(
 );
 
 practiceTransferSchema.index({ practiceUserId: 1, createdAt: -1 });
-practiceTransferSchema.index({ practiceBusinessAnchorId: 1, createdAt: -1 });
+practiceTransferSchema.index({
+  practiceBusinessAnchorId: 1,
+  createdAt: -1,
+  _id: -1,
+});
+practiceTransferSchema.index({
+  practiceBusinessAnchorId: 1,
+  practiceUserId: 1,
+  createdAt: -1,
+});
 practiceTransferSchema.index({ transferId: 1, practiceUserId: 1 }, { unique: true });
 // received-unread-count 폴링: targetLab + unread + status
 practiceTransferSchema.index({

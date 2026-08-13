@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: GET /rooms — unread만 집계 + lastMessage $lookup 제거 + 10s 캐시.
 // - 2026-08-13: 전송 채팅 권한 — 레거시 practice뿐 아니라 requestor(치과) 작성자·동료도 기존 방 합류.
 // - 2026-08-11: 기공소 수락 시 치과↔기공소 채팅방 생성. 치과 모달 실시간 재연결.
 // - 2026-08-10: 디자인 큐 request-room은 발신 의뢰자(치과)와 연결. 기공소/제조사 폴백 금지.
@@ -468,97 +469,118 @@ export async function getMyChatRooms(req, res) {
       });
     }
 
-    const rooms = await ChatRoom.find({
-      participants: userId,
-      isArchived: false,
-    })
-      .populate("participants", "name email role business")
-      .populate("relatedRequestId", "requestId title")
-      .populate("relatedPracticeTransferId", "transferId")
-      .sort({ lastMessageAt: -1 })
-      .lean();
+    const roomsWithUnread = await withChatInFlight(cacheKey, async () => {
+      const inflightCached = getChatPerfCacheValue(cacheKey);
+      if (inflightCached) return inflightCached;
 
-    if (rooms.length === 0) {
-      return res.status(200).json({
-        success: true,
-        data: [],
-      });
-    }
+      const rooms = await ChatRoom.find({
+        participants: userId,
+        isArchived: false,
+      })
+        .populate("participants", "name email role business")
+        .populate("relatedRequestId", "requestId title")
+        .populate("relatedPracticeTransferId", "transferId")
+        .sort({ lastMessageAt: -1 })
+        .lean();
 
-    const roomIds = rooms.map((r) => r._id);
+      if (rooms.length === 0) {
+        setChatPerfCacheValue(cacheKey, [], 10 * 1000);
+        return [];
+      }
 
-    // 모든 채팅방의 통계를 한 번의 집계 쿼리로 조회
-    const statsMap = new Map();
-    const stats = await Chat.aggregate([
-      { $match: { roomId: { $in: roomIds }, isDeleted: false } },
-      {
-        $group: {
-          _id: "$roomId",
-          unreadCount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $ne: ["$sender", userId] },
-                    { $not: { $in: [userId, "$readBy.userId"] } },
-                  ],
+      const roomIds = rooms.map((r) => r._id);
+      const [unreadStats, lastStats] = await Promise.all([
+        Chat.aggregate([
+          {
+            $match: {
+              roomId: { $in: roomIds },
+              isDeleted: false,
+              sender: { $ne: userId },
+              $expr: {
+                $not: {
+                  $in: [userId, { $ifNull: ["$readBy.userId", []] }],
                 },
-                1,
-                0,
-              ],
+              },
             },
           },
-          lastMessage: { $last: "$$ROOT" },
-        },
-      },
-      {
-        $lookup: {
-          from: "users",
-          localField: "lastMessage.sender",
-          foreignField: "_id",
-          as: "lastMessage.sender",
-        },
-      },
-      {
-        $unwind: {
-          path: "$lastMessage.sender",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $project: {
-          _id: 1,
-          unreadCount: 1,
-          "lastMessage._id": 1,
-          "lastMessage.content": 1,
-          "lastMessage.createdAt": 1,
-          "lastMessage.sender._id": 1,
-          "lastMessage.sender.name": 1,
-          "lastMessage.sender.role": 1,
-        },
-      },
-    ]);
+          { $group: { _id: "$roomId", unreadCount: { $sum: 1 } } },
+        ]),
+        Chat.aggregate([
+          { $match: { roomId: { $in: roomIds }, isDeleted: false } },
+          { $sort: { createdAt: -1 } },
+          {
+            $group: {
+              _id: "$roomId",
+              lastMessage: {
+                $first: {
+                  _id: "$_id",
+                  content: "$content",
+                  createdAt: "$createdAt",
+                  sender: "$sender",
+                },
+              },
+            },
+          },
+        ]),
+      ]);
 
-    stats.forEach((stat) => {
-      statsMap.set(stat._id.toString(), {
-        unreadCount: stat.unreadCount || 0,
-        lastMessage: stat.lastMessage || null,
+      const senderIds = [
+        ...new Set(
+          lastStats
+            .map((stat) => String(stat?.lastMessage?.sender || "").trim())
+            .filter((id) => Types.ObjectId.isValid(id)),
+        ),
+      ];
+      const senders =
+        senderIds.length > 0
+          ? await User.find({
+              _id: { $in: senderIds.map((id) => new Types.ObjectId(id)) },
+            })
+              .select({ name: 1, role: 1 })
+              .lean()
+          : [];
+      const senderById = new Map(
+        senders.map((user) => [String(user._id), user]),
+      );
+
+      const unreadByRoom = new Map(
+        unreadStats.map((stat) => [
+          String(stat._id),
+          Number(stat.unreadCount || 0),
+        ]),
+      );
+      const lastByRoom = new Map();
+      lastStats.forEach((stat) => {
+        const last = stat?.lastMessage || null;
+        if (!last) {
+          lastByRoom.set(String(stat._id), null);
+          return;
+        }
+        const senderId = String(last.sender || "").trim();
+        const sender = senderById.get(senderId) || null;
+        lastByRoom.set(String(stat._id), {
+          _id: last._id,
+          content: last.content,
+          createdAt: last.createdAt,
+          sender: sender
+            ? { _id: sender._id, name: sender.name, role: sender.role }
+            : last.sender
+              ? { _id: last.sender }
+              : null,
+        });
       });
-    });
 
-    const roomsWithUnread = rooms.map((room) => {
-      const stat = statsMap.get(room._id.toString()) || {
-        unreadCount: 0,
-        lastMessage: null,
-      };
-      return {
-        ...room,
-        unreadCount: stat.unreadCount,
-        lastMessage: stat.lastMessage,
-      };
+      const nextRooms = rooms.map((room) => {
+        const roomId = String(room._id);
+        return {
+          ...room,
+          unreadCount: unreadByRoom.get(roomId) || 0,
+          lastMessage: lastByRoom.get(roomId) || null,
+        };
+      });
+      setChatPerfCacheValue(cacheKey, nextRooms, 10 * 1000);
+      return nextRooms;
     });
-
-    setChatPerfCacheValue(cacheKey, roomsWithUnread, 3000);
 
     res.status(200).json({
       success: true,

@@ -49,6 +49,7 @@
  * - 2026-08-13: 채팅 첨부도 즉시 백그라운드 업로드 + 칩 프로그레스바.
  * - 2026-08-13: 채팅/의뢰 파일 다운로드 프로그레스바.
  * - 2026-08-14: 최근전송 전체보기 — 사이드바 /my 1페이지 재사용, 중복 GET 제거.
+ * - 2026-08-14: 임시저장 활성+휴지통 1회 조회(`drafts?trashed=all`).
  * - 2026-08-13: [기공소로 전송]은 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
  */
@@ -1520,33 +1521,25 @@ export const PracticeFileTransferPage = ({
     const seq = ++draftListSeqRef.current;
 
     try {
-      const [activeRes, trashRes] = await Promise.all([
-        apiFetch<unknown>({
-          path: "/api/practice/transfers/drafts",
-          method: "GET",
-          token: authToken,
-          skipCache: true,
-        }),
-        apiFetch<unknown>({
-          path: "/api/practice/transfers/drafts?trashed=1",
-          method: "GET",
-          token: authToken,
-          skipCache: true,
-        }),
-      ]);
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/drafts?trashed=all",
+        method: "GET",
+        token: authToken,
+        skipCache: true,
+      });
 
       if (seq !== draftListSeqRef.current) return;
 
-      // 목록 조회가 모두 실패하면 stale-form 검증을 돌리지 않는다(오삭제 방지)
-      if (!activeRes.ok && !trashRes.ok) return;
+      // 목록 조회가 실패하면 stale-form 검증을 돌리지 않는다(오삭제 방지)
+      if (!res.ok) return;
 
-      const parseList = (res: { ok: boolean; data?: unknown }) => {
-        if (!res.ok) return [] as DraftListSummary[];
-        const body =
-          res.data && typeof res.data === "object"
-            ? (res.data as { data?: unknown })
-            : {};
-        const rows = Array.isArray(body.data) ? body.data : [];
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: unknown })
+          : {};
+      const payload = body.data;
+      const parseRows = (rows: unknown) => {
+        if (!Array.isArray(rows)) return [] as DraftListSummary[];
         return rows
           .map((row) =>
             row && typeof row === "object"
@@ -1556,11 +1549,18 @@ export const PracticeFileTransferPage = ({
           .filter((row): row is DraftListSummary => Boolean(row));
       };
 
-      setPracticeDraftList(parseList(activeRes));
-      setTrashedDraftList(parseList(trashRes));
-      if (activeRes.ok) {
-        draftListLoadedRef.current = true;
+      if (Array.isArray(payload)) {
+        setPracticeDraftList(parseRows(payload));
+        setTrashedDraftList([]);
+      } else if (payload && typeof payload === "object") {
+        const grouped = payload as { drafts?: unknown; trashed?: unknown };
+        setPracticeDraftList(parseRows(grouped.drafts));
+        setTrashedDraftList(parseRows(grouped.trashed));
+      } else {
+        setPracticeDraftList([]);
+        setTrashedDraftList([]);
       }
+      draftListLoadedRef.current = true;
     } catch {
       // ignore
     }

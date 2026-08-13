@@ -2,6 +2,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - 2026-08-14: 목록 조회용 (practiceBusinessAnchorId, deletedAt, updatedAt) index.
 import mongoose from "mongoose";
 
 const practiceTransferDraftFileSchema = new mongoose.Schema(
@@ -56,6 +57,11 @@ const practiceTransferDraftSchema = new mongoose.Schema(
 practiceTransferDraftSchema.index({ practiceUserId: 1, deletedAt: 1, updatedAt: -1 });
 practiceTransferDraftSchema.index({ practiceUserId: 1, updatedAt: -1 });
 practiceTransferDraftSchema.index({ deletedAt: 1, updatedAt: -1 });
+practiceTransferDraftSchema.index({
+  practiceBusinessAnchorId: 1,
+  deletedAt: 1,
+  updatedAt: -1,
+});
 
 const PracticeTransferDraft = mongoose.model(
   "PracticeTransferDraft",

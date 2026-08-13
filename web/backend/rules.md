@@ -441,6 +441,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       - 응답: `{ draftClearedCount, draftIds }`
       - 성공 시 `practice:transfer-updated` `action: drafts-cleared` fan-out
     - `GET /api/practice/transfers/drafts?trashed=1` → 휴지통 목록
+    - `GET /api/practice/transfers/drafts?trashed=all` → `{ drafts, trashed }` 1쿼리(페이지 로드용)
   - 활성 draft는 사용자당 **여러 건** 허용. `POST`에 `draftId`가 없으면 **항상 새 draft 생성**, 있으면 해당 건 갱신(join).
   - 「임시 저장」은 현재 작성본을 목록에 스냅샷하고 폼을 그 draft에서 분리한다. 이후 내용이 바뀌면 새 임시저장이 생성된다.
   - 「새로 작성」은 화면만 비우고 서버 임시저장은 유지. 서버/휴지통 이동은 임시저장 카드 삭제로만 수행.

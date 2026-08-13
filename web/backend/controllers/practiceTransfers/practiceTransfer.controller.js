@@ -62,6 +62,7 @@ import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutm
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - 2026-08-13: 어벗 치아에 임플란트·스캔바디 프리셋이 없으면 전송 거절.
 // - 2026-08-14: GET /my 목록 — countDocuments 제거·레거시 $or 축소·동료/견적 조회 캐시.
+// - 2026-08-14: GET /my $or 분리 병렬 조회. drafts?trashed=all 1쿼리. GET에서 syncIndexes 제거.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -655,6 +656,98 @@ const buildPracticeOwnedScope = async (req) => {
   };
 };
 
+const transferCreatedAtMs = (doc) => {
+  const ts = new Date(doc?.createdAt || 0).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+};
+
+const mergeNewestTransferDocs = (left, right, limit) => {
+  const a = Array.isArray(left) ? left : [];
+  const b = Array.isArray(right) ? right : [];
+  const seen = new Set();
+  const out = [];
+  let i = 0;
+  let j = 0;
+  while (out.length < limit && (i < a.length || j < b.length)) {
+    const da = i < a.length ? a[i] : null;
+    const db = j < b.length ? b[j] : null;
+    let pick = null;
+    if (!da) {
+      pick = db;
+      j += 1;
+    } else if (!db) {
+      pick = da;
+      i += 1;
+    } else {
+      const ta = transferCreatedAtMs(da);
+      const tb = transferCreatedAtMs(db);
+      if (ta > tb || (ta === tb && String(da?._id || "") > String(db?._id || ""))) {
+        pick = da;
+        i += 1;
+      } else {
+        pick = db;
+        j += 1;
+      }
+    }
+    const id = String(pick?._id || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(pick);
+  }
+  return out;
+};
+
+const fetchOwnedPracticeTransfersPage = async ({
+  scope,
+  practiceBusinessAnchorId,
+  practiceUserObjectIds,
+  skip,
+  limit,
+}) => {
+  const pageSize = Math.max(1, Number(limit) || 1);
+  const offset = Math.max(0, Number(skip) || 0);
+  const take = pageSize + 1;
+  const sort = { createdAt: -1, _id: -1 };
+  const anchorId = String(practiceBusinessAnchorId || "").trim();
+  const canSplit =
+    Boolean(anchorId) &&
+    Types.ObjectId.isValid(anchorId) &&
+    scope &&
+    typeof scope === "object" &&
+    Array.isArray(scope.$or);
+
+  if (canSplit) {
+    const ownerIds = Array.isArray(practiceUserObjectIds)
+      ? practiceUserObjectIds
+      : [];
+    const fetchLimit = offset + take;
+    const [byAnchor, byLegacy] = await Promise.all([
+      PracticeTransfer.find({
+        practiceBusinessAnchorId: new Types.ObjectId(anchorId),
+      })
+        .sort(sort)
+        .limit(fetchLimit)
+        .lean(),
+      ownerIds.length
+        ? PracticeTransfer.find({
+            practiceBusinessAnchorId: null,
+            practiceUserId: { $in: ownerIds },
+          })
+            .sort(sort)
+            .limit(fetchLimit)
+            .lean()
+        : Promise.resolve([]),
+    ]);
+    return mergeNewestTransferDocs(byAnchor, byLegacy, fetchLimit).slice(offset);
+  }
+
+  return PracticeTransfer.find(scope)
+    .sort(sort)
+    .skip(offset)
+    .limit(take)
+    .lean();
+};
+
 const buildTransferIdFilter = (rawTransferId) => {
   const value = String(rawTransferId || "").trim();
   if (!value) return null;
@@ -719,8 +812,6 @@ export async function getMyPracticeTransferDraft(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
-    await ensurePracticeTransferDraftIndexes();
-
     const rawDraftId = String(req.query?.draftId || "").trim();
     let doc = null;
     let ownerMeta = req.user;
@@ -768,16 +859,18 @@ export async function listPracticeTransferDrafts(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
-    await ensurePracticeTransferDraftIndexes();
-
-    const trashed =
-      String(req.query?.trashed || "").trim() === "1" ||
-      String(req.query?.trashed || "").trim().toLowerCase() === "true";
+    const trashedRaw = String(req.query?.trashed || "").trim().toLowerCase();
+    const includeBoth = trashedRaw === "all" || trashedRaw === "both";
+    const trashedOnly = trashedRaw === "1" || trashedRaw === "true";
 
     const { scope } = await buildPracticeOwnedScope(req);
     const docs = await PracticeTransferDraft.find({
       ...scope,
-      ...(trashed ? { deletedAt: { $ne: null } } : { deletedAt: null }),
+      ...(includeBoth
+        ? {}
+        : trashedOnly
+          ? { deletedAt: { $ne: null } }
+          : { deletedAt: null }),
     })
       .sort({ updatedAt: -1, _id: -1 })
       .lean();
@@ -785,17 +878,30 @@ export async function listPracticeTransferDrafts(req, res) {
     const ownerMap = await loadDraftOwnerMetaByIds(
       docs.map((doc) => doc?.practiceUserId),
     );
+    const toRow = (doc) =>
+      toDraftResponse(
+        doc,
+        ownerMap.get(String(doc?.practiceUserId || "").trim()) || null,
+      );
+
+    if (includeBoth) {
+      const drafts = [];
+      const trashed = [];
+      for (const doc of docs) {
+        const row = toRow(doc);
+        if (!row) continue;
+        if (doc?.deletedAt) trashed.push(row);
+        else drafts.push(row);
+      }
+      return res.status(200).json({
+        success: true,
+        data: { drafts, trashed },
+      });
+    }
 
     return res.status(200).json({
       success: true,
-      data: docs
-        .map((doc) =>
-          toDraftResponse(
-            doc,
-            ownerMap.get(String(doc?.practiceUserId || "").trim()) || null,
-          ),
-        )
-        .filter(Boolean),
+      data: docs.map(toRow).filter(Boolean),
     });
   } catch (error) {
     return res.status(500).json({
@@ -1880,13 +1986,24 @@ export async function getMyPracticeTransfers(req, res) {
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
     const skip = (page - 1) * limit;
 
-    const { scope: baseFilter } = await buildPracticeOwnedScope(req);
+    const {
+      scope: baseFilter,
+      practiceUserObjectIds,
+    } = await buildPracticeOwnedScope(req);
+    const practiceBusinessAnchorId = String(
+      req.user?.businessAnchorId || "",
+    ).trim();
 
-    const fetched = await PracticeTransfer.find(baseFilter)
-      .sort({ createdAt: -1, _id: -1 })
-      .skip(skip)
-      .limit(limit + 1)
-      .lean();
+    const fetched = await fetchOwnedPracticeTransfersPage({
+      scope: baseFilter,
+      practiceBusinessAnchorId:
+        String(req.user?.role || "").trim() === "admin"
+          ? null
+          : practiceBusinessAnchorId,
+      practiceUserObjectIds,
+      skip,
+      limit,
+    });
     const hasMore = fetched.length > limit;
     const docs = hasMore ? fetched.slice(0, limit) : fetched;
 
