@@ -5,8 +5,11 @@
 // - web/backend/controllers/requests/creation.request.controller.js
 // - web/backend/controllers/requests/expressSelectable.utils.js
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-13: 제출 지연 단축. 설정/리드타임/크레딧을 트랜잭션 밖 병렬 prefetch,
+//   incoming caseInfos.file.s3Key를 받아 Draft PATCH 왕복 생략.
 // - 2026-08-11: 아노다이징은 의뢰건 caseInfos 우선, 미설정 시 사업체 기본값(ON) 폴백.
 // - 2026-08-10: caseInfos.files에서 primary s3Key 중복 저장 방지.
 // - 2026-08-08: 접수 시 신속 ETA 이점 없으면 express→normal 강등.
@@ -15,7 +18,6 @@ import crypto from "crypto";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
-import SystemSettings from "../../models/systemSettings.model.js";
 import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
@@ -32,7 +34,12 @@ import {
   normalizeRequestStage,
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
-import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
+import {
+  calculateInitialProductionSchedule,
+  resolveLeadDaysWithSameDayCutoff,
+} from "./production.utils.js";
+import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
+import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 import {
   countDesignAbutmentQty,
   resolveMachiningSpendAmount,
@@ -184,10 +191,11 @@ const generateRequestIdBatch = async (count, session) => {
   for (let attempt = 0; attempt < REQUEST_ID_MAX_TRIES; attempt += 1) {
     if (!pending.length) break;
     const candidates = pending.map(() => `${prefix}-${makeRequestSuffix()}`);
-    const existing = await Request.find({ requestId: { $in: candidates } })
+    const existingQuery = Request.find({ requestId: { $in: candidates } })
       .select({ requestId: 1 })
-      .session(session)
       .lean();
+    if (session) existingQuery.session(session);
+    const existing = await existingQuery;
     const existingSet = new Set(existing.map((doc) => doc.requestId));
     const nextPending = [];
 
@@ -292,12 +300,35 @@ export async function createRequestsFromDraft(req, res) {
 
     const earlyOrgId =
       req.user?.role === "requestor" ? getRequestorOrgId(req) : null;
-    const [draft, lockStatus] = await Promise.all([
-      DraftRequest.findById(draftId).lean(),
-      earlyOrgId && Types.ObjectId.isValid(earlyOrgId)
-        ? checkCreditLock(earlyOrgId)
-        : Promise.resolve({ isLocked: false }),
-    ]);
+    const shippingOrgIdEarly = String(
+      req.user?.businessAnchorId || earlyOrgId || "",
+    );
+    const [draft, lockStatus, creditSettings, manufacturerSettings, shippingOrg, creditBalance] =
+      await Promise.all([
+        DraftRequest.findById(draftId).lean(),
+        earlyOrgId && Types.ObjectId.isValid(earlyOrgId)
+          ? checkCreditLock(earlyOrgId)
+          : Promise.resolve({ isLocked: false }),
+        loadCreditSettingsDefaults(),
+        getManufacturerLeadTimesUtil().catch(() => null),
+        shippingOrgIdEarly && Types.ObjectId.isValid(shippingOrgIdEarly)
+          ? BusinessAnchor.findById(shippingOrgIdEarly)
+              .select({
+                "shippingPolicy.weeklyBatchDays": 1,
+                "requestSettings.anodizingEnabled": 1,
+                "requestSettings.defaultRequestorHexRotation": 1,
+                "requestSettings.defaultManufacturerHexRotation": 1,
+                "requestSettings.designSoftware": 1,
+              })
+              .lean()
+          : Promise.resolve(null),
+        shippingOrgIdEarly && Types.ObjectId.isValid(shippingOrgIdEarly)
+          ? getBusinessCreditBalanceBreakdown({
+              businessAnchorId: shippingOrgIdEarly,
+            }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+    const manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
     console.log("[createRequestsFromDraft] draft loaded", {
       t: Date.now() - startTime,
       found: Boolean(draft),
@@ -359,13 +390,30 @@ export async function createRequestsFromDraft(req, res) {
     let caseInfosArray = draftCaseInfos;
     if (Array.isArray(req.body.caseInfos) && req.body.caseInfos.length > 0) {
       const incoming = req.body.caseInfos;
-      caseInfosArray = draftCaseInfos.map((ci, idx) => {
-        const incomingCi = incoming[idx] || {};
+      caseInfosArray = incoming.map((incomingCi, idx) => {
+        const incomingName = String(
+          incomingCi?.file?.originalName || "",
+        ).trim();
+        const draftCi =
+          (incomingName &&
+            draftCaseInfos.find(
+              (d) =>
+                String(d?.file?.originalName || "").trim() === incomingName,
+            )) ||
+          draftCaseInfos[idx] ||
+          {};
+        const incomingFile = incomingCi?.file?.s3Key
+          ? incomingCi.file
+          : draftCi.file;
         return {
-          ...ci,
+          ...draftCi,
           ...incomingCi,
-          file: ci.file,
-          workType: (incomingCi.workType || ci.workType || "abutment").trim(),
+          _id: draftCi._id || incomingCi._id,
+          file: incomingFile,
+          files: Array.isArray(incomingCi?.files)
+            ? incomingCi.files
+            : draftCi.files,
+          workType: (incomingCi.workType || draftCi.workType || "abutment").trim(),
         };
       });
     }
@@ -468,6 +516,7 @@ export async function createRequestsFromDraft(req, res) {
           clinicName,
           patientName,
           tooth,
+          creditSettings,
         });
         let computedPrice = computedPriceBase;
         console.log("[createRequestsFromDraft] compute price", {
@@ -985,50 +1034,34 @@ export async function createRequestsFromDraft(req, res) {
               patientName: item.patientName,
               tooth: item.tooth,
               forceNewOrderPricing: true,
+              creditSettings,
             });
           }),
         );
       }
     }
 
-    // Pre-fetch read-only data in parallel before transaction to minimize transaction duration
+    // shippingOrg / creditSettings / manufacturerLeadTimes는 draft 로드와 병렬 prefetch
     const requestedAtForPrefetch = new Date();
     const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
-    const shippingOrgId = String(businessAnchorId || "");
-    const [systemSettings, shippingOrg, estimatedShipYmd] = await Promise.all([
-        SystemSettings.findOne().lean(),
-        shippingOrgId && Types.ObjectId.isValid(shippingOrgId)
-          ? BusinessAnchor.findById(shippingOrgId)
-              .select({
-                "shippingPolicy.weeklyBatchDays": 1,
-                "requestSettings.anodizingEnabled": 1,
-                "requestSettings.defaultRequestorHexRotation": 1,
-                "requestSettings.defaultManufacturerHexRotation": 1,
-                "requestSettings.designSoftware": 1,
-              })
-              .lean()
-          : Promise.resolve(null),
-
-        (async () => {
-          const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
-            leadDays: 1,
-            requestedAt: requestedAtForPrefetch,
-            shippingMode: "normal",
-          });
-          return addKoreanBusinessDays({
-            startYmd: createdYmd,
-            days: Math.max(1, resolvedLeadDays),
-          });
-        })(),
-      ]);
+    const shippingOrgId = String(businessAnchorId || shippingOrgIdEarly || "");
+    const resolvedLeadDaysPrefetch = resolveLeadDaysWithSameDayCutoff({
+      leadDays: 1,
+      requestedAt: requestedAtForPrefetch,
+      shippingMode: "normal",
+    });
+    const estimatedShipYmd = await addKoreanBusinessDays({
+      startYmd: createdYmd,
+      days: Math.max(1, resolvedLeadDaysPrefetch),
+    });
     const shippingFeePerBox = 3500;
     const expressFeePerRequest = Math.max(
       0,
-      Number(systemSettings?.creditSettings?.expressFee ?? 2000) || 2000,
+      Number(creditSettings?.expressFee ?? 2000) || 2000,
     );
     const designFeePerTooth = Math.max(
       0,
-      Number(systemSettings?.creditSettings?.designFee ?? 5000) || 5000,
+      Number(creditSettings?.designFee ?? 5000) || 5000,
     );
     const weeklyBatchDays = Array.isArray(
       shippingOrg?.shippingPolicy?.weeklyBatchDays,
@@ -1125,6 +1158,10 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
+    const requestIds = await generateRequestIdBatch(
+      preparedCasesForCreate.length,
+    );
+
     const session = await mongoose.startSession();
     try {
       console.log("[createRequestsFromDraft] transaction start", {
@@ -1214,10 +1251,12 @@ export async function createRequestsFromDraft(req, res) {
             paidCredit,
             freeRequestCredit,
             freeShippingCredit,
-          } = await getBusinessCreditBalanceBreakdown({
-            businessAnchorId,
-            session,
-          });
+          } = creditBalance && typeof creditBalance === "object"
+            ? creditBalance
+            : await getBusinessCreditBalanceBreakdown({
+                businessAnchorId,
+                session,
+              });
           console.log("[createRequestsFromDraft] Credit balance check", {
             t: Date.now() - startTime,
             balance,
@@ -1331,13 +1370,6 @@ export async function createRequestsFromDraft(req, res) {
           duplicates.map((d) => [String(d.caseId || ""), d]),
         );
 
-        const { calculateInitialProductionSchedule } =
-          await import("./production.utils.js");
-
-        const requestIds = await generateRequestIdBatch(
-          preparedCasesForCreate.length,
-          session,
-        );
         const requestDocs = [];
 
         for (const [index, item] of preparedCasesForCreate.entries()) {
@@ -1470,6 +1502,7 @@ export async function createRequestsFromDraft(req, res) {
             weeklyBatchDays:
               shippingMode === "normal" ? requestorWeeklyBatchDays : [],
             productMode: item.caseInfosWithFile?.productMode ?? null,
+            manufacturerLeadTimes,
           });
           newRequest.productionSchedule = productionSchedule;
 
@@ -1483,11 +1516,7 @@ export async function createRequestsFromDraft(req, res) {
             newRequest.timeline.nextEstimatedShipYmd = pickupYmdRaw;
             newRequest.timeline.estimatedShipYmd = pickupYmdRaw;
           } else {
-            // Use manufacturer lead times based on diameter
-            const { getManufacturerLeadTimesUtil } =
-              await import("../businesses/leadTime.controller.js");
-            const manufacturerSettings = await getManufacturerLeadTimesUtil();
-            const leadTimes = manufacturerSettings?.leadTimes || {};
+            const leadTimes = manufacturerLeadTimes || {};
 
             const maxD = item.caseInfosWithFile?.maxDiameter;
             const d = typeof maxD === "number" && !isNaN(maxD) ? maxD : 8;

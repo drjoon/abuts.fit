@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: manufacturerLeadTimes를 인자로 받아 제출 트랜잭션 안 재조회를 생략.
 // - 2026-08-11: 묶음 당일출고 회귀 가드. lead 계산·스케줄 모두 접수 YMD 초과를 강제.
 // - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일·기본 직경 그룹.
 // - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 모두 출고일에
@@ -288,6 +289,7 @@ export async function calculateInitialProductionSchedule({
   weeklyBatchDays,
   shippingMode = "normal",
   productMode = null,
+  manufacturerLeadTimes: manufacturerLeadTimesOverride = null,
 }) {
   const mode = shippingMode === "express" ? "express" : "normal";
   const now = requestedAt || new Date();
@@ -299,19 +301,19 @@ export async function calculateInitialProductionSchedule({
   const { diameter, diameterGroup, preferredMachine } =
     getDiameterGroupAndMachine(scheduleMaxDiameter);
 
-  // Fetch manufacturer settings for lead times
-  let manufacturerLeadTimes = null;
-
-  try {
-    const { getManufacturerLeadTimesUtil } =
-      await import("../businesses/leadTime.controller.js");
-    const manufacturerSettings = await getManufacturerLeadTimesUtil();
-    manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
-  } catch (error) {
-    console.error(
-      "[calculateInitialProductionSchedule] failed to fetch manufacturer settings:",
-      error,
-    );
+  let manufacturerLeadTimes = manufacturerLeadTimesOverride || null;
+  if (!manufacturerLeadTimes) {
+    try {
+      const { getManufacturerLeadTimesUtil } =
+        await import("../businesses/leadTime.controller.js");
+      const manufacturerSettings = await getManufacturerLeadTimesUtil();
+      manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
+    } catch (error) {
+      console.error(
+        "[calculateInitialProductionSchedule] failed to fetch manufacturer settings:",
+        error,
+      );
+    }
   }
 
   // 신속: 소재 대기/주간 배치 없이 당일(12시 전) 또는 다음 영업일 발송

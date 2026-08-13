@@ -1057,24 +1057,15 @@ export async function computePriceForRequest({
   tooth,
   forceNewOrderPricing = false,
   currentRequestId = null,
+  creditSettings: creditSettingsOverride = null,
 }) {
   const now = new Date();
-  const creditSettings = await loadCreditSettingsDefaults();
-  const baseUnitPrice = Math.max(
-    0,
-    Number(creditSettings?.minCreditForRequest ?? 15000) || 0,
-  );
-  const specialPrice = (creditSettings?.specialRequestorPrices || []).find(
-    (item) =>
-      String(item?.requestorAnchorId || "") === String(requestorOrgId || ""),
-  );
 
   const scopeFilter =
     requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
       ? { businessAnchorId: new Types.ObjectId(String(requestorOrgId)) }
       : { requestor: requestorId };
 
-  const BASE_UNIT_PRICE = baseUnitPrice;
   const NEW_USER_FIXED_PRICE = 10000;
   const DISCOUNT_PER_ORDER = 100;
   const MAX_DISCOUNT = 5000;
@@ -1091,18 +1082,37 @@ export async function computePriceForRequest({
   nowKst.setDate(nowKst.getDate() - 90);
   const remakeCutoff = nowKst;
 
-  const existing = await Request.findOne({
-    ...scopeFilter,
-    ...selfExclusionFilter,
-    "caseInfos.patientName": patientName,
-    "caseInfos.tooth": tooth,
-    "caseInfos.clinicName": clinicName,
-    "caseInfos.implantBrand": { $exists: true, $ne: "" },
-    manufacturerStage: { $ne: "취소" },
-    createdAt: { $gte: remakeCutoff },
-  })
-    .select({ _id: 1 })
-    .lean();
+  const [creditSettings, existing, pricingBaseDate] = await Promise.all([
+    creditSettingsOverride
+      ? Promise.resolve(creditSettingsOverride)
+      : loadCreditSettingsDefaults(),
+    Request.findOne({
+      ...scopeFilter,
+      ...selfExclusionFilter,
+      "caseInfos.patientName": patientName,
+      "caseInfos.tooth": tooth,
+      "caseInfos.clinicName": clinicName,
+      "caseInfos.implantBrand": { $exists: true, $ne: "" },
+      manufacturerStage: { $ne: "취소" },
+      createdAt: { $gte: remakeCutoff },
+    })
+      .select({ _id: 1 })
+      .lean(),
+    resolveRequestorPricingBaseDate({
+      requestorId,
+      requestorOrgId,
+    }),
+  ]);
+
+  const baseUnitPrice = Math.max(
+    0,
+    Number(creditSettings?.minCreditForRequest ?? 15000) || 0,
+  );
+  const specialPrice = (creditSettings?.specialRequestorPrices || []).find(
+    (item) =>
+      String(item?.requestorAnchorId || "") === String(requestorOrgId || ""),
+  );
+  const BASE_UNIT_PRICE = baseUnitPrice;
 
   let isRemake = false;
   let monthlyRemakeUsed = 0;
@@ -1177,10 +1187,7 @@ export async function computePriceForRequest({
   }
 
   // 1) 신규 90일 고정가: 가입일(대표 계정 기준) 90일 내 -> 10,000원 고정
-  const baseDate = await resolveRequestorPricingBaseDate({
-    requestorId,
-    requestorOrgId,
-  });
+  const baseDate = pricingBaseDate;
 
   if (baseDate) {
     const baseYmd = toKstYmd(baseDate);

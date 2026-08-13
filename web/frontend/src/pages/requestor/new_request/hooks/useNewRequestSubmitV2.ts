@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-13: 제출 시 사전업로드 캐시·from-draft caseInfos로 PATCH/credits GET 생략
 /**
  * ===== 신규 의뢰 제출 표준 훅 (SSOT) =====
  * Draft 기반 워크플로우: POST /api/requests/from-draft 사용
@@ -21,7 +22,6 @@ import { createParseLog } from "@/shared/services/parseLogService";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 import type { PatientFileGroup } from "../utils/patientGroups";
 import {
   buildAttachmentListItems,
@@ -93,13 +93,13 @@ export const useNewRequestSubmitV2 = ({
   const preparedDraftRef = useRef<{
     draftId: string;
     uploadFingerprint: string;
+    caseInfos?: Array<Record<string, unknown>>;
   } | null>(null);
   const { uploadFilesWithToast } = useUploadWithProgressToast({
     token,
     uploadFiles,
     peekCachedUploadedFiles,
   });
-  const { data: systemSettings } = useSystemSettings();
 
   const normalizeKeyPart = (s: string) => {
     try {
@@ -299,9 +299,6 @@ export const useNewRequestSubmitV2 = ({
     try {
       setIsSubmitting(true);
 
-      // boxCount = 1 (백엔드도 항상 1로 고정; 별도 draft 조회 불필요)
-      const boxCount = 1;
-
       // 1. 클라이언트 사이드 중복 체크 (동기)
       if (files.length > 1 && caseInfosMap) {
         const firstByCombo = new Map<string, File>();
@@ -377,7 +374,8 @@ export const useNewRequestSubmitV2 = ({
         }
       }
 
-      // 2. S3 업로드 + Draft 파일 패치 (중복 해소 재제출 시에는 재업로드 생략)
+      // 2. S3는 첨부 시 백그라운드 사전 업로드. 제출은 캐시 재사용만.
+      // 크레딧 부족은 from-draft 402가 SSOT. 제출 직전 balance GET은 생략.
       const validFileKeys = new Set(files.map((f) => toNormalizedFileKey(f)));
       const filteredMap: Record<string, CaseInfos> = {};
       if (caseInfosMap) {
@@ -395,7 +393,13 @@ export const useNewRequestSubmitV2 = ({
         preparedDraftRef.current?.draftId === String(draftId) &&
         preparedDraftRef.current?.uploadFingerprint === uploadFingerprint;
 
-      if (canReusePreparedDraft) {
+      let submitCaseInfos: Array<Record<string, unknown>> | null =
+        canReusePreparedDraft &&
+        Array.isArray(preparedDraftRef.current?.caseInfos)
+          ? preparedDraftRef.current.caseInfos
+          : null;
+
+      if (canReusePreparedDraft && submitCaseInfos?.length) {
         console.log(
           "[useNewRequestSubmitV2] Reusing prepared draft files, skip re-upload",
           {
@@ -405,129 +409,21 @@ export const useNewRequestSubmitV2 = ({
           },
         );
       } else {
-        let creditShortfallMsg: string | null = null;
         let tempFiles: TempUploadedFile[] = [];
         try {
-          const [uploadResult] = await Promise.all([
+          tempFiles =
             files.length > 0
-              ? uploadFilesWithToast(files)
-              : Promise.resolve([] as TempUploadedFile[]),
-            (async () => {
-              try {
-                const creditRes = await fetch(
-                  `${API_BASE_URL}/credits/balance`,
-                  {
-                    headers: getHeaders(),
-                  },
-                );
-                if (creditRes.ok) {
-                  const creditResponse = await creditRes.json();
-                  const creditData = creditResponse?.data || {};
-                  const paidCredit = Number(creditData?.paidCredit || 0);
-                  const freeRequestCredit = Number(
-                    creditData?.freeRequestCredit ?? 0,
-                  );
-                  const freeShippingCredit = Number(
-                    creditData?.freeShippingCredit ?? 0,
-                  );
-                  const freeCredit = Number(
-                    creditData?.freeCredit ??
-                      freeRequestCredit + freeShippingCredit,
-                  );
-
-                  const estimatedCaseCount = Math.max(
-                    1,
-                    buildAttachmentListItems(
-                      files,
-                      toNormalizedFileKey,
-                      patientGroups,
-                    ).length,
-                  );
-                  const estimatedMachiningFee = estimatedCaseCount * 10000;
-                  const estimatedShippingFee = boxCount * 3500;
-
-                  // 유료+무료 통합 풀, 의뢰비→배송비 순 배정(이중계산 방지)
-                  const totalAvailable = paidCredit + freeCredit;
-                  let remainingCredit = totalAvailable;
-                  const allocatedMachining = Math.min(
-                    remainingCredit,
-                    estimatedMachiningFee,
-                  );
-                  remainingCredit -= allocatedMachining;
-                  const allocatedShipping = Math.min(
-                    remainingCredit,
-                    estimatedShippingFee,
-                  );
-                  const availableForMachining = totalAvailable;
-                  const availableForShipping = Math.max(
-                    0,
-                    totalAvailable - allocatedMachining,
-                  );
-
-                  const machiningShortfall = Math.max(
-                    0,
-                    estimatedMachiningFee - allocatedMachining,
-                  );
-                  const shippingShortfall = Math.max(
-                    0,
-                    estimatedShippingFee - allocatedShipping,
-                  );
-
-                  if (machiningShortfall > 0 || shippingShortfall > 0) {
-                    let message = "";
-                    const details = [];
-
-                    if (machiningShortfall > 0 && shippingShortfall > 0) {
-                      message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
-                      details.push(
-                        `의뢰비 예상: ${estimatedMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
-                      );
-                      details.push(
-                        `배송비 예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스, 보유: ${availableForShipping.toLocaleString()}원)`,
-                      );
-                    } else if (machiningShortfall > 0) {
-                      message = "의뢰비 크레딧이 부족합니다.";
-                      details.push(
-                        `예상: ${estimatedMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
-                      );
-                    } else {
-                      message = "배송비 크레딧이 부족합니다.";
-                      details.push(
-                        `예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스), 보유: ${availableForShipping.toLocaleString()}원`,
-                      );
-                    }
-
-                    message += "\n\n" + details.join("\n");
-                    message += "\n\n크레딧을 충전한 뒤 다시 시도해주세요.";
-                    creditShortfallMsg = message;
-                  }
-                }
-              } catch (err) {
-                console.warn("[NewRequestSubmit] credit check failed:", err);
-              }
-            })(),
-          ]);
-
-          tempFiles = uploadResult ?? [];
+              ? await uploadFilesWithToast(files)
+              : [];
         } catch {
-          // S3 업로드 실패 - toast는 uploadFilesWithToast에서 이미 처리됨
           return;
         }
 
-        if (creditShortfallMsg) {
-          dismiss();
-          toast({
-            title: "크레딧 부족",
-            description: creditShortfallMsg,
-            variant: "destructive",
-            duration: 10000, // 10초
-          });
-          return;
-        }
-
-        // 3. Draft 파일+정보 업데이트 (S3 업로드 완료 후)
         if (files.length > 0 && tempFiles.length > 0) {
-          const fileByKey = new Map<string, { file: File; temp: TempUploadedFile }>();
+          const fileByKey = new Map<
+            string,
+            { file: File; temp: TempUploadedFile }
+          >();
           for (let i = 0; i < files.length; i += 1) {
             const file = files[i];
             const tf = tempFiles[i];
@@ -555,7 +451,6 @@ export const useNewRequestSubmitV2 = ({
               {}) as Partial<CaseInfos>;
 
             const primaryKeyNorm = String(primary.temp.key || "").trim();
-            // primary는 caseInfos.file에만 두고, files에는 나머지 멤버만 넣어 목록 중복을 막는다.
             const extraFiles = memberKeys
               .map((key) => fileByKey.get(key))
               .filter(
@@ -563,7 +458,10 @@ export const useNewRequestSubmitV2 = ({
                   row,
                 ): row is { file: File; temp: TempUploadedFile } => Boolean(row),
               )
-              .filter((row) => String(row.temp.key || "").trim() !== primaryKeyNorm)
+              .filter(
+                (row) =>
+                  String(row.temp.key || "").trim() !== primaryKeyNorm,
+              )
               .map(({ temp }) => ({
                 originalName: temp.originalName,
                 size: temp.size,
@@ -613,7 +511,7 @@ export const useNewRequestSubmitV2 = ({
             };
           };
 
-          const caseInfosPayload = listItems
+          submitCaseInfos = listItems
             .map((item) => {
               if (item.kind === "group") {
                 const primary =
@@ -625,30 +523,6 @@ export const useNewRequestSubmitV2 = ({
             .filter((ci): ci is NonNullable<typeof ci> =>
               Boolean(ci?.file?.s3Key),
             );
-
-          if (caseInfosPayload.length > 0) {
-            const patchRes = await fetch(
-              `${API_BASE_URL}/requests/drafts/${draftId}`,
-              {
-                method: "PATCH",
-                headers: getHeaders(),
-                body: JSON.stringify({ caseInfos: caseInfosPayload }),
-              },
-            ).catch((err) => {
-              console.error(
-                "[submitFromDraft] Draft file PATCH network error:",
-                err,
-              );
-              return null;
-            });
-
-            if (!patchRes || !patchRes.ok) {
-              const status = patchRes?.status ?? "network error";
-              throw new Error(
-                `파일 정보 저장에 실패했습니다 (${status}). 다시 시도해주세요.`,
-              );
-            }
-          }
         } else if (
           patchDraftImmediately &&
           Object.keys(filteredMap).length > 0
@@ -664,10 +538,11 @@ export const useNewRequestSubmitV2 = ({
         preparedDraftRef.current = {
           draftId: String(draftId),
           uploadFingerprint,
+          caseInfos: submitCaseInfos || undefined,
         };
       }
 
-      // 4. Draft를 Request로 전환
+      // 3. Draft를 Request로 전환. s3Key는 from-draft body로 전달해 Draft PATCH 왕복을 생략한다.
       console.log("[useNewRequestSubmitV2] Submitting draft to request...", {
         draftId,
         duplicateResolutionsCount: duplicateResolutions?.length || 0,
@@ -678,6 +553,10 @@ export const useNewRequestSubmitV2 = ({
         clinicId: selectedClinicId || undefined,
       };
 
+      if (Array.isArray(submitCaseInfos) && submitCaseInfos.length > 0) {
+        payload.caseInfos = submitCaseInfos;
+      }
+
       if (Array.isArray(duplicateResolutions) && duplicateResolutions.length) {
         payload.duplicateResolutions = duplicateResolutions;
         console.log(
@@ -685,9 +564,6 @@ export const useNewRequestSubmitV2 = ({
           duplicateResolutions,
         );
       }
-
-      // NOTE: caseInfos 페이로드를 제거하여 백엔드가 Draft의 데이터를 신뢰하도록 함
-      // (중복 체크 인덱스 불일치 방지)
 
       console.log("[NewRequestSubmit] submit API start", {
         t: Date.now() - submitStart,

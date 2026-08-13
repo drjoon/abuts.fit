@@ -5,6 +5,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-13: 제출 시 이미 사업자가 있으면 profile/credits GET을 생략
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -335,6 +336,7 @@ export const useNewRequestPage = (
   ]);
 
   const prevDraftIdRef = useRef<string | null | undefined>(undefined);
+  const setupReadyRef = useRef(false);
 
   // 첨부 직후 백그라운드 사전 업로드 (제출 시 ensureFilesUploaded로 재사용)
   const {
@@ -787,8 +789,6 @@ export const useNewRequestPage = (
     [handleLocalUpload],
   );
 
-  const setupNextPath = "/dashboard/new-request";
-
   const ensureSetupForUpload = useCallback(async () => {
     if (!token) {
       toast({
@@ -799,12 +799,29 @@ export const useNewRequestPage = (
       return false;
     }
 
+    // 제출 직전 GET profile/credits는 S3 업로드와 무관하다.
+    // from-draft가 authorizePaidRequestor로 다시 검사하므로, 이미 사업자가 있으면 왕복을 생략한다.
+    if (setupReadyRef.current) return true;
+    if (user?.businessAnchorId) {
+      setupReadyRef.current = true;
+      return true;
+    }
+
     try {
-      const profileRes = await request<any>({
-        path: "/api/users/profile",
-        method: "GET",
-        token,
-      });
+      const [profileRes, orgRes] = await Promise.all([
+        request<any>({
+          path: "/api/users/profile",
+          method: "GET",
+          token,
+        }),
+        request<any>({
+          path: `/api/businesses/me?businessType=${encodeURIComponent(
+            businessType,
+          )}`,
+          method: "GET",
+          token,
+        }).catch(() => null),
+      ]);
       const profileBody: any = profileRes.data || {};
       const profile = profileBody?.data || profileBody;
       const needsPhone =
@@ -818,28 +835,14 @@ export const useNewRequestPage = (
         return false;
       }
 
-      let membership: "owner" | "member" | "pending" | "none" = "none";
       let hasBusinessNumber = false;
-      try {
-        const orgRes = await request<any>({
-          path: `/api/businesses/me?businessType=${encodeURIComponent(
-            businessType,
-          )}`,
-          method: "GET",
-          token,
-        });
-        if (orgRes.ok) {
-          const orgBody: any = orgRes.data || {};
-          const orgData = orgBody?.data || orgBody;
-          membership = (orgData?.membership || "none") as
-            "owner" | "member" | "pending" | "none";
-          const businessNumberRaw = String(
-            orgData?.metadata?.businessNumber || "",
-          ).trim();
-          hasBusinessNumber = Boolean(businessNumberRaw);
-        }
-      } catch {
-        // ignore
+      if (orgRes?.ok) {
+        const orgBody: any = orgRes.data || {};
+        const orgData = orgBody?.data || orgBody;
+        const businessNumberRaw = String(
+          orgData?.metadata?.businessNumber || "",
+        ).trim();
+        hasBusinessNumber = Boolean(businessNumberRaw);
       }
 
       if (!hasBusinessNumber) {
@@ -850,107 +853,13 @@ export const useNewRequestPage = (
         });
         return false;
       }
-
-      // 대표자만 배송/결제 탭이 존재하므로 owner만 추가로 체크한다.
-      if (membership === "owner") {
-        const emailKey = String(user?.email || "guest").trim() || "guest";
-        let currentBalance = 0;
-        try {
-          const balanceRes = await request<{
-            data?: { balance?: number };
-            balance?: number;
-          }>({
-            path: "/api/credits/balance",
-            method: "GET",
-            token,
-          });
-          if (balanceRes.ok) {
-            const balanceBody = balanceRes.data || {};
-            const balanceData = balanceBody?.data || balanceBody;
-            currentBalance = Number(balanceData?.balance || 0);
-          }
-        } catch {
-          return true;
-        }
-
-        try {
-          const userId = String(user?.id || emailKey || "guest").trim();
-          const createdAtRaw = String(user?.createdAt || "").trim();
-          const createdAtMs = createdAtRaw
-            ? new Date(createdAtRaw).getTime()
-            : NaN;
-          const isNewUser =
-            Number.isFinite(createdAtMs) &&
-            Date.now() - createdAtMs < 7 * 24 * 60 * 60 * 1000;
-
-          let threshold = 10000;
-          if (!isNewUser) {
-            try {
-              const insightsRes = await request<any>({
-                path: "/api/credits/insights/spend",
-                method: "GET",
-                token,
-              });
-              if (insightsRes.ok) {
-                const body: any = insightsRes.data || {};
-                const data = body?.data || body;
-                const avgDailySpendSupply = Number(
-                  data?.avgDailySpendSupply || 0,
-                );
-                const hasUsageData = data?.hasUsageData === true;
-                if (
-                  hasUsageData &&
-                  Number.isFinite(avgDailySpendSupply) &&
-                  avgDailySpendSupply > 0
-                ) {
-                  threshold = Math.max(0, Math.round(avgDailySpendSupply * 7));
-                }
-              }
-            } catch {
-              // ignore
-            }
-          }
-
-          const now = new Date();
-          const ymd = `${now.getFullYear()}-${String(
-            now.getMonth() + 1,
-          ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-          const toastKey = `abutsfit:credit-topup-toast:v1:${userId}:${ymd}`;
-
-          // [변경] 생산 시작 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 크레딧 부족 토스트는 제거하거나 안내 문구로 변경 가능.
-          // 여기서는 사용자 요청에 따라 "생산 시작 시 크레딧을 확인"하도록 했으므로 생성 시점의 강제 토스트는 제거함.
-        } catch {
-          // ignore
-        }
-      }
     } catch {
-      // 네트워크 오류 등으로 설정 체크가 불가능한 경우에는 업로드를 막지 않는다.
       return true;
     }
 
-    try {
-      const toastKey = `abutsfit:setup-complete-toast-shown:v1:${String(
-        user?.id || "guest",
-      )}`;
-      if (!sessionStorage.getItem(toastKey)) {
-        sessionStorage.setItem(toastKey, "1");
-        // Toast removed as per request
-      }
-    } catch {
-      // ignore
-    }
-
+    setupReadyRef.current = true;
     return true;
-  }, [
-    businessType,
-    navigate,
-    setupNextPath,
-    toast,
-    token,
-    user?.createdAt,
-    user?.email,
-    user?.id,
-  ]);
+  }, [businessType, toast, token, user?.businessAnchorId]);
 
   // Draft에서 caseInfos 동기화 (임플란트 정보 -> Draft)
   // 주의: 이 동기화는 사용자가 명시적으로 임플란트 정보를 선택할 때만 호출되어야 함
