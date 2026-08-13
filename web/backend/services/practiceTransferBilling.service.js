@@ -11,6 +11,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-14: 목록 견적 조회(devops/단가/기공소/거래처) parallel + 60s 캐시.
 // - 2026-08-14: quote-context — 기공소/티어/단가/거래처/수수료율 parallel + 60s 캐시(5회 직렬 RTT 제거).
+// - 2026-08-14: 환봉 요청중 판별용 치과 implantFavorites를 견적·청구 계산에 전달.
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -359,12 +360,21 @@ export async function assertPracticeTransferPaidCreditSufficient({
 
   let labFeeSchedule = null;
   const labId = String(labAnchorId || "").trim();
-  if (labId && Types.ObjectId.isValid(labId)) {
-    const lab = await BusinessAnchor.findById(labId)
-      .select({ labFeeSchedule: 1 })
-      .lean();
-    labFeeSchedule = lab?.labFeeSchedule || null;
-  }
+  const [lab, practice] =
+    labId && Types.ObjectId.isValid(labId)
+      ? await Promise.all([
+          BusinessAnchor.findById(labId).select({ labFeeSchedule: 1 }).lean(),
+          BusinessAnchor.findById(practiceId)
+            .select({ "practiceTransferSettings.implantFavorites": 1 })
+            .lean(),
+        ])
+      : [
+          null,
+          await BusinessAnchor.findById(practiceId)
+            .select({ "practiceTransferSettings.implantFavorites": 1 })
+            .lean(),
+        ];
+  if (lab) labFeeSchedule = lab.labFeeSchedule || null;
 
   const noLab = !labId;
   const useRemake = Boolean(remake);
@@ -373,6 +383,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
   const abutmentPrices = await loadAbutmentCreditPrices();
   const fees = computePracticeTransferRetailFees({
     toothWorks,
+    implantFavorites: implantFavoritesFromPractice(practice),
     labFeeSchedule: noLab
       ? LAB_FEE_SCHEDULE_ZEROS
       : resolveLabFeeScheduleSource(labFeeSchedule),
@@ -450,10 +461,16 @@ export async function commitPracticeTransferBilling({
     return { billed: false, reason: "already_billed", journalId: existing.journalId };
   }
 
-  const lab = await BusinessAnchor.findById(labAnchorId)
-    .select({ labFeeSchedule: 1 })
-    .session(outerSession || null)
-    .lean();
+  const [lab, practice] = await Promise.all([
+    BusinessAnchor.findById(labAnchorId)
+      .select({ labFeeSchedule: 1 })
+      .session(outerSession || null)
+      .lean(),
+    BusinessAnchor.findById(practiceAnchorId)
+      .select({ "practiceTransferSettings.implantFavorites": 1 })
+      .session(outerSession || null)
+      .lean(),
+  ]);
   const remake = isPracticeTransferRemake(transfer);
   const abutmentPricingTier = await resolvePracticeAbutmentPricingTier(
     practiceAnchorId,
@@ -462,6 +479,7 @@ export async function commitPracticeTransferBilling({
   const abutmentPrices = await loadAbutmentCreditPrices();
   const fees = computePracticeTransferRetailFees({
     toothWorks,
+    implantFavorites: implantFavoritesFromPractice(practice),
     labFeeSchedule: resolveLabFeeScheduleSource(lab?.labFeeSchedule),
     abutmentPricingTier,
     abutmentPrices,
@@ -743,10 +761,22 @@ function relationshipKindFromPartner(partner) {
     : "none";
 }
 
+function implantFavoritesFromPractice(practice) {
+  const raw = practice?.practiceTransferSettings?.implantFavorites;
+  return Array.isArray(raw) ? raw : [];
+}
+
 export function toFeeQuoteApi(quote) {
   const fees = quote?.fees || {};
+  const labAbutmentTotal = Math.max(
+    0,
+    Math.round(Number(fees.labAbutmentTotal || 0)),
+  );
   return {
     labFeeTotal: Math.max(0, Math.round(Number(fees.labFeeTotal || 0))),
+    labAbutmentTotal,
+    labAbutmentPending:
+      Boolean(fees.labAbutmentPending) || labAbutmentTotal > 0,
     abutmentRetailTotal: Math.max(
       0,
       Math.round(Number(fees.abutmentRetailTotal || 0)),
@@ -806,6 +836,8 @@ export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } =
   return toFeeQuoteApi({
     fees: {
       labFeeTotal: billing?.labFeeTotal || 0,
+      labAbutmentTotal: billing?.labAbutmentTotal || 0,
+      labAbutmentPending: Boolean(billing?.labAbutmentPending),
       abutmentRetailTotal: billing?.abutmentRetailTotal || 0,
       abutmentQty: billing?.abutmentQty || 0,
       total,
@@ -859,10 +891,17 @@ export async function buildPracticeTransferQuote({
   const needPartner = relationshipKind == null;
   const needRates = payoutRates == null;
 
-  const [lab, abutmentPricingTier, abutmentPrices, partner, cachedRates] =
+  const practiceId = String(practiceAnchorId || "").trim();
+  const needFavorites = practiceId && Types.ObjectId.isValid(practiceId);
+  const [lab, practice, abutmentPricingTier, abutmentPrices, partner, cachedRates] =
     await Promise.all([
       needLab
         ? BusinessAnchor.findById(labId).select({ labFeeSchedule: 1 }).lean()
+        : Promise.resolve(null),
+      needFavorites
+        ? BusinessAnchor.findById(practiceId)
+            .select({ "practiceTransferSettings.implantFavorites": 1 })
+            .lean()
         : Promise.resolve(null),
       resolvePracticeAbutmentPricingTier(practiceAnchorId),
       loadCachedAbutmentCreditPrices(),
@@ -889,6 +928,7 @@ export async function buildPracticeTransferQuote({
   const useRemake = Boolean(remake);
   const fees = computePracticeTransferRetailFees({
     toothWorks,
+    implantFavorites: implantFavoritesFromPractice(practice),
     labFeeSchedule: schedule,
     abutmentPricingTier,
     abutmentPrices,
@@ -1031,7 +1071,10 @@ export async function buildFeeQuotesForTransferDocs({
         : Promise.resolve([]),
       practiceIdList.length
         ? BusinessAnchor.find({ _id: { $in: practiceIdList } })
-            .select({ practiceMembershipActive: 1 })
+            .select({
+              practiceMembershipActive: 1,
+              "practiceTransferSettings.implantFavorites": 1,
+            })
             .lean()
         : Promise.resolve([]),
       labIdList.length && practiceIdList.length
@@ -1056,6 +1099,12 @@ export async function buildFeeQuotesForTransferDocs({
     practices.map((practice) => [
       String(practice._id),
       Boolean(practice.practiceMembershipActive),
+    ]),
+  );
+  const favoritesByPractice = new Map(
+    practices.map((practice) => [
+      String(practice._id),
+      implantFavoritesFromPractice(practice),
     ]),
   );
   const partnerByPair = new Map();
@@ -1089,8 +1138,10 @@ export async function buildFeeQuotesForTransferDocs({
     const abutmentPricingTier = resolveAbutsAbutmentPricingTier({
       practiceMembershipActive: Boolean(membershipByPractice.get(practiceId)),
     });
+    const implantFavorites = favoritesByPractice.get(practiceId) || [];
     const remakeFees = computePracticeTransferRetailFees({
       toothWorks,
+      implantFavorites,
       labFeeSchedule: noLab
         ? LAB_FEE_SCHEDULE_ZEROS
         : resolveLabFeeScheduleSource(schedule),
@@ -1103,6 +1154,7 @@ export async function buildFeeQuotesForTransferDocs({
       ? remakeFees
       : computePracticeTransferRetailFees({
           toothWorks,
+          implantFavorites,
           labFeeSchedule: noLab
             ? LAB_FEE_SCHEDULE_ZEROS
             : resolveLabFeeScheduleSource(schedule),

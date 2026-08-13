@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-13: 저장된 견적 라인도 치아번호 10→20→30→40번대 순.
+// - 2026-08-14: 환봉 요청중은 기공소 어벗 라인(labAbutmentFee)으로 파싱.
 import {
   computePracticeTransferRetailFees,
   DEFAULT_ABUTMENT_RETAIL_PRICE,
@@ -77,6 +78,10 @@ export const parsePracticeTransferFeeQuote = (
   const r = raw as Record<string, unknown>;
   const total = Math.max(0, Math.round(Number(r.total || 0)));
   const labFeeTotal = Math.max(0, Math.round(Number(r.labFeeTotal || 0)));
+  const labAbutmentTotal = Math.max(
+    0,
+    Math.round(Number(r.labAbutmentTotal || 0)),
+  );
   const abutmentRetailTotal = Math.max(
     0,
     Math.round(Number(r.abutmentRetailTotal || 0)),
@@ -101,18 +106,36 @@ export const parsePracticeTransferFeeQuote = (
     linesRaw
       .map((row) => {
         const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+        const labAbutmentFee = Math.max(
+          0,
+          Math.round(Number(item.labAbutmentFee || 0)),
+        );
         return {
           toothNumber: String(item.toothNumber || item.tooth || "").trim(),
           prosthesisType: String(item.prosthesisType || item.type || "").trim(),
           labFee: Math.max(0, Math.round(Number(item.labFee || 0))),
+          labAbutmentFee,
+          labAbutmentPending: Boolean(item.labAbutmentPending) || labAbutmentFee > 0,
           abutmentRetail: Math.max(0, Math.round(Number(item.abutmentRetail || 0))),
         };
       })
-      .filter((line) => line.prosthesisType || line.labFee > 0 || line.abutmentRetail > 0),
+      .filter(
+        (line) =>
+          line.prosthesisType ||
+          line.labFee > 0 ||
+          line.labAbutmentFee > 0 ||
+          line.labAbutmentPending ||
+          line.abutmentRetail > 0,
+      ),
   );
 
   return {
     labFeeTotal,
+    labAbutmentTotal,
+    labAbutmentPending:
+      Boolean(r.labAbutmentPending) ||
+      labAbutmentTotal > 0 ||
+      lines.some((line) => line.labAbutmentPending),
     abutmentRetailTotal,
     abutmentQty: Math.max(0, Math.round(Number(r.abutmentQty || 0))),
     total,
@@ -191,12 +214,14 @@ export const parsePracticeTransferQuoteContext = (
 
 export const buildFeeQuoteFromContext = (params: {
   toothWorks?: Parameters<typeof computePracticeTransferRetailFees>[0]["toothWorks"];
+  implantFavorites?: Parameters<typeof computePracticeTransferRetailFees>[0]["implantFavorites"];
   context?: PracticeTransferQuoteContext | null;
 }): PracticeTransferFeeQuote => {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
   const fees = computePracticeTransferRetailFees({
     toothWorks: params.toothWorks,
+    implantFavorites: params.implantFavorites,
     labFeeSchedule: zeroed
       ? LAB_FEE_SCHEDULE_ZEROS
       : { ...context.schedule, remake: context.remakeSchedule, items: context.items },

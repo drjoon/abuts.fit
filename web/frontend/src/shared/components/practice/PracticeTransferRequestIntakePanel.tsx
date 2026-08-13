@@ -132,6 +132,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 커스텀어벗 설정 모달에 생산만/디자인+생산 배타 선택 + 가격 툴팁.
 // - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
 // - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
+// - 2026-08-14: 환봉 요청중 판별용 implantFavorites를 기공비 견적에 전달.
 // - 2026-08-13: 커스텀어벗 칸 「설정」제거. 생산/디자인+생산 클릭 시 설정 모달.
 // - 2026-08-13: 커스텀어벗 가격 툴팁은 해당 치과 멤버십/일반 한쪽만 안내.
 // - 2026-08-13: 커스텀어벗 설정 모달 가격 툴팁은 호버일 때만.
@@ -716,6 +717,7 @@ export const PracticeTransferRequestIntakePanel = ({
     enabled: showFeeEstimate && Boolean(selectedLab),
     labAnchorId: selectedLab?._id,
     toothWorks,
+    implantFavorites,
     abutmentPricingTier,
   });
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */

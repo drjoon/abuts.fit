@@ -5,6 +5,7 @@
 // - 2026-08-13: 기공소 기공비 Off면 미설정 안내.
 // - 2026-08-13: 치아번호 10→20→30→40번대 순으로 표시.
 // - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
+// - 2026-08-14: 툴팁 컬럼 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. 환봉 요청중은 기공소 어벗.
 import { CircleHelp } from "lucide-react";
 import {
   Tooltip,
@@ -39,27 +40,48 @@ type FeeBreakdownLine = {
   toothNumber: string;
   prosthesisType: string;
   labFee: number;
+  labAbutmentFee: number;
+  labAbutmentPending?: boolean;
   abutmentRetail: number;
+};
+
+const formatLabAbutmentCell = (line: {
+  labAbutmentFee: number;
+  labAbutmentPending?: boolean;
+}) => {
+  if (line.labAbutmentFee > 0) return formatWon(line.labAbutmentFee);
+  if (line.labAbutmentPending) return "요청중";
+  return "—";
 };
 
 function FeeBreakdownTable({
   lines,
   showLabColumn,
+  showLabAbutmentColumn,
   showAbutmentColumn,
 }: {
   lines: FeeBreakdownLine[];
   showLabColumn: boolean;
+  showLabAbutmentColumn: boolean;
   showAbutmentColumn: boolean;
 }) {
   const labTotal = lines.reduce((sum, line) => sum + line.labFee, 0);
+  const labAbutmentTotal = lines.reduce((sum, line) => sum + line.labAbutmentFee, 0);
+  const labAbutmentPending = lines.some((line) => line.labAbutmentPending);
   const abutmentTotal = lines.reduce((sum, line) => sum + line.abutmentRetail, 0);
-  const colCount = 1 + Number(showLabColumn) + Number(showAbutmentColumn);
+  const colCount =
+    1 +
+    Number(showLabColumn) +
+    Number(showLabAbutmentColumn) +
+    Number(showAbutmentColumn);
   const gridClass =
-    colCount === 3
-      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto]"
-      : colCount === 2
-        ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
-        : "grid-cols-1";
+    colCount === 4
+      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto_auto]"
+      : colCount === 3
+        ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto]"
+        : colCount === 2
+          ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
+          : "grid-cols-1";
 
   return (
     <div className={cn("grid gap-x-3 gap-y-0.5 tabular-nums", gridClass)}>
@@ -68,12 +90,17 @@ function FeeBreakdownTable({
       </span>
       {showLabColumn ? (
         <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
-          기공소 제공
+          기공소 기공물
+        </span>
+      ) : null}
+      {showLabAbutmentColumn ? (
+        <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
+          기공소 어벗
         </span>
       ) : null}
       {showAbutmentColumn ? (
         <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
-          어벗츠 제공
+          어벗츠 어벗
         </span>
       ) : null}
       {lines.map((line, idx) => (
@@ -84,6 +111,11 @@ function FeeBreakdownTable({
           </span>
           {showLabColumn ? (
             <span className="whitespace-nowrap text-right">{formatCell(line.labFee)}</span>
+          ) : null}
+          {showLabAbutmentColumn ? (
+            <span className="whitespace-nowrap text-right">
+              {formatLabAbutmentCell(line)}
+            </span>
           ) : null}
           {showAbutmentColumn ? (
             <span className="whitespace-nowrap text-right">
@@ -100,6 +132,15 @@ function FeeBreakdownTable({
           {showLabColumn ? (
             <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
               {formatCell(labTotal)}
+            </span>
+          ) : null}
+          {showLabAbutmentColumn ? (
+            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
+              {labAbutmentTotal > 0
+                ? formatWon(labAbutmentTotal)
+                : labAbutmentPending
+                  ? "요청중"
+                  : "—"}
             </span>
           ) : null}
           {showAbutmentColumn ? (
@@ -154,15 +195,27 @@ export function PracticeTransferFeeEstimate({
       : "견적";
   const keepRate =
     isLab && quote.total > 0 ? quote.labSettlementAmount / quote.total : 1;
+  const labProsthesisTotal = Math.max(
+    0,
+    Math.round(Number(quote.labFeeTotal || 0) - Number(quote.labAbutmentTotal || 0)),
+  );
   const simple = isLab
     ? null
     : quote.isRemake
       ? `리메이크 기공비 ${formatWon(quote.labFeeTotal)}`
-      : quote.labFeeTotal > 0 && quote.abutmentRetailTotal > 0
-        ? `기공비 ${formatWon(quote.labFeeTotal)} · 어벗 ${formatWon(quote.abutmentRetailTotal)}`
-        : quote.abutmentRetailTotal > 0
-          ? `어벗 ${formatWon(quote.abutmentRetailTotal)}`
-          : `기공비 ${formatWon(quote.labFeeTotal)}`;
+      : [
+          labProsthesisTotal > 0 ? `기공비 ${formatWon(labProsthesisTotal)}` : "",
+          quote.labAbutmentTotal > 0
+            ? `기공소어벗 ${formatWon(quote.labAbutmentTotal)}`
+            : quote.labAbutmentPending
+              ? "기공소어벗 요청중"
+              : "",
+          quote.abutmentRetailTotal > 0
+            ? `어벗 ${formatWon(quote.abutmentRetailTotal)}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" · ") || `기공비 ${formatWon(quote.labFeeTotal)}`;
   const labFeeUnset = !isLab && quote.labFeeConfigured === false;
 
   return (
@@ -217,7 +270,7 @@ export function PracticeTransferFeeEstimate({
         <TooltipContent
           side={isCard ? "top" : "bottom"}
           data-no-tooth-marquee=""
-          className="pointer-events-auto max-w-[22rem] select-text p-3 text-xs leading-relaxed"
+          className="pointer-events-auto max-w-[26rem] select-text p-3 text-xs leading-relaxed"
           onPointerDown={(event) => event.stopPropagation()}
           onPointerUp={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
@@ -234,9 +287,15 @@ export function PracticeTransferFeeEstimate({
                 toothNumber: line.toothNumber,
                 prosthesisType: line.prosthesisType,
                 labFee: scaleWon(line.labFee, keepRate),
+                labAbutmentFee: scaleWon(line.labAbutmentFee || 0, keepRate),
+                labAbutmentPending: Boolean(line.labAbutmentPending),
                 abutmentRetail: scaleWon(line.abutmentRetail, keepRate),
               }))}
               showLabColumn={quote.lines.some((line) => line.labFee > 0)}
+              showLabAbutmentColumn={quote.lines.some(
+                (line) =>
+                  Number(line.labAbutmentFee || 0) > 0 || Boolean(line.labAbutmentPending),
+              )}
               showAbutmentColumn={quote.lines.some((line) => line.abutmentRetail > 0)}
             />
           ) : (

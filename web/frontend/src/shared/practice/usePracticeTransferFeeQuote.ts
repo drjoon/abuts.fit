@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
 // - 2026-08-14: quote-context 인 inflight 합류 — intake/치아차트 중복 GET 방지.
+// - 2026-08-14: 환봉 요청중 판별용 implantFavorites를 견적 계산에 전달.
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import {
@@ -12,6 +13,7 @@ import {
   type PracticeTransferQuoteContext,
 } from "@/shared/practice/practiceTransferFeeQuote";
 import type { AbutsAbutmentPricingTier } from "@/shared/pricing/abutsAbutmentService";
+import type { ImplantFavoriteForFee } from "@/shared/practice/labFeeSchedule";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -59,6 +61,7 @@ export const usePracticeTransferFeeQuote = (params: {
   enabled?: boolean;
   labAnchorId?: string | null;
   toothWorks?: ToothWorkSelection[] | null;
+  implantFavorites?: ReadonlyArray<ImplantFavoriteForFee> | null;
   storedQuote?: PracticeTransferFeeQuote | null;
   abutmentPricingTier?: AbutsAbutmentPricingTier | null;
 }): {
@@ -101,13 +104,14 @@ export const usePracticeTransferFeeQuote = (params: {
     () =>
       buildFeeQuoteFromContext({
         toothWorks,
+        implantFavorites: params.implantFavorites,
         context: {
           ...context,
           abutmentPricingTier:
             params.abutmentPricingTier || context.abutmentPricingTier,
         },
       }),
-    [context, params.abutmentPricingTier, toothWorks],
+    [context, params.abutmentPricingTier, params.implantFavorites, toothWorks],
   );
 
   const quote = storedQuote && storedQuote.total > 0 ? storedQuote : liveQuote;

@@ -1,10 +1,12 @@
 // related files:
 // - web/backend/utils/labFeeSchedule.js
 // - 2026-08-13: 견적 라인 치아번호 10→20→30→40번대 정렬.
+// - 2026-08-14: 환봉 요청중은 기공소 어벗, 도입·CNC는 어벗츠 어벗.
 import {
   buildUnsetLabFeeSchedule,
   computePracticeTransferRetailFees,
   isLabFeeScheduleConfigured,
+  isPendingRoundBarAbutment,
   LAB_FEE_SCHEDULE_SAMPLE,
   LAB_FEE_SCHEDULE_ZEROS,
   normalizeLabFeeItems,
@@ -411,5 +413,133 @@ describe("labFeeSchedule", () => {
       labFeeSchedule: resolveLabFeeScheduleSource({ crown: 60000 }),
     });
     expect(fees.labFeeTotal).toBe(0);
+  });
+
+  test("환봉 요청중 커스텀어벗은 기공소 어벗(어벗츠 단가 제외)", () => {
+    const tooth = {
+      toothNumber: "16",
+      prosthesisType: "커스텀어벗",
+      customAbutment: true,
+      abutmentProductMode: "design_custom_abutment",
+      implantManufacturer: "Acme",
+      implantBrand: "One",
+      implantFamily: "Regular",
+      implantType: "헥스(사이즈 미정)",
+    };
+    expect(isPendingRoundBarAbutment(tooth)).toBe(true);
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [tooth],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.abutmentRetailTotal).toBe(0);
+    expect(fees.abutmentQty).toBe(0);
+    expect(fees.labAbutmentPending).toBe(true);
+    expect(fees.labAbutmentTotal).toBe(0);
+    expect(fees.lines[0]).toMatchObject({
+      toothNumber: "16",
+      labFee: 0,
+      labAbutmentFee: 0,
+      labAbutmentPending: true,
+      abutmentRetail: 0,
+    });
+  });
+
+  test("환봉 요청중+기공소 커스텀어벗 수가가 있으면 기공소 어벗으로 합산한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "16",
+          prosthesisType: "커스텀어벗",
+          customAbutment: true,
+          abutmentProductMode: "custom_abutment",
+          implantType: "헥스(사이즈 미정)",
+        },
+      ],
+      labFeeSchedule: {
+        items: [
+          {
+            id: "lab-abut",
+            name: "커스텀어벗",
+            unit: "perTooth",
+            enabled: true,
+            price: 35000,
+            remake: 0,
+            tiers: [],
+          },
+        ],
+      },
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.labAbutmentTotal).toBe(35000);
+    expect(fees.labFeeTotal).toBe(35000);
+    expect(fees.abutmentRetailTotal).toBe(0);
+    expect(fees.total).toBe(35000);
+    expect(fees.lines[0]).toMatchObject({
+      labAbutmentFee: 35000,
+      labAbutmentPending: true,
+      abutmentRetail: 0,
+    });
+  });
+
+  test("환봉 도입 프리셋은 어벗츠 단가를 쓴다", () => {
+    const tooth = {
+      toothNumber: "16",
+      prosthesisType: "커스텀어벗",
+      customAbutment: true,
+      abutmentProductMode: "custom_abutment",
+      implantManufacturer: "Acme",
+      implantBrand: "One",
+      implantFamily: "Regular",
+      implantType: "헥스(사이즈 미정)",
+    };
+    const favorites = [
+      {
+        manufacturer: "Acme",
+        brand: "One",
+        family: "Regular",
+        type: "헥스(사이즈 미정)",
+        roundBar: true,
+        adopted: true,
+      },
+    ];
+    expect(isPendingRoundBarAbutment(tooth, favorites)).toBe(false);
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [tooth],
+      implantFavorites: favorites,
+      labFeeSchedule: LAB_FEE_SCHEDULE_ZEROS,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.abutmentRetailTotal).toBe(20000);
+    expect(fees.labAbutmentPending).toBe(false);
+    expect(fees.lines[0]).toMatchObject({
+      labAbutmentFee: 0,
+      labAbutmentPending: false,
+      abutmentRetail: 20000,
+    });
+  });
+
+  test("크라운+환봉 요청중은 기공물과 기공소 어벗을 분리한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "26",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          implantType: "헥스(사이즈 미정)",
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.labFeeTotal).toBe(60000);
+    expect(fees.labAbutmentPending).toBe(true);
+    expect(fees.abutmentRetailTotal).toBe(0);
+    expect(fees.lines[0]).toMatchObject({
+      labFee: 60000,
+      labAbutmentPending: true,
+      abutmentRetail: 0,
+    });
   });
 });
