@@ -37,6 +37,12 @@ router.patch(
   businessController.updateMyBusiness,
 );
 
+router.post(
+  "/me/practice-membership",
+  authorize(["requestor", "practice", "admin"]),
+  businessController.setMyPracticeMembership,
+);
+
 router.put(
   "/me/request-settings",
   authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),

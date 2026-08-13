@@ -4,11 +4,13 @@
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
 // - web/backend/models/businessAnchor.model.js
 // change-log:
+// - 2026-08-13: 멤버십 가입 후 단가 즉시 반영(access updated).
 // - 2026-08-13: 로그인 치과 멤버십 여부로 커스텀어벗 안내 단가 결정.
 import { useEffect, useMemo, useState } from "react";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useAuthStore } from "@/store/useAuthStore";
+import { REQUESTOR_ACCESS_UPDATED_EVENT } from "@/shared/business/requestorCapabilities";
 import {
   resolveAbutsAbutmentPricingTier,
   type AbutsAbutmentPricingTier,
@@ -37,19 +39,28 @@ export const useAbutsAbutmentPricingTier = (): AbutsAbutmentPricingTier => {
       return;
     }
     let cancelled = false;
-    void loadBusinessMeCached({
-      token,
-      businessType: businessType || "requestor",
-    }).then((data) => {
-      if (cancelled) return;
-      const kind = String(data?.requestorKind || user?.requestorKind || "").trim();
-      if (kind === "practice" || kind === "lab") {
-        setRequestorKind(kind);
-      }
-      setPracticeMembershipActive(Boolean(data?.practiceMembershipActive));
-    });
+    const load = (force = false) => {
+      void loadBusinessMeCached({
+        token,
+        businessType: businessType || "requestor",
+        force,
+      }).then((data) => {
+        if (cancelled) return;
+        const kind = String(
+          data?.requestorKind || user?.requestorKind || "",
+        ).trim();
+        if (kind === "practice" || kind === "lab") {
+          setRequestorKind(kind);
+        }
+        setPracticeMembershipActive(Boolean(data?.practiceMembershipActive));
+      });
+    };
+    load();
+    const onUpdated = () => load(true);
+    window.addEventListener(REQUESTOR_ACCESS_UPDATED_EVENT, onUpdated);
     return () => {
       cancelled = true;
+      window.removeEventListener(REQUESTOR_ACCESS_UPDATED_EVENT, onUpdated);
     };
   }, [businessType, token, user?.requestorKind]);
 

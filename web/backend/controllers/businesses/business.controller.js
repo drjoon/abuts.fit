@@ -21,7 +21,10 @@ import {
   normalizeBusinessAddressFields,
 } from "./business.address.util.js";
 import { findBusinessByAnchors } from "./business.find.util.js";
-import { updateMyBusiness } from "./business.update.controller.js";
+import {
+  updateMyBusiness,
+  setMyPracticeMembership,
+} from "./business.update.controller.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
   matchesRequestedRequestorKind,
@@ -34,7 +37,7 @@ import {
   ensureRequestorOrgAnchor,
   isSyntheticPracticeBusinessNumber,
 } from "./requestorOrgAnchor.util.js";
-export { updateMyBusiness };
+export { updateMyBusiness, setMyPracticeMembership };
 
 export async function checkBusinessNumberDuplicate(req, res) {
   try {

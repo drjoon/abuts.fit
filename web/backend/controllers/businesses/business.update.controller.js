@@ -1163,3 +1163,89 @@ export async function updateMyBusiness(req, res) {
     });
   }
 }
+
+export async function setMyPracticeMembership(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const wantActive = req.body?.active !== false;
+    if (wantActive !== true) {
+      return res.status(400).json({
+        success: false,
+        message: "멤버십 해지는 아직 지원하지 않습니다.",
+      });
+    }
+
+    const freshUser = await User.findById(req.user._id)
+      .select({
+        businessAnchorId: 1,
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+        role: 1,
+      })
+      .lean();
+
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 등록 후 멤버십에 가입할 수 있습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(businessAnchorId).lean();
+    if (!anchor) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자 정보를 찾을 수 없습니다.",
+      });
+    }
+
+    const profile = resolveRequestorProfile({
+      anchorKind: anchor.requestorKind,
+      anchorServices: anchor.requestorServices,
+      anchorCaps: anchor.requestorCapabilities,
+      userKind: freshUser?.requestorKind,
+      userServices: freshUser?.requestorServices,
+      userCaps: freshUser?.requestorCapabilities,
+      userRole: freshUser?.role || req.user.role,
+      businessVerified: String(anchor.status || "").trim() === "verified",
+    });
+
+    if (profile.kind !== "practice") {
+      return res.status(403).json({
+        success: false,
+        message: "치과 멤버십은 치과만 가입할 수 있습니다.",
+      });
+    }
+
+    if (anchor.practiceMembershipActive) {
+      return res.json({
+        success: true,
+        message: "이미 멤버십을 이용 중입니다.",
+        data: { practiceMembershipActive: true },
+      });
+    }
+
+    await BusinessAnchor.updateOne(
+      { _id: anchor._id },
+      { $set: { practiceMembershipActive: true } },
+    );
+    invalidateMyBusinessCache(anchor._id);
+
+    return res.json({
+      success: true,
+      message: "치과 멤버십에 가입되었습니다.",
+      data: { practiceMembershipActive: true },
+    });
+  } catch (error) {
+    console.error("[setMyPracticeMembership]", error);
+    return res.status(500).json({
+      success: false,
+      message: "멤버십 가입 중 오류가 발생했습니다.",
+    });
+  }
+}

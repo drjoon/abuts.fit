@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 치과 [멤버십] → 가입 모달. [가입 이유] 제거.
 // - 2026-08-12: 기공소·치과 — [정책 안내] 오른쪽 [가입 이유] 버튼(PlatformBenefitsDialog).
 // - 2026-08-12: 무료 재제작 잔여를 어벗 요약카드로 이전. 헤더는 [정책 안내]만 유지.
 // - 2026-08-11: [정책 안내] 색을 primary(기간 필터와 동일)로 조정.
@@ -10,17 +11,15 @@
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
-// - web/frontend/src/features/platform/PlatformBenefitsDialog.tsx
+// - web/frontend/src/features/platform/PracticeMembershipJoinDialog.tsx
+// - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
-import {
-  LabPlatformBenefitsDialog,
-  PracticePlatformBenefitsDialog,
-} from "@/features/lab/LabPlatformBenefitsBanner";
+import { PracticeMembershipJoinDialog } from "@/features/platform/PracticeMembershipJoinDialog";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
 type PricingReferralStats = {
@@ -83,10 +82,9 @@ export const useRequestorMonthlyRemakeFreeRemaining = () => {
 
 export const RequestorPolicyRemakeHeader = () => {
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [benefitsOpen, setBenefitsOpen] = useState(false);
+  const [membershipOpen, setMembershipOpen] = useState(false);
   const { kind, loading } = useRequestorBusinessAccess();
-  const showBenefits =
-    !loading && (kind === "lab" || kind === "practice");
+  const showMembership = !loading && kind === "practice";
 
   return (
     <>
@@ -99,30 +97,23 @@ export const RequestorPolicyRemakeHeader = () => {
         정책 안내
       </Button>
 
-      {showBenefits ? (
+      {showMembership ? (
         <Button
           type="button"
           size="sm"
+          variant="outline"
           className="h-8 border border-input bg-white px-10 text-xs text-foreground hover:bg-slate-50 hover:text-foreground"
-          onClick={() => setBenefitsOpen(true)}
+          onClick={() => setMembershipOpen(true)}
         >
-          가입 이유
+          멤버십
         </Button>
       ) : null}
 
       <PricingPolicyDialog open={policyOpen} onOpenChange={setPolicyOpen} />
-      {kind === "lab" ? (
-        <LabPlatformBenefitsDialog
-          open={benefitsOpen}
-          onOpenChange={setBenefitsOpen}
-        />
-      ) : null}
-      {kind === "practice" ? (
-        <PracticePlatformBenefitsDialog
-          open={benefitsOpen}
-          onOpenChange={setBenefitsOpen}
-        />
-      ) : null}
+      <PracticeMembershipJoinDialog
+        open={membershipOpen}
+        onOpenChange={setMembershipOpen}
+      />
     </>
   );
 };

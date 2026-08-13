@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 치과 멤버십 가입 → 가입 모달.
 // - 2026-08-13: 가입 축하 크레딧 — 치과 숨김, 기공소는 금액·1회 지급만 표시.
 // - 2026-08-13: 기본 가격 제목 삭제. 멤버십 단가+일반 소형 병기, 치과 멤버십 자동결제 안내.
 // - 2026-08-13: 생산만 15,000·디자인+생산 20,000 기재, 배송비 박스단위 별도.
@@ -19,6 +20,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - web/frontend/src/features/platform/PracticeMembershipJoinDialog.tsx
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Dialog,
@@ -27,6 +29,7 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { request } from '@/shared/api/apiClient';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useRequestorBusinessAccess } from '@/shared/business/useRequestorBusinessAccess';
@@ -34,6 +37,8 @@ import {
   CREDIT_SETTINGS_DEFAULTS,
   useSystemSettings
 } from '@/hooks/useSystemSettings';
+import { useAbutsAbutmentPricingTier } from '@/shared/pricing/useAbutsAbutmentPricingTier';
+import { PracticeMembershipJoinDialog } from '@/features/platform/PracticeMembershipJoinDialog';
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
@@ -86,13 +91,15 @@ function PriceRow({
   value,
   unitLabel,
   secondaryValue,
-  note
+  note,
+  noteAction
 }: {
   label: string;
   value: string;
   unitLabel?: string;
   secondaryValue?: string;
   note?: string;
+  noteAction?: ReactNode;
 }) {
   return (
     <div className='space-y-0.5'>
@@ -111,8 +118,15 @@ function PriceRow({
             </div>
           ) : null}
         </div>
-      ) : note ? (
-        <div className='text-xs text-slate-500'>{note}</div>
+      ) : note || noteAction ? (
+        <div className='flex items-center justify-between gap-3'>
+          {note ? (
+            <div className='min-w-0 text-xs text-slate-500'>{note}</div>
+          ) : (
+            <span />
+          )}
+          {noteAction}
+        </div>
       ) : null}
     </div>
   );
@@ -138,7 +152,11 @@ export const PricingPolicyDialog = ({
 }: Props) => {
   const { token } = useAuthStore();
   const { kind } = useRequestorBusinessAccess();
+  const abutmentPricingTier = useAbutsAbutmentPricingTier();
   const showWelcomeCredit = kind === 'lab';
+  const showMembershipJoin = kind === 'practice';
+  const isPracticeMember = abutmentPricingTier === 'membership';
+  const [membershipOpen, setMembershipOpen] = useState(false);
   const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
   const { data: systemSettings } = useSystemSettings();
   const welcomeRequestCredit = Math.max(
@@ -220,6 +238,7 @@ export const PricingPolicyDialog = ({
         : '단가 · 출고 기준을 한눈에 확인하세요.';
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0 sm:rounded-2xl'>
         <DialogHeader className='border-b border-slate-100 px-6 pb-4 pt-6'>
@@ -331,6 +350,24 @@ export const PricingPolicyDialog = ({
                       membershipMonthlyFee
                     )}`}
                     note='매월 구독료 자동 결제'
+                    noteAction={
+                      showMembershipJoin ? (
+                        isPracticeMember ? (
+                          <span className='shrink-0 text-xs font-medium text-primary'>
+                            이용 중
+                          </span>
+                        ) : (
+                          <Button
+                            type='button'
+                            variant='link'
+                            className='h-auto shrink-0 px-0 py-0 text-xs font-semibold'
+                            onClick={() => setMembershipOpen(true)}
+                          >
+                            멤버십 가입
+                          </Button>
+                        )
+                      ) : null
+                    }
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
@@ -481,5 +518,10 @@ export const PricingPolicyDialog = ({
         </div>
       </DialogContent>
     </Dialog>
+      <PracticeMembershipJoinDialog
+        open={membershipOpen}
+        onOpenChange={setMembershipOpen}
+      />
+    </>
   );
 };
