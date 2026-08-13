@@ -86,10 +86,10 @@ import {
   ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE,
   ABUTS_ABUTMENT_SERVICE_TAX_NOTE,
   ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
-  ABUTS_PRACTICE_MEMBERSHIP_SCOPE_NOTE,
   formatAbutsAbutmentServiceWon,
-  formatAbutsManwon,
+  formatAbutsAbutmentTierPriceLine,
 } from "@/shared/pricing/abutsAbutmentService";
+import { useAbutsAbutmentPricingTier } from "@/shared/pricing/useAbutsAbutmentPricingTier";
 import {
   CREDIT_SETTINGS_DEFAULTS,
   useSystemSettings,
@@ -126,6 +126,8 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 커스텀어벗 설정 모달에 생산만/디자인+생산 배타 선택 + 가격 툴팁.
 // - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
 // - 2026-08-13: 커스텀 체크박스는 on/off만, 「커스텀」 라벨 클릭 시에만 설정 모달.
+// - 2026-08-13: 커스텀어벗 가격 툴팁은 해당 치과 멤버십/일반 한쪽만 안내.
+// - 2026-08-13: 커스텀어벗 설정 모달 가격 툴팁은 호버일 때만.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -151,6 +153,36 @@ const ABUTMENT_SERVICE_OPTIONS: Array<{
     regularPrice: ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
   },
 ];
+
+/** 다이얼로그 자동포커스로 툴팁이 바로 뜨지 않게, 포인터 호버일 때만 연다. */
+const HoverOnlyTooltip = ({
+  content,
+  children,
+}: {
+  content: ReactNode;
+  children: ReactNode;
+}) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <Tooltip open={open}>
+      <TooltipTrigger
+        asChild
+        onPointerEnter={() => setOpen(true)}
+        onPointerLeave={() => setOpen(false)}
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        className="max-w-xs space-y-1 p-3 text-xs leading-relaxed"
+        onPointerEnter={() => setOpen(true)}
+        onPointerLeave={() => setOpen(false)}
+      >
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  );
+};
 /** 치식: 위(18→11→21→28) / 아래(48→41→31→38). 행마다 6칸 + <> 스크롤 */
 const TOOTH_CHART_ROWS: ReadonlyArray<{ key: string; label: string; teeth: readonly string[] }> = [
   {
@@ -590,6 +622,7 @@ export const PracticeTransferRequestIntakePanel = ({
     labAnchorId: selectedLab?._id,
     toothWorks,
   });
+  const abutmentPricingTier = useAbutsAbutmentPricingTier();
   const { data: systemSettings } = useSystemSettings();
   const membershipMonthlyFee = Math.max(
     0,
@@ -2551,72 +2584,75 @@ export const PracticeTransferRequestIntakePanel = ({
                   const isDesign =
                     option.mode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION;
                   return (
-                    <Tooltip key={option.mode}>
-                      <TooltipTrigger asChild>
-                        <label
-                          className={cn(
-                            "flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-center text-sm font-semibold transition-colors",
-                            isDesign
-                              ? selected
-                                ? "border-[hsl(46_92%_48%)] bg-[hsl(48_96%_58%)] text-slate-900 shadow-sm"
-                                : "border-[hsl(46_85%_52%)] bg-[hsl(48_100%_93%)] text-[hsl(42_72%_28%)] hover:bg-[hsl(48_96%_86%)]"
-                              : selected
-                                ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                                : "border-primary bg-primary-soft text-primary-strong hover:bg-primary/15",
-                          )}
-                        >
-                          <input
-                            type="checkbox"
-                            className={cn(
-                              "h-4 w-4",
-                              isDesign
-                                ? "accent-[hsl(46_92%_42%)]"
-                                : "accent-primary-strong",
-                            )}
-                            checked={selected}
-                            onChange={() => {
-                              const index = customSpecsModalTarget;
-                              setToothWorks((prev) => {
-                                const next = [...prev];
-                                const current = next[index];
-                                if (!current) return prev;
-                                next[index] = {
-                                  ...current,
-                                  customAbutment: true,
-                                  abutmentProductMode: option.mode,
-                                };
-                                return next;
-                              });
-                            }}
-                          />
-                          <span className="text-center">
-                            {ABUTMENT_PRODUCT_MODE_LABEL[option.mode]}
-                          </span>
-                        </label>
-                      </TooltipTrigger>
-                      <TooltipContent
-                        side="bottom"
-                        className="max-w-xs space-y-1 p-3 text-xs leading-relaxed"
+                    <HoverOnlyTooltip
+                      key={option.mode}
+                      content={
+                        <>
+                          <p className="font-medium">
+                            CNC커스텀어벗 - 어벗츠 자체 제공
+                          </p>
+                          <p className="tabular-nums">
+                            {formatAbutsAbutmentTierPriceLine({
+                              tier: abutmentPricingTier,
+                              membershipPrice: option.membershipPrice,
+                              regularPrice: option.regularPrice,
+                            })}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}
+                          </p>
+                          {abutmentPricingTier === "membership" ? (
+                            <p className="text-muted-foreground">
+                              월 {formatAbutsAbutmentServiceWon(membershipMonthlyFee)}
+                            </p>
+                          ) : null}
+                          <p className="text-muted-foreground">
+                            {ABUTS_ABUTMENT_SERVICE_TAX_NOTE}
+                          </p>
+                        </>
+                      }
+                    >
+                      <label
+                        className={cn(
+                          "flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-center text-sm font-semibold transition-colors",
+                          isDesign
+                            ? selected
+                              ? "border-[hsl(46_92%_48%)] bg-[hsl(48_96%_58%)] text-slate-900 shadow-sm"
+                              : "border-[hsl(46_85%_52%)] bg-[hsl(48_100%_93%)] text-[hsl(42_72%_28%)] hover:bg-[hsl(48_96%_86%)]"
+                            : selected
+                              ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                              : "border-primary bg-primary-soft text-primary-strong hover:bg-primary/15",
+                        )}
                       >
-                        <p className="font-medium">
-                          CNC커스텀어벗 - 어벗츠 자체 제공
-                        </p>
-                        <p className="tabular-nums">
-                          멤버십 {formatAbutsManwon(option.membershipPrice)}, 일반{" "}
-                          {formatAbutsManwon(option.regularPrice)}
-                        </p>
-                        <p className="text-muted-foreground">
-                          {ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}
-                        </p>
-                        <p className="text-muted-foreground">
-                          {ABUTS_PRACTICE_MEMBERSHIP_SCOPE_NOTE} · 월{" "}
-                          {formatAbutsAbutmentServiceWon(membershipMonthlyFee)}
-                        </p>
-                        <p className="text-muted-foreground">
-                          {ABUTS_ABUTMENT_SERVICE_TAX_NOTE}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
+                        <input
+                          type="checkbox"
+                          className={cn(
+                            "h-4 w-4",
+                            isDesign
+                              ? "accent-[hsl(46_92%_42%)]"
+                              : "accent-primary-strong",
+                          )}
+                          checked={selected}
+                          onChange={() => {
+                            const index = customSpecsModalTarget;
+                            setToothWorks((prev) => {
+                              const next = [...prev];
+                              const current = next[index];
+                              if (!current) return prev;
+                              next[index] = {
+                                ...current,
+                                customAbutment: true,
+                                abutmentProductMode: option.mode,
+                              };
+                              return next;
+                            });
+                          }}
+                        />
+                        <span className="text-center">
+                          {ABUTMENT_PRODUCT_MODE_LABEL[option.mode]}
+                        </span>
+                      </label>
+                    </HoverOnlyTooltip>
                   );
                 })}
               </div>

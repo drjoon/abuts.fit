@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 기본 가격 제목 삭제. 멤버십 단가+일반 소형 병기, 치과 멤버십 자동결제 안내.
 // - 2026-08-13: 생산만 15,000·디자인+생산 20,000 기재, 배송비 박스단위 별도.
 // - 2026-08-12: 모달 제목을 커스텀 어벗 생산 가격 · 출고 정책 안내로 변경, 디자인 10,000원 행 삭제.
 // - 2026-08-11: 기본가 12,000/디자인 10,000·주문량할인·소개합산·런칭이벤트·디자인+생산 장문 삭제, 출고 안내 단축.
@@ -36,9 +37,7 @@ import {
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE,
   ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
-  ABUTS_PRACTICE_MEMBERSHIP_SCOPE_NOTE,
   formatAbutsAbutmentServiceWon,
   formatAbutsManwon
 } from '@/shared/pricing/abutsAbutmentService';
@@ -83,25 +82,36 @@ function PolicySection({
 function PriceRow({
   label,
   value,
-  hint
+  unitLabel,
+  secondaryValue,
+  note
 }: {
   label: string;
   value: string;
-  hint?: string;
+  unitLabel?: string;
+  secondaryValue?: string;
+  note?: string;
 }) {
   return (
-    <div className='flex items-start justify-between gap-3'>
-      <div className='min-w-0'>
-        <div className='text-sm text-slate-600'>{label}</div>
-        {hint ? (
-          <div className='mt-0.5 text-xs leading-relaxed text-slate-500'>
-            {hint}
-          </div>
-        ) : null}
+    <div className='space-y-0.5'>
+      <div className='flex items-baseline justify-between gap-3'>
+        <div className='min-w-0 text-sm text-slate-600'>{label}</div>
+        <div className='shrink-0 text-base font-semibold tabular-nums text-slate-900'>
+          {value}
+        </div>
       </div>
-      <div className='shrink-0 text-base font-semibold tabular-nums text-slate-900'>
-        {value}
-      </div>
+      {unitLabel || secondaryValue ? (
+        <div className='flex items-baseline justify-between gap-3'>
+          <div className='min-w-0 text-xs text-slate-500'>{unitLabel}</div>
+          {secondaryValue ? (
+            <div className='shrink-0 text-xs tabular-nums text-slate-500'>
+              {secondaryValue}
+            </div>
+          ) : null}
+        </div>
+      ) : note ? (
+        <div className='text-xs text-slate-500'>{note}</div>
+      ) : null}
     </div>
   );
 }
@@ -288,18 +298,16 @@ export const PricingPolicyDialog = ({
           ) : (
             <div className='space-y-3'>
               <section className='rounded-xl border border-slate-200 bg-white px-4 py-4'>
-                <h3 className='text-sm font-semibold tracking-tight text-slate-900'>
-                  기본 가격
-                </h3>
-                <div className='mt-3 space-y-3'>
+                <div className='space-y-3'>
                   <PriceRow
                     label='생산만'
                     value={`멤버십 ${formatAbutsManwon(
                       ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
                     )}`}
-                    hint={`일반 ${formatAbutsManwon(
+                    unitLabel='1개당'
+                    secondaryValue={`(일반 ${formatAbutsManwon(
                       ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE
-                    )} · 1개당`}
+                    )})`}
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
@@ -307,9 +315,10 @@ export const PricingPolicyDialog = ({
                     value={`멤버십 ${formatAbutsManwon(
                       ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
                     )}`}
-                    hint={`일반 ${formatAbutsManwon(
+                    unitLabel='1개당'
+                    secondaryValue={`(일반 ${formatAbutsManwon(
                       ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE
-                    )} · 1개당`}
+                    )})`}
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
@@ -317,19 +326,19 @@ export const PricingPolicyDialog = ({
                     value={`월 ${formatAbutsAbutmentServiceWon(
                       membershipMonthlyFee
                     )}`}
-                    hint={ABUTS_PRACTICE_MEMBERSHIP_SCOPE_NOTE}
+                    note='매월 구독료 자동 결제'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='커스텀 어벗 신속 출고'
                     value='+2,000원'
-                    hint='1개당 추가'
+                    unitLabel='1개당'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='배송비'
                     value='3,500원'
-                    hint={ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}
+                    unitLabel='1박스당'
                   />
                 </div>
                 <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>

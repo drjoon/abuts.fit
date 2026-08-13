@@ -48,6 +48,12 @@ const businessAnchorSchema = new mongoose.Schema(
       free: { type: Boolean, default: false },
       paid: { type: Boolean, default: false },
     },
+    // 치과(practice) 커스텀어벗 멤버십. 기공소는 무시하고 일반가.
+    practiceMembershipActive: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     // 레거시 — normalize/백필·resolve 폴백만. 신규 쓰기 금지.
     requestorCapabilities: {
       practice: { type: Boolean, default: false },

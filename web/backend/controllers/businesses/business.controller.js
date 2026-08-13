@@ -354,6 +354,7 @@ export async function getMyBusiness(req, res) {
           payoutAccount: {},
           pricingBaseDate: pricingBaseDate || null,
           ...requestorProfileResponseFields(profile),
+          practiceMembershipActive: false,
           designAccessEnabled: false,
         },
       });
@@ -491,6 +492,10 @@ export async function getMyBusiness(req, res) {
         shippingPolicy: anchor?.shippingPolicy || null,
         pricingBaseDate: pricingBaseDate || null,
         ...requestorProfileResponseFields(requestorProfile),
+        practiceMembershipActive:
+          requestorProfile.kind === "practice"
+            ? Boolean(anchor?.practiceMembershipActive)
+            : false,
         designAccessEnabled:
           businessType === "requestor"
             ? Boolean(anchor?.designAccessEnabled)

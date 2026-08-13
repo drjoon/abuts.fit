@@ -9,6 +9,7 @@ import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { generateRandomPassword } from "./admin.shared.controller.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
+import { invalidateMyBusinessCache } from "../businesses/business.controller.js";
 
 export async function getAllUsers(req, res) {
   try {
@@ -309,6 +310,8 @@ export async function getUserById(req, res) {
             businessLicense: 1,
             verification: 1,
             metadata: 1,
+            requestorKind: 1,
+            practiceMembershipActive: 1,
           })
           .lean()
       : null;
@@ -348,6 +351,11 @@ export async function updateUser(req, res) {
     delete updateData.email;
     delete updateData.createdAt;
     delete updateData.updatedAt;
+    const nextPracticeMembershipActive =
+      typeof updateData.practiceMembershipActive === "boolean"
+        ? updateData.practiceMembershipActive
+        : null;
+    delete updateData.practiceMembershipActive;
     if (
       userId === req.user.id &&
       updateData.role &&
@@ -368,6 +376,17 @@ export async function updateUser(req, res) {
       return res
         .status(404)
         .json({ success: false, message: "사용자를 찾을 수 없습니다." });
+    }
+    if (
+      nextPracticeMembershipActive !== null &&
+      updatedUser.businessAnchorId &&
+      Types.ObjectId.isValid(String(updatedUser.businessAnchorId))
+    ) {
+      await BusinessAnchor.updateOne(
+        { _id: updatedUser.businessAnchorId },
+        { $set: { practiceMembershipActive: nextPracticeMembershipActive } },
+      );
+      invalidateMyBusinessCache(updatedUser.businessAnchorId);
     }
     res.status(200).json({
       success: true,

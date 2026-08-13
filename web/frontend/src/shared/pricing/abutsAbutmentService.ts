@@ -6,6 +6,7 @@
 // - .cursor/rules/design-fee.mdc
 // change-log:
 // - 2026-08-13: 멤버십/일반 단가 + 치과 월 구독료(기본 55,000) SSOT.
+// - 2026-08-13: 치과 멤버십 여부(practiceMembershipActive)로 안내 단가 한쪽만 고름.
 
 export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 15_000;
 export const ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE = 25_000;
@@ -37,4 +38,38 @@ export const formatAbutsManwon = (value: number) => {
     ? String(man)
     : man.toFixed(1).replace(/\.0$/, "");
   return `${text}만원`;
+};
+
+export type AbutsAbutmentPricingTier = "membership" | "regular";
+
+/** 치과+멤버십만 membership. 기공소·미가입 치과는 regular. */
+export const resolveAbutsAbutmentPricingTier = (args?: {
+  requestorKind?: string | null;
+  practiceMembershipActive?: boolean | null;
+}): AbutsAbutmentPricingTier => {
+  if (
+    String(args?.requestorKind || "").trim() === "practice" &&
+    Boolean(args?.practiceMembershipActive)
+  ) {
+    return "membership";
+  }
+  return "regular";
+};
+
+export const pickAbutsAbutmentTierPrice = (args: {
+  tier: AbutsAbutmentPricingTier;
+  membershipPrice: number;
+  regularPrice: number;
+}) =>
+  args.tier === "membership" ? args.membershipPrice : args.regularPrice;
+
+export const formatAbutsAbutmentTierPriceLine = (args: {
+  tier: AbutsAbutmentPricingTier;
+  membershipPrice: number;
+  regularPrice: number;
+}) => {
+  const price = pickAbutsAbutmentTierPrice(args);
+  return args.tier === "membership"
+    ? `멤버십 ${formatAbutsManwon(price)}`
+    : `일반 ${formatAbutsManwon(price)}`;
 };
