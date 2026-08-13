@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 전송 채팅 권한 — 레거시 practice뿐 아니라 requestor(치과) 작성자·동료도 기존 방 합류.
 // - 2026-08-11: 기공소 수락 시 치과↔기공소 채팅방 생성. 치과 모달 실시간 재연결.
 // - 2026-08-10: 디자인 큐 request-room은 발신 의뢰자(치과)와 연결. 기공소/제조사 폴백 금지.
 // - 2026-08-10: 디자인 파트너가 request-room에서 의뢰 기공소와 1:1 채팅 가능.
@@ -7,6 +8,7 @@
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/utils/designAccess.js
 // - web/backend/utils/designClaim.js
+// - web/backend/utils/practiceTransferChatAccess.js
 // - web/backend/socket.js
 // - web/frontend/src/shared/hooks/useChatRooms.ts
 // - web/frontend/src/shared/hooks/useChatMessages.ts
@@ -22,6 +24,11 @@ import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
 import { isDesignClaimActive } from "../../utils/designClaim.js";
+import {
+  canAccessPracticeTransferChat,
+  canJoinPracticeTransferAsLabPeer,
+  canJoinPracticeTransferAsPracticePeer as canJoinPracticeTransferAsPracticePeerCore,
+} from "../../utils/practiceTransferChatAccess.js";
 import { emitAppEventToUser, emitToUser } from "../../socket.js";
 
 const __chatPerfCache = new Map();
@@ -336,9 +343,10 @@ const resolvePracticeUserIdsByAnchor = async (anchorId) => {
   const raw = String(anchorId || "").trim();
   if (!raw || !Types.ObjectId.isValid(raw)) return [];
 
+  // 레거시 practice + 신규 requestor(치과 발신) 동료를 함께 포함한다.
   const users = await User.find({
     businessAnchorId: new Types.ObjectId(raw),
-    role: "practice",
+    role: { $in: ["practice", "requestor"] },
     active: true,
   })
     .select({ _id: 1 })
@@ -349,56 +357,30 @@ const resolvePracticeUserIdsByAnchor = async (anchorId) => {
     .filter(Boolean);
 };
 
-/**
- * 동일 치과(practice businessAnchor) 구성원이면 전송 작성자가 아니어도 채팅 참여 가능.
- * - transfer.practiceBusinessAnchorId 일치
- * - 또는 레거시(앵커 미기입) 전송의 practiceUserId가 동일 치과 멤버
- */
 const canJoinPracticeTransferAsPracticePeer = async ({
   currentUserId,
   currentUserRole,
   currentUserBusinessAnchorId,
   transferDoc,
 }) => {
-  if (String(currentUserRole || "").trim() !== "practice") return false;
-
-  const userId = String(currentUserId || "").trim();
-  const practiceUserId = String(transferDoc?.practiceUserId || "").trim();
-  if (!userId) return false;
-  if (userId === practiceUserId) return true;
-
   const userAnchorId = String(currentUserBusinessAnchorId || "").trim();
-  if (!userAnchorId || !Types.ObjectId.isValid(userAnchorId)) return false;
-
   const transferAnchorId = String(transferDoc?.practiceBusinessAnchorId || "").trim();
-  if (transferAnchorId && transferAnchorId === userAnchorId) return true;
+  const needsPeerLookup =
+    String(currentUserId || "").trim() &&
+    String(currentUserId || "").trim() !== String(transferDoc?.practiceUserId || "").trim() &&
+    (!transferAnchorId || transferAnchorId !== userAnchorId);
 
-  if (!practiceUserId) return false;
-  const peerIds = await resolvePracticeUserIdsByAnchor(userAnchorId);
-  return peerIds.includes(practiceUserId);
-};
+  const peerIds = needsPeerLookup
+    ? await resolvePracticeUserIdsByAnchor(userAnchorId)
+    : [];
 
-/**
- * 지정된 기공소(requestor businessAnchor) 구성원이면 primaryContact 해석 실패해도 채팅 참여 가능.
- * - transfer.targetLabAnchorId === currentUser.businessAnchorId
- */
-const canJoinPracticeTransferAsLabPeer = ({
-  currentUserId,
-  currentUserRole,
-  currentUserBusinessAnchorId,
-  transferDoc,
-}) => {
-  if (String(currentUserRole || "").trim() !== "requestor") return false;
-
-  const userId = String(currentUserId || "").trim();
-  if (!userId) return false;
-
-  const userAnchorId = String(currentUserBusinessAnchorId || "").trim();
-  const targetLabAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
-  if (!userAnchorId || !Types.ObjectId.isValid(userAnchorId)) return false;
-  if (!targetLabAnchorId || !Types.ObjectId.isValid(targetLabAnchorId)) return false;
-
-  return userAnchorId === targetLabAnchorId;
+  return canJoinPracticeTransferAsPracticePeerCore({
+    currentUserId,
+    currentUserRole,
+    currentUserBusinessAnchorId,
+    transferDoc,
+    peerIds,
+  });
 };
 
 const ensureChatRoomParticipant = async (roomId, userId) => {
@@ -415,7 +397,7 @@ const ensureChatRoomParticipant = async (roomId, userId) => {
 
 /**
  * practice 전송 채팅방: 참여자이거나 동일 치과/기공소 동료면 접근 허용.
- * 동료 최초 접근 시 participants에 추가한다.
+ * 작성자·수락 담당자는 participants에 없어도 합류한다(수락 후 기존 방 403 방지).
  */
 const resolvePracticeTransferRoomAccess = async (req, room) => {
   const userId = String(req.user?._id || "").trim();
@@ -432,23 +414,34 @@ const resolvePracticeTransferRoomAccess = async (req, room) => {
   }
 
   const transferDoc = await PracticeTransfer.findById(room.relatedPracticeTransferId)
-    .select({ practiceUserId: 1, practiceBusinessAnchorId: 1, targetLabAnchorId: 1 })
+    .select({
+      practiceUserId: 1,
+      practiceBusinessAnchorId: 1,
+      targetLabAnchorId: 1,
+      requestorDownloadedBy: 1,
+      requestorReadBy: 1,
+    })
     .lean();
   if (!transferDoc) return { ok: false, added: false };
 
-  const isPracticePeer = await canJoinPracticeTransferAsPracticePeer({
+  const userAnchorId = String(req.user?.businessAnchorId || "").trim();
+  const transferAnchorId = String(transferDoc?.practiceBusinessAnchorId || "").trim();
+  const needsPeerLookup =
+    userId &&
+    userId !== String(transferDoc?.practiceUserId || "").trim() &&
+    (!transferAnchorId || transferAnchorId !== userAnchorId);
+  const peerIds = needsPeerLookup
+    ? await resolvePracticeUserIdsByAnchor(userAnchorId)
+    : [];
+
+  const canAccess = canAccessPracticeTransferChat({
     currentUserId: userId,
     currentUserRole: req.user?.role,
     currentUserBusinessAnchorId: req.user?.businessAnchorId,
     transferDoc,
+    peerIds,
   });
-  const isLabPeer = canJoinPracticeTransferAsLabPeer({
-    currentUserId: userId,
-    currentUserRole: req.user?.role,
-    currentUserBusinessAnchorId: req.user?.businessAnchorId,
-    transferDoc,
-  });
-  if (!isPracticePeer && !isLabPeer) return { ok: false, added: false };
+  if (!canAccess) return { ok: false, added: false };
 
   await ensureChatRoomParticipant(room._id, userId);
   invalidateChatPerfForUsers([
@@ -1100,7 +1093,10 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
         practiceBusinessAnchorId: 1,
         targetLabAnchorId: 1,
         targetLabName: 1,
+        matchingMode: 1,
         status: 1,
+        requestorDownloadedBy: 1,
+        requestorReadBy: 1,
       })
       .lean();
 
@@ -1261,6 +1257,9 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
 
     const isPracticeSide =
       currentUserId === practiceUserId || Boolean(isPracticePeer);
+    const isAcceptor =
+      currentUserId === String(transferDoc?.requestorDownloadedBy || "").trim() ||
+      currentUserId === String(transferDoc?.requestorReadBy || "").trim();
     const isAutoOpenPool =
       String(transferDoc?.matchingMode || "").trim() === "auto" && !targetLabAnchorId;
 
@@ -1272,14 +1271,13 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
     if (!counterpartUserId && !allowPracticeOnlyRoom) {
       return res.status(409).json({
         success: false,
-        message:
-          currentUserRole === "requestor"
-            ? isAutoOpenPool
-              ? "의뢰수락 후 치과와 채팅할 수 있습니다."
-              : "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다."
-            : isAutoOpenPool
-              ? "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다."
-              : "아직 연결 가능한 기공소가 지정되지 않았습니다.",
+        message: isPracticeSide
+          ? isAutoOpenPool
+            ? "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다."
+            : "아직 연결 가능한 기공소가 지정되지 않았습니다."
+          : isAutoOpenPool
+            ? "의뢰수락 후 치과와 채팅할 수 있습니다."
+            : "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다.",
       });
     }
 
@@ -1287,7 +1285,8 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       currentUserId === practiceUserId ||
       currentUserId === counterpartUserId ||
       isPracticePeer ||
-      isLabPeer;
+      isLabPeer ||
+      isAcceptor;
 
     if (!canAccess) {
       return res.status(403).json({
@@ -1298,7 +1297,7 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
 
     const participantIdSet = new Set([practiceUserId]);
     if (counterpartUserId) participantIdSet.add(counterpartUserId);
-    if (isPracticePeer || isLabPeer) participantIdSet.add(currentUserId);
+    if (isPracticePeer || isLabPeer || isAcceptor) participantIdSet.add(currentUserId);
 
     const participantObjectIds = [...participantIdSet]
       .filter((id) => Types.ObjectId.isValid(id))
@@ -1321,7 +1320,12 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       });
       roomMeta = { _id: created._id };
       invalidateChatPerfForUsers([...participantIdSet]);
-    } else if (isPracticePeer || isLabPeer || (counterpartUserId && isPracticeSide)) {
+    } else if (
+      isPracticePeer ||
+      isLabPeer ||
+      isAcceptor ||
+      (counterpartUserId && isPracticeSide)
+    ) {
       await ensureChatRoomParticipant(roomMeta._id, currentUserId);
       if (counterpartUserId) {
         await ensureChatRoomParticipant(roomMeta._id, counterpartUserId);
