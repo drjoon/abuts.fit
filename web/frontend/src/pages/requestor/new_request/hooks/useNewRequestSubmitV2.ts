@@ -550,6 +550,9 @@ export const useNewRequestSubmitV2 = ({
             const ci = (caseInfosMap?.[primaryKey] ||
               filteredMap[primaryKey] ||
               {}) as Partial<CaseInfos>;
+            const defaults = (caseInfosMap?.__default__ ||
+              filteredMap.__default__ ||
+              {}) as Partial<CaseInfos>;
 
             const primaryKeyNorm = String(primary.temp.key || "").trim();
             // primary는 caseInfos.file에만 두고, files에는 나머지 멤버만 넣어 목록 중복을 막는다.
@@ -589,8 +592,13 @@ export const useNewRequestSubmitV2 = ({
               requestorHexRotation: ci.requestorHexRotation,
               shippingMode: ci.shippingMode,
               requestedShipDate: ci.requestedShipDate,
-              designSoftware: ci.designSoftware,
-              anodizingEnabled: ci.anodizingEnabled,
+              designSoftware: String(
+                ci.designSoftware || defaults.designSoftware || "",
+              ).trim(),
+              anodizingEnabled:
+                typeof ci.anodizingEnabled === "boolean"
+                  ? ci.anodizingEnabled
+                  : defaults.anodizingEnabled,
               file: {
                 originalName: primary.temp.originalName,
                 size: primary.temp.size,
@@ -772,7 +780,9 @@ export const useNewRequestSubmitV2 = ({
           }
         }
 
-        const detailMsg = errData?.message || `서버 오류: ${res.status}`;
+        const detailMsg = String(
+          errData?.details || errData?.message || `서버 오류: ${res.status}`,
+        ).trim();
         const errorContext = errData?.code ? ` [${errData.code}]` : "";
         throw new Error(`${detailMsg}${errorContext}`);
       }
@@ -843,7 +853,8 @@ export const useNewRequestSubmitV2 = ({
       if (isNoAbutmentError) {
         description = "커스텀 어벗을 하나 이상 의뢰해야 합니다";
       } else if (isMissingFieldsError) {
-        description = "환자정보 또는 임플란트 정보가 누락되었습니다.";
+        description =
+          rawMessage || "환자정보 또는 임플란트 정보가 누락되었습니다.";
       }
 
       dismiss();
