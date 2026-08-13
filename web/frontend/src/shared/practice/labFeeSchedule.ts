@@ -267,6 +267,7 @@ export const canonicalizeFeeItemName = (name: string) => {
   if (
     compact === "가철성임시치아" ||
     compact === "임시치아" ||
+    /^임시치아\d+$/.test(compact) ||
     /가철성\s*임시/i.test(raw)
   ) {
     return "임시치아";
@@ -349,7 +350,7 @@ const migrateLegacyLabFeeItems = (
     { id: "retainer", name: "유지장치", unit: "perSet", enabled: on("retainer"), price: schedule.retainer, remake: remake.retainer, tiers: [] },
     {
       id: "temp1",
-      name: "임시치아1",
+      name: "임시치아",
       unit: "perNTeeth",
       enabled: on("removableTemp3"),
       price: schedule.removableTemp3,
@@ -358,7 +359,7 @@ const migrateLegacyLabFeeItems = (
     },
     {
       id: "temp2",
-      name: "임시치아2",
+      name: "임시치아",
       unit: "perNTeeth",
       enabled: on("removableTemp6"),
       price: schedule.removableTemp6,
@@ -368,11 +369,11 @@ const migrateLegacyLabFeeItems = (
   ];
 };
 
-const numberedTempName = (name: string, index: number) => {
+const numberedTempName = (name: string) => {
   const raw = String(name || "").trim() || "임시치아";
-  const compact = raw.replace(/\s+/g, "");
-  const base = compact.replace(/\d+$/, "") || "임시치아";
-  if (isRemovableTempFeeName(name)) return `${base}${index + 1}`;
+  if (isRemovableTempFeeName(name) || isRemovableTempFeeName(raw)) {
+    return "임시치아";
+  }
   return raw;
 };
 

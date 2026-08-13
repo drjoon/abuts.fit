@@ -267,6 +267,7 @@ export function canonicalizeFeeItemName(name) {
   if (
     compact === "가철성임시치아" ||
     compact === "임시치아" ||
+    /^임시치아\d+$/.test(compact) ||
     /가철성\s*임시/i.test(raw)
   ) {
     return "임시치아";
@@ -378,7 +379,7 @@ function migrateLegacyLabFeeItems(input) {
     },
     {
       id: "temp1",
-      name: "임시치아1",
+      name: "임시치아",
       unit: "perNTeeth",
       enabled: enabled.removableTemp3 !== false,
       price: schedule.removableTemp3,
@@ -393,7 +394,7 @@ function migrateLegacyLabFeeItems(input) {
     },
     {
       id: "temp2",
-      name: "임시치아2",
+      name: "임시치아",
       unit: "perNTeeth",
       enabled: enabled.removableTemp6 !== false,
       price: schedule.removableTemp6,
@@ -409,11 +410,11 @@ function migrateLegacyLabFeeItems(input) {
   ];
 }
 
-function numberedTempName(name, index) {
+function numberedTempName(name) {
   const raw = String(name || "").trim() || "임시치아";
-  const compact = raw.replace(/\s+/g, "");
-  const base = compact.replace(/\d+$/, "") || "임시치아";
-  if (isRemovableTempFeeName(name)) return `${base}${index + 1}`;
+  if (isRemovableTempFeeName(name) || isRemovableTempFeeName(raw)) {
+    return "임시치아";
+  }
   return raw;
 }
 
