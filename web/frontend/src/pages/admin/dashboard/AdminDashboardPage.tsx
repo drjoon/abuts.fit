@@ -910,30 +910,35 @@ export const AdminDashboardPage = () => {
   ) => {
     if (category === "3shape") {
       return {
-        panel: "bg-primary-soft/60",
         bar: "bg-primary",
         count: "text-primary-strong",
-        item: "border-primary-muted bg-primary-soft/60 hover:bg-primary-soft/60",
+        item: "border-primary-muted bg-primary-soft/70 hover:bg-primary-soft",
         badge: "border-primary-muted bg-primary-soft text-primary-strong",
+        chip: "border-primary-muted bg-primary-soft/70 text-primary-strong hover:bg-primary-soft",
+        chipActive:
+          "border-primary/70 bg-primary-soft text-primary-strong ring-1 ring-primary/30",
       };
     }
 
     if (category === "exocad") {
       return {
-        panel: "bg-primary-soft/60",
-        bar: "bg-primary",
-        count: "text-primary-strong",
-        item: "border-primary-muted bg-primary-soft/60 hover:bg-primary-soft/60",
-        badge: "border-primary-muted bg-primary-soft text-primary-strong",
+        bar: "bg-accent",
+        count: "text-accent-strong",
+        item: "border-accent-muted bg-accent-soft/70 hover:bg-accent-soft",
+        badge: "border-accent-muted bg-accent-soft text-accent-strong",
+        chip: "border-accent-muted bg-accent-soft/70 text-accent-strong hover:bg-accent-soft",
+        chipActive:
+          "border-accent/70 bg-accent-soft text-accent-strong ring-1 ring-accent/30",
       };
     }
 
     return {
-      panel: "bg-primary-soft/60",
-      bar: "bg-primary",
-      count: "text-primary-strong",
-      item: "border-primary-muted bg-primary-soft/60 hover:bg-primary-muted/60",
-      badge: "border-primary-muted bg-primary-muted/50 text-primary-strong",
+      bar: "bg-slate-500",
+      count: "text-slate-700",
+      item: "border-slate-200 bg-slate-50 hover:bg-slate-100",
+      badge: "border-slate-200 bg-slate-100 text-slate-700",
+      chip: "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
+      chipActive: "border-slate-400 bg-slate-100 text-slate-800 ring-1 ring-slate-300",
     };
   };
 
@@ -2001,45 +2006,28 @@ export const AdminDashboardPage = () => {
                 onClick={() => setDesignSoftwareStatsFilter("all")}
                 className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
                   designSoftwareStatsFilter === "all"
-                    ? "border-primary/70 bg-primary-soft text-primary-strong"
+                    ? "border-slate-500 bg-white text-slate-800 ring-1 ring-slate-400"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 전체 ({designSoftwareBusinesses.length.toLocaleString()})
               </button>
-              <button
-                type="button"
-                onClick={() => setDesignSoftwareStatsFilter("3shape")}
-                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
-                  designSoftwareStatsFilter === "3shape"
-                    ? "border-primary/70 bg-primary-soft text-primary-strong"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                3Shape ({Number(designSoftwareStats["3shape"] || 0).toLocaleString()})
-              </button>
-              <button
-                type="button"
-                onClick={() => setDesignSoftwareStatsFilter("exocad")}
-                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
-                  designSoftwareStatsFilter === "exocad"
-                    ? "border-primary/70 bg-primary-soft text-primary-strong"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                ExoCAD ({Number(designSoftwareStats.exocad || 0).toLocaleString()})
-              </button>
-              <button
-                type="button"
-                onClick={() => setDesignSoftwareStatsFilter("other")}
-                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
-                  designSoftwareStatsFilter === "other"
-                    ? "border-primary/70 bg-primary-soft text-primary-strong"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                기타 ({Number(designSoftwareStats.other || 0).toLocaleString()})
-              </button>
+              {designSoftwareStatRows.map((row) => {
+                const tone = getDesignSoftwareToneClasses(row.key);
+                const isActive = designSoftwareStatsFilter === row.key;
+                return (
+                  <button
+                    key={row.key}
+                    type="button"
+                    onClick={() => setDesignSoftwareStatsFilter(row.key)}
+                    className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                      isActive ? tone.chipActive : tone.chip
+                    }`}
+                  >
+                    {row.label} ({row.count.toLocaleString()})
+                  </button>
+                );
+              })}
             </div>
 
             <div className="max-h-[58vh] overflow-auto pr-1">
