@@ -260,7 +260,7 @@ describe("labFeeSchedule", () => {
     expect(fees.labFeeTotal).toBe(50000);
   });
 
-  test("유지장치는 악궁당 1세트, 임시치아는 치아 수 구간으로 합산한다", () => {
+  test("유지장치는 연결 없으면 악궁당 1세트, 임시치아는 치아 수 구간으로 합산한다", () => {
     expect(resolveLabFeeKeyFromProsthesisType("유지장치")).toBe("retainer");
     expect(resolveLabFeeKeyFromProsthesisType("임시치아")).toBeNull();
     const fees = computePracticeTransferRetailFees({
@@ -279,6 +279,23 @@ describe("labFeeSchedule", () => {
     expect(fees.labFeeTotal).toBe(130000);
     expect(fees.abutmentRetailTotal).toBe(0);
     expect(fees.total).toBe(130000);
+  });
+
+  test("유지장치는 같은 악궁이어도 연결이 끊기면 스팬당 1세트다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "43", prosthesisType: "유지장치", bridgeLinkedTeeth: ["42"] },
+        { toothNumber: "42", prosthesisType: "유지장치", bridgeLinkedTeeth: ["43", "41"] },
+        { toothNumber: "41", prosthesisType: "유지장치", bridgeLinkedTeeth: ["42"] },
+        { toothNumber: "31", prosthesisType: "유지장치", bridgeLinkedTeeth: ["32"] },
+        { toothNumber: "32", prosthesisType: "유지장치", bridgeLinkedTeeth: ["31", "33"] },
+        { toothNumber: "33", prosthesisType: "유지장치", bridgeLinkedTeeth: ["32"] },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_DEFAULTS,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.labFeeTotal).toBe(80000);
+    expect(fees.lines.filter((line) => String(line.prosthesisType).includes("유지장치"))).toHaveLength(2);
   });
 
   test("커스텀 수가 항목은 이름·단위로 청구한다", () => {

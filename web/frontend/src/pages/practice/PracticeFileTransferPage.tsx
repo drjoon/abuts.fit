@@ -175,6 +175,7 @@ import {
       formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
       normalizeToothWorksForSync,
       emptyToothWorkCustomSpecs,
+      isLinkableProsthesisType,
       pickToothWorkAbutmentProductMode,
       pickToothWorkCustomSpecs,
       normalizeAccountAbutmentProductMode,
@@ -494,6 +495,7 @@ const isMissingToothProsthesisType = (prosthesisType: string) => {
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" ||
   prosthesisType === "Pontic" ||
+  prosthesisType === "유지장치" ||
   isMissingToothProsthesisType(prosthesisType);
 
 const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
@@ -615,7 +617,7 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
           : false;
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
-        isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
+        isLinkableProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
           ? row.bridgeLinkedTeeth
               .map((v) => String(v || "").trim())
               .filter((v) => adjacent.includes(v))
@@ -640,7 +642,7 @@ const serializeToothWorks = (rows: ToothWorkSelection[]) =>
         (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
       );
       const linked =
-        isBridgeLikeProsthesisType(row.prosthesisType) && orderedLinks.length > 0
+        isLinkableProsthesisType(row.prosthesisType) && orderedLinks.length > 0
           ? `(${[row.toothNumber, ...orderedLinks].join("-")})`
           : "";
       const implantParts = [
@@ -4716,8 +4718,8 @@ export const PracticeFileTransferPage = ({
     );
     if (hasBridgeLikeWithoutLinkedTooth) {
       toast({
-        title: "브리지/Pontic/작업X 연결 치아를 선택해주세요",
-        description: "브리지, Pontic, 작업X 형태는 인접 치아를 최소 1개 연결해야 합니다.",
+        title: "브리지/Pontic/작업X/유지장치 연결 치아를 선택해주세요",
+        description: "브리지, Pontic, 작업X, 유지장치 형태는 인접 치아를 최소 1개 연결해야 합니다.",
         variant: "destructive",
       });
       return;

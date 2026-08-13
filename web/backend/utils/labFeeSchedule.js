@@ -6,6 +6,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
+// - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 import {
   resolveAbutsAbutmentPricingTier,
   resolveAbutsAbutmentUnitPrice,
@@ -697,7 +698,9 @@ export function computePracticeTransferRetailFees({
   }
 
   for (const { item, rows: groupedRows } of grouped.values()) {
-    for (const group of groupRowsByArch(groupedRows)) {
+    for (const group of item.unit === "perSet"
+      ? groupRowsForSetFee(groupedRows)
+      : groupRowsByArch(groupedRows)) {
       const labFee =
         item.unit === "perSet"
           ? Math.max(
@@ -748,6 +751,89 @@ function groupRowsByArch(rows) {
     groups.get(arch).teeth.push(tooth);
   }
   return [...groups.values()];
+}
+
+function getAdjacentTeethForFee(toothNumber) {
+  const raw = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(raw)) return [];
+  const tens = Number(raw[0]);
+  const ones = Number(raw[1]);
+  const out = [];
+  if (ones > 1) out.push(`${tens}${ones - 1}`);
+  if (ones < 8) out.push(`${tens}${ones + 1}`);
+  if (ones === 1) {
+    if (tens === 1) out.push("21");
+    if (tens === 2) out.push("11");
+    if (tens === 3) out.push("41");
+    if (tens === 4) out.push("31");
+  }
+  return [...new Set(out)];
+}
+
+function collectLinkedTeethForFee(rows, toothNumber) {
+  const tooth = String(toothNumber || "").trim();
+  const adjacent = new Set(getAdjacentTeethForFee(tooth));
+  const byTooth = new Map();
+  for (const row of rows) {
+    const other = String(row?.toothNumber || row?.tooth || "").trim();
+    if (other && !byTooth.has(other)) byTooth.set(other, row);
+  }
+  const links = new Set();
+  const self = byTooth.get(tooth);
+  for (const linked of Array.isArray(self?.bridgeLinkedTeeth)
+    ? self.bridgeLinkedTeeth
+    : []) {
+    const other = String(linked || "").trim();
+    if (adjacent.has(other) && byTooth.has(other)) links.add(other);
+  }
+  for (const [other, row] of byTooth) {
+    if (!other || other === tooth || !adjacent.has(other)) continue;
+    const otherLinks = Array.isArray(row?.bridgeLinkedTeeth)
+      ? row.bridgeLinkedTeeth
+      : [];
+    if (otherLinks.some((value) => String(value || "").trim() === tooth)) {
+      links.add(other);
+    }
+  }
+  return [...links];
+}
+
+/** 연결(+)이 있으면 스팬당 1세트. 연결 정보 없는 레거시는 악궁당 1세트 */
+function groupRowsForSetFee(rows) {
+  const hasLinks = rows.some((row) =>
+    (Array.isArray(row?.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []).some(
+      (value) => String(value || "").trim(),
+    ),
+  );
+  if (!hasLinks) return groupRowsByArch(rows);
+
+  const remaining = new Set();
+  for (const row of rows) {
+    const tooth = String(row?.toothNumber || row?.tooth || "").trim();
+    if (tooth) remaining.add(tooth);
+  }
+  const groups = [];
+  while (remaining.size > 0) {
+    const start = remaining.values().next().value;
+    remaining.delete(start);
+    const stack = [start];
+    const teeth = [];
+    while (stack.length > 0) {
+      const cur = stack.pop();
+      teeth.push(cur);
+      for (const linked of collectLinkedTeethForFee(rows, cur)) {
+        if (!remaining.has(linked)) continue;
+        remaining.delete(linked);
+        stack.push(linked);
+      }
+    }
+    const arch = toothArchFromNumber(teeth[0]);
+    groups.push({
+      suffix: arch === "upper" ? "(상악)" : arch === "lower" ? "(하악)" : "",
+      teeth,
+    });
+  }
+  return groups;
 }
 
 export { resolveAbutsAbutmentPricingTier, resolveAbutsAbutmentUnitPrice };

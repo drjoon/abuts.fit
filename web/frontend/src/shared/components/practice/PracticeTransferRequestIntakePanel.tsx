@@ -93,15 +93,20 @@ import {
 } from "@/shared/pricing/abutsAbutmentService";
 import { useAbutsAbutmentPricingTier } from "@/shared/pricing/useAbutsAbutmentPricingTier";
 import {
+  applyProsthesisTypeToLinkedSpan,
   applyProsthesisTypeToRow,
   collectAdjacentBridgeLinks,
   CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
   getAdjacentTeeth,
   getProsthesisTypesForLinkState,
-  isBridgeLikeProsthesisType,
   isCustomAbutmentProsthesisType,
   isCustomAbutmentSupportedProsthesisType,
+  isLinkableProsthesisType,
   isMissingToothProsthesisType,
+  isRetainerProsthesisType,
+  isSpanUniformProsthesisType,
+  isTemporaryToothProsthesisType,
+  LINKED_PROSTHESIS_TYPES,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
   resolveProsthesisTypeForLinkState,
@@ -138,6 +143,8 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 크라운·브리지 아래 어벗 체크박스. 체크 시 설정 모달.
 // - 2026-08-13: 커스텀어벗 프리셋 목록은 4개까지 표시, 초과 시 스크롤.
 // - 2026-08-13: 형태 글자 클릭(인레이→크라운→커스텀어벗)은 설정 모달을 열지 않음.
+// - 2026-08-13: 연결 형태 클릭 순환에 유지장치·임시치아 추가.
+// - 2026-08-13: 유지장치=연결 전용. 임시치아=단독·연결.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -232,7 +239,7 @@ const activateToothInWorks = (
     ? prev.findIndex(
         (row) =>
           adj.includes(String(row.toothNumber || "").trim()) &&
-          isBridgeLikeProsthesisType(row.prosthesisType),
+          isLinkableProsthesisType(row.prosthesisType),
       )
     : -1;
 
@@ -363,15 +370,15 @@ const applyBridgeLinksInWorks = (
   return next;
 };
 
-const LINKED_PROSTHESIS_TOGGLE_CYCLE = ["브리지", "Pontic", NO_WORK_PROSTHESIS_TYPE] as const;
-
 const matchesLinkedToggleType = (current: string, type: string) => {
   if (type === "Pontic") return /^pontic$/i.test(current);
   if (type === NO_WORK_PROSTHESIS_TYPE) return isMissingToothProsthesisType(current);
+  if (type === "유지장치") return isRetainerProsthesisType(current);
+  if (type === "임시치아") return isTemporaryToothProsthesisType(current);
   return current === type;
 };
 
-/** 선택 치아 클릭: 인레이→크라운→커스텀어벗→유지장치→임시치아 / 브리지↔Pontic↔작업X */
+/** 선택 치아 클릭: 인레이→크라운→커스텀어벗→임시치아 / 브리지↔Pontic↔작업X↔유지장치↔임시치아 */
 const resolveNextProsthesisType = (
   prev: ToothWorkSelection[],
   toothNumber: string,
@@ -388,7 +395,7 @@ const resolveNextProsthesisType = (
   const current = String(row.prosthesisType || "").trim();
   let nextType: string | null = null;
   if (isLinked) {
-    const cycle = LINKED_PROSTHESIS_TOGGLE_CYCLE.filter((type) =>
+    const cycle = LINKED_PROSTHESIS_TYPES.filter((type) =>
       options.some((option) => matchesLinkedToggleType(option, type)),
     );
     if (cycle.length > 0) {
@@ -1113,7 +1120,7 @@ export const PracticeTransferRequestIntakePanel = ({
     return teeth.size;
   }, [toothWorks]);
 
-  // 연결 여부 ↔ 형태(인레이/크라운/커스텀어벗 vs 브리지/Pontic/작업X) 불일치 보정 (드래프트·구버전 데이터)
+  // 연결 여부 ↔ 형태(인레이/크라운/커스텀어벗/임시치아 vs 브리지/Pontic/작업X/유지장치/임시치아) 불일치 보정 (드래프트·구버전 데이터)
   const toothWorkLinkTypeMismatch = useMemo(() => {
     return toothWorks.some((row) => {
       const links = collectAdjacentBridgeLinks(toothWorks, row.toothNumber);
@@ -2186,7 +2193,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               {row.toothNumber}
                             </span>
 
-                            {/* 2) 치아형태 — 글자 클릭 시에만 인레이→크라운→커스텀어벗 / 브리지↔Pontic↔작업X */}
+                            {/* 2) 치아형태 — 글자 클릭 시에만 인레이→크라운→커스텀어벗→임시치아 / 브리지↔Pontic↔작업X↔유지장치↔임시치아 */}
                             {(() => {
                               const typeLabel = isMissingTooth
                                 ? NO_WORK_PROSTHESIS_TYPE
@@ -2210,8 +2217,8 @@ export const PracticeTransferRequestIntakePanel = ({
                                     isMissingTooth
                                       ? undefined
                                       : isLinked
-                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X"
-                                        : "클릭: 인레이 → 크라운 → 커스텀어벗 → 유지장치 → 임시치아"
+                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치·임시치아는 연결 전체 동일)"
+                                        : "클릭: 인레이 → 크라운 → 커스텀어벗 → 임시치아"
                                   }
                                   onClick={(e) => {
                                     e.preventDefault();
@@ -2224,9 +2231,25 @@ export const PracticeTransferRequestIntakePanel = ({
                                     );
                                     if (!resolved) return;
                                     setToothWorks((prev) => {
-                                      const next = [...prev];
-                                      const current = next[resolved.index];
+                                      const current = prev[resolved.index];
                                       if (!current) return prev;
+                                      const currentType = String(current.prosthesisType || "").trim();
+                                      const isLinkedSpan =
+                                        collectAdjacentBridgeLinks(prev, current.toothNumber)
+                                          .length > 0;
+                                      if (
+                                        isLinkedSpan &&
+                                        (isSpanUniformProsthesisType(resolved.nextType) ||
+                                          isSpanUniformProsthesisType(currentType))
+                                      ) {
+                                        return applyProsthesisTypeToLinkedSpan(
+                                          prev,
+                                          current.toothNumber,
+                                          resolved.nextType,
+                                          defaultAbutmentProductMode,
+                                        );
+                                      }
+                                      const next = [...prev];
                                       next[resolved.index] = applyProsthesisTypeToRow(
                                         current,
                                         resolved.nextType,

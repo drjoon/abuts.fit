@@ -215,8 +215,9 @@ export const LabFeeScheduleTab = () => {
           기공비 수가
         </CardTitle>
         <CardDescription className="pt-1 text-[13px] leading-relaxed">
-          항목 이름은 의뢰서 보철 형태와 같아야 청구됩니다. 임시치아1·2는 의뢰서
-          「임시치아」에 치아 수 구간으로 합산됩니다.
+          항목 이름은 의뢰서 보철 형태와 같아야 청구됩니다. 유지장치는 연결
+          스팬당 1세트, 임시치아1·2는 의뢰서 「임시치아」에 치아 수 구간으로
+          합산됩니다.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

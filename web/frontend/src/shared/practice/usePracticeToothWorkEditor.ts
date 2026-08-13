@@ -7,6 +7,9 @@ import { useMemo } from "react";
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - 2026-08-13: 신규 커스텀어벗은 계정 기본 모드(디자인+생산). 기존 커스텀 치아 미설정은 생산만 유지.
 // - 2026-08-13: 크라운·브리지는 어벗 플래그 유지(체크박스). 인레이·Pontic·작업X는 해제.
+// - 2026-08-13: 연결 형태 토글에 유지장치·임시치아 추가(단독 토글도 유지).
+// - 2026-08-13: 유지장치=브리지 계열(2치+). 임시치아=단독 1치부터 연결 n치.
+// - 2026-08-13: 연결 스팬의 유지장치·임시치아는 한쪽 변경 시 전체 동일 형태.
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
@@ -18,7 +21,10 @@ import {
   isBridgeLikeProsthesisType,
   isCustomAbutmentProsthesisType,
   isCustomAbutmentSupportedProsthesisType,
+  isLinkableProsthesisType,
   isMissingToothProsthesisType,
+  isRetainerProsthesisType,
+  isTemporaryToothProsthesisType,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
   normalizeAccountAbutmentProductMode,
@@ -33,7 +39,10 @@ export {
   isBridgeLikeProsthesisType,
   isCustomAbutmentProsthesisType,
   isCustomAbutmentSupportedProsthesisType,
+  isLinkableProsthesisType,
   isMissingToothProsthesisType,
+  isRetainerProsthesisType,
+  isTemporaryToothProsthesisType,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
 };
@@ -41,22 +50,25 @@ export {
 /** @deprecated 단독 커스텀어벗 형태. CUSTOM_ABUTMENT_PROSTHESIS_TYPE 사용 */
 export const ABUTMENT_DESIGN_PROSTHESIS_TYPE = CUSTOM_ABUTMENT_PROSTHESIS_TYPE;
 
-/** 단독 치아 형태 토글 라벨(인레이↔크라운↔커스텀어벗↔유지장치↔임시치아) */
+/** 단독 치아 형태 토글 라벨(인레이↔크라운↔커스텀어벗↔임시치아). 유지장치는 브리지 계열(2치+) */
 export const STANDALONE_PROSTHESIS_TYPES = [
   "인레이",
   "크라운",
   CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
+  "임시치아",
+] as const;
+export const LINKED_PROSTHESIS_TYPES = [
+  "브리지",
+  "Pontic",
+  NO_WORK_PROSTHESIS_TYPE,
   "유지장치",
   "임시치아",
 ] as const;
-export const LINKED_PROSTHESIS_TYPES = ["브리지", "Pontic", NO_WORK_PROSTHESIS_TYPE] as const;
 
 export const isStandaloneProsthesisType = (prosthesisType: string) =>
   prosthesisType === "인레이" ||
   prosthesisType === "크라운" ||
-  prosthesisType === "유지장치" ||
-  prosthesisType === "임시치아" ||
-  prosthesisType === "가철성 임시치아" ||
+  isTemporaryToothProsthesisType(prosthesisType) ||
   isCustomAbutmentProsthesisType(prosthesisType);
 
 export const getAdjacentTeeth = (toothNumber: string) => {
@@ -144,17 +156,27 @@ export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: strin
     .filter((type) => {
       if (allowed.has(type)) return true;
       if (!isLinked && isCustomAbutmentProsthesisType(type)) return true;
+      if (!isLinked && isTemporaryToothProsthesisType(type)) return true;
       if (isLinked && /^pontic$/i.test(type)) return true;
       if (isLinked && isMissingToothProsthesisType(type)) return true;
+      if (isLinked && isRetainerProsthesisType(type)) return true;
+      if (isLinked && isTemporaryToothProsthesisType(type)) return true;
       return false;
     });
   if (!isLinked && !next.some((type) => isCustomAbutmentProsthesisType(type))) {
     next.push(CUSTOM_ABUTMENT_PROSTHESIS_TYPE);
   }
+  if (!isLinked && !next.some((type) => isTemporaryToothProsthesisType(type))) {
+    next.push("임시치아");
+  }
   if (isLinked && !next.some((type) => type === "브리지")) next.unshift("브리지");
   if (isLinked && !next.some((type) => /^pontic$/i.test(type))) next.push("Pontic");
   if (isLinked && !next.some((type) => isMissingToothProsthesisType(type))) {
     next.push(NO_WORK_PROSTHESIS_TYPE);
+  }
+  if (isLinked && !next.some((type) => isRetainerProsthesisType(type))) next.push("유지장치");
+  if (isLinked && !next.some((type) => isTemporaryToothProsthesisType(type))) {
+    next.push("임시치아");
   }
   return next;
 };
@@ -173,6 +195,9 @@ export const resolveProsthesisTypeForLinkState = (
       ? "임시치아"
       : currentRaw;
   if (current && options.some((type) => type === current)) return current;
+  if (!isLinked && isTemporaryToothProsthesisType(current)) {
+    return options.find((type) => isTemporaryToothProsthesisType(type)) || "임시치아";
+  }
   if (isLinked && isMissingToothProsthesisType(current)) {
     return (
       options.find((type) => isMissingToothProsthesisType(type)) || NO_WORK_PROSTHESIS_TYPE
@@ -180,6 +205,12 @@ export const resolveProsthesisTypeForLinkState = (
   }
   if (isLinked && /^pontic$/i.test(current)) {
     return options.find((type) => /^pontic$/i.test(type)) || "Pontic";
+  }
+  if (isLinked && isRetainerProsthesisType(current)) {
+    return options.find((type) => isRetainerProsthesisType(type)) || "유지장치";
+  }
+  if (isLinked && isTemporaryToothProsthesisType(current)) {
+    return options.find((type) => isTemporaryToothProsthesisType(type)) || "임시치아";
   }
   if (isLinked) {
     return options.find((type) => type === "브리지") || options[0] || "브리지";
@@ -251,7 +282,52 @@ export const applyProsthesisTypeToRow = (
   return { ...row, prosthesisType: nextType };
 };
 
-/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic/작업X vs 인레이/크라운/커스텀어벗) 동기화 */
+/** 연결 스팬 전체가 같은 형태여야 하는 보철(유지장치·임시치아) */
+export const isSpanUniformProsthesisType = (prosthesisType: string) =>
+  isRetainerProsthesisType(prosthesisType) ||
+  isTemporaryToothProsthesisType(prosthesisType);
+
+/** 인접 연결로 이어진 치아 집합(자기 포함) */
+export const collectLinkedComponentTeeth = (
+  rows: ToothWorkSelection[],
+  toothNumber: string,
+): string[] => {
+  const start = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(start)) return start ? [start] : [];
+  const known = new Set(
+    rows
+      .map((row) => String(row.toothNumber || "").trim())
+      .filter((tooth) => /^[1-4][1-8]$/.test(tooth)),
+  );
+  const visited = new Set<string>();
+  const stack = [start];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (visited.has(cur) || !known.has(cur)) continue;
+    visited.add(cur);
+    for (const linked of collectAdjacentBridgeLinks(rows, cur)) {
+      if (!visited.has(linked)) stack.push(linked);
+    }
+  }
+  return [...visited];
+};
+
+export const applyProsthesisTypeToLinkedSpan = (
+  rows: ToothWorkSelection[],
+  toothNumber: string,
+  prosthesisType: string,
+  defaultAbutmentProductMode?: AbutmentProductMode,
+): ToothWorkSelection[] => {
+  const component = new Set(collectLinkedComponentTeeth(rows, toothNumber));
+  if (component.size === 0) return rows;
+  return rows.map((row) => {
+    const tooth = String(row.toothNumber || "").trim();
+    if (!component.has(tooth)) return row;
+    return applyProsthesisTypeToRow(row, prosthesisType, defaultAbutmentProductMode);
+  });
+};
+
+/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic/작업X/유지장치 vs 인레이/크라운/커스텀어벗, 임시치아는 양쪽) 동기화 */
 export const toggleAdjacentBridgeLink = (
   rows: ToothWorkSelection[],
   originalIndex: number,
@@ -330,6 +406,14 @@ export const toggleAdjacentBridgeLink = (
       ...applyProsthesisTypeToRow(paired, pairedType),
       bridgeLinkedTeeth: pairedLinks,
     };
+  }
+
+  if (checked && currentTooth) {
+    const initiator = next[originalIndex];
+    const initiatorType = String(initiator?.prosthesisType || "").trim();
+    if (initiator && isSpanUniformProsthesisType(initiatorType)) {
+      return applyProsthesisTypeToLinkedSpan(next, currentTooth, initiatorType);
+    }
   }
 
   return next;

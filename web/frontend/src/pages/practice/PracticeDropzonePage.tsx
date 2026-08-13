@@ -122,6 +122,7 @@ import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import {
   buildPracticeTransferMemo as buildPracticeTransferMemoShared,
   emptyToothWorkCustomSpecs,
+  isLinkableProsthesisType,
   normalizeAbutmentFavorites,
   normalizeAccountAbutmentProductMode,
   normalizeImplantFavorites,
@@ -474,6 +475,7 @@ const isMissingToothProsthesisType = (prosthesisType: string) => {
 const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" ||
   prosthesisType === "Pontic" ||
+  prosthesisType === "유지장치" ||
   isMissingToothProsthesisType(prosthesisType);
 
 const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
@@ -503,7 +505,7 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
           : false;
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
-        isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
+        isLinkableProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
           ? row.bridgeLinkedTeeth
               .map((v) => String(v || "").trim())
               .filter((v) => adjacent.includes(v))
@@ -523,7 +525,7 @@ const serializeToothWorks = (rows: ToothWorkSelection[]) =>
   normalizeToothWorks(rows)
     .map((row) => {
       const linked =
-        isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0
+        isLinkableProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0
           ? `(${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")})`
           : "";
       const implantParts = [

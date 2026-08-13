@@ -2,8 +2,10 @@
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
+// - 2026-08-13: 유지장치·임시치아 연결도 드래프트에서 복원(isLinkableProsthesisType).
 
 import {
+  isLinkableProsthesisType,
   pickToothWorkAbutmentProductMode,
   pickToothWorkCustomSpecs,
   type ToothWorkSelection,
@@ -16,7 +18,8 @@ export const restoreToothWorksFromDraft = (
   options: {
     prosthesisTypes: string[];
     isCustomAbutmentSupportedProsthesisType: (prosthesisType: string) => boolean;
-    isBridgeLikeProsthesisType: (prosthesisType: string) => boolean;
+    /** @deprecated 연결 유지 여부는 isLinkableProsthesisType SSOT */
+    isBridgeLikeProsthesisType?: (prosthesisType: string) => boolean;
     getAdjacentTeeth: (toothNumber: string) => string[];
     fallbackProsthesisType?: string;
   },
@@ -44,7 +47,7 @@ export const restoreToothWorksFromDraft = (
 
     const adjacent = options.getAdjacentTeeth(toothNumber);
     const bridgeLinkedTeeth =
-      options.isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row.bridgeLinkedTeeth)
+      isLinkableProsthesisType(prosthesisType) && Array.isArray(row.bridgeLinkedTeeth)
         ? row.bridgeLinkedTeeth
             .map((v) => String(v || "").trim())
             .filter((v) => adjacent.includes(v))

@@ -8,6 +8,8 @@
 // - 2026-08-13: 커스텀어벗 치아별 생산만/디자인+생산(abutmentProductMode) 저장·직렬화.
 // - 2026-08-13: 계정 기본 모드(defaultAbutmentProductMode)는 디자인+생산. 치아 미설정 레거시는 생산만.
 // - 2026-08-13: 크라운+커스텀어벗 플래그 직렬화 지원(isCustomAbutmentSupportedProsthesisType).
+// - 2026-08-13: 연결 보철에 유지장치·임시치아 추가. 링크 직렬화는 isLinkableProsthesisType.
+// - 2026-08-13: 유지장치=브리지 계열(2치+). 임시치아=단독·연결 모두.
 export const ABUTMENT_PRODUCT_MODE = {
   PRODUCTION: "custom_abutment",
   DESIGN_AND_PRODUCTION: "design_custom_abutment",
@@ -405,6 +407,18 @@ export const isMissingToothProsthesisType = (prosthesisType: string) => {
 
 export const CUSTOM_ABUTMENT_PROSTHESIS_TYPE = "커스텀어벗";
 
+export const isRetainerProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return compact === "유지장치" || /^retainer$/i.test(raw);
+};
+
+export const isTemporaryToothProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return compact === "임시치아" || compact === "가철성임시치아";
+};
+
 export const isCustomAbutmentProsthesisType = (prosthesisType: string) => {
   const raw = String(prosthesisType || "").trim();
   const compact = raw.replace(/\s+/g, "");
@@ -420,6 +434,8 @@ export const toCanonicalProsthesisType = (prosthesisType: string) => {
   if (isCustomAbutmentProsthesisType(prosthesisType)) {
     return CUSTOM_ABUTMENT_PROSTHESIS_TYPE;
   }
+  if (isTemporaryToothProsthesisType(prosthesisType)) return "임시치아";
+  if (isRetainerProsthesisType(prosthesisType)) return "유지장치";
   return String(prosthesisType || "").trim();
 };
 
@@ -451,6 +467,7 @@ export const normalizeProsthesisTypes = (items: string[]) => {
       }
       if (/^missing(?:tooth)?$/i.test(compact)) return NO_WORK_PROSTHESIS_TYPE;
       if (compact === "가철성임시치아" || compact === "임시치아") return "임시치아";
+      if (compact === "유지장치" || /^retainer$/i.test(item)) return "유지장치";
       return item;
     });
 
@@ -465,7 +482,13 @@ export const normalizeProsthesisTypes = (items: string[]) => {
 export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" ||
   prosthesisType === "Pontic" ||
+  isRetainerProsthesisType(prosthesisType) ||
   isMissingToothProsthesisType(prosthesisType);
+
+/** 연결(+)을 유지할 수 있는 형태. 브리지 계열은 2치 이상 필수, 임시치아는 1치부터 가능 */
+export const isLinkableProsthesisType = (prosthesisType: string) =>
+  isBridgeLikeProsthesisType(prosthesisType) ||
+  isTemporaryToothProsthesisType(prosthesisType);
 
 export const isAbutmentDesignProsthesisType = (prosthesisType: string) =>
   isCustomAbutmentProsthesisType(prosthesisType);
@@ -523,7 +546,7 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
           : false;
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
-        isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
+        isLinkableProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
           ? row.bridgeLinkedTeeth
               .map((v) => String(v || "").trim())
               .filter((v) => adjacent.includes(v))
@@ -562,7 +585,7 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
           : false;
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
-        isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
+        isLinkableProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
           ? row.bridgeLinkedTeeth
               .map((v) => String(v || "").trim())
               .filter((v) => adjacent.includes(v))
@@ -656,7 +679,7 @@ export const serializeToothWorks = (rows: ToothWorkSelection[]) =>
         (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
       );
       const linked =
-        isBridgeLikeProsthesisType(row.prosthesisType) && orderedLinks.length > 0
+        isLinkableProsthesisType(row.prosthesisType) && orderedLinks.length > 0
           ? `(${[row.toothNumber, ...orderedLinks].join("-")})`
           : "";
       const custom =
@@ -678,7 +701,7 @@ export const serializeToothWorksForSync = (rows: ToothWorkSelection[]) =>
       );
       const linked =
         row.toothNumber &&
-        isBridgeLikeProsthesisType(prosthesisType) &&
+        isLinkableProsthesisType(prosthesisType) &&
         orderedLinks.length > 0
           ? `(${[row.toothNumber, ...orderedLinks].join("-")})`
           : "";
@@ -873,7 +896,7 @@ export const formatToothWorksForDisplay = (
       const specsSummary = formatCustomSpecsSummary(row);
       if (specsSummary) details.push(specsSummary);
     }
-    if (isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0) {
+    if (isLinkableProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0) {
       const orderedLinks = [...row.bridgeLinkedTeeth].sort(
         (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
       );
