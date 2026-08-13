@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-14: 추가한 패밀리는 select 항목 옆 X로 삭제.
 // - 2026-08-14: 패밀리 선택 Regular/Mini/Narrow/Small Narrow 고정 + 패밀리 추가.
 // - 2026-08-14: 제조사 선택 마지막에 제조사 추가 요청(환봉 헥스 사이즈 미정) + 안내 모달.
 import { useMemo, useState } from "react";
@@ -66,8 +67,11 @@ const STANDARD_IMPLANT_FAMILIES = ["Regular", "Mini", "Narrow", "Small Narrow"] 
 const FAMILY_ADD_VALUE = "__add_family__";
 
 const pickFirst = (arr: string[]) => arr[0] || "";
+const familyKey = (value: string) => String(value || "").trim().toLowerCase();
+const isStandardFamily = (value: string) =>
+  STANDARD_IMPLANT_FAMILIES.some((family) => familyKey(family) === familyKey(value));
 const pickPreferredFamily = (families: string[]) => {
-  const regular = families.find((f) => String(f).trim().toLowerCase() === "regular");
+  const regular = families.find((f) => familyKey(f) === "regular");
   return regular || pickFirst(families);
 };
 
@@ -77,7 +81,7 @@ const mergeFamilyOptions = (...lists: Array<Iterable<string>>) => {
   const push = (raw: string) => {
     const value = String(raw || "").trim();
     if (!value) return;
-    const key = value.toLowerCase();
+    const key = familyKey(value);
     if (seen.has(key)) return;
     seen.add(key);
     out.push(value);
@@ -89,6 +93,13 @@ const mergeFamilyOptions = (...lists: Array<Iterable<string>>) => {
   return out;
 };
 
+const pushUniqueFamily = (list: string[], raw: string) => {
+  const value = String(raw || "").trim();
+  if (!value || isStandardFamily(value)) return list;
+  if (list.some((item) => familyKey(item) === familyKey(value))) return list;
+  return [...list, value];
+};
+
 const selectTriggerClass =
   "h-11 min-w-0 px-3 text-sm [&>span]:min-w-0 [&>span]:flex-1 [&>span]:truncate [&>span]:text-left";
 
@@ -98,15 +109,25 @@ const FamilyField = ({
   disabled,
   options,
   labelMap,
+  removableFamilies,
+  onAddFamily,
+  onRemoveFamily,
 }: {
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
   options: string[];
   labelMap?: Map<string, string>;
+  removableFamilies?: string[];
+  onAddFamily?: (family: string) => void;
+  onRemoveFamily?: (family: string) => void;
 }) => {
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const removableKeys = useMemo(
+    () => new Set((removableFamilies || []).map((family) => familyKey(family))),
+    [removableFamilies],
+  );
 
   const closeAdd = () => {
     setAddOpen(false);
@@ -116,6 +137,7 @@ const FamilyField = ({
   const commitAdd = () => {
     const next = draft.trim();
     if (!next) return;
+    onAddFamily?.(next);
     onChange(next);
     closeAdd();
   };
@@ -181,11 +203,42 @@ const FamilyField = ({
         <SelectValue placeholder="패밀리 선택" />
       </SelectTrigger>
       <SelectContent>
-        {options.map((family) => (
-          <SelectItem key={`family-${family}`} value={family} className="text-sm">
-            {labelMap?.get(family) || family}
-          </SelectItem>
-        ))}
+        {options.map((family) => {
+          const removable = removableKeys.has(familyKey(family));
+          return (
+            <SelectItem
+              key={`family-${family}`}
+              value={family}
+              className="text-sm"
+              trailing={
+                removable ? (
+                  <button
+                    type="button"
+                    className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-destructive"
+                    aria-label={`${family} 삭제`}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onPointerUp={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onRemoveFamily?.(family);
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                ) : null
+              }
+            >
+              {labelMap?.get(family) || family}
+            </SelectItem>
+          );
+        })}
         <SelectSeparator />
         <SelectItem
           value={FAMILY_ADD_VALUE}
@@ -244,6 +297,7 @@ export const PracticeToothImplantFields = ({
     brand: "",
     family: "",
   });
+  const [customFamilies, setCustomFamilies] = useState<string[]>([]);
   const { token } = useAuthStore();
   const { toast } = useToast();
   const { kind } = useRequestorBusinessAccess();
@@ -292,6 +346,21 @@ export const PracticeToothImplantFields = ({
     return options;
   }, [connectionOptions, value.implantManufacturer, value.implantBrand]);
 
+  const catalogFamilyKeys = useMemo(
+    () =>
+      new Set(
+        connectionOptions
+          .filter(
+            (c) =>
+              c.manufacturer === value.implantManufacturer &&
+              c.brand === value.implantBrand,
+          )
+          .map((c) => familyKey(String(c.family || "")))
+          .filter(Boolean),
+      ),
+    [connectionOptions, value.implantManufacturer, value.implantBrand],
+  );
+
   const familyOptions = useMemo(() => {
     const fromCatalog = connectionOptions
       .filter(
@@ -302,13 +371,27 @@ export const PracticeToothImplantFields = ({
       .map((c) => String(c.family || "").trim())
       .filter(Boolean);
     const current = String(value.implantFamily || "").trim();
-    return mergeFamilyOptions(fromCatalog, current ? [current] : []);
+    return mergeFamilyOptions(
+      fromCatalog,
+      customFamilies,
+      current ? [current] : [],
+    );
   }, [
     connectionOptions,
+    customFamilies,
     value.implantManufacturer,
     value.implantBrand,
     value.implantFamily,
   ]);
+
+  const removableFamilies = useMemo(
+    () =>
+      familyOptions.filter(
+        (family) =>
+          !isStandardFamily(family) && !catalogFamilyKeys.has(familyKey(family)),
+      ),
+    [catalogFamilyKeys, familyOptions],
+  );
 
   const typeOptions = useMemo(() => {
     const options = [
@@ -434,6 +517,33 @@ export const PracticeToothImplantFields = ({
         .filter(Boolean),
     ),
   ];
+
+  const addCustomFamily = (family: string) => {
+    setCustomFamilies((prev) => pushUniqueFamily(prev, family));
+  };
+
+  const removeCustomFamily = (family: string) => {
+    setCustomFamilies((prev) =>
+      prev.filter((item) => familyKey(item) !== familyKey(family)),
+    );
+    if (familyKey(value.implantFamily) === familyKey(family)) {
+      const nextFamily =
+        pickPreferredFamily(
+          getFamilies(value.implantManufacturer, value.implantBrand),
+        ) || pickPreferredFamily([...STANDARD_IMPLANT_FAMILIES]);
+      const nextType = pickFirst(
+        getTypes(value.implantManufacturer, value.implantBrand, nextFamily),
+      );
+      onChange({
+        ...value,
+        implantFamily: nextFamily,
+        implantType: nextType,
+      });
+    }
+    if (familyKey(requestDraft.family) === familyKey(family)) {
+      setRequestDraft((prev) => ({ ...prev, family: "Regular" }));
+    }
+  };
 
   const currentFavoriteKey = favoriteKey({
     manufacturer: value.implantManufacturer,
@@ -831,8 +941,16 @@ export const PracticeToothImplantFields = ({
             <FamilyField
               value={requestDraft.family}
               options={mergeFamilyOptions(
+                customFamilies,
                 requestDraft.family ? [requestDraft.family] : [],
               )}
+              removableFamilies={
+                requestDraft.family && !isStandardFamily(requestDraft.family)
+                  ? pushUniqueFamily(customFamilies, requestDraft.family)
+                  : customFamilies
+              }
+              onAddFamily={addCustomFamily}
+              onRemoveFamily={removeCustomFamily}
               onChange={(nextFamily) =>
                 setRequestDraft((prev) => ({ ...prev, family: nextFamily }))
               }
@@ -955,7 +1073,10 @@ export const PracticeToothImplantFields = ({
               value={value.implantFamily}
               options={familyOptions}
               labelMap={familyLabelMap}
+              removableFamilies={removableFamilies}
               disabled={!value.implantBrand}
+              onAddFamily={addCustomFamily}
+              onRemoveFamily={removeCustomFamily}
               onChange={(nextFamily) => {
                 const nextType =
                   pickFirst(
