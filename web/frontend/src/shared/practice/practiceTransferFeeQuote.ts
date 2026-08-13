@@ -5,9 +5,11 @@ import {
   computePracticeTransferRetailFees,
   DEFAULT_ABUTMENT_RETAIL_PRICE,
   LAB_FEE_SCHEDULE_ZEROS,
+  normalizeLabFeeItems,
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
   splitPracticeTransferSettlement,
+  type LabFeeItem,
   type LabFeeSchedule,
   type PracticeTransferFeeLine,
   type PracticeTransferRetailFees,
@@ -32,6 +34,7 @@ export type PracticeTransferFeeQuoteViewer = "practice" | "lab";
 export type PracticeTransferQuoteContext = {
   schedule: LabFeeSchedule;
   remakeSchedule: LabFeeSchedule;
+  items: LabFeeItem[];
   abutmentRetailPrice: number;
   abutmentPricingTier: AbutsAbutmentPricingTier;
   relationshipKind: PracticeTransferRelationshipKind;
@@ -42,6 +45,7 @@ export type PracticeTransferQuoteContext = {
 export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
   schedule: LAB_FEE_SCHEDULE_ZEROS,
   remakeSchedule: LAB_FEE_SCHEDULE_ZEROS,
+  items: normalizeLabFeeItems(LAB_FEE_SCHEDULE_ZEROS),
   abutmentRetailPrice: 0,
   abutmentPricingTier: "regular",
   relationshipKind: "none",
@@ -136,6 +140,13 @@ export const parsePracticeTransferQuoteContext = (
     remakeSchedule: usedDefaultSchedule
       ? LAB_FEE_SCHEDULE_ZEROS
       : normalizeLabFeeRemakeSchedule(remakeRaw),
+    items: usedDefaultSchedule
+      ? normalizeLabFeeItems(LAB_FEE_SCHEDULE_ZEROS)
+      : normalizeLabFeeItems(
+          scheduleRaw && typeof scheduleRaw === "object" && "items" in scheduleRaw
+            ? scheduleRaw
+            : { ...(scheduleRaw || {}), remake: remakeRaw, items: (r as { items?: LabFeeItem[] }).items },
+        ),
     abutmentRetailPrice: usedDefaultSchedule
       ? 0
       : Math.max(
@@ -163,7 +174,9 @@ export const buildFeeQuoteFromContext = (params: {
   const zeroed = Boolean(context.usedDefaultSchedule);
   const fees = computePracticeTransferRetailFees({
     toothWorks: params.toothWorks,
-    labFeeSchedule: zeroed ? LAB_FEE_SCHEDULE_ZEROS : context.schedule,
+    labFeeSchedule: zeroed
+      ? LAB_FEE_SCHEDULE_ZEROS
+      : { ...context.schedule, remake: context.remakeSchedule, items: context.items },
     abutmentPricingTier: context.abutmentPricingTier,
   });
   const feeRateApplied = Number(context.feeRateApplied || 0);
