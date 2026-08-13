@@ -129,7 +129,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 커스텀어벗 칸 「설정」제거. 생산/디자인+생산 클릭 시 설정 모달.
 // - 2026-08-13: 커스텀어벗 가격 툴팁은 해당 치과 멤버십/일반 한쪽만 안내.
 // - 2026-08-13: 커스텀어벗 설정 모달 가격 툴팁은 호버일 때만.
-// - 2026-08-13: 단독 보철=인레이/크라운/커스텀어벗. 커스텀어벗 선택 시 설정 모달.
+// - 2026-08-13: 단독 보철=인레이/크라운/커스텀어벗. 형태 클릭은 모달 없음.
 // - 2026-08-13: 커스텀어벗 모달 기본=디자인+생산. 선택값은 계정 defaultAbutmentProductMode로 저장.
 // - 2026-08-13: 커스텀어벗 설정 모달 툴팁에서 월 구독료 삭제. 배송비·부가세는 한 줄.
 // - 2026-08-13: 모달 하단 좌측 프리셋 편집(primary), 우측 취소/확인.
@@ -137,7 +137,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘.
 // - 2026-08-13: 크라운·브리지 아래 어벗 체크박스. 체크 시 설정 모달.
 // - 2026-08-13: 커스텀어벗 프리셋 목록은 4개까지 표시, 초과 시 스크롤.
-// - 2026-08-13: 인레이→크라운 형태 클릭은 설정 모달을 열지 않음(체크박스 잔여 클릭 차단).
+// - 2026-08-13: 형태 글자 클릭(인레이→크라운→커스텀어벗)은 설정 모달을 열지 않음.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -2234,11 +2234,9 @@ export const PracticeTransferRequestIntakePanel = ({
                                       );
                                       return next;
                                     });
-                                    // 인레이→크라운 등: 어벗 체크가 같은 클릭으로 켜지며 모달이 뜨지 않게.
+                                    // 형태 글자 클릭은 타입만 순환. 모달은 어벗 체크·상세 클릭에서만.
                                     suppressAbutmentCheckboxUntilRef.current = Date.now() + 500;
-                                    if (isCustomAbutmentProsthesisType(resolved.nextType)) {
-                                      openCustomSpecsModal(resolved.index);
-                                    } else if (customSpecsModalTarget === resolved.index) {
+                                    if (customSpecsModalTarget === resolved.index) {
                                       customSpecsModalSnapshotRef.current = null;
                                       closeCustomSpecsModal();
                                     }
