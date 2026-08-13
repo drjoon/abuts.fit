@@ -263,27 +263,30 @@ const businessAnchorSchema = new mongoose.Schema(
         default: 35000,
         min: 0,
       },
-      items: [
-        {
-          id: { type: String, default: "", trim: true },
-          name: { type: String, default: "", trim: true },
-          unit: {
-            type: String,
-            enum: ["perTooth", "perNTeeth", "perSet"],
-            default: "perTooth",
-          },
-          enabled: { type: Boolean, default: true },
-          price: { type: Number, default: 0, min: 0 },
-          remake: { type: Number, default: 0, min: 0 },
-          tiers: [
-            {
-              n: { type: Number, default: 3, min: 1 },
-              price: { type: Number, default: 0, min: 0 },
-              remake: { type: Number, default: 0, min: 0 },
+      items: {
+        type: [
+          {
+            id: { type: String, default: "", trim: true },
+            name: { type: String, default: "", trim: true },
+            unit: {
+              type: String,
+              enum: ["perTooth", "perNTeeth", "perSet"],
+              default: "perTooth",
             },
-          ],
-        },
-      ],
+            enabled: { type: Boolean, default: true },
+            price: { type: Number, default: 0, min: 0 },
+            remake: { type: Number, default: 0, min: 0 },
+            tiers: [
+              {
+                n: { type: Number, default: 3, min: 1 },
+                price: { type: Number, default: 0, min: 0 },
+                remake: { type: Number, default: 0, min: 0 },
+              },
+            ],
+          },
+        ],
+        default: undefined,
+      },
       remake: {
         crown: { type: Number, default: 0, min: 0 },
         bridge: { type: Number, default: 0, min: 0 },

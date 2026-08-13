@@ -130,6 +130,24 @@ describe("labFeeSchedule", () => {
     expect(fees.total).toBe(130000);
   });
 
+  test("커스텀 수가 항목은 이름·단위로 청구한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "11", prosthesisType: "덴쳐" },
+        { toothNumber: "21", prosthesisType: "덴쳐" },
+        { toothNumber: "16", prosthesisType: "크라운" },
+      ],
+      labFeeSchedule: {
+        items: [
+          { id: "denture", name: "덴쳐", unit: "perSet", price: 80000, remake: 0, enabled: true },
+          { id: "crown", name: "크라운", unit: "perTooth", price: 10000, remake: 0, enabled: true },
+        ],
+      },
+    });
+    expect(fees.labFeeTotal).toBe(90000);
+    expect(fees.lines).toHaveLength(2);
+  });
+
   test("기공비 수수료와 어벗츠 단가를 분리한다", () => {
     const split = splitPracticeTransferSettlement({
       labFeeTotal: 100000,
