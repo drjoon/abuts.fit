@@ -95,6 +95,7 @@ import { useAbutsAbutmentPricingTier } from "@/shared/pricing/useAbutsAbutmentPr
 import {
   applyProsthesisTypeToRow,
   collectAdjacentBridgeLinks,
+  CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
   getAdjacentTeeth,
   getProsthesisTypesForLinkState,
   isBridgeLikeProsthesisType,
@@ -104,6 +105,7 @@ import {
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
   resolveProsthesisTypeForLinkState,
+  STANDALONE_PROSTHESIS_TYPES,
   toggleAdjacentBridgeLink,
   type ToothWorkSelection,
 } from "@/shared/practice/usePracticeToothWorkEditor";
@@ -135,6 +137,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘.
 // - 2026-08-13: 크라운·브리지 아래 어벗 체크박스. 체크 시 설정 모달.
 // - 2026-08-13: 커스텀어벗 프리셋 목록은 4개까지 표시, 초과 시 스크롤.
+// - 2026-08-13: 인레이→크라운 형태 클릭은 설정 모달을 열지 않음(체크박스 잔여 클릭 차단).
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -394,9 +397,26 @@ const resolveNextProsthesisType = (
     }
   }
   if (!nextType) {
-    const currentIdx = options.findIndex((type) => type === current);
+    const cycle = STANDALONE_PROSTHESIS_TYPES.filter((type) =>
+      options.some((option) =>
+        type === CUSTOM_ABUTMENT_PROSTHESIS_TYPE
+          ? isCustomAbutmentProsthesisType(option)
+          : option === type,
+      ),
+    ).map((type) =>
+      type === CUSTOM_ABUTMENT_PROSTHESIS_TYPE
+        ? options.find((option) => isCustomAbutmentProsthesisType(option)) || type
+        : type,
+    );
+    const currentIdx = cycle.findIndex((type) =>
+      isCustomAbutmentProsthesisType(type)
+        ? isCustomAbutmentProsthesisType(current)
+        : type === current,
+    );
     nextType =
-      currentIdx >= 0 ? options[(currentIdx + 1) % options.length]! : options[0]!;
+      cycle.length > 0
+        ? cycle[(currentIdx >= 0 ? currentIdx + 1 : 0) % cycle.length]!
+        : options[0]!;
   }
   if (!nextType || nextType === current) return null;
   return { index: idx, nextType };
@@ -661,6 +681,8 @@ export const PracticeTransferRequestIntakePanel = ({
   const toothChartRef = useRef<HTMLDivElement | null>(null);
   const toothSelectAnchorRef = useRef<string | null>(null);
   const suppressToothClickRef = useRef(false);
+  /** 인레이→크라운 직후 어벗 체크박스가 같은 클릭을 받아 모달이 열리는 것 방지 */
+  const suppressAbutmentCheckboxUntilRef = useRef(0);
   const toothMarqueeSessionRef = useRef<{
     pointerId: number;
     originX: number;
@@ -2212,8 +2234,13 @@ export const PracticeTransferRequestIntakePanel = ({
                                       );
                                       return next;
                                     });
+                                    // 인레이→크라운 등: 어벗 체크가 같은 클릭으로 켜지며 모달이 뜨지 않게.
+                                    suppressAbutmentCheckboxUntilRef.current = Date.now() + 500;
                                     if (isCustomAbutmentProsthesisType(resolved.nextType)) {
                                       openCustomSpecsModal(resolved.index);
+                                    } else if (customSpecsModalTarget === resolved.index) {
+                                      customSpecsModalSnapshotRef.current = null;
+                                      closeCustomSpecsModal();
                                     }
                                   }}
                                 >
@@ -2241,8 +2268,17 @@ export const PracticeTransferRequestIntakePanel = ({
                                   type="checkbox"
                                   className="h-3.5 w-3.5 accent-primary-strong"
                                   checked={Boolean(row.customAbutment)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (Date.now() < suppressAbutmentCheckboxUntilRef.current) {
+                                      e.preventDefault();
+                                    }
+                                  }}
                                   onChange={(e) => {
                                     e.stopPropagation();
+                                    if (Date.now() < suppressAbutmentCheckboxUntilRef.current) {
+                                      return;
+                                    }
                                     if (e.target.checked) {
                                       openCustomSpecsModal(originalIndex);
                                       return;
