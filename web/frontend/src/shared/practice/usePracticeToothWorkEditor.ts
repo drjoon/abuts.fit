@@ -6,11 +6,12 @@ import { useMemo } from "react";
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - 2026-08-13: 신규 커스텀어벗은 계정 기본 모드(디자인+생산). 기존 커스텀 치아 미설정은 생산만 유지.
-// - 2026-08-13: 크라운·브리지는 어벗 플래그 유지(체크박스). 인레이·Pontic·작업X는 해제.
+// - 2026-08-13: 크라운·브리지는 어벗 플래그 유지(체크박스). Pontic·작업X만 해제.
 // - 2026-08-13: 연결 형태 토글에 유지장치·임시치아 추가(단독 토글도 유지).
 // - 2026-08-13: 유지장치=브리지 계열(2치+). 임시치아=단독 1치부터 연결 n치.
 // - 2026-08-13: 연결 스팬의 유지장치·임시치아는 한쪽 변경 시 전체 동일 형태.
 // - 2026-08-13: 유지장치·임시치아 스팬 전환 시 커스텀어벗 플래그·규격은 유지. 브리지로 되돌리면 복구.
+// - 2026-08-13: 단독 순환(인레이↔크라운↔커스텀어벗↔임시치아)도 커스텀 플래그·규격을 유지.
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
@@ -225,8 +226,8 @@ export const resolveProsthesisTypeForLinkState = (
   return options.find((type) => type === "크라운") || options[0] || "크라운";
 };
 
-/** 형태 변경. 커스텀어벗↔인레이/크라운은 플래그·규격을 맞추고, 브리지는 기존 커스텀 유지.
- * 유지장치·임시치아는 연결 스팬 전체에 적용되므로 커스텀을 지우지 않는다(브리지 복귀 시 유지). */
+/** 형태 변경. Pontic·작업X만 커스텀을 지운다.
+ * 인레이·유지장치·임시치아는 순환 후 크라운/브리지/커스텀어벗으로 되돌릴 수 있어 유지. */
 export const applyProsthesisTypeToRow = (
   row: ToothWorkSelection,
   prosthesisType: string,
@@ -260,14 +261,14 @@ export const applyProsthesisTypeToRow = (
       ...emptyToothWorkCustomSpecs(),
     };
   }
-  if (isRetainerProsthesisType(nextType) || isTemporaryToothProsthesisType(nextType)) {
-    return { ...row, prosthesisType: nextType };
-  }
   if (
     nextType === "인레이" ||
-    isMissingToothProsthesisType(nextType) ||
-    /^pontic$/i.test(nextType)
+    isRetainerProsthesisType(nextType) ||
+    isTemporaryToothProsthesisType(nextType)
   ) {
+    return { ...row, prosthesisType: nextType };
+  }
+  if (isMissingToothProsthesisType(nextType) || /^pontic$/i.test(nextType)) {
     return {
       ...row,
       prosthesisType: nextType,
