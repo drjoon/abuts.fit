@@ -443,7 +443,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `GET /api/practice/transfers/drafts?trashed=1` → 휴지통 목록
     - `GET /api/practice/transfers/drafts?trashed=all` → `{ drafts, trashed }` 1쿼리(페이지 로드용)
   - 활성 draft는 사용자당 **여러 건** 허용. `POST`에 `draftId`가 없으면 **항상 새 draft 생성**, 있으면 해당 건 갱신(join).
-  - 「임시 저장」은 현재 작성본을 목록에 스냅샷하고 폼을 그 draft에서 분리한다. 이후 내용이 바뀌면 새 임시저장이 생성된다.
+  - 기공의뢰 UI는 수동 「임시 저장」스냅샷을 제공하지 않는다. 작성본은 autosave로 같은 draft를 갱신한다.
   - 「새로 작성」은 화면만 비우고 서버 임시저장은 유지. 서버/휴지통 이동은 임시저장 카드 삭제로만 수행.
   - 복구 시 다른 활성 draft를 휴지통으로 보내지 않는다.
   - draft `files`는 `File` 컬렉션의 temp 업로드 파일 소유권(`uploadedBy`) 검증 후 저장합니다.

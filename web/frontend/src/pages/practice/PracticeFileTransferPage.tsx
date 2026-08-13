@@ -53,6 +53,7 @@
  * - 2026-08-13: [기공소로 전송]은 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
  * - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지 즉시 갱신. 계정 프리셋은 서버 우선.
+ * - 2026-08-14: 기공의뢰 상단 「임시 저장」버튼 제거. 목록 반영은 자동 동기화만.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -979,8 +980,6 @@ export const PracticeFileTransferPage = ({
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
   const [defaultAbutmentProductMode, setDefaultAbutmentProductMode] =
     useState<AbutmentProductMode>(() => normalizeAccountAbutmentProductMode(undefined));
-  const [tempSaving, setTempSaving] = useState(false);
-  const [tempSaveDirty, setTempSaveDirty] = useState(false);
   const [lastSavedFormFingerprint, setLastSavedFormFingerprint] = useState<string | null>(null);
   const [formSyncStatus, setFormSyncStatus] = useState<
     "idle" | "pending" | "saving" | "saved" | "error"
@@ -1032,7 +1031,6 @@ export const PracticeFileTransferPage = ({
   const transferDialogOpenRef = useRef(false);
   const returnToAllModalRef = useRef(false);
   const selectedTransferIdRef = useRef("");
-  const prevFileCountRef = useRef(0);
   const localFormUpdatedAtRef = useRef(0);
   const skipNextArrivalAutoSyncRef = useRef(false);
   const suppressLocalFormPersistRef = useRef(false);
@@ -1609,9 +1607,6 @@ export const PracticeFileTransferPage = ({
         lastAppliedServerUpdatedAtRef.current = 0;
         pendingLocalFormEditRef.current = false;
         setFormSyncStatus("idle");
-        if (pendingLocalFilesRef.current.length === 0) {
-          setTempSaveDirty(false);
-        }
         return;
       }
 
@@ -1653,9 +1648,6 @@ export const PracticeFileTransferPage = ({
             serverUpdatedAt,
           );
           localFormUpdatedAtRef.current = Math.max(localFormUpdatedAtRef.current, serverUpdatedAt);
-        }
-        if (pendingLocalFilesRef.current.length === 0) {
-          setTempSaveDirty(false);
         }
         setFormSyncStatus("saved");
         return;
@@ -1810,10 +1802,6 @@ export const PracticeFileTransferPage = ({
           localFormUpdatedAt: localFormUpdatedAtRef.current,
           serverUpdatedAt,
         });
-      }
-
-      if (pendingLocalFilesRef.current.length === 0) {
-        setTempSaveDirty(false);
       }
     },
     [myUserId, setRequestMemo, setSelectedLab],
@@ -2432,7 +2420,7 @@ export const PracticeFileTransferPage = ({
     async (seq: number) => {
       if (seq !== formAutosaveSeqRef.current) return;
       if (!authToken) return;
-      if (tempSaving || requestSubmitting || fileSyncInFlightRef.current) return;
+      if (requestSubmitting || fileSyncInFlightRef.current) return;
 
       const filesForSave = draftFilesRef.current;
       // 파일 없이도 의뢰서 내용만으로 임시저장/동기화 가능
@@ -2583,11 +2571,10 @@ export const PracticeFileTransferPage = ({
       selectedLab?._id,
       selectedLab?.name,
       skipDesignConfirm,
-      tempSaving,
     ],
   );
 
-  /** 기공소·환자명 둘 다 있어야 신규/수동 임시저장·자동 동기화. */
+  /** 기공소·환자명 둘 다 있어야 신규 임시저장·자동 동기화. */
   const hasSubstantialContentForNewDraft = useMemo(() => {
     const hasLab = Boolean(
       String(selectedLab?._id || selectedLab?.name || "").trim(),
@@ -2599,7 +2586,7 @@ export const PracticeFileTransferPage = ({
     if (!localFormHydrated) return;
     if (skipFormAutosaveRef.current) return;
     if (!authToken) return;
-    if (tempSaving || requestSubmitting) return;
+    if (requestSubmitting) return;
 
     const fingerprintUnchanged =
       lastSavedFormFingerprint !== null &&
@@ -2658,7 +2645,6 @@ export const PracticeFileTransferPage = ({
     localFormHydrated,
     persistFormDraftAutosave,
     requestSubmitting,
-    tempSaving,
   ]);
 
   useEffect(() => {
@@ -2690,7 +2676,6 @@ export const PracticeFileTransferPage = ({
     setActiveDraftId(null);
     activeDraftSeenInListRef.current = null;
     draftSummaryIdRef.current = null;
-    setTempSaveDirty(false);
     lastSavedFormFingerprintRef.current = null;
     setLastSavedFormFingerprint(null);
     lastAppliedServerUpdatedAtRef.current = 0;
@@ -3492,7 +3477,6 @@ export const PracticeFileTransferPage = ({
         localFormUpdatedAtRef.current = ts;
       }
       setFormSyncStatus("saved");
-      setTempSaveDirty(false);
 
       // 반영된(비어 있을 수 있는) 스냅샷을 localStorage에도 즉시 기록해 캐시 잔존을 막는다.
       try {
@@ -4708,15 +4692,6 @@ export const PracticeFileTransferPage = ({
     },
   });
 
-  useEffect(() => {
-    const prevCount = prevFileCountRef.current;
-    const nextCount = files.length;
-    if (nextCount > prevCount) {
-      setTempSaveDirty(true);
-    }
-    prevFileCountRef.current = nextCount;
-  }, [files]);
-
   const handleSubmitPracticeRequest = async () => {
     if (requestSubmitting) return;
 
@@ -5044,7 +5019,6 @@ export const PracticeFileTransferPage = ({
     setDraftSummary(null);
     setActiveDraftId(null);
     activeDraftSeenInListRef.current = null;
-    setTempSaveDirty(false);
     setToothChartResetNonce((n) => n + 1);
 
     // 빈 폼 baseline — 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
@@ -5073,176 +5047,6 @@ export const PracticeFileTransferPage = ({
       description:
         "작성 화면을 비웠습니다. 임시저장은 오른쪽 목록에 남아 다시 불러올 수 있습니다.",
     });
-  };
-
-  /** 작성 중 의뢰서를 지금 임시저장하고, 이후 수정분은 새 임시저장으로 이어간다. */
-  const handleManualTempSaveSnapshot = async () => {
-    if (tempSaving || fileSyncInFlightRef.current || requestSubmitting) return;
-    if (!authToken) {
-      toast({
-        title: "로그인이 필요합니다",
-        description: "다시 로그인 후 시도해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 기공소·환자명 둘 다 있어야 스냅샷을 만든다.
-    if (!hasSubstantialContentForNewDraft) {
-      toast({
-        title: "저장할 내용이 없습니다",
-        description: "기공소와 환자명을 모두 입력한 뒤 다시 시도해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setTempSaving(true);
-    fileSyncInFlightRef.current = true;
-    suppressLocalFormPersistRef.current = true;
-    skipFormAutosaveRef.current = true;
-    formAutosaveSeqRef.current += 1;
-    if (formAutosaveTimerRef.current) {
-      window.clearTimeout(formAutosaveTimerRef.current);
-      formAutosaveTimerRef.current = null;
-    }
-
-    try {
-      let nextDraftFiles = [...draftFilesRef.current];
-      if (files.length > 0) {
-        const uploadedTempFiles: TempUploadedFile[] =
-          await resolveUploadedTempFiles(files);
-        nextDraftFiles = [
-          ...nextDraftFiles,
-          ...uploadedTempFiles.map((f) => ({
-            fileId: String(f._id || "").trim(),
-            originalName: String(f.originalName || "").trim(),
-            mimetype: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
-            size: Number(f.size || 0),
-            s3Key: String(f.key || "").trim(),
-            location: String(f.location || "").trim(),
-          })),
-        ].filter((row) => row.fileId && row.originalName && row.s3Key);
-        nextDraftFiles = Array.from(
-          new Map(nextDraftFiles.map((row) => [toDraftFileKey(row), row])).values(),
-        );
-      }
-
-      const transferMemo = buildPracticeTransferMemo({
-        memo: requestMemo,
-        orderDate,
-        arrivalDate,
-        arrivalDefaultDays,
-        prosthesisTypes: normalizedProsthesisTypes,
-        toothWorks: syncToothWorks,
-        patientName: normalizedPatientName,
-        skipDesignConfirm,
-      });
-
-      const res = await apiFetch<unknown>({
-        path: "/api/practice/transfers/draft",
-        method: "POST",
-        token: authToken,
-        jsonBody: {
-          draftId: activeDraftIdRef.current || undefined,
-          targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
-          targetLabName: String(selectedLab?.name || "").trim(),
-          orderDate,
-          arrivalDate,
-          arrivalDefaultDays,
-          transferMemo,
-          files: nextDraftFiles.map((row) => ({
-            fileId: row.fileId,
-          })),
-          forceResync: true,
-        },
-      });
-
-      if (!res.ok) {
-        const body = asApiMessagePayload(res.data);
-        throw new Error(String(body?.message || "임시저장에 실패했습니다."));
-      }
-
-      const body =
-        res.data && typeof res.data === "object"
-          ? (res.data as { data?: unknown })
-          : {};
-      const payload =
-        body.data && typeof body.data === "object"
-          ? (body.data as PracticeTransferDraftPayload)
-          : null;
-
-      const savedDraftFiles = Array.isArray(payload?.files)
-        ? payload.files
-            .map((row) => ({
-              fileId: String(row?.fileId || "").trim(),
-              originalName: String(row?.originalName || "").trim(),
-              mimetype: String(row?.mimetype || "application/octet-stream").trim(),
-              size: Number(row?.size || 0),
-              s3Key: String(row?.s3Key || "").trim(),
-              location: String(row?.location || "").trim(),
-            }))
-            .filter((row) => row.fileId && row.originalName && row.s3Key)
-        : nextDraftFiles;
-
-      const nextSummary = buildOwnDraftSummary(payload, savedDraftFiles, transferMemo);
-      if (nextSummary) {
-        setPracticeDraftList((prev) => {
-          const without = prev.filter((row) => row.id !== nextSummary.id);
-          return [nextSummary, ...without];
-        });
-      }
-      void loadPracticeTransferDraftList();
-
-      // 스냅샷은 목록에 남기고, 이후 수정은 새 임시저장으로 이어가도록 작성 폼을 분리한다.
-      setDraftFiles(savedDraftFiles);
-      setDraftSummary(null);
-      setActiveDraftId(null);
-      activeDraftSeenInListRef.current = null;
-      setTempSaveDirty(false);
-      await clearLocalFilesWithCache();
-
-      const fingerprint = currentFormFingerprintRef.current;
-      lastSavedFormFingerprintRef.current = fingerprint;
-      setLastSavedFormFingerprint(fingerprint);
-      pendingLocalFormEditRef.current = false;
-      setFormSyncStatus("saved");
-
-      const serverUpdatedAt = payload?.updatedAt
-        ? new Date(String(payload.updatedAt)).getTime()
-        : Date.now();
-      if (Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0) {
-        lastAppliedServerUpdatedAtRef.current = Math.max(
-          lastAppliedServerUpdatedAtRef.current,
-          serverUpdatedAt,
-        );
-        localFormUpdatedAtRef.current = Math.max(
-          localFormUpdatedAtRef.current,
-          serverUpdatedAt,
-        );
-      }
-
-      toast({
-        title: "임시 저장 완료",
-        description:
-          "오른쪽 목록에 저장했습니다. 내용을 바꾸면 새 임시저장 의뢰서가 만들어집니다.",
-      });
-    } catch (error) {
-      toast({
-        title: "임시 저장 실패",
-        description:
-          error instanceof Error ? error.message : "임시저장 중 오류가 발생했습니다.",
-        variant: "destructive",
-      });
-      setFormSyncStatus("error");
-    } finally {
-      setTempSaving(false);
-      fileSyncInFlightRef.current = false;
-      suppressLocalFormPersistRef.current = false;
-      queueMicrotask(() => {
-        skipFormAutosaveRef.current = false;
-      });
-    }
   };
 
   const persistArrivalDefaultDaysFromRange = useCallback(
@@ -5454,30 +5258,6 @@ export const PracticeFileTransferPage = ({
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-9 px-3 text-base"
-                          disabled={
-                            tempSaving ||
-                            requestSubmitting ||
-                            !hasSubstantialContentForNewDraft ||
-                            (!activeDraftId &&
-                              lastSavedFormFingerprint !== null &&
-                              currentFormFingerprint === lastSavedFormFingerprint)
-                          }
-                          onClick={() => void handleManualTempSaveSnapshot()}
-                        >
-                          임시 저장
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs text-xs">
-                        기공소와 환자명을 입력하면 목록에 저장됩니다. 이후 수정하면 새 임시저장이 생깁니다.
-                      </TooltipContent>
-                    </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
