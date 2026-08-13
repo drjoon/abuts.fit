@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/admin/admin.settings.controller.js
+// - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 import { Router } from "express";
 const router = Router();
 
@@ -54,6 +56,8 @@ import {
   getCreditSettings,
   updateCreditSettings,
   listCreditPriceRequestors,
+  getPlatformFeeSettings,
+  updatePlatformFeeSettings,
 } from "../../controllers/admin/admin.settings.controller.js";
 import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
@@ -191,6 +195,18 @@ router.get(
   authenticate,
   authorize(["admin", "devops"]),
   listCreditPriceRequestors,
+);
+router.get(
+  "/settings/platform-fees",
+  authenticate,
+  authorize(["admin", "devops"]),
+  getPlatformFeeSettings,
+);
+router.patch(
+  "/settings/platform-fees",
+  authenticate,
+  authorize(["admin", "devops"]),
+  updatePlatformFeeSettings,
 );
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용

@@ -3,7 +3,10 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/admin/admin.settings.controller.js
+// - web/backend/utils/creditSettingsDefaults.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
+// - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 import mongoose from "mongoose";
 
 const systemSettingsSchema = new mongoose.Schema(
@@ -21,6 +24,11 @@ const systemSettingsSchema = new mongoose.Schema(
     },
     creditSettings: {
       minCreditForRequest: { type: Number, default: 15000 },
+      // 멤버십=치과 가입, 일반=기공소·미가입. 저장 시 minCreditForRequest/designFee와 동기화.
+      membershipProductionPrice: { type: Number, default: 15000 },
+      regularProductionPrice: { type: Number, default: 20000 },
+      membershipDesignAndProductionPrice: { type: Number, default: 25000 },
+      regularDesignAndProductionPrice: { type: Number, default: 40000 },
       // 개발운영사 지정 의뢰자별 커스텀 어벗 의뢰비. 미지정 의뢰자는 minCreditForRequest를 사용한다.
       specialRequestorPrices: {
         type: [
@@ -38,9 +46,9 @@ const systemSettingsSchema = new mongoose.Schema(
       shippingFee: { type: Number, default: 3500 },
       // 신속 배송 추가 의뢰크레딧 (생산=건당, 디자인+생산=1어벗당, 가공 진입 시 차감)
       expressFee: { type: Number, default: 2000 },
-      // 디자인비 (1어벗당, design_custom_abutment 시 (생산단가+디자인비)×어벗수)
-      // 생산만 15,000 + 디자인 5,000 = 디자인+생산 20,000
-      designFee: { type: Number, default: 5000 },
+      // 디자인비 (1어벗당). 멤버십 디자인+생산 − 멤버십 생산만과 동기화.
+      // 생산만 멤버십 15,000 / 일반 20,000, 디자인+생산 멤버십 25,000 / 일반 40,000
+      designFee: { type: Number, default: 10000 },
       // 치과 납품 커스텀어벗 소매가(1어벗당). 기공의뢰 분배·devops 요금 설정 SSOT
       abutmentRetailPrice: { type: Number, default: 40000 },
       // 치과(practice) 전용 멤버십 월 구독료. 기공소에는 적용하지 않음.

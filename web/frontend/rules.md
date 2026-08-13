@@ -132,7 +132,9 @@ Notes:
   - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
   - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
   - `src/shared/components/CreditLedgerModal.tsx`
-  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·designFee 전역 설정 UI)
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
+  - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (커스텀어벗 요금 · 기공소 매칭. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`)
+  - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (등록/미등록 치과 플랫폼 수수료율. 개발운영사 앵커 `payoutRates` SSOT)
 - 개발·운영사 설정
   - `src/pages/devops/DevopsSettingsPage.tsx` (계정/사업자/임직원/**결제(입금 계좌)**/알림/보안)
   - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · **기공의뢰 자동매칭**
@@ -190,8 +192,8 @@ Notes:
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
-    - 디자인비는 `creditSettings.designFee`(기본 5,000원 / 1어벗). 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
-    - 안내 정가 SSOT (`src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.0만원, 디자인+생산 멤버십 2.5만원·일반 4.0만원. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 55,000원, 관리자 플랫폼 설정). 해지 시 다음 결제일까지 유지, 이후 결제 없음.
+    - 디자인비는 디자인+생산 − 생산만. 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
+    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.0만원, 디자인+생산 멤버십 2.5만원·일반 4.0만원. 치과 멤버십만 membership. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 55,000원, 관리자 플랫폼 설정). 해지 시 다음 결제일까지 유지, 이후 결제 없음.
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).

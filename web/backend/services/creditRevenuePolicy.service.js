@@ -54,7 +54,7 @@ export const DEFAULT_NON_PARTNER_FEE_RATE = 0.25;
  * - "active" | "referred"(등록 치과): payoutRates.partnerFeeRate (기본 0%)
  * - 그 외(미등록): payoutRates.nonPartnerFeeRate (기본 25%)
  * 걷힌 수수료 금액은 resolveRevenueOwnerBaseAllocation()으로 제조사/개발운영사/영업자/관리자에게 다시 분배된다.
- * 요율 SSOT: BusinessAnchor.payoutRates (개발운영사 파트너 페이지에서 변경).
+ * 요율 SSOT: BusinessAnchor.payoutRates (관리자 플랫폼 설정「기공소 매칭」에서 변경).
  */
 export function resolvePracticeTransferFeeRate({ relationshipKind, payoutRates }) {
   if (relationshipKind === "active" || relationshipKind === "referred") {

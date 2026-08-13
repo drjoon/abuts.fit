@@ -5,8 +5,10 @@
 // - web/backend/modules/admin/admin.routes.js
 // - web/backend/models/systemSettings.model.js
 // - web/backend/utils/creditSettingsDefaults.js
+// - web/backend/utils/abutsAbutmentService.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
-// - web/frontend/src/pages/devops/DevopsSettingsPage.tsx
+// - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
+// - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 import SystemSettings from "../../models/systemSettings.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
@@ -14,60 +16,15 @@ import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
   getDeliveryEtaLeadDays,
 } from "./admin.shared.controller.js";
-const CREDIT_SETTINGS_DEFAULTS = (() => {
-  const pickDefault = (path) =>
-    Number(SystemSettings.schema.path(path)?.options?.default ?? 0) || 0;
-  return {
-    minCreditForRequest: pickDefault("creditSettings.minCreditForRequest"),
-    shippingFee: pickDefault("creditSettings.shippingFee"),
-    expressFee: pickDefault("creditSettings.expressFee"),
-    designFee: pickDefault("creditSettings.designFee"),
-    abutmentRetailPrice: pickDefault("creditSettings.abutmentRetailPrice"),
-    practiceMembershipMonthlyFee: pickDefault(
-      "creditSettings.practiceMembershipMonthlyFee",
-    ),
-    defaultRequestFreeCredit: pickDefault(
-      "creditSettings.defaultRequestFreeCredit",
-    ),
-    defaultShippingFreeCredit: pickDefault(
-      "creditSettings.defaultShippingFreeCredit",
-    ),
-  };
-})();
+import { normalizeLoadedCreditSettings } from "../../utils/creditSettingsDefaults.js";
+import { normalizeAbutsAbutmentCreditPrices } from "../../utils/abutsAbutmentService.js";
+import {
+  DEFAULT_PARTNER_FEE_RATE,
+  DEFAULT_NON_PARTNER_FEE_RATE,
+} from "../../services/creditRevenuePolicy.service.js";
 
-function normalizeCreditSettings(raw = {}) {
-  return {
-    minCreditForRequest: Number(
-      raw.minCreditForRequest ?? CREDIT_SETTINGS_DEFAULTS.minCreditForRequest,
-    ),
-    specialRequestorPrices: Array.isArray(raw.specialRequestorPrices)
-      ? raw.specialRequestorPrices
-          .map((item) => ({
-            requestorAnchorId: String(item?.requestorAnchorId || "").trim(),
-            amount: Math.max(0, Number(item?.amount) || 0),
-          }))
-          .filter((item) => item.requestorAnchorId)
-      : [],
-    shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
-    expressFee: Number(raw.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee),
-    designFee: Number(raw.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
-    abutmentRetailPrice: Number(
-      raw.abutmentRetailPrice ?? CREDIT_SETTINGS_DEFAULTS.abutmentRetailPrice,
-    ),
-    practiceMembershipMonthlyFee: Number(
-      raw.practiceMembershipMonthlyFee ??
-        CREDIT_SETTINGS_DEFAULTS.practiceMembershipMonthlyFee,
-    ),
-    defaultRequestFreeCredit: Number(
-      raw.defaultRequestFreeCredit ??
-        CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
-    ),
-    defaultShippingFreeCredit: Number(
-      raw.defaultShippingFreeCredit ??
-        CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
-    ),
-  };
-}
+const normalizeCreditSettings = (raw = {}) =>
+  normalizeLoadedCreditSettings(raw);
 
 export async function getSystemSettings(req, res) {
   try {
@@ -330,6 +287,14 @@ export async function updateCreditSettings(req, res) {
     const shippingFee = Number(payload.shippingFee);
     const expressFee = Number(payload.expressFee);
     const designFee = Number(payload.designFee);
+    const membershipProductionPrice = Number(payload.membershipProductionPrice);
+    const regularProductionPrice = Number(payload.regularProductionPrice);
+    const membershipDesignAndProductionPrice = Number(
+      payload.membershipDesignAndProductionPrice,
+    );
+    const regularDesignAndProductionPrice = Number(
+      payload.regularDesignAndProductionPrice,
+    );
     const abutmentRetailPrice = Number(payload.abutmentRetailPrice);
     const practiceMembershipMonthlyFee = Number(
       payload.practiceMembershipMonthlyFee,
@@ -371,6 +336,29 @@ export async function updateCreditSettings(req, res) {
     if (!Number.isNaN(designFee) && designFee >= 0) {
       sanitized.designFee = designFee;
     }
+    if (
+      !Number.isNaN(membershipProductionPrice) &&
+      membershipProductionPrice >= 0
+    ) {
+      sanitized.membershipProductionPrice = membershipProductionPrice;
+    }
+    if (!Number.isNaN(regularProductionPrice) && regularProductionPrice >= 0) {
+      sanitized.regularProductionPrice = regularProductionPrice;
+    }
+    if (
+      !Number.isNaN(membershipDesignAndProductionPrice) &&
+      membershipDesignAndProductionPrice >= 0
+    ) {
+      sanitized.membershipDesignAndProductionPrice =
+        membershipDesignAndProductionPrice;
+    }
+    if (
+      !Number.isNaN(regularDesignAndProductionPrice) &&
+      regularDesignAndProductionPrice >= 0
+    ) {
+      sanitized.regularDesignAndProductionPrice =
+        regularDesignAndProductionPrice;
+    }
     if (!Number.isNaN(abutmentRetailPrice) && abutmentRetailPrice >= 0) {
       sanitized.abutmentRetailPrice = abutmentRetailPrice;
     }
@@ -402,9 +390,20 @@ export async function updateCreditSettings(req, res) {
       ...(existing?.creditSettings || {}),
       ...sanitized,
     };
+    const abutmentPrices = normalizeAbutsAbutmentCreditPrices(mergedRaw);
+    const synced = {
+      ...mergedRaw,
+      ...abutmentPrices,
+      minCreditForRequest: abutmentPrices.membershipProductionPrice,
+      designFee: Math.max(
+        0,
+        abutmentPrices.membershipDesignAndProductionPrice -
+          abutmentPrices.membershipProductionPrice,
+      ),
+    };
     // 응답/공개용 정규화와 저장용을 분리: 저장 시 ObjectId를 유지한다.
     const mergedForSave = {
-      ...normalizeCreditSettings(mergedRaw),
+      ...normalizeCreditSettings(synced),
       specialRequestorPrices: Array.isArray(mergedRaw.specialRequestorPrices)
         ? mergedRaw.specialRequestorPrices
             .map((item) => {
@@ -521,6 +520,107 @@ export async function listCreditPriceRequestors(req, res) {
     res.status(500).json({
       success: false,
       message: "의뢰자 목록을 조회하지 못했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+async function findDevopsPayoutAnchor() {
+  return BusinessAnchor.findOne({ businessType: "devops" })
+    .select({ payoutRates: 1 })
+    .sort({ createdAt: 1 })
+    .lean();
+}
+
+function normalizePlatformFeeRates(payoutRates = {}) {
+  const partnerFeeRate = Number(
+    payoutRates?.partnerFeeRate ?? DEFAULT_PARTNER_FEE_RATE,
+  );
+  const nonPartnerFeeRate = Number(
+    payoutRates?.nonPartnerFeeRate ?? DEFAULT_NON_PARTNER_FEE_RATE,
+  );
+  return {
+    partnerFeeRate: Number.isFinite(partnerFeeRate)
+      ? Math.min(1, Math.max(0, partnerFeeRate))
+      : DEFAULT_PARTNER_FEE_RATE,
+    nonPartnerFeeRate: Number.isFinite(nonPartnerFeeRate)
+      ? Math.min(1, Math.max(0, nonPartnerFeeRate))
+      : DEFAULT_NON_PARTNER_FEE_RATE,
+    updatedAt: payoutRates?.updatedAt || null,
+  };
+}
+
+export async function getPlatformFeeSettings(req, res) {
+  try {
+    const devops = await findDevopsPayoutAnchor();
+    res.status(200).json({
+      success: true,
+      data: {
+        platformFeeSettings: normalizePlatformFeeRates(devops?.payoutRates),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "플랫폼 수수료율을 조회하지 못했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function updatePlatformFeeSettings(req, res) {
+  try {
+    const payload = req.body && typeof req.body === "object" ? req.body : {};
+    const partnerFeeRate = Number(payload.partnerFeeRate);
+    const nonPartnerFeeRate = Number(payload.nonPartnerFeeRate);
+    if (
+      [partnerFeeRate, nonPartnerFeeRate].some(
+        (rate) => !Number.isFinite(rate) || rate < 0 || rate > 1,
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "플랫폼 수수료율은 0~100% 범위여야 합니다.",
+      });
+    }
+    if (partnerFeeRate > nonPartnerFeeRate) {
+      return res.status(400).json({
+        success: false,
+        message: "등록 치과 수수료율은 미등록 수수료율보다 클 수 없습니다.",
+      });
+    }
+
+    const devops = await findDevopsPayoutAnchor();
+    if (!devops?._id) {
+      return res.status(404).json({
+        success: false,
+        message: "개발운영사 사업자를 찾을 수 없습니다.",
+      });
+    }
+
+    await BusinessAnchor.updateOne(
+      { _id: devops._id },
+      {
+        $set: {
+          "payoutRates.partnerFeeRate": partnerFeeRate,
+          "payoutRates.nonPartnerFeeRate": nonPartnerFeeRate,
+          "payoutRates.updatedAt": new Date(),
+        },
+      },
+    );
+
+    const next = await findDevopsPayoutAnchor();
+    res.status(200).json({
+      success: true,
+      message: "플랫폼 수수료율이 저장되었습니다.",
+      data: {
+        platformFeeSettings: normalizePlatformFeeRates(next?.payoutRates),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "플랫폼 수수료율을 저장하지 못했습니다.",
       error: error.message,
     });
   }

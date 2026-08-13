@@ -309,7 +309,7 @@ export async function createRequestsFromDraft(req, res) {
         earlyOrgId && Types.ObjectId.isValid(earlyOrgId)
           ? checkCreditLock(earlyOrgId)
           : Promise.resolve({ isLocked: false }),
-        loadCreditSettingsDefaults(),
+        loadCreditSettingsDefaults({ requestorOrgId: earlyOrgId }),
         getManufacturerLeadTimesUtil().catch(() => null),
         shippingOrgIdEarly && Types.ObjectId.isValid(shippingOrgIdEarly)
           ? BusinessAnchor.findById(shippingOrgIdEarly)

@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 // - web/backend/controllers/businesses/business.update.controller.js
 // change-log:
+// - 2026-08-13: 생산·디자인+생산 단가를 creditSettings에서 읽음.
 // - 2026-08-13: 해지·해지 취소 안내를 상단 대신 버튼 툴팁으로.
 // - 2026-08-13: 단가 글자 확대. 생산 2.0→1.5만, 디자인+생산 4.0→2.5만.
 // - 2026-08-13: 이용 중 해지 예약. 다음 결제일까지 유지, 이후 결제 없음.
@@ -37,13 +38,10 @@ import { invalidateBusinessMeCache } from "@/shared/components/business/settings
 import { notifyRequestorAccessUpdated } from "@/shared/business/requestorCapabilities";
 import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
 import {
-  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
   ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
   formatAbutsAbutmentServiceWon,
   formatAbutsManwon,
+  normalizeAbutsAbutmentCreditPrices,
 } from "@/shared/pricing/abutsAbutmentService";
 
 type Props = {
@@ -80,6 +78,9 @@ export const PracticeMembershipJoinDialog = ({
         CREDIT_SETTINGS_DEFAULTS.practiceMembershipMonthlyFee ??
         ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
     ) || ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
+  );
+  const abutmentPrices = normalizeAbutsAbutmentCreditPrices(
+    systemSettings?.creditSettings,
   );
   const nextBillingLabel = membership.nextBillingAt
     ? formatKstYmdToKo(toKstYmd(membership.nextBillingAt))
@@ -185,10 +186,10 @@ export const PracticeMembershipJoinDialog = ({
               <span className="text-sm text-slate-600">생산만</span>
               <span className="flex items-baseline gap-2 tabular-nums">
                 <span className="text-base text-slate-400 line-through">
-                  {formatAbutsManwon(ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE)}
+                  {formatAbutsManwon(abutmentPrices.regularProductionPrice)}
                 </span>
                 <span className="text-xl font-semibold tracking-tight text-slate-900">
-                  {formatAbutsManwon(ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE)}
+                  {formatAbutsManwon(abutmentPrices.membershipProductionPrice)}
                 </span>
               </span>
             </div>
@@ -197,12 +198,12 @@ export const PracticeMembershipJoinDialog = ({
               <span className="flex items-baseline gap-2 tabular-nums">
                 <span className="text-base text-slate-400 line-through">
                   {formatAbutsManwon(
-                    ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+                    abutmentPrices.regularDesignAndProductionPrice,
                   )}
                 </span>
                 <span className="text-xl font-semibold tracking-tight text-slate-900">
                   {formatAbutsManwon(
-                    ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+                    abutmentPrices.membershipDesignAndProductionPrice,
                   )}
                 </span>
               </span>

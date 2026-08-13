@@ -3,8 +3,10 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/hooks/useSystemSettings.ts
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
+// - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - .cursor/rules/design-fee.mdc
 // change-log:
+// - 2026-08-13: creditSettings 멤버십/일반 생산·디자인+생산 단가 정규화.
 // - 2026-08-13: 생산 일반 2.0만·멤버십 1.5만 / 디자인+생산 일반 4.0만·멤버십 2.5만.
 // - 2026-08-13: 멤버십/일반 단가 + 치과 월 구독료(기본 55,000) SSOT.
 // - 2026-08-13: 치과 멤버십 여부(practiceMembershipActive)로 안내 단가 한쪽만 고름.
@@ -13,6 +15,42 @@ export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 15_000;
 export const ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE = 20_000;
 export const ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE = 25_000;
 export const ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE = 40_000;
+
+export type AbutsAbutmentCreditPrices = {
+  membershipProductionPrice: number;
+  regularProductionPrice: number;
+  membershipDesignAndProductionPrice: number;
+  regularDesignAndProductionPrice: number;
+};
+
+const toWon = (value: unknown, fallback: number) => {
+  const n = Math.round(Number(value ?? fallback));
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+};
+
+export const normalizeAbutsAbutmentCreditPrices = (
+  creditSettings?: Partial<AbutsAbutmentCreditPrices> & {
+    minCreditForRequest?: number;
+  } | null,
+): AbutsAbutmentCreditPrices => ({
+  membershipProductionPrice: toWon(
+    creditSettings?.membershipProductionPrice ??
+      creditSettings?.minCreditForRequest,
+    ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  ),
+  regularProductionPrice: toWon(
+    creditSettings?.regularProductionPrice,
+    ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  ),
+  membershipDesignAndProductionPrice: toWon(
+    creditSettings?.membershipDesignAndProductionPrice,
+    ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+  ),
+  regularDesignAndProductionPrice: toWon(
+    creditSettings?.regularDesignAndProductionPrice,
+    ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+  ),
+});
 
 /** @deprecated 멤버십 생산 단가. MEMBERSHIP_PRODUCTION 사용 */
 export const ABUTS_ABUTMENT_PRODUCTION_LIST_PRICE =

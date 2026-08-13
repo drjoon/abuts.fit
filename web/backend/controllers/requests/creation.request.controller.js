@@ -166,7 +166,9 @@ export async function createRequest(req, res) {
     let expressFeePerRequest = 2000;
     let designFeePerTooth = 5000;
     try {
-      const creditSettings = await loadCreditSettingsDefaults();
+      const creditSettings = await loadCreditSettingsDefaults({
+        requestorOrgId: req.user?.businessAnchorId,
+      });
       expressFeePerRequest = Math.max(
         0,
         Number(creditSettings?.expressFee ?? 2000) || 2000,
@@ -661,7 +663,9 @@ export async function createRequestsBulk(req, res) {
     let expressFeePerRequest = 2000;
     let designFeePerTooth = 5000;
     try {
-      const creditSettings = await loadCreditSettingsDefaults();
+      const creditSettings = await loadCreditSettingsDefaults({
+        requestorOrgId: req.user?.businessAnchorId,
+      });
       expressFeePerRequest = Math.max(
         0,
         Number(creditSettings?.expressFee ?? 2000) || 2000,

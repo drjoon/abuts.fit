@@ -2,7 +2,16 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/abutsAbutmentService.js
+// - web/backend/controllers/admin/admin.settings.controller.js
+import { Types } from "mongoose";
 import SystemSettings from "../models/systemSettings.model.js";
+import BusinessAnchor from "../models/businessAnchor.model.js";
+import {
+  pickAbutsAbutmentCreditPrices,
+  normalizeAbutsAbutmentCreditPrices,
+  resolveAbutsAbutmentPricingTier,
+} from "./abutsAbutmentService.js";
 
 const SCHEMA_DEFAULTS = (() => {
   const pickDefault = (path) =>
@@ -23,17 +32,27 @@ const SCHEMA_DEFAULTS = (() => {
     defaultShippingFreeCredit: pickDefault(
       "creditSettings.defaultShippingFreeCredit",
     ),
+    membershipProductionPrice: pickDefault(
+      "creditSettings.membershipProductionPrice",
+    ),
+    regularProductionPrice: pickDefault("creditSettings.regularProductionPrice"),
+    membershipDesignAndProductionPrice: pickDefault(
+      "creditSettings.membershipDesignAndProductionPrice",
+    ),
+    regularDesignAndProductionPrice: pickDefault(
+      "creditSettings.regularDesignAndProductionPrice",
+    ),
   };
 })();
 
-export async function loadCreditSettingsDefaults() {
-  const doc = await SystemSettings.findOne({ key: "global" }).lean();
-  const creditSettings = doc?.creditSettings || {};
-
+export function normalizeLoadedCreditSettings(creditSettings = {}) {
+  const abutmentPrices = normalizeAbutsAbutmentCreditPrices({
+    ...SCHEMA_DEFAULTS,
+    ...creditSettings,
+  });
+  const membership = pickAbutsAbutmentCreditPrices(abutmentPrices, "membership");
   return {
-    minCreditForRequest: Number(
-      creditSettings.minCreditForRequest ?? SCHEMA_DEFAULTS.minCreditForRequest,
-    ),
+    minCreditForRequest: membership.productionPrice,
     specialRequestorPrices: Array.isArray(creditSettings.specialRequestorPrices)
       ? creditSettings.specialRequestorPrices
           .map((item) => ({
@@ -46,7 +65,7 @@ export async function loadCreditSettingsDefaults() {
     expressFee: Number(
       creditSettings.expressFee ?? SCHEMA_DEFAULTS.expressFee,
     ),
-    designFee: Number(creditSettings.designFee ?? SCHEMA_DEFAULTS.designFee),
+    designFee: membership.designFeePerTooth,
     abutmentRetailPrice: Number(
       creditSettings.abutmentRetailPrice ?? SCHEMA_DEFAULTS.abutmentRetailPrice,
     ),
@@ -62,6 +81,38 @@ export async function loadCreditSettingsDefaults() {
       creditSettings.defaultShippingFreeCredit ??
         SCHEMA_DEFAULTS.defaultShippingFreeCredit,
     ),
+    ...abutmentPrices,
+  };
+}
+
+export async function resolveRequestorAbutmentPricingTier(requestorOrgId) {
+  const id = String(requestorOrgId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) return "regular";
+  const anchor = await BusinessAnchor.findById(id)
+    .select({ requestorKind: 1, practiceMembershipActive: 1 })
+    .lean();
+  if (String(anchor?.requestorKind || "").trim() !== "practice") {
+    return "regular";
+  }
+  return resolveAbutsAbutmentPricingTier({
+    practiceMembershipActive: Boolean(anchor?.practiceMembershipActive),
+  });
+}
+
+export async function loadCreditSettingsDefaults(options = {}) {
+  const doc = await SystemSettings.findOne({ key: "global" }).lean();
+  const base = normalizeLoadedCreditSettings(doc?.creditSettings || {});
+  const requestorOrgId = options?.requestorOrgId;
+  if (!requestorOrgId) return base;
+
+  const pricingTier =
+    await resolveRequestorAbutmentPricingTier(requestorOrgId);
+  const picked = pickAbutsAbutmentCreditPrices(base, pricingTier);
+  return {
+    ...base,
+    minCreditForRequest: picked.productionPrice,
+    designFee: picked.designFeePerTooth,
+    abutmentPricingTier: picked.pricingTier,
   };
 }
 

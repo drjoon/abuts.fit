@@ -2,9 +2,18 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
+// - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
-import { ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT } from "@/shared/pricing/abutsAbutmentService";
+import {
+  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
+  normalizeAbutsAbutmentCreditPrices,
+} from "@/shared/pricing/abutsAbutmentService";
 
 type CreditSettingsApiResponse = {
   success?: boolean;
@@ -22,17 +31,29 @@ export interface CreditSettings {
   practiceMembershipMonthlyFee: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
+  membershipProductionPrice: number;
+  regularProductionPrice: number;
+  membershipDesignAndProductionPrice: number;
+  regularDesignAndProductionPrice: number;
 }
 
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
-  minCreditForRequest: 15000,
+  minCreditForRequest: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   shippingFee: 3500,
   expressFee: 2000,
-  designFee: 5000,
+  designFee:
+    ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE -
+    ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   abutmentRetailPrice: 40000,
   practiceMembershipMonthlyFee: ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
   defaultRequestFreeCredit: 30000,
   defaultShippingFreeCredit: 7000,
+  membershipProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  regularProductionPrice: ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  membershipDesignAndProductionPrice:
+    ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+  regularDesignAndProductionPrice:
+    ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
 };
 
 export interface SystemSettingsData {
@@ -52,15 +73,18 @@ export const useSystemSettings = () => {
       }
       // 응답 형식: { success: true, data: { creditSettings: {...} } }
       const raw = res.data?.data?.creditSettings || {};
+      const abutmentPrices = normalizeAbutsAbutmentCreditPrices(raw);
       const creditSettings: CreditSettings = {
-        minCreditForRequest: Number(
-          raw.minCreditForRequest ?? CREDIT_SETTINGS_DEFAULTS.minCreditForRequest,
-        ),
+        minCreditForRequest: abutmentPrices.membershipProductionPrice,
         shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
         expressFee: Number(
           raw.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
         ),
-        designFee: Number(raw.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
+        designFee: Math.max(
+          0,
+          abutmentPrices.membershipDesignAndProductionPrice -
+            abutmentPrices.membershipProductionPrice,
+        ),
         abutmentRetailPrice: Number(
           raw.abutmentRetailPrice ?? CREDIT_SETTINGS_DEFAULTS.abutmentRetailPrice,
         ),
@@ -76,6 +100,7 @@ export const useSystemSettings = () => {
           raw.defaultShippingFreeCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
         ),
+        ...abutmentPrices,
       };
       return { creditSettings } as SystemSettingsData;
     },

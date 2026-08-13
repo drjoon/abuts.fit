@@ -4,12 +4,11 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/backend/tests/unit/labFeeSchedule.test.js
+// - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 import {
-  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  normalizeAbutsAbutmentCreditPrices,
+  type AbutsAbutmentCreditPrices,
   type AbutsAbutmentPricingTier,
 } from "@/shared/pricing/abutsAbutmentService";
 
@@ -449,17 +448,19 @@ export const resolveRemakeLabFeeKey = (row?: {
 export const resolveAbutsAbutmentUnitPrice = (args: {
   productMode?: string | null;
   pricingTier?: AbutsAbutmentPricingTier | null;
+  prices?: Partial<AbutsAbutmentCreditPrices> | null;
 }) => {
+  const prices = normalizeAbutsAbutmentCreditPrices(args.prices);
   const isDesign = String(args.productMode || "").trim() === "design_custom_abutment";
   const membership = args.pricingTier === "membership";
   if (isDesign) {
     return membership
-      ? ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
-      : ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE;
+      ? prices.membershipDesignAndProductionPrice
+      : prices.regularDesignAndProductionPrice;
   }
   return membership
-    ? ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
-    : ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE;
+    ? prices.membershipProductionPrice
+    : prices.regularProductionPrice;
 };
 
 export const splitPracticeTransferSettlement = (args: {
@@ -554,6 +555,7 @@ export const computePracticeTransferRetailFees = (params: {
   }> | null;
   labFeeSchedule?: (Partial<LabFeeSchedule> & { items?: LabFeeItem[]; remake?: Partial<LabFeeSchedule> }) | null;
   abutmentPricingTier?: AbutsAbutmentPricingTier | null;
+  abutmentPrices?: Partial<AbutsAbutmentCreditPrices> | null;
   remake?: boolean;
   skipAbutmentFees?: boolean;
 }): PracticeTransferRetailFees => {
@@ -575,6 +577,7 @@ export const computePracticeTransferRetailFees = (params: {
     return resolveAbutsAbutmentUnitPrice({
       productMode: row?.abutmentProductMode || row?.productMode,
       pricingTier,
+      prices: params.abutmentPrices,
     });
   };
   const addAbutment = (abutmentFee: number) => {

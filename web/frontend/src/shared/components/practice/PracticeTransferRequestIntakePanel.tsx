@@ -83,15 +83,13 @@ import {
   type PracticeImplantFavorite,
 } from "@/shared/practice/transferMemo";
 import {
-  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE,
   ABUTS_ABUTMENT_SERVICE_TAX_NOTE,
   formatAbutsAbutmentTierPriceLine,
+  normalizeAbutsAbutmentCreditPrices,
 } from "@/shared/pricing/abutsAbutmentService";
 import { useAbutsAbutmentPricingTier } from "@/shared/pricing/useAbutsAbutmentPricingTier";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 import {
   applyProsthesisTypeToLinkedSpan,
   applyProsthesisTypeToRow,
@@ -126,6 +124,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-08-13: 생산·디자인+생산 단가를 creditSettings 멤버십/일반값으로 표시.
 // - 2026-08-11: 기공소 선택에 "자동 매칭" 옵션(+빠른툴팁) 추가.
 // - 2026-08-11: 안내문구 최소화 — 플레이스홀더·메모 도움말·커스텀규격 설명을 즉시툴팁으로.
 // - 2026-08-11: 기공의뢰 카드 내 행(섹션) 수직 간격 gap-10.
@@ -154,20 +153,22 @@ const TOOTH_CHART_VISIBLE = 6;
 /** 카드 높이: 커스텀 임플란트/스캔바디 2줄까지 표시한 기준 */
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 
-const ABUTMENT_SERVICE_OPTIONS: Array<{
+const abutmentServiceOptionsFromPrices = (
+  prices: ReturnType<typeof normalizeAbutsAbutmentCreditPrices>,
+): Array<{
   mode: AbutmentProductMode;
   membershipPrice: number;
   regularPrice: number;
-}> = [
+}> => [
   {
     mode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
-    membershipPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-    regularPrice: ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+    membershipPrice: prices.membershipProductionPrice,
+    regularPrice: prices.regularProductionPrice,
   },
   {
     mode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
-    membershipPrice: ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
-    regularPrice: ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+    membershipPrice: prices.membershipDesignAndProductionPrice,
+    regularPrice: prices.regularDesignAndProductionPrice,
   },
 ];
 
@@ -659,6 +660,14 @@ export const PracticeTransferRequestIntakePanel = ({
     ? "크라운"
     : normalizedProsthesisTypes[0] || "크라운";
   const abutmentPricingTier = useAbutsAbutmentPricingTier();
+  const { data: systemSettings } = useSystemSettings();
+  const abutmentServiceOptions = useMemo(
+    () =>
+      abutmentServiceOptionsFromPrices(
+        normalizeAbutsAbutmentCreditPrices(systemSettings?.creditSettings),
+      ),
+    [systemSettings?.creditSettings],
+  );
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
     enabled: showFeeEstimate,
     labAnchorId: selectedLab?._id,
@@ -2720,7 +2729,7 @@ export const PracticeTransferRequestIntakePanel = ({
             <>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
               <div className="my-10 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {ABUTMENT_SERVICE_OPTIONS.map((option) => {
+                {abutmentServiceOptions.map((option) => {
                   const selected =
                     resolveToothAbutmentProductMode(
                       toothWorks[customSpecsModalTarget],

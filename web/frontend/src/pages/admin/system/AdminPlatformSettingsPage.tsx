@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 기공소 매칭 수수료율은 admin platform-fees API로 개발운영사 앵커에 저장.
 // - 2026-08-13: 개발운영사 파트너 페이지를 관리자「플랫폼 설정」으로 이전.
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx

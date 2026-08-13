@@ -805,7 +805,9 @@ export async function normalizeRequestForResponse(requestDoc) {
     let expressFeePerRequest = 2000;
     let designFeePerTooth = 5000;
     try {
-      const creditSettings = await loadCreditSettingsDefaults();
+      const creditSettings = await loadCreditSettingsDefaults({
+        requestorOrgId: obj?.businessAnchorId,
+      });
       expressFeePerRequest = Math.max(
         0,
         Number(creditSettings?.expressFee ?? 2000) || 2000,
@@ -1085,7 +1087,7 @@ export async function computePriceForRequest({
   const [creditSettings, existing, pricingBaseDate] = await Promise.all([
     creditSettingsOverride
       ? Promise.resolve(creditSettingsOverride)
-      : loadCreditSettingsDefaults(),
+      : loadCreditSettingsDefaults({ requestorOrgId }),
     Request.findOne({
       ...scopeFilter,
       ...selfExclusionFilter,

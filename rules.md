@@ -265,7 +265,7 @@
 - 묶음 배송 식별은 박스/패키지 기준으로 유지
 - 배송비 과금 시점: 세척.패킹 승인
 - 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1,000원), **가공 진입(CAM 승인) 시 별도 `express_surcharge` 저널로 차감**
-  - 설정 UI: 관리자 설정(결제) + 개발·운영사 설정(요금) — `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
+  - 설정 UI: 관리자 플랫폼 설정「커스텀어벗 요금 · 크레딧」— `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 약속 출고일 자정까지 당일 집하 실패(또는 신속→묶음 전환) 시 신속 추가비만 물리 삭제 취소
     (`shippingOnTimeEvalWorker` / `cancelExpressSurchargeIfShipDelayed`). 16시 이후 당일 수동 집하는 정시.
   - 의뢰자 대시보드: `PATCH /api/requests/my/shipping-mode` (준비 단계만)
@@ -274,7 +274,7 @@
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 디자인비: `creditSettings.designFee`(기본 **5,000원 / 1어벗**). 안내 정가 생산만 멤버십 1.5만원·일반 2.0만원 / 디자인+생산 멤버십 2.5만원·일반 4.0만원. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 55,000원).
+  - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 **10,000원 / 1어벗**). 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 55,000원).
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`

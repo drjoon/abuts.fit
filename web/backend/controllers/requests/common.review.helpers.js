@@ -597,7 +597,9 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   try {
     const { loadCreditSettingsDefaults } =
       await import("../../utils/creditSettingsDefaults.js");
-    const creditSettings = await loadCreditSettingsDefaults();
+    const creditSettings = await loadCreditSettingsDefaults({
+      requestorOrgId: spendAnchorId,
+    });
     if (shippingMode === "express") {
       expressFeeUnit = Math.max(
         0,

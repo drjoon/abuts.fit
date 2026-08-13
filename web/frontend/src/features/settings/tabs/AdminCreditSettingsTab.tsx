@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 디자인비 항목을 디자인+생산으로 교체. 생산만·디자인+생산을 멤버십/일반 단가로 분리.
 // - 2026-08-13: 치과 멤버십 월 구독료(practiceMembershipMonthlyFee) 추가.
 // - 2026-08-13: 디자인비(1어벗당) 입력 복구. 기본 생산 15,000 + 디자인 5,000.
 // - 2026-08-13: 파트너 요금·크레딧 UI를 카드/아이콘/자동저장 스타일로 정리.
@@ -21,6 +22,13 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { CREDIT_SETTINGS_DEFAULTS } from "@/hooks/useSystemSettings";
+import {
+  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  normalizeAbutsAbutmentCreditPrices,
+} from "@/shared/pricing/abutsAbutmentService";
 import {
   Card,
   CardContent,
@@ -72,6 +80,10 @@ interface CreditSettings {
   practiceMembershipMonthlyFee: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
+  membershipProductionPrice: number;
+  regularProductionPrice: number;
+  membershipDesignAndProductionPrice: number;
+  regularDesignAndProductionPrice: number;
 }
 
 type SpecialRequestorPrice = {
@@ -107,10 +119,12 @@ function normalizeCreditSettings(
   raw: Partial<CreditSettings> | typeof CREDIT_SETTINGS_DEFAULTS,
   fallback: CreditSettings,
 ): CreditSettings {
+  const abutmentPrices = normalizeAbutsAbutmentCreditPrices({
+    ...fallback,
+    ...raw,
+  });
   return {
-    minCreditForRequest: Number(
-      raw.minCreditForRequest ?? fallback.minCreditForRequest,
-    ),
+    minCreditForRequest: abutmentPrices.membershipProductionPrice,
     specialRequestorPrices: Array.isArray(raw.specialRequestorPrices)
       ? raw.specialRequestorPrices.map((item) => ({
           requestorAnchorId: String(item.requestorAnchorId || ""),
@@ -119,7 +133,11 @@ function normalizeCreditSettings(
       : fallback.specialRequestorPrices,
     shippingFee: Number(raw.shippingFee ?? fallback.shippingFee),
     expressFee: Number(raw.expressFee ?? fallback.expressFee),
-    designFee: Number(raw.designFee ?? fallback.designFee),
+    designFee: Math.max(
+      0,
+      abutmentPrices.membershipDesignAndProductionPrice -
+        abutmentPrices.membershipProductionPrice,
+    ),
     abutmentRetailPrice: Number(
       raw.abutmentRetailPrice ?? fallback.abutmentRetailPrice ?? 40000,
     ),
@@ -134,6 +152,7 @@ function normalizeCreditSettings(
     defaultShippingFreeCredit: Number(
       raw.defaultShippingFreeCredit ?? fallback.defaultShippingFreeCredit,
     ),
+    ...abutmentPrices,
   };
 }
 
@@ -203,6 +222,98 @@ function AmountField({
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
           원
         </span>
+      </div>
+    </div>
+  );
+}
+
+function DualTierAmountField({
+  label,
+  membershipId,
+  regularId,
+  membershipValue,
+  regularValue,
+  onMembershipChange,
+  onRegularChange,
+  disabled,
+  help,
+  icon: Icon,
+}: {
+  label: string;
+  membershipId: string;
+  regularId: string;
+  membershipValue: number;
+  regularValue: number;
+  onMembershipChange: (next: number) => void;
+  onRegularChange: (next: number) => void;
+  disabled?: boolean;
+  help?: string;
+  icon?: typeof Gift;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        {Icon ? (
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200/80">
+            <Icon className="h-4 w-4 text-slate-600" />
+          </span>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <div className="text-sm font-medium text-slate-800">{label}</div>
+            {help ? <FieldHelp text={help} /> : null}
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Label
+            htmlFor={membershipId}
+            className="mb-1.5 block text-[11px] font-medium text-slate-500"
+          >
+            멤버십
+          </Label>
+          <div className="relative">
+            <Input
+              id={membershipId}
+              type="number"
+              min="0"
+              className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
+              value={membershipValue}
+              onChange={(e) =>
+                onMembershipChange(Math.max(0, Number(e.target.value)))
+              }
+              disabled={disabled}
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+              원
+            </span>
+          </div>
+        </div>
+        <div>
+          <Label
+            htmlFor={regularId}
+            className="mb-1.5 block text-[11px] font-medium text-slate-500"
+          >
+            일반
+          </Label>
+          <div className="relative">
+            <Input
+              id={regularId}
+              type="number"
+              min="0"
+              className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
+              value={regularValue}
+              onChange={(e) =>
+                onRegularChange(Math.max(0, Number(e.target.value)))
+              }
+              disabled={disabled}
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+              원
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -292,11 +403,11 @@ export const AdminCreditSettingsTab = () => {
     }
     setSettings({
       ...settings,
-      specialRequestorPrices: [
+                  specialRequestorPrices: [
         ...settings.specialRequestorPrices,
         {
           requestorAnchorId: requestor.id,
-          amount: settings.minCreditForRequest,
+          amount: settings.membershipProductionPrice,
         },
       ],
     });
@@ -403,7 +514,8 @@ export const AdminCreditSettingsTab = () => {
   }, [settings, token, loading, toast]);
 
   const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
-  const designHelp = `디자인+생산 의뢰에만 더합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}원 / 1어벗. 생산 ${CREDIT_SETTINGS_DEFAULTS.minCreditForRequest.toLocaleString("ko-KR")}원 + 디자인 = 디자인+생산.`;
+  const productionHelp = `1어벗당. 멤버십 ${ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE.toLocaleString("ko-KR")}원, 일반 ${ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE.toLocaleString("ko-KR")}원.`;
+  const designAndProductionHelp = `1어벗당. 멤버십 ${ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE.toLocaleString("ko-KR")}원, 일반 ${ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE.toLocaleString("ko-KR")}원.`;
   const membershipHelp =
     "치과(의뢰 발신자)만 적용합니다. 기공소에는 적용하지 않으며, 매달 유료 청구됩니다.";
 
@@ -449,28 +561,59 @@ export const AdminCreditSettingsTab = () => {
               title="의뢰 · 배송"
               description="기본 요금입니다. 특별 공급가가 없으면 이 금액이 적용됩니다."
             />
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <AmountField
-                id="minCreditForRequest"
-                label="생산만 의뢰비"
+            <div className="grid gap-3 sm:grid-cols-2">
+              <DualTierAmountField
+                label="생산만"
                 icon={Package}
-                value={settings.minCreditForRequest}
-                onChange={(next) =>
-                  setSettings({ ...settings, minCreditForRequest: next })
+                membershipId="membershipProductionPrice"
+                regularId="regularProductionPrice"
+                membershipValue={settings.membershipProductionPrice}
+                regularValue={settings.regularProductionPrice}
+                onMembershipChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    membershipProductionPrice: next,
+                    minCreditForRequest: next,
+                    designFee: Math.max(
+                      0,
+                      settings.membershipDesignAndProductionPrice - next,
+                    ),
+                  })
+                }
+                onRegularChange={(next) =>
+                  setSettings({ ...settings, regularProductionPrice: next })
                 }
                 disabled={loading}
+                help={productionHelp}
               />
-              <AmountField
-                id="designFee"
-                label="디자인비 (1어벗당)"
+              <DualTierAmountField
+                label="디자인+생산"
                 icon={PenLine}
-                value={settings.designFee}
-                onChange={(next) =>
-                  setSettings({ ...settings, designFee: next })
+                membershipId="membershipDesignAndProductionPrice"
+                regularId="regularDesignAndProductionPrice"
+                membershipValue={settings.membershipDesignAndProductionPrice}
+                regularValue={settings.regularDesignAndProductionPrice}
+                onMembershipChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    membershipDesignAndProductionPrice: next,
+                    designFee: Math.max(
+                      0,
+                      next - settings.membershipProductionPrice,
+                    ),
+                  })
+                }
+                onRegularChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    regularDesignAndProductionPrice: next,
+                  })
                 }
                 disabled={loading}
-                help={designHelp}
+                help={designAndProductionHelp}
               />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <AmountField
                 id="practiceMembershipMonthlyFee"
                 label="치과 멤버십 구독료"

@@ -204,7 +204,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   let expressFeePerRequest = 2000;
   let designFeePerTooth = 5000;
   try {
-    const creditSettings = await loadCreditSettingsDefaults();
+    const creditSettings = await loadCreditSettingsDefaults({
+      requestorOrgId: labAnchorId,
+    });
     expressFeePerRequest = Math.max(
       0,
       Number(creditSettings?.expressFee ?? 2000) || 2000,

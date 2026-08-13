@@ -1,9 +1,11 @@
 // change-log:
+// - 2026-08-13: 관리자 플랫폼 설정에서도 개발운영사 앵커 수수료율이 저장되도록 admin API로 이전.
 // - 2026-08-13: 저장 버튼·자동 저장 뱃지·마지막 저장 문구 제거, 조용한 자동 저장.
 // - 2026-08-13: 카드 UI 정리 + 변경 시 디바운스 자동 저장.
 // related files:
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
-// - web/backend/controllers/users/user.controller.js
+// - web/backend/controllers/admin/admin.settings.controller.js
+// - web/backend/modules/admin/admin.routes.js
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
@@ -12,21 +14,32 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Building2, Landmark, Percent, ShieldCheck } from "lucide-react";
-import { request } from "@/shared/api/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 
-type DevopsSettings = {
+type PlatformFeeSettings = {
   partnerFeeRate?: number;
   nonPartnerFeeRate?: number;
   updatedAt?: string | null;
 };
 
+type PlatformFeeApiResponse = {
+  success?: boolean;
+  message?: string;
+  data?: {
+    platformFeeSettings?: PlatformFeeSettings;
+  };
+};
+
 const AUTO_SAVE_DELAY_MS = 700;
+
+const toPctString = (rate: number, fallback: number) =>
+  String(Math.round((Number.isFinite(rate) ? rate : fallback) * 100));
 
 export const DevopsPlatformFeeTab = () => {
   const { toast } = useToast();
-  const { token, loginWithToken } = useAuthStore();
+  const { token } = useAuthStore();
   const [loading, setLoading] = useState(Boolean(token));
   const [partnerFeeRate, setPartnerFeeRate] = useState("0");
   const [nonPartnerFeeRate, setNonPartnerFeeRate] = useState("25");
@@ -50,23 +63,20 @@ export const DevopsPlatformFeeTab = () => {
       }
       try {
         hydratedRef.current = false;
-        const res = await request<{ data?: Record<string, unknown> }>({
-          path: "/api/users/profile",
+        const res = await apiFetch<PlatformFeeApiResponse>({
+          path: "/api/admin/settings/platform-fees",
           method: "GET",
           token,
+          skipCache: true,
         });
         if (!res.ok || !mounted) return;
 
-        const body = res.data || {};
-        const profile = (body.data || body) as Record<string, unknown>;
-        const settings =
-          (profile.devopsPayoutSettings as DevopsSettings | undefined) || {};
+        const settings = res.data?.data?.platformFeeSettings || {};
         const snapshot = {
-          partnerFeeRate: String(
-            Math.round(Number(settings.partnerFeeRate ?? 0) * 100),
-          ),
-          nonPartnerFeeRate: String(
-            Math.round(Number(settings.nonPartnerFeeRate ?? 0.25) * 100),
+          partnerFeeRate: toPctString(Number(settings.partnerFeeRate), 0),
+          nonPartnerFeeRate: toPctString(
+            Number(settings.nonPartnerFeeRate),
+            0.25,
           ),
         };
         savedRef.current = snapshot;
@@ -133,15 +143,13 @@ export const DevopsPlatformFeeTab = () => {
       }
 
       try {
-        const res = await request<{ message?: string }>({
-          path: "/api/users/profile",
-          method: "PUT",
+        const res = await apiFetch<PlatformFeeApiResponse>({
+          path: "/api/admin/settings/platform-fees",
+          method: "PATCH",
           token,
           jsonBody: {
-            devopsPayoutSettings: {
-              partnerFeeRate: partner / 100,
-              nonPartnerFeeRate: nonPartner / 100,
-            },
+            partnerFeeRate: partner / 100,
+            nonPartnerFeeRate: nonPartner / 100,
           },
         });
         if (!res.ok) {
@@ -153,12 +161,15 @@ export const DevopsPlatformFeeTab = () => {
           return;
         }
 
+        const saved = res.data?.data?.platformFeeSettings;
         savedRef.current = {
-          partnerFeeRate: String(partner),
-          nonPartnerFeeRate: String(nonPartner),
+          partnerFeeRate: saved
+            ? toPctString(Number(saved.partnerFeeRate), partner / 100)
+            : String(partner),
+          nonPartnerFeeRate: saved
+            ? toPctString(Number(saved.nonPartnerFeeRate), nonPartner / 100)
+            : String(nonPartner),
         };
-        window.dispatchEvent(new Event("abuts:profile:updated"));
-        void loginWithToken(token);
       } catch {
         toast({
           title: "저장 실패",
@@ -169,7 +180,7 @@ export const DevopsPlatformFeeTab = () => {
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [partnerFeeRate, nonPartnerFeeRate, token, loading, toast, loginWithToken]);
+  }, [partnerFeeRate, nonPartnerFeeRate, token, loading, toast]);
 
   const partnerPct = rateValues?.partner ?? 0;
   const nonPartnerPct = rateValues?.nonPartner ?? 25;

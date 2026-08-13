@@ -6,6 +6,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
+// - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 import {
   resolveAbutsAbutmentPricingTier,
@@ -613,6 +614,7 @@ export function computePracticeTransferRetailFees({
   toothWorks,
   labFeeSchedule,
   abutmentPricingTier,
+  abutmentPrices,
   skipAbutmentFees = false,
   remake = false,
 }) {
@@ -634,6 +636,7 @@ export function computePracticeTransferRetailFees({
     return resolveAbutsAbutmentUnitPrice({
       productMode: row?.abutmentProductMode || row?.productMode,
       pricingTier,
+      prices: abutmentPrices,
     });
   };
   const addAbutment = (abutmentFee) => {

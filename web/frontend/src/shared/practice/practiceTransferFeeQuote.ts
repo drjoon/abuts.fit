@@ -14,7 +14,11 @@ import {
   type PracticeTransferFeeLine,
   type PracticeTransferRetailFees,
 } from "@/shared/practice/labFeeSchedule";
-import type { AbutsAbutmentPricingTier } from "@/shared/pricing/abutsAbutmentService";
+import {
+  normalizeAbutsAbutmentCreditPrices,
+  type AbutsAbutmentCreditPrices,
+  type AbutsAbutmentPricingTier,
+} from "@/shared/pricing/abutsAbutmentService";
 
 export type PracticeTransferRelationshipKind = "active" | "referred" | "none";
 
@@ -37,6 +41,7 @@ export type PracticeTransferQuoteContext = {
   items: LabFeeItem[];
   abutmentRetailPrice: number;
   abutmentPricingTier: AbutsAbutmentPricingTier;
+  abutmentPrices: AbutsAbutmentCreditPrices;
   relationshipKind: PracticeTransferRelationshipKind;
   feeRateApplied: number;
   usedDefaultSchedule: boolean;
@@ -48,6 +53,7 @@ export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
   items: normalizeLabFeeItems(LAB_FEE_SCHEDULE_ZEROS),
   abutmentRetailPrice: 0,
   abutmentPricingTier: "regular",
+  abutmentPrices: normalizeAbutsAbutmentCreditPrices(),
   relationshipKind: "none",
   feeRateApplied: 0,
   usedDefaultSchedule: true,
@@ -156,6 +162,11 @@ export const parsePracticeTransferQuoteContext = (
           ) || DEFAULT_ABUTMENT_RETAIL_PRICE,
         ),
     abutmentPricingTier,
+    abutmentPrices: normalizeAbutsAbutmentCreditPrices(
+      r.abutmentPrices && typeof r.abutmentPrices === "object"
+        ? (r.abutmentPrices as Partial<AbutsAbutmentCreditPrices>)
+        : null,
+    ),
     relationshipKind: toRelationshipKind(r.relationshipKind),
     feeRateApplied: usedDefaultSchedule
       ? 0
@@ -178,6 +189,7 @@ export const buildFeeQuoteFromContext = (params: {
       ? LAB_FEE_SCHEDULE_ZEROS
       : { ...context.schedule, remake: context.remakeSchedule, items: context.items },
     abutmentPricingTier: context.abutmentPricingTier,
+    abutmentPrices: context.abutmentPrices,
   });
   const feeRateApplied = Number(context.feeRateApplied || 0);
   const split = splitPracticeTransferSettlement({

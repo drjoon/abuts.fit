@@ -86,7 +86,7 @@
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
-    - 디자인비: `creditSettings.designFee`(기본 5000, **1어벗당**). 안내 정가 생산만 멤버십 1.5만원·일반 2.0만원 / 디자인+생산 멤버십 2.5만원·일반 4.0만원. 배송비 별도·박스당 과금. 치과 멤버십 `practiceMembershipMonthlyFee`(기본 55,000원). 해지 시 다음 결제일까지 유지, 그 다음 결제는 없음(`practiceMembershipCancelAtPeriodEnd`).
+    - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 10,000, **1어벗당**). 배송비 별도·박스당 과금. 치과 멤버십 `practiceMembershipMonthlyFee`(기본 55,000원). 해지 시 다음 결제일까지 유지, 그 다음 결제는 없음(`practiceMembershipCancelAtPeriodEnd`).
     - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic·작업X 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
       - `price.amount` = `(생산단가 + designFee) × qty`
@@ -736,7 +736,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트(`scripts/db/migrate-request-spend-to-gl.js`, `scripts/db/migrate-legacy-creditledger-to-gl.js`)는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
-    - 기본 분배(영업자 소개 있음): 제조사 60% / 개발운영사 10% / 영업자 10% / 관리자 20% (`BusinessAnchor.payoutRates` SSOT, 개발운영사 설정에서만 갱신).
+    - 기본 분배(영업자 소개 있음): 제조사 60% / 개발운영사 10% / 영업자 10% / 관리자 20% (`BusinessAnchor.payoutRates` SSOT). 기공의뢰 플랫폼 수수료율(등록 `partnerFeeRate` / 미등록 `nonPartnerFeeRate`)은 관리자 플랫폼 설정「기공소 매칭」(`GET|PATCH /api/admin/settings/platform-fees`)에서 개발운영사 앵커에 저장.
     - 영업자 소개 없음(`hasSalesmanReferrer=false`): 설정된 영업자 분배비의 **절반을 제조사**, **나머지 절반을 관리자**에 가산하고 영업자 0%. 기본값이면 제조사 65% / 개발운영사 10% / 영업자 0% / 관리자 25%. 하드코딩 고정비율이 아니라 `resolveRatesWithoutSalesman(configuredRates)`로 파생.
 
 - 관리자 credit-reconcile API 정책:

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 생산·디자인+생산 단가를 creditSettings(멤버십/일반)에서 읽음.
 // - 2026-08-13: 생산 일반 2.0만→멤버십 1.5만, 디자인+생산 일반 4.0만→멤버십 2.5만. 단가 글자 확대.
 // - 2026-08-13: 이용 중/해지 예약 클릭 시 멤버십 모달.
 // - 2026-08-13: 생산·디자인+생산 일반가 취소선, 멤버십 단가 강조.
@@ -187,6 +188,34 @@ export const PricingPolicyDialog = ({
         ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT
     ) || ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT
   );
+  const productionRegular = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.regularProductionPrice ??
+        ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE
+    ) || ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE
+  );
+  const productionMembership = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.membershipProductionPrice ??
+        ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
+    ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
+  );
+  const designAndProductionRegular = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.regularDesignAndProductionPrice ??
+        ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE
+    ) || ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE
+  );
+  const designAndProductionMembership = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.membershipDesignAndProductionPrice ??
+        ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
+    ) || ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -337,22 +366,16 @@ export const PricingPolicyDialog = ({
                 <div className='space-y-3'>
                   <PriceRow
                     label='생산만'
-                    strikeValue={formatAbutsManwon(
-                      ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE
-                    )}
-                    value={`멤버십 ${formatAbutsManwon(
-                      ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
-                    )}`}
+                    strikeValue={formatAbutsManwon(productionRegular)}
+                    value={`멤버십 ${formatAbutsManwon(productionMembership)}`}
                     unitLabel='1개당'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='디자인+생산 의뢰'
-                    strikeValue={formatAbutsManwon(
-                      ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE
-                    )}
+                    strikeValue={formatAbutsManwon(designAndProductionRegular)}
                     value={`멤버십 ${formatAbutsManwon(
-                      ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
+                      designAndProductionMembership
                     )}`}
                     unitLabel='1개당'
                   />

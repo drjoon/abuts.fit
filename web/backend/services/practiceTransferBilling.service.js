@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/utils/labFeeSchedule.js
+// - web/backend/utils/abutsAbutmentService.js
+// - web/backend/utils/creditSettingsDefaults.js
 // - web/backend/utils/labTradingPartner.util.js
 // - web/backend/services/generalLedger.service.js
 // - web/backend/services/creditRevenuePolicy.service.js
@@ -34,9 +36,21 @@ import {
   resolveAbutsAbutmentPricingTier,
   splitPracticeTransferSettlement,
 } from "../utils/labFeeSchedule.js";
+import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+import { normalizeAbutsAbutmentCreditPrices } from "../utils/abutsAbutmentService.js";
 import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
 import { isAutoMatchOpenPool } from "../utils/practiceTransferAutoMatch.js";
+
+async function loadAbutmentCreditPrices() {
+  try {
+    return normalizeAbutsAbutmentCreditPrices(
+      await loadCreditSettingsDefaults(),
+    );
+  } catch {
+    return normalizeAbutsAbutmentCreditPrices();
+  }
+}
 
 async function lockGuard(businessAnchorId, session) {
   const id = new Types.ObjectId(String(businessAnchorId));
@@ -298,10 +312,12 @@ export async function assertPracticeTransferPaidCreditSufficient({
   const useRemake = Boolean(remake);
   const abutmentPricingTier =
     await resolvePracticeAbutmentPricingTier(practiceId);
+  const abutmentPrices = await loadAbutmentCreditPrices();
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     labFeeSchedule: noLab ? LAB_FEE_SCHEDULE_ZEROS : labFeeSchedule,
     abutmentPricingTier,
+    abutmentPrices,
     remake: useRemake,
     skipAbutmentFees: useRemake,
   });
@@ -383,10 +399,12 @@ export async function commitPracticeTransferBilling({
     practiceAnchorId,
     outerSession,
   );
+  const abutmentPrices = await loadAbutmentCreditPrices();
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     labFeeSchedule: lab?.labFeeSchedule,
     abutmentPricingTier,
+    abutmentPrices,
     remake,
     skipAbutmentFees: remake,
   });
@@ -782,10 +800,12 @@ export async function buildPracticeTransferQuote({
   const useRemake = Boolean(remake);
   const abutmentPricingTier =
     await resolvePracticeAbutmentPricingTier(practiceAnchorId);
+  const abutmentPrices = await loadAbutmentCreditPrices();
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     labFeeSchedule: usedDefaultSchedule ? LAB_FEE_SCHEDULE_ZEROS : schedule,
     abutmentPricingTier,
+    abutmentPrices,
     remake: useRemake,
     skipAbutmentFees: useRemake,
   });
@@ -834,6 +854,7 @@ export async function buildPracticeTransferQuote({
     isRemake: useRemake,
     remake: useRemake,
     abutmentPricingTier,
+    abutmentPrices,
     abutmentRetailPrice: 0,
     schedule: usedDefaultSchedule
       ? LAB_FEE_SCHEDULE_ZEROS
@@ -902,6 +923,7 @@ export async function buildFeeQuotesForTransferDocs({
     .sort({ createdAt: 1 })
     .lean();
   const payoutRates = devops?.payoutRates;
+  const abutmentPrices = await loadAbutmentCreditPrices();
 
   const labIds = new Set();
   const viewerLabId = String(viewingLabAnchorId || "").trim();
@@ -985,6 +1007,7 @@ export async function buildFeeQuotesForTransferDocs({
       toothWorks,
       labFeeSchedule: noLab ? LAB_FEE_SCHEDULE_ZEROS : schedule,
       abutmentPricingTier,
+      abutmentPrices,
       remake: true,
       skipAbutmentFees: true,
     });
@@ -994,6 +1017,7 @@ export async function buildFeeQuotesForTransferDocs({
           toothWorks,
           labFeeSchedule: noLab ? LAB_FEE_SCHEDULE_ZEROS : schedule,
           abutmentPricingTier,
+          abutmentPrices,
         });
 
     const partner = quoteLabId && practiceId
