@@ -56,19 +56,19 @@ const DEFAULT_ENABLED: FeeEnabled = Object.fromEntries(
 ) as FeeEnabled;
 
 const LABELS: { key: FeeKey; label: string; hint: string }[] = [
-  { key: "crown", label: "크라운", hint: "단일 크라운" },
-  { key: "bridge", label: "브리지", hint: "브리지 단위" },
-  { key: "inlay", label: "인레이", hint: "인레이·온레이" },
-  { key: "pontic", label: "Pontic", hint: "폰틱 (어벗 없음)" },
+  { key: "crown", label: "크라운", hint: "크라운 1개당" },
+  { key: "bridge", label: "브리지", hint: "크라운 1개당" },
+  { key: "inlay", label: "인레이", hint: "인레이·온레이 1개당" },
+  { key: "pontic", label: "Pontic", hint: "폰틱 1개당" },
   {
     key: "customAbutmentDesign",
     label: "커스텀어벗 디자인",
-    hint: "디자인만. 생산비 별도",
+    hint: "어벗 디자인 1개당",
   },
   {
     key: "customAbutmentDesignAndProduction",
     label: "커스텀어벗 디자인+생산",
-    hint: "디자인 및 생산",
+    hint: "어벗 디자인 및 생산 1개당",
   },
 ];
 
