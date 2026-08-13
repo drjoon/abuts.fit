@@ -40,11 +40,11 @@ import {
 import ChatRoom from "../../models/chatRoom.model.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
-  assertAbutmentPresetsComplete,
   createAbutmentRequestsFromPracticeTransfer,
   hasCustomAbutmentToothWorks,
   normalizeResultFiles,
 } from "../../services/practiceTransferProduction.service.js";
+import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutmentPresets.js";
 // related files:
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -59,6 +59,8 @@ import {
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/socket.js
 // - web/backend/services/requestDashboardCache.service.js
+// - web/backend/utils/practiceTransferAbutmentPresets.js
+// - 2026-08-13: 어벗 치아에 임플란트·스캔바디 프리셋이 없으면 전송 거절.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
