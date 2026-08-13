@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: 타입(헥스 사이즈) 관리자 수정·자동저장. 치과 프리셋에 반영.
 // - 2026-08-14: CNC어벗=Primary, 환봉어벗=어벗 골드. 선택 전에도 색으로 구분.
 // - 2026-08-14: 도입 전 CNC어벗/환봉어벗 선택 필수. 선택값이 치과 단가에 반영.
 // - 2026-08-14: 되돌리기 버튼 제거. 도입 체크 해제가 해제 동작.
@@ -34,6 +35,7 @@ type DraftRow = {
   manufacturer: string;
   brand: string;
   family: string;
+  type: string;
 };
 
 export const AdminRoundBarAbutmentTab = ({
@@ -76,6 +78,7 @@ export const AdminRoundBarAbutmentTab = ({
               manufacturer: row.manufacturer,
               brand: row.brand,
               family: row.family,
+              type: row.type || ROUND_BAR_HEX_TYPE,
             },
           ]),
         ),
@@ -111,6 +114,7 @@ export const AdminRoundBarAbutmentTab = ({
         manufacturer: next.manufacturer,
         brand: next.brand,
         family: next.family,
+        type: next.type || ROUND_BAR_HEX_TYPE,
       },
     }));
   };
@@ -120,13 +124,14 @@ export const AdminRoundBarAbutmentTab = ({
     const manufacturer = draft.manufacturer.trim();
     const brand = draft.brand.trim();
     const family = draft.family.trim();
+    const type = draft.type.trim() || ROUND_BAR_HEX_TYPE;
     if (!manufacturer || !brand || !family) return;
     setSavingId(id);
     try {
       const updated = await patchAdminRoundBarRequest({
         token,
         id,
-        patch: { manufacturer, brand, family },
+        patch: { manufacturer, brand, family, type },
       });
       if (updated) applyRow(updated);
     } catch (error) {
@@ -263,7 +268,7 @@ export const AdminRoundBarAbutmentTab = ({
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="치과명, 제조사, 브랜드, 패밀리"
+            placeholder="치과명, 제조사, 브랜드, 패밀리, 타입"
             className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm"
           />
         </div>
@@ -283,6 +288,7 @@ export const AdminRoundBarAbutmentTab = ({
                 manufacturer: row.manufacturer,
                 brand: row.brand,
                 family: row.family,
+                type: row.type || ROUND_BAR_HEX_TYPE,
               };
               const busy = savingId === row.id;
               return (
@@ -405,9 +411,15 @@ export const AdminRoundBarAbutmentTab = ({
                     <div className="space-y-1">
                       <Label className="text-xs text-slate-500">타입</Label>
                       <Input
-                        value={ROUND_BAR_HEX_TYPE}
-                        readOnly
-                        className="h-10 bg-slate-50 text-sm"
+                        value={draft.type}
+                        className="h-10 text-sm"
+                        disabled={busy}
+                        onChange={(e) =>
+                          scheduleSave(row.id, {
+                            ...draft,
+                            type: e.target.value,
+                          })
+                        }
                       />
                     </div>
                   </div>

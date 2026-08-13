@@ -6,6 +6,7 @@
 // change-log:
 // - 2026-08-14: 추가한 패밀리는 select 항목 옆 X로 삭제.
 // - 2026-08-14: 패밀리 선택 Regular/Mini/Narrow/Small Narrow 고정 + 패밀리 추가.
+// - 2026-08-14: 환봉 도입 배지 라벨을 「환봉」으로 표시.
 // - 2026-08-14: 도입 배지에 CNC/환봉 종류 표시.
 // - 2026-08-14: 제조사 선택 마지막에 제조사 추가 요청(환봉 헥스 사이즈 미정) + 안내 모달.
 import { useMemo, useState } from "react";
@@ -835,7 +836,7 @@ export const PracticeToothImplantFields = ({
                       >
                         {fav.adopted
                           ? fav.adoptedKind === "round_bar"
-                            ? "환봉 도입"
+                            ? "환봉"
                             : fav.adoptedKind === "cnc"
                               ? "CNC 도입"
                               : "도입"

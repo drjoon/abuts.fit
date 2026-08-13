@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-08-14: 관리자 타입 수정 패치.
 // - 2026-08-14: 도입 실시간 이벤트(`practice:round-bar-request-updated`) 프리셋 patch.
 import { apiFetch } from "@/shared/api/apiClient";
 import type { PracticeImplantFavorite } from "@/shared/practice/transferMemo";
@@ -167,7 +168,7 @@ export async function patchAdminRoundBarRequest(params: {
   patch: Partial<
     Pick<
       RoundBarAbutmentRequest,
-      "manufacturer" | "brand" | "family" | "adopted" | "adoptedKind"
+      "manufacturer" | "brand" | "family" | "type" | "adopted" | "adoptedKind"
     >
   >;
 }) {

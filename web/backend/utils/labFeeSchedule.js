@@ -13,6 +13,7 @@
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다.
+// - 2026-08-14: 환봉 프리셋 타입 변경 후에도 제조사·브랜드·패밀리로 매칭.
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote).
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기. 요청중은 기공소 어벗.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
@@ -180,6 +181,43 @@ function implantSpecKeyForFee(row) {
     .join("|");
 }
 
+function implantFamilyKeyForFee(row) {
+  return [
+    row?.implantManufacturer || row?.manufacturer,
+    row?.implantBrand || row?.brand,
+    row?.implantFamily || row?.family,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .join("|");
+}
+
+function isRoundBarFavoriteRow(fav) {
+  return Boolean(fav?.roundBar) || Boolean(String(fav?.roundBarRequestId || "").trim());
+}
+
+function findRoundBarFavoriteForFee(row, favorites) {
+  const list = Array.isArray(favorites) ? favorites : [];
+  if (!row || list.length === 0) return null;
+  const requestId = String(row.roundBarRequestId || "").trim();
+  if (requestId) {
+    const byRequest = list.find(
+      (fav) => String(fav.roundBarRequestId || "").trim() === requestId,
+    );
+    if (byRequest) return byRequest;
+  }
+  const exact = implantSpecKeyForFee(row);
+  const byExact = list.find((fav) => implantSpecKeyForFee(fav) === exact);
+  if (byExact) return byExact;
+  const familyKey = implantFamilyKeyForFee(row);
+  if (!familyKey || familyKey === "||") return null;
+  return (
+    list.find(
+      (fav) =>
+        isRoundBarFavoriteRow(fav) && implantFamilyKeyForFee(fav) === familyKey,
+    ) || null
+  );
+}
+
 /** 환봉생산 서비스 추가 요청중(미도입). 도입되면 어벗츠 어벗 */
 export function isPendingRoundBarAbutment(row, favorites) {
   if (!row) return false;
@@ -190,17 +228,14 @@ export function isPendingRoundBarAbutment(row, favorites) {
   if (row.roundBarAdopted === true || row.adopted === true) return false;
   const list = Array.isArray(favorites) ? favorites : [];
   if (list.length === 0) return true;
-  const key = implantSpecKeyForFee(row);
-  const match = list.find((fav) => implantSpecKeyForFee(fav) === key);
+  const match = findRoundBarFavoriteForFee(row, list);
   if (!match) return true;
   return match.adopted !== true;
 }
 
 /** 도입된 추가요청의 단가 종류. 미도입·일반 CNC는 cnc */
 export function resolveAdoptedAbutmentKind(row, favorites) {
-  const list = Array.isArray(favorites) ? favorites : [];
-  const key = implantSpecKeyForFee(row);
-  const match = list.find((fav) => implantSpecKeyForFee(fav) === key);
+  const match = findRoundBarFavoriteForFee(row, favorites);
   const raw = String(match?.adoptedKind || row?.adoptedKind || "")
     .trim()
     .toLowerCase();

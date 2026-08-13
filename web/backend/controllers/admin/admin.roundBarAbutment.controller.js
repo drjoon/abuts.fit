@@ -4,6 +4,7 @@
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // change-log:
+// - 2026-08-14: 관리자가 타입(헥스 사이즈)을 수정하면 치과 프리셋에도 반영.
 // - 2026-08-14: 도입 시 치과 프리셋 adopted 동기화 강화 + practice:round-bar-request-updated 이벤트.
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -32,7 +33,7 @@ const notifyPracticeRoundBarUpdate = async (doc) => {
     manufacturer: String(doc.manufacturer || "").trim(),
     brand: String(doc.brand || "").trim(),
     family: String(doc.family || "").trim(),
-    type: ROUND_BAR_HEX_TYPE,
+    type: String(doc.type || "").trim() || ROUND_BAR_HEX_TYPE,
   };
   const userIds = new Set();
   if (doc.requestedBy) userIds.add(String(doc.requestedBy));
@@ -117,6 +118,7 @@ export async function adminListRoundBarAbutmentRequests(req, res) {
         { manufacturer: rx },
         { brand: rx },
         { family: rx },
+        { type: rx },
       ];
     }
 
@@ -157,17 +159,22 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
     const hasSpec =
       Object.prototype.hasOwnProperty.call(body, "manufacturer") ||
       Object.prototype.hasOwnProperty.call(body, "brand") ||
-      Object.prototype.hasOwnProperty.call(body, "family");
+      Object.prototype.hasOwnProperty.call(body, "family") ||
+      Object.prototype.hasOwnProperty.call(body, "type");
     const hasAdopted = Object.prototype.hasOwnProperty.call(body, "adopted");
     const hasAdoptedKind = Object.prototype.hasOwnProperty.call(body, "adoptedKind");
 
     if (hasSpec) {
-      const spec = normalizeRoundBarSpec({
-        manufacturer:
-          body.manufacturer != null ? body.manufacturer : doc.manufacturer,
-        brand: body.brand != null ? body.brand : doc.brand,
-        family: body.family != null ? body.family : doc.family,
-      });
+      const spec = normalizeRoundBarSpec(
+        {
+          manufacturer:
+            body.manufacturer != null ? body.manufacturer : doc.manufacturer,
+          brand: body.brand != null ? body.brand : doc.brand,
+          family: body.family != null ? body.family : doc.family,
+          type: body.type != null ? body.type : doc.type,
+        },
+        { allowType: true },
+      );
       if (!spec.manufacturer || !spec.brand || !spec.family) {
         return res.status(400).json({
           success: false,
@@ -177,7 +184,7 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
       doc.manufacturer = spec.manufacturer;
       doc.brand = spec.brand;
       doc.family = spec.family;
-      doc.type = ROUND_BAR_HEX_TYPE;
+      doc.type = spec.type;
       doc.specKey = buildRoundBarSpecKey(spec);
     }
 
@@ -227,7 +234,7 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
           manufacturer: doc.manufacturer,
           brand: doc.brand,
           family: doc.family,
-          type: ROUND_BAR_HEX_TYPE,
+          type: String(doc.type || "").trim() || ROUND_BAR_HEX_TYPE,
         },
         roundBarRequestId: String(doc._id),
         adopted: Boolean(doc.adopted),
