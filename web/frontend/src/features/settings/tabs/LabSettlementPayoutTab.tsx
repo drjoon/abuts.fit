@@ -5,7 +5,7 @@
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
-// - 2026-08-13: 소개 치과 제거 — 등록/미등록 2구분. 탭·카피 「기공크레딧」통일. 정산규칙·요약카드 최신 스타일.
+// - 2026-08-13: 요약 3열 — 잔액(총계+등록/미등록)·지급 합계·액션. 소개 치과 제거·기공크레딧 표기 통일.
 // - 2026-08-11: 요약 5열(액션 버튼 세로). 일자 입력 제거·검색 상단 이동. 전체/거래처/비거래처를 필터 행으로.
 // - 2026-08-11: 요약 카드 — 하단 보조행 제거, 금액 옆 (N건), 높이 축소·중앙 정렬.
 // - 2026-08-11: 정산 요청 버튼 제거(매월 자동 지급). 안내는 정산규칙 모달에만 표시.
@@ -47,7 +47,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn } from "@/shared/ui/cn";
 
 type PayoutItem = {
   _id: string;
@@ -137,39 +136,6 @@ const periodToYmdRange = (
 };
 
 const pctLabel = (rate: number) => `${Math.round(Number(rate || 0) * 100)}%`;
-
-function StatCard({
-  label,
-  value,
-  count,
-  emphasize,
-}: {
-  label: string;
-  value: number;
-  count?: number;
-  emphasize?: boolean;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-3 shadow-sm">
-      <div className="text-center text-[13px] font-medium text-slate-500 break-keep">
-        {label}
-      </div>
-      <div
-        className={cn(
-          "mt-1.5 text-center text-lg font-semibold tabular-nums sm:text-xl",
-          emphasize ? "text-primary-strong" : "text-slate-900",
-        )}
-      >
-        ₩{value.toLocaleString()}
-        {typeof count === "number" ? (
-          <span className="ml-1 text-sm font-medium text-muted-foreground">
-            ({count}건)
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 function PolicySection({
   title,
@@ -518,32 +484,52 @@ export const LabSettlementPayoutTab = () => {
     <DashboardShell
       title="기공크레딧"
       subtitle=""
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(9.5rem,auto)]"
       stats={
         <>
-          <StatCard
-            label="기공크레딧 잔액"
-            value={settlementCredit}
-            emphasize
-          />
-          <StatCard
-            label={partnerColLabel}
-            value={snapshotTotals.partnerTotal}
-            count={snapshotTotals.partnerCount}
-            emphasize
-          />
-          <StatCard
-            label={nonPartnerColLabel}
-            value={snapshotTotals.nonPartnerTotal}
-            count={snapshotTotals.nonPartnerCount}
-            emphasize
-          />
-          <StatCard
-            label="지급 합계"
-            value={snapshotTotals.payoutTotal}
-            count={snapshotTotals.payoutCount}
-          />
-          <div className="flex flex-col justify-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/70 p-2.5 shadow-sm">
+          <div className="flex min-h-[7.25rem] flex-col justify-center rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3.5 shadow-sm">
+            <div className="text-center text-[13px] font-medium text-slate-500">
+              기공크레딧 잔액
+            </div>
+            <div className="mt-1 text-center text-2xl font-semibold tabular-nums text-primary-strong sm:text-[1.65rem]">
+              ₩{settlementCredit.toLocaleString()}
+            </div>
+            <div className="mt-2.5 flex items-center justify-center gap-3 border-t border-slate-100 pt-2.5 text-[11px] tabular-nums text-slate-600 sm:gap-4 sm:text-xs">
+              <span>
+                <span className="text-slate-400">등록</span>{" "}
+                <span className="font-medium text-slate-800">
+                  ₩{snapshotTotals.partnerTotal.toLocaleString()}
+                </span>
+                <span className="ml-0.5 text-slate-400">
+                  ({snapshotTotals.partnerCount}건)
+                </span>
+              </span>
+              <span className="h-3 w-px bg-slate-200" aria-hidden />
+              <span>
+                <span className="text-slate-400">미등록</span>{" "}
+                <span className="font-medium text-slate-800">
+                  ₩{snapshotTotals.nonPartnerTotal.toLocaleString()}
+                </span>
+                <span className="ml-0.5 text-slate-400">
+                  ({snapshotTotals.nonPartnerCount}건)
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <div className="flex min-h-[7.25rem] flex-col justify-center rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3.5 shadow-sm">
+            <div className="text-center text-[13px] font-medium text-slate-500">
+              지급 합계
+            </div>
+            <div className="mt-1 text-center text-2xl font-semibold tabular-nums text-slate-900 sm:text-[1.65rem]">
+              ₩{snapshotTotals.payoutTotal.toLocaleString()}
+            </div>
+            <div className="mt-2.5 border-t border-transparent pt-2.5 text-center text-xs text-muted-foreground">
+              {snapshotTotals.payoutCount}건
+            </div>
+          </div>
+
+          <div className="flex min-h-[7.25rem] flex-col justify-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/70 p-2.5 shadow-sm">
             <Button
               type="button"
               size="sm"
