@@ -43,7 +43,7 @@
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
  * - 2026-08-13: 임시저장/동기화는 기공소·환자명 둘 다 입력된 뒤에만 수행.
  * - 2026-08-13: 최근전송 취소 뱃지=기공소 작업취소만(치과 휴지통 제외). 6뱃지 빠른툴팁.
- * - 2026-08-13: 첨부 점선 드롭존 제거. 파일카드에 사전 업로드 프로그레스바.
+ * - 2026-08-13: 파일카드에 사전 업로드 프로그레스바.
  * - 2026-08-13: 채팅 첨부도 즉시 백그라운드 업로드 + 칩 프로그레스바.
  */
 
@@ -5271,7 +5271,6 @@ export const PracticeFileTransferPage = ({
                   filePaneProps={{
                     acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-file-transfer-input",
-                    showDropzone: false,
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
                         file.kind === "local" ? files[file.localIndex] : null;

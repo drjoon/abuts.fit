@@ -733,9 +733,7 @@ Notes:
 - 파일 드롭은 개별 구현보다 공통 컴포넌트 재사용을 우선합니다.
   - 페이지 전역: `@/features/requests/components/PageFileDropZone`
   - 요소(카드/첨부 UI) 클릭+로컬 드롭: `@/shared/components/practice/PracticeTransferFileDropTarget`
-  - 치과 intake 첨부 UI: `@/shared/components/practice/PracticeTransferFilePane`
-    - 기공의뢰 전송(`/dashboard/practice-transfers?mode=send`): 점선 드롭존 없음(`showDropzone=false`). 전역 드롭 + 「파일 추가」. 카드에 사전 업로드 프로그레스바.
-    - 공개 드롭존(`PracticeDropzonePage`)만 점선 DropTarget 유지.
+  - 치과 intake 첨부 UI: `@/shared/components/practice/PracticeTransferFilePane` (DropTarget 래핑, 카드에 사전 업로드 프로그레스바)
   - 드롭 파일 추출: `@/shared/files/extractDroppedFiles.ts`
   - 확장자 SSOT: `@/shared/practice/practiceTransferAccept.ts`
 - UI에서 `requestId`는 서버 문자열을 그대로 표시합니다.
