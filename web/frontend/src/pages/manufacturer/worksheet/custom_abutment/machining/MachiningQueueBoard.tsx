@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 가공중(Now Playing) 프리뷰에서 NC 에디터·재생성 잠금 신호를 PreviewModal에 전달.
 // - 2026-08-06: 큐→프리뷰에 designSoftware·헥스 회전(rnd/caseInfos) 전달. 가공 단계 누락 수정.
 // - 2026-08-06: 출고예정·마감 뱃지용 estimatedShipYmd를 큐→프리뷰로 전달.
 // - 2026-08-12: 빠른 가공 재배치 Alert 닫기 시 확인 처리. 같은 건은 새로고침 후 재표시하지 않음.
@@ -66,6 +67,20 @@ type MaterialLikeMachine = {
   currentMaterial?: { diameter?: unknown; diameterGroup?: unknown } | null;
   maxModelDiameterGroups?: unknown[] | null;
 } | null;
+
+const isQueueItemMachiningInProgress = (item?: QueueItem | null) => {
+  if (!item) return false;
+  if (String(item.status || "").trim() === "가공중") return true;
+  const rec = item.machiningRecord;
+  if (!rec || typeof rec !== "object") return false;
+  const recStatus = String(rec.status || "")
+    .trim()
+    .toUpperCase();
+  if (recStatus === "RUNNING" || recStatus === "PROCESSING") return true;
+  const startedAt = rec.startedAt ? new Date(rec.startedAt).getTime() : 0;
+  const completedAt = rec.completedAt ? new Date(rec.completedAt).getTime() : 0;
+  return startedAt > 0 && completedAt <= 0;
+};
 
 const resolveMachineMaterialDiameter = (machine: MaterialLikeMachine): number | null => {
   const rawDia = machine?.currentMaterial?.diameter;
@@ -798,8 +813,39 @@ export const MachiningQueueBoard = ({
     [token, camPreviewFiles],
   );
 
+  const isCamPreviewMachiningInProgress = useMemo(() => {
+    const requestId = String(
+      (camPreviewFiles?.request as ManufacturerRequest | null | undefined)
+        ?.requestId || "",
+    ).trim();
+    if (!requestId) return false;
+
+    if (
+      Object.values(nowPlayingHintMap || {}).some(
+        (hint) => String(hint?.requestId || "").trim() === requestId,
+      )
+    ) {
+      return true;
+    }
+
+    return Object.values(queueMap || {}).some((list) =>
+      (Array.isArray(list) ? list : []).some(
+        (item) =>
+          String(item?.requestId || "").trim() === requestId &&
+          isQueueItemMachiningInProgress(item),
+      ),
+    );
+  }, [camPreviewFiles?.request, nowPlayingHintMap, queueMap]);
+
   const handleOpenCodeEditorFromCamPreview = useCallback(
     async (req: ManufacturerRequest) => {
+      if (isCamPreviewMachiningInProgress) {
+        toast({
+          title: "가공 중",
+          description: "가공 중에는 NC 코드를 수정할 수 없습니다.",
+        });
+        return;
+      }
       const machineId = String(camPreviewMachineId || activeMachineId || "").trim();
       if (!machineId) {
         toast({
@@ -843,6 +889,7 @@ export const MachiningQueueBoard = ({
       }
     },
     [
+      isCamPreviewMachiningInProgress,
       camPreviewMachineId,
       activeMachineId,
       camPreviewProgram,
@@ -1910,6 +1957,7 @@ export const MachiningQueueBoard = ({
         stage="cam"
         isCamStage={true}
         isMachiningStage={false}
+        isMachiningInProgress={isCamPreviewMachiningInProgress}
         onOpenCodeEditor={handleOpenCodeEditorFromCamPreview}
         onSaveAnodizingEnabledOverride={
           handleSaveAnodizingEnabledOverrideFromCamPreview

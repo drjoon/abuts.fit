@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 가공중(Now Playing)에는 NC 코드 에디터·NC 재생성 비활성화.
 // - 2026-08-12: 상단 요약(환자/임플란트/생산) 문구가 열 너비를 넘으면 다음 줄로 넘김.
 // - 2026-08-11: FP 저장 후 "NC 코드 재생성할까요?" 컨펌 → 확인 시 Esprit NC 재생성.
 // - 2026-08-11: FP 저장은 DB 메타만 갱신(STL 재로드/forceRefresh 제거). realtime도 manual-front-point 스킵.
@@ -414,6 +415,34 @@ const buildPatchedFinishLinePoints = (
   return [...patchCore, ...keepInner];
 };
 
+const isRequestMachiningInProgress = (req?: ManufacturerRequest | null) => {
+  if (!req) return false;
+  const rec =
+    (req as any)?.productionSchedule?.machiningRecord ||
+    (req as any)?.machiningRecord ||
+    null;
+  if (rec && typeof rec === "object") {
+    const status = String(rec.status || "")
+      .trim()
+      .toUpperCase();
+    if (status === "RUNNING" || status === "PROCESSING") return true;
+    const startedAt = rec.startedAt ? new Date(rec.startedAt).getTime() : 0;
+    const completedAt = rec.completedAt
+      ? new Date(rec.completedAt).getTime()
+      : 0;
+    if (startedAt > 0 && completedAt <= 0) return true;
+  }
+  const phase = String(
+    (req as any)?.productionSchedule?.machiningProgress?.phase || "",
+  )
+    .trim()
+    .toUpperCase();
+  if (phase === "RUNNING" || phase === "PROCESSING" || phase === "MACHINING") {
+    return true;
+  }
+  return String((req as any)?.realtimeProgress?.badge || "").trim() === "가공중";
+};
+
 type PreviewModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -428,6 +457,8 @@ type PreviewModalProps = {
   stage: string;
   isCamStage: boolean;
   isMachiningStage: boolean;
+  /** 가공 큐 Now Playing 등 실시간 가공중 여부. 없으면 request 레코드로 판정. */
+  isMachiningInProgress?: boolean;
   onOpenCodeEditor?: (req: ManufacturerRequest) => void | Promise<void>;
   onUpdateReviewStatus: (params: {
     req: ManufacturerRequest;
@@ -511,6 +542,7 @@ export const PreviewModal = ({
   stage,
   isCamStage,
   isMachiningStage,
+  isMachiningInProgress = false,
   onOpenCodeEditor,
   onUpdateReviewStatus,
   onDeleteCam,
@@ -925,6 +957,14 @@ export const PreviewModal = ({
   } = useStlMetadata(requestId);
 
   const activeReq = req || lastStableReqRef.current;
+  const isNcActionLocked =
+    isMachiningInProgress || isRequestMachiningInProgress(activeReq);
+
+  useEffect(() => {
+    if (isNcActionLocked) {
+      setNcRegenConfirmOpen(false);
+    }
+  }, [isNcActionLocked]);
 
   useEffect(() => {
     if (!open || !token || stage !== "packing" || !activeReq) return;
@@ -1566,6 +1606,13 @@ export const PreviewModal = ({
   };
 
   const onRegenerateNc = async () => {
+    if (isNcActionLocked) {
+      toast({
+        title: "가공 중",
+        description: "가공 중에는 NC 코드를 재생성할 수 없습니다.",
+      });
+      return;
+    }
     if (!token) {
       toast({
         title: "실패",
@@ -1868,7 +1915,9 @@ export const PreviewModal = ({
         title: "저장 완료",
         description: "Front Point를 저장했습니다.",
       });
-      setNcRegenConfirmOpen(true);
+      if (!isNcActionLocked) {
+        setNcRegenConfirmOpen(true);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "";
       toast({
@@ -3161,15 +3210,24 @@ export const PreviewModal = ({
                     {isCamStage && onOpenCodeEditor && (
                       <button
                         type="button"
-                        className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-slate-200 bg-white text-[12px] font-mono font-bold text-slate-700 transition hover:bg-slate-50"
+                        className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[12px] font-mono font-bold transition ${
+                          isNcActionLocked
+                            ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                        disabled={isNcActionLocked}
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (!activeReq) return;
+                          if (!activeReq || isNcActionLocked) return;
                           void onOpenCodeEditor(activeReq);
                         }}
                         aria-label="코드 에디터"
-                        title="코드 에디터"
+                        title={
+                          isNcActionLocked
+                            ? "가공 중에는 NC 코드를 수정할 수 없습니다."
+                            : "코드 에디터"
+                        }
                       >
                         {"</>"}
                       </button>
@@ -3183,16 +3241,23 @@ export const PreviewModal = ({
                               <button
                                 type="button"
                                 className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                                  regenerating || isUploading || hexRotationSaving
+                                  isNcActionLocked ||
+                                  regenerating ||
+                                  isUploading ||
+                                  hexRotationSaving
                                     ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                                     : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
                                 }`}
                                 disabled={
-                                  regenerating || isUploading || hexRotationSaving
+                                  isNcActionLocked ||
+                                  regenerating ||
+                                  isUploading ||
+                                  hexRotationSaving
                                 }
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
+                                  if (isNcActionLocked) return;
                                   void onRegenerateNc();
                                 }}
                                 aria-label="NC 재생성"
@@ -3203,7 +3268,9 @@ export const PreviewModal = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="bottom">
-                              NC 재생성
+                              {isNcActionLocked
+                                ? "가공 중에는 NC 코드를 재생성할 수 없습니다."
+                                : "NC 재생성"}
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
