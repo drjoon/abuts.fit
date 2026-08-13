@@ -188,15 +188,15 @@ describe("labFeeSchedule", () => {
 
   test("기본 수가의 임시치아는 3치·6치 카드로 분리된다", () => {
     const items = normalizeLabFeeItems(LAB_FEE_SCHEDULE_SAMPLE);
-    const temps = items.filter((item) => /^임시치아\d+$/.test(item.name));
+    const temps = items.filter((item) => item.name === "임시치아");
     expect(temps).toHaveLength(2);
     expect(temps[0]).toMatchObject({
-      name: "임시치아1",
+      name: "임시치아",
       unit: "perNTeeth",
     });
     expect(temps[0].tiers[0]).toMatchObject({ n: 3, price: 30000, remake: 0 });
     expect(temps[1]).toMatchObject({
-      name: "임시치아2",
+      name: "임시치아",
       unit: "perNTeeth",
     });
     expect(temps[1].tiers[0]).toMatchObject({ n: 6, price: 50000, remake: 0 });
@@ -355,11 +355,15 @@ describe("labFeeSchedule", () => {
     expect(split.total).toBe(120000);
   });
 
-  test("updatedAt이 있어야 기공비 설정 완료다", () => {
+  test("마스터 active가 켜져야 기공비 설정 완료다", () => {
     expect(isLabFeeScheduleConfigured(null)).toBe(false);
     expect(isLabFeeScheduleConfigured({})).toBe(false);
     expect(isLabFeeScheduleConfigured({ updatedAt: null })).toBe(false);
     expect(isLabFeeScheduleConfigured({ updatedAt: new Date() })).toBe(true);
+    expect(isLabFeeScheduleConfigured({ active: false, updatedAt: new Date() })).toBe(
+      false,
+    );
+    expect(isLabFeeScheduleConfigured({ active: true })).toBe(true);
   });
 
   test("견적 라인은 치아번호 10·20·30·40번대 순이다", () => {

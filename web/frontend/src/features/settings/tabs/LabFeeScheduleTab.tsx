@@ -4,12 +4,12 @@
 // - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
-// - 2026-08-13: 미저장 디폴트는 0원·전부 off. 한 번 저장해야 설정 완료.
+// - 2026-08-13: 마스터 On/Off(기본 off). 켜면 설정 완료. 모달 진입 시 스위치 하이라이트.
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -105,8 +105,11 @@ function WonInput({
 export const LabFeeScheduleTab = () => {
   const { toast } = useToast();
   const { token } = useAuthStore();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightSetup = searchParams.get("setup") === "1";
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [active, setActive] = useState(false);
   const [items, setItems] = useState<LabFeeItem[]>([]);
 
   const patchItem = (id: string, patch: Partial<LabFeeItem>) => {
@@ -138,6 +141,8 @@ export const LabFeeScheduleTab = () => {
           schedule?: Partial<LabFeeSchedule>;
           remake?: Partial<LabFeeSchedule>;
           enabled?: Partial<Record<string, boolean>>;
+          active?: boolean;
+          configured?: boolean;
         };
         message?: string;
       }>({
@@ -154,6 +159,7 @@ export const LabFeeScheduleTab = () => {
         return;
       }
       const payload = res.data?.data;
+      setActive(Boolean(payload?.active ?? payload?.configured));
       if (Array.isArray(payload?.items)) {
         setItems(
           payload.items.length ? normalizeLabFeeItems({ items: payload.items }) : [],
@@ -176,15 +182,18 @@ export const LabFeeScheduleTab = () => {
     void load();
   }, [load]);
 
-  const save = async () => {
-    if (!token) return;
+  const persist = async (next: { items: LabFeeItem[]; active: boolean }) => {
+    if (!token) return false;
     setSaving(true);
     try {
-      const res = await request<{ message?: string; data?: { items?: LabFeeItem[] } }>({
+      const res = await request<{
+        message?: string;
+        data?: { items?: LabFeeItem[]; active?: boolean; configured?: boolean };
+      }>({
         path: "/api/lab-trading-partners/fee-schedule",
         method: "PUT",
         token,
-        jsonBody: { items },
+        jsonBody: { items: next.items, active: next.active },
       });
       if (!res.ok) {
         toast({
@@ -192,15 +201,41 @@ export const LabFeeScheduleTab = () => {
           description: res.data?.message || "다시 시도해주세요.",
           variant: "destructive",
         });
-        return;
+        return false;
       }
       if (Array.isArray(res.data?.data?.items)) {
         setItems(normalizeLabFeeItems({ items: res.data.data.items }));
       }
-      toast({ title: "기공비를 저장했습니다." });
+      setActive(Boolean(res.data?.data?.active ?? res.data?.data?.configured));
+      return true;
     } finally {
       setSaving(false);
     }
+  };
+
+  const save = async () => {
+    const ok = await persist({ items, active });
+    if (ok) toast({ title: "기공비를 저장했습니다." });
+  };
+
+  const toggleActive = async (nextActive: boolean) => {
+    const prev = active;
+    setActive(nextActive);
+    const ok = await persist({ items, active: nextActive });
+    if (!ok) {
+      setActive(prev);
+      return;
+    }
+    if (nextActive) {
+      if (highlightSetup) {
+        const next = new URLSearchParams(searchParams);
+        next.delete("setup");
+        setSearchParams(next, { replace: true });
+      }
+      toast({ title: "기공비 설정을 완료했습니다." });
+      return;
+    }
+    toast({ title: "기공비를 껐습니다." });
   };
 
   if (loading) {
@@ -210,18 +245,37 @@ export const LabFeeScheduleTab = () => {
   return (
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
-            <Banknote className="h-4 w-4 text-primary-strong" />
-          </span>
-          기공비 수가
-        </CardTitle>
-        <CardDescription className="pt-1 text-[13px] leading-relaxed">
-          처음에는 모든 항목이 0원·미제공입니다. 제공할 항목을 켜고 수가를 입력한
-          뒤 저장하세요. 항목 이름은 의뢰서 보철 형태와 같아야 청구됩니다.
-          유지장치는 연결 스팬당 1세트, 임시치아1·2는 의뢰서 「임시치아」에 치아
-          수 구간으로 합산됩니다.
-        </CardDescription>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
+              <Banknote className="h-4 w-4 text-primary-strong" />
+            </span>
+            기공비 수가
+          </CardTitle>
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 transition-shadow",
+              !active
+                ? "bg-red-50 ring-2 ring-red-500 ring-offset-2 ring-offset-white animate-pulse"
+                : "bg-slate-50 ring-1 ring-slate-200/80",
+            )}
+          >
+            <span
+              className={cn(
+                "text-[12px] font-medium",
+                !active ? "text-red-600" : "text-slate-600",
+              )}
+            >
+              치과 의뢰 받으려면 켜세요.
+            </span>
+            <Switch
+              checked={active}
+              disabled={saving}
+              onCheckedChange={(checked) => void toggleActive(checked === true)}
+              aria-label="기공비 사용"
+            />
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -143,7 +143,7 @@ Notes:
   - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「거래 치과 등록」·「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - `src/features/settings/tabs/LabTradingPartnersTab.tsx` — 거래처 O/X 결제 안내 + 초대
-    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·원가/리메이크). 미저장 디폴트는 0원·전부 off. 한 번 저장해야 설정 완료. 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees`. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 임시치아1·임시치아2로 분리. 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산.
+    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·원가/리메이크). 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료). 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산.
     - 등록 기간 D-day 배너: `LabDashboardTopBanners` — 기공의뢰수신·어벗생산의뢰 상단.
       - 소개치과 등록 기간 중만 표시(종료 시 두 alert 모두 숨김)
       - 왼쪽: 소개치과 등록 (`LabTradingPartnerWindowBanner`) → `?tab=trading-partners`

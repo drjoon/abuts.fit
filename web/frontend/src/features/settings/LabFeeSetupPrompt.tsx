@@ -18,7 +18,7 @@ import {
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 
-export const LAB_FEE_SETTINGS_PATH = "/dashboard/settings?tab=lab-fees";
+export const LAB_FEE_SETTINGS_PATH = "/dashboard/settings?tab=lab-fees&setup=1";
 
 const sessionKey = (userId: string) => `abuts:lab-fee-setup-prompted:${userId}`;
 
