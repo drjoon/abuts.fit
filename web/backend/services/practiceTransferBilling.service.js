@@ -28,6 +28,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   computePracticeTransferRetailFees,
   LAB_FEE_SCHEDULE_ZEROS,
+  normalizeLabFeeItems,
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
   resolveAbutsAbutmentPricingTier,
@@ -840,6 +841,9 @@ export async function buildPracticeTransferQuote({
     remakeSchedule: usedDefaultSchedule
       ? LAB_FEE_SCHEDULE_ZEROS
       : normalizeLabFeeRemakeSchedule(schedule),
+    items: usedDefaultSchedule
+      ? normalizeLabFeeItems(LAB_FEE_SCHEDULE_ZEROS)
+      : normalizeLabFeeItems(schedule),
   };
 }
 
@@ -867,6 +871,7 @@ export async function loadPracticeTransferQuoteContext({
   return {
     schedule: quote.schedule,
     remakeSchedule: quote.remakeSchedule || LAB_FEE_SCHEDULE_ZEROS,
+    items: quote.items || normalizeLabFeeItems(quote.schedule),
     abutmentRetailPrice: quote.abutmentRetailPrice,
     abutmentPricingTier: quote.abutmentPricingTier || "regular",
     relationshipKind: quote.relationshipKind,

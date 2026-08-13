@@ -511,16 +511,14 @@ export function computePracticeTransferRetailFees({
   remake = false,
 }) {
   const useRemake = Boolean(remake);
-  const schedule = useRemake
-    ? normalizeLabFeeRemakeSchedule(labFeeSchedule)
-    : normalizeLabFeeSchedule(labFeeSchedule);
+  const items = normalizeLabFeeItems(labFeeSchedule);
+  const remakeSchedule = normalizeLabFeeRemakeSchedule(labFeeSchedule);
   const waiveAbutment = useRemake || Boolean(skipAbutmentFees);
   const pricingTier =
     abutmentPricingTier === "membership" ? "membership" : "regular";
   const rows = Array.isArray(toothWorks) ? toothWorks : [];
   const lines = [];
-  const retainerRows = [];
-  const removableRows = [];
+  const grouped = new Map();
   let labFeeTotal = 0;
   let abutmentRetailTotal = 0;
   let abutmentQty = 0;
@@ -531,71 +529,81 @@ export function computePracticeTransferRetailFees({
     ).trim();
     if (!prosthesisType) continue;
     if (isMissingToothProsthesisType(prosthesisType)) continue;
-    if (isRetainerProsthesisType(prosthesisType)) {
-      retainerRows.push(row);
-      continue;
-    }
-    if (isRemovableTempProsthesisType(prosthesisType)) {
-      removableRows.push(row);
-      continue;
-    }
 
-    let labFee = 0;
-    let abutmentFee = 0;
-    if (useRemake) {
-      const feeKey = resolveRemakeLabFeeKey(row);
-      if (!feeKey) continue;
-      labFee = Math.max(0, Math.round(Number(schedule[feeKey] || 0)));
-    } else if (isCustomAbutmentWork(row)) {
-      abutmentFee = waiveAbutment
+    if (!useRemake && isCustomAbutmentWork(row)) {
+      const abutmentFee = waiveAbutment
         ? 0
         : resolveAbutsAbutmentUnitPrice({
             productMode: row?.abutmentProductMode || row?.productMode,
             pricingTier,
           });
-    } else {
-      const feeKey = resolveLabFeeKeyFromProsthesisType(prosthesisType);
+      if (abutmentFee > 0) {
+        abutmentRetailTotal += abutmentFee;
+        abutmentQty += 1;
+      }
+      lines.push({
+        toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
+        prosthesisType,
+        labFee: 0,
+        abutmentRetail: abutmentFee,
+      });
+      continue;
+    }
+
+    if (useRemake && isCustomAbutmentWork(row)) {
+      const feeKey = resolveRemakeLabFeeKey(row);
       if (!feeKey) continue;
-      labFee = Math.max(0, Math.round(Number(schedule[feeKey] || 0)));
+      const labFee = Math.max(0, Math.round(Number(remakeSchedule[feeKey] || 0)));
+      labFeeTotal += labFee;
+      lines.push({
+        toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
+        prosthesisType,
+        labFee,
+        abutmentRetail: 0,
+      });
+      continue;
     }
 
-    labFeeTotal += labFee;
-    if (abutmentFee > 0) {
-      abutmentRetailTotal += abutmentFee;
-      abutmentQty += 1;
+    const item = findLabFeeItemForProsthesisType(items, prosthesisType);
+    if (!item) continue;
+    if (item.unit === "perTooth") {
+      const labFee = Math.max(
+        0,
+        Math.round(Number(useRemake ? item.remake : item.price) || 0),
+      );
+      labFeeTotal += labFee;
+      lines.push({
+        toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
+        prosthesisType,
+        labFee,
+        abutmentRetail: 0,
+      });
+      continue;
     }
-    lines.push({
-      toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
-      prosthesisType,
-      labFee,
-      abutmentRetail: abutmentFee,
-    });
+    if (!grouped.has(item.id)) grouped.set(item.id, { item, rows: [] });
+    grouped.get(item.id).rows.push(row);
   }
 
-  for (const group of groupRowsByArch(retainerRows)) {
-    const fee = Math.max(0, Math.round(Number(schedule.retainer || 0)));
-    labFeeTotal += fee;
-    lines.push({
-      toothNumber: group.teeth.join(","),
-      prosthesisType: `유지장치${group.suffix}`,
-      labFee: fee,
-      abutmentRetail: 0,
-    });
-  }
-
-  for (const group of groupRowsByArch(removableRows)) {
-    const fee = removableTempFeeForCount(
-      group.teeth.length,
-      schedule.removableTemp3,
-      schedule.removableTemp6,
-    );
-    labFeeTotal += fee;
-    lines.push({
-      toothNumber: group.teeth.join(","),
-      prosthesisType: `임시치아${group.suffix} ${group.teeth.length}치`,
-      labFee: fee,
-      abutmentRetail: 0,
-    });
+  for (const { item, rows: groupedRows } of grouped.values()) {
+    for (const group of groupRowsByArch(groupedRows)) {
+      const labFee =
+        item.unit === "perSet"
+          ? Math.max(
+              0,
+              Math.round(Number(useRemake ? item.remake : item.price) || 0),
+            )
+          : nTeethFeeForCount(group.teeth.length, item.tiers, useRemake);
+      labFeeTotal += labFee;
+      lines.push({
+        toothNumber: group.teeth.join(","),
+        prosthesisType:
+          item.unit === "perSet"
+            ? `${item.name}${group.suffix}`
+            : `${item.name}${group.suffix} ${group.teeth.length}치`,
+        labFee,
+        abutmentRetail: 0,
+      });
+    }
   }
 
   return {

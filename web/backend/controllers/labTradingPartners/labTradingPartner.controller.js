@@ -18,6 +18,8 @@ import {
   normalizeLabFeeScheduleEnabled,
   LAB_FEE_SCHEDULE_DEFAULTS,
   normalizeLabFeeRemakeSchedule,
+  normalizeLabFeeItems,
+  legacyLabFeeScheduleFromItems,
 } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRequestorKind,
@@ -453,14 +455,15 @@ export async function getLabFeeSchedule(req, res) {
     const lab = await BusinessAnchor.findById(labAnchorId)
       .select({ labFeeSchedule: 1 })
       .lean();
-    const schedule = normalizeLabFeeSchedule(
-      lab?.labFeeSchedule || LAB_FEE_SCHEDULE_DEFAULTS,
-    );
-    const remake = normalizeLabFeeRemakeSchedule(lab?.labFeeSchedule);
-    const enabled = normalizeLabFeeScheduleEnabled(lab?.labFeeSchedule);
+    const source = lab?.labFeeSchedule || LAB_FEE_SCHEDULE_DEFAULTS;
+    const items = normalizeLabFeeItems(source);
+    const schedule = normalizeLabFeeSchedule(source);
+    const remake = normalizeLabFeeRemakeSchedule(source);
+    const enabled = normalizeLabFeeScheduleEnabled(source);
     return res.json({
       success: true,
       data: {
+        items,
         schedule,
         remake,
         enabled,
@@ -488,22 +491,40 @@ export async function updateLabFeeSchedule(req, res) {
     const existing = await BusinessAnchor.findById(labAnchorId)
       .select({ labFeeSchedule: 1 })
       .lean();
-    const schedule = normalizeLabFeeSchedule(req.body?.schedule || req.body);
+    const items = Array.isArray(req.body?.items)
+      ? normalizeLabFeeItems({ items: req.body.items })
+      : normalizeLabFeeItems(
+          existing?.labFeeSchedule?.items?.length
+            ? existing.labFeeSchedule
+            : req.body?.schedule || req.body || existing?.labFeeSchedule,
+        );
     const remakeRaw = req.body?.remake ?? req.body?.schedule?.remake;
-    const remake = normalizeLabFeeRemakeSchedule(
+    const remakeFallback = normalizeLabFeeRemakeSchedule(
       remakeRaw != null ? remakeRaw : existing?.labFeeSchedule,
     );
-    const enabled = normalizeLabFeeScheduleEnabled(
-      req.body?.enabled ?? req.body?.schedule?.enabled ?? req.body,
+    const enabledFallback = normalizeLabFeeScheduleEnabled(
+      req.body?.enabled ?? req.body?.schedule?.enabled ?? existing?.labFeeSchedule,
     );
+    const legacy = legacyLabFeeScheduleFromItems(items, {
+      ...normalizeLabFeeSchedule(existing?.labFeeSchedule),
+      remake: remakeFallback,
+      enabled: enabledFallback,
+    });
     const updated = await BusinessAnchor.findByIdAndUpdate(
       labAnchorId,
       {
         $set: {
           labFeeSchedule: {
-            ...schedule,
-            remake,
-            enabled,
+            ...legacy.schedule,
+            remake: {
+              ...remakeFallback,
+              ...legacy.remake,
+            },
+            enabled: {
+              ...enabledFallback,
+              ...legacy.enabled,
+            },
+            items,
             updatedAt: new Date(),
           },
         },
@@ -513,6 +534,7 @@ export async function updateLabFeeSchedule(req, res) {
     return res.json({
       success: true,
       data: {
+        items: normalizeLabFeeItems(updated?.labFeeSchedule),
         schedule: normalizeLabFeeSchedule(updated?.labFeeSchedule),
         remake: normalizeLabFeeRemakeSchedule(updated?.labFeeSchedule),
         enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
