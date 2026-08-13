@@ -340,7 +340,7 @@ export async function updateMyBusiness(req, res) {
         return res.status(400).json({
           success: false,
           message:
-            "역할(치과/기공소)과 이용 서비스(기공의뢰서/생산의뢰)를 선택해주세요.",
+            "역할(치과/기공소)을 선택해주세요.",
         });
       }
 
@@ -598,7 +598,7 @@ export async function updateMyBusiness(req, res) {
         return res.status(400).json({
           success: false,
           message:
-            "역할(치과/기공소)과 이용 서비스(기공의뢰서/생산의뢰)를 선택해주세요.",
+            "역할(치과/기공소)을 선택해주세요.",
         });
       }
       if (
@@ -848,12 +848,9 @@ export async function updateMyBusiness(req, res) {
         const createdKind = hasRequestorProfile(createdProfile)
           ? createdProfile.kind
           : "lab";
-        // 검증 성공 시 유료 개방, 아니면 가입 기본(무료)
         const createdPersist = requestorProfilePersistFields({
           kind: createdKind,
-          services: verifiedNow
-            ? { free: true, paid: true }
-            : { free: true, paid: false },
+          services: { free: false, paid: true },
         });
 
         const created = await BusinessAnchor.create({
@@ -986,9 +983,8 @@ export async function updateMyBusiness(req, res) {
 
     if (verificationResult) {
       patch.status = verificationResult.verified ? "verified" : "active";
-      // 사업자등록증 검증 성공 시 생산의뢰(유료) 자동 개방 (가입 시에는 무료만)
       if (verificationResult.verified && businessType === "requestor") {
-        patch.requestorServices = { free: true, paid: true };
+        patch.requestorServices = { free: false, paid: true };
       }
     }
 

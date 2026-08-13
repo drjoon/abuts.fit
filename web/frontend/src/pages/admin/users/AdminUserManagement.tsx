@@ -314,7 +314,7 @@ const toUiUser = (u: ApiUser): UiUserRow => {
   });
   const kind = normalizeRequestorKind(profile.kind);
   const services = normalizeRequestorServices(profile.services);
-  const hasProfile = Boolean(kind) && (services.free || services.paid);
+  const hasProfile = Boolean(kind) && services.paid;
   const normalizedCaps = hasProfile
     ? legacyCapabilitiesFromProfile(profile)
     : u.requestorCapabilities
@@ -412,20 +412,11 @@ const getRequestorCapabilityBadges = (
 ) => {
   if (normalizeRole(user.role) !== "requestor") return null;
   const services = user.requestorServices;
-  if (!services?.free && !services?.paid) return null;
+  if (!services?.paid) return null;
   return (
-    <>
-      {services?.free ? (
-        <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-          {REQUESTOR_SERVICE_LABEL.free}
-        </span>
-      ) : null}
-      {services?.paid ? (
-        <span className="rounded-md border border-accent-muted bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-strong">
-          {REQUESTOR_SERVICE_LABEL.paid}
-        </span>
-      ) : null}
-    </>
+    <span className="rounded-md border border-accent-muted bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-strong">
+      {REQUESTOR_SERVICE_LABEL.paid}
+    </span>
   );
 };
 

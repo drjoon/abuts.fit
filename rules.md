@@ -202,7 +202,7 @@
 
 ### 2.4 의뢰자 유형(발신/수신) · 가입/온보딩 · 기공의뢰서 전송
 
-- 가입 role SSOT: **requestor** | **salesman**만. `practice` role은 **제거**(신규 생성·공개 가입·드롭존 가입·관리자 생성 모두 금지). 기존 `practice` 계정은 `requestor`+`requestorCapabilities.practice`(의뢰 발신자·무료)로 마이그레이션. 관리자 UI의 별도 치과 role 필터도 제거.
+- 가입 role SSOT: **requestor** | **salesman**만. `practice` role은 **제거**(신규 생성·공개 가입·드롭존 가입·관리자 생성 모두 금지). 기존 `practice` 계정은 `requestor`+`requestorKind=practice`(의뢰 발신자)로 마이그레이션. 관리자 UI의 별도 치과 role 필터도 제거.
 - **네이밍 SSOT**: 발신(치과) 유형 식별자는 `practice`다. 예전 `clinic`과 동일 의미 — 코드/스키마에서 `clinic`이 발견되면 `practice`로 바꾼다.
   - `requestorCapabilities.practice` (레거시 키 `clinic`은 normalize·백필에서만 호환)
   - `clinicName`/`clinicPhone` 등 **연락처 필드**는 별도(점진 개명). filename-rule·묶음배송·Clinic CRUD 엔티티의 `clinic`은 해당 도메인 유지.
@@ -218,18 +218,18 @@
   - 캡 SSOT: `BusinessAnchor.requestorCapabilities` (User 필드는 미링크·온보딩 중 미러)
   - 해석 우선순위: 앵커 → 유저 → 레거시 폴백(미기입 requestor·구 practice role 데이터 → practice / verified requestor → lab). 폴백은 마이그레이션 전까지만.
 - UI 라벨 SSOT(`REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`):
-  - `practice`: **의뢰 발신자 (치과)** — 무료 서비스, 사업자등록증 선택
-  - `lab`: **의뢰 수신자 (기공소와 기공실)** — 유료 서비스, 사업자등록증 필수
+  - `practice`: **의뢰 발신자 (치과)** — 생산의뢰, 사업자등록증 필수
+  - `lab`: **의뢰 수신자 (기공소와 기공실)** — 생산의뢰, 사업자등록증 필수
+- `requestorServices`는 **paid-only**. `free`(기공의뢰서) 옵션은 폐기. 읽기 시 레거시 `free`는 `paid`로 승격, 쓰기는 `{free:false,paid:true}`.
 - 가입·온보딩 흐름:
   1. `/signup` → 계정(이메일·비번) → 로그인. 드롭존 → 계정(이메일·비번·담당자 휴대폰 인증) → **첫 기공의뢰 전송**
   2. `/dashboard/wizard` 온보딩: 프로필 → 휴대전화(드롭존에서 이미 인증되면 스킵) → 역할(owner/staff) → 사업자
-  3. 사업자 단계에서 `RequestorCapabilitiesPicker`로 practice/lab 선택(드롭존 가입자는 practice 고정)
-  4. `lab` 포함 시 사업자등록증 등록·검증 필수. practice만 선택한 경우 등록증을 건너뛰고 `practiceProfile`(치과명·원장·담당·전화·주소·우편) 필수로 완료 가능 → 이때 Org 앵커 생성
-  5. 온보딩 완료 후: 유료 미가용 requestor → `/dashboard/practice-transfers`(기공의뢰서). 유료 가용 → `/dashboard`
-- 접근성 게이트(특정 상품명이 아니라 **유료/무료** 기준):
-  - **유료**: `lab === true` AND `BusinessAnchor.status === "verified"` — 대시보드 홈·신규의뢰·설정 탭 `request`/`payment`
-  - **무료**: `practice === true`이면 사업자등록증 없이 이용(기공의뢰서 발신 등). `lab` 미체크 또는 미검증이면 유료 페이지 접근 불가
-  - `lab === true`이면 온보드/설정 전환 시 사업자등록증 등록·검증 필수
+  3. 사업자 단계에서 `RequestorCapabilitiesPicker`로 practice/lab 선택(드롭존 가입자는 practice 고정). 서비스 체크 UI 없음(paid 고정)
+  4. 역할 선택 시 사업자등록증 등록·검증 필수
+  5. 온보딩 완료 후 → `/dashboard` (생산의뢰는 `paid` + 사업자 검증)
+- 접근성 게이트:
+  - **생산의뢰**: `requestorServices.paid`(레거시 free는 paid 승격) AND `BusinessAnchor.status === "verified"`
+  - 미검증이면 설정 > 사업자에서 사업자등록증 검증 필요
 - 기공의뢰서(PracticeTransfer) 권한:
   - **발신**: `requestor` + `practice` (의뢰 발신자)
   - **수신**: `requestor` + `lab` (의뢰 수신자)
@@ -274,7 +274,7 @@
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 디자인비: `creditSettings.designFee`(기본 **15,000원 / 1어벗**)
+  - 디자인비: `creditSettings.designFee`(기본 **5,000원 / 1어벗**). 안내 정가 생산만 멤버십 1.5만원·일반 2.5만원 / 디자인+생산 멤버십 2.0만원·일반 3.5만원. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 55,000원).
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`

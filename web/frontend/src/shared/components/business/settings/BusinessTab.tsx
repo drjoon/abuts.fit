@@ -147,7 +147,7 @@ export const BusinessTab = ({
   const [focusFieldKey, setFocusFieldKey] = useState<FieldKey | null>(null);
   const [requestorProfile, setRequestorProfile] = useState<RequestorProfile>({
     kind: null,
-    services: { free: true, paid: false },
+    services: { free: false, paid: true },
   });
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
   const [capabilitiesSaving, setCapabilitiesSaving] = useState(false);
@@ -313,12 +313,10 @@ export const BusinessTab = ({
   const persistRequestorProfile = useCallback(
     async (next: RequestorProfile) => {
       if (!token || !isRequestorBusiness) return false;
-      const normalized: RequestorProfile = isOnboarding
-        ? {
-            kind: next.kind,
-            services: { free: true, paid: false },
-          }
-        : next;
+      const normalized: RequestorProfile = {
+        kind: next.kind,
+        services: { free: false, paid: true },
+      };
       if (!hasRequestorProfile(normalized)) {
         toast({
           title: "역할을 선택해주세요",
@@ -386,7 +384,6 @@ export const BusinessTab = ({
       businessDataMgmt.isVerified,
       businessDataMgmt.validationSucceeded,
       businessType,
-      isOnboarding,
       isRequestorBusiness,
       setUser,
       toast,
@@ -550,9 +547,7 @@ export const BusinessTab = ({
         },
         requestorKind: isRequestorBusiness ? requestorProfile.kind : undefined,
         requestorServices: isRequestorBusiness
-          ? isOnboarding
-            ? { free: true, paid: false }
-            : requestorProfile.services
+          ? { free: false, paid: true }
           : undefined,
         mockHeaders: {},
         toast,

@@ -43,7 +43,7 @@ const businessAnchorSchema = new mongoose.Schema(
         message: "requestorKind must be practice or lab",
       },
     },
-    // 이용 서비스 OR: free=기공의뢰서, paid=생산의뢰(검증 필수)
+    // 이용 서비스: paid-only. free는 폐기(읽기 시 paid 승격).
     requestorServices: {
       free: { type: Boolean, default: false },
       paid: { type: Boolean, default: false },

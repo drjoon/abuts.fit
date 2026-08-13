@@ -116,7 +116,7 @@ Notes:
   - `src/shared/practice/practiceTransferAccept.ts`
   - `src/shared/files/extractDroppedFiles.ts`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
-    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 어벗 디자인은 커스텀 체크박스(임플란트·스캔바디) 지원. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
+    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 어벗 디자인은 커스텀 체크박스(임플란트·스캔바디) 지원. 커스텀어벗 설정 모달에서 **생산만 의뢰 / 디자인+생산 의뢰** 배타 선택(호버 시 어벗츠 자체 제공 가격 툴팁). 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
     - 기공의뢰서 상·하악 사이(크게보기·전송 상세 포함)에 견적(크레딧 소비액) 표시. 치과는 평소 블러, 호버 시 금액 공개. 기공소 미지정(자동매칭)은 기본수가 없음(0원). 간단 합계 + 빠른툴팁 치식별 세부. `PracticeTransferFeeEstimate` / `GET /api/practice/transfers/quote-context`.
     - 기공소 의뢰카드·전송 상세에는 수령액(청구 − 플랫폼 수수료) 표시. 목록 `feeQuote` SSOT.
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
@@ -190,13 +190,14 @@ Notes:
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
-    - 디자인비는 `creditSettings.designFee`(기본 15,000원 / 1어벗). 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
+    - 디자인비는 `creditSettings.designFee`(기본 5,000원 / 1어벗). 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
+    - 안내 정가 SSOT (`src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.5만원, 디자인+생산 멤버십 2.0만원·일반 3.5만원. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 55,000원, 관리자 플랫폼 설정).
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
     - 출고일: 묶음/신속 공통 **+1영업일**(디자인). 안내 카피 SSOT는 `.cursor/rules/design-fee.mdc` UI 절.
     - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(생산/디자인/배송·신속) 표시.
-    - 표시: `PricingPolicyDialog`, `RequestDetailDialog`. 오늘의 생산 가격 카드는 생산 단가·할인만(디자인비 미표시). 신규의뢰 우측에는 금액 미표시.
+    - 표시: `PricingPolicyDialog`, `RequestDetailDialog`, `RequestorPricingReferralPolicyCard`. 생산만/디자인+생산 정가와 배송비 박스단위 별도. 신규의뢰 우측에는 금액 미표시.
   - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`
     - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 표시 금액 SSOT: 신속배송이면 생산비+추가비를 합산해 보여줍니다 (`resolveQuotedPriceAmount` in `shippingMode.ts`).
@@ -218,6 +219,7 @@ Notes:
     - `src/shared/shipping/shippingMode.ts`
     - `src/shared/shipping/ShippingModeBadge.tsx`
     - `src/shared/ui/PricingPolicyDialog.tsx`
+    - `src/shared/pricing/abutsAbutmentService.ts`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/shippingDay.helpers.ts`
 
@@ -310,10 +312,19 @@ Notes:
   - request 탭 API 조회는 `manufacturerStageIn=준비` 단일값만 전달합니다.
   - `manufacturerStage` request 단계 레거시 값(`의뢰`, `request`) 사용/비교는 금지합니다.
   - 상단 카운터/카드 목록 불일치 방지를 위해 탭별 API stage 필터와 클라이언트 stage 비교 문자열을 동일하게 유지합니다.
+  - 라이노 작업 전 카드: 의뢰 생성 직후 준비 탭에 즉시 표시하되, `caseInfos.camFile.s3Key`(2-filled)가 없으면
+    카드 본문을 블러하고 「라이노 작업중」 오버레이로 클릭을 막는다.
+    라이노 완료 웹소켓(`request:stage-changed` source=`bg-file-processed`,
+    `request:stl-metadata-updated` source=`bg-file-processed:2-filled`,
+    notification `bg-file-processed` step=`2-filled`)으로 camFile이 패치되면 블러를 해제한다.
+    디자인+생산 큐(`DesignRequestTransferView`)에는 적용하지 않는다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts`
     - `src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
     - `src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts`
+    - `web/backend/controllers/bg/bg.controller.js`
 
 - 작업 공정 변경:
   - `PreviewModal`과 `WorksheetCardGrid`의 화살표 액션은 동일 공정 전이 규칙을 사용합니다.
@@ -386,7 +397,7 @@ Notes:
     첫 충전 기본 1단위. 2회차부터 기본 추천 = 월사용량(90일/3)의 1/3을 단위로 반올림(0이면 최소 1단위).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금), 미사용 잔액은 요청 시 환불(마이너스 수정 계산서). 선불페이/선결제 잔액 표현 금지.
-  - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드 — "배송비 별도"만 유지.
+  - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드 — 커스텀어벗 멤버십/일반 단가 + 배송비 별도(박스당 과금).
   - 제조사 정산규칙 안내: 분배율만 안내하고 "+ VAT 10%" 표기 금지.
   - 관리자 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0).
 
@@ -512,14 +523,13 @@ Notes:
   - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자.
   - 사업자 단계(`BusinessTab` + `RequestorCapabilitiesPicker`):
     - 역할 라디오: `REQUESTOR_KIND_LABEL` — practice=`치과 (기공실 포함)`, lab=`기공소`
-    - 온보딩: `forceFreeServices` — 서비스 UI 숨김, `{free:true,paid:false}` 고정. 유료는 이후 사업자등록증 검증으로 개방
-    - 설정: 서비스 체크 표시. `paid` 선택 시 미검증이면 저장 차단
-    - free-only + practice로 등록증 건너뛰면 `practiceProfilePhase` → `PracticeBusinessProfileStep`
-  - 온보딩 완료 랜딩: 유료 미가용(`!paid` 또는 미검증) → `/dashboard/practice-transfers`, 그 외 → `/dashboard`
-  - 유료 게이트: `canUsePaidServices({ businessVerified, services })` = `paid && verified`
+    - 서비스 선택 UI 없음. `requestorServices`는 paid-only(`{free:false,paid:true}`). 레거시 free는 읽기 시 paid 승격
+    - 역할 선택 시 사업자등록증 등록·검증 필수
+  - 온보딩 완료 랜딩: `/dashboard`
+  - 생산의뢰 게이트: `canUsePaidServices({ businessVerified, services })` = `paid && verified`
     - `BusinessPaidAccessGate`, 사이드바 `isPaidRequestorPath`, 설정 `PAID_REQUESTOR_SETTINGS_TABS`
     - 변경 후 `notifyRequestorAccessUpdated`
-  - 기공의뢰서: 발신=`kind===practice && free`, 수신=`kind===lab && free` (`PracticeTransferRoleTabs`)
+  - 기공의뢰서: 발신=`kind===practice`, 수신=`kind===lab` (`PracticeTransferRoleTabs`)
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
   - 계정 전환: `AccountSwitcher`
 
@@ -533,10 +543,10 @@ Notes:
   - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(클릭 픽커·확장자 툴팁)/`[작업취소]` — 결과파일 필수. 커스텀어벗이면 배송선택. 치과 「생산 진행」 후 커스텀어벗은 어벗츠 자동의뢰
 
 
-- 드롭존 가입(치과 전용, requestor+practice+free)
-  - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab·paid 선택 UI 없음.
+- 드롭존 가입(치과 전용, requestor+practice)
+  - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab 선택 UI 없음.
   - Step 2 임베디드 로그인/가입/비밀번호 변경. 라벨은 「의뢰인 계정」.
-  - 최소 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorKind=practice` + `requestorServices={free:true,paid:false}`.
+  - 최소 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorKind=practice` + `requestorServices={free:false,paid:true}`.
     필수: `email`, `password`, `phone`, `clinicName`, `staffName`.
     `practiceProfile.clinicName/staffName/phone`과 계정 `name(=staffName)`을 저장. 주소/Org 앵커는 온보딩에서 완성.
   - 가입 전 이메일·담당자 휴대폰 인증 필수(공통 signup verification API). 로컬 캐시: `practice_dropzone_signup_verification_v1`.

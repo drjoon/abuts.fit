@@ -7,6 +7,7 @@ import {
   REQUESTOR_KIND_OPTIONS,
   type RequestorKind,
   type RequestorProfile,
+  PAID_ONLY_SERVICES,
   type RequestorServices,
   hasAnyRequestorService,
   normalizeRequestorKind,
@@ -14,14 +15,12 @@ import {
 } from "@/shared/business/requestorCapabilities";
 import { cn } from "@/shared/ui/cn";
 
-const DEFAULT_SERVICES: RequestorServices = { free: true, paid: false };
-
 type Props = {
   value: RequestorProfile;
   onChange: (next: RequestorProfile) => void;
   disabled?: boolean;
   className?: string;
-  /** 드롭존 최소 가입자 등: practice + free 고정 */
+  /** 드롭존 최소 가입자 등: practice 고정 */
   forcePracticeOnly?: boolean;
 };
 
@@ -39,7 +38,7 @@ export const RequestorCapabilitiesPicker = ({
     const normalized = normalizeRequestorServices(value.services);
     return hasAnyRequestorService(normalized)
       ? normalized
-      : DEFAULT_SERVICES;
+      : { ...PAID_ONLY_SERVICES };
   })();
 
   const setKind = (nextKind: RequestorKind) => {

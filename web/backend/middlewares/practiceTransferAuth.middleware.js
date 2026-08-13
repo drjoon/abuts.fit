@@ -54,7 +54,7 @@ const loadResolvedProfile = async (user) => {
 };
 
 /**
- * 기공의뢰서 발신: legacy practice role 또는 requestor+practice+free
+ * 기공의뢰서 발신: legacy practice role 또는 requestor+practice
  */
 export const authorizePracticeTransferSend = (options = {}) => {
   return async (req, res, next) => {
@@ -93,7 +93,7 @@ export const authorizePracticeTransferSend = (options = {}) => {
         return res.status(403).json({
           success: false,
           message:
-            "치과(기공실) 역할과 기공의뢰서(무료) 서비스가 필요합니다. 설정 > 사업자에서 확인해주세요.",
+            "치과(기공실) 역할이 필요합니다. 설정 > 사업자에서 확인해주세요.",
         });
       }
 
@@ -125,7 +125,7 @@ export const authorizePracticeTransferSend = (options = {}) => {
 };
 
 /**
- * 기공의뢰서 수신: requestor+lab+free
+ * 기공의뢰서 수신: requestor+lab
  */
 export const authorizePracticeTransferReceive = () => {
   return async (req, res, next) => {
@@ -150,7 +150,7 @@ export const authorizePracticeTransferReceive = () => {
         return res.status(403).json({
           success: false,
           message:
-            "기공소 역할과 기공의뢰서(무료) 서비스가 필요합니다. 설정 > 사업자에서 확인해주세요.",
+            "기공소 역할이 필요합니다. 설정 > 사업자에서 확인해주세요.",
         });
       }
 

@@ -101,10 +101,7 @@ import {
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import {
-  REQUESTOR_KIND_LABEL,
-  REQUESTOR_SERVICE_LABEL,
-} from "@/shared/business/requestorCapabilities";
+import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
 import { DesignQueueSection } from "@/pages/requestor/design/DesignQueueSection";
 import {
@@ -350,11 +347,10 @@ export default function RequestorPracticePage() {
         <div className="flex min-h-[50vh] items-center justify-center p-6">
           <Card className="w-full max-w-md">
             <CardHeader>
-              <CardTitle className="text-lg">역할·서비스 선택 필요</CardTitle>
+              <CardTitle className="text-lg">역할 선택 필요</CardTitle>
               <CardDescription>
                 기공의뢰서 이용을 위해 설정 &gt; 사업자에서{" "}
-                {REQUESTOR_KIND_LABEL.lab} 역할과{" "}
-                {REQUESTOR_SERVICE_LABEL.free}를 선택해주세요.
+                {REQUESTOR_KIND_LABEL.lab} 역할을 선택해주세요.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -384,11 +380,10 @@ export default function RequestorPracticePage() {
       <div className="flex min-h-[50vh] items-center justify-center p-6">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle className="text-lg">역할·서비스 선택 필요</CardTitle>
+            <CardTitle className="text-lg">역할 선택 필요</CardTitle>
             <CardDescription>
               기공의뢰서 이용을 위해 설정 &gt; 사업자에서{" "}
-              {REQUESTOR_KIND_LABEL.practice} 역할과{" "}
-              {REQUESTOR_SERVICE_LABEL.free}를 선택해주세요.
+              {REQUESTOR_KIND_LABEL.practice} 역할을 선택해주세요.
             </CardDescription>
           </CardHeader>
           <CardContent>

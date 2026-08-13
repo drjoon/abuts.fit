@@ -654,7 +654,7 @@ async function updateProfile(req, res) {
           !req.user?.requestorKind
         ) {
           updateData.requestorKind = "practice";
-          updateData.requestorServices = { free: true, paid: false };
+          updateData.requestorServices = { free: false, paid: true };
         }
       }
     }

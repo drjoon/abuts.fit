@@ -5,11 +5,20 @@
 /** 역할 XOR — 치과(기공실) / 기공소 */
 export type RequestorKind = "practice" | "lab";
 
-/** 서비스 OR — 기공의뢰서(무료) / 생산의뢰(유료) */
+/** 서비스 — paid-only. `free`는 스키마 호환용(항상 false, 읽기 시 paid 승격). */
 export type RequestorServices = {
   free: boolean;
   paid: boolean;
 };
+
+export const PAID_ONLY_SERVICES: RequestorServices = Object.freeze({
+  free: false,
+  paid: true,
+});
+export const EMPTY_REQUESTOR_SERVICES: RequestorServices = Object.freeze({
+  free: false,
+  paid: false,
+});
 
 export type RequestorProfile = {
   kind: RequestorKind | null;
@@ -37,19 +46,18 @@ export const normalizeRequestorKind = (
   return null;
 };
 
+/** paid-only. 레거시 free-only는 paid로 승격. */
 export const normalizeRequestorServices = (
   raw?: Partial<RequestorServices> | null,
-): RequestorServices => ({
-  free: Boolean(raw?.free),
-  paid: Boolean(raw?.paid),
-});
+): RequestorServices => {
+  if (!raw || typeof raw !== "object") return { ...EMPTY_REQUESTOR_SERVICES };
+  const paid = Boolean(raw.paid || raw.free);
+  return paid ? { ...PAID_ONLY_SERVICES } : { ...EMPTY_REQUESTOR_SERVICES };
+};
 
 export const hasAnyRequestorService = (
   services?: Partial<RequestorServices> | null,
-) => {
-  const s = normalizeRequestorServices(services);
-  return s.free || s.paid;
-};
+) => Boolean(normalizeRequestorServices(services).paid);
 
 export const hasRequestorProfile = (profile?: {
   kind?: string | null;
@@ -78,7 +86,7 @@ export const profileFromLegacyCapabilities = (
 ): RequestorProfile => {
   const c = normalizeRequestorCapabilities(caps);
   if (!c.practice && !c.lab) {
-    return { kind: null, services: { free: false, paid: false } };
+    return { kind: null, services: { ...EMPTY_REQUESTOR_SERVICES } };
   }
   let kind: RequestorKind;
   if (c.practice && c.lab) {
@@ -90,10 +98,7 @@ export const profileFromLegacyCapabilities = (
   }
   return {
     kind,
-    services: {
-      free: true,
-      paid: Boolean(c.lab && args?.businessVerified),
-    },
+    services: { ...PAID_ONLY_SERVICES },
   };
 };
 
@@ -145,15 +150,15 @@ export const resolveRequestorProfile = (args?: {
   if (fromUserLegacy.kind) return fromUserLegacy;
 
   if (args?.userRole === "practice") {
-    return { kind: "practice", services: { free: true, paid: false } };
+    return { kind: "practice", services: { ...PAID_ONLY_SERVICES } };
   }
   if (args?.userRole === "requestor" && args?.businessVerified) {
-    return { kind: "lab", services: { free: true, paid: true } };
+    return { kind: "lab", services: { ...PAID_ONLY_SERVICES } };
   }
   if (args?.userRole === "requestor") {
-    return { kind: "practice", services: { free: true, paid: false } };
+    return { kind: "practice", services: { ...PAID_ONLY_SERVICES } };
   }
-  return { kind: null, services: { free: false, paid: false } };
+  return { kind: null, services: { ...EMPTY_REQUESTOR_SERVICES } };
 };
 
 /** @deprecated resolveRequestorProfile 사용 */
@@ -268,47 +273,24 @@ export const REQUESTOR_CAPABILITY_LABEL = {
 } as const;
 
 export const REQUESTOR_SERVICE_LABEL = {
+  /** @deprecated 기공의뢰서(free) 폐기 */
   free: "기공의뢰서 (무료)",
-  paid: "생산의뢰 (유료)",
+  paid: "생산의뢰",
 } as const;
 
 export const PAID_ACCESS_DISABLED_HINT =
   "설정 > 사업자에서 사업자등록증을 등록,검증한 뒤 이용할 수 있습니다.";
 
+/** @deprecated 기공의뢰서(free) 폐기 — 항상 false */
 export const canUseFreeServices = (
-  servicesOrProfileOrCaps?:
+  _servicesOrProfileOrCaps?:
     | Partial<RequestorServices>
     | RequestorProfile
     | RequestorCapabilitiesInput
     | null,
-) => {
-  if (!servicesOrProfileOrCaps || typeof servicesOrProfileOrCaps !== "object") {
-    return false;
-  }
-  if ("services" in servicesOrProfileOrCaps) {
-    return Boolean(
-      normalizeRequestorServices(
-        (servicesOrProfileOrCaps as RequestorProfile).services,
-      ).free,
-    );
-  }
-  if (
-    "free" in servicesOrProfileOrCaps ||
-    "paid" in servicesOrProfileOrCaps
-  ) {
-    return Boolean(
-      normalizeRequestorServices(
-        servicesOrProfileOrCaps as Partial<RequestorServices>,
-      ).free,
-    );
-  }
-  return Boolean(
-    normalizeRequestorCapabilities(
-      servicesOrProfileOrCaps as RequestorCapabilitiesInput,
-    ).practice,
-  );
-};
+) => false;
 
+/** 기공의뢰서 발신: practice (free 플래그 불필요) */
 export const canSendPracticeTransfer = (
   profileOrCaps?:
     | RequestorProfile
@@ -317,11 +299,8 @@ export const canSendPracticeTransfer = (
 ) => {
   if (!profileOrCaps || typeof profileOrCaps !== "object") return false;
   if ("kind" in profileOrCaps || "services" in profileOrCaps) {
-    const p = profileOrCaps as RequestorProfile;
-    return (
-      normalizeRequestorKind(p.kind) === "practice" &&
-      Boolean(normalizeRequestorServices(p.services).free)
-    );
+    return normalizeRequestorKind((profileOrCaps as RequestorProfile).kind) ===
+      "practice";
   }
   return Boolean(
     normalizeRequestorCapabilities(profileOrCaps as RequestorCapabilitiesInput)
@@ -329,6 +308,7 @@ export const canSendPracticeTransfer = (
   );
 };
 
+/** 기공의뢰서 수신: lab (free 플래그 불필요) */
 export const canReceivePracticeTransfer = (
   profileOrCaps?:
     | RequestorProfile
@@ -337,11 +317,8 @@ export const canReceivePracticeTransfer = (
 ) => {
   if (!profileOrCaps || typeof profileOrCaps !== "object") return false;
   if ("kind" in profileOrCaps || "services" in profileOrCaps) {
-    const p = profileOrCaps as RequestorProfile;
-    return (
-      normalizeRequestorKind(p.kind) === "lab" &&
-      Boolean(normalizeRequestorServices(p.services).free)
-    );
+    return normalizeRequestorKind((profileOrCaps as RequestorProfile).kind) ===
+      "lab";
   }
   return Boolean(
     normalizeRequestorCapabilities(profileOrCaps as RequestorCapabilitiesInput)
@@ -354,22 +331,18 @@ export const REQUESTOR_KIND_OPTIONS = [
     key: "practice" as const,
     label: REQUESTOR_KIND_LABEL.practice,
     description:
-      "구강스캔 3d 모델로 기공소에 의뢰하거나, 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
+      "치과에서 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
   },
   {
     key: "lab" as const,
     label: REQUESTOR_KIND_LABEL.lab,
     description:
-      "치과로부터 의뢰받거나, 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
+      "기공소에서 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
   },
 ];
 
+/** @deprecated 서비스 선택 UI 없음 — paid-only */
 export const REQUESTOR_SERVICE_OPTIONS = [
-  {
-    key: "free" as const,
-    label: REQUESTOR_SERVICE_LABEL.free,
-    description: "치과 ↔ 기공소 기공의뢰서 전달·관리.",
-  },
   {
     key: "paid" as const,
     label: REQUESTOR_SERVICE_LABEL.paid,
@@ -407,7 +380,7 @@ export const normalizeRequestorProfileInput = (body?: {
     servicesFromBody &&
     hasAnyRequestorService(servicesFromBody)
   ) {
-    return { kind: kindFromBody, services: servicesFromBody };
+    return { kind: kindFromBody, services: { ...PAID_ONLY_SERVICES } };
   }
 
   if (body?.requestorCapabilities) {
@@ -419,9 +392,9 @@ export const normalizeRequestorProfileInput = (body?: {
   if (kindFromBody) {
     return {
       kind: kindFromBody,
-      services: servicesFromBody || { free: false, paid: false },
+      services: { ...PAID_ONLY_SERVICES },
     };
   }
 
-  return { kind: null, services: { free: false, paid: false } };
+  return { kind: null, services: { ...EMPTY_REQUESTOR_SERVICES } };
 };

@@ -7,7 +7,7 @@
 /**
  * 의뢰자 SSOT:
  * - requestorKind: "practice" | "lab" (XOR) — 치과(기공실) / 기공소
- * - requestorServices: { free, paid } (OR, 최소 1) — 기공의뢰서 / 생산의뢰
+ * - requestorServices: paid-only. `free`(기공의뢰서)는 폐기 — 읽기 시 paid로 승격, 쓰기는 `{free:false,paid:true}`.
  * 레거시 requestorCapabilities.{practice,lab}는 normalize·백필·resolve 폴백 전용.
  */
 
@@ -47,15 +47,23 @@ export const requestorKindCapableAnchorFilter = (kind) => {
   };
 };
 
-export const normalizeRequestorServices = (raw) => ({
-  free: Boolean(raw?.free),
-  paid: Boolean(raw?.paid),
+export const PAID_ONLY_SERVICES = Object.freeze({ free: false, paid: true });
+export const EMPTY_REQUESTOR_SERVICES = Object.freeze({
+  free: false,
+  paid: false,
 });
 
-export const hasAnyRequestorService = (services) => {
-  const s = normalizeRequestorServices(services);
-  return s.free || s.paid;
+/** paid-only. 레거시 free-only는 paid로 승격. */
+export const normalizeRequestorServices = (raw) => {
+  if (!raw || typeof raw !== "object") {
+    return { ...EMPTY_REQUESTOR_SERVICES };
+  }
+  const paid = Boolean(raw.paid || raw.free);
+  return paid ? { ...PAID_ONLY_SERVICES } : { ...EMPTY_REQUESTOR_SERVICES };
 };
+
+export const hasAnyRequestorService = (services) =>
+  Boolean(normalizeRequestorServices(services).paid);
 
 export const hasRequestorProfile = ({ kind, services } = {}) =>
   Boolean(normalizeRequestorKind(kind)) && hasAnyRequestorService(services);
@@ -79,7 +87,7 @@ export const profileFromLegacyCapabilities = (
 ) => {
   const c = normalizeRequestorCapabilities(caps);
   if (!c.practice && !c.lab) {
-    return { kind: null, services: { free: false, paid: false } };
+    return { kind: null, services: { ...EMPTY_REQUESTOR_SERVICES } };
   }
   let kind = null;
   if (c.practice && c.lab) {
@@ -89,10 +97,7 @@ export const profileFromLegacyCapabilities = (
   } else {
     kind = "practice";
   }
-  // 구 모델: practice=무료 발신, lab=수신(+검증 시 유료)
-  const free = true;
-  const paid = Boolean(c.lab && businessVerified);
-  return { kind, services: { free, paid } };
+  return { kind, services: { ...PAID_ONLY_SERVICES } };
 };
 
 /** 검색 결과 후처리 — 듀얼 caps·미백필 앵커를 resolve 결과와 맞춤 */
@@ -157,15 +162,15 @@ export const resolveRequestorProfile = ({
   if (fromUserLegacy.kind) return fromUserLegacy;
 
   if (userRole === "practice") {
-    return { kind: "practice", services: { free: true, paid: false } };
+    return { kind: "practice", services: { ...PAID_ONLY_SERVICES } };
   }
   if (userRole === "requestor" && businessVerified) {
-    return { kind: "lab", services: { free: true, paid: true } };
+    return { kind: "lab", services: { ...PAID_ONLY_SERVICES } };
   }
   if (userRole === "requestor") {
-    return { kind: "practice", services: { free: true, paid: false } };
+    return { kind: "practice", services: { ...PAID_ONLY_SERVICES } };
   }
-  return { kind: null, services: { free: false, paid: false } };
+  return { kind: null, services: { ...EMPTY_REQUESTOR_SERVICES } };
 };
 
 /** @deprecated resolveRequestorProfile 사용. 레거시 caps 형태로 반환 */
@@ -204,63 +209,44 @@ export const canUsePaidServices = ({
   );
 };
 
-/** 무료 서비스 — 기공의뢰서 */
-export const canUseFreeServices = (servicesOrProfileOrCaps) => {
-  if (!servicesOrProfileOrCaps || typeof servicesOrProfileOrCaps !== "object") {
-    return false;
-  }
-  if ("services" in servicesOrProfileOrCaps) {
-    return Boolean(
-      normalizeRequestorServices(servicesOrProfileOrCaps.services).free,
-    );
-  }
-  if ("free" in servicesOrProfileOrCaps || "paid" in servicesOrProfileOrCaps) {
-    return Boolean(normalizeRequestorServices(servicesOrProfileOrCaps).free);
-  }
-  // 레거시: practice면 무료
-  return Boolean(
-    normalizeRequestorCapabilities(servicesOrProfileOrCaps).practice,
-  );
-};
+/** @deprecated 기공의뢰서(free) 폐기 — 항상 false */
+export const canUseFreeServices = () => false;
 
-/** 기공의뢰서 발신: practice + free */
+/** 기공의뢰서 발신: practice (free 플래그 불필요) */
 export const canSendPracticeTransfer = (profileOrCaps) => {
   if (!profileOrCaps || typeof profileOrCaps !== "object") return false;
   if ("kind" in profileOrCaps || "services" in profileOrCaps) {
-    return (
-      normalizeRequestorKind(profileOrCaps.kind) === "practice" &&
-      Boolean(normalizeRequestorServices(profileOrCaps.services).free)
-    );
+    return normalizeRequestorKind(profileOrCaps.kind) === "practice";
   }
   return Boolean(normalizeRequestorCapabilities(profileOrCaps).practice);
 };
 
-/** 기공의뢰서 수신: lab + free */
+/** 기공의뢰서 수신: lab (free 플래그 불필요) */
 export const canReceivePracticeTransfer = (profileOrCaps) => {
   if (!profileOrCaps || typeof profileOrCaps !== "object") return false;
   if ("kind" in profileOrCaps || "services" in profileOrCaps) {
-    return (
-      normalizeRequestorKind(profileOrCaps.kind) === "lab" &&
-      Boolean(normalizeRequestorServices(profileOrCaps.services).free)
-    );
+    return normalizeRequestorKind(profileOrCaps.kind) === "lab";
   }
   return Boolean(normalizeRequestorCapabilities(profileOrCaps).lab);
 };
 
-/** User/Anchor $set 필드 */
+/** User/Anchor $set 필드 — kind가 있으면 항상 paid-only */
 export const requestorProfilePersistFields = (profile = {}) => {
   const kind = normalizeRequestorKind(profile.kind);
-  const services = normalizeRequestorServices(profile.services);
   return {
     requestorKind: kind,
-    requestorServices: services,
+    requestorServices: kind
+      ? { ...PAID_ONLY_SERVICES }
+      : { ...EMPTY_REQUESTOR_SERVICES },
   };
 };
 
 /** API 응답 필드 (레거시 caps는 파생 호환) */
 export const requestorProfileResponseFields = (profile = {}) => {
   const kind = normalizeRequestorKind(profile.kind);
-  const services = normalizeRequestorServices(profile.services);
+  const services = kind
+    ? { ...PAID_ONLY_SERVICES }
+    : { ...EMPTY_REQUESTOR_SERVICES };
   const normalized = { kind, services };
   return {
     requestorKind: kind,
@@ -278,7 +264,7 @@ export const normalizeRequestorProfileInput = (body = {}) => {
       : null;
 
   if (kindFromBody && servicesFromBody && hasAnyRequestorService(servicesFromBody)) {
-    return { kind: kindFromBody, services: servicesFromBody };
+    return { kind: kindFromBody, services: { ...PAID_ONLY_SERVICES } };
   }
 
   if (body.requestorCapabilities || body.practice != null || body.lab != null) {
@@ -291,9 +277,9 @@ export const normalizeRequestorProfileInput = (body = {}) => {
   if (kindFromBody) {
     return {
       kind: kindFromBody,
-      services: servicesFromBody || { free: false, paid: false },
+      services: { ...PAID_ONLY_SERVICES },
     };
   }
 
-  return { kind: null, services: { free: false, paid: false } };
+  return { kind: null, services: { ...EMPTY_REQUESTOR_SERVICES } };
 };

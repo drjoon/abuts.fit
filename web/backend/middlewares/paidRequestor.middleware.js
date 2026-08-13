@@ -10,7 +10,7 @@ import {
 } from "../utils/requestorCapabilities.js";
 
 /**
- * 생산의뢰(유료) API 가드: requestorServices.paid + BusinessAnchor verified.
+ * 생산의뢰 API 가드: requestorServices.paid(레거시 free는 paid 승격) + BusinessAnchor verified.
  * admin은 통과.
  */
 export const authorizePaidRequestor = () => {
@@ -80,7 +80,7 @@ export const authorizePaidRequestor = () => {
           success: false,
           reason: "paid_services_required",
           message:
-            "생산의뢰(유료) 이용을 위해 설정 > 사업자에서 유료 서비스를 선택하고 사업자등록증을 검증해주세요.",
+            "생산의뢰 이용을 위해 설정 > 사업자에서 사업자등록증을 검증해주세요.",
         });
       }
 

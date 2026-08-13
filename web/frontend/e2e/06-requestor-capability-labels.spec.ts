@@ -18,7 +18,7 @@ const KIND_LAB = "기공소";
 const ROLE_BADGE_PRACTICE = "의뢰자·치과";
 const ROLE_BADGE_LAB = "의뢰자·기공소";
 const SERVICE_FREE = "기공의뢰서 (무료)";
-const SERVICE_PAID = "생산의뢰 (유료)";
+const SERVICE_PAID = "생산의뢰";
 const OLD_SENDER = "원내 기공실 없는 치과";
 const OLD_RECEIVER = "기공소 혹은 원내 기공실";
 const OLD_CAP_SENDER = "의뢰 발신자 (치과)";
@@ -106,19 +106,20 @@ test.describe("Requestor capability labels – SSOT/공개/관리자", () => {
 });
 
 test.describe("Requestor capability labels – 유료게이트 로직", () => {
-  test("canUsePaidServices = paid && verified", async () => {
+  test("canUsePaidServices = paid && verified (레거시 free는 paid 승격)", async () => {
+    const paidOf = (s?: { free?: boolean; paid?: boolean }) =>
+      Boolean(s?.paid || s?.free);
     const canUsePaid = (args?: {
       businessVerified?: boolean;
       services?: { free?: boolean; paid?: boolean };
-    }) =>
-      Boolean(args?.businessVerified) && Boolean(args?.services?.paid);
+    }) => Boolean(args?.businessVerified) && paidOf(args?.services);
 
     expect(
       canUsePaid({
         businessVerified: true,
         services: { free: true, paid: false },
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       canUsePaid({
         businessVerified: true,

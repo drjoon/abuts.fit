@@ -1224,7 +1224,7 @@ async function practiceRegister(req, res) {
       referralCode,
       referredByAnchorId: referredByAnchorId || null,
       requestorKind: "practice",
-      requestorServices: { free: true, paid: false },
+      requestorServices: { free: false, paid: true },
       signupChannel: "practice_dropzone",
       onboardingWizardCompleted: false,
       approvedAt: new Date(),

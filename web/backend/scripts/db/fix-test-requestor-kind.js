@@ -46,10 +46,7 @@ const CLASSIFY = [
 const servicesForAnchor = (doc) => {
   const existing = normalizeRequestorServices(doc?.requestorServices);
   if (hasAnyRequestorService(existing)) return existing;
-  return {
-    free: true,
-    paid: String(doc?.status || "").trim() === "verified",
-  };
+  return { free: false, paid: true };
 };
 
 async function main() {

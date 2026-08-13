@@ -46,7 +46,7 @@ const resolvePersistFromDoc = (doc) => {
   }
   return requestorProfilePersistFields({
     kind: "practice",
-    services: { free: true, paid: false },
+    services: { free: false, paid: true },
   });
 };
 
@@ -226,7 +226,7 @@ async function main() {
     for (const u of practiceUsers) {
       const persist = requestorProfilePersistFields({
         kind: "practice",
-        services: { free: true, paid: false },
+        services: { free: false, paid: true },
       });
       const res = await User.updateOne(
         { _id: u._id },
@@ -247,7 +247,7 @@ async function main() {
 
       let persist = requestorProfilePersistFields({
         kind: "practice",
-        services: { free: true, paid: false },
+        services: { free: false, paid: true },
       });
 
       if (u.businessAnchorId) {
@@ -275,7 +275,7 @@ async function main() {
         } else if (u.role === "practice") {
           persist = requestorProfilePersistFields({
             kind: "practice",
-            services: { free: true, paid: false },
+            services: { free: false, paid: true },
           });
         }
       }
@@ -302,7 +302,7 @@ async function main() {
         ? requestorProfilePersistFields(fromLegacy)
         : requestorProfilePersistFields({
             kind: "practice",
-            services: { free: true, paid: false },
+            services: { free: false, paid: true },
           });
       // clinic 키만 정리; 이미 kind가 있으면 유지
       const set = needsKindServicesBackfill(u) ? persist : {};

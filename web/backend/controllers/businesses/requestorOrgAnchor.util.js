@@ -81,7 +81,7 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
   });
   const profile = hasRequestorProfile(resolved)
     ? resolved
-    : { kind: "practice", services: { free: true, paid: false } };
+    : { kind: "practice", services: { free: false, paid: true } };
   const persist = requestorProfilePersistFields(profile);
 
   const existingAnchorId = user.businessAnchorId;

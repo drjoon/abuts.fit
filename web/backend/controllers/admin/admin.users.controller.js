@@ -468,7 +468,7 @@ export async function changeUserRole(req, res) {
     user.role = normalizedRole;
     if (role === "practice" || previousRole === "practice") {
       user.requestorKind = "practice";
-      user.requestorServices = { free: true, paid: false };
+      user.requestorServices = { free: false, paid: true };
     }
     if (subRole !== undefined) {
       user.subRole = subRole;

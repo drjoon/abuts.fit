@@ -86,7 +86,7 @@
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
-    - 디자인비: `creditSettings.designFee`(기본 15000, **1어벗당**)
+    - 디자인비: `creditSettings.designFee`(기본 5000, **1어벗당**). 안내 정가 생산만 멤버십 1.5만원·일반 2.5만원 / 디자인+생산 멤버십 2.0만원·일반 3.5만원. 배송비 별도·박스당 과금. 치과 멤버십 `practiceMembershipMonthlyFee`(기본 55,000원).
     - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic·작업X 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
       - `price.amount` = `(생산단가 + designFee) × qty`
@@ -382,23 +382,24 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 의뢰자 역할·서비스 · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
   - 가입 role SSOT: `requestor` | `salesman`만. `practice` role **제거**(신규 생성 금지).
-  - 필드 SSOT: `BusinessAnchor.requestorKind` (`practice|lab`) + `requestorServices` (`{free,paid}`). User 미러 동일.
+  - 필드 SSOT: `BusinessAnchor.requestorKind` (`practice|lab`) + `requestorServices` (paid-only). User 미러 동일.
   - 레거시 `requestorCapabilities`는 resolve/백필 폴백만. 신규 쓰기 금지.
+  - `requestorServices.free` 폐기: 읽기 시 paid 승격, 쓰기는 `{free:false,paid:true}`.
   - 헬퍼: `utils/requestorCapabilities.js`, `requestorOrgAnchor.util.js`
-    - `requiresBusinessLicense`(paid) / `canUsePaidServices`(paid+verified)
-    - `canSendPracticeTransfer`(practice+free) / `canReceivePracticeTransfer`(lab+free)
+    - `requiresBusinessLicense`(any service) / `canUsePaidServices`(paid+verified)
+    - `canSendPracticeTransfer`(practice) / `canReceivePracticeTransfer`(lab)
     - `resolveRequestorProfile`: kind+services 우선, 없으면 레거시 caps 파생
-  - 사업자 저장(`business.update.controller.js`): body `requestorKind`/`requestorServices`(또는 레거시 caps) → normalize·검증. paid면 미검증 저장 거부(검증 플로우 중 제외). 홈택스 검증 성공 시 `requestorServices={free:true,paid:true}` 자동 개방.
-  - 기공의뢰서: `practiceTransferAuth.middleware.js` — 발신 practice+free, 수신 lab+free
+  - 사업자 저장(`business.update.controller.js`): body `requestorKind`/`requestorServices`(또는 레거시 caps) → normalize·검증. paid면 미검증 저장 거부(검증 플로우 중 제외). 홈택스 검증 성공 시 `requestorServices={free:false,paid:true}`.
+  - 기공의뢰서: `practiceTransferAuth.middleware.js` — 발신 practice, 수신 lab
   - 생산의뢰: `paidRequestor.middleware.js` — `POST /api/requests`, `/from-draft`, `/bulk`
   - 공개 가입: `POST /api/auth/register`. 발신 프로필: `practiceProfile` → `ensureRequestorOrgAnchor`.
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
   - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
     환영 무료 크레딧은 `requestorKind=lab`만(치과 practice 제외).
 
-- 드롭존 가입(치과 전용, requestor+practice+free):
+- 드롭존 가입(치과 전용, requestor+practice):
   - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.
-    `role=requestor` + `requestorKind=practice` + `requestorServices={free:true,paid:false}` + 휴대폰 인증·치과명·담당자명을 저장.
+    `role=requestor` + `requestorKind=practice` + `requestorServices={free:false,paid:true}` + 휴대폰 인증·치과명·담당자명을 저장.
     완전한 주소/Org 앵커는 온보딩(`PUT /api/users/profile` → `ensureRequestorOrgAnchor`)에서 생성.
   - 필수: `email` + `password` + `phone` + `clinicName` + `staffName`. 로그인 식별은 이메일.
     `name`/`practiceProfile.staffName`=담당자명, `practiceProfile.clinicName`=치과명.
