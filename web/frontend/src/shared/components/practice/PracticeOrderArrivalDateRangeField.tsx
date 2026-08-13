@@ -17,13 +17,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
-import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
+import { kstYmdDiffDays, toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
 // - 2026-08-11: 캘린더 상단 안내문 제거 → 라벨 즉시툴팁.
+// - 2026-08-13: 라벨 오른쪽에 주문→도착 소요일 표시.
 
 const addDaysToYmd = (ymd: string, days: number) => {
   const base = String(ymd || "").trim();
@@ -38,6 +39,12 @@ const formatArrivalLabel = (arrivalYmd: string) => {
   const arrival = ymdToKstDate(arrivalYmd);
   if (!arrival) return "도착일 선택";
   return `오늘 – ${format(arrival, "M월 d일", { locale: ko })}`;
+};
+
+const formatLeadDaysLabel = (days: number | null) => {
+  if (days == null || days < 0) return "";
+  if (days === 0) return "당일";
+  return `+${days}일`;
 };
 
 const pinRangeToToday = (
@@ -68,6 +75,7 @@ export type PracticeOrderArrivalDateRangeFieldProps = {
 };
 
 export function PracticeOrderArrivalDateRangeField({
+  orderDate,
   arrivalDate,
   arrivalDefaultDays,
   onChange,
@@ -99,6 +107,10 @@ export function PracticeOrderArrivalDateRangeField({
       ? toKstYmd(draftRange.from) || ""
       : "";
   const canApply = Boolean(todayYmd && draftArrivalYmd && draftArrivalYmd >= todayYmd);
+  const appliedOrderYmd = String(orderDate || "").trim() || todayYmd;
+  const leadFromYmd = open ? todayYmd : appliedOrderYmd;
+  const leadToYmd = open ? draftArrivalYmd : appliedArrivalYmd;
+  const leadDaysLabel = formatLeadDaysLabel(kstYmdDiffDays(leadFromYmd, leadToYmd));
 
   const handleApply = () => {
     if (!canApply || !todayYmd || !draftArrivalYmd) return;
@@ -124,23 +136,28 @@ export function PracticeOrderArrivalDateRangeField({
 
   return (
     <div className={cn("space-y-2", className)}>
-      <div className="flex h-7 items-center gap-1">
-        <Label className="text-sm leading-none">주문일–도착일</Label>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
-              aria-label="주문일–도착일 도움말"
-            >
-              <CircleHelp className="h-3.5 w-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
-            주문일은 오늘 고정. 도착일만 선택하면 됩니다. 변경한 간격(+{arrivalDefaultDays}일)이
-            다음 기본값으로 저장됩니다.
-          </TooltipContent>
-        </Tooltip>
+      <div className="flex h-7 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1">
+          <Label className="text-sm leading-none">주문일–도착일</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
+                aria-label="주문일–도착일 도움말"
+              >
+                <CircleHelp className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
+              주문일은 오늘 고정. 도착일만 선택하면 됩니다. 변경한 간격(+{arrivalDefaultDays}일)이
+              다음 기본값으로 저장됩니다.
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        {leadDaysLabel ? (
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{leadDaysLabel}</span>
+        ) : null}
       </div>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
