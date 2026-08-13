@@ -143,6 +143,27 @@ export const authenticate = async (req, res, next) => {
   }
 };
 
+/** 토큰이 있으면 req.user를 채우고, 없거나 실패해도 통과 */
+export const authenticateOptional = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return next();
+  try {
+    const token = authHeader.split(" ")[1];
+    const decoded = verifyToken(token);
+    const userId = decoded?.userId;
+    if (!userId || Array.isArray(userId)) return next();
+    let user = getCachedAuthUser(userId);
+    if (!user) {
+      user = await User.findById(userId).select("-password");
+      if (user) setCachedAuthUser(userId, user);
+    }
+    if (user && user.active) req.user = user;
+  } catch {
+    // 카탈로그 공개 조회는 비로그인 허용
+  }
+  return next();
+};
+
 /**
  * 권한 확인 미들웨어
  * @param {Array<string>} roles - 허용된 역할 배열

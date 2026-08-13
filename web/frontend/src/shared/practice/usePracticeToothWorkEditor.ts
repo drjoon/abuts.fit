@@ -11,6 +11,7 @@ import { useMemo } from "react";
 // - 2026-08-13: 유지장치=브리지 계열(2치+). 임시치아=단독 1치부터 연결 n치.
 // - 2026-08-13: 연결 스팬의 유지장치·임시치아는 한쪽 변경 시 전체 동일 형태.
 // - 2026-08-13: 유지장치·임시치아 스팬 전환 시 커스텀어벗 플래그·규격은 유지. 브리지로 되돌리면 복구.
+// - 2026-08-14: 유지장치·임시치아 등 연결 전체 강제 변경 후 복귀 시, 클릭하지 않은 치아는 진입 직전 행 전체(형태·어벗·임플란트) 복원.
 // - 2026-08-13: 단독 순환(인레이↔크라운↔커스텀어벗↔임시치아)도 커스텀 플래그·규격을 유지.
 // - 2026-08-13: 클릭한 치아가 Pontic·작업X를 거쳐도 커스텀을 지우지 않는다.
 
@@ -308,6 +309,148 @@ export const applyProsthesisTypeToLinkedSpan = (
     if (!component.has(tooth)) return row;
     return applyProsthesisTypeToRow(row, prosthesisType, defaultAbutmentProductMode);
   });
+};
+
+const cloneToothWorkRow = (row: ToothWorkSelection): ToothWorkSelection => ({
+  ...row,
+  bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? [...row.bridgeLinkedTeeth] : [],
+});
+
+/** 유지장치·임시치아 진입 직전 치아별 행. 키=치아번호 */
+export type LinkedSpanProsthesisSnapshot = Record<string, ToothWorkSelection>;
+
+export const captureLinkedSpanProsthesisTypes = (
+  rows: ToothWorkSelection[],
+  toothNumber: string,
+): LinkedSpanProsthesisSnapshot => {
+  const component = new Set(collectLinkedComponentTeeth(rows, toothNumber));
+  const snapshot: LinkedSpanProsthesisSnapshot = {};
+  for (const row of rows) {
+    const tooth = String(row.toothNumber || "").trim();
+    if (!component.has(tooth)) continue;
+    snapshot[tooth] = cloneToothWorkRow(row);
+  }
+  return snapshot;
+};
+
+export const pruneLinkedSpanProsthesisSnapshot = (
+  snapshot: LinkedSpanProsthesisSnapshot,
+  rows: ToothWorkSelection[],
+): LinkedSpanProsthesisSnapshot => {
+  const known = new Set(
+    rows
+      .map((row) => String(row.toothNumber || "").trim())
+      .filter((tooth) => /^[1-4][1-8]$/.test(tooth)),
+  );
+  let changed = false;
+  const next: LinkedSpanProsthesisSnapshot = {};
+  for (const [tooth, original] of Object.entries(snapshot)) {
+    if (!known.has(tooth) || !original) {
+      changed = true;
+      continue;
+    }
+    next[tooth] = original;
+  }
+  return changed ? next : snapshot;
+};
+
+/** 연결은 현재 값 유지, 형태·어벗·임플란트 등 내용은 스냅샷 복원 */
+export const restoreLinkedSpanToothWorkRow = (
+  current: ToothWorkSelection,
+  original: ToothWorkSelection,
+): ToothWorkSelection => ({
+  ...cloneToothWorkRow(original),
+  toothNumber: current.toothNumber,
+  bridgeLinkedTeeth: Array.isArray(current.bridgeLinkedTeeth)
+    ? [...current.bridgeLinkedTeeth]
+    : [],
+});
+
+/**
+ * 연결 스팬 형태 순환.
+ * 유지장치·임시치아처럼 연결 전체가 강제 변경되면 치아별 행을 스냅샷하고,
+ * 브리지/Pontic/작업X로 나오면 클릭한 치아만 nextType, 나머지는 진입 직전 내용 복원.
+ */
+export const applyCycledLinkedSpanProsthesisType = (
+  rows: ToothWorkSelection[],
+  toothNumber: string,
+  nextType: string,
+  snapshot: LinkedSpanProsthesisSnapshot,
+  defaultAbutmentProductMode?: AbutmentProductMode,
+): { rows: ToothWorkSelection[]; snapshot: LinkedSpanProsthesisSnapshot } => {
+  const tooth = String(toothNumber || "").trim();
+  const current = rows.find((row) => String(row.toothNumber || "").trim() === tooth);
+  if (!current) return { rows, snapshot: pruneLinkedSpanProsthesisSnapshot(snapshot, rows) };
+  const currentType = String(current.prosthesisType || "").trim();
+  const nextIsUniform = isSpanUniformProsthesisType(nextType);
+  const currentIsUniform = isSpanUniformProsthesisType(currentType);
+  const pruned = pruneLinkedSpanProsthesisSnapshot(snapshot, rows);
+
+  if (!currentIsUniform && nextIsUniform) {
+    const captured = captureLinkedSpanProsthesisTypes(rows, tooth);
+    return {
+      rows: applyProsthesisTypeToLinkedSpan(
+        rows,
+        tooth,
+        nextType,
+        defaultAbutmentProductMode,
+      ),
+      snapshot: { ...pruned, ...captured },
+    };
+  }
+
+  if (currentIsUniform && nextIsUniform) {
+    return {
+      rows: applyProsthesisTypeToLinkedSpan(
+        rows,
+        tooth,
+        nextType,
+        defaultAbutmentProductMode,
+      ),
+      snapshot: pruned,
+    };
+  }
+
+  if (currentIsUniform && !nextIsUniform) {
+    const component = collectLinkedComponentTeeth(rows, tooth);
+    const componentSet = new Set(component);
+    const hasRestore = component.some((item) => Boolean(pruned[item]));
+    const nextSnapshot = { ...pruned };
+    for (const item of component) delete nextSnapshot[item];
+    if (!hasRestore) {
+      return {
+        rows: applyProsthesisTypeToLinkedSpan(
+          rows,
+          tooth,
+          nextType,
+          defaultAbutmentProductMode,
+        ),
+        snapshot: nextSnapshot,
+      };
+    }
+    const nextRows = rows.map((row) => {
+      const rowTooth = String(row.toothNumber || "").trim();
+      if (!componentSet.has(rowTooth)) return row;
+      if (rowTooth === tooth) {
+        return applyProsthesisTypeToRow(row, nextType, defaultAbutmentProductMode);
+      }
+      const original = pruned[rowTooth];
+      if (!original) {
+        return applyProsthesisTypeToRow(row, nextType, defaultAbutmentProductMode);
+      }
+      return restoreLinkedSpanToothWorkRow(row, original);
+    });
+    return { rows: nextRows, snapshot: nextSnapshot };
+  }
+
+  return {
+    rows: rows.map((row) =>
+      String(row.toothNumber || "").trim() === tooth
+        ? applyProsthesisTypeToRow(row, nextType, defaultAbutmentProductMode)
+        : row,
+    ),
+    snapshot: pruned,
+  };
 };
 
 /** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic/작업X/유지장치 vs 인레이/크라운/커스텀어벗, 임시치아는 양쪽) 동기화 */

@@ -52,6 +52,7 @@
  * - 2026-08-14: 임시저장 활성+휴지통 1회 조회(`drafts?trashed=all`).
  * - 2026-08-13: [기공소로 전송]은 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
+ * - 2026-08-14: 프리셋 편집을 열 때 도입 스펙을 서버에서 다시 불러온다.
  * - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지 즉시 갱신. 계정 프리셋은 서버 우선.
  * - 2026-08-14: 기공의뢰 상단 「임시 저장」버튼 제거. 목록 반영은 자동 동기화만.
  */
@@ -5390,6 +5391,9 @@ export const PracticeFileTransferPage = ({
                     navigate("/dashboard/new-request");
                   },
                   implantFavorites,
+                  onPresetEditorOpen: () => {
+                    void loadPracticeTransferSettingsFromServer();
+                  },
                   onImplantFavoritesChange: (next) => {
                     const normalized = normalizeImplantFavorites(next);
                     setImplantFavorites(normalized);

@@ -33,6 +33,7 @@
  * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
  * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
  * - 2026-08-14: 비로그인 환봉 제조사 추가요청을 로그인 후 문의·요청으로 동기화.
+ * - 2026-08-14: 프리셋 편집을 열 때 도입 스펙을 서버에서 다시 불러온다.
  * - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지·로컬 미러 갱신.
  */
 
@@ -2553,6 +2554,10 @@ export const PracticeDropzonePage = () => {
                       });
                     },
                     implantFavorites,
+                    onPresetEditorOpen: () => {
+                      if (!authToken) return;
+                      void syncLocalFavoritesToServer(authToken);
+                    },
                     onImplantFavoritesChange: (next) => {
                       const normalized = normalizeImplantFavorites(next);
                       setImplantFavorites(normalized);

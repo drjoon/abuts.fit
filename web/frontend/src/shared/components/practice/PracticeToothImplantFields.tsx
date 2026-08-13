@@ -6,6 +6,8 @@
 // change-log:
 // - 2026-08-14: 추가한 패밀리는 select 항목 옆 X로 삭제.
 // - 2026-08-14: 패밀리 선택 Regular/Mini/Narrow/Small Narrow 고정 + 패밀리 추가.
+// - 2026-08-14: 제조사 선택 CNC 위·환봉 아래 + 구분선. 환봉은 별도 값이라 카탈로그와 겹쳐도 보임.
+// - 2026-08-14: 도입된 프리셋 스펙을 제조사·브랜드·패밀리·타입 선택에 합친다.
 // - 2026-08-14: 환봉 도입 배지 라벨을 「환봉」으로 표시.
 // - 2026-08-14: 도입 배지에 CNC/환봉 종류 표시.
 // - 2026-08-14: 제조사 선택 마지막에 제조사 추가 요청(환봉 헥스 사이즈 미정) + 안내 모달.
@@ -17,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectSeparator,
   SelectTrigger,
@@ -67,8 +70,20 @@ type Props = {
 
 const STANDARD_IMPLANT_FAMILIES = ["Regular", "Mini", "Narrow", "Small Narrow"] as const;
 const FAMILY_ADD_VALUE = "__add_family__";
+const ROUND_BAR_MFR_PREFIX = "__rb_mfr__:";
 
 const pickFirst = (arr: string[]) => arr[0] || "";
+const uniqueStrings = (values: Array<string | undefined | null>) => {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const value = String(raw || "").trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+};
 const familyKey = (value: string) => String(value || "").trim().toLowerCase();
 const isStandardFamily = (value: string) =>
   STANDARD_IMPLANT_FAMILIES.some((family) => familyKey(family) === familyKey(value));
@@ -308,8 +323,75 @@ export const PracticeToothImplantFields = ({
   const canManagePresets = allowPresetEdit && Boolean(onFavoritesChange);
   const allowManufacturerRequest = canManagePresets && kind !== "lab";
 
-  const connectionOptions = useMemo(
+  const connectionOptions = useMemo(() => {
+    const fromCatalog = connections
+      .filter(
+        (c) =>
+          typeof c.manufacturer === "string" &&
+          typeof c.brand === "string" &&
+          c.manufacturer.trim() &&
+          c.brand.trim(),
+      )
+      .slice()
+      .sort((a, b) => {
+        const manufacturerCompare = a.manufacturer.localeCompare(b.manufacturer, "ko");
+        if (manufacturerCompare !== 0) return manufacturerCompare;
+        return String(a.brand || "").localeCompare(String(b.brand || ""), "ko");
+      });
+    const seen = new Set(
+      fromCatalog.map(
+        (c) =>
+          `${c.manufacturer}|${c.brand}|${c.family}|${c.type}`.toLowerCase(),
+      ),
+    );
+    const fromFavorites = favorites
+      .map((fav) => {
+        const manufacturer = String(fav.manufacturer || "").trim();
+        const brand = String(fav.brand || "").trim();
+        const family = String(fav.family || "").trim();
+        const type = String(fav.type || "").trim();
+        if (!manufacturer) return null;
+        const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
+        if (seen.has(key)) return null;
+        seen.add(key);
+        return {
+          manufacturer,
+          brand,
+          family,
+          type,
+          displayManufacturer: manufacturer,
+          displayBrand: brand,
+          displayFamily: family,
+          displayType: type,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    return [...fromFavorites, ...fromCatalog];
+  }, [connections, favorites]);
+
+  const specRows = useMemo(
     () =>
+      connectionOptions.map((c) => ({
+        manufacturer: c.manufacturer,
+        brand: String(c.brand || "").trim(),
+        family: String(c.family || "").trim(),
+        type: String(c.type || "").trim(),
+      })),
+    [connectionOptions],
+  );
+
+  const roundBarManufacturerOptions = useMemo(
+    () =>
+      uniqueStrings(
+        favorites
+          .filter((fav) => isRoundBarFavorite(fav))
+          .map((fav) => fav.manufacturer),
+      ),
+    [favorites],
+  );
+
+  const cncManufacturerOptions = useMemo(() => {
+    const catalog = uniqueStrings(
       connections
         .filter(
           (c) =>
@@ -318,68 +400,97 @@ export const PracticeToothImplantFields = ({
             c.manufacturer.trim() &&
             c.brand.trim(),
         )
-        .slice()
-        .sort((a, b) => {
-          const manufacturerCompare = a.manufacturer.localeCompare(b.manufacturer, "ko");
-          if (manufacturerCompare !== 0) return manufacturerCompare;
-          return String(a.brand || "").localeCompare(String(b.brand || ""), "ko");
-        }),
-    [connections],
+        .map((c) => c.manufacturer),
+    );
+    const current = String(value.implantManufacturer || "").trim();
+    const currentIsRoundBar = favorites.some(
+      (fav) =>
+        isRoundBarFavorite(fav) &&
+        fav.manufacturer === current &&
+        fav.brand === value.implantBrand &&
+        fav.family === value.implantFamily &&
+        fav.type === value.implantType,
+    );
+    if (current && !currentIsRoundBar && !catalog.includes(current)) {
+      return [current, ...catalog];
+    }
+    return catalog;
+  }, [
+    connections,
+    favorites,
+    value.implantManufacturer,
+    value.implantBrand,
+    value.implantFamily,
+    value.implantType,
+  ]);
+
+  const manufacturerOptions = useMemo(
+    () => uniqueStrings([...cncManufacturerOptions, ...roundBarManufacturerOptions]),
+    [cncManufacturerOptions, roundBarManufacturerOptions],
   );
 
-  const manufacturerOptions = useMemo(() => {
-    const options = [...new Set(connectionOptions.map((c) => c.manufacturer))];
-    const current = String(value.implantManufacturer || "").trim();
-    if (current && !options.includes(current)) options.unshift(current);
-    return options;
-  }, [connectionOptions, value.implantManufacturer]);
+  const isCurrentRoundBarManufacturer = useMemo(
+    () =>
+      favorites.some(
+        (fav) =>
+          isRoundBarFavorite(fav) &&
+          fav.manufacturer === value.implantManufacturer &&
+          fav.brand === value.implantBrand &&
+          fav.family === value.implantFamily &&
+          fav.type === value.implantType,
+      ),
+    [favorites, value],
+  );
+
+  const pickRoundBarFavorite = (manufacturer: string) => {
+    const rows = favorites.filter(
+      (fav) => isRoundBarFavorite(fav) && fav.manufacturer === manufacturer,
+    );
+    return rows.find((fav) => fav.adopted) || rows[0] || null;
+  };
 
   const brandOptions = useMemo(() => {
-    const options = [
-      ...new Set(
-        connectionOptions
-          .filter((c) => c.manufacturer === value.implantManufacturer)
-          .map((c) => String(c.brand || "").trim())
-          .filter(Boolean),
-      ),
-    ];
+    const options = uniqueStrings(
+      specRows
+        .filter((row) => row.manufacturer === value.implantManufacturer)
+        .map((row) => row.brand),
+    );
     const current = String(value.implantBrand || "").trim();
     if (current && !options.includes(current)) options.unshift(current);
     return options;
-  }, [connectionOptions, value.implantManufacturer, value.implantBrand]);
+  }, [specRows, value.implantManufacturer, value.implantBrand]);
 
   const catalogFamilyKeys = useMemo(
     () =>
       new Set(
-        connectionOptions
+        specRows
           .filter(
-            (c) =>
-              c.manufacturer === value.implantManufacturer &&
-              c.brand === value.implantBrand,
+            (row) =>
+              row.manufacturer === value.implantManufacturer &&
+              row.brand === value.implantBrand,
           )
-          .map((c) => familyKey(String(c.family || "")))
+          .map((row) => familyKey(row.family))
           .filter(Boolean),
       ),
-    [connectionOptions, value.implantManufacturer, value.implantBrand],
+    [specRows, value.implantManufacturer, value.implantBrand],
   );
 
   const familyOptions = useMemo(() => {
-    const fromCatalog = connectionOptions
+    const fromSpecs = specRows
       .filter(
-        (c) =>
-          c.manufacturer === value.implantManufacturer &&
-          c.brand === value.implantBrand,
+        (row) =>
+          row.manufacturer === value.implantManufacturer &&
+          row.brand === value.implantBrand,
       )
-      .map((c) => String(c.family || "").trim())
-      .filter(Boolean);
+      .map((row) => row.family);
     const current = String(value.implantFamily || "").trim();
     return mergeFamilyOptions(
-      fromCatalog,
+      fromSpecs,
       customFamilies,
       current ? [current] : [],
     );
   }, [
-    connectionOptions,
+    specRows,
     customFamilies,
     value.implantManufacturer,
     value.implantBrand,
@@ -396,24 +507,21 @@ export const PracticeToothImplantFields = ({
   );
 
   const typeOptions = useMemo(() => {
-    const options = [
-      ...new Set(
-        connectionOptions
-          .filter(
-            (c) =>
-              c.manufacturer === value.implantManufacturer &&
-              c.brand === value.implantBrand &&
-              c.family === value.implantFamily,
-          )
-          .map((c) => String(c.type || "").trim())
-          .filter(Boolean),
-      ),
-    ];
+    const options = uniqueStrings(
+      specRows
+        .filter(
+          (row) =>
+            row.manufacturer === value.implantManufacturer &&
+            row.brand === value.implantBrand &&
+            row.family === value.implantFamily,
+        )
+        .map((row) => row.type),
+    );
     const current = String(value.implantType || "").trim();
     if (current && !options.includes(current)) options.unshift(current);
     return options;
   }, [
-    connectionOptions,
+    specRows,
     value.implantManufacturer,
     value.implantBrand,
     value.implantFamily,
@@ -488,37 +596,31 @@ export const PracticeToothImplantFields = ({
     ],
   );
 
-  const getBrands = (manufacturer: string) => [
-    ...new Set(
-      connectionOptions
-        .filter((c) => c.manufacturer === manufacturer)
-        .map((c) => String(c.brand || "").trim())
-        .filter(Boolean),
-    ),
-  ];
+  const getBrands = (manufacturer: string) =>
+    uniqueStrings(
+      specRows
+        .filter((row) => row.manufacturer === manufacturer)
+        .map((row) => row.brand),
+    );
 
-  const getFamilies = (manufacturer: string, brand: string) => [
-    ...new Set(
-      connectionOptions
-        .filter((c) => c.manufacturer === manufacturer && c.brand === brand)
-        .map((c) => String(c.family || "").trim())
-        .filter(Boolean),
-    ),
-  ];
+  const getFamilies = (manufacturer: string, brand: string) =>
+    uniqueStrings(
+      specRows
+        .filter((row) => row.manufacturer === manufacturer && row.brand === brand)
+        .map((row) => row.family),
+    );
 
-  const getTypes = (manufacturer: string, brand: string, family: string) => [
-    ...new Set(
-      connectionOptions
+  const getTypes = (manufacturer: string, brand: string, family: string) =>
+    uniqueStrings(
+      specRows
         .filter(
-          (c) =>
-            c.manufacturer === manufacturer &&
-            c.brand === brand &&
-            c.family === family,
+          (row) =>
+            row.manufacturer === manufacturer &&
+            row.brand === brand &&
+            row.family === family,
         )
-        .map((c) => String(c.type || "").trim())
-        .filter(Boolean),
-    ),
-  ];
+        .map((row) => row.type),
+    );
 
   const addCustomFamily = (family: string) => {
     setCustomFamilies((prev) => pushUniqueFamily(prev, family));
@@ -995,7 +1097,13 @@ export const PracticeToothImplantFields = ({
           <div className="space-y-1.5">
             <Label className="text-sm text-slate-600">제조사</Label>
             <Select
-              value={value.implantManufacturer || undefined}
+              value={
+                value.implantManufacturer
+                  ? isCurrentRoundBarManufacturer
+                    ? `${ROUND_BAR_MFR_PREFIX}${value.implantManufacturer}`
+                    : value.implantManufacturer
+                  : undefined
+              }
               onValueChange={(nextManufacturer) => {
                 if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) {
                   setRequestDraft({
@@ -1004,6 +1112,21 @@ export const PracticeToothImplantFields = ({
                     family: "",
                   });
                   setRequestFormOpen(true);
+                  return;
+                }
+                if (nextManufacturer.startsWith(ROUND_BAR_MFR_PREFIX)) {
+                  const manufacturer = nextManufacturer.slice(ROUND_BAR_MFR_PREFIX.length);
+                  const fav = pickRoundBarFavorite(manufacturer);
+                  if (fav) {
+                    applyFavorite(fav);
+                    return;
+                  }
+                  onChange({
+                    implantManufacturer: manufacturer,
+                    implantBrand: "",
+                    implantFamily: "",
+                    implantType: ROUND_BAR_HEX_TYPE,
+                  });
                   return;
                 }
                 const nextBrand = pickFirst(getBrands(nextManufacturer));
@@ -1021,11 +1144,34 @@ export const PracticeToothImplantFields = ({
                 <SelectValue placeholder="제조사 선택" />
               </SelectTrigger>
               <SelectContent>
-                {manufacturerOptions.map((m) => (
-                  <SelectItem key={`mfr-${m}`} value={m} className="text-sm">
-                    {manufacturerLabelMap.get(m) || m}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {cncManufacturerOptions.map((m) => (
+                    <SelectItem key={`mfr-${m}`} value={m} className="text-sm">
+                      {manufacturerLabelMap.get(m) || m}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                {roundBarManufacturerOptions.length > 0 ? (
+                  <>
+                    <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
+                    <SelectGroup>
+                      {roundBarManufacturerOptions.map((m) => (
+                        <SelectItem
+                          key={`rb-mfr-${m}`}
+                          value={`${ROUND_BAR_MFR_PREFIX}${m}`}
+                          className="text-sm"
+                          trailing={
+                            <span className="inline-flex rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                              환봉
+                            </span>
+                          }
+                        >
+                          {manufacturerLabelMap.get(m) || m}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </>
+                ) : null}
                 {allowManufacturerRequest ? (
                   <>
                     <SelectSeparator />

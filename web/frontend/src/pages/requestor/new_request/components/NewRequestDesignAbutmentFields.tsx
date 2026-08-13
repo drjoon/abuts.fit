@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // - 2026-08-13: 어벗생산의뢰 모달=생산만 고정. 디자인+생산 클릭은 기공의뢰로 이동.
+// - 2026-08-14: 프리셋 편집을 열 때 도입 스펙을 서버에서 다시 불러온다.
 // - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지 갱신.
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useNavigate } from "react-router-dom";
@@ -281,6 +282,9 @@ export function NewRequestDesignAbutmentFields({
       navigate("/dashboard/practice-transfers?mode=send");
     },
     implantFavorites,
+    onPresetEditorOpen: () => {
+      void loadFavoritesFromServer();
+    },
     onImplantFavoritesChange: handleImplantFavoritesChange,
     abutmentFavorites,
     onAbutmentFavoritesChange: handleAbutmentFavoritesChange,

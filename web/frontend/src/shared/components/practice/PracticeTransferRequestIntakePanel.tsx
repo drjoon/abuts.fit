@@ -91,7 +91,7 @@ import {
 import { useAbutsAbutmentPricingTier } from "@/shared/pricing/useAbutsAbutmentPricingTier";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import {
-  applyProsthesisTypeToLinkedSpan,
+  applyCycledLinkedSpanProsthesisType,
   applyProsthesisTypeToRow,
   collectAdjacentBridgeLinks,
   CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
@@ -107,9 +107,11 @@ import {
   LINKED_PROSTHESIS_TYPES,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
+  pruneLinkedSpanProsthesisSnapshot,
   resolveProsthesisTypeForLinkState,
   STANDALONE_PROSTHESIS_TYPES,
   toggleAdjacentBridgeLink,
+  type LinkedSpanProsthesisSnapshot,
   type ToothWorkSelection,
 } from "@/shared/practice/usePracticeToothWorkEditor";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
@@ -149,6 +151,7 @@ import { resolveAdoptedAbutmentKind } from "@/shared/practice/labFeeSchedule";
 // - 2026-08-13: 형태 글자 클릭(인레이→크라운→커스텀어벗)은 설정 모달을 열지 않음.
 // - 2026-08-13: 연결 형태 클릭 순환에 유지장치·임시치아 추가.
 // - 2026-08-13: 유지장치=연결 전용. 임시치아=단독·연결.
+// - 2026-08-14: 유지장치·임시치아 등 연결 전체 강제 변경 후 복귀 시, 미클릭 치아는 형태·어벗·임플란트까지 복원.
 // - 2026-08-13: 어벗 체크·커스텀어벗인데 프리셋 미선택이면 치식 카드 빨강.
 // - 2026-08-13: 기공의뢰 치식 카드에서 디자인+생산 라벨 제거(모드는 디자인+생산 고정).
 // - 2026-08-13: 형태 글자 클릭은 마키 억제와 별개로 순환(브리지·크라운 여백 클릭 포함).
@@ -619,6 +622,8 @@ export type PracticeTransferRequestIntakePanelProps = {
   implantConnections?: ImplantConnection[];
   implantFavorites?: PracticeImplantFavorite[];
   onImplantFavoritesChange?: (next: PracticeImplantFavorite[]) => void | Promise<void>;
+  /** 프리셋 편집을 열 때 서버 프리셋(도입 스펙)을 다시 불러온다 */
+  onPresetEditorOpen?: () => void;
   abutmentFavorites?: PracticeAbutmentFavorite[];
   onAbutmentFavoritesChange?: (next: PracticeAbutmentFavorite[]) => void | Promise<void>;
   /** 계정 커스텀어벗 기본 모드. 신규 선택·모달 초기값 */
@@ -682,6 +687,7 @@ export const PracticeTransferRequestIntakePanel = ({
   implantConnections = [],
   implantFavorites = [],
   onImplantFavoritesChange,
+  onPresetEditorOpen,
   abutmentFavorites = [],
   onAbutmentFavoritesChange,
   defaultAbutmentProductMode: defaultAbutmentProductModeProp,
@@ -770,6 +776,8 @@ export const PracticeTransferRequestIntakePanel = ({
   const suppressToothClickRef = useRef(false);
   /** 인레이→크라운 직후 어벗 체크박스가 같은 클릭을 받아 모달이 열리는 것 방지 */
   const suppressAbutmentCheckboxUntilRef = useRef(0);
+  /** 유지장치·임시치아 진입 직전 치아별 행. 브리지 등으로 복귀 시 미클릭 치아 내용 복원 */
+  const linkedSpanTypeSnapshotRef = useRef<LinkedSpanProsthesisSnapshot>({});
   const toothMarqueeSessionRef = useRef<{
     pointerId: number;
     originX: number;
@@ -1212,8 +1220,16 @@ export const PracticeTransferRequestIntakePanel = ({
   useEffect(() => {
     if (toothChartResetNonceRef.current === toothChartResetNonce) return;
     toothChartResetNonceRef.current = toothChartResetNonce;
+    linkedSpanTypeSnapshotRef.current = {};
     setToothChartOffsets(initialToothChartOffsets());
   }, [toothChartResetNonce]);
+
+  useEffect(() => {
+    linkedSpanTypeSnapshotRef.current = pruneLinkedSpanProsthesisSnapshot(
+      linkedSpanTypeSnapshotRef.current,
+      toothWorks,
+    );
+  }, [toothWorks]);
 
   const requestedToothCount = useMemo(() => {
     const teeth = new Set<string>();
@@ -1387,6 +1403,7 @@ export const PracticeTransferRequestIntakePanel = ({
   const setCustomSpecsPresetEditOpenSafe = (open: boolean) => {
     customSpecsPresetEditOpenRef.current = open;
     setCustomSpecsPresetEditOpen(open);
+    if (open) onPresetEditorOpen?.();
     if (!open) tryConfirmCustomSpecsModalAfterPicks();
   };
 
@@ -2330,7 +2347,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                     isMissingTooth
                                       ? undefined
                                       : isLinked
-                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치·임시치아는 연결 전체 동일)"
+                                        ? "클릭: 브리지 ↔ Pontic ↔ 작업X ↔ 유지장치 ↔ 임시치아 (유지장치·임시치아는 연결 전체 동일, 복귀 시 미클릭 치아는 원래 내용)"
                                         : "클릭: 인레이 → 크라운 → 커스텀어벗 → 임시치아"
                                   }
                                   onClick={(e) => {
@@ -2355,12 +2372,15 @@ export const PracticeTransferRequestIntakePanel = ({
                                         (isSpanUniformProsthesisType(resolved.nextType) ||
                                           isSpanUniformProsthesisType(currentType))
                                       ) {
-                                        return applyProsthesisTypeToLinkedSpan(
+                                        const cycled = applyCycledLinkedSpanProsthesisType(
                                           prev,
                                           current.toothNumber,
                                           resolved.nextType,
-                                          defaultAbutmentProductMode,
+                                          linkedSpanTypeSnapshotRef.current,
+                                          lockedMode ?? defaultAbutmentProductMode,
                                         );
+                                        linkedSpanTypeSnapshotRef.current = cycled.snapshot;
+                                        return cycled.rows;
                                       }
                                       const next = [...prev];
                                       next[resolved.index] = applyIntakeProsthesisType(

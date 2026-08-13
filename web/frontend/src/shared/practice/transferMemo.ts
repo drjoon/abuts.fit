@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-08-14: 같은 스펙이면 환봉 도입 프리셋을 일반 프리셋보다 우선한다.
 // - 2026-08-14: implantFavorites 환봉 제조사 추가요청(roundBar/adopted/roundBarRequestId).
 // - 2026-08-13: 커스텀어벗 치아별 생산만/디자인+생산(abutmentProductMode) 저장·직렬화.
 // - 2026-08-13: 계정 기본 모드(defaultAbutmentProductMode)는 디자인+생산. 치아 미설정 레거시는 생산만.
@@ -344,7 +345,7 @@ const parseCustomSpecsSuffix = (value: string) => {
 export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavorite[] => {
   if (!Array.isArray(items)) return [];
   const out: PracticeImplantFavorite[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
   for (const raw of items) {
     const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     const manufacturer = String(row.manufacturer || "").trim();
@@ -353,12 +354,10 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
     const type = String(row.type || "").trim();
     if (!manufacturer && !brand && !family && !type) continue;
     const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
     const id = String(row.id || "").trim() || `imp-${out.length + 1}-${key.slice(0, 24)}`;
     const roundBarRequestId = String(row.roundBarRequestId || "").trim();
     const roundBar = Boolean(row.roundBar) || Boolean(roundBarRequestId);
-    out.push({
+    const nextRow: PracticeImplantFavorite = {
       id,
       manufacturer,
       brand,
@@ -377,7 +376,14 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
             roundBarRequestId,
           }
         : {}),
-    });
+    };
+    if (seen.has(key)) {
+      const idx = seen.get(key);
+      if (idx != null && !out[idx]?.roundBar && roundBar) out[idx] = nextRow;
+      continue;
+    }
+    seen.set(key, out.length);
+    out.push(nextRow);
     if (out.length >= 40) break;
   }
   return out;

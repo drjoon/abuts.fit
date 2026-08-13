@@ -4,11 +4,18 @@
 // - web/backend/server.js
 import { Router } from "express";
 import implantPresetController from "../../controllers/presets/implantPreset.controller.js";
-import { authenticate } from "../../middlewares/auth.middleware.js";
+import {
+  authenticate,
+  authenticateOptional,
+} from "../../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.get("/", implantPresetController.getImplantPresets);
+router.get(
+  "/",
+  authenticateOptional,
+  implantPresetController.getImplantPresets,
+);
 router.get(
   "/find-by-diameter",
   implantPresetController.findImplantPresetByDiameter,

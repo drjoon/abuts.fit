@@ -1,6 +1,9 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestImplant.ts
+// - web/backend/controllers/presets/implantPreset.controller.js
+// change-log:
+// - 2026-08-14: 캐시를 보여준 뒤 서버를 다시 불러 도입 스펙이 빠지지 않게 한다.
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 
@@ -19,7 +22,7 @@ export type ImplantConnection = {
   diameter?: number | null;
 };
 
-const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v6";
+const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v7";
 const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 export const useImplantConnectionCatalog = (token: string | null) => {
@@ -28,41 +31,45 @@ export const useImplantConnectionCatalog = (token: string | null) => {
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
+    const readCache = () => {
+      if (typeof window === "undefined") return [];
       try {
-        if (typeof window !== "undefined") {
-          try {
-            const stored = window.localStorage.getItem(IMPLANT_PRESETS_STORAGE_KEY);
-            if (stored) {
-              const parsed = JSON.parse(stored) as {
-                data: ImplantConnection[];
-                cachedAt: number;
-              };
-              const age = Date.now() - Number(parsed.cachedAt || 0);
-              if (
-                age <= IMPLANT_PRESETS_TTL_MS &&
-                Array.isArray(parsed.data) &&
-                parsed.data.length > 0
-              ) {
-                if (!cancelled) setConnections(parsed.data);
-                return;
-              }
-            }
-          } catch {
-            // ignore cache read errors
-          }
+        const stored = window.localStorage.getItem(IMPLANT_PRESETS_STORAGE_KEY);
+        if (!stored) return [];
+        const parsed = JSON.parse(stored) as {
+          data: ImplantConnection[];
+          cachedAt: number;
+        };
+        const age = Date.now() - Number(parsed.cachedAt || 0);
+        if (
+          age <= IMPLANT_PRESETS_TTL_MS &&
+          Array.isArray(parsed.data) &&
+          parsed.data.length > 0
+        ) {
+          return parsed.data;
         }
+      } catch {
+        // ignore cache read errors
+      }
+      return [];
+    };
 
+    const load = async () => {
+      const cached = readCache();
+      if (cached.length > 0 && !cancelled) setConnections(cached);
+
+      try {
         const res = await apiFetch<{ data?: ImplantConnection[] }>({
           path: "/api/implant-presets",
           method: "GET",
           token,
+          skipCache: true,
         });
         if (!res.ok || cancelled) return;
         const list = Array.isArray(res.data?.data) ? res.data.data : [];
-        setConnections(list);
+        if (list.length > 0) setConnections(list);
 
-        if (typeof window !== "undefined") {
+        if (typeof window !== "undefined" && list.length > 0) {
           try {
             window.localStorage.setItem(
               IMPLANT_PRESETS_STORAGE_KEY,

@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // change-log:
+// - 2026-08-14: 도입된 요청이 치과 프리셋에 없으면 hydrate가 추가한다.
 // - 2026-08-14: hydrate가 관리자가 고친 타입·스펙도 프리셋에 덮어쓴다.
 // - 2026-08-14: 도입 상태 SSOT=요청 문서. 프리셋 id 매칭(mongoose virtual) 수정 + GET/PATCH hydrate.
 import { Types } from "mongoose";
@@ -336,7 +337,7 @@ export async function createRoundBarAbutmentRequest(req, res) {
 
 async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) {
   const list = Array.isArray(favorites) ? favorites : [];
-  if (!practiceAnchorId || list.length === 0) return list;
+  if (!practiceAnchorId) return list;
   const requests = await RoundBarAbutmentRequest.find({ practiceAnchorId })
     .select({
       adopted: 1,
@@ -352,8 +353,12 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
 
   const byRequestId = new Map();
   const byFavoriteId = new Map();
+  const byFamilyKey = new Map();
   for (const row of requests) {
+    const requestId = String(row._id);
     const snapshot = {
+      requestId,
+      favoriteId: String(row.favoriteId || "").trim(),
       adopted: Boolean(row.adopted),
       adoptedKind: normalizeAdoptedKind(row.adoptedKind),
       manufacturer: String(row.manufacturer || "").trim(),
@@ -361,50 +366,88 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
       family: String(row.family || "").trim(),
       type: String(row.type || "").trim() || ROUND_BAR_HEX_TYPE,
     };
-    byRequestId.set(String(row._id), snapshot);
-    const favoriteId = String(row.favoriteId || "").trim();
-    if (favoriteId) byFavoriteId.set(favoriteId, snapshot);
+    byRequestId.set(requestId, snapshot);
+    if (snapshot.favoriteId) byFavoriteId.set(snapshot.favoriteId, snapshot);
+    const familyKey = [snapshot.manufacturer, snapshot.brand, snapshot.family]
+      .map((value) => value.toLowerCase())
+      .join("|");
+    if (familyKey !== "||" && !byFamilyKey.has(familyKey)) {
+      byFamilyKey.set(familyKey, snapshot);
+    }
   }
 
-  return list.map((fav) => {
+  const matchedRequestIds = new Set();
+  const next = [];
+  for (const fav of list) {
     const requestId = String(fav.roundBarRequestId || "").trim();
     const favoriteId = String(fav.id || "").trim();
     const isRoundBar = Boolean(fav.roundBar) || Boolean(requestId);
-    if (!isRoundBar) return fav;
+    const familyKey = [
+      String(fav.manufacturer || "").trim().toLowerCase(),
+      String(fav.brand || "").trim().toLowerCase(),
+      String(fav.family || "").trim().toLowerCase(),
+    ].join("|");
     const snapshot =
       (requestId && byRequestId.get(requestId)) ||
       (favoriteId && byFavoriteId.get(favoriteId)) ||
+      (isRoundBar && familyKey !== "||" ? byFamilyKey.get(familyKey) : null) ||
       null;
-    const adopted = snapshot ? Boolean(snapshot.adopted) : Boolean(fav.adopted);
-    const adoptedKind = snapshot
-      ? snapshot.adoptedKind
-      : normalizeAdoptedKind(fav.adoptedKind);
-    const manufacturer = snapshot?.manufacturer || fav.manufacturer;
-    const brand = snapshot?.brand || fav.brand;
-    const family = snapshot?.family || fav.family;
-    const type = snapshot?.type || fav.type;
+    if (!snapshot) {
+      next.push(fav);
+      continue;
+    }
+    if (matchedRequestIds.has(snapshot.requestId)) continue;
+    matchedRequestIds.add(snapshot.requestId);
+    const adopted = Boolean(snapshot.adopted);
+    const adoptedKind = snapshot.adoptedKind;
+    const manufacturer = snapshot.manufacturer || fav.manufacturer;
+    const brand = snapshot.brand || fav.brand;
+    const family = snapshot.family || fav.family;
+    const type = snapshot.type || fav.type;
     if (
       Boolean(fav.roundBar) &&
       Boolean(fav.adopted) === adopted &&
       normalizeAdoptedKind(fav.adoptedKind) === adoptedKind &&
+      String(fav.roundBarRequestId || "").trim() === snapshot.requestId &&
       String(fav.manufacturer || "").trim() === String(manufacturer || "").trim() &&
       String(fav.brand || "").trim() === String(brand || "").trim() &&
       String(fav.family || "").trim() === String(family || "").trim() &&
       String(fav.type || "").trim() === String(type || "").trim()
     ) {
-      return fav;
+      next.push(fav);
+      continue;
     }
-    return {
+    next.push({
       ...fav,
+      id: fav.id || snapshot.favoriteId,
       roundBar: true,
       adopted,
       adoptedKind,
+      roundBarRequestId: snapshot.requestId,
       manufacturer,
       brand,
       family,
       type,
-    };
-  });
+    });
+  }
+
+  const missing = [];
+  for (const snapshot of byRequestId.values()) {
+    if (!snapshot.adopted || matchedRequestIds.has(snapshot.requestId)) continue;
+    missing.push({
+      id: snapshot.favoriteId || `imp-rb-${String(snapshot.requestId).slice(-8)}`,
+      manufacturer: snapshot.manufacturer,
+      brand: snapshot.brand,
+      family: snapshot.family,
+      type: snapshot.type,
+      roundBar: true,
+      adopted: true,
+      adoptedKind: snapshot.adoptedKind,
+      roundBarRequestId: snapshot.requestId,
+    });
+  }
+  if (!missing.length) return next;
+  return [...missing, ...next].slice(0, MAX_IMPLANT_FAVORITES);
 }
 
 export {

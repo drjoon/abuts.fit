@@ -2,9 +2,15 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
+// change-log:
+// - 2026-08-14: 로그인 치과면 도입된 환봉 스펙을 카탈로그 앞에 붙여 프리셋 편집 선택에 나오게 한다.
+import mongoose from "mongoose";
 import ImplantPreset from "../../models/implantPreset.model.js";
 import Connection from "../../models/connection.model.js";
 import Request from "../../models/request.model.js";
+import RoundBarAbutmentRequest from "../../models/roundBarAbutmentRequest.model.js";
+import { ROUND_BAR_HEX_TYPE } from "../../utils/roundBarAbutment.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import {
   buildExpectedPrcFileName,
@@ -101,6 +107,45 @@ async function buildPrcFileNames({
 
 function getBusinessAnchorId(req) {
   return String(req.user?.businessAnchorId || "").trim();
+}
+
+async function loadAdoptedRoundBarConnections(businessAnchorId) {
+  if (!businessAnchorId || !mongoose.Types.ObjectId.isValid(businessAnchorId)) {
+    return [];
+  }
+  const requests = await RoundBarAbutmentRequest.find({
+    practiceAnchorId: businessAnchorId,
+    adopted: true,
+  })
+    .select({ manufacturer: 1, brand: 1, family: 1, type: 1 })
+    .lean();
+  const out = [];
+  const seen = new Set();
+  for (const row of requests) {
+    const manufacturer = String(row.manufacturer || "").trim();
+    const brand = String(row.brand || "").trim();
+    const family = String(row.family || "").trim();
+    const type = String(row.type || "").trim() || ROUND_BAR_HEX_TYPE;
+    if (!manufacturer) continue;
+    const canonicalKey =
+      `rb:${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
+    if (seen.has(canonicalKey)) continue;
+    seen.add(canonicalKey);
+    out.push({
+      manufacturer,
+      brand,
+      family,
+      type,
+      displayManufacturer: manufacturer,
+      displayBrand: brand,
+      displayFamily: family,
+      displayType: type,
+      canonicalKey,
+      prcMatchScore: 0,
+      usageCount: 0,
+    });
+  }
+  return out;
 }
 
 export async function getImplantPresets(req, res) {
@@ -205,9 +250,11 @@ export async function getImplantPresets(req, res) {
       return updated > max ? updated : max;
     }, 0);
 
+    const adopted = await loadAdoptedRoundBarConnections(businessAnchorId);
+
     res.json({
       success: true,
-      data: sorted,
+      data: [...adopted, ...sorted],
       serverUpdatedAt: serverUpdatedAt || null,
     });
   } catch (error) {

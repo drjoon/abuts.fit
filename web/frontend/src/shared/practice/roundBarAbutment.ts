@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-08-14: 도입 이벤트가 치과 프리셋에 없으면 행을 추가한다.
 // - 2026-08-14: 관리자 타입 수정 패치.
 // - 2026-08-14: 도입 실시간 이벤트(`practice:round-bar-request-updated`) 프리셋 patch.
 import { apiFetch } from "@/shared/api/apiClient";
@@ -88,11 +89,13 @@ export const applyRoundBarRequestUpdate = (
   const brand = String(payload?.brand || "").trim();
   const family = String(payload?.family || "").trim();
   const type = String(payload?.type || "").trim() || ROUND_BAR_HEX_TYPE;
-  return favorites.map((fav) => {
+  let matched = false;
+  const next = favorites.map((fav) => {
     const match =
       (requestId && String(fav.roundBarRequestId || "").trim() === requestId) ||
       (favoriteId && fav.id === favoriteId);
     if (!match) return fav;
+    matched = true;
     return {
       ...fav,
       roundBar: true,
@@ -105,6 +108,21 @@ export const applyRoundBarRequestUpdate = (
       type,
     };
   });
+  if (matched || !adopted || !manufacturer) return next;
+  return [
+    {
+      id: favoriteId || (requestId ? `imp-rb-${requestId.slice(-8)}` : `imp-rb-${Date.now().toString(36)}`),
+      manufacturer,
+      brand,
+      family,
+      type,
+      roundBar: true,
+      adopted,
+      adoptedKind,
+      roundBarRequestId: requestId || undefined,
+    },
+    ...next,
+  ];
 };
 
 export async function submitRoundBarManufacturerRequest(params: {
