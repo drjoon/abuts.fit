@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: 의뢰·배송에 CNC/환봉 라벨 분리, 환봉방식 커스텀어벗 요청 목록 포함.
 // - 2026-08-13: 디자인비 항목을 디자인+생산으로 교체. 생산만·디자인+생산을 멤버십/일반 단가로 분리.
 // - 2026-08-13: 치과 멤버십 월 구독료(practiceMembershipMonthlyFee) 추가.
 // - 2026-08-13: 디자인비(1어벗당) 입력 복구. 기본 생산 15,000 + 디자인 5,000.
@@ -17,7 +18,9 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/backend/models/systemSettings.model.js
 // - web/backend/utils/creditSettingsDefaults.js
+// - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 import { useCallback, useMemo, useState, useEffect, useRef, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -60,6 +63,7 @@ import {
   CircleHelp,
   Crown,
   Gift,
+  Hexagon,
   Package,
   PenLine,
   Plus,
@@ -69,6 +73,7 @@ import {
   Zap,
 } from "lucide-react";
 import { REQUESTOR_CAPABILITY_LABEL } from "@/shared/business/requestorCapabilities";
+import { AdminRoundBarAbutmentTab } from "@/pages/admin/system/AdminRoundBarAbutmentTab";
 
 interface CreditSettings {
   minCreditForRequest: number;
@@ -84,6 +89,10 @@ interface CreditSettings {
   regularProductionPrice: number;
   membershipDesignAndProductionPrice: number;
   regularDesignAndProductionPrice: number;
+  membershipRoundBarProductionPrice: number;
+  regularRoundBarProductionPrice: number;
+  membershipRoundBarDesignAndProductionPrice: number;
+  regularRoundBarDesignAndProductionPrice: number;
 }
 
 type SpecialRequestorPrice = {
@@ -153,6 +162,38 @@ function normalizeCreditSettings(
       raw.defaultShippingFreeCredit ?? fallback.defaultShippingFreeCredit,
     ),
     ...abutmentPrices,
+    membershipRoundBarProductionPrice: Math.max(
+      0,
+      Number(
+        raw.membershipRoundBarProductionPrice ??
+          fallback.membershipRoundBarProductionPrice ??
+          0,
+      ) || 0,
+    ),
+    regularRoundBarProductionPrice: Math.max(
+      0,
+      Number(
+        raw.regularRoundBarProductionPrice ??
+          fallback.regularRoundBarProductionPrice ??
+          0,
+      ) || 0,
+    ),
+    membershipRoundBarDesignAndProductionPrice: Math.max(
+      0,
+      Number(
+        raw.membershipRoundBarDesignAndProductionPrice ??
+          fallback.membershipRoundBarDesignAndProductionPrice ??
+          0,
+      ) || 0,
+    ),
+    regularRoundBarDesignAndProductionPrice: Math.max(
+      0,
+      Number(
+        raw.regularRoundBarDesignAndProductionPrice ??
+          fallback.regularRoundBarDesignAndProductionPrice ??
+          0,
+      ) || 0,
+    ),
   };
 }
 
@@ -355,6 +396,7 @@ function SectionHeader({
 export const AdminCreditSettingsTab = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState<CreditSettings>({
     ...CREDIT_SETTINGS_DEFAULTS,
@@ -499,6 +541,7 @@ export const AdminCreditSettingsTab = () => {
           setSettings(normalized);
           savedSnapshotRef.current = JSON.stringify(normalized);
         }
+        void queryClient.invalidateQueries({ queryKey: ["credit-settings"] });
       } catch (error) {
         toast({
           title: "설정 저장 실패",
@@ -511,7 +554,7 @@ export const AdminCreditSettingsTab = () => {
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [settings, token, loading, toast]);
+  }, [settings, token, loading, toast, queryClient]);
 
   const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
   const productionHelp = `1어벗당. 멤버십 ${ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE.toLocaleString("ko-KR")}원, 일반 ${ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE.toLocaleString("ko-KR")}원.`;
@@ -563,7 +606,7 @@ export const AdminCreditSettingsTab = () => {
             />
             <div className="grid gap-3 sm:grid-cols-2">
               <DualTierAmountField
-                label="생산만"
+                label="CNC어벗 생산만"
                 icon={Package}
                 membershipId="membershipProductionPrice"
                 regularId="regularProductionPrice"
@@ -587,7 +630,7 @@ export const AdminCreditSettingsTab = () => {
                 help={productionHelp}
               />
               <DualTierAmountField
-                label="디자인+생산"
+                label="CNC어벗 디자인+생산"
                 icon={PenLine}
                 membershipId="membershipDesignAndProductionPrice"
                 regularId="regularDesignAndProductionPrice"
@@ -611,6 +654,52 @@ export const AdminCreditSettingsTab = () => {
                 }
                 disabled={loading}
                 help={designAndProductionHelp}
+              />
+              <DualTierAmountField
+                label="환봉어벗 생산만"
+                icon={Hexagon}
+                membershipId="membershipRoundBarProductionPrice"
+                regularId="regularRoundBarProductionPrice"
+                membershipValue={settings.membershipRoundBarProductionPrice}
+                regularValue={settings.regularRoundBarProductionPrice}
+                onMembershipChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    membershipRoundBarProductionPrice: next,
+                  })
+                }
+                onRegularChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    regularRoundBarProductionPrice: next,
+                  })
+                }
+                disabled={loading}
+                help="1어벗당. 0원이면 가격 별도 고지."
+              />
+              <DualTierAmountField
+                label="환봉어벗 디자인+생산"
+                icon={Hexagon}
+                membershipId="membershipRoundBarDesignAndProductionPrice"
+                regularId="regularRoundBarDesignAndProductionPrice"
+                membershipValue={
+                  settings.membershipRoundBarDesignAndProductionPrice
+                }
+                regularValue={settings.regularRoundBarDesignAndProductionPrice}
+                onMembershipChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    membershipRoundBarDesignAndProductionPrice: next,
+                  })
+                }
+                onRegularChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    regularRoundBarDesignAndProductionPrice: next,
+                  })
+                }
+                disabled={loading}
+                help="1어벗당. 0원이면 가격 별도 고지."
               />
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -647,6 +736,10 @@ export const AdminCreditSettingsTab = () => {
                 disabled={loading}
                 help={expressHelp}
               />
+            </div>
+
+            <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/50 p-4 sm:p-5">
+              <AdminRoundBarAbutmentTab embedded />
             </div>
 
             <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/50 p-4 sm:p-5">

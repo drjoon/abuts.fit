@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: manufacturer_add_request(제조사 추가 요청) 라벨.
 // - 2026-08-13: ?type= 쿼리로 문의 유형 프리필.
 // - 2026-08-12: 의뢰자 문의 화면에 기공료 선입금 FAQ 노출.
 // - 2026-08-11: 크레딧 페이지와 동일하게 max-w-4xl·gradient·glass 카드 적용, 역할별 문의 유형 확장.
@@ -76,6 +77,7 @@ export const INQUIRY_TYPE_LABEL: Record<string, string> = {
   other: "기타",
   business_registration: "사업자등록",
   user_registration: "사용자등록",
+  manufacturer_add_request: "제조사 추가 요청",
 };
 
 const STATUS_CONFIG: Record<

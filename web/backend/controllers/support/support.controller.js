@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx
 // - web/frontend/src/features/support/InquiriesPage.tsx
 // change-log:
+// - 2026-08-14: manufacturer_add_request 자동 문의 유형 허용.
 // - 2026-08-11: 문의 type enum을 역할별 프리셋(크레딧/디자인/파일전송 등)까지 확장.
 import { randomBytes } from "crypto";
 import { uploadFileToS3 } from "../../utils/s3.utils.js";
@@ -127,6 +128,7 @@ export async function createInquiry(req, res) {
       "partnership",
       "operation",
       "system",
+      "manufacturer_add_request",
     ];
     const normalizedType = allowedTypes.includes(String(type || "").trim())
       ? String(type).trim()

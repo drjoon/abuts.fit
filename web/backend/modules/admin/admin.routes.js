@@ -4,6 +4,8 @@
 // - web/backend/server.js
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
+// - web/backend/controllers/admin/admin.roundBarAbutment.controller.js
+// - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 import { Router } from "express";
 const router = Router();
 
@@ -161,6 +163,10 @@ import {
   adminResolveBusinessRegistrationInquiry,
 } from "../../controllers/support/support.controller.js";
 import {
+  adminListRoundBarAbutmentRequests,
+  adminUpdateRoundBarAbutmentRequest,
+} from "../../controllers/admin/admin.roundBarAbutment.controller.js";
+import {
   handleInboundEmailWebhook,
   adminListInboundEmails,
   adminGetInboundEmail,
@@ -262,6 +268,9 @@ router.patch(
   "/business-registration-inquiries/:id",
   adminResolveBusinessRegistrationInquiry,
 );
+
+router.get("/round-bar-requests", adminListRoundBarAbutmentRequests);
+router.patch("/round-bar-requests/:id", adminUpdateRoundBarAbutmentRequest);
 
 // 사업자 관리
 router.get(

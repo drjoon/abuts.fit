@@ -29,6 +29,10 @@ const systemSettingsSchema = new mongoose.Schema(
       regularProductionPrice: { type: Number, default: 20000 },
       membershipDesignAndProductionPrice: { type: Number, default: 25000 },
       regularDesignAndProductionPrice: { type: Number, default: 40000 },
+      membershipRoundBarProductionPrice: { type: Number, default: 0 },
+      regularRoundBarProductionPrice: { type: Number, default: 0 },
+      membershipRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
+      regularRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
       // 개발운영사 지정 의뢰자별 커스텀 어벗 의뢰비. 미지정 의뢰자는 minCreditForRequest를 사용한다.
       specialRequestorPrices: {
         type: [

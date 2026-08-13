@@ -41,6 +41,10 @@
   - `modules/practiceTransfers/practiceTransfer.routes.js`
   - `controllers/practiceTransfers/practiceTransfer.controller.js`
   - `controllers/practiceTransfers/practiceTransferSettings.controller.js`
+  - `controllers/practiceTransfers/roundBarAbutmentRequest.controller.js`
+  - `controllers/admin/admin.roundBarAbutment.controller.js`
+  - `models/roundBarAbutmentRequest.model.js`
+  - `utils/roundBarAbutment.js`
   - `middlewares/practiceTransferAuth.middleware.js`
   - `utils/requestorCapabilities.js`
   - `models/businessAnchor.model.js` (`requestorCapabilities`)
@@ -455,7 +459,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 설정 SSOT:
   - 저장 위치: `BusinessAnchor.practiceTransferSettings`
   - API: `GET/POST /api/practice/transfers/settings`
-  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`, `defaultAbutmentProductMode`
+  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`, `defaultAbutmentProductMode`, `implantFavorites`(환봉 요청 시 `roundBar`/`adopted`/`roundBarRequestId`)
   - `memoSnippets`는 의뢰 메모 문장 즐겨찾기(최대 40개, 공백/중복 제거)이며 프론트는 로컬스토리지에도 미러링합니다.
   - `defaultAbutmentProductMode`: 커스텀어벗 설정 모달 계정 기본값. 미설정·신규는 `design_custom_abutment`(디자인+생산). 모달에서 바꾸면 저장하고 다음 모달 초기값으로 씀. 치아별 스냅샷은 `toothWorks.abutmentProductMode`(레거시 미설정=생산만).
   - 관련 파일:
@@ -463,6 +467,17 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `models/businessAnchor.model.js`
     - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
     - `web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
+
+- 환봉방식 커스텀어벗(제조사 추가 요청) SSOT:
+  - 치과 프리셋 편집에서 카탈로그에 없는 제조사를 요청. 타입은 `헥스(사이즈 미정)` 고정.
+  - 생성: `POST /api/practice/transfers/round-bar-requests` — 문의(`manufacturer_add_request`) 자동 접수 + `RoundBarAbutmentRequest` + 치과 `implantFavorites`에 일단 저장(`roundBar=true`, `adopted=false`).
+  - 관리자: `GET|PATCH /api/admin/round-bar-requests` — 프리셋 내용 편집, 도입 체크 시 해당 치과 프리셋 `adopted=true`(정식 채택). 되돌리기=`adopted=false` + 문의 재오픈. UI는 플랫폼 설정「커스텀어벗 요금 · 크레딧 > 의뢰 · 배송」.
+  - 요금 필드: `membership/regularRoundBarProductionPrice`, `membership/regularRoundBarDesignAndProductionPrice` (0이면 별도 고지).
+  - 관련 파일:
+    - `models/roundBarAbutmentRequest.model.js`
+    - `utils/roundBarAbutment.js`
+    - `controllers/practiceTransfers/roundBarAbutmentRequest.controller.js`
+    - `controllers/admin/admin.roundBarAbutment.controller.js`
 
 - practice 취소 API 계약(SSOT):
   - endpoint: `POST /api/practice/transfers/cancel-batch`

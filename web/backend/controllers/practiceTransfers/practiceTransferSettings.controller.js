@@ -8,6 +8,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-08-14: implantFavorites에 환봉 제조사 추가요청(roundBar/adopted) 필드 보존.
 // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산) 저장.
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
@@ -75,7 +76,18 @@ const normalizeImplantFavorites = (items) => {
     if (seen.has(key)) continue;
     seen.add(key);
     const id = String(row.id || "").trim() || `imp-${out.length + 1}`;
-    out.push({ id, manufacturer, brand, family, type });
+    const roundBarRequestId = String(row.roundBarRequestId || "").trim();
+    const roundBar = Boolean(row.roundBar) || Boolean(roundBarRequestId);
+    out.push({
+      id,
+      manufacturer,
+      brand,
+      family,
+      type,
+      roundBar,
+      adopted: Boolean(row.adopted),
+      roundBarRequestId,
+    });
     if (out.length >= MAX_IMPLANT_FAVORITES) break;
   }
 

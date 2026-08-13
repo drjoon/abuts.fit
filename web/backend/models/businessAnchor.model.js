@@ -324,6 +324,7 @@ const businessAnchorSchema = new mongoose.Schema(
       // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
       // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
       // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+      // - 2026-08-14: implantFavorites roundBar/adopted/roundBarRequestId (환봉 제조사 추가요청)
       // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산)
       arrivalDefaultDays: {
         type: Number,
@@ -347,6 +348,9 @@ const businessAnchorSchema = new mongoose.Schema(
             brand: { type: String, default: "" },
             family: { type: String, default: "" },
             type: { type: String, default: "" },
+            roundBar: { type: Boolean, default: false },
+            adopted: { type: Boolean, default: false },
+            roundBarRequestId: { type: String, default: "" },
           },
         ],
         default: [],

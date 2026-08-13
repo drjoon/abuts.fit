@@ -295,6 +295,18 @@ export async function updateCreditSettings(req, res) {
     const regularDesignAndProductionPrice = Number(
       payload.regularDesignAndProductionPrice,
     );
+    const membershipRoundBarProductionPrice = Number(
+      payload.membershipRoundBarProductionPrice,
+    );
+    const regularRoundBarProductionPrice = Number(
+      payload.regularRoundBarProductionPrice,
+    );
+    const membershipRoundBarDesignAndProductionPrice = Number(
+      payload.membershipRoundBarDesignAndProductionPrice,
+    );
+    const regularRoundBarDesignAndProductionPrice = Number(
+      payload.regularRoundBarDesignAndProductionPrice,
+    );
     const abutmentRetailPrice = Number(payload.abutmentRetailPrice);
     const practiceMembershipMonthlyFee = Number(
       payload.practiceMembershipMonthlyFee,
@@ -358,6 +370,33 @@ export async function updateCreditSettings(req, res) {
     ) {
       sanitized.regularDesignAndProductionPrice =
         regularDesignAndProductionPrice;
+    }
+    if (
+      !Number.isNaN(membershipRoundBarProductionPrice) &&
+      membershipRoundBarProductionPrice >= 0
+    ) {
+      sanitized.membershipRoundBarProductionPrice =
+        membershipRoundBarProductionPrice;
+    }
+    if (
+      !Number.isNaN(regularRoundBarProductionPrice) &&
+      regularRoundBarProductionPrice >= 0
+    ) {
+      sanitized.regularRoundBarProductionPrice = regularRoundBarProductionPrice;
+    }
+    if (
+      !Number.isNaN(membershipRoundBarDesignAndProductionPrice) &&
+      membershipRoundBarDesignAndProductionPrice >= 0
+    ) {
+      sanitized.membershipRoundBarDesignAndProductionPrice =
+        membershipRoundBarDesignAndProductionPrice;
+    }
+    if (
+      !Number.isNaN(regularRoundBarDesignAndProductionPrice) &&
+      regularRoundBarDesignAndProductionPrice >= 0
+    ) {
+      sanitized.regularRoundBarDesignAndProductionPrice =
+        regularRoundBarDesignAndProductionPrice;
     }
     if (!Number.isNaN(abutmentRetailPrice) && abutmentRetailPrice >= 0) {
       sanitized.abutmentRetailPrice = abutmentRetailPrice;

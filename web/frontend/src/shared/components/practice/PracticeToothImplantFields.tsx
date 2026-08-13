@@ -2,6 +2,9 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/useImplantConnectionCatalog.ts
 // - web/frontend/src/shared/practice/transferMemo.ts
+// - web/frontend/src/shared/practice/roundBarAbutment.ts
+// change-log:
+// - 2026-08-14: 제조사 선택 마지막에 제조사 추가 요청(환봉 헥스 사이즈 미정) + 안내 모달.
 import { useMemo, useState } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,14 +14,27 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
 import {
   emptyToothWorkImplant,
   type PracticeImplantFavorite,
 } from "@/shared/practice/transferMemo";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useToast } from "@/shared/hooks/use-toast";
+import {
+  MANUFACTURER_ADD_REQUEST_VALUE,
+  ROUND_BAR_GUIDE_LINES,
+  ROUND_BAR_GUIDE_TITLE,
+  ROUND_BAR_HEX_TYPE,
+  isRoundBarFavorite,
+  submitRoundBarManufacturerRequest,
+} from "@/shared/practice/roundBarAbutment";
 import { cn } from "@/shared/ui/cn";
 
 export type ToothImplantValues = {
@@ -92,9 +108,21 @@ export const PracticeToothImplantFields = ({
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothImplantValues>(emptyToothWorkImplant());
   const [favoritesBusy, setFavoritesBusy] = useState(false);
+  const [requestFormOpen, setRequestFormOpen] = useState(false);
+  const [requestBusy, setRequestBusy] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [requestDraft, setRequestDraft] = useState({
+    manufacturer: "",
+    brand: "",
+    family: "",
+  });
+  const { token } = useAuthStore();
+  const { toast } = useToast();
+  const { kind } = useRequestorBusinessAccess();
   const showFields = mode === "full" || mode === "fields";
   const showPresets = mode === "full" || mode === "presets";
   const canManagePresets = allowPresetEdit && Boolean(onFavoritesChange);
+  const allowManufacturerRequest = canManagePresets && kind !== "lab";
 
   const connectionOptions = useMemo(
     () =>
@@ -332,6 +360,85 @@ export const PracticeToothImplantFields = ({
       },
     ]);
 
+  const closeRequestForm = () => {
+    setRequestFormOpen(false);
+    setRequestDraft({ manufacturer: "", brand: "", family: "" });
+  };
+
+  const submitManufacturerRequest = async () => {
+    const manufacturer = requestDraft.manufacturer.trim();
+    const brand = requestDraft.brand.trim();
+    const family = requestDraft.family.trim();
+    if (!manufacturer || !brand || !family) {
+      toast({
+        title: "입력 필요",
+        description: "제조사, 브랜드, 패밀리를 모두 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const favoriteId = `imp-rb-${Date.now().toString(36)}`;
+    let nextFavorite: PracticeImplantFavorite = {
+      id: favoriteId,
+      manufacturer,
+      brand,
+      family,
+      type: ROUND_BAR_HEX_TYPE,
+      roundBar: true,
+      adopted: false,
+    };
+    setRequestBusy(true);
+    try {
+      if (token) {
+        const result = await submitRoundBarManufacturerRequest({
+          token,
+          payload: { manufacturer, brand, family, favoriteId },
+        });
+        if (result.favorite?.id) {
+          nextFavorite = {
+            ...nextFavorite,
+            ...result.favorite,
+            type: ROUND_BAR_HEX_TYPE,
+            roundBar: true,
+          };
+        }
+      }
+      const withoutDup = favorites.filter(
+        (row) => favoriteKey(row) !== favoriteKey(nextFavorite) && row.id !== nextFavorite.id,
+      );
+      await persistFavorites([...withoutDup, nextFavorite]);
+      onChange({
+        implantManufacturer: nextFavorite.manufacturer,
+        implantBrand: nextFavorite.brand,
+        implantFamily: nextFavorite.family,
+        implantType: ROUND_BAR_HEX_TYPE,
+      });
+      closeRequestForm();
+      setGuideOpen(true);
+    } catch (error) {
+      toast({
+        title: "요청 전달 실패",
+        description:
+          error instanceof Error ? error.message : "관리자 문의 전달에 실패했습니다.",
+        variant: "destructive",
+      });
+      const withoutDup = favorites.filter(
+        (row) => favoriteKey(row) !== favoriteKey(nextFavorite) && row.id !== nextFavorite.id,
+      );
+      await persistFavorites([...withoutDup, nextFavorite]);
+      onChange({
+        implantManufacturer: nextFavorite.manufacturer,
+        implantBrand: nextFavorite.brand,
+        implantFamily: nextFavorite.family,
+        implantType: ROUND_BAR_HEX_TYPE,
+      });
+      closeRequestForm();
+      setGuideOpen(true);
+    } finally {
+      setRequestBusy(false);
+    }
+  };
+
   const renderSaveFavoriteButton = () => {
     if (!canManagePresets || !showFields) return null;
     return (
@@ -344,7 +451,7 @@ export const PracticeToothImplantFields = ({
             ? "h-10 w-full text-sm"
             : "h-10 w-full border-dashed text-sm text-slate-500"
         }
-        disabled={!canSaveFavorite}
+        disabled={!canSaveFavorite || requestFormOpen}
         onClick={saveCurrentAsFavorite}
       >
         <Plus className="mr-1 h-4 w-4" />
@@ -479,11 +586,22 @@ export const PracticeToothImplantFields = ({
                 >
                   <button
                     type="button"
-                    className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-sm font-medium text-slate-800 hover:text-primary-strong"
+                    className="flex min-w-0 flex-1 items-center truncate rounded px-1.5 py-1 text-left text-sm font-medium text-slate-800 hover:text-primary-strong"
                     title={favoriteLabel(fav)}
                     onClick={() => applyFavorite(fav)}
                   >
-                    {favoriteLabel(fav)}
+                    <span className="truncate">{favoriteLabel(fav)}</span>
+                    {isRoundBarFavorite(fav) ? (
+                      <span
+                        className={
+                          fav.adopted
+                            ? "ml-1.5 inline-flex rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+                            : "ml-1.5 inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                        }
+                      >
+                        {fav.adopted ? "도입" : "요청중"}
+                      </span>
+                    ) : null}
                   </button>
                   {canManagePresets ? (
                     <>
@@ -544,7 +662,10 @@ export const PracticeToothImplantFields = ({
             variant="ghost"
             size="sm"
             className="h-8 px-2 text-sm text-slate-500"
-            onClick={() => onChange(emptyToothWorkImplant())}
+            onClick={() => {
+              closeRequestForm();
+              onChange(emptyToothWorkImplant());
+            }}
           >
             <X className="mr-1 h-4 w-4" />
             비우기
@@ -558,13 +679,83 @@ export const PracticeToothImplantFields = ({
 
       {showPresets && (presetsFirst || mode === "presets") ? renderPresets("top") : null}
 
-      {showFields ? (
+      {showFields && requestFormOpen ? (
+        <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-sm text-slate-600">제조사</Label>
+            <Input
+              value={requestDraft.manufacturer}
+              placeholder="제조사 입력"
+              className="h-11 text-sm"
+              onChange={(e) =>
+                setRequestDraft((prev) => ({ ...prev, manufacturer: e.target.value }))
+              }
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm text-slate-600">브랜드</Label>
+            <Input
+              value={requestDraft.brand}
+              placeholder="브랜드 입력"
+              className="h-11 text-sm"
+              onChange={(e) =>
+                setRequestDraft((prev) => ({ ...prev, brand: e.target.value }))
+              }
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm text-slate-600">패밀리</Label>
+            <Input
+              value={requestDraft.family}
+              placeholder="패밀리 입력"
+              className="h-11 text-sm"
+              onChange={(e) =>
+                setRequestDraft((prev) => ({ ...prev, family: e.target.value }))
+              }
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm text-slate-600">타입</Label>
+            <Input value={ROUND_BAR_HEX_TYPE} readOnly className="h-11 bg-slate-50 text-sm" />
+          </div>
+          <div className="col-span-1 flex gap-2 sm:col-span-2">
+            <Button
+              type="button"
+              className="h-10 flex-1 text-sm"
+              disabled={requestBusy}
+              onClick={() => void submitManufacturerRequest()}
+            >
+              {requestBusy ? "요청 중..." : "요청"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 flex-1 text-sm"
+              disabled={requestBusy}
+              onClick={closeRequestForm}
+            >
+              취소
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {showFields && !requestFormOpen ? (
         <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label className="text-sm text-slate-600">제조사</Label>
             <Select
               value={value.implantManufacturer || undefined}
               onValueChange={(nextManufacturer) => {
+                if (nextManufacturer === MANUFACTURER_ADD_REQUEST_VALUE) {
+                  setRequestDraft({
+                    manufacturer: "",
+                    brand: "",
+                    family: "",
+                  });
+                  setRequestFormOpen(true);
+                  return;
+                }
                 const nextBrand = pickFirst(getBrands(nextManufacturer));
                 const nextFamily = pickPreferredFamily(getFamilies(nextManufacturer, nextBrand));
                 const nextType = pickFirst(getTypes(nextManufacturer, nextBrand, nextFamily));
@@ -585,6 +776,17 @@ export const PracticeToothImplantFields = ({
                     {manufacturerLabelMap.get(m) || m}
                   </SelectItem>
                 ))}
+                {allowManufacturerRequest ? (
+                  <>
+                    <SelectSeparator />
+                    <SelectItem
+                      value={MANUFACTURER_ADD_REQUEST_VALUE}
+                      className="text-sm font-semibold text-primary-strong"
+                    >
+                      제조사 추가 요청
+                    </SelectItem>
+                  </>
+                ) : null}
               </SelectContent>
             </Select>
           </div>
@@ -678,9 +880,26 @@ export const PracticeToothImplantFields = ({
         </div>
       ) : null}
 
-      <div className="shrink-0">{renderSaveFavoriteButton()}</div>
+      <div className="shrink-0">{requestFormOpen ? null : renderSaveFavoriteButton()}</div>
 
       {showPresets && !presetsFirst && mode !== "presets" ? renderPresets("bottom") : null}
+
+      <ConfirmDialog
+        open={guideOpen}
+        title={ROUND_BAR_GUIDE_TITLE}
+        description={
+          <>
+            {ROUND_BAR_GUIDE_LINES[0]}
+            <br />
+            {ROUND_BAR_GUIDE_LINES[1]}
+          </>
+        }
+        confirmLabel="확인"
+        cancelLabel="닫기"
+        confirmTone="primary"
+        onConfirm={() => setGuideOpen(false)}
+        onCancel={() => setGuideOpen(false)}
+      />
     </div>
   );
 };

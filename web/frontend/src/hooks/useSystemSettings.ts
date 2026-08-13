@@ -35,6 +35,10 @@ export interface CreditSettings {
   regularProductionPrice: number;
   membershipDesignAndProductionPrice: number;
   regularDesignAndProductionPrice: number;
+  membershipRoundBarProductionPrice: number;
+  regularRoundBarProductionPrice: number;
+  membershipRoundBarDesignAndProductionPrice: number;
+  regularRoundBarDesignAndProductionPrice: number;
 }
 
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
@@ -54,6 +58,10 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   regularDesignAndProductionPrice:
     ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+  membershipRoundBarProductionPrice: 0,
+  regularRoundBarProductionPrice: 0,
+  membershipRoundBarDesignAndProductionPrice: 0,
+  regularRoundBarDesignAndProductionPrice: 0,
 };
 
 export interface SystemSettingsData {
@@ -101,6 +109,22 @@ export const useSystemSettings = () => {
             CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
         ),
         ...abutmentPrices,
+        membershipRoundBarProductionPrice: Number(
+          raw.membershipRoundBarProductionPrice ??
+            CREDIT_SETTINGS_DEFAULTS.membershipRoundBarProductionPrice,
+        ),
+        regularRoundBarProductionPrice: Number(
+          raw.regularRoundBarProductionPrice ??
+            CREDIT_SETTINGS_DEFAULTS.regularRoundBarProductionPrice,
+        ),
+        membershipRoundBarDesignAndProductionPrice: Number(
+          raw.membershipRoundBarDesignAndProductionPrice ??
+            CREDIT_SETTINGS_DEFAULTS.membershipRoundBarDesignAndProductionPrice,
+        ),
+        regularRoundBarDesignAndProductionPrice: Number(
+          raw.regularRoundBarDesignAndProductionPrice ??
+            CREDIT_SETTINGS_DEFAULTS.regularRoundBarDesignAndProductionPrice,
+        ),
       };
       return { creditSettings } as SystemSettingsData;
     },

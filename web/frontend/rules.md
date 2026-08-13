@@ -119,6 +119,9 @@ Notes:
     - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 인레이→크라운→커스텀어벗→임시치아 / 브리지↔Pontic↔작업X↔유지장치↔임시치아. 유지장치는 브리지 계열(2치 이상 연결 필수). 임시치아는 1치부터 n치(단독·연결). 연결 스팬에서 유지장치·임시치아는 한쪽 변경 시 연결된 치아 전체가 같은 형태. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 크라운·브리지 아래 `어벗` 체크박스(체크 시 설정 모달, 해제 시 규격 삭제). 커스텀어벗 칸·어벗 체크 후는 「설정」없이 `생산만`/`디자인+생산` 클릭으로 설정 모달. **기공의뢰(practice/dropzone)** 모달은 디자인+생산 고정, 생산만 클릭=`/dashboard/new-request`(어벗생산의뢰). **어벗생산의뢰** 모달은 생산만 고정, 디자인+생산 클릭=`/dashboard/practice-transfers?mode=send`(기공의뢰). 모달 하단 좌측 `프리셋 편집`(primary), 우측 취소/확인. 프리셋 목록은 4개까지 표시·초과 시 스크롤. 임플란트·스캔바디 프리셋이 모두 없으면 설정 모달과 함께 프리셋 편집을 연다. 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘. 취소·오버레이=열기 전 값 복원. 호버 툴팁: `CNC커스텀어벗 - 어벗츠 자체 제공` + 멤버십/일반 단가 + `배송비 별도, 박스당 과금, 부가세 없음`(월 구독료 미표시). 모달 기본·계정 초기값=`design_custom_abutment`(디자인+생산). 한 번 바꾸면 `practiceTransferSettings.defaultAbutmentProductMode`에 저장하고 다음 모달 초기값으로 사용. 커스텀어벗은 기공소 수가가 아니라 어벗츠 단가. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
     - 기공의뢰서 상·하악 사이(크게보기·전송 상세 포함)에 견적(크레딧 소비액) 표시. 치과는 평소 블러, 호버 시 금액 공개. 기공소 미지정(자동매칭)은 기본수가 없음(0원). 간단 합계 + 빠른툴팁 치식별 세부. `PracticeTransferFeeEstimate` / `GET /api/practice/transfers/quote-context`.
     - 기공소 의뢰카드·전송 상세에는 수령액(청구 − 플랫폼 수수료) 표시. 목록 `feeQuote` SSOT.
+    - 프리셋 편집 제조사 선택 마지막「제조사 추가 요청」: 제조사·브랜드·패밀리 입력, 타입=`헥스(사이즈 미정)` 고정. 요청 시 관리자 문의 자동 접수 + 프리셋 저장 + 안내 모달. `PracticeToothImplantFields` / `POST /api/practice/transfers/round-bar-requests`.
+  - `src/shared/components/practice/PracticeToothImplantFields.tsx`
+  - `src/shared/practice/roundBarAbutment.ts`
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
   - `src/shared/practice/toothWorkDraft.ts`
   - `src/shared/components/PracticeTransferDetailChatDialog.tsx`
@@ -134,6 +137,8 @@ Notes:
   - `src/shared/components/CreditLedgerModal.tsx`
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (커스텀어벗 요금 · 기공소 매칭. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`)
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (의뢰·배송: CNC어벗 생산만/디자인+생산, 환봉어벗 생산만/디자인+생산, 환봉방식 요청 목록)
+  - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (치과 제조사 추가요청 목록·편집·도입/되돌리기. `GET|PATCH /api/admin/round-bar-requests`. 요금·크레딧「의뢰 · 배송」에 포함)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (등록/미등록 치과 플랫폼 수수료율. 개발운영사 앵커 `payoutRates` SSOT)
 - 개발·운영사 설정
   - `src/pages/devops/DevopsSettingsPage.tsx` (계정/사업자/임직원/**결제(입금 계좌)**/알림/보안)
@@ -399,7 +404,7 @@ Notes:
     첫 충전 기본 1단위. 2회차부터 기본 추천 = 월사용량(90일/3)의 1/3을 단위로 반올림(0이면 최소 1단위).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금), 미사용 잔액은 요청 시 환불(마이너스 수정 계산서). 선불페이/선결제 잔액 표현 금지.
-  - 가격 정책/대시보드: `PricingPolicyDialog` — 커스텀어벗 멤버십/일반 단가 + 배송비 별도(박스당 과금).
+  - 가격 정책/대시보드: `PricingPolicyDialog` — CNC어벗 생산만(2만/멤버십 1.5만) · CNC어벗 디자인+생산(4만/멤버십 2.5만) · 환봉어벗 생산만/디자인+생산(`creditSettings` 단가, 0원이면 별도 고지) + 배송비 별도(박스당 과금).
   - 제조사 정산규칙 안내: 분배율만 안내하고 "+ VAT 10%" 표기 금지.
   - 관리자 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0).
 

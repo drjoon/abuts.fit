@@ -1,4 +1,8 @@
 // change-log:
+// - 2026-08-14: 환봉어벗 단가를 creditSettings에서 읽어 표시(0원이면 별도 고지).
+// - 2026-08-14: CNC어벗 디자인+생산 의뢰 멤버십/일반가 복구.
+// - 2026-08-14: CNC어벗 생산만(2만/멤버십 1.5만) · CNC어벗 디자인+생산(4만) · 환봉어벗 별도 고지 순.
+// - 2026-08-14: 환봉 커스텀어벗 1개당 가격 별도 고지 행 추가.
 // - 2026-08-13: 생산·디자인+생산 단가를 creditSettings(멤버십/일반)에서 읽음.
 // - 2026-08-13: 생산 일반 2.0만→멤버십 1.5만, 디자인+생산 일반 4.0만→멤버십 2.5만. 단가 글자 확대.
 // - 2026-08-13: 이용 중/해지 예약 클릭 시 멤버십 모달.
@@ -145,6 +149,37 @@ function PriceRow({
   );
 }
 
+function resolveRoundBarPriceRow(regular: number, membership: number) {
+  const hasRegular = regular > 0;
+  const hasMembership = membership > 0;
+  if (!hasRegular && !hasMembership) {
+    return {
+      value: '가격 별도 고지',
+      strikeValue: undefined as string | undefined,
+      unitLabel: '1개당'
+    };
+  }
+  if (hasRegular && hasMembership) {
+    return {
+      value: `멤버십 ${formatAbutsManwon(membership)}`,
+      strikeValue: formatAbutsManwon(regular),
+      unitLabel: '1개당'
+    };
+  }
+  if (hasMembership) {
+    return {
+      value: `멤버십 ${formatAbutsManwon(membership)}`,
+      strikeValue: undefined as string | undefined,
+      unitLabel: '1개당'
+    };
+  }
+  return {
+    value: formatAbutsManwon(regular),
+    strikeValue: undefined as string | undefined,
+    unitLabel: '1개당'
+  };
+}
+
 function BulletList({ items }: { items: ReactNode[] }) {
   return (
     <ul className='space-y-1.5'>
@@ -172,7 +207,8 @@ export const PricingPolicyDialog = ({
   const cancelScheduled = isPracticeMember && membership.cancelAtPeriodEnd;
   const [membershipOpen, setMembershipOpen] = useState(false);
   const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
-  const { data: systemSettings } = useSystemSettings();
+  const { data: systemSettings, refetch: refetchSystemSettings } =
+    useSystemSettings();
   const welcomeRequestCredit = Math.max(
     0,
     Number(
@@ -216,9 +252,40 @@ export const PricingPolicyDialog = ({
         ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
     ) || ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
   );
+  const roundBarProductionRegular = Math.max(
+    0,
+    Number(systemSettings?.creditSettings?.regularRoundBarProductionPrice) || 0
+  );
+  const roundBarProductionMembership = Math.max(
+    0,
+    Number(systemSettings?.creditSettings?.membershipRoundBarProductionPrice) ||
+      0
+  );
+  const roundBarDesignRegular = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.regularRoundBarDesignAndProductionPrice
+    ) || 0
+  );
+  const roundBarDesignMembership = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.membershipRoundBarDesignAndProductionPrice
+    ) || 0
+  );
+
+  const roundBarProductionRow = resolveRoundBarPriceRow(
+    roundBarProductionRegular,
+    roundBarProductionMembership
+  );
+  const roundBarDesignRow = resolveRoundBarPriceRow(
+    roundBarDesignRegular,
+    roundBarDesignMembership
+  );
 
   useEffect(() => {
     if (!open) return;
+    void refetchSystemSettings();
     if (!token) {
       setLeadTimes(DEFAULT_LEAD_TIMES);
       return;
@@ -256,7 +323,7 @@ export const PricingPolicyDialog = ({
       }
     };
     void load();
-  }, [open, token]);
+  }, [open, token, refetchSystemSettings]);
 
   const diameterRows: { label: string; key: DiameterKey }[] = [
     { label: '6mm', key: 'd6' },
@@ -365,19 +432,33 @@ export const PricingPolicyDialog = ({
               <section className='rounded-xl border border-slate-200 bg-white px-4 py-4'>
                 <div className='space-y-3'>
                   <PriceRow
-                    label='생산만'
+                    label='CNC어벗 생산만'
                     strikeValue={formatAbutsManwon(productionRegular)}
                     value={`멤버십 ${formatAbutsManwon(productionMembership)}`}
                     unitLabel='1개당'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
-                    label='디자인+생산 의뢰'
+                    label='CNC어벗 디자인+생산 의뢰'
                     strikeValue={formatAbutsManwon(designAndProductionRegular)}
                     value={`멤버십 ${formatAbutsManwon(
                       designAndProductionMembership
                     )}`}
                     unitLabel='1개당'
+                  />
+                  <div className='h-px bg-slate-100' />
+                  <PriceRow
+                    label='환봉어벗 생산만'
+                    strikeValue={roundBarProductionRow.strikeValue}
+                    value={roundBarProductionRow.value}
+                    unitLabel={roundBarProductionRow.unitLabel}
+                  />
+                  <div className='h-px bg-slate-100' />
+                  <PriceRow
+                    label='환봉어벗 디자인+생산'
+                    strikeValue={roundBarDesignRow.strikeValue}
+                    value={roundBarDesignRow.value}
+                    unitLabel={roundBarDesignRow.unitLabel}
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow

@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-08-14: implantFavorites 환봉 제조사 추가요청(roundBar/adopted/roundBarRequestId).
 // - 2026-08-13: 커스텀어벗 치아별 생산만/디자인+생산(abutmentProductMode) 저장·직렬화.
 // - 2026-08-13: 계정 기본 모드(defaultAbutmentProductMode)는 디자인+생산. 치아 미설정 레거시는 생산만.
 // - 2026-08-13: 크라운+커스텀어벗 플래그 직렬화 지원(isCustomAbutmentSupportedProsthesisType).
@@ -94,6 +95,9 @@ export type PracticeImplantFavorite = {
   brand: string;
   family: string;
   type: string;
+  roundBar?: boolean;
+  adopted?: boolean;
+  roundBarRequestId?: string;
 };
 
 export type PracticeAbutmentFavorite = {
@@ -351,7 +355,22 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
     if (seen.has(key)) continue;
     seen.add(key);
     const id = String(row.id || "").trim() || `imp-${out.length + 1}-${key.slice(0, 24)}`;
-    out.push({ id, manufacturer, brand, family, type });
+    const roundBarRequestId = String(row.roundBarRequestId || "").trim();
+    const roundBar = Boolean(row.roundBar) || Boolean(roundBarRequestId);
+    out.push({
+      id,
+      manufacturer,
+      brand,
+      family,
+      type,
+      ...(roundBar
+        ? {
+            roundBar: true,
+            adopted: Boolean(row.adopted),
+            roundBarRequestId,
+          }
+        : {}),
+    });
     if (out.length >= 40) break;
   }
   return out;

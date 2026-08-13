@@ -42,6 +42,18 @@ const SCHEMA_DEFAULTS = (() => {
     regularDesignAndProductionPrice: pickDefault(
       "creditSettings.regularDesignAndProductionPrice",
     ),
+    membershipRoundBarProductionPrice: pickDefault(
+      "creditSettings.membershipRoundBarProductionPrice",
+    ),
+    regularRoundBarProductionPrice: pickDefault(
+      "creditSettings.regularRoundBarProductionPrice",
+    ),
+    membershipRoundBarDesignAndProductionPrice: pickDefault(
+      "creditSettings.membershipRoundBarDesignAndProductionPrice",
+    ),
+    regularRoundBarDesignAndProductionPrice: pickDefault(
+      "creditSettings.regularRoundBarDesignAndProductionPrice",
+    ),
   };
 })();
 
@@ -82,6 +94,22 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
         SCHEMA_DEFAULTS.defaultShippingFreeCredit,
     ),
     ...abutmentPrices,
+    membershipRoundBarProductionPrice: Number(
+      creditSettings.membershipRoundBarProductionPrice ??
+        SCHEMA_DEFAULTS.membershipRoundBarProductionPrice,
+    ),
+    regularRoundBarProductionPrice: Number(
+      creditSettings.regularRoundBarProductionPrice ??
+        SCHEMA_DEFAULTS.regularRoundBarProductionPrice,
+    ),
+    membershipRoundBarDesignAndProductionPrice: Number(
+      creditSettings.membershipRoundBarDesignAndProductionPrice ??
+        SCHEMA_DEFAULTS.membershipRoundBarDesignAndProductionPrice,
+    ),
+    regularRoundBarDesignAndProductionPrice: Number(
+      creditSettings.regularRoundBarDesignAndProductionPrice ??
+        SCHEMA_DEFAULTS.regularRoundBarDesignAndProductionPrice,
+    ),
   };
 }
 

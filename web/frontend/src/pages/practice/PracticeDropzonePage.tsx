@@ -32,6 +32,7 @@
  * - 2026-08-13: 커스텀어벗 설정 모달 기본=디자인+생산. 로그인 후 계정 설정으로 저장.
  * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
  * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
+ * - 2026-08-14: 비로그인 환봉 제조사 추가요청을 로그인 후 문의·요청으로 동기화.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -137,6 +138,10 @@ import {
   type ToothWorkSelection as SharedToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
+import {
+  isRoundBarFavorite,
+  submitRoundBarManufacturerRequest,
+} from "@/shared/practice/roundBarAbutment";
 import { kstYmdDiffDays } from "@/shared/date/kst";
 import {
   PRACTICE_DROPZONE_DRAFT_KEY,
@@ -1818,11 +1823,47 @@ export const PracticeDropzonePage = () => {
       });
       if (!postRes.ok) return;
 
-      setImplantFavorites(mergedImplant);
+      let nextImplant = mergedImplant;
+      const pendingRoundBar = nextImplant.filter(
+        (row) => isRoundBarFavorite(row) && !String(row.roundBarRequestId || "").trim(),
+      );
+      if (pendingRoundBar.length > 0) {
+        const flushed: PracticeImplantFavorite[] = [];
+        for (const row of pendingRoundBar) {
+          try {
+            const result = await submitRoundBarManufacturerRequest({
+              token,
+              payload: {
+                manufacturer: row.manufacturer,
+                brand: row.brand,
+                family: row.family,
+                favoriteId: row.id,
+              },
+            });
+            flushed.push(
+              result.favorite?.id
+                ? { ...row, ...result.favorite, roundBar: true }
+                : row,
+            );
+          } catch {
+            flushed.push(row);
+          }
+        }
+        const flushedById = new Map(flushed.map((row) => [row.id, row]));
+        nextImplant = nextImplant.map((row) => flushedById.get(row.id) || row);
+        await apiFetch<unknown>({
+          path: "/api/practice/transfers/settings",
+          method: "POST",
+          token,
+          jsonBody: { implantFavorites: nextImplant },
+        }).catch(() => {});
+      }
+
+      setImplantFavorites(nextImplant);
       setAbutmentFavorites(mergedAbutment);
       setDefaultAbutmentProductMode(mergedMode);
       writeLocalFavoriteSettings({
-        implantFavorites: mergedImplant,
+        implantFavorites: nextImplant,
         abutmentFavorites: mergedAbutment,
         defaultAbutmentProductMode: mergedMode,
       });

@@ -234,6 +234,7 @@
   - **발신**: `requestor` + `practice` (의뢰 발신자)
   - **수신**: `requestor` + `lab` (의뢰 수신자)
   - 제출은 Request 생성 경유 금지. 저장 SSOT: `PracticeTransfer`
+- 환봉방식 커스텀어벗: 치과 프리셋 편집 제조사 선택 마지막「제조사 추가 요청」→ 제조사·브랜드·패밀리 입력, 타입 `헥스(사이즈 미정)` 고정. 요청 시 관리자 문의 자동 접수 + 프리셋 일단 저장. 관리자 플랫폼 설정에서 도입 체크 시 해당 치과 프리셋 정식 채택(되돌리기 가능). 가격 안내는 별도 고지.
 - SSOT API:
   - 생성: `POST /api/practice/transfers`
   - 조회(발신): `GET /api/practice/transfers/my`

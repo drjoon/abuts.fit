@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
+// - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import express from "express";
@@ -36,6 +37,7 @@ import {
   getPracticeTransferSettings,
   upsertPracticeTransferSettings,
 } from "../../controllers/practiceTransfers/practiceTransferSettings.controller.js";
+import { createRoundBarAbutmentRequest } from "../../controllers/practiceTransfers/roundBarAbutmentRequest.controller.js";
 
 const router = express.Router();
 
@@ -69,6 +71,13 @@ router.post(
   authenticate,
   authorize(["practice", "requestor", "admin"]),
   upsertPracticeTransferSettings,
+);
+
+router.post(
+  "/round-bar-requests",
+  authenticate,
+  authorize(["practice", "requestor", "admin"]),
+  createRoundBarAbutmentRequest,
 );
 
 router.get("/draft", authenticate, sendAuth, getMyPracticeTransferDraft);
