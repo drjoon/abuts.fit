@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-14: 패밀리 선택 Regular/Mini/Narrow/Small Narrow + 패밀리 추가는 ImplantFields가 담당.
 // - 2026-08-14: 치과 프리셋 편집에서 제조사 추가 요청(환봉) UI는 ImplantFields가 담당.
 import { Button } from "@/components/ui/button";
 import {

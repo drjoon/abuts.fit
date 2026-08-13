@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // change-log:
+// - 2026-08-14: 패밀리 선택 Regular/Mini/Narrow/Small Narrow 고정 + 패밀리 추가.
 // - 2026-08-14: 제조사 선택 마지막에 제조사 추가 요청(환봉 헥스 사이즈 미정) + 안내 모달.
 import { useMemo, useState } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
@@ -61,10 +62,140 @@ type Props = {
   className?: string;
 };
 
+const STANDARD_IMPLANT_FAMILIES = ["Regular", "Mini", "Narrow", "Small Narrow"] as const;
+const FAMILY_ADD_VALUE = "__add_family__";
+
 const pickFirst = (arr: string[]) => arr[0] || "";
 const pickPreferredFamily = (families: string[]) => {
   const regular = families.find((f) => String(f).trim().toLowerCase() === "regular");
   return regular || pickFirst(families);
+};
+
+const mergeFamilyOptions = (...lists: Array<Iterable<string>>) => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (raw: string) => {
+    const value = String(raw || "").trim();
+    if (!value) return;
+    const key = value.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(value);
+  };
+  STANDARD_IMPLANT_FAMILIES.forEach(push);
+  for (const list of lists) {
+    for (const item of list) push(item);
+  }
+  return out;
+};
+
+const selectTriggerClass =
+  "h-11 min-w-0 px-3 text-sm [&>span]:min-w-0 [&>span]:flex-1 [&>span]:truncate [&>span]:text-left";
+
+const FamilyField = ({
+  value,
+  onChange,
+  disabled,
+  options,
+  labelMap,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+  options: string[];
+  labelMap?: Map<string, string>;
+}) => {
+  const [addOpen, setAddOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const closeAdd = () => {
+    setAddOpen(false);
+    setDraft("");
+  };
+
+  const commitAdd = () => {
+    const next = draft.trim();
+    if (!next) return;
+    onChange(next);
+    closeAdd();
+  };
+
+  if (addOpen) {
+    return (
+      <div className="flex gap-1.5">
+        <Input
+          autoFocus
+          value={draft}
+          placeholder="패밀리 입력"
+          className="h-11 text-sm"
+          disabled={disabled}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitAdd();
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              closeAdd();
+            }
+          }}
+        />
+        <Button
+          type="button"
+          className="h-11 px-3"
+          disabled={disabled || !draft.trim()}
+          onClick={commitAdd}
+          aria-label="패밀리 추가"
+        >
+          <Check className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 px-3"
+          disabled={disabled}
+          onClick={closeAdd}
+          aria-label="취소"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Select
+      value={value || undefined}
+      onValueChange={(next) => {
+        if (next === FAMILY_ADD_VALUE) {
+          setAddOpen(true);
+          setDraft("");
+          return;
+        }
+        onChange(next);
+      }}
+      disabled={disabled}
+    >
+      <SelectTrigger className={selectTriggerClass} disabled={disabled}>
+        <SelectValue placeholder="패밀리 선택" />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((family) => (
+          <SelectItem key={`family-${family}`} value={family} className="text-sm">
+            {labelMap?.get(family) || family}
+          </SelectItem>
+        ))}
+        <SelectSeparator />
+        <SelectItem
+          value={FAMILY_ADD_VALUE}
+          className="text-sm font-semibold text-primary-strong"
+        >
+          패밀리 추가
+        </SelectItem>
+      </SelectContent>
+    </Select>
+  );
 };
 
 const favoriteKey = (row: {
@@ -85,9 +216,6 @@ const favoriteLabel = (row: {
     .map((v) => String(v || "").trim())
     .filter(Boolean)
     .join(" / ") || "임플란트";
-
-const selectTriggerClass =
-  "h-11 min-w-0 px-3 text-sm [&>span]:min-w-0 [&>span]:flex-1 [&>span]:truncate [&>span]:text-left";
 
 /** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + space-y-1.5 × 3. 초과 시 스크롤. */
 const PRESET_LIST_CLASS =
@@ -165,21 +293,16 @@ export const PracticeToothImplantFields = ({
   }, [connectionOptions, value.implantManufacturer, value.implantBrand]);
 
   const familyOptions = useMemo(() => {
-    const options = [
-      ...new Set(
-        connectionOptions
-          .filter(
-            (c) =>
-              c.manufacturer === value.implantManufacturer &&
-              c.brand === value.implantBrand,
-          )
-          .map((c) => String(c.family || "").trim())
-          .filter(Boolean),
-      ),
-    ];
+    const fromCatalog = connectionOptions
+      .filter(
+        (c) =>
+          c.manufacturer === value.implantManufacturer &&
+          c.brand === value.implantBrand,
+      )
+      .map((c) => String(c.family || "").trim())
+      .filter(Boolean);
     const current = String(value.implantFamily || "").trim();
-    if (current && !options.includes(current)) options.unshift(current);
-    return options;
+    return mergeFamilyOptions(fromCatalog, current ? [current] : []);
   }, [
     connectionOptions,
     value.implantManufacturer,
@@ -705,12 +828,13 @@ export const PracticeToothImplantFields = ({
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm text-slate-600">패밀리</Label>
-            <Input
+            <FamilyField
               value={requestDraft.family}
-              placeholder="패밀리 입력"
-              className="h-11 text-sm"
-              onChange={(e) =>
-                setRequestDraft((prev) => ({ ...prev, family: e.target.value }))
+              options={mergeFamilyOptions(
+                requestDraft.family ? [requestDraft.family] : [],
+              )}
+              onChange={(nextFamily) =>
+                setRequestDraft((prev) => ({ ...prev, family: nextFamily }))
               }
             />
           </div>
@@ -826,31 +950,28 @@ export const PracticeToothImplantFields = ({
 
           <div className="space-y-1.5">
             <Label className="text-sm text-slate-600">패밀리</Label>
-            <Select
-              value={value.implantFamily || undefined}
-              onValueChange={(nextFamily) => {
-                const nextType = pickFirst(
-                  getTypes(value.implantManufacturer, value.implantBrand, nextFamily),
-                );
+            <FamilyField
+              key={`${value.implantManufacturer}|${value.implantBrand}`}
+              value={value.implantFamily}
+              options={familyOptions}
+              labelMap={familyLabelMap}
+              disabled={!value.implantBrand}
+              onChange={(nextFamily) => {
+                const nextType =
+                  pickFirst(
+                    getTypes(
+                      value.implantManufacturer,
+                      value.implantBrand,
+                      nextFamily,
+                    ),
+                  ) || value.implantType;
                 onChange({
                   ...value,
                   implantFamily: nextFamily,
                   implantType: nextType,
                 });
               }}
-              disabled={!value.implantBrand}
-            >
-              <SelectTrigger className={selectTriggerClass} disabled={!value.implantBrand}>
-                <SelectValue placeholder="패밀리 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {familyOptions.map((f) => (
-                  <SelectItem key={`family-${f}`} value={f} className="text-sm">
-                    {familyLabelMap.get(f) || f}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
           </div>
 
           <div className="space-y-1.5">
