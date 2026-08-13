@@ -118,20 +118,251 @@ export function toothArchFromNumber(toothNumber) {
 }
 
 export function removableTempFeeForCount(count, price3, price6) {
+  return nTeethFeeForCount(count, [
+    { n: 3, price: price3, remake: 0 },
+    { n: 6, price: price6, remake: 0 },
+  ]);
+}
+
+export function nTeethFeeForCount(count, tiers, remake = false) {
+  const list = (Array.isArray(tiers) ? tiers : [])
+    .map((tier) => ({
+      n: Math.max(1, Math.round(Number(tier?.n || 1))),
+      price: Math.max(
+        0,
+        Math.round(Number(remake ? tier?.remake : tier?.price) || 0),
+      ),
+    }))
+    .filter((tier) => Number.isFinite(tier.n) && tier.n > 0)
+    .sort((a, b) => a.n - b.n);
   let left = Math.max(0, Math.round(Number(count || 0)));
-  const p3 = Math.max(0, Math.round(Number(price3 || 0)));
-  const p6 = Math.max(0, Math.round(Number(price6 || 0)));
+  if (!list.length || left <= 0) return 0;
+  const maxN = list[list.length - 1].n;
   let total = 0;
   while (left > 0) {
-    if (left <= 3) {
-      total += p3;
-      break;
-    }
-    total += p6;
-    if (left <= 6) break;
-    left -= 6;
+    const tier = list.find((row) => left <= row.n) || list[list.length - 1];
+    total += tier.price;
+    if (left <= tier.n) break;
+    left -= maxN;
   }
   return total;
+}
+
+export function canonicalizeFeeItemName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return "";
+  const compact = raw.replace(/\s+/g, "");
+  if (/^pontic$/i.test(raw)) return "Pontic";
+  if (compact === "브릿지" || compact === "브리지" || /^bridge$/i.test(raw)) {
+    return "브리지";
+  }
+  if (
+    compact === "가철성임시치아" ||
+    compact === "임시치아" ||
+    /가철성\s*임시/i.test(raw)
+  ) {
+    return "임시치아";
+  }
+  if (compact === "유지장치" || /^retainer$/i.test(raw)) return "유지장치";
+  if (compact === "인레이" || /^inlay$/i.test(raw)) return "인레이";
+  if (compact === "크라운" || /^crown$/i.test(raw)) return "크라운";
+  return raw;
+}
+
+export function normalizeLabFeeItemUnit(unit) {
+  const raw = String(unit || "").trim();
+  if (raw === "perNTeeth" || raw === "nTeeth" || raw === "perN") return "perNTeeth";
+  if (raw === "perSet" || raw === "set") return "perSet";
+  return "perTooth";
+}
+
+function normalizeLabFeeItemTier(input, index) {
+  const src = input && typeof input === "object" ? input : {};
+  const n = Math.max(1, Math.min(32, Math.round(Number(src.n || index + 1))));
+  const price = Math.max(0, Math.round(Number(src.price || 0)));
+  const remake = Math.max(0, Math.round(Number(src.remake || 0)));
+  return {
+    n: Number.isFinite(n) ? n : index + 1,
+    price: Number.isFinite(price) ? price : 0,
+    remake: Number.isFinite(remake) ? remake : 0,
+  };
+}
+
+export function normalizeLabFeeItem(input, index = 0) {
+  const src = input && typeof input === "object" ? input : {};
+  const name = canonicalizeFeeItemName(src.name || src.label || "");
+  const unit = normalizeLabFeeItemUnit(src.unit);
+  const enabled = src.enabled !== false;
+  const price = Math.max(0, Math.round(Number(src.price || 0)));
+  const remake = Math.max(0, Math.round(Number(src.remake || 0)));
+  const idRaw = String(src.id || src.key || "").trim();
+  const id = idRaw || `item-${index + 1}`;
+  const tiers = (Array.isArray(src.tiers) ? src.tiers : [])
+    .map((tier, tierIndex) => normalizeLabFeeItemTier(tier, tierIndex))
+    .slice(0, MAX_LAB_FEE_ITEM_TIERS);
+  if (unit === "perNTeeth" && tiers.length === 0) {
+    tiers.push(
+      normalizeLabFeeItemTier({ n: 3, price, remake }, 0),
+    );
+  }
+  return {
+    id,
+    name,
+    unit,
+    enabled,
+    price: Number.isFinite(price) ? price : 0,
+    remake: Number.isFinite(remake) ? remake : 0,
+    tiers: unit === "perNTeeth" ? tiers : [],
+  };
+}
+
+function migrateLegacyLabFeeItems(input) {
+  const schedule = normalizeLabFeeSchedule(input);
+  const remake = normalizeLabFeeRemakeSchedule(input);
+  const enabled = normalizeLabFeeScheduleEnabled(input);
+  return [
+    {
+      id: "crown",
+      name: "크라운",
+      unit: "perTooth",
+      enabled: enabled.crown !== false,
+      price: schedule.crown,
+      remake: remake.crown,
+      tiers: [],
+    },
+    {
+      id: "bridge",
+      name: "브리지",
+      unit: "perTooth",
+      enabled: enabled.bridge !== false,
+      price: schedule.bridge,
+      remake: remake.bridge,
+      tiers: [],
+    },
+    {
+      id: "inlay",
+      name: "인레이",
+      unit: "perTooth",
+      enabled: enabled.inlay !== false,
+      price: schedule.inlay,
+      remake: remake.inlay,
+      tiers: [],
+    },
+    {
+      id: "pontic",
+      name: "Pontic",
+      unit: "perTooth",
+      enabled: enabled.pontic !== false,
+      price: schedule.pontic,
+      remake: remake.pontic,
+      tiers: [],
+    },
+    {
+      id: "retainer",
+      name: "유지장치",
+      unit: "perSet",
+      enabled: enabled.retainer !== false,
+      price: schedule.retainer,
+      remake: remake.retainer,
+      tiers: [],
+    },
+    {
+      id: "temp",
+      name: "임시치아",
+      unit: "perNTeeth",
+      enabled: enabled.removableTemp3 !== false || enabled.removableTemp6 !== false,
+      price: schedule.removableTemp3,
+      remake: remake.removableTemp3,
+      tiers: [
+        {
+          n: 3,
+          price: schedule.removableTemp3,
+          remake: remake.removableTemp3,
+        },
+        {
+          n: 6,
+          price: schedule.removableTemp6,
+          remake: remake.removableTemp6,
+        },
+      ],
+    },
+  ];
+}
+
+export function normalizeLabFeeItems(input) {
+  const src = input && typeof input === "object" ? input : {};
+  const rawItems = Array.isArray(src.items)
+    ? src.items
+    : Array.isArray(src)
+      ? src
+      : null;
+  if (rawItems) {
+    const seen = new Set();
+    const out = [];
+    for (const row of rawItems) {
+      if (out.length >= MAX_LAB_FEE_ITEMS) break;
+      const item = normalizeLabFeeItem(row, out.length);
+      if (!item.name) continue;
+      let id = item.id;
+      if (!id || seen.has(id)) id = `item-${out.length + 1}`;
+      seen.add(id);
+      out.push({ ...item, id });
+    }
+    return out;
+  }
+  return migrateLegacyLabFeeItems(src);
+}
+
+function legacyKeyFromItemName(name) {
+  const canon = canonicalizeFeeItemName(name);
+  if (canon === "크라운") return "crown";
+  if (canon === "브리지") return "bridge";
+  if (canon === "인레이") return "inlay";
+  if (canon === "Pontic") return "pontic";
+  if (canon === "유지장치") return "retainer";
+  if (canon === "임시치아") return "removableTemp";
+  return null;
+}
+
+/** items → 레거시 crown/bridge… 키. 기존 견적 경로 호환 */
+export function legacyLabFeeScheduleFromItems(items, base) {
+  const schedule = normalizeLabFeeSchedule(base);
+  const remake = normalizeLabFeeRemakeSchedule(base);
+  const enabled = normalizeLabFeeScheduleEnabled(base);
+  for (const item of Array.isArray(items) ? items : []) {
+    const key = legacyKeyFromItemName(item.name);
+    if (!key) continue;
+    if (key === "removableTemp") {
+      const tiers = [...(item.tiers || [])].sort((a, b) => a.n - b.n);
+      const first = tiers[0] || { n: 3, price: item.price, remake: item.remake };
+      const second = tiers.find((tier) => tier.n !== first.n) || first;
+      schedule.removableTemp3 = first.price;
+      schedule.removableTemp6 = second.price;
+      remake.removableTemp3 = first.remake;
+      remake.removableTemp6 = second.remake;
+      enabled.removableTemp3 = item.enabled !== false;
+      enabled.removableTemp6 = item.enabled !== false;
+      continue;
+    }
+    schedule[key] = item.unit === "perNTeeth"
+      ? Number(item.tiers?.[0]?.price || item.price || 0)
+      : item.price;
+    remake[key] = item.unit === "perNTeeth"
+      ? Number(item.tiers?.[0]?.remake || item.remake || 0)
+      : item.remake;
+    enabled[key] = item.enabled !== false;
+  }
+  return { schedule, remake, enabled };
+}
+
+export function findLabFeeItemForProsthesisType(items, prosthesisType) {
+  const canon = canonicalizeFeeItemName(prosthesisType);
+  if (!canon) return null;
+  return (
+    (Array.isArray(items) ? items : []).find(
+      (item) => item.enabled !== false && canonicalizeFeeItemName(item.name) === canon,
+    ) || null
+  );
 }
 
 /** 보철 형태 → labFeeSchedule 키. 작업X·커스텀어벗(어벗츠 단가)·묶음수가 항목은 null */
