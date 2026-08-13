@@ -40,6 +40,7 @@ import {
 import ChatRoom from "../../models/chatRoom.model.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
+  assertAbutmentPresetsComplete,
   createAbutmentRequestsFromPracticeTransfer,
   hasCustomAbutmentToothWorks,
   normalizeResultFiles,
@@ -1433,6 +1434,17 @@ export async function createPracticeTransfer(req, res) {
       req.body?.skipDesignConfirm === "true" ||
       practiceRouting?.skipDesignConfirm === true ||
       practiceRouting?.skipDesignConfirm === "true";
+
+    try {
+      assertAbutmentPresetsComplete(toothWorksRaw);
+    } catch (presetErr) {
+      return res.status(400).json({
+        success: false,
+        message:
+          presetErr?.message ||
+          "어벗 프리셋(임플란트·스캔바디)을 선택해주세요.",
+      });
+    }
 
     // 잔액 검사: 전송 시점. 실제 과금은 기공소 의뢰수락(mark-accepted).
     try {
