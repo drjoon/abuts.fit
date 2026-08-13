@@ -11,6 +11,7 @@
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다.
+// - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote). 견적에서 열이 사라지지 않게.
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
 import {
@@ -691,6 +692,8 @@ export const normalizeLabFeeRemakeSchedule = (
   };
 };
 
+export type AbutmentRetailNote = "quote";
+
 export type PracticeTransferFeeLine = {
   toothNumber: string;
   prosthesisType: string;
@@ -698,6 +701,8 @@ export type PracticeTransferFeeLine = {
   labAbutmentFee: number;
   labAbutmentPending?: boolean;
   abutmentRetail: number;
+  /** 환봉 단가 0원 — 가격 별도 고지 */
+  abutmentRetailNote?: AbutmentRetailNote;
 };
 
 export type PracticeTransferRetailFees = {
@@ -705,6 +710,7 @@ export type PracticeTransferRetailFees = {
   labAbutmentTotal: number;
   labAbutmentPending: boolean;
   abutmentRetailTotal: number;
+  abutmentQuotePending: boolean;
   abutmentQty: number;
   total: number;
   lines: PracticeTransferFeeLine[];
@@ -751,32 +757,42 @@ export const computePracticeTransferRetailFees = (params: {
   let labAbutmentTotal = 0;
   let labAbutmentPending = false;
   let abutmentRetailTotal = 0;
+  let abutmentQuotePending = false;
   let abutmentQty = 0;
 
   const abutmentSplitForRow = (row: (typeof rows)[number]) => {
     if (waiveAbutment || !isCustomAbutmentWork(row)) {
-      return { abuts: 0, lab: 0, pending: false };
+      return { abuts: 0, lab: 0, pending: false, quote: false };
     }
     if (isPendingRoundBarAbutment(row, params.implantFavorites)) {
       return {
         abuts: 0,
         lab: resolveLabAbutmentUnitPrice(items, useRemake),
         pending: true,
+        quote: false,
       };
     }
+    const kind = resolveAdoptedAbutmentKind(row, params.implantFavorites);
+    const abuts = resolveAbutsAbutmentUnitPrice({
+      productMode: row?.abutmentProductMode || row?.productMode,
+      pricingTier,
+      prices: params.abutmentPrices,
+      kind,
+    });
     return {
-      abuts: resolveAbutsAbutmentUnitPrice({
-        productMode: row?.abutmentProductMode || row?.productMode,
-        pricingTier,
-        prices: params.abutmentPrices,
-        kind: resolveAdoptedAbutmentKind(row, params.implantFavorites),
-      }),
+      abuts,
       lab: 0,
       pending: false,
+      quote: kind === "round_bar" && abuts === 0,
     };
   };
-  const addAbutment = (split: { abuts: number; lab: number; pending: boolean }) => {
-    if (split.abuts > 0) {
+  const addAbutment = (split: {
+    abuts: number;
+    lab: number;
+    pending: boolean;
+    quote?: boolean;
+  }) => {
+    if (split.abuts > 0 || split.quote) {
       abutmentRetailTotal += split.abuts;
       abutmentQty += 1;
     }
@@ -785,7 +801,10 @@ export const computePracticeTransferRetailFees = (params: {
       labFeeTotal += split.lab;
     }
     if (split.pending) labAbutmentPending = true;
+    if (split.quote) abutmentQuotePending = true;
   };
+  const retailNote = (split: { quote?: boolean }): AbutmentRetailNote | undefined =>
+    split.quote ? "quote" : undefined;
 
   for (const row of rows) {
     const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
@@ -822,6 +841,7 @@ export const computePracticeTransferRetailFees = (params: {
         labAbutmentFee: split.lab,
         labAbutmentPending: split.pending,
         abutmentRetail: split.abuts,
+        abutmentRetailNote: retailNote(split),
       });
       continue;
     }
@@ -843,6 +863,7 @@ export const computePracticeTransferRetailFees = (params: {
         labAbutmentFee: split.lab,
         labAbutmentPending: split.pending,
         abutmentRetail: split.abuts,
+        abutmentRetailNote: retailNote(split),
       });
       continue;
     }
@@ -862,6 +883,7 @@ export const computePracticeTransferRetailFees = (params: {
       let groupAbutment = 0;
       let groupLabAbutment = 0;
       let groupPending = false;
+      let groupQuote = false;
       for (const row of groupedRows) {
         const tooth = String(row?.toothNumber || row?.tooth || "").trim();
         if (!group.teeth.includes(tooth)) continue;
@@ -870,6 +892,7 @@ export const computePracticeTransferRetailFees = (params: {
         groupAbutment += split.abuts;
         groupLabAbutment += split.lab;
         if (split.pending) groupPending = true;
+        if (split.quote) groupQuote = true;
       }
       const sortedTeeth = sortToothNumbersForFee(group.teeth);
       lines.push({
@@ -882,6 +905,7 @@ export const computePracticeTransferRetailFees = (params: {
         labAbutmentFee: groupLabAbutment,
         labAbutmentPending: groupPending,
         abutmentRetail: groupAbutment,
+        abutmentRetailNote: groupQuote && groupAbutment === 0 ? "quote" : undefined,
       });
     }
   }
@@ -891,6 +915,7 @@ export const computePracticeTransferRetailFees = (params: {
     labAbutmentTotal,
     labAbutmentPending,
     abutmentRetailTotal,
+    abutmentQuotePending,
     abutmentQty,
     total: labFeeTotal + abutmentRetailTotal,
     lines: sortPracticeTransferFeeLines(lines),

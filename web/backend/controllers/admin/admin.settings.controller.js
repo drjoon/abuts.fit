@@ -9,6 +9,8 @@
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
+// - web/backend/services/practiceTransferBilling.service.js
+// - 2026-08-14: 크레딧 단가 저장 시 기공의뢰 quote-context 캐시 무효화.
 import SystemSettings from "../../models/systemSettings.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
@@ -18,6 +20,7 @@ import {
 } from "./admin.shared.controller.js";
 import { normalizeLoadedCreditSettings } from "../../utils/creditSettingsDefaults.js";
 import { normalizeAbutsAbutmentCreditPrices } from "../../utils/abutsAbutmentService.js";
+import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
 import {
   DEFAULT_PARTNER_FEE_RATE,
   DEFAULT_NON_PARTNER_FEE_RATE,
@@ -470,6 +473,7 @@ export async function updateCreditSettings(req, res) {
     ).lean();
 
     const creditSettings = normalizeCreditSettings(doc?.creditSettings || {});
+    invalidatePracticeTransferQuoteCaches();
     res.status(200).json({
       success: true,
       message: "크레딧 설정이 업데이트되었습니다.",

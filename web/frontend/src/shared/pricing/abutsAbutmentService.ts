@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - .cursor/rules/design-fee.mdc
 // change-log:
+// - 2026-08-14: 환봉 0원은「가격 별도 고지」로 표시.
 // - 2026-08-14: 환봉 단가 필드 포함. 도입 종류별 단가 계산은 labFeeSchedule.
 // - 2026-08-13: creditSettings 멤버십/일반 생산·디자인+생산 단가 정규화.
 // - 2026-08-13: 생산 일반 2.0만·멤버십 1.5만 / 디자인+생산 일반 4.0만·멤버십 2.5만.
@@ -131,6 +132,7 @@ export const formatAbutsAbutmentTierPriceLine = (args: {
   regularPrice: number;
 }) => {
   const price = pickAbutsAbutmentTierPrice(args);
+  if (price <= 0) return "가격 별도 고지";
   return args.tier === "membership"
     ? `멤버십 ${formatAbutsManwon(price)}`
     : `일반 ${formatAbutsManwon(price)}`;

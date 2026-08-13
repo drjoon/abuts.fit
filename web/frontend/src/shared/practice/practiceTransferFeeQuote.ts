@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-13: 저장된 견적 라인도 치아번호 10→20→30→40번대 순.
+// - 2026-08-14: 환봉 단가 0원(별도 고지) 라인도 파싱.
 // - 2026-08-14: 환봉 요청중은 기공소 어벗 라인(labAbutmentFee)으로 파싱.
 import {
   computePracticeTransferRetailFees,
@@ -110,6 +111,8 @@ export const parsePracticeTransferFeeQuote = (
           0,
           Math.round(Number(item.labAbutmentFee || 0)),
         );
+        const abutmentRetailNote =
+          item.abutmentRetailNote === "quote" ? ("quote" as const) : undefined;
         return {
           toothNumber: String(item.toothNumber || item.tooth || "").trim(),
           prosthesisType: String(item.prosthesisType || item.type || "").trim(),
@@ -117,6 +120,7 @@ export const parsePracticeTransferFeeQuote = (
           labAbutmentFee,
           labAbutmentPending: Boolean(item.labAbutmentPending) || labAbutmentFee > 0,
           abutmentRetail: Math.max(0, Math.round(Number(item.abutmentRetail || 0))),
+          abutmentRetailNote,
         };
       })
       .filter(
@@ -125,7 +129,8 @@ export const parsePracticeTransferFeeQuote = (
           line.labFee > 0 ||
           line.labAbutmentFee > 0 ||
           line.labAbutmentPending ||
-          line.abutmentRetail > 0,
+          line.abutmentRetail > 0 ||
+          line.abutmentRetailNote === "quote",
       ),
   );
 
@@ -136,6 +141,9 @@ export const parsePracticeTransferFeeQuote = (
       Boolean(r.labAbutmentPending) ||
       labAbutmentTotal > 0 ||
       lines.some((line) => line.labAbutmentPending),
+    abutmentQuotePending:
+      Boolean(r.abutmentQuotePending) ||
+      lines.some((line) => line.abutmentRetailNote === "quote"),
     abutmentRetailTotal,
     abutmentQty: Math.max(0, Math.round(Number(r.abutmentQty || 0))),
     total,

@@ -13,6 +13,7 @@
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다.
+// - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote).
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기. 요청중은 기공소 어벗.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
 import {
@@ -757,7 +758,7 @@ export function normalizeLabFeeScheduleEnabled(input) {
  * 단독 커스텀어벗은 기공소 수가가 아니라 어벗츠 멤버십/일반 단가.
  * 환봉 요청중(헥스 사이즈 미정, 미도입)은 기공소 어벗. 도입·CNC는 어벗츠 어벗.
  * 크라운·브리지 등에 어벗을 붙이면 기공수가 + 어벗 단가.
- * @returns {{ labFeeTotal, labAbutmentTotal, labAbutmentPending, abutmentRetailTotal, abutmentQty, total, lines }}
+ * @returns {{ labFeeTotal, labAbutmentTotal, labAbutmentPending, abutmentRetailTotal, abutmentQuotePending, abutmentQty, total, lines }}
  */
 export function computePracticeTransferRetailFees({
   toothWorks,
@@ -781,32 +782,37 @@ export function computePracticeTransferRetailFees({
   let labAbutmentTotal = 0;
   let labAbutmentPending = false;
   let abutmentRetailTotal = 0;
+  let abutmentQuotePending = false;
   let abutmentQty = 0;
 
   const abutmentSplitForRow = (row) => {
     if (waiveAbutment || !isCustomAbutmentWork(row)) {
-      return { abuts: 0, lab: 0, pending: false };
+      return { abuts: 0, lab: 0, pending: false, quote: false };
     }
     if (isPendingRoundBarAbutment(row, implantFavorites)) {
       return {
         abuts: 0,
         lab: resolveLabAbutmentUnitPrice(items, useRemake),
         pending: true,
+        quote: false,
       };
     }
+    const kind = resolveAdoptedAbutmentKind(row, implantFavorites);
+    const abuts = resolveAbutsAbutmentUnitPrice({
+      productMode: row?.abutmentProductMode || row?.productMode,
+      pricingTier,
+      prices: abutmentPrices,
+      kind,
+    });
     return {
-      abuts: resolveAbutsAbutmentUnitPrice({
-        productMode: row?.abutmentProductMode || row?.productMode,
-        pricingTier,
-        prices: abutmentPrices,
-        kind: resolveAdoptedAbutmentKind(row, implantFavorites),
-      }),
+      abuts,
       lab: 0,
       pending: false,
+      quote: kind === "round_bar" && abuts === 0,
     };
   };
   const addAbutment = (split) => {
-    if (split.abuts > 0) {
+    if (split.abuts > 0 || split.quote) {
       abutmentRetailTotal += split.abuts;
       abutmentQty += 1;
     }
@@ -815,7 +821,9 @@ export function computePracticeTransferRetailFees({
       labFeeTotal += split.lab;
     }
     if (split.pending) labAbutmentPending = true;
+    if (split.quote) abutmentQuotePending = true;
   };
+  const retailNote = (split) => (split.quote ? "quote" : undefined);
 
   for (const row of rows) {
     const prosthesisType = String(
@@ -857,6 +865,7 @@ export function computePracticeTransferRetailFees({
         labAbutmentFee: split.lab,
         labAbutmentPending: split.pending,
         abutmentRetail: split.abuts,
+        abutmentRetailNote: retailNote(split),
       });
       continue;
     }
@@ -878,6 +887,7 @@ export function computePracticeTransferRetailFees({
         labAbutmentFee: split.lab,
         labAbutmentPending: split.pending,
         abutmentRetail: split.abuts,
+        abutmentRetailNote: retailNote(split),
       });
       continue;
     }
@@ -900,6 +910,7 @@ export function computePracticeTransferRetailFees({
       let groupAbutment = 0;
       let groupLabAbutment = 0;
       let groupPending = false;
+      let groupQuote = false;
       for (const row of groupedRows) {
         const tooth = String(row?.toothNumber || row?.tooth || "").trim();
         if (!group.teeth.includes(tooth)) continue;
@@ -908,6 +919,7 @@ export function computePracticeTransferRetailFees({
         groupAbutment += split.abuts;
         groupLabAbutment += split.lab;
         if (split.pending) groupPending = true;
+        if (split.quote) groupQuote = true;
       }
       const sortedTeeth = sortToothNumbersForFee(group.teeth);
       lines.push({
@@ -920,6 +932,8 @@ export function computePracticeTransferRetailFees({
         labAbutmentFee: groupLabAbutment,
         labAbutmentPending: groupPending,
         abutmentRetail: groupAbutment,
+        abutmentRetailNote:
+          groupQuote && groupAbutment === 0 ? "quote" : undefined,
       });
     }
   }
@@ -929,6 +943,7 @@ export function computePracticeTransferRetailFees({
     labAbutmentTotal,
     labAbutmentPending,
     abutmentRetailTotal,
+    abutmentQuotePending,
     abutmentQty,
     total: labFeeTotal + abutmentRetailTotal,
     lines: sortPracticeTransferFeeLines(lines),

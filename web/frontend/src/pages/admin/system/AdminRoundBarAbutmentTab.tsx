@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: CNC어벗=Primary, 환봉어벗=어벗 골드. 선택 전에도 색으로 구분.
 // - 2026-08-14: 도입 전 CNC어벗/환봉어벗 선택 필수. 선택값이 치과 단가에 반영.
 // - 2026-08-14: 되돌리기 버튼 제거. 도입 체크 해제가 해제 동작.
 // - 2026-08-14: 섹션 제목을「어벗 추가 요청」으로 변경. 요금·크레딧에서는 독립 카드로 표시.
@@ -289,7 +290,12 @@ export const AdminRoundBarAbutmentTab = ({
                   key={row.id}
                   className={cn(
                     "rounded-2xl border bg-white/80 p-4 shadow-sm",
-                    row.adopted ? "border-emerald-200/80" : "border-slate-200/80",
+                    row.adopted
+                      ? normalizeAdoptedKind(row.adoptedKind) ===
+                        ABUTMENT_ADOPTED_KIND.ROUND_BAR
+                        ? "border-service-abut-muted/80"
+                        : "border-primary-muted/80"
+                      : "border-slate-200/80",
                   )}
                 >
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -304,13 +310,22 @@ export const AdminRoundBarAbutmentTab = ({
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                      <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5">
                         {(
                           [
-                            { id: ABUTMENT_ADOPTED_KIND.CNC, label: "CNC어벗" },
+                            {
+                              id: ABUTMENT_ADOPTED_KIND.CNC,
+                              label: "CNC어벗",
+                              active:
+                                "bg-primary text-primary-foreground shadow-sm",
+                              idle: "text-primary-strong/75 hover:bg-primary-soft",
+                            },
                             {
                               id: ABUTMENT_ADOPTED_KIND.ROUND_BAR,
                               label: "환봉어벗",
+                              active:
+                                "bg-service-abut text-service-abut-foreground shadow-sm",
+                              idle: "text-service-abut hover:bg-service-abut-soft",
                             },
                           ] as const
                         ).map((option) => {
@@ -323,9 +338,7 @@ export const AdminRoundBarAbutmentTab = ({
                               disabled={busy}
                               className={cn(
                                 "rounded-[10px] px-2.5 py-1 text-xs font-semibold transition-colors",
-                                active
-                                  ? "bg-white text-slate-900 shadow-sm"
-                                  : "text-slate-500 hover:text-slate-800",
+                                active ? option.active : option.idle,
                               )}
                               onClick={() => void setAdoptedKind(row, option.id)}
                             >

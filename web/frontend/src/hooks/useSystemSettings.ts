@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-08-14: 환봉 단가 반영을 위해 staleTime 60s.
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
 import {
@@ -129,6 +130,6 @@ export const useSystemSettings = () => {
       return { creditSettings } as SystemSettingsData;
     },
     retry: false,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
   });
 };

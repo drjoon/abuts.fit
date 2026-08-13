@@ -10,6 +10,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-14: 목록 견적 조회(devops/단가/기공소/거래처) parallel + 60s 캐시.
+// - 2026-08-14: quote-context에 abutmentPrices 포함. 환봉 단가가 치과 견적에 전달.
 // - 2026-08-14: quote-context — 기공소/티어/단가/거래처/수수료율 parallel + 60s 캐시(5회 직렬 RTT 제거).
 // - 2026-08-14: 환봉 요청중 판별용 치과 implantFavorites를 견적·청구 계산에 전달.
 import mongoose, { Types } from "mongoose";
@@ -781,6 +782,7 @@ export function toFeeQuoteApi(quote) {
       0,
       Math.round(Number(fees.abutmentRetailTotal || 0)),
     ),
+    abutmentQuotePending: Boolean(fees.abutmentQuotePending),
     abutmentQty: Math.max(0, Math.round(Number(fees.abutmentQty || 0))),
     total: Math.max(0, Math.round(Number(fees.total || 0))),
     lines: Array.isArray(fees.lines) ? fees.lines : [],
@@ -839,6 +841,7 @@ export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } =
       labAbutmentTotal: billing?.labAbutmentTotal || 0,
       labAbutmentPending: Boolean(billing?.labAbutmentPending),
       abutmentRetailTotal: billing?.abutmentRetailTotal || 0,
+      abutmentQuotePending: Boolean(billing?.abutmentQuotePending),
       abutmentQty: billing?.abutmentQty || 0,
       total,
       lines,
@@ -856,8 +859,9 @@ export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } =
   });
 }
 
-/** 기공비 저장 시 quote-context 캐시 무효화. */
+/** 기공비·크레딧 단가 저장 시 quote-context 캐시 무효화. */
 export function invalidatePracticeTransferQuoteCaches(labAnchorId = null) {
+  invalidateRequestPerfCacheByPrefix("practice-transfer:abutment-prices");
   const labId = String(labAnchorId || "").trim();
   if (labId) {
     invalidateRequestPerfCacheByPrefix(
@@ -1016,6 +1020,7 @@ export async function loadPracticeTransferQuoteContext({
       items: quote.items || normalizeLabFeeItems(quote.schedule),
       abutmentRetailPrice: quote.abutmentRetailPrice,
       abutmentPricingTier: quote.abutmentPricingTier || "regular",
+      abutmentPrices: quote.abutmentPrices,
       relationshipKind: quote.relationshipKind,
       feeRateApplied: quote.feeRateApplied,
       usedDefaultSchedule: quote.usedDefaultSchedule,

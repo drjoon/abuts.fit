@@ -114,6 +114,7 @@ import {
 } from "@/shared/practice/usePracticeToothWorkEditor";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
+import { resolveAdoptedAbutmentKind } from "@/shared/practice/labFeeSchedule";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -132,6 +133,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 커스텀어벗 설정 모달에 생산만/디자인+생산 배타 선택 + 가격 툴팁.
 // - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
 // - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
+// - 2026-08-14: 환봉 도입 치아는 환봉 단가(0원이면 별도 고지)를 설정 모달에 표시.
 // - 2026-08-14: 환봉 요청중 판별용 implantFavorites를 기공비 견적에 전달.
 // - 2026-08-13: 커스텀어벗 칸 「설정」제거. 생산/디자인+생산 클릭 시 설정 모달.
 // - 2026-08-13: 커스텀어벗 가격 툴팁은 해당 치과 멤버십/일반 한쪽만 안내.
@@ -161,22 +163,37 @@ const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 
 const abutmentServiceOptionsFromPrices = (
   prices: ReturnType<typeof normalizeAbutsAbutmentCreditPrices>,
+  kind: "cnc" | "round_bar" = "cnc",
 ): Array<{
   mode: AbutmentProductMode;
   membershipPrice: number;
   regularPrice: number;
-}> => [
-  {
-    mode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
-    membershipPrice: prices.membershipProductionPrice,
-    regularPrice: prices.regularProductionPrice,
-  },
-  {
-    mode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
-    membershipPrice: prices.membershipDesignAndProductionPrice,
-    regularPrice: prices.regularDesignAndProductionPrice,
-  },
-];
+}> =>
+  kind === "round_bar"
+    ? [
+        {
+          mode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
+          membershipPrice: prices.membershipRoundBarProductionPrice,
+          regularPrice: prices.regularRoundBarProductionPrice,
+        },
+        {
+          mode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
+          membershipPrice: prices.membershipRoundBarDesignAndProductionPrice,
+          regularPrice: prices.regularRoundBarDesignAndProductionPrice,
+        },
+      ]
+    : [
+        {
+          mode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
+          membershipPrice: prices.membershipProductionPrice,
+          regularPrice: prices.regularProductionPrice,
+        },
+        {
+          mode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
+          membershipPrice: prices.membershipDesignAndProductionPrice,
+          regularPrice: prices.regularDesignAndProductionPrice,
+        },
+      ];
 
 /** 다이얼로그 자동포커스로 툴팁이 바로 뜨지 않게, 포인터 호버일 때만 연다. */
 const HoverOnlyTooltip = ({
@@ -706,13 +723,6 @@ export const PracticeTransferRequestIntakePanel = ({
     : normalizedProsthesisTypes[0] || "크라운";
   const abutmentPricingTier = useAbutsAbutmentPricingTier();
   const { data: systemSettings } = useSystemSettings();
-  const abutmentServiceOptions = useMemo(
-    () =>
-      abutmentServiceOptionsFromPrices(
-        normalizeAbutsAbutmentCreditPrices(systemSettings?.creditSettings),
-      ),
-    [systemSettings?.creditSettings],
-  );
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
     enabled: showFeeEstimate && Boolean(selectedLab),
     labAnchorId: selectedLab?._id,
@@ -722,6 +732,21 @@ export const PracticeTransferRequestIntakePanel = ({
   });
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */
   const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<number | null>(null);
+  const customSpecsAdoptedKind =
+    typeof customSpecsModalTarget === "number"
+      ? resolveAdoptedAbutmentKind(
+          toothWorks[customSpecsModalTarget],
+          implantFavorites,
+        )
+      : "cnc";
+  const abutmentServiceOptions = useMemo(
+    () =>
+      abutmentServiceOptionsFromPrices(
+        normalizeAbutsAbutmentCreditPrices(systemSettings?.creditSettings),
+        customSpecsAdoptedKind,
+      ),
+    [customSpecsAdoptedKind, systemSettings?.creditSettings],
+  );
   const [customSpecsPresetEditOpen, setCustomSpecsPresetEditOpen] = useState(false);
   const customSpecsPresetEditOpenRef = useRef(false);
   /** 이번 모달에서 임플란트/스캔바디를 각각 클릭 선택했는지 */
@@ -2845,7 +2870,9 @@ export const PracticeTransferRequestIntakePanel = ({
                       content={
                         <>
                           <p className="font-medium">
-                            CNC커스텀어벗 - 어벗츠 자체 제공
+                            {customSpecsAdoptedKind === "round_bar"
+                              ? "환봉어벗 - 어벗츠 자체 제공"
+                              : "CNC커스텀어벗 - 어벗츠 자체 제공"}
                           </p>
                           <p className="tabular-nums">
                             {formatAbutsAbutmentTierPriceLine({

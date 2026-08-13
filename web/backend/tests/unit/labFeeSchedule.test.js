@@ -561,6 +561,49 @@ describe("labFeeSchedule", () => {
     });
   });
 
+  test("환봉 단가 0원이면 별도 고지 노트를 남긴다", () => {
+    const tooth = {
+      toothNumber: "16",
+      prosthesisType: "커스텀어벗",
+      customAbutment: true,
+      abutmentProductMode: "custom_abutment",
+      implantManufacturer: "Acme",
+      implantBrand: "One",
+      implantFamily: "Regular",
+      implantType: "헥스(사이즈 미정)",
+    };
+    const favorites = [
+      {
+        manufacturer: "Acme",
+        brand: "One",
+        family: "Regular",
+        type: "헥스(사이즈 미정)",
+        roundBar: true,
+        adopted: true,
+        adoptedKind: "round_bar",
+      },
+    ];
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [tooth],
+      implantFavorites: favorites,
+      labFeeSchedule: LAB_FEE_SCHEDULE_ZEROS,
+      abutmentPricingTier: "regular",
+      abutmentPrices: {
+        regularRoundBarProductionPrice: 0,
+        membershipRoundBarProductionPrice: 0,
+      },
+    });
+    expect(fees.abutmentRetailTotal).toBe(0);
+    expect(fees.abutmentQuotePending).toBe(true);
+    expect(fees.abutmentQty).toBe(1);
+    expect(fees.lines[0]).toMatchObject({
+      labAbutmentFee: 0,
+      labAbutmentPending: false,
+      abutmentRetail: 0,
+      abutmentRetailNote: "quote",
+    });
+  });
+
   test("크라운+환봉 요청중은 기공물과 기공소 어벗을 분리한다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [

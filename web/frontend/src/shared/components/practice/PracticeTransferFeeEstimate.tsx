@@ -5,6 +5,7 @@
 // - 2026-08-13: 기공소 기공비 Off면 미설정 안내.
 // - 2026-08-13: 치아번호 10→20→30→40번대 순으로 표시.
 // - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
+// - 2026-08-14: 환봉 단가 0원은 어벗츠 열에「별도 고지」.
 // - 2026-08-14: 툴팁 컬럼 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. 환봉 요청중은 기공소 어벗.
 import { CircleHelp } from "lucide-react";
 import {
@@ -43,6 +44,7 @@ type FeeBreakdownLine = {
   labAbutmentFee: number;
   labAbutmentPending?: boolean;
   abutmentRetail: number;
+  abutmentRetailNote?: "quote";
 };
 
 const formatLabAbutmentCell = (line: {
@@ -51,6 +53,15 @@ const formatLabAbutmentCell = (line: {
 }) => {
   if (line.labAbutmentFee > 0) return formatWon(line.labAbutmentFee);
   if (line.labAbutmentPending) return "요청중";
+  return "—";
+};
+
+const formatAbutsCell = (line: {
+  abutmentRetail: number;
+  abutmentRetailNote?: "quote";
+}) => {
+  if (line.abutmentRetail > 0) return formatWon(line.abutmentRetail);
+  if (line.abutmentRetailNote === "quote") return "별도 고지";
   return "—";
 };
 
@@ -119,7 +130,7 @@ function FeeBreakdownTable({
           ) : null}
           {showAbutmentColumn ? (
             <span className="whitespace-nowrap text-right">
-              {formatCell(line.abutmentRetail)}
+              {formatAbutsCell(line)}
             </span>
           ) : null}
         </div>
@@ -145,7 +156,11 @@ function FeeBreakdownTable({
           ) : null}
           {showAbutmentColumn ? (
             <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
-              {formatCell(abutmentTotal)}
+              {abutmentTotal > 0
+                ? formatWon(abutmentTotal)
+                : lines.some((line) => line.abutmentRetailNote === "quote")
+                  ? "별도 고지"
+                  : "—"}
             </span>
           ) : null}
         </>
@@ -212,7 +227,9 @@ export function PracticeTransferFeeEstimate({
               : "",
           quote.abutmentRetailTotal > 0
             ? `어벗 ${formatWon(quote.abutmentRetailTotal)}`
-            : "",
+            : quote.abutmentQuotePending
+              ? "어벗 별도 고지"
+              : "",
         ]
           .filter(Boolean)
           .join(" · ") || `기공비 ${formatWon(quote.labFeeTotal)}`;
@@ -290,13 +307,17 @@ export function PracticeTransferFeeEstimate({
                 labAbutmentFee: scaleWon(line.labAbutmentFee || 0, keepRate),
                 labAbutmentPending: Boolean(line.labAbutmentPending),
                 abutmentRetail: scaleWon(line.abutmentRetail, keepRate),
+                abutmentRetailNote: line.abutmentRetailNote,
               }))}
               showLabColumn={quote.lines.some((line) => line.labFee > 0)}
               showLabAbutmentColumn={quote.lines.some(
                 (line) =>
                   Number(line.labAbutmentFee || 0) > 0 || Boolean(line.labAbutmentPending),
               )}
-              showAbutmentColumn={quote.lines.some((line) => line.abutmentRetail > 0)}
+              showAbutmentColumn={quote.lines.some(
+                (line) =>
+                  line.abutmentRetail > 0 || line.abutmentRetailNote === "quote",
+              )}
             />
           ) : (
             <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
