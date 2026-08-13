@@ -1,9 +1,13 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/toothWorkDraft.ts
+// - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
 // - web/backend/services/practiceTransferProduction.service.js
+// - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
 // - 2026-08-13: 커스텀어벗 치아별 생산만/디자인+생산(abutmentProductMode) 저장·직렬화.
+// - 2026-08-13: 계정 기본 모드(defaultAbutmentProductMode)는 디자인+생산. 치아 미설정 레거시는 생산만.
+// - 2026-08-13: 크라운+커스텀어벗 플래그 직렬화 지원(isCustomAbutmentSupportedProsthesisType).
 export const ABUTMENT_PRODUCT_MODE = {
   PRODUCTION: "custom_abutment",
   DESIGN_AND_PRODUCTION: "design_custom_abutment",
@@ -11,6 +15,19 @@ export const ABUTMENT_PRODUCT_MODE = {
 
 export type AbutmentProductMode =
   (typeof ABUTMENT_PRODUCT_MODE)[keyof typeof ABUTMENT_PRODUCT_MODE];
+
+/** 계정 설정·신규 커스텀어벗 모달 초기값. 치아 레거시 폴백(resolveToothAbutmentProductMode)과 다름 */
+export const DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE =
+  ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION;
+
+export const isAbutmentProductMode = (value: unknown): value is AbutmentProductMode =>
+  value === ABUTMENT_PRODUCT_MODE.PRODUCTION ||
+  value === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION;
+
+export const normalizeAccountAbutmentProductMode = (
+  value: unknown,
+): AbutmentProductMode =>
+  isAbutmentProductMode(value) ? value : DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE;
 
 export const ABUTMENT_PRODUCT_MODE_LABEL: Record<AbutmentProductMode, string> = {
   [ABUTMENT_PRODUCT_MODE.PRODUCTION]: "생산만 의뢰",
@@ -29,7 +46,7 @@ export type ToothWorkSelection = {
   toothNumber: string;
   prosthesisType: string;
   customAbutment: boolean;
-  /** 커스텀어벗일 때만 의미. 기본 생산만(custom_abutment) */
+  /** 커스텀어벗일 때만 의미. 신규 선택은 계정 기본(디자인+생산). 미설정 레거시는 생산만 */
   abutmentProductMode?: AbutmentProductMode;
   bridgeLinkedTeeth: string[];
   /** 커스텀어벗일 때만 의미 있음. 동기화/임시저장 memo에 포함 */
@@ -433,6 +450,7 @@ export const normalizeProsthesisTypes = (items: string[]) => {
         return CUSTOM_ABUTMENT_PROSTHESIS_TYPE;
       }
       if (/^missing(?:tooth)?$/i.test(compact)) return NO_WORK_PROSTHESIS_TYPE;
+      if (compact === "가철성임시치아" || compact === "임시치아") return "임시치아";
       return item;
     });
 
@@ -454,6 +472,7 @@ export const isAbutmentDesignProsthesisType = (prosthesisType: string) =>
 
 export const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
   isCustomAbutmentProsthesisType(prosthesisType) ||
+  prosthesisType === "크라운" ||
   prosthesisType === "브리지";
 
 export const getAdjacentTeeth = (toothNumber: string) => {

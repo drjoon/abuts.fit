@@ -455,8 +455,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 설정 SSOT:
   - 저장 위치: `BusinessAnchor.practiceTransferSettings`
   - API: `GET/POST /api/practice/transfers/settings`
-  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`
+  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`, `defaultAbutmentProductMode`
   - `memoSnippets`는 의뢰 메모 문장 즐겨찾기(최대 40개, 공백/중복 제거)이며 프론트는 로컬스토리지에도 미러링합니다.
+  - `defaultAbutmentProductMode`: 커스텀어벗 설정 모달 계정 기본값. 미설정·신규는 `design_custom_abutment`(디자인+생산). 모달에서 바꾸면 저장하고 다음 모달 초기값으로 씀. 치아별 스냅샷은 `toothWorks.abutmentProductMode`(레거시 미설정=생산만).
   - 관련 파일:
     - `controllers/practiceTransfers/practiceTransferSettings.controller.js`
     - `models/businessAnchor.model.js`

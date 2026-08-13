@@ -17,6 +17,7 @@ import {
   normalizeLabFeeSchedule,
   normalizeLabFeeScheduleEnabled,
   LAB_FEE_SCHEDULE_DEFAULTS,
+  normalizeLabFeeRemakeSchedule,
 } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRequestorKind,
@@ -455,11 +456,13 @@ export async function getLabFeeSchedule(req, res) {
     const schedule = normalizeLabFeeSchedule(
       lab?.labFeeSchedule || LAB_FEE_SCHEDULE_DEFAULTS,
     );
+    const remake = normalizeLabFeeRemakeSchedule(lab?.labFeeSchedule);
     const enabled = normalizeLabFeeScheduleEnabled(lab?.labFeeSchedule);
     return res.json({
       success: true,
       data: {
         schedule,
+        remake,
         enabled,
         updatedAt: lab?.labFeeSchedule?.updatedAt || null,
       },
@@ -482,7 +485,14 @@ export async function updateLabFeeSchedule(req, res) {
         message: "기공소 사업자만 이용할 수 있습니다.",
       });
     }
+    const existing = await BusinessAnchor.findById(labAnchorId)
+      .select({ labFeeSchedule: 1 })
+      .lean();
     const schedule = normalizeLabFeeSchedule(req.body?.schedule || req.body);
+    const remakeRaw = req.body?.remake ?? req.body?.schedule?.remake;
+    const remake = normalizeLabFeeRemakeSchedule(
+      remakeRaw != null ? remakeRaw : existing?.labFeeSchedule,
+    );
     const enabled = normalizeLabFeeScheduleEnabled(
       req.body?.enabled ?? req.body?.schedule?.enabled ?? req.body,
     );
@@ -492,6 +502,7 @@ export async function updateLabFeeSchedule(req, res) {
         $set: {
           labFeeSchedule: {
             ...schedule,
+            remake,
             enabled,
             updatedAt: new Date(),
           },
@@ -503,6 +514,7 @@ export async function updateLabFeeSchedule(req, res) {
       success: true,
       data: {
         schedule: normalizeLabFeeSchedule(updated?.labFeeSchedule),
+        remake: normalizeLabFeeRemakeSchedule(updated?.labFeeSchedule),
         enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
         updatedAt: updated?.labFeeSchedule?.updatedAt || null,
       },

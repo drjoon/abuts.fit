@@ -16,6 +16,9 @@ export const LAB_FEE_SCHEDULE_KEYS = [
   "bridge",
   "inlay",
   "pontic",
+  "retainer",
+  "removableTemp3",
+  "removableTemp6",
   "customAbutmentDesign",
   "customAbutmentDesignAndProduction",
 ] as const;
@@ -29,6 +32,9 @@ export const LAB_FEE_SCHEDULE_DEFAULTS: LabFeeSchedule = {
   bridge: 60000,
   inlay: 50000,
   pontic: 40000,
+  retainer: 40000,
+  removableTemp3: 30000,
+  removableTemp6: 50000,
   customAbutmentDesign: 10000,
   customAbutmentDesignAndProduction: 35000,
 };
@@ -39,6 +45,9 @@ export const LAB_FEE_SCHEDULE_ZEROS: LabFeeSchedule = {
   bridge: 0,
   inlay: 0,
   pontic: 0,
+  retainer: 0,
+  removableTemp3: 0,
+  removableTemp6: 0,
   customAbutmentDesign: 0,
   customAbutmentDesignAndProduction: 0,
 };
@@ -87,7 +96,52 @@ export const isCustomAbutmentWork = (row?: {
   );
 };
 
-/** 보철 형태 → labFeeSchedule 키. 작업X·커스텀어벗(어벗츠 단가)은 null */
+export const isRetainerProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return compact === "유지장치" || /^retainer$/i.test(raw);
+};
+
+export const isRemovableTempProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    compact === "가철성임시치아" ||
+    compact === "임시치아" ||
+    /가철성\s*임시/i.test(raw)
+  );
+};
+
+export const toothArchFromNumber = (toothNumber: string) => {
+  const n = String(toothNumber || "").replace(/\D/g, "");
+  const first = n[0];
+  if (first === "1" || first === "2") return "upper" as const;
+  if (first === "3" || first === "4") return "lower" as const;
+  return "other" as const;
+};
+
+export const removableTempFeeForCount = (
+  count: number,
+  price3: number,
+  price6: number,
+) => {
+  let left = Math.max(0, Math.round(Number(count || 0)));
+  const p3 = Math.max(0, Math.round(Number(price3 || 0)));
+  const p6 = Math.max(0, Math.round(Number(price6 || 0)));
+  let total = 0;
+  while (left > 0) {
+    if (left <= 3) {
+      total += p3;
+      break;
+    }
+    total += p6;
+    if (left <= 6) break;
+    left -= 6;
+  }
+  return total;
+};
+
+/** 보철 형태 → labFeeSchedule 키. 작업X·커스텀어벗(어벗츠 단가)·묶음수가 항목은 null */
 export const resolveLabFeeKeyFromProsthesisType = (
   prosthesisType: string,
 ): LabFeeScheduleKey | null => {
@@ -95,6 +149,8 @@ export const resolveLabFeeKeyFromProsthesisType = (
   if (!raw) return "crown";
   if (isMissingToothProsthesisType(raw)) return null;
   if (isCustomAbutmentProsthesisType(raw)) return null;
+  if (isRetainerProsthesisType(raw)) return "retainer";
+  if (isRemovableTempProsthesisType(raw)) return null;
   if (/^pontic$/i.test(raw)) return "pontic";
   if (raw.includes("인레이") || /^inlay$/i.test(raw)) return "inlay";
   if (raw.includes("브리지") || /^bridge$/i.test(raw)) return "bridge";
@@ -169,6 +225,9 @@ export const normalizeLabFeeSchedule = (input?: Partial<LabFeeSchedule> | null):
     bridge: pick("bridge"),
     inlay: pick("inlay"),
     pontic: pick("pontic"),
+    retainer: pick("retainer"),
+    removableTemp3: pick("removableTemp3"),
+    removableTemp6: pick("removableTemp6"),
     customAbutmentDesign: pick("customAbutmentDesign"),
     customAbutmentDesignAndProduction: pick("customAbutmentDesignAndProduction"),
   };
@@ -193,6 +252,9 @@ export const normalizeLabFeeRemakeSchedule = (
     bridge: pick("bridge"),
     inlay: pick("inlay"),
     pontic: pick("pontic"),
+    retainer: pick("retainer"),
+    removableTemp3: pick("removableTemp3"),
+    removableTemp6: pick("removableTemp6"),
     customAbutmentDesign: pick("customAbutmentDesign"),
     customAbutmentDesignAndProduction: pick("customAbutmentDesignAndProduction"),
   };
@@ -238,6 +300,8 @@ export const computePracticeTransferRetailFees = (params: {
     params.abutmentPricingTier === "membership" ? "membership" : "regular";
   const rows = Array.isArray(params.toothWorks) ? params.toothWorks : [];
   const lines: PracticeTransferFeeLine[] = [];
+  const retainerRows: typeof rows = [];
+  const removableRows: typeof rows = [];
   let labFeeTotal = 0;
   let abutmentRetailTotal = 0;
   let abutmentQty = 0;
@@ -246,6 +310,14 @@ export const computePracticeTransferRetailFees = (params: {
     const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
     if (!prosthesisType) continue;
     if (isMissingToothProsthesisType(prosthesisType)) continue;
+    if (isRetainerProsthesisType(prosthesisType)) {
+      retainerRows.push(row);
+      continue;
+    }
+    if (isRemovableTempProsthesisType(prosthesisType)) {
+      removableRows.push(row);
+      continue;
+    }
 
     let labFee = 0;
     let abutmentFee = 0;
@@ -279,6 +351,32 @@ export const computePracticeTransferRetailFees = (params: {
     });
   }
 
+  for (const group of groupRowsByArch(retainerRows)) {
+    const fee = Math.max(0, Math.round(Number(schedule.retainer || 0)));
+    labFeeTotal += fee;
+    lines.push({
+      toothNumber: group.teeth.join(","),
+      prosthesisType: `유지장치${group.suffix}`,
+      labFee: fee,
+      abutmentRetail: 0,
+    });
+  }
+
+  for (const group of groupRowsByArch(removableRows)) {
+    const fee = removableTempFeeForCount(
+      group.teeth.length,
+      schedule.removableTemp3,
+      schedule.removableTemp6,
+    );
+    labFeeTotal += fee;
+    lines.push({
+      toothNumber: group.teeth.join(","),
+      prosthesisType: `임시치아${group.suffix} ${group.teeth.length}치`,
+      labFee: fee,
+      abutmentRetail: 0,
+    });
+  }
+
   return {
     labFeeTotal,
     abutmentRetailTotal,
@@ -287,3 +385,23 @@ export const computePracticeTransferRetailFees = (params: {
     lines,
   };
 };
+
+function groupRowsByArch(
+  rows: ReadonlyArray<{ toothNumber?: string; tooth?: string }>,
+) {
+  const groups = new Map<
+    "upper" | "lower" | "other",
+    { suffix: string; teeth: string[] }
+  >();
+  for (const row of rows) {
+    const tooth = String(row?.toothNumber || row?.tooth || "").trim();
+    const arch = toothArchFromNumber(tooth);
+    if (!groups.has(arch)) {
+      const suffix =
+        arch === "upper" ? "(상악)" : arch === "lower" ? "(하악)" : "";
+      groups.set(arch, { suffix, teeth: [] });
+    }
+    groups.get(arch)?.teeth.push(tooth);
+  }
+  return [...groups.values()];
+}

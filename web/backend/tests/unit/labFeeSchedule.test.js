@@ -109,6 +109,27 @@ describe("labFeeSchedule", () => {
     expect(fees.total).toBe(35000);
   });
 
+  test("유지장치는 악궁당 1세트, 임시치아는 치아 수 구간으로 합산한다", () => {
+    expect(resolveLabFeeKeyFromProsthesisType("유지장치")).toBe("retainer");
+    expect(resolveLabFeeKeyFromProsthesisType("임시치아")).toBeNull();
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "11", prosthesisType: "유지장치" },
+        { toothNumber: "21", prosthesisType: "유지장치" },
+        { toothNumber: "31", prosthesisType: "유지장치" },
+        { toothNumber: "16", prosthesisType: "임시치아" },
+        { toothNumber: "15", prosthesisType: "임시치아" },
+        { toothNumber: "14", prosthesisType: "임시치아" },
+        { toothNumber: "13", prosthesisType: "임시치아" },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_DEFAULTS,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.labFeeTotal).toBe(130000);
+    expect(fees.abutmentRetailTotal).toBe(0);
+    expect(fees.total).toBe(130000);
+  });
+
   test("기공비 수수료와 어벗츠 단가를 분리한다", () => {
     const split = splitPracticeTransferSettlement({
       labFeeTotal: 100000,

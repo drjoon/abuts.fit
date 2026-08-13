@@ -28,6 +28,7 @@ import {
   markReceivedPracticeTransferRelease,
   markReceivedPracticeTransferDownloaded,
   confirmPracticeTransferProduction,
+  remakePracticeTransfers,
   restorePracticeTransfersBatch,
   upsertPracticeTransferDraft,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
@@ -93,6 +94,8 @@ router.post(
 );
 
 router.post("/trash/empty", authenticate, sendAuth, emptyPracticeTransferTrash);
+
+router.post("/remake", authenticate, sendAuth, remakePracticeTransfers);
 
 router.get("/received", authenticate, receiveAuth, getReceivedPracticeTransfers);
 

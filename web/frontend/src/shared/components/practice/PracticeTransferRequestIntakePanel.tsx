@@ -41,6 +41,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -67,11 +68,14 @@ import {
   ABUTMENT_PRODUCT_MODE,
   ABUTMENT_PRODUCT_MODE_LABEL,
   ABUTMENT_PRODUCT_MODE_SHORT_LABEL,
+  DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
   emptyToothWorkCustomSpecs,
   formatAbutmentCompact,
   formatAbutmentSummary,
   formatImplantCompact,
   formatImplantSummary,
+  isAbutmentProductMode,
+  normalizeAccountAbutmentProductMode,
   pickToothWorkCustomSpecs,
   resolveToothAbutmentProductMode,
   type AbutmentProductMode,
@@ -85,15 +89,9 @@ import {
   ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE,
   ABUTS_ABUTMENT_SERVICE_TAX_NOTE,
-  ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
-  formatAbutsAbutmentServiceWon,
   formatAbutsAbutmentTierPriceLine,
 } from "@/shared/pricing/abutsAbutmentService";
 import { useAbutsAbutmentPricingTier } from "@/shared/pricing/useAbutsAbutmentPricingTier";
-import {
-  CREDIT_SETTINGS_DEFAULTS,
-  useSystemSettings,
-} from "@/hooks/useSystemSettings";
 import {
   applyProsthesisTypeToRow,
   collectAdjacentBridgeLinks,
@@ -126,10 +124,17 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-11: 기공의뢰 카드 내 행(섹션) 수직 간격 gap-10.
 // - 2026-08-13: 커스텀어벗 설정 모달에 생산만/디자인+생산 배타 선택 + 가격 툴팁.
 // - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
-// - 2026-08-13: 커스텀 체크박스는 on/off만, 「커스텀」 라벨 클릭 시에만 설정 모달.
+// - 2026-08-13: 커스텀어벗 칸 「설정」제거. 생산/디자인+생산 클릭 시 설정 모달.
 // - 2026-08-13: 커스텀어벗 가격 툴팁은 해당 치과 멤버십/일반 한쪽만 안내.
 // - 2026-08-13: 커스텀어벗 설정 모달 가격 툴팁은 호버일 때만.
 // - 2026-08-13: 단독 보철=인레이/크라운/커스텀어벗. 커스텀어벗 선택 시 설정 모달.
+// - 2026-08-13: 커스텀어벗 모달 기본=디자인+생산. 선택값은 계정 defaultAbutmentProductMode로 저장.
+// - 2026-08-13: 커스텀어벗 설정 모달 툴팁에서 월 구독료 삭제. 배송비·부가세는 한 줄.
+// - 2026-08-13: 모달 하단 좌측 프리셋 편집(primary), 우측 취소/확인.
+// - 2026-08-13: 임플란트·스캔바디 프리셋이 모두 없으면 설정 모달과 함께 프리셋 편집을 연다.
+// - 2026-08-13: 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘.
+// - 2026-08-13: 크라운·브리지 아래 어벗 체크박스. 체크 시 설정 모달.
+// - 2026-08-13: 커스텀어벗 프리셋 목록은 4개까지 표시, 초과 시 스크롤.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -363,7 +368,7 @@ const matchesLinkedToggleType = (current: string, type: string) => {
   return current === type;
 };
 
-/** 선택 치아 클릭: 인레이→크라운→커스텀어벗 / 브리지↔Pontic↔작업X */
+/** 선택 치아 클릭: 인레이→크라운→커스텀어벗→유지장치→임시치아 / 브리지↔Pontic↔작업X */
 const resolveNextProsthesisType = (
   prev: ToothWorkSelection[],
   toothNumber: string,
@@ -556,6 +561,11 @@ export type PracticeTransferRequestIntakePanelProps = {
   onImplantFavoritesChange?: (next: PracticeImplantFavorite[]) => void | Promise<void>;
   abutmentFavorites?: PracticeAbutmentFavorite[];
   onAbutmentFavoritesChange?: (next: PracticeAbutmentFavorite[]) => void | Promise<void>;
+  /** 계정 커스텀어벗 기본 모드. 신규 선택·모달 초기값 */
+  defaultAbutmentProductMode?: AbutmentProductMode;
+  onDefaultAbutmentProductModeChange?: (
+    next: AbutmentProductMode,
+  ) => void | Promise<void>;
   /** 값이 바뀌면 치식 차트를 M(전치부) 위치로 되돌린다 (새로 작성 등) */
   toothChartResetNonce?: number;
   /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
@@ -610,9 +620,14 @@ export const PracticeTransferRequestIntakePanel = ({
   onImplantFavoritesChange,
   abutmentFavorites = [],
   onAbutmentFavoritesChange,
+  defaultAbutmentProductMode: defaultAbutmentProductModeProp,
+  onDefaultAbutmentProductModeChange,
   toothChartResetNonce = 0,
   showFeeEstimate = false,
 }: PracticeTransferRequestIntakePanelProps) => {
+  const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
+    defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
+  );
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
     : normalizedProsthesisTypes[0] || "크라운";
@@ -623,21 +638,17 @@ export const PracticeTransferRequestIntakePanel = ({
     toothWorks,
     abutmentPricingTier,
   });
-  const { data: systemSettings } = useSystemSettings();
-  const membershipMonthlyFee = Math.max(
-    0,
-    Number(
-      systemSettings?.creditSettings?.practiceMembershipMonthlyFee ??
-        CREDIT_SETTINGS_DEFAULTS.practiceMembershipMonthlyFee ??
-        ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
-    ) || ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
-  );
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */
   const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<number | null>(null);
   const [customSpecsPresetEditOpen, setCustomSpecsPresetEditOpen] = useState(false);
+  const customSpecsPresetEditOpenRef = useRef(false);
   /** 이번 모달에서 임플란트/스캔바디를 각각 클릭 선택했는지 */
   const customSpecsPickSessionRef = useRef({ implant: false, scanbody: false });
-  const customSpecsPresetEditOpenRef = useRef(false);
+  const customSpecsModalSnapshotRef = useRef<{
+    index: number;
+    row: ToothWorkSelection;
+    accountMode: AbutmentProductMode;
+  } | null>(null);
   const [toothChartOffsets, setToothChartOffsets] = useState<Record<string, number>>(
     initialToothChartOffsets,
   );
@@ -1127,13 +1138,13 @@ export const PracticeTransferRequestIntakePanel = ({
         if (prosthesisType === prevType && !linksChanged) return row;
         changed = true;
         return {
-          ...applyProsthesisTypeToRow(row, prosthesisType),
+          ...applyProsthesisTypeToRow(row, prosthesisType, defaultAbutmentProductMode),
           bridgeLinkedTeeth: isLinked ? links : [],
         };
       });
       return changed ? next : prev;
     });
-  }, [normalizedProsthesisTypes, setToothWorks, toothWorkLinkTypeMismatch]);
+  }, [defaultAbutmentProductMode, normalizedProsthesisTypes, setToothWorks, toothWorkLinkTypeMismatch]);
   const isMemoSnippetsControlled = typeof onMemoSnippetsChange === "function";
   const [localMemoSnippets, setLocalMemoSnippets] = useState<string[]>(() => loadLocalMemoSnippets());
   const [suggestLineIndex, setSuggestLineIndex] = useState<number | null>(null);
@@ -1152,30 +1163,95 @@ export const PracticeTransferRequestIntakePanel = ({
   };
 
   const openCustomSpecsModal = (index: number) => {
+    const current = toothWorks[index];
+    if (current) {
+      customSpecsModalSnapshotRef.current = {
+        index,
+        row: {
+          ...current,
+          bridgeLinkedTeeth: [...(current.bridgeLinkedTeeth || [])],
+        },
+        accountMode: defaultAbutmentProductMode,
+      };
+    } else {
+      customSpecsModalSnapshotRef.current = null;
+    }
+    const hasNoPresets =
+      implantFavorites.length === 0 && abutmentFavorites.length === 0;
+    customSpecsPresetEditOpenRef.current = hasNoPresets;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
-    customSpecsPresetEditOpenRef.current = false;
-    setCustomSpecsPresetEditOpen(false);
+    setCustomSpecsPresetEditOpen(hasNoPresets);
+    setToothWorks((prev) => {
+      const row = prev[index];
+      if (!row) return prev;
+      const canEnable =
+        row.customAbutment ||
+        isCustomAbutmentProsthesisType(row.prosthesisType) ||
+        row.prosthesisType === "크라운" ||
+        row.prosthesisType === "브리지";
+      if (!canEnable) return prev;
+      if (
+        row.customAbutment &&
+        isAbutmentProductMode(row.abutmentProductMode)
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      next[index] = {
+        ...row,
+        customAbutment: true,
+        abutmentProductMode: isAbutmentProductMode(row.abutmentProductMode)
+          ? row.abutmentProductMode
+          : defaultAbutmentProductMode,
+      };
+      return next;
+    });
     setCustomSpecsModalTarget(index);
   };
 
   const closeCustomSpecsModal = () => {
-    customSpecsPickSessionRef.current = { implant: false, scanbody: false };
     customSpecsPresetEditOpenRef.current = false;
+    customSpecsPickSessionRef.current = { implant: false, scanbody: false };
     setCustomSpecsPresetEditOpen(false);
     setCustomSpecsModalTarget(null);
   };
 
-  const tryCloseCustomSpecsModalAfterPicks = () => {
+  const restoreCustomSpecsModalSnapshot = () => {
+    const snap = customSpecsModalSnapshotRef.current;
+    if (!snap) return;
+    customSpecsModalSnapshotRef.current = null;
+    setToothWorks((prev) => {
+      if (!prev[snap.index]) return prev;
+      const next = [...prev];
+      next[snap.index] = snap.row;
+      return next;
+    });
+    if (snap.accountMode !== defaultAbutmentProductMode) {
+      void onDefaultAbutmentProductModeChange?.(snap.accountMode);
+    }
+  };
+
+  const cancelCustomSpecsModal = () => {
+    restoreCustomSpecsModalSnapshot();
+    closeCustomSpecsModal();
+  };
+
+  const confirmCustomSpecsModal = () => {
+    customSpecsModalSnapshotRef.current = null;
+    closeCustomSpecsModal();
+  };
+
+  const tryConfirmCustomSpecsModalAfterPicks = () => {
     if (customSpecsPresetEditOpenRef.current) return;
     const { implant, scanbody } = customSpecsPickSessionRef.current;
     if (!implant || !scanbody) return;
-    closeCustomSpecsModal();
+    confirmCustomSpecsModal();
   };
 
   const setCustomSpecsPresetEditOpenSafe = (open: boolean) => {
     customSpecsPresetEditOpenRef.current = open;
     setCustomSpecsPresetEditOpen(open);
-    if (!open) tryCloseCustomSpecsModalAfterPicks();
+    if (!open) tryConfirmCustomSpecsModalAfterPicks();
   };
 
   const registerCustomSpecsPick = (kind: "implant" | "scanbody" | "both") => {
@@ -1184,7 +1260,7 @@ export const PracticeTransferRequestIntakePanel = ({
       implant: prev.implant || kind === "implant" || kind === "both",
       scanbody: prev.scanbody || kind === "scanbody" || kind === "both",
     };
-    tryCloseCustomSpecsModalAfterPicks();
+    tryConfirmCustomSpecsModalAfterPicks();
   };
 
   const patchCustomSpecsOnTooth = (
@@ -1704,6 +1780,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       ...emptyToothWorkCustomSpecs(),
                     },
                   ]);
+                  customSpecsModalSnapshotRef.current = null;
                   closeCustomSpecsModal();
                   toothSelectAnchorRef.current = null;
                 }}
@@ -1914,6 +1991,10 @@ export const PracticeTransferRequestIntakePanel = ({
                       const isLinked = linkedTeeth.length > 0;
                       const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
                       const isCustomType = isCustomAbutmentProsthesisType(row.prosthesisType);
+                      const showAbutmentCheckbox =
+                        !isMissingTooth &&
+                        !isCustomType &&
+                        (row.prosthesisType === "크라운" || row.prosthesisType === "브리지");
                       const showCustomDetails =
                         isCustomType ||
                         (isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
@@ -2108,7 +2189,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                       ? undefined
                                       : isLinked
                                         ? "클릭: 브리지 ↔ Pontic ↔ 작업X"
-                                        : "클릭: 인레이 → 크라운 → 커스텀어벗"
+                                        : "클릭: 인레이 → 크라운 → 커스텀어벗 → 유지장치 → 임시치아"
                                   }
                                   onClick={(e) => {
                                     e.preventDefault();
@@ -2127,6 +2208,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                       next[resolved.index] = applyProsthesisTypeToRow(
                                         current,
                                         resolved.nextType,
+                                        defaultAbutmentProductMode,
                                       );
                                       return next;
                                     });
@@ -2149,30 +2231,68 @@ export const PracticeTransferRequestIntakePanel = ({
                               );
                             })()}
 
-                            {/* 3) 커스텀어벗 · 임플란트 · 스캔바디 */}
+                            {/* 3) 크라운·브리지 → 어벗 체크. 커스텀어벗 형태는 상세만 */}
+                            {showAbutmentCheckbox ? (
+                              <label
+                                data-no-tooth-marquee=""
+                                className="mt-2 inline-flex h-5 max-w-full cursor-pointer items-center gap-1 px-0.5 text-[11px] leading-none text-slate-600"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="h-3.5 w-3.5 accent-primary-strong"
+                                  checked={Boolean(row.customAbutment)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    if (e.target.checked) {
+                                      openCustomSpecsModal(originalIndex);
+                                      return;
+                                    }
+                                    setToothWorks((prev) => {
+                                      const current = prev[originalIndex];
+                                      if (!current) return prev;
+                                      const next = [...prev];
+                                      next[originalIndex] = {
+                                        ...current,
+                                        customAbutment: false,
+                                        abutmentProductMode: undefined,
+                                        ...emptyToothWorkCustomSpecs(),
+                                      };
+                                      return next;
+                                    });
+                                    if (customSpecsModalTarget === originalIndex) {
+                                      customSpecsModalSnapshotRef.current = null;
+                                      closeCustomSpecsModal();
+                                    }
+                                  }}
+                                />
+                                <span className="truncate">어벗</span>
+                              </label>
+                            ) : null}
+
+                            {/* 4) 커스텀어벗 · 임플란트 · 스캔바디 */}
                             {showCustomDetails ? (
                               <div
                                 data-no-tooth-marquee=""
-                                className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none"
+                                className={cn(
+                                  "flex w-full flex-col items-center gap-0.5 leading-none",
+                                  showAbutmentCheckbox ? "mt-0.5" : "mt-2",
+                                )}
                               >
                                 <button
                                   type="button"
-                                  className="inline-flex h-5 items-center text-[11px] leading-none text-slate-500 hover:text-primary-strong hover:underline"
+                                  className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong hover:bg-primary-soft/70 hover:underline"
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
                                     openCustomSpecsModal(originalIndex);
                                   }}
                                 >
-                                  설정
-                                </button>
-                                <span className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
                                   {
                                     ABUTMENT_PRODUCT_MODE_SHORT_LABEL[
                                       resolveToothAbutmentProductMode(row)
                                     ]
                                   }
-                                </span>
+                                </button>
                                 <TooltipProvider delayDuration={0}>
                                   <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
                                     <Tooltip>
@@ -2513,11 +2633,14 @@ export const PracticeTransferRequestIntakePanel = ({
       <Dialog
         open={customSpecsModalTarget !== null}
         onOpenChange={(open) => {
-          if (!open) closeCustomSpecsModal();
+          if (!open) cancelCustomSpecsModal();
         }}
       >
         <DialogContent
-          className={cn("max-h-[92vh] gap-4 overflow-y-auto sm:max-w-3xl", nestedDialogClassName)}
+          className={cn(
+            "flex max-h-[92vh] flex-col gap-4 overflow-hidden sm:max-w-3xl",
+            nestedDialogClassName,
+          )}
           overlayClassName={nestedDialogOverlayClassName}
         >
           <DialogHeader className="space-y-1.5 text-left">
@@ -2530,13 +2653,15 @@ export const PracticeTransferRequestIntakePanel = ({
               }`}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              생산만 의뢰 또는 디자인+생산 의뢰를 선택한 뒤, 임플란트와 스캔바디 프리셋을
-              각각 한 번씩 선택하면 저장되고 닫힙니다.
+              생산만 의뢰 또는 디자인+생산 의뢰를 고른 뒤, 임플란트와 스캔바디 프리셋을
+              각각 한 번씩 선택하면 저장되고 닫힙니다. 확인도 동일하고, 취소하면 열기 전
+              값으로 돌아갑니다.
             </DialogDescription>
           </DialogHeader>
 
           {typeof customSpecsModalTarget === "number" && toothWorks[customSpecsModalTarget] ? (
-            <div className="space-y-4">
+            <>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
               <div className="my-10 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {ABUTMENT_SERVICE_OPTIONS.map((option) => {
                   const selected =
@@ -2561,15 +2686,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             })}
                           </p>
                           <p className="text-muted-foreground">
-                            {ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}
-                          </p>
-                          {abutmentPricingTier === "membership" ? (
-                            <p className="text-muted-foreground">
-                              월 {formatAbutsAbutmentServiceWon(membershipMonthlyFee)}
-                            </p>
-                          ) : null}
-                          <p className="text-muted-foreground">
-                            {ABUTS_ABUTMENT_SERVICE_TAX_NOTE}
+                            {`${ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}, ${ABUTS_ABUTMENT_SERVICE_TAX_NOTE}`}
                           </p>
                         </>
                       }
@@ -2597,17 +2714,29 @@ export const PracticeTransferRequestIntakePanel = ({
                           checked={selected}
                           onChange={() => {
                             const index = customSpecsModalTarget;
+                            const current = toothWorks[index];
+                            if (!current) return;
+                            const previous = resolveToothAbutmentProductMode(current);
+                            if (
+                              previous === option.mode &&
+                              isAbutmentProductMode(current.abutmentProductMode)
+                            ) {
+                              return;
+                            }
                             setToothWorks((prev) => {
+                              const row = prev[index];
+                              if (!row) return prev;
                               const next = [...prev];
-                              const current = next[index];
-                              if (!current) return prev;
                               next[index] = {
-                                ...current,
+                                ...row,
                                 customAbutment: true,
                                 abutmentProductMode: option.mode,
                               };
                               return next;
                             });
+                            if (previous !== option.mode) {
+                              void onDefaultAbutmentProductModeChange?.(option.mode);
+                            }
                           }}
                         />
                         <span className="text-center">
@@ -2643,18 +2772,6 @@ export const PracticeTransferRequestIntakePanel = ({
                 />
               </div>
 
-              <div className="flex justify-center">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-10 min-w-[10rem] text-sm"
-                  onClick={() => setCustomSpecsPresetEditOpenSafe(true)}
-                >
-                  <Settings className="mr-1.5 h-4 w-4" />
-                  프리셋 편집
-                </Button>
-              </div>
-
               <PracticeCustomSpecsPresetEditDialog
                 open={customSpecsPresetEditOpen}
                 onOpenChange={setCustomSpecsPresetEditOpenSafe}
@@ -2674,6 +2791,35 @@ export const PracticeTransferRequestIntakePanel = ({
                 onAbutmentFavoritesChange={onAbutmentFavoritesChange}
               />
             </div>
+
+            <DialogFooter className="flex flex-row items-center justify-between gap-2 sm:justify-between sm:space-x-0">
+              <Button
+                type="button"
+                className="h-10"
+                onClick={() => setCustomSpecsPresetEditOpenSafe(true)}
+              >
+                <Settings className="mr-1.5 h-4 w-4" />
+                프리셋 편집
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 min-w-[5.5rem]"
+                  onClick={cancelCustomSpecsModal}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="button"
+                  className="h-10 min-w-[5.5rem]"
+                  onClick={confirmCustomSpecsModal}
+                >
+                  확인
+                </Button>
+              </div>
+            </DialogFooter>
+            </>
           ) : null}
         </DialogContent>
       </Dialog>

@@ -4,6 +4,9 @@ import { useMemo } from "react";
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/shared/practice/transferMemo.ts
+// - 2026-08-13: 신규 커스텀어벗은 계정 기본 모드(디자인+생산). 기존 커스텀 치아 미설정은 생산만 유지.
+// - 2026-08-13: 크라운·브리지는 어벗 플래그 유지(체크박스). 인레이·Pontic·작업X는 해제.
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
@@ -11,13 +14,16 @@ import {
   CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
   emptyToothWorkCustomSpecs,
   isAbutmentDesignProsthesisType,
+  isAbutmentProductMode,
   isBridgeLikeProsthesisType,
   isCustomAbutmentProsthesisType,
   isCustomAbutmentSupportedProsthesisType,
   isMissingToothProsthesisType,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
+  normalizeAccountAbutmentProductMode,
   toToothMemoSortNumber,
+  type AbutmentProductMode,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 
@@ -35,17 +41,22 @@ export {
 /** @deprecated 단독 커스텀어벗 형태. CUSTOM_ABUTMENT_PROSTHESIS_TYPE 사용 */
 export const ABUTMENT_DESIGN_PROSTHESIS_TYPE = CUSTOM_ABUTMENT_PROSTHESIS_TYPE;
 
-/** 단독 치아 형태 토글 라벨(인레이↔크라운↔커스텀어벗) */
+/** 단독 치아 형태 토글 라벨(인레이↔크라운↔커스텀어벗↔유지장치↔임시치아) */
 export const STANDALONE_PROSTHESIS_TYPES = [
   "인레이",
   "크라운",
   CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
+  "유지장치",
+  "임시치아",
 ] as const;
 export const LINKED_PROSTHESIS_TYPES = ["브리지", "Pontic", NO_WORK_PROSTHESIS_TYPE] as const;
 
 export const isStandaloneProsthesisType = (prosthesisType: string) =>
   prosthesisType === "인레이" ||
   prosthesisType === "크라운" ||
+  prosthesisType === "유지장치" ||
+  prosthesisType === "임시치아" ||
+  prosthesisType === "가철성 임시치아" ||
   isCustomAbutmentProsthesisType(prosthesisType);
 
 export const getAdjacentTeeth = (toothNumber: string) => {
@@ -124,13 +135,19 @@ export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: strin
   const allowed = new Set<string>(
     isLinked ? LINKED_PROSTHESIS_TYPES : STANDALONE_PROSTHESIS_TYPES,
   );
-  const next = catalog.filter((type) => {
-    if (allowed.has(type)) return true;
-    if (!isLinked && isCustomAbutmentProsthesisType(type)) return true;
-    if (isLinked && /^pontic$/i.test(type)) return true;
-    if (isLinked && isMissingToothProsthesisType(type)) return true;
-    return false;
-  });
+  const next = catalog
+    .map((type) =>
+      type === "가철성 임시치아" || type.replace(/\s+/g, "") === "가철성임시치아"
+        ? "임시치아"
+        : type,
+    )
+    .filter((type) => {
+      if (allowed.has(type)) return true;
+      if (!isLinked && isCustomAbutmentProsthesisType(type)) return true;
+      if (isLinked && /^pontic$/i.test(type)) return true;
+      if (isLinked && isMissingToothProsthesisType(type)) return true;
+      return false;
+    });
   if (!isLinked && !next.some((type) => isCustomAbutmentProsthesisType(type))) {
     next.push(CUSTOM_ABUTMENT_PROSTHESIS_TYPE);
   }
@@ -149,7 +166,12 @@ export const resolveProsthesisTypeForLinkState = (
   customAbutment = false,
 ) => {
   const options = getProsthesisTypesForLinkState(isLinked, catalog);
-  const current = String(currentType || "").trim();
+  const currentRaw = String(currentType || "").trim();
+  const current =
+    currentRaw === "가철성 임시치아" ||
+    currentRaw.replace(/\s+/g, "") === "가철성임시치아"
+      ? "임시치아"
+      : currentRaw;
   if (current && options.some((type) => type === current)) return current;
   if (isLinked && isMissingToothProsthesisType(current)) {
     return (
@@ -175,20 +197,46 @@ export const resolveProsthesisTypeForLinkState = (
 export const applyProsthesisTypeToRow = (
   row: ToothWorkSelection,
   prosthesisType: string,
+  defaultAbutmentProductMode?: AbutmentProductMode,
 ): ToothWorkSelection => {
   const nextType = String(prosthesisType || "").trim();
   if (isCustomAbutmentProsthesisType(nextType)) {
+    const wasCustom =
+      row.customAbutment || isCustomAbutmentProsthesisType(row.prosthesisType);
+    const abutmentProductMode = isAbutmentProductMode(row.abutmentProductMode)
+      ? row.abutmentProductMode
+      : wasCustom
+        ? ABUTMENT_PRODUCT_MODE.PRODUCTION
+        : normalizeAccountAbutmentProductMode(defaultAbutmentProductMode);
     return {
       ...row,
       prosthesisType: CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
       customAbutment: true,
-      abutmentProductMode:
-        row.abutmentProductMode || ABUTMENT_PRODUCT_MODE.PRODUCTION,
+      abutmentProductMode,
+    };
+  }
+  if (nextType === "크라운" || nextType === "브리지") {
+    const keepCustom =
+      Boolean(row.customAbutment) &&
+      (row.prosthesisType === "크라운" ||
+        row.prosthesisType === "브리지" ||
+        isCustomAbutmentProsthesisType(row.prosthesisType));
+    if (keepCustom) {
+      return { ...row, prosthesisType: nextType };
+    }
+    return {
+      ...row,
+      prosthesisType: nextType,
+      customAbutment: false,
+      abutmentProductMode: undefined,
+      ...emptyToothWorkCustomSpecs(),
     };
   }
   if (
     nextType === "인레이" ||
-    nextType === "크라운" ||
+    nextType === "유지장치" ||
+    nextType === "임시치아" ||
+    nextType === "가철성 임시치아" ||
     isMissingToothProsthesisType(nextType) ||
     /^pontic$/i.test(nextType)
   ) {

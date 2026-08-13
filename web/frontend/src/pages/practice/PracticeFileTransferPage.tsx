@@ -37,9 +37,10 @@
  * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
  * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 프로모 카피 축소.
  * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
- * - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·추적관리(취소=기공소 작업취소).
+ * - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·리메이크(취소=기공소 작업취소).
  * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
  * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 계정 마지막 설정. 전송 시 의뢰건에 스냅샷.
+ * - 2026-08-13: 커스텀어벗 설정 모달 기본=디자인+생산. 선택값은 practiceTransferSettings.defaultAbutmentProductMode.
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
  * - 2026-08-13: 임시저장/동기화는 기공소·환자명 둘 다 입력된 뒤에만 수행.
  * - 2026-08-13: 최근전송 취소 뱃지=기공소 작업취소만(치과 휴지통 제외). 6뱃지 빠른툴팁.
@@ -66,6 +67,7 @@ import {
   Settings,
   ChevronDown,
   LayoutGrid,
+  Repeat,
 } from "lucide-react";
 import {
   Card,
@@ -135,10 +137,13 @@ import { PracticeTransferIntakeSection } from "@/shared/components/practice/Prac
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import {
   PRACTICE_RECENT_STATUS_BADGES,
+  PRACTICE_REMAKE_BADGE_CLASS,
+  canRemakePracticeTransferByStatus,
   computeGroupedStatusCounts,
   filterGroupedTransfersByStatus,
   type PracticeRecentStatusFilter,
 } from "@/shared/practice/practiceRecentTransferList";
+import { formatWon } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
@@ -170,9 +175,12 @@ import {
       formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
       normalizeToothWorksForSync,
       emptyToothWorkCustomSpecs,
+      pickToothWorkAbutmentProductMode,
       pickToothWorkCustomSpecs,
+      normalizeAccountAbutmentProductMode,
       normalizeImplantFavorites,
       normalizeAbutmentFavorites,
+      type AbutmentProductMode,
       parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
       stripPracticeTransferMessageEnvelope,
       type PracticeAbutmentFavorite,
@@ -216,6 +224,9 @@ type RecentRequestItem = {
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
   feeQuote?: PracticeTransferFeeQuote | null;
+  remakeFeeQuote?: PracticeTransferFeeQuote | null;
+  isRemake?: boolean;
+  remakeSourceTransferId?: string;
 };
 
 type TransferFileItem = {
@@ -340,6 +351,9 @@ type RecentTransferItem = {
   draftPatientName?: string;
   targetLabAnchorId?: string;
   feeQuote?: PracticeTransferFeeQuote | null;
+  remakeFeeQuote?: PracticeTransferFeeQuote | null;
+  isRemake?: boolean;
+  remakeSourceTransferId?: string;
 };
 
 const extractLabNameFromMessage = (message: string) => {
@@ -368,7 +382,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "Pontic", "작업X"] as const;
+const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "Pontic", "유지장치", "임시치아", "작업X"] as const;
 const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 
 type ToothWorkSelection = SharedToothWorkSelection;
@@ -438,6 +452,7 @@ type PracticeTransferSettingsPayload = {
   implantFavorites?: PracticeImplantFavorite[];
   abutmentFavorites?: PracticeAbutmentFavorite[];
   skipDesignConfirm?: boolean;
+  defaultAbutmentProductMode?: AbutmentProductMode;
   updatedAt?: string | null;
 };
 
@@ -485,6 +500,7 @@ const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
   const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
   return (
     compact === "커스텀어벗" ||
+    prosthesisType === "크라운" ||
     prosthesisType === "브리지" ||
     /^(?:커스텀)?어벗디자인$/i.test(compact)
   );
@@ -499,6 +515,7 @@ const sanitizeProsthesisTypeLabel = (value: string) => {
   if (/^커스텀어벗\+?브리지$/i.test(compact)) return "브리지";
   if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "커스텀어벗";
   if (/^커스텀어벗$/i.test(compact)) return "커스텀어벗";
+  if (compact === "가철성임시치아" || compact === "임시치아") return "임시치아";
   return trimmed;
 };
 
@@ -940,8 +957,13 @@ export const PracticeFileTransferPage = ({
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
   const [recentStatusFilter, setRecentStatusFilter] =
     useState<PracticeRecentStatusFilter>("all");
+  const [remakeSelectedIds, setRemakeSelectedIds] = useState<string[]>([]);
+  const [remakeConfirmOpen, setRemakeConfirmOpen] = useState(false);
+  const [remakeBusy, setRemakeBusy] = useState(false);
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
+  const [defaultAbutmentProductMode, setDefaultAbutmentProductMode] =
+    useState<AbutmentProductMode>(() => normalizeAccountAbutmentProductMode(undefined));
   const [tempSaving, setTempSaving] = useState(false);
   const [tempSaveDirty, setTempSaveDirty] = useState(false);
   const [lastSavedFormFingerprint, setLastSavedFormFingerprint] = useState<string | null>(null);
@@ -1342,6 +1364,9 @@ export const PracticeFileTransferPage = ({
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
     const nextSkipDesignConfirm = Boolean(payload.skipDesignConfirm);
+    const nextDefaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
+      payload.defaultAbutmentProductMode,
+    );
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
@@ -1350,6 +1375,7 @@ export const PracticeFileTransferPage = ({
     setImplantFavorites(nextImplantFavorites);
     setAbutmentFavorites(nextAbutmentFavorites);
     setSkipDesignConfirm(nextSkipDesignConfirm);
+    setDefaultAbutmentProductMode(nextDefaultAbutmentProductMode);
     setToothWorks((prev) =>
       prev.map((row) => {
         const customAbutment = Boolean(row.customAbutment);
@@ -1359,6 +1385,7 @@ export const PracticeFileTransferPage = ({
             ? row.prosthesisType
             : resolveDefaultProsthesisType(nextProsthesisTypes),
           customAbutment,
+          ...pickToothWorkAbutmentProductMode(row, customAbutment),
           bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
           ...pickToothWorkCustomSpecs(row, customAbutment),
         };
@@ -1379,6 +1406,10 @@ export const PracticeFileTransferPage = ({
         params,
         "skipDesignConfirm",
       );
+      const hasDefaultAbutmentProductMode = Object.prototype.hasOwnProperty.call(
+        params,
+        "defaultAbutmentProductMode",
+      );
 
       const jsonBody: Record<string, unknown> = {};
       if (hasArrivalDefaultDays) {
@@ -1398,6 +1429,11 @@ export const PracticeFileTransferPage = ({
       }
       if (hasSkipDesignConfirm) {
         jsonBody.skipDesignConfirm = params.skipDesignConfirm === true;
+      }
+      if (hasDefaultAbutmentProductMode) {
+        jsonBody.defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
+          params.defaultAbutmentProductMode,
+        );
       }
       if (Object.keys(jsonBody).length === 0) return true;
 
@@ -1448,6 +1484,9 @@ export const PracticeFileTransferPage = ({
                 : abutmentFavorites,
             ),
             skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
+            defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
+              payload?.defaultAbutmentProductMode,
+            ),
             savedAt: Date.now(),
           }),
         );
@@ -1881,9 +1920,12 @@ export const PracticeFileTransferPage = ({
       if (localFormUpdatedAtRef.current <= 0) {
         applyPracticeTransferSettings(payload);
       } else if (payload) {
-        // 폼 로컬값이 있어도 계정 세팅(문장·디자인컨펌생략)은 서버를 우선 반영
+        // 폼 로컬값이 있어도 계정 세팅(문장·디자인컨펌생략·커스텀어벗 기본모드)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         setSkipDesignConfirm(Boolean(payload.skipDesignConfirm));
+        setDefaultAbutmentProductMode(
+          normalizeAccountAbutmentProductMode(payload.defaultAbutmentProductMode),
+        );
       }
       try {
         localStorage.setItem(
@@ -1905,6 +1947,9 @@ export const PracticeFileTransferPage = ({
               Array.isArray(payload?.abutmentFavorites) ? payload?.abutmentFavorites : [],
             ),
             skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
+            defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
+              payload?.defaultAbutmentProductMode,
+            ),
             savedAt: Date.now(),
           }),
         );
@@ -2047,6 +2092,31 @@ export const PracticeFileTransferPage = ({
               ? String(productionRaw.confirmedAt)
               : null,
             feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
+            remakeFeeQuote: parsePracticeTransferFeeQuote(
+              (r.feeQuote && typeof r.feeQuote === "object"
+                ? (r.feeQuote as Record<string, unknown>).remakeFeeQuote
+                : null) ?? r.remakeFeeQuote,
+            ),
+            isRemake: Boolean(
+              r.isRemake ||
+                (r.remake &&
+                  typeof r.remake === "object" &&
+                  (String(
+                    (r.remake as { sourceTransferId?: unknown }).sourceTransferId || "",
+                  ).trim() ||
+                    String(
+                      (r.remake as { sourceTransferMongoId?: unknown })
+                        .sourceTransferMongoId || "",
+                    ).trim())) ||
+                (r.feeQuote &&
+                  typeof r.feeQuote === "object" &&
+                  (r.feeQuote as { isRemake?: boolean }).isRemake),
+            ),
+            remakeSourceTransferId: String(
+              (r.remake && typeof r.remake === "object"
+                ? (r.remake as { sourceTransferId?: unknown }).sourceTransferId
+                : r.remakeSourceTransferId) || "",
+            ).trim(),
           };
         })
         .filter((item) => Boolean(item.id))
@@ -2827,6 +2897,9 @@ export const PracticeFileTransferPage = ({
           rawTransferMemo: req.rawTransferMemo,
           targetLabAnchorId: req.targetLabAnchorId,
           feeQuote: req.feeQuote || null,
+          remakeFeeQuote: req.remakeFeeQuote || req.feeQuote?.remakeFeeQuote || null,
+          isRemake: Boolean(req.isRemake),
+          remakeSourceTransferId: req.remakeSourceTransferId || "",
           unreadCount,
           searchBlob: [
             req.id,
@@ -2898,6 +2971,13 @@ export const PracticeFileTransferPage = ({
       }
       if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
       if (!existing.feeQuote && req.feeQuote) existing.feeQuote = req.feeQuote;
+      if (!existing.remakeFeeQuote && req.remakeFeeQuote) {
+        existing.remakeFeeQuote = req.remakeFeeQuote;
+      }
+      if (req.isRemake) existing.isRemake = true;
+      if (!existing.remakeSourceTransferId && req.remakeSourceTransferId) {
+        existing.remakeSourceTransferId = req.remakeSourceTransferId;
+      }
       if (!existing.targetLabAnchorId && req.targetLabAnchorId) {
         existing.targetLabAnchorId = req.targetLabAnchorId;
       }
@@ -3151,6 +3231,79 @@ export const PracticeFileTransferPage = ({
   }, [trashRecentRequests, trashedDraftList]);
 
   const displayGroupedTransfers = filteredGroupedTransfers;
+
+  const remakeSelectedTransfers = useMemo(() => {
+    const selected = new Set(remakeSelectedIds);
+    return groupedTransfers.filter((transfer) => {
+      const key = String(transfer.transferMongoIds?.[0] || transfer.id || "").trim();
+      return key && selected.has(key) && canRemakePracticeTransferByStatus(transfer.status);
+    });
+  }, [groupedTransfers, remakeSelectedIds]);
+
+  const remakeSelectedTotal = useMemo(
+    () =>
+      remakeSelectedTransfers.reduce((sum, transfer) => {
+        const quote = transfer.remakeFeeQuote || transfer.feeQuote?.remakeFeeQuote;
+        return sum + Math.max(0, Math.round(Number(quote?.total || 0)));
+      }, 0),
+    [remakeSelectedTransfers],
+  );
+
+  const toggleRemakeSelect = useCallback((transfer: RecentTransferItem) => {
+    const key = String(transfer.transferMongoIds?.[0] || transfer.id || "").trim();
+    if (!key || !canRemakePracticeTransferByStatus(transfer.status)) return;
+    setRemakeSelectedIds((prev) =>
+      prev.includes(key) ? prev.filter((id) => id !== key) : [...prev, key],
+    );
+  }, []);
+
+  const handleConfirmRemake = useCallback(async () => {
+    if (!authToken || remakeSelectedTransfers.length === 0) return;
+    setRemakeBusy(true);
+    try {
+      const res = await apiFetch<{
+        message?: string;
+        data?: { created?: unknown[]; failed?: Array<{ message?: string }> };
+      }>({
+        path: "/api/practice/transfers/remake",
+        method: "POST",
+        token: authToken,
+        jsonBody: {
+          transferMongoIds: remakeSelectedTransfers.map((transfer) =>
+            String(transfer.transferMongoIds?.[0] || transfer.id || "").trim(),
+          ),
+        },
+      });
+      if (!res.ok) {
+        const body = res.data && typeof res.data === "object" ? res.data : {};
+        toast({
+          title: "리메이크 의뢰 실패",
+          description: String(body.message || "다시 시도해주세요."),
+          variant: "destructive",
+        });
+        return;
+      }
+      const createdCount = Array.isArray(res.data?.data?.created)
+        ? res.data.data.created.length
+        : remakeSelectedTransfers.length;
+      toast({
+        title: "리메이크 의뢰를 전송했습니다",
+        description: createdCount > 1 ? `${createdCount}건` : undefined,
+      });
+      setRemakeSelectedIds([]);
+      setRemakeConfirmOpen(false);
+      await loadRecentRequests({ silent: true });
+    } catch (error) {
+      toast({
+        title: "리메이크 의뢰 실패",
+        description:
+          error instanceof Error ? error.message : "다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setRemakeBusy(false);
+    }
+  }, [authToken, loadRecentRequests, remakeSelectedTransfers, toast]);
 
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -5122,6 +5275,54 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
+  const persistDefaultAbutmentProductModeSetting = useCallback(
+    (next: AbutmentProductMode) => {
+      const normalized = normalizeAccountAbutmentProductMode(next);
+      if (normalized === defaultAbutmentProductMode) return;
+      setDefaultAbutmentProductMode(normalized);
+
+      try {
+        const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+        const existing =
+          existingRaw && typeof existingRaw === "string"
+            ? (JSON.parse(existingRaw) as Record<string, unknown>)
+            : {};
+        localStorage.setItem(
+          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+          JSON.stringify({
+            ...existing,
+            arrivalDefaultDays,
+            prosthesisTypes: normalizedProsthesisTypes,
+            memoSnippets,
+            implantFavorites,
+            abutmentFavorites,
+            skipDesignConfirm,
+            defaultAbutmentProductMode: normalized,
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+
+      void savePracticeTransferSettingsToServer({
+        defaultAbutmentProductMode: normalized,
+      }).catch(() => {
+        // UI 값은 유지하고, 서버 저장 실패는 다음 저장 기회에 재시도
+      });
+    },
+    [
+      abutmentFavorites,
+      arrivalDefaultDays,
+      defaultAbutmentProductMode,
+      implantFavorites,
+      memoSnippets,
+      normalizedProsthesisTypes,
+      savePracticeTransferSettingsToServer,
+      skipDesignConfirm,
+    ],
+  );
+
   const handleSaveProsthesisTypeSettings = async () => {
     if (savingProsthesisTypeSettings) return;
     setSavingProsthesisTypeSettings(true);
@@ -5142,6 +5343,7 @@ export const PracticeFileTransferPage = ({
               ? row.prosthesisType
               : resolveDefaultProsthesisType(nextTypes),
             customAbutment,
+            ...pickToothWorkAbutmentProductMode(row, customAbutment),
             bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
             ...pickToothWorkCustomSpecs(row, customAbutment),
           };
@@ -5341,6 +5543,8 @@ export const PracticeFileTransferPage = ({
                     await savePracticeTransferSettingsToServer({ memoSnippets: normalized });
                   },
                   implantConnections,
+                  defaultAbutmentProductMode,
+                  onDefaultAbutmentProductModeChange: persistDefaultAbutmentProductModeSetting,
                   implantFavorites,
                   onImplantFavoritesChange: (next) => {
                     const normalized = normalizeImplantFavorites(next);
@@ -5501,6 +5705,17 @@ export const PracticeFileTransferPage = ({
                       <LayoutGrid className="h-3.5 w-3.5" />
                       전체 보기
                     </Button>
+                    {remakeSelectedTransfers.length > 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 gap-1 px-2 bg-amber-600 text-white hover:bg-amber-700"
+                        onClick={() => setRemakeConfirmOpen(true)}
+                      >
+                        <Repeat className="h-3.5 w-3.5" />
+                        리메이크 {remakeSelectedTransfers.length}
+                      </Button>
+                    ) : null}
                     <CollapsibleTrigger asChild>
                       <button type="button" className="shrink-0 text-muted-foreground">
                         <ChevronDown
@@ -5538,9 +5753,13 @@ export const PracticeFileTransferPage = ({
                               variant="outline"
                               className={cn(
                                 "cursor-pointer",
-                                recentStatusFilter === item.filter
-                                  ? "border-primary/70 bg-primary-soft text-primary-strong"
-                                  : "hover:bg-muted/40",
+                                item.filter === "리메이크"
+                                  ? recentStatusFilter === item.filter
+                                    ? PRACTICE_REMAKE_BADGE_CLASS
+                                    : "border-amber-200 bg-amber-50/70 text-amber-800 hover:bg-amber-50"
+                                  : recentStatusFilter === item.filter
+                                    ? "border-primary/70 bg-primary-soft text-primary-strong"
+                                    : "hover:bg-muted/40",
                               )}
                             >
                               {item.label} {statusCounts[item.countKey]}건
@@ -5603,6 +5822,8 @@ export const PracticeFileTransferPage = ({
                                   ? "완료"
                                   : recentStatusFilter === "취소"
                                     ? "취소"
+                                  : recentStatusFilter === "리메이크"
+                                    ? "리메이크"
                                   : recentStatusFilter
                         } 없음`}
                   </div>
@@ -5616,6 +5837,11 @@ export const PracticeFileTransferPage = ({
                       const isDraftTransfer =
                         transfer.status === "임시저장" ||
                         transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
+                      const remakeKey = String(
+                        transfer.transferMongoIds?.[0] || transfer.id || "",
+                      ).trim();
+                      const canRemake = canRemakePracticeTransferByStatus(transfer.status);
+                      const remakeChecked = remakeSelectedIds.includes(remakeKey);
 
                       return (
                         <div
@@ -5645,6 +5871,14 @@ export const PracticeFileTransferPage = ({
                                 <Badge variant="outline" className="whitespace-nowrap">
                                   {toStatusBadgeLabel(transfer.status)}
                                 </Badge>
+                                {transfer.isRemake ? (
+                                  <Badge
+                                    variant="outline"
+                                    className={cn("whitespace-nowrap", PRACTICE_REMAKE_BADGE_CLASS)}
+                                  >
+                                    리메이크
+                                  </Badge>
+                                ) : null}
                               </div>
                               <p className="truncate text-xs text-muted-foreground">{targetLabText}</p>
                               <p className="truncate text-xs text-muted-foreground">
@@ -5660,6 +5894,28 @@ export const PracticeFileTransferPage = ({
                             </div>
 
                             <div className="flex shrink-0 items-center gap-1.5">
+                              {canRemake ? (
+                                <TooltipProvider delayDuration={0}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span
+                                        className="inline-flex"
+                                        onClick={(e) => e.stopPropagation()}
+                                        onKeyDown={(e) => e.stopPropagation()}
+                                      >
+                                        <Checkbox
+                                          checked={remakeChecked}
+                                          onCheckedChange={() => toggleRemakeSelect(transfer)}
+                                          aria-label="리메이크 대상 선택"
+                                        />
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="max-w-xs text-xs">
+                                      발송 건 리메이크 의뢰
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : null}
                               {transfer.unreadCount > 0 ? (
                                 <span
                                   className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold leading-none text-white"
@@ -6008,6 +6264,11 @@ export const PracticeFileTransferPage = ({
           onDeleteTransfer={(transfer) => {
             handleAskDeleteTransfer(transfer as RecentTransferItem);
           }}
+          remakeSelectedIds={remakeSelectedIds}
+          onToggleRemakeSelect={(transfer) =>
+            toggleRemakeSelect(transfer as RecentTransferItem)
+          }
+          onAskRemake={() => setRemakeConfirmOpen(true)}
         />
 
         <PracticeTransferDetailChatDialog
@@ -6282,6 +6543,30 @@ export const PracticeFileTransferPage = ({
           cancelLabel="취소"
           onConfirm={() => void handleConfirmRestoreTransfer()}
           onCancel={handleCancelRestoreTransfer}
+        />
+
+        <ConfirmDialog
+          open={remakeConfirmOpen}
+          title="선택한 발송 건을 리메이크 의뢰할까요?"
+          description={
+            <div className="space-y-1">
+              <div className="text-sm text-muted-foreground">
+                {remakeSelectedTransfers.length}건 · 리메이크 비용{" "}
+                {formatWon(remakeSelectedTotal)}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                기공소 설정 기공료의 리메이크 수가로 청구되며, 의뢰부터 발송까지
+                다시 진행됩니다.
+              </div>
+            </div>
+          }
+          confirmLabel={remakeBusy ? "전송 중..." : "리메이크 의뢰"}
+          cancelLabel="취소"
+          onConfirm={() => void handleConfirmRemake()}
+          onCancel={() => {
+            if (remakeBusy) return;
+            setRemakeConfirmOpen(false);
+          }}
         />
 
         <ConfirmDialog

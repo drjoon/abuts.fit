@@ -20,6 +20,7 @@ import {
   loadPracticeTransferQuoteContext,
   rollbackPracticeTransferBilling,
   toBillingPreviewFields,
+  toRemakeApiFields,
 } from "../../services/practiceTransferBilling.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
@@ -342,6 +343,7 @@ const toVirtualRequestRows = (transferDoc) => {
     : [];
 
   const manufacturerStage = resolvePracticeTransferManufacturerStage(transferDoc);
+  const remakeFields = toRemakeApiFields(transferDoc);
 
   // 첨부 파일 없는 전송도 최근 의뢰 목록에 보이도록 placeholder row 1건 생성
   const memoPatientMatch = transferMemo.match(/\[\s*환자명\s*:\s*([^\]]+)\]/);
@@ -352,6 +354,7 @@ const toVirtualRequestRows = (transferDoc) => {
     _id: `${String(transferDoc._id)}:${idx + 1}`,
     requestId: `${transferId}-${idx + 1}`,
     manufacturerStage,
+    ...remakeFields,
     createdAt: transferDoc?.createdAt,
     practiceTransferId: String(transferDoc?._id || ""),
     matchingMode,
@@ -1599,6 +1602,241 @@ export async function createPracticeTransfer(req, res) {
   }
 }
 
+export async function remakePracticeTransfers(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const practiceAnchorId = req.user?.businessAnchorId || null;
+    if (!practiceAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "치과 사업자 정보가 필요합니다. 사업자 등록 후 다시 시도해주세요.",
+      });
+    }
+
+    const rawIds = Array.isArray(req.body?.transferMongoIds)
+      ? req.body.transferMongoIds
+      : Array.isArray(req.body?.ids)
+        ? req.body.ids
+        : [];
+    const objectIds = rawIds
+      .map((id) => String(id || "").trim())
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (objectIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "리메이크할 발송 건을 선택해주세요.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const sources = await PracticeTransfer.find({
+      ...scope,
+      _id: { $in: objectIds },
+      status: { $ne: "canceled" },
+    });
+
+    const created = [];
+    const failed = [];
+    const seen = new Set();
+
+    for (const source of sources) {
+      const sourceMongoId = String(source?._id || "").trim();
+      const sourceTransferId = String(source?.transferId || "").trim();
+      seen.add(sourceMongoId);
+      const stage = resolvePracticeTransferManufacturerStage(source);
+      if (stage !== "생산진행") {
+        failed.push({
+          transferId: sourceTransferId || sourceMongoId,
+          message: "발송된 의뢰만 리메이크할 수 있습니다.",
+        });
+        continue;
+      }
+
+      const targetLabAnchorId = source.targetLabAnchorId || null;
+      if (!targetLabAnchorId) {
+        failed.push({
+          transferId: sourceTransferId || sourceMongoId,
+          message: "기공소가 지정되지 않은 의뢰는 리메이크할 수 없습니다.",
+        });
+        continue;
+      }
+
+      const toothWorks = Array.isArray(source.toothWorks) ? source.toothWorks : [];
+      const files = Array.isArray(source.files)
+        ? source.files
+            .map((item) => ({
+              patientName: String(item?.patientName || "").trim(),
+              tooth: String(item?.tooth || "").trim(),
+              file: {
+                originalName: String(item?.file?.originalName || "").trim(),
+                mimetype: String(
+                  item?.file?.mimetype || "application/octet-stream",
+                ).trim(),
+                size: Number(item?.file?.size || 0),
+                s3Key: String(item?.file?.s3Key || "").trim(),
+              },
+            }))
+            .filter((item) => item.file.originalName && item.file.s3Key)
+        : [];
+
+      try {
+        await assertPracticeTransferPaidCreditSufficient({
+          practiceAnchorId,
+          labAnchorId: targetLabAnchorId,
+          toothWorks,
+          remake: true,
+        });
+      } catch (creditErr) {
+        const status = Number(creditErr?.statusCode || 500);
+        if (created.length === 0 && failed.length === 0 && sources.length === 1) {
+          return res.status(status >= 400 && status < 600 ? status : 500).json({
+            success: false,
+            message:
+              creditErr?.message || "리메이크 전송 전 유료크레딧 확인에 실패했습니다.",
+            ...(creditErr?.payload || {}),
+          });
+        }
+        failed.push({
+          transferId: sourceTransferId || sourceMongoId,
+          message:
+            creditErr?.message || "리메이크 전송 전 유료크레딧이 부족합니다.",
+        });
+        continue;
+      }
+
+      const feeQuote = await buildPracticeTransferQuote({
+        practiceAnchorId,
+        labAnchorId: targetLabAnchorId,
+        toothWorks,
+        remake: true,
+      });
+
+      const transferId = `PTX-${Date.now().toString(36).toUpperCase()}${created.length
+        ? String(created.length)
+        : ""}`;
+      const production =
+        source.production && typeof source.production === "object"
+          ? source.production
+          : {};
+
+      const transferDoc = await PracticeTransfer.create({
+        transferId,
+        practiceUserId: req.user?._id,
+        practiceBusinessAnchorId: practiceAnchorId,
+        targetLabAnchorId,
+        targetLabName: String(source.targetLabName || "").trim(),
+        matchingMode: "direct",
+        transferMemo: String(source.transferMemo || "").trim(),
+        tag: String(source.tag || "practice_file_transfer").trim(),
+        status: "active",
+        files,
+        toothWorks,
+        billing: toBillingPreviewFields(feeQuote),
+        remake: {
+          sourceTransferId,
+          sourceTransferMongoId: source._id,
+          requestedAt: new Date(),
+          requestedBy: req.user?._id || null,
+        },
+        production: {
+          skipDesignConfirm: Boolean(production?.skipDesignConfirm),
+          shippingMode: null,
+          confirmedAt: null,
+          confirmedBy: null,
+          relatedRequestIds: [],
+        },
+      });
+
+      const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
+      if (targetLabAnchorIdText) {
+        invalidateUnreadCountCache(targetLabAnchorIdText);
+      }
+      const unreadCountForRequestor = targetLabAnchorIdText
+        ? await PracticeTransfer.countDocuments({
+            targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
+            status: { $ne: "canceled" },
+            requestorReadAt: null,
+          })
+        : 0;
+
+      const realtimePayload = {
+        source: "remakePracticeTransfers",
+        transferId,
+        transferMongoId: String(transferDoc?._id || ""),
+        targetLabAnchorId: targetLabAnchorIdText || null,
+        matchingMode: "direct",
+        practiceUserId: String(req.user?._id || ""),
+        status: "active",
+        count: files.length,
+        unreadCount: unreadCountForRequestor,
+        createdAt: transferDoc?.createdAt || new Date(),
+        isRemake: true,
+        remake: {
+          sourceTransferId,
+          sourceTransferMongoId: sourceMongoId,
+        },
+      };
+
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+        type: "practice:transfer-created",
+        payload: realtimePayload,
+        extraUserIds: [req.user?._id],
+      });
+      await emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId,
+        type: "practice:transfer-created",
+        payload: realtimePayload,
+      });
+
+      created.push({
+        _id: String(transferDoc?._id || ""),
+        transferId,
+        sourceTransferId,
+        sourceTransferMongoId: sourceMongoId,
+        billing: transferDoc?.billing || null,
+      });
+    }
+
+    for (const rawId of objectIds) {
+      const id = String(rawId);
+      if (seen.has(id)) continue;
+      failed.push({
+        transferId: id,
+        message: "의뢰를 찾지 못했습니다.",
+      });
+    }
+
+    if (created.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: failed[0]?.message || "리메이크 의뢰를 생성하지 못했습니다.",
+        data: { created, failed },
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message:
+        created.length === 1
+          ? "리메이크 의뢰를 전송했습니다."
+          : `리메이크 의뢰 ${created.length}건을 전송했습니다.`,
+      data: { created, failed },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "리메이크 의뢰 생성 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
 export async function getMyPracticeTransfers(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
@@ -1892,6 +2130,7 @@ export async function getReceivedPracticeTransfers(req, res) {
           s3Key: String(item?.file?.s3Key || "").trim(),
         })),
         feeQuote: quotesById.get(String(doc?._id || "")) || null,
+        ...toRemakeApiFields(doc),
       };
     });
 
@@ -2248,6 +2487,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             labSettlementAmount: billingResult.labSettlementAmount || 0,
             abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
             billedAt: new Date(),
+            isRemake: toRemakeApiFields(doc).isRemake,
           };
           await doc.save();
         }
@@ -2383,6 +2623,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             labSettlementAmount: billingResult.labSettlementAmount || 0,
             abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
             billedAt: new Date(),
+            isRemake: toRemakeApiFields(doc).isRemake,
           };
         }
       } catch (billingErr) {

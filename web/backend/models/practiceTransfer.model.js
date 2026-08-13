@@ -144,6 +144,22 @@ const practiceTransferSchema = new mongoose.Schema(
       labSettlementAmount: { type: Number, default: 0 },
       abutsRevenueAmount: { type: Number, default: 0 },
       billedAt: { type: Date, default: null },
+      isRemake: { type: Boolean, default: false },
+    },
+    remake: {
+      sourceTransferId: { type: String, default: "", trim: true, index: true },
+      sourceTransferMongoId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "PracticeTransfer",
+        default: null,
+        index: true,
+      },
+      requestedAt: { type: Date, default: null },
+      requestedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
     },
     // requestor(수신 기공소) 확인 상태 SSOT
     requestorReadAt: {

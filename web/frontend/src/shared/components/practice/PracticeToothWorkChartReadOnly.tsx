@@ -362,7 +362,9 @@ export const PracticeToothWorkChartReadOnly = ({
                     {canShowCustom ? (
                       <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
                         <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
-                          커스텀
+                          {row.prosthesisType === "크라운" || row.prosthesisType === "브리지"
+                            ? "어벗"
+                            : "커스텀"}
                         </span>
                         <span className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
                           {

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: ?type= 쿼리로 문의 유형 프리필.
 // - 2026-08-12: 의뢰자 문의 화면에 기공료 선입금 FAQ 노출.
 // - 2026-08-11: 크레딧 페이지와 동일하게 max-w-4xl·gradient·glass 카드 적용, 역할별 문의 유형 확장.
 // related files:
@@ -259,10 +260,10 @@ export const InquiriesPage = () => {
     if (presetSubject) setSubject((prev) => prev || presetSubject);
     if (presetMessage) setMessage((prev) => prev || presetMessage);
     if (presetType && preset.typeChips.some((c) => c.value === presetType)) {
-      setType((prev) => prev || presetType);
+      setType(presetType);
     }
 
-    if (presetSubject || presetMessage || shouldFocusMessage) {
+    if (presetSubject || presetMessage || presetType || shouldFocusMessage) {
       setActiveTab("new");
       requestAnimationFrame(() => {
         if (shouldFocusMessage) messageRef.current?.focus();

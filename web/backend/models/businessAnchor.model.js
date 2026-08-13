@@ -254,6 +254,9 @@ const businessAnchorSchema = new mongoose.Schema(
       bridge: { type: Number, default: 60000, min: 0 },
       inlay: { type: Number, default: 50000, min: 0 },
       pontic: { type: Number, default: 40000, min: 0 },
+      retainer: { type: Number, default: 40000, min: 0 },
+      removableTemp3: { type: Number, default: 30000, min: 0 },
+      removableTemp6: { type: Number, default: 50000, min: 0 },
       customAbutmentDesign: { type: Number, default: 10000, min: 0 },
       customAbutmentDesignAndProduction: {
         type: Number,
@@ -265,6 +268,9 @@ const businessAnchorSchema = new mongoose.Schema(
         bridge: { type: Number, default: 0, min: 0 },
         inlay: { type: Number, default: 0, min: 0 },
         pontic: { type: Number, default: 0, min: 0 },
+        retainer: { type: Number, default: 0, min: 0 },
+        removableTemp3: { type: Number, default: 0, min: 0 },
+        removableTemp6: { type: Number, default: 0, min: 0 },
         customAbutmentDesign: { type: Number, default: 0, min: 0 },
         customAbutmentDesignAndProduction: {
           type: Number,
@@ -278,6 +284,9 @@ const businessAnchorSchema = new mongoose.Schema(
         bridge: { type: Boolean, default: true },
         inlay: { type: Boolean, default: true },
         pontic: { type: Boolean, default: true },
+        retainer: { type: Boolean, default: true },
+        removableTemp3: { type: Boolean, default: true },
+        removableTemp6: { type: Boolean, default: true },
         customAbutmentDesign: { type: Boolean, default: true },
         customAbutmentDesignAndProduction: { type: Boolean, default: true },
       },
@@ -287,7 +296,9 @@ const businessAnchorSchema = new mongoose.Schema(
       // related files:
       // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
       // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+      // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
       // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+      // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산)
       arrivalDefaultDays: {
         type: Number,
         default: 7,
@@ -296,7 +307,7 @@ const businessAnchorSchema = new mongoose.Schema(
       },
       prosthesisTypes: {
         type: [String],
-        default: ["인레이", "크라운", "커스텀어벗", "브리지"],
+        default: ["인레이", "크라운", "커스텀어벗", "브리지", "유지장치", "임시치아"],
       },
       memoSnippets: {
         type: [String],
@@ -333,6 +344,13 @@ const businessAnchorSchema = new mongoose.Schema(
       skipDesignConfirm: {
         type: Boolean,
         default: false,
+      },
+      // 커스텀어벗 설정 모달 기본 모드. 미설정·신규 계정은 디자인+생산.
+      // 치아별 스냅샷은 toothWorks.abutmentProductMode (레거시 미설정=생산만).
+      defaultAbutmentProductMode: {
+        type: String,
+        enum: ["custom_abutment", "design_custom_abutment"],
+        default: "design_custom_abutment",
       },
       updatedAt: {
         type: Date,

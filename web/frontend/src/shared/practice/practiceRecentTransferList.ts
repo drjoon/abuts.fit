@@ -1,6 +1,7 @@
 /**
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
- * 상단 6뱃지 취소=기공소 작업취소. 치과 휴지통(status 취소)은 집계·필터에서 제외.
+ * 상단 6뱃지 취소=기공소 작업취소. 리메이크는 발송 건 재의뢰 플래그(파이프라인과 병행).
+ * 치과 휴지통(status 취소)은 집계·필터에서 제외.
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -44,6 +45,9 @@ export type PracticeRecentRequestItem = {
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
   feeQuote?: PracticeTransferFeeQuote | null;
+  remakeFeeQuote?: PracticeTransferFeeQuote | null;
+  isRemake?: boolean;
+  remakeSourceTransferId?: string;
 };
 
 export type PracticeRecentTransferItem = {
@@ -72,6 +76,9 @@ export type PracticeRecentTransferItem = {
   searchBlob: string;
   targetLabAnchorId?: string;
   feeQuote?: PracticeTransferFeeQuote | null;
+  remakeFeeQuote?: PracticeTransferFeeQuote | null;
+  isRemake?: boolean;
+  remakeSourceTransferId?: string;
 };
 
 export type PracticeRecentStatusFilter =
@@ -81,15 +88,23 @@ export type PracticeRecentStatusFilter =
   | "작업완료"
   | "취소"
   | "포장.발송"
-  | "추적관리";
+  | "리메이크";
 
 export type PracticeRecentStatusCounts = {
   sent: number;
   accepted: number;
   completed: number;
   shipping: number;
-  tracking: number;
+  remake: number;
   canceled: number;
+};
+
+export const PRACTICE_REMAKE_BADGE_CLASS =
+  "border-amber-400/80 bg-amber-50 text-amber-800 hover:bg-amber-50";
+
+export const canRemakePracticeTransferByStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  return s === "생산진행" || s === "포장.발송";
 };
 
 /** 최근전송 상단 6뱃지 — 라벨·집계키·빠른툴팁 SSOT. 취소=기공소 작업취소(치과 휴지통 제외). */
@@ -125,10 +140,10 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
     tooltip: "완료된 기공물을 치과로 발송한 후 (완료 후 1일 경과시)",
   },
   {
-    filter: "추적관리",
-    label: "추적관리",
-    countKey: "tracking",
-    tooltip: "치과에서 기공물을 받은 후 (발송 후 1일 경과시)",
+    filter: "리메이크",
+    label: "리메이크",
+    countKey: "remake",
+    tooltip: "발송된 기공물을 리메이크 의뢰한 후. 의뢰부터 발송까지 다시 진행됩니다.",
   },
 ] as const satisfies ReadonlyArray<{
   filter: Exclude<PracticeRecentStatusFilter, "all">;
@@ -318,6 +333,28 @@ export const mapMyPracticeTransferApiRows = (
           ? String(productionRaw.confirmedAt)
           : null,
         feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
+        remakeFeeQuote: parsePracticeTransferFeeQuote(
+          (r.feeQuote && typeof r.feeQuote === "object"
+            ? (r.feeQuote as Record<string, unknown>).remakeFeeQuote
+            : null) ?? r.remakeFeeQuote,
+        ),
+        isRemake: Boolean(
+          r.isRemake ||
+            (r.remake &&
+              typeof r.remake === "object" &&
+              (String((r.remake as { sourceTransferId?: unknown }).sourceTransferId || "").trim() ||
+                String(
+                  (r.remake as { sourceTransferMongoId?: unknown }).sourceTransferMongoId || "",
+                ).trim())) ||
+            (r.feeQuote &&
+              typeof r.feeQuote === "object" &&
+              (r.feeQuote as { isRemake?: boolean }).isRemake),
+        ),
+        remakeSourceTransferId: String(
+          (r.remake && typeof r.remake === "object"
+            ? (r.remake as { sourceTransferId?: unknown }).sourceTransferId
+            : r.remakeSourceTransferId) || "",
+        ).trim(),
       };
     })
     .filter((item) => Boolean(item.id))
@@ -459,6 +496,9 @@ export const groupPracticeRecentRequests = (
         rawTransferMemo: req.rawTransferMemo,
         targetLabAnchorId: req.targetLabAnchorId,
         feeQuote: req.feeQuote || null,
+        remakeFeeQuote: req.remakeFeeQuote || req.feeQuote?.remakeFeeQuote || null,
+        isRemake: Boolean(req.isRemake),
+        remakeSourceTransferId: req.remakeSourceTransferId || "",
         unreadCount,
         searchBlob: [
           req.id,
@@ -529,6 +569,13 @@ export const groupPracticeRecentRequests = (
     }
     if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
     if (!existing.feeQuote && req.feeQuote) existing.feeQuote = req.feeQuote;
+    if (!existing.remakeFeeQuote && req.remakeFeeQuote) {
+      existing.remakeFeeQuote = req.remakeFeeQuote;
+    }
+    if (req.isRemake) existing.isRemake = true;
+    if (!existing.remakeSourceTransferId && req.remakeSourceTransferId) {
+      existing.remakeSourceTransferId = req.remakeSourceTransferId;
+    }
     if (!existing.targetLabAnchorId && req.targetLabAnchorId) {
       existing.targetLabAnchorId = req.targetLabAnchorId;
     }
@@ -607,8 +654,6 @@ export const computeGroupedStatusCounts = (
         acc.completed += 1;
       } else if (status === "생산진행" || status === "포장.발송") {
         acc.shipping += 1;
-      } else if (status === "추적관리") {
-        acc.tracking += 1;
       } else if (status === "의뢰수락" || status === "다운로드완료") {
         acc.accepted += 1;
       } else if (status === "작업취소") {
@@ -618,9 +663,10 @@ export const computeGroupedStatusCounts = (
       } else {
         acc.sent += 1;
       }
+      if (request.isRemake) acc.remake += 1;
       return acc;
     },
-    { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0, canceled: 0 },
+    { sent: 0, accepted: 0, completed: 0, shipping: 0, remake: 0, canceled: 0 },
   );
 
 export const filterGroupedTransfersByStatus = (
@@ -641,8 +687,7 @@ export const filterGroupedTransfersByStatus = (
           status !== "자동매칭" &&
           status !== "취소" &&
           status !== "작업취소" &&
-          status !== "포장.발송" &&
-          status !== "추적관리")
+          status !== "포장.발송")
       );
     }
     if (statusFilter === "포장.발송") {
@@ -653,6 +698,9 @@ export const filterGroupedTransfersByStatus = (
     }
     if (statusFilter === "취소") {
       return status === "작업취소";
+    }
+    if (statusFilter === "리메이크") {
+      return Boolean(transfer.isRemake);
     }
     return status === statusFilter;
   });

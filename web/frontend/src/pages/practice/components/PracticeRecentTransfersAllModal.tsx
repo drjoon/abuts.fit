@@ -4,7 +4,8 @@
  * 취소 뱃지=기공소 작업취소(치과 휴지통 제외). 6뱃지 빠른툴팁.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, Trash2 } from "lucide-react";
+import { Repeat, Search, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import {
   Dialog,
@@ -33,7 +34,9 @@ import {
   type PracticeRecentRequestItem,
   type PracticeRecentStatusFilter,
   PRACTICE_RECENT_STATUS_BADGES,
+  PRACTICE_REMAKE_BADGE_CLASS,
   canDeletePracticeTransferByStatus,
+  canRemakePracticeTransferByStatus,
   computeGroupedStatusCounts,
   filterGroupedTransfersByStatus,
   filterRequestsByPeriodAndSearch,
@@ -54,6 +57,9 @@ type PracticeRecentTransfersAllModalProps = {
   initialStatusFilter?: PracticeRecentStatusFilter;
   onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
+  remakeSelectedIds?: string[];
+  onToggleRemakeSelect?: (transfer: PracticeRecentTransferItem) => void;
+  onAskRemake?: () => void;
 };
 
 export function PracticeRecentTransfersAllModal({
@@ -66,6 +72,9 @@ export function PracticeRecentTransfersAllModal({
   initialStatusFilter = "all",
   onSelectTransfer,
   onDeleteTransfer,
+  remakeSelectedIds = [],
+  onToggleRemakeSelect,
+  onAskRemake,
 }: PracticeRecentTransfersAllModalProps) {
   const [period, setPeriod] = useState(initialPeriod);
   const [search, setSearch] = useState(initialSearch);
@@ -255,6 +264,8 @@ export function PracticeRecentTransfersAllModal({
                   ? "완료"
                   : statusFilter === "취소"
                     ? "취소"
+                  : statusFilter === "리메이크"
+                    ? "리메이크"
                   : statusFilter
         } 없음`;
 
@@ -276,9 +287,13 @@ export function PracticeRecentTransfersAllModal({
             variant="outline"
             className={cn(
               "cursor-pointer",
-              statusFilter === filterKey
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
+              filterKey === "리메이크"
+                ? statusFilter === filterKey
+                  ? PRACTICE_REMAKE_BADGE_CLASS
+                  : "border-amber-200 bg-amber-50/70 text-amber-800 hover:bg-amber-50"
+                : statusFilter === filterKey
+                  ? "border-primary/70 bg-primary-soft text-primary-strong"
+                  : "hover:bg-muted/40",
             )}
           >
             {label} {count}건
@@ -295,7 +310,20 @@ export function PracticeRecentTransfersAllModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[min(88vh,920px)] w-[min(96vw,1280px)] max-w-none flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 space-y-3 border-b px-5 py-4 sm:px-6">
-          <DialogTitle className="text-lg font-semibold">전송 내역 전체 보기</DialogTitle>
+          <DialogTitle className="flex items-center justify-between gap-3 text-lg font-semibold">
+            <span>전송 내역 전체 보기</span>
+            {remakeSelectedIds.length > 0 && onAskRemake ? (
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 gap-1 bg-amber-600 px-2 text-white hover:bg-amber-700"
+                onClick={onAskRemake}
+              >
+                <Repeat className="h-3.5 w-3.5" />
+                리메이크 {remakeSelectedIds.length}
+              </Button>
+            ) : null}
+          </DialogTitle>
           <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2">
             <div className="flex min-w-0 justify-start">
               <PeriodFilter
@@ -359,6 +387,11 @@ export function PracticeRecentTransfersAllModal({
                     .replace(/\s*→.*$/g, "")
                     .trim() || "-";
                 const deleteLocked = !canDeletePracticeTransferByStatus(transfer.status);
+                const remakeKey = String(
+                  transfer.transferMongoIds?.[0] || transfer.id || "",
+                ).trim();
+                const canRemake = canRemakePracticeTransferByStatus(transfer.status);
+                const remakeChecked = remakeSelectedIds.includes(remakeKey);
 
                 return (
                   <div
@@ -386,9 +419,30 @@ export function PracticeRecentTransfersAllModal({
                           <Badge variant="outline" className="whitespace-nowrap">
                             {toStatusBadgeLabel(transfer.status)}
                           </Badge>
+                          {transfer.isRemake ? (
+                            <Badge
+                              variant="outline"
+                              className={cn("whitespace-nowrap", PRACTICE_REMAKE_BADGE_CLASS)}
+                            >
+                              리메이크
+                            </Badge>
+                          ) : null}
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
+                        {canRemake && onToggleRemakeSelect ? (
+                          <span
+                            className="inline-flex"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
+                            <Checkbox
+                              checked={remakeChecked}
+                              onCheckedChange={() => onToggleRemakeSelect(transfer)}
+                              aria-label="리메이크 대상 선택"
+                            />
+                          </span>
+                        ) : null}
                         {transfer.unreadCount > 0 ? (
                           <span
                             className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold leading-none text-white"

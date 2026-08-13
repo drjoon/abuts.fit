@@ -73,6 +73,10 @@ const favoriteLabel = (row: {
 const selectTriggerClass =
   "h-11 min-w-0 px-3 text-sm [&>span]:min-w-0 [&>span]:flex-1 [&>span]:truncate [&>span]:text-left";
 
+/** 프리셋 행(h-8 + py-1.5×2 + border 2px) × 4 + space-y-1.5 × 3. 초과 시 스크롤. */
+const PRESET_LIST_CLASS =
+  "max-h-[calc(4*(2.75rem+2px)+3*0.375rem)] space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100";
+
 export const PracticeToothImplantFields = ({
   value,
   onChange,
@@ -397,15 +401,7 @@ export const PracticeToothImplantFields = ({
             </p>
           )
         ) : (
-          <div
-            className={
-              mode === "presets"
-                ? "max-h-64 space-y-1.5 overflow-y-auto pr-0.5"
-                : stretchList
-                  ? "min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5"
-                  : "max-h-40 space-y-1.5 overflow-y-auto pr-0.5"
-            }
-          >
+          <div className={`min-h-0 ${PRESET_LIST_CLASS}`}>
             {favorites.map((fav) => {
               const isEditing = canManagePresets && editingFavoriteId === fav.id;
               const isActive = favoriteKey(fav) === currentFavoriteKey;

@@ -34,7 +34,7 @@
 // - 2026-08-11: 의뢰수락 후 치과 transfer-room 재연결. 모달 폭·lab peer 채팅 연결.
 // - 2026-08-13: 의뢰 상세 모달 — 수락 전에도 지정 기공소는 치과 채팅 내역을 표시.
 // - 2026-08-11: 수락 카드에 작업완료/작업취소 버튼. mark-release API.
-// - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·추적관리(작업취소는 취소 집계).
+// - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·리메이크(작업취소는 취소 집계).
 // - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
 // - 2026-08-12: 수락 카드 — 별도 결과파일 드롭존 제거·카드 점선 외곽·작업완료 왼쪽 드롭 아이콘.
 // - 2026-08-13: 채팅 첨부 즉시 백그라운드 업로드 + 칩 프로그레스바.
@@ -70,6 +70,7 @@ import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { Building2, Search, UploadCloud } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
+import { PRACTICE_REMAKE_BADGE_CLASS } from "@/shared/practice/practiceRecentTransferList";
 import {
   Dialog,
   DialogContent,
@@ -177,6 +178,8 @@ type ReceivedPracticeTransfer = {
   resultFileCount?: number;
   resultFiles?: ReceivedPracticeFile[];
   feeQuote?: PracticeTransferFeeQuote | null;
+  isRemake?: boolean;
+  remakeSourceTransferId?: string;
 };
 
 type ReceivedTransfersResponse = {
@@ -437,7 +440,7 @@ function RequestorPracticeReceivePage({
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "발송완료" | "의뢰수락" | "작업완료" | "취소" | "포장.발송" | "추적관리"
+    "all" | "발송완료" | "의뢰수락" | "작업완료" | "취소" | "포장.발송" | "리메이크"
   >("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -682,6 +685,26 @@ function RequestorPracticeReceivePage({
           resultFileCount: Number(r.resultFileCount || resultFiles.length || 0),
           resultFiles,
           feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
+          isRemake: Boolean(
+            r.isRemake ||
+              (r.remake &&
+                typeof r.remake === "object" &&
+                (String(
+                  (r.remake as { sourceTransferId?: unknown }).sourceTransferId || "",
+                ).trim() ||
+                  String(
+                    (r.remake as { sourceTransferMongoId?: unknown }).sourceTransferMongoId ||
+                      "",
+                  ).trim())) ||
+              (r.feeQuote &&
+                typeof r.feeQuote === "object" &&
+                (r.feeQuote as { isRemake?: boolean }).isRemake),
+          ),
+          remakeSourceTransferId: String(
+            (r.remake && typeof r.remake === "object"
+              ? (r.remake as { sourceTransferId?: unknown }).sourceTransferId
+              : r.remakeSourceTransferId) || "",
+          ).trim(),
         };
       })
       .filter((x) => x.transferId)
@@ -1015,10 +1038,10 @@ function RequestorPracticeReceivePage({
         else if (status === "발송완료" || status === "수신완료") {
           acc.sent += 1;
         }
-        // 자동매칭·기타는 집계 제외
+        if (transfer.isRemake) acc.remake += 1;
         return acc;
       },
-      { sent: 0, accepted: 0, completed: 0, canceled: 0, shipping: 0, tracking: 0 },
+      { sent: 0, accepted: 0, completed: 0, canceled: 0, shipping: 0, remake: 0 },
     );
     return counts;
   }, [baseFilteredTransfers]);
@@ -1032,6 +1055,9 @@ function RequestorPracticeReceivePage({
       }
       if (statusFilter === "포장.발송") {
         return status === "생산진행";
+      }
+      if (statusFilter === "리메이크") {
+        return Boolean(transfer.isRemake);
       }
       return status === statusFilter;
     });
@@ -2031,19 +2057,19 @@ function RequestorPracticeReceivePage({
         <button
           type="button"
           className="rounded-full"
-          onClick={() => setStatusFilter((prev) => (prev === "추적관리" ? "all" : "추적관리"))}
-          aria-pressed={statusFilter === "추적관리"}
+          onClick={() => setStatusFilter((prev) => (prev === "리메이크" ? "all" : "리메이크"))}
+          aria-pressed={statusFilter === "리메이크"}
         >
           <Badge
             variant="outline"
             className={cn(
               "cursor-pointer",
-              statusFilter === "추적관리"
-                ? "border-primary/70 bg-primary-soft text-primary-strong"
-                : "hover:bg-muted/40",
+              statusFilter === "리메이크"
+                ? PRACTICE_REMAKE_BADGE_CLASS
+                : "border-amber-200 bg-amber-50/70 text-amber-800 hover:bg-amber-50",
             )}
           >
-            추적관리 {statusCounts.tracking}건
+            리메이크 {statusCounts.remake}건
           </Badge>
         </button>
       </div>
@@ -2118,6 +2144,14 @@ function RequestorPracticeReceivePage({
                         ? ` · ${formatRemainingMs(transfer.autoMatch.remainingMs)}`
                         : ""}
                     </Badge>
+                    {transfer.isRemake ? (
+                      <Badge
+                        variant="outline"
+                        className={cn("shrink-0 whitespace-nowrap", PRACTICE_REMAKE_BADGE_CLASS)}
+                      >
+                        리메이크
+                      </Badge>
+                    ) : null}
                   </div>
                 </div>
 

@@ -5,13 +5,21 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/models/businessAnchor.model.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+// - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산) 저장.
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
+const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
+const ABUTMENT_PRODUCT_MODE_DESIGN_AND_PRODUCTION = "design_custom_abutment";
+const DEFAULT_ABUTMENT_PRODUCT_MODE = ABUTMENT_PRODUCT_MODE_DESIGN_AND_PRODUCTION;
 const DEFAULT_PROSTHESIS_TYPES = [
   "인레이",
   "크라운",
   "커스텀어벗",
   "브리지",
+  "유지장치",
+  "임시치아",
 ];
 const MAX_MEMO_SNIPPETS = 40;
 const MAX_IMPLANT_FAVORITES = 40;
@@ -24,8 +32,13 @@ const normalizeProsthesisTypes = (items) => {
   for (const item of list) {
     const trimmed = String(item || "").trim();
     if (!trimmed) continue;
-    const key = trimmed.toLowerCase();
-    if (!dedup.has(key)) dedup.set(key, trimmed);
+    const compact = trimmed.replace(/\s+/g, "");
+    const canonical =
+      compact === "가철성임시치아" || compact === "임시치아"
+        ? "임시치아"
+        : trimmed;
+    const key = canonical.toLowerCase();
+    if (!dedup.has(key)) dedup.set(key, canonical);
   }
 
   const out = Array.from(dedup.values());
@@ -97,6 +110,17 @@ const normalizeArrivalDefaultDays = (value) => {
   return Math.min(365, Math.max(0, Math.floor(raw)));
 };
 
+const normalizeDefaultAbutmentProductMode = (value) => {
+  const raw = String(value || "").trim();
+  if (
+    raw === ABUTMENT_PRODUCT_MODE_PRODUCTION ||
+    raw === ABUTMENT_PRODUCT_MODE_DESIGN_AND_PRODUCTION
+  ) {
+    return raw;
+  }
+  return DEFAULT_ABUTMENT_PRODUCT_MODE;
+};
+
 const toSettingsResponse = (anchor) => {
   const settings =
     anchor?.practiceTransferSettings &&
@@ -116,6 +140,9 @@ const toSettingsResponse = (anchor) => {
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
     promoNoticeDismissedAt,
     skipDesignConfirm: Boolean(settings?.skipDesignConfirm),
+    defaultAbutmentProductMode: normalizeDefaultAbutmentProductMode(
+      settings?.defaultAbutmentProductMode,
+    ),
     updatedAt: settings?.updatedAt || null,
   };
 };
@@ -182,6 +209,10 @@ export async function upsertPracticeTransferSettings(req, res) {
     const hasAbutmentFavorites = Object.prototype.hasOwnProperty.call(body, "abutmentFavorites");
     const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(body, "promoNoticeDismissedAt");
     const hasSkipDesignConfirm = Object.prototype.hasOwnProperty.call(body, "skipDesignConfirm");
+    const hasDefaultAbutmentProductMode = Object.prototype.hasOwnProperty.call(
+      body,
+      "defaultAbutmentProductMode",
+    );
 
     const setPatch = {
       "practiceTransferSettings.updatedAt": new Date(),
@@ -215,6 +246,10 @@ export async function upsertPracticeTransferSettings(req, res) {
     if (hasSkipDesignConfirm) {
       setPatch["practiceTransferSettings.skipDesignConfirm"] =
         body.skipDesignConfirm === true || body.skipDesignConfirm === "true";
+    }
+    if (hasDefaultAbutmentProductMode) {
+      setPatch["practiceTransferSettings.defaultAbutmentProductMode"] =
+        normalizeDefaultAbutmentProductMode(body.defaultAbutmentProductMode);
     }
 
     const anchor = await BusinessAnchor.findByIdAndUpdate(
