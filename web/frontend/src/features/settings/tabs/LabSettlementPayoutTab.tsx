@@ -5,7 +5,8 @@
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
-// - 2026-08-13: 요약 3열 — 잔액(총계+등록/미등록)·지급 합계·액션. 소개 치과 제거·기공크레딧 표기 통일.
+// - 2026-08-13: 잔액/지급 동폭 클릭 카드로 탭 전환. 정산규칙은 검색줄 우측. 등록치과·미등록치과 표기.
+
 // - 2026-08-11: 요약 5열(액션 버튼 세로). 일자 입력 제거·검색 상단 이동. 전체/거래처/비거래처를 필터 행으로.
 // - 2026-08-11: 요약 카드 — 하단 보조행 제거, 금액 옆 (N건), 높이 축소·중앙 정렬.
 // - 2026-08-11: 정산 요청 버튼 제거(매월 자동 지급). 안내는 정산규칙 모달에만 표시.
@@ -47,6 +48,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/shared/ui/cn";
 
 type PayoutItem = {
   _id: string;
@@ -191,8 +193,8 @@ export const LabSettlementPayoutTab = () => {
 
   const partnerFeePct = pctLabel(partnerFeeRate);
   const nonPartnerFeePct = pctLabel(nonPartnerFeeRate);
-  const partnerColLabel = `등록 (${partnerFeePct})`;
-  const nonPartnerColLabel = `미등록 (${nonPartnerFeePct})`;
+  const partnerColLabel = `등록치과 (${partnerFeePct})`;
+  const nonPartnerColLabel = `미등록치과 (${nonPartnerFeePct})`;
 
   const loadBalance = useCallback(async () => {
     if (!token) return;
@@ -484,19 +486,29 @@ export const LabSettlementPayoutTab = () => {
     <DashboardShell
       title="기공크레딧"
       subtitle=""
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(9.5rem,auto)]"
+      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2"
       stats={
         <>
-          <div className="flex min-h-[7.25rem] flex-col justify-center rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3.5 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setTab("snapshot")}
+            aria-pressed={tab === "snapshot"}
+            className={cn(
+              "flex min-h-[7.25rem] w-full flex-col justify-center rounded-2xl border px-4 py-3.5 text-left shadow-sm transition-colors",
+              tab === "snapshot"
+                ? "border-primary-muted bg-primary-soft/40 ring-1 ring-primary-muted/70"
+                : "border-slate-200/80 bg-white/70 hover:border-slate-300 hover:bg-white",
+            )}
+          >
             <div className="text-center text-[13px] font-medium text-slate-500">
               기공크레딧 잔액
             </div>
             <div className="mt-1 text-center text-2xl font-semibold tabular-nums text-primary-strong sm:text-[1.65rem]">
               ₩{settlementCredit.toLocaleString()}
             </div>
-            <div className="mt-2.5 flex items-center justify-center gap-3 border-t border-slate-100 pt-2.5 text-[11px] tabular-nums text-slate-600 sm:gap-4 sm:text-xs">
+            <div className="mt-2.5 flex items-center justify-center gap-3 border-t border-slate-100/80 pt-2.5 text-[11px] tabular-nums text-slate-600 sm:gap-4 sm:text-xs">
               <span>
-                <span className="text-slate-400">등록</span>{" "}
+                <span className="text-slate-400">등록치과</span>{" "}
                 <span className="font-medium text-slate-800">
                   ₩{snapshotTotals.partnerTotal.toLocaleString()}
                 </span>
@@ -506,7 +518,7 @@ export const LabSettlementPayoutTab = () => {
               </span>
               <span className="h-3 w-px bg-slate-200" aria-hidden />
               <span>
-                <span className="text-slate-400">미등록</span>{" "}
+                <span className="text-slate-400">미등록치과</span>{" "}
                 <span className="font-medium text-slate-800">
                   ₩{snapshotTotals.nonPartnerTotal.toLocaleString()}
                 </span>
@@ -515,9 +527,19 @@ export const LabSettlementPayoutTab = () => {
                 </span>
               </span>
             </div>
-          </div>
+          </button>
 
-          <div className="flex min-h-[7.25rem] flex-col justify-center rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3.5 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setTab("payments")}
+            aria-pressed={tab === "payments"}
+            className={cn(
+              "flex min-h-[7.25rem] w-full flex-col justify-center rounded-2xl border px-4 py-3.5 text-left shadow-sm transition-colors",
+              tab === "payments"
+                ? "border-primary-muted bg-primary-soft/40 ring-1 ring-primary-muted/70"
+                : "border-slate-200/80 bg-white/70 hover:border-slate-300 hover:bg-white",
+            )}
+          >
             <div className="text-center text-[13px] font-medium text-slate-500">
               지급 합계
             </div>
@@ -527,98 +549,7 @@ export const LabSettlementPayoutTab = () => {
             <div className="mt-2.5 border-t border-transparent pt-2.5 text-center text-xs text-muted-foreground">
               {snapshotTotals.payoutCount}건
             </div>
-          </div>
-
-          <div className="flex min-h-[7.25rem] flex-col justify-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/70 p-2.5 shadow-sm">
-            <Button
-              type="button"
-              size="sm"
-              variant={tab === "snapshot" ? "default" : "outline"}
-              className="h-8 w-full"
-              onClick={() => setTab("snapshot")}
-            >
-              일별 정산
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={tab === "payments" ? "default" : "outline"}
-              className="h-8 w-full"
-              onClick={() => setTab("payments")}
-            >
-              입금 내역
-            </Button>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 w-full"
-                >
-                  정산규칙
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-h-[85vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-2xl">
-                <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
-                  <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
-                    기공크레딧 정산 규칙
-                  </DialogTitle>
-                  <DialogDescription className="text-sm text-slate-500">
-                    적립 · 분리 · 지급 기준을 한눈에 확인하세요.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="max-h-[calc(85vh-5.5rem)] space-y-3 overflow-y-auto px-6 py-5">
-                  <PolicySection title="기공의뢰 적립">
-                    <div className="flex gap-2.5">
-                      <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                      <p>
-                        치과가 유료/무료크레딧으로 지불한 기공비에서, 등록 치과(
-                        플랫폼 수수료 {partnerFeePct})·미등록 치과(
-                        {nonPartnerFeePct})는 수수료를 제외한 금액이{" "}
-                        <span className="font-semibold text-slate-900">
-                          기공크레딧
-                        </span>
-                        으로 적립됩니다. 무료 프로모션 비용은 플랫폼이
-                        부담합니다.
-                      </p>
-                    </div>
-                  </PolicySection>
-                  <PolicySection title="유료/무료크레딧 · 기공크레딧 분리">
-                    <div className="flex gap-2.5">
-                      <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                      <p>
-                        유료·무료크레딧은 기공소가 앱에서 소비하는
-                        잔액(기공의뢰·생산·배송). 기공크레딧은 치과에서 받은
-                        정산 대기액으로 완전 분리 관리됩니다.
-                      </p>
-                    </div>
-                  </PolicySection>
-                  <PolicySection title="매월 자동 지급">
-                    <div className="flex gap-2.5">
-                      <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                      <p>
-                        기공크레딧 잔액은 사업자에 등록된 입금 계좌로 매월 자동
-                        지급됩니다. 별도 정산 요청은 필요하지 않습니다.
-                      </p>
-                    </div>
-                  </PolicySection>
-                  <PolicySection title="일별 정산 집계">
-                    <div className="flex gap-2.5">
-                      <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                      <p>원장 기준 KST 일자별 실시간 집계</p>
-                    </div>
-                  </PolicySection>
-                  <PolicySection title="롤백">
-                    <div className="flex gap-2.5">
-                      <BookOpenText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                      <p>기공의뢰 취소·롤백 시 해당 적립은 삭제형으로 정리</p>
-                    </div>
-                  </PolicySection>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
+          </button>
         </>
       }
       mainLeft={
@@ -645,7 +576,7 @@ export const LabSettlementPayoutTab = () => {
                   onClick={() => setPartnerFilter("partner")}
                   disabled={anyLoading}
                 >
-                  등록
+                  등록치과
                 </Button>
                 <Button
                   type="button"
@@ -657,7 +588,7 @@ export const LabSettlementPayoutTab = () => {
                   onClick={() => setPartnerFilter("nonPartner")}
                   disabled={anyLoading}
                 >
-                  미등록
+                  미등록치과
                 </Button>
               </div>
               <Input
@@ -666,6 +597,79 @@ export const LabSettlementPayoutTab = () => {
                 placeholder="검색 (계좌/저널ID)"
                 className="h-9 w-full sm:w-[280px]"
               />
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto h-9"
+                  >
+                    정산규칙
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-h-[85vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-2xl">
+                  <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
+                    <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
+                      기공크레딧 정산 규칙
+                    </DialogTitle>
+                    <DialogDescription className="text-sm text-slate-500">
+                      적립 · 분리 · 지급 기준을 한눈에 확인하세요.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="max-h-[calc(85vh-5.5rem)] space-y-3 overflow-y-auto px-6 py-5">
+                    <PolicySection title="기공의뢰 적립">
+                      <div className="flex gap-2.5">
+                        <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <p>
+                          치과가 유료/무료크레딧으로 지불한 기공비에서, 등록치과
+                          (플랫폼 수수료 {partnerFeePct})·미등록치과(
+                          {nonPartnerFeePct})는 수수료를 제외한 금액이{" "}
+                          <span className="font-semibold text-slate-900">
+                            기공크레딧
+                          </span>
+                          으로 적립됩니다. 무료 프로모션 비용은 플랫폼이
+                          부담합니다.
+                        </p>
+                      </div>
+                    </PolicySection>
+                    <PolicySection title="유료/무료크레딧 · 기공크레딧 분리">
+                      <div className="flex gap-2.5">
+                        <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <p>
+                          유료·무료크레딧은 기공소가 앱에서 소비하는
+                          잔액(기공의뢰·생산·배송). 기공크레딧은 치과에서 받은
+                          정산 대기액으로 완전 분리 관리됩니다.
+                        </p>
+                      </div>
+                    </PolicySection>
+                    <PolicySection title="매월 자동 지급">
+                      <div className="flex gap-2.5">
+                        <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <p>
+                          기공크레딧 잔액은 사업자에 등록된 입금 계좌로 매월
+                          자동 지급됩니다. 별도 정산 요청은 필요하지
+                          않습니다.
+                        </p>
+                      </div>
+                    </PolicySection>
+                    <PolicySection title="일별 정산 집계">
+                      <div className="flex gap-2.5">
+                        <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <p>원장 기준 KST 일자별 실시간 집계</p>
+                      </div>
+                    </PolicySection>
+                    <PolicySection title="롤백">
+                      <div className="flex gap-2.5">
+                        <BookOpenText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <p>
+                          기공의뢰 취소·롤백 시 해당 적립은 삭제형으로 정리
+                        </p>
+                      </div>
+                    </PolicySection>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
 
             <TabsContent value="snapshot" className="mt-0">
