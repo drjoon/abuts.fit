@@ -166,6 +166,7 @@ const NewRequestPageContent = () => {
     handleUpload,
     handleUploadUnchecked,
     handleRemoveFile: rawHandleRemoveFile,
+    uploadProgress,
     familyOptions,
     typeOptions,
     implantManufacturer,
@@ -2175,6 +2176,7 @@ const NewRequestPageContent = () => {
               sectionHighlightClass={sectionHighlightClass}
               focusUnverifiedTick={focusUnverifiedTick}
               duplicatePromptOpen={!!duplicatePrompt}
+              uploadProgress={uploadProgress}
               isDragOver={isDragOver}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}

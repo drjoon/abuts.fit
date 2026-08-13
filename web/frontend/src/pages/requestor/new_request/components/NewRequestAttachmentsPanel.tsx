@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 첨부를 PracticeTransferFileDropTarget + useFilePreUpload 진행률바로.
 // - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(accept·드롭존 문구).
 // - 2026-08-11: 상단 버튼·드롭존 카드내 좌우상하 여백 균일(중첩 px 제거, 카드 패딩 SSOT).
 // - 2026-08-11: 디자인소프트웨어·아노다이징 뱃지를 파일 용량 오른쪽으로 이동, 축소. 아노 OFF도 동일 secondary 색.
@@ -44,6 +45,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Check, Calendar, Link2, Link2Off, X } from "lucide-react";
+import { cn } from "@/shared/ui/cn";
+import { PracticeTransferFileDropTarget } from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import {
+  toTempUploadFileKey,
+  type PreUploadFileProgress,
+} from "@/shared/hooks/useFilePreUpload";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 import { useMemo, useState, useEffect, useRef, useCallback, type ReactElement } from "react";
 import {
@@ -82,6 +89,45 @@ function formatAttachmentSize(bytes: number): string {
   }
   const mb = bytes / (1024 * 1024);
   return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)}MB`;
+}
+
+const NEW_REQUEST_STL_ACCEPT = ".stl,model/stl,application/sla";
+
+function pickUploadProgress(
+  filesForCard: Array<File | undefined>,
+  uploadProgress: Record<string, PreUploadFileProgress>,
+): PreUploadFileProgress | undefined {
+  const rows = filesForCard
+    .filter((file): file is File => Boolean(file))
+    .map((file) => uploadProgress[toTempUploadFileKey(file)])
+    .filter((row): row is PreUploadFileProgress => Boolean(row));
+  return (
+    rows.find((row) => row.status === "uploading" || row.status === "error") ||
+    rows[0]
+  );
+}
+
+function renderUploadProgressBar(progress?: PreUploadFileProgress | null) {
+  if (!progress) return null;
+  if (progress.status !== "uploading" && progress.status !== "error") {
+    return null;
+  }
+  const barPercent = Math.max(0, Math.min(100, Math.round(progress.percent ?? 0)));
+  return (
+    <div className="absolute inset-x-0 bottom-0 h-1 bg-slate-100" aria-hidden>
+      <div
+        className={cn(
+          "h-full transition-[width] duration-150 ease-out",
+          progress.status === "error" ? "bg-destructive" : "bg-primary",
+        )}
+        style={{
+          width: `${
+            progress.status === "error" ? Math.max(barPercent, 8) : barPercent
+          }%`,
+        }}
+      />
+    </div>
+  );
 }
 
 /** 파일 용량 옆 케이스 메타 뱃지(디자인소프트웨어·아노다이징). 카드 스냅샷만 표시. */
@@ -178,14 +224,10 @@ type Props = {
   handleRemoveFile: (index: number) => void;
   openDetailModal: (index: number) => void;
   handleClearAll: () => void;
-  isDragOver: boolean;
-  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
-  onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
-  onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onKeyboardNavigation: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   listContainerRef: React.RefObject<HTMLDivElement | null>;
-  uploadInputRef: React.RefObject<HTMLInputElement | null>;
   onFilesSelected: (files: File[]) => void;
+  uploadProgress?: Record<string, PreUploadFileProgress>;
   designSoftwareLabel?: string;
   onOpenDesignSoftwareModal?: () => void;
   anodizingEnabled?: boolean;
@@ -226,14 +268,10 @@ export function NewRequestAttachmentsPanel({
   handleRemoveFile,
   openDetailModal,
   handleClearAll,
-  isDragOver,
-  onDragOver,
-  onDragLeave,
-  onDrop,
   onKeyboardNavigation,
   listContainerRef,
-  uploadInputRef,
   onFilesSelected,
+  uploadProgress = {},
   designSoftwareLabel,
   onOpenDesignSoftwareModal,
   anodizingEnabled = true,
@@ -810,8 +848,9 @@ export function NewRequestAttachmentsPanel({
         data-file-index={fileIndex}
         data-group-select-key={canGroupSelect ? fileKey : undefined}
         aria-selected={checked}
-        className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
+        className={`relative shrink-0 overflow-hidden app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
       >
+        {renderUploadProgressBar(pickUploadProgress([file], uploadProgress))}
         <div className="relative z-10 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -938,8 +977,14 @@ export function NewRequestAttachmentsPanel({
           canGroupSelect ? group.fileKeys.join("|") : undefined
         }
         aria-selected={checked}
-        className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
+        className={`relative shrink-0 overflow-hidden app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
       >
+        {renderUploadProgressBar(
+          pickUploadProgress(
+            fileIndices.map((idx) => files[idx]),
+            uploadProgress,
+          ),
+        )}
         <div className="relative z-10 flex flex-col gap-2">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 flex items-center gap-2">
@@ -1086,21 +1131,6 @@ export function NewRequestAttachmentsPanel({
 
   return (
     <>
-      <input
-        ref={uploadInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          const fileList = e.currentTarget.files;
-          if (fileList) {
-            onFilesSelected(Array.from(fileList));
-          }
-          e.currentTarget.value = "";
-        }}
-        accept=".stl,model/stl,application/sla"
-      />
-
       <div className="flex flex-col flex-1 min-h-0 gap-3 h-full">
         <div className="flex shrink-0 items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -1140,25 +1170,16 @@ export function NewRequestAttachmentsPanel({
         <div
           className={`flex flex-col gap-2.5 flex-1 min-h-0 ${hasAnyAttachment ? "" : "justify-center"}`}
         >
-        <div
-          className={`shrink-0 w-full border-2 border-dashed rounded-2xl text-center transition-colors flex flex-col items-center justify-center cursor-pointer ${
-            hasAnyAttachment
-              ? "min-h-[4.75rem] md:min-h-[5.25rem] px-3 py-3 md:px-4 md:py-4"
-              : "min-h-[7rem] md:min-h-[8rem] p-5 md:p-6"
-          } ${
-            isDragOver
-              ? "border-primary bg-primary/5"
-              : "border-gray-300 hover:border-primary/50 bg-white"
-          }`}
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
-          onDrop={onDrop}
-          onClick={() => uploadInputRef.current?.click()}
-        >
-          <p className="whitespace-nowrap text-xs md:text-sm text-muted-foreground">
-            여기를 클릭하거나 STL 파일을 드래그해 추가하세요.
-          </p>
-        </div>
+        <PracticeTransferFileDropTarget
+          fileInputId="new-request-stl-upload"
+          onFiles={onFilesSelected}
+          accept={NEW_REQUEST_STL_ACCEPT}
+          acceptedHint="STL"
+          filterFiles={(incoming) => incoming}
+          compact={hasAnyAttachment}
+          label="여기를 클릭하거나 STL 파일을 드래그해 추가하세요."
+          className="shrink-0 w-full"
+        />
 
         {onGroupSelectedFiles && selectedUnitCount >= 1 ? (
           <div className="flex shrink-0 items-center justify-center gap-2" data-no-marquee>

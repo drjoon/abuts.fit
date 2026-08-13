@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - web/frontend/src/features/requests/components/PageFileDropZone.tsx
 // - web/frontend/src/shared/files/extractDroppedFiles.ts
 // - web/frontend/src/shared/practice/practiceTransferAccept.ts
@@ -41,6 +42,8 @@ export type PracticeTransferFileDropTargetProps = {
   multiple?: boolean;
   accept?: string;
   acceptedHint?: string;
+  /** 기본: 기공의뢰 허용 확장자. 생산의뢰는 STL만 넘기려면 호출측에서 지정 */
+  filterFiles?: (files: File[]) => File[];
   className?: string;
   activeClassName?: string;
   /** 기본 dashed 클릭/드롭 UI. false면 children만(카드 래핑용) */
@@ -62,6 +65,7 @@ export function PracticeTransferFileDropTarget({
   multiple = true,
   accept = PRACTICE_TRANSFER_ACCEPT,
   acceptedHint = PRACTICE_ACCEPTED_HINT,
+  filterFiles = filterPracticeTransferFiles,
   className,
   activeClassName = "border-primary bg-primary-soft/40 ring-2 ring-primary/30",
   showDefaultUi = true,
@@ -74,7 +78,7 @@ export function PracticeTransferFileDropTarget({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const emitFiles = (raw: File[]) => {
-    const next = filterPracticeTransferFiles(raw);
+    const next = filterFiles(raw);
     if (!next.length) return;
     onFiles(next);
   };

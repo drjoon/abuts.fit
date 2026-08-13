@@ -104,8 +104,6 @@ type Props = {
   /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
   previewFileIndices?: number[];
   onSelectPreviewIndex?: (index: number) => void;
-  /** true: 상단 생산/디자인+생산 탭 숨김(기공소 — 생산만) */
-  hideProductModeTabs?: boolean;
 };
 
 export function NewRequestDetailDialog({
@@ -149,7 +147,6 @@ export function NewRequestDetailDialog({
   lockProductionProductMode = false,
   previewFileIndices,
   onSelectPreviewIndex,
-  hideProductModeTabs = false,
 }: Props) {
   const [showNewSystemForm, setShowNewSystemForm] = useState(false);
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
@@ -216,14 +213,13 @@ export function NewRequestDetailDialog({
   }, [detailFile, detailCaseInfos?.retentionGroove, setDetailCaseInfos]);
 
   const showImplantSelect = true;
-  const productMode: NewRequestProductMode =
-    hideProductModeTabs || lockProductionProductMode
-      ? "custom_abutment"
-      : lockDesignProductMode
+  const productMode: NewRequestProductMode = lockProductionProductMode
+    ? "custom_abutment"
+    : lockDesignProductMode
+      ? "design_custom_abutment"
+      : detailCaseInfos?.productMode === "design_custom_abutment"
         ? "design_custom_abutment"
-        : detailCaseInfos?.productMode === "design_custom_abutment"
-          ? "design_custom_abutment"
-          : "custom_abutment";
+        : "custom_abutment";
   const isDesignCustomMode = productMode === "design_custom_abutment";
 
   const selectablePreviewIndices = useMemo(() => {
@@ -243,71 +239,14 @@ export function NewRequestDetailDialog({
       ? detailIndex
       : (selectablePreviewIndices[0] ?? null);
 
-  const setProductMode = useCallback(
-    (mode: NewRequestProductMode) => {
-      if (lockDesignProductMode && mode !== "design_custom_abutment") return;
-      if (lockProductionProductMode && mode !== "custom_abutment") return;
-      setDetailCaseInfos({ productMode: mode });
-    },
-    [lockDesignProductMode, lockProductionProductMode, setDetailCaseInfos],
-  );
-
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="new-request-page flex w-[calc(100vw-1rem)] max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[1180px] sm:p-5 lg:w-[980px]">
           <DialogHeader className="relative shrink-0 space-y-0 pr-8">
-            <div className="relative flex min-h-9 flex-col gap-3 sm:flex-row sm:items-center">
-              <DialogTitle className="text-lg font-semibold sm:pr-[300px]">
-                3D 모델 확인 및 정보 입력
-              </DialogTitle>
-              {!hideProductModeTabs ? (
-              <div
-                role="radiogroup"
-                aria-label="의뢰 유형"
-                className="flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 p-1 sm:absolute sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2"
-              >
-                {(
-                  [
-                    { value: "custom_abutment", label: "커스텀어벗 생산" },
-                    { value: "design_custom_abutment", label: "커스텀어벗 디자인+생산" },
-                  ] as const
-                ).map((option) => {
-                  const selected = productMode === option.value;
-                  const lockedOut =
-                    (lockDesignProductMode &&
-                      option.value !== "design_custom_abutment") ||
-                    (lockProductionProductMode &&
-                      option.value !== "custom_abutment");
-                  const lockedTitle = lockDesignProductMode
-                    ? "구강 스캔은 디자인+생산만 가능합니다"
-                    : lockProductionProductMode
-                      ? "어벗디자인 파일은 생산만 가능합니다"
-                      : undefined;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      disabled={lockedOut}
-                      title={lockedOut ? lockedTitle : undefined}
-                      className={cn(
-                        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap",
-                        selected
-                          ? "bg-primary-strong text-white shadow-sm"
-                          : "text-slate-600 hover:bg-white/70 hover:text-slate-900",
-                        lockedOut && "cursor-not-allowed opacity-50 hover:bg-transparent",
-                      )}
-                      onClick={() => setProductMode(option.value)}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-              ) : null}
-            </div>
+            <DialogTitle className="text-lg font-semibold">
+              3D 모델 확인 및 정보 입력
+            </DialogTitle>
             <DialogDescription className="sr-only">
               3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 다음 케이스로 이동합니다.
             </DialogDescription>

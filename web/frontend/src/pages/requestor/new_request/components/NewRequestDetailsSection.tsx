@@ -5,6 +5,7 @@ import { useLeadTimeForecast } from "../hooks/useLeadTimeForecast";
 import { NewRequestAttachmentsPanel } from "./NewRequestAttachmentsPanel";
 import { NewRequestDetailDialog } from "./NewRequestDetailDialog";
 import type { LeadTimesMap } from "@/shared/shipping/estimateShipDate";
+import type { PreUploadFileProgress } from "@/shared/hooks/useFilePreUpload";
 import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
 import {
   findGroupByFileKey,
@@ -83,6 +84,7 @@ type Props = {
   onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onFilesSelected: (files: File[]) => void;
+  uploadProgress?: Record<string, PreUploadFileProgress>;
   weeklyBatchDays?: string[];
   onCancelAll: () => void;
   designSoftwareLabel?: string;
@@ -148,11 +150,12 @@ export function NewRequestDetailsSection({
   focusUnverifiedTick,
   onDuplicateDetected: _onDuplicateDetected,
   duplicatePromptOpen,
-  isDragOver,
-  onDragOver,
-  onDragLeave,
-  onDrop,
+  isDragOver: _isDragOver,
+  onDragOver: _onDragOver,
+  onDragLeave: _onDragLeave,
+  onDrop: _onDrop,
   onFilesSelected,
+  uploadProgress = {},
   weeklyBatchDays = [],
   onCancelAll,
   designSoftwareLabel,
@@ -173,7 +176,6 @@ export function NewRequestDetailsSection({
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
 
   const [detailIndex, setDetailIndex] = useState<number | null>(null);
@@ -649,13 +651,9 @@ export function NewRequestDetailsSection({
             anodizingSaving={anodizingSaving}
             onToggleAnodizing={onToggleAnodizing}
             onFilesSelected={onFilesSelected}
-            isDragOver={isDragOver}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={onDrop}
+            uploadProgress={uploadProgress}
             onKeyboardNavigation={handleKeyboardNavigation}
             listContainerRef={listContainerRef}
-            uploadInputRef={uploadInputRef}
             onShippingModeChange={onShippingModeChange}
             defaultShippingMode={defaultShippingMode}
             expressSelectableGlobal={expressSelectableGlobal}
@@ -709,7 +707,6 @@ export function NewRequestDetailsSection({
         toast={toast}
         lockDesignProductMode={lockDesignProductMode}
         lockProductionProductMode={lockProductionProductMode}
-        hideProductModeTabs={productionOnly}
         previewFileIndices={previewFileIndices}
         onSelectPreviewIndex={selectPreviewIndex}
       />

@@ -343,6 +343,7 @@ export const useNewRequestPage = (
     preUploadFiles,
     forgetFile,
     clearPreUploadCache,
+    uploadProgress,
   } = useFilePreUpload({ token });
 
   useEffect(() => {
@@ -1217,6 +1218,7 @@ export const useNewRequestPage = (
     handleUpload: isReady ? handleUpload : () => {},
     handleUploadUnchecked: isReady ? handleUploadUnchecked : () => {},
     handleRemoveFile: isReady ? handleRemoveFile : () => {},
+    uploadProgress,
 
     // 디자인+생산: 환자 케이스(구강 스캔 합치기)
     patientGroups: patientFileGroupsApi.patientGroups,
