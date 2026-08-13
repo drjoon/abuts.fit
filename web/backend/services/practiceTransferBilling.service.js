@@ -9,6 +9,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-14: 목록 견적 조회(devops/단가/기공소/거래처) parallel + 60s 캐시.
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -43,6 +44,45 @@ import { normalizeAbutsAbutmentCreditPrices } from "../utils/abutsAbutmentServic
 import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
 import { isAutoMatchOpenPool } from "../utils/practiceTransferAutoMatch.js";
+import {
+  getRequestPerfCacheValue,
+  setRequestPerfCacheValue,
+  withRequestPerfInFlight,
+} from "./requestDashboardCache.service.js";
+
+const QUOTE_LOOKUP_CACHE_TTL_MS = 60 * 1000;
+
+async function loadCachedDevopsPayoutRates() {
+  const cacheKey = "practice-transfer:devops-payout";
+  const cached = getRequestPerfCacheValue(cacheKey);
+  if (cached && typeof cached === "object" && "payoutRates" in cached) {
+    return cached.payoutRates;
+  }
+  return withRequestPerfInFlight(cacheKey, async () => {
+    const devops = await BusinessAnchor.findOne({ businessType: "devops" })
+      .select({ payoutRates: 1 })
+      .sort({ createdAt: 1 })
+      .lean();
+    const payoutRates = devops?.payoutRates || null;
+    setRequestPerfCacheValue(
+      cacheKey,
+      { payoutRates },
+      QUOTE_LOOKUP_CACHE_TTL_MS,
+    );
+    return payoutRates;
+  });
+}
+
+async function loadCachedAbutmentCreditPrices() {
+  const cacheKey = "practice-transfer:abutment-prices";
+  const cached = getRequestPerfCacheValue(cacheKey);
+  if (cached) return cached;
+  return withRequestPerfInFlight(cacheKey, async () => {
+    const prices = await loadAbutmentCreditPrices();
+    setRequestPerfCacheValue(cacheKey, prices, QUOTE_LOOKUP_CACHE_TTL_MS);
+    return prices;
+  });
+}
 
 async function loadAbutmentCreditPrices() {
   try {
@@ -931,60 +971,61 @@ export async function buildFeeQuotesForTransferDocs({
   const list = Array.isArray(docs) ? docs : [];
   if (list.length === 0) return new Map();
 
-  const devops = await BusinessAnchor.findOne({ businessType: "devops" })
-    .select({ payoutRates: 1 })
-    .sort({ createdAt: 1 })
-    .lean();
-  const payoutRates = devops?.payoutRates;
-  const abutmentPrices = await loadAbutmentCreditPrices();
-
   const labIds = new Set();
+  const practiceIds = new Set();
   const viewerLabId = String(viewingLabAnchorId || "").trim();
   if (viewerLabId && Types.ObjectId.isValid(viewerLabId)) labIds.add(viewerLabId);
   for (const doc of list) {
-    const id = String(doc?.targetLabAnchorId?._id || doc?.targetLabAnchorId || "").trim();
-    if (id && Types.ObjectId.isValid(id)) labIds.add(id);
-  }
-  const labs = labIds.size
-    ? await BusinessAnchor.find({ _id: { $in: [...labIds] } })
-        .select({ labFeeSchedule: 1 })
-        .lean()
-    : [];
-  const scheduleByLab = new Map(
-    labs.map((lab) => [String(lab._id), lab.labFeeSchedule || null]),
-  );
-
-  const pairKey = (labId, practiceId) => `${labId}:${practiceId}`;
-  const practiceIds = new Set();
-  for (const doc of list) {
+    const labId = String(
+      doc?.targetLabAnchorId?._id || doc?.targetLabAnchorId || "",
+    ).trim();
+    if (labId && Types.ObjectId.isValid(labId)) labIds.add(labId);
     const practiceId = String(
       doc?.practiceBusinessAnchorId?._id || doc?.practiceBusinessAnchorId || "",
     ).trim();
     if (practiceId && Types.ObjectId.isValid(practiceId)) practiceIds.add(practiceId);
   }
-  const practices = practiceIds.size
-    ? await BusinessAnchor.find({ _id: { $in: [...practiceIds] } })
-        .select({ practiceMembershipActive: 1 })
-        .lean()
-    : [];
+
+  const labIdList = [...labIds];
+  const practiceIdList = [...practiceIds];
+  const [payoutRates, abutmentPrices, labs, practices, partners] =
+    await Promise.all([
+      loadCachedDevopsPayoutRates(),
+      loadCachedAbutmentCreditPrices(),
+      labIdList.length
+        ? BusinessAnchor.find({ _id: { $in: labIdList } })
+            .select({ labFeeSchedule: 1 })
+            .lean()
+        : Promise.resolve([]),
+      practiceIdList.length
+        ? BusinessAnchor.find({ _id: { $in: practiceIdList } })
+            .select({ practiceMembershipActive: 1 })
+            .lean()
+        : Promise.resolve([]),
+      labIdList.length && practiceIdList.length
+        ? LabTradingPartner.find({
+            labAnchorId: { $in: labIdList.map((id) => new Types.ObjectId(id)) },
+            practiceAnchorId: {
+              $in: practiceIdList.map((id) => new Types.ObjectId(id)),
+            },
+            status: { $in: ["active", "referred"] },
+          })
+            .select({ labAnchorId: 1, practiceAnchorId: 1, status: 1 })
+            .lean()
+        : Promise.resolve([]),
+    ]);
+
+  const scheduleByLab = new Map(
+    labs.map((lab) => [String(lab._id), lab.labFeeSchedule || null]),
+  );
+
+  const pairKey = (labId, practiceId) => `${labId}:${practiceId}`;
   const membershipByPractice = new Map(
     practices.map((practice) => [
       String(practice._id),
       Boolean(practice.practiceMembershipActive),
     ]),
   );
-  const partners =
-    labIds.size && practiceIds.size
-      ? await LabTradingPartner.find({
-          labAnchorId: { $in: [...labIds].map((id) => new Types.ObjectId(id)) },
-          practiceAnchorId: {
-            $in: [...practiceIds].map((id) => new Types.ObjectId(id)),
-          },
-          status: { $in: ["active", "referred"] },
-        })
-          .select({ labAnchorId: 1, practiceAnchorId: 1, status: 1 })
-          .lean()
-      : [];
   const partnerByPair = new Map();
   for (const partner of partners) {
     partnerByPair.set(

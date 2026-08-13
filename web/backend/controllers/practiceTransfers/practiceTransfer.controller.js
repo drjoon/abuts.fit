@@ -61,6 +61,7 @@ import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutm
 // - web/backend/services/requestDashboardCache.service.js
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - 2026-08-13: 어벗 치아에 임플란트·스캔바디 프리셋이 없으면 전송 거절.
+// - 2026-08-14: GET /my 목록 — countDocuments 제거·레거시 $or 축소·동료/견적 조회 캐시.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -554,22 +555,32 @@ const resolveRequestorUserIdsByAnchor = async (anchorId) => {
     .filter(Boolean);
 };
 
+const PRACTICE_PEER_USER_CACHE_TTL_MS = 30 * 1000;
+
 const resolvePracticeUserIdsByAnchor = async (anchorId) => {
   const raw = String(anchorId || "").trim();
   if (!raw || !Types.ObjectId.isValid(raw)) return [];
 
-  // 레거시 practice + 신규 requestor(practice 발신) 동료를 함께 포함한다.
-  const users = await User.find({
-    businessAnchorId: new Types.ObjectId(raw),
-    role: { $in: ["practice", "requestor"] },
-    active: true,
-  })
-    .select({ _id: 1 })
-    .lean();
+  const cacheKey = `practice-peer-users:${raw}`;
+  const cached = getRequestPerfCacheValue(cacheKey);
+  if (Array.isArray(cached)) return cached;
 
-  return users
-    .map((u) => String(u?._id || "").trim())
-    .filter(Boolean);
+  return withRequestPerfInFlight(cacheKey, async () => {
+    // 레거시 practice + 신규 requestor(practice 발신) 동료를 함께 포함한다.
+    const users = await User.find({
+      businessAnchorId: new Types.ObjectId(raw),
+      role: { $in: ["practice", "requestor"] },
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const ids = users
+      .map((u) => String(u?._id || "").trim())
+      .filter(Boolean);
+    setRequestPerfCacheValue(cacheKey, ids, PRACTICE_PEER_USER_CACHE_TTL_MS);
+    return ids;
+  });
 };
 
 /** 발신 API 역할 allowlist. 세부 capability는 authorizePracticeTransferSend가 검증한다. */
@@ -621,9 +632,16 @@ const buildPracticeOwnedScope = async (req) => {
               practiceBusinessAnchorId,
             ),
           },
-          ...(practiceUserObjectIds.length
-            ? [{ practiceUserId: { $in: practiceUserObjectIds } }]
-            : [{ practiceUserId }]),
+          {
+            practiceBusinessAnchorId: null,
+            practiceUserId: {
+              $in: practiceUserObjectIds.length
+                ? practiceUserObjectIds
+                : practiceUserId
+                  ? [practiceUserId]
+                  : [],
+            },
+          },
         ],
       },
       practiceUserObjectIds,
@@ -1864,14 +1882,13 @@ export async function getMyPracticeTransfers(req, res) {
 
     const { scope: baseFilter } = await buildPracticeOwnedScope(req);
 
-    const [docs, totalCount] = await Promise.all([
-      PracticeTransfer.find(baseFilter)
-        .sort({ createdAt: -1, _id: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      PracticeTransfer.countDocuments(baseFilter),
-    ]);
+    const fetched = await PracticeTransfer.find(baseFilter)
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit + 1)
+      .lean();
+    const hasMore = fetched.length > limit;
+    const docs = hasMore ? fetched.slice(0, limit) : fetched;
 
     const quotesById = await buildFeeQuotesForTransferDocs({ docs });
     const requests = docs.flatMap((doc) => {
@@ -1887,8 +1904,8 @@ export async function getMyPracticeTransfers(req, res) {
           page,
           limit,
           count: requests.length,
-          total: totalCount,
-          hasMore: skip + docs.length < totalCount,
+          total: skip + docs.length + (hasMore ? 1 : 0),
+          hasMore,
         },
       },
     });

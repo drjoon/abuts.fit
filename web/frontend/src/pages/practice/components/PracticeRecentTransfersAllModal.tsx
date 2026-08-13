@@ -2,6 +2,7 @@
  * 치과 기공의뢰 — 최근 전송 「전체 보기」 모달.
  * 3열 그리드 + 무한 스크롤, 기간·검색·상태 뱃지 필터.
  * 취소 뱃지=기공소 작업취소(치과 휴지통 제외). 6뱃지 빠른툴팁.
+ * 2026-08-14: 사이드바 1페이지를 시드로 재사용. 열 때 /my 재요청하지 않음.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Repeat, Search, Trash2 } from "lucide-react";
@@ -33,6 +34,7 @@ import {
   type PracticeRecentTransferItem,
   type PracticeRecentRequestItem,
   type PracticeRecentStatusFilter,
+  PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   PRACTICE_RECENT_STATUS_BADGES,
   PRACTICE_REMAKE_BADGE_CLASS,
   canDeletePracticeTransferByStatus,
@@ -45,7 +47,7 @@ import {
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = PRACTICE_MY_TRANSFERS_PAGE_SIZE;
 
 type PracticeRecentTransfersAllModalProps = {
   open: boolean;
@@ -55,6 +57,11 @@ type PracticeRecentTransfersAllModalProps = {
   initialPeriod: PeriodFilterValue;
   initialSearch?: string;
   initialStatusFilter?: PracticeRecentStatusFilter;
+  /** 사이드바가 이미 불러온 1페이지. 있으면 page=1 GET을 생략한다. */
+  initialRequests?: PracticeRecentRequestItem[];
+  initialHasMore?: boolean;
+  initialLoading?: boolean;
+  initialError?: string;
   onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
   remakeSelectedIds?: string[];
@@ -70,6 +77,10 @@ export function PracticeRecentTransfersAllModal({
   initialPeriod,
   initialSearch = "",
   initialStatusFilter = "all",
+  initialRequests = [],
+  initialHasMore = false,
+  initialLoading = false,
+  initialError = "",
   onSelectTransfer,
   onDeleteTransfer,
   remakeSelectedIds = [],
@@ -79,10 +90,8 @@ export function PracticeRecentTransfersAllModal({
   const [period, setPeriod] = useState(initialPeriod);
   const [search, setSearch] = useState(initialSearch);
   const [statusFilter, setStatusFilter] = useState<PracticeRecentStatusFilter>(initialStatusFilter);
-  const [recentRequests, setRecentRequests] = useState<PracticeRecentRequestItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [extraRequests, setExtraRequests] = useState<PracticeRecentRequestItem[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -94,112 +103,100 @@ export function PracticeRecentTransfersAllModal({
     setStatusFilter(initialStatusFilter);
   }, [open, initialPeriod, initialSearch, initialStatusFilter]);
 
-  const fetchPage = useCallback(
-    async (nextPage: number, append: boolean) => {
-      if (!token) {
-        setRecentRequests([]);
-        setError("로그인이 필요합니다.");
-        setHasMore(false);
-        return;
-      }
-
-      if (append) setLoadingMore(true);
-      else {
-        setLoading(true);
-        setError("");
-      }
-
-      try {
-        const res = await apiFetch<unknown>({
-          path: `/api/practice/transfers/my?page=${nextPage}&limit=${PAGE_SIZE}`,
-          method: "GET",
-          token,
-        });
-
-        if (!res.ok) {
-          const body =
-            res.data && typeof res.data === "object"
-              ? (res.data as { message?: string })
-              : {};
-          if (!append) {
-            setRecentRequests([]);
-            setError(String(body.message || "전송 내역을 불러올 권한이 없습니다."));
-            setHasMore(false);
-            setPage(1);
-          }
-          return;
-        }
-
-        const body = res.data;
-        const data =
-          body && typeof body === "object" && "data" in (body as Record<string, unknown>)
-            ? (body as { data?: unknown }).data
-            : body;
-        const list =
-          data &&
-          typeof data === "object" &&
-          Array.isArray((data as { requests?: unknown }).requests)
-            ? ((data as { requests: unknown[] }).requests ?? [])
-            : [];
-        const pagination =
-          data &&
-          typeof data === "object" &&
-          (data as { pagination?: unknown }).pagination &&
-          typeof (data as { pagination?: unknown }).pagination === "object"
-            ? ((data as { pagination: Record<string, unknown> }).pagination ?? {})
-            : {};
-
-        const mapped = mapMyPracticeTransferApiRows(list);
-
-        setRecentRequests((prev) => {
-          if (!append) return mapped;
-          const merged = [...prev];
-          const seen = new Set(prev.map((row) => `${row.id}:${row.fileS3Key}`));
-          for (const row of mapped) {
-            const key = `${row.id}:${row.fileS3Key}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            merged.push(row);
-          }
-          return merged.sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
-        });
-
-        setPage(nextPage);
-        const paginationHasMore = pagination.hasMore;
-        if (typeof paginationHasMore === "boolean") {
-          setHasMore(paginationHasMore);
-        } else {
-          setHasMore(mapped.length >= PAGE_SIZE);
-        }
-      } catch {
-        if (!append) {
-          setRecentRequests([]);
-          setError("전송 내역 조회 중 오류가 발생했습니다.");
-          setHasMore(false);
-          setPage(1);
-        }
-      } finally {
-        if (append) setLoadingMore(false);
-        else setLoading(false);
-      }
-    },
-    [token],
-  );
-
   useEffect(() => {
-    if (!open) return;
-    setPage(1);
-    setHasMore(false);
-    void fetchPage(1, false);
-  }, [fetchPage, open]);
+    if (!open) {
+      setExtraRequests([]);
+      setPage(1);
+      setHasMore(false);
+      return;
+    }
+    if (extraRequests.length === 0) {
+      setHasMore(Boolean(initialHasMore));
+    }
+  }, [open, extraRequests.length, initialHasMore]);
+
+  const recentRequests = useMemo(() => {
+    if (extraRequests.length === 0) return initialRequests;
+    const merged = [...initialRequests];
+    const seen = new Set(initialRequests.map((row) => `${row.id}:${row.fileS3Key}`));
+    for (const row of extraRequests) {
+      const key = `${row.id}:${row.fileS3Key}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(row);
+    }
+    return merged.sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
+  }, [extraRequests, initialRequests]);
+
+  const loading = Boolean(initialLoading) && recentRequests.length === 0;
+  const displayError = recentRequests.length === 0 ? initialError : "";
+
+  const fetchMore = useCallback(async () => {
+    if (!token || loadingMore || !hasMore) return;
+
+    const nextPage = page + 1;
+    setLoadingMore(true);
+    try {
+      const res = await apiFetch<unknown>({
+        path: `/api/practice/transfers/my?page=${nextPage}&limit=${PAGE_SIZE}`,
+        method: "GET",
+        token,
+      });
+
+      if (!res.ok) return;
+
+      const body = res.data;
+      const data =
+        body && typeof body === "object" && "data" in (body as Record<string, unknown>)
+          ? (body as { data?: unknown }).data
+          : body;
+      const list =
+        data &&
+        typeof data === "object" &&
+        Array.isArray((data as { requests?: unknown }).requests)
+          ? ((data as { requests: unknown[] }).requests ?? [])
+          : [];
+      const pagination =
+        data &&
+        typeof data === "object" &&
+        (data as { pagination?: unknown }).pagination &&
+        typeof (data as { pagination?: unknown }).pagination === "object"
+          ? ((data as { pagination: Record<string, unknown> }).pagination ?? {})
+          : {};
+
+      const mapped = mapMyPracticeTransferApiRows(list);
+      setExtraRequests((prev) => {
+        const merged = [...prev];
+        const seen = new Set(prev.map((row) => `${row.id}:${row.fileS3Key}`));
+        for (const row of mapped) {
+          const key = `${row.id}:${row.fileS3Key}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(row);
+        }
+        return merged;
+      });
+      setPage(nextPage);
+      const paginationHasMore = pagination.hasMore;
+      if (typeof paginationHasMore === "boolean") {
+        setHasMore(paginationHasMore);
+      } else {
+        setHasMore(mapped.length >= PAGE_SIZE);
+      }
+    } catch {
+      // 추가 페이지 실패는 기존 목록을 유지
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore, page, token]);
 
   useAppEventDebouncedReload({
     enabled: open && Boolean(token),
     eventTypes: ["practice:transfer-created", "practice:transfer-updated"],
     onMatch: () => {
+      setExtraRequests([]);
       setPage(1);
-      setHasMore(false);
-      void fetchPage(1, false);
+      setHasMore(Boolean(initialHasMore));
     },
     delayMs: 140,
   });
@@ -213,14 +210,14 @@ export function PracticeRecentTransfersAllModal({
       (entries) => {
         const [entry] = entries;
         if (!entry?.isIntersecting) return;
-        void fetchPage(page + 1, true);
+        void fetchMore();
       },
       { rootMargin: "240px" },
     );
 
     observer.observe(target);
     return () => observer.disconnect();
-  }, [fetchPage, hasMore, loading, loadingMore, open, page]);
+  }, [fetchMore, hasMore, loading, loadingMore, open]);
 
   const periodFilteredRequests = useMemo(
     () => filterRequestsByPeriodAndSearch(recentRequests, period, search),
@@ -371,9 +368,9 @@ export function PracticeRecentTransfersAllModal({
                 </div>
               ))}
             </div>
-          ) : error ? (
+          ) : displayError ? (
             <div className="rounded-lg border border-dashed px-3 py-16 text-center text-sm text-destructive">
-              {error}
+              {displayError}
             </div>
           ) : filteredTransfers.length === 0 ? (
             <div className="rounded-lg border border-dashed px-3 py-16 text-center text-sm text-muted-foreground">
@@ -501,7 +498,7 @@ export function PracticeRecentTransfersAllModal({
             </div>
           )}
 
-          {!error && hasMore ? (
+          {!displayError && hasMore ? (
             <div
               ref={loadMoreRef}
               className="py-6 text-center text-xs text-muted-foreground"

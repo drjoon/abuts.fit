@@ -2,54 +2,71 @@
 // - web/backend/utils/requestorCapabilities.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/middlewares/auth.middleware.js
+// - web/backend/services/requestDashboardCache.service.js
+// - 2026-08-14: sendAuth 프로필 — authenticate User 재사용 + 30s 캐시(목록 폴링 병목).
 import BusinessAnchor from "../models/businessAnchor.model.js";
-import User from "../models/user.model.js";
 import {
   canReceivePracticeTransfer,
   canSendPracticeTransfer,
   resolveRequestorProfile,
 } from "../utils/requestorCapabilities.js";
+import {
+  getRequestPerfCacheValue,
+  setRequestPerfCacheValue,
+  withRequestPerfInFlight,
+} from "../services/requestDashboardCache.service.js";
+
+const PROFILE_CACHE_TTL_MS = 30 * 1000;
 
 const loadResolvedProfile = async (user) => {
   if (!user) return { kind: null, services: { free: false, paid: false } };
 
-  let anchorKind = null;
-  let anchorServices = null;
-  let anchorCaps = null;
-  let businessVerified = false;
-  if (user.businessAnchorId) {
-    const anchor = await BusinessAnchor.findById(user.businessAnchorId)
-      .select({
-        requestorKind: 1,
-        requestorServices: 1,
-        requestorCapabilities: 1,
-        status: 1,
-      })
-      .lean();
-    anchorKind = anchor?.requestorKind || null;
-    anchorServices = anchor?.requestorServices || null;
-    anchorCaps = anchor?.requestorCapabilities || null;
-    businessVerified = anchor?.status === "verified";
+  const userId = String(user._id || "").trim();
+  const cacheKey = userId ? `practice-auth-profile:${userId}` : "";
+  if (cacheKey) {
+    const cached = getRequestPerfCacheValue(cacheKey);
+    if (cached) return cached;
   }
 
-  const freshUser = await User.findById(user._id)
-    .select({
-      requestorKind: 1,
-      requestorServices: 1,
-      requestorCapabilities: 1,
-      role: 1,
-    })
-    .lean();
+  const build = async () => {
+    let anchorKind = null;
+    let anchorServices = null;
+    let anchorCaps = null;
+    let businessVerified = false;
+    if (user.businessAnchorId) {
+      const anchor = await BusinessAnchor.findById(user.businessAnchorId)
+        .select({
+          requestorKind: 1,
+          requestorServices: 1,
+          requestorCapabilities: 1,
+          status: 1,
+        })
+        .lean();
+      anchorKind = anchor?.requestorKind || null;
+      anchorServices = anchor?.requestorServices || null;
+      anchorCaps = anchor?.requestorCapabilities || null;
+      businessVerified = anchor?.status === "verified";
+    }
 
-  return resolveRequestorProfile({
-    anchorKind,
-    anchorServices,
-    anchorCaps,
-    userKind: freshUser?.requestorKind,
-    userServices: freshUser?.requestorServices,
-    userCaps: freshUser?.requestorCapabilities,
-    userRole: freshUser?.role || user.role,
-    businessVerified,
+    // authenticate가 이미 User를 로드함. 동일 요청/짧은 TTL 안에서 재조회하지 않는다.
+    return resolveRequestorProfile({
+      anchorKind,
+      anchorServices,
+      anchorCaps,
+      userKind: user.requestorKind,
+      userServices: user.requestorServices,
+      userCaps: user.requestorCapabilities,
+      userRole: user.role,
+      businessVerified,
+    });
+  };
+
+  if (!cacheKey) return build();
+
+  return withRequestPerfInFlight(cacheKey, async () => {
+    const profile = await build();
+    setRequestPerfCacheValue(cacheKey, profile, PROFILE_CACHE_TTL_MS);
+    return profile;
   });
 };
 

@@ -2,6 +2,7 @@
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
  * 상단 6뱃지 취소=기공소 작업취소. 리메이크는 발송 건 재의뢰 플래그(파이프라인과 병행).
  * 치과 휴지통(status 취소)은 집계·필터에서 제외.
+ * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -14,6 +15,9 @@ import {
   parsePracticeTransferFeeQuote,
   type PracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
+
+/** GET /api/practice/transfers/my 기본 페이지 크기. 사이드바·전체보기 모달 공유. */
+export const PRACTICE_MY_TRANSFERS_PAGE_SIZE = 30;
 
 export type PracticeRecentTransferFileItem = {
   fileName: string;

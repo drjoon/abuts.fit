@@ -48,6 +48,7 @@
  * - 2026-08-13: 파일카드에 사전 업로드 프로그레스바.
  * - 2026-08-13: 채팅 첨부도 즉시 백그라운드 업로드 + 칩 프로그레스바.
  * - 2026-08-13: 채팅/의뢰 파일 다운로드 프로그레스바.
+ * - 2026-08-14: 최근전송 전체보기 — 사이드바 /my 1페이지 재사용, 중복 GET 제거.
  * - 2026-08-13: [기공소로 전송]은 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
  */
@@ -138,6 +139,7 @@ import {
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import {
+  PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   PRACTICE_RECENT_STATUS_BADGES,
   PRACTICE_REMAKE_BADGE_CLASS,
   canRemakePracticeTransferByStatus,
@@ -985,6 +987,7 @@ export const PracticeFileTransferPage = ({
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
   const [recentRequestsLoading, setRecentRequestsLoading] = useState(false);
   const [recentRequestsError, setRecentRequestsError] = useState("");
+  const [recentRequestsHasMore, setRecentRequestsHasMore] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<RecentTransferItem | null>(null);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [productionConfirmBusy, setProductionConfirmBusy] = useState(false);
@@ -1973,6 +1976,7 @@ export const PracticeFileTransferPage = ({
       if (!authToken) {
         if (!silent) {
           setRecentRequests([]);
+          setRecentRequestsHasMore(false);
           setRecentRequestsError("로그인이 필요합니다.");
         }
         return;
@@ -1984,7 +1988,7 @@ export const PracticeFileTransferPage = ({
       }
       try {
       const res = await apiFetch<unknown>({
-        path: "/api/practice/transfers/my?page=1&limit=100",
+        path: `/api/practice/transfers/my?page=1&limit=${PRACTICE_MY_TRANSFERS_PAGE_SIZE}`,
         method: "GET",
         token: authToken,
       });
@@ -1996,6 +2000,7 @@ export const PracticeFileTransferPage = ({
             : {};
         if (!silent) {
           setRecentRequests([]);
+          setRecentRequestsHasMore(false);
           setRecentRequestsError(
             String(body.message || "최근 전송 내역을 불러올 권한이 없습니다."),
           );
@@ -2014,6 +2019,14 @@ export const PracticeFileTransferPage = ({
         Array.isArray((data as { requests?: unknown }).requests)
           ? ((data as { requests: unknown[] }).requests ?? [])
           : [];
+      const pagination =
+        data &&
+        typeof data === "object" &&
+        (data as { pagination?: unknown }).pagination &&
+        typeof (data as { pagination?: unknown }).pagination === "object"
+          ? ((data as { pagination: Record<string, unknown> }).pagination ?? {})
+          : {};
+      const paginationHasMore = pagination.hasMore;
 
       const mapped: RecentRequestItem[] = list
         .map((raw) => {
@@ -2129,6 +2142,11 @@ export const PracticeFileTransferPage = ({
         .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
 
       setRecentRequests(mapped);
+      setRecentRequestsHasMore(
+        typeof paginationHasMore === "boolean"
+          ? paginationHasMore
+          : mapped.length >= PRACTICE_MY_TRANSFERS_PAGE_SIZE,
+      );
 
       const labsFromTransfers: SearchBusinessResult[] = [];
       const seenLabKeys = new Set<string>();
@@ -2155,6 +2173,7 @@ export const PracticeFileTransferPage = ({
     } catch {
       if (!silent) {
         setRecentRequests([]);
+        setRecentRequestsHasMore(false);
         setRecentRequestsError("최근 전송 내역 조회 중 오류가 발생했습니다.");
       }
     } finally {
@@ -6291,6 +6310,10 @@ export const PracticeFileTransferPage = ({
           initialPeriod={period}
           initialSearch={requestSearchTerm}
           initialStatusFilter={recentStatusFilter}
+          initialRequests={recentRequests}
+          initialHasMore={recentRequestsHasMore}
+          initialLoading={recentRequestsLoading}
+          initialError={recentRequestsError}
           onSelectTransfer={(transfer) => {
             void handleOpenTransferDialog(transfer as RecentTransferItem, {
               returnToAllModal: true,
