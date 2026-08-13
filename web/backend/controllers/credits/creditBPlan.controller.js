@@ -9,6 +9,7 @@
 // - web/backend/utils/creditChargeUnit.js
 // - web/backend/utils/requestorCapabilities.js
 import ChargeOrder from "../../models/chargeOrder.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
@@ -278,6 +279,46 @@ export async function listMyChargeOrders(req, res) {
       },
     ],
   );
+
+  // Reconcile orders approved before the status transition was added. A posted
+  // CHARGE_PAID journal is authoritative that the prepaid credit was granted,
+  // so the associated order must no longer appear as a pending deposit.
+  const pendingOrderIds = await ChargeOrder.find({
+    businessAnchorId,
+    status: "PENDING",
+  })
+    .select({ _id: 1 })
+    .lean();
+  if (pendingOrderIds.length) {
+    const postedOrderIds = await LedgerJournal.find({
+      eventType: "CHARGE_PAID",
+      refType: "CHARGE_ORDER",
+      refId: { $in: pendingOrderIds.map((order) => order._id) },
+      status: "POSTED",
+    })
+      .select({ refId: 1 })
+      .lean();
+    const chargeOrderIds = postedOrderIds
+      .map((journal) => journal.refId)
+      .filter(Boolean);
+
+    if (chargeOrderIds.length) {
+      await ChargeOrder.updateMany(
+        {
+          _id: { $in: chargeOrderIds },
+          businessAnchorId,
+          status: "PENDING",
+        },
+        {
+          $set: {
+            status: "MATCHED",
+            matchedAt: now,
+            matchedBy: "ADMIN",
+          },
+        },
+      );
+    }
+  }
 
   const items = await ChargeOrder.find({ businessAnchorId })
     .sort({ createdAt: -1, _id: -1 })

@@ -16,11 +16,13 @@
 // - web/backend/controllers/credits/credit.controller.js
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -215,6 +217,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   const [orders, setOrders] = useState<CreditOrderItem[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [ordersPeriod, setOrdersPeriod] = useState<PeriodFilterValue>("30d");
+  const ordersRequestSequence = useRef(0);
 
   const [spendInsights, setSpendInsights] = useState<
     CreditSpendInsightsResponse["data"] | null
@@ -437,6 +440,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
 
   const reloadOrders = async () => {
     if (!token) return;
+    const requestSequence = ++ordersRequestSequence.current;
     setLoadingOrders(true);
     try {
       const res = await request<any>({
@@ -450,6 +454,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       const items = Array.isArray(data?.items)
         ? (data.items as CreditOrderItem[])
         : [];
+      if (requestSequence !== ordersRequestSequence.current) return;
       setOrders(items);
 
       const account = data?.depositAccount;
@@ -507,9 +512,11 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
         setPendingOrder(null);
       }
     } catch {
-      // ignore
+      // A newer response is authoritative; stale failures must not alter UI.
     } finally {
-      setLoadingOrders(false);
+      if (requestSequence === ordersRequestSequence.current) {
+        setLoadingOrders(false);
+      }
     }
   };
 
@@ -519,6 +526,19 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
     reloadSpendInsights();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(token) && Boolean(user?.businessAnchorId),
+    eventTypes: ["credit:balance-updated"],
+    delayMs: 80,
+    shouldHandle: (evt) =>
+      isCreditEventForBusiness(evt, user?.businessAnchorId),
+    onMatch: () => {
+      void reloadBalance();
+      void reloadOrders();
+      void reloadSpendInsights();
+    },
+  });
 
   const hasChargedBefore = useMemo(() => {
     return orders.some((o) =>
