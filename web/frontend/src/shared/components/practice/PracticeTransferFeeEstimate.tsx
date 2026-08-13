@@ -27,6 +27,86 @@ type PracticeTransferFeeEstimateProps = {
 const scaleWon = (value: number, keepRate: number) =>
   Math.max(0, Math.round(Number(value || 0) * keepRate));
 
+const formatCell = (value: number) => (value > 0 ? formatWon(value) : "—");
+
+type FeeBreakdownLine = {
+  toothNumber: string;
+  prosthesisType: string;
+  labFee: number;
+  abutmentRetail: number;
+};
+
+function FeeBreakdownTable({
+  lines,
+  showLabColumn,
+  showAbutmentColumn,
+}: {
+  lines: FeeBreakdownLine[];
+  showLabColumn: boolean;
+  showAbutmentColumn: boolean;
+}) {
+  const labTotal = lines.reduce((sum, line) => sum + line.labFee, 0);
+  const abutmentTotal = lines.reduce((sum, line) => sum + line.abutmentRetail, 0);
+  const colCount = 1 + Number(showLabColumn) + Number(showAbutmentColumn);
+  const gridClass =
+    colCount === 3
+      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto]"
+      : colCount === 2
+        ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
+        : "grid-cols-1";
+
+  return (
+    <div className={cn("grid gap-x-3 gap-y-0.5 tabular-nums", gridClass)}>
+      <span className="pb-0.5 text-[10px] font-medium text-muted-foreground">
+        <span className="sr-only">보철물</span>
+      </span>
+      {showLabColumn ? (
+        <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
+          기공소 제공
+        </span>
+      ) : null}
+      {showAbutmentColumn ? (
+        <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
+          어벗츠 제공
+        </span>
+      ) : null}
+      {lines.map((line, idx) => (
+        <div key={`${line.toothNumber}:${idx}`} className="contents">
+          <span className="min-w-0 truncate">
+            {line.toothNumber ? `${line.toothNumber} ` : ""}
+            {line.prosthesisType || "보철"}
+          </span>
+          {showLabColumn ? (
+            <span className="whitespace-nowrap text-right">{formatCell(line.labFee)}</span>
+          ) : null}
+          {showAbutmentColumn ? (
+            <span className="whitespace-nowrap text-right">
+              {formatCell(line.abutmentRetail)}
+            </span>
+          ) : null}
+        </div>
+      ))}
+      {colCount > 1 ? (
+        <>
+          <span className="mt-0.5 border-t border-foreground/15 pt-1.5 font-medium">
+            합계
+          </span>
+          {showLabColumn ? (
+            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
+              {formatCell(labTotal)}
+            </span>
+          ) : null}
+          {showAbutmentColumn ? (
+            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
+              {formatCell(abutmentTotal)}
+            </span>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function PracticeTransferFeeEstimate({
   quote,
   viewer,
@@ -105,32 +185,29 @@ export function PracticeTransferFeeEstimate({
             <CircleHelp className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" />
           </div>
         </TooltipTrigger>
-        <TooltipContent side={isCard ? "top" : "bottom"} className="max-w-xs space-y-1.5 p-3 text-xs leading-relaxed">
+        <TooltipContent
+          side={isCard ? "top" : "bottom"}
+          className="max-w-[22rem] p-3 text-xs leading-relaxed"
+        >
           {quote.lines.length > 0 ? (
-            <ul className="space-y-0.5 tabular-nums">
-              {quote.lines.map((line, idx) => {
-                const labFee = scaleWon(line.labFee, keepRate);
-                const abutment = scaleWon(line.abutmentRetail, keepRate);
-                const parts = [formatWon(labFee)];
-                if (line.abutmentRetail > 0) parts.push(`어벗 ${formatWon(abutment)}`);
-                return (
-                  <li key={`${line.toothNumber}:${idx}`}>
-                    {line.toothNumber ? `${line.toothNumber} ` : ""}
-                    {line.prosthesisType || "보철"} · {parts.join(" + ")}
-                  </li>
-                );
-              })}
-            </ul>
+            <FeeBreakdownTable
+              lines={quote.lines.map((line) => ({
+                toothNumber: line.toothNumber,
+                prosthesisType: line.prosthesisType,
+                labFee: scaleWon(line.labFee, keepRate),
+                abutmentRetail: scaleWon(line.abutmentRetail, keepRate),
+              }))}
+              showLabColumn={quote.lines.some((line) => line.labFee > 0)}
+              showAbutmentColumn={quote.lines.some((line) => line.abutmentRetail > 0)}
+            />
           ) : (
             <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
           )}
-          <div className="space-y-0.5 border-t border-white/20 pt-1.5 tabular-nums">
-            {isLab ? (
-              <p className="font-medium">기공비 총액 {formatWon(quote.labSettlementAmount)}</p>
-            ) : (
-              <p className="font-medium">크레딧 소비 총액 {formatWon(quote.total)}</p>
-            )}
-          </div>
+          <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
+            {isLab
+              ? `기공비 총액 ${formatWon(quote.labSettlementAmount)}`
+              : `크레딧 소비 총액 ${formatWon(quote.total)}`}
+          </p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
