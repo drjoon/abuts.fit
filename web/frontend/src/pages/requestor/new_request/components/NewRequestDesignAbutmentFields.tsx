@@ -3,7 +3,9 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
+// - 2026-08-13: 어벗생산의뢰 모달=생산만 고정. 디자인+생산 클릭은 기공의뢰로 이동.
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +24,7 @@ import {
 import { apiFetch } from "@/shared/api/apiClient";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import {
+  ABUTMENT_PRODUCT_MODE,
   normalizeAbutmentFavorites,
   normalizeImplantFavorites,
   normalizeProsthesisTypes,
@@ -84,6 +87,7 @@ export function NewRequestDesignAbutmentFields({
   handleAddOrSelectClinic,
 }: Props) {
   const { token } = useAuthStore();
+  const navigate = useNavigate();
   const { connections: implantConnections } = useImplantConnectionCatalog(token);
 
   const requestMemo = String(caseInfos?.memo || "");
@@ -251,6 +255,10 @@ export function NewRequestDesignAbutmentFields({
     requestMemo,
     setRequestMemo,
     implantConnections,
+    lockedAbutmentProductMode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
+    onAlternateAbutmentModeNavigate: () => {
+      navigate("/dashboard/practice-transfers?mode=send");
+    },
     implantFavorites,
     onImplantFavoritesChange: handleImplantFavoritesChange,
     abutmentFavorites,

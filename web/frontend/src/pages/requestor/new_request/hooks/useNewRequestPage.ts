@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - 2026-08-13: 제출 시 이미 사업자가 있으면 profile/credits GET을 생략
+// - 2026-08-13: 복원·포워딩 시 이미 S3/메타가 있는 STL은 재업로드하지 않음.
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -20,8 +21,14 @@ import { usePatientFileGroups } from "./usePatientFileGroups";
 import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
+import type { TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { apiFetch, request } from "@/shared/api/apiClient";
-import { getLocalDraft, initLocalDraft } from "../utils/localDraftStorage";
+import {
+  getFileKey,
+  getLocalDraft,
+  initLocalDraft,
+  patchFileUploadMeta,
+} from "../utils/localDraftStorage";
 import { getFile } from "../utils/fileIndexedDB";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
@@ -256,6 +263,39 @@ export const useNewRequestPage = (
     initialDraftFiles,
   } = useDraftMeta();
 
+  const prevDraftIdRef = useRef<string | null | undefined>(undefined);
+  const setupReadyRef = useRef(false);
+
+  // 첨부 직후 백그라운드 사전 업로드 (제출 시 ensureFilesUploaded로 재사용)
+  const {
+    ensureFilesUploaded,
+    peekCachedUploadedFiles,
+    preUploadFiles,
+    forgetFile,
+    clearPreUploadCache,
+    rememberUploadedFile,
+    uploadProgress,
+  } = useFilePreUpload({ token });
+
+  useEffect(() => {
+    // undefined: 초기 마운트 (스킵)
+    // null 또는 string: 이후 변경 (처리)
+    if (
+      prevDraftIdRef.current !== undefined &&
+      prevDraftIdRef.current !== draftId
+    ) {
+      // Draft가 바뀌었으면 파일/케이스 관련 상태를 즉시 비움
+      clearPreUploadCache();
+      setFiles([]);
+      setDraftFiles([]);
+      setSelectedPreviewIndex(null);
+      setDuplicatePrompt(null);
+      setDuplicatePromptFromSubmit(false);
+    }
+
+    prevDraftIdRef.current = draftId ?? null;
+  }, [clearPreUploadCache, draftId]);
+
   // --- 로컬 SSOT 복원 (페이지 새로고침 시 파일/정보 유지) ---
   useEffect(() => {
     // 이미 UI에 파일이 있으면 복원 스킵
@@ -270,6 +310,18 @@ export const useNewRequestPage = (
         try {
           const fileFromIdb = await getFile(meta.fileKey);
           if (fileFromIdb) {
+            const fileId = String(meta.fileId || "").trim();
+            const s3Key = String(meta.s3Key || "").trim();
+            if (fileId && s3Key) {
+              rememberUploadedFile(fileFromIdb, {
+                _id: fileId,
+                originalName: meta.name || fileFromIdb.name,
+                mimetype:
+                  meta.mimetype || meta.type || fileFromIdb.type || "application/octet-stream",
+                size: Number(meta.size || fileFromIdb.size),
+                key: s3Key,
+              });
+            }
             restored.push(fileFromIdb);
           }
         } catch {
@@ -317,7 +369,13 @@ export const useNewRequestPage = (
     };
 
     void restoreLocal();
-  }, [files.length, setCaseInfosMap, setFiles, setSelectedPreviewIndex]);
+  }, [
+    files.length,
+    rememberUploadedFile,
+    setCaseInfosMap,
+    setFiles,
+    setSelectedPreviewIndex,
+  ]);
 
   // Draft 최초 로딩 시 서버의 draft.caseInfos를 로컬 draftFiles 상태에 주입
   useEffect(() => {
@@ -335,42 +393,103 @@ export const useNewRequestPage = (
     setDraftFiles,
   ]);
 
-  const prevDraftIdRef = useRef<string | null | undefined>(undefined);
-  const setupReadyRef = useRef(false);
+  useEffect(() => {
+    if (!token || files.length === 0) return;
 
-  // 첨부 직후 백그라운드 사전 업로드 (제출 시 ensureFilesUploaded로 재사용)
-  const {
+    const localFiles = getLocalDraft()?.files || [];
+    const localByKey = new Map(
+      localFiles.map((row) => [String(row.fileKey || "").trim(), row]),
+    );
+    const draftByNameSize = new Map<
+      string,
+      { fileId?: string; s3Key?: string; originalName?: string; mimetype?: string; size?: number }
+    >();
+    for (const row of initialDraftFiles || []) {
+      const meta = row?.file;
+      if (!meta) continue;
+      const name = String(meta.originalName || "").trim();
+      const size = Number(meta.size || 0);
+      if (!name || !size) continue;
+      draftByNameSize.set(`${name}:${size}`, meta);
+      try {
+        draftByNameSize.set(`${name.normalize("NFC")}:${size}`, meta);
+      } catch {
+        // ignore
+      }
+    }
+
+    let hydratedAll = true;
+    for (const file of files) {
+      const localMeta = localByKey.get(getFileKey(file));
+      const draftMeta =
+        draftByNameSize.get(`${file.name}:${file.size}`) ||
+        (() => {
+          try {
+            return draftByNameSize.get(`${file.name.normalize("NFC")}:${file.size}`);
+          } catch {
+            return undefined;
+          }
+        })();
+      const fileId = String(localMeta?.fileId || draftMeta?.fileId || "").trim();
+      const s3Key = String(localMeta?.s3Key || draftMeta?.s3Key || "").trim();
+      if (!fileId || !s3Key) {
+        hydratedAll = false;
+        continue;
+      }
+      rememberUploadedFile(file, {
+        _id: fileId,
+        originalName: String(
+          draftMeta?.originalName || localMeta?.name || file.name,
+        ),
+        mimetype: String(
+          draftMeta?.mimetype ||
+            localMeta?.mimetype ||
+            localMeta?.type ||
+            file.type ||
+            "application/octet-stream",
+        ),
+        size: Number(draftMeta?.size || localMeta?.size || file.size),
+        key: s3Key,
+      });
+    }
+
+    if (!hydratedAll && draftStatus === "loading") return;
+
+    preUploadFiles(files);
+
+    const persistUploaded = (rows: TempUploadedFile[]) => {
+      rows.forEach((row, index) => {
+        const file = files[index];
+        if (!file || !row?._id || !row.key) return;
+        patchFileUploadMeta(getFileKey(file), {
+          fileId: row._id,
+          s3Key: row.key,
+          mimetype: row.mimetype,
+        });
+      });
+    };
+
+    const cached = peekCachedUploadedFiles(files);
+    if (cached) {
+      persistUploaded(cached);
+      return;
+    }
+
+    void ensureFilesUploaded(files)
+      .then(persistUploaded)
+      .catch(() => {
+        // 제출 시 재시도
+      });
+  }, [
+    token,
+    files,
+    draftStatus,
+    initialDraftFiles,
     ensureFilesUploaded,
     peekCachedUploadedFiles,
     preUploadFiles,
-    forgetFile,
-    clearPreUploadCache,
-    uploadProgress,
-  } = useFilePreUpload({ token });
-
-  useEffect(() => {
-    // undefined: 초기 마운트 (스킵)
-    // null 또는 string: 이후 변경 (처리)
-    if (
-      prevDraftIdRef.current !== undefined &&
-      prevDraftIdRef.current !== draftId
-    ) {
-      // Draft가 바뀌었으면 파일/케이스 관련 상태를 즉시 비움
-      clearPreUploadCache();
-      setFiles([]);
-      setDraftFiles([]);
-      setSelectedPreviewIndex(null);
-      setDuplicatePrompt(null);
-      setDuplicatePromptFromSubmit(false);
-    }
-
-    prevDraftIdRef.current = draftId ?? null;
-  }, [clearPreUploadCache, draftId]);
-
-  useEffect(() => {
-    if (!token || files.length === 0) return;
-    preUploadFiles(files);
-  }, [token, files, preUploadFiles]);
+    rememberUploadedFile,
+  ]);
 
   const normalizeKeyPart = useCallback((s: string) => {
     try {

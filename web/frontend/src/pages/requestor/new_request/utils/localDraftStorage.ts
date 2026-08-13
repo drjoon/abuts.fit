@@ -21,12 +21,17 @@ export interface FileMetadata {
   type: string;
   lastModified: number;
   addedAt: number;
+  /** 이미 S3 temp + File 메타가 있으면 재업로드하지 않는다 */
+  fileId?: string;
+  s3Key?: string;
+  mimetype?: string;
 }
 
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts
+// - 2026-08-13: 로컬 파일 메타에 fileId/s3Key를 붙여 복원 시 재업로드를 생략한다.
 // Rhino align 정책으로 구성정보 파일은 저장하지 않으므로,
 // 로컬 Draft SSOT도 STL 케이스 메타만 보관한다.
 export interface CaseInfos {
@@ -230,6 +235,29 @@ export function removeFile(fileKey: string): LocalDraft {
     }))
     .filter((group) => group.fileKeys.length >= 2);
 
+  saveLocalDraft(draft);
+  return draft;
+}
+
+/**
+ * 사전 업로드 결과(S3/File 메타)를 로컬 Draft 파일에 붙인다.
+ */
+export function patchFileUploadMeta(
+  fileKey: string,
+  meta: { fileId?: string; s3Key?: string; mimetype?: string },
+): LocalDraft {
+  const draft = getLocalDraft() || initLocalDraft();
+  const fileId = String(meta.fileId || "").trim();
+  const s3Key = String(meta.s3Key || "").trim();
+  draft.files = draft.files.map((file) => {
+    if (file.fileKey !== fileKey) return file;
+    return {
+      ...file,
+      ...(fileId ? { fileId } : {}),
+      ...(s3Key ? { s3Key } : {}),
+      ...(meta.mimetype ? { mimetype: String(meta.mimetype) } : {}),
+    };
+  });
   saveLocalDraft(draft);
   return draft;
 }

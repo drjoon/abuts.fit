@@ -41,6 +41,7 @@
  * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
  * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 계정 마지막 설정. 전송 시 의뢰건에 스냅샷.
  * - 2026-08-13: 커스텀어벗 설정 모달 기본=디자인+생산. 선택값은 practiceTransferSettings.defaultAbutmentProductMode.
+ * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
  * - 2026-08-13: 임시저장/동기화는 기공소·환자명 둘 다 입력된 뒤에만 수행.
  * - 2026-08-13: 최근전송 취소 뱃지=기공소 작업취소만(치과 휴지통 제외). 6뱃지 빠른툴팁.
@@ -178,6 +179,7 @@ import {
       isLinkableProsthesisType,
       pickToothWorkAbutmentProductMode,
       pickToothWorkCustomSpecs,
+      ABUTMENT_PRODUCT_MODE,
       normalizeAccountAbutmentProductMode,
       normalizeImplantFavorites,
       normalizeAbutmentFavorites,
@@ -5547,6 +5549,10 @@ export const PracticeFileTransferPage = ({
                   implantConnections,
                   defaultAbutmentProductMode,
                   onDefaultAbutmentProductModeChange: persistDefaultAbutmentProductModeSetting,
+                  lockedAbutmentProductMode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
+                  onAlternateAbutmentModeNavigate: () => {
+                    navigate("/dashboard/new-request");
+                  },
                   implantFavorites,
                   onImplantFavoritesChange: (next) => {
                     const normalized = normalizeImplantFavorites(next);

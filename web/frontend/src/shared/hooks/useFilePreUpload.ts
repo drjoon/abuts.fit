@@ -9,6 +9,7 @@
 // - web/frontend/rules.md
 // - 2026-08-13: uploadProgress 상태 노출(파일카드 프로그레스바). 진행키=toTempUploadFileKey.
 // - 2026-08-13: 제출 시 캐시된 결과는 재사용·진행 중이면 대기만. 진행률 0%로 되돌리지 않음.
+// - 2026-08-13: 기공의뢰↔어벗생산의뢰 이동 시 공유 캐시·세션 저장으로 S3/메타 재업로드 생략.
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   TempUploadedFile,
@@ -34,18 +35,122 @@ type CacheEntry =
   | { status: "done"; result: TempUploadedFile }
   | { status: "error"; error: Error };
 
+type PersistedDone = {
+  savedAt: number;
+  result: TempUploadedFile;
+};
+
 type Options = {
   token?: string | null;
+};
+
+const PREUPLOAD_CACHE_STORAGE_KEY = "abutsfit:file-preupload-cache:v1";
+const PREUPLOAD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const sharedCache = new Map<string, CacheEntry>();
+let persistedLoaded = false;
+
+const isUsableUploadedFile = (value: unknown): value is TempUploadedFile => {
+  if (!value || typeof value !== "object") return false;
+  const row = value as TempUploadedFile;
+  return Boolean(String(row._id || "").trim() && String(row.key || "").trim());
+};
+
+const normalizeUploadedFile = (
+  value: Partial<TempUploadedFile> | null | undefined,
+): TempUploadedFile | null => {
+  if (!value) return null;
+  const result: TempUploadedFile = {
+    _id: String(value._id || "").trim(),
+    originalName: String(value.originalName || "").trim(),
+    mimetype: String(value.mimetype || "").trim(),
+    size: Number(value.size || 0),
+    fileType: value.fileType,
+    location: value.location,
+    key: String(value.key || "").trim(),
+  };
+  return isUsableUploadedFile(result) ? result : null;
+};
+
+const loadPersistedDone = () => {
+  if (persistedLoaded) return;
+  persistedLoaded = true;
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.sessionStorage.getItem(PREUPLOAD_CACHE_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, PersistedDone>;
+    if (!parsed || typeof parsed !== "object") return;
+    const now = Date.now();
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!value || now - Number(value.savedAt || 0) > PREUPLOAD_CACHE_TTL_MS) {
+        continue;
+      }
+      const result = normalizeUploadedFile(value.result);
+      if (!result) continue;
+      sharedCache.set(key, { status: "done", result });
+    }
+  } catch {
+    // ignore
+  }
+};
+
+const persistDone = (key: string, result: TempUploadedFile) => {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.sessionStorage.getItem(PREUPLOAD_CACHE_STORAGE_KEY);
+    const parsed = raw
+      ? (JSON.parse(raw) as Record<string, PersistedDone>)
+      : {};
+    if (!parsed || typeof parsed !== "object") return;
+    parsed[key] = { savedAt: Date.now(), result };
+    window.sessionStorage.setItem(
+      PREUPLOAD_CACHE_STORAGE_KEY,
+      JSON.stringify(parsed),
+    );
+  } catch {
+    // quota / private mode
+  }
+};
+
+const unpersistKey = (key: string) => {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.sessionStorage.getItem(PREUPLOAD_CACHE_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, PersistedDone>;
+    if (!parsed || typeof parsed !== "object" || !(key in parsed)) return;
+    delete parsed[key];
+    window.sessionStorage.setItem(
+      PREUPLOAD_CACHE_STORAGE_KEY,
+      JSON.stringify(parsed),
+    );
+  } catch {
+    // ignore
+  }
+};
+
+const rememberDoneInSharedCache = (
+  key: string,
+  raw: Partial<TempUploadedFile>,
+) => {
+  loadPersistedDone();
+  const result = normalizeUploadedFile(raw);
+  if (!result) return false;
+  sharedCache.set(key, { status: "done", result });
+  persistDone(key, result);
+  return true;
 };
 
 /**
  * 첨부 직후 백그라운드 사전 업로드 (기공의뢰·생산의뢰 공통).
  * 제출 시에는 이미 올라간 결과는 재사용하고, 남은 파일만 이어서 올린다.
+ * 캐시는 페이지 인스턴스와 무관하게 공유한다(기공의뢰↔어벗생산의뢰 포워딩).
  */
 export function useFilePreUpload(options: Options) {
   const { token } = options;
   const { uploadFiles } = useS3TempUpload({ token });
-  const cacheRef = useRef(new Map<string, CacheEntry>());
+  loadPersistedDone();
+  const cacheRef = useRef(sharedCache);
   const tokenRef = useRef(token);
   tokenRef.current = token;
   const [uploadProgress, setUploadProgress] = useState<
@@ -74,6 +179,7 @@ export function useFilePreUpload(options: Options) {
 
   const forgetFileKey = useCallback((key: string) => {
     cacheRef.current.delete(key);
+    unpersistKey(key);
     setUploadProgress((prev) => {
       if (!(key in prev)) return prev;
       const next = { ...prev };
@@ -90,9 +196,22 @@ export function useFilePreUpload(options: Options) {
   );
 
   const clearPreUploadCache = useCallback(() => {
-    cacheRef.current.clear();
+    for (const [key, entry] of [...cacheRef.current.entries()]) {
+      if (entry.status !== "done") {
+        cacheRef.current.delete(key);
+      }
+    }
     setUploadProgress({});
   }, []);
+
+  const rememberUploadedFile = useCallback(
+    (file: File, raw: Partial<TempUploadedFile>) => {
+      const key = toTempUploadFileKey(file);
+      if (!rememberDoneInSharedCache(key, raw)) return;
+      patchProgress({ [key]: { percent: 100, status: "done" } });
+    },
+    [patchProgress],
+  );
 
   const peekCachedUploadedFiles = useCallback(
     (files: File[]): TempUploadedFile[] | null => {
@@ -206,7 +325,7 @@ export function useFilePreUpload(options: Options) {
             if (!row) {
               throw new Error("업로드 결과가 없습니다.");
             }
-            cacheRef.current.set(key, { status: "done", result: row });
+            rememberDoneInSharedCache(key, row);
             return row;
           });
           cacheRef.current.set(key, { status: "uploading", promise });
@@ -231,10 +350,7 @@ export function useFilePreUpload(options: Options) {
           results[fileIndex] = row;
           const key = toTempUploadFileKey(files[fileIndex]);
           progressMap[key] = 100;
-          cacheRef.current.set(key, {
-            status: "done",
-            result: row,
-          });
+          rememberDoneInSharedCache(key, row);
         });
         emit();
       }
@@ -283,6 +399,7 @@ export function useFilePreUpload(options: Options) {
     forgetFile,
     forgetFileKey,
     clearPreUploadCache,
+    rememberUploadedFile,
     uploadProgress,
   };
 }

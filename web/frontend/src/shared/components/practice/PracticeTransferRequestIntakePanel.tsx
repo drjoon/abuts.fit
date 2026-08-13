@@ -124,6 +124,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-08-13: 기공의뢰 모달=디자인+생산 고정(생산만→어벗생산의뢰). 어벗생산의뢰=생산만 고정(디자인+생산→기공의뢰).
 // - 2026-08-13: 생산·디자인+생산 단가를 creditSettings 멤버십/일반값으로 표시.
 // - 2026-08-11: 기공소 선택에 "자동 매칭" 옵션(+빠른툴팁) 추가.
 // - 2026-08-11: 안내문구 최소화 — 플레이스홀더·메모 도움말·커스텀규격 설명을 즉시툴팁으로.
@@ -594,6 +595,10 @@ export type PracticeTransferRequestIntakePanelProps = {
   onDefaultAbutmentProductModeChange?: (
     next: AbutmentProductMode,
   ) => void | Promise<void>;
+  /** 고정 모드. 해당 항목 항상 체크. 다른 항목 클릭은 onAlternateAbutmentModeNavigate */
+  lockedAbutmentProductMode?: AbutmentProductMode;
+  /** 고정 모드의 반대 항목 클릭 시 이동(기공의뢰↔어벗생산의뢰) */
+  onAlternateAbutmentModeNavigate?: () => void;
   /** 값이 바뀌면 치식 차트를 M(전치부) 위치로 되돌린다 (새로 작성 등) */
   toothChartResetNonce?: number;
   /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
@@ -650,12 +655,38 @@ export const PracticeTransferRequestIntakePanel = ({
   onAbutmentFavoritesChange,
   defaultAbutmentProductMode: defaultAbutmentProductModeProp,
   onDefaultAbutmentProductModeChange,
+  lockedAbutmentProductMode,
+  onAlternateAbutmentModeNavigate,
   toothChartResetNonce = 0,
   showFeeEstimate = false,
 }: PracticeTransferRequestIntakePanelProps) => {
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
   );
+  const lockedMode = isAbutmentProductMode(lockedAbutmentProductMode)
+    ? lockedAbutmentProductMode
+    : null;
+  const applyIntakeProsthesisType = (
+    row: ToothWorkSelection,
+    prosthesisType: string,
+  ) => {
+    const next = applyProsthesisTypeToRow(
+      row,
+      prosthesisType,
+      lockedMode ?? defaultAbutmentProductMode,
+    );
+    if (
+      lockedMode &&
+      (next.customAbutment || isCustomAbutmentProsthesisType(next.prosthesisType))
+    ) {
+      return {
+        ...next,
+        customAbutment: true,
+        abutmentProductMode: lockedMode,
+      };
+    }
+    return next;
+  };
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
     : normalizedProsthesisTypes[0] || "크라운";
@@ -1176,7 +1207,7 @@ export const PracticeTransferRequestIntakePanel = ({
         if (prosthesisType === prevType && !linksChanged) return row;
         changed = true;
         return {
-          ...applyProsthesisTypeToRow(row, prosthesisType, defaultAbutmentProductMode),
+          ...applyIntakeProsthesisType(row, prosthesisType),
           bridgeLinkedTeeth: isLinked ? links : [],
         };
       });
@@ -1228,9 +1259,14 @@ export const PracticeTransferRequestIntakePanel = ({
         row.prosthesisType === "크라운" ||
         row.prosthesisType === "브리지";
       if (!canEnable) return prev;
+      const nextMode = lockedMode
+        ? lockedMode
+        : isAbutmentProductMode(row.abutmentProductMode)
+          ? row.abutmentProductMode
+          : defaultAbutmentProductMode;
       if (
         row.customAbutment &&
-        isAbutmentProductMode(row.abutmentProductMode)
+        row.abutmentProductMode === nextMode
       ) {
         return prev;
       }
@@ -1238,9 +1274,7 @@ export const PracticeTransferRequestIntakePanel = ({
       next[index] = {
         ...row,
         customAbutment: true,
-        abutmentProductMode: isAbutmentProductMode(row.abutmentProductMode)
-          ? row.abutmentProductMode
-          : defaultAbutmentProductMode,
+        abutmentProductMode: nextMode,
       };
       return next;
     });
@@ -2259,10 +2293,9 @@ export const PracticeTransferRequestIntakePanel = ({
                                         );
                                       }
                                       const next = [...prev];
-                                      next[resolved.index] = applyProsthesisTypeToRow(
+                                      next[resolved.index] = applyIntakeProsthesisType(
                                         current,
                                         resolved.nextType,
-                                        defaultAbutmentProductMode,
                                       );
                                       return next;
                                     });
@@ -2355,7 +2388,8 @@ export const PracticeTransferRequestIntakePanel = ({
                                 >
                                   {
                                     ABUTMENT_PRODUCT_MODE_SHORT_LABEL[
-                                      resolveToothAbutmentProductMode(row)
+                                      lockedMode ??
+                                        resolveToothAbutmentProductMode(row)
                                     ]
                                   }
                                 </button>
@@ -2719,9 +2753,11 @@ export const PracticeTransferRequestIntakePanel = ({
               }`}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              생산만 의뢰 또는 디자인+생산 의뢰를 고른 뒤, 임플란트와 스캔바디 프리셋을
-              각각 한 번씩 선택하면 저장되고 닫힙니다. 확인도 동일하고, 취소하면 열기 전
-              값으로 돌아갑니다.
+              {lockedMode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
+                ? "디자인+생산 의뢰가 선택됩니다. 생산만 의뢰는 어벗생산의뢰 페이지로 이동합니다. 임플란트와 스캔바디 프리셋을 각각 한 번씩 선택하면 저장되고 닫힙니다."
+                : lockedMode === ABUTMENT_PRODUCT_MODE.PRODUCTION
+                  ? "생산만 의뢰가 선택됩니다. 디자인+생산 의뢰는 기공의뢰 페이지로 이동합니다. 임플란트와 스캔바디 프리셋을 각각 한 번씩 선택하면 저장되고 닫힙니다."
+                  : "생산만 의뢰 또는 디자인+생산 의뢰를 고른 뒤, 임플란트와 스캔바디 프리셋을 각각 한 번씩 선택하면 저장되고 닫힙니다. 확인도 동일하고, 취소하면 열기 전 값으로 돌아갑니다."}
             </DialogDescription>
           </DialogHeader>
 
@@ -2730,12 +2766,16 @@ export const PracticeTransferRequestIntakePanel = ({
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
               <div className="my-10 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {abutmentServiceOptions.map((option) => {
-                  const selected =
-                    resolveToothAbutmentProductMode(
-                      toothWorks[customSpecsModalTarget],
-                    ) === option.mode;
                   const isDesign =
                     option.mode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION;
+                  const selected = lockedMode
+                    ? option.mode === lockedMode
+                    : resolveToothAbutmentProductMode(
+                        toothWorks[customSpecsModalTarget],
+                      ) === option.mode;
+                  const isAlternateLockedOption = Boolean(
+                    lockedMode && option.mode !== lockedMode,
+                  );
                   return (
                     <HoverOnlyTooltip
                       key={option.mode}
@@ -2752,7 +2792,12 @@ export const PracticeTransferRequestIntakePanel = ({
                             })}
                           </p>
                           <p className="text-muted-foreground">
-                            {`${ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}, ${ABUTS_ABUTMENT_SERVICE_TAX_NOTE}`}
+                            {isAlternateLockedOption
+                              ? lockedMode ===
+                                ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
+                                ? "어벗생산의뢰 페이지에서 처리합니다."
+                                : "기공의뢰 페이지에서 처리합니다."
+                              : `${ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}, ${ABUTS_ABUTMENT_SERVICE_TAX_NOTE}`}
                           </p>
                         </>
                       }
@@ -2779,6 +2824,12 @@ export const PracticeTransferRequestIntakePanel = ({
                           )}
                           checked={selected}
                           onChange={() => {
+                            if (lockedMode) {
+                              if (option.mode === lockedMode) return;
+                              cancelCustomSpecsModal();
+                              onAlternateAbutmentModeNavigate?.();
+                              return;
+                            }
                             const index = customSpecsModalTarget;
                             const current = toothWorks[index];
                             if (!current) return;

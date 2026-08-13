@@ -30,6 +30,7 @@
  * - 2026-08-13: 파일카드에 사전 업로드 프로그레스바.
  * - 2026-08-13: 전송 시 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  * - 2026-08-13: 커스텀어벗 설정 모달 기본=디자인+생산. 로그인 후 계정 설정으로 저장.
+ * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -124,6 +125,7 @@ import {
   emptyToothWorkCustomSpecs,
   isLinkableProsthesisType,
   normalizeAbutmentFavorites,
+  ABUTMENT_PRODUCT_MODE,
   normalizeAccountAbutmentProductMode,
   normalizeImplantFavorites,
   pickToothWorkCustomSpecs,
@@ -2444,6 +2446,10 @@ export const PracticeDropzonePage = () => {
                     onClearAll: handleClearRequestIntakeCache,
                     implantConnections,
                     defaultAbutmentProductMode,
+                    lockedAbutmentProductMode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
+                    onAlternateAbutmentModeNavigate: () => {
+                      navigate("/dashboard/new-request");
+                    },
                     onDefaultAbutmentProductModeChange: (next) => {
                       const normalized = normalizeAccountAbutmentProductMode(next);
                       if (normalized === defaultAbutmentProductMode) return;
