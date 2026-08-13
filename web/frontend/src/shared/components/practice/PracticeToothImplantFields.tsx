@@ -1174,7 +1174,7 @@ export const PracticeToothImplantFields = ({
                 ) : null}
                 {allowManufacturerRequest ? (
                   <>
-                    <SelectSeparator />
+                    <SelectSeparator className="my-1.5 h-0.5 bg-slate-300" />
                     <SelectItem
                       value={MANUFACTURER_ADD_REQUEST_VALUE}
                       className="text-sm font-semibold text-primary-strong"
