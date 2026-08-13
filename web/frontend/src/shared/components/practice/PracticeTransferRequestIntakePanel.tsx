@@ -131,6 +131,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-11: 기공의뢰 카드 내 행(섹션) 수직 간격 gap-10.
 // - 2026-08-13: 커스텀어벗 설정 모달에 생산만/디자인+생산 배타 선택 + 가격 툴팁.
 // - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
+// - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
 // - 2026-08-13: 커스텀어벗 칸 「설정」제거. 생산/디자인+생산 클릭 시 설정 모달.
 // - 2026-08-13: 커스텀어벗 가격 툴팁은 해당 치과 멤버십/일반 한쪽만 안내.
 // - 2026-08-13: 커스텀어벗 설정 모달 가격 툴팁은 호버일 때만.
@@ -712,7 +713,7 @@ export const PracticeTransferRequestIntakePanel = ({
     [systemSettings?.creditSettings],
   );
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
-    enabled: showFeeEstimate,
+    enabled: showFeeEstimate && Boolean(selectedLab),
     labAnchorId: selectedLab?._id,
     toothWorks,
     abutmentPricingTier,
@@ -2521,7 +2522,11 @@ export const PracticeTransferRequestIntakePanel = ({
               >
                 {chartRows[0]}
                 {showFeeEstimate ? (
-                  <PracticeTransferFeeEstimate quote={feeQuote} viewer="practice" />
+                  <PracticeTransferFeeEstimate
+                    quote={feeQuote}
+                    viewer="practice"
+                    labPending={!selectedLab}
+                  />
                 ) : null}
                 {chartRows[1]}
                 {toothMarquee && toothChartRef.current

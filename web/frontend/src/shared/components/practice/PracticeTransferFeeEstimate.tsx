@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
 // - 2026-08-13: 기공소 기공비 Off면 미설정 안내.
 // - 2026-08-13: 치아번호 10→20→30→40번대 순으로 표시.
+// - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
 import { CircleHelp } from "lucide-react";
 import {
   Tooltip,
@@ -25,6 +26,8 @@ type PracticeTransferFeeEstimateProps = {
   className?: string;
   /** compact: 상·하악 사이 / card: 의뢰카드 */
   density?: "chart" | "card";
+  /** 기공소 미선택 — 기공 수가 미산출 안내 */
+  labPending?: boolean;
 };
 
 const scaleWon = (value: number, keepRate: number) =>
@@ -115,8 +118,32 @@ export function PracticeTransferFeeEstimate({
   viewer,
   className,
   density = "chart",
+  labPending = false,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
+  const isCard = density === "card";
+  const showLabPendingHint = Boolean(labPending) && !isLab;
+
+  if (showLabPendingHint) {
+    return (
+      <div
+        data-no-tooth-marquee=""
+        className={cn(
+          "flex items-center justify-center text-center",
+          isCard
+            ? "mt-2 justify-start text-left"
+            : "rounded-lg border border-primary-muted/50 bg-primary-soft/40 px-3 py-1.5",
+          className,
+        )}
+        role="note"
+      >
+        <p className="text-sm text-muted-foreground">
+          기공소를 선택하시면 기공 수가가 계산됩니다.
+        </p>
+      </div>
+    );
+  }
+
   const amount = isLab ? quote.labSettlementAmount : quote.total;
   const title = quote.isRemake
     ? isLab
@@ -136,8 +163,6 @@ export function PracticeTransferFeeEstimate({
         : quote.abutmentRetailTotal > 0
           ? `어벗 ${formatWon(quote.abutmentRetailTotal)}`
           : `기공비 ${formatWon(quote.labFeeTotal)}`;
-
-  const isCard = density === "card";
   const labFeeUnset = !isLab && quote.labFeeConfigured === false;
 
   return (
