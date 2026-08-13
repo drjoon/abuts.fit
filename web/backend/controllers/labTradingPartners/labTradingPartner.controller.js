@@ -15,6 +15,7 @@ import {
 } from "../../utils/labTradingPartner.util.js";
 import {
   normalizeLabFeeSchedule,
+  normalizeLabFeeScheduleEnabled,
   LAB_FEE_SCHEDULE_DEFAULTS,
 } from "../../utils/labFeeSchedule.js";
 import {
@@ -454,10 +455,12 @@ export async function getLabFeeSchedule(req, res) {
     const schedule = normalizeLabFeeSchedule(
       lab?.labFeeSchedule || LAB_FEE_SCHEDULE_DEFAULTS,
     );
+    const enabled = normalizeLabFeeScheduleEnabled(lab?.labFeeSchedule);
     return res.json({
       success: true,
       data: {
         schedule,
+        enabled,
         updatedAt: lab?.labFeeSchedule?.updatedAt || null,
       },
     });
@@ -480,12 +483,16 @@ export async function updateLabFeeSchedule(req, res) {
       });
     }
     const schedule = normalizeLabFeeSchedule(req.body?.schedule || req.body);
+    const enabled = normalizeLabFeeScheduleEnabled(
+      req.body?.enabled ?? req.body?.schedule?.enabled ?? req.body,
+    );
     const updated = await BusinessAnchor.findByIdAndUpdate(
       labAnchorId,
       {
         $set: {
           labFeeSchedule: {
             ...schedule,
+            enabled,
             updatedAt: new Date(),
           },
         },
@@ -496,6 +503,7 @@ export async function updateLabFeeSchedule(req, res) {
       success: true,
       data: {
         schedule: normalizeLabFeeSchedule(updated?.labFeeSchedule),
+        enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
         updatedAt: updated?.labFeeSchedule?.updatedAt || null,
       },
     });

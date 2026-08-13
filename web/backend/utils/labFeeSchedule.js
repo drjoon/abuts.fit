@@ -4,6 +4,15 @@
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 
+export const LAB_FEE_SCHEDULE_KEYS = [
+  "crown",
+  "bridge",
+  "inlay",
+  "pontic",
+  "customAbutmentDesign",
+  "customAbutmentDesignAndProduction",
+];
+
 export const LAB_FEE_SCHEDULE_DEFAULTS = {
   crown: 60000,
   bridge: 60000,
@@ -12,6 +21,11 @@ export const LAB_FEE_SCHEDULE_DEFAULTS = {
   customAbutmentDesign: 10000,
   customAbutmentDesignAndProduction: 35000,
 };
+
+/** 항목별 서비스 제공 여부. 미설정 시 전부 제공(true) */
+export const LAB_FEE_SCHEDULE_ENABLED_DEFAULTS = Object.fromEntries(
+  LAB_FEE_SCHEDULE_KEYS.map((key) => [key, true]),
+);
 
 export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;
 
@@ -58,6 +72,29 @@ export function normalizeLabFeeSchedule(input) {
       "customAbutmentDesignAndProduction",
     ),
   };
+}
+
+/** labFeeSchedule.enabled — 제공하지 않는 항목은 false */
+export function normalizeLabFeeScheduleEnabled(input) {
+  const src =
+    input && typeof input === "object"
+      ? input.enabled && typeof input.enabled === "object"
+        ? input.enabled
+        : input
+      : {};
+  const out = {};
+  for (const key of LAB_FEE_SCHEDULE_KEYS) {
+    if (typeof src[key] === "boolean") {
+      out[key] = src[key];
+    } else if (src[key] === 0 || src[key] === "0" || src[key] === "false") {
+      out[key] = false;
+    } else if (src[key] === 1 || src[key] === "1" || src[key] === "true") {
+      out[key] = true;
+    } else {
+      out[key] = LAB_FEE_SCHEDULE_ENABLED_DEFAULTS[key];
+    }
+  }
+  return out;
 }
 
 /**

@@ -235,6 +235,15 @@ const businessAnchorSchema = new mongoose.Schema(
         default: 35000,
         min: 0,
       },
+      // 항목별 서비스 제공 여부. false면 UI에서 비활성(수가 값은 유지)
+      enabled: {
+        crown: { type: Boolean, default: true },
+        bridge: { type: Boolean, default: true },
+        inlay: { type: Boolean, default: true },
+        pontic: { type: Boolean, default: true },
+        customAbutmentDesign: { type: Boolean, default: true },
+        customAbutmentDesignAndProduction: { type: Boolean, default: true },
+      },
       updatedAt: { type: Date, default: null },
     },
     practiceTransferSettings: {
