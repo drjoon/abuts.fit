@@ -1,5 +1,6 @@
 /**
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
+ * 상단 6뱃지 취소=기공소 작업취소. 치과 휴지통(status 취소)은 집계·필터에서 제외.
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -74,6 +75,60 @@ export type PracticeRecentStatusFilter =
   | "취소"
   | "포장.발송"
   | "추적관리";
+
+export type PracticeRecentStatusCounts = {
+  sent: number;
+  accepted: number;
+  completed: number;
+  shipping: number;
+  tracking: number;
+  canceled: number;
+};
+
+/** 최근전송 상단 6뱃지 — 라벨·집계키·빠른툴팁 SSOT. 취소=기공소 작업취소(치과 휴지통 제외). */
+export const PRACTICE_RECENT_STATUS_BADGES = [
+  {
+    filter: "발송완료",
+    label: "의뢰",
+    countKey: "sent",
+    tooltip: "치과에서 기공의뢰서 전송 후",
+  },
+  {
+    filter: "의뢰수락",
+    label: "수락",
+    countKey: "accepted",
+    tooltip: "기공소에서 기공의뢰서 확인 후 작업을 수락한 후",
+  },
+  {
+    filter: "작업완료",
+    label: "완료",
+    countKey: "completed",
+    tooltip: "기공소에서 기공작업을 완료한 뒤 관련 파일을 업로드한 후",
+  },
+  {
+    filter: "취소",
+    label: "취소",
+    countKey: "canceled",
+    tooltip: "기공소에서 기공작업을 취소한 후",
+  },
+  {
+    filter: "포장.발송",
+    label: "발송",
+    countKey: "shipping",
+    tooltip: "완료된 기공물을 치과로 발송한 후 (완료 후 1일 경과시)",
+  },
+  {
+    filter: "추적관리",
+    label: "추적관리",
+    countKey: "tracking",
+    tooltip: "치과에서 기공물을 받은 후 (발송 후 1일 경과시)",
+  },
+] as const satisfies ReadonlyArray<{
+  filter: Exclude<PracticeRecentStatusFilter, "all">;
+  label: string;
+  countKey: keyof PracticeRecentStatusCounts;
+  tooltip: string;
+}>;
 
 const extractLabNameFromMessage = (message: string) => {
   const raw = String(message || "").trim();
@@ -530,21 +585,22 @@ export const groupPracticeRecentRequests = (
 
 export const computeGroupedStatusCounts = (
   groupedTransfers: PracticeRecentTransferItem[],
-  options?: { canceledGroupedTransfers?: PracticeRecentTransferItem[] },
-) => {
-  const counts = groupedTransfers.reduce(
+): PracticeRecentStatusCounts =>
+  groupedTransfers.reduce(
     (acc, request) => {
       const status = String(request.status || "").trim();
       if (status === "작업완료") {
         acc.completed += 1;
-      } else if (status === "생산진행") {
+      } else if (status === "생산진행" || status === "포장.발송") {
         acc.shipping += 1;
+      } else if (status === "추적관리") {
+        acc.tracking += 1;
       } else if (status === "의뢰수락" || status === "다운로드완료") {
         acc.accepted += 1;
-      } else if (status === "자동매칭" || status === "취소") {
-        // 집계 제외
       } else if (status === "작업취소") {
-        acc.sent += 1;
+        acc.canceled += 1;
+      } else if (status === "자동매칭" || status === "취소") {
+        // 치과 휴지통(취소)·자동매칭은 최근전송 뱃지 집계에서 제외
       } else {
         acc.sent += 1;
       }
@@ -552,10 +608,6 @@ export const computeGroupedStatusCounts = (
     },
     { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0, canceled: 0 },
   );
-
-  counts.canceled = Number(options?.canceledGroupedTransfers?.length || 0);
-  return counts;
-};
 
 export const filterGroupedTransfersByStatus = (
   groupedTransfers: PracticeRecentTransferItem[],
@@ -568,7 +620,6 @@ export const filterGroupedTransfersByStatus = (
       return (
         status === "발송완료" ||
         status === "수신완료" ||
-        status === "작업취소" ||
         (status !== "의뢰수락" &&
           status !== "다운로드완료" &&
           status !== "작업완료" &&
@@ -587,7 +638,7 @@ export const filterGroupedTransfersByStatus = (
       return status === "의뢰수락" || status === "다운로드완료";
     }
     if (statusFilter === "취소") {
-      return status === "취소";
+      return status === "작업취소";
     }
     return status === statusFilter;
   });

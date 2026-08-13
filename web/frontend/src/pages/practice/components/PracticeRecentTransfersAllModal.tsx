@@ -1,6 +1,7 @@
 /**
  * 치과 기공의뢰 — 최근 전송 「전체 보기」 모달.
  * 3열 그리드 + 무한 스크롤, 기간·검색·상태 뱃지 필터.
+ * 취소 뱃지=기공소 작업취소(치과 휴지통 제외). 6뱃지 빠른툴팁.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Trash2 } from "lucide-react";
@@ -31,6 +32,7 @@ import {
   type PracticeRecentTransferItem,
   type PracticeRecentRequestItem,
   type PracticeRecentStatusFilter,
+  PRACTICE_RECENT_STATUS_BADGES,
   canDeletePracticeTransferByStatus,
   computeGroupedStatusCounts,
   filterGroupedTransfersByStatus,
@@ -224,36 +226,20 @@ export function PracticeRecentTransfersAllModal({
     [periodFilteredRequests],
   );
 
-  const canceledRequests = useMemo(
-    () =>
-      periodFilteredRequests.filter(
-        (request) => String(request.status || "").trim() === "취소",
-      ),
-    [periodFilteredRequests],
-  );
-
   const groupedTransfers = useMemo(
     () => groupPracticeRecentRequests(activeRequests, chatRooms),
     [activeRequests, chatRooms],
   );
 
-  const canceledGroupedTransfers = useMemo(
-    () => groupPracticeRecentRequests(canceledRequests, chatRooms),
-    [canceledRequests, chatRooms],
-  );
-
   const statusCounts = useMemo(
-    () =>
-      computeGroupedStatusCounts(groupedTransfers, {
-        canceledGroupedTransfers,
-      }),
-    [canceledGroupedTransfers, groupedTransfers],
+    () => computeGroupedStatusCounts(groupedTransfers),
+    [groupedTransfers],
   );
 
-  const filteredTransfers = useMemo(() => {
-    if (statusFilter === "취소") return canceledGroupedTransfers;
-    return filterGroupedTransfersByStatus(groupedTransfers, statusFilter);
-  }, [canceledGroupedTransfers, groupedTransfers, statusFilter]);
+  const filteredTransfers = useMemo(
+    () => filterGroupedTransfersByStatus(groupedTransfers, statusFilter),
+    [groupedTransfers, statusFilter],
+  );
 
   const emptyLabel =
     statusFilter === "all"
@@ -273,28 +259,36 @@ export function PracticeRecentTransfersAllModal({
         } 없음`;
 
   const renderStatusBadgeToggle = (
-    filterKey: PracticeRecentStatusFilter,
+    filterKey: Exclude<PracticeRecentStatusFilter, "all">,
     label: string,
     count: number,
+    tooltip: string,
   ) => (
-    <button
-      type="button"
-      className="rounded-full"
-      onClick={() => setStatusFilter((prev) => (prev === filterKey ? "all" : filterKey))}
-      aria-pressed={statusFilter === filterKey}
-    >
-      <Badge
-        variant="outline"
-        className={cn(
-          "cursor-pointer",
-          statusFilter === filterKey
-            ? "border-primary/70 bg-primary-soft text-primary-strong"
-            : "hover:bg-muted/40",
-        )}
-      >
-        {label} {count}건
-      </Badge>
-    </button>
+    <Tooltip key={filterKey}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="rounded-full"
+          onClick={() => setStatusFilter((prev) => (prev === filterKey ? "all" : filterKey))}
+          aria-pressed={statusFilter === filterKey}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === filterKey
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            {label} {count}건
+          </Badge>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 
   return (
@@ -311,12 +305,14 @@ export function PracticeRecentTransfersAllModal({
               />
             </div>
             <div className="flex flex-wrap justify-center gap-2">
-              {renderStatusBadgeToggle("발송완료", "의뢰", statusCounts.sent)}
-              {renderStatusBadgeToggle("의뢰수락", "수락", statusCounts.accepted)}
-              {renderStatusBadgeToggle("작업완료", "완료", statusCounts.completed)}
-              {renderStatusBadgeToggle("취소", "취소", statusCounts.canceled)}
-              {renderStatusBadgeToggle("포장.발송", "발송", statusCounts.shipping)}
-              {renderStatusBadgeToggle("추적관리", "추적관리", statusCounts.tracking)}
+              {PRACTICE_RECENT_STATUS_BADGES.map((item) =>
+                renderStatusBadgeToggle(
+                  item.filter,
+                  item.label,
+                  statusCounts[item.countKey],
+                  item.tooltip,
+                ),
+              )}
             </div>
             <div className="flex min-w-0 justify-end">
               <div className="relative w-full max-w-xs">

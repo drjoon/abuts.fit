@@ -35,11 +35,12 @@
  * - 2026-08-11: 최근 전송 뱃지 「다운로드」→「의뢰수락」(requestorDownloadedAt=수락 SSOT)
  * - 2026-08-11: 생산의뢰식 레이아웃·안내문구 최소화(즉시툴팁). 프로모 카피 축소.
  * - 2026-08-11: 기공의뢰 Card 유지, [기공소로 전송]만 카드 아래. intake는 plain.
- * - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
+ * - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·추적관리(취소=기공소 작업취소).
  * - 2026-08-12: 최근전송 — 기공소 의뢰수락 이후 삭제(휴지통) 비활성. 수락 전(발송/수신/자동매칭)만 가능.
  * - 2026-08-12: [기공소로 전송] 옆 「디자인 컨펌 생략」— 계정 마지막 설정. 전송 시 의뢰건에 스냅샷.
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
  * - 2026-08-13: 임시저장/동기화는 기공소·환자명 둘 다 입력된 뒤에만 수행.
+ * - 2026-08-13: 최근전송 취소 뱃지=기공소 작업취소만(치과 휴지통 제외). 6뱃지 빠른툴팁.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -122,6 +123,12 @@ import {
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
+import {
+  PRACTICE_RECENT_STATUS_BADGES,
+  computeGroupedStatusCounts,
+  filterGroupedTransfersByStatus,
+  type PracticeRecentStatusFilter,
+} from "@/shared/practice/practiceRecentTransferList";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
@@ -885,9 +892,8 @@ export const PracticeFileTransferPage = ({
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
-  const [recentStatusFilter, setRecentStatusFilter] = useState<
-    "all" | "발송완료" | "의뢰수락" | "작업완료" | "취소" | "포장.발송" | "추적관리"
-  >("all");
+  const [recentStatusFilter, setRecentStatusFilter] =
+    useState<PracticeRecentStatusFilter>("all");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
@@ -2890,75 +2896,15 @@ export const PracticeFileTransferPage = ({
       });
   }, [filteredRecentRequests, chatRooms]);
 
-  const statusCounts = useMemo(() => {
-    const counts = groupedTransfers.reduce(
-      (acc, request) => {
-        const status = String(request.status || "").trim();
-        if (status === "작업완료") {
-          acc.completed += 1;
-        } else if (status === "생산진행") {
-          acc.shipping += 1;
-        } else if (status === "의뢰수락" || status === "다운로드완료") {
-          acc.accepted += 1;
-        } else if (status === "자동매칭" || status === "취소") {
-          // 상단 뱃지 집계 제외
-        } else if (status === "작업취소") {
-          // 기공소 작업취소 — 의뢰로 집계(재작업 가능)
-          acc.sent += 1;
-        } else {
-          // 발송완료·수신완료 및 기타 미수락 → 의뢰
-          acc.sent += 1;
-        }
-        return acc;
-      },
-      { sent: 0, accepted: 0, completed: 0, shipping: 0, tracking: 0, canceled: 0 },
-    );
+  const statusCounts = useMemo(
+    () => computeGroupedStatusCounts(groupedTransfers),
+    [groupedTransfers],
+  );
 
-    const canceledKeys = new Set<string>();
-    for (const req of trashRecentRequests) {
-      const key =
-        req.transferId && req.transferId !== "-"
-          ? `tid:${req.transferId}`
-          : req.requestMongoId
-            ? `mid:${req.requestMongoId}`
-            : `id:${req.id}`;
-      canceledKeys.add(key);
-    }
-    counts.canceled = canceledKeys.size;
-
-    return counts;
-  }, [groupedTransfers, trashRecentRequests]);
-
-  const filteredGroupedTransfers = useMemo(() => {
-    if (recentStatusFilter === "all") return groupedTransfers;
-    if (recentStatusFilter === "취소") return [];
-    return groupedTransfers.filter((transfer) => {
-      const status = String(transfer.status || "").trim();
-      if (recentStatusFilter === "발송완료") {
-        return (
-          status === "발송완료" ||
-          status === "수신완료" ||
-          status === "작업취소" ||
-          (status !== "의뢰수락" &&
-            status !== "다운로드완료" &&
-            status !== "작업완료" &&
-            status !== "생산진행" &&
-            status !== "자동매칭" &&
-            status !== "취소" &&
-            status !== "작업취소" &&
-            status !== "포장.발송" &&
-            status !== "추적관리")
-        );
-      }
-      if (recentStatusFilter === "포장.발송") {
-        return status === "생산진행" || status === "포장.발송";
-      }
-      if (recentStatusFilter === "의뢰수락") {
-        return status === "의뢰수락" || status === "다운로드완료";
-      }
-      return status === recentStatusFilter;
-    });
-  }, [groupedTransfers, recentStatusFilter]);
+  const filteredGroupedTransfers = useMemo(
+    () => filterGroupedTransfersByStatus(groupedTransfers, recentStatusFilter),
+    [groupedTransfers, recentStatusFilter],
+  );
 
   const draftGroupedTransfers = useMemo(() => {
     const query = requestSearchTerm.trim().toLowerCase();
@@ -3134,18 +3080,7 @@ export const PracticeFileTransferPage = ({
     );
   }, [trashRecentRequests, trashedDraftList]);
 
-  const canceledGroupedTransfers = useMemo(
-    () =>
-      trashGroupedTransfers.filter(
-        (transfer) => String(transfer.status || "").trim() === "취소",
-      ),
-    [trashGroupedTransfers],
-  );
-
-  const displayGroupedTransfers = useMemo(() => {
-    if (recentStatusFilter === "취소") return canceledGroupedTransfers;
-    return filteredGroupedTransfers;
-  }, [canceledGroupedTransfers, filteredGroupedTransfers, recentStatusFilter]);
+  const displayGroupedTransfers = filteredGroupedTransfers;
 
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -5591,126 +5526,37 @@ export const PracticeFileTransferPage = ({
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="rounded-full"
-                      onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "발송완료" ? "all" : "발송완료"))
-                      }
-                      aria-pressed={recentStatusFilter === "발송완료"}
-                    >
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "cursor-pointer",
-                          recentStatusFilter === "발송완료"
-                            ? "border-primary/70 bg-primary-soft text-primary-strong"
-                            : "hover:bg-muted/40",
-                        )}
-                      >
-                        의뢰 {statusCounts.sent}건
-                      </Badge>
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full"
-                      onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "의뢰수락" ? "all" : "의뢰수락"))
-                      }
-                      aria-pressed={recentStatusFilter === "의뢰수락"}
-                    >
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "cursor-pointer",
-                          recentStatusFilter === "의뢰수락"
-                            ? "border-primary/70 bg-primary-soft text-primary-strong"
-                            : "hover:bg-muted/40",
-                        )}
-                      >
-                        수락 {statusCounts.accepted}건
-                      </Badge>
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full"
-                      onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "작업완료" ? "all" : "작업완료"))
-                      }
-                      aria-pressed={recentStatusFilter === "작업완료"}
-                    >
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "cursor-pointer",
-                          recentStatusFilter === "작업완료"
-                            ? "border-primary/70 bg-primary-soft text-primary-strong"
-                            : "hover:bg-muted/40",
-                        )}
-                      >
-                        완료 {statusCounts.completed}건
-                      </Badge>
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full"
-                      onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "취소" ? "all" : "취소"))
-                      }
-                      aria-pressed={recentStatusFilter === "취소"}
-                    >
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "cursor-pointer",
-                          recentStatusFilter === "취소"
-                            ? "border-primary/70 bg-primary-soft text-primary-strong"
-                            : "hover:bg-muted/40",
-                        )}
-                      >
-                        취소 {statusCounts.canceled}건
-                      </Badge>
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full"
-                      onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "포장.발송" ? "all" : "포장.발송"))
-                      }
-                      aria-pressed={recentStatusFilter === "포장.발송"}
-                    >
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "cursor-pointer",
-                          recentStatusFilter === "포장.발송"
-                            ? "border-primary/70 bg-primary-soft text-primary-strong"
-                            : "hover:bg-muted/40",
-                        )}
-                      >
-                        발송 {statusCounts.shipping}건
-                      </Badge>
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full"
-                      onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "추적관리" ? "all" : "추적관리"))
-                      }
-                      aria-pressed={recentStatusFilter === "추적관리"}
-                    >
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "cursor-pointer",
-                          recentStatusFilter === "추적관리"
-                            ? "border-primary/70 bg-primary-soft text-primary-strong"
-                            : "hover:bg-muted/40",
-                        )}
-                      >
-                        추적관리 {statusCounts.tracking}건
-                      </Badge>
-                    </button>
+                    {PRACTICE_RECENT_STATUS_BADGES.map((item) => (
+                      <Tooltip key={item.filter}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="rounded-full"
+                            onClick={() =>
+                              setRecentStatusFilter((prev) =>
+                                prev === item.filter ? "all" : item.filter,
+                              )
+                            }
+                            aria-pressed={recentStatusFilter === item.filter}
+                          >
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "cursor-pointer",
+                                recentStatusFilter === item.filter
+                                  ? "border-primary/70 bg-primary-soft text-primary-strong"
+                                  : "hover:bg-muted/40",
+                              )}
+                            >
+                              {item.label} {statusCounts[item.countKey]}건
+                            </Badge>
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                          {item.tooltip}
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
                   </div>
 
                   <div className="relative w-full md:max-w-md">
