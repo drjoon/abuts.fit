@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-13: 기공소 기공비 Off면 미설정 안내.
 // - 2026-08-13: 치아번호 10→20→30→40번대 순으로 표시.
 import { CircleHelp } from "lucide-react";
 import {
@@ -137,6 +138,7 @@ export function PracticeTransferFeeEstimate({
           : `기공비 ${formatWon(quote.labFeeTotal)}`;
 
   const isCard = density === "card";
+  const labFeeUnset = !isLab && quote.labFeeConfigured === false;
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -189,9 +191,19 @@ export function PracticeTransferFeeEstimate({
         </TooltipTrigger>
         <TooltipContent
           side={isCard ? "top" : "bottom"}
-          className="max-w-[22rem] p-3 text-xs leading-relaxed"
+          data-no-tooth-marquee=""
+          className="pointer-events-auto max-w-[22rem] select-text p-3 text-xs leading-relaxed"
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
         >
-          {quote.lines.length > 0 ? (
+          {labFeeUnset ? (
+            <p className="text-muted-foreground">
+              기공소에서 아직 기공료를 설정하지 않았습니다. 기공소에
+              문의해주세요.
+            </p>
+          ) : quote.lines.length > 0 ? (
             <FeeBreakdownTable
               lines={sortPracticeTransferFeeLines(quote.lines).map((line) => ({
                 toothNumber: line.toothNumber,
@@ -205,11 +217,13 @@ export function PracticeTransferFeeEstimate({
           ) : (
             <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
           )}
-          <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
-            {isLab
-              ? `기공비 총액 ${formatWon(quote.labSettlementAmount)}`
-              : `크레딧 소비 총액 ${formatWon(quote.total)}`}
-          </p>
+          {labFeeUnset && quote.total <= 0 ? null : (
+            <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
+              {isLab
+                ? `기공비 총액 ${formatWon(quote.labSettlementAmount)}`
+                : `크레딧 소비 총액 ${formatWon(quote.total)}`}
+            </p>
+          )}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

@@ -33,6 +33,8 @@ export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   abutsRevenueAmount: number;
   billed?: boolean;
   usedDefaultSchedule?: boolean;
+  /** 지정 기공소 마스터 스위치. 자동매칭(기공소 없음)은 true */
+  labFeeConfigured?: boolean;
   isRemake?: boolean;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
 };
@@ -49,6 +51,7 @@ export type PracticeTransferQuoteContext = {
   relationshipKind: PracticeTransferRelationshipKind;
   feeRateApplied: number;
   usedDefaultSchedule: boolean;
+  labFeeConfigured: boolean;
 };
 
 export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
@@ -61,6 +64,7 @@ export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
   relationshipKind: "none",
   feeRateApplied: 0,
   usedDefaultSchedule: true,
+  labFeeConfigured: true,
 };
 
 const toRelationshipKind = (value: unknown): PracticeTransferRelationshipKind =>
@@ -119,6 +123,7 @@ export const parsePracticeTransferFeeQuote = (
     abutsRevenueAmount,
     billed: Boolean(r.billed),
     usedDefaultSchedule: Boolean(r.usedDefaultSchedule),
+    labFeeConfigured: r.labFeeConfigured !== false,
     isRemake: Boolean(r.isRemake),
     remakeFeeQuote:
       r.remakeFeeQuote && typeof r.remakeFeeQuote === "object"
@@ -180,6 +185,7 @@ export const parsePracticeTransferQuoteContext = (
         ? Math.min(1, Math.max(0, feeRateApplied))
         : 0,
     usedDefaultSchedule,
+    labFeeConfigured: usedDefaultSchedule ? true : r.labFeeConfigured !== false,
   };
 };
 
@@ -211,6 +217,7 @@ export const buildFeeQuoteFromContext = (params: {
     abutsRevenueAmount: split.abutsRevenueAmount,
     billed: false,
     usedDefaultSchedule: Boolean(context.usedDefaultSchedule),
+    labFeeConfigured: context.labFeeConfigured !== false,
   };
 };
 

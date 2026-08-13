@@ -453,10 +453,19 @@ const teethInShiftRange = (anchor: string, target: string): string[] => {
   return [target];
 };
 
+const isToothOverlayUiTarget = (target: EventTarget | null) => {
+  if (!(target instanceof Element)) return false;
+  return Boolean(
+    target.closest(
+      "[data-no-tooth-marquee], [data-radix-tooltip-content], [data-radix-popper-content-wrapper], [role='tooltip']",
+    ),
+  );
+};
+
 /** 빈 슬롯·선택 카드·브리지 +/−·차트 여백은 마키 허용. 셀렉트·입력 등만 차단 */
 const isToothMarqueeBlockedTarget = (target: EventTarget | null) => {
   if (!(target instanceof Element)) return true;
-  if (target.closest("[data-no-tooth-marquee]")) return true;
+  if (isToothOverlayUiTarget(target)) return true;
   if (target.closest("[data-tooth-slot-empty]")) return false;
   if (target.closest("[data-tooth-slot-selected]")) return false;
   if (target.closest("[data-bridge-link]")) return false;
@@ -1145,6 +1154,30 @@ export const PracticeTransferRequestIntakePanel = ({
       toothMarqueeSessionRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only
+  }, []);
+
+  useEffect(() => {
+    let overlayPointer = false;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!isToothOverlayUiTarget(event.target)) return;
+      overlayPointer = true;
+      suppressToothClickRef.current = true;
+    };
+    const onPointerUp = () => {
+      if (!overlayPointer) return;
+      overlayPointer = false;
+      window.setTimeout(() => {
+        suppressToothClickRef.current = false;
+      }, 0);
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("pointerup", onPointerUp, true);
+    window.addEventListener("pointercancel", onPointerUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("pointerup", onPointerUp, true);
+      window.removeEventListener("pointercancel", onPointerUp, true);
+    };
   }, []);
 
   useEffect(() => {

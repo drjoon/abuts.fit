@@ -30,6 +30,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   computePracticeTransferRetailFees,
   LAB_FEE_SCHEDULE_ZEROS,
+  isLabFeeScheduleConfigured,
   normalizeLabFeeItems,
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
@@ -797,6 +798,10 @@ export async function buildPracticeTransferQuote({
     }
   }
 
+  const labFeeConfigured = usedDefaultSchedule
+    ? true
+    : isLabFeeScheduleConfigured(schedule);
+
   if (usedDefaultSchedule) {
     schedule = LAB_FEE_SCHEDULE_ZEROS;
   } else if (loadedFromDb) {
@@ -856,6 +861,7 @@ export async function buildPracticeTransferQuote({
     abutsRevenueAmount,
     labTradingPartnerId: partnerId,
     usedDefaultSchedule,
+    labFeeConfigured,
     billed: false,
     isRemake: useRemake,
     remake: useRemake,
@@ -904,6 +910,7 @@ export async function loadPracticeTransferQuoteContext({
     relationshipKind: quote.relationshipKind,
     feeRateApplied: quote.feeRateApplied,
     usedDefaultSchedule: quote.usedDefaultSchedule,
+    labFeeConfigured: quote.labFeeConfigured !== false,
   };
 }
 
