@@ -25,11 +25,13 @@ import {
   resolvePracticeTransferFeeRate,
 } from "./creditRevenuePolicy.service.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
-import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 import {
   computePracticeTransferRetailFees,
   LAB_FEE_SCHEDULE_ZEROS,
+  normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
+  resolveAbutsAbutmentPricingTier,
+  splitPracticeTransferSettlement,
 } from "../utils/labFeeSchedule.js";
 import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
@@ -45,6 +47,49 @@ async function lockGuard(businessAnchorId, session) {
     },
     { upsert: true, session },
   );
+}
+
+export function isPracticeTransferRemake(doc) {
+  const remake = doc?.remake && typeof doc.remake === "object" ? doc.remake : {};
+  return Boolean(
+    remake.sourceTransferMongoId ||
+      String(remake.sourceTransferId || "").trim() ||
+      doc?.billing?.isRemake,
+  );
+}
+
+export function toRemakeApiFields(doc) {
+  const remake = doc?.remake && typeof doc.remake === "object" ? doc.remake : {};
+  const sourceTransferId = String(remake.sourceTransferId || "").trim();
+  const sourceTransferMongoId = String(remake.sourceTransferMongoId || "").trim();
+  const isRemake = Boolean(
+    sourceTransferId || sourceTransferMongoId || doc?.billing?.isRemake,
+  );
+  return {
+    isRemake,
+    remake: isRemake
+      ? {
+          sourceTransferId: sourceTransferId || null,
+          sourceTransferMongoId: sourceTransferMongoId || null,
+          requestedAt: remake.requestedAt || null,
+        }
+      : null,
+  };
+}
+
+async function resolvePracticeAbutmentPricingTier(
+  practiceAnchorId,
+  session = null,
+) {
+  const id = String(practiceAnchorId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) return "regular";
+  const practice = await BusinessAnchor.findById(id)
+    .select({ practiceMembershipActive: 1 })
+    .session(session || null)
+    .lean();
+  return resolveAbutsAbutmentPricingTier({
+    practiceMembershipActive: Boolean(practice?.practiceMembershipActive),
+  });
 }
 
 async function resolveRevenueOwners({ practiceAnchorId, session }) {
@@ -230,6 +275,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
   practiceAnchorId,
   labAnchorId = null,
   toothWorks,
+  remake = false,
 }) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
@@ -247,14 +293,16 @@ export async function assertPracticeTransferPaidCreditSufficient({
     labFeeSchedule = lab?.labFeeSchedule || null;
   }
 
-  const creditSettings = await loadCreditSettingsDefaults();
   const noLab = !labId;
+  const useRemake = Boolean(remake);
+  const abutmentPricingTier =
+    await resolvePracticeAbutmentPricingTier(practiceId);
   const fees = computePracticeTransferRetailFees({
     toothWorks,
-    labFeeSchedule: noLab
-      ? LAB_FEE_SCHEDULE_ZEROS
-      : normalizeLabFeeSchedule(labFeeSchedule),
-    abutmentRetailPrice: noLab ? 0 : creditSettings.abutmentRetailPrice,
+    labFeeSchedule: noLab ? LAB_FEE_SCHEDULE_ZEROS : labFeeSchedule,
+    abutmentPricingTier,
+    remake: useRemake,
+    skipAbutmentFees: useRemake,
   });
 
   if (fees.total <= 0) {
@@ -329,11 +377,17 @@ export async function commitPracticeTransferBilling({
     .select({ labFeeSchedule: 1 })
     .session(outerSession || null)
     .lean();
-  const creditSettings = await loadCreditSettingsDefaults();
+  const remake = isPracticeTransferRemake(transfer);
+  const abutmentPricingTier = await resolvePracticeAbutmentPricingTier(
+    practiceAnchorId,
+    outerSession,
+  );
   const fees = computePracticeTransferRetailFees({
     toothWorks,
-    labFeeSchedule: normalizeLabFeeSchedule(lab?.labFeeSchedule),
-    abutmentRetailPrice: creditSettings.abutmentRetailPrice,
+    labFeeSchedule: lab?.labFeeSchedule,
+    abutmentPricingTier,
+    remake,
+    skipAbutmentFees: remake,
   });
 
   if (fees.total <= 0) {
@@ -361,8 +415,12 @@ export async function commitPracticeTransferBilling({
     payoutRates: devopsAnchorForFeeRate?.payoutRates,
   });
 
-  const abutsRevenueAmount = Math.round(fees.total * feeRateApplied);
-  const labSettlementAmount = fees.total - abutsRevenueAmount;
+  const { abutsRevenueAmount, labSettlementAmount } =
+    splitPracticeTransferSettlement({
+      labFeeTotal: fees.labFeeTotal,
+      abutmentRetailTotal: fees.abutmentRetailTotal,
+      feeRateApplied,
+    });
 
   const ownSession = !outerSession;
   const session = outerSession || (await mongoose.startSession());
@@ -478,7 +536,7 @@ export async function commitPracticeTransferBilling({
           relationshipKind,
           feeRateApplied,
           labFee: fees.labFeeTotal,
-          abutmentRetailIncluded: isPartner ? fees.abutmentRetailTotal : 0,
+          abutmentRetailIncluded: 0,
           displayKind: "lab_credit",
           displayLabel: "기공정산크레딧",
           itemLabel: "기공비",
@@ -633,6 +691,7 @@ export function toFeeQuoteApi(quote) {
     labTradingPartnerId: quote?.labTradingPartnerId || null,
     billed: Boolean(quote?.billed),
     usedDefaultSchedule: Boolean(quote?.usedDefaultSchedule),
+    isRemake: Boolean(quote?.isRemake || quote?.remake),
   };
 }
 
@@ -650,6 +709,7 @@ export function toBillingPreviewFields(quote) {
     labSettlementAmount: api.labSettlementAmount,
     abutsRevenueAmount: api.abutsRevenueAmount,
     billedAt: null,
+    isRemake: Boolean(api.isRemake),
   };
 }
 
@@ -681,6 +741,7 @@ export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } =
       : null,
     billed,
     usedDefaultSchedule: false,
+    isRemake: Boolean(billing?.isRemake),
   });
 }
 
@@ -697,6 +758,7 @@ export async function buildPracticeTransferQuote({
   payoutRates = undefined,
   relationshipKind = undefined,
   labTradingPartnerId = undefined,
+  remake = false,
 }) {
   let schedule = labFeeSchedule;
   const labId = String(labAnchorId || "").trim();
@@ -712,21 +774,19 @@ export async function buildPracticeTransferQuote({
     }
   }
 
-  let retailPrice = abutmentRetailPrice;
   if (usedDefaultSchedule) {
     schedule = LAB_FEE_SCHEDULE_ZEROS;
-    retailPrice = 0;
-  } else if (retailPrice == null) {
-    const creditSettings = await loadCreditSettingsDefaults();
-    retailPrice = creditSettings.abutmentRetailPrice;
   }
 
+  const useRemake = Boolean(remake);
+  const abutmentPricingTier =
+    await resolvePracticeAbutmentPricingTier(practiceAnchorId);
   const fees = computePracticeTransferRetailFees({
     toothWorks,
-    labFeeSchedule: usedDefaultSchedule
-      ? LAB_FEE_SCHEDULE_ZEROS
-      : normalizeLabFeeSchedule(schedule),
-    abutmentRetailPrice: retailPrice,
+    labFeeSchedule: usedDefaultSchedule ? LAB_FEE_SCHEDULE_ZEROS : schedule,
+    abutmentPricingTier,
+    remake: useRemake,
+    skipAbutmentFees: useRemake,
   });
 
   let kind = relationshipKind;
@@ -754,8 +814,12 @@ export async function buildPracticeTransferQuote({
     relationshipKind: kind,
     payoutRates: rates,
   });
-  const abutsRevenueAmount = Math.round(fees.total * feeRateApplied);
-  const labSettlementAmount = Math.max(0, fees.total - abutsRevenueAmount);
+  const { abutsRevenueAmount, labSettlementAmount } =
+    splitPracticeTransferSettlement({
+      labFeeTotal: fees.labFeeTotal,
+      abutmentRetailTotal: fees.abutmentRetailTotal,
+      feeRateApplied,
+    });
 
   return {
     fees,
@@ -766,10 +830,16 @@ export async function buildPracticeTransferQuote({
     labTradingPartnerId: partnerId,
     usedDefaultSchedule,
     billed: false,
-    abutmentRetailPrice: Math.max(0, Math.round(Number(retailPrice || 0))),
+    isRemake: useRemake,
+    remake: useRemake,
+    abutmentPricingTier,
+    abutmentRetailPrice: 0,
     schedule: usedDefaultSchedule
       ? LAB_FEE_SCHEDULE_ZEROS
       : normalizeLabFeeSchedule(schedule),
+    remakeSchedule: usedDefaultSchedule
+      ? LAB_FEE_SCHEDULE_ZEROS
+      : normalizeLabFeeRemakeSchedule(schedule),
   };
 }
 
@@ -796,7 +866,9 @@ export async function loadPracticeTransferQuoteContext({
   });
   return {
     schedule: quote.schedule,
+    remakeSchedule: quote.remakeSchedule || LAB_FEE_SCHEDULE_ZEROS,
     abutmentRetailPrice: quote.abutmentRetailPrice,
+    abutmentPricingTier: quote.abutmentPricingTier || "regular",
     relationshipKind: quote.relationshipKind,
     feeRateApplied: quote.feeRateApplied,
     usedDefaultSchedule: quote.usedDefaultSchedule,
@@ -820,8 +892,6 @@ export async function buildFeeQuotesForTransferDocs({
   const list = Array.isArray(docs) ? docs : [];
   if (list.length === 0) return new Map();
 
-  const creditSettings = await loadCreditSettingsDefaults();
-  const abutmentRetailPrice = creditSettings.abutmentRetailPrice;
   const devops = await BusinessAnchor.findOne({ businessType: "devops" })
     .select({ payoutRates: 1 })
     .sort({ createdAt: 1 })
@@ -852,6 +922,17 @@ export async function buildFeeQuotesForTransferDocs({
     ).trim();
     if (practiceId && Types.ObjectId.isValid(practiceId)) practiceIds.add(practiceId);
   }
+  const practices = practiceIds.size
+    ? await BusinessAnchor.find({ _id: { $in: [...practiceIds] } })
+        .select({ practiceMembershipActive: 1 })
+        .lean()
+    : [];
+  const membershipByPractice = new Map(
+    practices.map((practice) => [
+      String(practice._id),
+      Boolean(practice.practiceMembershipActive),
+    ]),
+  );
   const partners =
     labIds.size && practiceIds.size
       ? await LabTradingPartner.find({
@@ -891,21 +972,24 @@ export async function buildFeeQuotesForTransferDocs({
 
     const schedule = quoteLabId ? scheduleByLab.get(quoteLabId) : null;
     const noLab = !quoteLabId;
-    const fees = computePracticeTransferRetailFees({
-      toothWorks,
-      labFeeSchedule: noLab
-        ? LAB_FEE_SCHEDULE_ZEROS
-        : normalizeLabFeeSchedule(schedule),
-      abutmentRetailPrice: noLab ? 0 : abutmentRetailPrice,
+    const remake = isPracticeTransferRemake(doc);
+    const abutmentPricingTier = resolveAbutsAbutmentPricingTier({
+      practiceMembershipActive: Boolean(membershipByPractice.get(practiceId)),
     });
-
-    if (useStored) {
-      out.set(
-        docId,
-        feeQuoteFromBillingDoc(billing, { lines: fees.lines, billed }),
-      );
-      continue;
-    }
+    const remakeFees = computePracticeTransferRetailFees({
+      toothWorks,
+      labFeeSchedule: noLab ? LAB_FEE_SCHEDULE_ZEROS : schedule,
+      abutmentPricingTier,
+      remake: true,
+      skipAbutmentFees: true,
+    });
+    const fees = remake
+      ? remakeFees
+      : computePracticeTransferRetailFees({
+          toothWorks,
+          labFeeSchedule: noLab ? LAB_FEE_SCHEDULE_ZEROS : schedule,
+          abutmentPricingTier,
+        });
 
     const partner = quoteLabId && practiceId
       ? partnerByPair.get(pairKey(quoteLabId, practiceId))
@@ -915,19 +999,53 @@ export async function buildFeeQuotesForTransferDocs({
       relationshipKind: kind,
       payoutRates,
     });
-    const abutsRevenueAmount = Math.round(fees.total * feeRateApplied);
+    const remakeSplit = splitPracticeTransferSettlement({
+      labFeeTotal: remakeFees.labFeeTotal,
+      abutmentRetailTotal: remakeFees.abutmentRetailTotal,
+      feeRateApplied,
+    });
+    const remakeFeeQuote = toFeeQuoteApi({
+      fees: remakeFees,
+      relationshipKind: kind,
+      feeRateApplied,
+      labSettlementAmount: remakeSplit.labSettlementAmount,
+      abutsRevenueAmount: remakeSplit.abutsRevenueAmount,
+      labTradingPartnerId: partner?._id ? String(partner._id) : null,
+      billed: false,
+      usedDefaultSchedule: !quoteLabId,
+      isRemake: true,
+    });
+
+    if (useStored) {
+      out.set(docId, {
+        ...feeQuoteFromBillingDoc(billing, { lines: fees.lines, billed }),
+        remakeFeeQuote,
+      });
+      continue;
+    }
+
+    const { abutsRevenueAmount, labSettlementAmount } =
+      splitPracticeTransferSettlement({
+        labFeeTotal: fees.labFeeTotal,
+        abutmentRetailTotal: fees.abutmentRetailTotal,
+        feeRateApplied,
+      });
     out.set(
       docId,
-      toFeeQuoteApi({
-        fees,
-        relationshipKind: kind,
-        feeRateApplied,
-        labSettlementAmount: Math.max(0, fees.total - abutsRevenueAmount),
-        abutsRevenueAmount,
-        labTradingPartnerId: partner?._id ? String(partner._id) : null,
-        billed: false,
-        usedDefaultSchedule: !quoteLabId,
-      }),
+      {
+        ...toFeeQuoteApi({
+          fees,
+          relationshipKind: kind,
+          feeRateApplied,
+          labSettlementAmount,
+          abutsRevenueAmount,
+          labTradingPartnerId: partner?._id ? String(partner._id) : null,
+          billed: false,
+          usedDefaultSchedule: !quoteLabId,
+          isRemake: remake,
+        }),
+        remakeFeeQuote,
+      },
     );
   }
   return out;

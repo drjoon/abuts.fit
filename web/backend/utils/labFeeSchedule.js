@@ -1,8 +1,13 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/models/businessAnchor.model.js
+// - web/backend/utils/abutsAbutmentService.js
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+import {
+  resolveAbutsAbutmentPricingTier,
+  resolveAbutsAbutmentUnitPrice,
+} from "./abutsAbutmentService.js";
 
 export const LAB_FEE_SCHEDULE_KEYS = [
   "crown",
@@ -21,6 +26,11 @@ export const LAB_FEE_SCHEDULE_DEFAULTS = {
   customAbutmentDesign: 10000,
   customAbutmentDesignAndProduction: 35000,
 };
+
+/** 리메이크 수가. 미설정 시 0원(기공소가 항목별로 지정) */
+export const LAB_FEE_REMAKE_SCHEDULE_DEFAULTS = Object.fromEntries(
+  LAB_FEE_SCHEDULE_KEYS.map((key) => [key, 0]),
+);
 
 /** 기공소 미지정(자동매칭) 견적 — 기본수가 없음(0원). 기공소 스케줄이 있을 때만 청구. */
 export const LAB_FEE_SCHEDULE_ZEROS = Object.fromEntries(
@@ -45,18 +55,35 @@ export function isMissingToothProsthesisType(prosthesisType) {
   );
 }
 
-/** 보철 형태 → labFeeSchedule 키. 작업X(상실치)는 과금 대상이 아니므로 null */
+export function isCustomAbutmentProsthesisType(prosthesisType) {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    compact === "커스텀어벗" ||
+    /^(?:커스텀)?어벗디자인$/i.test(compact) ||
+    /^custom\s*abut(?:ment)?$/i.test(raw)
+  );
+}
+
+export function isCustomAbutmentWork(row) {
+  const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
+  if (!prosthesisType || isMissingToothProsthesisType(prosthesisType)) {
+    return false;
+  }
+  if (/^pontic$/i.test(prosthesisType)) return false;
+  return (
+    isCustomAbutmentProsthesisType(prosthesisType) ||
+    Boolean(row?.hasCustomAbutment) ||
+    Boolean(row?.customAbutment)
+  );
+}
+
+/** 보철 형태 → labFeeSchedule 키. 작업X·커스텀어벗(어벗츠 단가)은 null */
 export function resolveLabFeeKeyFromProsthesisType(prosthesisType) {
   const raw = String(prosthesisType || "").trim();
   if (!raw) return "crown";
   if (isMissingToothProsthesisType(raw)) return null;
-  // 디자인만 — 크라운/브리지 포함 문자열보다 먼저
-  if (
-    /어벗\s*디자인/i.test(raw) ||
-    /custom\s*abut(?:ment)?\s*design/i.test(raw)
-  ) {
-    return "customAbutmentDesign";
-  }
+  if (isCustomAbutmentProsthesisType(raw)) return null;
   if (/^pontic$/i.test(raw)) return "pontic";
   if (raw.includes("인레이") || /^inlay$/i.test(raw)) return "inlay";
   if (raw.includes("브리지") || /^bridge$/i.test(raw)) return "bridge";
@@ -65,12 +92,45 @@ export function resolveLabFeeKeyFromProsthesisType(prosthesisType) {
 }
 
 export function prosthesisIncludesCustomAbutment(prosthesisType) {
-  const raw = String(prosthesisType || "").trim();
-  // 커스텀어벗 디자인만: 어벗 소매가 미부과
-  if (resolveLabFeeKeyFromProsthesisType(raw) === "customAbutmentDesign") {
-    return false;
+  return isCustomAbutmentProsthesisType(prosthesisType);
+}
+
+/** 리메이크 수가 키. 커스텀어벗은 디자인/디자인+생산, 그 외는 보철 키 */
+export function resolveRemakeLabFeeKey(row) {
+  const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
+  if (!prosthesisType || isMissingToothProsthesisType(prosthesisType)) {
+    return null;
   }
-  return raw.includes("커스텀어벗") || /custom\s*abut/i.test(raw);
+  if (isCustomAbutmentWork(row)) {
+    const mode = String(
+      row?.abutmentProductMode || row?.productMode || "",
+    ).trim();
+    if (
+      mode === "design_custom_abutment" ||
+      /어벗\s*디자인/i.test(prosthesisType)
+    ) {
+      return "customAbutmentDesign";
+    }
+    return "customAbutmentDesignAndProduction";
+  }
+  return resolveLabFeeKeyFromProsthesisType(prosthesisType);
+}
+
+export function splitPracticeTransferSettlement({
+  labFeeTotal,
+  abutmentRetailTotal,
+  feeRateApplied,
+}) {
+  const labFees = Math.max(0, Math.round(Number(labFeeTotal || 0)));
+  const abutment = Math.max(0, Math.round(Number(abutmentRetailTotal || 0)));
+  const rate = Number(feeRateApplied || 0);
+  const clampedRate = Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : 0;
+  const abutsFromLab = Math.round(labFees * clampedRate);
+  return {
+    labSettlementAmount: Math.max(0, labFees - abutsFromLab),
+    abutsRevenueAmount: abutsFromLab + abutment,
+    total: labFees + abutment,
+  };
 }
 
 export function normalizeLabFeeSchedule(input) {
@@ -78,6 +138,35 @@ export function normalizeLabFeeSchedule(input) {
   const pick = (key) => {
     const n = Math.round(Number(src[key] ?? LAB_FEE_SCHEDULE_DEFAULTS[key]));
     return Number.isFinite(n) && n >= 0 ? n : LAB_FEE_SCHEDULE_DEFAULTS[key];
+  };
+  return {
+    crown: pick("crown"),
+    bridge: pick("bridge"),
+    inlay: pick("inlay"),
+    pontic: pick("pontic"),
+    customAbutmentDesign: pick("customAbutmentDesign"),
+    customAbutmentDesignAndProduction: pick(
+      "customAbutmentDesignAndProduction",
+    ),
+  };
+}
+
+/** labFeeSchedule.remake — 항목별 리메이크 수가(원). 미설정 0 */
+export function normalizeLabFeeRemakeSchedule(input) {
+  const raw = input && typeof input === "object" ? input : {};
+  const src =
+    raw.remake && typeof raw.remake === "object"
+      ? raw.remake
+      : "enabled" in raw || "updatedAt" in raw
+        ? {}
+        : raw;
+  const pick = (key) => {
+    const n = Math.round(
+      Number(src[key] ?? LAB_FEE_REMAKE_SCHEDULE_DEFAULTS[key]),
+    );
+    return Number.isFinite(n) && n >= 0
+      ? n
+      : LAB_FEE_REMAKE_SCHEDULE_DEFAULTS[key];
   };
   return {
     crown: pick("crown"),
@@ -115,19 +204,24 @@ export function normalizeLabFeeScheduleEnabled(input) {
 }
 
 /**
- * toothWorks 행 기준 기공비·어벗 소매가 합산.
+ * toothWorks 행 기준 기공비·어벗츠 커스텀어벗 단가 합산.
+ * 커스텀어벗은 기공소 수가가 아니라 어벗츠 멤버십/일반 단가.
  * @returns {{ labFeeTotal, abutmentRetailTotal, abutmentQty, total, lines }}
  */
 export function computePracticeTransferRetailFees({
   toothWorks,
   labFeeSchedule,
-  abutmentRetailPrice,
+  abutmentPricingTier,
+  skipAbutmentFees = false,
+  remake = false,
 }) {
-  const schedule = normalizeLabFeeSchedule(labFeeSchedule);
-  const retailUnit = Math.max(
-    0,
-    Math.round(Number(abutmentRetailPrice || 0)) || 0,
-  );
+  const useRemake = Boolean(remake);
+  const schedule = useRemake
+    ? normalizeLabFeeRemakeSchedule(labFeeSchedule)
+    : normalizeLabFeeSchedule(labFeeSchedule);
+  const waiveAbutment = useRemake || Boolean(skipAbutmentFees);
+  const pricingTier =
+    abutmentPricingTier === "membership" ? "membership" : "regular";
   const rows = Array.isArray(toothWorks) ? toothWorks : [];
   const lines = [];
   let labFeeTotal = 0;
@@ -139,22 +233,26 @@ export function computePracticeTransferRetailFees({
       row?.prosthesisType || row?.type || "",
     ).trim();
     if (!prosthesisType) continue;
-    // 작업X(상실치): 보철 아님 → 기공비·어벗 소매가 모두 제외
     if (isMissingToothProsthesisType(prosthesisType)) continue;
-    // Pontic은 기공비만 (어벗 없음)
-    const feeKey = resolveLabFeeKeyFromProsthesisType(prosthesisType);
-    if (!feeKey) continue;
-    const labFee = Math.max(0, Math.round(Number(schedule[feeKey] || 0)));
-    // 어벗 디자인: 기공비만. customAbutment 스펙 체크와 무관하게 소매가 미부과
-    const isDesignOnly = feeKey === "customAbutmentDesign";
-    const hasAbutment =
-      !isDesignOnly &&
-      (prosthesisIncludesCustomAbutment(prosthesisType) ||
-        Boolean(row?.hasCustomAbutment) ||
-        Boolean(row?.customAbutment));
-    const abutmentFee = hasAbutment && !/^pontic$/i.test(prosthesisType)
-      ? retailUnit
-      : 0;
+
+    let labFee = 0;
+    let abutmentFee = 0;
+    if (useRemake) {
+      const feeKey = resolveRemakeLabFeeKey(row);
+      if (!feeKey) continue;
+      labFee = Math.max(0, Math.round(Number(schedule[feeKey] || 0)));
+    } else if (isCustomAbutmentWork(row)) {
+      abutmentFee = waiveAbutment
+        ? 0
+        : resolveAbutsAbutmentUnitPrice({
+            productMode: row?.abutmentProductMode || row?.productMode,
+            pricingTier,
+          });
+    } else {
+      const feeKey = resolveLabFeeKeyFromProsthesisType(prosthesisType);
+      if (!feeKey) continue;
+      labFee = Math.max(0, Math.round(Number(schedule[feeKey] || 0)));
+    }
 
     labFeeTotal += labFee;
     if (abutmentFee > 0) {
@@ -177,3 +275,5 @@ export function computePracticeTransferRetailFees({
     lines,
   };
 }
+
+export { resolveAbutsAbutmentPricingTier, resolveAbutsAbutmentUnitPrice };

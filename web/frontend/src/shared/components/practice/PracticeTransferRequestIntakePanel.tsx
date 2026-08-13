@@ -100,6 +100,7 @@ import {
   getAdjacentTeeth,
   getProsthesisTypesForLinkState,
   isBridgeLikeProsthesisType,
+  isCustomAbutmentProsthesisType,
   isCustomAbutmentSupportedProsthesisType,
   isMissingToothProsthesisType,
   NO_WORK_PROSTHESIS_TYPE,
@@ -128,6 +129,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 커스텀 체크박스는 on/off만, 「커스텀」 라벨 클릭 시에만 설정 모달.
 // - 2026-08-13: 커스텀어벗 가격 툴팁은 해당 치과 멤버십/일반 한쪽만 안내.
 // - 2026-08-13: 커스텀어벗 설정 모달 가격 툴팁은 호버일 때만.
+// - 2026-08-13: 단독 보철=인레이/크라운/커스텀어벗. 커스텀어벗 선택 시 설정 모달.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -361,19 +363,19 @@ const matchesLinkedToggleType = (current: string, type: string) => {
   return current === type;
 };
 
-/** 선택 치아 클릭: 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X */
-const toggleProsthesisPairInWorks = (
+/** 선택 치아 클릭: 인레이→크라운→커스텀어벗 / 브리지↔Pontic↔작업X */
+const resolveNextProsthesisType = (
   prev: ToothWorkSelection[],
   toothNumber: string,
   prosthesisTypes: string[],
-): ToothWorkSelection[] => {
+): { index: number; nextType: string } | null => {
   const idx = prev.findIndex((row) => String(row.toothNumber || "").trim() === toothNumber);
-  if (idx < 0) return prev;
+  if (idx < 0) return null;
   const row = prev[idx];
   const links = collectAdjacentBridgeLinks(prev, row.toothNumber);
   const isLinked = links.length > 0;
   const options = getProsthesisTypesForLinkState(isLinked, prosthesisTypes);
-  if (options.length === 0) return prev;
+  if (options.length === 0) return null;
 
   const current = String(row.prosthesisType || "").trim();
   let nextType: string | null = null;
@@ -391,11 +393,8 @@ const toggleProsthesisPairInWorks = (
     nextType =
       currentIdx >= 0 ? options[(currentIdx + 1) % options.length]! : options[0]!;
   }
-  if (nextType === current) return prev;
-
-  const next = [...prev];
-  next[idx] = applyProsthesisTypeToRow(row, nextType);
-  return next;
+  if (!nextType || nextType === current) return null;
+  return { index: idx, nextType };
 };
 
 const TOOTH_MARQUEE_MOVE_THRESHOLD_PX = 6;
@@ -617,12 +616,13 @@ export const PracticeTransferRequestIntakePanel = ({
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
     : normalizedProsthesisTypes[0] || "크라운";
+  const abutmentPricingTier = useAbutsAbutmentPricingTier();
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
     enabled: showFeeEstimate,
     labAnchorId: selectedLab?._id,
     toothWorks,
+    abutmentPricingTier,
   });
-  const abutmentPricingTier = useAbutsAbutmentPricingTier();
   const { data: systemSettings } = useSystemSettings();
   const membershipMonthlyFee = Math.max(
     0,
@@ -1080,7 +1080,7 @@ export const PracticeTransferRequestIntakePanel = ({
     return teeth.size;
   }, [toothWorks]);
 
-  // 연결 여부 ↔ 형태(크라운/인레이/어벗 디자인 vs 브리지/Pontic/작업X) 불일치 보정 (드래프트·구버전 데이터)
+  // 연결 여부 ↔ 형태(인레이/크라운/커스텀어벗 vs 브리지/Pontic/작업X) 불일치 보정 (드래프트·구버전 데이터)
   const toothWorkLinkTypeMismatch = useMemo(() => {
     return toothWorks.some((row) => {
       const links = collectAdjacentBridgeLinks(toothWorks, row.toothNumber);
@@ -1096,6 +1096,7 @@ export const PracticeTransferRequestIntakePanel = ({
         prevType,
         isLinked,
         normalizedProsthesisTypes,
+        row.customAbutment || isCustomAbutmentProsthesisType(prevType),
       );
       return resolved !== prevType || linksChanged;
     });
@@ -1112,7 +1113,12 @@ export const PracticeTransferRequestIntakePanel = ({
         const prosthesisType =
           !prevType && !isLinked
             ? prevType
-            : resolveProsthesisTypeForLinkState(prevType, isLinked, normalizedProsthesisTypes);
+            : resolveProsthesisTypeForLinkState(
+                prevType,
+                isLinked,
+                normalizedProsthesisTypes,
+                row.customAbutment || isCustomAbutmentProsthesisType(prevType),
+              );
         const prevLinks = Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [];
         const linksChanged =
           links.length !== prevLinks.length ||
@@ -1907,11 +1913,11 @@ export const PracticeTransferRequestIntakePanel = ({
                       const linkedTeeth = collectAdjacentBridgeLinks(toothWorks, row.toothNumber);
                       const isLinked = linkedTeeth.length > 0;
                       const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
-                      const canSelectCustomAbutment = isCustomAbutmentSupportedProsthesisType(
-                        row.prosthesisType,
-                      );
+                      const isCustomType = isCustomAbutmentProsthesisType(row.prosthesisType);
                       const showCustomDetails =
-                        canSelectCustomAbutment && Boolean(row.customAbutment);
+                        isCustomType ||
+                        (isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
+                          Boolean(row.customAbutment));
                       const implantSummary = formatImplantSummary(row);
                       const abutmentSummary = formatAbutmentSummary(row);
                       const implantCompact = formatImplantCompact(row);
@@ -2077,7 +2083,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               {row.toothNumber}
                             </span>
 
-                            {/* 2) 치아형태 — 글자 클릭 시에만 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X */}
+                            {/* 2) 치아형태 — 글자 클릭 시에만 인레이→크라운→커스텀어벗 / 브리지↔Pontic↔작업X */}
                             {(() => {
                               const typeLabel = isMissingTooth
                                 ? NO_WORK_PROSTHESIS_TYPE
@@ -2102,19 +2108,31 @@ export const PracticeTransferRequestIntakePanel = ({
                                       ? undefined
                                       : isLinked
                                         ? "클릭: 브리지 ↔ Pontic ↔ 작업X"
-                                        : "클릭: 크라운 → 인레이 → 어벗 디자인"
+                                        : "클릭: 인레이 → 크라운 → 커스텀어벗"
                                   }
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
                                     if (suppressToothClickRef.current) return;
-                                    setToothWorks((prev) =>
-                                      toggleProsthesisPairInWorks(
-                                        prev,
-                                        toothNumber,
-                                        normalizedProsthesisTypes,
-                                      ),
+                                    const resolved = resolveNextProsthesisType(
+                                      toothWorks,
+                                      toothNumber,
+                                      normalizedProsthesisTypes,
                                     );
+                                    if (!resolved) return;
+                                    setToothWorks((prev) => {
+                                      const next = [...prev];
+                                      const current = next[resolved.index];
+                                      if (!current) return prev;
+                                      next[resolved.index] = applyProsthesisTypeToRow(
+                                        current,
+                                        resolved.nextType,
+                                      );
+                                      return next;
+                                    });
+                                    if (isCustomAbutmentProsthesisType(resolved.nextType)) {
+                                      openCustomSpecsModal(resolved.index);
+                                    }
                                   }}
                                 >
                                   {typeLabel}
@@ -2132,117 +2150,61 @@ export const PracticeTransferRequestIntakePanel = ({
                             })()}
 
                             {/* 3) 커스텀어벗 · 임플란트 · 스캔바디 */}
-                            {canSelectCustomAbutment ? (
+                            {showCustomDetails ? (
                               <div
                                 data-no-tooth-marquee=""
                                 className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none"
                               >
-                                <div className="inline-flex h-5 items-center gap-1 text-[11px] leading-none text-slate-500">
-                                  <input
-                                    type="checkbox"
-                                    className="h-3 w-3 accent-primary-strong"
-                                    checked={Boolean(row.customAbutment)}
-                                    aria-label="커스텀어벗"
-                                    onChange={(e) => {
-                                      const checked = Boolean(e.target.checked);
-                                      if (checked) {
-                                        setToothWorks((prev) => {
-                                          const next = [...prev];
-                                          next[originalIndex] = {
-                                            ...next[originalIndex],
-                                            customAbutment: true,
-                                            abutmentProductMode:
-                                              ABUTMENT_PRODUCT_MODE.PRODUCTION,
-                                            ...emptyToothWorkCustomSpecs(),
-                                          };
-                                          return next;
-                                        });
-                                      } else {
-                                        setToothWorks((prev) => {
-                                          const next = [...prev];
-                                          next[originalIndex] = {
-                                            ...next[originalIndex],
-                                            customAbutment: false,
-                                            abutmentProductMode: undefined,
-                                            ...emptyToothWorkCustomSpecs(),
-                                          };
-                                          return next;
-                                        });
-                                        if (customSpecsModalTarget === originalIndex) {
-                                          closeCustomSpecsModal();
-                                        }
-                                      }
-                                    }}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="hover:text-primary-strong hover:underline"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      if (!row.customAbutment) {
-                                        setToothWorks((prev) => {
-                                          const next = [...prev];
-                                          next[originalIndex] = {
-                                            ...next[originalIndex],
-                                            customAbutment: true,
-                                            abutmentProductMode:
-                                              ABUTMENT_PRODUCT_MODE.PRODUCTION,
-                                            ...emptyToothWorkCustomSpecs(),
-                                          };
-                                          return next;
-                                        });
-                                      }
-                                      openCustomSpecsModal(originalIndex);
-                                    }}
-                                  >
-                                    커스텀
-                                  </button>
-                                </div>
-                                {showCustomDetails ? (
-                                  <span className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
-                                    {
-                                      ABUTMENT_PRODUCT_MODE_SHORT_LABEL[
-                                        resolveToothAbutmentProductMode(row)
-                                      ]
-                                    }
-                                  </span>
-                                ) : null}
-
-                                {showCustomDetails ? (
-                                  <TooltipProvider delayDuration={0}>
-                                    <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <button
-                                            type="button"
-                                            className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong hover:bg-primary-soft/70 hover:underline"
-                                            onClick={() => openCustomSpecsModal(originalIndex)}
-                                          >
-                                            {implantCompact || "임플란트"}
-                                          </button>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                          {implantSummary || "임플란트 선택"}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <button
-                                            type="button"
-                                            className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut hover:bg-service-abut-soft hover:underline"
-                                            onClick={() => openCustomSpecsModal(originalIndex)}
-                                          >
-                                            {abutmentCompact || "스캔바디"}
-                                          </button>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                          {abutmentSummary || "스캔바디 선택"}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </div>
-                                  </TooltipProvider>
-                                ) : null}
+                                <button
+                                  type="button"
+                                  className="inline-flex h-5 items-center text-[11px] leading-none text-slate-500 hover:text-primary-strong hover:underline"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    openCustomSpecsModal(originalIndex);
+                                  }}
+                                >
+                                  설정
+                                </button>
+                                <span className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
+                                  {
+                                    ABUTMENT_PRODUCT_MODE_SHORT_LABEL[
+                                      resolveToothAbutmentProductMode(row)
+                                    ]
+                                  }
+                                </span>
+                                <TooltipProvider delayDuration={0}>
+                                  <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong hover:bg-primary-soft/70 hover:underline"
+                                          onClick={() => openCustomSpecsModal(originalIndex)}
+                                        >
+                                          {implantCompact || "임플란트"}
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
+                                        {implantSummary || "임플란트 선택"}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut hover:bg-service-abut-soft hover:underline"
+                                          onClick={() => openCustomSpecsModal(originalIndex)}
+                                        >
+                                          {abutmentCompact || "스캔바디"}
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
+                                        {abutmentSummary || "스캔바디 선택"}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                </TooltipProvider>
                               </div>
                             ) : null}
                           </div>

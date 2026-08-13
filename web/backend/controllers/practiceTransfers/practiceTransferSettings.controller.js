@@ -8,10 +8,10 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const DEFAULT_PROSTHESIS_TYPES = [
+  "인레이",
   "크라운",
+  "커스텀어벗",
   "브리지",
-  "커스텀어벗+크라운",
-  "커스텀어벗+브리지",
 ];
 const MAX_MEMO_SNIPPETS = 40;
 const MAX_IMPLANT_FAVORITES = 40;

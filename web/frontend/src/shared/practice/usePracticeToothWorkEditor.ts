@@ -7,8 +7,13 @@ import { useMemo } from "react";
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
+  ABUTMENT_PRODUCT_MODE,
+  CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
   emptyToothWorkCustomSpecs,
+  isAbutmentDesignProsthesisType,
   isBridgeLikeProsthesisType,
+  isCustomAbutmentProsthesisType,
+  isCustomAbutmentSupportedProsthesisType,
   isMissingToothProsthesisType,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
@@ -17,36 +22,31 @@ import {
 } from "@/shared/practice/transferMemo";
 
 export {
+  CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
+  isAbutmentDesignProsthesisType,
   isBridgeLikeProsthesisType,
+  isCustomAbutmentProsthesisType,
+  isCustomAbutmentSupportedProsthesisType,
   isMissingToothProsthesisType,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
 };
 
-/** 단독 치아 형태 토글 라벨(크라운↔인레이↔어벗 디자인) */
-export const ABUTMENT_DESIGN_PROSTHESIS_TYPE = "어벗 디자인";
+/** @deprecated 단독 커스텀어벗 형태. CUSTOM_ABUTMENT_PROSTHESIS_TYPE 사용 */
+export const ABUTMENT_DESIGN_PROSTHESIS_TYPE = CUSTOM_ABUTMENT_PROSTHESIS_TYPE;
 
+/** 단독 치아 형태 토글 라벨(인레이↔크라운↔커스텀어벗) */
 export const STANDALONE_PROSTHESIS_TYPES = [
-  "크라운",
   "인레이",
-  ABUTMENT_DESIGN_PROSTHESIS_TYPE,
+  "크라운",
+  CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
 ] as const;
 export const LINKED_PROSTHESIS_TYPES = ["브리지", "Pontic", NO_WORK_PROSTHESIS_TYPE] as const;
 
-export const isAbutmentDesignProsthesisType = (prosthesisType: string) => {
-  const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
-  return /^(?:커스텀)?어벗디자인$/i.test(compact);
-};
-
 export const isStandaloneProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "크라운" ||
   prosthesisType === "인레이" ||
-  isAbutmentDesignProsthesisType(prosthesisType);
-
-export const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
   prosthesisType === "크라운" ||
-  prosthesisType === "브리지" ||
-  isAbutmentDesignProsthesisType(prosthesisType);
+  isCustomAbutmentProsthesisType(prosthesisType);
 
 export const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
@@ -126,11 +126,14 @@ export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: strin
   );
   const next = catalog.filter((type) => {
     if (allowed.has(type)) return true;
-    if (!isLinked && isAbutmentDesignProsthesisType(type)) return true;
+    if (!isLinked && isCustomAbutmentProsthesisType(type)) return true;
     if (isLinked && /^pontic$/i.test(type)) return true;
     if (isLinked && isMissingToothProsthesisType(type)) return true;
     return false;
   });
+  if (!isLinked && !next.some((type) => isCustomAbutmentProsthesisType(type))) {
+    next.push(CUSTOM_ABUTMENT_PROSTHESIS_TYPE);
+  }
   if (isLinked && !next.some((type) => type === "브리지")) next.unshift("브리지");
   if (isLinked && !next.some((type) => /^pontic$/i.test(type))) next.push("Pontic");
   if (isLinked && !next.some((type) => isMissingToothProsthesisType(type))) {
@@ -143,6 +146,7 @@ export const resolveProsthesisTypeForLinkState = (
   currentType: string,
   isLinked: boolean,
   catalog: string[],
+  customAbutment = false,
 ) => {
   const options = getProsthesisTypesForLinkState(isLinked, catalog);
   const current = String(currentType || "").trim();
@@ -158,19 +162,48 @@ export const resolveProsthesisTypeForLinkState = (
   if (isLinked) {
     return options.find((type) => type === "브리지") || options[0] || "브리지";
   }
+  if (isCustomAbutmentProsthesisType(current) || customAbutment) {
+    return (
+      options.find((type) => isCustomAbutmentProsthesisType(type)) ||
+      CUSTOM_ABUTMENT_PROSTHESIS_TYPE
+    );
+  }
   return options.find((type) => type === "크라운") || options[0] || "크라운";
 };
 
-/** 형태만 변경. 커스텀어벗·임플란트/스캔바디는 유지(인레이 등 UI 비표시 타입 포함 — 크라운/어벗 디자인으로 돌아오면 그대로) */
+/** 형태 변경. 커스텀어벗↔인레이/크라운은 플래그·규격을 맞추고, 브리지는 기존 커스텀 유지 */
 export const applyProsthesisTypeToRow = (
   row: ToothWorkSelection,
   prosthesisType: string,
-): ToothWorkSelection => ({
-  ...row,
-  prosthesisType,
-});
+): ToothWorkSelection => {
+  const nextType = String(prosthesisType || "").trim();
+  if (isCustomAbutmentProsthesisType(nextType)) {
+    return {
+      ...row,
+      prosthesisType: CUSTOM_ABUTMENT_PROSTHESIS_TYPE,
+      customAbutment: true,
+      abutmentProductMode:
+        row.abutmentProductMode || ABUTMENT_PRODUCT_MODE.PRODUCTION,
+    };
+  }
+  if (
+    nextType === "인레이" ||
+    nextType === "크라운" ||
+    isMissingToothProsthesisType(nextType) ||
+    /^pontic$/i.test(nextType)
+  ) {
+    return {
+      ...row,
+      prosthesisType: nextType,
+      customAbutment: false,
+      abutmentProductMode: undefined,
+      ...emptyToothWorkCustomSpecs(),
+    };
+  }
+  return { ...row, prosthesisType: nextType };
+};
 
-/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic/작업X vs 크라운/인레이/어벗 디자인) 동기화 */
+/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic/작업X vs 인레이/크라운/커스텀어벗) 동기화 */
 export const toggleAdjacentBridgeLink = (
   rows: ToothWorkSelection[],
   originalIndex: number,
@@ -194,6 +227,7 @@ export const toggleAdjacentBridgeLink = (
     current.prosthesisType,
     currentIsLinked,
     catalog,
+    current.customAbutment || isCustomAbutmentProsthesisType(current.prosthesisType),
   );
 
   next[originalIndex] = {
@@ -218,6 +252,7 @@ export const toggleAdjacentBridgeLink = (
         paired.prosthesisType,
         nextPairedLinks.length > 0,
         catalog,
+        paired.customAbutment || isCustomAbutmentProsthesisType(paired.prosthesisType),
       );
       next[pairedIdx] = {
         ...applyProsthesisTypeToRow(paired, pairedType),
@@ -226,7 +261,7 @@ export const toggleAdjacentBridgeLink = (
     } else {
       next.push({
         toothNumber: adjTooth,
-        prosthesisType: resolveProsthesisTypeForLinkState("", true, catalog),
+        prosthesisType: resolveProsthesisTypeForLinkState("", true, catalog, false),
         customAbutment: false,
         bridgeLinkedTeeth: currentTooth ? [currentTooth] : [],
         ...emptyToothWorkCustomSpecs(),
@@ -241,6 +276,7 @@ export const toggleAdjacentBridgeLink = (
       paired.prosthesisType,
       pairedLinks.length > 0,
       catalog,
+      paired.customAbutment || isCustomAbutmentProsthesisType(paired.prosthesisType),
     );
     next[pairedIdx] = {
       ...applyProsthesisTypeToRow(paired, pairedType),

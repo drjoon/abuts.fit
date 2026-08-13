@@ -260,6 +260,18 @@ const businessAnchorSchema = new mongoose.Schema(
         default: 35000,
         min: 0,
       },
+      remake: {
+        crown: { type: Number, default: 0, min: 0 },
+        bridge: { type: Number, default: 0, min: 0 },
+        inlay: { type: Number, default: 0, min: 0 },
+        pontic: { type: Number, default: 0, min: 0 },
+        customAbutmentDesign: { type: Number, default: 0, min: 0 },
+        customAbutmentDesignAndProduction: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
+      },
       // 항목별 서비스 제공 여부. false면 UI에서 비활성(수가 값은 유지)
       enabled: {
         crown: { type: Boolean, default: true },
@@ -284,7 +296,7 @@ const businessAnchorSchema = new mongoose.Schema(
       },
       prosthesisTypes: {
         type: [String],
-        default: ["크라운", "브리지", "커스텀어벗+크라운", "커스텀어벗+브리지"],
+        default: ["인레이", "크라운", "커스텀어벗", "브리지"],
       },
       memoSnippets: {
         type: [String],

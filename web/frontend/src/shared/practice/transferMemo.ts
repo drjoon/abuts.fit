@@ -386,10 +386,25 @@ export const isMissingToothProsthesisType = (prosthesisType: string) => {
   );
 };
 
-export const toCanonicalProsthesisType = (prosthesisType: string) =>
-  isMissingToothProsthesisType(prosthesisType)
-    ? NO_WORK_PROSTHESIS_TYPE
-    : String(prosthesisType || "").trim();
+export const CUSTOM_ABUTMENT_PROSTHESIS_TYPE = "커스텀어벗";
+
+export const isCustomAbutmentProsthesisType = (prosthesisType: string) => {
+  const raw = String(prosthesisType || "").trim();
+  const compact = raw.replace(/\s+/g, "");
+  return (
+    compact === CUSTOM_ABUTMENT_PROSTHESIS_TYPE ||
+    /^(?:커스텀)?어벗디자인$/i.test(compact) ||
+    /^custom\s*abut(?:ment)?$/i.test(raw)
+  );
+};
+
+export const toCanonicalProsthesisType = (prosthesisType: string) => {
+  if (isMissingToothProsthesisType(prosthesisType)) return NO_WORK_PROSTHESIS_TYPE;
+  if (isCustomAbutmentProsthesisType(prosthesisType)) {
+    return CUSTOM_ABUTMENT_PROSTHESIS_TYPE;
+  }
+  return String(prosthesisType || "").trim();
+};
 
 export const normalizeArrivalDefaultDays = (value: number) =>
   Math.max(0, Math.floor(Number(value || 0)));
@@ -411,7 +426,12 @@ export const normalizeProsthesisTypes = (items: string[]) => {
         return NO_WORK_PROSTHESIS_TYPE;
       }
       const compact = item.replace(/\s+/g, "");
-      if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "어벗 디자인";
+      if (
+        compact === CUSTOM_ABUTMENT_PROSTHESIS_TYPE ||
+        /^(?:커스텀)?어벗디자인$/i.test(compact)
+      ) {
+        return CUSTOM_ABUTMENT_PROSTHESIS_TYPE;
+      }
       if (/^missing(?:tooth)?$/i.test(compact)) return NO_WORK_PROSTHESIS_TYPE;
       return item;
     });
@@ -429,15 +449,12 @@ export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "Pontic" ||
   isMissingToothProsthesisType(prosthesisType);
 
-export const isAbutmentDesignProsthesisType = (prosthesisType: string) => {
-  const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
-  return /^(?:커스텀)?어벗디자인$/i.test(compact);
-};
+export const isAbutmentDesignProsthesisType = (prosthesisType: string) =>
+  isCustomAbutmentProsthesisType(prosthesisType);
 
 export const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
-  prosthesisType === "크라운" ||
-  prosthesisType === "브리지" ||
-  isAbutmentDesignProsthesisType(prosthesisType);
+  isCustomAbutmentProsthesisType(prosthesisType) ||
+  prosthesisType === "브리지";
 
 export const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
@@ -480,9 +497,11 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
       const prosthesisType = toCanonicalProsthesisType(
         String(row?.prosthesisType || "").trim(),
       );
-      const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
-        ? Boolean(row?.customAbutment)
-        : false;
+      const customAbutment = isCustomAbutmentProsthesisType(prosthesisType)
+        ? true
+        : isCustomAbutmentSupportedProsthesisType(prosthesisType)
+          ? Boolean(row?.customAbutment)
+          : false;
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
         isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
@@ -517,9 +536,11 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
       const prosthesisType = toCanonicalProsthesisType(
         String(row?.prosthesisType || "").trim() || (toothNumber ? "크라운" : ""),
       );
-      const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
-        ? Boolean(row?.customAbutment)
-        : false;
+      const customAbutment = isCustomAbutmentProsthesisType(prosthesisType)
+        ? true
+        : isCustomAbutmentSupportedProsthesisType(prosthesisType)
+          ? Boolean(row?.customAbutment)
+          : false;
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
         isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
@@ -583,7 +604,8 @@ export const parseToothWorks = (value: string) =>
       }
 
       const prosthesisType = toCanonicalProsthesisType(
-        withoutLinked || (toothNumber ? "크라운" : ""),
+        withoutLinked ||
+          (customAbutment ? CUSTOM_ABUTMENT_PROSTHESIS_TYPE : toothNumber ? "크라운" : ""),
       );
       const bridgeLinkedTeeth = linkedRaw
         ? linkedRaw
@@ -822,9 +844,13 @@ export const formatToothWorksForDisplay = (
   const formattedRows = normalizedRows.map((row) => {
     const details = [row.prosthesisType];
     if (row.customAbutment) {
-      details.push(
-        `커스텀어벗 ${ABUTMENT_PRODUCT_MODE_SHORT_LABEL[resolveToothAbutmentProductMode(row)]}`,
-      );
+      const modeLabel =
+        ABUTMENT_PRODUCT_MODE_SHORT_LABEL[resolveToothAbutmentProductMode(row)];
+      if (!isCustomAbutmentProsthesisType(row.prosthesisType)) {
+        details.push(`커스텀어벗 ${modeLabel}`);
+      } else {
+        details.push(modeLabel);
+      }
       const specsSummary = formatCustomSpecsSummary(row);
       if (specsSummary) details.push(specsSummary);
     }

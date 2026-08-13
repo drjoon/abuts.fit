@@ -116,7 +116,7 @@ Notes:
   - `src/shared/practice/practiceTransferAccept.ts`
   - `src/shared/files/extractDroppedFiles.ts`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
-    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 어벗 디자인은 커스텀 체크박스(임플란트·스캔바디) 지원. 커스텀어벗 설정 모달에서 **생산만 의뢰 / 디자인+생산 의뢰** 배타 선택(호버 시 어벗츠 자체 제공 가격 툴팁). 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
+    - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 인레이→크라운→커스텀어벗 / 브리지↔Pontic↔작업X. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 커스텀어벗 선택 시 설정 모달(생산만/디자인+생산, 호버 시 어벗츠 멤버십·일반 단가). 커스텀어벗은 기공소 수가가 아니라 어벗츠 단가. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
     - 기공의뢰서 상·하악 사이(크게보기·전송 상세 포함)에 견적(크레딧 소비액) 표시. 치과는 평소 블러, 호버 시 금액 공개. 기공소 미지정(자동매칭)은 기본수가 없음(0원). 간단 합계 + 빠른툴팁 치식별 세부. `PracticeTransferFeeEstimate` / `GET /api/practice/transfers/quote-context`.
     - 기공소 의뢰카드·전송 상세에는 수령액(청구 − 플랫폼 수수료) 표시. 목록 `feeQuote` SSOT.
   - `src/shared/practice/usePracticeToothWorkEditor.ts`

@@ -34,9 +34,13 @@ export const restoreToothWorksFromDraft = (
       ? prosthesisTypeRaw
       : fallbackType;
 
-    const customAbutment = options.isCustomAbutmentSupportedProsthesisType(prosthesisType)
-      ? Boolean(row.customAbutment)
-      : false;
+    const customAbutment = /커스텀어벗|(?:커스텀)?어벗디자인/i.test(
+      String(prosthesisType || "").replace(/\s+/g, ""),
+    )
+      ? true
+      : options.isCustomAbutmentSupportedProsthesisType(prosthesisType)
+        ? Boolean(row.customAbutment)
+        : false;
 
     const adjacent = options.getAdjacentTeeth(toothNumber);
     const bridgeLinkedTeeth =

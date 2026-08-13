@@ -5,11 +5,14 @@ import {
   computePracticeTransferRetailFees,
   DEFAULT_ABUTMENT_RETAIL_PRICE,
   LAB_FEE_SCHEDULE_ZEROS,
+  normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
+  splitPracticeTransferSettlement,
   type LabFeeSchedule,
   type PracticeTransferFeeLine,
   type PracticeTransferRetailFees,
 } from "@/shared/practice/labFeeSchedule";
+import type { AbutsAbutmentPricingTier } from "@/shared/pricing/abutsAbutmentService";
 
 export type PracticeTransferRelationshipKind = "active" | "referred" | "none";
 
@@ -20,13 +23,17 @@ export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   abutsRevenueAmount: number;
   billed?: boolean;
   usedDefaultSchedule?: boolean;
+  isRemake?: boolean;
+  remakeFeeQuote?: PracticeTransferFeeQuote | null;
 };
 
 export type PracticeTransferFeeQuoteViewer = "practice" | "lab";
 
 export type PracticeTransferQuoteContext = {
   schedule: LabFeeSchedule;
+  remakeSchedule: LabFeeSchedule;
   abutmentRetailPrice: number;
+  abutmentPricingTier: AbutsAbutmentPricingTier;
   relationshipKind: PracticeTransferRelationshipKind;
   feeRateApplied: number;
   usedDefaultSchedule: boolean;
@@ -34,7 +41,9 @@ export type PracticeTransferQuoteContext = {
 
 export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
   schedule: LAB_FEE_SCHEDULE_ZEROS,
+  remakeSchedule: LAB_FEE_SCHEDULE_ZEROS,
   abutmentRetailPrice: 0,
+  abutmentPricingTier: "regular",
   relationshipKind: "none",
   feeRateApplied: 0,
   usedDefaultSchedule: true,
@@ -94,6 +103,11 @@ export const parsePracticeTransferFeeQuote = (
     abutsRevenueAmount,
     billed: Boolean(r.billed),
     usedDefaultSchedule: Boolean(r.usedDefaultSchedule),
+    isRemake: Boolean(r.isRemake),
+    remakeFeeQuote:
+      r.remakeFeeQuote && typeof r.remakeFeeQuote === "object"
+        ? parsePracticeTransferFeeQuote(r.remakeFeeQuote)
+        : null,
   };
 };
 
@@ -107,10 +121,21 @@ export const parsePracticeTransferQuoteContext = (
       : null;
   const feeRateApplied = Number(r.feeRateApplied);
   const usedDefaultSchedule = Boolean(r.usedDefaultSchedule);
+  const abutmentPricingTier: AbutsAbutmentPricingTier =
+    r.abutmentPricingTier === "membership" ? "membership" : "regular";
+  const remakeRaw =
+    r.remakeSchedule && typeof r.remakeSchedule === "object"
+      ? (r.remakeSchedule as Partial<LabFeeSchedule>)
+      : r.remake && typeof r.remake === "object"
+        ? (r.remake as Partial<LabFeeSchedule>)
+        : null;
   return {
     schedule: usedDefaultSchedule
       ? LAB_FEE_SCHEDULE_ZEROS
       : normalizeLabFeeSchedule(scheduleRaw),
+    remakeSchedule: usedDefaultSchedule
+      ? LAB_FEE_SCHEDULE_ZEROS
+      : normalizeLabFeeRemakeSchedule(remakeRaw),
     abutmentRetailPrice: usedDefaultSchedule
       ? 0
       : Math.max(
@@ -119,6 +144,7 @@ export const parsePracticeTransferQuoteContext = (
             Number(r.abutmentRetailPrice ?? DEFAULT_ABUTMENT_RETAIL_PRICE),
           ) || DEFAULT_ABUTMENT_RETAIL_PRICE,
         ),
+    abutmentPricingTier,
     relationshipKind: toRelationshipKind(r.relationshipKind),
     feeRateApplied: usedDefaultSchedule
       ? 0
@@ -138,16 +164,20 @@ export const buildFeeQuoteFromContext = (params: {
   const fees = computePracticeTransferRetailFees({
     toothWorks: params.toothWorks,
     labFeeSchedule: zeroed ? LAB_FEE_SCHEDULE_ZEROS : context.schedule,
-    abutmentRetailPrice: zeroed ? 0 : context.abutmentRetailPrice,
+    abutmentPricingTier: context.abutmentPricingTier,
   });
   const feeRateApplied = Number(context.feeRateApplied || 0);
-  const abutsRevenueAmount = Math.round(fees.total * feeRateApplied);
+  const split = splitPracticeTransferSettlement({
+    labFeeTotal: fees.labFeeTotal,
+    abutmentRetailTotal: fees.abutmentRetailTotal,
+    feeRateApplied,
+  });
   return {
     ...fees,
     relationshipKind: context.relationshipKind,
     feeRateApplied,
-    labSettlementAmount: Math.max(0, fees.total - abutsRevenueAmount),
-    abutsRevenueAmount,
+    labSettlementAmount: split.labSettlementAmount,
+    abutsRevenueAmount: split.abutsRevenueAmount,
     billed: false,
     usedDefaultSchedule: Boolean(context.usedDefaultSchedule),
   };

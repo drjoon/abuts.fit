@@ -337,7 +337,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "작업X", "인레이", "어벗 디자인"] as const;
+const PRESET_PROSTHESIS_TYPES = ["인레이", "크라운", "커스텀어벗", "브리지", "Pontic", "작업X"] as const;
 
 type ToothWorkSelection = SharedToothWorkSelection;
 
@@ -369,8 +369,8 @@ const sanitizeProsthesisTypeLabel = (value: string) => {
   const compact = trimmed.replace(/\s+/g, "");
   if (/^커스텀어벗\+?크라운$/i.test(compact)) return "크라운";
   if (/^커스텀어벗\+?브리지$/i.test(compact)) return "브리지";
-  if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "어벗 디자인";
-  if (/^커스텀어벗$/i.test(compact)) return "";
+  if (/^(?:커스텀)?어벗디자인$/i.test(compact)) return "커스텀어벗";
+  if (/^커스텀어벗$/i.test(compact)) return "커스텀어벗";
   return trimmed;
 };
 
@@ -450,7 +450,7 @@ const isBridgeLikeProsthesisType = (prosthesisType: string) =>
 const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) => {
   const compact = String(prosthesisType || "").trim().replace(/\s+/g, "");
   return (
-    prosthesisType === "크라운" ||
+    compact === "커스텀어벗" ||
     prosthesisType === "브리지" ||
     /^(?:커스텀)?어벗디자인$/i.test(compact)
   );
@@ -464,9 +464,13 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
       const prosthesisType = isMissingToothProsthesisType(prosthesisTypeRaw)
         ? "작업X"
         : prosthesisTypeRaw;
-      const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
-        ? Boolean(row?.customAbutment)
-        : false;
+      const customAbutment = /커스텀어벗|(?:커스텀)?어벗디자인/i.test(
+        String(prosthesisType || "").replace(/\s+/g, ""),
+      )
+        ? true
+        : isCustomAbutmentSupportedProsthesisType(prosthesisType)
+          ? Boolean(row?.customAbutment)
+          : false;
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
         isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)

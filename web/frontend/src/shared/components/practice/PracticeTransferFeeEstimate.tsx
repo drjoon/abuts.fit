@@ -35,14 +35,24 @@ export function PracticeTransferFeeEstimate({
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
   const amount = isLab ? quote.labSettlementAmount : quote.total;
-  const title = isLab ? "기공비 총액" : "견적";
+  const title = quote.isRemake
+    ? isLab
+      ? "리메이크 기공비"
+      : "리메이크 견적"
+    : isLab
+      ? "기공비 총액"
+      : "견적";
   const keepRate =
     isLab && quote.total > 0 ? quote.labSettlementAmount / quote.total : 1;
   const simple = isLab
     ? null
-    : quote.abutmentRetailTotal > 0
-      ? `기공비 ${formatWon(quote.labFeeTotal)} · 어벗 ${formatWon(quote.abutmentRetailTotal)}`
-      : `기공비 ${formatWon(quote.labFeeTotal)}`;
+    : quote.isRemake
+      ? `리메이크 기공비 ${formatWon(quote.labFeeTotal)}`
+      : quote.labFeeTotal > 0 && quote.abutmentRetailTotal > 0
+        ? `기공비 ${formatWon(quote.labFeeTotal)} · 어벗 ${formatWon(quote.abutmentRetailTotal)}`
+        : quote.abutmentRetailTotal > 0
+          ? `어벗 ${formatWon(quote.abutmentRetailTotal)}`
+          : `기공비 ${formatWon(quote.labFeeTotal)}`;
 
   const isCard = density === "card";
 

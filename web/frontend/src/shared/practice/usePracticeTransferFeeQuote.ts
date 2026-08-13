@@ -10,6 +10,7 @@ import {
   type PracticeTransferFeeQuote,
   type PracticeTransferQuoteContext,
 } from "@/shared/practice/practiceTransferFeeQuote";
+import type { AbutsAbutmentPricingTier } from "@/shared/pricing/abutsAbutmentService";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -23,6 +24,7 @@ export const usePracticeTransferFeeQuote = (params: {
   labAnchorId?: string | null;
   toothWorks?: ToothWorkSelection[] | null;
   storedQuote?: PracticeTransferFeeQuote | null;
+  abutmentPricingTier?: AbutsAbutmentPricingTier | null;
 }): {
   quote: PracticeTransferFeeQuote;
   contextReady: boolean;
@@ -75,9 +77,13 @@ export const usePracticeTransferFeeQuote = (params: {
     () =>
       buildFeeQuoteFromContext({
         toothWorks,
-        context,
+        context: {
+          ...context,
+          abutmentPricingTier:
+            params.abutmentPricingTier || context.abutmentPricingTier,
+        },
       }),
-    [context, toothWorks],
+    [context, params.abutmentPricingTier, toothWorks],
   );
 
   const quote = storedQuote && storedQuote.total > 0 ? storedQuote : liveQuote;
