@@ -1,13 +1,16 @@
 // related files:
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
+// - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
+// - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-08-13: 소개 치과 제거 — 등록/미등록 2구분. 탭·카피 「기공크레딧」통일. 정산규칙·요약카드 최신 스타일.
 // - 2026-08-11: 요약 5열(액션 버튼 세로). 일자 입력 제거·검색 상단 이동. 전체/거래처/비거래처를 필터 행으로.
 // - 2026-08-11: 요약 카드 — 하단 보조행 제거, 금액 옆 (N건), 높이 축소·중앙 정렬.
 // - 2026-08-11: 정산 요청 버튼 제거(매월 자동 지급). 안내는 정산규칙 모달에만 표시.
 // - 2026-08-11: 제조사 정산 페이지와 동일 UX(요약 카드·기간·일별/입금·정산규칙).
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
@@ -31,6 +34,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -43,7 +47,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/shared/ui/cn";
 
 type PayoutItem = {
   _id: string;
@@ -64,8 +68,6 @@ type LabDailySnapshotRow = {
   ymd: string;
   earnPartnerAmount: number;
   earnPartnerCount: number;
-  earnReferredAmount: number;
-  earnReferredCount: number;
   earnNonPartnerAmount: number;
   earnNonPartnerCount: number;
   earnAmount: number;
@@ -87,11 +89,10 @@ type SortDirection = "asc" | "desc";
 type SnapshotSortKey =
   | "ymd"
   | "partner"
-  | "referred"
   | "nonPartner"
   | "deduction"
   | "net";
-type RelationshipFilter = "all" | "partner" | "referred" | "nonPartner";
+type RelationshipFilter = "all" | "partner" | "nonPartner";
 type PayoutSortKey = "occurredAt" | "status" | "amount" | "note";
 
 const formatDate = (iso: string) => {
@@ -135,6 +136,60 @@ const periodToYmdRange = (
   return { from, to };
 };
 
+const pctLabel = (rate: number) => `${Math.round(Number(rate || 0) * 100)}%`;
+
+function StatCard({
+  label,
+  value,
+  count,
+  emphasize,
+}: {
+  label: string;
+  value: number;
+  count?: number;
+  emphasize?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-3 shadow-sm">
+      <div className="text-center text-[13px] font-medium text-slate-500 break-keep">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-1.5 text-center text-lg font-semibold tabular-nums sm:text-xl",
+          emphasize ? "text-primary-strong" : "text-slate-900",
+        )}
+      >
+        ₩{value.toLocaleString()}
+        {typeof count === "number" ? (
+          <span className="ml-1 text-sm font-medium text-muted-foreground">
+            ({count}건)
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function PolicySection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-xl bg-slate-50 px-4 py-3.5">
+      <h3 className="text-sm font-semibold tracking-tight text-slate-900">
+        {title}
+      </h3>
+      <div className="mt-2.5 space-y-2 text-sm leading-relaxed text-slate-600">
+        {children}
+      </div>
+    </section>
+  );
+}
+
 export const LabSettlementPayoutTab = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -162,9 +217,16 @@ export const LabSettlementPayoutTab = () => {
   const anyLoading = loading || snapLoading;
 
   const [settlementCredit, setSettlementCredit] = useState(0);
+  const [partnerFeeRate, setPartnerFeeRate] = useState(0);
+  const [nonPartnerFeeRate, setNonPartnerFeeRate] = useState(0.25);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const partnerFeePct = pctLabel(partnerFeeRate);
+  const nonPartnerFeePct = pctLabel(nonPartnerFeeRate);
+  const partnerColLabel = `등록 (${partnerFeePct})`;
+  const nonPartnerColLabel = `미등록 (${nonPartnerFeePct})`;
 
   const loadBalance = useCallback(async () => {
     if (!token) return;
@@ -183,9 +245,37 @@ export const LabSettlementPayoutTab = () => {
     }
   }, [token]);
 
+  const loadFeeRates = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await request<{
+        data?: {
+          window?: {
+            feeRates?: { partnerFeeRate?: number; nonPartnerFeeRate?: number };
+          };
+        };
+      }>({
+        path: "/api/lab-trading-partners",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) return;
+      const rates = res.data?.data?.window?.feeRates;
+      if (rates?.partnerFeeRate != null) {
+        setPartnerFeeRate(Number(rates.partnerFeeRate) || 0);
+      }
+      if (rates?.nonPartnerFeeRate != null) {
+        setNonPartnerFeeRate(Number(rates.nonPartnerFeeRate) || 0.25);
+      }
+    } catch {
+      // keep defaults (0% / 25%)
+    }
+  }, [token]);
+
   useEffect(() => {
     void loadBalance();
-  }, [loadBalance]);
+    void loadFeeRates();
+  }, [loadBalance, loadFeeRates]);
 
   const buildQueryParams = useCallback(
     (p: number) => {
@@ -308,8 +398,6 @@ export const LabSettlementPayoutTab = () => {
   const snapshotTotals = useMemo(() => {
     let partnerTotal = 0;
     let partnerCount = 0;
-    let referredTotal = 0;
-    let referredCount = 0;
     let nonPartnerTotal = 0;
     let nonPartnerCount = 0;
     let payoutTotal = 0;
@@ -318,8 +406,6 @@ export const LabSettlementPayoutTab = () => {
     for (const row of snapItems) {
       partnerTotal += Number(row.earnPartnerAmount || 0);
       partnerCount += Number(row.earnPartnerCount || 0);
-      referredTotal += Number(row.earnReferredAmount || 0);
-      referredCount += Number(row.earnReferredCount || 0);
       nonPartnerTotal += Number(row.earnNonPartnerAmount || 0);
       nonPartnerCount += Number(row.earnNonPartnerCount || 0);
       const pa = Number(row.payoutAmount || 0);
@@ -330,8 +416,6 @@ export const LabSettlementPayoutTab = () => {
     return {
       partnerTotal,
       partnerCount,
-      referredTotal,
-      referredCount,
       nonPartnerTotal,
       nonPartnerCount,
       payoutTotal,
@@ -358,15 +442,12 @@ export const LabSettlementPayoutTab = () => {
   const sortedSnapItems = useMemo(() => {
     const partnerOf = (r: LabDailySnapshotRow) =>
       Number(r.earnPartnerAmount || 0);
-    const referredOf = (r: LabDailySnapshotRow) =>
-      Number(r.earnReferredAmount || 0);
     const nonPartnerOf = (r: LabDailySnapshotRow) =>
       Number(r.earnNonPartnerAmount || 0);
     const deductionOf = (r: LabDailySnapshotRow) =>
       Number(r.payoutAmount || 0) + Number(r.adjustAmount || 0);
     const netOf = (r: LabDailySnapshotRow) => {
       if (partnerFilter === "partner") return partnerOf(r);
-      if (partnerFilter === "referred") return referredOf(r);
       if (partnerFilter === "nonPartner") return nonPartnerOf(r);
       return Number(r.netAmount || 0);
     };
@@ -381,9 +462,6 @@ export const LabSettlementPayoutTab = () => {
       if (snapshotSort.key === "partner") {
         av = partnerOf(a);
         bv = partnerOf(b);
-      } else if (snapshotSort.key === "referred") {
-        av = referredOf(a);
-        bv = referredOf(b);
       } else if (snapshotSort.key === "nonPartner") {
         av = nonPartnerOf(a);
         bv = nonPartnerOf(b);
@@ -438,84 +516,34 @@ export const LabSettlementPayoutTab = () => {
 
   return (
     <DashboardShell
-      title="기공정산크레딧 정산"
+      title="기공크레딧"
       subtitle=""
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
       stats={
         <>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                기공정산크레딧 잔액
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
-                ₩{settlementCredit.toLocaleString()}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                기존 치과 (0%)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
-                ₩{snapshotTotals.partnerTotal.toLocaleString()}
-                <span className="ml-1 text-sm font-medium text-muted-foreground">
-                  ({snapshotTotals.partnerCount}건)
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                소개 치과 (10%)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
-                ₩{snapshotTotals.referredTotal.toLocaleString()}
-                <span className="ml-1 text-sm font-medium text-muted-foreground">
-                  ({snapshotTotals.referredCount}건)
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                일반 치과 (25%)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
-                ₩{snapshotTotals.nonPartnerTotal.toLocaleString()}
-                <span className="ml-1 text-sm font-medium text-muted-foreground">
-                  ({snapshotTotals.nonPartnerCount}건)
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                지급 합계
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="text-center text-lg font-semibold tabular-nums sm:text-xl">
-                ₩{snapshotTotals.payoutTotal.toLocaleString()}
-                <span className="ml-1 text-sm font-medium text-muted-foreground">
-                  ({snapshotTotals.payoutCount}건)
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-          <div className="flex flex-col justify-center gap-1.5">
+          <StatCard
+            label="기공크레딧 잔액"
+            value={settlementCredit}
+            emphasize
+          />
+          <StatCard
+            label={partnerColLabel}
+            value={snapshotTotals.partnerTotal}
+            count={snapshotTotals.partnerCount}
+            emphasize
+          />
+          <StatCard
+            label={nonPartnerColLabel}
+            value={snapshotTotals.nonPartnerTotal}
+            count={snapshotTotals.nonPartnerCount}
+            emphasize
+          />
+          <StatCard
+            label="지급 합계"
+            value={snapshotTotals.payoutTotal}
+            count={snapshotTotals.payoutCount}
+          />
+          <div className="flex flex-col justify-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/70 p-2.5 shadow-sm">
             <Button
               type="button"
               size="sm"
@@ -545,76 +573,62 @@ export const LabSettlementPayoutTab = () => {
                   정산규칙
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>기공소 기공정산크레딧 정산 규칙</DialogTitle>
+              <DialogContent className="max-h-[85vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-2xl">
+                <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
+                  <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
+                    기공크레딧 정산 규칙
+                  </DialogTitle>
+                  <DialogDescription className="text-sm text-slate-500">
+                    적립 · 분리 · 지급 기준을 한눈에 확인하세요.
+                  </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-2 text-sm">
-                  <div className="flex items-start gap-3 rounded-lg border p-3">
-                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                      01
-                    </span>
-                    <HandCoins className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="font-medium">기공의뢰 적립</div>
-                      <div className="text-muted-foreground">
-                        치과가 유료/무료크레딧으로 지불한 기공비에서, 등록 치과(기본
-                        0%)·미등록 치과(기본 25%)는 플랫폼 수수료를 제외한
-                        금액이 기공정산크레딧으로 적립됩니다. 무료 프로모션 비용은
-                        플랫폼이 부담합니다.
-                      </div>
+                <div className="max-h-[calc(85vh-5.5rem)] space-y-3 overflow-y-auto px-6 py-5">
+                  <PolicySection title="기공의뢰 적립">
+                    <div className="flex gap-2.5">
+                      <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                      <p>
+                        치과가 유료/무료크레딧으로 지불한 기공비에서, 등록 치과(
+                        플랫폼 수수료 {partnerFeePct})·미등록 치과(
+                        {nonPartnerFeePct})는 수수료를 제외한 금액이{" "}
+                        <span className="font-semibold text-slate-900">
+                          기공크레딧
+                        </span>
+                        으로 적립됩니다. 무료 프로모션 비용은 플랫폼이
+                        부담합니다.
+                      </p>
                     </div>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-lg border p-3">
-                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                      02
-                    </span>
-                    <Building2 className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="font-medium">유료/무료크레딧 · 기공정산크레딧 분리</div>
-                      <div className="text-muted-foreground">
-                        유료·무료크레딧은 기공소가 앱에서 소비하는 잔액(기공의뢰·생산·배송).
-                        기공정산크레딧은 치과에서 받은 정산 대기액으로 완전 분리 관리
-                      </div>
+                  </PolicySection>
+                  <PolicySection title="유료/무료크레딧 · 기공크레딧 분리">
+                    <div className="flex gap-2.5">
+                      <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                      <p>
+                        유료·무료크레딧은 기공소가 앱에서 소비하는
+                        잔액(기공의뢰·생산·배송). 기공크레딧은 치과에서 받은
+                        정산 대기액으로 완전 분리 관리됩니다.
+                      </p>
                     </div>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-lg border p-3">
-                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                      03
-                    </span>
-                    <Landmark className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="font-medium">매월 자동 지급</div>
-                      <div className="text-muted-foreground">
-                        기공정산크레딧 잔액은 사업자에 등록된 입금 계좌로 매월 자동
+                  </PolicySection>
+                  <PolicySection title="매월 자동 지급">
+                    <div className="flex gap-2.5">
+                      <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                      <p>
+                        기공크레딧 잔액은 사업자에 등록된 입금 계좌로 매월 자동
                         지급됩니다. 별도 정산 요청은 필요하지 않습니다.
-                      </div>
+                      </p>
                     </div>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-lg border p-3">
-                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                      04
-                    </span>
-                    <CalendarClock className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="font-medium">일별 정산 집계</div>
-                      <div className="text-muted-foreground">
-                        원장 기준 KST 일자별 실시간 집계
-                      </div>
+                  </PolicySection>
+                  <PolicySection title="일별 정산 집계">
+                    <div className="flex gap-2.5">
+                      <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                      <p>원장 기준 KST 일자별 실시간 집계</p>
                     </div>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-lg border p-3">
-                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                      05
-                    </span>
-                    <BookOpenText className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="font-medium">롤백</div>
-                      <div className="text-muted-foreground">
-                        기공의뢰 취소·롤백 시 해당 적립은 삭제형으로 정리
-                      </div>
+                  </PolicySection>
+                  <PolicySection title="롤백">
+                    <div className="flex gap-2.5">
+                      <BookOpenText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                      <p>기공의뢰 취소·롤백 시 해당 적립은 삭제형으로 정리</p>
                     </div>
-                  </div>
+                  </PolicySection>
                 </div>
               </DialogContent>
             </Dialog>
@@ -626,7 +640,7 @@ export const LabSettlementPayoutTab = () => {
           <Tabs value={tab} onValueChange={handleTabChange}>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <PeriodFilter value={period} onChange={setPeriod} />
-              <div className="inline-flex items-center rounded-md border bg-background p-0.5">
+              <div className="inline-flex items-center rounded-xl border border-slate-200/80 bg-white/70 p-0.5 shadow-sm">
                 <Button
                   type="button"
                   size="sm"
@@ -645,17 +659,7 @@ export const LabSettlementPayoutTab = () => {
                   onClick={() => setPartnerFilter("partner")}
                   disabled={anyLoading}
                 >
-                  기존 치과
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={partnerFilter === "referred" ? "default" : "ghost"}
-                  className="h-7 px-2"
-                  onClick={() => setPartnerFilter("referred")}
-                  disabled={anyLoading}
-                >
-                  소개 치과
+                  등록
                 </Button>
                 <Button
                   type="button"
@@ -667,7 +671,7 @@ export const LabSettlementPayoutTab = () => {
                   onClick={() => setPartnerFilter("nonPartner")}
                   disabled={anyLoading}
                 >
-                  일반 치과
+                  미등록
                 </Button>
               </div>
               <Input
@@ -679,7 +683,7 @@ export const LabSettlementPayoutTab = () => {
             </div>
 
             <TabsContent value="snapshot" className="mt-0">
-              <div className="overflow-x-auto rounded-md border">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -702,7 +706,7 @@ export const LabSettlementPayoutTab = () => {
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
                           onClick={() => toggleSnapshotSort("partner")}
                         >
-                          기존 치과 (0%)
+                          {partnerColLabel}
                           {renderSortIcon(
                             snapshotSort.key === "partner",
                             snapshotSort.direction,
@@ -713,22 +717,9 @@ export const LabSettlementPayoutTab = () => {
                         <button
                           type="button"
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("referred")}
-                        >
-                          소개 치과 (10%)
-                          {renderSortIcon(
-                            snapshotSort.key === "referred",
-                            snapshotSort.direction,
-                          )}
-                        </button>
-                      </TableHead>
-                      <TableHead className="min-w-[140px] text-center">
-                        <button
-                          type="button"
-                          className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
                           onClick={() => toggleSnapshotSort("nonPartner")}
                         >
-                          일반 치과 (25%)
+                          {nonPartnerColLabel}
                           {renderSortIcon(
                             snapshotSort.key === "nonPartner",
                             snapshotSort.direction,
@@ -767,8 +758,6 @@ export const LabSettlementPayoutTab = () => {
                     {sortedSnapItems.map((r) => {
                       const partnerAmount = Number(r.earnPartnerAmount || 0);
                       const partnerCount = Number(r.earnPartnerCount || 0);
-                      const referredAmount = Number(r.earnReferredAmount || 0);
-                      const referredCount = Number(r.earnReferredCount || 0);
                       const nonPartnerAmount = Number(
                         r.earnNonPartnerAmount || 0,
                       );
@@ -785,7 +774,6 @@ export const LabSettlementPayoutTab = () => {
                           : "-";
 
                       let partnerText = fmtEarn(partnerAmount, partnerCount);
-                      let referredText = fmtEarn(referredAmount, referredCount);
                       let nonPartnerText = fmtEarn(
                         nonPartnerAmount,
                         nonPartnerCount,
@@ -809,18 +797,11 @@ export const LabSettlementPayoutTab = () => {
                       let netText = `₩${Number(r.netAmount || 0).toLocaleString()}`;
 
                       if (partnerFilter === "partner") {
-                        referredText = "-";
                         nonPartnerText = "-";
                         deductionText = "-";
                         netText = `₩${partnerAmount.toLocaleString()}`;
-                      } else if (partnerFilter === "referred") {
-                        partnerText = "-";
-                        nonPartnerText = "-";
-                        deductionText = "-";
-                        netText = `₩${referredAmount.toLocaleString()}`;
                       } else if (partnerFilter === "nonPartner") {
                         partnerText = "-";
-                        referredText = "-";
                         deductionText = "-";
                         netText = `₩${nonPartnerAmount.toLocaleString()}`;
                       }
@@ -832,9 +813,6 @@ export const LabSettlementPayoutTab = () => {
                           </TableCell>
                           <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
                             {partnerText}
-                          </TableCell>
-                          <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
-                            {referredText}
                           </TableCell>
                           <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
                             {nonPartnerText}
@@ -851,7 +829,7 @@ export const LabSettlementPayoutTab = () => {
                     {snapLoading && (
                       <TableRow>
                         <TableCell
-                          colSpan={6}
+                          colSpan={5}
                           className="py-4 text-center text-sm text-muted-foreground"
                         >
                           불러오는 중...
@@ -861,7 +839,7 @@ export const LabSettlementPayoutTab = () => {
                     {!snapLoading && snapItems.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={6}
+                          colSpan={5}
                           className="py-8 text-center text-sm text-muted-foreground"
                         >
                           조회 결과가 없습니다.
@@ -876,7 +854,7 @@ export const LabSettlementPayoutTab = () => {
             <TabsContent value="payments" className="mt-0">
               <div
                 ref={scrollRef}
-                className="max-h-[60vh] overflow-x-auto overflow-y-auto rounded-md border"
+                className="max-h-[60vh] overflow-x-auto overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
               >
                 <Table>
                   <TableHeader>

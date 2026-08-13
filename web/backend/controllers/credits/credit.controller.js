@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 기공크레딧 일별 집계를 등록(active|referred)/미등록 2구분으로 통합.
 // - 2026-08-12: balance 응답에 requestorKind·showSettlementCredit(기공크레딧은 lab만 UI 노출).
 // - 2026-08-11: spend insights 추천 충전액을 월사용량/3 반올림으로 변경. 단위는 기공소 50만/치과 100만.
 // - 2026-08-11: 기공소 기공크레딧 일별 정산·지급 내역 API 추가 (제조사 정산 UX 정렬).
@@ -493,7 +494,7 @@ export async function createLabSettlementPayout(req, res) {
 
 /**
  * 기공소 기공크레딧 일별 정산 집계 (GL LAB_SETTLEMENT_CREDIT, KST).
- * 관계별(active/referred/none) 적립 + 지급·조정을 일자별로 채운다.
+ * 관계별(등록=active|referred / 미등록=none) 적립 + 지급·조정을 일자별로 채운다.
  */
 export async function getLabSettlementDailySummary(req, res) {
   try {
@@ -607,7 +608,12 @@ export async function getLabSettlementDailySummary(req, res) {
                 {
                   $and: [
                     { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                    { $eq: ["$_id.relationshipKind", "active"] },
+                    {
+                      $in: [
+                        "$_id.relationshipKind",
+                        ["active", "referred"],
+                      ],
+                    },
                     { $gt: ["$amount", 0] },
                   ],
                 },
@@ -622,37 +628,12 @@ export async function getLabSettlementDailySummary(req, res) {
                 {
                   $and: [
                     { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                    { $eq: ["$_id.relationshipKind", "active"] },
-                    { $gt: ["$amount", 0] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          earnReferredAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                    { $eq: ["$_id.relationshipKind", "referred"] },
-                    { $gt: ["$amount", 0] },
-                  ],
-                },
-                "$amount",
-                0,
-              ],
-            },
-          },
-          earnReferredCount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$_id.eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
-                    { $eq: ["$_id.relationshipKind", "referred"] },
+                    {
+                      $in: [
+                        "$_id.relationshipKind",
+                        ["active", "referred"],
+                      ],
+                    },
                     { $gt: ["$amount", 0] },
                   ],
                 },
@@ -760,8 +741,6 @@ export async function getLabSettlementDailySummary(req, res) {
           ymd: "$_id",
           earnPartnerAmount: 1,
           earnPartnerCount: 1,
-          earnReferredAmount: 1,
-          earnReferredCount: 1,
           earnNonPartnerAmount: 1,
           earnNonPartnerCount: 1,
           earnOtherAmount: 1,
@@ -776,8 +755,6 @@ export async function getLabSettlementDailySummary(req, res) {
       ymd,
       earnPartnerAmount: 0,
       earnPartnerCount: 0,
-      earnReferredAmount: 0,
-      earnReferredCount: 0,
       earnNonPartnerAmount: 0,
       earnNonPartnerCount: 0,
       earnAmount: 0,
@@ -789,17 +766,15 @@ export async function getLabSettlementDailySummary(req, res) {
 
     const recompute = (row) => {
       const partner = Number(row.earnPartnerAmount || 0);
-      const referred = Number(row.earnReferredAmount || 0);
       const nonPartner = Number(row.earnNonPartnerAmount || 0);
       const other = Number(row.earnOtherAmount || 0);
       const partnerCount = Number(row.earnPartnerCount || 0);
-      const referredCount = Number(row.earnReferredCount || 0);
       const nonPartnerCount = Number(row.earnNonPartnerCount || 0);
       const otherCount = Number(row.earnOtherCount || 0);
       const payout = Number(row.payoutAmount || 0);
       const adjust = Number(row.adjustAmount || 0);
-      row.earnAmount = partner + referred + nonPartner + other;
-      row.earnCount = partnerCount + referredCount + nonPartnerCount + otherCount;
+      row.earnAmount = partner + nonPartner + other;
+      row.earnCount = partnerCount + nonPartnerCount + otherCount;
       row.netAmount = row.earnAmount + payout + adjust;
       return row;
     };

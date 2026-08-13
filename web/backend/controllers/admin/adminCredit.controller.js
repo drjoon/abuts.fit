@@ -16,6 +16,7 @@ import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
@@ -873,6 +874,19 @@ export async function adminGetBusinessLedger(req, res) {
       ),
     );
 
+    const practiceTransferRefIds = Array.from(
+      new Set(
+        (items || [])
+          .filter(
+            (it) =>
+              String(it?.refType || "") === "PRACTICE_TRANSFER" &&
+              it?.refId &&
+              Types.ObjectId.isValid(String(it.refId)),
+          )
+          .map((it) => String(it.refId)),
+      ),
+    );
+
     const freeCreditGrantIds = Array.from(
       new Set(
         (items || [])
@@ -948,6 +962,26 @@ export async function adminGetBusinessLedger(req, res) {
       }
     }
 
+    const practiceTransferIdById = new Map();
+    if (practiceTransferRefIds.length > 0) {
+      const transferDocs = await PracticeTransfer.find({
+        _id: {
+          $in: practiceTransferRefIds.map((id) => new Types.ObjectId(id)),
+        },
+      })
+        .select({ _id: 1, transferId: 1 })
+        .lean();
+
+      for (const doc of transferDocs || []) {
+        if (doc?._id) {
+          practiceTransferIdById.set(
+            String(doc._id),
+            String(doc.transferId || ""),
+          );
+        }
+      }
+    }
+
     const freeReasonByGrantId = new Map();
     if (freeCreditGrantIds.length > 0) {
       const grants = await FreeCreditGrant.find({
@@ -993,6 +1027,16 @@ export async function adminGetBusinessLedger(req, res) {
           trackingNumbers: refId
             ? shippingTrackingNumbersByPackageId.get(refId) || []
             : [],
+        };
+      }
+
+      if (refType === "PRACTICE_TRANSFER") {
+        const refId = it?.refId ? String(it.refId) : "";
+        return {
+          ...it,
+          refPracticeTransferId: refId
+            ? practiceTransferIdById.get(refId) || ""
+            : "",
         };
       }
 

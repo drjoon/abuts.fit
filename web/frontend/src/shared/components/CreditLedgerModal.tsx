@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 기공크레딧 표기 통일(잔액·필터·유형 라벨). 상단 잔액 요약(현재/유료/무료/정산) 중앙 정렬.
 // - 2026-08-12: 치과는 기공크레딧 잔액/필터 숨김. 유료→유료크레딧. 기공소만 settlement 버킷 표시.
 // - 2026-08-11: 초기 로드 시 테이블 스켈레톤(텍스트 "불러오는 중..." 대체).
 // - 2026-08-11: 중복 일자(from~to) 입력 제거. 검색을 초기화 버튼 우측으로 이동.
@@ -87,6 +88,7 @@ type CreditLedgerItem = {
   refType?: string;
   refId?: string | null;
   refRequestId?: string;
+  refPracticeTransferId?: string;
   uniqueKey: string;
   spendKind?: string | null;
   includesExpressSurcharge?: boolean;
@@ -167,8 +169,8 @@ const typeLabel = (t: CreditLedgerType) => {
   if (t === "SPEND_PAID") return "사용(유료)";
   if (t === "SPEND_FREE_REQUEST") return "사용(무료)";
   if (t === "SPEND_FREE_SHIPPING") return "사용(무료)";
-  if (t === "LAB_SETTLEMENT_CHARGE") return "기공정산크레딧 충전";
-  if (t === "LAB_SETTLEMENT_PAYOUT") return "기공정산크레딧 정산";
+  if (t === "LAB_SETTLEMENT_CHARGE") return "기공크레딧 적립";
+  if (t === "LAB_SETTLEMENT_PAYOUT") return "기공크레딧 정산";
   return "조정";
 };
 
@@ -184,24 +186,20 @@ const formatDate = (iso: string) => {
   });
 };
 
-const formatShortCode = (value: string) => {
-  const raw = String(value || "");
-  if (!raw) return "-";
-  const tail = raw.replace(/[^a-zA-Z0-9]/g, "");
-  const s = tail.slice(-4).toUpperCase();
-  return s || "-";
-};
-
 const REF_TYPE_LABELS: Record<string, string> = {
+  CHARGE_ORDER: "유료충전",
   SHIPPING_PACKAGE: "택배비",
   REQUEST: "의뢰",
   PRACTICE_TRANSFER: "기공비",
-  LAB_SETTLEMENT_PAYOUT: "기공정산크레딧 정산",
+  LAB_SETTLEMENT_PAYOUT: "기공크레딧 정산",
+  SETTLEMENT_BATCH_ITEM: "기공크레딧 정산",
   FREE_REQUEST_CREDIT: "환영 무료크레딧",
   REQUEST_FREE_CREDIT: "환영 무료크레딧",
   WELCOME_BONUS: "환영 무료크레딧",
   FREE_SHIPPING_CREDIT: "환영 무료크레딧",
   SHIPPING_FREE_CREDIT: "환영 무료크레딧",
+  FREE_CREDIT_CANCEL: "무료크레딧 취소",
+  CREDIT_RECONCILE: "잔액 조정",
   SEED_REQUESTOR_CHARGE: "시드 초기 충전",
 };
 
@@ -252,7 +250,7 @@ const renderTransactionDetail = ({
 }) => {
   const refType = String(item.refType || "");
   const requestSummary = item.refRequestSummary;
-  const shortCode = safeRef || formatShortCode(String(item.uniqueKey || ""));
+  const requestReference = safeRef || "참조 내역 없음";
 
   if (refType === "REQUEST") {
     const manufacturerStageRaw =
@@ -284,7 +282,7 @@ const renderTransactionDetail = ({
             </Badge>
           ) : null}
           <span className="font-mono text-xs font-semibold text-slate-900">
-            {shortCode}
+            {requestReference}
           </span>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 pt-1 text-[11px] text-slate-700">
@@ -313,11 +311,20 @@ const renderTransactionDetail = ({
         <span className="text-[11px] text-muted-foreground">
           {refTypeLabel(refType)}
         </span>
-        <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
-          {shortCode}
-        </span>
         <span className="pt-1 text-[11px] text-slate-700">
           송장번호 {formatTrackingNumbers(item.trackingNumbers)}
+        </span>
+      </>
+    );
+  }
+
+  if (refType === "PRACTICE_TRANSFER") {
+    const transferId = String(item.refPracticeTransferId || "").trim();
+    return (
+      <>
+        <span className="text-[11px] text-muted-foreground">기공비</span>
+        <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
+          {transferId || "참조 내역 없음"}
         </span>
       </>
     );
@@ -333,9 +340,6 @@ const renderTransactionDetail = ({
         <span className="text-[11px] text-slate-700">
           {reason || refTypeLabel(refType)}
         </span>
-        <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
-          {shortCode}
-        </span>
       </>
     );
   }
@@ -344,9 +348,6 @@ const renderTransactionDetail = ({
     <>
       <span className="text-[11px] text-muted-foreground">
         {refTypeLabel(refType)}
-      </span>
-      <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
-        {shortCode}
       </span>
     </>
   );
@@ -677,7 +678,7 @@ export const CreditLedgerModal = ({
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
           <div
             className={cn(
-              "grid min-w-0 flex-1 grid-cols-1 gap-1 text-xs sm:grid-cols-2",
+              "grid min-w-0 flex-1 grid-cols-1 gap-1 text-center text-xs sm:grid-cols-2",
               showSettlementCredit ? "lg:grid-cols-4" : "lg:grid-cols-3",
             )}
           >
@@ -707,7 +708,7 @@ export const CreditLedgerModal = ({
             </div>
             {showSettlementCredit ? (
               <div className="tabular-nums">
-                <span className="text-muted-foreground">기공정산크레딧</span>{" "}
+                <span className="text-muted-foreground">기공크레딧</span>{" "}
                 <span className="font-semibold text-slate-900">
                   {Number(
                     currentBalanceSnapshot.settlementCredit ?? 0,
@@ -760,10 +761,10 @@ export const CreditLedgerModal = ({
               {showSettlementCredit ? (
                 <>
                   <SelectItem value="LAB_SETTLEMENT_CHARGE">
-                    기공정산크레딧 충전
+                    기공크레딧 적립
                   </SelectItem>
                   <SelectItem value="LAB_SETTLEMENT_PAYOUT">
-                    기공정산크레딧 정산
+                    기공크레딧 정산
                   </SelectItem>
                 </>
               ) : null}
