@@ -1,6 +1,6 @@
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
-// - web/frontend/src/pages/requestor/dashboard/components/RequestorPricingReferralPolicyCard.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - web/backend/services/requestorDashboardSummarySnapshot.service.js
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
@@ -1107,7 +1107,7 @@ export async function getMyDashboardSummary(req, res) {
         }));
 
         let expressFeePerRequest = 2000;
-        let designFeePerTooth = 15000;
+        let designFeePerTooth = 5000;
         try {
           const creditSettings = await loadCreditSettingsDefaults();
           expressFeePerRequest = Math.max(
@@ -1116,11 +1116,11 @@ export async function getMyDashboardSummary(req, res) {
           );
           designFeePerTooth = Math.max(
             0,
-            Number(creditSettings?.designFee ?? 15000) || 15000,
+            Number(creditSettings?.designFee ?? 5000) || 5000,
           );
         } catch {
           expressFeePerRequest = 2000;
-          designFeePerTooth = 15000;
+          designFeePerTooth = 5000;
         }
 
         const recentRequestsData = recentRequests.map((r) => {

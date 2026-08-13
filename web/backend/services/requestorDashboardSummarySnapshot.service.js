@@ -531,7 +531,7 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
   }));
 
   let expressFeePerRequest = 2000;
-  let designFeePerTooth = 15000;
+  let designFeePerTooth = 5000;
   try {
     const creditSettings = await loadCreditSettingsDefaults();
     expressFeePerRequest = Math.max(
@@ -540,11 +540,11 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
     );
     designFeePerTooth = Math.max(
       0,
-      Number(creditSettings?.designFee ?? 15000) || 15000,
+        Number(creditSettings?.designFee ?? 5000) || 5000,
     );
   } catch {
     expressFeePerRequest = 2000;
-    designFeePerTooth = 15000;
+    designFeePerTooth = 5000;
   }
 
   const recentRequestsData = recentRequests.map((r) => {

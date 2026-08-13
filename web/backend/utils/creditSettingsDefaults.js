@@ -14,6 +14,9 @@ const SCHEMA_DEFAULTS = (() => {
     expressFee: pickDefault("creditSettings.expressFee"),
     designFee: pickDefault("creditSettings.designFee"),
     abutmentRetailPrice: pickDefault("creditSettings.abutmentRetailPrice"),
+    practiceMembershipMonthlyFee: pickDefault(
+      "creditSettings.practiceMembershipMonthlyFee",
+    ),
     defaultRequestFreeCredit: pickDefault(
       "creditSettings.defaultRequestFreeCredit",
     ),
@@ -46,6 +49,10 @@ export async function loadCreditSettingsDefaults() {
     designFee: Number(creditSettings.designFee ?? SCHEMA_DEFAULTS.designFee),
     abutmentRetailPrice: Number(
       creditSettings.abutmentRetailPrice ?? SCHEMA_DEFAULTS.abutmentRetailPrice,
+    ),
+    practiceMembershipMonthlyFee: Number(
+      creditSettings.practiceMembershipMonthlyFee ??
+        SCHEMA_DEFAULTS.practiceMembershipMonthlyFee,
     ),
     defaultRequestFreeCredit: Number(
       creditSettings.defaultRequestFreeCredit ??

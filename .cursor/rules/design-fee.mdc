@@ -1,6 +1,6 @@
 ---
 description: 디자인+가공 과금(designFee) SSOT — 설정·견적·표시·차감
-globs: "**/creditSettings*|**/AdminCreditSettingsTab*|**/PricingPolicyDialog*|**/expressPrice*|**/designPrice*|**/NewRequestShippingSection*|**/RequestorPricingReferralPolicyCard*|**/systemSettings.model.js"
+globs: "**/creditSettings*|**/AdminCreditSettingsTab*|**/PricingPolicyDialog*|**/expressPrice*|**/designPrice*|**/NewRequestShippingSection*|**/systemSettings.model.js"
 alwaysApply: false
 ---
 
@@ -14,9 +14,11 @@ alwaysApply: false
   - `toothWorks` 유효 행 수 우선 → 없으면 `tooth` 파싱 → 최소 1.
 - 단가:
   - 가공비: `computePriceForRequest`가 산출한 **1개 단가** (`price.amount` 기준, 할인·리메이크 반영).
-  - 디자인비: `creditSettings.designFee` (스키마 기본 **15,000원 / 1어벗**).
+  - 디자인비: `creditSettings.designFee` (스키마 기본 **5,000원 / 1어벗**).
 - **공식**: `(가공 단가 + 디자인비) × 어벗 수`
-  - 예: 어벗 5개, 가공 15,000·디자인 15,000 → `(15,000 + 15,000) × 5 = 150,000`
+  - 예: 어벗 5개, 가공 15,000·디자인 5,000 → `(15,000 + 5,000) × 5 = 100,000`
+  - 안내 정가: 생산만 멤버십 1.5만원·일반 2.5만원, 디자인+생산 멤버십 2.0만원·일반 3.5만원. 배송비 별도·박스당 과금.
+  - 치과 멤버십 월 구독료: `creditSettings.practiceMembershipMonthlyFee`(기본 55,000원). 치과만 적용.
 - `custom_abutment`(가공만): 기존처럼 **Request/STL 1건 = 가공 1개**. 디자인비·배수 없음.
 - 설정 UI SSOT: 개발·운영사/관리자 **설정 → 요금** (`AdminCreditSettingsTab`).
 - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits`.
@@ -34,6 +36,6 @@ alwaysApply: false
 
 ## UI
 
-- 가격 정책 모달·오늘의 가격: 디자인비는 **1어벗당**, 디자인+가공은 위 공식으로 안내.
+- 가격 정책 모달: 디자인비는 **1어벗당**, 디자인+가공은 위 공식으로 안내.
 - 의뢰 상세(`RequestDetailDialog`): 비용 세부(가공/디자인/배송·신속)를 표시.
 - 신규의뢰 우측·의뢰카드에는 디자인비 금액을 넣지 않는다. 의뢰카드는 `+디자인` 뱃지만.

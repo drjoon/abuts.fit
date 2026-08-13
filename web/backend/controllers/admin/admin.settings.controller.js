@@ -23,6 +23,9 @@ const CREDIT_SETTINGS_DEFAULTS = (() => {
     expressFee: pickDefault("creditSettings.expressFee"),
     designFee: pickDefault("creditSettings.designFee"),
     abutmentRetailPrice: pickDefault("creditSettings.abutmentRetailPrice"),
+    practiceMembershipMonthlyFee: pickDefault(
+      "creditSettings.practiceMembershipMonthlyFee",
+    ),
     defaultRequestFreeCredit: pickDefault(
       "creditSettings.defaultRequestFreeCredit",
     ),
@@ -50,6 +53,10 @@ function normalizeCreditSettings(raw = {}) {
     designFee: Number(raw.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
     abutmentRetailPrice: Number(
       raw.abutmentRetailPrice ?? CREDIT_SETTINGS_DEFAULTS.abutmentRetailPrice,
+    ),
+    practiceMembershipMonthlyFee: Number(
+      raw.practiceMembershipMonthlyFee ??
+        CREDIT_SETTINGS_DEFAULTS.practiceMembershipMonthlyFee,
     ),
     defaultRequestFreeCredit: Number(
       raw.defaultRequestFreeCredit ??
@@ -324,6 +331,9 @@ export async function updateCreditSettings(req, res) {
     const expressFee = Number(payload.expressFee);
     const designFee = Number(payload.designFee);
     const abutmentRetailPrice = Number(payload.abutmentRetailPrice);
+    const practiceMembershipMonthlyFee = Number(
+      payload.practiceMembershipMonthlyFee,
+    );
     const defaultRequestFreeCredit = Number(payload.defaultRequestFreeCredit);
     const defaultShippingFreeCredit = Number(payload.defaultShippingFreeCredit);
     const specialRequestorPrices = Array.isArray(payload.specialRequestorPrices)
@@ -363,6 +373,12 @@ export async function updateCreditSettings(req, res) {
     }
     if (!Number.isNaN(abutmentRetailPrice) && abutmentRetailPrice >= 0) {
       sanitized.abutmentRetailPrice = abutmentRetailPrice;
+    }
+    if (
+      !Number.isNaN(practiceMembershipMonthlyFee) &&
+      practiceMembershipMonthlyFee >= 0
+    ) {
+      sanitized.practiceMembershipMonthlyFee = practiceMembershipMonthlyFee;
     }
     if (!Number.isNaN(defaultRequestFreeCredit) && defaultRequestFreeCredit >= 0) {
       sanitized.defaultRequestFreeCredit = defaultRequestFreeCredit;

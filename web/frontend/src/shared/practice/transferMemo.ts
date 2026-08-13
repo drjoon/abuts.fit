@@ -1,7 +1,36 @@
+// related files:
+// - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+// - web/frontend/src/shared/practice/toothWorkDraft.ts
+// - web/backend/services/practiceTransferProduction.service.js
+// change-log:
+// - 2026-08-13: 커스텀어벗 치아별 생산만/디자인+생산(abutmentProductMode) 저장·직렬화.
+export const ABUTMENT_PRODUCT_MODE = {
+  PRODUCTION: "custom_abutment",
+  DESIGN_AND_PRODUCTION: "design_custom_abutment",
+} as const;
+
+export type AbutmentProductMode =
+  (typeof ABUTMENT_PRODUCT_MODE)[keyof typeof ABUTMENT_PRODUCT_MODE];
+
+export const ABUTMENT_PRODUCT_MODE_LABEL: Record<AbutmentProductMode, string> = {
+  [ABUTMENT_PRODUCT_MODE.PRODUCTION]: "생산만 의뢰",
+  [ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION]: "디자인+생산 의뢰",
+};
+
+export const ABUTMENT_PRODUCT_MODE_SHORT_LABEL: Record<AbutmentProductMode, string> = {
+  [ABUTMENT_PRODUCT_MODE.PRODUCTION]: "생산만",
+  [ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION]: "디자인+생산",
+};
+
+const CUSTOM_ABUTMENT_DESIGN_TOKEN = "커스텀어벗디자인생산";
+const CUSTOM_ABUTMENT_TOKEN = "커스텀어벗";
+
 export type ToothWorkSelection = {
   toothNumber: string;
   prosthesisType: string;
   customAbutment: boolean;
+  /** 커스텀어벗일 때만 의미. 기본 생산만(custom_abutment) */
+  abutmentProductMode?: AbutmentProductMode;
   bridgeLinkedTeeth: string[];
   /** 커스텀어벗일 때만 의미 있음. 동기화/임시저장 memo에 포함 */
   implantManufacturer?: string;
@@ -12,6 +41,30 @@ export type ToothWorkSelection = {
   abutmentManufacturer?: string;
   abutmentDiameter?: string;
   abutmentHeight?: string;
+};
+
+export const resolveToothAbutmentProductMode = (
+  row?: Partial<ToothWorkSelection> | null,
+): AbutmentProductMode => {
+  if (!row?.customAbutment) return ABUTMENT_PRODUCT_MODE.PRODUCTION;
+  const raw = String(row.abutmentProductMode || "").trim();
+  if (raw === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION) {
+    return ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION;
+  }
+  return ABUTMENT_PRODUCT_MODE.PRODUCTION;
+};
+
+export const pickToothWorkAbutmentProductMode = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+  customAbutment: boolean,
+): Pick<ToothWorkSelection, "abutmentProductMode"> => {
+  if (!customAbutment) return {};
+  return {
+    abutmentProductMode: resolveToothAbutmentProductMode({
+      ...row,
+      customAbutment: true,
+    }),
+  };
 };
 
 export type PracticeImplantFavorite = {
@@ -174,6 +227,52 @@ const serializeAbutmentSuffix = (row: ToothWorkSelection) => {
 
 const serializeCustomSpecsSuffix = (row: ToothWorkSelection) =>
   `${serializeImplantSuffix(row)}${serializeAbutmentSuffix(row)}`;
+
+const serializeCustomAbutmentToken = (row: ToothWorkSelection) =>
+  resolveToothAbutmentProductMode(row) === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
+    ? `+${CUSTOM_ABUTMENT_DESIGN_TOKEN}`
+    : `+${CUSTOM_ABUTMENT_TOKEN}`;
+
+const stripPrefixedToken = (source: string, token: string) => {
+  if (source.startsWith(`${token}+`)) {
+    return { hit: true, without: source.slice(token.length + 1).trim() };
+  }
+  if (source.startsWith(token)) {
+    return {
+      hit: true,
+      without: source.slice(token.length).trim().replace(/^\+/, "").trim(),
+    };
+  }
+  const plusToken = `+${token}`;
+  if (source.includes(plusToken)) {
+    return { hit: true, without: source.replace(plusToken, "").trim() };
+  }
+  return { hit: false, without: source };
+};
+
+const stripCustomAbutmentToken = (source: string) => {
+  const design = stripPrefixedToken(source, CUSTOM_ABUTMENT_DESIGN_TOKEN);
+  if (design.hit) {
+    return {
+      customAbutment: true,
+      abutmentProductMode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
+      without: design.without,
+    };
+  }
+  const production = stripPrefixedToken(source, CUSTOM_ABUTMENT_TOKEN);
+  if (production.hit) {
+    return {
+      customAbutment: true,
+      abutmentProductMode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
+      without: production.without,
+    };
+  }
+  return {
+    customAbutment: false,
+    abutmentProductMode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
+    without: source,
+  };
+};
 
 const parseCustomSpecsSuffix = (value: string) => {
   let source = String(value || "").trim();
@@ -396,6 +495,7 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         toothNumber,
         prosthesisType,
         customAbutment,
+        ...pickToothWorkAbutmentProductMode(row, customAbutment),
         bridgeLinkedTeeth,
         ...pickToothWorkCustomSpecs(row, customAbutment),
       };
@@ -432,6 +532,7 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
         toothNumber,
         prosthesisType,
         customAbutment,
+        ...pickToothWorkAbutmentProductMode(row, customAbutment),
         bridgeLinkedTeeth,
         ...pickToothWorkCustomSpecs(row, customAbutment),
       };
@@ -465,15 +566,10 @@ export const parseToothWorks = (value: string) =>
       const specsParsed = parseCustomSpecsSuffix(withoutLinked);
       withoutLinked = specsParsed.without;
 
-      let customAbutment = false;
-      if (withoutLinked.startsWith("커스텀어벗+")) {
-        customAbutment = true;
-        withoutLinked = withoutLinked.replace("커스텀어벗+", "").trim();
-      }
-      if (withoutLinked.includes("+커스텀어벗")) {
-        customAbutment = true;
-        withoutLinked = withoutLinked.replace("+커스텀어벗", "").trim();
-      }
+      const stripped = stripCustomAbutmentToken(withoutLinked);
+      withoutLinked = stripped.without;
+      let customAbutment = stripped.customAbutment;
+      let abutmentProductMode = stripped.abutmentProductMode;
       if (
         specsParsed.implantManufacturer ||
         specsParsed.implantBrand ||
@@ -500,6 +596,10 @@ export const parseToothWorks = (value: string) =>
         toothNumber,
         prosthesisType,
         customAbutment,
+        ...pickToothWorkAbutmentProductMode(
+          { abutmentProductMode },
+          customAbutment,
+        ),
         bridgeLinkedTeeth,
         ...pickToothWorkCustomSpecs(specsParsed, customAbutment),
       };
@@ -520,7 +620,7 @@ export const serializeToothWorks = (rows: ToothWorkSelection[]) =>
           : "";
       const custom =
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
-          ? `+커스텀어벗${serializeCustomSpecsSuffix(row)}`
+          ? `${serializeCustomAbutmentToken(row)}${serializeCustomSpecsSuffix(row)}`
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
     })
@@ -543,7 +643,7 @@ export const serializeToothWorksForSync = (rows: ToothWorkSelection[]) =>
           : "";
       const custom =
         isCustomAbutmentSupportedProsthesisType(prosthesisType) && row.customAbutment
-          ? `+커스텀어벗${serializeCustomSpecsSuffix(row)}`
+          ? `${serializeCustomAbutmentToken(row)}${serializeCustomSpecsSuffix(row)}`
           : "";
       return `${toothToken}=${prosthesisType}${custom}${linked}`;
     })
@@ -722,7 +822,9 @@ export const formatToothWorksForDisplay = (
   const formattedRows = normalizedRows.map((row) => {
     const details = [row.prosthesisType];
     if (row.customAbutment) {
-      details.push("커스텀어벗");
+      details.push(
+        `커스텀어벗 ${ABUTMENT_PRODUCT_MODE_SHORT_LABEL[resolveToothAbutmentProductMode(row)]}`,
+      );
       const specsSummary = formatCustomSpecsSummary(row);
       if (specsSummary) details.push(specsSummary);
     }

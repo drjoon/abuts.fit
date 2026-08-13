@@ -1028,7 +1028,7 @@ export async function createRequestsFromDraft(req, res) {
     );
     const designFeePerTooth = Math.max(
       0,
-      Number(systemSettings?.creditSettings?.designFee ?? 15000) || 15000,
+      Number(systemSettings?.creditSettings?.designFee ?? 5000) || 5000,
     );
     const weeklyBatchDays = Array.isArray(
       shippingOrg?.shippingPolicy?.weeklyBatchDays,

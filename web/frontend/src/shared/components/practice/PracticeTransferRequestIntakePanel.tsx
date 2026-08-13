@@ -64,17 +64,36 @@ import { PracticeToothAbutmentFields } from "@/shared/components/practice/Practi
 import { PracticeCustomSpecsPresetEditDialog } from "@/shared/components/practice/PracticeCustomSpecsPresetEditDialog";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
 import {
-  customSpecsKey,
+  ABUTMENT_PRODUCT_MODE,
+  ABUTMENT_PRODUCT_MODE_LABEL,
+  ABUTMENT_PRODUCT_MODE_SHORT_LABEL,
   emptyToothWorkCustomSpecs,
   formatAbutmentCompact,
   formatAbutmentSummary,
-  formatCustomSpecsSummary,
   formatImplantCompact,
   formatImplantSummary,
   pickToothWorkCustomSpecs,
+  resolveToothAbutmentProductMode,
+  type AbutmentProductMode,
   type PracticeAbutmentFavorite,
   type PracticeImplantFavorite,
 } from "@/shared/practice/transferMemo";
+import {
+  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE,
+  ABUTS_ABUTMENT_SERVICE_TAX_NOTE,
+  ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
+  ABUTS_PRACTICE_MEMBERSHIP_SCOPE_NOTE,
+  formatAbutsAbutmentServiceWon,
+  formatAbutsManwon,
+} from "@/shared/pricing/abutsAbutmentService";
+import {
+  CREDIT_SETTINGS_DEFAULTS,
+  useSystemSettings,
+} from "@/hooks/useSystemSettings";
 import {
   applyProsthesisTypeToRow,
   collectAdjacentBridgeLinks,
@@ -100,10 +119,13 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
+// - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 // - 2026-08-11: 기공소 선택에 "자동 매칭" 옵션(+빠른툴팁) 추가.
 // - 2026-08-11: 안내문구 최소화 — 플레이스홀더·메모 도움말·커스텀규격 설명을 즉시툴팁으로.
 // - 2026-08-11: 기공의뢰 카드 내 행(섹션) 수직 간격 gap-10.
+// - 2026-08-13: 커스텀어벗 설정 모달에 생산만/디자인+생산 배타 선택 + 가격 툴팁.
 // - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
+// - 2026-08-13: 커스텀 체크박스는 on/off만, 「커스텀」 라벨 클릭 시에만 설정 모달.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -111,7 +133,24 @@ const MAX_MEMO_SUGGESTIONS = 8;
 const MEMO_SUGGEST_MIN_CHARS = 1;
 const TOOTH_CHART_VISIBLE = 6;
 /** 카드 높이: 커스텀 임플란트/스캔바디 2줄까지 표시한 기준 */
-const TOOTH_CARD_HEIGHT_CLASS = "h-[11rem]";
+const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
+
+const ABUTMENT_SERVICE_OPTIONS: Array<{
+  mode: AbutmentProductMode;
+  membershipPrice: number;
+  regularPrice: number;
+}> = [
+  {
+    mode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
+    membershipPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+    regularPrice: ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  },
+  {
+    mode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
+    membershipPrice: ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+    regularPrice: ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+  },
+];
 /** 치식: 위(18→11→21→28) / 아래(48→41→31→38). 행마다 6칸 + <> 스크롤 */
 const TOOTH_CHART_ROWS: ReadonlyArray<{ key: string; label: string; teeth: readonly string[] }> = [
   {
@@ -551,7 +590,15 @@ export const PracticeTransferRequestIntakePanel = ({
     labAnchorId: selectedLab?._id,
     toothWorks,
   });
-  const [lastUsedCustomSpecs, setLastUsedCustomSpecs] = useState(() => emptyToothWorkCustomSpecs());
+  const { data: systemSettings } = useSystemSettings();
+  const membershipMonthlyFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.practiceMembershipMonthlyFee ??
+        CREDIT_SETTINGS_DEFAULTS.practiceMembershipMonthlyFee ??
+        ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
+    ) || ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
+  );
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */
   const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<number | null>(null);
   const [customSpecsPresetEditOpen, setCustomSpecsPresetEditOpen] = useState(false);
@@ -1065,8 +1112,6 @@ export const PracticeTransferRequestIntakePanel = ({
     onImeComposingChange?.(patientComposingRef.current || memoComposingRef.current);
   };
 
-  const emptySpecsKey = customSpecsKey(emptyToothWorkCustomSpecs());
-
   const openCustomSpecsModal = (index: number) => {
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
     customSpecsPresetEditOpenRef.current = false;
@@ -1103,27 +1148,6 @@ export const PracticeTransferRequestIntakePanel = ({
     tryCloseCustomSpecsModalAfterPicks();
   };
 
-  const applyCustomSpecsToTooth = (
-    index: number,
-    specs: ReturnType<typeof emptyToothWorkCustomSpecs>,
-    pickKind: "implant" | "scanbody" | "both" = "both",
-  ) => {
-    setToothWorks((prev) => {
-      const next = [...prev];
-      if (!next[index]) return prev;
-      next[index] = {
-        ...next[index],
-        customAbutment: true,
-        ...specs,
-      };
-      return next;
-    });
-    if (customSpecsKey(specs) !== emptySpecsKey) {
-      setLastUsedCustomSpecs(pickToothWorkCustomSpecs(specs, true));
-    }
-    registerCustomSpecsPick(pickKind);
-  };
-
   const patchCustomSpecsOnTooth = (
     index: number,
     patch: Partial<ReturnType<typeof emptyToothWorkCustomSpecs>>,
@@ -1151,9 +1175,6 @@ export const PracticeTransferRequestIntakePanel = ({
       };
       return next;
     });
-    if (customSpecsKey(merged) !== emptySpecsKey) {
-      setLastUsedCustomSpecs(pickToothWorkCustomSpecs(merged, true));
-    }
     if (implantTouched && scanbodyTouched) registerCustomSpecsPick("both");
     else if (implantTouched) registerCustomSpecsPick("implant");
     else if (scanbodyTouched) registerCustomSpecsPick("scanbody");
@@ -1644,7 +1665,6 @@ export const PracticeTransferRequestIntakePanel = ({
                       ...emptyToothWorkCustomSpecs(),
                     },
                   ]);
-                  setLastUsedCustomSpecs(emptyToothWorkCustomSpecs());
                   closeCustomSpecsModal();
                   toothSelectAnchorRef.current = null;
                 }}
@@ -2084,11 +2104,12 @@ export const PracticeTransferRequestIntakePanel = ({
                                 data-no-tooth-marquee=""
                                 className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none"
                               >
-                                <label className="inline-flex h-5 items-center gap-1 text-[11px] leading-none text-slate-500">
+                                <div className="inline-flex h-5 items-center gap-1 text-[11px] leading-none text-slate-500">
                                   <input
                                     type="checkbox"
                                     className="h-3 w-3 accent-primary-strong"
                                     checked={Boolean(row.customAbutment)}
+                                    aria-label="커스텀어벗"
                                     onChange={(e) => {
                                       const checked = Boolean(e.target.checked);
                                       if (checked) {
@@ -2097,17 +2118,19 @@ export const PracticeTransferRequestIntakePanel = ({
                                           next[originalIndex] = {
                                             ...next[originalIndex],
                                             customAbutment: true,
+                                            abutmentProductMode:
+                                              ABUTMENT_PRODUCT_MODE.PRODUCTION,
                                             ...emptyToothWorkCustomSpecs(),
                                           };
                                           return next;
                                         });
-                                        openCustomSpecsModal(originalIndex);
                                       } else {
                                         setToothWorks((prev) => {
                                           const next = [...prev];
                                           next[originalIndex] = {
                                             ...next[originalIndex],
                                             customAbutment: false,
+                                            abutmentProductMode: undefined,
                                             ...emptyToothWorkCustomSpecs(),
                                           };
                                           return next;
@@ -2118,8 +2141,40 @@ export const PracticeTransferRequestIntakePanel = ({
                                       }
                                     }}
                                   />
-                                  <span>커스텀</span>
-                                </label>
+                                  <button
+                                    type="button"
+                                    className="hover:text-primary-strong hover:underline"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (!row.customAbutment) {
+                                        setToothWorks((prev) => {
+                                          const next = [...prev];
+                                          next[originalIndex] = {
+                                            ...next[originalIndex],
+                                            customAbutment: true,
+                                            abutmentProductMode:
+                                              ABUTMENT_PRODUCT_MODE.PRODUCTION,
+                                            ...emptyToothWorkCustomSpecs(),
+                                          };
+                                          return next;
+                                        });
+                                      }
+                                      openCustomSpecsModal(originalIndex);
+                                    }}
+                                  >
+                                    커스텀
+                                  </button>
+                                </div>
+                                {showCustomDetails ? (
+                                  <span className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
+                                    {
+                                      ABUTMENT_PRODUCT_MODE_SHORT_LABEL[
+                                        resolveToothAbutmentProductMode(row)
+                                      ]
+                                    }
+                                  </span>
+                                ) : null}
 
                                 {showCustomDetails ? (
                                   <TooltipProvider delayDuration={0}>
@@ -2471,56 +2526,100 @@ export const PracticeTransferRequestIntakePanel = ({
           overlayClassName={nestedDialogOverlayClassName}
         >
           <DialogHeader className="space-y-1.5 text-left">
-            <DialogTitle className="flex items-center gap-1.5 text-lg">
-              <span>
-                {`커스텀어벗 설정${
-                  typeof customSpecsModalTarget === "number" &&
-                  toothWorks[customSpecsModalTarget]?.toothNumber
-                    ? ` (#${toothWorks[customSpecsModalTarget].toothNumber})`
-                    : ""
-                }`}
-              </span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
-                    aria-label="커스텀어벗 설정 도움말"
-                  >
-                    <CircleHelp className="h-4 w-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                  임플란트·스캔바디 프리셋을 각각 선택하면 저장되고 닫힙니다.
-                </TooltipContent>
-              </Tooltip>
+            <DialogTitle className="text-lg">
+              {`커스텀어벗 설정${
+                typeof customSpecsModalTarget === "number" &&
+                toothWorks[customSpecsModalTarget]?.toothNumber
+                  ? ` (#${toothWorks[customSpecsModalTarget].toothNumber})`
+                  : ""
+              }`}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              임플란트와 스캔바디 프리셋을 각각 한 번씩 선택하면 저장되고 닫힙니다.
+              생산만 의뢰 또는 디자인+생산 의뢰를 선택한 뒤, 임플란트와 스캔바디 프리셋을
+              각각 한 번씩 선택하면 저장되고 닫힙니다.
             </DialogDescription>
           </DialogHeader>
 
           {typeof customSpecsModalTarget === "number" && toothWorks[customSpecsModalTarget] ? (
             <div className="space-y-4">
-              {customSpecsKey(lastUsedCustomSpecs) !== emptySpecsKey ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-slate-700">직전 규격</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="w-full truncate rounded-md border border-primary/70 bg-white px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-primary-soft"
-                    onClick={() =>
-                      applyCustomSpecsToTooth(
-                        customSpecsModalTarget,
-                        pickToothWorkCustomSpecs(lastUsedCustomSpecs, true),
-                      )
-                    }
-                  >
-                    {formatCustomSpecsSummary(lastUsedCustomSpecs) || "최근 규격"}
-                  </button>
-                </div>
-              ) : null}
+              <div className="my-10 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {ABUTMENT_SERVICE_OPTIONS.map((option) => {
+                  const selected =
+                    resolveToothAbutmentProductMode(
+                      toothWorks[customSpecsModalTarget],
+                    ) === option.mode;
+                  const isDesign =
+                    option.mode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION;
+                  return (
+                    <Tooltip key={option.mode}>
+                      <TooltipTrigger asChild>
+                        <label
+                          className={cn(
+                            "flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-center text-sm font-semibold transition-colors",
+                            isDesign
+                              ? selected
+                                ? "border-[hsl(46_92%_48%)] bg-[hsl(48_96%_58%)] text-slate-900 shadow-sm"
+                                : "border-[hsl(46_85%_52%)] bg-[hsl(48_100%_93%)] text-[hsl(42_72%_28%)] hover:bg-[hsl(48_96%_86%)]"
+                              : selected
+                                ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                                : "border-primary bg-primary-soft text-primary-strong hover:bg-primary/15",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className={cn(
+                              "h-4 w-4",
+                              isDesign
+                                ? "accent-[hsl(46_92%_42%)]"
+                                : "accent-primary-strong",
+                            )}
+                            checked={selected}
+                            onChange={() => {
+                              const index = customSpecsModalTarget;
+                              setToothWorks((prev) => {
+                                const next = [...prev];
+                                const current = next[index];
+                                if (!current) return prev;
+                                next[index] = {
+                                  ...current,
+                                  customAbutment: true,
+                                  abutmentProductMode: option.mode,
+                                };
+                                return next;
+                              });
+                            }}
+                          />
+                          <span className="text-center">
+                            {ABUTMENT_PRODUCT_MODE_LABEL[option.mode]}
+                          </span>
+                        </label>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="bottom"
+                        className="max-w-xs space-y-1 p-3 text-xs leading-relaxed"
+                      >
+                        <p className="font-medium">
+                          CNC커스텀어벗 - 어벗츠 자체 제공
+                        </p>
+                        <p className="tabular-nums">
+                          멤버십 {formatAbutsManwon(option.membershipPrice)}, 일반{" "}
+                          {formatAbutsManwon(option.regularPrice)}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {ABUTS_PRACTICE_MEMBERSHIP_SCOPE_NOTE} · 월{" "}
+                          {formatAbutsAbutmentServiceWon(membershipMonthlyFee)}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {ABUTS_ABUTMENT_SERVICE_TAX_NOTE}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <PracticeToothImplantFields

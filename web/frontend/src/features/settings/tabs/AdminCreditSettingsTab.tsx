@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-13: 치과 멤버십 월 구독료(practiceMembershipMonthlyFee) 추가.
+// - 2026-08-13: 디자인비(1어벗당) 입력 복구. 기본 생산 15,000 + 디자인 5,000.
 // - 2026-08-13: 파트너 요금·크레딧 UI를 카드/아이콘/자동저장 스타일로 정리.
 // - 2026-08-13: 저장/취소 버튼 제거 → 변경 시 디바운스 자동 저장.
 // - 2026-08-13: 특별 공급가 — 의뢰자 검색 후 추가·금액 입력, 다수 지정 지원.
@@ -48,8 +50,10 @@ import {
 import {
   ChevronsUpDown,
   CircleHelp,
+  Crown,
   Gift,
   Package,
+  PenLine,
   Plus,
   Search,
   Truck,
@@ -65,6 +69,7 @@ interface CreditSettings {
   expressFee: number;
   designFee: number;
   abutmentRetailPrice: number;
+  practiceMembershipMonthlyFee: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
 }
@@ -117,6 +122,11 @@ function normalizeCreditSettings(
     designFee: Number(raw.designFee ?? fallback.designFee),
     abutmentRetailPrice: Number(
       raw.abutmentRetailPrice ?? fallback.abutmentRetailPrice ?? 40000,
+    ),
+    practiceMembershipMonthlyFee: Number(
+      raw.practiceMembershipMonthlyFee ??
+        fallback.practiceMembershipMonthlyFee ??
+        55000,
     ),
     defaultRequestFreeCredit: Number(
       raw.defaultRequestFreeCredit ?? fallback.defaultRequestFreeCredit,
@@ -393,6 +403,9 @@ export const AdminCreditSettingsTab = () => {
   }, [settings, token, loading, toast]);
 
   const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
+  const designHelp = `디자인+생산 의뢰에만 더합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.designFee.toLocaleString("ko-KR")}원 / 1어벗. 생산 ${CREDIT_SETTINGS_DEFAULTS.minCreditForRequest.toLocaleString("ko-KR")}원 + 디자인 = 디자인+생산.`;
+  const membershipHelp =
+    "치과(의뢰 발신자)만 적용합니다. 기공소에는 적용하지 않으며, 매달 유료 청구됩니다.";
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -439,13 +452,35 @@ export const AdminCreditSettingsTab = () => {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <AmountField
                 id="minCreditForRequest"
-                label="커스텀 어벗 의뢰비"
+                label="생산만 의뢰비"
                 icon={Package}
                 value={settings.minCreditForRequest}
                 onChange={(next) =>
                   setSettings({ ...settings, minCreditForRequest: next })
                 }
                 disabled={loading}
+              />
+              <AmountField
+                id="designFee"
+                label="디자인비 (1어벗당)"
+                icon={PenLine}
+                value={settings.designFee}
+                onChange={(next) =>
+                  setSettings({ ...settings, designFee: next })
+                }
+                disabled={loading}
+                help={designHelp}
+              />
+              <AmountField
+                id="practiceMembershipMonthlyFee"
+                label="치과 멤버십 구독료"
+                icon={Crown}
+                value={settings.practiceMembershipMonthlyFee}
+                onChange={(next) =>
+                  setSettings({ ...settings, practiceMembershipMonthlyFee: next })
+                }
+                disabled={loading}
+                help={membershipHelp}
               />
               <AmountField
                 id="shippingFee"
@@ -456,6 +491,7 @@ export const AdminCreditSettingsTab = () => {
                   setSettings({ ...settings, shippingFee: next })
                 }
                 disabled={loading}
+                help="박스단위 별도"
               />
               <AmountField
                 id="expressFee"

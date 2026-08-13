@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 생산만 15,000·디자인+생산 20,000 기재, 배송비 박스단위 별도.
 // - 2026-08-12: 모달 제목을 커스텀 어벗 생산 가격 · 출고 정책 안내로 변경, 디자인 10,000원 행 삭제.
 // - 2026-08-11: 기본가 12,000/디자인 10,000·주문량할인·소개합산·런칭이벤트·디자인+생산 장문 삭제, 출고 안내 단축.
 // - 2026-08-09: 디자인+생산 신속비=어벗 수 배수 안내.
@@ -15,6 +16,7 @@
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestShippingSection.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/utils/creditSettingsDefaults.js
+// - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Dialog,
@@ -29,6 +31,17 @@ import {
   CREDIT_SETTINGS_DEFAULTS,
   useSystemSettings
 } from '@/hooks/useSystemSettings';
+import {
+  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE,
+  ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
+  ABUTS_PRACTICE_MEMBERSHIP_SCOPE_NOTE,
+  formatAbutsAbutmentServiceWon,
+  formatAbutsManwon
+} from '@/shared/pricing/abutsAbutmentService';
 
 type Props = {
   open: boolean;
@@ -120,6 +133,14 @@ export const PricingPolicyDialog = ({
       systemSettings?.creditSettings?.defaultRequestFreeCredit ??
         CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit
     ) || CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit
+  );
+  const membershipMonthlyFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.practiceMembershipMonthlyFee ??
+        CREDIT_SETTINGS_DEFAULTS.practiceMembershipMonthlyFee ??
+        ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT
+    ) || ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT
   );
 
   useEffect(() => {
@@ -272,9 +293,31 @@ export const PricingPolicyDialog = ({
                 </h3>
                 <div className='mt-3 space-y-3'>
                   <PriceRow
-                    label='커스텀 어벗 생산'
-                    value='12,000원'
-                    hint='1개당'
+                    label='생산만'
+                    value={`멤버십 ${formatAbutsManwon(
+                      ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
+                    )}`}
+                    hint={`일반 ${formatAbutsManwon(
+                      ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE
+                    )} · 1개당`}
+                  />
+                  <div className='h-px bg-slate-100' />
+                  <PriceRow
+                    label='디자인+생산 의뢰'
+                    value={`멤버십 ${formatAbutsManwon(
+                      ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE
+                    )}`}
+                    hint={`일반 ${formatAbutsManwon(
+                      ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE
+                    )} · 1개당`}
+                  />
+                  <div className='h-px bg-slate-100' />
+                  <PriceRow
+                    label='치과 멤버십'
+                    value={`월 ${formatAbutsAbutmentServiceWon(
+                      membershipMonthlyFee
+                    )}`}
+                    hint={ABUTS_PRACTICE_MEMBERSHIP_SCOPE_NOTE}
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
@@ -286,7 +329,7 @@ export const PricingPolicyDialog = ({
                   <PriceRow
                     label='배송비'
                     value='3,500원'
-                    hint='출고 1회당 · 1박스당'
+                    hint={ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}
                   />
                 </div>
                 <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>

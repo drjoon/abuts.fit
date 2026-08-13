@@ -164,7 +164,7 @@ export async function createRequest(req, res) {
     });
 
     let expressFeePerRequest = 2000;
-    let designFeePerTooth = 15000;
+    let designFeePerTooth = 5000;
     try {
       const creditSettings = await loadCreditSettingsDefaults();
       expressFeePerRequest = Math.max(
@@ -173,11 +173,11 @@ export async function createRequest(req, res) {
       );
       designFeePerTooth = Math.max(
         0,
-        Number(creditSettings?.designFee ?? 15000) || 15000,
+        Number(creditSettings?.designFee ?? 5000) || 5000,
       );
     } catch {
       expressFeePerRequest = 2000;
-      designFeePerTooth = 15000;
+      designFeePerTooth = 5000;
     }
 
     const quotedPrice = resolveQuotedPriceWithExtras({
@@ -659,7 +659,7 @@ export async function createRequestsBulk(req, res) {
 
     // 2. 총 의뢰비 계산 (+ 신속 추가비 + 디자인비)
     let expressFeePerRequest = 2000;
-    let designFeePerTooth = 15000;
+    let designFeePerTooth = 5000;
     try {
       const creditSettings = await loadCreditSettingsDefaults();
       expressFeePerRequest = Math.max(
@@ -668,11 +668,11 @@ export async function createRequestsBulk(req, res) {
       );
       designFeePerTooth = Math.max(
         0,
-        Number(creditSettings?.designFee ?? 15000) || 15000,
+        Number(creditSettings?.designFee ?? 5000) || 5000,
       );
     } catch {
       expressFeePerRequest = 2000;
-      designFeePerTooth = 15000;
+      designFeePerTooth = 5000;
     }
 
     // 신속 선택 가능 여부 선반영 (ETA 이점 없으면 normal)

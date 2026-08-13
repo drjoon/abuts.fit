@@ -593,7 +593,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const shippingMode = resolveEffectiveShippingMode(request);
 
   let expressFeeUnit = 0;
-  let designFeePerTooth = 15000;
+  let designFeePerTooth = 5000;
   try {
     const { loadCreditSettingsDefaults } =
       await import("../../utils/creditSettingsDefaults.js");
@@ -606,11 +606,11 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     }
     designFeePerTooth = Math.max(
       0,
-      Number(creditSettings?.designFee ?? 15000) || 15000,
+      Number(creditSettings?.designFee ?? 5000) || 5000,
     );
   } catch {
     if (shippingMode === "express") expressFeeUnit = 2000;
-    designFeePerTooth = 15000;
+    designFeePerTooth = 5000;
   }
 
   const caseInfos = request?.caseInfos || {};

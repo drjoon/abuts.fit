@@ -122,7 +122,7 @@ export function resolveQuotedPriceWithDesignFee({
   price,
   productMode,
   toothCount = 0,
-  designFeePerTooth = 15000,
+  designFeePerTooth = 5000,
 }) {
   const src = toPlainRequestPrice(price);
   const mode = String(productMode || "").trim();
@@ -190,7 +190,7 @@ export function resolveQuotedPriceWithExtras({
   caseInfos,
   shippingMode,
   expressFee = 2000,
-  designFeePerTooth = 15000,
+  designFeePerTooth = 5000,
 }) {
   const mode = String(caseInfos?.productMode || "").trim();
   const qty = countDesignAbutmentQty(caseInfos);
@@ -217,7 +217,7 @@ export function resolveQuotedPriceWithExtras({
 export function resolveMachiningSpendAmount({
   price,
   caseInfos,
-  designFeePerTooth = 15000,
+  designFeePerTooth = 5000,
 }) {
   const withDesign = resolveQuotedPriceWithDesignFee({
     price,

@@ -281,7 +281,7 @@
     - `price.amount` = `(가공단가 + designFee) × qty`, `price.designFee` = 디자인 총액, `price.abutmentQty` = qty
   - 적용 순서: 디자인+가공 배수 → 신속비(건당, 배수 없음). 무상/0원 견적에는 미적용
   - 차감: CAM `machining_spend` = `(가공단가 + 디자인비) × qty` (신속비와 분리)
-  - UI: `PricingPolicyDialog`, 오늘의 가격, 의뢰 상세 비용 세부. 신규의뢰 우측·의뢰카드는 금액 미표시(`+디자인` 뱃지만)
+  - UI: `PricingPolicyDialog`, 의뢰 상세 비용 세부. 신규의뢰 우측·의뢰카드는 금액 미표시(`+디자인` 뱃지만)
   - 상세: `.cursor/rules/design-fee.mdc`
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)
 

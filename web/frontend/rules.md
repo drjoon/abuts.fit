@@ -197,7 +197,7 @@ Notes:
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
     - 출고일: 묶음/신속 공통 **+1영업일**(디자인). 안내 카피 SSOT는 `.cursor/rules/design-fee.mdc` UI 절.
     - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(생산/디자인/배송·신속) 표시.
-    - 표시: `PricingPolicyDialog`, `RequestDetailDialog`, `RequestorPricingReferralPolicyCard`. 생산만/디자인+생산 정가와 배송비 박스단위 별도. 신규의뢰 우측에는 금액 미표시.
+    - 표시: `PricingPolicyDialog`, `RequestDetailDialog`. 생산만/디자인+생산 정가와 배송비 별도(박스당 과금). 신규의뢰 우측에는 금액 미표시.
   - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`
     - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 표시 금액 SSOT: 신속배송이면 생산비+추가비를 합산해 보여줍니다 (`resolveQuotedPriceAmount` in `shippingMode.ts`).
@@ -397,7 +397,7 @@ Notes:
     첫 충전 기본 1단위. 2회차부터 기본 추천 = 월사용량(90일/3)의 1/3을 단위로 반올림(0이면 최소 1단위).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금), 미사용 잔액은 요청 시 환불(마이너스 수정 계산서). 선불페이/선결제 잔액 표현 금지.
-  - 가격 정책/대시보드: `PricingPolicyDialog`, 의뢰자 단가 카드 — 커스텀어벗 멤버십/일반 단가 + 배송비 별도(박스당 과금).
+  - 가격 정책/대시보드: `PricingPolicyDialog` — 커스텀어벗 멤버십/일반 단가 + 배송비 별도(박스당 과금).
   - 제조사 정산규칙 안내: 분배율만 안내하고 "+ VAT 10%" 표기 금지.
   - 관리자 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0).
 

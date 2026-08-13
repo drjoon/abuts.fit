@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 
 import {
+  pickToothWorkAbutmentProductMode,
   pickToothWorkCustomSpecs,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
@@ -49,6 +50,7 @@ export const restoreToothWorksFromDraft = (
       toothNumber,
       prosthesisType,
       customAbutment,
+      ...pickToothWorkAbutmentProductMode(row, customAbutment),
       bridgeLinkedTeeth,
       ...pickToothWorkCustomSpecs(
         {

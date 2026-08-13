@@ -20,10 +20,12 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
+  ABUTMENT_PRODUCT_MODE_SHORT_LABEL,
   formatAbutmentCompact,
   formatAbutmentSummary,
   formatImplantCompact,
   formatImplantSummary,
+  resolveToothAbutmentProductMode,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import {
@@ -41,7 +43,7 @@ import type {
 } from "@/shared/practice/practiceTransferFeeQuote";
 
 const TOOTH_CHART_VISIBLE = 6;
-const TOOTH_CARD_HEIGHT_CLASS = "h-[11rem]";
+const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 
 const TOOTH_CHART_ROWS: ReadonlyArray<{
   key: string;
@@ -361,6 +363,13 @@ export const PracticeToothWorkChartReadOnly = ({
                       <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
                         <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
                           커스텀
+                        </span>
+                        <span className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
+                          {
+                            ABUTMENT_PRODUCT_MODE_SHORT_LABEL[
+                              resolveToothAbutmentProductMode(row)
+                            ]
+                          }
                         </span>
                         <TooltipProvider delayDuration={0}>
                           <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">

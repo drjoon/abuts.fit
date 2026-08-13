@@ -3,6 +3,9 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/controllers/requests/creation.request.controller.js
 // - web/backend/models/request.model.js
+// - web/frontend/src/shared/practice/transferMemo.ts
+// change-log:
+// - 2026-08-13: 치아별 abutmentProductMode(생산만/디자인+생산)를 어벗츠 의뢰 productMode로 전달.
 import { Types } from "mongoose";
 import Request from "../models/request.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -33,6 +36,13 @@ const listCustomAbutmentToothWorks = (toothWorks) =>
   (Array.isArray(toothWorks) ? toothWorks : []).filter(
     (row) => Boolean(row?.customAbutment) && String(row?.toothNumber || "").trim(),
   );
+
+const resolveAbutmentProductMode = (row) => {
+  const raw = String(row?.abutmentProductMode || row?.productMode || "").trim();
+  return raw === "design_custom_abutment"
+    ? "design_custom_abutment"
+    : "custom_abutment";
+};
 
 const normalizeResultFiles = (raw) => {
   const list = Array.isArray(raw) ? raw : [];
@@ -148,14 +158,10 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       ? labOrg.requestSettings.anodizingEnabled
       : true;
 
-  const shippingMode = await resolveSelectableShippingMode({
-    shippingMode: shippingModeRaw === "express" ? "express" : "normal",
-    requestedAt: new Date(),
-    weeklyBatchDays,
-    productMode: "custom_abutment",
-  });
+  const requestedShippingMode =
+    shippingModeRaw === "express" ? "express" : "normal";
 
-  if (shippingMode === "normal" && weeklyBatchDays.length === 0) {
+  if (requestedShippingMode === "normal" && weeklyBatchDays.length === 0) {
     throw new Error(
       "묶음 배송을 쓰려면 기공소 설정 > 배송에서 묶음 요일을 먼저 지정해주세요.",
     );
@@ -196,7 +202,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   const practicePrepaidAbutment = abutmentQty > 0 || abutmentRetailTotal > 0;
 
   let expressFeePerRequest = 2000;
-  let designFeePerTooth = 15000;
+  let designFeePerTooth = 5000;
   try {
     const creditSettings = await loadCreditSettingsDefaults();
     expressFeePerRequest = Math.max(
@@ -205,11 +211,11 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
     designFeePerTooth = Math.max(
       0,
-      Number(creditSettings?.designFee ?? 15000) || 15000,
+      Number(creditSettings?.designFee ?? 5000) || 5000,
     );
   } catch {
     expressFeePerRequest = 2000;
-    designFeePerTooth = 15000;
+    designFeePerTooth = 5000;
   }
 
   const manufacturerSettings = await getManufacturerLeadTimesUtil();
@@ -237,6 +243,14 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       );
     }
 
+    const productMode = resolveAbutmentProductMode(row);
+    const shippingMode = await resolveSelectableShippingMode({
+      shippingMode: requestedShippingMode,
+      requestedAt,
+      weeklyBatchDays,
+      productMode,
+    });
+
     const diameterRaw = String(row.abutmentDiameter || "").trim();
     const diameterNum = Number(diameterRaw.replace(/[^\d.]/g, ""));
     const maxDiameter =
@@ -247,7 +261,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       patientName,
       tooth,
       workType: "abutment",
-      productMode: "custom_abutment",
+      productMode,
       implantManufacturer,
       implantBrand,
       implantFamily,
@@ -290,7 +304,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt,
       weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
-      productMode: "custom_abutment",
+      productMode,
     });
 
     const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();

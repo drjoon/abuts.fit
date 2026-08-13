@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
+import { ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT } from "@/shared/pricing/abutsAbutmentService";
 
 type CreditSettingsApiResponse = {
   success?: boolean;
@@ -18,16 +19,18 @@ export interface CreditSettings {
   expressFee: number;
   designFee: number;
   abutmentRetailPrice: number;
+  practiceMembershipMonthlyFee: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
 }
 
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
-  minCreditForRequest: 12000,
+  minCreditForRequest: 15000,
   shippingFee: 3500,
   expressFee: 2000,
-  designFee: 15000,
+  designFee: 5000,
   abutmentRetailPrice: 40000,
+  practiceMembershipMonthlyFee: ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
   defaultRequestFreeCredit: 30000,
   defaultShippingFreeCredit: 7000,
 };
@@ -60,6 +63,10 @@ export const useSystemSettings = () => {
         designFee: Number(raw.designFee ?? CREDIT_SETTINGS_DEFAULTS.designFee),
         abutmentRetailPrice: Number(
           raw.abutmentRetailPrice ?? CREDIT_SETTINGS_DEFAULTS.abutmentRetailPrice,
+        ),
+        practiceMembershipMonthlyFee: Number(
+          raw.practiceMembershipMonthlyFee ??
+            CREDIT_SETTINGS_DEFAULTS.practiceMembershipMonthlyFee,
         ),
         defaultRequestFreeCredit: Number(
           raw.defaultRequestFreeCredit ??

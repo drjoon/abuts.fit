@@ -803,7 +803,7 @@ export async function normalizeRequestForResponse(requestDoc) {
 
   if (obj.price) {
     let expressFeePerRequest = 2000;
-    let designFeePerTooth = 15000;
+    let designFeePerTooth = 5000;
     try {
       const creditSettings = await loadCreditSettingsDefaults();
       expressFeePerRequest = Math.max(
@@ -812,11 +812,11 @@ export async function normalizeRequestForResponse(requestDoc) {
       );
       designFeePerTooth = Math.max(
         0,
-        Number(creditSettings?.designFee ?? 15000) || 15000,
+        Number(creditSettings?.designFee ?? 5000) || 5000,
       );
     } catch {
       expressFeePerRequest = 2000;
-      designFeePerTooth = 15000;
+      designFeePerTooth = 5000;
     }
     const shippingMode =
       obj?.finalShipping?.mode === "express" ||
@@ -1062,7 +1062,7 @@ export async function computePriceForRequest({
   const creditSettings = await loadCreditSettingsDefaults();
   const baseUnitPrice = Math.max(
     0,
-    Number(creditSettings?.minCreditForRequest ?? 12000) || 0,
+    Number(creditSettings?.minCreditForRequest ?? 15000) || 0,
   );
   const specialPrice = (creditSettings?.specialRequestorPrices || []).find(
     (item) =>
