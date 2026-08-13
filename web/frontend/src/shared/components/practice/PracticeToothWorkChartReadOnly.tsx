@@ -33,6 +33,12 @@ import {
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
 } from "@/shared/practice/usePracticeToothWorkEditor";
+import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
+import type {
+  PracticeTransferFeeQuote,
+  PracticeTransferFeeQuoteViewer,
+} from "@/shared/practice/practiceTransferFeeQuote";
 
 const TOOTH_CHART_VISIBLE = 6;
 const TOOTH_CARD_HEIGHT_CLASS = "h-[11rem]";
@@ -101,11 +107,17 @@ const initialToothChartOffsets = (
 type PracticeToothWorkChartReadOnlyProps = {
   toothWorks: ToothWorkSelection[];
   className?: string;
+  feeQuote?: PracticeTransferFeeQuote | null;
+  feeViewer?: PracticeTransferFeeQuoteViewer;
+  labAnchorId?: string | null;
 };
 
 export const PracticeToothWorkChartReadOnly = ({
   toothWorks,
   className,
+  feeQuote: storedFeeQuote = null,
+  feeViewer = "practice",
+  labAnchorId = null,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const byTooth = useMemo(() => {
     const map = new Map<string, ToothWorkSelection>();
@@ -118,6 +130,12 @@ export const PracticeToothWorkChartReadOnly = ({
   }, [toothWorks]);
 
   const selectedTeeth = useMemo(() => new Set(byTooth.keys()), [byTooth]);
+  const { quote: feeQuote } = usePracticeTransferFeeQuote({
+    enabled: !storedFeeQuote || storedFeeQuote.total <= 0,
+    labAnchorId,
+    toothWorks,
+    storedQuote: storedFeeQuote,
+  });
 
   const [toothChartOffsets, setToothChartOffsets] = useState<Record<string, number>>(() =>
     initialToothChartOffsets(selectedTeeth),
@@ -400,7 +418,13 @@ export const PracticeToothWorkChartReadOnly = ({
     );
   });
 
-  const chartBody = <div className="space-y-2">{chartRows}</div>;
+  const chartBody = (
+    <div className="space-y-2">
+      {chartRows[0]}
+      <PracticeTransferFeeEstimate quote={feeQuote} viewer={feeViewer} />
+      {chartRows[1]}
+    </div>
+  );
 
   const regionNav = (
     <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">

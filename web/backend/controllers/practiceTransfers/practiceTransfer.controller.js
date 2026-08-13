@@ -14,8 +14,12 @@ import {
 } from "../../services/requestDashboardCache.service.js";
 import {
   assertPracticeTransferPaidCreditSufficient,
+  buildFeeQuotesForTransferDocs,
+  buildPracticeTransferQuote,
   commitPracticeTransferBilling,
+  loadPracticeTransferQuoteContext,
   rollbackPracticeTransferBilling,
+  toBillingPreviewFields,
 } from "../../services/practiceTransferBilling.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
@@ -1444,6 +1448,12 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
+    const feeQuote = await buildPracticeTransferQuote({
+      practiceAnchorId,
+      labAnchorId: targetLabAnchorId,
+      toothWorks: toothWorksRaw,
+    });
+
     const transferDoc = await PracticeTransfer.create({
       transferId,
       practiceUserId: req.user?._id,
@@ -1467,6 +1477,7 @@ export async function createPracticeTransfer(req, res) {
       status: "active",
       files,
       toothWorks: toothWorksRaw,
+      billing: toBillingPreviewFields(feeQuote),
       production: {
         skipDesignConfirm,
         shippingMode: null,
@@ -1610,7 +1621,11 @@ export async function getMyPracticeTransfers(req, res) {
       PracticeTransfer.countDocuments(baseFilter),
     ]);
 
-    const requests = docs.flatMap((doc) => toVirtualRequestRows(doc));
+    const quotesById = await buildFeeQuotesForTransferDocs({ docs });
+    const requests = docs.flatMap((doc) => {
+      const feeQuote = quotesById.get(String(doc?._id || "")) || null;
+      return toVirtualRequestRows(doc).map((row) => ({ ...row, feeQuote }));
+    });
 
     return res.status(200).json({
       success: true,
@@ -1629,6 +1644,39 @@ export async function getMyPracticeTransfers(req, res) {
     return res.status(500).json({
       success: false,
       message: "practice 전송 내역 조회 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+const AUTO_MATCH_LAB_SENTINEL = "__auto_match__";
+
+export async function getPracticeTransferQuoteContext(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const rawLabId = String(req.query?.labAnchorId || "").trim();
+    const labAnchorId =
+      !rawLabId ||
+      rawLabId === AUTO_MATCH_LAB_SENTINEL ||
+      !Types.ObjectId.isValid(rawLabId)
+        ? null
+        : rawLabId;
+    const practiceAnchorId =
+      String(req.user?.businessAnchorId || "").trim() || null;
+
+    const context = await loadPracticeTransferQuoteContext({
+      labAnchorId,
+      practiceAnchorId,
+    });
+    return res.status(200).json({ success: true, data: context });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "기공의뢰 견적 기준을 불러오지 못했습니다.",
       error: error?.message,
     });
   }
@@ -1738,6 +1786,11 @@ export async function getReceivedPracticeTransfers(req, res) {
       );
     }
 
+    const quotesById = await buildFeeQuotesForTransferDocs({
+      docs,
+      viewingLabAnchorId: labAnchorId,
+    });
+
     const transfers = docs.map((doc) => {
       const practiceBusiness =
         doc?.practiceBusinessAnchorId &&
@@ -1838,6 +1891,7 @@ export async function getReceivedPracticeTransfers(req, res) {
           size: Number(item?.file?.size || 0),
           s3Key: String(item?.file?.s3Key || "").trim(),
         })),
+        feeQuote: quotesById.get(String(doc?._id || "")) || null,
       };
     });
 

@@ -6,6 +6,8 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - web/frontend/src/shared/files/useS3FileDownload.ts
+// - 2026-08-13: 채팅 첨부 다운로드 프로그레스바.
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -37,7 +39,11 @@ import {
   ChatComposer,
   type RequestPickItem,
 } from "@/features/chat/components/ChatComposer";
-import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
+import {
+  ChatMessageBubble,
+  type ChatBubbleAttachment,
+} from "@/features/chat/components/ChatMessageBubble";
+import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -125,6 +131,8 @@ export const AdminChatManagement = () => {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const chatUploads = useBackgroundTempUpload({ token });
+  const { downloadingKeys, downloadProgressByKey, downloadS3File } =
+    useS3FileDownload(token);
 
   const {
     messages: activeMessages,
@@ -358,7 +366,17 @@ export const AdminChatManagement = () => {
     });
   };
 
-  const openAttachment = async (a: any) => {
+  const openAttachment = async (a: ChatBubbleAttachment) => {
+    const s3Key = String(a?.s3Key || "").trim();
+    if (s3Key && token) {
+      await downloadS3File({
+        s3Key,
+        fileName: String(a?.fileName || "첨부파일").trim() || "첨부파일",
+        busyKey: s3Key,
+      });
+      return;
+    }
+
     const fileId = String(a?.fileId || "").trim();
     const direct = String(a?.s3Url || "").trim();
 
@@ -635,6 +653,8 @@ export const AdminChatManagement = () => {
                               onToggleReaction={(messageId, emoji) =>
                                 void toggleReaction(messageId, emoji)
                               }
+                              downloadingFileKeys={downloadingKeys}
+                              downloadProgressByKey={downloadProgressByKey}
                               onOpenAttachment={(file) => void openAttachment(file)}
                             />
                           </div>

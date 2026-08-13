@@ -5,6 +5,8 @@
 // - web/backend/utils/labTradingPartner.util.js
 // - web/backend/services/generalLedger.service.js
 // - web/backend/services/creditRevenuePolicy.service.js
+// - web/frontend/src/shared/practice/labFeeSchedule.ts
+// - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -26,9 +28,12 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 import {
   computePracticeTransferRetailFees,
+  LAB_FEE_SCHEDULE_ZEROS,
   normalizeLabFeeSchedule,
 } from "../utils/labFeeSchedule.js";
+import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
+import { isAutoMatchOpenPool } from "../utils/practiceTransferAutoMatch.js";
 
 async function lockGuard(businessAnchorId, session) {
   const id = new Types.ObjectId(String(businessAnchorId));
@@ -219,7 +224,7 @@ function pushRevenueLines({
 
 /**
  * 기공의뢰 전송 전 치과 유료크레딧 잔액 검사(차감 없음).
- * 자동매칭은 기공소 미정이라 기본 기공비 스케줄로 견적한다.
+ * 자동매칭(기공소 미정)은 기본수가가 없어 0원. 실제 청구는 수락 시 기공소 스케줄.
  */
 export async function assertPracticeTransferPaidCreditSufficient({
   practiceAnchorId,
@@ -243,10 +248,13 @@ export async function assertPracticeTransferPaidCreditSufficient({
   }
 
   const creditSettings = await loadCreditSettingsDefaults();
+  const noLab = !labId;
   const fees = computePracticeTransferRetailFees({
     toothWorks,
-    labFeeSchedule: normalizeLabFeeSchedule(labFeeSchedule),
-    abutmentRetailPrice: creditSettings.abutmentRetailPrice,
+    labFeeSchedule: noLab
+      ? LAB_FEE_SCHEDULE_ZEROS
+      : normalizeLabFeeSchedule(labFeeSchedule),
+    abutmentRetailPrice: noLab ? 0 : creditSettings.abutmentRetailPrice,
   });
 
   if (fees.total <= 0) {
@@ -592,17 +600,335 @@ export async function rollbackPracticeTransferBilling({
   };
 }
 
+function relationshipKindFromPartner(partner) {
+  return partner?.status === "active" || partner?.status === "referred"
+    ? partner.status
+    : "none";
+}
+
+export function toFeeQuoteApi(quote) {
+  const fees = quote?.fees || {};
+  return {
+    labFeeTotal: Math.max(0, Math.round(Number(fees.labFeeTotal || 0))),
+    abutmentRetailTotal: Math.max(
+      0,
+      Math.round(Number(fees.abutmentRetailTotal || 0)),
+    ),
+    abutmentQty: Math.max(0, Math.round(Number(fees.abutmentQty || 0))),
+    total: Math.max(0, Math.round(Number(fees.total || 0))),
+    lines: Array.isArray(fees.lines) ? fees.lines : [],
+    relationshipKind:
+      quote?.relationshipKind === "active" || quote?.relationshipKind === "referred"
+        ? quote.relationshipKind
+        : "none",
+    feeRateApplied: Number(quote?.feeRateApplied || 0),
+    labSettlementAmount: Math.max(
+      0,
+      Math.round(Number(quote?.labSettlementAmount || 0)),
+    ),
+    abutsRevenueAmount: Math.max(
+      0,
+      Math.round(Number(quote?.abutsRevenueAmount || 0)),
+    ),
+    labTradingPartnerId: quote?.labTradingPartnerId || null,
+    billed: Boolean(quote?.billed),
+    usedDefaultSchedule: Boolean(quote?.usedDefaultSchedule),
+  };
+}
+
+export function toBillingPreviewFields(quote) {
+  const api = toFeeQuoteApi(quote);
+  return {
+    labFeeTotal: api.labFeeTotal,
+    abutmentRetailTotal: api.abutmentRetailTotal,
+    abutmentQty: api.abutmentQty,
+    total: api.total,
+    isTradingPartner: api.relationshipKind === "active",
+    relationshipKind: api.relationshipKind,
+    feeRateApplied: api.feeRateApplied,
+    labTradingPartnerId: api.labTradingPartnerId,
+    labSettlementAmount: api.labSettlementAmount,
+    abutsRevenueAmount: api.abutsRevenueAmount,
+    billedAt: null,
+  };
+}
+
+export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } = {}) {
+  const total = Math.max(0, Math.round(Number(billing?.total || 0)));
+  const feeRateApplied = Number(billing?.feeRateApplied || 0);
+  const labSettlementAmount = Math.max(
+    0,
+    Math.round(Number(billing?.labSettlementAmount || 0)),
+  );
+  const abutsRevenueAmount = Math.max(
+    0,
+    Math.round(Number(billing?.abutsRevenueAmount || total - labSettlementAmount)),
+  );
+  return toFeeQuoteApi({
+    fees: {
+      labFeeTotal: billing?.labFeeTotal || 0,
+      abutmentRetailTotal: billing?.abutmentRetailTotal || 0,
+      abutmentQty: billing?.abutmentQty || 0,
+      total,
+      lines,
+    },
+    relationshipKind: billing?.relationshipKind || "none",
+    feeRateApplied,
+    labSettlementAmount,
+    abutsRevenueAmount,
+    labTradingPartnerId: billing?.labTradingPartnerId
+      ? String(billing.labTradingPartnerId)
+      : null,
+    billed,
+    usedDefaultSchedule: false,
+  });
+}
+
+/**
+ * 기공의뢰 견적(치과 크레딧 소비액 + 기공소 수령액).
+ * labAnchorId 없으면 기본수가 없음(0원).
+ */
+export async function buildPracticeTransferQuote({
+  practiceAnchorId = null,
+  labAnchorId = null,
+  toothWorks,
+  labFeeSchedule = undefined,
+  abutmentRetailPrice = undefined,
+  payoutRates = undefined,
+  relationshipKind = undefined,
+  labTradingPartnerId = undefined,
+}) {
+  let schedule = labFeeSchedule;
+  const labId = String(labAnchorId || "").trim();
+  const usedDefaultSchedule = !labId;
+  if (schedule == null) {
+    if (labId && Types.ObjectId.isValid(labId)) {
+      const lab = await BusinessAnchor.findById(labId)
+        .select({ labFeeSchedule: 1 })
+        .lean();
+      schedule = lab?.labFeeSchedule || null;
+    } else {
+      schedule = null;
+    }
+  }
+
+  let retailPrice = abutmentRetailPrice;
+  if (usedDefaultSchedule) {
+    schedule = LAB_FEE_SCHEDULE_ZEROS;
+    retailPrice = 0;
+  } else if (retailPrice == null) {
+    const creditSettings = await loadCreditSettingsDefaults();
+    retailPrice = creditSettings.abutmentRetailPrice;
+  }
+
+  const fees = computePracticeTransferRetailFees({
+    toothWorks,
+    labFeeSchedule: usedDefaultSchedule
+      ? LAB_FEE_SCHEDULE_ZEROS
+      : normalizeLabFeeSchedule(schedule),
+    abutmentRetailPrice: retailPrice,
+  });
+
+  let kind = relationshipKind;
+  let partnerId =
+    labTradingPartnerId != null ? labTradingPartnerId : null;
+  if (kind == null) {
+    const partner = await findLabPracticeRelationship({
+      labAnchorId,
+      practiceAnchorId,
+    });
+    kind = relationshipKindFromPartner(partner);
+    partnerId = partner?._id ? String(partner._id) : null;
+  }
+
+  let rates = payoutRates;
+  if (rates == null) {
+    const devops = await BusinessAnchor.findOne({ businessType: "devops" })
+      .select({ payoutRates: 1 })
+      .sort({ createdAt: 1 })
+      .lean();
+    rates = devops?.payoutRates;
+  }
+
+  const feeRateApplied = resolvePracticeTransferFeeRate({
+    relationshipKind: kind,
+    payoutRates: rates,
+  });
+  const abutsRevenueAmount = Math.round(fees.total * feeRateApplied);
+  const labSettlementAmount = Math.max(0, fees.total - abutsRevenueAmount);
+
+  return {
+    fees,
+    relationshipKind: kind === "active" || kind === "referred" ? kind : "none",
+    feeRateApplied,
+    labSettlementAmount,
+    abutsRevenueAmount,
+    labTradingPartnerId: partnerId,
+    usedDefaultSchedule,
+    billed: false,
+    abutmentRetailPrice: Math.max(0, Math.round(Number(retailPrice || 0))),
+    schedule: usedDefaultSchedule
+      ? LAB_FEE_SCHEDULE_ZEROS
+      : normalizeLabFeeSchedule(schedule),
+  };
+}
+
 export async function quotePracticeTransferFees({
   labAnchorId,
   toothWorks,
+  practiceAnchorId = null,
 }) {
-  const lab = await BusinessAnchor.findById(labAnchorId)
-    .select({ labFeeSchedule: 1 })
-    .lean();
-  const creditSettings = await loadCreditSettingsDefaults();
-  return computePracticeTransferRetailFees({
+  return buildPracticeTransferQuote({
+    labAnchorId,
+    practiceAnchorId,
     toothWorks,
-    labFeeSchedule: normalizeLabFeeSchedule(lab?.labFeeSchedule),
-    abutmentRetailPrice: creditSettings.abutmentRetailPrice,
   });
+}
+
+export async function loadPracticeTransferQuoteContext({
+  labAnchorId = null,
+  practiceAnchorId = null,
+}) {
+  const quote = await buildPracticeTransferQuote({
+    labAnchorId,
+    practiceAnchorId,
+    toothWorks: [],
+  });
+  return {
+    schedule: quote.schedule,
+    abutmentRetailPrice: quote.abutmentRetailPrice,
+    relationshipKind: quote.relationshipKind,
+    feeRateApplied: quote.feeRateApplied,
+    usedDefaultSchedule: quote.usedDefaultSchedule,
+  };
+}
+
+function billingLooksStored(billing) {
+  if (!billing || typeof billing !== "object") return false;
+  if (billing.billedAt) return true;
+  return Math.max(0, Math.round(Number(billing.total || 0))) > 0;
+}
+
+/**
+ * 목록/상세용 견적. 과금 스냅샷이 있으면 금액은 스냅샷, 치식별 라인은 현재 스케줄로 보강.
+ * 자동매칭 공개 풀은 조회 기공소 스케줄·관계로 다시 계산한다.
+ */
+export async function buildFeeQuotesForTransferDocs({
+  docs,
+  viewingLabAnchorId = null,
+}) {
+  const list = Array.isArray(docs) ? docs : [];
+  if (list.length === 0) return new Map();
+
+  const creditSettings = await loadCreditSettingsDefaults();
+  const abutmentRetailPrice = creditSettings.abutmentRetailPrice;
+  const devops = await BusinessAnchor.findOne({ businessType: "devops" })
+    .select({ payoutRates: 1 })
+    .sort({ createdAt: 1 })
+    .lean();
+  const payoutRates = devops?.payoutRates;
+
+  const labIds = new Set();
+  const viewerLabId = String(viewingLabAnchorId || "").trim();
+  if (viewerLabId && Types.ObjectId.isValid(viewerLabId)) labIds.add(viewerLabId);
+  for (const doc of list) {
+    const id = String(doc?.targetLabAnchorId?._id || doc?.targetLabAnchorId || "").trim();
+    if (id && Types.ObjectId.isValid(id)) labIds.add(id);
+  }
+  const labs = labIds.size
+    ? await BusinessAnchor.find({ _id: { $in: [...labIds] } })
+        .select({ labFeeSchedule: 1 })
+        .lean()
+    : [];
+  const scheduleByLab = new Map(
+    labs.map((lab) => [String(lab._id), lab.labFeeSchedule || null]),
+  );
+
+  const pairKey = (labId, practiceId) => `${labId}:${practiceId}`;
+  const practiceIds = new Set();
+  for (const doc of list) {
+    const practiceId = String(
+      doc?.practiceBusinessAnchorId?._id || doc?.practiceBusinessAnchorId || "",
+    ).trim();
+    if (practiceId && Types.ObjectId.isValid(practiceId)) practiceIds.add(practiceId);
+  }
+  const partners =
+    labIds.size && practiceIds.size
+      ? await LabTradingPartner.find({
+          labAnchorId: { $in: [...labIds].map((id) => new Types.ObjectId(id)) },
+          practiceAnchorId: {
+            $in: [...practiceIds].map((id) => new Types.ObjectId(id)),
+          },
+          status: { $in: ["active", "referred"] },
+        })
+          .select({ labAnchorId: 1, practiceAnchorId: 1, status: 1 })
+          .lean()
+      : [];
+  const partnerByPair = new Map();
+  for (const partner of partners) {
+    partnerByPair.set(
+      pairKey(String(partner.labAnchorId), String(partner.practiceAnchorId)),
+      partner,
+    );
+  }
+
+  const out = new Map();
+  for (const doc of list) {
+    const docId = String(doc?._id || "");
+    const toothWorks = Array.isArray(doc?.toothWorks) ? doc.toothWorks : [];
+    const targetLabId = String(
+      doc?.targetLabAnchorId?._id || doc?.targetLabAnchorId || "",
+    ).trim();
+    const practiceId = String(
+      doc?.practiceBusinessAnchorId?._id || doc?.practiceBusinessAnchorId || "",
+    ).trim();
+    const openPool = isAutoMatchOpenPool(doc);
+    const quoteLabId = viewerLabId && (openPool || !targetLabId) ? viewerLabId : targetLabId;
+    const billing = doc?.billing && typeof doc.billing === "object" ? doc.billing : null;
+    const billed = Boolean(billing?.billedAt);
+    const useStored =
+      billingLooksStored(billing) && !(viewerLabId && openPool && !billed);
+
+    const schedule = quoteLabId ? scheduleByLab.get(quoteLabId) : null;
+    const noLab = !quoteLabId;
+    const fees = computePracticeTransferRetailFees({
+      toothWorks,
+      labFeeSchedule: noLab
+        ? LAB_FEE_SCHEDULE_ZEROS
+        : normalizeLabFeeSchedule(schedule),
+      abutmentRetailPrice: noLab ? 0 : abutmentRetailPrice,
+    });
+
+    if (useStored) {
+      out.set(
+        docId,
+        feeQuoteFromBillingDoc(billing, { lines: fees.lines, billed }),
+      );
+      continue;
+    }
+
+    const partner = quoteLabId && practiceId
+      ? partnerByPair.get(pairKey(quoteLabId, practiceId))
+      : null;
+    const kind = relationshipKindFromPartner(partner);
+    const feeRateApplied = resolvePracticeTransferFeeRate({
+      relationshipKind: kind,
+      payoutRates,
+    });
+    const abutsRevenueAmount = Math.round(fees.total * feeRateApplied);
+    out.set(
+      docId,
+      toFeeQuoteApi({
+        fees,
+        relationshipKind: kind,
+        feeRateApplied,
+        labSettlementAmount: Math.max(0, fees.total - abutsRevenueAmount),
+        abutsRevenueAmount,
+        labTradingPartnerId: partner?._id ? String(partner._id) : null,
+        billed: false,
+        usedDefaultSchedule: !quoteLabId,
+      }),
+    );
+  }
+  return out;
 }

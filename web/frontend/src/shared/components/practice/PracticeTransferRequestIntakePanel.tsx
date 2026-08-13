@@ -89,6 +89,8 @@ import {
   toggleAdjacentBridgeLink,
   type ToothWorkSelection,
 } from "@/shared/practice/usePracticeToothWorkEditor";
+import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -101,6 +103,7 @@ import {
 // - 2026-08-11: 기공소 선택에 "자동 매칭" 옵션(+빠른툴팁) 추가.
 // - 2026-08-11: 안내문구 최소화 — 플레이스홀더·메모 도움말·커스텀규격 설명을 즉시툴팁으로.
 // - 2026-08-11: 기공의뢰 카드 내 행(섹션) 수직 간격 gap-10.
+// - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -485,6 +488,8 @@ export type PracticeTransferRequestIntakePanelProps = {
   onAbutmentFavoritesChange?: (next: PracticeAbutmentFavorite[]) => void | Promise<void>;
   /** 값이 바뀌면 치식 차트를 M(전치부) 위치로 되돌린다 (새로 작성 등) */
   toothChartResetNonce?: number;
+  /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
+  showFeeEstimate?: boolean;
 };
 
 export const PracticeTransferRequestIntakePanel = ({
@@ -536,10 +541,16 @@ export const PracticeTransferRequestIntakePanel = ({
   abutmentFavorites = [],
   onAbutmentFavoritesChange,
   toothChartResetNonce = 0,
+  showFeeEstimate = false,
 }: PracticeTransferRequestIntakePanelProps) => {
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
     : normalizedProsthesisTypes[0] || "크라운";
+  const { quote: feeQuote } = usePracticeTransferFeeQuote({
+    enabled: showFeeEstimate,
+    labAnchorId: selectedLab?._id,
+    toothWorks,
+  });
   const [lastUsedCustomSpecs, setLastUsedCustomSpecs] = useState(() => emptyToothWorkCustomSpecs());
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */
   const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<number | null>(null);
@@ -2182,7 +2193,11 @@ export const PracticeTransferRequestIntakePanel = ({
                 )}
                 onPointerDown={handleToothChartPointerDown}
               >
-                {chartRows}
+                {chartRows[0]}
+                {showFeeEstimate ? (
+                  <PracticeTransferFeeEstimate quote={feeQuote} viewer="practice" />
+                ) : null}
+                {chartRows[1]}
                 {toothMarquee && toothChartRef.current
                   ? (() => {
                       const container = toothChartRef.current!;

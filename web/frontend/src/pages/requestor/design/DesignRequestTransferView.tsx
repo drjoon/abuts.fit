@@ -3,6 +3,7 @@
 // - 2026-08-10: 개별/전체 다운로드 중 재클릭 방지. 채팅 라벨·상대를 치과(발신 의뢰자)로 정렬.
 // - 2026-08-10: 디자인 큐 기공의뢰서형 카드 + 상세/채팅 모달 호스트.
 // - 2026-08-13: 채팅 첨부 즉시 백그라운드 업로드 + 칩 프로그레스바.
+// - 2026-08-13: 채팅 첨부 다운로드 프로그레스바.
 // related files:
 // - web/frontend/src/pages/requestor/design/DesignPage.tsx
 // - web/frontend/src/pages/requestor/design/DesignRequestCardGrid.tsx
@@ -39,7 +40,7 @@ import {
 } from "@/shared/practice/transferMemo";
 import type { ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { DesignRequestCardGrid } from "./DesignRequestCardGrid";
-import { downloadWithProgress } from "@/shared/files/downloadWithProgress";
+import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -180,14 +181,16 @@ export function DesignRequestTransferView({
     content: string;
   } | null>(null);
   const [chatSending, setChatSending] = useState(false);
-  const [downloadingKeys, setDownloadingKeys] = useState<string[]>([]);
-  const [downloadProgressByKey, setDownloadProgressByKey] = useState<
-    Record<string, number>
-  >({});
-  const [downloadAllBusy, setDownloadAllBusy] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
-  const downloadingKeysRef = useRef<Set<string>>(new Set());
+  const {
+    downloadingKeys,
+    downloadProgressByKey,
+    downloadAllBusy,
+    downloadS3File,
+    downloadAll,
+    resetDownloads,
+  } = useS3FileDownload(token);
 
   const {
     messages,
@@ -280,106 +283,48 @@ export function DesignRequestTransferView({
     [prefetchMessages, rooms, setChatMessages, token],
   );
 
-  const handleDownloadFile = useCallback(
-    async (file: PracticeTransferDialogFileItem) => {
-      if (!token || !file.s3Key) {
-        toast({
-          title: "다운로드 실패",
-          description: "파일 키가 없어 다운로드할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const busyKey = String(file.s3Key || file.id || "").trim();
-      if (busyKey && downloadingKeysRef.current.has(busyKey)) return;
-
-      if (busyKey) {
-        downloadingKeysRef.current.add(busyKey);
-        setDownloadingKeys(Array.from(downloadingKeysRef.current));
-        setDownloadProgressByKey((prev) => ({ ...prev, [busyKey]: 0 }));
-      }
-
-      try {
-        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(file.s3Key)}&fileName=${encodeURIComponent(file.fileName || "download")}&_ts=${Date.now()}`;
-        await downloadWithProgress({
-          url: downloadPath,
-          token,
-          fileName: String(file.fileName || "download").trim() || "download",
-          onProgress: (percent) => {
-            if (!busyKey) return;
-            setDownloadProgressByKey((prev) => ({
-              ...prev,
-              [busyKey]: percent,
-            }));
-          },
-        });
-      } catch (err) {
-        if ((err as { name?: string })?.name === "AbortError") return;
-        toast({
-          title: "다운로드 실패",
-          description: "다운로드 요청 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        if (busyKey) {
-          downloadingKeysRef.current.delete(busyKey);
-          setDownloadingKeys(Array.from(downloadingKeysRef.current));
-          setDownloadProgressByKey((prev) => {
-            const next = { ...prev };
-            delete next[busyKey];
-            return next;
-          });
-        }
-      }
-    },
-    [toast, token],
-  );
-
   const dialogFiles = useMemo(
     () => collectRequestFiles(selectedRequest),
     [selectedRequest],
   );
 
+  const handleDownloadFile = useCallback(
+    async (file: PracticeTransferDialogFileItem) => {
+      await downloadS3File({
+        s3Key: file.s3Key,
+        fileName: file.fileName,
+        busyKey: String(file.s3Key || file.id || "").trim(),
+      });
+    },
+    [downloadS3File],
+  );
+
   const handleDownloadAllFiles = useCallback(async () => {
-    if (!dialogFiles.length || downloadAllBusy) return;
-    setDownloadAllBusy(true);
-    try {
-      await Promise.all(dialogFiles.map((file) => handleDownloadFile(file)));
-    } finally {
-      setDownloadAllBusy(false);
-    }
-  }, [dialogFiles, downloadAllBusy, handleDownloadFile]);
+    await downloadAll(
+      dialogFiles.map((file) => ({
+        s3Key: file.s3Key,
+        fileName: file.fileName,
+        busyKey: String(file.s3Key || file.id || "").trim(),
+      })),
+    );
+  }, [dialogFiles, downloadAll]);
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
+      fileId?: string;
       fileName?: string;
       fileSize?: number;
       s3Key?: string;
       s3Url?: string;
     }) => {
-      if (!token) return;
-      const rawName =
-        String(attachment?.fileName || "첨부파일").trim() || "첨부파일";
       const s3Key = String(attachment?.s3Key || "").trim();
-      if (!s3Key) return;
-
-      try {
-        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(s3Key)}&fileName=${encodeURIComponent(rawName)}&_ts=${Date.now()}`;
-        await downloadWithProgress({
-          url: downloadPath,
-          token,
-          fileName: rawName,
-        });
-      } catch {
-        toast({
-          title: "다운로드 실패",
-          description: "채팅 첨부 다운로드 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      }
+      await downloadS3File({
+        s3Key,
+        fileName: String(attachment?.fileName || "첨부파일").trim() || "첨부파일",
+        busyKey: s3Key || String(attachment?.fileId || "").trim(),
+      });
     },
-    [toast, token],
+    [downloadS3File],
   );
 
   const handleAttachChatFiles = useCallback((files: FileList | null) => {
@@ -511,10 +456,7 @@ export function DesignRequestTransferView({
             setChatReplyTo(null);
             chatUploads.clear();
             setChatError("");
-            setDownloadingKeys([]);
-            setDownloadProgressByKey({});
-            setDownloadAllBusy(false);
-            downloadingKeysRef.current.clear();
+            resetDownloads();
           }
         }}
         title="의뢰 상세 · 치과 채팅"

@@ -8,6 +8,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
 // - web/frontend/rules.md
 // - 2026-08-13: uploadProgress 상태 노출(파일카드 프로그레스바). 진행키=toTempUploadFileKey.
+// - 2026-08-13: 제출 시 캐시된 결과는 재사용·진행 중이면 대기만. 진행률 0%로 되돌리지 않음.
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   TempUploadedFile,
@@ -50,6 +51,8 @@ export function useFilePreUpload(options: Options) {
   const [uploadProgress, setUploadProgress] = useState<
     Record<string, PreUploadFileProgress>
   >({});
+  const uploadProgressRef = useRef(uploadProgress);
+  uploadProgressRef.current = uploadProgress;
 
   const patchProgress = useCallback(
     (updates: Record<string, PreUploadFileProgress>) => {
@@ -91,6 +94,20 @@ export function useFilePreUpload(options: Options) {
     setUploadProgress({});
   }, []);
 
+  const peekCachedUploadedFiles = useCallback(
+    (files: File[]): TempUploadedFile[] | null => {
+      if (!files.length) return [];
+      const results: TempUploadedFile[] = [];
+      for (const file of files) {
+        const entry = cacheRef.current.get(toTempUploadFileKey(file));
+        if (entry?.status !== "done") return null;
+        results.push(entry.result);
+      }
+      return results;
+    },
+    [],
+  );
+
   const ensureFilesUploaded = useCallback(
     async (
       files: File[],
@@ -102,8 +119,12 @@ export function useFilePreUpload(options: Options) {
         throw new Error("로그인이 필요합니다.");
       }
 
+      const cached = peekCachedUploadedFiles(files);
+      if (cached) return cached;
+
       const results = new Array<TempUploadedFile>(files.length);
       const pendingIndexes: number[] = [];
+      const uploadingWaits: Promise<void>[] = [];
       const progressMap: Record<string, number> = {};
       const statusUpdates: Record<string, PreUploadFileProgress> = {};
 
@@ -127,9 +148,13 @@ export function useFilePreUpload(options: Options) {
         onProgress?.({ ...progressMap });
       };
 
-      for (const file of files) {
-        progressMap[toTempUploadFileKey(file)] = 0;
-      }
+      const knownPercent = (key: string) => {
+        const prev = uploadProgressRef.current[key]?.percent;
+        if (typeof prev === "number" && Number.isFinite(prev)) {
+          return Math.max(0, Math.min(100, Math.round(prev)));
+        }
+        return undefined;
+      };
 
       for (let i = 0; i < files.length; i += 1) {
         const key = toTempUploadFileKey(files[i]);
@@ -140,28 +165,40 @@ export function useFilePreUpload(options: Options) {
           continue;
         }
         if (entry?.status === "uploading") {
-          try {
-            results[i] = await entry.promise;
-            progressMap[key] = 100;
-            emit();
-            continue;
-          } catch {
-            // fall through to re-upload
-          }
+          progressMap[key] = knownPercent(key) ?? 1;
+          uploadingWaits.push(
+            entry.promise
+              .then((row) => {
+                results[i] = row;
+                progressMap[key] = 100;
+                emit();
+              })
+              .catch(() => {
+                pendingIndexes.push(i);
+                progressMap[key] = knownPercent(key) ?? progressMap[key] ?? 0;
+              }),
+          );
+          continue;
         }
         pendingIndexes.push(i);
+        progressMap[key] = knownPercent(key) ?? 0;
       }
 
       emit();
 
-      if (pendingIndexes.length > 0) {
-        const pendingFiles = pendingIndexes.map((idx) => files[idx]);
+      if (uploadingWaits.length > 0) {
+        await Promise.all(uploadingWaits);
+      }
+
+      const uniquePending = Array.from(new Set(pendingIndexes));
+      if (uniquePending.length > 0) {
+        const pendingFiles = uniquePending.map((idx) => files[idx]);
         const batchPromise = uploadFiles(pendingFiles, (perFile) => {
           Object.assign(progressMap, perFile);
           emit();
         });
 
-        pendingIndexes.forEach((fileIndex, batchIndex) => {
+        uniquePending.forEach((fileIndex, batchIndex) => {
           const file = files[fileIndex];
           const key = toTempUploadFileKey(file);
           const promise = batchPromise.then((uploaded) => {
@@ -186,7 +223,7 @@ export function useFilePreUpload(options: Options) {
         });
 
         const uploaded = await batchPromise;
-        pendingIndexes.forEach((fileIndex, batchIndex) => {
+        uniquePending.forEach((fileIndex, batchIndex) => {
           const row = uploaded[batchIndex];
           if (!row) {
             throw new Error("업로드 결과가 없습니다.");
@@ -204,7 +241,7 @@ export function useFilePreUpload(options: Options) {
 
       return results;
     },
-    [patchProgress, uploadFiles],
+    [patchProgress, peekCachedUploadedFiles, uploadFiles],
   );
 
   const preUploadFiles = useCallback(
@@ -241,6 +278,7 @@ export function useFilePreUpload(options: Options) {
 
   return {
     ensureFilesUploaded,
+    peekCachedUploadedFiles,
     preUploadFiles,
     forgetFile,
     forgetFileKey,

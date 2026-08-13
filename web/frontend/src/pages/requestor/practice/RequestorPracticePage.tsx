@@ -32,11 +32,13 @@
 // - 2026-08-11: [안내 복사] 문구 — 이모티콘·부드러운 말투로 정리.
 // - 2026-08-11: 다운로드→의뢰수락 뱃지/상태. 수락 API 과금. 파일 다운로드는 상태 미전이.
 // - 2026-08-11: 의뢰수락 후 치과 transfer-room 재연결. 모달 폭·lab peer 채팅 연결.
+// - 2026-08-13: 의뢰 상세 모달 — 수락 전에도 지정 기공소는 치과 채팅 내역을 표시.
 // - 2026-08-11: 수락 카드에 작업완료/작업취소 버튼. mark-release API.
 // - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·추적관리(작업취소는 취소 집계).
 // - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
 // - 2026-08-12: 수락 카드 — 별도 결과파일 드롭존 제거·카드 점선 외곽·작업완료 왼쪽 드롭 아이콘.
 // - 2026-08-13: 채팅 첨부 즉시 백그라운드 업로드 + 칩 프로그레스바.
+// - 2026-08-13: 채팅/의뢰 파일 다운로드 프로그레스바.
 import {
   useCallback,
   useEffect,
@@ -64,6 +66,7 @@ import {
   toChatMessageAttachments,
   useBackgroundTempUpload,
 } from "@/shared/hooks/useBackgroundTempUpload";
+import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { Building2, Search, UploadCloud } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
@@ -91,6 +94,11 @@ import {
   PracticeTransferFileDropTarget,
   openPracticeTransferFilePicker,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import {
+  parsePracticeTransferFeeQuote,
+  type PracticeTransferFeeQuote,
+} from "@/shared/practice/practiceTransferFeeQuote";
 import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
@@ -171,6 +179,7 @@ type ReceivedPracticeTransfer = {
   files: ReceivedPracticeFile[];
   resultFileCount?: number;
   resultFiles?: ReceivedPracticeFile[];
+  feeQuote?: PracticeTransferFeeQuote | null;
 };
 
 type ReceivedTransfersResponse = {
@@ -416,6 +425,14 @@ function RequestorPracticeReceivePage({
   const { rooms } = useChatRooms();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const chatUploads = useBackgroundTempUpload({ token });
+  const {
+    downloadingKeys,
+    downloadProgressByKey,
+    downloadAllBusy,
+    downloadS3File,
+    downloadAll,
+    resetDownloads,
+  } = useS3FileDownload(token);
 
   const [transfers, setTransfers] = useState<ReceivedPracticeTransfer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -669,6 +686,7 @@ function RequestorPracticeReceivePage({
           files,
           resultFileCount: Number(r.resultFileCount || resultFiles.length || 0),
           resultFiles,
+          feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
         };
       })
       .filter((x) => x.transferId)
@@ -1798,40 +1816,14 @@ function RequestorPracticeReceivePage({
 
   const handleDownload = useCallback(
     async (file: ReceivedPracticeFile) => {
-      if (!token || !file.s3Key) return;
-
-      try {
-        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(file.s3Key)}&fileName=${encodeURIComponent(file.originalName || "download")}&_ts=${Date.now()}`;
-        const resp = await fetch(downloadPath, {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!resp.ok) {
-          throw new Error("다운로드 응답이 올바르지 않습니다.");
-        }
-
-        const blob = await resp.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = objectUrl;
-        a.download = String(file.originalName || "download").trim() || "download";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(objectUrl);
-      } catch {
-        toast({
-          title: "다운로드 실패",
-          description: "다운로드 요청 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      }
+      const s3Key = String(file.s3Key || "").trim();
+      await downloadS3File({
+        s3Key,
+        fileName: String(file.originalName || "download").trim() || "download",
+        busyKey: s3Key,
+      });
     },
-    [toast, token],
+    [downloadS3File],
   );
 
   const handleDownloadAllFiles = useCallback(async () => {
@@ -1841,63 +1833,31 @@ function RequestorPracticeReceivePage({
         ? selectedTransfer.resultFiles
         : []),
     ];
-    if (!files.length) return;
-
-    await Promise.all(files.map((file) => handleDownload(file)));
-  }, [handleDownload, selectedTransfer]);
+    await downloadAll(
+      files.map((file) => ({
+        s3Key: String(file.s3Key || "").trim(),
+        fileName: String(file.originalName || "download").trim() || "download",
+        busyKey: String(file.s3Key || "").trim(),
+      })),
+    );
+  }, [downloadAll, selectedTransfer]);
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
+      fileId?: string;
       fileName?: string;
       fileSize?: number;
       s3Key?: string;
       s3Url?: string;
     }) => {
-      if (!token) return;
-
-      const rawName = String(attachment?.fileName || "첨부파일").trim() || "첨부파일";
       const s3Key = String(attachment?.s3Key || "").trim();
-      if (!s3Key) {
-        toast({
-          title: "다운로드 실패",
-          description: "첨부파일 키를 확인할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      try {
-        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(s3Key)}&fileName=${encodeURIComponent(rawName)}&_ts=${Date.now()}`;
-        const resp = await fetch(downloadPath, {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!resp.ok) {
-          throw new Error("첨부파일 다운로드 응답이 올바르지 않습니다.");
-        }
-
-        const blob = await resp.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = objectUrl;
-        a.download = rawName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(objectUrl);
-      } catch {
-        toast({
-          title: "다운로드 실패",
-          description: "첨부파일 다운로드 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      }
+      await downloadS3File({
+        s3Key,
+        fileName: String(attachment?.fileName || "첨부파일").trim() || "첨부파일",
+        busyKey: s3Key || String(attachment?.fileId || "").trim(),
+      });
     },
-    [toast, token],
+    [downloadS3File],
   );
 
   const handleAttachChatFiles = useCallback((inputFiles: FileList | null) => {
@@ -2185,6 +2145,13 @@ function RequestorPracticeReceivePage({
                     ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
                     : ""}
                 </p>
+                {transfer.feeQuote ? (
+                  <PracticeTransferFeeEstimate
+                    quote={transfer.feeQuote}
+                    viewer="lab"
+                    density="card"
+                  />
+                ) : null}
 
                 {showWorkActions ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2398,6 +2365,7 @@ function RequestorPracticeReceivePage({
             setChatReplyTo(null);
             chatUploads.clear();
             setChatError("");
+            resetDownloads();
           }
         }}
         title="의뢰 상세 · 치과 채팅"
@@ -2418,6 +2386,8 @@ function RequestorPracticeReceivePage({
         memo={selectedTransferDisplayMemo}
         toothWorks={selectedTransferToothWorks}
         toothWorksKey={selectedTransfer?.transferId || "requestor-transfer"}
+        feeQuote={selectedTransfer?.feeQuote || null}
+        feeViewer="lab"
         filesLabel="의뢰 파일"
         files={
           (selectedTransfer?.files || []).map((file) => ({
@@ -2436,6 +2406,9 @@ function RequestorPracticeReceivePage({
             s3Key: String(file.s3Key || "").trim(),
           })) satisfies PracticeTransferDialogFileItem[]
         }
+        downloadingFileKeys={downloadingKeys}
+        downloadProgressByKey={downloadProgressByKey}
+        downloadAllBusy={downloadAllBusy}
         onDownloadAllFiles={() => void handleDownloadAllFiles()}
         onDownloadTransferFile={(file) =>
           void handleDownload({

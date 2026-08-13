@@ -4,6 +4,8 @@
 // - web/frontend/src/pages/admin/support/AdminChatManagement.tsx
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/features/chat/components/chatReactions.ts
+// - web/frontend/src/shared/files/useS3FileDownload.ts
+// - 2026-08-13: 채팅 첨부 다운로드 중 프로그레스바.
 import { useMemo, useState } from "react";
 import { Reply, SmilePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,7 +38,16 @@ type ChatMessageBubbleProps = {
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   onOpenAttachment?: (file: ChatBubbleAttachment) => void | Promise<void>;
   formatFileSize?: (size: number) => string;
+  downloadingFileKeys?: string[];
+  downloadProgressByKey?: Record<string, number>;
 };
+
+export function chatAttachmentBusyKey(file: {
+  s3Key?: string;
+  fileId?: string;
+}): string {
+  return String(file?.s3Key || file?.fileId || "").trim();
+}
 
 type ReactionGroup = {
   emoji: string;
@@ -125,6 +136,8 @@ export function ChatMessageBubble({
   onToggleReaction,
   onOpenAttachment,
   formatFileSize,
+  downloadingFileKeys = [],
+  downloadProgressByKey = {},
 }: ChatMessageBubbleProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const senderName = String(message.sender?.name || "알 수 없음").trim();
@@ -242,24 +255,58 @@ export function ChatMessageBubble({
                       : "";
                 const s3Key = String(file?.s3Key || "").trim();
                 const canOpen = typeof onOpenAttachment === "function" && (s3Key || file?.s3Url);
+                const busyKey = chatAttachmentBusyKey({
+                  s3Key,
+                  fileId: file?.fileId,
+                });
+                const isBusy = Boolean(
+                  busyKey && downloadingFileKeys.includes(busyKey),
+                );
+                const progress = busyKey
+                  ? Number(downloadProgressByKey[busyKey] ?? 0)
+                  : 0;
+                const barWidth = isBusy
+                  ? Math.max(6, Math.min(100, Math.round(progress)))
+                  : 0;
 
                 return canOpen ? (
                   <button
                     key={`${message._id}:file:${idx}`}
                     type="button"
-                    onClick={() =>
+                    disabled={isBusy}
+                    onClick={() => {
+                      if (isBusy) return;
                       void onOpenAttachment({
                         fileId: file?.fileId,
                         fileName,
                         fileSize: fileSizeNum,
                         s3Key,
                         s3Url: String(file?.s3Url || "").trim(),
-                      })
+                      });
+                    }}
+                    className="block w-full rounded border border-current/20 px-2 py-1 text-xs text-left underline-offset-2 hover:underline disabled:pointer-events-none disabled:no-underline disabled:opacity-80"
+                    aria-busy={isBusy}
+                    aria-label={
+                      isBusy
+                        ? `${fileName} 다운로드 중 ${Math.round(progress)}%`
+                        : fileName
                     }
-                    className="block w-full rounded border border-current/20 px-2 py-1 text-xs text-left underline-offset-2 hover:underline"
                   >
-                    {fileName}
-                    {sizeLabel ? ` · ${sizeLabel}` : ""}
+                    <span className="block">
+                      {isBusy
+                        ? `다운로드 중 ${Math.round(progress)}% · `
+                        : ""}
+                      {fileName}
+                      {sizeLabel ? ` · ${sizeLabel}` : ""}
+                    </span>
+                    {isBusy ? (
+                      <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-current/20">
+                        <span
+                          className="block h-full rounded-full bg-current/80 transition-[width]"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </span>
+                    ) : null}
                   </button>
                 ) : (
                   <div

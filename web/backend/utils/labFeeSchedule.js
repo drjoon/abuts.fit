@@ -22,6 +22,11 @@ export const LAB_FEE_SCHEDULE_DEFAULTS = {
   customAbutmentDesignAndProduction: 35000,
 };
 
+/** 기공소 미지정(자동매칭) 견적 — 기본수가 없음(0원). 기공소 스케줄이 있을 때만 청구. */
+export const LAB_FEE_SCHEDULE_ZEROS = Object.fromEntries(
+  LAB_FEE_SCHEDULE_KEYS.map((key) => [key, 0]),
+);
+
 /** 항목별 서비스 제공 여부. 미설정 시 전부 제공(true) */
 export const LAB_FEE_SCHEDULE_ENABLED_DEFAULTS = Object.fromEntries(
   LAB_FEE_SCHEDULE_KEYS.map((key) => [key, true]),

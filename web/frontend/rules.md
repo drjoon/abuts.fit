@@ -117,6 +117,8 @@ Notes:
   - `src/shared/files/extractDroppedFiles.ts`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
     - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 어벗 디자인은 커스텀 체크박스(임플란트·스캔바디) 지원. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
+    - 기공의뢰서 상·하악 사이(크게보기·전송 상세 포함)에 견적(크레딧 소비액) 표시. 간단 합계 + 빠른툴팁 치식별 세부. `PracticeTransferFeeEstimate` / `GET /api/practice/transfers/quote-context`.
+    - 기공소 의뢰카드·전송 상세에는 수령액(청구 − 플랫폼 수수료) 표시. 목록 `feeQuote` SSOT.
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
   - `src/shared/practice/toothWorkDraft.ts`
   - `src/shared/components/PracticeTransferDetailChatDialog.tsx`
@@ -257,7 +259,8 @@ Notes:
   - 기존 거래 치과 등록은 `max(pricingBaseDate, 2026-08-11)` 기준 **30일**간만 신규 초대 가능(D-day 배지·상단 배너). 탭 라벨: 「거래 치과 등록」.
   - 기공소 화면(기공의뢰수신·어벗생산의뢰) 상단: 등록 잔여일 alert + 가입 이유 alert(기간 중만, 2열). 기간 종료 후 대시보드 `[가입 이유]`(기공소·치과 각 variant).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
-    - **치과**: 유료크레딧(+무료·의뢰/배송)만 표시. `기공크레딧` 잔액 행·정산 필터 숨김. 기공의뢰 차감은 유료크레딧에서 나가며 장부 항목=`기공비`.
+    - **치과**: 유료크레딧(+무료·의뢰/배송)만 표시. `기공크레딧` 잔액 행·정산 필터 숨김. 기공의뢰 차감은 유료크레딧에서 나가며 장부 항목=`기공비`. 기공의뢰 치식 차트(상·하악 사이)·전송 상세에 견적(크레딧 소비액) 표시.
+    - **기공소 기공의뢰수신**: 의뢰카드·전송 상세에 수령액(청구 − 플랫폼 수수료) 표시.
     - **기공소**: 유료크레딧(입금·소비)과 기공크레딧(치과 수취·월 정산, `LAB_SETTLEMENT_CREDIT`)을 분리 표시. 「기공크레딧 정산」 탭은 lab만.
   - 치과 장부 라벨: 기공비 / 어벗의뢰비 / 배송비.
   - 안내 모달([정책 안내])·어벗 라인 요약카드(무료 재제작 잔여) 문구는 동일한 `90일` 기준을 사용해야 합니다.
@@ -613,6 +616,7 @@ Notes:
   - 동일 치과 구성원(레거시 practice 및 requestor+practice)은 동료가 보낸 전송 채팅에도 참여할 수 있습니다(백엔드 participants 자동 추가). 수락 후 기존 방이 있어도 작성자·수락 기공소는 403 없이 합류합니다.
   - 지정 기공소(`targetLabAnchorId`) requestor 구성원도 primaryContact 해석 실패 시 본인으로 lab 참여자를 잡아 치과(`practiceUserId`)와 연결합니다.
   - 자동매칭 공개 풀: 치과는 「기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다.」, 기공소는 「의뢰수락 후…」 안내. 수락 시 서버가 채팅방을 만들고 치과 모달은 실시간으로 재연결.
+  - 기공소 의뢰 상세 모달: 지정 기공소는 수락 전이라도 치과 채팅 내역을 본다. 수락 CTA는 채팅 상단 바. 자동매칭 공개 풀은 수락 전까지 방이 없어 빈 상태 + 수락 바.
   - 의뢰 상세·채팅 모달(`PracticeTransferDetailChatDialog`) 가로폭: `max-w-[90rem]` (`w-[95vw]`).
   - draft 공동 작성 동기화: `draft-upserted` 이벤트 스냅샷을 즉시 반영(`delayMs=0`, `deferWhenEditing=false`). 동일 계정 다중 탭도 fingerprint/서버 updatedAt LWW로 맞춤(editor echo skip 금지).
   - 한글 IME: 환자명/메모는 `ImeSafeInput`으로 조합 중 로컬 draft 유지. 조합 중 autosave·원격 폼 반영은 미루고, 조합 종료 후 처리.

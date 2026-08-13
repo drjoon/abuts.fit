@@ -28,6 +28,7 @@
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
  * - web/frontend/src/shared/hooks/useFilePreUpload.ts
  * - 2026-08-13: 파일카드에 사전 업로드 프로그레스바.
+ * - 2026-08-13: 전송 시 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -60,7 +61,6 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore, type User } from "@/store/useAuthStore";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
-import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { toTempUploadFileKey, useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import {
   Popover,
@@ -622,15 +622,12 @@ export const PracticeDropzonePage = () => {
   const fileCacheMaxTotalBytes = PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES;
   const {
     ensureFilesUploaded,
+    peekCachedUploadedFiles,
     preUploadFiles,
     forgetFile,
     clearPreUploadCache,
     uploadProgress,
   } = useFilePreUpload({ token: authToken });
-  const { uploadFilesWithToast } = useUploadWithProgressToast({
-    token: authToken,
-    uploadFiles: ensureFilesUploaded,
-  });
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
 
   const {
@@ -1574,7 +1571,11 @@ export const PracticeDropzonePage = () => {
 
     setRequestSubmitting(true);
     try {
-      const uploadedTempFiles = files.length > 0 ? await uploadFilesWithToast(files) : [];
+      const uploadedTempFiles =
+        files.length > 0
+          ? peekCachedUploadedFiles(files) ??
+            (await ensureFilesUploaded(files))
+          : [];
       const transferId = makeTransferId();
       const transferMemo = buildPracticeTransferMemo({
         memo: requestMemo,

@@ -12,6 +12,7 @@ import {
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferMiddleGrid.tsx
+// - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 
 type PracticeTransferIntakeSectionProps = {
   filePaneProps: PracticeTransferFilePaneProps;
@@ -26,7 +27,7 @@ export const PracticeTransferIntakeSection = ({
 }: PracticeTransferIntakeSectionProps) => {
   return (
     <PracticeTransferMiddleGrid className={middleGridClassName}>
-      <PracticeTransferRequestIntakePanel {...requestIntakeProps} />
+      <PracticeTransferRequestIntakePanel {...requestIntakeProps} showFeeEstimate />
       <PracticeTransferFilePane {...filePaneProps} />
     </PracticeTransferMiddleGrid>
   );

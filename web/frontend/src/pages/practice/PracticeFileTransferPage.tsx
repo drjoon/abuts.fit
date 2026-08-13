@@ -45,6 +45,8 @@
  * - 2026-08-13: 최근전송 취소 뱃지=기공소 작업취소만(치과 휴지통 제외). 6뱃지 빠른툴팁.
  * - 2026-08-13: 파일카드에 사전 업로드 프로그레스바.
  * - 2026-08-13: 채팅 첨부도 즉시 백그라운드 업로드 + 칩 프로그레스바.
+ * - 2026-08-13: 채팅/의뢰 파일 다운로드 프로그레스바.
+ * - 2026-08-13: [기공소로 전송]은 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -99,12 +101,12 @@ import { usePeriodStore } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch, invalidateApiGetCache } from "@/shared/api/apiClient";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
-import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { toTempUploadFileKey, useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import {
   toChatMessageAttachments,
   useBackgroundTempUpload,
 } from "@/shared/hooks/useBackgroundTempUpload";
+import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
@@ -177,6 +179,10 @@ import {
       type PracticeImplantFavorite,
       type ToothWorkSelection as SharedToothWorkSelection,
 } from "@/shared/practice/transferMemo";
+import {
+  parsePracticeTransferFeeQuote,
+  type PracticeTransferFeeQuote,
+} from "@/shared/practice/practiceTransferFeeQuote";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { kstYmdDiffDays } from "@/shared/date/kst";
 import {
@@ -209,6 +215,7 @@ type RecentRequestItem = {
   resultFiles?: TransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
+  feeQuote?: PracticeTransferFeeQuote | null;
 };
 
 type TransferFileItem = {
@@ -331,6 +338,8 @@ type RecentTransferItem = {
   practiceUserLabel?: string;
   isMineDraft?: boolean;
   draftPatientName?: string;
+  targetLabAnchorId?: string;
+  feeQuote?: PracticeTransferFeeQuote | null;
 };
 
 const extractLabNameFromMessage = (message: string) => {
@@ -958,6 +967,14 @@ export const PracticeFileTransferPage = ({
   } | null>(null);
   const [chatSending, setChatSending] = useState(false);
   const chatUploads = useBackgroundTempUpload({ token: authToken });
+  const {
+    downloadingKeys,
+    downloadProgressByKey,
+    downloadAllBusy,
+    downloadS3File,
+    downloadAll,
+    resetDownloads,
+  } = useS3FileDownload(authToken);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
@@ -1244,16 +1261,24 @@ export const PracticeFileTransferPage = ({
 
   const {
     ensureFilesUploaded,
+    peekCachedUploadedFiles,
     preUploadFiles,
     forgetFile,
     clearPreUploadCache,
     uploadProgress,
   } = useFilePreUpload({ token: authToken });
-  const { uploadFilesWithToast } = useUploadWithProgressToast({
-    token: authToken,
-    uploadFiles: ensureFilesUploaded,
-  });
   const { rooms: chatRooms } = useChatRooms();
+
+  const resolveUploadedTempFiles = useCallback(
+    async (targetFiles: File[]) => {
+      if (!targetFiles.length) return [];
+      return (
+        peekCachedUploadedFiles(targetFiles) ??
+        (await ensureFilesUploaded(targetFiles))
+      );
+    },
+    [ensureFilesUploaded, peekCachedUploadedFiles],
+  );
 
   useEffect(() => {
     if (!authToken || files.length === 0) return;
@@ -2017,6 +2042,7 @@ export const PracticeFileTransferPage = ({
             productionConfirmedAt: productionRaw?.confirmedAt
               ? String(productionRaw.confirmedAt)
               : null,
+            feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
           };
         })
         .filter((item) => Boolean(item.id))
@@ -2795,6 +2821,8 @@ export const PracticeFileTransferPage = ({
           productionConfirmedAt: req.productionConfirmedAt || null,
           transferMemo: req.transferMemo,
           rawTransferMemo: req.rawTransferMemo,
+          targetLabAnchorId: req.targetLabAnchorId,
+          feeQuote: req.feeQuote || null,
           unreadCount,
           searchBlob: [
             req.id,
@@ -2865,6 +2893,10 @@ export const PracticeFileTransferPage = ({
         existing.resultFiles = Array.from(byKey.values());
       }
       if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
+      if (!existing.feeQuote && req.feeQuote) existing.feeQuote = req.feeQuote;
+      if (!existing.targetLabAnchorId && req.targetLabAnchorId) {
+        existing.targetLabAnchorId = req.targetLabAnchorId;
+      }
       if (req.productionConfirmedAt) {
         existing.productionConfirmedAt = req.productionConfirmedAt;
       }
@@ -3459,6 +3491,7 @@ export const PracticeFileTransferPage = ({
     setChatReplyTo(null);
     chatUploads.clear();
     setChatError("");
+    resetDownloads();
     if (reopenAllModal) {
       setRecentTransfersAllOpen(true);
     }
@@ -3505,50 +3538,14 @@ export const PracticeFileTransferPage = ({
 
   const handleDownloadTransferFile = useCallback(
     async (file: TransferFileItem) => {
-      if (!authToken) return;
-      const fileName = String(file?.fileName || "첨부파일").trim() || "첨부파일";
       const s3Key = String(file?.s3Key || "").trim();
-      if (!s3Key) {
-        toast({
-          title: "다운로드 실패",
-          description: "파일 키를 확인할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      try {
-        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(s3Key)}&fileName=${encodeURIComponent(fileName)}&_ts=${Date.now()}`;
-        const resp = await fetch(downloadPath, {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        });
-
-        if (!resp.ok) {
-          throw new Error("전송 파일 다운로드 응답이 올바르지 않습니다.");
-        }
-
-        const blob = await resp.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = objectUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(objectUrl);
-      } catch {
-        toast({
-          title: "다운로드 실패",
-          description: "전송 파일 다운로드 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      }
+      await downloadS3File({
+        s3Key,
+        fileName: String(file?.fileName || "첨부파일").trim() || "첨부파일",
+        busyKey: s3Key,
+      });
     },
-    [authToken, toast],
+    [downloadS3File],
   );
 
   const handleDownloadAllTransferFiles = useCallback(async () => {
@@ -3558,10 +3555,14 @@ export const PracticeFileTransferPage = ({
         ? selectedTransfer.resultFiles
         : []),
     ];
-    if (!files.length) return;
-
-    await Promise.all(files.map((file) => handleDownloadTransferFile(file)));
-  }, [handleDownloadTransferFile, selectedTransfer]);
+    await downloadAll(
+      files.map((file) => ({
+        s3Key: String(file.s3Key || "").trim(),
+        fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
+        busyKey: String(file.s3Key || "").trim(),
+      })),
+    );
+  }, [downloadAll, selectedTransfer]);
 
   const handleConfirmProduction = useCallback(async () => {
     if (!authToken || !selectedTransfer || productionConfirmBusy) return;
@@ -3628,56 +3629,20 @@ export const PracticeFileTransferPage = ({
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
+      fileId?: string;
       fileName?: string;
       fileSize?: number;
       s3Key?: string;
       s3Url?: string;
     }) => {
-      if (!authToken) return;
-
-      const rawName = String(attachment?.fileName || "첨부파일").trim() || "첨부파일";
       const s3Key = String(attachment?.s3Key || "").trim();
-      if (!s3Key) {
-        toast({
-          title: "다운로드 실패",
-          description: "첨부파일 키를 확인할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      try {
-        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(s3Key)}&fileName=${encodeURIComponent(rawName)}&_ts=${Date.now()}`;
-        const resp = await fetch(downloadPath, {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        });
-
-        if (!resp.ok) {
-          throw new Error("첨부파일 다운로드 응답이 올바르지 않습니다.");
-        }
-
-        const blob = await resp.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = objectUrl;
-        a.download = rawName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(objectUrl);
-      } catch {
-        toast({
-          title: "다운로드 실패",
-          description: "첨부파일 다운로드 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      }
+      await downloadS3File({
+        s3Key,
+        fileName: String(attachment?.fileName || "첨부파일").trim() || "첨부파일",
+        busyKey: s3Key || String(attachment?.fileId || "").trim(),
+      });
     },
-    [authToken, toast],
+    [downloadS3File],
   );
 
   const handleAttachChatFiles = (inputFiles: FileList | null) => {
@@ -4603,9 +4568,8 @@ export const PracticeFileTransferPage = ({
 
     setRequestSubmitting(true);
     try {
-      const uploadedTempFiles: TempUploadedFile[] = files.length
-        ? await uploadFilesWithToast(files)
-        : [];
+      const uploadedTempFiles: TempUploadedFile[] =
+        await resolveUploadedTempFiles(files);
 
       const localTempFiles = uploadedTempFiles
         .map((f) => ({
@@ -4929,7 +4893,8 @@ export const PracticeFileTransferPage = ({
     try {
       let nextDraftFiles = [...draftFilesRef.current];
       if (files.length > 0) {
-        const uploadedTempFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
+        const uploadedTempFiles: TempUploadedFile[] =
+          await resolveUploadedTempFiles(files);
         nextDraftFiles = [
           ...nextDraftFiles,
           ...uploadedTempFiles.map((f) => ({
@@ -6078,6 +6043,9 @@ export const PracticeFileTransferPage = ({
               ? selectedTransfer.transferId
               : selectedTransfer?.id || "practice-transfer"
           }
+          feeQuote={selectedTransfer?.feeQuote || null}
+          feeViewer="practice"
+          labAnchorId={selectedTransfer?.targetLabAnchorId || null}
           filesLabel="의뢰 파일"
           files={
             (selectedTransfer?.files || []).map((file, idx) => ({
@@ -6103,6 +6071,9 @@ export const PracticeFileTransferPage = ({
           }
           productionConfirmBusy={productionConfirmBusy}
           onConfirmProduction={() => void handleConfirmProduction()}
+          downloadingFileKeys={downloadingKeys}
+          downloadProgressByKey={downloadProgressByKey}
+          downloadAllBusy={downloadAllBusy}
           onDownloadAllFiles={() => void handleDownloadAllTransferFiles()}
           onDownloadTransferFile={(file) =>
             void handleDownloadTransferFile({

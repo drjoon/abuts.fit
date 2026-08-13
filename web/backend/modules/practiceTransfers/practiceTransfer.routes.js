@@ -19,6 +19,7 @@ import {
   listPracticeTransferDrafts,
   restorePracticeTransferDraft,
   getMyPracticeTransfers,
+  getPracticeTransferQuoteContext,
   getReceivedPracticeTransfers,
   getReceivedPracticeTransferUnreadCount,
   markReceivedPracticeTransferRead,
@@ -47,6 +48,13 @@ const receiveAuth = authorizePracticeTransferReceive();
 router.post("/", authenticate, sendAuth, createPracticeTransfer);
 
 router.get("/my", authenticate, sendAuth, getMyPracticeTransfers);
+
+router.get(
+  "/quote-context",
+  authenticate,
+  authorize(["practice", "requestor", "admin"]),
+  getPracticeTransferQuoteContext,
+);
 
 router.get(
   "/settings",

@@ -9,6 +9,10 @@ import {
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
   stripPracticeTransferMessageEnvelope,
 } from "@/shared/practice/transferMemo";
+import {
+  parsePracticeTransferFeeQuote,
+  type PracticeTransferFeeQuote,
+} from "@/shared/practice/practiceTransferFeeQuote";
 
 export type PracticeRecentTransferFileItem = {
   fileName: string;
@@ -39,6 +43,7 @@ export type PracticeRecentRequestItem = {
   resultFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
+  feeQuote?: PracticeTransferFeeQuote | null;
 };
 
 export type PracticeRecentTransferItem = {
@@ -65,6 +70,8 @@ export type PracticeRecentTransferItem = {
   rawTransferMemo?: string;
   unreadCount: number;
   searchBlob: string;
+  targetLabAnchorId?: string;
+  feeQuote?: PracticeTransferFeeQuote | null;
 };
 
 export type PracticeRecentStatusFilter =
@@ -310,6 +317,7 @@ export const mapMyPracticeTransferApiRows = (
         productionConfirmedAt: productionRaw?.confirmedAt
           ? String(productionRaw.confirmedAt)
           : null,
+        feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
       };
     })
     .filter((item) => Boolean(item.id))
@@ -449,6 +457,8 @@ export const groupPracticeRecentRequests = (
         productionConfirmedAt: req.productionConfirmedAt || null,
         transferMemo: req.transferMemo,
         rawTransferMemo: req.rawTransferMemo,
+        targetLabAnchorId: req.targetLabAnchorId,
+        feeQuote: req.feeQuote || null,
         unreadCount,
         searchBlob: [
           req.id,
@@ -518,6 +528,10 @@ export const groupPracticeRecentRequests = (
       existing.resultFiles = Array.from(byS3Key.values());
     }
     if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
+    if (!existing.feeQuote && req.feeQuote) existing.feeQuote = req.feeQuote;
+    if (!existing.targetLabAnchorId && req.targetLabAnchorId) {
+      existing.targetLabAnchorId = req.targetLabAnchorId;
+    }
     if (req.productionConfirmedAt) {
       existing.productionConfirmedAt = req.productionConfirmedAt;
     }

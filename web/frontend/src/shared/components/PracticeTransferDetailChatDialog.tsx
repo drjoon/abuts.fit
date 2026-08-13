@@ -6,6 +6,8 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - 2026-08-13: 기공소 상세 모달 — 수락 전에도 치과 채팅 내역 표시. 수락 CTA는 채팅 상단 바.
+// - 2026-08-13: 채팅 첨부 다운로드 프로그레스를 버블에 전달.
 import type { RefObject } from "react";
 import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +22,10 @@ import {
 } from "@/features/chat/components/MessageReply";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+import type {
+  PracticeTransferFeeQuote,
+  PracticeTransferFeeQuoteViewer,
+} from "@/shared/practice/practiceTransferFeeQuote";
 import { Progress } from "@/components/ui/progress";
 import type { BackgroundUploadItem } from "@/shared/hooks/useBackgroundTempUpload";
 import { BackgroundUploadList } from "@/shared/components/upload/BackgroundUploadList";
@@ -52,6 +58,9 @@ type PracticeTransferDetailChatDialogProps = {
   /** 보철물 치식 차트(읽기 전용). 있으면 의뢰 메모 위에 표시 */
   toothWorks?: ToothWorkSelection[];
   toothWorksKey?: string;
+  feeQuote?: PracticeTransferFeeQuote | null;
+  feeViewer?: PracticeTransferFeeQuoteViewer;
+  labAnchorId?: string | null;
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
   /** 기공소 작업완료 결과 파일 (있을 때만 표시) */
@@ -68,12 +77,12 @@ type PracticeTransferDetailChatDialogProps = {
   downloadAllBusy?: boolean;
   onDownloadAllFiles: () => void | Promise<void>;
   onDownloadTransferFile: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
-  /** 기공소 의뢰수락 (수신 페이지에서만 전달). 미수락·채팅방 없음일 때만 중앙 CTA */
+  /** 기공소 의뢰수락 (수신 페이지에서만 전달). 미수락이면 채팅 상단 CTA */
   acceptBusy?: boolean;
   accepted?: boolean;
   /**
    * 이미 채팅방이 연결된 경우(수락 이력·작업취소 후 등).
-   * true면 채팅을 유지할 수 있다. 재수락 CTA는 workCanceled일 때만 표시한다.
+   * 수락 전이라도 지정 기공소는 치과 메시지를 볼 수 있다.
    */
   chatUnlocked?: boolean;
   /** 기공소 작업취소 후 재수락이 필요한 상태 */
@@ -89,6 +98,7 @@ type PracticeTransferDetailChatDialogProps = {
   formatChatTime: (createdAt: string) => string;
   formatFileSize: (size: number) => string;
   onDownloadChatAttachment: (file: {
+    fileId?: string;
     fileName: string;
     fileSize: number;
     s3Key: string;
@@ -121,6 +131,9 @@ export function PracticeTransferDetailChatDialog({
   memo,
   toothWorks,
   toothWorksKey,
+  feeQuote = null,
+  feeViewer = "practice",
+  labAnchorId = null,
   filesLabel,
   files,
   resultFilesLabel = "작업 결과 파일",
@@ -135,7 +148,6 @@ export function PracticeTransferDetailChatDialog({
   onDownloadTransferFile,
   acceptBusy = false,
   accepted = false,
-  chatUnlocked = false,
   workCanceled = false,
   onAccept,
   remainingLabel = null,
@@ -168,14 +180,18 @@ export function PracticeTransferDetailChatDialog({
   const hasCustomAbutment = Boolean(
     toothWorks?.some((work) => Boolean(work.customAbutment)),
   );
-  /** 최초 미수락: 중앙 수락 CTA (채팅방만 있다고 재수락으로 보지 않음) */
-  const showAcceptGate = Boolean(onAccept) && !accepted && !workCanceled;
+  /** 최초 미수락: 채팅은 유지하고 상단에 수락 CTA */
+  const showAcceptBar = Boolean(onAccept) && !accepted && !workCanceled;
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
   const showReacceptBar =
     Boolean(onAccept) && !accepted && workCanceled;
-  const acceptGateMessage =
-    String(chatError || "").trim() ||
-    "의뢰수락 후 치과와 채팅할 수 있습니다.";
+  const rawChatError = String(chatError || "").trim();
+  const isPreAcceptChatHint =
+    rawChatError === "의뢰수락 후 치과와 채팅할 수 있습니다." ||
+    rawChatError === "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다.";
+  /** 자동매칭 공개 풀 등 방이 없을 때: 수락 바와 같은 안내를 메시지 영역에 중복하지 않음 */
+  const visibleChatError =
+    showAcceptBar && isPreAcceptChatHint ? "" : rawChatError;
   const acceptButtonLabel = acceptBusy
     ? "수락 중..."
     : remainingLabel
@@ -212,6 +228,9 @@ export function PracticeTransferDetailChatDialog({
                 <PracticeToothWorkChartReadOnly
                   key={toothWorksKey || "tooth-works"}
                   toothWorks={toothWorks}
+                  feeQuote={feeQuote}
+                  feeViewer={feeViewer}
+                  labAnchorId={labAnchorId}
                 />
               ) : null}
 
@@ -347,18 +366,12 @@ export function PracticeTransferDetailChatDialog({
                 {conversationTitle}
               </div>
 
-              {showAcceptGate ? (
-                <div className="min-h-0 flex-1 flex items-center justify-center px-4 py-6">
-                  <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-                    {chatLoading ? (
-                      <p className="text-sm text-muted-foreground">
-                        채팅을 불러오는 중입니다...
-                      </p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        {acceptGateMessage}
-                      </p>
-                    )}
+              {showAcceptBar ? (
+                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">
+                      치과 메시지를 확인한 뒤 수락하면 작업을 진행할 수 있습니다.
+                    </p>
                     {hasCustomAbutment ? (
                       <TooltipProvider delayDuration={0}>
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -382,8 +395,11 @@ export function PracticeTransferDetailChatDialog({
                         </div>
                       </TooltipProvider>
                     ) : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
                     <Button
                       type="button"
+                      size="sm"
                       onClick={() => void onAccept?.()}
                       disabled={acceptBusy}
                     >
@@ -391,27 +407,28 @@ export function PracticeTransferDetailChatDialog({
                     </Button>
                   </div>
                 </div>
-              ) : (
-                <>
-                  {showReacceptBar ? (
-                    <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-xs text-muted-foreground">
-                        작업이 취소된 상태입니다. 채팅은 이어갈 수 있고, 다시 수락하면 작업을
-                        진행할 수 있습니다.
-                      </p>
-                      <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => void onAccept?.()}
-                          disabled={acceptBusy}
-                        >
-                          {reacceptButtonLabel}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                  <ScrollArea className="min-h-0 flex-1 px-3 py-3">
+              ) : null}
+
+              {showReacceptBar ? (
+                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    작업이 취소된 상태입니다. 채팅은 이어갈 수 있고, 다시 수락하면 작업을
+                    진행할 수 있습니다.
+                  </p>
+                  <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void onAccept?.()}
+                      disabled={acceptBusy}
+                    >
+                      {reacceptButtonLabel}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              <ScrollArea className="min-h-0 flex-1 px-3 py-3">
                     <div className="w-full min-w-0 max-w-full space-y-2">
                       {chatLoading ? (
                         <div className="text-center text-sm text-muted-foreground py-4">
@@ -419,15 +436,15 @@ export function PracticeTransferDetailChatDialog({
                         </div>
                       ) : null}
 
-                      {!chatLoading && chatError ? (
+                      {!chatLoading && visibleChatError ? (
                         <div className="flex min-h-[12rem] items-center justify-center py-4">
                           <p className="text-center text-sm text-muted-foreground">
-                            {chatError}
+                            {visibleChatError}
                           </p>
                         </div>
                       ) : null}
 
-                      {!chatLoading && !chatError && chatMessages.length === 0 ? (
+                      {!chatLoading && !visibleChatError && chatMessages.length === 0 ? (
                         <div className="text-center text-sm text-muted-foreground py-4">
                           아직 메시지가 없습니다.
                         </div>
@@ -443,10 +460,13 @@ export function PracticeTransferDetailChatDialog({
                             currentUserId={currentUserId}
                             formatTime={formatChatTime}
                             formatFileSize={formatFileSize}
+                            downloadingFileKeys={downloadingFileKeys}
+                            downloadProgressByKey={downloadProgressByKey}
                             onReply={onReplyToMessage}
                             onToggleReaction={onToggleReaction}
                             onOpenAttachment={(file) =>
                               void onDownloadChatAttachment({
+                                fileId: file.fileId,
                                 fileName: file.fileName,
                                 fileSize: Number(file.fileSize || 0),
                                 s3Key: String(file.s3Key || ""),
@@ -530,8 +550,6 @@ export function PracticeTransferDetailChatDialog({
                       </Button>
                     </div>
                   </div>
-                </>
-              )}
             </div>
           </div>
         </div>
