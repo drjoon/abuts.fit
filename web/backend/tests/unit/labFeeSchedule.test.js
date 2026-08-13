@@ -561,6 +561,41 @@ describe("labFeeSchedule", () => {
     });
   });
 
+  test("관리자가 타입을 바꿔도 같은 제조사 환봉 도입 단가를 쓴다", () => {
+    const tooth = {
+      toothNumber: "16",
+      prosthesisType: "커스텀어벗",
+      customAbutment: true,
+      abutmentProductMode: "custom_abutment",
+      implantManufacturer: "Acme",
+      implantBrand: "One",
+      implantFamily: "Regular",
+      implantType: "헥스(사이즈 미정)",
+    };
+    const favorites = [
+      {
+        manufacturer: "Acme",
+        brand: "One",
+        family: "Regular",
+        type: "2.5 Hex",
+        roundBar: true,
+        adopted: true,
+        adoptedKind: "round_bar",
+      },
+    ];
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [tooth],
+      implantFavorites: favorites,
+      labFeeSchedule: LAB_FEE_SCHEDULE_ZEROS,
+      abutmentPricingTier: "regular",
+      abutmentPrices: {
+        regularRoundBarProductionPrice: 18000,
+      },
+    });
+    expect(fees.abutmentRetailTotal).toBe(18000);
+    expect(fees.labAbutmentPending).toBe(false);
+  });
+
   test("환봉 단가 0원이면 별도 고지 노트를 남긴다", () => {
     const tooth = {
       toothNumber: "16",

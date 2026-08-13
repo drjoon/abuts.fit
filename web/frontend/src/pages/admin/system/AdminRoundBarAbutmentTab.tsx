@@ -124,8 +124,8 @@ export const AdminRoundBarAbutmentTab = ({
     const manufacturer = draft.manufacturer.trim();
     const brand = draft.brand.trim();
     const family = draft.family.trim();
-    const type = draft.type.trim() || ROUND_BAR_HEX_TYPE;
-    if (!manufacturer || !brand || !family) return;
+    const type = draft.type.trim();
+    if (!manufacturer || !brand || !family || !type) return;
     setSavingId(id);
     try {
       const updated = await patchAdminRoundBarRequest({

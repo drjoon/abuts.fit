@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // change-log:
+// - 2026-08-14: hydrate가 관리자가 고친 타입·스펙도 프리셋에 덮어쓴다.
 // - 2026-08-14: 도입 상태 SSOT=요청 문서. 프리셋 id 매칭(mongoose virtual) 수정 + GET/PATCH hydrate.
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -337,7 +338,15 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
   const list = Array.isArray(favorites) ? favorites : [];
   if (!practiceAnchorId || list.length === 0) return list;
   const requests = await RoundBarAbutmentRequest.find({ practiceAnchorId })
-    .select({ adopted: 1, adoptedKind: 1, favoriteId: 1 })
+    .select({
+      adopted: 1,
+      adoptedKind: 1,
+      favoriteId: 1,
+      manufacturer: 1,
+      brand: 1,
+      family: 1,
+      type: 1,
+    })
     .lean();
   if (!requests.length) return list;
 
@@ -347,6 +356,10 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
     const snapshot = {
       adopted: Boolean(row.adopted),
       adoptedKind: normalizeAdoptedKind(row.adoptedKind),
+      manufacturer: String(row.manufacturer || "").trim(),
+      brand: String(row.brand || "").trim(),
+      family: String(row.family || "").trim(),
+      type: String(row.type || "").trim() || ROUND_BAR_HEX_TYPE,
     };
     byRequestId.set(String(row._id), snapshot);
     const favoriteId = String(row.favoriteId || "").trim();
@@ -366,14 +379,31 @@ async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) 
     const adoptedKind = snapshot
       ? snapshot.adoptedKind
       : normalizeAdoptedKind(fav.adoptedKind);
+    const manufacturer = snapshot?.manufacturer || fav.manufacturer;
+    const brand = snapshot?.brand || fav.brand;
+    const family = snapshot?.family || fav.family;
+    const type = snapshot?.type || fav.type;
     if (
       Boolean(fav.roundBar) &&
       Boolean(fav.adopted) === adopted &&
-      normalizeAdoptedKind(fav.adoptedKind) === adoptedKind
+      normalizeAdoptedKind(fav.adoptedKind) === adoptedKind &&
+      String(fav.manufacturer || "").trim() === String(manufacturer || "").trim() &&
+      String(fav.brand || "").trim() === String(brand || "").trim() &&
+      String(fav.family || "").trim() === String(family || "").trim() &&
+      String(fav.type || "").trim() === String(type || "").trim()
     ) {
       return fav;
     }
-    return { ...fav, roundBar: true, adopted, adoptedKind };
+    return {
+      ...fav,
+      roundBar: true,
+      adopted,
+      adoptedKind,
+      manufacturer,
+      brand,
+      family,
+      type,
+    };
   });
 }
 
