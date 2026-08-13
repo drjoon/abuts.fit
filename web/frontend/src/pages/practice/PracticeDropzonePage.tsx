@@ -31,6 +31,7 @@
  * - 2026-08-13: 전송 시 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  * - 2026-08-13: 커스텀어벗 설정 모달 기본=디자인+생산. 로그인 후 계정 설정으로 저장.
  * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
+ * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -124,6 +125,7 @@ import {
   buildPracticeTransferMemo as buildPracticeTransferMemoShared,
   emptyToothWorkCustomSpecs,
   isLinkableProsthesisType,
+  listMissingAbutmentPresetTeeth,
   normalizeAbutmentFavorites,
   ABUTMENT_PRODUCT_MODE,
   normalizeAccountAbutmentProductMode,
@@ -807,13 +809,26 @@ export const PracticeDropzonePage = () => {
   const normalizedToothWorks = useMemo(() => normalizeToothWorks(toothWorks), [toothWorks]);
   const normalizedPatientName = useMemo(() => String(patientName || "").trim(), [patientName]);
 
+  const missingAbutmentPresetTeeth = useMemo(
+    () => listMissingAbutmentPresetTeeth(normalizedToothWorks),
+    [normalizedToothWorks],
+  );
+
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
     if (!selectedLab?._id) missing.push("기공소");
     if (!normalizedPatientName) missing.push("환자명");
     if (normalizedToothWorks.length === 0) missing.push("보철물");
+    if (missingAbutmentPresetTeeth.length > 0) {
+      missing.push(`어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`);
+    }
     return missing;
-  }, [selectedLab?._id, normalizedPatientName, normalizedToothWorks.length]);
+  }, [
+    selectedLab?._id,
+    normalizedPatientName,
+    normalizedToothWorks.length,
+    missingAbutmentPresetTeeth,
+  ]);
 
   const missingStep1Fields = useMemo(() => {
     const missing = [...missingRequiredFields];

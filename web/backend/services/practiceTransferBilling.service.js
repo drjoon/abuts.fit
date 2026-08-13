@@ -34,6 +34,7 @@ import {
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
   resolveAbutsAbutmentPricingTier,
+  resolveLabFeeScheduleSource,
   splitPracticeTransferSettlement,
 } from "../utils/labFeeSchedule.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
@@ -315,7 +316,9 @@ export async function assertPracticeTransferPaidCreditSufficient({
   const abutmentPrices = await loadAbutmentCreditPrices();
   const fees = computePracticeTransferRetailFees({
     toothWorks,
-    labFeeSchedule: noLab ? LAB_FEE_SCHEDULE_ZEROS : labFeeSchedule,
+    labFeeSchedule: noLab
+      ? LAB_FEE_SCHEDULE_ZEROS
+      : resolveLabFeeScheduleSource(labFeeSchedule),
     abutmentPricingTier,
     abutmentPrices,
     remake: useRemake,
@@ -402,7 +405,7 @@ export async function commitPracticeTransferBilling({
   const abutmentPrices = await loadAbutmentCreditPrices();
   const fees = computePracticeTransferRetailFees({
     toothWorks,
-    labFeeSchedule: lab?.labFeeSchedule,
+    labFeeSchedule: resolveLabFeeScheduleSource(lab?.labFeeSchedule),
     abutmentPricingTier,
     abutmentPrices,
     remake,
@@ -782,6 +785,7 @@ export async function buildPracticeTransferQuote({
   let schedule = labFeeSchedule;
   const labId = String(labAnchorId || "").trim();
   const usedDefaultSchedule = !labId;
+  const loadedFromDb = schedule == null;
   if (schedule == null) {
     if (labId && Types.ObjectId.isValid(labId)) {
       const lab = await BusinessAnchor.findById(labId)
@@ -795,6 +799,8 @@ export async function buildPracticeTransferQuote({
 
   if (usedDefaultSchedule) {
     schedule = LAB_FEE_SCHEDULE_ZEROS;
+  } else if (loadedFromDb) {
+    schedule = resolveLabFeeScheduleSource(schedule);
   }
 
   const useRemake = Boolean(remake);
@@ -803,7 +809,7 @@ export async function buildPracticeTransferQuote({
   const abutmentPrices = await loadAbutmentCreditPrices();
   const fees = computePracticeTransferRetailFees({
     toothWorks,
-    labFeeSchedule: usedDefaultSchedule ? LAB_FEE_SCHEDULE_ZEROS : schedule,
+    labFeeSchedule: schedule,
     abutmentPricingTier,
     abutmentPrices,
     remake: useRemake,
@@ -1005,7 +1011,9 @@ export async function buildFeeQuotesForTransferDocs({
     });
     const remakeFees = computePracticeTransferRetailFees({
       toothWorks,
-      labFeeSchedule: noLab ? LAB_FEE_SCHEDULE_ZEROS : schedule,
+      labFeeSchedule: noLab
+        ? LAB_FEE_SCHEDULE_ZEROS
+        : resolveLabFeeScheduleSource(schedule),
       abutmentPricingTier,
       abutmentPrices,
       remake: true,
@@ -1015,7 +1023,9 @@ export async function buildFeeQuotesForTransferDocs({
       ? remakeFees
       : computePracticeTransferRetailFees({
           toothWorks,
-          labFeeSchedule: noLab ? LAB_FEE_SCHEDULE_ZEROS : schedule,
+          labFeeSchedule: noLab
+            ? LAB_FEE_SCHEDULE_ZEROS
+            : resolveLabFeeScheduleSource(schedule),
           abutmentPricingTier,
           abutmentPrices,
         });

@@ -6,8 +6,10 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
+// - 2026-08-13: 미저장(updatedAt 없음) 기공비는 0원·전부 off. 한 번 저장해야 설정 완료.
 // - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
+// - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 import {
   resolveAbutsAbutmentPricingTier,
   resolveAbutsAbutmentUnitPrice,
@@ -25,7 +27,13 @@ export const LAB_FEE_SCHEDULE_KEYS = [
   "customAbutmentDesignAndProduction",
 ];
 
-export const LAB_FEE_SCHEDULE_DEFAULTS = {
+/** 운영 디폴트·미설정 수가. 기공소가 한 번 저장하기 전에는 0원 */
+export const LAB_FEE_SCHEDULE_DEFAULTS = Object.fromEntries(
+  LAB_FEE_SCHEDULE_KEYS.map((key) => [key, 0]),
+);
+
+/** 테스트·예시용 샘플 수가(운영 디폴트는 0원) */
+export const LAB_FEE_SCHEDULE_SAMPLE = {
   crown: 60000,
   bridge: 60000,
   inlay: 50000,
@@ -47,10 +55,38 @@ export const LAB_FEE_SCHEDULE_ZEROS = Object.fromEntries(
   LAB_FEE_SCHEDULE_KEYS.map((key) => [key, 0]),
 );
 
-/** 항목별 서비스 제공 여부. 미설정 시 전부 제공(true) */
+/** 저장된 스케줄에서 키가 없을 때(레거시)는 제공(true)으로 본다 */
 export const LAB_FEE_SCHEDULE_ENABLED_DEFAULTS = Object.fromEntries(
   LAB_FEE_SCHEDULE_KEYS.map((key) => [key, true]),
 );
+
+/** 한 번도 저장하지 않은 기공비 — 전부 미제공 */
+export const LAB_FEE_SCHEDULE_UNSET_ENABLED = Object.fromEntries(
+  LAB_FEE_SCHEDULE_KEYS.map((key) => [key, false]),
+);
+
+export function isLabFeeScheduleConfigured(schedule) {
+  const raw = schedule?.updatedAt;
+  if (raw == null || raw === "") return false;
+  const t = raw instanceof Date ? raw.getTime() : new Date(raw).getTime();
+  return Number.isFinite(t);
+}
+
+export function buildUnsetLabFeeSchedule() {
+  return {
+    ...LAB_FEE_SCHEDULE_ZEROS,
+    remake: { ...LAB_FEE_REMAKE_SCHEDULE_DEFAULTS },
+    enabled: { ...LAB_FEE_SCHEDULE_UNSET_ENABLED },
+    updatedAt: null,
+  };
+}
+
+/** 미저장 스케줄은 스키마 잔여값 대신 0원·전부 off */
+export function resolveLabFeeScheduleSource(schedule) {
+  return isLabFeeScheduleConfigured(schedule)
+    ? schedule
+    : buildUnsetLabFeeSchedule();
+}
 
 export const LAB_TRADING_PARTNER_WINDOW_DAYS = 60;
 
@@ -131,6 +167,34 @@ export function toothArchFromNumber(toothNumber) {
   if (first === "1" || first === "2") return "upper";
   if (first === "3" || first === "4") return "lower";
   return "other";
+}
+
+/** 표시용: 11..18 → 21..28 → 31..38 → 41..48. 아치 순회(18→11)와 분리 */
+export function toToothDecadeSortNumber(toothNumber) {
+  const tokens = String(toothNumber || "")
+    .split(/[^\d]+/)
+    .filter((token) => /^[1-4][1-8]$/.test(token));
+  if (tokens.length === 0) return Number.MAX_SAFE_INTEGER;
+  return Math.min(...tokens.map(Number));
+}
+
+export function sortPracticeTransferFeeLines(lines) {
+  return (Array.isArray(lines) ? lines : []).slice().sort((a, b) => {
+    const diff =
+      toToothDecadeSortNumber(a?.toothNumber) -
+      toToothDecadeSortNumber(b?.toothNumber);
+    if (diff !== 0) return diff;
+    return String(a?.toothNumber || "").localeCompare(
+      String(b?.toothNumber || ""),
+      "ko",
+    );
+  });
+}
+
+function sortToothNumbersForFee(teeth) {
+  return (Array.isArray(teeth) ? teeth : []).slice().sort(
+    (a, b) => toToothDecadeSortNumber(a) - toToothDecadeSortNumber(b),
+  );
 }
 
 export function removableTempFeeForCount(count, price3, price6) {
@@ -720,8 +784,9 @@ export function computePracticeTransferRetailFees({
         addAbutment(abutmentFee);
         groupAbutment += abutmentFee;
       }
+      const sortedTeeth = sortToothNumbersForFee(group.teeth);
       lines.push({
-        toothNumber: group.teeth.join(","),
+        toothNumber: sortedTeeth.join(","),
         prosthesisType:
           item.unit === "perSet"
             ? `${item.name}${group.suffix}`
@@ -737,7 +802,7 @@ export function computePracticeTransferRetailFees({
     abutmentRetailTotal,
     abutmentQty,
     total: labFeeTotal + abutmentRetailTotal,
-    lines,
+    lines: sortPracticeTransferFeeLines(lines),
   };
 }
 

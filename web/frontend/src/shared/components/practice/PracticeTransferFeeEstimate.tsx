@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-13: 치아번호 10→20→30→40번대 순으로 표시.
 import { CircleHelp } from "lucide-react";
 import {
   Tooltip,
@@ -12,6 +13,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import {
   formatWon,
+  sortPracticeTransferFeeLines,
   type PracticeTransferFeeQuote,
   type PracticeTransferFeeQuoteViewer,
 } from "@/shared/practice/practiceTransferFeeQuote";
@@ -191,7 +193,7 @@ export function PracticeTransferFeeEstimate({
         >
           {quote.lines.length > 0 ? (
             <FeeBreakdownTable
-              lines={quote.lines.map((line) => ({
+              lines={sortPracticeTransferFeeLines(quote.lines).map((line) => ({
                 toothNumber: line.toothNumber,
                 prosthesisType: line.prosthesisType,
                 labFee: scaleWon(line.labFee, keepRate),

@@ -74,6 +74,7 @@ import {
   formatAbutmentSummary,
   formatImplantCompact,
   formatImplantSummary,
+  hasCompleteAbutmentPresets,
   isAbutmentProductMode,
   normalizeAccountAbutmentProductMode,
   pickToothWorkCustomSpecs,
@@ -145,6 +146,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 형태 글자 클릭(인레이→크라운→커스텀어벗)은 설정 모달을 열지 않음.
 // - 2026-08-13: 연결 형태 클릭 순환에 유지장치·임시치아 추가.
 // - 2026-08-13: 유지장치=연결 전용. 임시치아=단독·연결.
+// - 2026-08-13: 어벗 체크·커스텀어벗인데 프리셋 미선택이면 치식 카드 빨강.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -2071,6 +2073,8 @@ export const PracticeTransferRequestIntakePanel = ({
                         isCustomType ||
                         (isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
                           Boolean(row.customAbutment));
+                      const missingAbutmentPreset =
+                        showCustomDetails && !hasCompleteAbutmentPresets(row);
                       const implantSummary = formatImplantSummary(row);
                       const abutmentSummary = formatAbutmentSummary(row);
                       const implantCompact = formatImplantCompact(row);
@@ -2186,6 +2190,10 @@ export const PracticeTransferRequestIntakePanel = ({
                                 ? isLinked
                                   ? "border-primary bg-slate-50"
                                   : "rounded-xl border-slate-300 bg-slate-50"
+                                : missingAbutmentPreset
+                                ? isLinked
+                                  ? "border-destructive bg-gradient-to-b from-destructive-soft via-destructive-soft/95 to-white ring-1 ring-destructive/40"
+                                  : "rounded-xl border-destructive bg-gradient-to-b from-destructive-soft via-white to-destructive-soft/40 ring-1 ring-destructive/40"
                                 : isLinked
                                 ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
                                 : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40",
@@ -2325,7 +2333,17 @@ export const PracticeTransferRequestIntakePanel = ({
                             {showAbutmentCheckbox ? (
                               <label
                                 data-no-tooth-marquee=""
-                                className="mt-2 inline-flex h-5 max-w-full cursor-pointer items-center gap-1 px-0.5 text-[11px] leading-none text-slate-600"
+                                title={
+                                  missingAbutmentPreset
+                                    ? "임플란트·스캔바디 프리셋을 선택해주세요"
+                                    : undefined
+                                }
+                                className={cn(
+                                  "mt-2 inline-flex h-5 max-w-full cursor-pointer items-center gap-1 px-0.5 text-[11px] leading-none",
+                                  missingAbutmentPreset
+                                    ? "text-destructive"
+                                    : "text-slate-600",
+                                )}
                               >
                                 <input
                                   type="checkbox"
@@ -2379,7 +2397,12 @@ export const PracticeTransferRequestIntakePanel = ({
                               >
                                 <button
                                   type="button"
-                                  className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong hover:bg-primary-soft/70 hover:underline"
+                                  className={cn(
+                                    "h-5 w-full truncate px-0.5 text-center text-[10px] leading-none hover:underline",
+                                    missingAbutmentPreset
+                                      ? "text-destructive hover:bg-destructive-soft"
+                                      : "text-primary-strong hover:bg-primary-soft/70",
+                                  )}
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -2399,28 +2422,48 @@ export const PracticeTransferRequestIntakePanel = ({
                                       <TooltipTrigger asChild>
                                         <button
                                           type="button"
-                                          className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong hover:bg-primary-soft/70 hover:underline"
+                                          className={cn(
+                                            "h-5 w-full truncate px-0.5 text-center text-[10px] leading-none hover:underline",
+                                            implantCompact
+                                              ? "text-primary-strong hover:bg-primary-soft/70"
+                                              : missingAbutmentPreset
+                                                ? "font-semibold text-destructive hover:bg-destructive-soft"
+                                                : "text-primary-strong hover:bg-primary-soft/70",
+                                          )}
                                           onClick={() => openCustomSpecsModal(originalIndex)}
                                         >
                                           {implantCompact || "임플란트"}
                                         </button>
                                       </TooltipTrigger>
                                       <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                        {implantSummary || "임플란트 선택"}
+                                        {implantSummary ||
+                                          (missingAbutmentPreset
+                                            ? "임플란트 프리셋을 선택해주세요"
+                                            : "임플란트 선택")}
                                       </TooltipContent>
                                     </Tooltip>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <button
                                           type="button"
-                                          className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut hover:bg-service-abut-soft hover:underline"
+                                          className={cn(
+                                            "h-5 w-full truncate px-0.5 text-center text-[10px] leading-none hover:underline",
+                                            abutmentCompact
+                                              ? "text-service-abut hover:bg-service-abut-soft"
+                                              : missingAbutmentPreset
+                                                ? "font-semibold text-destructive hover:bg-destructive-soft"
+                                                : "text-service-abut hover:bg-service-abut-soft",
+                                          )}
                                           onClick={() => openCustomSpecsModal(originalIndex)}
                                         >
                                           {abutmentCompact || "스캔바디"}
                                         </button>
                                       </TooltipTrigger>
                                       <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                        {abutmentSummary || "스캔바디 선택"}
+                                        {abutmentSummary ||
+                                          (missingAbutmentPreset
+                                            ? "스캔바디 프리셋을 선택해주세요"
+                                            : "스캔바디 선택")}
                                       </TooltipContent>
                                     </Tooltip>
                                   </div>

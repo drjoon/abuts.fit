@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-13: 저장된 견적 라인도 치아번호 10→20→30→40번대 순.
 import {
   computePracticeTransferRetailFees,
   DEFAULT_ABUTMENT_RETAIL_PRICE,
@@ -8,6 +9,7 @@ import {
   normalizeLabFeeItems,
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
+  sortPracticeTransferFeeLines,
   splitPracticeTransferSettlement,
   type LabFeeItem,
   type LabFeeSchedule,
@@ -19,6 +21,8 @@ import {
   type AbutsAbutmentCreditPrices,
   type AbutsAbutmentPricingTier,
 } from "@/shared/pricing/abutsAbutmentService";
+
+export { sortPracticeTransferFeeLines };
 
 export type PracticeTransferRelationshipKind = "active" | "referred" | "none";
 
@@ -89,17 +93,19 @@ export const parsePracticeTransferFeeQuote = (
     ),
   );
   const linesRaw = Array.isArray(r.lines) ? r.lines : [];
-  const lines: PracticeTransferFeeLine[] = linesRaw
-    .map((row) => {
-      const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-      return {
-        toothNumber: String(item.toothNumber || item.tooth || "").trim(),
-        prosthesisType: String(item.prosthesisType || item.type || "").trim(),
-        labFee: Math.max(0, Math.round(Number(item.labFee || 0))),
-        abutmentRetail: Math.max(0, Math.round(Number(item.abutmentRetail || 0))),
-      };
-    })
-    .filter((line) => line.prosthesisType || line.labFee > 0 || line.abutmentRetail > 0);
+  const lines: PracticeTransferFeeLine[] = sortPracticeTransferFeeLines(
+    linesRaw
+      .map((row) => {
+        const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+        return {
+          toothNumber: String(item.toothNumber || item.tooth || "").trim(),
+          prosthesisType: String(item.prosthesisType || item.type || "").trim(),
+          labFee: Math.max(0, Math.round(Number(item.labFee || 0))),
+          abutmentRetail: Math.max(0, Math.round(Number(item.abutmentRetail || 0))),
+        };
+      })
+      .filter((line) => line.prosthesisType || line.labFee > 0 || line.abutmentRetail > 0),
+  );
 
   return {
     labFeeTotal,

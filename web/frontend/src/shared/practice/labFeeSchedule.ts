@@ -4,8 +4,10 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/backend/tests/unit/labFeeSchedule.test.js
+// - 2026-08-13: 미저장(updatedAt 없음) 기공비는 0원·전부 off. 한 번 저장해야 설정 완료.
 // - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
+// - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 import {
   normalizeAbutsAbutmentCreditPrices,
   type AbutsAbutmentCreditPrices,
@@ -28,20 +30,8 @@ export type LabFeeScheduleKey = (typeof LAB_FEE_SCHEDULE_KEYS)[number];
 
 export type LabFeeSchedule = Record<LabFeeScheduleKey, number>;
 
+/** 운영 디폴트·미설정 수가. 기공소가 한 번 저장하기 전에는 0원 */
 export const LAB_FEE_SCHEDULE_DEFAULTS: LabFeeSchedule = {
-  crown: 60000,
-  bridge: 60000,
-  inlay: 50000,
-  pontic: 40000,
-  retainer: 40000,
-  removableTemp3: 30000,
-  removableTemp6: 50000,
-  customAbutmentDesign: 10000,
-  customAbutmentDesignAndProduction: 35000,
-};
-
-/** 기공소 미지정(자동매칭) 견적 — 기본수가 없음 */
-export const LAB_FEE_SCHEDULE_ZEROS: LabFeeSchedule = {
   crown: 0,
   bridge: 0,
   inlay: 0,
@@ -52,6 +42,37 @@ export const LAB_FEE_SCHEDULE_ZEROS: LabFeeSchedule = {
   customAbutmentDesign: 0,
   customAbutmentDesignAndProduction: 0,
 };
+
+/** 기공소 미지정(자동매칭) 견적 — 기본수가 없음 */
+export const LAB_FEE_SCHEDULE_ZEROS: LabFeeSchedule = {
+  ...LAB_FEE_SCHEDULE_DEFAULTS,
+};
+
+export const LAB_FEE_SCHEDULE_UNSET_ENABLED: Record<LabFeeScheduleKey, boolean> =
+  Object.fromEntries(LAB_FEE_SCHEDULE_KEYS.map((key) => [key, false])) as Record<
+    LabFeeScheduleKey,
+    boolean
+  >;
+
+export const isLabFeeScheduleConfigured = (
+  schedule?: { updatedAt?: string | Date | null } | null,
+) => {
+  const raw = schedule?.updatedAt;
+  if (raw == null || raw === "") return false;
+  const t = raw instanceof Date ? raw.getTime() : new Date(raw).getTime();
+  return Number.isFinite(t);
+};
+
+export const buildUnsetLabFeeSchedule = () => ({
+  ...LAB_FEE_SCHEDULE_ZEROS,
+  remake: { ...LAB_FEE_SCHEDULE_ZEROS },
+  enabled: { ...LAB_FEE_SCHEDULE_UNSET_ENABLED },
+  updatedAt: null as string | Date | null,
+});
+
+export const resolveLabFeeScheduleSource = <T extends { updatedAt?: string | Date | null }>(
+  schedule?: T | null,
+) => (isLabFeeScheduleConfigured(schedule) ? schedule : buildUnsetLabFeeSchedule());
 
 /** 리메이크 수가. 미설정 시 0원 */
 export const LAB_FEE_REMAKE_SCHEDULE_DEFAULTS: LabFeeSchedule = {
@@ -132,6 +153,29 @@ export const toothArchFromNumber = (toothNumber: string) => {
   if (first === "3" || first === "4") return "lower" as const;
   return "other" as const;
 };
+
+/** 표시용: 11..18 → 21..28 → 31..38 → 41..48. 아치 순회(18→11)와 분리 */
+export const toToothDecadeSortNumber = (toothNumber: string) => {
+  const tokens = String(toothNumber || "")
+    .split(/[^\d]+/)
+    .filter((token) => /^[1-4][1-8]$/.test(token));
+  if (tokens.length === 0) return Number.MAX_SAFE_INTEGER;
+  return Math.min(...tokens.map(Number));
+};
+
+export const sortPracticeTransferFeeLines = <T extends { toothNumber?: string }>(
+  lines: ReadonlyArray<T>,
+): T[] =>
+  lines.slice().sort((a, b) => {
+    const diff =
+      toToothDecadeSortNumber(String(a.toothNumber || "")) -
+      toToothDecadeSortNumber(String(b.toothNumber || ""));
+    if (diff !== 0) return diff;
+    return String(a.toothNumber || "").localeCompare(String(b.toothNumber || ""), "ko");
+  });
+
+const sortToothNumbersForFee = (teeth: readonly string[]) =>
+  teeth.slice().sort((a, b) => toToothDecadeSortNumber(a) - toToothDecadeSortNumber(b));
 
 export const removableTempFeeForCount = (
   count: number,
@@ -656,8 +700,9 @@ export const computePracticeTransferRetailFees = (params: {
         addAbutment(abutmentFee);
         groupAbutment += abutmentFee;
       }
+      const sortedTeeth = sortToothNumbersForFee(group.teeth);
       lines.push({
-        toothNumber: group.teeth.join(","),
+        toothNumber: sortedTeeth.join(","),
         prosthesisType:
           item.unit === "perSet"
             ? `${item.name}${group.suffix}`
@@ -673,7 +718,7 @@ export const computePracticeTransferRetailFees = (params: {
     abutmentRetailTotal,
     abutmentQty,
     total: labFeeTotal + abutmentRetailTotal,
-    lines,
+    lines: sortPracticeTransferFeeLines(lines),
   };
 };
 

@@ -10,6 +10,7 @@
 // - 2026-08-13: 크라운+커스텀어벗 플래그 직렬화 지원(isCustomAbutmentSupportedProsthesisType).
 // - 2026-08-13: 연결 보철에 유지장치·임시치아 추가. 링크 직렬화는 isLinkableProsthesisType.
 // - 2026-08-13: 유지장치=브리지 계열(2치+). 임시치아=단독·연결 모두.
+// - 2026-08-13: 어벗 체크 시 임플란트·스캔바디 프리셋 필수. 미선택이면 전송 불가.
 export const ABUTMENT_PRODUCT_MODE = {
   PRODUCTION: "custom_abutment",
   DESIGN_AND_PRODUCTION: "design_custom_abutment",
@@ -497,6 +498,55 @@ export const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) 
   isCustomAbutmentProsthesisType(prosthesisType) ||
   prosthesisType === "크라운" ||
   prosthesisType === "브리지";
+
+export const hasToothWorkImplantPreset = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => {
+  const specs = pickToothWorkImplant(row, true);
+  return Boolean(
+    specs.implantManufacturer &&
+      specs.implantBrand &&
+      specs.implantFamily &&
+      specs.implantType,
+  );
+};
+
+export const hasToothWorkScanbodyPreset = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => {
+  const specs = pickToothWorkAbutment(row, true);
+  return Boolean(
+    specs.abutmentManufacturer &&
+      specs.abutmentDiameter &&
+      specs.abutmentHeight,
+  );
+};
+
+/** 어벗(커스텀어벗 형태 또는 크라운·브리지 체크)에 임플란트·스캔바디 프리셋이 모두 있는지 */
+export const hasCompleteAbutmentPresets = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => hasToothWorkImplantPreset(row) && hasToothWorkScanbodyPreset(row);
+
+export const isAbutmentPresetRequired = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) =>
+  Boolean(row?.customAbutment) ||
+  isCustomAbutmentProsthesisType(String(row?.prosthesisType || ""));
+
+export const isAbutmentPresetMissing = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => isAbutmentPresetRequired(row) && !hasCompleteAbutmentPresets(row);
+
+export const listMissingAbutmentPresetTeeth = (
+  rows: readonly Partial<ToothWorkSelection>[] | null | undefined,
+) =>
+  (Array.isArray(rows) ? rows : [])
+    .filter(
+      (row) =>
+        isAbutmentPresetMissing(row) &&
+        /^[1-4][1-8]$/.test(String(row?.toothNumber || "").trim()),
+    )
+    .map((row) => String(row.toothNumber || "").trim());
 
 export const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();

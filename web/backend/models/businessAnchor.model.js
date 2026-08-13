@@ -249,18 +249,19 @@ const businessAnchorSchema = new mongoose.Schema(
     },
     // 기공소 기공비 수가 (원). lab only. 설정 「기공비」탭 SSOT
     // related: web/backend/utils/labFeeSchedule.js
+    // 미저장(updatedAt=null)은 0원·전부 off. 한 번 저장해야 설정 완료.
     labFeeSchedule: {
-      crown: { type: Number, default: 60000, min: 0 },
-      bridge: { type: Number, default: 60000, min: 0 },
-      inlay: { type: Number, default: 50000, min: 0 },
-      pontic: { type: Number, default: 40000, min: 0 },
-      retainer: { type: Number, default: 40000, min: 0 },
-      removableTemp3: { type: Number, default: 30000, min: 0 },
-      removableTemp6: { type: Number, default: 50000, min: 0 },
-      customAbutmentDesign: { type: Number, default: 10000, min: 0 },
+      crown: { type: Number, default: 0, min: 0 },
+      bridge: { type: Number, default: 0, min: 0 },
+      inlay: { type: Number, default: 0, min: 0 },
+      pontic: { type: Number, default: 0, min: 0 },
+      retainer: { type: Number, default: 0, min: 0 },
+      removableTemp3: { type: Number, default: 0, min: 0 },
+      removableTemp6: { type: Number, default: 0, min: 0 },
+      customAbutmentDesign: { type: Number, default: 0, min: 0 },
       customAbutmentDesignAndProduction: {
         type: Number,
-        default: 35000,
+        default: 0,
         min: 0,
       },
       items: {
@@ -302,17 +303,17 @@ const businessAnchorSchema = new mongoose.Schema(
           min: 0,
         },
       },
-      // 항목별 서비스 제공 여부. false면 UI에서 비활성(수가 값은 유지)
+      // 항목별 서비스 제공 여부. false면 UI에서 비활성(수가 값은 유지). 미저장 디폴트=off
       enabled: {
-        crown: { type: Boolean, default: true },
-        bridge: { type: Boolean, default: true },
-        inlay: { type: Boolean, default: true },
-        pontic: { type: Boolean, default: true },
-        retainer: { type: Boolean, default: true },
-        removableTemp3: { type: Boolean, default: true },
-        removableTemp6: { type: Boolean, default: true },
-        customAbutmentDesign: { type: Boolean, default: true },
-        customAbutmentDesignAndProduction: { type: Boolean, default: true },
+        crown: { type: Boolean, default: false },
+        bridge: { type: Boolean, default: false },
+        inlay: { type: Boolean, default: false },
+        pontic: { type: Boolean, default: false },
+        retainer: { type: Boolean, default: false },
+        removableTemp3: { type: Boolean, default: false },
+        removableTemp6: { type: Boolean, default: false },
+        customAbutmentDesign: { type: Boolean, default: false },
+        customAbutmentDesignAndProduction: { type: Boolean, default: false },
       },
       updatedAt: { type: Date, default: null },
     },

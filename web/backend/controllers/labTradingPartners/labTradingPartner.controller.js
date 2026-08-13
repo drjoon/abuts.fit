@@ -4,6 +4,8 @@
 // - web/backend/utils/labTradingPartner.util.js
 // - web/backend/utils/labFeeSchedule.js
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
+// - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
+// - 2026-08-13: 기공비 GET은 미저장이면 0원·전부 off + configured=false.
 import { Types } from "mongoose";
 import LabTradingPartner from "../../models/labTradingPartner.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -16,10 +18,11 @@ import {
 import {
   normalizeLabFeeSchedule,
   normalizeLabFeeScheduleEnabled,
-  LAB_FEE_SCHEDULE_DEFAULTS,
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeItems,
   legacyLabFeeScheduleFromItems,
+  isLabFeeScheduleConfigured,
+  resolveLabFeeScheduleSource,
 } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRequestorKind,
@@ -455,7 +458,8 @@ export async function getLabFeeSchedule(req, res) {
     const lab = await BusinessAnchor.findById(labAnchorId)
       .select({ labFeeSchedule: 1 })
       .lean();
-    const source = lab?.labFeeSchedule || LAB_FEE_SCHEDULE_DEFAULTS;
+    const configured = isLabFeeScheduleConfigured(lab?.labFeeSchedule);
+    const source = resolveLabFeeScheduleSource(lab?.labFeeSchedule);
     const items = normalizeLabFeeItems(source);
     const schedule = normalizeLabFeeSchedule(source);
     const remake = normalizeLabFeeRemakeSchedule(source);
@@ -467,6 +471,7 @@ export async function getLabFeeSchedule(req, res) {
         schedule,
         remake,
         enabled,
+        configured,
         updatedAt: lab?.labFeeSchedule?.updatedAt || null,
       },
     });
@@ -538,6 +543,7 @@ export async function updateLabFeeSchedule(req, res) {
         schedule: normalizeLabFeeSchedule(updated?.labFeeSchedule),
         remake: normalizeLabFeeRemakeSchedule(updated?.labFeeSchedule),
         enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
+        configured: isLabFeeScheduleConfigured(updated?.labFeeSchedule),
         updatedAt: updated?.labFeeSchedule?.updatedAt || null,
       },
     });

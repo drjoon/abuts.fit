@@ -1,11 +1,15 @@
 // related files:
 // - web/backend/utils/labFeeSchedule.js
+// - 2026-08-13: 견적 라인 치아번호 10→20→30→40번대 정렬.
 import {
+  buildUnsetLabFeeSchedule,
   computePracticeTransferRetailFees,
-  LAB_FEE_SCHEDULE_DEFAULTS,
+  isLabFeeScheduleConfigured,
+  LAB_FEE_SCHEDULE_SAMPLE,
   LAB_FEE_SCHEDULE_ZEROS,
   normalizeLabFeeItems,
   resolveLabFeeKeyFromProsthesisType,
+  resolveLabFeeScheduleSource,
   splitPracticeTransferSettlement,
 } from "../../utils/labFeeSchedule.js";
 
@@ -27,7 +31,7 @@ describe("labFeeSchedule", () => {
         { toothNumber: "26", prosthesisType: "브리지" },
         { toothNumber: "27", prosthesisType: "작업X" },
       ],
-      labFeeSchedule: LAB_FEE_SCHEDULE_DEFAULTS,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
       abutmentPricingTier: "regular",
     });
     expect(fees.labFeeTotal).toBe(120000);
@@ -53,7 +57,7 @@ describe("labFeeSchedule", () => {
           abutmentProductMode: "design_custom_abutment",
         },
       ],
-      labFeeSchedule: LAB_FEE_SCHEDULE_DEFAULTS,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
       abutmentPricingTier: "regular",
     });
     expect(fees.labFeeTotal).toBe(0);
@@ -90,7 +94,7 @@ describe("labFeeSchedule", () => {
           abutmentProductMode: "design_custom_abutment",
         },
       ],
-      labFeeSchedule: LAB_FEE_SCHEDULE_DEFAULTS,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
       abutmentPricingTier: "membership",
     });
     expect(fees.labFeeTotal).toBe(180000);
@@ -117,7 +121,7 @@ describe("labFeeSchedule", () => {
         },
       ],
       labFeeSchedule: {
-        ...LAB_FEE_SCHEDULE_DEFAULTS,
+        ...LAB_FEE_SCHEDULE_SAMPLE,
         remake: {
           crown: 20000,
           bridge: 0,
@@ -165,7 +169,7 @@ describe("labFeeSchedule", () => {
         { toothNumber: "26", prosthesisType: "브리지" },
       ],
       labFeeSchedule: {
-        ...LAB_FEE_SCHEDULE_DEFAULTS,
+        ...LAB_FEE_SCHEDULE_SAMPLE,
         remake: {
           crown: 20000,
           bridge: 15000,
@@ -183,7 +187,7 @@ describe("labFeeSchedule", () => {
   });
 
   test("기본 수가의 임시치아는 3치·6치 카드로 분리된다", () => {
-    const items = normalizeLabFeeItems(LAB_FEE_SCHEDULE_DEFAULTS);
+    const items = normalizeLabFeeItems(LAB_FEE_SCHEDULE_SAMPLE);
     const temps = items.filter((item) => /^임시치아\d+$/.test(item.name));
     expect(temps).toHaveLength(2);
     expect(temps[0]).toMatchObject({
@@ -273,7 +277,7 @@ describe("labFeeSchedule", () => {
         { toothNumber: "14", prosthesisType: "임시치아" },
         { toothNumber: "13", prosthesisType: "임시치아" },
       ],
-      labFeeSchedule: LAB_FEE_SCHEDULE_DEFAULTS,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
       abutmentPricingTier: "regular",
     });
     expect(fees.labFeeTotal).toBe(130000);
@@ -291,7 +295,7 @@ describe("labFeeSchedule", () => {
         { toothNumber: "32", prosthesisType: "유지장치", bridgeLinkedTeeth: ["31", "33"] },
         { toothNumber: "33", prosthesisType: "유지장치", bridgeLinkedTeeth: ["32"] },
       ],
-      labFeeSchedule: LAB_FEE_SCHEDULE_DEFAULTS,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
       abutmentPricingTier: "regular",
     });
     expect(fees.labFeeTotal).toBe(80000);
@@ -325,5 +329,59 @@ describe("labFeeSchedule", () => {
     expect(split.labSettlementAmount).toBe(75000);
     expect(split.abutsRevenueAmount).toBe(45000);
     expect(split.total).toBe(120000);
+  });
+
+  test("updatedAt이 있어야 기공비 설정 완료다", () => {
+    expect(isLabFeeScheduleConfigured(null)).toBe(false);
+    expect(isLabFeeScheduleConfigured({})).toBe(false);
+    expect(isLabFeeScheduleConfigured({ updatedAt: null })).toBe(false);
+    expect(isLabFeeScheduleConfigured({ updatedAt: new Date() })).toBe(true);
+  });
+
+  test("견적 라인은 치아번호 10·20·30·40번대 순이다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "33", prosthesisType: "브리지" },
+        { toothNumber: "22", prosthesisType: "크라운" },
+        { toothNumber: "43", prosthesisType: "브리지" },
+        {
+          toothNumber: "23",
+          prosthesisType: "커스텀어벗",
+          customAbutment: true,
+          abutmentProductMode: "custom_abutment",
+        },
+        { toothNumber: "42", prosthesisType: "Pontic" },
+        { toothNumber: "41", prosthesisType: "Pontic" },
+        { toothNumber: "31", prosthesisType: "Pontic" },
+        { toothNumber: "32", prosthesisType: "Pontic" },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+    });
+    expect(fees.lines.map((line) => line.toothNumber)).toEqual([
+      "22",
+      "23",
+      "31",
+      "32",
+      "33",
+      "41",
+      "42",
+      "43",
+    ]);
+  });
+
+  test("미설정 스케줄은 0원·전부 미제공이다", () => {
+    const items = normalizeLabFeeItems(buildUnsetLabFeeSchedule());
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every((item) => item.enabled === false)).toBe(true);
+    expect(items.every((item) => item.price === 0)).toBe(true);
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "16", prosthesisType: "크라운" },
+        { toothNumber: "26", prosthesisType: "브리지" },
+      ],
+      labFeeSchedule: resolveLabFeeScheduleSource({ crown: 60000 }),
+    });
+    expect(fees.labFeeTotal).toBe(0);
   });
 });

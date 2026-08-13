@@ -49,6 +49,7 @@
  * - 2026-08-13: 채팅 첨부도 즉시 백그라운드 업로드 + 칩 프로그레스바.
  * - 2026-08-13: 채팅/의뢰 파일 다운로드 프로그레스바.
  * - 2026-08-13: [기공소로 전송]은 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
+ * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -177,6 +178,7 @@ import {
       normalizeToothWorksForSync,
       emptyToothWorkCustomSpecs,
       isLinkableProsthesisType,
+      listMissingAbutmentPresetTeeth,
       pickToothWorkAbutmentProductMode,
       pickToothWorkCustomSpecs,
       ABUTMENT_PRODUCT_MODE,
@@ -4889,13 +4891,26 @@ export const PracticeFileTransferPage = ({
             ? "동기화 실패 · 다시 시도"
             : "";
 
+  const missingAbutmentPresetTeeth = useMemo(
+    () => listMissingAbutmentPresetTeeth(normalizedToothWorks),
+    [normalizedToothWorks],
+  );
+
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
     if (!String(selectedLab?._id || "").trim()) missing.push("기공소");
     if (!normalizedPatientName) missing.push("환자명");
     if (normalizedToothWorks.length === 0) missing.push("보철물");
+    if (missingAbutmentPresetTeeth.length > 0) {
+      missing.push(`어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`);
+    }
     return missing;
-  }, [selectedLab?._id, normalizedPatientName, normalizedToothWorks.length]);
+  }, [
+    selectedLab?._id,
+    normalizedPatientName,
+    normalizedToothWorks.length,
+    missingAbutmentPresetTeeth,
+  ]);
 
   const hasRequiredSubmitFields = missingRequiredFields.length === 0;
 
@@ -5672,7 +5687,19 @@ export const PracticeFileTransferPage = ({
                           { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
                           { key: "환자명", ok: Boolean(normalizedPatientName) },
                           { key: "보철물", ok: normalizedToothWorks.length > 0 },
-                        ] as const
+                          ...(missingAbutmentPresetTeeth.length > 0 ||
+                          normalizedToothWorks.some((row) => row.customAbutment)
+                            ? [
+                                {
+                                  key:
+                                    missingAbutmentPresetTeeth.length > 0
+                                      ? `어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`
+                                      : "어벗 프리셋",
+                                  ok: missingAbutmentPresetTeeth.length === 0,
+                                },
+                              ]
+                            : []),
+                        ]
                       ).map((item) => (
                         <li
                           key={item.key}

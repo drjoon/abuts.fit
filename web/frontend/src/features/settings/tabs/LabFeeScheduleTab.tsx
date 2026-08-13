@@ -1,8 +1,10 @@
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
+// - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
+// - 2026-08-13: 미저장 디폴트는 0원·전부 off. 한 번 저장해야 설정 완료.
 import { useCallback, useEffect, useState } from "react";
 import {
   Card,
@@ -215,9 +217,10 @@ export const LabFeeScheduleTab = () => {
           기공비 수가
         </CardTitle>
         <CardDescription className="pt-1 text-[13px] leading-relaxed">
-          항목 이름은 의뢰서 보철 형태와 같아야 청구됩니다. 유지장치는 연결
-          스팬당 1세트, 임시치아1·2는 의뢰서 「임시치아」에 치아 수 구간으로
-          합산됩니다.
+          처음에는 모든 항목이 0원·미제공입니다. 제공할 항목을 켜고 수가를 입력한
+          뒤 저장하세요. 항목 이름은 의뢰서 보철 형태와 같아야 청구됩니다.
+          유지장치는 연결 스팬당 1세트, 임시치아1·2는 의뢰서 「임시치아」에 치아
+          수 구간으로 합산됩니다.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
