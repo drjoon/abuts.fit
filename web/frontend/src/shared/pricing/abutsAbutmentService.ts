@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - .cursor/rules/design-fee.mdc
 // change-log:
+// - 2026-08-14: 환봉 단가 필드 포함. 도입 종류별 단가 계산은 labFeeSchedule.
 // - 2026-08-13: creditSettings 멤버십/일반 생산·디자인+생산 단가 정규화.
 // - 2026-08-13: 생산 일반 2.0만·멤버십 1.5만 / 디자인+생산 일반 4.0만·멤버십 2.5만.
 // - 2026-08-13: 멤버십/일반 단가 + 치과 월 구독료(기본 55,000) SSOT.
@@ -21,7 +22,13 @@ export type AbutsAbutmentCreditPrices = {
   regularProductionPrice: number;
   membershipDesignAndProductionPrice: number;
   regularDesignAndProductionPrice: number;
+  membershipRoundBarProductionPrice: number;
+  regularRoundBarProductionPrice: number;
+  membershipRoundBarDesignAndProductionPrice: number;
+  regularRoundBarDesignAndProductionPrice: number;
 };
+
+export type AbutsAbutmentAdoptedKind = "cnc" | "round_bar";
 
 const toWon = (value: unknown, fallback: number) => {
   const n = Math.round(Number(value ?? fallback));
@@ -49,6 +56,22 @@ export const normalizeAbutsAbutmentCreditPrices = (
   regularDesignAndProductionPrice: toWon(
     creditSettings?.regularDesignAndProductionPrice,
     ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+  ),
+  membershipRoundBarProductionPrice: toWon(
+    creditSettings?.membershipRoundBarProductionPrice,
+    0,
+  ),
+  regularRoundBarProductionPrice: toWon(
+    creditSettings?.regularRoundBarProductionPrice,
+    0,
+  ),
+  membershipRoundBarDesignAndProductionPrice: toWon(
+    creditSettings?.membershipRoundBarDesignAndProductionPrice,
+    0,
+  ),
+  regularRoundBarDesignAndProductionPrice: toWon(
+    creditSettings?.regularRoundBarDesignAndProductionPrice,
+    0,
   ),
 });
 

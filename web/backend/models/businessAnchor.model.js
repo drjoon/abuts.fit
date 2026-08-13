@@ -343,6 +343,7 @@ const businessAnchorSchema = new mongoose.Schema(
       implantFavorites: {
         type: [
           {
+            _id: false,
             id: { type: String, default: "" },
             manufacturer: { type: String, default: "" },
             brand: { type: String, default: "" },
@@ -350,6 +351,7 @@ const businessAnchorSchema = new mongoose.Schema(
             type: { type: String, default: "" },
             roundBar: { type: Boolean, default: false },
             adopted: { type: Boolean, default: false },
+            adoptedKind: { type: String, default: "" },
             roundBarRequestId: { type: String, default: "" },
           },
         ],

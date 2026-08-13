@@ -501,6 +501,7 @@ describe("labFeeSchedule", () => {
         type: "헥스(사이즈 미정)",
         roundBar: true,
         adopted: true,
+        adoptedKind: "cnc",
       },
     ];
     expect(isPendingRoundBarAbutment(tooth, favorites)).toBe(false);
@@ -516,6 +517,47 @@ describe("labFeeSchedule", () => {
       labAbutmentFee: 0,
       labAbutmentPending: false,
       abutmentRetail: 20000,
+    });
+  });
+
+  test("환봉어벗으로 도입하면 환봉 단가를 쓴다", () => {
+    const tooth = {
+      toothNumber: "16",
+      prosthesisType: "커스텀어벗",
+      customAbutment: true,
+      abutmentProductMode: "custom_abutment",
+      implantManufacturer: "Acme",
+      implantBrand: "One",
+      implantFamily: "Regular",
+      implantType: "헥스(사이즈 미정)",
+    };
+    const favorites = [
+      {
+        manufacturer: "Acme",
+        brand: "One",
+        family: "Regular",
+        type: "헥스(사이즈 미정)",
+        roundBar: true,
+        adopted: true,
+        adoptedKind: "round_bar",
+      },
+    ];
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [tooth],
+      implantFavorites: favorites,
+      labFeeSchedule: LAB_FEE_SCHEDULE_ZEROS,
+      abutmentPricingTier: "regular",
+      abutmentPrices: {
+        regularRoundBarProductionPrice: 18000,
+        membershipRoundBarProductionPrice: 12000,
+      },
+    });
+    expect(fees.abutmentRetailTotal).toBe(18000);
+    expect(fees.labAbutmentPending).toBe(false);
+    expect(fees.lines[0]).toMatchObject({
+      labAbutmentFee: 0,
+      labAbutmentPending: false,
+      abutmentRetail: 18000,
     });
   });
 

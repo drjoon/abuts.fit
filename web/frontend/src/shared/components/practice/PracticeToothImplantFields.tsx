@@ -6,6 +6,7 @@
 // change-log:
 // - 2026-08-14: 추가한 패밀리는 select 항목 옆 X로 삭제.
 // - 2026-08-14: 패밀리 선택 Regular/Mini/Narrow/Small Narrow 고정 + 패밀리 추가.
+// - 2026-08-14: 도입 배지에 CNC/환봉 종류 표시.
 // - 2026-08-14: 제조사 선택 마지막에 제조사 추가 요청(환봉 헥스 사이즈 미정) + 안내 모달.
 import { useMemo, useState } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
@@ -832,7 +833,13 @@ export const PracticeToothImplantFields = ({
                             : "ml-1.5 inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
                         }
                       >
-                        {fav.adopted ? "도입" : "요청중"}
+                        {fav.adopted
+                          ? fav.adoptedKind === "round_bar"
+                            ? "환봉 도입"
+                            : fav.adoptedKind === "cnc"
+                              ? "CNC 도입"
+                              : "도입"
+                          : "요청중"}
                       </span>
                     ) : null}
                   </button>

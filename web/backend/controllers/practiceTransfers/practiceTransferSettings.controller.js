@@ -1,13 +1,17 @@
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import { hydrateFavoritesWithRoundBarAdopted } from "./roundBarAbutmentRequest.controller.js";
+import { normalizeAdoptedKind } from "../../utils/roundBarAbutment.js";
 
 // related files:
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/models/businessAnchor.model.js
+// - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-08-14: 환봉 도입 상태는 요청 문서로 hydrate. 치과 저장이 adopted를 덮어쓰지 않음.
 // - 2026-08-14: implantFavorites에 환봉 제조사 추가요청(roundBar/adopted) 필드 보존.
 // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산) 저장.
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
@@ -86,6 +90,7 @@ const normalizeImplantFavorites = (items) => {
       type,
       roundBar,
       adopted: Boolean(row.adopted),
+      adoptedKind: normalizeAdoptedKind(row.adoptedKind),
       roundBarRequestId,
     });
     if (out.length >= MAX_IMPLANT_FAVORITES) break;
@@ -133,7 +138,7 @@ const normalizeDefaultAbutmentProductMode = (value) => {
   return DEFAULT_ABUTMENT_PRODUCT_MODE;
 };
 
-const toSettingsResponse = (anchor) => {
+const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
   const settings =
     anchor?.practiceTransferSettings &&
     typeof anchor.practiceTransferSettings === "object"
@@ -144,11 +149,31 @@ const toSettingsResponse = (anchor) => {
     ? new Date(settings.promoNoticeDismissedAt).toISOString()
     : null;
 
+  const normalizedFavorites = normalizeImplantFavorites(settings?.implantFavorites);
+  const implantFavorites = await hydrateFavoritesWithRoundBarAdopted(
+    anchor?._id,
+    normalizedFavorites,
+  );
+  if (
+    persistHydrated &&
+    anchor?._id &&
+    JSON.stringify(implantFavorites) !== JSON.stringify(normalizedFavorites)
+  ) {
+    await BusinessAnchor.updateOne(
+      { _id: anchor._id },
+      {
+        $set: {
+          "practiceTransferSettings.implantFavorites": implantFavorites,
+        },
+      },
+    );
+  }
+
   return {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
     prosthesisTypes: normalizeProsthesisTypes(settings?.prosthesisTypes),
     memoSnippets: normalizeMemoSnippets(settings?.memoSnippets),
-    implantFavorites: normalizeImplantFavorites(settings?.implantFavorites),
+    implantFavorites,
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
     promoNoticeDismissedAt,
     skipDesignConfirm: Boolean(settings?.skipDesignConfirm),
@@ -187,7 +212,7 @@ export async function getPracticeTransferSettings(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: toSettingsResponse(anchor),
+      data: await toSettingsResponse(anchor, { persistHydrated: true }),
     });
   } catch (error) {
     return res.status(500).json({
@@ -240,7 +265,11 @@ export async function upsertPracticeTransferSettings(req, res) {
       setPatch["practiceTransferSettings.memoSnippets"] = normalizeMemoSnippets(body.memoSnippets);
     }
     if (hasImplantFavorites) {
-      setPatch["practiceTransferSettings.implantFavorites"] = normalizeImplantFavorites(body.implantFavorites);
+      setPatch["practiceTransferSettings.implantFavorites"] =
+        await hydrateFavoritesWithRoundBarAdopted(
+          anchorId,
+          normalizeImplantFavorites(body.implantFavorites),
+        );
     }
     if (hasAbutmentFavorites) {
       setPatch["practiceTransferSettings.abutmentFavorites"] = normalizeAbutmentFavorites(body.abutmentFavorites);
@@ -287,7 +316,7 @@ export async function upsertPracticeTransferSettings(req, res) {
     return res.status(200).json({
       success: true,
       message: "practice 전송 설정을 저장했습니다.",
-      data: toSettingsResponse(anchor),
+      data: await toSettingsResponse(anchor),
     });
   } catch (error) {
     return res.status(500).json({

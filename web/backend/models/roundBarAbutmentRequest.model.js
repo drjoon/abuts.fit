@@ -50,6 +50,13 @@ const roundBarAbutmentRequestSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    /** 도입 시 관리자가 지정. cnc | round_bar. 도입 전에는 빈 값 */
+    adoptedKind: {
+      type: String,
+      enum: ["cnc", "round_bar", ""],
+      default: "",
+      trim: true,
+    },
     adoptedAt: { type: Date, default: null },
     adoptedBy: {
       type: mongoose.Schema.Types.ObjectId,

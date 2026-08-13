@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // - 2026-08-13: 어벗생산의뢰 모달=생산만 고정. 디자인+생산 클릭은 기공의뢰로 이동.
+// - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지 갱신.
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
@@ -37,6 +38,12 @@ import {
 import LabeledAutocompleteField from "@/shared/ui/forms/LabeledAutocompleteField";
 import { cn } from "@/shared/ui/cn";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import {
+  ROUND_BAR_REQUEST_UPDATED_EVENT,
+  applyRoundBarRequestUpdate,
+  type RoundBarRequestUpdatedPayload,
+} from "@/shared/practice/roundBarAbutment";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 
 const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "작업X", "인레이", "어벗 디자인"] as const;
@@ -150,6 +157,20 @@ export function NewRequestDesignAbutmentFields({
   useEffect(() => {
     void loadFavoritesFromServer();
   }, [loadFavoritesFromServer]);
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(token),
+    eventTypes: [ROUND_BAR_REQUEST_UPDATED_EVENT],
+    delayMs: 0,
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as RoundBarRequestUpdatedPayload)
+          : {};
+      setImplantFavorites((prev) => applyRoundBarRequestUpdate(prev, payload));
+    },
+  });
 
   const saveFavoritesToServer = useCallback(
     async (patch: {

@@ -52,6 +52,7 @@
  * - 2026-08-14: 임시저장 활성+휴지통 1회 조회(`drafts?trashed=all`).
  * - 2026-08-13: [기공소로 전송]은 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
+ * - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지 즉시 갱신. 계정 프리셋은 서버 우선.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -200,6 +201,11 @@ import {
   type PracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
+import {
+  ROUND_BAR_REQUEST_UPDATED_EVENT,
+  applyRoundBarRequestUpdate,
+  type RoundBarRequestUpdatedPayload,
+} from "@/shared/practice/roundBarAbutment";
 import { kstYmdDiffDays } from "@/shared/date/kst";
 import {
   Collapsible,
@@ -1929,12 +1935,14 @@ export const PracticeFileTransferPage = ({
       if (localFormUpdatedAtRef.current <= 0) {
         applyPracticeTransferSettings(payload);
       } else if (payload) {
-        // 폼 로컬값이 있어도 계정 세팅(문장·디자인컨펌생략·커스텀어벗 기본모드)은 서버를 우선 반영
+        // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·커스텀어벗 기본모드)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         setSkipDesignConfirm(Boolean(payload.skipDesignConfirm));
         setDefaultAbutmentProductMode(
           normalizeAccountAbutmentProductMode(payload.defaultAbutmentProductMode),
         );
+        setImplantFavorites(normalizeImplantFavorites(payload.implantFavorites));
+        setAbutmentFavorites(normalizeAbutmentFavorites(payload.abutmentFavorites));
       }
       try {
         localStorage.setItem(
@@ -4492,6 +4500,20 @@ export const PracticeFileTransferPage = ({
     });
     return () => window.cancelAnimationFrame(raf);
   }, [transferDialogOpen, activeChatRoom?._id, chatMessages.length, chatMessagesLoading]);
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(authToken),
+    eventTypes: [ROUND_BAR_REQUEST_UPDATED_EVENT],
+    delayMs: 0,
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as RoundBarRequestUpdatedPayload)
+          : {};
+      setImplantFavorites((prev) => applyRoundBarRequestUpdate(prev, payload));
+    },
+  });
 
   useAppEventDebouncedReload({
     enabled: Boolean(authToken),

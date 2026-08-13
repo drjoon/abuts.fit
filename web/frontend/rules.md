@@ -139,7 +139,7 @@ Notes:
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (커스텀어벗 요금 · 기공소 매칭. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧 · 어벗(CNC/환봉) · 어벗 추가 요청 · 멤버십·배송 · 특별 공급가)
-  - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청 목록·편집·도입/되돌리기. `GET|PATCH /api/admin/round-bar-requests`. 요금·크레딧 독립 카드)
+  - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (등록/미등록 치과 플랫폼 수수료율. 개발운영사 앵커 `payoutRates` SSOT)
 - 개발·운영사 설정
   - `src/pages/devops/DevopsSettingsPage.tsx` (계정/사업자/임직원/**결제(입금 계좌)**/알림/보안)
@@ -149,7 +149,7 @@ Notes:
   - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「거래 치과 등록」·「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - `src/features/settings/tabs/LabTradingPartnersTab.tsx` — 거래처 O/X 결제 안내 + 초대
-    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·원가/리메이크). 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료). 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산.
+    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·원가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산.
     - 등록 기간 D-day 배너: `LabDashboardTopBanners` — 기공의뢰수신·어벗생산의뢰 상단.
       - 소개치과 등록 기간 중만 표시(종료 시 두 alert 모두 숨김)
       - 왼쪽: 소개치과 등록 (`LabTradingPartnerWindowBanner`) → `?tab=trading-partners`

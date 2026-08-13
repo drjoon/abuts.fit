@@ -11,6 +11,7 @@
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
 // - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다.
+// - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
 import {
   normalizeAbutsAbutmentCreditPrices,
@@ -149,6 +150,7 @@ export type ImplantFavoriteForFee = {
   type?: string;
   roundBar?: boolean;
   adopted?: boolean;
+  adoptedKind?: "cnc" | "round_bar" | "";
   roundBarRequestId?: string;
 };
 
@@ -160,6 +162,7 @@ type RoundBarToothRow = {
   roundBar?: boolean;
   roundBarAdopted?: boolean;
   adopted?: boolean;
+  adoptedKind?: "cnc" | "round_bar" | "";
   roundBarRequestId?: string;
 };
 
@@ -199,6 +202,20 @@ export const isPendingRoundBarAbutment = (
   const match = list.find((fav) => implantSpecKeyForFee(fav) === key);
   if (!match) return true;
   return match.adopted !== true;
+};
+
+export const resolveAdoptedAbutmentKind = (
+  row?: RoundBarToothRow | null,
+  favorites?: ReadonlyArray<ImplantFavoriteForFee> | null,
+): "cnc" | "round_bar" => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const key = implantSpecKeyForFee(row || {});
+  const match = list.find((fav) => implantSpecKeyForFee(fav) === key);
+  const raw = String(match?.adoptedKind || row?.adoptedKind || "")
+    .trim()
+    .toLowerCase();
+  if (raw === "round_bar") return "round_bar";
+  return "cnc";
 };
 
 const resolveLabAbutmentUnitPrice = (
@@ -586,10 +603,21 @@ export const resolveAbutsAbutmentUnitPrice = (args: {
   productMode?: string | null;
   pricingTier?: AbutsAbutmentPricingTier | null;
   prices?: Partial<AbutsAbutmentCreditPrices> | null;
+  kind?: "cnc" | "round_bar" | null;
 }) => {
   const prices = normalizeAbutsAbutmentCreditPrices(args.prices);
   const isDesign = String(args.productMode || "").trim() === "design_custom_abutment";
   const membership = args.pricingTier === "membership";
+  if (args.kind === "round_bar") {
+    if (isDesign) {
+      return membership
+        ? prices.membershipRoundBarDesignAndProductionPrice
+        : prices.regularRoundBarDesignAndProductionPrice;
+    }
+    return membership
+      ? prices.membershipRoundBarProductionPrice
+      : prices.regularRoundBarProductionPrice;
+  }
   if (isDesign) {
     return membership
       ? prices.membershipDesignAndProductionPrice
@@ -700,6 +728,7 @@ export const computePracticeTransferRetailFees = (params: {
     roundBar?: boolean;
     roundBarAdopted?: boolean;
     adopted?: boolean;
+    adoptedKind?: "cnc" | "round_bar" | "";
     roundBarRequestId?: string;
   }> | null;
   implantFavorites?: ReadonlyArray<ImplantFavoriteForFee> | null;
@@ -740,6 +769,7 @@ export const computePracticeTransferRetailFees = (params: {
         productMode: row?.abutmentProductMode || row?.productMode,
         pricingTier,
         prices: params.abutmentPrices,
+        kind: resolveAdoptedAbutmentKind(row, params.implantFavorites),
       }),
       lab: 0,
       pending: false,

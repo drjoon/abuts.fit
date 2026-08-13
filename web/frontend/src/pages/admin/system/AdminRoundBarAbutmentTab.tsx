@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-14: 도입 전 CNC어벗/환봉어벗 선택 필수. 선택값이 치과 단가에 반영.
+// - 2026-08-14: 되돌리기 버튼 제거. 도입 체크 해제가 해제 동작.
 // - 2026-08-14: 섹션 제목을「어벗 추가 요청」으로 변경. 요금·크레딧에서는 독립 카드로 표시.
 // - 2026-08-14: 요금·크레딧에 임베드 시 작은제목(제조사 추가요청)만 쓰고 큰제목 아이콘 헤더는 숨김.
 // - 2026-08-14: 치과 제조사 추가요청(환봉방식 커스텀어벗) 목록·편집·도입/되돌리기.
@@ -10,16 +12,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Hexagon, Search, Undo2 } from "lucide-react";
+import { Hexagon, Search } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import {
+  ABUTMENT_ADOPTED_KIND,
   ROUND_BAR_HEX_TYPE,
   fetchAdminRoundBarRequests,
+  normalizeAdoptedKind,
   patchAdminRoundBarRequest,
+  type AbutmentAdoptedKind,
   type RoundBarAbutmentRequest,
 } from "@/shared/practice/roundBarAbutment";
 
@@ -143,8 +147,47 @@ export const AdminRoundBarAbutmentTab = ({
     }, AUTO_SAVE_DELAY_MS);
   };
 
+  const setAdoptedKind = async (
+    row: RoundBarAbutmentRequest,
+    adoptedKind: AbutmentAdoptedKind,
+  ) => {
+    if (!token || normalizeAdoptedKind(row.adoptedKind) === adoptedKind) return;
+    setSavingId(row.id);
+    const prev = rows;
+    setRows((cur) =>
+      cur.map((item) => (item.id === row.id ? { ...item, adoptedKind } : item)),
+    );
+    try {
+      const updated = await patchAdminRoundBarRequest({
+        token,
+        id: row.id,
+        patch: { adoptedKind },
+      });
+      if (updated) applyRow(updated);
+    } catch (error) {
+      setRows(prev);
+      toast({
+        title: "유형 저장 실패",
+        description:
+          error instanceof Error ? error.message : "어벗 유형을 저장하지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   const setAdopted = async (row: RoundBarAbutmentRequest, adopted: boolean) => {
     if (!token) return;
+    const adoptedKind = normalizeAdoptedKind(row.adoptedKind);
+    if (adopted && !adoptedKind) {
+      toast({
+        title: "유형을 먼저 선택하세요",
+        description: "도입 전에 CNC어벗 또는 환봉어벗을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSavingId(row.id);
     const prev = rows;
     setRows((cur) =>
@@ -154,13 +197,13 @@ export const AdminRoundBarAbutmentTab = ({
       const updated = await patchAdminRoundBarRequest({
         token,
         id: row.id,
-        patch: { adopted },
+        patch: { adopted, adoptedKind },
       });
       if (updated) applyRow(updated);
     } catch (error) {
       setRows(prev);
       toast({
-        title: adopted ? "도입 실패" : "되돌리기 실패",
+        title: adopted ? "도입 실패" : "도입 해제 실패",
         description:
           error instanceof Error ? error.message : "도입 상태를 변경하지 못했습니다.",
         variant: "destructive",
@@ -260,30 +303,52 @@ export const AdminRoundBarAbutmentTab = ({
                           : ""}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                        {(
+                          [
+                            { id: ABUTMENT_ADOPTED_KIND.CNC, label: "CNC어벗" },
+                            {
+                              id: ABUTMENT_ADOPTED_KIND.ROUND_BAR,
+                              label: "환봉어벗",
+                            },
+                          ] as const
+                        ).map((option) => {
+                          const active =
+                            normalizeAdoptedKind(row.adoptedKind) === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              disabled={busy}
+                              className={cn(
+                                "rounded-[10px] px-2.5 py-1 text-xs font-semibold transition-colors",
+                                active
+                                  ? "bg-white text-slate-900 shadow-sm"
+                                  : "text-slate-500 hover:text-slate-800",
+                              )}
+                              onClick={() => void setAdoptedKind(row, option.id)}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                       <label className="flex items-center gap-2 text-sm text-slate-700">
                         <Checkbox
                           checked={row.adopted}
-                          disabled={busy}
+                          disabled={
+                            busy ||
+                            (row.adopted
+                              ? false
+                              : !normalizeAdoptedKind(row.adoptedKind))
+                          }
                           onCheckedChange={(checked) => {
                             void setAdopted(row, checked === true);
                           }}
                         />
                         도입
                       </label>
-                      {row.adopted ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-2.5 text-xs"
-                          disabled={busy}
-                          onClick={() => void setAdopted(row, false)}
-                        >
-                          <Undo2 className="mr-1 h-3.5 w-3.5" />
-                          되돌리기
-                        </Button>
-                      ) : null}
                     </div>
                   </div>
 

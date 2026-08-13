@@ -4,8 +4,10 @@
 // - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
+// - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
+// - 2026-08-14: 하단 저장 버튼 제거. 항목 변경은 디바운스 자동 저장. 마스터 스위치는 즉시 저장.
 // - 2026-08-13: 마스터 On/Off(기본 off). 켜면 설정 완료. 모달 진입 시 스위치 하이라이트.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -17,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Banknote, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { Banknote, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -34,6 +36,9 @@ import {
 } from "@/shared/practice/labFeeSchedule";
 
 const UNIT_OPTIONS = Object.keys(LAB_FEE_ITEM_UNIT_LABELS) as LabFeeItemUnit[];
+const AUTO_SAVE_DELAY_MS = 700;
+
+const snapshotItems = (next: LabFeeItem[]) => JSON.stringify(next);
 
 const newItemId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
@@ -111,6 +116,12 @@ export const LabFeeScheduleTab = () => {
   const [saving, setSaving] = useState(false);
   const [active, setActive] = useState(false);
   const [items, setItems] = useState<LabFeeItem[]>([]);
+  const hydratedRef = useRef(false);
+  const savedSnapshotRef = useRef("");
+  const itemsRef = useRef(items);
+  const activeRef = useRef(active);
+  itemsRef.current = items;
+  activeRef.current = active;
 
   const patchItem = (id: string, patch: Partial<LabFeeItem>) => {
     setItems((prev) =>
@@ -131,9 +142,16 @@ export const LabFeeScheduleTab = () => {
     });
   };
 
+  const applyLoadedItems = (next: LabFeeItem[]) => {
+    setItems(next);
+    savedSnapshotRef.current = snapshotItems(next);
+    hydratedRef.current = true;
+  };
+
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true);
+    hydratedRef.current = false;
     try {
       const res = await request<{
         data?: {
@@ -161,11 +179,11 @@ export const LabFeeScheduleTab = () => {
       const payload = res.data?.data;
       setActive(Boolean(payload?.active ?? payload?.configured));
       if (Array.isArray(payload?.items)) {
-        setItems(
+        applyLoadedItems(
           payload.items.length ? normalizeLabFeeItems({ items: payload.items }) : [],
         );
       } else {
-        setItems(
+        applyLoadedItems(
           normalizeLabFeeItems({
             ...(payload?.schedule || {}),
             remake: payload?.remake,
@@ -182,47 +200,71 @@ export const LabFeeScheduleTab = () => {
     void load();
   }, [load]);
 
-  const persist = async (next: { items: LabFeeItem[]; active: boolean }) => {
-    if (!token) return false;
-    setSaving(true);
-    try {
-      const res = await request<{
-        message?: string;
-        data?: { items?: LabFeeItem[]; active?: boolean; configured?: boolean };
-      }>({
-        path: "/api/lab-trading-partners/fee-schedule",
-        method: "PUT",
-        token,
-        jsonBody: { items: next.items, active: next.active },
-      });
-      if (!res.ok) {
+  const persist = useCallback(
+    async (next: { items: LabFeeItem[]; active: boolean }) => {
+      if (!token) return false;
+      try {
+        const res = await request<{
+          message?: string;
+          data?: { items?: LabFeeItem[]; active?: boolean; configured?: boolean };
+        }>({
+          path: "/api/lab-trading-partners/fee-schedule",
+          method: "PUT",
+          token,
+          jsonBody: { items: next.items, active: activeRef.current },
+        });
+        if (!res.ok) {
+          toast({
+            title: "기공비 저장 실패",
+            description: res.data?.message || "다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        const serverItems = Array.isArray(res.data?.data?.items)
+          ? normalizeLabFeeItems({ items: res.data.data.items })
+          : next.items;
+        savedSnapshotRef.current = snapshotItems(serverItems);
+        if (snapshotItems(itemsRef.current) === snapshotItems(next.items)) {
+          setItems(serverItems);
+          savedSnapshotRef.current = snapshotItems(serverItems);
+        }
+        return true;
+      } catch {
         toast({
           title: "기공비 저장 실패",
-          description: res.data?.message || "다시 시도해주세요.",
+          description: "네트워크 오류가 발생했습니다.",
           variant: "destructive",
         });
         return false;
       }
-      if (Array.isArray(res.data?.data?.items)) {
-        setItems(normalizeLabFeeItems({ items: res.data.data.items }));
-      }
-      setActive(Boolean(res.data?.data?.active ?? res.data?.data?.configured));
-      return true;
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    [token, toast],
+  );
 
-  const save = async () => {
-    const ok = await persist({ items, active });
-    if (ok) toast({ title: "기공비를 저장했습니다." });
-  };
+  useEffect(() => {
+    if (!hydratedRef.current || !token || loading) return;
+    const snapshot = snapshotItems(items);
+    if (snapshot === savedSnapshotRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      const payload = itemsRef.current;
+      if (snapshotItems(payload) === savedSnapshotRef.current) return;
+      void persist({ items: payload, active: activeRef.current });
+    }, AUTO_SAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [items, token, loading, persist]);
 
   const toggleActive = async (nextActive: boolean) => {
     const prev = active;
+    activeRef.current = nextActive;
     setActive(nextActive);
-    const ok = await persist({ items, active: nextActive });
+    setSaving(true);
+    const ok = await persist({ items: itemsRef.current, active: nextActive });
+    setSaving(false);
     if (!ok) {
+      activeRef.current = prev;
       setActive(prev);
       return;
     }
@@ -434,21 +476,6 @@ export const LabFeeScheduleTab = () => {
               항목 추가
             </button>
           ) : null}
-        </div>
-
-        <div className="flex justify-end pt-1">
-          <Button
-            onClick={() => void save()}
-            disabled={saving}
-            className="h-10 gap-1.5 rounded-xl px-5"
-          >
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {saving ? "저장 중…" : "저장"}
-          </Button>
         </div>
       </CardContent>
     </Card>

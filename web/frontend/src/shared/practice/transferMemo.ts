@@ -97,6 +97,7 @@ export type PracticeImplantFavorite = {
   type: string;
   roundBar?: boolean;
   adopted?: boolean;
+  adoptedKind?: "cnc" | "round_bar" | "";
   roundBarRequestId?: string;
 };
 
@@ -367,6 +368,12 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
         ? {
             roundBar: true,
             adopted: Boolean(row.adopted),
+            adoptedKind:
+              String(row.adoptedKind || "").trim() === "round_bar"
+                ? "round_bar"
+                : String(row.adoptedKind || "").trim() === "cnc"
+                  ? "cnc"
+                  : "",
             roundBarRequestId,
           }
         : {}),

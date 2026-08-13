@@ -2,8 +2,11 @@
 // - web/backend/models/roundBarAbutmentRequest.model.js
 // - web/backend/utils/roundBarAbutment.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // - web/frontend/src/shared/practice/roundBarAbutment.ts
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
+// change-log:
+// - 2026-08-14: 도입 상태 SSOT=요청 문서. 프리셋 id 매칭(mongoose virtual) 수정 + GET/PATCH hydrate.
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
@@ -13,6 +16,7 @@ import {
   ROUND_BAR_HEX_TYPE,
   ROUND_BAR_INQUIRY_TYPE,
   buildRoundBarSpecKey,
+  normalizeAdoptedKind,
   normalizeRoundBarSpec,
 } from "../../utils/roundBarAbutment.js";
 
@@ -43,8 +47,18 @@ const buildInquiryRealtimePayload = (inquiry, action) => {
   };
 };
 
+const toPlainFavorite = (raw) => {
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.toObject === "function") {
+    return raw.toObject({ virtuals: false, depopulate: true });
+  }
+  if (raw._doc && typeof raw._doc === "object") return { ...raw._doc };
+  return raw;
+};
+
 const normalizeFavoriteRow = (raw) => {
-  const row = raw && typeof raw === "object" ? raw : {};
+  const row = toPlainFavorite(raw);
+  if (!row) return null;
   const manufacturer = String(row.manufacturer || "").trim();
   const brand = String(row.brand || "").trim();
   const family = String(row.family || "").trim();
@@ -59,6 +73,7 @@ const normalizeFavoriteRow = (raw) => {
     type,
     roundBar: Boolean(row.roundBar) || Boolean(roundBarRequestId),
     adopted: Boolean(row.adopted),
+    adoptedKind: normalizeAdoptedKind(row.adoptedKind),
     roundBarRequestId,
   };
 };
@@ -75,6 +90,7 @@ const upsertFavoriteOnAnchor = async ({
   spec,
   roundBarRequestId,
   adopted,
+  adoptedKind,
 }) => {
   const nextId =
     String(favoriteId || "").trim() ||
@@ -87,16 +103,25 @@ const upsertFavoriteOnAnchor = async ({
     type: spec.type || ROUND_BAR_HEX_TYPE,
     roundBar: true,
     adopted: Boolean(adopted),
+    adoptedKind: normalizeAdoptedKind(adoptedKind),
     roundBarRequestId: String(roundBarRequestId || "").trim(),
   };
   const current = listFavorites(anchor);
-  const byId = current.findIndex((row) => row.id === nextId);
-  const byRequest = current.findIndex(
+  const byId = nextId
+    ? current.findIndex((row) => row.id === nextId)
+    : -1;
+  const byRequest = nextRow.roundBarRequestId
+    ? current.findIndex(
+        (row) => row.roundBarRequestId === nextRow.roundBarRequestId,
+      )
+    : -1;
+  const nextSpecKey = buildRoundBarSpecKey(nextRow);
+  const bySpec = current.findIndex(
     (row) =>
-      nextRow.roundBarRequestId &&
-      row.roundBarRequestId === nextRow.roundBarRequestId,
+      (Boolean(row.roundBar) || Boolean(row.roundBarRequestId)) &&
+      buildRoundBarSpecKey(row) === nextSpecKey,
   );
-  const idx = byId >= 0 ? byId : byRequest;
+  const idx = byId >= 0 ? byId : byRequest >= 0 ? byRequest : bySpec;
   const nextList = [...current];
   if (idx >= 0) {
     nextList[idx] = { ...nextList[idx], ...nextRow, id: nextList[idx].id || nextId };
@@ -132,6 +157,7 @@ const toResponse = (doc) => {
     family: String(row.family || "").trim(),
     type: String(row.type || ROUND_BAR_HEX_TYPE).trim() || ROUND_BAR_HEX_TYPE,
     adopted: Boolean(row.adopted),
+    adoptedKind: normalizeAdoptedKind(row.adoptedKind),
     adoptedAt: row.adoptedAt || null,
     revertedAt: row.revertedAt || null,
     createdAt: row.createdAt || null,
@@ -307,4 +333,52 @@ export async function createRoundBarAbutmentRequest(req, res) {
   }
 }
 
-export { toResponse as toRoundBarRequestResponse, upsertFavoriteOnAnchor };
+async function hydrateFavoritesWithRoundBarAdopted(practiceAnchorId, favorites) {
+  const list = Array.isArray(favorites) ? favorites : [];
+  if (!practiceAnchorId || list.length === 0) return list;
+  const requests = await RoundBarAbutmentRequest.find({ practiceAnchorId })
+    .select({ adopted: 1, adoptedKind: 1, favoriteId: 1 })
+    .lean();
+  if (!requests.length) return list;
+
+  const byRequestId = new Map();
+  const byFavoriteId = new Map();
+  for (const row of requests) {
+    const snapshot = {
+      adopted: Boolean(row.adopted),
+      adoptedKind: normalizeAdoptedKind(row.adoptedKind),
+    };
+    byRequestId.set(String(row._id), snapshot);
+    const favoriteId = String(row.favoriteId || "").trim();
+    if (favoriteId) byFavoriteId.set(favoriteId, snapshot);
+  }
+
+  return list.map((fav) => {
+    const requestId = String(fav.roundBarRequestId || "").trim();
+    const favoriteId = String(fav.id || "").trim();
+    const isRoundBar = Boolean(fav.roundBar) || Boolean(requestId);
+    if (!isRoundBar) return fav;
+    const snapshot =
+      (requestId && byRequestId.get(requestId)) ||
+      (favoriteId && byFavoriteId.get(favoriteId)) ||
+      null;
+    const adopted = snapshot ? Boolean(snapshot.adopted) : Boolean(fav.adopted);
+    const adoptedKind = snapshot
+      ? snapshot.adoptedKind
+      : normalizeAdoptedKind(fav.adoptedKind);
+    if (
+      Boolean(fav.roundBar) &&
+      Boolean(fav.adopted) === adopted &&
+      normalizeAdoptedKind(fav.adoptedKind) === adoptedKind
+    ) {
+      return fav;
+    }
+    return { ...fav, roundBar: true, adopted, adoptedKind };
+  });
+}
+
+export {
+  toResponse as toRoundBarRequestResponse,
+  upsertFavoriteOnAnchor,
+  hydrateFavoritesWithRoundBarAdopted,
+};

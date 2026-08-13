@@ -33,6 +33,7 @@
  * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
  * - 2026-08-13: 어벗 체크인데 임플란트·스캔바디 프리셋 없으면 전송 불가.
  * - 2026-08-14: 비로그인 환봉 제조사 추가요청을 로그인 후 문의·요청으로 동기화.
+ * - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지·로컬 미러 갱신.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -139,9 +140,13 @@ import {
 } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import {
+  ROUND_BAR_REQUEST_UPDATED_EVENT,
+  applyRoundBarRequestUpdate,
   isRoundBarFavorite,
   submitRoundBarManufacturerRequest,
+  type RoundBarRequestUpdatedPayload,
 } from "@/shared/practice/roundBarAbutment";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { kstYmdDiffDays } from "@/shared/date/kst";
 import {
   PRACTICE_DROPZONE_DRAFT_KEY,
@@ -1871,6 +1876,28 @@ export const PracticeDropzonePage = () => {
       // 동기화 실패해도 의뢰 전송은 계속 진행
     }
   }, []);
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(authToken),
+    eventTypes: [ROUND_BAR_REQUEST_UPDATED_EVENT],
+    delayMs: 0,
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as RoundBarRequestUpdatedPayload)
+          : {};
+      setImplantFavorites((prev) => {
+        const next = applyRoundBarRequestUpdate(prev, payload);
+        const local = readLocalFavoriteSettings();
+        writeLocalFavoriteSettings({
+          implantFavorites: next,
+          abutmentFavorites: local.abutmentFavorites,
+        });
+        return next;
+      });
+    },
+  });
 
   useEffect(() => {
     if (!authToken) return;

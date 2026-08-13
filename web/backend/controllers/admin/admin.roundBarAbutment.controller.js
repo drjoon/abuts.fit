@@ -3,20 +3,49 @@
 // - web/backend/modules/admin/admin.routes.js
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
+// change-log:
+// - 2026-08-14: 도입 시 치과 프리셋 adopted 동기화 강화 + practice:round-bar-request-updated 이벤트.
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
 import RoundBarAbutmentRequest from "../../models/roundBarAbutmentRequest.model.js";
-import { emitAppEventToRoles } from "../../socket.js";
+import User from "../../models/user.model.js";
+import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import {
   ROUND_BAR_HEX_TYPE,
   buildRoundBarSpecKey,
+  normalizeAdoptedKind,
   normalizeRoundBarSpec,
 } from "../../utils/roundBarAbutment.js";
 import {
   toRoundBarRequestResponse,
   upsertFavoriteOnAnchor,
 } from "../practiceTransfers/roundBarAbutmentRequest.controller.js";
+
+const notifyPracticeRoundBarUpdate = async (doc) => {
+  const payload = {
+    practiceAnchorId: doc.practiceAnchorId ? String(doc.practiceAnchorId) : "",
+    requestId: String(doc._id || ""),
+    favoriteId: String(doc.favoriteId || "").trim(),
+    adopted: Boolean(doc.adopted),
+    adoptedKind: normalizeAdoptedKind(doc.adoptedKind),
+    manufacturer: String(doc.manufacturer || "").trim(),
+    brand: String(doc.brand || "").trim(),
+    family: String(doc.family || "").trim(),
+    type: ROUND_BAR_HEX_TYPE,
+  };
+  const userIds = new Set();
+  if (doc.requestedBy) userIds.add(String(doc.requestedBy));
+  if (doc.practiceAnchorId) {
+    const users = await User.find({ businessAnchorId: doc.practiceAnchorId })
+      .select({ _id: 1 })
+      .lean();
+    users.forEach((user) => userIds.add(String(user._id)));
+  }
+  for (const userId of userIds) {
+    emitAppEventToUser(userId, "practice:round-bar-request-updated", payload);
+  }
+};
 
 const setInquiryStatus = async ({ inquiryId, nextStatus, userId, adminNote }) => {
   if (!inquiryId || !Types.ObjectId.isValid(String(inquiryId))) return;
@@ -130,6 +159,7 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
       Object.prototype.hasOwnProperty.call(body, "brand") ||
       Object.prototype.hasOwnProperty.call(body, "family");
     const hasAdopted = Object.prototype.hasOwnProperty.call(body, "adopted");
+    const hasAdoptedKind = Object.prototype.hasOwnProperty.call(body, "adoptedKind");
 
     if (hasSpec) {
       const spec = normalizeRoundBarSpec({
@@ -151,10 +181,20 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
       doc.specKey = buildRoundBarSpecKey(spec);
     }
 
+    if (hasAdoptedKind) {
+      doc.adoptedKind = normalizeAdoptedKind(body.adoptedKind);
+    }
+
     let adoptChanged = false;
     if (hasAdopted) {
       const nextAdopted = body.adopted === true || body.adopted === "true";
       if (nextAdopted !== Boolean(doc.adopted)) {
+        if (nextAdopted && !normalizeAdoptedKind(doc.adoptedKind)) {
+          return res.status(400).json({
+            success: false,
+            message: "도입 전에 CNC어벗 또는 환봉어벗을 선택해주세요.",
+          });
+        }
         adoptChanged = true;
         doc.adopted = nextAdopted;
         if (nextAdopted) {
@@ -173,12 +213,14 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
 
     await doc.save();
 
-    const anchor = await BusinessAnchor.findById(doc.practiceAnchorId).select({
-      name: 1,
-      practiceTransferSettings: 1,
-    });
+    const anchor = await BusinessAnchor.findById(doc.practiceAnchorId)
+      .select({
+        name: 1,
+        practiceTransferSettings: 1,
+      })
+      .lean();
     if (anchor) {
-      await upsertFavoriteOnAnchor({
+      const favorite = await upsertFavoriteOnAnchor({
         anchor,
         favoriteId: doc.favoriteId,
         spec: {
@@ -189,7 +231,12 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
         },
         roundBarRequestId: String(doc._id),
         adopted: Boolean(doc.adopted),
+        adoptedKind: doc.adoptedKind,
       });
+      if (favorite?.id && favorite.id !== doc.favoriteId) {
+        doc.favoriteId = favorite.id;
+        await doc.save();
+      }
     }
 
     if (adoptChanged) {
@@ -198,10 +245,12 @@ export async function adminUpdateRoundBarAbutmentRequest(req, res) {
         nextStatus: doc.adopted ? "resolved" : "open",
         userId: req.user?._id,
         adminNote: doc.adopted
-          ? "환봉방식 커스텀어벗 도입(정식 채택)"
-          : "환봉방식 커스텀어벗 도입 되돌림",
+          ? `어벗 추가 요청 도입(${normalizeAdoptedKind(doc.adoptedKind) === "round_bar" ? "환봉어벗" : "CNC어벗"})`
+          : "어벗 추가 요청 도입 해제",
       });
     }
+
+    await notifyPracticeRoundBarUpdate(doc);
 
     return res.json({
       success: true,
