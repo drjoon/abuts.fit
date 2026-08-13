@@ -147,6 +147,7 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 // - 2026-08-13: 유지장치=연결 전용. 임시치아=단독·연결.
 // - 2026-08-13: 어벗 체크·커스텀어벗인데 프리셋 미선택이면 치식 카드 빨강.
 // - 2026-08-13: 기공의뢰 치식 카드에서 디자인+생산 라벨 제거(모드는 디자인+생산 고정).
+// - 2026-08-13: 형태 글자 클릭은 마키 억제와 별개로 순환(브리지·크라운 여백 클릭 포함).
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -2307,7 +2308,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    if (suppressToothClickRef.current) return;
+                                    // 마키 억제는 카드 해제용. 형태 버튼(여백 포함) 클릭은 순환한다.
                                     const resolved = resolveNextProsthesisType(
                                       toothWorks,
                                       toothNumber,
