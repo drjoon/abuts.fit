@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-13: 가입 축하 크레딧 — 치과 숨김, 기공소는 금액·1회 지급만 표시.
 // - 2026-08-13: 기본 가격 제목 삭제. 멤버십 단가+일반 소형 병기, 치과 멤버십 자동결제 안내.
 // - 2026-08-13: 생산만 15,000·디자인+생산 20,000 기재, 배송비 박스단위 별도.
 // - 2026-08-12: 모달 제목을 커스텀 어벗 생산 가격 · 출고 정책 안내로 변경, 디자인 10,000원 행 삭제.
@@ -28,6 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { request } from '@/shared/api/apiClient';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useRequestorBusinessAccess } from '@/shared/business/useRequestorBusinessAccess';
 import {
   CREDIT_SETTINGS_DEFAULTS,
   useSystemSettings
@@ -135,6 +137,8 @@ export const PricingPolicyDialog = ({
   variant = 'default'
 }: Props) => {
   const { token } = useAuthStore();
+  const { kind } = useRequestorBusinessAccess();
+  const showWelcomeCredit = kind === 'lab';
   const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
   const { data: systemSettings } = useSystemSettings();
   const welcomeRequestCredit = Math.max(
@@ -351,20 +355,26 @@ export const PricingPolicyDialog = ({
                 </div>
               </section>
 
-              <div className='grid gap-3 sm:grid-cols-2'>
-                <PolicySection title='가입 축하 무료 크레딧'>
-                  <p className='text-2xl font-semibold tracking-tight text-slate-900'>
-                    {welcomeRequestCredit.toLocaleString('ko-KR')}원
-                  </p>
-                  <p className='text-xs text-slate-500'>신규 가입 기공소 1회 지급</p>
-                  <BulletList
-                    items={[
-                      '커스텀 어벗 의뢰 결제에만 사용 가능',
-                      '배송비에는 사용할 수 없습니다.'
-                    ]}
-                  />
-                </PolicySection>
-
+              {showWelcomeCredit ? (
+                <div className='grid gap-3 sm:grid-cols-2'>
+                  <PolicySection title='가입 축하 무료 크레딧'>
+                    <p className='text-2xl font-semibold tracking-tight text-slate-900'>
+                      {welcomeRequestCredit.toLocaleString('ko-KR')}원
+                    </p>
+                    <p className='text-xs text-slate-500'>
+                      신규 가입 기공소 1회 지급
+                    </p>
+                  </PolicySection>
+                  <PolicySection title='의뢰 취소'>
+                    <p>
+                      <span className='font-semibold text-slate-900'>
+                        준비 단계
+                      </span>
+                      에서만 취소 가능하며, 가공 단계부터는 취소할 수 없습니다.
+                    </p>
+                  </PolicySection>
+                </div>
+              ) : (
                 <PolicySection title='의뢰 취소'>
                   <p>
                     <span className='font-semibold text-slate-900'>
@@ -373,7 +383,7 @@ export const PricingPolicyDialog = ({
                     에서만 취소 가능하며, 가공 단계부터는 취소할 수 없습니다.
                   </p>
                 </PolicySection>
-              </div>
+              )}
 
               <PolicySection title='출고 리드타임 (최대 직경 기준)'>
                 <BulletList
