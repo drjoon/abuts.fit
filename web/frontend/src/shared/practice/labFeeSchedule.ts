@@ -356,7 +356,7 @@ export const resolveRemakeLabFeeKey = (row?: {
 } | null): LabFeeScheduleKey | null => {
   const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
   if (!prosthesisType || isMissingToothProsthesisType(prosthesisType)) return null;
-  if (isCustomAbutmentWork(row)) {
+  if (isCustomAbutmentProsthesisType(prosthesisType)) {
     const mode = String(row?.abutmentProductMode || row?.productMode || "").trim();
     if (mode === "design_custom_abutment" || /어벗\s*디자인/i.test(prosthesisType)) {
       return "customAbutmentDesign";
@@ -489,41 +489,46 @@ export const computePracticeTransferRetailFees = (params: {
   let abutmentRetailTotal = 0;
   let abutmentQty = 0;
 
+  const abutmentFeeForRow = (row: (typeof rows)[number]) => {
+    if (waiveAbutment || !isCustomAbutmentWork(row)) return 0;
+    return resolveAbutsAbutmentUnitPrice({
+      productMode: row?.abutmentProductMode || row?.productMode,
+      pricingTier,
+    });
+  };
+  const addAbutment = (abutmentFee: number) => {
+    if (abutmentFee > 0) {
+      abutmentRetailTotal += abutmentFee;
+      abutmentQty += 1;
+    }
+  };
+
   for (const row of rows) {
     const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
     if (!prosthesisType) continue;
     if (isMissingToothProsthesisType(prosthesisType)) continue;
 
-    if (!useRemake && isCustomAbutmentWork(row)) {
-      const abutmentFee = waiveAbutment
-        ? 0
-        : resolveAbutsAbutmentUnitPrice({
-            productMode: row?.abutmentProductMode || row?.productMode,
-            pricingTier,
-          });
-      if (abutmentFee > 0) {
-        abutmentRetailTotal += abutmentFee;
-        abutmentQty += 1;
+    if (isCustomAbutmentProsthesisType(prosthesisType)) {
+      if (useRemake) {
+        const feeKey = resolveRemakeLabFeeKey(row);
+        if (!feeKey) continue;
+        const labFee = Math.max(0, Math.round(Number(remakeSchedule[feeKey] || 0)));
+        labFeeTotal += labFee;
+        lines.push({
+          toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
+          prosthesisType,
+          labFee,
+          abutmentRetail: 0,
+        });
+        continue;
       }
+      const abutmentFee = abutmentFeeForRow(row);
+      addAbutment(abutmentFee);
       lines.push({
         toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
         prosthesisType,
         labFee: 0,
         abutmentRetail: abutmentFee,
-      });
-      continue;
-    }
-
-    if (useRemake && isCustomAbutmentWork(row)) {
-      const feeKey = resolveRemakeLabFeeKey(row);
-      if (!feeKey) continue;
-      const labFee = Math.max(0, Math.round(Number(remakeSchedule[feeKey] || 0)));
-      labFeeTotal += labFee;
-      lines.push({
-        toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
-        prosthesisType,
-        labFee,
-        abutmentRetail: 0,
       });
       continue;
     }
@@ -535,12 +540,14 @@ export const computePracticeTransferRetailFees = (params: {
         0,
         Math.round(Number(useRemake ? item.remake : item.price) || 0),
       );
+      const abutmentFee = abutmentFeeForRow(row);
       labFeeTotal += labFee;
+      addAbutment(abutmentFee);
       lines.push({
         toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
         prosthesisType,
         labFee,
-        abutmentRetail: 0,
+        abutmentRetail: abutmentFee,
       });
       continue;
     }
@@ -555,6 +562,14 @@ export const computePracticeTransferRetailFees = (params: {
           ? Math.max(0, Math.round(Number(useRemake ? item.remake : item.price) || 0))
           : nTeethFeeForCount(group.teeth.length, item.tiers, useRemake);
       labFeeTotal += labFee;
+      let groupAbutment = 0;
+      for (const row of groupedRows) {
+        const tooth = String(row?.toothNumber || row?.tooth || "").trim();
+        if (!group.teeth.includes(tooth)) continue;
+        const abutmentFee = abutmentFeeForRow(row);
+        addAbutment(abutmentFee);
+        groupAbutment += abutmentFee;
+      }
       lines.push({
         toothNumber: group.teeth.join(","),
         prosthesisType:
@@ -562,7 +577,7 @@ export const computePracticeTransferRetailFees = (params: {
             ? `${item.name}${group.suffix}`
             : `${item.name}${group.suffix} ${group.teeth.length}치`,
         labFee,
-        abutmentRetail: 0,
+        abutmentRetail: groupAbutment,
       });
     }
   }

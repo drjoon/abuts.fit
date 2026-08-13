@@ -61,6 +61,78 @@ describe("labFeeSchedule", () => {
     expect(fees.total).toBe(60000);
   });
 
+  test("크라운·브리지+어벗은 기공수가와 어벗츠 단가를 함께 합산한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "11",
+          prosthesisType: "커스텀어벗",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+        },
+        {
+          toothNumber: "21",
+          prosthesisType: "브리지",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+        },
+        {
+          toothNumber: "22",
+          prosthesisType: "브리지",
+          customAbutment: true,
+          abutmentProductMode: "custom_abutment",
+        },
+        {
+          toothNumber: "23",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_DEFAULTS,
+      abutmentPricingTier: "membership",
+    });
+    expect(fees.labFeeTotal).toBe(180000);
+    expect(fees.abutmentRetailTotal).toBe(90000);
+    expect(fees.abutmentQty).toBe(4);
+    expect(fees.total).toBe(270000);
+    const byTooth = Object.fromEntries(
+      fees.lines.map((line) => [line.toothNumber, line]),
+    );
+    expect(byTooth["11"]).toMatchObject({ labFee: 0, abutmentRetail: 25000 });
+    expect(byTooth["21"]).toMatchObject({ labFee: 60000, abutmentRetail: 25000 });
+    expect(byTooth["22"]).toMatchObject({ labFee: 60000, abutmentRetail: 15000 });
+    expect(byTooth["23"]).toMatchObject({ labFee: 60000, abutmentRetail: 25000 });
+  });
+
+  test("리메이크 크라운+어벗은 크라운 리메이크 수가만 쓴다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "16",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+        },
+      ],
+      labFeeSchedule: {
+        ...LAB_FEE_SCHEDULE_DEFAULTS,
+        remake: {
+          crown: 20000,
+          bridge: 0,
+          inlay: 0,
+          pontic: 0,
+          customAbutmentDesign: 0,
+          customAbutmentDesignAndProduction: 5000,
+        },
+      },
+      remake: true,
+    });
+    expect(fees.labFeeTotal).toBe(20000);
+    expect(fees.abutmentRetailTotal).toBe(0);
+    expect(fees.total).toBe(20000);
+  });
+
   test("커스텀어벗은 어벗츠 멤버십 단가를 쓴다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [
