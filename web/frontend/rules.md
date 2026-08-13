@@ -117,7 +117,7 @@ Notes:
   - `src/shared/files/extractDroppedFiles.ts`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
     - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 크라운→인레이→어벗 디자인 / 브리지↔Pontic↔작업X. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 어벗 디자인은 커스텀 체크박스(임플란트·스캔바디) 지원. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
-    - 기공의뢰서 상·하악 사이(크게보기·전송 상세 포함)에 견적(크레딧 소비액) 표시. 간단 합계 + 빠른툴팁 치식별 세부. `PracticeTransferFeeEstimate` / `GET /api/practice/transfers/quote-context`.
+    - 기공의뢰서 상·하악 사이(크게보기·전송 상세 포함)에 견적(크레딧 소비액) 표시. 치과는 평소 블러, 호버 시 금액 공개. 기공소 미지정(자동매칭)은 기본수가 없음(0원). 간단 합계 + 빠른툴팁 치식별 세부. `PracticeTransferFeeEstimate` / `GET /api/practice/transfers/quote-context`.
     - 기공소 의뢰카드·전송 상세에는 수령액(청구 − 플랫폼 수수료) 표시. 목록 `feeQuote` SSOT.
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
   - `src/shared/practice/toothWorkDraft.ts`
@@ -566,6 +566,7 @@ Notes:
   - 동시 업로드 풀: 최대 8 (`useS3TempUpload`).
   - 첨부 직후 백그라운드 사전 업로드(`useFilePreUpload`). 로그인 세션이 있을 때:
     - 기공의뢰: Dropzone·FileTransfer. 파일카드에 `uploadProgress` 프로그레스바.
+      제출([기공소로 전송])은 캐시된 결과를 재사용하고, 미완료면 백그라운드 업로드만 기다린다. 재업로드 토스트를 띄우지 않는다.
     - 생산의뢰: `useNewRequestPage` → 제출 시 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`)
     - 채팅 첨부: `useBackgroundTempUpload` + `BackgroundUploadList`
       (첨부 즉시 백그라운드 업로드, 칩 프로그레스바. 전송 시 `ensureUploaded` 재사용)

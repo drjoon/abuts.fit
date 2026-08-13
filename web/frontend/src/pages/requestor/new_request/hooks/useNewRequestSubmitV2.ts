@@ -51,6 +51,7 @@ type UseNewRequestSubmitV2Params = {
     files: File[],
     onProgress?: (progress: Record<string, number>) => void,
   ) => Promise<TempUploadedFile[]>;
+  peekCachedUploadedFiles?: (files: File[]) => TempUploadedFile[] | null;
   onDuplicateDetected?: (payload: {
     mode: "active" | "tracking";
     duplicates: any[];
@@ -84,6 +85,7 @@ export const useNewRequestSubmitV2 = ({
   patientGroups = [],
   patchDraftImmediately,
   uploadFiles,
+  peekCachedUploadedFiles,
   onDuplicateDetected,
 }: UseNewRequestSubmitV2Params) => {
   const { toast, dismiss } = useToast();
@@ -95,6 +97,7 @@ export const useNewRequestSubmitV2 = ({
   const { uploadFilesWithToast } = useUploadWithProgressToast({
     token,
     uploadFiles,
+    peekCachedUploadedFiles,
   });
   const { data: systemSettings } = useSystemSettings();
 

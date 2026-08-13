@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/hooks/useS3TempUpload.ts
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
+// - 2026-08-13: peekCachedUploadedFiles가 있으면 재업로드 토스트를 생략한다.
 import React, { useCallback } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
@@ -21,12 +22,18 @@ interface UseUploadWithProgressToastOptions {
     files: File[],
     onProgress?: (progress: Record<string, number>) => void,
   ) => Promise<TempUploadedFile[]>;
+  /** 이미 올라간 파일이면 토스트 없이 즉시 반환 */
+  peekCachedUploadedFiles?: (files: File[]) => TempUploadedFile[] | null;
 }
 
 export function useUploadWithProgressToast(
   options: UseUploadWithProgressToastOptions,
 ) {
-  const { token, uploadFiles: uploadFilesOverride } = options;
+  const {
+    token,
+    uploadFiles: uploadFilesOverride,
+    peekCachedUploadedFiles,
+  } = options;
   const { toast } = useToast();
   const { uploadFiles: defaultUploadFiles } = useS3TempUpload({ token });
   const uploadFiles = uploadFilesOverride || defaultUploadFiles;
@@ -34,6 +41,8 @@ export function useUploadWithProgressToast(
   const uploadFilesWithToast = useCallback(
     async (files: File[]): Promise<TempUploadedFile[]> => {
       if (!files.length) return [];
+      const cached = peekCachedUploadedFiles?.(files);
+      if (cached) return cached;
 
       let overall = 0;
       const total = files.length;
@@ -115,7 +124,7 @@ export function useUploadWithProgressToast(
         throw err;
       }
     },
-    [toast, uploadFiles],
+    [peekCachedUploadedFiles, toast, uploadFiles],
   );
 
   return { uploadFilesWithToast };

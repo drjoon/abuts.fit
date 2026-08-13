@@ -339,6 +339,7 @@ export const useNewRequestPage = (
   // 첨부 직후 백그라운드 사전 업로드 (제출 시 ensureFilesUploaded로 재사용)
   const {
     ensureFilesUploaded,
+    peekCachedUploadedFiles,
     preUploadFiles,
     forgetFile,
     clearPreUploadCache,
@@ -1149,6 +1150,7 @@ export const useNewRequestPage = (
     patientGroups: patientFileGroupsApi.patientGroups,
     patchDraftImmediately,
     uploadFiles: ensureFilesUploaded,
+    peekCachedUploadedFiles,
     onDuplicateDetected: handleServerDuplicateDetected,
   });
 
