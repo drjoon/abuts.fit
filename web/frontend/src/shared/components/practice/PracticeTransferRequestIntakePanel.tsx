@@ -83,9 +83,6 @@ import {
   type PracticeImplantFavorite,
 } from "@/shared/practice/transferMemo";
 import {
-  ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE,
-  ABUTS_ABUTMENT_SERVICE_TAX_NOTE,
-  formatAbutsAbutmentTierPriceLine,
   normalizeAbutsAbutmentCreditPrices,
 } from "@/shared/pricing/abutsAbutmentService";
 import { useAbutsAbutmentPricingTier } from "@/shared/pricing/useAbutsAbutmentPricingTier";
@@ -135,6 +132,8 @@ import { resolveAdoptedAbutmentKind } from "@/shared/practice/labFeeSchedule";
 // - 2026-08-13: 커스텀어벗 설정 모달에 생산만/디자인+생산 배타 선택 + 가격 툴팁.
 // - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
 // - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
+// - 2026-08-14: 생산만/디자인+생산 툴팁을「커스텀어벗 - 어벗츠 자체 제공」(+생산만은 어벗생산의뢰 안내)로 통일.
+// - 2026-08-14: 커스텀어벗 설정 모달 가로폭을 프리셋 편집과 같이 max-w-5xl로 맞춘다.
 // - 2026-08-14: 환봉 도입 치아는 환봉 단가(0원이면 별도 고지)를 설정 모달에 표시.
 // - 2026-08-14: 환봉 요청중 판별용 implantFavorites를 기공비 견적에 전달.
 // - 2026-08-13: 커스텀어벗 칸 「설정」제거. 생산/디자인+생산 클릭 시 설정 모달.
@@ -2846,7 +2845,7 @@ export const PracticeTransferRequestIntakePanel = ({
       >
         <DialogContent
           className={cn(
-            "flex max-h-[92vh] flex-col gap-4 overflow-hidden sm:max-w-3xl",
+            "flex max-h-[92vh] flex-col gap-4 overflow-hidden sm:max-w-5xl",
             nestedDialogClassName,
           )}
           overlayClassName={nestedDialogOverlayClassName}
@@ -2881,34 +2880,17 @@ export const PracticeTransferRequestIntakePanel = ({
                     : resolveToothAbutmentProductMode(
                         toothWorks[customSpecsModalTarget],
                       ) === option.mode;
-                  const isAlternateLockedOption = Boolean(
-                    lockedMode && option.mode !== lockedMode,
-                  );
                   return (
                     <HoverOnlyTooltip
                       key={option.mode}
                       content={
                         <>
-                          <p className="font-medium">
-                            {customSpecsAdoptedKind === "round_bar"
-                              ? "환봉어벗 - 어벗츠 자체 제공"
-                              : "CNC커스텀어벗 - 어벗츠 자체 제공"}
-                          </p>
-                          <p className="tabular-nums">
-                            {formatAbutsAbutmentTierPriceLine({
-                              tier: abutmentPricingTier,
-                              membershipPrice: option.membershipPrice,
-                              regularPrice: option.regularPrice,
-                            })}
-                          </p>
-                          <p className="text-muted-foreground">
-                            {isAlternateLockedOption
-                              ? lockedMode ===
-                                ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
-                                ? "어벗생산의뢰 페이지에서 처리합니다."
-                                : "기공의뢰 페이지에서 처리합니다."
-                              : `${ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE}, ${ABUTS_ABUTMENT_SERVICE_TAX_NOTE}`}
-                          </p>
+                          <p className="font-medium">커스텀어벗 - 어벗츠 자체 제공</p>
+                          {option.mode === ABUTMENT_PRODUCT_MODE.PRODUCTION ? (
+                            <p className="text-muted-foreground">
+                              어벗생산의뢰 페이지에서 처리합니다.
+                            </p>
+                          ) : null}
                         </>
                       }
                     >
