@@ -32,6 +32,7 @@ import {
   remakePracticeTransfers,
   restorePracticeTransfersBatch,
   upsertPracticeTransferDraft,
+  upsertPracticeTransferLabRating,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 import {
   getPracticeTransferSettings,
@@ -114,6 +115,13 @@ router.get(
   authenticate,
   authorize(["requestor", "admin"]),
   getReceivedPracticeTransferUnreadCount,
+);
+
+router.post(
+  "/:transferId/lab-rating",
+  authenticate,
+  sendAuth,
+  upsertPracticeTransferLabRating,
 );
 
 router.post(

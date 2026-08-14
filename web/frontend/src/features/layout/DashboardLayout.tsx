@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-14: 기공소 신규 기공비 → 관리자 토스트·플랫폼 설정 배지.
 // - 2026-08-13: 기공소 기공비 미설정 시 로그인 후 설정 탭 유도(LabFeeSetupPrompt).
 // - 2026-08-13: 파트너 페이지 → 관리자「플랫폼 설정」이전. 개발운영사 파트너 메뉴 제거. 설정 그룹(플랫폼 설정·설정).
 // - 2026-08-11: 개발운영사·관리자 사이드·라우트에서 소개 제거(영업자만 유지).
@@ -442,6 +443,7 @@ export const DashboardLayout = () => {
     useState<ColleagueAccount | null>(null);
   const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
     useState(0);
+  const [abutsFeePendingCount, setAbutsFeePendingCount] = useState(0);
   const { rooms: chatRooms } = useChatRooms();
   const {
     canUsePaid: requestorCanUsePaid,
@@ -981,6 +983,100 @@ export const DashboardLayout = () => {
     clearBadgeForPath(location.pathname);
   }, [location.pathname, clearBadgeForPath]);
 
+  useEffect(() => {
+    if (user.role !== "admin" || !token) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await apiFetch<{
+          success?: boolean;
+          data?: {
+            pendingCount?: number;
+            items?: Array<{ pendingReview?: boolean }>;
+          };
+        }>({
+          path: "/api/admin/settings/abuts-lab-fee-schedule",
+          method: "GET",
+          token,
+        });
+        if (cancelled || !res.ok) return;
+        const payload = res.data?.data;
+        if (typeof payload?.pendingCount === "number") {
+          setAbutsFeePendingCount(Math.max(0, payload.pendingCount));
+          return;
+        }
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        setAbutsFeePendingCount(
+          items.filter((item) => item.pendingReview === true).length,
+        );
+      } catch {
+        // silent
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user.role]);
+
+  useAppEventListener({
+    enabled: user.role === "admin",
+    eventTypes: ["abuts-lab-fee:pending-items"],
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const data =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as {
+              pendingCount?: number;
+              labName?: string;
+              items?: Array<{ name?: string }>;
+            })
+          : {};
+      const count = Number(data.pendingCount);
+      if (Number.isFinite(count) && count >= 0) {
+        setAbutsFeePendingCount(count);
+      } else {
+        const added = Array.isArray(data.items) ? data.items.length : 1;
+        setAbutsFeePendingCount((prev) => Math.max(0, prev + added));
+      }
+      const names = (Array.isArray(data.items) ? data.items : [])
+        .map((item) => String(item?.name || "").trim())
+        .filter(Boolean);
+      const labLabel = String(data.labName || "기공소").trim() || "기공소";
+      toast({
+        title: "신규 기공비 검토",
+        description:
+          names.length > 0
+            ? `${labLabel}에서 「${names.join(", ")}」을(를) 추가했습니다. 어벗츠 수가에서 검증 후 On으로 적용하세요.`
+            : `${labLabel}에서 신규 기공비를 추가했습니다. 어벗츠 수가에서 검증 후 On으로 적용하세요.`,
+        action: (
+          <ToastAction
+            altText="어벗츠 수가 열기"
+            onClick={() => {
+              navigate("/dashboard/platform-settings?tab=abutsFees");
+            }}
+          >
+            확인
+          </ToastAction>
+        ),
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (user.role !== "admin") return;
+    const onPending = (evt: Event) => {
+      const custom = evt as CustomEvent<{ pendingCount?: unknown }>;
+      const next = Number(custom.detail?.pendingCount);
+      if (Number.isFinite(next) && next >= 0) {
+        setAbutsFeePendingCount(next);
+      }
+    };
+    window.addEventListener("abuts:abuts-lab-fee-pending", onPending);
+    return () => {
+      window.removeEventListener("abuts:abuts-lab-fee-pending", onPending);
+    };
+  }, [user.role]);
+
   const resolvedMenuItems = (() => {
     if (!isCreditBelowUnit) return menuItems;
     return menuItems.map((item) => {
@@ -1010,9 +1106,13 @@ export const DashboardLayout = () => {
         const chatUnread = Math.max(0, Number(requestorPracticeChatUnreadCount || 0));
         return adminCommBadge + transferUnread + chatUnread;
       }
+      if (path === "/dashboard/platform-settings" && user.role === "admin") {
+        return adminCommBadge + Math.max(0, abutsFeePendingCount);
+      }
       return adminCommBadge;
     },
     [
+      abutsFeePendingCount,
       getBadgeForHref,
       requestorPracticeChatUnreadCount,
       requestorPracticeUnreadCount,

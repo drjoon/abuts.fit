@@ -8,13 +8,14 @@
 // - 2026-08-14: 환봉 단가 0원은 어벗츠 열에「별도 고지」.
 // - 2026-08-14: 툴팁 컬럼 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. 환봉 요청중은 기공소 어벗.
 // - 2026-08-14: 기공소 뷰 — 주 표기는 설정 수가. 수수료 수령은 보조. 총액 텍스트만 툴팁 트리거.
-// - 2026-08-14: 기공소 툴팁 컬럼 기공수가/어벗츠 몫. 어벗츠 열은 금액 대신「커스텀어벗」표기·합계는 기공수가.
+// - 2026-08-14: 기공소 툴팁 컬럼 기공수가/어벗츠 몫. 어벗츠 열은 금액 대신「커스텀어벗」표기.
 // - 2026-08-14: 카드 density에서 trailingAction(기공수가 할증)을 총액 오른쪽 끝에 배치.
 // - 2026-08-14: 할증 안내를「Nx 할증 적용」만 표시(견적은 생성 시 스냅샷 배수).
 // - 2026-08-14: 자동매칭 예산 툴팁도 치아번호별 기공소·어벗츠 어벗 + 하한~상한 총액.
 // - 2026-08-14: 치과-기공의뢰 견적에서 할증 문구 숨김(결과 가격만 표시).
 // - 2026-08-14: 기공소 뷰만 총액 옆·툴팁에 할증 표기. 의뢰카드 trailingAction은 채팅 헤더로 이동.
 // - 2026-08-14: 기공소 뷰는 설정 수가(labFeeTotal)를 제시. 수수료 차감 수령은 보조 표기.
+// - 2026-08-14: 합산 라벨은「기공비」, 단위(툴팁 컬럼)는「기공수가」.
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import {
@@ -42,7 +43,7 @@ type PracticeTransferFeeEstimateProps = {
   className?: string;
   /** compact: 상·하악 사이 / card: 의뢰카드 */
   density?: "chart" | "card";
-  /** 기공소 미선택 — 기공 수가 미산출 안내 */
+  /** 기공소 미선택 — 기공비 미산출 안내 */
   labPending?: boolean;
   /** 카드 총액 오른쪽(선택) */
   trailingAction?: ReactNode;
@@ -298,7 +299,7 @@ export function PracticeTransferFeeEstimate({
         role="note"
       >
         <p className="text-sm text-muted-foreground">
-          기공소를 선택하시면 기공 수가가 계산됩니다.
+          기공소를 선택하시면 기공비가 계산됩니다.
         </p>
       </div>
     );
@@ -324,10 +325,10 @@ export function PracticeTransferFeeEstimate({
       : quote.total;
   const title = quote.isRemake
     ? isLab
-      ? "리메이크 기공수가"
+      ? "리메이크 기공비"
       : "리메이크 견적"
     : isLab
-      ? "기공수가"
+      ? "기공비"
       : budget && Number(budget.maxLabFee) > 0
         ? "예상 견적"
         : "견적";

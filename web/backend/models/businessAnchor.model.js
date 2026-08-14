@@ -357,6 +357,25 @@ const businessAnchorSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // 치과→기공소 rating(1~3)·메모. 기록한 치과·관리자만 조회.
+    // related: web/backend/utils/practiceLabRating.js
+    practiceLabRatings: {
+      type: [
+        {
+          _id: false,
+          labAnchorId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "BusinessAnchor",
+            required: true,
+          },
+          stars: { type: Number, default: 3, min: 1, max: 3 },
+          memo: { type: String, default: "" },
+          ratingCount: { type: Number, default: 1, min: 1 },
+          updatedAt: { type: Date, default: null },
+        },
+      ],
+      default: [],
+    },
     practiceTransferSettings: {
       // related files:
       // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
@@ -427,6 +446,13 @@ const businessAnchorSchema = new mongoose.Schema(
       autoMatchBudget: {
         type: mongoose.Schema.Types.Mixed,
         default: null,
+      },
+      // 자동매칭 참여 최소 별(1~3). 해당 치과 rating 기준. 1회 rating은 차단하지 않음.
+      autoMatchMinLabRating: {
+        type: Number,
+        default: 1,
+        min: 1,
+        max: 3,
       },
       updatedAt: {
         type: Date,

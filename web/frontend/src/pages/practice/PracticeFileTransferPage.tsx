@@ -24,6 +24,9 @@
  * - web/frontend/src/shared/realtime/socket.ts
  * - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+ * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
+ * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-08-14: 의뢰 상세 · 기공소 채팅 rating(1~3)·메모. 자동매칭 최소 별.
  * - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
@@ -148,6 +151,7 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
+import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import {
@@ -160,6 +164,11 @@ import {
   type PracticeRecentStatusFilter,
 } from "@/shared/practice/practiceRecentTransferList";
 import { formatWon } from "@/shared/practice/practiceTransferFeeQuote";
+import {
+  normalizeAutoMatchMinLabRating,
+  parsePracticeLabRatingPublic,
+  type PracticeLabRatingPublic,
+} from "@/shared/practice/practiceLabRating";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
@@ -256,6 +265,8 @@ type RecentRequestItem = {
   isRemake?: boolean;
   remakeSourceTransferId?: string;
   matchingMode?: "direct" | "auto";
+  canRateLab?: boolean;
+  labRating?: PracticeLabRatingPublic | null;
 };
 
 type TransferFileItem = {
@@ -384,6 +395,8 @@ type RecentTransferItem = {
   isRemake?: boolean;
   remakeSourceTransferId?: string;
   matchingMode?: "direct" | "auto";
+  canRateLab?: boolean;
+  labRating?: PracticeLabRatingPublic | null;
 };
 
 const extractLabNameFromMessage = (message: string) => {
@@ -484,6 +497,7 @@ type PracticeTransferSettingsPayload = {
   skipDesignConfirm?: boolean;
   defaultAbutmentProductMode?: AbutmentProductMode;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
+  autoMatchMinLabRating?: number;
   abutsLabFeeCatalog?: AbutsLabFeeCatalogItem[] | null;
   updatedAt?: string | null;
 };
@@ -1000,6 +1014,7 @@ export const PracticeFileTransferPage = ({
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
   const [autoMatchBudget, setAutoMatchBudget] =
     useState<PracticeTransferAutoMatchBudget | null>(null);
+  const [autoMatchMinLabRating, setAutoMatchMinLabRating] = useState(1);
   const [abutsLabFeeCatalog, setAbutsLabFeeCatalog] = useState<
     AbutsLabFeeCatalogItem[] | null
   >(null);
@@ -1430,6 +1445,9 @@ export const PracticeFileTransferPage = ({
       payload.autoMatchBudget,
       payload.abutsLabFeeCatalog,
     );
+    const nextAutoMatchMinLabRating = normalizeAutoMatchMinLabRating(
+      payload.autoMatchMinLabRating,
+    );
     if (Array.isArray(payload.abutsLabFeeCatalog)) {
       setAbutsLabFeeCatalog(payload.abutsLabFeeCatalog);
     }
@@ -1443,6 +1461,7 @@ export const PracticeFileTransferPage = ({
     setSkipDesignConfirm(nextSkipDesignConfirm);
     setDefaultAbutmentProductMode(nextDefaultAbutmentProductMode);
     setAutoMatchBudget(nextAutoMatchBudget);
+    setAutoMatchMinLabRating(nextAutoMatchMinLabRating);
     setToothWorks((prev) =>
       prev.map((row) => {
         const customAbutment = Boolean(row.customAbutment);
@@ -1481,6 +1500,10 @@ export const PracticeFileTransferPage = ({
         params,
         "autoMatchBudget",
       );
+      const hasAutoMatchMinLabRating = Object.prototype.hasOwnProperty.call(
+        params,
+        "autoMatchMinLabRating",
+      );
 
       const jsonBody: Record<string, unknown> = {};
       if (hasArrivalDefaultDays) {
@@ -1510,6 +1533,11 @@ export const PracticeFileTransferPage = ({
         jsonBody.autoMatchBudget = resolveAutoMatchBudgetOrDefaults(
           params.autoMatchBudget,
           abutsLabFeeCatalog,
+        );
+      }
+      if (hasAutoMatchMinLabRating) {
+        jsonBody.autoMatchMinLabRating = normalizeAutoMatchMinLabRating(
+          params.autoMatchMinLabRating,
         );
       }
       if (Object.keys(jsonBody).length === 0) return true;
@@ -2211,6 +2239,8 @@ export const PracticeFileTransferPage = ({
                 ? (r.remake as { sourceTransferId?: unknown }).sourceTransferId
                 : r.remakeSourceTransferId) || "",
             ).trim(),
+            canRateLab: Boolean(r.canRateLab),
+            labRating: parsePracticeLabRatingPublic(r.labRating),
           };
         })
         .filter((item) => Boolean(item.id))
@@ -3039,6 +3069,8 @@ export const PracticeFileTransferPage = ({
           remakeFeeQuote: req.remakeFeeQuote || req.feeQuote?.remakeFeeQuote || null,
           isRemake: Boolean(req.isRemake),
           remakeSourceTransferId: req.remakeSourceTransferId || "",
+          canRateLab: Boolean(req.canRateLab),
+          labRating: req.labRating || null,
           unreadCount,
           searchBlob: [
             req.id,
@@ -5515,6 +5547,14 @@ export const PracticeFileTransferPage = ({
                       autoMatchBudget: next,
                     }).catch(() => {});
                   },
+                  autoMatchMinLabRating,
+                  onAutoMatchMinLabRatingChange: (next) => {
+                    const normalized = normalizeAutoMatchMinLabRating(next);
+                    setAutoMatchMinLabRating(normalized);
+                    void savePracticeTransferSettingsToServer({
+                      autoMatchMinLabRating: normalized,
+                    }).catch(() => {});
+                  },
                   onMemoSnippetsChange: async (next) => {
                     const normalized = normalizeMemoSnippets(next);
                     setMemoSnippets(normalized);
@@ -6306,8 +6346,32 @@ export const PracticeFileTransferPage = ({
             }
             handleCloseTransferDialog();
           }}
-          title="의뢰서 전송 상세 · 기공소 채팅"
+          title="의뢰 상세 · 기공소 채팅"
           conversationTitle="기공소와의 소통"
+          chatHeaderAction={
+            selectedTransfer &&
+            selectedTransfer.canRateLab &&
+            selectedTransfer.transferMongoIds?.[0] ? (
+              <PracticeLabRatingControl
+                transferMongoId={String(selectedTransfer.transferMongoIds[0])}
+                rating={selectedTransfer.labRating || null}
+                size="sm"
+                onChanged={(next) => {
+                  setSelectedTransfer((prev) =>
+                    prev ? { ...prev, labRating: next, canRateLab: true } : prev,
+                  );
+                  setRecentRequests((prev) =>
+                    prev.map((row) =>
+                      row.requestMongoId ===
+                        String(selectedTransfer.transferMongoIds?.[0] || "")
+                        ? { ...row, labRating: next, canRateLab: true }
+                        : row,
+                    ),
+                  );
+                }}
+              />
+            ) : null
+          }
           summaryItems={[
             {
               label: "전송ID",

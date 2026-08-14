@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: 기공소 신규 기공비 → 어벗츠 수가 검토 배지·탭 하이라이트.
 // - 2026-08-14: 기공소 매칭 탭을 단일 카드(수수료+인증 목록)로 합침.
 // - 2026-08-14: 기공소 수가 탭 추가(목록·호버 툴팁).
 // - 2026-08-14: 환봉방식 커스텀어벗은 커스텀어벗 요금·크레딧(의뢰·배송)으로 이전.
@@ -12,7 +13,7 @@
 // - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   SettingsScaffold,
@@ -23,6 +24,9 @@ import { AdminLabFeeSchedulesTab } from "@/features/settings/tabs/AdminLabFeeSch
 import { AdminAbutsLabFeeScheduleTab } from "@/features/settings/tabs/AdminAbutsLabFeeScheduleTab";
 import { PracticeTransferAutoMatchTab } from "@/pages/devops/components/PracticeTransferAutoMatchTab";
 import { BadgeJapaneseYen, Banknote, CreditCard, FlaskConical } from "lucide-react";
+import { request } from "@/shared/api/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 
 type TabKey = "credits" | "autoMatch" | "abutsFees" | "labFees";
 
@@ -35,6 +39,67 @@ const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
 
 export const AdminPlatformSettingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { token } = useAuthStore();
+  const [abutsPendingCount, setAbutsPendingCount] = useState(0);
+
+  const refreshPendingCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await request<{
+        data?: { pendingCount?: number; items?: Array<{ pendingReview?: boolean }> };
+      }>({
+        path: "/api/admin/settings/abuts-lab-fee-schedule",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) return;
+      const payload = res.data?.data;
+      if (typeof payload?.pendingCount === "number") {
+        setAbutsPendingCount(Math.max(0, payload.pendingCount));
+        return;
+      }
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      setAbutsPendingCount(
+        items.filter((item) => item.pendingReview === true).length,
+      );
+    } catch {
+      // silent
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void refreshPendingCount();
+  }, [refreshPendingCount]);
+
+  useAppEventListener({
+    enabled: Boolean(token),
+    eventTypes: ["abuts-lab-fee:pending-items"],
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const count = Number(
+        (evt?.data as { pendingCount?: number } | undefined)?.pendingCount,
+      );
+      if (Number.isFinite(count) && count >= 0) {
+        setAbutsPendingCount(count);
+        return;
+      }
+      void refreshPendingCount();
+    },
+  });
+
+  const handlePendingCountChange = useCallback((count: number) => {
+    const next = Math.max(0, Number(count) || 0);
+    setAbutsPendingCount(next);
+    try {
+      window.dispatchEvent(
+        new CustomEvent("abuts:abuts-lab-fee-pending", {
+          detail: { pendingCount: next },
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const tabs: SettingsTabDef[] = useMemo(
     () => [
@@ -54,7 +119,12 @@ export const AdminPlatformSettingsPage = () => {
         key: "abutsFees",
         label: "어벗츠 수가",
         icon: BadgeJapaneseYen,
-        content: <AdminAbutsLabFeeScheduleTab />,
+        badgeCount: abutsPendingCount,
+        content: (
+          <AdminAbutsLabFeeScheduleTab
+            onPendingCountChange={handlePendingCountChange}
+          />
+        ),
       },
       {
         key: "labFees",
@@ -63,7 +133,7 @@ export const AdminPlatformSettingsPage = () => {
         content: <AdminLabFeeSchedulesTab />,
       },
     ],
-    [],
+    [abutsPendingCount, handlePendingCountChange],
   );
 
   const rawTab = searchParams.get("tab");
@@ -86,6 +156,7 @@ export const AdminPlatformSettingsPage = () => {
         nextParams.set("tab", next);
         setSearchParams(nextParams, { replace: true });
       }}
+      highlightTabKey={abutsPendingCount > 0 ? "abutsFees" : undefined}
     />
   );
 };

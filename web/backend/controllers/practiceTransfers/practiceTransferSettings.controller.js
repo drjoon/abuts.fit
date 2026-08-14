@@ -6,6 +6,7 @@ import {
   loadAutoMatchBudgetCatalog,
   resolveAutoMatchBudgetOrDefaults,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
+import { normalizeAutoMatchMinLabRating } from "../../utils/practiceLabRating.js";
 
 // related files:
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
@@ -20,6 +21,7 @@ import {
 // - 2026-08-14: implantFavorites에 환봉 제조사 추가요청(roundBar/adopted) 필드 보존.
 // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산) 저장.
 // - 2026-08-14: autoMatchBudget(자동매칭 기공비 min/max).
+// - 2026-08-14: autoMatchMinLabRating(자동매칭 최소 별·2nd chance).
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
 const ABUTMENT_PRODUCT_MODE_DESIGN_AND_PRODUCTION = "design_custom_abutment";
@@ -197,6 +199,9 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
       settings?.autoMatchBudget,
       catalog,
     ),
+    autoMatchMinLabRating: normalizeAutoMatchMinLabRating(
+      settings?.autoMatchMinLabRating,
+    ),
     abutsLabFeeCatalog: catalog,
     updatedAt: settings?.updatedAt || null,
   };
@@ -272,6 +277,10 @@ export async function upsertPracticeTransferSettings(req, res) {
       body,
       "autoMatchBudget",
     );
+    const hasAutoMatchMinLabRating = Object.prototype.hasOwnProperty.call(
+      body,
+      "autoMatchMinLabRating",
+    );
 
     const setPatch = {
       "practiceTransferSettings.updatedAt": new Date(),
@@ -321,6 +330,10 @@ export async function upsertPracticeTransferSettings(req, res) {
         version: 2,
         items: band.items,
       };
+    }
+    if (hasAutoMatchMinLabRating) {
+      setPatch["practiceTransferSettings.autoMatchMinLabRating"] =
+        normalizeAutoMatchMinLabRating(body.autoMatchMinLabRating);
     }
 
     const anchor = await BusinessAnchor.findByIdAndUpdate(

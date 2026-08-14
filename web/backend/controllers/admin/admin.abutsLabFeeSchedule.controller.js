@@ -2,6 +2,7 @@
 // - web/backend/utils/abutsLabFeeSchedule.js
 // - web/backend/modules/admin/admin.routes.js
 // - web/frontend/src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx
+// - 2026-08-14: GET에 pendingCount 포함(기공소 신규 항목 검토).
 import {
   loadAbutsLabFeeSchedule,
   saveAbutsLabFeeSchedule,

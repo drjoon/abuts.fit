@@ -424,6 +424,11 @@ export type LabFeeItem = {
   price: number;
   remake: number;
   tiers: LabFeeItemTier[];
+  /** 어벗츠 수가: 기공소 신규 제안 · 관리자 검증 대기 */
+  pendingReview?: boolean;
+  proposedByLabName?: string;
+  proposedByLabAnchorId?: string;
+  proposedAt?: string | null;
 };
 
 export const nTeethFeeForCount = (
@@ -518,6 +523,22 @@ export const normalizeLabFeeItem = (
     price: Number.isFinite(price) ? price : 0,
     remake: Number.isFinite(remake) ? remake : 0,
     tiers: unit === "perNTeeth" ? tiers : [],
+    ...(src.pendingReview === true
+      ? {
+          pendingReview: true,
+          ...(String(src.proposedByLabName || "").trim()
+            ? { proposedByLabName: String(src.proposedByLabName).trim() }
+            : {}),
+          ...(String(src.proposedByLabAnchorId || "").trim()
+            ? {
+                proposedByLabAnchorId: String(src.proposedByLabAnchorId).trim(),
+              }
+            : {}),
+          ...(src.proposedAt
+            ? { proposedAt: String(src.proposedAt) }
+            : {}),
+        }
+      : {}),
   };
 };
 

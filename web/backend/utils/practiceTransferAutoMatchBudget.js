@@ -3,6 +3,7 @@
 // - web/backend/utils/abutsLabFeeSchedule.js
 // - web/backend/utils/practiceTransferAutoMatch.js
 // - web/backend/utils/labFeeSchedule.js
+// - web/backend/utils/practiceLabRating.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 //
 // 자동매칭 기공비 예산 SSOT.
@@ -31,6 +32,7 @@ import {
   isAutoMatchEligibleLabAnchor,
   loadAutoMatchEligibleLabAnchors,
 } from "./practiceTransferAutoMatch.js";
+import { isLabBlockedByPracticeRating } from "./practiceLabRating.js";
 export {
   ADMIN_LAB_FEE_BASE,
   AUTO_MATCH_BUDGET_KEYS,
@@ -186,7 +188,9 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   toothWorks,
   budget,
   catalog,
-}) {
+  practiceLabRatings = null,
+  autoMatchMinLabRating = 1,
+} = {}) {
   const catalogItems =
     catalog != null
       ? normalizeCatalogItems(catalog)
@@ -217,6 +221,16 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   for (const lab of labs) {
     if (!isAutoMatchEligibleLabAnchor(lab)) continue;
     if (!isLabFeeScheduleConfigured(lab.labFeeSchedule)) continue;
+
+    if (
+      isLabBlockedByPracticeRating({
+        ratings: practiceLabRatings,
+        labAnchorId: lab._id,
+        minStars: autoMatchMinLabRating,
+      })
+    ) {
+      continue;
+    }
 
     const unitPrices = labUnitPricesByCatalogId(
       lab.labFeeSchedule,

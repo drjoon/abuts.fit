@@ -8,6 +8,7 @@
 // - 2026-08-13: 기공비 GET은 미저장이면 0원·전부 off + configured=false.
 // - 2026-08-14: 기공비 저장 시 quote-context 캐시 무효화.
 // - 2026-08-14: 치과별 기공수가 할증 저장 시 해당 치과 사용자에 app-event 이밋.
+// - 2026-08-14: 기공소 신규 기공비 → 어벗츠 수가(off·검토) 동기화 + 관리자 알림.
 import { Types } from "mongoose";
 import LabTradingPartner from "../../models/labTradingPartner.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -29,6 +30,7 @@ import {
   resolveLabPracticeFeeMultiplier,
   upsertLabPracticeFeeMultiplierList,
 } from "../../utils/labFeeSchedule.js";
+import { syncNewLabFeeItemsToAbutsCatalog } from "../../utils/abutsLabFeeSchedule.js";
 import {
   normalizeRequestorKind,
   resolveRequestorProfile,
@@ -37,7 +39,7 @@ import {
   resolvePlatformFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
-import { emitAppEventToUser } from "../../socket.js";
+import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 
 /** 기공소 설정 화면 표시용 플랫폼 수수료율 조회 (개발운영사 설정 SSOT: BusinessAnchor.payoutRates) */
 async function resolvePlatformFeeRatesForDisplay() {
@@ -543,7 +545,7 @@ export async function updateLabFeeSchedule(req, res) {
       });
     }
     const existing = await BusinessAnchor.findById(labAnchorId)
-      .select({ labFeeSchedule: 1 })
+      .select({ labFeeSchedule: 1, name: 1, metadata: 1 })
       .lean();
     const items = Array.isArray(req.body?.items)
       ? normalizeLabFeeItems({ items: req.body.items })
@@ -592,6 +594,37 @@ export async function updateLabFeeSchedule(req, res) {
     ).lean();
     const configured = isLabFeeScheduleConfigured(updated?.labFeeSchedule);
     invalidatePracticeTransferQuoteCaches(labAnchorId);
+
+    const labName =
+      String(existing?.name || existing?.metadata?.companyName || "").trim() ||
+      "기공소";
+    try {
+      const { added, schedule: abutsSchedule } =
+        await syncNewLabFeeItemsToAbutsCatalog({
+          labItems: items,
+          labName,
+          labAnchorId: String(labAnchorId),
+        });
+      if (added.length > 0) {
+        emitAppEventToRoles(["admin"], "abuts-lab-fee:pending-items", {
+          labAnchorId: String(labAnchorId),
+          labName,
+          items: added.map((item) => ({
+            id: item.id,
+            name: item.name,
+            unit: item.unit,
+            price: item.price,
+          })),
+          pendingCount: Number(abutsSchedule?.pendingCount || added.length),
+        });
+      }
+    } catch (syncError) {
+      console.error(
+        "[labTradingPartners] sync abuts lab fee catalog failed",
+        syncError,
+      );
+    }
+
     return res.json({
       success: true,
       data: {

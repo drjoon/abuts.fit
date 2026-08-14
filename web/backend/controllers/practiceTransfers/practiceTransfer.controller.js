@@ -45,6 +45,13 @@ import {
   resolveAutoMatchEligibleLabAnchorIds,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
 import { resolveLabPracticeFeeMultiplier } from "../../utils/labFeeSchedule.js";
+import {
+  findPracticeLabRating,
+  normalizePracticeLabStars,
+  normalizePracticeLabRatingMemo,
+  toPracticeLabRatingPublicApi,
+  upsertPracticeLabRatingList,
+} from "../../utils/practiceLabRating.js";
 import ChatRoom from "../../models/chatRoom.model.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
@@ -68,9 +75,11 @@ import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutm
 // - web/backend/socket.js
 // - web/backend/services/requestDashboardCache.service.js
 // - web/backend/utils/practiceTransferAbutmentPresets.js
+// - web/backend/utils/practiceLabRating.js
 // - 2026-08-13: 어벗 치아에 임플란트·스캔바디 프리셋이 없으면 전송 거절.
 // - 2026-08-14: GET /my 목록 — countDocuments 제거·레거시 $or 축소·동료/견적 조회 캐시.
 // - 2026-08-14: GET /my $or 분리 병렬 조회. drafts?trashed=all 1쿼리. GET에서 syncIndexes 제거.
+// - 2026-08-14: 치과→기공소 labRating(1~3)·메모. 자동매칭 최소 별 필터.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -400,6 +409,8 @@ const toVirtualRequestRows = (transferDoc) => {
         ? production.relatedRequestIds.map((id) => String(id))
         : [],
     },
+    canRateLab: Boolean(String(transferDoc?.targetLabAnchorId || "").trim()),
+    labRating: null,
     caseInfos: {
       clinicName: "",
       patientName: String(item?.patientName || memoPatientName || "").trim(),
@@ -1595,7 +1606,9 @@ export async function createPracticeTransfer(req, res) {
       const practiceForBudget = await BusinessAnchor.findById(practiceAnchorId)
         .select({
           "practiceTransferSettings.autoMatchBudget": 1,
+          "practiceTransferSettings.autoMatchMinLabRating": 1,
           "practiceTransferSettings.implantFavorites": 1,
+          practiceLabRatings: 1,
         })
         .lean();
       const catalog = await loadAutoMatchBudgetCatalog();
@@ -1610,13 +1623,16 @@ export async function createPracticeTransfer(req, res) {
         toothWorks: toothWorksRaw,
         budget: autoMatchBudget,
         catalog,
+        practiceLabRatings: practiceForBudget?.practiceLabRatings,
+        autoMatchMinLabRating:
+          practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
       });
       autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
       if (autoMatchEligibleLabAnchorIds.length === 0) {
         return res.status(409).json({
           success: false,
           message:
-            "설정한 항목별 기공비 예산에 맞는 인증 기공소가 없습니다. 예산을 조정하거나 지정 기공소를 선택해주세요.",
+            "설정한 항목별 기공비 예산·최소 별점에 맞는 인증 기공소가 없습니다. 예산·별점을 조정하거나 지정 기공소를 선택해주세요.",
           reason: "auto_match_no_eligible_labs",
           autoMatchBudget,
           labsScanned: eligibility.labsScanned,
@@ -2067,9 +2083,77 @@ export async function getMyPracticeTransfers(req, res) {
     const docs = hasMore ? fetched.slice(0, limit) : fetched;
 
     const quotesById = await buildFeeQuotesForTransferDocs({ docs });
+
+    let practiceRatings = [];
+    const practiceAnchorForRatings = String(
+      req.user?.businessAnchorId || "",
+    ).trim();
+    if (practiceAnchorForRatings && Types.ObjectId.isValid(practiceAnchorForRatings)) {
+      const practiceDoc = await BusinessAnchor.findById(practiceAnchorForRatings)
+        .select({ practiceLabRatings: 1 })
+        .lean();
+      practiceRatings = Array.isArray(practiceDoc?.practiceLabRatings)
+        ? practiceDoc.practiceLabRatings
+        : [];
+    } else if (role === "admin") {
+      // 관리자: 목록의 치과 앵커별 rating을 모아 조회(기공소에는 노출하지 않음)
+      const practiceIds = [
+        ...new Set(
+          docs
+            .map((doc) => String(doc?.practiceBusinessAnchorId || "").trim())
+            .filter((id) => id && Types.ObjectId.isValid(id)),
+        ),
+      ];
+      if (practiceIds.length) {
+        const anchors = await BusinessAnchor.find({
+          _id: { $in: practiceIds.map((id) => new Types.ObjectId(id)) },
+        })
+          .select({ practiceLabRatings: 1 })
+          .lean();
+        const byPractice = new Map(
+          anchors.map((a) => [String(a._id), a.practiceLabRatings || []]),
+        );
+        const requests = docs.flatMap((doc) => {
+          const feeQuote = quotesById.get(String(doc?._id || "")) || null;
+          const ratings =
+            byPractice.get(String(doc?.practiceBusinessAnchorId || "")) || [];
+          const labId = String(doc?.targetLabAnchorId || "").trim();
+          const labRating = toPracticeLabRatingPublicApi(
+            findPracticeLabRating(ratings, labId),
+          );
+          return toVirtualRequestRows(doc).map((row) => ({
+            ...row,
+            feeQuote,
+            labRating,
+          }));
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            requests,
+            pagination: {
+              page,
+              limit,
+              count: requests.length,
+              total: skip + docs.length + (hasMore ? 1 : 0),
+              hasMore,
+            },
+          },
+        });
+      }
+    }
+
     const requests = docs.flatMap((doc) => {
       const feeQuote = quotesById.get(String(doc?._id || "")) || null;
-      return toVirtualRequestRows(doc).map((row) => ({ ...row, feeQuote }));
+      const labId = String(doc?.targetLabAnchorId || "").trim();
+      const labRating = toPracticeLabRatingPublicApi(
+        findPracticeLabRating(practiceRatings, labId),
+      );
+      return toVirtualRequestRows(doc).map((row) => ({
+        ...row,
+        feeQuote,
+        labRating,
+      }));
     });
 
     return res.status(200).json({
@@ -2095,6 +2179,132 @@ export async function getMyPracticeTransfers(req, res) {
 }
 
 const AUTO_MATCH_LAB_SENTINEL = "__auto_match__";
+
+/**
+ * 치과→기공소 rating 저장. 자동/지정 공통.
+ * body: { stars: 1|2|3, memo?: string }
+ * 기공소에는 노출하지 않음(기록 치과·관리자만).
+ */
+export async function upsertPracticeTransferLabRating(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdParam = String(req.params?.transferId || "").trim();
+    if (!transferIdParam || !Types.ObjectId.isValid(transferIdParam)) {
+      return res.status(400).json({
+        success: false,
+        message: "의뢰 ID가 필요합니다.",
+      });
+    }
+
+    const stars = normalizePracticeLabStars(req.body?.stars);
+    if (stars == null) {
+      return res.status(400).json({
+        success: false,
+        message: "별점은 1~3 사이여야 합니다.",
+      });
+    }
+    const memo = normalizePracticeLabRatingMemo(req.body?.memo);
+
+    const doc = await PracticeTransfer.findById(transferIdParam)
+      .select({
+        practiceBusinessAnchorId: 1,
+        practiceUserId: 1,
+        targetLabAnchorId: 1,
+        matchingMode: 1,
+      })
+      .lean();
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    const labAnchorId = String(doc.targetLabAnchorId || "").trim();
+    if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
+      return res.status(409).json({
+        success: false,
+        message: "아직 기공소가 배정되지 않아 rating을 남길 수 없습니다.",
+        reason: "lab_not_assigned",
+      });
+    }
+
+    if (role !== "admin") {
+      const { scope } = await buildPracticeOwnedScope(req);
+      const owned = await PracticeTransfer.findOne({
+        _id: doc._id,
+        ...scope,
+      })
+        .select({ _id: 1 })
+        .lean();
+      if (!owned) {
+        return res.status(403).json({
+          success: false,
+          message: "이 의뢰에 rating을 남길 권한이 없습니다.",
+        });
+      }
+    }
+
+    const practiceAnchorId = String(doc.practiceBusinessAnchorId || "").trim();
+    if (!practiceAnchorId || !Types.ObjectId.isValid(practiceAnchorId)) {
+      return res.status(400).json({
+        success: false,
+        message: "치과 사업자 정보가 필요합니다.",
+      });
+    }
+
+    const practice = await BusinessAnchor.findById(practiceAnchorId)
+      .select({ practiceLabRatings: 1 })
+      .lean();
+    if (!practice) {
+      return res.status(404).json({
+        success: false,
+        message: "치과 사업자를 찾을 수 없습니다.",
+      });
+    }
+
+    const nextList = upsertPracticeLabRatingList(
+      practice.practiceLabRatings,
+      labAnchorId,
+      stars,
+      memo,
+    ).map((row) => ({
+      labAnchorId: new Types.ObjectId(String(row.labAnchorId)),
+      stars: row.stars,
+      memo: row.memo,
+      ratingCount: row.ratingCount,
+      updatedAt: row.updatedAt || new Date(),
+    }));
+
+    await BusinessAnchor.findByIdAndUpdate(practiceAnchorId, {
+      $set: { practiceLabRatings: nextList },
+    });
+
+    const saved = toPracticeLabRatingPublicApi(
+      findPracticeLabRating(nextList, labAnchorId),
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "기공소 rating을 저장했습니다.",
+      data: {
+        transferId: transferIdParam,
+        labRating: saved,
+      },
+    });
+  } catch (error) {
+    console.error("[practiceTransfers] upsertPracticeTransferLabRating", error);
+    return res.status(500).json({
+      success: false,
+      message: "기공소 rating 저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
 
 export async function getPracticeTransferQuoteContext(req, res) {
   try {

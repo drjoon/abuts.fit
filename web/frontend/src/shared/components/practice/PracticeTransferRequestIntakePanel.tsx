@@ -26,11 +26,13 @@ import { Button } from "@/components/ui/button";
 import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import { Label } from "@/components/ui/label";
 import { AutoMatchLabFeeBudgetDialog } from "@/shared/components/practice/AutoMatchLabFeeBudgetDialog";
+import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
 import {
   resolveAutoMatchBudgetOrDefaults,
   type AbutsLabFeeCatalogItem,
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
+import { normalizeAutoMatchMinLabRating } from "@/shared/practice/practiceLabRating";
 import {
   Popover,
   PopoverContent,
@@ -652,6 +654,9 @@ export type PracticeTransferRequestIntakePanelProps = {
   onAutoMatchBudgetChange?: (
     next: PracticeTransferAutoMatchBudget | null,
   ) => void | Promise<void>;
+  /** 자동매칭 최소 별(1~3). 이 치과 rating 기준. 1회는 차단 안 함. */
+  autoMatchMinLabRating?: number;
+  onAutoMatchMinLabRatingChange?: (next: number) => void | Promise<void>;
 };
 
 export const PracticeTransferRequestIntakePanel = ({
@@ -712,11 +717,16 @@ export const PracticeTransferRequestIntakePanel = ({
   autoMatchBudget = null,
   abutsLabFeeCatalog = null,
   onAutoMatchBudgetChange,
+  autoMatchMinLabRating = 1,
+  onAutoMatchMinLabRatingChange,
 }: PracticeTransferRequestIntakePanelProps) => {
   const [autoMatchBudgetOpen, setAutoMatchBudgetOpen] = useState(false);
   const resolvedAutoMatchBudget = resolveAutoMatchBudgetOrDefaults(
     autoMatchBudget,
     abutsLabFeeCatalog,
+  );
+  const resolvedMinLabRating = normalizeAutoMatchMinLabRating(
+    autoMatchMinLabRating,
   );
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
@@ -1625,6 +1635,13 @@ export const PracticeTransferRequestIntakePanel = ({
             >
               <SlidersHorizontal />
             </Button>
+            <AutoMatchMinLabRatingStars
+              value={resolvedMinLabRating}
+              disabled={!onAutoMatchMinLabRatingChange}
+              onChange={(next) => {
+                void onAutoMatchMinLabRatingChange?.(next);
+              }}
+            />
           </div>
           <Popover open={labOpen} onOpenChange={setLabOpen}>
             <PopoverTrigger asChild>

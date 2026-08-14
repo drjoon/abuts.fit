@@ -24,6 +24,8 @@ export type SettingsTabDef = {
   content: ReactNode;
   disabled?: boolean;
   disabledHint?: string;
+  /** 탭 라벨 옆 배지(예: 검토 대기 건수) */
+  badgeCount?: number;
 };
 
 type Props = {
@@ -67,6 +69,11 @@ export const SettingsScaffold = ({
       >
         <t.icon className="h-4 w-4" />
         {t.label}
+        {Number(t.badgeCount || 0) > 0 ? (
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold text-white">
+            {Number(t.badgeCount) > 99 ? "99+" : Number(t.badgeCount)}
+          </span>
+        ) : null}
       </TabsTrigger>
     );
 

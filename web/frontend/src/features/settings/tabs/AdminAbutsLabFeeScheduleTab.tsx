@@ -3,9 +3,11 @@
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/AutoMatchLabFeeBudgetDialog.tsx
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 //
 // 어벗츠 기공수가(플랫폼 카탈로그). 자동매칭 기공비 범위 모달 항목 SSOT.
-import { useCallback, useEffect, useRef, useState } from "react";
+// 기공소 신규 항목은 Off·검토 대기로 들어오며, On하면 적용·대기 해제.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -22,6 +24,7 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 import { cn } from "@/shared/ui/cn";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import {
   LAB_FEE_ITEM_UNIT_LABELS,
   MAX_LAB_FEE_ITEMS,
@@ -54,6 +57,12 @@ const createFeeItem = (partial?: Partial<LabFeeItem>): LabFeeItem =>
   });
 
 const toWon = (value: number) => Math.max(0, Math.round(Number(value) || 0));
+
+const sortCatalogItems = (list: LabFeeItem[]) => {
+  const pending = list.filter((item) => item.pendingReview === true);
+  const rest = list.filter((item) => item.pendingReview !== true);
+  return [...pending, ...rest];
+};
 
 function WonInput({
   id,
@@ -95,7 +104,13 @@ function WonInput({
   );
 }
 
-export const AdminAbutsLabFeeScheduleTab = () => {
+type Props = {
+  onPendingCountChange?: (count: number) => void;
+};
+
+export const AdminAbutsLabFeeScheduleTab = ({
+  onPendingCountChange,
+}: Props = {}) => {
   const { toast } = useToast();
   const { token } = useAuthStore();
   const [loading, setLoading] = useState(true);
@@ -105,9 +120,28 @@ export const AdminAbutsLabFeeScheduleTab = () => {
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
+  const pendingCount = useMemo(
+    () => items.filter((item) => item.pendingReview === true).length,
+    [items],
+  );
+
+  useEffect(() => {
+    onPendingCountChange?.(pendingCount);
+  }, [pendingCount, onPendingCountChange]);
+
   const patchItem = (id: string, patch: Partial<LabFeeItem>) => {
     setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const next = { ...item, ...patch };
+        if (patch.enabled === true) {
+          next.pendingReview = false;
+          delete next.proposedByLabName;
+          delete next.proposedByLabAnchorId;
+          delete next.proposedAt;
+        }
+        return next;
+      }),
     );
   };
 
@@ -125,8 +159,9 @@ export const AdminAbutsLabFeeScheduleTab = () => {
   };
 
   const applyLoadedItems = (next: LabFeeItem[]) => {
-    setItems(next);
-    savedSnapshotRef.current = snapshotItems(next);
+    const sorted = sortCatalogItems(next);
+    setItems(sorted);
+    savedSnapshotRef.current = snapshotItems(sorted);
     hydratedRef.current = true;
   };
 
@@ -136,7 +171,7 @@ export const AdminAbutsLabFeeScheduleTab = () => {
     hydratedRef.current = false;
     try {
       const res = await request<{
-        data?: { items?: LabFeeItem[] };
+        data?: { items?: LabFeeItem[]; pendingCount?: number };
         message?: string;
       }>({
         path: "/api/admin/settings/abuts-lab-fee-schedule",
@@ -166,6 +201,15 @@ export const AdminAbutsLabFeeScheduleTab = () => {
     void load();
   }, [load]);
 
+  useAppEventListener({
+    enabled: Boolean(token),
+    eventTypes: ["abuts-lab-fee:pending-items"],
+    deferWhenEditing: false,
+    onMatch: () => {
+      void load();
+    },
+  });
+
   const persist = useCallback(
     async (nextItems: LabFeeItem[]) => {
       if (!token) return false;
@@ -178,7 +222,14 @@ export const AdminAbutsLabFeeScheduleTab = () => {
           method: "PUT",
           token,
           jsonBody: {
-            items: nextItems.map((item) => ({ ...item, remake: 0 })),
+            items: nextItems.map((item) => ({
+              ...item,
+              remake: 0,
+              pendingReview:
+                item.enabled === false && item.pendingReview === true
+                  ? true
+                  : undefined,
+            })),
           },
         });
         if (!res.ok) {
@@ -190,7 +241,9 @@ export const AdminAbutsLabFeeScheduleTab = () => {
           return false;
         }
         const serverItems = Array.isArray(res.data?.data?.items)
-          ? normalizeLabFeeItems({ items: res.data.data.items })
+          ? sortCatalogItems(
+              normalizeLabFeeItems({ items: res.data.data.items }),
+            )
           : nextItems;
         savedSnapshotRef.current = snapshotItems(serverItems);
         if (snapshotItems(itemsRef.current) === snapshotItems(nextItems)) {
@@ -236,15 +289,22 @@ export const AdminAbutsLabFeeScheduleTab = () => {
             <Banknote className="h-4 w-4 text-primary-strong" />
           </span>
           어벗츠 수가
+          {pendingCount > 0 ? (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+              검토 {pendingCount}
+            </span>
+          ) : null}
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          항목을 추가하면 자동매칭 기공비 범위 설정에도 바로 반영됩니다.
+          항목을 추가하면 자동매칭 기공비 범위 설정에도 바로 반영됩니다. 기공소에서
+          새로 올린 항목은 Off로 들어오니 검증 후 On으로 적용하세요.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {items.map((item) => {
             const isProvided = item.enabled !== false;
+            const isPending = item.pendingReview === true;
             const tier = item.tiers[0] || {
               n: 3,
               price: item.price,
@@ -255,11 +315,22 @@ export const AdminAbutsLabFeeScheduleTab = () => {
                 key={item.id}
                 className={cn(
                   "flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm transition-all",
+                  isPending &&
+                    "border-amber-300/90 bg-amber-50/50 ring-1 ring-amber-200/80",
                   isProvided
                     ? "hover:border-primary-muted/80 hover:shadow-md"
-                    : "opacity-60",
+                    : !isPending && "opacity-60",
                 )}
               >
+                {isPending ? (
+                  <div className="rounded-lg bg-amber-100/80 px-2.5 py-1.5 text-[11px] font-medium text-amber-900">
+                    신규 제안
+                    {item.proposedByLabName
+                      ? ` · ${item.proposedByLabName}`
+                      : ""}
+                    {" · 검증 후 On으로 적용"}
+                  </div>
+                ) : null}
                 <div className="flex items-start gap-2.5">
                   <Switch
                     id={`abuts-fee-enabled-${item.id}`}
@@ -273,7 +344,7 @@ export const AdminAbutsLabFeeScheduleTab = () => {
                   <Input
                     value={item.name}
                     placeholder="항목 이름 (예: 크라운)"
-                    disabled={!isProvided}
+                    disabled={!isProvided && !isPending}
                     onChange={(e) =>
                       patchItem(item.id, { name: e.target.value })
                     }
@@ -302,7 +373,7 @@ export const AdminAbutsLabFeeScheduleTab = () => {
                       <button
                         key={unit}
                         type="button"
-                        disabled={!isProvided}
+                        disabled={!isProvided && !isPending}
                         onClick={() => {
                           if (unit === "perNTeeth") {
                             patchItem(item.id, {
@@ -348,7 +419,7 @@ export const AdminAbutsLabFeeScheduleTab = () => {
                         min={1}
                         max={32}
                         value={tier.n}
-                        disabled={!isProvided}
+                        disabled={!isProvided && !isPending}
                         onChange={(e) => {
                           const n = Math.max(
                             1,
@@ -373,7 +444,7 @@ export const AdminAbutsLabFeeScheduleTab = () => {
                   id={`abuts-fee-${item.id}`}
                   label="기준 수가"
                   value={item.unit === "perNTeeth" ? tier.price : item.price}
-                  disabled={!isProvided}
+                  disabled={!isProvided && !isPending}
                   onChange={(price) =>
                     item.unit === "perNTeeth"
                       ? patchTier(item, { price })
