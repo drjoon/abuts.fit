@@ -9,7 +9,8 @@
 // 자동매칭 기공비 예산 SSOT.
 // 성능: 적격 기공소는 전송 생성 시 1회 스냅샷(eligibleLabAnchorIds).
 // 수신 목록은 Mongo multikey로만 필터. 수락 시 항목별 단가 재검증.
-// 자동매칭은 할증 미적용(설정 수가) — 수락 직전 할증 인상으로 예산 상한 abuse 방지.
+// 적격 스냅샷: 생성 시점 live 할증 반영 단가. 수락: 의뢰 createdAt 기준 할증
+// (할증 updatedAt이 의뢰 이후면 해당 건 미적용 — 상세 채팅에서 올린 할증 소급 금지).
 // 항목 목록은 어벗츠 수가(시스템 카탈로그)에서 동적으로 온다.
 
 import {
@@ -25,6 +26,7 @@ import {
   normalizeLabFeeSchedule,
   resolveLabFeeKeyFromProsthesisType,
   resolveLabFeeScheduleSource,
+  resolveLabPracticeFeeMultiplier,
 } from "./labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
@@ -249,8 +251,12 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
       continue;
     }
 
-    // 자동매칭 적격: 설정 수가만(할증 미적용).
-    const unitPrices = labUnitPricesByCatalogId(lab.labFeeSchedule, catalogItems);
+    // 생성 시점 live 할증 반영(이미 적용 중인 할증만 적격에 반영).
+    const multiplier = resolveLabPracticeFeeMultiplier(lab, practiceAnchorId);
+    const unitPrices = scaleLabUnitPricesByMultiplier(
+      labUnitPricesByCatalogId(lab.labFeeSchedule, catalogItems),
+      multiplier,
+    );
     if (
       !isLabUnitPricesWithinAutoMatchBudget(
         unitPrices,
@@ -271,7 +277,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   };
 }
 
-/** 수락 시: 기공소 설정 단가(할증 미적용)가 스냅샷 예산 안인지 */
+/** 수락 시: 의뢰시점 할증 반영 기공소 단가가 스냅샷 예산 안인지 */
 export function assertLabWithinAutoMatchBudget({
   toothWorks,
   budget,

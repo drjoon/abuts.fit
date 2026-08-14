@@ -78,7 +78,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     ).toBeNull();
   });
 
-  test("scaleLabUnitPricesByMultiplier helper (auto-match billing does not use surcharge)", () => {
+  test("surcharge unit prices must stay within budget band", () => {
     const budget = {
       version: 2,
       items: { crown: { min: 54000, max: 66000 } },

@@ -12,7 +12,9 @@ import {
   normalizeLabFeeItems,
   resolveLabFeeKeyFromProsthesisType,
   resolveLabFeeScheduleSource,
+  resolveLabPracticeFeeMultiplierAsOf,
   splitPracticeTransferSettlement,
+  upsertLabPracticeFeeMultiplierList,
 } from "../../utils/labFeeSchedule.js";
 
 describe("labFeeSchedule", () => {
@@ -685,5 +687,47 @@ describe("labFeeSchedule", () => {
       labAbutmentPending: true,
       abutmentRetail: 0,
     });
+  });
+
+  test("할증 updatedAt이 의뢰 createdAt 이후면 해당 건에 미적용", () => {
+    const practiceId = "64b000000000000000000001";
+    const orderAt = new Date("2026-08-14T10:00:00+09:00");
+    const before = new Date("2026-08-14T09:00:00+09:00");
+    const after = new Date("2026-08-14T11:00:00+09:00");
+    const labBefore = {
+      labPracticeFeeMultipliers: [
+        { practiceAnchorId: practiceId, multiplier: 1.1, updatedAt: before },
+      ],
+    };
+    const labAfter = {
+      labPracticeFeeMultipliers: [
+        { practiceAnchorId: practiceId, multiplier: 1.1, updatedAt: after },
+      ],
+    };
+    const labLegacy = {
+      labPracticeFeeMultipliers: [
+        { practiceAnchorId: practiceId, multiplier: 1.2 },
+      ],
+    };
+    expect(
+      resolveLabPracticeFeeMultiplierAsOf(labBefore, practiceId, orderAt),
+    ).toBe(1.1);
+    expect(
+      resolveLabPracticeFeeMultiplierAsOf(labAfter, practiceId, orderAt),
+    ).toBe(1);
+    expect(
+      resolveLabPracticeFeeMultiplierAsOf(labLegacy, practiceId, orderAt),
+    ).toBe(1.2);
+  });
+
+  test("upsertLabPracticeFeeMultiplierList는 updatedAt을 기록한다", () => {
+    const practiceId = "64b000000000000000000001";
+    const at = new Date("2026-08-14T12:00:00+09:00");
+    const rows = upsertLabPracticeFeeMultiplierList([], practiceId, 1.1, {
+      updatedAt: at,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].multiplier).toBe(1.1);
+    expect(rows[0].updatedAt.getTime()).toBe(at.getTime());
   });
 });

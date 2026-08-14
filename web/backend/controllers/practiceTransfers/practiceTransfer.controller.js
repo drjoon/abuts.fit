@@ -81,11 +81,12 @@ import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutm
 // - 2026-08-14: GET /my $or 분리 병렬 조회. drafts?trashed=all 1쿼리. GET에서 syncIndexes 제거.
 // - 2026-08-14: 치과→기공소 labRating(1~3)·메모. 자동매칭 최소 별 필터.
 // - 2026-08-14: 자동매칭도 practiceBusinessAnchorId 전달(표시명 비공개·기공수가 할증 키).
-// - 2026-08-14: 자동매칭 적격/수락 — 설정 수가(할증 미적용)가 치과 예산 min~max 안이어야 함.
+// - 2026-08-14: 자동매칭 적격/수락 — 의뢰시점 할증 반영 단가가 치과 예산 min~max 안이어야 함.
 // - 2026-08-14: 자동매칭 3시간 강제 클레임 만료 폐기(작업완료/취소까지 유지·도착일은 소통 기한).
 // - 2026-08-14: mark-accepted — autoMatch pool emit N+1 제거·사이드이펙트 병렬. FE 수락 busy에서 chat resolve 분리.
 // - 2026-08-14: mark-accepted — 과금 직후 응답, billing $set, 사이드이펙트 비동기.
 // - 2026-08-14: mark-release — updateOne + 사이드이펙트 비동기(채팅/emit은 응답 후).
+// - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김.
 // - 2026-08-14: mark-accepted — 치과 practice:transfer-updated에 확정 feeQuote 포함.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
@@ -548,9 +549,15 @@ const scheduleAcceptSideEffects = ({
   realtimePayload,
   practiceRealtimePayload = null,
   poolPayload = null,
+  systemChatContent = "",
 }) => {
   void (async () => {
     try {
+      // 시스템 메시지는 채팅방이 있어야 하므로 먼저 확보한다.
+      await ensurePracticeTransferChatRoomOnAccept({
+        transferDoc: doc,
+        labUserId,
+      });
       const jobs = [
         PracticeTransfer.countDocuments({
           ...scope,
@@ -565,11 +572,18 @@ const scheduleAcceptSideEffects = ({
             );
           }
         }),
-        ensurePracticeTransferChatRoomOnAccept({
-          transferDoc: doc,
-          labUserId,
-        }),
       ];
+      const chatText = String(systemChatContent || "").trim();
+      if (chatText) {
+        jobs.push(
+          postPracticeTransferSystemChatMessage({
+            transferMongoId: doc._id,
+            senderUserId: labUserId,
+            content: chatText,
+            systemEvent: "work_accept",
+          }),
+        );
+      }
       if (billingResult?.billed) {
         const spendTotal = Number(billingResult.fees?.total || 0);
         if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
@@ -3103,6 +3117,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           action: "auto-match-claimed",
           source: "autoMatchClaim",
         },
+        systemChatContent: "의뢰를 수락했습니다.",
       });
 
       return res.status(200).json({
@@ -3195,6 +3210,11 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    const labLabelForChat =
+      String(doc.targetLabName || "").trim() &&
+      String(doc.targetLabName || "").trim() !== AUTO_MATCH_LAB_DISPLAY_NAME
+        ? String(doc.targetLabName || "").trim()
+        : "기공소";
     scheduleAcceptSideEffects({
       doc,
       labAnchorId,
@@ -3204,6 +3224,10 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       billingResult,
       realtimePayload,
       practiceRealtimePayload: realtimePayload,
+      // 이미 수락된 건 재진입 시 시스템 메시지 중복 방지
+      systemChatContent: alreadyAccepted
+        ? ""
+        : `기공소「${labLabelForChat}」이(가) 의뢰를 수락했습니다.`,
     });
 
     return res.status(200).json({
