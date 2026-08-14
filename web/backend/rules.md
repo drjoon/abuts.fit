@@ -250,13 +250,14 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 소비 라인 `meta.usageKind`: `practice_transfer` | `abutment_production` | `shipping` | `express_surcharge`.
 
 - 기공소 기존 거래처 · 기공정산크레딧 SSOT:
-  - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 발급된 초대는 검증 완료 시 `status=active`(거래처, 수수료 0%). 30일 경과 후에도 초대 발급은 계속 허용하되(`invitedAfterWindow=true`), 검증 완료 시 `status=referred`(소개)로 승격된다.
+  - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 발급된 초대는 검증 완료 시 `status=active`(소개 치과). 30일 경과 후에도 초대 발급은 계속 허용하되(`invitedAfterWindow=true`), 검증 완료 시 `status=referred`로 승격된다. 플랫폼 수수료는 등록 여부와 무관하다.
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
   - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic + items). **마스터 `active`(기본 off)가 켜져야 설정 완료.** 수가 디폴트는 기본값·항목 on. 꺼져 있으면 청구 0원(로그인 시 설정 탭 유도). 임시치아는 설정 카드 두 장(이름 모두 「임시치아」, 3치 이하·6치 이하)으로 분리하고, 의뢰서 「임시치아」 청구 시 치아 수 구간으로 합산. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 `+`로 끊기면 별도 세트, 연결 정보 없는 레거시는 악궁당 1세트). **단독 커스텀어벗은 기공소 수가가 아니라 어벗츠 단가**(멤버십 생산 1.5만·디자인+생산 2.5만 / 일반 생산 2.0만·디자인+생산 4.0만). **환봉 요청중(미도입)은 기공소 어벗** — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 기공비로 합산. **크라운·브리지 등에 어벗을 붙이면 기공수가 + 어벗 단가**(요청중=기공소 어벗, 그 외=어벗츠 어벗). 치과 멤버십=`BusinessAnchor.practiceMembershipActive`. 브리지 스팬의 `작업X`는 보철이 아니므로 기공비·어벗 단가에서 제외.
-  - PracticeTransfer: **전송 생성(`POST /api/practice/transfers`)** 시 치과 **유료+무료크레딧** 잔액을 검사하고 견적 스냅샷을 `billing`(billedAt=null)에 저장한다. UI 견적: `GET /api/practice/transfers/quote-context`(스케줄·수수료율·멤버십 티어) + 치식별 합산(`labFeeSchedule.js`). 기공소 미지정(자동매칭)은 **기공비 기본수가 없음(0원)** — 커스텀어벗은 어벗츠 단가가 그대로 적용. 실제 기공비 청구는 수락 시 해당 기공소 `labFeeSchedule`. **기공소 의뢰수락(`POST .../mark-accepted`)** 시 청구 총액(기공비+커스텀어벗) 1회 차감(무료 우선) → 기공비에만 관계별 플랫폼 수수료율(`resolvePracticeTransferFeeRate`)을 적용하고, 커스텀어벗 단가는 전액 어벗츠 매출. 나머지는 기공소 `LAB_SETTLEMENT_CREDIT`(UI: 기공정산크레딧). 무료로 지불해도 기공소 정산 적립은 유지(프로모션 비용은 플랫폼 부담). 전송 생성 시점에는 차감하지 않는다. 목록 `feeQuote`: 치과=크레딧 소비(`total`), 기공소=수령(`labSettlementAmount`).
-    - `active`/`referred`(등록 치과): 수수료 `BusinessAnchor.payoutRates.partnerFeeRate`(기본 0%).
-    - 그 외(미등록): 수수료 `BusinessAnchor.payoutRates.nonPartnerFeeRate`(기본 25%).
+  - PracticeTransfer: **전송 생성(`POST /api/practice/transfers`)** 시 치과 **유료+무료크레딧** 잔액을 검사하고 견적 스냅샷을 `billing`(billedAt=null)에 저장한다. UI 견적: `GET /api/practice/transfers/quote-context`(스케줄·수수료율·멤버십 티어) + 치식별 합산(`labFeeSchedule.js`). **자동매칭**은 치과 `practiceTransferSettings.autoMatchBudget`(기공비 min/max, 어벗츠 어벗 제외) 필수. 생성 시 예산에 맞는 인증 기공소를 `autoMatch.eligibleLabAnchorIds`에 스냅샷(수신 목록은 multikey 필터만, 수가 재계산 없음). 견적은 예산 구간+어벗츠 어벗, 잔액 검사는 상한(`maxLabFee`)+어벗. 실제 기공비 청구는 수락 시 해당 기공소 `labFeeSchedule`(예산 밖이면 거절). **기공소 의뢰수락(`POST .../mark-accepted`)** 시 청구 총액(기공비+커스텀어벗) 1회 차감(무료 우선) → 기공비에만 플랫폼 수수료율(`resolvePracticeTransferFeeRate`)을 적용하고, 커스텀어벗 단가는 전액 어벗츠 매출. 나머지는 기공소 `LAB_SETTLEMENT_CREDIT`(UI: 기공정산크레딧). 무료로 지불해도 기공소 정산 적립은 유지(프로모션 비용은 플랫폼 부담). 전송 생성 시점에는 차감하지 않는다. 목록 `feeQuote`: 치과=크레딧 소비(`total`), 기공소=수령(`labSettlementAmount`).
+    - **자동 매칭 성공**(`matchingMode=auto`): 수수료 `BusinessAnchor.payoutRates.platformFeeRate`(기본 25%, 레거시 `nonPartnerFeeRate` fallback). 등록/미등록 치과를 나누지 않는다.
+    - **지정 기공소**(`matchingMode=direct`): 플랫폼 수수료 0%.
     - 걷힌 수수료 금액은 기존 4자 분배율(`manufacturerRate`/`devopsRate`/`salesmanRate`/`adminRate`)로 다시 나뉜다(영업자 추천 유무에 따른 재배분 로직 동일 적용).
+    - 자동 매칭 식별 정보: 치과명·담당자명·기공소명·담당자명은 상대방에게 비공개(`AUTO_MATCH_LAB_DISPLAY_NAME` 유지, 수신 목록 치과 식별 마스킹).
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
   - eventType: `PRACTICE_TRANSFER_SPEND_COMMIT`, `LAB_SETTLEMENT_CHARGE`; accountCode: `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부 항목 라벨: `기공비` / 기공소 버킷 표시: `기공정산크레딧`.
   - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공정산크레딧 → 계좌 이체.
@@ -361,7 +362,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 과금 SSOT: `POST /api/practice/transfers/:transferId/mark-accepted`에서 `commitPracticeTransferBilling` (파일 다운로드는 상태·과금에 영향 없음)
   - **자동매칭 SSOT** (`matchingMode: "auto"`):
     - 생성 시 `targetLabAnchorId=null`, 공개 풀. 자격(**인증 기공소**): `verified` + `practiceTransferAutoMatchEnabled`(인증 ON) + lab+free (`utils/practiceTransferAutoMatch.js`). 관리자 목록/ON은 `verifiedLabCapableAnchorFilter`(kind=lab 또는 레거시 caps.lab)
-    - 인증 ON: `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }` — ON이면 치과 자동 매칭 의뢰 공개 풀에 참여·선착순 수락
+    - 인증 ON: `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }` — ON이면 치과 자동 매칭 의뢰 공개 풀에 참여·선착순 수락. 자동 매칭 성공 시 `platformFeeRate` 적용. 치과/기공소 식별 정보 비공개.
     - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정·만료 claim). 타인 활성 claim은 숨김
     - 수락=`mark-accepted` 원자 FCFS claim(3시간 `autoMatch.deadlineAt`) + 과금. 작업완료=`POST .../mark-complete`(결과파일 필수, 커스텀어벗 시 shippingMode). 작업취소=`POST .../mark-release`(auto는 풀 재공개, direct는 수락 해제+과금 롤백)
     - 치과 생산컨펌=`POST .../confirm-production` → 생산진행. 커스텀어벗이면 기공소→어벗츠 Request 자동 생성
@@ -753,7 +754,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트(`scripts/db/migrate-request-spend-to-gl.js`, `scripts/db/migrate-legacy-creditledger-to-gl.js`)는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
-    - 기본 분배(영업자 소개 있음): 제조사 60% / 개발운영사 10% / 영업자 10% / 관리자 20% (`BusinessAnchor.payoutRates` SSOT). 기공의뢰 플랫폼 수수료율(등록 `partnerFeeRate` / 미등록 `nonPartnerFeeRate`)은 관리자 플랫폼 설정「기공소 매칭」(`GET|PATCH /api/admin/settings/platform-fees`)에서 개발운영사 앵커에 저장.
+    - 기본 분배(영업자 소개 있음): 제조사 60% / 개발운영사 10% / 영업자 10% / 관리자 20% (`BusinessAnchor.payoutRates` SSOT). 기공의뢰 플랫폼 수수료율(`platformFeeRate`, 자동 매칭 성공 시)은 관리자 플랫폼 설정「기공소 매칭」(`GET|PATCH /api/admin/settings/platform-fees`)에서 개발운영사 앵커에 저장.
     - 영업자 소개 없음(`hasSalesmanReferrer=false`): 설정된 영업자 분배비의 **절반을 제조사**, **나머지 절반을 관리자**에 가산하고 영업자 0%. 기본값이면 제조사 65% / 개발운영사 10% / 영업자 0% / 관리자 25%. 하드코딩 고정비율이 아니라 `resolveRatesWithoutSalesman(configuredRates)`로 파생.
 
 - 관리자 credit-reconcile API 정책:

@@ -14,14 +14,10 @@ export const buildReferralSignupLink = (referralCode: string) => {
 
 export const buildPracticeIntroMessage = (
   link: string,
-  options?: { feeWaiver?: boolean },
+  _options?: { feeWaiver?: boolean },
 ) => {
   const url = String(link || "").trim();
   if (!url) return "";
-
-  if (options?.feeWaiver) {
-    return `안녕하세요 🙂 어벗츠 소개치과로 등록하시면 플랫폼 수수료가 면제됩니다.\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`;
-  }
 
   return `안녕하세요 🙂 어벗츠에 가입해 주시면 기공의뢰서·구강스캔 전달과 내역 관리가 훨씬 편해집니다.\n아래 링크로 가볍게 가입해 주세요.\n${url}`;
 };

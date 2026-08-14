@@ -15,6 +15,43 @@ import {
 export const PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS = 3;
 
 export const AUTO_MATCH_LAB_DISPLAY_NAME = "자동 매칭";
+export const AUTO_MATCH_PRACTICE_DISPLAY_NAME = "자동 매칭";
+
+/** 자동매칭 의뢰의 기공소명·기공소 앵커는 치과/타 기공소에 비공개. */
+export const redactAutoMatchLabIdentity = (
+  matchingMode,
+  { targetLabName = "", targetLabAnchorId = null } = {},
+  { reveal = false } = {},
+) => {
+  if (reveal || !isAutoMatchMode({ matchingMode })) {
+    return {
+      targetLabName: String(targetLabName || "").trim(),
+      targetLabAnchorId: targetLabAnchorId || null,
+    };
+  }
+  return {
+    targetLabName: AUTO_MATCH_LAB_DISPLAY_NAME,
+    targetLabAnchorId: null,
+  };
+};
+
+/** 자동매칭 의뢰의 치과명·담당자명은 기공소에 비공개. */
+export const redactAutoMatchPracticeIdentity = (
+  matchingMode,
+  practice = {},
+  { reveal = false } = {},
+) => {
+  if (reveal || !isAutoMatchMode({ matchingMode })) {
+    return {
+      businessName: String(practice?.businessName || "").trim(),
+      userName: String(practice?.userName || "").trim(),
+    };
+  }
+  return {
+    businessName: AUTO_MATCH_PRACTICE_DISPLAY_NAME,
+    userName: "",
+  };
+};
 
 export const isPracticeTransferAutoMatchEnabled = (anchor) =>
   Boolean(anchor?.practiceTransferAutoMatchEnabled);
@@ -102,6 +139,15 @@ export const buildReceivedScopeWithAutoMatch = ({
     return mine;
   }
 
+  // 공개 풀: 생성 시 스냅샷된 적격 목록에 내가 있어야 함.
+  // eligibleLabAnchorIds 미존재 = 레거시(예산 도입 전) → 인증 기공소 전원.
+  const openPoolEligibleToMe = {
+    $or: [
+      { "autoMatch.eligibleLabAnchorIds": labOid },
+      { "autoMatch.eligibleLabAnchorIds": { $exists: false } },
+    ],
+  };
+
   return {
     $or: [
       mine,
@@ -109,6 +155,7 @@ export const buildReceivedScopeWithAutoMatch = ({
         matchingMode: "auto",
         status: "active",
         $and: [
+          openPoolEligibleToMe,
           {
             $or: [
               { "autoMatch.completedAt": null },
@@ -130,28 +177,45 @@ export const buildReceivedScopeWithAutoMatch = ({
   };
 };
 
-/** 원자 클레임 조건: 공개 풀(미배정 또는 만료) */
-export const buildAutoMatchClaimableFilter = (now = new Date()) => ({
-  matchingMode: "auto",
-  status: "active",
-  $and: [
-    {
-      $or: [
-        { "autoMatch.completedAt": null },
-        { "autoMatch.completedAt": { $exists: false } },
-      ],
-    },
-    {
-      $or: [
-        { targetLabAnchorId: null },
-        { targetLabAnchorId: { $exists: false } },
-        { "autoMatch.deadlineAt": null },
-        { "autoMatch.deadlineAt": { $exists: false } },
-        { "autoMatch.deadlineAt": { $lte: now } },
-      ],
-    },
-  ],
-});
+/** 원자 클레임 조건: 공개 풀(미배정 또는 만료) + (있으면) 예산 적격 스냅샷 */
+export const buildAutoMatchClaimableFilter = (
+  now = new Date(),
+  { labAnchorId = null } = {},
+) => {
+  const labId = String(labAnchorId || "").trim();
+  const eligibleClause =
+    labId && Types.ObjectId.isValid(labId)
+      ? {
+          $or: [
+            { "autoMatch.eligibleLabAnchorIds": new Types.ObjectId(labId) },
+            { "autoMatch.eligibleLabAnchorIds": { $exists: false } },
+          ],
+        }
+      : null;
+
+  return {
+    matchingMode: "auto",
+    status: "active",
+    $and: [
+      ...(eligibleClause ? [eligibleClause] : []),
+      {
+        $or: [
+          { "autoMatch.completedAt": null },
+          { "autoMatch.completedAt": { $exists: false } },
+        ],
+      },
+      {
+        $or: [
+          { targetLabAnchorId: null },
+          { targetLabAnchorId: { $exists: false } },
+          { "autoMatch.deadlineAt": null },
+          { "autoMatch.deadlineAt": { $exists: false } },
+          { "autoMatch.deadlineAt": { $lte: now } },
+        ],
+      },
+    ],
+  };
+};
 
 export async function loadAutoMatchEligibleLabAnchors({
   select = { _id: 1, name: 1, primaryContactUserId: 1 },

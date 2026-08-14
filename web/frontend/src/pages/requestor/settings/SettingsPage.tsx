@@ -10,7 +10,7 @@ import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { LabTradingPartnersTab } from "@/features/settings/tabs/LabTradingPartnersTab";
+import { LabAutoMatchParticipationTab } from "@/features/settings/tabs/LabAutoMatchParticipationTab";
 import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
 import {
   User,
@@ -18,7 +18,7 @@ import {
   Bell,
   Users,
   Shield,
-  Handshake,
+  FlaskConical,
   Banknote,
 } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
@@ -36,6 +36,7 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 // 2026-08-11: 설정 결제 탭 제거 → 사이드바 크레딧(`/dashboard/credits`)로 이전.
 // 2026-08-11: 설정 의뢰 탭 제거 → 어벗의뢰 좌측 상단(디자인소프트웨어·아노다이징).
 // 2026-08-13: 기공비 마스터 Off면 로그인 후 `?tab=lab-fees&setup=1`로 유도(LabFeeSetupPrompt).
+// 2026-08-14: 「치과 등록」탭 제거 → 「자동 매칭 참여」.
 // 2026-08-11: 기공소 전용 「치과 등록」「기공비」탭(알림 왼쪽).
 
 type TabKey =
@@ -43,9 +44,14 @@ type TabKey =
   | "business"
   | "staff"
   | "lab-fees"
+  | "auto-match"
   | "trading-partners"
   | "notifications"
   | "security";
+
+const LEGACY_TAB_REDIRECT: Partial<Record<string, TabKey>> = {
+  "trading-partners": "auto-match",
+};
 
 export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
@@ -203,10 +209,10 @@ export const RequestorSettingsPage = () => {
           content: <LabFeeScheduleTab />,
         },
         {
-          key: "trading-partners",
-          label: "치과 등록",
-          icon: Handshake,
-          content: <LabTradingPartnersTab />,
+          key: "auto-match",
+          label: "자동 매칭 참여",
+          icon: FlaskConical,
+          content: <LabAutoMatchParticipationTab />,
         },
       );
     }
@@ -235,8 +241,12 @@ export const RequestorSettingsPage = () => {
     user,
   ]);
 
-  const tabFromUrl =
-    (searchParams.get("tab") as TabKey | null) || (tabs[0]?.key as TabKey);
+  const rawTab = searchParams.get("tab");
+  const mapped =
+    rawTab && LEGACY_TAB_REDIRECT[rawTab]
+      ? LEGACY_TAB_REDIRECT[rawTab]
+      : (rawTab as TabKey | null);
+  const tabFromUrl = mapped || (tabs[0]?.key as TabKey);
   const allowed = new Set(
     tabs.filter((t) => !t.disabled).map((t) => t.key),
   );

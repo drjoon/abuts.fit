@@ -128,6 +128,7 @@ import {
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
+import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
@@ -244,6 +245,7 @@ type RecentRequestItem = {
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
+  matchingMode?: "direct" | "auto";
 };
 
 type TransferFileItem = {
@@ -371,6 +373,7 @@ type RecentTransferItem = {
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
+  matchingMode?: "direct" | "auto";
 };
 
 const extractLabNameFromMessage = (message: string) => {
@@ -470,6 +473,7 @@ type PracticeTransferSettingsPayload = {
   abutmentFavorites?: PracticeAbutmentFavorite[];
   skipDesignConfirm?: boolean;
   defaultAbutmentProductMode?: AbutmentProductMode;
+  autoMatchBudget?: { minLabFee: number; maxLabFee: number } | null;
   updatedAt?: string | null;
 };
 
@@ -983,6 +987,10 @@ export const PracticeFileTransferPage = ({
   const [remakeBusy, setRemakeBusy] = useState(false);
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
+  const [autoMatchBudget, setAutoMatchBudget] = useState<{
+    minLabFee: number;
+    maxLabFee: number;
+  } | null>(null);
   const [defaultAbutmentProductMode, setDefaultAbutmentProductMode] =
     useState<AbutmentProductMode>(() => normalizeAccountAbutmentProductMode(undefined));
   const [lastSavedFormFingerprint, setLastSavedFormFingerprint] = useState<string | null>(null);
@@ -1348,6 +1356,23 @@ export const PracticeFileTransferPage = ({
     setMessages: setChatMessages,
   } = useChatMessages({ roomId: activeChatRoom?._id, autoFetch: transferDialogOpen });
 
+  const displayChatMessages = useMemo(() => {
+    const currentUserId = String(authUser?.id || "");
+    return chatMessages.map((message) => {
+      const senderId = String(message.sender?._id || "");
+      const name = anonymizeAutoMatchChatSenderName({
+        matchingMode: selectedTransfer?.matchingMode,
+        isOwn: senderId === currentUserId,
+        counterpartLabel: "기공소",
+        name: String(message.sender?.name || ""),
+      });
+      return {
+        ...message,
+        sender: { ...message.sender, name },
+      };
+    });
+  }, [authUser, chatMessages, selectedTransfer?.matchingMode]);
+
   const combinedFilesSizeMb = useMemo(() => {
     const localBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
     const draftBytes = draftFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
@@ -1389,6 +1414,16 @@ export const PracticeFileTransferPage = ({
     const nextDefaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
       payload.defaultAbutmentProductMode,
     );
+    const nextBudgetRaw = payload.autoMatchBudget;
+    const nextAutoMatchBudget =
+      nextBudgetRaw &&
+      typeof nextBudgetRaw === "object" &&
+      Number(nextBudgetRaw.maxLabFee) > 0
+        ? {
+            minLabFee: Math.max(0, Math.round(Number(nextBudgetRaw.minLabFee || 0))),
+            maxLabFee: Math.max(0, Math.round(Number(nextBudgetRaw.maxLabFee || 0))),
+          }
+        : null;
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
@@ -1398,6 +1433,7 @@ export const PracticeFileTransferPage = ({
     setAbutmentFavorites(nextAbutmentFavorites);
     setSkipDesignConfirm(nextSkipDesignConfirm);
     setDefaultAbutmentProductMode(nextDefaultAbutmentProductMode);
+    setAutoMatchBudget(nextAutoMatchBudget);
     setToothWorks((prev) =>
       prev.map((row) => {
         const customAbutment = Boolean(row.customAbutment);
@@ -1432,6 +1468,10 @@ export const PracticeFileTransferPage = ({
         params,
         "defaultAbutmentProductMode",
       );
+      const hasAutoMatchBudget = Object.prototype.hasOwnProperty.call(
+        params,
+        "autoMatchBudget",
+      );
 
       const jsonBody: Record<string, unknown> = {};
       if (hasArrivalDefaultDays) {
@@ -1456,6 +1496,16 @@ export const PracticeFileTransferPage = ({
         jsonBody.defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
           params.defaultAbutmentProductMode,
         );
+      }
+      if (hasAutoMatchBudget) {
+        const band = params.autoMatchBudget;
+        jsonBody.autoMatchBudget =
+          band && Number(band.maxLabFee) > 0
+            ? {
+                minLabFee: Math.max(0, Math.round(Number(band.minLabFee || 0))),
+                maxLabFee: Math.max(0, Math.round(Number(band.maxLabFee || 0))),
+              }
+            : null;
       }
       if (Object.keys(jsonBody).length === 0) return true;
 
@@ -1931,7 +1981,7 @@ export const PracticeFileTransferPage = ({
       if (localFormUpdatedAtRef.current <= 0) {
         applyPracticeTransferSettings(payload);
       } else if (payload) {
-        // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·커스텀어벗 기본모드)은 서버를 우선 반영
+        // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·커스텀어벗 기본모드·자동매칭 예산)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         setSkipDesignConfirm(Boolean(payload.skipDesignConfirm));
         setDefaultAbutmentProductMode(
@@ -1939,6 +1989,15 @@ export const PracticeFileTransferPage = ({
         );
         setImplantFavorites(normalizeImplantFavorites(payload.implantFavorites));
         setAbutmentFavorites(normalizeAbutmentFavorites(payload.abutmentFavorites));
+        const band = payload.autoMatchBudget;
+        setAutoMatchBudget(
+          band && Number(band.maxLabFee) > 0
+            ? {
+                minLabFee: Math.max(0, Math.round(Number(band.minLabFee || 0))),
+                maxLabFee: Math.max(0, Math.round(Number(band.maxLabFee || 0))),
+              }
+            : null,
+        );
       }
       try {
         localStorage.setItem(
@@ -2055,8 +2114,14 @@ export const PracticeFileTransferPage = ({
           const targetLabFromRouting = String(
             practiceRouting.targetLabName || r.targetLabName || "",
           ).trim();
+          const matchingMode =
+            String(practiceRouting.matchingMode || r.matchingMode || "").trim() === "auto"
+              ? "auto"
+              : "direct";
           const targetLab =
-            targetLabFromRouting || extractLabNameFromMessage(message) || "-";
+            matchingMode === "auto"
+              ? "자동 매칭"
+              : targetLabFromRouting || extractLabNameFromMessage(message) || "-";
           const toothRaw = String(ci.tooth || "").trim();
           const createdAtRaw = String(r.createdAt || "");
           const strippedTransferMemo = stripPracticeTransferMessageEnvelope(message);
@@ -2098,7 +2163,8 @@ export const PracticeFileTransferPage = ({
             patientKey: normalizePatientNameKey(patientName),
             toothNumbers: toothRaw ? [toothRaw] : [],
             targetLab,
-            targetLabAnchorId,
+            targetLabAnchorId: matchingMode === "auto" ? "" : targetLabAnchorId,
+            matchingMode,
             status: toStatusLabel(r.manufacturerStage),
             createdAtTs: new Date(createdAtRaw).getTime(),
             transferId: extractTransferIdFromMessage(message),
@@ -2963,6 +3029,7 @@ export const PracticeFileTransferPage = ({
           transferMemo: req.transferMemo,
           rawTransferMemo: req.rawTransferMemo,
           targetLabAnchorId: req.targetLabAnchorId,
+          matchingMode: req.matchingMode,
           feeQuote: req.feeQuote || null,
           remakeFeeQuote: req.remakeFeeQuote || req.feeQuote?.remakeFeeQuote || null,
           isRemake: Boolean(req.isRemake),
@@ -3047,6 +3114,9 @@ export const PracticeFileTransferPage = ({
       }
       if (!existing.targetLabAnchorId && req.targetLabAnchorId) {
         existing.targetLabAnchorId = req.targetLabAnchorId;
+      }
+      if (!existing.matchingMode && req.matchingMode) {
+        existing.matchingMode = req.matchingMode;
       }
       if (req.productionConfirmedAt) {
         existing.productionConfirmedAt = req.productionConfirmedAt;
@@ -4663,14 +4733,16 @@ export const PracticeFileTransferPage = ({
         action === "accept-released" ||
         (action === "auto-match-released" && releaseSource === "workCancelRelease");
       if (isWorkCancelRelease) {
-        const releaseLabName =
-          String(payload.previousLabName || "").trim() ||
-          String(payload.targetLabName || "").trim();
+        const isAutoRelease = String(payload.matchingMode || "").trim() === "auto";
+        const releaseLabName = isAutoRelease
+          ? ""
+          : String(payload.previousLabName || "").trim() ||
+            String(payload.targetLabName || "").trim();
         toast({
           title: "작업 취소",
           description: releaseLabName
             ? `기공소「${releaseLabName}」이(가) 작업을 취소했습니다. 다시 의뢰할 수 있습니다.`
-            : "기공소가 작업을 취소했습니다. 다시 의뢰할 수 있습니다.",
+            : "작업을 취소했습니다. 다시 의뢰할 수 있습니다.",
         });
         const releaseTransferId = String(payload.transferId || "").trim();
         const stageRaw = String(payload.manufacturerStage || "작업취소").trim() || "작업취소";
@@ -4824,11 +4896,15 @@ export const PracticeFileTransferPage = ({
         skipDesignConfirm,
       });
       const autoMatch = isAutoMatchLab(selectedLab);
+      if (autoMatch && !(autoMatchBudget && autoMatchBudget.maxLabFee > 0)) {
+        throw new Error("자동매칭에는 기공비 최대 예산이 필요합니다.");
+      }
       const practiceRouting = {
         targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
         targetLabName: String(selectedLab?.name || "").trim(),
         matchingMode: autoMatch ? "auto" : "direct",
         skipDesignConfirm,
+        autoMatchBudget: autoMatch ? autoMatchBudget : undefined,
       };
       const newSystemRequestBase = {
         requested: true,
@@ -4895,6 +4971,7 @@ export const PracticeFileTransferPage = ({
           transferMemo,
           toothWorks: syncToothWorks,
           skipDesignConfirm,
+          autoMatchBudget: autoMatch ? autoMatchBudget : undefined,
           caseInfos: caseInfosPayload,
         },
       });
@@ -5401,6 +5478,13 @@ export const PracticeFileTransferPage = ({
                   memoInputId: "practice-file-transfer-request-memo",
                   toothChartResetNonce,
                   memoSnippets,
+                  autoMatchBudget,
+                  onAutoMatchBudgetChange: (next) => {
+                    setAutoMatchBudget(next);
+                    void savePracticeTransferSettingsToServer({
+                      autoMatchBudget: next,
+                    }).catch(() => {});
+                  },
                   onMemoSnippetsChange: async (next) => {
                     const normalized = normalizeMemoSnippets(next);
                     setMemoSnippets(normalized);
@@ -6261,7 +6345,7 @@ export const PracticeFileTransferPage = ({
           }
           chatLoading={chatLoading || chatMessagesLoading}
           chatError={String(chatError || chatMessagesError || "")}
-          chatMessages={chatMessages}
+          chatMessages={displayChatMessages}
           isMyMessage={(senderId) => myIdCandidates.has(senderId)}
           currentUserId={String(authUser?.id || (authUser as { _id?: string } | null)?._id || "").trim()}
           formatChatTime={formatChatTs}

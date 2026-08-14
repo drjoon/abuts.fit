@@ -12,6 +12,7 @@ import {
   bindLabTradingPartnerInvite,
   getLabFeeSchedule,
   updateLabFeeSchedule,
+  updateLabPracticeFeeMultiplier,
 } from "../../controllers/labTradingPartners/labTradingPartner.controller.js";
 
 const router = express.Router();
@@ -37,6 +38,13 @@ router.put(
   authenticate,
   authorize(["requestor", "admin"]),
   updateLabFeeSchedule,
+);
+
+router.put(
+  "/practice-fee-multiplier",
+  authenticate,
+  authorize(["requestor", "admin"]),
+  updateLabPracticeFeeMultiplier,
 );
 
 router.post(

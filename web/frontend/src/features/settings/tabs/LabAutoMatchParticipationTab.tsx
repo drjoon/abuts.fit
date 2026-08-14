@@ -1,0 +1,262 @@
+// related files:
+// - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
+// - web/backend/controllers/businesses/business.update.controller.js
+// - web/backend/services/labAutoMatchParticipation.service.js
+// - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
+// change-log:
+// - 2026-08-14: 기공소 자동 매칭 월 참여 탭. 치과 등록·소개 UI 대체.
+import { useCallback, useEffect, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { FlaskConical, Info, Loader2 } from "lucide-react";
+import { useToast } from "@/shared/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
+import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
+import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
+import { cn } from "@/shared/ui/cn";
+
+type ParticipationData = {
+  practiceTransferAutoMatchEnabled?: boolean;
+  autoMatchParticipationActive?: boolean;
+  autoMatchParticipationCancelAtPeriodEnd?: boolean;
+  autoMatchParticipationNextBillingAt?: string | null;
+  platformFeeRate?: number;
+  autoMatchMonthlyFee?: number;
+  verified?: boolean;
+  canReceivePracticeTransfer?: boolean;
+};
+
+const formatWon = (value: number) =>
+  `${Math.max(0, Math.round(value || 0)).toLocaleString("ko-KR")}원`;
+
+export const LabAutoMatchParticipationTab = () => {
+  const { toast } = useToast();
+  const { token } = useAuthStore();
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [data, setData] = useState<ParticipationData | null>(null);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const res = await request<{
+        success?: boolean;
+        message?: string;
+        data?: ParticipationData;
+      }>({
+        path: "/api/businesses/me/auto-match-participation",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) {
+        toast({
+          title: "조회 실패",
+          description: res.data?.message || "다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setData(res.data?.data || null);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, toast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const active = Boolean(
+    data?.autoMatchParticipationActive ?? data?.practiceTransferAutoMatchEnabled,
+  );
+  const cancelScheduled =
+    active && Boolean(data?.autoMatchParticipationCancelAtPeriodEnd);
+  const monthlyFee = Math.max(0, Number(data?.autoMatchMonthlyFee) || 0);
+  const successPct = Math.round(
+    Number(data?.platformFeeRate ?? 0.25) * 100,
+  );
+  const nextBillingLabel = data?.autoMatchParticipationNextBillingAt
+    ? formatKstYmdToKo(toKstYmd(data.autoMatchParticipationNextBillingAt) || "")
+    : null;
+  const canJoin =
+    Boolean(data?.verified) && Boolean(data?.canReceivePracticeTransfer);
+
+  const submit = async (nextActive: boolean) => {
+    if (!token || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await request<{
+        success?: boolean;
+        message?: string;
+        data?: ParticipationData;
+      }>({
+        path: "/api/businesses/me/auto-match-participation",
+        method: "POST",
+        token,
+        jsonBody: { active: nextActive },
+      });
+      if (!res.ok) {
+        toast({
+          title: nextActive ? "참여 실패" : "해지 실패",
+          description: res.data?.message || "다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setData((prev) => ({ ...(prev || {}), ...(res.data?.data || {}) }));
+      toast({
+        title: res.data?.message || (nextActive ? "참여했습니다." : "해지했습니다."),
+        duration: 2500,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return <SettingsCardSkeleton />;
+  }
+
+  return (
+    <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <FlaskConical className="h-5 w-5 text-primary-strong" />
+          자동 매칭 참여
+        </CardTitle>
+        <CardDescription className="text-[13px] leading-relaxed">
+          월 플랫폼 수수료를 내면 치과의 자동 매칭 의뢰에 참여할 수 있습니다.
+          성공 시 기공비의 {successPct}%가 플랫폼 수수료입니다. 치과·기공소 식별
+          정보는 비공개입니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3.5 shadow-sm">
+            <p className="text-[12px] font-medium text-slate-500">월 참여 수수료</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-900">
+              {formatWon(monthlyFee)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3.5 shadow-sm">
+            <p className="text-[12px] font-medium text-slate-500">성공 수수료</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-900">
+              {successPct}%
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              지정 기공소 의뢰에는 적용되지 않습니다.
+            </p>
+          </div>
+        </div>
+
+        <div
+          className={cn(
+            "rounded-2xl border px-4 py-3.5",
+            active
+              ? "border-primary-muted/70 bg-primary-soft/40"
+              : "border-slate-200/80 bg-slate-50/60",
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold text-slate-900">
+                {active
+                  ? cancelScheduled
+                    ? "참여 중 · 해지 예약"
+                    : "참여 중"
+                  : "미참여"}
+              </p>
+              {active && nextBillingLabel ? (
+                <p className="text-[12px] text-muted-foreground">
+                  {cancelScheduled
+                    ? `${nextBillingLabel}까지 유지 · 이후 종료`
+                    : `다음 결제일 ${nextBillingLabel}`}
+                </p>
+              ) : (
+                <p className="text-[12px] text-muted-foreground">
+                  검증된 기공소만 참여할 수 있습니다.
+                </p>
+              )}
+            </div>
+
+            {!active ? (
+              <Button
+                type="button"
+                disabled={submitting || !canJoin}
+                onClick={() => void submit(true)}
+                className="shrink-0"
+              >
+                {submitting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                참여하기
+              </Button>
+            ) : cancelScheduled ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={submitting}
+                    onClick={() => void submit(true)}
+                    className="shrink-0"
+                  >
+                    {submitting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    해지 취소
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>해지 예약을 취소하고 계속 참여합니다.</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={submitting}
+                    onClick={() => void submit(false)}
+                    className="shrink-0"
+                  >
+                    {submitting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    해지 예약
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  다음 결제일까지 유지되고, 이후 자동으로 종료됩니다.
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+
+        {!canJoin ? (
+          <div className="flex gap-3 rounded-2xl border border-dashed border-amber-200/90 bg-amber-50/50 px-4 py-3.5">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <p className="text-[13px] leading-relaxed text-amber-900/80">
+              {!data?.verified
+                ? "사업자 검증이 완료되면 참여할 수 있습니다."
+                : "기공의뢰 수신이 가능한 기공소만 참여할 수 있습니다."}
+            </p>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+};

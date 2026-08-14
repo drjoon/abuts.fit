@@ -45,24 +45,38 @@ export function resolveRatesWithoutSalesman(configuredRates) {
 
 export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_DEFAULT_RATES);
 
+export const DEFAULT_PLATFORM_FEE_RATE = 0.25;
+/** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
 export const DEFAULT_PARTNER_FEE_RATE = 0;
-export const DEFAULT_NON_PARTNER_FEE_RATE = 0.25;
+export const DEFAULT_NON_PARTNER_FEE_RATE = DEFAULT_PLATFORM_FEE_RATE;
+
+export function resolvePlatformFeeRate(payoutRates) {
+  const raw = payoutRates?.platformFeeRate;
+  if (raw != null && Number.isFinite(Number(raw))) {
+    return Math.min(1, Math.max(0, Number(raw)));
+  }
+  const legacy = Number(
+    payoutRates?.nonPartnerFeeRate ?? DEFAULT_PLATFORM_FEE_RATE,
+  );
+  return Number.isFinite(legacy)
+    ? Math.min(1, Math.max(0, legacy))
+    : DEFAULT_PLATFORM_FEE_RATE;
+}
 
 /**
- * 기공의뢰(practice transfer) 청구 총액 중 플랫폼 수수료 비율을 관계 유형에 따라 정한다.
- * 2단계 고정:
- * - "active" | "referred"(등록 치과): payoutRates.partnerFeeRate (기본 0%)
- * - 그 외(미등록): payoutRates.nonPartnerFeeRate (기본 25%)
- * 걷힌 수수료 금액은 resolveRevenueOwnerBaseAllocation()으로 제조사/개발운영사/영업자/관리자에게 다시 분배된다.
- * 요율 SSOT: BusinessAnchor.payoutRates (관리자 플랫폼 설정「기공소 매칭」에서 변경).
+ * 기공의뢰 플랫폼 수수료율.
+ * 자동 매칭 성공(수락) 시에만 기공비에 적용. 지정 기공소 의뢰는 0%.
+ * 등록/미등록 치과를 나누지 않는다.
+ * 걷힌 수수료는 resolveRevenueOwnerBaseAllocation()으로 4자 분배.
+ * 요율 SSOT: BusinessAnchor.payoutRates.platformFeeRate
+ * (관리자 플랫폼 설정「기공소 매칭」).
  */
-export function resolvePracticeTransferFeeRate({ relationshipKind, payoutRates }) {
-  if (relationshipKind === "active" || relationshipKind === "referred") {
-    const rate = Number(payoutRates?.partnerFeeRate ?? DEFAULT_PARTNER_FEE_RATE);
-    return Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : DEFAULT_PARTNER_FEE_RATE;
-  }
-  const rate = Number(payoutRates?.nonPartnerFeeRate ?? DEFAULT_NON_PARTNER_FEE_RATE);
-  return Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : DEFAULT_NON_PARTNER_FEE_RATE;
+export function resolvePracticeTransferFeeRate({
+  matchingMode,
+  payoutRates,
+} = {}) {
+  if (String(matchingMode || "").trim() !== "auto") return 0;
+  return resolvePlatformFeeRate(payoutRates);
 }
 
 export function isShippingSpendRevenueContext({ refType, freeAccountCode }) {

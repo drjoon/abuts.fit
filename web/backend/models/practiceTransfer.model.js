@@ -68,6 +68,17 @@ const practiceTransferSchema = new mongoose.Schema(
         default: null,
       },
       releaseCount: { type: Number, default: 0 },
+      // 생성 시점 예산에 맞는 인증 기공소 스냅샷. 수신 목록은 이 배열만 본다(수가 재계산 없음).
+      eligibleLabAnchorIds: {
+        type: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "BusinessAnchor",
+          },
+        ],
+        default: undefined,
+        index: true,
+      },
     },
     transferMemo: {
       type: String,
@@ -130,13 +141,15 @@ const practiceTransferSchema = new mongoose.Schema(
       abutmentQty: { type: Number, default: 0 },
       total: { type: Number, default: 0 },
       isTradingPartner: { type: Boolean, default: false },
-      // "active"|"referred"(등록 치과, partnerFeeRate) | "none"(미등록, nonPartnerFeeRate)
+      // 거래처 여부(커스텀어벗 기공소 크레딧 차감). 플랫폼 수수료는 matchingMode=auto 때만.
       relationshipKind: {
         type: String,
         enum: ["active", "referred", "none"],
         default: "none",
       },
       feeRateApplied: { type: Number, default: 0 },
+      // 기공수가 할증 배수(1=없음). 생성·수락 시점 스냅샷.
+      labFeeMultiplier: { type: Number, default: 1, min: 1, max: 5 },
       labTradingPartnerId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "LabTradingPartner",
@@ -146,6 +159,11 @@ const practiceTransferSchema = new mongoose.Schema(
       abutsRevenueAmount: { type: Number, default: 0 },
       billedAt: { type: Date, default: null },
       isRemake: { type: Boolean, default: false },
+      // 자동매칭 기공비 예산(원). 생성 시 스냅샷. 어벗츠 어벗 단가는 별도.
+      autoMatchBudget: {
+        minLabFee: { type: Number, default: null, min: 0 },
+        maxLabFee: { type: Number, default: null, min: 0 },
+      },
     },
     remake: {
       sourceTransferId: { type: String, default: "", trim: true, index: true },
@@ -234,6 +252,14 @@ practiceTransferSchema.index({
   matchingMode: 1,
   status: 1,
   targetLabAnchorId: 1,
+  "autoMatch.deadlineAt": 1,
+  "autoMatch.completedAt": 1,
+});
+// 자동매칭 예산 적격 기공소 스냅샷(multikey) — 수신 목록 필터
+practiceTransferSchema.index({
+  matchingMode: 1,
+  status: 1,
+  "autoMatch.eligibleLabAnchorIds": 1,
   "autoMatch.deadlineAt": 1,
   "autoMatch.completedAt": 1,
 });

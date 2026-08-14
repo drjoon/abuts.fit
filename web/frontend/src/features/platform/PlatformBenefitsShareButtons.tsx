@@ -1,14 +1,13 @@
 // related files:
 // - web/frontend/src/features/platform/PlatformBenefitsDialog.tsx
 // - web/frontend/src/shared/platform/referralShareMessages.ts
+// - 2026-08-14: 수수료 면제 소개 문구 제거.
 // - 2026-08-12: 안내 문구+링크 클립보드 복사(카톡 미실행).
 import { useMemo, useState } from "react";
 import { Copy, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
-import { request } from "@/shared/api/apiClient";
-import { useLabTradingPartnerWindow } from "@/shared/lab/useLabTradingPartnerWindow";
 import type { PlatformBenefitsVariant } from "@/shared/platform/platformBenefitsContent";
 import {
   buildLabIntroMessage,
@@ -22,10 +21,9 @@ type Props = {
   viewerKind: PlatformBenefitsVariant;
 };
 
-export const PlatformBenefitsShareButtons = ({ viewerKind }: Props) => {
+export const PlatformBenefitsShareButtons = ({ viewerKind: _viewerKind }: Props) => {
   const { toast } = useToast();
-  const { token, user } = useAuthStore();
-  const { canInvite, remainingDays } = useLabTradingPartnerWindow();
+  const { user } = useAuthStore();
   const [busyTarget, setBusyTarget] = useState<ShareTarget | null>(null);
 
   const referralCode = useMemo(
@@ -41,49 +39,6 @@ export const PlatformBenefitsShareButtons = ({ viewerKind }: Props) => {
     [referralCode],
   );
 
-  const canFeeWaiverInvite =
-    viewerKind === "lab" &&
-    Boolean(canInvite) &&
-    remainingDays != null &&
-    Number.isFinite(remainingDays) &&
-    remainingDays > 0;
-
-  const buildInviteUrl = (path: string) => {
-    const base = `${window.location.origin}${path}`;
-    if (!referralCode) return base;
-    const sep = path.includes("?") ? "&" : "?";
-    return `${base}${sep}ref=${encodeURIComponent(referralCode)}`;
-  };
-
-  const createPracticeInviteLink = async (): Promise<string | null> => {
-    if (!token) return null;
-    const res = await request<{
-      success?: boolean;
-      message?: string;
-      data?: { invitePath?: string };
-    }>({
-      path: "/api/lab-trading-partners",
-      method: "POST",
-      token,
-      jsonBody: {},
-    });
-    if (!res.ok) {
-      throw new Error(res.data?.message || "초대 링크 생성에 실패했습니다.");
-    }
-    const path = String(res.data?.data?.invitePath || "").trim();
-    if (!path) {
-      throw new Error("초대 링크를 확인할 수 없습니다.");
-    }
-    return buildInviteUrl(path);
-  };
-
-  const resolvePracticeLink = async () => {
-    if (canFeeWaiverInvite) {
-      return createPracticeInviteLink();
-    }
-    return referralSignupLink || null;
-  };
-
   const handleCopy = async (target: ShareTarget) => {
     if (!referralCode) {
       toast({
@@ -96,21 +51,13 @@ export const PlatformBenefitsShareButtons = ({ viewerKind }: Props) => {
 
     setBusyTarget(target);
     try {
-      let message = "";
-      if (target === "practice") {
-        const link = await resolvePracticeLink();
-        if (!link) {
-          throw new Error("치과 소개 링크를 만들 수 없습니다.");
-        }
-        message = buildPracticeIntroMessage(link, {
-          feeWaiver: canFeeWaiverInvite,
-        });
-      } else {
-        if (!referralSignupLink) {
-          throw new Error("기공소 소개 링크를 만들 수 없습니다.");
-        }
-        message = buildLabIntroMessage(referralSignupLink);
+      if (!referralSignupLink) {
+        throw new Error("소개 링크를 만들 수 없습니다.");
       }
+      const message =
+        target === "practice"
+          ? buildPracticeIntroMessage(referralSignupLink)
+          : buildLabIntroMessage(referralSignupLink);
 
       await navigator.clipboard.writeText(message);
       toast({

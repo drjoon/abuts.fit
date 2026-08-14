@@ -22,6 +22,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import { Label } from "@/components/ui/label";
 import {
@@ -638,6 +639,11 @@ export type PracticeTransferRequestIntakePanelProps = {
   toothChartResetNonce?: number;
   /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
   showFeeEstimate?: boolean;
+  /** 자동매칭 기공비 예산(원) */
+  autoMatchBudget?: { minLabFee: number; maxLabFee: number } | null;
+  onAutoMatchBudgetChange?: (
+    next: { minLabFee: number; maxLabFee: number } | null,
+  ) => void | Promise<void>;
 };
 
 export const PracticeTransferRequestIntakePanel = ({
@@ -695,6 +701,8 @@ export const PracticeTransferRequestIntakePanel = ({
   onAlternateAbutmentModeNavigate,
   toothChartResetNonce = 0,
   showFeeEstimate = false,
+  autoMatchBudget = null,
+  onAutoMatchBudgetChange,
 }: PracticeTransferRequestIntakePanelProps) => {
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
@@ -734,6 +742,7 @@ export const PracticeTransferRequestIntakePanel = ({
     toothWorks,
     implantFavorites,
     abutmentPricingTier,
+    autoMatchBudget: isAutoMatchLab(selectedLab) ? autoMatchBudget : null,
   });
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */
   const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<number | null>(null);
@@ -1746,6 +1755,64 @@ export const PracticeTransferRequestIntakePanel = ({
               </Command>
             </PopoverContent>
           </Popover>
+          {isAutoMatchLab(selectedLab) ? (
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">기공비 최소</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  className="h-9"
+                  value={autoMatchBudget?.minLabFee ?? ""}
+                  placeholder="0"
+                  onChange={(event) => {
+                    const minLabFee = Math.max(
+                      0,
+                      Math.round(Number(event.target.value || 0)),
+                    );
+                    const maxLabFee = Math.max(
+                      minLabFee,
+                      Math.round(Number(autoMatchBudget?.maxLabFee || 0)),
+                    );
+                    void onAutoMatchBudgetChange?.(
+                      maxLabFee > 0 ? { minLabFee, maxLabFee } : null,
+                    );
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  기공비 최대 <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  className="h-9"
+                  value={autoMatchBudget?.maxLabFee ?? ""}
+                  placeholder="예: 120000"
+                  onChange={(event) => {
+                    const maxRaw = Math.max(
+                      0,
+                      Math.round(Number(event.target.value || 0)),
+                    );
+                    const minLabFee = Math.min(
+                      maxRaw || 0,
+                      Math.max(0, Math.round(Number(autoMatchBudget?.minLabFee || 0))),
+                    );
+                    void onAutoMatchBudgetChange?.(
+                      maxRaw > 0 ? { minLabFee, maxLabFee: maxRaw } : null,
+                    );
+                  }}
+                />
+              </div>
+              <p className="col-span-2 text-[11px] text-muted-foreground">
+                이 구간의 인증 기공소만 참여합니다. 수락 시 해당 기공소 수가로
+                확정됩니다.
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-2">

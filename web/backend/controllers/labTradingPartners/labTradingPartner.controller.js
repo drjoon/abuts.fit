@@ -24,14 +24,16 @@ import {
   legacyLabFeeScheduleFromItems,
   isLabFeeScheduleConfigured,
   resolveLabFeeScheduleForSettings,
+  normalizeLabFeeMultiplier,
+  resolveLabPracticeFeeMultiplier,
+  upsertLabPracticeFeeMultiplierList,
 } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRequestorKind,
   resolveRequestorProfile,
 } from "../../utils/requestorCapabilities.js";
 import {
-  DEFAULT_PARTNER_FEE_RATE,
-  DEFAULT_NON_PARTNER_FEE_RATE,
+  resolvePlatformFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
 
@@ -41,13 +43,11 @@ async function resolvePlatformFeeRatesForDisplay() {
     .select({ payoutRates: 1 })
     .sort({ createdAt: 1 })
     .lean();
+  const platformFeeRate = resolvePlatformFeeRate(devops?.payoutRates);
   return {
-    partnerFeeRate: Number(
-      devops?.payoutRates?.partnerFeeRate ?? DEFAULT_PARTNER_FEE_RATE,
-    ),
-    nonPartnerFeeRate: Number(
-      devops?.payoutRates?.nonPartnerFeeRate ?? DEFAULT_NON_PARTNER_FEE_RATE,
-    ),
+    platformFeeRate,
+    partnerFeeRate: platformFeeRate,
+    nonPartnerFeeRate: platformFeeRate,
   };
 }
 
@@ -191,6 +191,10 @@ export async function listLabTradingPartners(req, res) {
       .sort({ invitedAt: -1 })
       .lean();
 
+    const labDoc = await BusinessAnchor.findById(labAnchorId)
+      .select({ labPracticeFeeMultipliers: 1 })
+      .lean();
+
     const practiceIds = rows
       .map((r) => r.practiceAnchorId)
       .filter(Boolean)
@@ -225,6 +229,9 @@ export async function listLabTradingPartners(req, res) {
         ? practiceById.get(String(row.practiceAnchorId))
         : null;
       const meta = practice?.metadata || {};
+      const practiceAnchorId = row.practiceAnchorId
+        ? String(row.practiceAnchorId)
+        : null;
       return {
         _id: String(row._id),
         status: row.status,
@@ -233,9 +240,7 @@ export async function listLabTradingPartners(req, res) {
         practiceHint: row.practiceHint || {},
         invitedAt: row.invitedAt,
         activatedAt: row.activatedAt,
-        practiceAnchorId: row.practiceAnchorId
-          ? String(row.practiceAnchorId)
-          : null,
+        practiceAnchorId,
         practiceName:
           practice?.name ||
           meta?.companyName ||
@@ -247,6 +252,9 @@ export async function listLabTradingPartners(req, res) {
         ).trim(),
         practiceStatus: practice?.status || null,
         boundAt: row.boundAt || null,
+        labFeeMultiplier: practiceAnchorId
+          ? resolveLabPracticeFeeMultiplier(labDoc, practiceAnchorId)
+          : 1,
       };
     });
 
@@ -275,7 +283,7 @@ export async function createLabTradingPartnerInvite(req, res) {
     const window = await resolveLabTradingPartnerWindow({ labAnchorId });
     // 등록 기간이 지나도 초대(소개) 발급 자체는 계속 허용한다.
     // 다만 이 기간 이후 발급된 초대는 검증 완료 시 active(등록 치과)가 아닌
-    // referred(기간 후 등록)로 승격된다. 플랫폼 수수료는 둘 다 partnerFeeRate(기본 0%).
+    // referred(기간 후 등록)로 승격된다. 플랫폼 수수료는 등록 여부와 무관하다.
     const invitedAfterWindow = !window.canInvite;
 
     // 링크/안내문구 복사용 토큰만 발급. 목록 카드는 치과 가입(pending) 때부터 표시.
@@ -563,6 +571,81 @@ export async function updateLabFeeSchedule(req, res) {
     return res.status(500).json({
       success: false,
       message: "기공비를 저장하지 못했습니다.",
+    });
+  }
+}
+
+/**
+ * 치과별 기공수가 할증 배수 설정.
+ * body: { practiceAnchorId, multiplier } — 1이면 할증 해제.
+ */
+export async function updateLabPracticeFeeMultiplier(req, res) {
+  try {
+    const labAnchorId = await resolveCallerLabAnchorId(req);
+    if (!labAnchorId) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 사업자만 이용할 수 있습니다.",
+      });
+    }
+    const practiceAnchorId = String(req.body?.practiceAnchorId || "").trim();
+    if (!practiceAnchorId || !Types.ObjectId.isValid(practiceAnchorId)) {
+      return res.status(400).json({
+        success: false,
+        message: "치과 사업자 ID가 필요합니다.",
+      });
+    }
+    const practice = await BusinessAnchor.findById(practiceAnchorId)
+      .select({
+        _id: 1,
+        businessType: 1,
+        requestorKind: 1,
+        requestorCapabilities: 1,
+      })
+      .lean();
+    if (!practice || String(practice.businessType || "") !== "requestor") {
+      return res.status(404).json({
+        success: false,
+        message: "치과 사업자를 찾을 수 없습니다.",
+      });
+    }
+    if (normalizeRequestorKind(practice.requestorKind) === "lab") {
+      return res.status(400).json({
+        success: false,
+        message: "의뢰 발신자(치과)에만 할증을 적용할 수 있습니다.",
+      });
+    }
+
+    const multiplier = normalizeLabFeeMultiplier(req.body?.multiplier);
+    const lab = await BusinessAnchor.findById(labAnchorId)
+      .select({ labPracticeFeeMultipliers: 1 })
+      .lean();
+    const nextList = upsertLabPracticeFeeMultiplierList(
+      lab?.labPracticeFeeMultipliers,
+      practiceAnchorId,
+      multiplier,
+    ).map((row) => ({
+      practiceAnchorId: new Types.ObjectId(String(row.practiceAnchorId)),
+      multiplier: row.multiplier,
+    }));
+
+    await BusinessAnchor.findByIdAndUpdate(labAnchorId, {
+      $set: { labPracticeFeeMultipliers: nextList },
+    });
+    invalidatePracticeTransferQuoteCaches(labAnchorId);
+
+    return res.json({
+      success: true,
+      data: {
+        practiceAnchorId,
+        labFeeMultiplier: multiplier,
+      },
+    });
+  } catch (e) {
+    console.error("[labTradingPartners] updateLabPracticeFeeMultiplier error", e);
+    return res.status(500).json({
+      success: false,
+      message: "기공수가 할증을 저장하지 못했습니다.",
     });
   }
 }

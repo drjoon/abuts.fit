@@ -12,6 +12,8 @@ export const {
   getBusinessPublicById,
   updateMyBusiness,
   setMyPracticeMembership,
+  getMyAutoMatchParticipation,
+  setMyAutoMatchParticipation,
   clearMyBusinessLicense,
   checkBusinessNumberDuplicate,
   lookupPostalCode,

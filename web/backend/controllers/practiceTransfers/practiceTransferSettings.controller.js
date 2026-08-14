@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { hydrateFavoritesWithRoundBarAdopted } from "./roundBarAbutmentRequest.controller.js";
 import { normalizeAdoptedKind } from "../../utils/roundBarAbutment.js";
+import { normalizeAutoMatchBudget } from "../../utils/practiceTransferAutoMatchBudget.js";
 
 // related files:
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
@@ -15,6 +16,7 @@ import { normalizeAdoptedKind } from "../../utils/roundBarAbutment.js";
 // - 2026-08-14: 환봉 도입 상태는 요청 문서로 hydrate. 치과 저장이 adopted를 덮어쓰지 않음.
 // - 2026-08-14: implantFavorites에 환봉 제조사 추가요청(roundBar/adopted) 필드 보존.
 // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산) 저장.
+// - 2026-08-14: autoMatchBudget(자동매칭 기공비 min/max).
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
 const ABUTMENT_PRODUCT_MODE_DESIGN_AND_PRODUCTION = "design_custom_abutment";
@@ -186,6 +188,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     defaultAbutmentProductMode: normalizeDefaultAbutmentProductMode(
       settings?.defaultAbutmentProductMode,
     ),
+    autoMatchBudget: normalizeAutoMatchBudget(settings?.autoMatchBudget),
     updatedAt: settings?.updatedAt || null,
   };
 };
@@ -256,6 +259,10 @@ export async function upsertPracticeTransferSettings(req, res) {
       body,
       "defaultAbutmentProductMode",
     );
+    const hasAutoMatchBudget = Object.prototype.hasOwnProperty.call(
+      body,
+      "autoMatchBudget",
+    );
 
     const setPatch = {
       "practiceTransferSettings.updatedAt": new Date(),
@@ -297,6 +304,12 @@ export async function upsertPracticeTransferSettings(req, res) {
     if (hasDefaultAbutmentProductMode) {
       setPatch["practiceTransferSettings.defaultAbutmentProductMode"] =
         normalizeDefaultAbutmentProductMode(body.defaultAbutmentProductMode);
+    }
+    if (hasAutoMatchBudget) {
+      const band = normalizeAutoMatchBudget(body.autoMatchBudget);
+      setPatch["practiceTransferSettings.autoMatchBudget"] = band
+        ? { minLabFee: band.minLabFee, maxLabFee: band.maxLabFee }
+        : { minLabFee: null, maxLabFee: null };
     }
 
     const anchor = await BusinessAnchor.findByIdAndUpdate(

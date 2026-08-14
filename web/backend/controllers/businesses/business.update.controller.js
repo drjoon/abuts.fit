@@ -38,6 +38,7 @@ import {
   requestorProfilePersistFields,
   requestorProfileResponseFields,
   normalizeRequestorKind,
+  canReceivePracticeTransfer,
 } from "../../utils/requestorCapabilities.js";
 import { isSyntheticPracticeBusinessNumber } from "./requestorOrgAnchor.util.js";
 import {
@@ -49,6 +50,12 @@ import {
   applyPracticeMembershipJoin,
   practiceMembershipResponseFields,
 } from "../../services/practiceMembership.service.js";
+import {
+  applyAutoMatchParticipationCancel,
+  applyAutoMatchParticipationJoin,
+  autoMatchParticipationResponseFields,
+} from "../../services/labAutoMatchParticipation.service.js";
+import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
 
 function resolveLabPartnerInviteToken(req) {
   return String(
@@ -1264,6 +1271,208 @@ export async function setMyPracticeMembership(req, res) {
       message: wantActive
         ? "멤버십 가입 중 오류가 발생했습니다."
         : "멤버십 해지 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+async function loadDevopsAutoMatchFees() {
+  const devops = await BusinessAnchor.findOne({ businessType: "devops" })
+    .select({ payoutRates: 1 })
+    .sort({ createdAt: 1 })
+    .lean();
+  const rates = devops?.payoutRates || {};
+  const platformFeeRate = resolvePlatformFeeRate(rates);
+  const monthlyFee = Math.max(0, Number(rates.autoMatchMonthlyFee) || 0);
+  return { platformFeeRate, autoMatchMonthlyFee: monthlyFee };
+}
+
+export async function getMyAutoMatchParticipation(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const freshUser = await User.findById(req.user._id)
+      .select({
+        businessAnchorId: 1,
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+        role: 1,
+      })
+      .lean();
+
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 등록 후 이용할 수 있습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(businessAnchorId).lean();
+    if (!anchor) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자 정보를 찾을 수 없습니다.",
+      });
+    }
+
+    const profile = resolveRequestorProfile({
+      anchorKind: anchor.requestorKind,
+      anchorServices: anchor.requestorServices,
+      anchorCaps: anchor.requestorCapabilities,
+      userKind: freshUser?.requestorKind,
+      userServices: freshUser?.requestorServices,
+      userCaps: freshUser?.requestorCapabilities,
+      userRole: freshUser?.role || req.user.role,
+      businessVerified: String(anchor.status || "").trim() === "verified",
+    });
+
+    if (profile.kind !== "lab") {
+      return res.status(403).json({
+        success: false,
+        message: "자동 매칭 참여는 기공소만 이용할 수 있습니다.",
+      });
+    }
+
+    const fees = await loadDevopsAutoMatchFees();
+    return res.json({
+      success: true,
+      data: {
+        ...autoMatchParticipationResponseFields(anchor),
+        ...fees,
+        verified: String(anchor.status || "").trim() === "verified",
+        canReceivePracticeTransfer: canReceivePracticeTransfer(profile),
+      },
+    });
+  } catch (error) {
+    console.error("[getMyAutoMatchParticipation]", error);
+    return res.status(500).json({
+      success: false,
+      message: "자동 매칭 참여 정보를 불러오지 못했습니다.",
+    });
+  }
+}
+
+export async function setMyAutoMatchParticipation(req, res) {
+  const wantActive = req.body?.active !== false;
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const freshUser = await User.findById(req.user._id)
+      .select({
+        businessAnchorId: 1,
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+        role: 1,
+      })
+      .lean();
+
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 등록 후 참여할 수 있습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(businessAnchorId).lean();
+    if (!anchor) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자 정보를 찾을 수 없습니다.",
+      });
+    }
+
+    const profile = resolveRequestorProfile({
+      anchorKind: anchor.requestorKind,
+      anchorServices: anchor.requestorServices,
+      anchorCaps: anchor.requestorCapabilities,
+      userKind: freshUser?.requestorKind,
+      userServices: freshUser?.requestorServices,
+      userCaps: freshUser?.requestorCapabilities,
+      userRole: freshUser?.role || req.user.role,
+      businessVerified: String(anchor.status || "").trim() === "verified",
+    });
+
+    if (profile.kind !== "lab") {
+      return res.status(403).json({
+        success: false,
+        message: "자동 매칭 참여는 기공소만 이용할 수 있습니다.",
+      });
+    }
+
+    if (wantActive !== true) {
+      if (!anchor.practiceTransferAutoMatchEnabled) {
+        return res.status(400).json({
+          success: false,
+          message: "참여 중이 아닙니다.",
+        });
+      }
+      const { anchor: next, expiredNow } =
+        await applyAutoMatchParticipationCancel(anchor);
+      return res.json({
+        success: true,
+        message: expiredNow
+          ? "자동 매칭 참여가 종료되었습니다."
+          : "참여 해지가 예약되었습니다. 다음 결제일까지 유지됩니다.",
+        data: {
+          ...autoMatchParticipationResponseFields(next),
+          ...(await loadDevopsAutoMatchFees()),
+        },
+      });
+    }
+
+    if (String(anchor.status || "").trim() !== "verified") {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 검증 후 참여할 수 있습니다.",
+      });
+    }
+    if (!canReceivePracticeTransfer(profile)) {
+      return res.status(400).json({
+        success: false,
+        message: "기공의뢰를 수신할 수 있는 기공소만 참여할 수 있습니다.",
+      });
+    }
+
+    if (
+      anchor.practiceTransferAutoMatchEnabled &&
+      !anchor.autoMatchParticipationCancelAtPeriodEnd
+    ) {
+      return res.json({
+        success: true,
+        message: "이미 자동 매칭에 참여 중입니다.",
+        data: {
+          ...autoMatchParticipationResponseFields(anchor),
+          ...(await loadDevopsAutoMatchFees()),
+        },
+      });
+    }
+
+    const next = await applyAutoMatchParticipationJoin(anchor);
+    const resumed = Boolean(anchor.autoMatchParticipationCancelAtPeriodEnd);
+    return res.json({
+      success: true,
+      message: resumed
+        ? "참여 해지가 취소되었습니다."
+        : "자동 매칭에 참여합니다.",
+      data: {
+        ...autoMatchParticipationResponseFields(next),
+        ...(await loadDevopsAutoMatchFees()),
+      },
+    });
+  } catch (error) {
+    console.error("[setMyAutoMatchParticipation]", error);
+    return res.status(500).json({
+      success: false,
+      message: wantActive
+        ? "자동 매칭 참여 중 오류가 발생했습니다."
+        : "자동 매칭 해지 중 오류가 발생했습니다.",
     });
   }
 }

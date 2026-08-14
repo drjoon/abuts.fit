@@ -92,11 +92,30 @@ const businessAnchorSchema = new mongoose.Schema(
     // related files:
     // - web/backend/utils/practiceTransferAutoMatch.js
     // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
+    // - web/backend/services/labAutoMatchParticipation.service.js
     // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
     practiceTransferAutoMatchEnabled: {
       type: Boolean,
       default: false,
       index: true,
+    },
+    // 월 참여 구독(해지 예약·다음 결제일). 활성 여부는 practiceTransferAutoMatchEnabled.
+    autoMatchParticipationCancelAtPeriodEnd: {
+      type: Boolean,
+      default: false,
+    },
+    autoMatchParticipationNextBillingAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    autoMatchParticipationStartedAt: {
+      type: Date,
+      default: null,
+    },
+    autoMatchParticipationCanceledAt: {
+      type: Date,
+      default: null,
     },
     name: {
       type: String,
@@ -169,9 +188,12 @@ const businessAnchorSchema = new mongoose.Schema(
       devopsRate: { type: Number, default: 0.1, min: 0, max: 1 },
       salesmanRate: { type: Number, default: 0.1, min: 0, max: 1 },
       adminRate: { type: Number, default: 0.2, min: 0, max: 1 },
-      // 기공의뢰(practice transfer) 플랫폼 수수료율(2단계).
-      // 등록 치과(active|referred)=partnerFeeRate, 미등록=nonPartnerFeeRate.
+      // 기공의뢰 플랫폼 수수료율. 자동 매칭 성공 시 기공비에만 적용(지정 의뢰 0%).
       // 걷힌 수수료 총액은 위 4자 배분율로 다시 나뉜다.
+      platformFeeRate: { type: Number, default: 0.25, min: 0, max: 1 },
+      // 기공소 자동 매칭 월 참여 수수료(원). 관리자 플랫폼 설정「기공소 매칭」.
+      autoMatchMonthlyFee: { type: Number, default: 0, min: 0 },
+      // 레거시 2단계 필드. 신규 저장은 platformFeeRate. 읽기는 resolvePlatformFeeRate fallback.
       partnerFeeRate: { type: Number, default: 0, min: 0, max: 1 },
       nonPartnerFeeRate: { type: Number, default: 0.25, min: 0, max: 1 },
       updatedAt: { type: Date, default: null },
@@ -319,6 +341,22 @@ const businessAnchorSchema = new mongoose.Schema(
       },
       updatedAt: { type: Date, default: null },
     },
+    // 기공소→치과별 기공수가 할증(배수). 1 초과만 저장. 어벗츠 어벗 단가는 미적용.
+    // related: web/backend/utils/labFeeSchedule.js (normalizeLabFeeMultiplier)
+    labPracticeFeeMultipliers: {
+      type: [
+        {
+          _id: false,
+          practiceAnchorId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "BusinessAnchor",
+            required: true,
+          },
+          multiplier: { type: Number, default: 1, min: 1, max: 5 },
+        },
+      ],
+      default: [],
+    },
     practiceTransferSettings: {
       // related files:
       // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
@@ -384,6 +422,11 @@ const businessAnchorSchema = new mongoose.Schema(
         type: String,
         enum: ["custom_abutment", "design_custom_abutment"],
         default: "design_custom_abutment",
+      },
+      // 자동매칭 기공비 예산(원). 치식 합산 labFeeTotal 기준. 어벗츠 어벗 제외.
+      autoMatchBudget: {
+        minLabFee: { type: Number, default: null, min: 0 },
+        maxLabFee: { type: Number, default: null, min: 0 },
       },
       updatedAt: {
         type: Date,

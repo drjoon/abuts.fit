@@ -12,6 +12,7 @@ import {
   DEFAULT_QUOTE_CONTEXT,
   buildFeeQuoteFromContext,
   parsePracticeTransferQuoteContext,
+  type PracticeTransferAutoMatchBudget,
   type PracticeTransferFeeQuote,
   type PracticeTransferQuoteContext,
 } from "@/shared/practice/practiceTransferFeeQuote";
@@ -89,6 +90,7 @@ export const usePracticeTransferFeeQuote = (params: {
   storedQuote?: PracticeTransferFeeQuote | null;
   abutmentPricingTier?: AbutsAbutmentPricingTier | null;
   abutmentPrices?: Partial<AbutsAbutmentCreditPrices> | null;
+  autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
 }): {
   quote: PracticeTransferFeeQuote;
   contextReady: boolean;
@@ -132,6 +134,7 @@ export const usePracticeTransferFeeQuote = (params: {
       buildFeeQuoteFromContext({
         toothWorks,
         implantFavorites: params.implantFavorites,
+        autoMatchBudget: params.autoMatchBudget,
         context: {
           ...context,
           abutmentPricingTier:
@@ -145,6 +148,7 @@ export const usePracticeTransferFeeQuote = (params: {
       context,
       params.abutmentPrices,
       params.abutmentPricingTier,
+      params.autoMatchBudget,
       params.implantFavorites,
       settingsPrices,
       toothWorks,

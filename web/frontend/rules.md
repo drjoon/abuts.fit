@@ -117,7 +117,7 @@ Notes:
   - `src/shared/files/extractDroppedFiles.ts`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
     - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 인레이→크라운→커스텀어벗→임시치아 / 브리지↔Pontic↔작업X↔유지장치↔임시치아. 유지장치는 브리지 계열(2치 이상 연결 필수). 임시치아는 1치부터 n치(단독·연결). 연결 스팬에서 유지장치·임시치아는 한쪽 변경 시 연결된 치아 전체가 같은 형태. 유지장치·임시치아처럼 연결 전체가 강제 변경된 뒤 브리지 등으로 돌아오면, 클릭하지 않은 치아는 진입 직전 내용(형태·어벗·임플란트)을 복원. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 크라운·브리지 아래 `어벗` 체크박스(체크 시 설정 모달, 해제 시 규격 삭제). 커스텀어벗 칸·어벗 체크 후는 「설정」없이 `생산만`/`디자인+생산` 클릭으로 설정 모달. **기공의뢰(practice/dropzone)** 모달은 디자인+생산 고정, 생산만 클릭=`/dashboard/new-request`(어벗생산의뢰). **어벗생산의뢰** 모달은 생산만 고정, 디자인+생산 클릭=`/dashboard/practice-transfers?mode=send`(기공의뢰). 모달 하단 좌측 `프리셋 편집`(primary), 우측 취소/확인. 프리셋 목록은 4개까지 표시·초과 시 스크롤. 임플란트·스캔바디 프리셋이 모두 없으면 설정 모달과 함께 프리셋 편집을 연다. 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘. 취소·오버레이=열기 전 값 복원. 호버 툴팁: `CNC커스텀어벗 - 어벗츠 자체 제공` + 멤버십/일반 단가 + `배송비 별도, 박스당 과금, 부가세 없음`(월 구독료 미표시). 모달 기본·계정 초기값=`design_custom_abutment`(디자인+생산). 한 번 바꾸면 `practiceTransferSettings.defaultAbutmentProductMode`에 저장하고 다음 모달 초기값으로 사용. 커스텀어벗은 기공소 수가가 아니라 어벗츠 단가. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.
-    - 기공의뢰서 상·하악 사이(크게보기·전송 상세 포함)에 견적(크레딧 소비액) 표시. 치과는 평소 블러, 호버 시 금액 공개. 기공소 미지정(자동매칭)은 기본수가 없음(0원). 간단 합계 + 빠른툴팁 치식별 세부(컬럼: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗). 환봉 요청중은 기공소 어벗에 `요청중`(또는 기공소 커스텀어벗 수가). `PracticeTransferFeeEstimate` / `GET /api/practice/transfers/quote-context`.
+    - 기공의뢰서 상·하악 사이(크게보기·전송 상세 포함)에 견적(크레딧 소비액) 표시. 치과는 평소 블러, 호버 시 금액 공개. **자동매칭**은 치과 기공비 예산(min~max) 필수·견적에 구간 표시(수락 시 기공소 수가 확정). 간단 합계 + 빠른툴팁 치식별 세부(컬럼: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗). 환봉 요청중은 기공소 어벗에 `요청중`(또는 기공소 커스텀어벗 수가). `PracticeTransferFeeEstimate` / `GET /api/practice/transfers/quote-context`.
     - 기공소 의뢰카드·전송 상세에는 수령액(청구 − 플랫폼 수수료) 표시. 목록 `feeQuote` SSOT.
     - 프리셋 편집 패밀리 선택: Regular / Mini / Narrow / Small Narrow 고정 + 마지막「패밀리 추가」(직접 입력). 추가한 패밀리는 항목 옆 X로 삭제.
     - 프리셋 편집 제조사 선택 마지막「제조사 추가 요청」: 제조사·브랜드·패밀리 입력, 타입=`헥스(사이즈 미정)` 고정. 요청 시 관리자 문의 자동 접수 + 프리셋 저장 + 안내 모달. `PracticeToothImplantFields` / `POST /api/practice/transfers/round-bar-requests`.
@@ -140,26 +140,25 @@ Notes:
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (커스텀어벗 요금 · 기공소 매칭. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧 · 어벗(CNC/환봉) · 어벗 추가 요청 · 멤버십·배송 · 특별 공급가)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
-  - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (등록/미등록 치과 플랫폼 수수료율. 개발운영사 앵커 `payoutRates` SSOT)
+  - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (자동 매칭 단일 플랫폼 수수료율 인라인 입력. `PracticeTransferAutoMatchTab` 카드 안에 포함. 개발운영사 앵커 `payoutRates.platformFeeRate` SSOT)
 - 개발·운영사 설정
   - `src/pages/devops/DevopsSettingsPage.tsx` (계정/사업자/임직원/**결제(입금 계좌)**/알림/보안)
   - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · **기공의뢰 자동매칭**
     - 요금·크레딧에 치과 납품 어벗 소매가(`abutmentRetailPrice`) 포함
     - 기공의뢰 자동매칭: 상단 `DevopsDesignDeadlineTab`(수락 후 마감 요약) + `PracticeTransferAutoMatchTab`(기공의뢰 자동매칭 ON). 구 `?tab=design|deadline` → `autoMatch`
-  - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「거래 치과 등록」·「기공비」 탭
+  - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「기공비」·「자동 매칭 참여」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
-    - `src/features/settings/tabs/LabTradingPartnersTab.tsx` — 거래처 O/X 결제 안내 + 초대
+    - `src/features/settings/tabs/LabAutoMatchParticipationTab.tsx` — 월 참여 수수료·성공 수수료 안내 + 참여/해지. 구 `?tab=trading-partners` → `auto-match`
     - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·원가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산.
-    - 등록 기간 D-day 배너: `LabDashboardTopBanners` — 기공의뢰수신·어벗생산의뢰 상단.
-      - 소개치과 등록 기간 중만 표시(종료 시 두 alert 모두 숨김)
-      - 왼쪽: 소개치과 등록 (`LabTradingPartnerWindowBanner`) → `?tab=trading-partners`
+    - 상단 배너: `LabDashboardTopBanners` — 기공의뢰수신·어벗생산의뢰 상단.
+      - 왼쪽: 자동 매칭 참여 (`LabAutoMatchParticipationBanner`) → `?tab=auto-match`
       - 오른쪽: 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
-      - 기간 종료 후에도 대시보드 `[정책 안내]` 옆 `[가입 이유]`로 동일 모달 열기(기공소·치과)
+      - 대시보드 `[정책 안내]` 옆 `[가입 이유]`로도 동일 모달 열기(기공소·치과)
       - `src/features/platform/PlatformBenefitsDialog.tsx` (`variant`: lab | practice)
       - `src/shared/platform/platformBenefitsContent.ts`
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
-  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드 제목 **인증 기공소**) — `BusinessAnchor.practiceTransferAutoMatchEnabled`=인증(ON). 인증 기공소만 치과 자동 매칭 공개 풀 참여. 관리자 플랫폼 설정「기공소 매칭」탭(페이지 무한스크롤, 내부 스크롤 없음)
+  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드 제목 **기공소 매칭**) — 월 참여 수수료·성공 수수료 스트립 + 참여(ON) 목록. 기공소는 설정「자동 매칭 참여」에서 월 수수료로 자가 참여(`POST /api/businesses/me/auto-match-participation`). 관리자 스위치도 동일 플래그. 성공 시 `platformFeeRate`%. 관리자 플랫폼 설정「기공소 매칭」탭
   - 검증된 디자이너 지정: `DesignerAssignmentTab` / `BusinessAnchor.designAccessEnabled`(디자인 큐). API·게이트 유지, 파트너 탭 UI에서는 제거
   - 영업자 없을 때 분배: 설정된 영업자 분배비의 절반→제조사, 나머지 절반→관리자 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
   - 관리자 대시보드/소통
@@ -266,7 +265,7 @@ Notes:
 
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
   - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
-  - 기존 거래 치과 등록은 `max(pricingBaseDate, 2026-08-11)` 기준 **30일**간만 신규 초대 가능(D-day 배지·상단 배너). 탭 라벨: 「거래 치과 등록」.
+  - 기공소 자동 매칭 참여: 설정「자동 매칭 참여」에서 월 플랫폼 수수료(`payoutRates.autoMatchMonthlyFee`)로 참여. 성공 시 `platformFeeRate`%. 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지).
   - 기공소 화면(기공의뢰수신·어벗생산의뢰) 상단: 등록 잔여일 alert + 가입 이유 alert(기간 중만, 2열). 기간 종료 후 대시보드 `[가입 이유]`(기공소·치과 각 variant).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
     - 잔액 요약은 기공크레딧 탭과 동일하게 rounded-2xl 카드 그리드(현재/유료/무료/[기공]).
@@ -549,7 +548,7 @@ Notes:
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」(자동매칭 클레임 중이면 `수락 [남은 시간 …]`)→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서.
-  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto`. **인증 기공소**(검증 + `practiceTransferAutoMatchEnabled`)만 공개 풀 수신. 선착순 수락(3시간)·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 만료 시 재공개. UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「기공소 매칭」)
+  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto` + 기공비 예산(min/max) 필수. **인증 기공소** 중 예산 구간·기공비 설정 완료 기공소만 `eligibleLabAnchorIds` 스냅샷으로 공개 풀 수신. 선착순 수락(3시간)·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 만료 시 재공개. 성공 시 기공비의 `platformFeeRate`% 플랫폼 수수료. 식별 정보 비공개. UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「기공소 매칭」)
   - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(클릭 픽커·확장자 툴팁)/`[작업취소]` — 결과파일 필수. 커스텀어벗이면 배송선택. 치과 「생산 진행」 후 커스텀어벗은 어벗츠 자동의뢰
 
 

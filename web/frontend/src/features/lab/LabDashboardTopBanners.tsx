@@ -1,13 +1,14 @@
 // related files:
-// - web/frontend/src/features/lab/LabTradingPartnerWindowBanner.tsx
+// - web/frontend/src/features/lab/LabAutoMatchParticipationBanner.tsx
 // - web/frontend/src/features/lab/LabPlatformBenefitsBanner.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// change-log:
+// - 2026-08-14: 거래 치과 소개 배너 제거 → 자동 매칭 참여 + 가입 이유 상시 표시.
 // - 2026-08-12: 소개치과·가입 이유 상단 2열 배너.
-// - 2026-08-12: 등록 기간 종료 시 두 배너 모두 숨김.
-import { LabTradingPartnerWindowBanner } from "@/features/lab/LabTradingPartnerWindowBanner";
+import { LabAutoMatchParticipationBanner } from "@/features/lab/LabAutoMatchParticipationBanner";
 import { LabPlatformBenefitsBanner } from "@/features/lab/LabPlatformBenefitsBanner";
-import { useLabTradingPartnerWindow } from "@/shared/lab/useLabTradingPartnerWindow";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { cn } from "@/shared/ui/cn";
 
 type Props = {
@@ -15,23 +16,13 @@ type Props = {
 };
 
 export const LabDashboardTopBanners = ({ className }: Props) => {
-  const { isLab, canInvite, remainingDays, loading } =
-    useLabTradingPartnerWindow();
+  const { loading, kind } = useRequestorBusinessAccess();
 
-  if (loading || !isLab) return null;
-
-  const showInvite =
-    Boolean(canInvite) &&
-    remainingDays != null &&
-    Number.isFinite(remainingDays) &&
-    remainingDays > 0;
-
-  // 소개치과 등록 기간이 끝나면 두 alert 모두 제거
-  if (!showInvite) return null;
+  if (loading || kind !== "lab") return null;
 
   return (
     <div className={cn("grid grid-cols-1 gap-3 md:grid-cols-2", className)}>
-      <LabTradingPartnerWindowBanner remainingDays={remainingDays} />
+      <LabAutoMatchParticipationBanner />
       <LabPlatformBenefitsBanner className="h-full" />
     </div>
   );

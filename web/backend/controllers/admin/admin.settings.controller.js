@@ -21,10 +21,7 @@ import {
 import { normalizeLoadedCreditSettings } from "../../utils/creditSettingsDefaults.js";
 import { normalizeAbutsAbutmentCreditPrices } from "../../utils/abutsAbutmentService.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
-import {
-  DEFAULT_PARTNER_FEE_RATE,
-  DEFAULT_NON_PARTNER_FEE_RATE,
-} from "../../services/creditRevenuePolicy.service.js";
+import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
 
 const normalizeCreditSettings = (raw = {}) =>
   normalizeLoadedCreditSettings(raw);
@@ -576,19 +573,16 @@ async function findDevopsPayoutAnchor() {
 }
 
 function normalizePlatformFeeRates(payoutRates = {}) {
-  const partnerFeeRate = Number(
-    payoutRates?.partnerFeeRate ?? DEFAULT_PARTNER_FEE_RATE,
-  );
-  const nonPartnerFeeRate = Number(
-    payoutRates?.nonPartnerFeeRate ?? DEFAULT_NON_PARTNER_FEE_RATE,
+  const platformFeeRate = resolvePlatformFeeRate(payoutRates);
+  const autoMatchMonthlyFee = Math.max(
+    0,
+    Number(payoutRates?.autoMatchMonthlyFee) || 0,
   );
   return {
-    partnerFeeRate: Number.isFinite(partnerFeeRate)
-      ? Math.min(1, Math.max(0, partnerFeeRate))
-      : DEFAULT_PARTNER_FEE_RATE,
-    nonPartnerFeeRate: Number.isFinite(nonPartnerFeeRate)
-      ? Math.min(1, Math.max(0, nonPartnerFeeRate))
-      : DEFAULT_NON_PARTNER_FEE_RATE,
+    platformFeeRate,
+    autoMatchMonthlyFee,
+    partnerFeeRate: platformFeeRate,
+    nonPartnerFeeRate: platformFeeRate,
     updatedAt: payoutRates?.updatedAt || null,
   };
 }
@@ -614,23 +608,29 @@ export async function getPlatformFeeSettings(req, res) {
 export async function updatePlatformFeeSettings(req, res) {
   try {
     const payload = req.body && typeof req.body === "object" ? req.body : {};
-    const partnerFeeRate = Number(payload.partnerFeeRate);
-    const nonPartnerFeeRate = Number(payload.nonPartnerFeeRate);
-    if (
-      [partnerFeeRate, nonPartnerFeeRate].some(
-        (rate) => !Number.isFinite(rate) || rate < 0 || rate > 1,
-      )
-    ) {
+    const platformFeeRate = Number(
+      payload.platformFeeRate ?? payload.nonPartnerFeeRate,
+    );
+    if (!Number.isFinite(platformFeeRate) || platformFeeRate < 0 || platformFeeRate > 1) {
       return res.status(400).json({
         success: false,
         message: "플랫폼 수수료율은 0~100% 범위여야 합니다.",
       });
     }
-    if (partnerFeeRate > nonPartnerFeeRate) {
-      return res.status(400).json({
-        success: false,
-        message: "등록 치과 수수료율은 미등록 수수료율보다 클 수 없습니다.",
-      });
+
+    let autoMatchMonthlyFee;
+    if (payload.autoMatchMonthlyFee != null) {
+      autoMatchMonthlyFee = Number(payload.autoMatchMonthlyFee);
+      if (
+        !Number.isFinite(autoMatchMonthlyFee) ||
+        autoMatchMonthlyFee < 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "월 참여 수수료는 0원 이상이어야 합니다.",
+        });
+      }
+      autoMatchMonthlyFee = Math.round(autoMatchMonthlyFee);
     }
 
     const devops = await findDevopsPayoutAnchor();
@@ -641,21 +641,23 @@ export async function updatePlatformFeeSettings(req, res) {
       });
     }
 
-    await BusinessAnchor.updateOne(
-      { _id: devops._id },
-      {
-        $set: {
-          "payoutRates.partnerFeeRate": partnerFeeRate,
-          "payoutRates.nonPartnerFeeRate": nonPartnerFeeRate,
-          "payoutRates.updatedAt": new Date(),
-        },
-      },
-    );
+    const $set = {
+      "payoutRates.platformFeeRate": platformFeeRate,
+      "payoutRates.partnerFeeRate": platformFeeRate,
+      "payoutRates.nonPartnerFeeRate": platformFeeRate,
+      "payoutRates.updatedAt": new Date(),
+    };
+    if (autoMatchMonthlyFee != null) {
+      $set["payoutRates.autoMatchMonthlyFee"] = autoMatchMonthlyFee;
+    }
+
+    await BusinessAnchor.updateOne({ _id: devops._id }, { $set });
+    invalidatePracticeTransferQuoteCaches();
 
     const next = await findDevopsPayoutAnchor();
     res.status(200).json({
       success: true,
-      message: "플랫폼 수수료율이 저장되었습니다.",
+      message: "플랫폼 수수료 설정이 저장되었습니다.",
       data: {
         platformFeeSettings: normalizePlatformFeeRates(next?.payoutRates),
       },
@@ -663,7 +665,7 @@ export async function updatePlatformFeeSettings(req, res) {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "플랫폼 수수료율을 저장하지 못했습니다.",
+      message: "플랫폼 수수료 설정을 저장하지 못했습니다.",
       error: error.message,
     });
   }

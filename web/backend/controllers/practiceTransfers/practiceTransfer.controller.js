@@ -35,8 +35,15 @@ import {
   isAutoMatchOpenPool,
   isLabAnchorAutoMatchEligible,
   loadAutoMatchEligibleLabAnchors,
+  redactAutoMatchLabIdentity,
+  redactAutoMatchPracticeIdentity,
   toAutoMatchApiFields,
 } from "../../utils/practiceTransferAutoMatch.js";
+import {
+  normalizeAutoMatchBudget,
+  resolveAutoMatchEligibleLabAnchorIds,
+} from "../../utils/practiceTransferAutoMatchBudget.js";
+import { resolveLabPracticeFeeMultiplier } from "../../utils/labFeeSchedule.js";
 import ChatRoom from "../../models/chatRoom.model.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
@@ -330,7 +337,11 @@ const canCancelPracticeTransferByManufacturerStage = (stage) => {
 const toVirtualRequestRows = (transferDoc) => {
   const transferId = String(transferDoc?.transferId || "").trim();
   const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
-  const targetLabName = String(transferDoc?.targetLabName || "").trim();
+  const labIdentity = redactAutoMatchLabIdentity(matchingMode, {
+    targetLabName: String(transferDoc?.targetLabName || "").trim(),
+    targetLabAnchorId: transferDoc?.targetLabAnchorId || null,
+  });
+  const targetLabName = labIdentity.targetLabName;
   const transferMemo = String(transferDoc?.transferMemo || "").trim();
   const message = `[기공소: ${targetLabName}] ${transferMemo}\n[전송ID: ${transferId}]`;
   const files = Array.isArray(transferDoc?.files) ? transferDoc.files : [];
@@ -400,7 +411,7 @@ const toVirtualRequestRows = (transferDoc) => {
         message,
       },
       practiceRouting: {
-        targetLabAnchorId: transferDoc?.targetLabAnchorId || null,
+        targetLabAnchorId: labIdentity.targetLabAnchorId,
         targetLabName,
         matchingMode,
       },
@@ -1573,11 +1584,54 @@ export async function createPracticeTransfer(req, res) {
     }
 
     // 잔액 검사: 전송 시점. 실제 과금은 기공소 의뢰수락(mark-accepted).
+    let autoMatchBudget = null;
+    let autoMatchEligibleLabAnchorIds = undefined;
+    if (matchingMode === "auto") {
+      const practiceForBudget = await BusinessAnchor.findById(practiceAnchorId)
+        .select({
+          "practiceTransferSettings.autoMatchBudget": 1,
+          "practiceTransferSettings.implantFavorites": 1,
+        })
+        .lean();
+      autoMatchBudget = normalizeAutoMatchBudget(
+        req.body?.autoMatchBudget ??
+          practiceRouting?.autoMatchBudget ??
+          practiceForBudget?.practiceTransferSettings?.autoMatchBudget,
+      );
+      if (!autoMatchBudget) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "자동매칭에는 기공비 예산(최소·최대)이 필요합니다. 설정에서 예산을 지정해주세요.",
+          reason: "auto_match_budget_required",
+        });
+      }
+
+      const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
+        toothWorks: toothWorksRaw,
+        budget: autoMatchBudget,
+        implantFavorites:
+          practiceForBudget?.practiceTransferSettings?.implantFavorites || [],
+        practiceAnchorId,
+      });
+      autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
+      if (autoMatchEligibleLabAnchorIds.length === 0) {
+        return res.status(409).json({
+          success: false,
+          message: `예산(${autoMatchBudget.minLabFee.toLocaleString("ko-KR")}~${autoMatchBudget.maxLabFee.toLocaleString("ko-KR")}원)에 맞는 인증 기공소가 없습니다. 예산을 조정하거나 지정 기공소를 선택해주세요.`,
+          reason: "auto_match_no_eligible_labs",
+          autoMatchBudget,
+          labsScanned: eligibility.labsScanned,
+        });
+      }
+    }
+
     try {
       await assertPracticeTransferPaidCreditSufficient({
         practiceAnchorId,
         labAnchorId: targetLabAnchorId,
         toothWorks: toothWorksRaw,
+        autoMatchBudget,
       });
     } catch (creditErr) {
       const status = Number(creditErr?.statusCode || 500);
@@ -1593,7 +1647,17 @@ export async function createPracticeTransfer(req, res) {
       practiceAnchorId,
       labAnchorId: targetLabAnchorId,
       toothWorks: toothWorksRaw,
+      matchingMode,
+      autoMatchBudget,
     });
+
+    const billingPreview = toBillingPreviewFields(feeQuote);
+    if (autoMatchBudget) {
+      billingPreview.autoMatchBudget = {
+        minLabFee: autoMatchBudget.minLabFee,
+        maxLabFee: autoMatchBudget.maxLabFee,
+      };
+    }
 
     const transferDoc = await PracticeTransfer.create({
       transferId,
@@ -1611,6 +1675,7 @@ export async function createPracticeTransfer(req, res) {
               completedAt: null,
               completedBy: null,
               releaseCount: 0,
+              eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds || [],
             }
           : undefined,
       transferMemo,
@@ -1618,7 +1683,7 @@ export async function createPracticeTransfer(req, res) {
       status: "active",
       files,
       toothWorks: toothWorksRaw,
-      billing: toBillingPreviewFields(feeQuote),
+      billing: billingPreview,
       production: {
         skipDesignConfirm,
         shippingMode: null,
@@ -1852,6 +1917,7 @@ export async function remakePracticeTransfers(req, res) {
         labAnchorId: targetLabAnchorId,
         toothWorks,
         remake: true,
+        matchingMode: "direct",
       });
 
       const transferId = `PTX-${Date.now().toString(36).toUpperCase()}${created.length
@@ -2177,6 +2243,13 @@ export async function getReceivedPracticeTransfers(req, res) {
       viewingLabAnchorId: labAnchorId,
     });
 
+    const labMultiplierDoc =
+      labAnchorId && Types.ObjectId.isValid(labAnchorId)
+        ? await BusinessAnchor.findById(labAnchorId)
+            .select({ labPracticeFeeMultipliers: 1 })
+            .lean()
+        : null;
+
     const transfers = docs.map((doc) => {
       const practiceBusiness =
         doc?.practiceBusinessAnchorId &&
@@ -2199,6 +2272,26 @@ export async function getReceivedPracticeTransfers(req, res) {
         doc?.production && typeof doc.production === "object" ? doc.production : {};
       const autoFields = toAutoMatchApiFields(doc, labAnchorId);
       const openPool = Boolean(autoFields.autoMatch?.openPool);
+      const matchingMode = autoFields.matchingMode;
+      const revealIdentities = role === "admin";
+      const practiceIdentity = redactAutoMatchPracticeIdentity(
+        matchingMode,
+        {
+          businessName: String(
+            practiceBusiness?.name || practiceProfile?.clinicName || "",
+          ).trim(),
+          userName: String(
+            practiceProfile?.staffName || practiceUser?.name || "",
+          ).trim(),
+        },
+        { reveal: revealIdentities },
+      );
+      const practiceAnchorIdForSurcharge =
+        matchingMode === "auto" && openPool
+          ? null
+          : practiceBusiness
+            ? String(practiceBusiness._id || "")
+            : String(doc?.practiceBusinessAnchorId || "").trim() || null;
       const isAccepted =
         Boolean(doc?.requestorDownloadedAt) && !openPool;
       const manufacturerStage = production?.confirmedAt
@@ -2249,14 +2342,14 @@ export async function getReceivedPracticeTransfers(req, res) {
             ? production.relatedRequestIds.map((id) => String(id))
             : [],
         },
-        practice: {
-          businessName: String(
-            practiceBusiness?.name || practiceProfile?.clinicName || "",
-          ).trim(),
-          userName: String(
-            practiceProfile?.staffName || practiceUser?.name || "",
-          ).trim(),
-        },
+        practice: practiceIdentity,
+        practiceBusinessAnchorId: practiceAnchorIdForSurcharge,
+        labFeeMultiplier: practiceAnchorIdForSurcharge
+          ? resolveLabPracticeFeeMultiplier(
+              labMultiplierDoc,
+              practiceAnchorIdForSurcharge,
+            )
+          : 1,
         fileCount: files.length,
         files: files.map((item, idx) => ({
           id: `${String(doc?._id || "")}::${idx + 1}`,
@@ -2570,10 +2663,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         }
       }
 
-      const labAnchor = await BusinessAnchor.findById(labOid)
-        .select({ name: 1 })
-        .lean();
-      const labName = String(labAnchor?.name || "").trim() || "기공소";
+      const labName = AUTO_MATCH_LAB_DISPLAY_NAME;
       const deadlineAt = buildAutoMatchDeadlineAt(
         now,
         PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
@@ -2582,7 +2672,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       const claimed = await PracticeTransfer.findOneAndUpdate(
         {
           _id: doc._id,
-          ...buildAutoMatchClaimableFilter(now),
+          ...buildAutoMatchClaimableFilter(now, { labAnchorId }),
         },
         {
           $set: {
@@ -2624,6 +2714,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         });
         if (billingResult?.billed) {
           doc.billing = {
+            ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
             labFeeTotal: billingResult.fees?.labFeeTotal || 0,
             abutmentRetailTotal: billingResult.fees?.abutmentRetailTotal || 0,
             abutmentQty: billingResult.fees?.abutmentQty || 0,
@@ -2631,6 +2722,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             isTradingPartner: Boolean(billingResult.isPartner),
             relationshipKind: billingResult.relationshipKind || "none",
             feeRateApplied: Number(billingResult.feeRateApplied || 0),
+            labFeeMultiplier: Number(billingResult.labFeeMultiplier || 1),
             labTradingPartnerId: billingResult.labTradingPartnerId || null,
             labSettlementAmount: billingResult.labSettlementAmount || 0,
             abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
@@ -2712,12 +2804,19 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         updatedAt: doc.updatedAt || new Date(),
         ...toAutoMatchApiFields(doc, labAnchorId),
       };
+      const practiceRealtimePayload = {
+        ...realtimePayload,
+        ...redactAutoMatchLabIdentity("auto", {
+          targetLabName: labName,
+          targetLabAnchorId: labAnchorId,
+        }),
+      };
 
       emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
       await emitPracticeTransferEventToPracticeUsers({
         practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
         type: "practice:transfer-updated",
-        payload: realtimePayload,
+        payload: practiceRealtimePayload,
         extraUserIds: [doc.practiceUserId],
       });
       await emitPracticeTransferEventToRequestorUsers({
@@ -2767,6 +2866,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             isTradingPartner: Boolean(billingResult.isPartner),
             relationshipKind: billingResult.relationshipKind || "none",
             feeRateApplied: Number(billingResult.feeRateApplied || 0),
+            labFeeMultiplier: Number(billingResult.labFeeMultiplier || 1),
             labTradingPartnerId: billingResult.labTradingPartnerId || null,
             labSettlementAmount: billingResult.labSettlementAmount || 0,
             abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
@@ -3403,7 +3503,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         ? previousLabName
         : "기공소";
     const systemChatContent = isAuto
-      ? `기공소「${labLabel}」이(가) 작업을 취소했습니다. 자동매칭으로 다시 공개됩니다.`
+      ? "작업을 취소했습니다. 자동 매칭으로 다시 공개됩니다."
       : `기공소「${labLabel}」이(가) 작업을 취소했습니다. 다시 의뢰하거나 기공소에 안내할 수 있습니다.`;
     try {
       await postPracticeTransferSystemChatMessage({
@@ -3445,7 +3545,17 @@ export async function markReceivedPracticeTransferRelease(req, res) {
     await emitPracticeTransferEventToPracticeUsers({
       practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
       type: "practice:transfer-updated",
-      payload: realtimePayload,
+      payload: isAuto
+        ? {
+            ...realtimePayload,
+            ...redactAutoMatchLabIdentity("auto", {
+              targetLabName: realtimePayload.targetLabName,
+              targetLabAnchorId: realtimePayload.targetLabAnchorId,
+            }),
+            previousLabAnchorId: null,
+            previousLabName: AUTO_MATCH_LAB_DISPLAY_NAME,
+          }
+        : realtimePayload,
       extraUserIds: [doc.practiceUserId],
     });
     if (previousLabAnchorId) {

@@ -5,7 +5,8 @@
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
-// - 2026-08-13: 잔액/지급 동폭 클릭 카드로 탭 전환. 정산규칙은 검색줄 우측. 등록치과·미등록치과 표기.
+// - 2026-08-14: 등록/미등록 구분 제거. 자동 매칭 단일 수수료율 안내.
+// - 2026-08-13: 잔액/지급 동폭 클릭 카드로 탭 전환. 정산규칙은 검색줄 우측.
 
 // - 2026-08-11: 요약 5열(액션 버튼 세로). 일자 입력 제거·검색 상단 이동. 전체/거래처/비거래처를 필터 행으로.
 // - 2026-08-11: 요약 카드 — 하단 보조행 제거, 금액 옆 (N건), 높이 축소·중앙 정렬.
@@ -89,11 +90,9 @@ const PAGE_SIZE = 50;
 type SortDirection = "asc" | "desc";
 type SnapshotSortKey =
   | "ymd"
-  | "partner"
-  | "nonPartner"
+  | "earn"
   | "deduction"
   | "net";
-type RelationshipFilter = "all" | "partner" | "nonPartner";
 type PayoutSortKey = "occurredAt" | "status" | "amount" | "note";
 
 const formatDate = (iso: string) => {
@@ -165,7 +164,6 @@ export const LabSettlementPayoutTab = () => {
   const [tab, setTab] = useState<"snapshot" | "payments">("snapshot");
   const { period, setPeriod } = usePeriodStore();
   const [q, setQ] = useState("");
-  const [partnerFilter, setPartnerFilter] = useState<RelationshipFilter>("all");
   const [snapshotSort, setSnapshotSort] = useState<{
     key: SnapshotSortKey;
     direction: SortDirection;
@@ -185,16 +183,12 @@ export const LabSettlementPayoutTab = () => {
   const anyLoading = loading || snapLoading;
 
   const [settlementCredit, setSettlementCredit] = useState(0);
-  const [partnerFeeRate, setPartnerFeeRate] = useState(0);
-  const [nonPartnerFeeRate, setNonPartnerFeeRate] = useState(0.25);
+  const [platformFeeRate, setPlatformFeeRate] = useState(0.25);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const partnerFeePct = pctLabel(partnerFeeRate);
-  const nonPartnerFeePct = pctLabel(nonPartnerFeeRate);
-  const partnerColLabel = `등록치과 (${partnerFeePct})`;
-  const nonPartnerColLabel = `미등록치과 (${nonPartnerFeePct})`;
+  const platformFeePct = pctLabel(platformFeeRate);
 
   const loadBalance = useCallback(async () => {
     if (!token) return;
@@ -219,7 +213,10 @@ export const LabSettlementPayoutTab = () => {
       const res = await request<{
         data?: {
           window?: {
-            feeRates?: { partnerFeeRate?: number; nonPartnerFeeRate?: number };
+            feeRates?: {
+              platformFeeRate?: number;
+              nonPartnerFeeRate?: number;
+            };
           };
         };
       }>({
@@ -229,14 +226,12 @@ export const LabSettlementPayoutTab = () => {
       });
       if (!res.ok) return;
       const rates = res.data?.data?.window?.feeRates;
-      if (rates?.partnerFeeRate != null) {
-        setPartnerFeeRate(Number(rates.partnerFeeRate) || 0);
-      }
-      if (rates?.nonPartnerFeeRate != null) {
-        setNonPartnerFeeRate(Number(rates.nonPartnerFeeRate) || 0.25);
-      }
+      const next = Number(
+        rates?.platformFeeRate ?? rates?.nonPartnerFeeRate ?? 0.25,
+      );
+      if (Number.isFinite(next)) setPlatformFeeRate(next);
     } catch {
-      // keep defaults (0% / 25%)
+      // keep default
     }
   }, [token]);
 
@@ -364,28 +359,26 @@ export const LabSettlementPayoutTab = () => {
   };
 
   const snapshotTotals = useMemo(() => {
-    let partnerTotal = 0;
-    let partnerCount = 0;
-    let nonPartnerTotal = 0;
-    let nonPartnerCount = 0;
+    let earnTotal = 0;
+    let earnCount = 0;
     let payoutTotal = 0;
     let payoutCount = 0;
 
     for (const row of snapItems) {
-      partnerTotal += Number(row.earnPartnerAmount || 0);
-      partnerCount += Number(row.earnPartnerCount || 0);
-      nonPartnerTotal += Number(row.earnNonPartnerAmount || 0);
-      nonPartnerCount += Number(row.earnNonPartnerCount || 0);
+      earnTotal +=
+        Number(row.earnPartnerAmount || 0) +
+        Number(row.earnNonPartnerAmount || 0);
+      earnCount +=
+        Number(row.earnPartnerCount || 0) +
+        Number(row.earnNonPartnerCount || 0);
       const pa = Number(row.payoutAmount || 0);
       payoutTotal += Math.abs(pa);
       if (pa !== 0) payoutCount += 1;
     }
 
     return {
-      partnerTotal,
-      partnerCount,
-      nonPartnerTotal,
-      nonPartnerCount,
+      earnTotal,
+      earnCount,
       payoutTotal,
       payoutCount,
     };
@@ -408,17 +401,11 @@ export const LabSettlementPayoutTab = () => {
   };
 
   const sortedSnapItems = useMemo(() => {
-    const partnerOf = (r: LabDailySnapshotRow) =>
-      Number(r.earnPartnerAmount || 0);
-    const nonPartnerOf = (r: LabDailySnapshotRow) =>
-      Number(r.earnNonPartnerAmount || 0);
+    const earnOf = (r: LabDailySnapshotRow) =>
+      Number(r.earnPartnerAmount || 0) + Number(r.earnNonPartnerAmount || 0);
     const deductionOf = (r: LabDailySnapshotRow) =>
       Number(r.payoutAmount || 0) + Number(r.adjustAmount || 0);
-    const netOf = (r: LabDailySnapshotRow) => {
-      if (partnerFilter === "partner") return partnerOf(r);
-      if (partnerFilter === "nonPartner") return nonPartnerOf(r);
-      return Number(r.netAmount || 0);
-    };
+    const netOf = (r: LabDailySnapshotRow) => Number(r.netAmount || 0);
 
     const sorted = [...snapItems].sort((a, b) => {
       if (snapshotSort.key === "ymd") {
@@ -427,12 +414,9 @@ export const LabSettlementPayoutTab = () => {
       }
       let av = 0;
       let bv = 0;
-      if (snapshotSort.key === "partner") {
-        av = partnerOf(a);
-        bv = partnerOf(b);
-      } else if (snapshotSort.key === "nonPartner") {
-        av = nonPartnerOf(a);
-        bv = nonPartnerOf(b);
+      if (snapshotSort.key === "earn") {
+        av = earnOf(a);
+        bv = earnOf(b);
       } else if (snapshotSort.key === "deduction") {
         av = deductionOf(a);
         bv = deductionOf(b);
@@ -443,7 +427,7 @@ export const LabSettlementPayoutTab = () => {
       return snapshotSort.direction === "asc" ? av - bv : bv - av;
     });
     return sorted;
-  }, [snapItems, partnerFilter, snapshotSort]);
+  }, [snapItems, snapshotSort]);
 
   const sortedPayoutItems = useMemo(() => {
     return [...items].sort((a, b) => {
@@ -506,25 +490,13 @@ export const LabSettlementPayoutTab = () => {
             <div className="mt-1 text-center text-2xl font-semibold tabular-nums text-primary-strong sm:text-[1.65rem]">
               ₩{settlementCredit.toLocaleString()}
             </div>
-            <div className="mt-2.5 flex items-center justify-center gap-3 border-t border-slate-100/80 pt-2.5 text-[11px] tabular-nums text-slate-600 sm:gap-4 sm:text-xs">
-              <span>
-                <span className="text-slate-400">등록치과</span>{" "}
-                <span className="font-medium text-slate-800">
-                  ₩{snapshotTotals.partnerTotal.toLocaleString()}
-                </span>
-                <span className="ml-0.5 text-slate-400">
-                  ({snapshotTotals.partnerCount}건)
-                </span>
+            <div className="mt-2.5 border-t border-slate-100/80 pt-2.5 text-center text-[11px] tabular-nums text-slate-600 sm:text-xs">
+              <span className="text-slate-400">기간 적립</span>{" "}
+              <span className="font-medium text-slate-800">
+                ₩{snapshotTotals.earnTotal.toLocaleString()}
               </span>
-              <span className="h-3 w-px bg-slate-200" aria-hidden />
-              <span>
-                <span className="text-slate-400">미등록치과</span>{" "}
-                <span className="font-medium text-slate-800">
-                  ₩{snapshotTotals.nonPartnerTotal.toLocaleString()}
-                </span>
-                <span className="ml-0.5 text-slate-400">
-                  ({snapshotTotals.nonPartnerCount}건)
-                </span>
+              <span className="ml-0.5 text-slate-400">
+                ({snapshotTotals.earnCount}건)
               </span>
             </div>
           </button>
@@ -557,40 +529,6 @@ export const LabSettlementPayoutTab = () => {
           <Tabs value={tab} onValueChange={handleTabChange}>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <PeriodFilter value={period} onChange={setPeriod} />
-              <div className="inline-flex items-center rounded-xl border border-slate-200/80 bg-white/70 p-0.5 shadow-sm">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={partnerFilter === "all" ? "default" : "ghost"}
-                  className="h-7 px-2"
-                  onClick={() => setPartnerFilter("all")}
-                  disabled={anyLoading}
-                >
-                  전체
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={partnerFilter === "partner" ? "default" : "ghost"}
-                  className="h-7 px-2"
-                  onClick={() => setPartnerFilter("partner")}
-                  disabled={anyLoading}
-                >
-                  등록치과
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={
-                    partnerFilter === "nonPartner" ? "default" : "ghost"
-                  }
-                  className="h-7 px-2"
-                  onClick={() => setPartnerFilter("nonPartner")}
-                  disabled={anyLoading}
-                >
-                  미등록치과
-                </Button>
-              </div>
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -622,14 +560,14 @@ export const LabSettlementPayoutTab = () => {
                       <div className="flex gap-2.5">
                         <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                         <p>
-                          치과가 유료/무료크레딧으로 지불한 기공비에서, 등록치과
-                          (플랫폼 수수료 {partnerFeePct})·미등록치과(
-                          {nonPartnerFeePct})는 수수료를 제외한 금액이{" "}
+                          치과가 유료/무료크레딧으로 지불한 기공비에서, 자동
+                          매칭 성공 시 플랫폼 수수료({platformFeePct})를 제외한
+                          금액이{" "}
                           <span className="font-semibold text-slate-900">
                             기공크레딧
                           </span>
-                          으로 적립됩니다. 무료 프로모션 비용은 플랫폼이
-                          부담합니다.
+                          으로 적립됩니다. 지정 기공소 의뢰에는 플랫폼 수수료가
+                          없습니다. 무료 프로모션 비용은 플랫폼이 부담합니다.
                         </p>
                       </div>
                     </PolicySection>
@@ -694,24 +632,11 @@ export const LabSettlementPayoutTab = () => {
                         <button
                           type="button"
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("partner")}
+                          onClick={() => toggleSnapshotSort("earn")}
                         >
-                          {partnerColLabel}
+                          기공의뢰
                           {renderSortIcon(
-                            snapshotSort.key === "partner",
-                            snapshotSort.direction,
-                          )}
-                        </button>
-                      </TableHead>
-                      <TableHead className="min-w-[140px] text-center">
-                        <button
-                          type="button"
-                          className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("nonPartner")}
-                        >
-                          {nonPartnerColLabel}
-                          {renderSortIcon(
-                            snapshotSort.key === "nonPartner",
+                            snapshotSort.key === "earn",
                             snapshotSort.direction,
                           )}
                         </button>
@@ -746,28 +671,20 @@ export const LabSettlementPayoutTab = () => {
                   </TableHeader>
                   <TableBody>
                     {sortedSnapItems.map((r) => {
-                      const partnerAmount = Number(r.earnPartnerAmount || 0);
-                      const partnerCount = Number(r.earnPartnerCount || 0);
-                      const nonPartnerAmount = Number(
-                        r.earnNonPartnerAmount || 0,
-                      );
-                      const nonPartnerCount = Number(
-                        r.earnNonPartnerCount || 0,
-                      );
+                      const earnAmount =
+                        Number(r.earnPartnerAmount || 0) +
+                        Number(r.earnNonPartnerAmount || 0);
+                      const earnCount =
+                        Number(r.earnPartnerCount || 0) +
+                        Number(r.earnNonPartnerCount || 0);
                       const payoutRaw = Number(r.payoutAmount || 0);
                       const payoutAmountAbs = Math.abs(payoutRaw);
                       const adjustAmount = Number(r.adjustAmount || 0);
 
-                      const fmtEarn = (amount: number, count: number) =>
-                        amount > 0 || count > 0
-                          ? `₩${amount.toLocaleString()}(${count})`
+                      const earnText =
+                        earnAmount > 0 || earnCount > 0
+                          ? `₩${earnAmount.toLocaleString()}(${earnCount})`
                           : "-";
-
-                      let partnerText = fmtEarn(partnerAmount, partnerCount);
-                      let nonPartnerText = fmtEarn(
-                        nonPartnerAmount,
-                        nonPartnerCount,
-                      );
 
                       const deductionParts: string[] = [];
                       if (payoutRaw !== 0) {
@@ -780,21 +697,11 @@ export const LabSettlementPayoutTab = () => {
                           `조정 ₩${adjustAmount.toLocaleString()}`,
                         );
                       }
-                      let deductionText = deductionParts.length
+                      const deductionText = deductionParts.length
                         ? deductionParts.join(" / ")
                         : "-";
 
-                      let netText = `₩${Number(r.netAmount || 0).toLocaleString()}`;
-
-                      if (partnerFilter === "partner") {
-                        nonPartnerText = "-";
-                        deductionText = "-";
-                        netText = `₩${partnerAmount.toLocaleString()}`;
-                      } else if (partnerFilter === "nonPartner") {
-                        partnerText = "-";
-                        deductionText = "-";
-                        netText = `₩${nonPartnerAmount.toLocaleString()}`;
-                      }
+                      const netText = `₩${Number(r.netAmount || 0).toLocaleString()}`;
 
                       return (
                         <TableRow key={r.ymd}>
@@ -802,10 +709,7 @@ export const LabSettlementPayoutTab = () => {
                             {r.ymd}
                           </TableCell>
                           <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
-                            {partnerText}
-                          </TableCell>
-                          <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
-                            {nonPartnerText}
+                            {earnText}
                           </TableCell>
                           <TableCell className="text-center text-[11px] tabular-nums text-accent-strong whitespace-nowrap">
                             {deductionText}
@@ -819,7 +723,7 @@ export const LabSettlementPayoutTab = () => {
                     {snapLoading && (
                       <TableRow>
                         <TableCell
-                          colSpan={5}
+                          colSpan={4}
                           className="py-4 text-center text-sm text-muted-foreground"
                         >
                           불러오는 중...
@@ -829,7 +733,7 @@ export const LabSettlementPayoutTab = () => {
                     {!snapLoading && snapItems.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={5}
+                          colSpan={4}
                           className="py-8 text-center text-sm text-muted-foreground"
                         >
                           조회 결과가 없습니다.

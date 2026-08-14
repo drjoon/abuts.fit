@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: 기공소 매칭 탭을 단일 카드(수수료+인증 목록)로 합침.
 // - 2026-08-14: 기공소 수가 탭 추가(목록·호버 툴팁).
 // - 2026-08-14: 환봉방식 커스텀어벗은 커스텀어벗 요금·크레딧(의뢰·배송)으로 이전.
 // - 2026-08-14: 환봉방식 커스텀어벗(치과 제조사 추가요청) 탭 추가.
@@ -10,8 +11,6 @@
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
-// - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
-// - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -21,7 +20,6 @@ import {
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
 import { AdminLabFeeSchedulesTab } from "@/features/settings/tabs/AdminLabFeeSchedulesTab";
 import { PracticeTransferAutoMatchTab } from "@/pages/devops/components/PracticeTransferAutoMatchTab";
-import { DevopsPlatformFeeTab } from "@/pages/devops/components/DevopsPlatformFeeTab";
 import { Banknote, CreditCard, FlaskConical } from "lucide-react";
 
 type TabKey = "credits" | "autoMatch" | "labFees";
@@ -48,12 +46,7 @@ export const AdminPlatformSettingsPage = () => {
         key: "autoMatch",
         label: "기공소 매칭",
         icon: FlaskConical,
-        content: (
-          <div className="space-y-5">
-            <DevopsPlatformFeeTab />
-            <PracticeTransferAutoMatchTab />
-          </div>
-        ),
+        content: <PracticeTransferAutoMatchTab />,
       },
       {
         key: "labFees",

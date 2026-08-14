@@ -1,26 +1,22 @@
 // related files:
-// - web/frontend/src/shared/lab/useLabTradingPartnerWindow.ts
 // - web/frontend/src/features/lab/LabDashboardTopBanners.tsx
-// - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
+// - web/frontend/src/features/settings/tabs/LabAutoMatchParticipationTab.tsx
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
-// - 2026-08-14: 수수료 면제 안내 제거. 거래 치과 소개 CTA로 정리.
+// change-log:
+// - 2026-08-14: 거래 치과 소개 → 자동 매칭 참여 CTA로 교체.
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Handshake } from "lucide-react";
+import { ChevronRight, FlaskConical } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 
 type Props = {
-  remainingDays: number;
   className?: string;
 };
 
-export const LabTradingPartnerWindowBanner = ({
-  remainingDays,
-  className,
-}: Props) => {
+export const LabAutoMatchParticipationBanner = ({ className }: Props) => {
   const navigate = useNavigate();
 
   const goSettings = () => {
-    navigate("/dashboard/settings?tab=trading-partners");
+    navigate("/dashboard/settings?tab=auto-match");
   };
 
   return (
@@ -40,14 +36,14 @@ export const LabTradingPartnerWindowBanner = ({
       )}
     >
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/70 ring-1 ring-primary-muted/60">
-        <Handshake className="h-[18px] w-[18px]" />
+        <FlaskConical className="h-[18px] w-[18px]" />
       </span>
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-base font-semibold leading-snug tracking-tight sm:text-[17px]">
-          거래 치과 소개 {remainingDays}일 남음
+          자동 매칭에 참여하세요
         </p>
         <p className="text-sm leading-relaxed text-primary-strong/85 sm:text-[15px]">
-          거래하시던 치과를 어벗츠에 소개해 주세요.
+          월 플랫폼 수수료로 치과 자동 매칭 의뢰를 받을 수 있습니다.
           <br />
           자세한 내용은 클릭하세요!
         </p>

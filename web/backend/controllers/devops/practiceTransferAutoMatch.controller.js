@@ -15,6 +15,10 @@ import {
   resolveRequestorProfile,
 } from "../../utils/requestorCapabilities.js";
 import { invalidateMyBusinessCache } from "../businesses/business.controller.js";
+import {
+  applyAutoMatchParticipationForceOff,
+  applyAutoMatchParticipationForceOn,
+} from "../../services/labAutoMatchParticipation.service.js";
 
 const PAGE_LIMIT_DEFAULT = 15;
 const PAGE_LIMIT_MAX = 50;
@@ -164,6 +168,10 @@ export async function patchPracticeTransferAutoMatch(req, res) {
         requestorKind: 1,
         requestorServices: 1,
         requestorCapabilities: 1,
+        practiceTransferAutoMatchEnabled: 1,
+        autoMatchParticipationCancelAtPeriodEnd: 1,
+        autoMatchParticipationNextBillingAt: 1,
+        autoMatchParticipationStartedAt: 1,
       })
       .lean();
 
@@ -198,36 +206,42 @@ export async function patchPracticeTransferAutoMatch(req, res) {
       }
     }
 
-    const $set = { practiceTransferAutoMatchEnabled: enabled };
-    // kind 미백필 레거시 앵커는 ON 시 SSOT 필드를 채운다
-    if (enabled && !String(existing.requestorKind || "").trim()) {
-      Object.assign($set, requestorProfilePersistFields(profile));
-      $set.requestorCapabilities = legacyCapabilitiesFromProfile(profile);
+    if (enabled) {
+      await applyAutoMatchParticipationForceOn(existing);
+      // kind 미백필 레거시 앵커는 ON 시 SSOT 필드를 채운다
+      if (!String(existing.requestorKind || "").trim()) {
+        await BusinessAnchor.updateOne(
+          { _id: anchorId },
+          {
+            $set: {
+              ...requestorProfilePersistFields(profile),
+              requestorCapabilities: legacyCapabilitiesFromProfile(profile),
+            },
+          },
+        );
+      }
+    } else {
+      await applyAutoMatchParticipationForceOff(existing);
     }
 
-    const updated = await BusinessAnchor.findOneAndUpdate(
-      {
-        _id: anchorId,
-        ...verifiedLabCapableAnchorFilter(),
-      },
-      { $set },
-      {
-        new: true,
-        projection: {
-          name: 1,
-          businessNumberNormalized: 1,
-          status: 1,
-          requestorKind: 1,
-          requestorServices: 1,
-          requestorCapabilities: 1,
-          practiceTransferAutoMatchEnabled: 1,
-          "metadata.companyName": 1,
-          "metadata.representativeName": 1,
-          "metadata.address": 1,
-          "metadata.addressDetail": 1,
-        },
-      },
-    ).lean();
+    const updated = await BusinessAnchor.findOne({
+      _id: anchorId,
+      ...verifiedLabCapableAnchorFilter(),
+    })
+      .select({
+        name: 1,
+        businessNumberNormalized: 1,
+        status: 1,
+        requestorKind: 1,
+        requestorServices: 1,
+        requestorCapabilities: 1,
+        practiceTransferAutoMatchEnabled: 1,
+        "metadata.companyName": 1,
+        "metadata.representativeName": 1,
+        "metadata.address": 1,
+        "metadata.addressDetail": 1,
+      })
+      .lean();
 
     if (!updated) {
       return res.status(404).json({

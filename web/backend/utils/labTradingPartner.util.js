@@ -108,9 +108,10 @@ export async function findActiveTradingPartner({
 
 /**
  * 기공소-치과 관계를 판정한다.
- * - "active": 등록 기간 내 소개·검증 완료된 등록 치과 (플랫폼 수수료 partnerFeeRate, 기본 0%)
- * - "referred": 등록 기간 이후 발급된 초대로 검증 완료 (동일하게 partnerFeeRate)
- * - null: 관계 없음 / 미등록 (플랫폼 수수료 nonPartnerFeeRate, 기본 25%)
+ * - "active": 등록 기간 내 소개·검증 완료된 소개 치과
+ * - "referred": 등록 기간 이후 발급된 초대로 검증 완료
+ * - null: 관계 없음
+ * 플랫폼 수수료는 이 관계와 무관하다(자동 매칭 성공 시 platformFeeRate).
  */
 export async function findLabPracticeRelationship({
   labAnchorId,

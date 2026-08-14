@@ -24,6 +24,8 @@ import { findBusinessByAnchors } from "./business.find.util.js";
 import {
   updateMyBusiness,
   setMyPracticeMembership,
+  getMyAutoMatchParticipation,
+  setMyAutoMatchParticipation,
 } from "./business.update.controller.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
@@ -38,7 +40,7 @@ import {
   isSyntheticPracticeBusinessNumber,
 } from "./requestorOrgAnchor.util.js";
 import { practiceMembershipResponseFields } from "../../services/practiceMembership.service.js";
-export { updateMyBusiness, setMyPracticeMembership };
+export { updateMyBusiness, setMyPracticeMembership, getMyAutoMatchParticipation, setMyAutoMatchParticipation };
 
 export async function checkBusinessNumberDuplicate(req, res) {
   try {

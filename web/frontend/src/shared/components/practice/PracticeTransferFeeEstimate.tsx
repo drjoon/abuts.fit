@@ -21,6 +21,10 @@ import {
   type PracticeTransferFeeQuote,
   type PracticeTransferFeeQuoteViewer,
 } from "@/shared/practice/practiceTransferFeeQuote";
+import {
+  formatLabFeeMultiplierLabel,
+  normalizeLabFeeMultiplier,
+} from "@/shared/practice/labFeeSchedule";
 
 type PracticeTransferFeeEstimateProps = {
   quote: PracticeTransferFeeQuote;
@@ -200,26 +204,38 @@ export function PracticeTransferFeeEstimate({
     );
   }
 
-  const amount = isLab ? quote.labSettlementAmount : quote.total;
+  const amount = isLab
+    ? quote.labSettlementAmount
+    : quote.autoMatchBudget
+      ? Math.max(0, quote.autoMatchBudget.maxLabFee) +
+        Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))
+      : quote.total;
   const title = quote.isRemake
     ? isLab
       ? "리메이크 기공비"
       : "리메이크 견적"
     : isLab
       ? "기공비 총액"
-      : "견적";
+      : quote.autoMatchBudget
+        ? "예상 견적"
+        : "견적";
   const keepRate =
     isLab && quote.total > 0 ? quote.labSettlementAmount / quote.total : 1;
   const labProsthesisTotal = Math.max(
     0,
     Math.round(Number(quote.labFeeTotal || 0) - Number(quote.labAbutmentTotal || 0)),
   );
+  const budget = quote.autoMatchBudget;
   const simple = isLab
     ? null
     : quote.isRemake
       ? `리메이크 기공비 ${formatWon(quote.labFeeTotal)}`
       : [
-          labProsthesisTotal > 0 ? `기공비 ${formatWon(labProsthesisTotal)}` : "",
+          budget
+            ? `기공비 ${formatWon(budget.minLabFee)}~${formatWon(budget.maxLabFee)}`
+            : labProsthesisTotal > 0
+              ? `기공비 ${formatWon(labProsthesisTotal)}`
+              : "",
           quote.labAbutmentTotal > 0
             ? `기공소어벗 ${formatWon(quote.labAbutmentTotal)}`
             : quote.labAbutmentPending
@@ -232,8 +248,15 @@ export function PracticeTransferFeeEstimate({
               : "",
         ]
           .filter(Boolean)
-          .join(" · ") || `기공비 ${formatWon(quote.labFeeTotal)}`;
+          .join(" · ") ||
+        (budget
+          ? `기공비 ${formatWon(budget.minLabFee)}~${formatWon(budget.maxLabFee)}`
+          : `기공비 ${formatWon(quote.labFeeTotal)}`);
   const labFeeUnset = !isLab && quote.labFeeConfigured === false;
+  const surchargeLabel =
+    normalizeLabFeeMultiplier(quote.labFeeMultiplier) > 1
+      ? formatLabFeeMultiplierLabel(quote.labFeeMultiplier)
+      : null;
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -269,6 +292,11 @@ export function PracticeTransferFeeEstimate({
               >
                 <span className="font-medium text-slate-600">{title} </span>
                 {formatWon(amount)}
+                {surchargeLabel ? (
+                  <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                    {surchargeLabel}
+                  </span>
+                ) : null}
               </p>
               {simple ? (
                 <p
@@ -298,6 +326,29 @@ export function PracticeTransferFeeEstimate({
               기공소에서 아직 기공료를 설정하지 않았습니다. 기공소에
               문의해주세요.
             </p>
+          ) : budget ? (
+            <div className="space-y-1.5 tabular-nums">
+              <p>
+                기공비 예산{" "}
+                <span className="font-medium">
+                  {formatWon(budget.minLabFee)}~{formatWon(budget.maxLabFee)}
+                </span>
+              </p>
+              {quote.abutmentRetailTotal > 0 || quote.abutmentQuotePending ? (
+                <p>
+                  어벗츠 어벗{" "}
+                  <span className="font-medium">
+                    {quote.abutmentQuotePending && quote.abutmentRetailTotal <= 0
+                      ? "별도 고지"
+                      : formatWon(quote.abutmentRetailTotal)}
+                  </span>
+                </p>
+              ) : null}
+              <p className="text-[11px] text-muted-foreground">
+                예산 구간의 인증 기공소만 자동매칭에 참여합니다. 수락 시 해당
+                기공소 수가로 확정·청구됩니다.
+              </p>
+            </div>
           ) : quote.lines.length > 0 ? (
             <FeeBreakdownTable
               lines={sortPracticeTransferFeeLines(quote.lines).map((line) => ({
@@ -322,11 +373,18 @@ export function PracticeTransferFeeEstimate({
           ) : (
             <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
           )}
+          {surchargeLabel ? (
+            <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
+              {surchargeLabel} 적용 · 기공비·기공소 어벗만 배수(어벗츠 단가 제외)
+            </p>
+          ) : null}
           {labFeeUnset && quote.total <= 0 ? null : (
             <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
               {isLab
                 ? `기공비 총액 ${formatWon(quote.labSettlementAmount)}`
-                : `크레딧 소비 총액 ${formatWon(quote.total)}`}
+                : budget
+                  ? `크레딧 소비 상한 ${formatWon(amount)}`
+                  : `크레딧 소비 총액 ${formatWon(quote.total)}`}
             </p>
           )}
         </TooltipContent>

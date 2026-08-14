@@ -16,6 +16,30 @@ import {
 } from "../../utils/labFeeSchedule.js";
 
 describe("labFeeSchedule", () => {
+  test("치과별 기공수가 할증은 기공비·기공소 어벗만 배수한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "16", prosthesisType: "크라운" },
+        {
+          toothNumber: "26",
+          prosthesisType: "커스텀어벗",
+          customAbutment: true,
+          abutmentProductMode: "custom_abutment",
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+      labFeeMultiplier: 1.5,
+    });
+    expect(fees.labFeeTotal).toBe(90000);
+    expect(fees.abutmentRetailTotal).toBe(20000);
+    expect(fees.total).toBe(110000);
+    expect(fees.labFeeMultiplier).toBe(1.5);
+    expect(fees.lines.find((l) => l.prosthesisType === "크라운")?.labFee).toBe(
+      90000,
+    );
+  });
+
   test("작업X는 과금 키가 없다", () => {
     expect(resolveLabFeeKeyFromProsthesisType("작업X")).toBeNull();
     expect(resolveLabFeeKeyFromProsthesisType("상실치")).toBeNull();

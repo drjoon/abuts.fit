@@ -17,10 +17,86 @@
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote).
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기. 요청중은 기공소 어벗.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
+// - 2026-08-14: 치과별 기공수가 할증(labFeeMultiplier). 기공비·기공소 어벗만 배수, 어벗츠 단가 제외.
 import {
   resolveAbutsAbutmentPricingTier,
   resolveAbutsAbutmentUnitPrice,
 } from "./abutsAbutmentService.js";
+
+/** 기공수가 할증 배수. 1=없음, 최대 5, 소수 둘째 자리. */
+export function normalizeLabFeeMultiplier(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 1) return 1;
+  return Math.min(5, Math.round(n * 100) / 100);
+}
+
+/** lab.labPracticeFeeMultipliers에서 치과별 배수 조회. */
+export function resolveLabPracticeFeeMultiplier(labDoc, practiceAnchorId) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  if (!practiceId) return 1;
+  const rows = Array.isArray(labDoc?.labPracticeFeeMultipliers)
+    ? labDoc.labPracticeFeeMultipliers
+    : [];
+  for (const row of rows) {
+    if (String(row?.practiceAnchorId || "") === practiceId) {
+      return normalizeLabFeeMultiplier(row?.multiplier);
+    }
+  }
+  return 1;
+}
+
+/** 목록 upsert. multiplier<=1이면 해당 치과 항목 제거. */
+export function upsertLabPracticeFeeMultiplierList(
+  existing,
+  practiceAnchorId,
+  multiplier,
+) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  const m = normalizeLabFeeMultiplier(multiplier);
+  const rows = (Array.isArray(existing) ? existing : [])
+    .filter((row) => String(row?.practiceAnchorId || "").trim() !== practiceId)
+    .map((row) => ({
+      practiceAnchorId: row.practiceAnchorId,
+      multiplier: normalizeLabFeeMultiplier(row.multiplier),
+    }))
+    .filter((row) => row.practiceAnchorId && row.multiplier > 1);
+  if (practiceId && m > 1) {
+    rows.push({ practiceAnchorId: practiceId, multiplier: m });
+  }
+  return rows;
+}
+
+/** 기공비·기공소 어벗 라인/합계에만 배수 적용. 어벗츠 어벗 단가는 유지. */
+export function applyLabFeeMultiplierToFees(fees, labFeeMultiplier) {
+  const m = normalizeLabFeeMultiplier(labFeeMultiplier);
+  const base = fees && typeof fees === "object" ? fees : {};
+  if (m === 1) {
+    return {
+      ...base,
+      labFeeMultiplier: 1,
+    };
+  }
+  const scale = (n) => Math.max(0, Math.round(Number(n || 0) * m));
+  const labFeeTotal = scale(base.labFeeTotal);
+  const labAbutmentTotal = scale(base.labAbutmentTotal);
+  const abutmentRetailTotal = Math.max(
+    0,
+    Math.round(Number(base.abutmentRetailTotal || 0)),
+  );
+  return {
+    ...base,
+    labFeeTotal,
+    labAbutmentTotal,
+    abutmentRetailTotal,
+    total: labFeeTotal + abutmentRetailTotal,
+    lines: (Array.isArray(base.lines) ? base.lines : []).map((line) => ({
+      ...line,
+      labFee: scale(line?.labFee),
+      labAbutmentFee: scale(line?.labAbutmentFee),
+    })),
+    labFeeMultiplier: m,
+  };
+}
 
 export const LAB_FEE_SCHEDULE_KEYS = [
   "crown",
@@ -803,6 +879,7 @@ export function computePracticeTransferRetailFees({
   abutmentPrices,
   skipAbutmentFees = false,
   remake = false,
+  labFeeMultiplier = 1,
 }) {
   const useRemake = Boolean(remake);
   const items = normalizeLabFeeItems(labFeeSchedule);
@@ -973,16 +1050,19 @@ export function computePracticeTransferRetailFees({
     }
   }
 
-  return {
-    labFeeTotal,
-    labAbutmentTotal,
-    labAbutmentPending,
-    abutmentRetailTotal,
-    abutmentQuotePending,
-    abutmentQty,
-    total: labFeeTotal + abutmentRetailTotal,
-    lines: sortPracticeTransferFeeLines(lines),
-  };
+  return applyLabFeeMultiplierToFees(
+    {
+      labFeeTotal,
+      labAbutmentTotal,
+      labAbutmentPending,
+      abutmentRetailTotal,
+      abutmentQuotePending,
+      abutmentQty,
+      total: labFeeTotal + abutmentRetailTotal,
+      lines: sortPracticeTransferFeeLines(lines),
+    },
+    labFeeMultiplier,
+  );
 }
 
 function groupRowsByArch(rows) {

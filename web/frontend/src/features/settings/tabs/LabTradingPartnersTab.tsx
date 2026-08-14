@@ -25,8 +25,7 @@ import {
   Check,
   Send,
   Hash,
-  ShieldCheck,
-  Percent,
+  FlaskConical,
   Info,
   Building2,
   Clock,
@@ -38,6 +37,8 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 import { cn } from "@/shared/ui/cn";
 import { Separator } from "@/components/ui/separator";
+import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
+import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
 
 type PartnerItem = {
   _id: string;
@@ -48,10 +49,12 @@ type PartnerItem = {
   invitedAt?: string;
   boundAt?: string | null;
   activatedAt?: string | null;
+  practiceAnchorId?: string | null;
   practiceName?: string;
   practiceAddress?: string;
   practiceRepresentativeName?: string;
   practiceStatus?: string | null;
+  labFeeMultiplier?: number;
 };
 
 type WindowInfo = {
@@ -60,7 +63,7 @@ type WindowInfo = {
   elapsedDays?: number | null;
   windowDays?: number;
   pricingBaseDate?: string | null;
-  feeRates?: { partnerFeeRate?: number; nonPartnerFeeRate?: number };
+  feeRates?: { platformFeeRate?: number; partnerFeeRate?: number; nonPartnerFeeRate?: number };
 };
 
 export const LabTradingPartnersTab = () => {
@@ -202,9 +205,7 @@ export const LabTradingPartnersTab = () => {
     try {
       const url = await createInvite();
       if (!url) return;
-      const message = canInvite
-        ? `안녕하세요 🙂 기존 거래 치과로 등록하시면 플랫폼 수수료가 면제됩니다.\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`
-        : `안녕하세요 🙂 어벗츠에 함께해요!\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`;
+      const message = `안녕하세요 🙂 어벗츠에 함께해요!\n아래 링크로 가입 후 사업자등록증 검증을 완료해 주세요.\n${url}`;
       await copyText(
         message,
         "안내 문구를 복사했습니다.",
@@ -224,24 +225,11 @@ export const LabTradingPartnersTab = () => {
     windowInfo?.remainingDays == null ? null : Number(windowInfo.remainingDays);
   const windowDays = Number(windowInfo?.windowDays ?? 60);
   const platformFeePct = Math.round(
-    Number(windowInfo?.feeRates?.nonPartnerFeeRate ?? 0.25) * 100,
-  );
-  // 안내 예시: 기존 거래 1,000만 + 플랫폼 추가 200만 → 수수료는 추가분만
-  const exampleExistingMan = 1000;
-  const examplePlatformMan = 200;
-  const exampleFeeMan = Math.round(
-    (examplePlatformMan * platformFeePct) / 100,
-  );
-  const exampleLabFromPlatformMan = examplePlatformMan - exampleFeeMan;
-  const exampleTotalMan = exampleExistingMan + examplePlatformMan;
-  const existingBarPct = Math.round(
-    (exampleExistingMan / exampleTotalMan) * 100,
-  );
-  const platformBarPct = 100 - existingBarPct;
-  // 200만 구간을 오른쪽으로 확대해 수수료 조각을 읽기 쉽게 표시
-  const zoomPanelStartPct = Math.min(
-    existingBarPct,
-    Math.max(42, existingBarPct - 28),
+    Number(
+      windowInfo?.feeRates?.platformFeeRate ??
+        windowInfo?.feeRates?.nonPartnerFeeRate ??
+        0.25,
+    ) * 100,
   );
   const windowProgressPct =
     remaining == null || windowDays <= 0
@@ -256,173 +244,29 @@ export const LabTradingPartnersTab = () => {
       <Card className="app-glass-card app-glass-card--lg overflow-hidden">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Building2 className="h-5 w-5 text-primary-strong" />
-            치과 등록
+            <FlaskConical className="h-5 w-5 text-primary-strong" />
+            자동 매칭
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
-            거래해오시던 치과를 등록하시면, 해당 치과들에 대해서는 플랫폼
-            수수료가 면제됩니다. (한시 적용)
+            인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다. 자동 매칭
+            성공 시 기공비의 {platformFeePct}%를 플랫폼 수수료로 지급합니다.
+            치과명·담당자명·기공소명·담당자명 등 식별 정보는 비공개입니다.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-slate-600">
-                수수료 예시
-              </p>
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
-                플랫폼 수수료 {platformFeePct}%
-              </span>
-            </div>
-            <div className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-              기존 매출 {exampleExistingMan.toLocaleString()}만원, 플랫폼 가입
-              후 추가 매출 {examplePlatformMan.toLocaleString()}만원일 경우,
-              플랫폼 수수료는 {examplePlatformMan.toLocaleString()}만원에 대한{" "}
-              {platformFeePct}%인 {exampleFeeMan.toLocaleString()}만원
-            </div>
-
-            <div className="mt-4">
-              <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground">
-                <span>월 매출 구성</span>
-                <span className="tabular-nums">
-                  합계 {exampleTotalMan.toLocaleString()}만원
-                </span>
-              </div>
-
-              <div
-                className="flex h-9 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200/70"
-                role="img"
-                aria-label={`기존 거래 ${exampleExistingMan}만원, 플랫폼 추가 ${examplePlatformMan}만원`}
-              >
-                <div
-                  className="flex items-center justify-center bg-primary-strong px-2 text-[11px] font-semibold tabular-nums text-white"
-                  style={{ width: `${existingBarPct}%` }}
-                >
-                  <span className="truncate">
-                    {exampleExistingMan.toLocaleString()}만
-                  </span>
-                </div>
-                <div
-                  className="flex items-center justify-center bg-sky-400/90 px-2 text-[11px] font-semibold tabular-nums text-white"
-                  style={{ width: `${platformBarPct}%` }}
-                >
-                  <span className="truncate">
-                    {examplePlatformMan.toLocaleString()}만
-                  </span>
-                </div>
-              </div>
-
-              {/* 200만 구간 → 확대 영역 연결선 + 내부 배분 바 */}
-              <div className="relative mt-0.5">
-                <svg
-                  className="h-7 w-full text-sky-300"
-                  viewBox="0 0 100 28"
-                  preserveAspectRatio="none"
-                  aria-hidden
-                >
-                  <polygon
-                    points={`${existingBarPct},0 100,0 100,28 ${zoomPanelStartPct},28`}
-                    fill="currentColor"
-                    opacity="0.18"
-                  />
-                  <line
-                    x1={existingBarPct}
-                    y1="0"
-                    x2={zoomPanelStartPct}
-                    y2="28"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <line
-                    x1="100"
-                    y1="0"
-                    x2="100"
-                    y2="28"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </svg>
-
-                <div className="flex">
-                  <div
-                    className="shrink-0"
-                    style={{ width: `${zoomPanelStartPct}%` }}
-                    aria-hidden
-                  />
-                  <div
-                    className="min-w-0 space-y-1.5"
-                    style={{ width: `${100 - zoomPanelStartPct}%` }}
-                  >
-                    <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground">
-                      <span>기공소 몫</span>
-                      <span className="tabular-nums text-amber-700">
-                        플랫폼 수수료
-                      </span>
-                    </div>
-                    <div
-                      className="grid h-9 grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-full bg-sky-50 ring-1 ring-sky-200/80"
-                      role="img"
-                      aria-label={`추가 매출 ${examplePlatformMan}만원 중 기공소 ${exampleLabFromPlatformMan}만원, 플랫폼 수수료 ${exampleFeeMan}만원`}
-                    >
-                      <div className="flex min-w-0 items-center px-2.5 text-[11px] font-medium tabular-nums text-sky-900/80">
-                        <span className="truncate">
-                          {exampleLabFromPlatformMan.toLocaleString()}만
-                        </span>
-                      </div>
-                      <div
-                        className="flex items-center justify-center bg-amber-500 px-3 text-[11px] font-semibold tabular-nums text-white whitespace-nowrap"
-                        title={`플랫폼 수수료 ${exampleFeeMan.toLocaleString()}만원`}
-                      >
-                        {exampleFeeMan.toLocaleString()}만
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+        <CardContent className="space-y-3">
+          <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              지정 기공소로 보내는 의뢰에는 플랫폼 수수료가 적용되지 않습니다.
+              거래 치과 소개는 아래에서 계속할 수 있습니다.
+            </p>
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-primary-muted/70 bg-primary-soft/35 p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 ring-1 ring-primary-muted/60">
-                  <ShieldCheck className="h-[18px] w-[18px] text-primary-strong" />
-                </span>
-                <p className="text-sm font-semibold text-primary-strong">
-                  등록 치과 · 수수료 면제
-                </p>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200/80">
-                  <Percent className="h-[18px] w-[18px] text-slate-600" />
-                </span>
-                <p className="text-sm font-semibold text-slate-900">
-                  미등록 의뢰 · {platformFeePct}%
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
-            <div className="flex gap-3">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
-                {windowDays}일 등록·수수료 면제 혜택은 한시 이벤트이며, 정책에
-                따라 변경·종료될 수 있습니다.
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
-                어벗츠에 직접 커스텀 어벗 생산을 의뢰할 수 있습니다. 별도
-                의뢰크레딧이 차감됩니다.
-              </p>
-            </div>
+          <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              어벗츠에 직접 커스텀 어벗 생산을 의뢰할 수 있습니다. 별도
+              의뢰크레딧이 차감됩니다.
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -436,8 +280,8 @@ export const LabTradingPartnersTab = () => {
           {!canInvite ? (
             <div className="mt-3 rounded-2xl border border-amber-200/80 bg-amber-50/50 px-4 py-3.5">
               <p className="text-[13px] leading-relaxed text-slate-700">
-                등록 기간({windowDays}일)이 지났습니다. 이후 등록 치과에도
-                수수료 {platformFeePct}%가 적용됩니다.
+                등록 기간({windowDays}일)이 지났습니다. 초대는 계속할 수
+                있습니다.
               </p>
             </div>
           ) : null}
@@ -585,7 +429,8 @@ export const LabTradingPartnersTab = () => {
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
             초대 링크로 가입을 시작한 치과가 표시됩니다. 사업자등록증 검증
-            후 등록 완료됩니다.
+            후 등록 완료됩니다. 세심한 작업이 필요한 치과는 할증으로
+            기공수가를 올릴 수 있습니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -619,9 +464,9 @@ export const LabTradingPartnersTab = () => {
                   item.practiceRepresentativeName || "",
                 ).trim();
                 const badgeLabel = isActive
-                  ? "등록 치과 · 수수료 면제"
+                  ? "등록 완료"
                   : isReferred
-                    ? "등록 치과"
+                    ? "소개 등록"
                     : "가입 진행 중";
 
                 return (
@@ -679,6 +524,30 @@ export const LabTradingPartnersTab = () => {
                             {representative || "—"}
                           </dd>
                         </div>
+                        {item.practiceAnchorId ? (
+                          <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-2 items-center">
+                            <dt className="text-slate-500">할증</dt>
+                            <dd className="min-w-0">
+                              <LabPracticeFeeSurchargeControl
+                                practiceAnchorId={item.practiceAnchorId}
+                                multiplier={normalizeLabFeeMultiplier(
+                                  item.labFeeMultiplier,
+                                )}
+                                size="xs"
+                                stopPropagation={false}
+                                onChanged={(next) => {
+                                  setItems((prev) =>
+                                    prev.map((row) =>
+                                      row._id === item._id
+                                        ? { ...row, labFeeMultiplier: next }
+                                        : row,
+                                    ),
+                                  );
+                                }}
+                              />
+                            </dd>
+                          </div>
+                        ) : null}
                       </dl>
                     </div>
                   </div>

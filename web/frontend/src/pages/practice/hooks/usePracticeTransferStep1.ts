@@ -31,7 +31,7 @@ export type SearchBusinessResult = {
 export const AUTO_MATCH_LAB_ID = "__auto_match__";
 export const AUTO_MATCH_LAB_NAME = "자동 매칭";
 export const AUTO_MATCH_LAB_TOOLTIP =
-  "어벗츠에서 검증한 기공소 중 한 곳을 자동으로 매칭합니다";
+  "어벗츠 인증 기공소가 선착순으로 수락합니다. 치과·기공소 식별 정보는 비공개입니다.";
 export const AUTO_MATCH_LAB: SearchBusinessResult = {
   _id: AUTO_MATCH_LAB_ID,
   name: AUTO_MATCH_LAB_NAME,

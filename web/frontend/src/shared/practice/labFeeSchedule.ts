@@ -15,11 +15,68 @@
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote). 견적에서 열이 사라지지 않게.
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
+// - 2026-08-14: 치과별 기공수가 할증(labFeeMultiplier). 기공비·기공소 어벗만 배수.
 import {
   normalizeAbutsAbutmentCreditPrices,
   type AbutsAbutmentCreditPrices,
   type AbutsAbutmentPricingTier,
 } from "@/shared/pricing/abutsAbutmentService";
+
+/** 기공수가 할증 배수. 1=없음, 최대 5, 소수 둘째 자리. */
+export const normalizeLabFeeMultiplier = (value: unknown): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 1) return 1;
+  return Math.min(5, Math.round(n * 100) / 100);
+};
+
+export const applyLabFeeMultiplierToFees = <
+  T extends {
+    labFeeTotal?: number;
+    labAbutmentTotal?: number;
+    abutmentRetailTotal?: number;
+    total?: number;
+    lines?: Array<{
+      labFee?: number;
+      labAbutmentFee?: number;
+      [key: string]: unknown;
+    }>;
+  },
+>(
+  fees: T,
+  labFeeMultiplier: unknown,
+): T & { labFeeMultiplier: number } => {
+  const m = normalizeLabFeeMultiplier(labFeeMultiplier);
+  if (m === 1) {
+    return { ...fees, labFeeMultiplier: 1 };
+  }
+  const scale = (n: unknown) => Math.max(0, Math.round(Number(n || 0) * m));
+  const labFeeTotal = scale(fees.labFeeTotal);
+  const labAbutmentTotal = scale(fees.labAbutmentTotal);
+  const abutmentRetailTotal = Math.max(
+    0,
+    Math.round(Number(fees.abutmentRetailTotal || 0)),
+  );
+  return {
+    ...fees,
+    labFeeTotal,
+    labAbutmentTotal,
+    abutmentRetailTotal,
+    total: labFeeTotal + abutmentRetailTotal,
+    lines: (Array.isArray(fees.lines) ? fees.lines : []).map((line) => ({
+      ...line,
+      labFee: scale(line?.labFee),
+      labAbutmentFee: scale(line?.labAbutmentFee),
+    })),
+    labFeeMultiplier: m,
+  };
+};
+
+export const formatLabFeeMultiplierLabel = (multiplier: unknown): string => {
+  const m = normalizeLabFeeMultiplier(multiplier);
+  if (m <= 1) return "할증 없음";
+  const text = Number.isInteger(m) ? String(m) : String(m);
+  return `${text}x 할증`;
+};
 
 export const LAB_FEE_SCHEDULE_KEYS = [
   "crown",
@@ -757,6 +814,7 @@ export type PracticeTransferRetailFees = {
   abutmentQty: number;
   total: number;
   lines: PracticeTransferFeeLine[];
+  labFeeMultiplier?: number;
 };
 
 export const computePracticeTransferRetailFees = (params: {
@@ -786,6 +844,7 @@ export const computePracticeTransferRetailFees = (params: {
   abutmentPrices?: Partial<AbutsAbutmentCreditPrices> | null;
   remake?: boolean;
   skipAbutmentFees?: boolean;
+  labFeeMultiplier?: number;
 }): PracticeTransferRetailFees => {
   const useRemake = Boolean(params.remake);
   const items = normalizeLabFeeItems(params.labFeeSchedule);
@@ -953,16 +1012,19 @@ export const computePracticeTransferRetailFees = (params: {
     }
   }
 
-  return {
-    labFeeTotal,
-    labAbutmentTotal,
-    labAbutmentPending,
-    abutmentRetailTotal,
-    abutmentQuotePending,
-    abutmentQty,
-    total: labFeeTotal + abutmentRetailTotal,
-    lines: sortPracticeTransferFeeLines(lines),
-  };
+  return applyLabFeeMultiplierToFees(
+    {
+      labFeeTotal,
+      labAbutmentTotal,
+      labAbutmentPending,
+      abutmentRetailTotal,
+      abutmentQuotePending,
+      abutmentQty,
+      total: labFeeTotal + abutmentRetailTotal,
+      lines: sortPracticeTransferFeeLines(lines),
+    },
+    params.labFeeMultiplier,
+  );
 };
 
 type FeeToothRow = {

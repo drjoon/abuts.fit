@@ -43,6 +43,18 @@ router.post(
   businessController.setMyPracticeMembership,
 );
 
+router.get(
+  "/me/auto-match-participation",
+  authorize(["requestor", "admin"]),
+  businessController.getMyAutoMatchParticipation,
+);
+
+router.post(
+  "/me/auto-match-participation",
+  authorize(["requestor", "admin"]),
+  businessController.setMyAutoMatchParticipation,
+);
+
 router.put(
   "/me/request-settings",
   authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),

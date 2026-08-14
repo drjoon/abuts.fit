@@ -1,9 +1,11 @@
 // change-log:
-// - 2026-08-14: 카드 제목「인증 기공소」·ON=자동매칭 공개 풀 참여 자격 카피로 정리.
+// - 2026-08-14: 수수료 스트립을 같은 카드에 합치고 안내 문구 중복 제거.
+// - 2026-08-14: 카드 제목「인증 기공소」·식별 비공개·자동매칭 참여 카피로 정리.
 // - 2026-08-13: 목록·검색·카드 UI를 최신 파트너 설정 스타일로 정리.
 // related files:
 // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
+// - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // - web/backend/utils/practiceTransferAutoMatch.js
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -17,6 +19,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
+import { DevopsPlatformFeeTab } from "@/pages/devops/components/DevopsPlatformFeeTab";
 
 const PAGE_LIMIT = 15;
 
@@ -282,11 +285,11 @@ export const PracticeTransferAutoMatchTab = () => {
             </span>
             <div className="min-w-0 space-y-1">
               <h3 className="text-base font-semibold tracking-tight text-slate-900">
-                인증 기공소
+                기공소 매칭
               </h3>
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                인증(ON)한 기공소만 치과의 자동 매칭 의뢰가 들어오면 공개 풀에
-                참여해 선착순 수락할 수 있습니다.
+                월 참여 수수료를 낸 기공소만 자동 매칭에 참여합니다. 치과·기공소
+                식별 정보는 비공개입니다.
               </p>
             </div>
           </div>
@@ -296,6 +299,8 @@ export const PracticeTransferAutoMatchTab = () => {
             </span>
           ) : null}
         </div>
+
+        <DevopsPlatformFeeTab />
 
         <div className="relative max-w-md">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

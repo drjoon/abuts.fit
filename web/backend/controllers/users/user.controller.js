@@ -10,7 +10,7 @@ import { messageService } from "../../utils/popbill.util.js";
 import { Types } from "mongoose";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { ensureRequestorOrgAnchor } from "../businesses/requestorOrgAnchor.util.js";
-import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.js";
+import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
 
 /**
  * 사용자 프로필 조회
@@ -61,16 +61,13 @@ async function getProfile(req, res) {
         }
 
         data.salesmanPayoutAccount = payoutAccount || {};
-        // 플랫폼 수수료 2단계 SSOT: partnerFeeRate / nonPartnerFeeRate
         const rates = payoutRates || {};
+        const platformFeeRate = resolvePlatformFeeRate(rates);
         data.devopsPayoutSettings = {
           ...rates,
-          partnerFeeRate: Number(
-            rates.partnerFeeRate ?? 0,
-          ),
-          nonPartnerFeeRate: Number(
-            rates.nonPartnerFeeRate ?? 0.25,
-          ),
+          platformFeeRate,
+          partnerFeeRate: platformFeeRate,
+          nonPartnerFeeRate: platformFeeRate,
         };
         delete data.devopsPayoutSettings.labReferredFeeRate;
       }
@@ -467,23 +464,13 @@ async function updateProfile(req, res) {
           });
         }
 
-        // 기공의뢰(practice transfer) 플랫폼 수수료율(2단계): 등록/미등록.
-        // partnerFeeRate 미전송 시 레거시 labReferredFeeRate는 무시하고 기본 0%를 쓴다.
-        const partnerFeeRate = Number(
-          raw?.partnerFeeRate ?? 0,
+        const platformFeeRate = Number(
+          raw?.platformFeeRate ?? raw?.nonPartnerFeeRate ?? 0.25,
         );
-        const nonPartnerFeeRate = Number(raw?.nonPartnerFeeRate ?? 0.25);
-        const feeRates = [partnerFeeRate, nonPartnerFeeRate];
-        if (feeRates.some((r) => !Number.isFinite(r) || r < 0 || r > 1)) {
+        if (!Number.isFinite(platformFeeRate) || platformFeeRate < 0 || platformFeeRate > 1) {
           return res.status(400).json({
             success: false,
             message: "플랫폼 수수료율은 0~100% 범위여야 합니다.",
-          });
-        }
-        if (partnerFeeRate > nonPartnerFeeRate) {
-          return res.status(400).json({
-            success: false,
-            message: "등록 치과 수수료율은 미등록 수수료율보다 클 수 없습니다.",
           });
         }
 
@@ -498,8 +485,9 @@ async function updateProfile(req, res) {
                   devopsRate,
                   salesmanRate,
                   adminRate,
-                  partnerFeeRate,
-                  nonPartnerFeeRate,
+                  platformFeeRate,
+                  partnerFeeRate: platformFeeRate,
+                  nonPartnerFeeRate: platformFeeRate,
                   updatedAt: new Date(),
                 },
               },

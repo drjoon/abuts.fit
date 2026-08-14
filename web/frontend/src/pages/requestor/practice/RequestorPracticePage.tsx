@@ -60,6 +60,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
+import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import {
@@ -96,10 +97,12 @@ import {
   openPracticeTransferFilePicker,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import {
   parsePracticeTransferFeeQuote,
   type PracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
+import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
 import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
@@ -173,6 +176,8 @@ type ReceivedPracticeTransfer = {
     businessName: string;
     userName: string;
   };
+  practiceBusinessAnchorId?: string | null;
+  labFeeMultiplier?: number;
   fileCount: number;
   files: ReceivedPracticeFile[];
   resultFileCount?: number;
@@ -480,6 +485,23 @@ function RequestorPracticeReceivePage({
     autoFetch: dialogOpen,
   });
 
+  const displayChatMessages = useMemo(() => {
+    const currentUserId = String(user?.id || "");
+    return messages.map((message) => {
+      const senderId = String(message.sender?._id || "");
+      const name = anonymizeAutoMatchChatSenderName({
+        matchingMode: selectedTransfer?.matchingMode,
+        isOwn: senderId === currentUserId,
+        counterpartLabel: "치과",
+        name: String(message.sender?.name || ""),
+      });
+      return {
+        ...message,
+        sender: { ...message.sender, name },
+      };
+    });
+  }, [messages, selectedTransfer?.matchingMode, user?.id]);
+
   const unreadByTransferId = useMemo(() => {
     const map = new Map<string, number>();
     for (const room of rooms) {
@@ -680,6 +702,16 @@ function RequestorPracticeReceivePage({
             businessName: String(practiceRaw.businessName || "").trim(),
             userName: String(practiceRaw.userName || "").trim(),
           },
+          practiceBusinessAnchorId: String(
+            r.practiceBusinessAnchorId || "",
+          ).trim() || null,
+          labFeeMultiplier: normalizeLabFeeMultiplier(
+            r.labFeeMultiplier ??
+              (r.feeQuote &&
+              typeof r.feeQuote === "object"
+                ? (r.feeQuote as { labFeeMultiplier?: unknown }).labFeeMultiplier
+                : 1),
+          ),
           fileCount: Number(r.fileCount || files.length || 0),
           files,
           resultFileCount: Number(r.resultFileCount || resultFiles.length || 0),
@@ -2155,9 +2187,44 @@ function RequestorPracticeReceivePage({
                   </div>
                 </div>
 
-                <div className="mt-2 text-sm text-muted-foreground">
-                  치과: {transfer.practice.businessName || "-"}
-                  {transfer.practice.userName ? ` · 담당자 ${transfer.practice.userName}` : ""}
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span>
+                    치과:{" "}
+                    {transfer.matchingMode === "auto"
+                      ? "자동 매칭"
+                      : transfer.practice.businessName || "-"}
+                    {transfer.matchingMode === "auto"
+                      ? ""
+                      : transfer.practice.userName
+                        ? ` · 담당자 ${transfer.practice.userName}`
+                        : ""}
+                  </span>
+                  {transfer.matchingMode !== "auto" &&
+                  transfer.practiceBusinessAnchorId ? (
+                    <LabPracticeFeeSurchargeControl
+                      practiceAnchorId={transfer.practiceBusinessAnchorId}
+                      multiplier={transfer.labFeeMultiplier}
+                      size="xs"
+                      onChanged={(next) => {
+                        setTransfers((prev) =>
+                          prev.map((row) =>
+                            row.practiceBusinessAnchorId ===
+                            transfer.practiceBusinessAnchorId
+                              ? { ...row, labFeeMultiplier: next }
+                              : row,
+                          ),
+                        );
+                        setSelectedTransfer((prev) =>
+                          prev &&
+                          prev.practiceBusinessAnchorId ===
+                            transfer.practiceBusinessAnchorId
+                            ? { ...prev, labFeeMultiplier: next }
+                            : prev,
+                        );
+                        void loadFirstPage({ silent: true });
+                      }}
+                    />
+                  ) : null}
                 </div>
 
                 <p className="mt-2 text-xs text-muted-foreground truncate">
@@ -2402,8 +2469,12 @@ function RequestorPracticeReceivePage({
         summaryItems={[
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
           { label: "전송시각", value: selectedTransfer ? formatDateTime(selectedTransfer.createdAt) : "-" },
-          { label: "치과", value: selectedTransfer?.practice.businessName || "-" },
-          { label: "담당자", value: selectedTransfer?.practice.userName || "-" },
+          { label: "치과", value: selectedTransfer?.matchingMode === "auto"
+            ? "자동 매칭"
+            : selectedTransfer?.practice.businessName || "-" },
+          { label: "담당자", value: selectedTransfer?.matchingMode === "auto"
+            ? "비공개"
+            : selectedTransfer?.practice.userName || "-" },
           { label: "환자명", value: selectedTransferPatientName || "-" },
           { label: "주문일", value: selectedTransfer?.orderDate || "-" },
           { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
@@ -2480,7 +2551,7 @@ function RequestorPracticeReceivePage({
         onAccept={() => void handleAcceptTransfer()}
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
-        chatMessages={messages}
+        chatMessages={displayChatMessages}
         isMyMessage={(senderId) => senderId === String(user?.id || "")}
         currentUserId={String(user?.id || "").trim()}
         formatChatTime={formatDateTime}
