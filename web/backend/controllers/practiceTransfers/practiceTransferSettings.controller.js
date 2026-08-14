@@ -3,6 +3,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { hydrateFavoritesWithRoundBarAdopted } from "./roundBarAbutmentRequest.controller.js";
 import { normalizeAdoptedKind } from "../../utils/roundBarAbutment.js";
 import {
+  loadAutoMatchBudgetCatalog,
   resolveAutoMatchBudgetOrDefaults,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
 
@@ -179,6 +180,8 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     );
   }
 
+  const catalog = await loadAutoMatchBudgetCatalog();
+
   return {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
     prosthesisTypes: normalizeProsthesisTypes(settings?.prosthesisTypes),
@@ -190,7 +193,11 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     defaultAbutmentProductMode: normalizeDefaultAbutmentProductMode(
       settings?.defaultAbutmentProductMode,
     ),
-    autoMatchBudget: resolveAutoMatchBudgetOrDefaults(settings?.autoMatchBudget),
+    autoMatchBudget: resolveAutoMatchBudgetOrDefaults(
+      settings?.autoMatchBudget,
+      catalog,
+    ),
+    abutsLabFeeCatalog: catalog,
     updatedAt: settings?.updatedAt || null,
   };
 };
@@ -308,7 +315,8 @@ export async function upsertPracticeTransferSettings(req, res) {
         normalizeDefaultAbutmentProductMode(body.defaultAbutmentProductMode);
     }
     if (hasAutoMatchBudget) {
-      const band = resolveAutoMatchBudgetOrDefaults(body.autoMatchBudget);
+      const catalog = await loadAutoMatchBudgetCatalog();
+      const band = resolveAutoMatchBudgetOrDefaults(body.autoMatchBudget, catalog);
       setPatch["practiceTransferSettings.autoMatchBudget"] = {
         version: 2,
         items: band.items,
