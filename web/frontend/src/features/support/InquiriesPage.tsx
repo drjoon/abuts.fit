@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-15: FAQ — 기공물 서비스·기공소 가입 이유 반영, 진행상태 항목 삭제.
+// - 2026-08-15: FAQ 탭 라벨 단축·어벗츠 특징+크레딧 핵심만 정리.
+// - 2026-08-15: 크레딧·기공료 선입금 FAQ를 내 문의 내역 옆 탭으로 이동(의뢰자).
 // - 2026-08-14: manufacturer_add_request(제조사 추가 요청) 라벨.
 // - 2026-08-13: ?type= 쿼리로 문의 유형 프리필.
 // - 2026-08-12: 의뢰자 문의 화면에 기공료 선입금 FAQ 노출.
@@ -10,7 +13,6 @@
 // - web/frontend/src/features/components/SettingsScaffold.tsx
 // - web/backend/models/businessRegistrationInquiry.model.js
 // - web/backend/controllers/support/support.controller.js
-// - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 // 문의 페이지는 requestor, salesman, admin 역할에서만 사용됩니다.
 // manufacturer(제조사)와 devops(개발운영사)는 문의 페이지가 불필요하며,
 // 사이드메뉴 및 라우트 접근에서 제외되어 있습니다.
@@ -44,7 +46,6 @@ import {
 } from "@/shared/lib/contactInfo";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
-import { CREDIT_PREPAID_FAQS } from "@/shared/legal/creditPrepaidCopy";
 import { Link } from "react-router-dom";
 import {
   CheckCircle2,
@@ -55,6 +56,30 @@ import {
   MessageSquarePlus,
   Phone,
 } from "lucide-react";
+
+/** 의뢰자 문의 FAQ — 서비스·기공소 가입 이유·크레딧 핵심만. */
+const REQUESTOR_FAQS: { q: string; a: string }[] = [
+  {
+    q: "어벗츠는 어떤 서비스인가요?",
+    a: "치과·기공소가 기공물 제작과 커스텀 어벗먼트 의뢰·제작·배송을 한곳에서 관리하는 B2B 플랫폼입니다.",
+  },
+  {
+    q: "기공소가 어벗츠를 쓰는 이유는?",
+    a: "의뢰·채팅으로 이메일 없이 소통하고, 정산·계산서·자동 매칭·커스텀어벗 생산까지 한곳에서 이어갑니다.",
+  },
+  {
+    q: "크레딧은 선불페이인가요?",
+    a: "아닙니다. 기공료 선입금(선납 대금)이며, 앱 내 기공물·어벗 주문 대금으로만 사용됩니다.",
+  },
+  {
+    q: "남은 크레딧은 환불되나요?",
+    a: "유료 잔액은 요청 시 전액 환불되고, 기발행 면세 계산서는 마이너스 수정 계산서로 처리됩니다. 무료·이벤트 크레딧은 제외입니다.",
+  },
+  {
+    q: "부가세가 붙나요?",
+    a: "없습니다. 면세로 운영되며, 충전 시 면세 계산서가 발행됩니다.",
+  },
+];
 
 export const INQUIRY_TYPE_LABEL: Record<string, string> = {
   manufacturing: "의뢰/제작",
@@ -201,7 +226,8 @@ export const InquiriesPage = () => {
   const [items, setItems] = useState<InquiryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState<"new" | "history">("new");
+  const [activeTab, setActiveTab] = useState<"new" | "history" | "faq">("new");
+  const showFaq = user?.role === "requestor";
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [type, setType] = useState<string>(preset.typeChips[0].value);
@@ -378,41 +404,12 @@ export const InquiriesPage = () => {
           </CardContent>
         </Card>
 
-        {user?.role === "requestor" ? (
-          <Card className="app-glass-card app-glass-card--lg">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">
-                크레딧 · 기공료 선입금 FAQ
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <Accordion type="multiple" className="w-full">
-                {CREDIT_PREPAID_FAQS.map((item, index) => (
-                  <AccordionItem key={item.q} value={`credit-faq-${index}`}>
-                    <AccordionTrigger className="text-left text-sm hover:no-underline">
-                      {item.q}
-                    </AccordionTrigger>
-                    <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
-                      {item.a}
-                    </AccordionContent>
-                  </AccordionItem>
-                ))}
-              </Accordion>
-              <p className="mt-3 text-xs text-muted-foreground">
-                더 자세한 안내는{" "}
-                <Link to="/help" className="underline underline-offset-2">
-                  도움말 센터
-                </Link>
-                와 이용약관 제7조를 확인해 주세요.
-              </p>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {/* 탭: 새 문의 / 내 문의 내역 */}
+        {/* 탭: 새 문의 / 내 문의 내역 / (의뢰자) FAQ */}
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as "new" | "history")}
+          onValueChange={(v) =>
+            setActiveTab(v as "new" | "history" | "faq")
+          }
           className="space-y-4"
         >
           <TabsList className="flex h-auto w-full flex-wrap gap-1.5 px-1.5 py-1.5">
@@ -438,6 +435,14 @@ export const InquiriesPage = () => {
                 </span>
               )}
             </TabsTrigger>
+            {showFaq ? (
+              <TabsTrigger
+                value="faq"
+                className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
+              >
+                FAQ
+              </TabsTrigger>
+            ) : null}
           </TabsList>
 
           {/* 새 문의 작성 탭 */}
@@ -630,6 +635,37 @@ export const InquiriesPage = () => {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {showFaq ? (
+            <TabsContent value="faq">
+              <Card className="app-glass-card app-glass-card--lg">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">FAQ</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <Accordion type="multiple" className="w-full">
+                    {REQUESTOR_FAQS.map((item, index) => (
+                      <AccordionItem key={item.q} value={`faq-${index}`}>
+                        <AccordionTrigger className="text-left text-sm hover:no-underline">
+                          {item.q}
+                        </AccordionTrigger>
+                        <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
+                          {item.a}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    더 자세한 안내는{" "}
+                    <Link to="/help" className="underline underline-offset-2">
+                      도움말 센터
+                    </Link>
+                    와 이용약관 제7조를 확인해 주세요.
+                  </p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          ) : null}
         </Tabs>
 
         {/* 문의 상세 다이얼로그 */}
