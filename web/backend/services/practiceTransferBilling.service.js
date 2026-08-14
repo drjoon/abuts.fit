@@ -18,6 +18,7 @@
 // - 2026-08-14: 자동매칭: 치과별 할증 사용. 할증 updatedAt > 의뢰 createdAt 이면 해당 건 미적용.
 // - 2026-08-14: 자동매칭 수락 예산 검증은 공개 수가(할증 제외). 할증은 청구에만.
 // - 2026-08-15: 전송 전 잔액검사 — catalog 재사용·어벗 단가 캐시·조회 병렬화.
+// - 2026-08-15: 청구 완료 목록 견적에 autoMatchBudget 재부착 금지(확정 기공비 유지).
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -2432,12 +2433,9 @@ export async function buildFeeQuotesForTransferDocs({
         lines: fees.lines,
         billed,
       });
+      // 청구 완료(billed): 예산 구간(autoMatchBudget)을 다시 붙이지 않는다.
       out.set(docId, {
         ...storedQuote,
-        // 목록 재계산 라인·합산 예산을 우선(구 스냅샷에 min/max 합산이 없을 수 있음).
-        ...(autoMatchBudgetOut
-          ? { autoMatchBudget: autoMatchBudgetOut, lines: fees.lines }
-          : {}),
         remakeFeeQuote,
       });
       continue;

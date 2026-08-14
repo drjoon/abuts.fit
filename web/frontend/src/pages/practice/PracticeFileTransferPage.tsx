@@ -62,6 +62,7 @@
  * - 2026-08-14: 임시저장 디바운스·한글 IME 게이트. stale 저장 응답에서도 draftId 회수.
  * - 2026-08-14: 기공수가 할증 변경(practice:lab-fee-multiplier-updated) 시 견적·리메이크 미리보기 갱신.
  * - 2026-08-14: 기공소 수락 시 웹소켓 feeQuote로 치과「확정 기공비」즉시 반영.
+ * - 2026-08-15: 수락 시 상세 다이얼로그를 열어 확정 기공비 영역을 즉시 표시(작성 폼은 대상 아님).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1078,6 +1079,8 @@ export const PracticeFileTransferPage = ({
   const transferDialogOpenRef = useRef(false);
   const returnToAllModalRef = useRef(false);
   const selectedTransferIdRef = useRef("");
+  /** 기공소 수락 직후 상세를 열어 확정 기공비를 보여 줄 transferId */
+  const pendingAcceptOpenTransferIdRef = useRef("");
   const localFormUpdatedAtRef = useRef(0);
   const skipNextArrivalAutoSyncRef = useRef(false);
   const suppressLocalFormPersistRef = useRef(false);
@@ -2259,6 +2262,36 @@ export const PracticeFileTransferPage = ({
           ? paginationHasMore
           : mapped.length >= PRACTICE_MY_TRANSFERS_PAGE_SIZE,
       );
+
+      // 열린 상세가 있으면 목록 재조회의 확정 feeQuote·상태를 동기화
+      const openTransferId = String(selectedTransferIdRef.current || "").trim();
+      if (transferDialogOpenRef.current && openTransferId) {
+        const openRow = mapped.find(
+          (row) => String(row.transferId || "").trim() === openTransferId,
+        );
+        if (openRow) {
+          setSelectedTransfer((prev) => {
+            if (!prev || String(prev.transferId || "").trim() !== openTransferId) {
+              return prev;
+            }
+            const nextFee = openRow.feeQuote;
+            const keepBilled =
+              prev.feeQuote?.billed && (!nextFee || !nextFee.billed);
+            return {
+              ...prev,
+              status: openRow.status || prev.status,
+              ...(keepBilled
+                ? {}
+                : nextFee
+                  ? { feeQuote: nextFee }
+                  : {}),
+              ...(openRow.remakeFeeQuote
+                ? { remakeFeeQuote: openRow.remakeFeeQuote }
+                : {}),
+            };
+          });
+        }
+      }
 
       const labsFromTransfers: SearchBusinessResult[] = [];
       const seenLabKeys = new Set<string>();
@@ -3755,6 +3788,21 @@ export const PracticeFileTransferPage = ({
     await resolvePracticeTransferChatRoom(String(transfer.transferId || "").trim(), resolveSeq);
   };
 
+  const handleOpenTransferDialogRef = useRef(handleOpenTransferDialog);
+  handleOpenTransferDialogRef.current = handleOpenTransferDialog;
+
+  // 기공소 수락 직후: 목록에 반영되면 상세를 열어「확정 기공비」를 즉시 표시
+  useEffect(() => {
+    const pendingId = String(pendingAcceptOpenTransferIdRef.current || "").trim();
+    if (!pendingId) return;
+    const match = groupedTransfers.find(
+      (row) => String(row.transferId || "").trim() === pendingId,
+    );
+    if (!match) return;
+    pendingAcceptOpenTransferIdRef.current = "";
+    void handleOpenTransferDialogRef.current(match);
+  }, [groupedTransfers]);
+
   const resolvePracticeTransferChatRoom = useCallback(
     async (transferIdRaw: string, resolveSeq: number) => {
       if (!authToken) {
@@ -4852,7 +4900,7 @@ export const PracticeFileTransferPage = ({
         }
       }
 
-      // 기공소 의뢰수락 시: 확정 기공비·상태·기공소명 갱신 + 열린 상세 채팅 재연결
+      // 기공소 의뢰수락 시: 확정 기공비·상태·기공소명 갱신 + 상세를 열어 즉시 표시
       const eventTransferId = String(payload.transferId || "").trim();
       const isAcceptChatEvent =
         action === "accepted" ||
@@ -4881,14 +4929,23 @@ export const PracticeFileTransferPage = ({
           };
         };
         setRecentRequests((prev) => prev.map(patchRow));
-        if (
+        const dialogAlreadyOpenForTransfer =
           transferDialogOpenRef.current &&
-          eventTransferId === selectedTransferIdRef.current
-        ) {
+          eventTransferId === selectedTransferIdRef.current;
+        if (dialogAlreadyOpenForTransfer) {
           setSelectedTransfer((prev) => (prev ? patchRow(prev) : prev));
           const resolveSeq = ++chatRoomResolveSeqRef.current;
           setChatError("");
           void resolvePracticeTransferChatRoom(eventTransferId, resolveSeq);
+        } else if (action === "accepted" || action === "auto-match-claimed") {
+          // 작성 폼 기공비 영역이 아니라 상세 치식·견적 영역에「확정 기공비」를 즉시 표시
+          pendingAcceptOpenTransferIdRef.current = eventTransferId;
+          toast({
+            title: "의뢰 수락",
+            description: acceptedFeeQuote
+              ? "확정 기공비를 상세에서 확인하세요."
+              : "기공소가 의뢰를 수락했습니다.",
+          });
         }
       }
     },
