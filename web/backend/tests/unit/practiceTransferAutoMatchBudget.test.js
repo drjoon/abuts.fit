@@ -11,18 +11,18 @@ import {
 } from "../../utils/practiceTransferAutoMatchBudgetCore.js";
 
 describe("practiceTransferAutoMatchBudgetCore", () => {
-  test("admin ±20% uses Math.ceil", () => {
-    expect(bandFromAdminBase(60000)).toEqual({ min: 48000, max: 72000 });
+  test("admin ±10% uses Math.ceil", () => {
+    expect(bandFromAdminBase(60000)).toEqual({ min: 54000, max: 66000 });
     expect(bandFromAdminBase(50001)).toEqual({
-      min: Math.ceil(50001 * 0.8),
-      max: Math.ceil(50001 * 1.2),
+      min: Math.ceil(50001 * 0.9),
+      max: Math.ceil(50001 * 1.1),
     });
   });
 
   test("defaults cover all prosthetic keys", () => {
     const items = buildDefaultAutoMatchBudgetItems();
-    expect(items.crown).toEqual({ min: 48000, max: 72000 });
-    expect(items.bridge).toEqual({ min: 48000, max: 72000 });
+    expect(items.crown).toEqual({ min: 54000, max: 66000 });
+    expect(items.bridge).toEqual({ min: 54000, max: 66000 });
     expect(isAutoMatchBudgetConfigured({ version: 2, items })).toBe(true);
   });
 
@@ -32,13 +32,13 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
       { id: "custom-veneer", name: "비니어", price: 80000, enabled: true },
     ];
     const budget = resolveAutoMatchBudgetOrDefaults(
-      { version: 2, items: { crown: { min: 48000, max: 72000 } } },
+      { version: 2, items: { crown: { min: 54000, max: 66000 } } },
       catalog,
     );
-    expect(budget.items.crown).toEqual({ min: 48000, max: 72000 });
+    expect(budget.items.crown).toEqual({ min: 54000, max: 66000 });
     expect(budget.items["custom-veneer"]).toEqual({
-      min: 64000,
-      max: 96000,
+      min: 72000,
+      max: 88000,
     });
   });
 
@@ -46,14 +46,14 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     const budget = resolveAutoMatchBudgetOrDefaults(null);
     expect(
       isLabUnitPricesWithinAutoMatchBudget(
-        { crown: 48000, bridge: 72000 },
+        { crown: 54000, bridge: 66000 },
         budget,
         ["crown", "bridge"],
       ),
     ).toBe(true);
     expect(
       isLabUnitPricesWithinAutoMatchBudget(
-        { crown: 47999, bridge: 72000 },
+        { crown: 53999, bridge: 66000 },
         budget,
         ["crown"],
       ),

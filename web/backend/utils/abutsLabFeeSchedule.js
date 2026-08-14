@@ -5,7 +5,7 @@
 // - web/backend/controllers/admin/admin.abutsLabFeeSchedule.controller.js
 //
 // 어벗츠 기공수가(플랫폼 카탈로그) SSOT.
-// 자동매칭 예산 모달·기본 ±20%의 기준 항목/단가.
+// 자동매칭 예산 모달·기본 ±10%의 기준 항목/단가.
 
 import SystemSettings from "../models/systemSettings.model.js";
 import {

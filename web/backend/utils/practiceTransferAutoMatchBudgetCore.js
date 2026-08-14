@@ -4,10 +4,10 @@
 // - web/frontend/src/shared/practice/autoMatchBudget.ts
 //
 // 자동매칭 기공비 예산 — 항목별 min/max (순수).
-// 카탈로그(어벗츠 수가) 기준 ±20% Math.ceil 기본값.
+// 카탈로그(어벗츠 수가) 기준 ±10% Math.ceil 기본값.
 
 const MAX_UNIT_FEE = 50_000_000;
-const DEFAULT_SPREAD = 0.2;
+const DEFAULT_SPREAD = 0.1;
 
 /** 카탈로그 없을 때 fallback (어벗츠 기본 수가와 동기화) */
 export const ADMIN_LAB_FEE_BASE = {
@@ -177,7 +177,7 @@ export function isAutoMatchBudgetConfigured(budget, catalog) {
   });
 }
 
-/** 설정/모달용 — 카탈로그 항목마다 저장값 또는 ±20% */
+/** 설정/모달용 — 카탈로그 항목마다 저장값 또는 ±10% */
 export function resolveAutoMatchBudgetOrDefaults(raw, catalog) {
   const rows = normalizeCatalogItems(catalog);
   const normalized = normalizeAutoMatchBudget(raw, catalog);

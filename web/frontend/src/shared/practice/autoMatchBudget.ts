@@ -55,7 +55,7 @@ export type PracticeTransferAutoMatchBudget = {
 };
 
 const MAX_UNIT_FEE = 50_000_000;
-const DEFAULT_SPREAD = 0.2;
+const DEFAULT_SPREAD = 0.1;
 
 export const bandFromAdminBase = (
   basePrice: number,

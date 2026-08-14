@@ -11,7 +11,6 @@ import {
   type SetStateAction,
 } from "react";
 import {
-  Banknote,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +19,7 @@ import {
   Plus,
   CircleHelp,
   Settings,
+  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1618,12 +1618,12 @@ export const PracticeTransferRequestIntakePanel = ({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-11 w-11 text-muted-foreground hover:text-foreground"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground [&_svg]:size-5"
               title="자동매칭 기공비 범위"
               aria-label="자동매칭 기공비 범위 설정"
               onClick={() => setAutoMatchBudgetOpen(true)}
             >
-              <Banknote className="h-6 w-6" />
+              <SlidersHorizontal />
             </Button>
           </div>
           <Popover open={labOpen} onOpenChange={setLabOpen}>
