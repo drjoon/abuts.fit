@@ -43,7 +43,7 @@
  * - 2026-08-13: 커스텀어벗 설정 모달 기본=디자인+생산. 선택값은 practiceTransferSettings.defaultAbutmentProductMode.
  * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
- * - 2026-08-13: 임시저장/동기화는 기공소·환자명 둘 다 입력된 뒤에만 수행.
+ * - 2026-08-13: 임시저장/동기화는 기공소·완성형 한글 환자명 둘 다 입력된 뒤에만 수행.
  * - 2026-08-13: 최근전송 취소 뱃지=기공소 작업취소만(치과 휴지통 제외). 6뱃지 빠른툴팁.
  * - 2026-08-13: 파일카드에 사전 업로드 프로그레스바.
  * - 2026-08-13: 채팅 첨부도 즉시 백그라운드 업로드 + 칩 프로그레스바.
@@ -55,6 +55,7 @@
  * - 2026-08-14: 프리셋 편집을 열 때 도입 스펙을 서버에서 다시 불러온다.
  * - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지 즉시 갱신. 계정 프리셋은 서버 우선.
  * - 2026-08-14: 기공의뢰 상단 「임시 저장」버튼 제거. 목록 반영은 자동 동기화만.
+ * - 2026-08-14: 임시저장 디바운스·한글 IME 게이트. stale 저장 응답에서도 draftId 회수.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -833,6 +834,9 @@ const normalizePatientNameKey = (value: string) => {
   return (stripped || normalized).toLowerCase();
 };
 
+/** 완성형 한글 음절이 있어야 임시저장. IME Latin(r/rh) mid-type은 제외. */
+const hasAutosaveReadyPatientName = (value: string) => /[가-힣]/.test(String(value || "").trim());
+
 const toDateLabel = (value: unknown) => {
   const d = new Date(String(value || ""));
   if (Number.isNaN(d.getTime())) return "-";
@@ -1055,9 +1059,12 @@ export const PracticeFileTransferPage = ({
   /** 파일 업로드 동기화 중 원격 draft 적용으로 폼이 깜빡이지 않게 한다. */
   const fileSyncInFlightRef = useRef(false);
   const resetIntakeFormAfterTransferRef = useRef<() => Promise<void>>(async () => {});
-  const FORM_AUTOSAVE_DEBOUNCE_MS = 200;
-  const FORM_AUTOSAVE_IME_RETRY_MS = 80;
+  // 한글 음절 사이 composition 공백을 넘기도록 여유. 200ms면 r/rh 같은 중간값이 저장됨.
+  const FORM_AUTOSAVE_DEBOUNCE_MS = 900;
+  const FORM_AUTOSAVE_IME_RETRY_MS = 120;
   const imeComposingRef = useRef(false);
+  /** draftId 없는 동시 POST가 각각 새 draft를 만들지 않도록 upsert를 직렬화한다. */
+  const formAutosaveGateRef = useRef<Promise<void> | null>(null);
   const pendingDraftApplyRef = useRef<
     (PracticeTransferDraftPayload & { forceResync?: boolean }) | null
   >(null);
@@ -2438,8 +2445,9 @@ export const PracticeFileTransferPage = ({
       const hasLab =
         Boolean(String(selectedLab?.name || "").trim()) ||
         Boolean(toApiLabAnchorId(selectedLab?._id));
-      // 기공소·환자명 둘 다 있어야 임시저장/동기화한다(신규·갱신 공통).
-      if (!normalizedPatientName || !hasLab) return;
+      // 기공소·완성형 한글 환자명 둘 다 있어야 임시저장/동기화한다(신규·갱신 공통).
+      // IME 중간 Latin(r/rh)이나 자모만으로는 저장하지 않는다.
+      if (!hasAutosaveReadyPatientName(normalizedPatientName) || !hasLab) return;
 
       const fingerprintAtSend = currentFormFingerprintRef.current;
       const savedFingerprint = lastSavedFormFingerprintRef.current;
@@ -2454,7 +2462,21 @@ export const PracticeFileTransferPage = ({
       const filesCountAtStart = filesForSave.length;
 
       setFormSyncStatus("saving");
+      let releaseAutosaveGate: (() => void) | null = null;
       try {
+        const prevGate = formAutosaveGateRef.current;
+        const gate = new Promise<void>((resolve) => {
+          releaseAutosaveGate = resolve;
+        });
+        formAutosaveGateRef.current = gate;
+        if (prevGate) {
+          try {
+            await prevGate;
+          } catch {
+            // ignore
+          }
+        }
+
         if (
           seq !== formAutosaveSeqRef.current ||
           fileSyncInFlightRef.current ||
@@ -2483,9 +2505,8 @@ export const PracticeFileTransferPage = ({
           },
         });
 
-        if (seq !== formAutosaveSeqRef.current) return;
-
         if (!res.ok) {
+          if (seq !== formAutosaveSeqRef.current) return;
           const body = asApiMessagePayload(res.data);
           throw new Error(String(body?.message || "임시저장 동기화에 실패했습니다."));
         }
@@ -2498,6 +2519,31 @@ export const PracticeFileTransferPage = ({
           body.data && typeof body.data === "object"
             ? (body.data as PracticeTransferDraftPayload)
             : null;
+
+        // seq가 바뀌어도 draftId 없는 POST가 만든 id는 회수한다(미회수 시 r/rh/완성명이 각각 새 draft).
+        const returnedDraftId = String(payload?._id || "").trim();
+        if (returnedDraftId && !activeDraftIdRef.current) {
+          setActiveDraftId(returnedDraftId);
+          activeDraftIdRef.current = returnedDraftId;
+          activeDraftSeenInListRef.current = returnedDraftId;
+        }
+
+        if (seq !== formAutosaveSeqRef.current) {
+          if (returnedDraftId) {
+            const orphanSummary = buildOwnDraftSummary(
+              payload,
+              latestFilesForSave,
+              transferMemo,
+            );
+            if (orphanSummary?.id) {
+              setPracticeDraftList((prev) => {
+                const without = prev.filter((row) => row.id !== orphanSummary.id);
+                return [orphanSummary, ...without];
+              });
+            }
+          }
+          return;
+        }
 
         const nextDraftFiles = Array.isArray(payload?.files)
           ? payload.files
@@ -2553,6 +2599,8 @@ export const PracticeFileTransferPage = ({
       } catch {
         if (seq !== formAutosaveSeqRef.current) return;
         setFormSyncStatus("error");
+      } finally {
+        releaseAutosaveGate?.();
       }
     },
     [
@@ -2575,12 +2623,12 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
-  /** 기공소·환자명 둘 다 있어야 신규 임시저장·자동 동기화. */
+  /** 기공소·완성형 한글 환자명 둘 다 있어야 신규 임시저장·자동 동기화. */
   const hasSubstantialContentForNewDraft = useMemo(() => {
     const hasLab = Boolean(
       String(selectedLab?._id || selectedLab?.name || "").trim(),
     );
-    return Boolean(normalizedPatientName) && hasLab;
+    return hasAutosaveReadyPatientName(normalizedPatientName) && hasLab;
   }, [normalizedPatientName, selectedLab?._id, selectedLab?.name]);
 
   useEffect(() => {
@@ -2601,7 +2649,7 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    // 기공소·환자명이 모두 있을 때만 서버 동기화(치아/메모/파일만으로는 목록에 올리지 않음).
+    // 기공소·완성형 한글 환자명이 모두 있을 때만 서버 동기화(치아/메모/파일만으로는 목록에 올리지 않음).
     if (!hasSubstantialContentForNewDraft) {
       pendingLocalFormEditRef.current = false;
       setFormSyncStatus((prev) =>
@@ -3851,8 +3899,8 @@ export const PracticeFileTransferPage = ({
     const hasLab =
       Boolean(String(selectedLab?.name || "").trim()) ||
       Boolean(toApiLabAnchorId(selectedLab?._id));
-    // 파일 반영도 기공소·환자명이 있을 때만 서버 draft를 만든다/갱신한다.
-    if (!normalizedPatientName || !hasLab) return;
+    // 파일 반영도 기공소·완성형 한글 환자명이 있을 때만 서버 draft를 만든다/갱신한다.
+    if (!hasAutosaveReadyPatientName(normalizedPatientName) || !hasLab) return;
 
     const transferMemo = buildPracticeTransferMemo({
       memo: requestMemo,
