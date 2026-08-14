@@ -81,6 +81,12 @@ describe("resolveLedgerTypesForFilters", () => {
       }),
     ).toEqual(["LAB_SETTLEMENT_CHARGE"]);
     expect(
+      resolveLedgerTypesForFilters({
+        creditKind: "SETTLEMENT",
+        action: "SPEND",
+      }).sort(),
+    ).toEqual(["LAB_SETTLEMENT_PAYOUT", "SPEND_SETTLEMENT"].sort());
+    expect(
       resolveLedgerTypesForFilters({ creditKind: "FREE", action: "SPEND" }).sort(),
     ).toEqual(["SPEND_FREE_REQUEST", "SPEND_FREE_SHIPPING"].sort());
   });

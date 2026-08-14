@@ -94,8 +94,9 @@ export function countRatedLabAnchors(ratings) {
 /**
  * 자동매칭 차단:
  * - rating한 기공소가 10곳 미만이면 제한 없음
+ * - 미평가(기록 없음)면 false
  * - 해당 기공소를 3회 이상 rating했고 현재 별 < 최소 별이면 true
- * - 2회 이하·미평가·이상이면 false (2nd chance)
+ * - 2회 이하·이상이면 false (2nd chance)
  */
 export function isLabBlockedByPracticeRating({
   ratings,

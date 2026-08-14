@@ -59,6 +59,11 @@ function buildCurrentBalanceSnapshot(balanceSnapshot, requestorKind) {
     // 기공정산크레딧은 기공소 전용 버킷. 치과 응답에도 숫자는 포함하되 UI는 requestorKind로 숨긴다.
     settlementCredit: Number(balanceSnapshot?.settlementCredit || 0),
     balance: Number(balanceSnapshot?.balance || 0),
+    spendableBalance: Number(
+      balanceSnapshot?.spendableBalance ??
+        Number(balanceSnapshot?.balance || 0) +
+          Number(balanceSnapshot?.settlementCredit || 0),
+    ),
     requestorKind: kind,
     showSettlementCredit: isLab,
   };
@@ -307,6 +312,26 @@ export async function listMyCreditLedger(req, res) {
             ],
           },
         },
+        spentSettlementAmount: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  {
+                    $in: [
+                      "$eventType",
+                      ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                    ],
+                  },
+                  { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
+                  { $lt: ["$amountBase", 0] },
+                ],
+              },
+              { $abs: "$amountBase" },
+              0,
+            ],
+          },
+        },
         accountCode: { $first: "$accountCode" },
       },
     },
@@ -353,6 +378,20 @@ export async function listMyCreditLedger(req, res) {
                   ],
                 },
                 then: "SPEND_PAID",
+              },
+              {
+                case: {
+                  $and: [
+                    {
+                      $in: [
+                        "$eventType",
+                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                      ],
+                    },
+                    { $gt: ["$spentSettlementAmount", 0] },
+                  ],
+                },
+                then: "SPEND_SETTLEMENT",
               },
               {
                 case: {

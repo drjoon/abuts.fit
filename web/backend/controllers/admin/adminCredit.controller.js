@@ -705,6 +705,26 @@ export async function adminGetBusinessLedger(req, res) {
               ],
             },
           },
+          spentSettlementAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    {
+                      $in: [
+                        "$eventType",
+                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                      ],
+                    },
+                    { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
+                    { $lt: ["$amountBase", 0] },
+                  ],
+                },
+                { $abs: "$amountBase" },
+                0,
+              ],
+            },
+          },
         },
       },
       {
@@ -741,6 +761,20 @@ export async function adminGetBusinessLedger(req, res) {
                     ],
                   },
                   then: "SPEND_PAID",
+                },
+                {
+                  case: {
+                    $and: [
+                      {
+                        $in: [
+                          "$eventType",
+                          ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                        ],
+                      },
+                      { $gt: ["$spentSettlementAmount", 0] },
+                    ],
+                  },
+                  then: "SPEND_SETTLEMENT",
                 },
                 {
                   case: { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
@@ -789,6 +823,7 @@ export async function adminGetBusinessLedger(req, res) {
         "SPEND_PAID",
         "SPEND_FREE_REQUEST",
         "SPEND_FREE_SHIPPING",
+        "SPEND_SETTLEMENT",
         "LAB_SETTLEMENT_CHARGE",
         "LAB_SETTLEMENT_PAYOUT",
         "ADJUST",

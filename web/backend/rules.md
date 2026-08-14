@@ -243,10 +243,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/requests/dashboard.controller.js`
 
 - 역할별 크레딧 버킷 SSOT(강제):
-  - **의뢰자 소비 잔액은 2버킷**: `유료크레딧`(`paidCredit`/`REQ_PAID_CREDIT`) + `무료크레딧`(`freeCredit` = `REQ_FREE_REQUEST_CREDIT` + `REQ_FREE_SHIPPING_CREDIT` 합). 사용처 제한 없음(기공의뢰·어벗생산·배송·신속비 모두 가능). 소진 시 **무료 우선 → 유료**. GL 하위계정(FREE_REQUEST/FREE_SHIPPING)은 원장 추적용으로 유지.
-  - **치과(`practice`)**: 유료/무료크레딧으로 기공비·생산·배송을 지불. 잔액/장부 UI에 `기공정산크레딧`/`settlementCredit`을 **노출하지 않음**.
-  - **기공소(`lab`)**: `유료/무료크레딧`=입금·충전·앱 내 소비. `기공정산크레딧`=치과로부터 적립된 `LAB_SETTLEMENT_CREDIT`(정산 전용, 소비 잔액과 분리) → 매월 `SETTLEMENT_PAYOUT`.
-  - 잔액 API/`currentBalanceSnapshot`은 `freeCredit`·`requestorKind`를 함께 내려 UI가 기공정산크레딧 행을 lab에만 그린다.
+  - **의뢰자 소비 잔액**: `유료크레딧`(`paidCredit`/`REQ_PAID_CREDIT`) + `무료크레딧`(`freeCredit` = `REQ_FREE_REQUEST_CREDIT` + `REQ_FREE_SHIPPING_CREDIT` 합) + (기공소만) `기공크레딧`(`settlementCredit`/`LAB_SETTLEMENT_CREDIT`). 사용처 제한 없음(기공의뢰·어벗생산·배송·신속비 모두 가능). 소진 시 **무료 → 기공(상계) → 유료**. GL 계정은 분리 유지. `balance`=paid+free, `spendableBalance`=paid+free+settlement.
+  - **치과(`practice`)**: 유료/무료크레딧으로 기공비·생산·배송을 지불. 잔액/장부 UI에 `기공정산크레딧`/`settlementCredit`을 **노출하지 않음**(잔액 0).
+  - **기공소(`lab`)**: 충전(선입금)·무료와 기공크레딧(치과 적립) **적립 경로는 분리 표시**. 주문 차감은 통합(`무료→기공→유료`). 기공 사용분=월 정산 상계. 잔여 기공크레딧 → `SETTLEMENT_PAYOUT`.
+  - 잔액 API/`currentBalanceSnapshot`은 `freeCredit`·`spendableBalance`·`requestorKind`를 함께 내려 UI가 기공정산크레딧 행을 lab에만 그린다.
   - 소비 라인 `meta.usageKind`: `practice_transfer` | `abutment_production` | `shipping` | `express_surcharge`.
 
 - 기공소 기존 거래처 · 기공정산크레딧 SSOT:
@@ -257,7 +257,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - **자동 매칭 성공**(`matchingMode=auto`): 수수료 `BusinessAnchor.payoutRates.platformFeeRate`(기본 25%, 레거시 `nonPartnerFeeRate` fallback). 등록/미등록 치과를 나누지 않는다.
     - **지정 기공소**(`matchingMode=direct`): 플랫폼 수수료 0%.
     - 걷힌 수수료 금액은 기존 4자 분배율(`manufacturerRate`/`devopsRate`/`salesmanRate`/`adminRate`)로 다시 나뉜다(영업자 추천 유무에 따른 재배분 로직 동일 적용).
-    - 자동 매칭 식별 정보: 치과명·담당자명·기공소명·담당자명은 상대방에게 비공개(`AUTO_MATCH_LAB_DISPLAY_NAME` 유지, 수신 목록 치과 식별 마스킹). **`practiceBusinessAnchorId`는 기공수가 할증 키로 기공소 API에 전달**(표시명과 별개). 지정 기공소는 생성 시 `billing.labFeeMultiplier` 스냅샷, **자동매칭은 치과별 할증 사용**하되 `labPracticeFeeMultipliers.updatedAt`이 의뢰 `createdAt`보다 이후면 해당 건에 미적용(상세·채팅에서 올린 할증은 다음 건부터). 적격 스냅샷은 생성 시점 live 할증, 수락·미청구 견적은 의뢰시점 as-of 할증이 `autoMatchBudget` 항목별 min~max 안이어야 함.
+    - 자동 매칭 식별 정보: 치과명·담당자명·기공소명·담당자명은 상대방에게 비공개(`AUTO_MATCH_LAB_DISPLAY_NAME` 유지, 수신 목록 치과 식별 마스킹). **`practiceBusinessAnchorId`는 기공수가 할증 키로 기공소 API에 전달**(표시명과 별개). 지정 기공소는 생성 시 `billing.labFeeMultiplier` 스냅샷, **자동매칭은 치과별 할증을 청구에 사용**하되 `labPracticeFeeMultipliers.updatedAt`이 의뢰 `createdAt`보다 이후면 해당 건에 미적용(상세·채팅에서 올린 할증은 다음 건부터). **적격 스냅샷·수락 예산 게이트는 공개 수가(할증 제외)**가 `autoMatchBudget` 항목별 min~max 안이어야 함. 미평가·동일 기공소 평가 2회 이하는 최소 별 제한에서 제외.
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
   - eventType: `PRACTICE_TRANSFER_SPEND_HOLD` / `PRACTICE_TRANSFER_HOLD_ADJUST` / `PRACTICE_TRANSFER_ESCROW_RELEASE`(레거시 `PRACTICE_TRANSFER_SPEND_COMMIT` 유지); accountCode: `PLATFORM_ESCROW`, `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부: `기공비 보류` / 기공소: `기공크레딧` 적립(완료 시).
   - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공정산크레딧 → 계좌 이체. 크레딧 페이지 탭은 내역·충전만(기공크레딧 정산 탭 없음; 내역 필터로 기공 버킷 조회).
@@ -757,7 +757,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 지급 가능 잔액 계산 시 `EARN/ADJUST`는 `creditKind=PAID|null`만 포함하고, 무료(`FREE_REQUEST|FREE_SHIPPING`)는 제외합니다.
   - 배송비 정산은 제조사 실비 부담 정책을 반영해 `SHIPPING_SPEND_COMMIT` 수익을 전액 `REV_MANUFACTURER`로 귀속합니다.
   - 무료 수익은 지급금액 0으로 정산 완료 상태만 표시할 수 있습니다.
-  - paid/free 혼합 소비는 의뢰자 잔액에서 **무료 우선 차감 후 부족분만 유료 차감**을 사용합니다.
+  - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공 → 유료** 차감을 사용합니다.
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트(`scripts/db/migrate-request-spend-to-gl.js`, `scripts/db/migrate-legacy-creditledger-to-gl.js`)는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.

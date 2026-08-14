@@ -24,23 +24,26 @@ function normalizeAnchorObjectId(businessAnchorId) {
 
 /**
  * 의뢰자 소비 배분 SSOT:
- * - 잔액 버킷은 유료(paid) + 무료(freeRequest+freeShipping 통합) 2종.
- * - GL 계정은 하위호환으로 FREE_REQUEST / FREE_SHIPPING을 유지하되, 사용처 제한 없이 소진한다.
- * - freeOrder: 무료 소진 우선순위(기본 의뢰무료→배송무료).
+ * - 버킷: 유료(paid) + 무료(freeRequest+freeShipping) + 기공(settlement, lab 전용·치과는 0).
+ * - 소진 순서: 무료 → 기공(settlement 상계) → 유료(선입금).
+ * - GL 계정은 FREE_REQUEST / FREE_SHIPPING / LAB_SETTLEMENT 분리 유지.
+ * - freeOrder: 무료 하위계정 우선순위(기본 의뢰무료→배송무료).
  */
 export function allocateSpendFromCreditBuckets({
   amount,
   paidCredit = 0,
   freeRequestCredit = 0,
   freeShippingCredit = 0,
+  settlementCredit = 0,
   freeOrder = ["freeRequest", "freeShipping"],
 } = {}) {
   const required = Math.max(0, Math.round(Number(amount || 0)));
   const paid = Math.max(0, Math.round(Number(paidCredit || 0)));
   const freeRequest = Math.max(0, Math.round(Number(freeRequestCredit || 0)));
   const freeShipping = Math.max(0, Math.round(Number(freeShippingCredit || 0)));
+  const settlement = Math.max(0, Math.round(Number(settlementCredit || 0)));
   const freeCredit = freeRequest + freeShipping;
-  const available = paid + freeCredit;
+  const available = paid + freeCredit + settlement;
 
   let remaining = required;
   let fromFreeRequest = 0;
@@ -61,6 +64,9 @@ export function allocateSpendFromCreditBuckets({
     }
   }
 
+  const fromSettlement = Math.min(settlement, remaining);
+  remaining -= fromSettlement;
+
   const fromPaid = Math.min(paid, remaining);
   remaining -= fromPaid;
 
@@ -70,9 +76,11 @@ export function allocateSpendFromCreditBuckets({
     freeRequestCredit: freeRequest,
     freeShippingCredit: freeShipping,
     freeCredit,
+    settlementCredit: settlement,
     available,
     fromFreeRequest,
     fromFreeShipping,
+    fromSettlement,
     fromPaid,
     fromFree: fromFreeRequest + fromFreeShipping,
     shortfall: Math.max(0, remaining),
@@ -101,10 +109,10 @@ export async function computeBusinessCreditBalanceFromLedger({
   session,
 }) {
   // 잔액 버킷:
-  // - paidCredit: 유료크레딧. freeCredit: 무료크레딧(REQ_FREE_REQUEST + REQ_FREE_SHIPPING 합).
+  // - paidCredit: 유료(선입금). freeCredit: 무료(REQ_FREE_REQUEST + REQ_FREE_SHIPPING 합).
   // - freeRequestCredit/freeShippingCredit: GL 하위계정 잔액(하위호환·원장 추적).
-  // - settlementCredit: 기공소 전용 기공정산크레딧(LAB_SETTLEMENT_CREDIT). 치과 UI 미노출.
-  // - balance: paid+free만 합산(settlement 제외).
+  // - settlementCredit: 기공소 기공크레딧(LAB_SETTLEMENT_CREDIT). 치과는 0·UI 미노출.
+  // - balance: paid+free(선입금·무료 지갑). spendableBalance: +settlement(주문 차감 가능액).
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
   if (!anchorObjectId) {
     return {
@@ -114,6 +122,7 @@ export async function computeBusinessCreditBalanceFromLedger({
       freeCredit: 0,
       settlementCredit: 0,
       balance: 0,
+      spendableBalance: 0,
     };
   }
 
@@ -161,6 +170,7 @@ export async function computeBusinessCreditBalanceFromLedger({
   const freeShippingCredit = Math.max(0, Math.round(freeShipping));
   const freeCredit = freeRequestCredit + freeShippingCredit;
   const settlementCredit = Math.max(0, Math.round(settlement));
+  const balance = paidCredit + freeCredit;
 
   return {
     paidCredit,
@@ -168,7 +178,8 @@ export async function computeBusinessCreditBalanceFromLedger({
     freeShippingCredit,
     freeCredit,
     settlementCredit,
-    balance: paidCredit + freeCredit,
+    balance,
+    spendableBalance: balance + settlementCredit,
   };
 }
 
@@ -193,6 +204,7 @@ export async function getBusinessCreditBalanceSnapshot({
       freeCredit: 0,
       settlementCredit: 0,
       balance: 0,
+      spendableBalance: 0,
       source: "invalid",
     };
   }
@@ -202,14 +214,24 @@ export async function getBusinessCreditBalanceSnapshot({
     session,
   });
 
+  const paidCredit = Number(glBalance?.paidCredit || 0);
+  const freeRequestCredit = Number(glBalance?.freeRequestCredit || 0);
+  const freeShippingCredit = Number(glBalance?.freeShippingCredit || 0);
+  const freeCredit = Number(glBalance?.freeCredit || 0);
+  const settlementCredit = Number(glBalance?.settlementCredit || 0);
+  const balance = Number(glBalance?.balance || 0);
+
   return {
     businessAnchorId: String(anchorObjectId),
-    paidCredit: Number(glBalance?.paidCredit || 0),
-    freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
-    freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
-    freeCredit: Number(glBalance?.freeCredit || 0),
-    settlementCredit: Number(glBalance?.settlementCredit || 0),
-    balance: Number(glBalance?.balance || 0),
+    paidCredit,
+    freeRequestCredit,
+    freeShippingCredit,
+    freeCredit,
+    settlementCredit,
+    balance,
+    spendableBalance: Number(
+      glBalance?.spendableBalance ?? balance + settlementCredit,
+    ),
     source: "gl",
   };
 }
@@ -235,6 +257,7 @@ async function computeSpendRestoreBreakdownByJournalId({ journalId, session }) {
       restorePaid: 0,
       restoreBonusRequest: 0,
       restoreBonusShipping: 0,
+      restoreSettlement: 0,
       rollbackAmount: 0,
     };
   }
@@ -249,6 +272,7 @@ async function computeSpendRestoreBreakdownByJournalId({ journalId, session }) {
             "REQ_PAID_CREDIT",
             "REQ_FREE_REQUEST_CREDIT",
             "REQ_FREE_SHIPPING_CREDIT",
+            "LAB_SETTLEMENT_CREDIT",
           ],
         },
       },
@@ -274,6 +298,7 @@ async function computeSpendRestoreBreakdownByJournalId({ journalId, session }) {
   let restorePaid = 0;
   let restoreBonusRequest = 0;
   let restoreBonusShipping = 0;
+  let restoreSettlement = 0;
 
   for (const row of rows || []) {
     const code = String(row?._id || "");
@@ -282,14 +307,20 @@ async function computeSpendRestoreBreakdownByJournalId({ journalId, session }) {
     if (code === "REQ_PAID_CREDIT") restorePaid += total;
     else if (code === "REQ_FREE_REQUEST_CREDIT") restoreBonusRequest += total;
     else if (code === "REQ_FREE_SHIPPING_CREDIT") restoreBonusShipping += total;
+    else if (code === "LAB_SETTLEMENT_CREDIT") restoreSettlement += total;
   }
 
-  const rollbackAmount = restorePaid + restoreBonusRequest + restoreBonusShipping;
+  const rollbackAmount =
+    restorePaid +
+    restoreBonusRequest +
+    restoreBonusShipping +
+    restoreSettlement;
 
   return {
     restorePaid: Math.round(restorePaid),
     restoreBonusRequest: Math.round(restoreBonusRequest),
     restoreBonusShipping: Math.round(restoreBonusShipping),
+    restoreSettlement: Math.round(restoreSettlement),
     rollbackAmount: Math.round(rollbackAmount),
   };
 }
@@ -350,6 +381,7 @@ export async function spendRequestCreditAtomic({
     paidCredit: Number(glBalance?.paidCredit || 0),
     freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
     freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
+    settlementCredit: Number(glBalance?.settlementCredit || 0),
     freeOrder: ["freeRequest", "freeShipping"],
   });
 
@@ -362,6 +394,7 @@ export async function spendRequestCreditAtomic({
       freeRequestCredit: split.freeRequestCredit,
       freeShippingCredit: split.freeShippingCredit,
       freeCredit: split.freeCredit,
+      settlementCredit: split.settlementCredit,
       availableForMachining: split.available,
       required: resolvedAmount,
       requestId: request?._id ? String(request._id) : null,
@@ -377,6 +410,7 @@ export async function spendRequestCreditAtomic({
     fromBonusShipping: split.fromFreeShipping,
     fromFreeRequest: split.fromFreeRequest,
     fromFreeShipping: split.fromFreeShipping,
+    fromSettlement: split.fromSettlement,
     uniqueKey,
   };
 }
@@ -438,6 +472,7 @@ export async function spendShippingCreditAtomic({
     paidCredit: Number(glBalance?.paidCredit || 0),
     freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
     freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
+    settlementCredit: Number(glBalance?.settlementCredit || 0),
     freeOrder: ["freeShipping", "freeRequest"],
   });
 
@@ -450,6 +485,7 @@ export async function spendShippingCreditAtomic({
       freeRequestCredit: split.freeRequestCredit,
       freeShippingCredit: split.freeShippingCredit,
       freeCredit: split.freeCredit,
+      settlementCredit: split.settlementCredit,
       availableForShipping: split.available,
       required: amount,
       shippingPackageId: String(packageObjectId),
@@ -465,6 +501,7 @@ export async function spendShippingCreditAtomic({
     fromBonusRequest: split.fromFreeRequest,
     fromFreeRequest: split.fromFreeRequest,
     fromFreeShipping: split.fromFreeShipping,
+    fromSettlement: split.fromSettlement,
     uniqueKey,
     shippingPackageId: String(packageObjectId),
   };

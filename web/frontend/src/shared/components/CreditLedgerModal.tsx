@@ -163,6 +163,7 @@ type CreditLedgerType =
   | "SPEND_PAID"
   | "SPEND_FREE_REQUEST"
   | "SPEND_FREE_SHIPPING"
+  | "SPEND_SETTLEMENT"
   | "SPEND_HOLD"
   | "LAB_SETTLEMENT_CHARGE"
   | "LAB_SETTLEMENT_PAYOUT"
@@ -261,6 +262,7 @@ const typeLabel = (t: CreditLedgerType) => {
   if (t === "SPEND_PAID") return "사용(선입금)";
   if (t === "SPEND_FREE_REQUEST") return "사용(무료)";
   if (t === "SPEND_FREE_SHIPPING") return "사용(무료)";
+  if (t === "SPEND_SETTLEMENT") return "사용(기공크레딧)";
   if (t === "SPEND_HOLD") return "기공비 보류";
   if (t === "LAB_SETTLEMENT_CHARGE") return "기공크레딧 적립";
   if (t === "LAB_SETTLEMENT_PAYOUT") return "기공크레딧 정산";

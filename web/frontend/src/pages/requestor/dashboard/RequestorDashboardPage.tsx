@@ -121,6 +121,7 @@ type DashboardOutletContext = {
   paidCredit: number | null;
   freeRequestCredit: number | null;
   freeShippingCredit: number | null;
+  settlementCredit: number | null;
 };
 
 export const RequestorDashboardPage = () => {
@@ -132,6 +133,7 @@ export const RequestorDashboardPage = () => {
     paidCredit,
     freeRequestCredit,
     freeShippingCredit,
+    settlementCredit,
   } = useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
   const {
@@ -602,7 +604,7 @@ export const RequestorDashboardPage = () => {
 
   // 의뢰비 충전 경고
   // 준비, 가공 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
-  // 의뢰비/배송비: 유료크레딧 + 무료크레딧(의뢰·배송 계정 합) 사용 가능
+  // 의뢰비/배송비: 유료+무료(+기공소 기공크레딧) 통합 풀
   useEffect(() => {
     if (
       dashboardStatsSource?.success &&
@@ -621,7 +623,10 @@ export const RequestorDashboardPage = () => {
       const totalPendingRequests = inRequest + inMachining;
 
       const availableForRequest =
-        paidCredit + freeRequestCredit + freeShippingCredit;
+        paidCredit +
+        freeRequestCredit +
+        freeShippingCredit +
+        Number(settlementCredit || 0);
       const requiredCredit = totalPendingRequests * pricePerRequest;
 
       if (totalPendingRequests > 0 && availableForRequest < requiredCredit) {
@@ -635,6 +640,7 @@ export const RequestorDashboardPage = () => {
     paidCredit,
     freeRequestCredit,
     freeShippingCredit,
+    settlementCredit,
     systemSettings,
   ]);
 
@@ -656,7 +662,10 @@ export const RequestorDashboardPage = () => {
       const totalShippingBoxes = bulkShippingCandidates.length;
 
       const availableForShipping =
-        paidCredit + freeRequestCredit + freeShippingCredit;
+        paidCredit +
+        freeRequestCredit +
+        freeShippingCredit +
+        Number(settlementCredit || 0);
       const requiredShippingFee = totalShippingBoxes * shippingFeePerBox;
 
       if (
@@ -673,6 +682,7 @@ export const RequestorDashboardPage = () => {
     freeRequestCredit,
     freeShippingCredit,
     paidCredit,
+    settlementCredit,
     systemSettings,
   ]);
 

@@ -16,7 +16,8 @@
 // - 2026-08-14: 치과별 기공수가 할증(labPracticeFeeMultipliers → labFeeMultiplier).
 // - 2026-08-14: 지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
 // - 2026-08-14: 자동매칭: 치과별 할증 사용. 할증 updatedAt > 의뢰 createdAt 이면 해당 건 미적용.
-// - 2026-08-14: 자동매칭 수락 예산 검증은 의뢰시점 할증 반영 단가.
+// - 2026-08-14: 자동매칭 수락 예산 검증은 공개 수가(할증 제외). 할증은 청구에만.
+// - 2026-08-15: 전송 전 잔액검사 — catalog 재사용·어벗 단가 캐시·조회 병렬화.
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -367,6 +368,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
   toothWorks,
   remake = false,
   autoMatchBudget = null,
+  catalog: catalogInput = null,
 }) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
@@ -377,31 +379,28 @@ export async function assertPracticeTransferPaidCreditSufficient({
 
   let labFeeSchedule = null;
   const labId = String(labAnchorId || "").trim();
-  const catalog = await loadAutoMatchBudgetCatalog();
-  const budget = normalizeAutoMatchBudget(autoMatchBudget, catalog);
-  const [lab, practice] =
-    labId && Types.ObjectId.isValid(labId)
-      ? await Promise.all([
-          BusinessAnchor.findById(labId)
+  const needLab = labId && Types.ObjectId.isValid(labId);
+  const [catalog, lab, practice, abutmentPricingTier, abutmentPrices] =
+    await Promise.all([
+      catalogInput != null
+        ? Promise.resolve(catalogInput)
+        : loadAutoMatchBudgetCatalog(),
+      needLab
+        ? BusinessAnchor.findById(labId)
             .select({ labFeeSchedule: 1, labPracticeFeeMultipliers: 1 })
-            .lean(),
-          BusinessAnchor.findById(practiceId)
-            .select({ "practiceTransferSettings.implantFavorites": 1 })
-            .lean(),
-        ])
-      : [
-          null,
-          await BusinessAnchor.findById(practiceId)
-            .select({ "practiceTransferSettings.implantFavorites": 1 })
-            .lean(),
-        ];
+            .lean()
+        : Promise.resolve(null),
+      BusinessAnchor.findById(practiceId)
+        .select({ "practiceTransferSettings.implantFavorites": 1 })
+        .lean(),
+      resolvePracticeAbutmentPricingTier(practiceId),
+      loadCachedAbutmentCreditPrices(),
+    ]);
+  const budget = normalizeAutoMatchBudget(autoMatchBudget, catalog);
   if (lab) labFeeSchedule = lab.labFeeSchedule || null;
 
   const noLab = !labId;
   const useRemake = Boolean(remake);
-  const abutmentPricingTier =
-    await resolvePracticeAbutmentPricingTier(practiceId);
-  const abutmentPrices = await loadAbutmentCreditPrices();
   const autoSchedule =
     noLab && budget
       ? buildScheduleFromAutoMatchBudget(budget, "max", catalog)
@@ -560,12 +559,13 @@ export async function commitPracticeTransferBilling({
     toothWorks,
     budget: transfer?.billing?.autoMatchBudget,
     labFeeSchedule: lab?.labFeeSchedule,
-    labFeeMultiplier,
+    // 자동매칭 예산 게이트는 공개 수가만. 할증은 청구(fees)에만 반영.
+    labFeeMultiplier: 1,
     catalog: autoMatchCatalog || undefined,
   });
   if (isAutoMatch && !budgetCheck.ok) {
     const err = new Error(
-      "기공소 수가(할증 포함)가 치과 자동매칭 예산(항목별 최소~최대) 밖입니다.",
+      "기공소 수가가 치과 자동매칭 예산(항목별 최소~최대) 밖입니다.",
     );
     err.statusCode = 409;
     err.payload = {
@@ -1174,12 +1174,13 @@ async function computeAcceptedPracticeTransferFees({
       toothWorks,
       budget: transfer?.billing?.autoMatchBudget,
       labFeeSchedule: lab?.labFeeSchedule,
-      labFeeMultiplier,
+      // 자동매칭 예산 게이트는 공개 수가만. 할증은 청구(fees)에만 반영.
+      labFeeMultiplier: 1,
       catalog: autoMatchCatalog || undefined,
     });
     if (!budgetCheck.ok) {
       const err = new Error(
-        "기공소 수가(할증 포함)가 치과 자동매칭 예산(항목별 최소~최대) 밖입니다.",
+        "기공소 수가가 치과 자동매칭 예산(항목별 최소~최대) 밖입니다.",
       );
       err.statusCode = 409;
       err.payload = {
@@ -2002,6 +2003,7 @@ export async function buildPracticeTransferQuote({
   remake = false,
   matchingMode = undefined,
   autoMatchBudget = undefined,
+  catalog: catalogInput = undefined,
 }) {
   let schedule = labFeeSchedule;
   const labId = String(labAnchorId || "").trim();
@@ -2017,6 +2019,8 @@ export async function buildPracticeTransferQuote({
     autoMatchBudget === undefined &&
     needFavorites &&
     (!labId || String(matchingMode || "").trim() === "auto");
+  const needCatalog =
+    catalogInput === undefined && (usedDefaultSchedule || needBudget);
   const [lab, practice, abutmentPricingTier, abutmentPrices, partner, cachedRates, catalog] =
     await Promise.all([
       needLab
@@ -2038,9 +2042,11 @@ export async function buildPracticeTransferQuote({
         ? findLabPracticeRelationship({ labAnchorId, practiceAnchorId })
         : Promise.resolve(null),
       needRates ? loadCachedDevopsPayoutRates() : Promise.resolve(payoutRates),
-      usedDefaultSchedule || needBudget
-        ? loadAutoMatchBudgetCatalog()
-        : Promise.resolve(null),
+      catalogInput !== undefined
+        ? Promise.resolve(catalogInput)
+        : needCatalog
+          ? loadAutoMatchBudgetCatalog()
+          : Promise.resolve(null),
     ]);
 
   const resolvedBudgetRaw =

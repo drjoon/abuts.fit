@@ -24,6 +24,7 @@ const SPEND_TYPES = [
   "SPEND_PAID",
   "SPEND_FREE_REQUEST",
   "SPEND_FREE_SHIPPING",
+  "SPEND_SETTLEMENT",
   "SPEND_HOLD",
   "LAB_SETTLEMENT_PAYOUT",
 ];
@@ -39,6 +40,7 @@ const FREE_TYPES = [
 const SETTLEMENT_FILTER_TYPES = [
   "LAB_SETTLEMENT_CHARGE",
   "LAB_SETTLEMENT_PAYOUT",
+  "SPEND_SETTLEMENT",
 ];
 
 /** creditKind×action → ledger type 목록. 둘 다 있으면 교집합. */
@@ -58,6 +60,7 @@ export function resolveLedgerTypesForFilters({
       "SPEND_PAID",
       "SPEND_FREE_REQUEST",
       "SPEND_FREE_SHIPPING",
+      "SPEND_SETTLEMENT",
       "SPEND_HOLD",
       "LAB_SETTLEMENT_CHARGE",
       "LAB_SETTLEMENT_PAYOUT",
@@ -92,9 +95,10 @@ export function resolveLedgerTypesForFilters({
 
 /**
  * 장부「잔액」SSOT (행 시점 총잔액).
- * - 기공소: paid+free(spendable) + settlementCredit
- * - 치과: settlement=0 → spendable과 동일
+ * - 기공소: paid+free + settlementCredit (= spendableBalance)
+ * - 치과: settlement=0 → paid+free와 동일
  * - newest-first: 현재 총잔액에서 페이지 스킵·각 행 amount를 역산
+ * - API의 spendableBalance(주문 가능액)와 표시 총잔액 기준을 맞춘다.
  */
 export function buildLedgerItemsWithBucketBalanceAfter({
   rows,

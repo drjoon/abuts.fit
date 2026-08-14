@@ -9,9 +9,10 @@
 // 자동매칭 기공비 예산 SSOT.
 // 성능: 적격 기공소는 전송 생성 시 1회 스냅샷(eligibleLabAnchorIds).
 // 수신 목록은 Mongo multikey로만 필터. 수락 시 항목별 단가 재검증.
-// 적격 스냅샷: 생성 시점 live 할증 반영 단가. 수락: 의뢰 createdAt 기준 할증
-// (할증 updatedAt이 의뢰 이후면 해당 건 미적용 — 상세 채팅에서 올린 할증 소급 금지).
+// 적격·수락 예산 게이트: 공개 수가(할증 제외). 치과별 할증은 청구에만 반영.
+// 의뢰 이후 올린 할증은 as-of로 해당 건 미적용(상세 채팅 소급 금지).
 // 항목 목록은 어벗츠 수가(시스템 카탈로그)에서 동적으로 온다.
+// - 2026-08-15: 자동매칭 예산 필터에서 practice 할증 제외(공개 수가 기준).
 
 import {
   isLabFeeScheduleConfigured,
@@ -26,12 +27,12 @@ import {
   normalizeLabFeeSchedule,
   resolveLabFeeKeyFromProsthesisType,
   resolveLabFeeScheduleSource,
-  resolveLabPracticeFeeMultiplier,
 } from "./labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
   listEnabledAbutsLabFeeCatalogItems,
 } from "./abutsLabFeeSchedule.js";
+import cache, { CacheKeys, CacheTTL } from "./cache.utils.js";
 import {
   isAutoMatchEligibleLabAnchor,
   loadAutoMatchEligibleLabAnchors,
@@ -73,10 +74,16 @@ export {
   scaleLabUnitPricesByMultiplier,
 };
 
-/** 어벗츠 수가 enabled 항목(자동매칭 모달·예산 기본값 SSOT) */
+/** 어벗츠 수가 enabled 항목(자동매칭 모달·예산 기본값 SSOT). 전송 핫패스용 캐시. */
 export async function loadAutoMatchBudgetCatalog() {
-  const schedule = await loadAbutsLabFeeSchedule();
-  return listEnabledAbutsLabFeeCatalogItems(schedule);
+  return cache.getOrSet(
+    CacheKeys.abutsLabFeeCatalog(),
+    async () => {
+      const schedule = await loadAbutsLabFeeSchedule();
+      return listEnabledAbutsLabFeeCatalogItems(schedule);
+    },
+    CacheTTL.LONG,
+  );
 }
 
 /** @deprecated 레거시 키 수집 — 카탈로그 id 경로 우선 */
@@ -200,12 +207,12 @@ export function labUnitPricesFromSchedule(labFeeSchedule) {
 /**
  * 인증 기공소 중 이 치식·항목 예산에 맞는 앵커 ID 목록.
  * 전송 생성 시에만 호출(수신 목록 핫패스에서 호출 금지).
+ * 예산 비교는 공개 수가만(치과별 할증 제외).
  */
 export async function resolveAutoMatchEligibleLabAnchorIds({
   toothWorks,
   budget,
   catalog,
-  practiceAnchorId = null,
   practiceLabRatings = null,
   autoMatchMinLabRating = 1,
 } = {}) {
@@ -215,7 +222,12 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
       : await loadAutoMatchBudgetCatalog();
   const band = normalizeAutoMatchBudget(budget, catalogItems);
   if (!band) {
-    return { eligibleLabAnchorIds: [], labsScanned: 0, budget: null };
+    return {
+      eligibleLabAnchorIds: [],
+      labsScanned: 0,
+      budget: null,
+      skipped: { noBudget: true, feeUnconfigured: 0, rating: 0, budget: 0 },
+    };
   }
 
   const requiredIds = collectRequiredAutoMatchBudgetIds(
@@ -232,14 +244,17 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
       requestorCapabilities: 1,
       practiceTransferAutoMatchEnabled: 1,
       labFeeSchedule: 1,
-      labPracticeFeeMultipliers: 1,
     },
   });
 
   const eligibleLabAnchorIds = [];
+  const skipped = { feeUnconfigured: 0, rating: 0, budget: 0 };
   for (const lab of labs) {
     if (!isAutoMatchEligibleLabAnchor(lab)) continue;
-    if (!isLabFeeScheduleConfigured(lab.labFeeSchedule)) continue;
+    if (!isLabFeeScheduleConfigured(lab.labFeeSchedule)) {
+      skipped.feeUnconfigured += 1;
+      continue;
+    }
 
     if (
       isLabBlockedByPracticeRating({
@@ -248,14 +263,13 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
         minStars: autoMatchMinLabRating,
       })
     ) {
+      skipped.rating += 1;
       continue;
     }
 
-    // 생성 시점 live 할증 반영(이미 적용 중인 할증만 적격에 반영).
-    const multiplier = resolveLabPracticeFeeMultiplier(lab, practiceAnchorId);
-    const unitPrices = scaleLabUnitPricesByMultiplier(
-      labUnitPricesByCatalogId(lab.labFeeSchedule, catalogItems),
-      multiplier,
+    const unitPrices = labUnitPricesByCatalogId(
+      lab.labFeeSchedule,
+      catalogItems,
     );
     if (
       !isLabUnitPricesWithinAutoMatchBudget(
@@ -265,6 +279,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
         catalogItems,
       )
     ) {
+      skipped.budget += 1;
       continue;
     }
     eligibleLabAnchorIds.push(lab._id);
@@ -274,10 +289,11 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
     eligibleLabAnchorIds,
     labsScanned: labs.length,
     budget: band,
+    skipped,
   };
 }
 
-/** 수락 시: 의뢰시점 할증 반영 기공소 단가가 스냅샷 예산 안인지 */
+/** 수락 시: 공개 수가가 스냅샷 예산 안인지(할증 제외 — 청구는 별도) */
 export function assertLabWithinAutoMatchBudget({
   toothWorks,
   budget,

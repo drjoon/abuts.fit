@@ -449,7 +449,8 @@ const businessAnchorSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.Mixed,
         default: null,
       },
-      // 자동매칭 참여 최소 별(1~3). 해당 치과 rating 기준. 1회 rating은 차단하지 않음.
+      // 자동매칭 참여 최소 별(1~3). 해당 치과 rating 기준.
+      // 미평가·동일 기공소 평가 2회 이하는 차단하지 않음.
       autoMatchMinLabRating: {
         type: Number,
         default: 1,

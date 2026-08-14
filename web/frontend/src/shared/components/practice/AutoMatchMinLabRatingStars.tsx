@@ -22,7 +22,7 @@ import { cn } from "@/shared/ui/cn";
 const TOOLTIP_LINES = [
   "자동 매칭에 참여하는 기공소는 우리 치과가 지정한 별 갯수 이상의 평가를 가진 곳입니다.",
   `우리 치과가 평가한 기공소가 ${AUTO_MATCH_RATING_FILTER_MIN_LABS}개 이상일 때부터 제한이 적용됩니다.`,
-  "기공소가 2회 이하로 평가된 경우 매칭에 참여할 수 있습니다.",
+  "평가가 없거나 2회 이하로 평가된 기공소는 매칭에 참여할 수 있습니다.",
 ] as const;
 
 type AutoMatchMinLabRatingStarsProps = {

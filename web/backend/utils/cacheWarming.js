@@ -9,6 +9,7 @@
 
 import cache, { CacheKeys, CacheTTL } from "./cache.utils.js";
 import { getDeliveryEtaLeadDays } from "../controllers/requests/utils.js";
+import { loadAutoMatchBudgetCatalog } from "./practiceTransferAutoMatchBudget.js";
 
 /**
  * 배송 리드타임 캐시 워밍
@@ -26,6 +27,18 @@ async function warmDeliveryLeadDays() {
   }
 }
 
+async function warmAbutsLabFeeCatalog() {
+  try {
+    await loadAutoMatchBudgetCatalog();
+    console.log("[CacheWarming] ✅ Abuts lab fee catalog cached");
+  } catch (error) {
+    console.error(
+      "[CacheWarming] ❌ Failed to cache abuts lab fee catalog:",
+      error.message,
+    );
+  }
+}
+
 /**
  * 모든 캐시 워밍 실행
  */
@@ -36,7 +49,7 @@ export async function warmupCache() {
 
   await Promise.allSettled([
     warmDeliveryLeadDays(),
-    // 필요시 추가 워밍 함수 추가
+    warmAbutsLabFeeCatalog(),
   ]);
 
   const duration = Date.now() - startTime;
@@ -52,6 +65,7 @@ export function startPeriodicCacheRefresh() {
   setInterval(
     () => {
       warmDeliveryLeadDays();
+      warmAbutsLabFeeCatalog();
     },
     30 * 60 * 1000,
   );

@@ -571,13 +571,16 @@ export const LabSettlementPayoutTab = () => {
                         </p>
                       </div>
                     </PolicySection>
-                    <PolicySection title="유료/무료크레딧 · 기공크레딧 분리">
+                    <PolicySection title="유료/무료크레딧 · 기공크레딧">
                       <div className="flex gap-2.5">
                         <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                         <p>
-                          유료·무료크레딧은 기공소가 앱에서 소비하는
-                          잔액(기공의뢰·생산·배송). 기공크레딧은 치과에서 받은
-                          정산 대기액으로 완전 분리 관리됩니다.
+                          충전(선입금)·무료 지급과 기공크레딧 적립 경로는 따로
+                          표시·관리됩니다. 앱 내 주문 차감은{" "}
+                          <span className="font-semibold text-slate-900">
+                            무료 → 기공 → 유료
+                          </span>{" "}
+                          순이며, 기공크레딧 사용분은 월 정산에서 상계됩니다.
                         </p>
                       </div>
                     </PolicySection>

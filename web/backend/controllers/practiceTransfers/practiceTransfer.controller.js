@@ -83,7 +83,8 @@ import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutm
 // - 2026-08-14: GET /my $or 분리 병렬 조회. drafts?trashed=all 1쿼리. GET에서 syncIndexes 제거.
 // - 2026-08-14: 치과→기공소 labRating(1~3)·메모. 자동매칭 최소 별 필터.
 // - 2026-08-14: 자동매칭도 practiceBusinessAnchorId 전달(표시명 비공개·기공수가 할증 키).
-// - 2026-08-14: 자동매칭 적격/수락 — 의뢰시점 할증 반영 단가가 치과 예산 min~max 안이어야 함.
+// - 2026-08-14: 자동매칭 적격/수락 — 공개 수가가 치과 예산 min~max 안이어야 함(할증은 청구만).
+// - 2026-08-15: 적격 스냅샷에서 practice 할증 제외. 카탈로그·practice 병렬 로드.
 // - 2026-08-14: 자동매칭 3시간 강제 클레임 만료 폐기(작업완료/취소까지 유지·도착일은 소통 기한).
 // - 2026-08-14: mark-accepted — autoMatch pool emit N+1 제거·사이드이펙트 병렬. FE 수락 busy에서 chat resolve 분리.
 // - 2026-08-14: mark-accepted — 과금 직후 응답, billing $set, 사이드이펙트 비동기.
@@ -1802,16 +1803,20 @@ export async function createPracticeTransfer(req, res) {
     // 잔액 검사 후 생성. 크레딧은 생성 시 에스크로 보류(기공 적립은 작업완료).
     let autoMatchBudget = null;
     let autoMatchEligibleLabAnchorIds = undefined;
+    let autoMatchCatalog = null;
     if (matchingMode === "auto") {
-      const practiceForBudget = await BusinessAnchor.findById(practiceAnchorId)
-        .select({
-          "practiceTransferSettings.autoMatchBudget": 1,
-          "practiceTransferSettings.autoMatchMinLabRating": 1,
-          "practiceTransferSettings.implantFavorites": 1,
-          practiceLabRatings: 1,
-        })
-        .lean();
-      const catalog = await loadAutoMatchBudgetCatalog();
+      const [practiceForBudget, catalog] = await Promise.all([
+        BusinessAnchor.findById(practiceAnchorId)
+          .select({
+            "practiceTransferSettings.autoMatchBudget": 1,
+            "practiceTransferSettings.autoMatchMinLabRating": 1,
+            "practiceTransferSettings.implantFavorites": 1,
+            practiceLabRatings: 1,
+          })
+          .lean(),
+        loadAutoMatchBudgetCatalog(),
+      ]);
+      autoMatchCatalog = catalog;
       autoMatchBudget = resolveAutoMatchBudgetOrDefaults(
         req.body?.autoMatchBudget ??
           practiceRouting?.autoMatchBudget ??
@@ -1823,20 +1828,32 @@ export async function createPracticeTransfer(req, res) {
         toothWorks: toothWorksRaw,
         budget: autoMatchBudget,
         catalog,
-        practiceAnchorId,
         practiceLabRatings: practiceForBudget?.practiceLabRatings,
         autoMatchMinLabRating:
           practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
       });
       autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
       if (autoMatchEligibleLabAnchorIds.length === 0) {
+        const skipped = eligibility.skipped || {};
+        let message =
+          "설정한 항목별 기공비 예산·최소 별점에 맞는 인증 기공소가 없습니다. 예산·별점을 조정하거나 지정 기공소를 선택해주세요.";
+        if (skipped.feeUnconfigured > 0 && skipped.budget === 0 && skipped.rating === 0) {
+          message =
+            "인증 기공소의 기공수가가 아직 설정되지 않았습니다. 기공소에서 수가를 켜거나 지정 기공소를 선택해주세요.";
+        } else if (skipped.rating > 0 && skipped.budget === 0) {
+          message =
+            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요. (평가 2회 이하·미평가 기공소는 제한되지 않습니다.)";
+        } else if (skipped.budget > 0) {
+          message =
+            "설정한 항목별 기공비 예산에 맞는 인증 기공소가 없습니다. 예산을 조정하거나 지정 기공소를 선택해주세요.";
+        }
         return res.status(409).json({
           success: false,
-          message:
-            "설정한 항목별 기공비 예산·최소 별점에 맞는 인증 기공소가 없습니다. 예산·별점을 조정하거나 지정 기공소를 선택해주세요.",
+          message,
           reason: "auto_match_no_eligible_labs",
           autoMatchBudget,
           labsScanned: eligibility.labsScanned,
+          skipped,
         });
       }
     }
@@ -1847,6 +1864,7 @@ export async function createPracticeTransfer(req, res) {
         labAnchorId: targetLabAnchorId,
         toothWorks: toothWorksRaw,
         autoMatchBudget,
+        catalog: autoMatchCatalog,
       });
     } catch (creditErr) {
       const status = Number(creditErr?.statusCode || 500);
@@ -1864,6 +1882,7 @@ export async function createPracticeTransfer(req, res) {
       toothWorks: toothWorksRaw,
       matchingMode,
       autoMatchBudget,
+      catalog: autoMatchCatalog,
     });
 
     const billingPreview = toBillingPreviewFields(feeQuote);

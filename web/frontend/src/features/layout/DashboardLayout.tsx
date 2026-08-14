@@ -280,14 +280,18 @@ type UserProfileApiResponse = {
 type CreditBalanceApiResponse = {
   data?: {
     balance?: number;
+    spendableBalance?: number;
     paidCredit?: number;
     freeRequestCredit?: number;
     freeShippingCredit?: number;
+    settlementCredit?: number;
   };
   balance?: number;
+  spendableBalance?: number;
   paidCredit?: number;
   freeRequestCredit?: number;
   freeShippingCredit?: number;
+  settlementCredit?: number;
 };
 
 type SpendInsightsApiResponse = {
@@ -427,6 +431,7 @@ export const DashboardLayout = () => {
   const [freeShippingCredit, setFreeShippingCredit] = useState<number | null>(
     null,
   );
+  const [settlementCredit, setSettlementCredit] = useState<number | null>(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -702,7 +707,8 @@ export const DashboardLayout = () => {
       creditBalance === null &&
       paidCredit === null &&
       freeRequestCredit === null &&
-      freeShippingCredit === null;
+      freeShippingCredit === null &&
+      settlementCredit === null;
 
     if (shouldShowLoading) {
       setLoadingCreditBalance(true);
@@ -719,19 +725,31 @@ export const DashboardLayout = () => {
         setPaidCredit(null);
         setFreeRequestCredit(null);
         setFreeShippingCredit(null);
+        setSettlementCredit(null);
         return;
       }
       const body = res.data || {};
       const data = body.data || body;
-      setCreditBalance(Number(data?.balance ?? 0));
-      setPaidCredit(Number(data?.paidCredit ?? 0));
-      setFreeRequestCredit(Number(data?.freeRequestCredit ?? 0));
-      setFreeShippingCredit(Number(data?.freeShippingCredit ?? 0));
+      const paid = Number(data?.paidCredit ?? 0);
+      const freeReq = Number(data?.freeRequestCredit ?? 0);
+      const freeShip = Number(data?.freeShippingCredit ?? 0);
+      const settlement = Number(data?.settlementCredit ?? 0);
+      const spendable = Number(
+        data?.spendableBalance ??
+          data?.balance ??
+          paid + freeReq + freeShip + settlement,
+      );
+      setCreditBalance(spendable);
+      setPaidCredit(paid);
+      setFreeRequestCredit(freeReq);
+      setFreeShippingCredit(freeShip);
+      setSettlementCredit(settlement);
     } catch {
       setCreditBalance(null);
       setPaidCredit(null);
       setFreeRequestCredit(null);
       setFreeShippingCredit(null);
+      setSettlementCredit(null);
     } finally {
       if (shouldShowLoading) {
         setLoadingCreditBalance(false);
@@ -743,6 +761,7 @@ export const DashboardLayout = () => {
     freeShippingCredit,
     isPracticeUser,
     paidCredit,
+    settlementCredit,
     token,
     user,
   ]);
@@ -888,7 +907,9 @@ export const DashboardLayout = () => {
         const balanceData = balanceRes.data?.data || balanceRes.data;
         const insightsData = insightsRes.data?.data || insightsRes.data;
 
-        const balance = Number(balanceData?.balance || 0);
+        const balance = Number(
+          balanceData?.spendableBalance ?? balanceData?.balance ?? 0,
+        );
         const avgDailySpendSupply = Number(
           insightsData?.avgDailySpendSupply || 0,
         );
@@ -1841,6 +1862,7 @@ export const DashboardLayout = () => {
                           paidCredit,
                           freeRequestCredit,
                           freeShippingCredit,
+                          settlementCredit,
                           loadingCreditBalance,
                         }}
                       />

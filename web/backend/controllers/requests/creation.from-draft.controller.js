@@ -1248,9 +1248,11 @@ export async function createRequestsFromDraft(req, res) {
         if (!isPracticeRoutingSubmission) {
           const {
             balance,
+            spendableBalance,
             paidCredit,
             freeRequestCredit,
             freeShippingCredit,
+            settlementCredit,
           } = creditBalance && typeof creditBalance === "object"
             ? creditBalance
             : await getBusinessCreditBalanceBreakdown({
@@ -1260,9 +1262,11 @@ export async function createRequestsFromDraft(req, res) {
           console.log("[createRequestsFromDraft] Credit balance check", {
             t: Date.now() - startTime,
             balance,
+            spendableBalance,
             paidCredit,
             freeRequestCredit,
             freeShippingCredit,
+            settlementCredit,
             requiredMachiningFee,
             totalSpendSupply,
             totalExpressFee,
@@ -1276,9 +1280,12 @@ export async function createRequestsFromDraft(req, res) {
             totalShippingFee,
           });
 
-          // 유료+무료 통합 풀에서 의뢰비(+신속)→배송비 순으로 배정해 이중계산을 방지
+          // 무료→기공→유료 통합 풀에서 의뢰비(+신속)→배송비 순으로 배정
           const freeCredit = freeRequestCredit + freeShippingCredit;
-          const totalAvailable = paidCredit + freeCredit;
+          const totalAvailable = Number(
+            spendableBalance ??
+              paidCredit + freeCredit + Number(settlementCredit || 0),
+          );
           let remaining = totalAvailable;
           const allocatedMachining = Math.min(remaining, requiredMachiningFee);
           remaining -= allocatedMachining;

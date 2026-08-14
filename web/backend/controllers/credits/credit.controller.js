@@ -192,8 +192,13 @@ async function getBalanceBreakdown(scope, requestorKindHint) {
 
   const freeRequestCredit = Number(snapshot?.freeRequestCredit || 0);
   const freeShippingCredit = Number(snapshot?.freeShippingCredit || 0);
+  const balance = Number(snapshot?.balance || 0);
+  const settlementCredit = Number(snapshot?.settlementCredit || 0);
   return {
-    balance: Number(snapshot?.balance || 0),
+    balance,
+    spendableBalance: Number(
+      snapshot?.spendableBalance ?? balance + settlementCredit,
+    ),
     paidCredit: Number(snapshot?.paidCredit || 0),
     freeRequestCredit,
     freeShippingCredit,
@@ -201,9 +206,8 @@ async function getBalanceBreakdown(scope, requestorKindHint) {
     freeCredit: Number(
       snapshot?.freeCredit ?? freeRequestCredit + freeShippingCredit,
     ),
-    // 기공정산크레딧(LAB_SETTLEMENT_CREDIT)은 기공소가 치과로부터 적립·월정산하는 버킷.
-    // 치과는 유료/무료크레딧으로 기공비를 지불하며 settlement 잔액 UI를 쓰지 않는다.
-    settlementCredit: Number(snapshot?.settlementCredit || 0),
+    // 기공크레딧: 적립·월정산 경로 분리. 주문 차감 시 무료 다음·유료 이전 상계.
+    settlementCredit,
     requestorKind: kind,
     showSettlementCredit: isLab,
   };

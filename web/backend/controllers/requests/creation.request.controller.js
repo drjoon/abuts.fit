@@ -743,24 +743,34 @@ export async function createRequestsBulk(req, res) {
       });
     }
 
-    const { balance, paidCredit, freeRequestCredit, freeShippingCredit } =
-      await getBusinessCreditBalanceBreakdown({
-        businessAnchorId,
-      });
+    const {
+      balance,
+      spendableBalance,
+      paidCredit,
+      freeRequestCredit,
+      freeShippingCredit,
+      settlementCredit,
+    } = await getBusinessCreditBalanceBreakdown({
+      businessAnchorId,
+    });
 
     console.log("[createRequestsBulk] Credit check", {
       totalMachiningFee,
       totalShippingFee,
       boxCount,
       balance,
+      spendableBalance,
       paidCredit,
       freeRequestCredit,
       freeShippingCredit,
+      settlementCredit,
     });
 
-    // 5. 크레딧 부족 체크 (유료+무료 통합 풀, 의뢰비→배송비 순 배정)
+    // 5. 크레딧 부족 체크 (무료→기공→유료 통합 풀, 의뢰비→배송비 순 배정)
     const freeCredit = freeRequestCredit + freeShippingCredit;
-    const totalAvailable = paidCredit + freeCredit;
+    const totalAvailable = Number(
+      spendableBalance ?? paidCredit + freeCredit + Number(settlementCredit || 0),
+    );
     let remaining = totalAvailable;
     const allocatedMachining = Math.min(remaining, totalMachiningFee);
     remaining -= allocatedMachining;

@@ -78,7 +78,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     ).toBeNull();
   });
 
-  test("surcharge unit prices must stay within budget band", () => {
+  test("unit price helper scales surcharge (eligibility uses base; billing may scale)", () => {
     const budget = {
       version: 2,
       items: { crown: { min: 54000, max: 66000 } },

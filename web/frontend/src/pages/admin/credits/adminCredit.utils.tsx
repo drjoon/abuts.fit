@@ -46,6 +46,7 @@ export const creditTypeLabel = (t: AdminCreditLedgerType) => {
   if (t === "SPEND_PAID") return "사용(유료)";
   if (t === "SPEND_FREE_REQUEST") return "사용(무료)";
   if (t === "SPEND_FREE_SHIPPING") return "사용(무료)";
+  if (t === "SPEND_SETTLEMENT") return "사용(기공크레딧)";
   return "조정";
 };
 

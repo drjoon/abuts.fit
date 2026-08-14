@@ -9,6 +9,7 @@ export type AdminCreditLedgerType =
   | "SPEND_PAID"
   | "SPEND_FREE_REQUEST"
   | "SPEND_FREE_SHIPPING"
+  | "SPEND_SETTLEMENT"
   | "ADJUST";
 
 export type AdminLedgerItem = {

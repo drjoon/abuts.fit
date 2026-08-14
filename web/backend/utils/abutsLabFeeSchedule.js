@@ -147,6 +147,12 @@ export async function saveAbutsLabFeeSchedule(rawItems) {
   )
     .select({ abutsLabFeeSchedule: 1 })
     .lean();
+  try {
+    const { default: cache, CacheKeys } = await import("./cache.utils.js");
+    cache.delete(CacheKeys.abutsLabFeeCatalog());
+  } catch {
+    // ignore cache miss wiring
+  }
   return normalizeAbutsLabFeeSchedule(doc?.abutsLabFeeSchedule);
 }
 

@@ -141,6 +141,7 @@ async function postSpendCommitGeneralLedger({
   fromFree,
   fromFreeRequest,
   fromFreeShipping,
+  fromSettlement = 0,
   freeAccountCode,
   refType,
   refId,
@@ -153,6 +154,7 @@ async function postSpendCommitGeneralLedger({
   if (spendAmount <= 0) return { posted: false, reason: "zero_amount" };
 
   const paidAmount = Math.max(0, Math.round(Number(fromPaid || 0)));
+  const settlementAmount = Math.max(0, Math.round(Number(fromSettlement || 0)));
   // 통합 무료: 두 GL 하위계정에서 각각 소진 가능. 하위호환으로 fromFree+freeAccountCode 유지.
   let freeRequestAmount = Math.max(0, Math.round(Number(fromFreeRequest || 0)));
   let freeShippingAmount = Math.max(0, Math.round(Number(fromFreeShipping || 0)));
@@ -167,7 +169,7 @@ async function postSpendCommitGeneralLedger({
     }
   }
   const freeAmount = freeRequestAmount + freeShippingAmount;
-  if (paidAmount <= 0 && freeAmount <= 0) {
+  if (paidAmount <= 0 && freeAmount <= 0 && settlementAmount <= 0) {
     return { posted: false, reason: "zero_split" };
   }
 
@@ -180,6 +182,7 @@ async function postSpendCommitGeneralLedger({
   const spendMeta = {
     spendUniqueKey,
     ...(usageKind ? { usageKind: String(usageKind) } : {}),
+    ...(settlementAmount > 0 ? { settlementOffset: true } : {}),
   };
 
   if (freeRequestAmount > 0) {
@@ -208,6 +211,19 @@ async function postSpendCommitGeneralLedger({
     });
   }
 
+  if (settlementAmount > 0) {
+    lines.push({
+      accountCode: "LAB_SETTLEMENT_CREDIT",
+      ownerRole: "requestor",
+      ownerId: owners.requestorAnchorId,
+      amount: -settlementAmount,
+      creditKind: "SETTLEMENT",
+      refType,
+      refId,
+      meta: spendMeta,
+    });
+  }
+
   if (paidAmount > 0) {
     lines.push({
       accountCode: "REQ_PAID_CREDIT",
@@ -221,7 +237,7 @@ async function postSpendCommitGeneralLedger({
     });
   }
 
-  // 수익 라인 creditKind: 무료 소진 비중에 비례해 FREE_REQUEST/FREE_SHIPPING으로 분해.
+  // 수익 라인: 무료만 free, 기공상계·유료는 paid 비중(상계분도 실대금).
   // shipping 수익 배분 컨텍스트는 배송 소비(refType) 또는 배송무료 소진이 있을 때 적용.
   const primaryFreeAccountCode =
     freeShippingAmount > freeRequestAmount
@@ -682,6 +698,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       fromFreeShipping: Number(
         spendResult.fromFreeShipping ?? spendResult.fromBonusShipping ?? 0,
       ),
+      fromSettlement: Number(spendResult.fromSettlement || 0),
       freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
       refType: "REQUEST",
       refId: request._id,
@@ -772,7 +789,12 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
           refId: request._id,
           ownerRole: "requestor",
           accountCode: {
-            $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT"],
+            $in: [
+              "REQ_PAID_CREDIT",
+              "REQ_FREE_REQUEST_CREDIT",
+              "REQ_FREE_SHIPPING_CREDIT",
+              "LAB_SETTLEMENT_CREDIT",
+            ],
           },
           amount: { $lt: 0 },
         },
@@ -856,6 +878,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
         expressSpendResult.fromBonusShipping ??
         0,
     ),
+    fromSettlement: Number(expressSpendResult.fromSettlement || 0),
     freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
     refType: "REQUEST",
     refId: request._id,
@@ -1129,7 +1152,14 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
         ownerId: businessAnchorId,
         refType: "REQUEST",
         refId: request._id,
-        accountCode: { $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT"] },
+        accountCode: {
+          $in: [
+            "REQ_PAID_CREDIT",
+            "REQ_FREE_REQUEST_CREDIT",
+            "REQ_FREE_SHIPPING_CREDIT",
+            "LAB_SETTLEMENT_CREDIT",
+          ],
+        },
         amount: { $lt: 0 },
       }).session(session || null);
 
@@ -1435,6 +1465,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     fromFreeShipping: Number(
       spendResult.fromFreeShipping ?? spendResult.fromBonusShipping ?? 0,
     ),
+    fromSettlement: Number(spendResult.fromSettlement || 0),
     freeAccountCode: "REQ_FREE_SHIPPING_CREDIT",
     refType: "SHIPPING_PACKAGE",
     refId: pkg._id,
