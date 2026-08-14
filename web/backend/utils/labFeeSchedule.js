@@ -386,6 +386,25 @@ export function sortPracticeTransferFeeLines(lines) {
   });
 }
 
+/** max 견적 라인에 min 스케줄 labFee를 labFeeMin으로 붙인다. */
+export function attachLabFeeMinToLines(maxLines, minLines) {
+  const minByKey = new Map();
+  for (const line of Array.isArray(minLines) ? minLines : []) {
+    const key = `${String(line?.toothNumber || "").trim()}\0${String(line?.prosthesisType || "").trim()}`;
+    if (!minByKey.has(key)) {
+      minByKey.set(key, Math.max(0, Math.round(Number(line?.labFee || 0))));
+    }
+  }
+  return (Array.isArray(maxLines) ? maxLines : []).map((line) => {
+    const key = `${String(line?.toothNumber || "").trim()}\0${String(line?.prosthesisType || "").trim()}`;
+    if (!minByKey.has(key)) return line;
+    return {
+      ...line,
+      labFeeMin: minByKey.get(key),
+    };
+  });
+}
+
 function sortToothNumbersForFee(teeth) {
   return (Array.isArray(teeth) ? teeth : []).slice().sort(
     (a, b) => toToothDecadeSortNumber(a) - toToothDecadeSortNumber(b),

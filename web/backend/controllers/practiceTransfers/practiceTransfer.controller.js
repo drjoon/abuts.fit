@@ -166,6 +166,8 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
   const prev = doc.autoMatch && typeof doc.autoMatch === "object"
     ? doc.autoMatch
     : {};
+  const prevBilling =
+    doc.billing && typeof doc.billing === "object" ? doc.billing : {};
   const releaseCount = Number(prev.releaseCount || 0);
   doc.targetLabAnchorId = null;
   doc.targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
@@ -181,6 +183,8 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
     isTradingPartner: false,
     relationshipKind: "none",
     feeRateApplied: 0,
+    // 생성 시 할증 스냅샷 유지(클레임 해제 후에도 소급 적용 금지).
+    labFeeMultiplier: Number(prevBilling.labFeeMultiplier || 1),
     labTradingPartnerId: null,
     labSettlementAmount: 0,
     abutsRevenueAmount: 0,
@@ -1642,9 +1646,7 @@ export async function createPracticeTransfer(req, res) {
     });
 
     const billingPreview = toBillingPreviewFields(feeQuote);
-    if (autoMatchBudget) {
-      billingPreview.autoMatchBudget = autoMatchBudget;
-    }
+    // feeQuote.autoMatchBudget에 합산 minLabFee/maxLabFee가 포함된다.
 
     const transferDoc = await PracticeTransfer.create({
       transferId,

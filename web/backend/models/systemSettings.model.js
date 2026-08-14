@@ -60,6 +60,11 @@ const systemSettingsSchema = new mongoose.Schema(
       defaultRequestFreeCredit: { type: Number, default: 30000 },
       defaultShippingFreeCredit: { type: Number, default: 7000 },
     },
+    // 어벗츠 기공수가 카탈로그(자동매칭 예산 기준·플랫폼 SSOT)
+    abutsLabFeeSchedule: {
+      items: { type: [mongoose.Schema.Types.Mixed], default: [] },
+      updatedAt: { type: Date, default: null },
+    },
     // B플랜 충전 입금 계좌: EBS 환경변수 한글 인코딩 버그로 인해 DB에서 관리
     // (B_PLAN_DEPOSIT_BANK_NAME/HOLDER 를 env로 넣으면 "????"로 깨짐)
     bPlanDepositAccount: {

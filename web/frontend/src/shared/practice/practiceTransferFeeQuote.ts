@@ -5,6 +5,7 @@
 // - 2026-08-14: 환봉 단가 0원(별도 고지) 라인도 파싱.
 // - 2026-08-14: 환봉 요청중은 기공소 어벗 라인(labAbutmentFee)으로 파싱.
 import {
+  attachLabFeeMinToLines,
   computePracticeTransferRetailFees,
   DEFAULT_ABUTMENT_RETAIL_PRICE,
   LAB_FEE_SCHEDULE_ZEROS,
@@ -133,10 +134,16 @@ export const parsePracticeTransferFeeQuote = (
         );
         const abutmentRetailNote =
           item.abutmentRetailNote === "quote" ? ("quote" as const) : undefined;
+        const labFeeMinRaw = item.labFeeMin;
+        const labFeeMin =
+          labFeeMinRaw != null && Number.isFinite(Number(labFeeMinRaw))
+            ? Math.max(0, Math.round(Number(labFeeMinRaw)))
+            : undefined;
         return {
           toothNumber: String(item.toothNumber || item.tooth || "").trim(),
           prosthesisType: String(item.prosthesisType || item.type || "").trim(),
           labFee: Math.max(0, Math.round(Number(item.labFee || 0))),
+          ...(labFeeMin != null ? { labFeeMin } : {}),
           labAbutmentFee,
           labAbutmentPending: Boolean(item.labAbutmentPending) || labAbutmentFee > 0,
           abutmentRetail: Math.max(0, Math.round(Number(item.abutmentRetail || 0))),
@@ -285,6 +292,7 @@ export const buildFeeQuoteFromContext = (params: {
   });
   const feeRateApplied = Number(context.feeRateApplied || 0);
   let autoMatchBudgetOut: PracticeTransferAutoMatchBudget | null = null;
+  let lines = fees.lines;
   if (zeroed && budget) {
     const minFees = computePracticeTransferRetailFees({
       toothWorks: params.toothWorks,
@@ -295,6 +303,7 @@ export const buildFeeQuoteFromContext = (params: {
       skipAbutmentFees: true,
       labFeeMultiplier: 1,
     });
+    lines = attachLabFeeMinToLines(fees.lines, minFees.lines);
     autoMatchBudgetOut = {
       ...budget,
       minLabFee: minFees.labFeeTotal,
@@ -308,6 +317,7 @@ export const buildFeeQuoteFromContext = (params: {
   });
   return {
     ...fees,
+    lines,
     relationshipKind: context.relationshipKind,
     feeRateApplied,
     labFeeMultiplier: zeroed ? 1 : labFeeMultiplier,

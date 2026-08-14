@@ -64,6 +64,10 @@ import {
   updatePlatformFeeSettings,
 } from "../../controllers/admin/admin.settings.controller.js";
 import { listLabFeeSchedules } from "../../controllers/admin/admin.labFeeSchedules.controller.js";
+import {
+  getAbutsLabFeeSchedule,
+  updateAbutsLabFeeSchedule,
+} from "../../controllers/admin/admin.abutsLabFeeSchedule.controller.js";
 import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { fixSubRole } from "../../controllers/admin/admin.fixSubRole.controller.js";
@@ -222,6 +226,18 @@ router.get(
   authenticate,
   authorize(["admin", "devops"]),
   listLabFeeSchedules,
+);
+router.get(
+  "/settings/abuts-lab-fee-schedule",
+  authenticate,
+  authorize(["admin", "devops"]),
+  getAbutsLabFeeSchedule,
+);
+router.put(
+  "/settings/abuts-lab-fee-schedule",
+  authenticate,
+  authorize(["admin", "devops"]),
+  updateAbutsLabFeeSchedule,
 );
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용

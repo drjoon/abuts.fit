@@ -1,15 +1,15 @@
 // related files:
 // - web/backend/utils/practiceTransferAutoMatchBudget.js
-// - web/backend/utils/labFeeSchedule.js (LAB_FEE_SCHEDULE_DEFAULTS와 동기화)
+// - web/backend/utils/abutsLabFeeSchedule.js
 // - web/frontend/src/shared/practice/autoMatchBudget.ts
 //
-// 자동매칭 기공비 예산 — 항목별 min/max (순수, DB 의존 없음).
-// 기본값: 어벗츠 관리자 기본 수가 ±20%, Math.ceil.
+// 자동매칭 기공비 예산 — 항목별 min/max (순수).
+// 카탈로그(어벗츠 수가) 기준 ±20% Math.ceil 기본값.
 
 const MAX_UNIT_FEE = 50_000_000;
 const DEFAULT_SPREAD = 0.2;
 
-/** SSOT 동기화: web/backend/utils/labFeeSchedule.js LAB_FEE_SCHEDULE_DEFAULTS */
+/** 카탈로그 없을 때 fallback (어벗츠 기본 수가와 동기화) */
 export const ADMIN_LAB_FEE_BASE = {
   crown: 60000,
   bridge: 60000,
@@ -20,7 +20,6 @@ export const ADMIN_LAB_FEE_BASE = {
   removableTemp6: 50000,
 };
 
-/** 자동매칭 예산에 쓰는 기공 항목(어벗츠/기공소 어벗 단가 키 제외) */
 export const AUTO_MATCH_BUDGET_KEYS = [
   "crown",
   "bridge",
@@ -41,7 +40,33 @@ export const AUTO_MATCH_BUDGET_KEY_LABELS = {
   removableTemp6: "임시치아 (6치 이하)",
 };
 
-/** @returns {{ min: number, max: number }} */
+/** @returns {{ id: string, name: string, price: number, unit?: string }[]} */
+export function fallbackAbutsLabFeeCatalog() {
+  return [
+    { id: "crown", name: "크라운", unit: "perTooth", price: 60000, enabled: true },
+    { id: "bridge", name: "브리지", unit: "perTooth", price: 60000, enabled: true },
+    { id: "inlay", name: "인레이", unit: "perTooth", price: 50000, enabled: true },
+    { id: "pontic", name: "Pontic", unit: "perTooth", price: 40000, enabled: true },
+    { id: "retainer", name: "유지장치", unit: "perSet", price: 40000, enabled: true },
+    {
+      id: "removableTemp3",
+      name: "임시치아",
+      unit: "perNTeeth",
+      price: 30000,
+      enabled: true,
+      tiers: [{ n: 3, price: 30000, remake: 0 }],
+    },
+    {
+      id: "removableTemp6",
+      name: "임시치아",
+      unit: "perNTeeth",
+      price: 50000,
+      enabled: true,
+      tiers: [{ n: 6, price: 50000, remake: 0 }],
+    },
+  ];
+}
+
 export function bandFromAdminBase(basePrice, spread = DEFAULT_SPREAD) {
   const base = Math.max(0, Math.round(Number(basePrice) || 0));
   const s = Number.isFinite(Number(spread)) ? Math.max(0, Number(spread)) : DEFAULT_SPREAD;
@@ -53,18 +78,30 @@ export function bandFromAdminBase(basePrice, spread = DEFAULT_SPREAD) {
   };
 }
 
-export function buildDefaultAutoMatchBudgetItems(
-  adminDefaults = ADMIN_LAB_FEE_BASE,
-) {
+export function normalizeCatalogItems(catalog) {
+  const list = Array.isArray(catalog) && catalog.length
+    ? catalog
+    : fallbackAbutsLabFeeCatalog();
+  return list
+    .filter((item) => item && item.enabled !== false && String(item.name || "").trim())
+    .map((item, index) => ({
+      id: String(item.id || `item-${index + 1}`).trim() || `item-${index + 1}`,
+      name: String(item.name || "").trim(),
+      unit: String(item.unit || "perTooth").trim() || "perTooth",
+      price: Math.max(0, Math.round(Number(item.price) || 0)),
+      enabled: true,
+      tiers: Array.isArray(item.tiers) ? item.tiers : [],
+    }));
+}
+
+export function buildDefaultAutoMatchBudgetItems(catalog) {
   const items = {};
-  for (const key of AUTO_MATCH_BUDGET_KEYS) {
-    const base = Number(adminDefaults?.[key] ?? ADMIN_LAB_FEE_BASE[key] ?? 0);
-    items[key] = bandFromAdminBase(base);
+  for (const row of normalizeCatalogItems(catalog)) {
+    items[row.id] = bandFromAdminBase(row.price);
   }
   return items;
 }
 
-/** @returns {{ min: number, max: number } | null} */
 export function normalizeAutoMatchBudgetBand(raw) {
   if (raw == null || typeof raw !== "object") return null;
   const minRaw = Number(raw.min ?? raw.minLabFee);
@@ -86,10 +123,9 @@ export function normalizeAutoMatchBudgetBand(raw) {
  *   maxLabFee?: number,
  * } | null}
  */
-export function normalizeAutoMatchBudget(raw) {
+export function normalizeAutoMatchBudget(raw, catalog) {
   if (raw == null || typeof raw !== "object") return null;
 
-  // 레거시 총액만 있으면 미설정(모달이 관리자 ±20%로 채움)
   const hasLegacyTotalOnly =
     (raw.minLabFee != null || raw.maxLabFee != null) &&
     raw.items == null &&
@@ -99,14 +135,23 @@ export function normalizeAutoMatchBudget(raw) {
   const srcItems =
     raw.items && typeof raw.items === "object" ? raw.items : raw;
 
+  const catalogIds = new Set(normalizeCatalogItems(catalog).map((row) => row.id));
   const items = {};
   let any = false;
-  for (const key of AUTO_MATCH_BUDGET_KEYS) {
-    const band = normalizeAutoMatchBudgetBand(srcItems?.[key]);
+
+  for (const [key, value] of Object.entries(srcItems || {})) {
+    if (key === "version" || key === "minLabFee" || key === "maxLabFee" || key === "items") {
+      continue;
+    }
+    if (catalogIds.size && !catalogIds.has(key) && !AUTO_MATCH_BUDGET_KEYS.includes(key)) {
+      // 카탈로그에 없는 저장값은 보존하되, 카탈로그 id만 필수로 봄
+    }
+    const band = normalizeAutoMatchBudgetBand(value);
     if (!band) continue;
     items[key] = band;
     any = true;
   }
+
   if (!any) return null;
 
   const out = { version: 2, items };
@@ -121,64 +166,97 @@ export function normalizeAutoMatchBudget(raw) {
   return out;
 }
 
-export function isAutoMatchBudgetConfigured(budget) {
-  const normalized = normalizeAutoMatchBudget(budget);
+export function isAutoMatchBudgetConfigured(budget, catalog) {
+  const normalized = normalizeAutoMatchBudget(budget, catalog);
   if (!normalized) return false;
-  return AUTO_MATCH_BUDGET_KEYS.every((key) => {
-    const band = normalized.items[key];
+  const rows = normalizeCatalogItems(catalog);
+  if (!rows.length) return false;
+  return rows.every((row) => {
+    const band = normalized.items[row.id];
     return band && band.max > 0;
   });
 }
 
-/** 설정 응답/모달용 — 비어 있으면 관리자 ±20%로 채운다. */
-export function resolveAutoMatchBudgetOrDefaults(raw) {
-  const normalized = normalizeAutoMatchBudget(raw);
-  if (normalized && isAutoMatchBudgetConfigured(normalized)) {
-    return normalized;
+/** 설정/모달용 — 카탈로그 항목마다 저장값 또는 ±20% */
+export function resolveAutoMatchBudgetOrDefaults(raw, catalog) {
+  const rows = normalizeCatalogItems(catalog);
+  const normalized = normalizeAutoMatchBudget(raw, catalog);
+  const items = {};
+  for (const row of rows) {
+    const saved = normalized?.items?.[row.id];
+    items[row.id] = saved && saved.max > 0 ? saved : bandFromAdminBase(row.price);
   }
-  return {
-    version: 2,
-    items: buildDefaultAutoMatchBudgetItems(),
-  };
+  return { version: 2, items };
 }
 
-/**
- * 기공소 단가(스케줄 키)가 항목별 예산 안인지.
- * @param {Record<string, number>} unitPrices - key → 원
- * @param {string[]} requiredKeys - 이번 의뢰에 쓰인 키
- */
 export function isLabUnitPricesWithinAutoMatchBudget(
-  unitPrices,
+  unitPricesById,
   budget,
-  requiredKeys,
+  requiredIds,
+  catalog,
 ) {
-  const normalized = normalizeAutoMatchBudget(budget);
+  const normalized = normalizeAutoMatchBudget(budget, catalog);
   if (!normalized) return false;
-  const keys = Array.isArray(requiredKeys) ? requiredKeys : [];
-  if (keys.length === 0) return true;
+  const ids = Array.isArray(requiredIds) ? requiredIds : [];
+  if (ids.length === 0) return true;
 
-  for (const key of keys) {
-    if (!AUTO_MATCH_BUDGET_KEYS.includes(key)) continue;
-    const band = normalized.items[key];
+  for (const id of ids) {
+    const band = normalized.items[id];
     if (!band) return false;
-    const price = Math.max(0, Math.round(Number(unitPrices?.[key] || 0)));
+    const price = Math.max(0, Math.round(Number(unitPricesById?.[id] || 0)));
     if (price < band.min || price > band.max) return false;
   }
   return true;
 }
 
-/** 견적/잔액용 — 항목 예산으로 합성한 가상 스케줄(min 또는 max). */
-export function buildScheduleFromAutoMatchBudget(budget, side = "max") {
-  const normalized = resolveAutoMatchBudgetOrDefaults(budget);
-  const schedule = {};
-  for (const key of AUTO_MATCH_BUDGET_KEYS) {
-    const band = normalized.items[key];
-    schedule[key] = side === "min" ? band.min : band.max;
-  }
-  return schedule;
+/** 견적용 가상 스케줄 — 카탈로그 items의 min/max 단가 */
+export function buildItemsScheduleFromAutoMatchBudget(budget, catalog, side = "max") {
+  const rows = normalizeCatalogItems(catalog);
+  const normalized = resolveAutoMatchBudgetOrDefaults(budget, catalog);
+  return {
+    active: true,
+    items: rows.map((row) => {
+      const band = normalized.items[row.id] || bandFromAdminBase(row.price);
+      const price = side === "min" ? band.min : band.max;
+      return {
+        ...row,
+        price,
+        remake: 0,
+        enabled: true,
+        tiers:
+          row.unit === "perNTeeth"
+            ? (row.tiers?.length
+                ? row.tiers.map((tier) => ({
+                    ...tier,
+                    price,
+                    remake: 0,
+                  }))
+                : [{ n: 3, price, remake: 0 }])
+            : [],
+      };
+    }),
+  };
 }
 
-/** @deprecated 항목별 모델 — 총액만으로는 판정하지 않음 */
-export function isLabFeeWithinAutoMatchBudget(_labFeeTotal, budget) {
-  return isAutoMatchBudgetConfigured(budget);
+/** @deprecated 레거시 키 스케줄 — 카탈로그 id가 crown 등일 때만 */
+export function buildScheduleFromAutoMatchBudget(budget, side = "max", catalog) {
+  const itemsSchedule = buildItemsScheduleFromAutoMatchBudget(
+    budget,
+    catalog,
+    side,
+  );
+  const schedule = {};
+  for (const key of AUTO_MATCH_BUDGET_KEYS) {
+    const item = itemsSchedule.items.find((row) => row.id === key);
+    schedule[key] = item
+      ? item.price
+      : side === "min"
+        ? 0
+        : ADMIN_LAB_FEE_BASE[key] || 0;
+  }
+  return { ...schedule, ...itemsSchedule };
+}
+
+export function isLabFeeWithinAutoMatchBudget(_labFeeTotal, budget, catalog) {
+  return isAutoMatchBudgetConfigured(budget, catalog);
 }

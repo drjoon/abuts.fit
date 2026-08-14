@@ -14,6 +14,7 @@
 // - 2026-08-14: quote-context — 기공소/티어/단가/거래처/수수료율 parallel + 60s 캐시(5회 직렬 RTT 제거).
 // - 2026-08-14: 환봉 요청중 판별용 치과 implantFavorites를 견적·청구 계산에 전달.
 // - 2026-08-14: 치과별 기공수가 할증(labPracticeFeeMultipliers → labFeeMultiplier).
+// - 2026-08-14: 기존 의뢰 견적·수락은 생성 시 billing.labFeeMultiplier만(할증 소급 금지).
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -35,6 +36,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   computePracticeTransferRetailFees,
   LAB_FEE_SCHEDULE_ZEROS,
+  attachLabFeeMinToLines,
   isLabFeeScheduleConfigured,
   normalizeLabFeeItems,
   normalizeLabFeeMultiplier,
@@ -498,9 +500,9 @@ export async function commitPracticeTransferBilling({
     outerSession,
   );
   const abutmentPrices = await loadAbutmentCreditPrices();
-  const labFeeMultiplier = resolveLabPracticeFeeMultiplier(
-    lab,
-    practiceAnchorId,
+  // 수락 과금도 생성 시 billing.labFeeMultiplier 스냅샷 유지(할증은 다음 의뢰부터).
+  const labFeeMultiplier = normalizeLabFeeMultiplier(
+    transfer?.billing?.labFeeMultiplier,
   );
   const fees = computePracticeTransferRetailFees({
     toothWorks,
@@ -1035,6 +1037,7 @@ export async function buildPracticeTransferQuote({
       skipAbutmentFees: true,
       labFeeMultiplier: 1,
     });
+    fees.lines = attachLabFeeMinToLines(fees.lines, minFees.lines);
     autoMatchBudgetOut = {
       ...resolvedBudget,
       minLabFee: minFees.labFeeTotal,
@@ -1145,7 +1148,9 @@ export async function loadPracticeTransferQuoteContext({
 }
 
 /**
- * 목록/상세용 견적. 과금 완료 건은 스냅샷 금액 유지, 미청구는 현재 수가·할증으로 재계산.
+ * 목록/상세용 견적. 과금 완료 건은 스냅샷 금액 유지.
+ * 미청구는 현재 수가로 재계산하되, 할증은 생성 시 billing.labFeeMultiplier만 사용
+ * (치과별 할증은 다음 의뢰부터 적용 — 기존 건에 소급하지 않음).
  */
 export async function buildFeeQuotesForTransferDocs({
   docs,
@@ -1243,7 +1248,7 @@ export async function buildFeeQuotesForTransferDocs({
     const quoteLabId = viewerLabId && (openPool || !targetLabId) ? viewerLabId : targetLabId;
     const billing = doc?.billing && typeof doc.billing === "object" ? doc.billing : null;
     const billed = Boolean(billing?.billedAt);
-    // 과금 완료만 스냅샷 고정. 미청구는 현재 수가·할증으로 재계산(수락 시와 동일).
+    // 과금 완료만 금액 스냅샷 고정. 미청구는 현재 수가로 재계산.
     const useStored = billed;
 
     const schedule = quoteLabId ? scheduleByLab.get(quoteLabId) : null;
@@ -1253,34 +1258,63 @@ export async function buildFeeQuotesForTransferDocs({
       practiceMembershipActive: Boolean(membershipByPractice.get(practiceId)),
     });
     const implantFavorites = favoritesByPractice.get(practiceId) || [];
-    const labFeeMultiplier = resolveLabPracticeFeeMultiplier(
+    // 이 의뢰 견적: 생성 시 스냅샷. 리메이크 미리보기만 현재 할증(다음 의뢰) 반영.
+    const snapLabFeeMultiplier = normalizeLabFeeMultiplier(
+      billing?.labFeeMultiplier,
+    );
+    const liveLabFeeMultiplier = resolveLabPracticeFeeMultiplier(
       quoteLabId ? multiplierByLab.get(quoteLabId) : null,
       practiceId,
     );
+    const storedBudget = normalizeAutoMatchBudget(billing?.autoMatchBudget);
+    const autoScheduleMax =
+      noLab && storedBudget
+        ? buildScheduleFromAutoMatchBudget(storedBudget, "max")
+        : null;
     const remakeFees = computePracticeTransferRetailFees({
       toothWorks,
       implantFavorites,
       labFeeSchedule: noLab
-        ? LAB_FEE_SCHEDULE_ZEROS
+        ? autoScheduleMax || LAB_FEE_SCHEDULE_ZEROS
         : resolveLabFeeScheduleSource(schedule),
       abutmentPricingTier,
       abutmentPrices,
       remake: true,
       skipAbutmentFees: true,
-      labFeeMultiplier,
+      labFeeMultiplier: liveLabFeeMultiplier,
     });
-    const fees = remake
-      ? remakeFees
-      : computePracticeTransferRetailFees({
-          toothWorks,
-          implantFavorites,
-          labFeeSchedule: noLab
-            ? LAB_FEE_SCHEDULE_ZEROS
-            : resolveLabFeeScheduleSource(schedule),
-          abutmentPricingTier,
-          abutmentPrices,
-          labFeeMultiplier,
-        });
+    const fees = computePracticeTransferRetailFees({
+      toothWorks,
+      implantFavorites,
+      labFeeSchedule: noLab
+        ? autoScheduleMax || LAB_FEE_SCHEDULE_ZEROS
+        : resolveLabFeeScheduleSource(schedule),
+      abutmentPricingTier,
+      abutmentPrices,
+      remake,
+      skipAbutmentFees: remake,
+      labFeeMultiplier: snapLabFeeMultiplier,
+    });
+
+    let autoMatchBudgetOut = null;
+    if (noLab && storedBudget) {
+      const minFees = computePracticeTransferRetailFees({
+        toothWorks,
+        implantFavorites,
+        labFeeSchedule: buildScheduleFromAutoMatchBudget(storedBudget, "min"),
+        abutmentPricingTier,
+        abutmentPrices,
+        remake,
+        skipAbutmentFees: true,
+        labFeeMultiplier: 1,
+      });
+      fees.lines = attachLabFeeMinToLines(fees.lines, minFees.lines);
+      autoMatchBudgetOut = {
+        ...storedBudget,
+        minLabFee: minFees.labFeeTotal,
+        maxLabFee: fees.labFeeTotal,
+      };
+    }
 
     const partner = quoteLabId && practiceId
       ? partnerByPair.get(pairKey(quoteLabId, practiceId))
@@ -1305,13 +1339,14 @@ export async function buildFeeQuotesForTransferDocs({
       fees: remakeFees,
       relationshipKind: kind,
       feeRateApplied: remakeFeeRateApplied,
-      labFeeMultiplier,
+      labFeeMultiplier: liveLabFeeMultiplier,
       labSettlementAmount: remakeSplit.labSettlementAmount,
       abutsRevenueAmount: remakeSplit.abutsRevenueAmount,
       labTradingPartnerId: partner?._id ? String(partner._id) : null,
       billed: false,
       usedDefaultSchedule: !quoteLabId,
       isRemake: true,
+      autoMatchBudget: autoMatchBudgetOut,
     });
 
     if (useStored) {
@@ -1335,13 +1370,14 @@ export async function buildFeeQuotesForTransferDocs({
           fees,
           relationshipKind: kind,
           feeRateApplied,
-          labFeeMultiplier,
+          labFeeMultiplier: snapLabFeeMultiplier,
           labSettlementAmount,
           abutsRevenueAmount,
           labTradingPartnerId: partner?._id ? String(partner._id) : null,
           billed: false,
           usedDefaultSchedule: !quoteLabId,
           isRemake: remake,
+          autoMatchBudget: autoMatchBudgetOut,
         }),
         remakeFeeQuote,
       },

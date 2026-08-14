@@ -797,12 +797,37 @@ export type AbutmentRetailNote = "quote";
 export type PracticeTransferFeeLine = {
   toothNumber: string;
   prosthesisType: string;
+  /** 기공비(자동매칭 예산 시 상한) */
   labFee: number;
+  /** 자동매칭 예산 하한. 있으면 툴팁에서 하한~상한 표시 */
+  labFeeMin?: number;
   labAbutmentFee: number;
   labAbutmentPending?: boolean;
   abutmentRetail: number;
   /** 환봉 단가 0원 — 가격 별도 고지 */
   abutmentRetailNote?: AbutmentRetailNote;
+};
+
+/** max 견적 라인에 min 스케줄 labFee를 labFeeMin으로 붙인다(치아·보철 키 매칭). */
+export const attachLabFeeMinToLines = (
+  maxLines: PracticeTransferFeeLine[],
+  minLines: ReadonlyArray<Pick<PracticeTransferFeeLine, "toothNumber" | "prosthesisType" | "labFee">>,
+): PracticeTransferFeeLine[] => {
+  const minByKey = new Map<string, number>();
+  for (const line of minLines) {
+    const key = `${String(line.toothNumber || "").trim()}\0${String(line.prosthesisType || "").trim()}`;
+    if (!minByKey.has(key)) {
+      minByKey.set(key, Math.max(0, Math.round(Number(line.labFee || 0))));
+    }
+  }
+  return maxLines.map((line) => {
+    const key = `${String(line.toothNumber || "").trim()}\0${String(line.prosthesisType || "").trim()}`;
+    const labFeeMin = minByKey.has(key)
+      ? minByKey.get(key)
+      : undefined;
+    if (labFeeMin == null) return line;
+    return { ...line, labFeeMin };
+  });
 };
 
 export type PracticeTransferRetailFees = {

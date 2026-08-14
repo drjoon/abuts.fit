@@ -10,6 +10,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
+// - web/frontend/src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -19,10 +20,11 @@ import {
 } from "@/features/components/SettingsScaffold";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
 import { AdminLabFeeSchedulesTab } from "@/features/settings/tabs/AdminLabFeeSchedulesTab";
+import { AdminAbutsLabFeeScheduleTab } from "@/features/settings/tabs/AdminAbutsLabFeeScheduleTab";
 import { PracticeTransferAutoMatchTab } from "@/pages/devops/components/PracticeTransferAutoMatchTab";
-import { Banknote, CreditCard, FlaskConical } from "lucide-react";
+import { BadgeJapaneseYen, Banknote, CreditCard, FlaskConical } from "lucide-react";
 
-type TabKey = "credits" | "autoMatch" | "labFees";
+type TabKey = "credits" | "autoMatch" | "abutsFees" | "labFees";
 
 const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
   design: "autoMatch",
@@ -47,6 +49,12 @@ export const AdminPlatformSettingsPage = () => {
         label: "기공소 매칭",
         icon: FlaskConical,
         content: <PracticeTransferAutoMatchTab />,
+      },
+      {
+        key: "abutsFees",
+        label: "어벗츠 수가",
+        icon: BadgeJapaneseYen,
+        content: <AdminAbutsLabFeeScheduleTab />,
       },
       {
         key: "labFees",

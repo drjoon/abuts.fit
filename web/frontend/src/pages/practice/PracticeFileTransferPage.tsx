@@ -131,6 +131,7 @@ import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import {
   resolveAutoMatchBudgetOrDefaults,
+  type AbutsLabFeeCatalogItem,
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -478,6 +479,7 @@ type PracticeTransferSettingsPayload = {
   skipDesignConfirm?: boolean;
   defaultAbutmentProductMode?: AbutmentProductMode;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
+  abutsLabFeeCatalog?: AbutsLabFeeCatalogItem[] | null;
   updatedAt?: string | null;
 };
 
@@ -993,6 +995,9 @@ export const PracticeFileTransferPage = ({
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
   const [autoMatchBudget, setAutoMatchBudget] =
     useState<PracticeTransferAutoMatchBudget | null>(null);
+  const [abutsLabFeeCatalog, setAbutsLabFeeCatalog] = useState<
+    AbutsLabFeeCatalogItem[] | null
+  >(null);
   const [defaultAbutmentProductMode, setDefaultAbutmentProductMode] =
     useState<AbutmentProductMode>(() => normalizeAccountAbutmentProductMode(undefined));
   const [lastSavedFormFingerprint, setLastSavedFormFingerprint] = useState<string | null>(null);
@@ -1418,7 +1423,11 @@ export const PracticeFileTransferPage = ({
     );
     const nextAutoMatchBudget = resolveAutoMatchBudgetOrDefaults(
       payload.autoMatchBudget,
+      payload.abutsLabFeeCatalog,
     );
+    if (Array.isArray(payload.abutsLabFeeCatalog)) {
+      setAbutsLabFeeCatalog(payload.abutsLabFeeCatalog);
+    }
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
@@ -1495,6 +1504,7 @@ export const PracticeFileTransferPage = ({
       if (hasAutoMatchBudget) {
         jsonBody.autoMatchBudget = resolveAutoMatchBudgetOrDefaults(
           params.autoMatchBudget,
+          abutsLabFeeCatalog,
         );
       }
       if (Object.keys(jsonBody).length === 0) return true;
@@ -1558,7 +1568,7 @@ export const PracticeFileTransferPage = ({
 
       return true;
     },
-    [applyPracticeTransferSettings, authToken, memoSnippets, implantFavorites, abutmentFavorites],
+    [applyPracticeTransferSettings, authToken, memoSnippets, implantFavorites, abutmentFavorites, abutsLabFeeCatalog],
   );
 
   const myUserId = String(authUser?.id || (authUser as { _id?: string } | null)?._id || "").trim();
@@ -1979,7 +1989,15 @@ export const PracticeFileTransferPage = ({
         );
         setImplantFavorites(normalizeImplantFavorites(payload.implantFavorites));
         setAbutmentFavorites(normalizeAbutmentFavorites(payload.abutmentFavorites));
-        setAutoMatchBudget(resolveAutoMatchBudgetOrDefaults(payload.autoMatchBudget));
+        setAutoMatchBudget(
+          resolveAutoMatchBudgetOrDefaults(
+            payload.autoMatchBudget,
+            payload.abutsLabFeeCatalog ?? abutsLabFeeCatalog,
+          ),
+        );
+        if (Array.isArray(payload.abutsLabFeeCatalog)) {
+          setAbutsLabFeeCatalog(payload.abutsLabFeeCatalog);
+        }
       }
       try {
         localStorage.setItem(
@@ -4878,7 +4896,10 @@ export const PracticeFileTransferPage = ({
         skipDesignConfirm,
       });
       const autoMatch = isAutoMatchLab(selectedLab);
-      const budgetForAuto = resolveAutoMatchBudgetOrDefaults(autoMatchBudget);
+      const budgetForAuto = resolveAutoMatchBudgetOrDefaults(
+        autoMatchBudget,
+        abutsLabFeeCatalog,
+      );
       const practiceRouting = {
         targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
         targetLabName: String(selectedLab?.name || "").trim(),
@@ -5459,6 +5480,7 @@ export const PracticeFileTransferPage = ({
                   toothChartResetNonce,
                   memoSnippets,
                   autoMatchBudget,
+                  abutsLabFeeCatalog,
                   onAutoMatchBudgetChange: (next) => {
                     setAutoMatchBudget(next);
                     void savePracticeTransferSettingsToServer({

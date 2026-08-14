@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/utils/practiceTransferAutoMatchBudgetCore.js
+// - web/backend/utils/abutsLabFeeSchedule.js
 // - web/backend/utils/practiceTransferAutoMatch.js
 // - web/backend/utils/labFeeSchedule.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
@@ -7,14 +8,25 @@
 // 자동매칭 기공비 예산 SSOT.
 // 성능: 적격 기공소는 전송 생성 시 1회 스냅샷(eligibleLabAnchorIds).
 // 수신 목록은 Mongo multikey로만 필터. 수락 시 항목별 단가 재검증.
+// 항목 목록은 어벗츠 수가(시스템 카탈로그)에서 동적으로 온다.
 
 import {
   isLabFeeScheduleConfigured,
+  isMissingToothProsthesisType,
+  isCustomAbutmentProsthesisType,
   isRemovableTempProsthesisType,
+  isRemovableTempFeeName,
+  canonicalizeFeeItemName,
+  legacyLabFeeScheduleFromItems,
+  normalizeLabFeeItems,
   normalizeLabFeeSchedule,
   resolveLabFeeKeyFromProsthesisType,
   resolveLabFeeScheduleSource,
 } from "./labFeeSchedule.js";
+import {
+  loadAbutsLabFeeSchedule,
+  listEnabledAbutsLabFeeCatalogItems,
+} from "./abutsLabFeeSchedule.js";
 import {
   isAutoMatchEligibleLabAnchor,
   loadAutoMatchEligibleLabAnchors,
@@ -25,20 +37,30 @@ export {
   AUTO_MATCH_BUDGET_KEY_LABELS,
   bandFromAdminBase,
   buildDefaultAutoMatchBudgetItems,
+  buildItemsScheduleFromAutoMatchBudget,
   buildScheduleFromAutoMatchBudget,
+  fallbackAbutsLabFeeCatalog,
   isAutoMatchBudgetConfigured,
   isLabFeeWithinAutoMatchBudget,
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
+  normalizeCatalogItems,
   resolveAutoMatchBudgetOrDefaults,
 } from "./practiceTransferAutoMatchBudgetCore.js";
 import {
   AUTO_MATCH_BUDGET_KEYS,
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
+  normalizeCatalogItems,
 } from "./practiceTransferAutoMatchBudgetCore.js";
 
-/** 이번 치식에서 예산 검증에 필요한 스케줄 키 */
+/** 어벗츠 수가 enabled 항목(자동매칭 모달·예산 기본값 SSOT) */
+export async function loadAutoMatchBudgetCatalog() {
+  const schedule = await loadAbutsLabFeeSchedule();
+  return listEnabledAbutsLabFeeCatalogItems(schedule);
+}
+
+/** @deprecated 레거시 키 수집 — 카탈로그 id 경로 우선 */
 export function collectRequiredAutoMatchBudgetKeys(toothWorks) {
   const keys = new Set();
   let hasTemp = false;
@@ -59,8 +81,101 @@ export function collectRequiredAutoMatchBudgetKeys(toothWorks) {
   return Array.from(keys);
 }
 
+/** 치식에 필요한 카탈로그 항목 id */
+export function collectRequiredAutoMatchBudgetIds(toothWorks, catalog) {
+  const rows = normalizeCatalogItems(catalog);
+  if (!rows.length) return collectRequiredAutoMatchBudgetKeys(toothWorks);
+
+  const ids = new Set();
+  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
+    const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
+    if (!prosthesisType) continue;
+    if (isMissingToothProsthesisType(prosthesisType)) continue;
+    if (isCustomAbutmentProsthesisType(prosthesisType)) continue;
+
+    if (isRemovableTempProsthesisType(prosthesisType)) {
+      for (const item of rows) {
+        if (isRemovableTempFeeName(item.name)) ids.add(item.id);
+      }
+      continue;
+    }
+
+    const canon = canonicalizeFeeItemName(prosthesisType);
+    for (const item of rows) {
+      if (canonicalizeFeeItemName(item.name) === canon) ids.add(item.id);
+    }
+  }
+  return Array.from(ids);
+}
+
+function catalogItemTierN(item) {
+  const n = Number(item?.tiers?.[0]?.n);
+  if (Number.isFinite(n) && n > 0) return n;
+  const id = String(item?.id || "");
+  if (id.includes("6")) return 6;
+  if (id.includes("3")) return 3;
+  return null;
+}
+
+/** 기공소 수가 → 카탈로그 id별 단가 */
+export function labUnitPricesByCatalogId(labFeeSchedule, catalog) {
+  const labItems = normalizeLabFeeItems(
+    resolveLabFeeScheduleSource(labFeeSchedule),
+  );
+  const prices = {};
+  for (const cat of normalizeCatalogItems(catalog)) {
+    prices[cat.id] = resolveLabUnitPriceForCatalogItem(labItems, cat);
+  }
+  return prices;
+}
+
+function resolveLabUnitPriceForCatalogItem(labItems, cat) {
+  const list = Array.isArray(labItems) ? labItems : [];
+  if (cat.unit === "perNTeeth" || isRemovableTempFeeName(cat.name)) {
+    const wantN = catalogItemTierN(cat);
+    const matches = list.filter(
+      (item) =>
+        item.enabled !== false && isRemovableTempFeeName(item.name),
+    );
+    for (const item of matches) {
+      if (item.unit === "perNTeeth" && item.tiers?.length) {
+        const tier =
+          (wantN
+            ? item.tiers.find((t) => Number(t.n) === wantN)
+            : null) || item.tiers[0];
+        if (tier) return Math.max(0, Math.round(Number(tier.price) || 0));
+      }
+      if (wantN == null || Number(item.tiers?.[0]?.n) === wantN) {
+        return Math.max(0, Math.round(Number(item.price) || 0));
+      }
+    }
+    return 0;
+  }
+
+  const canon = canonicalizeFeeItemName(cat.name);
+  const match = list.find(
+    (item) =>
+      item.enabled !== false &&
+      canonicalizeFeeItemName(item.name) === canon,
+  );
+  if (!match) return 0;
+  if (match.unit === "perNTeeth" && match.tiers?.[0]) {
+    return Math.max(0, Math.round(Number(match.tiers[0].price) || 0));
+  }
+  return Math.max(0, Math.round(Number(match.price) || 0));
+}
+
+/** @deprecated 레거시 키 단가 맵 */
 export function labUnitPricesFromSchedule(labFeeSchedule) {
-  return normalizeLabFeeSchedule(resolveLabFeeScheduleSource(labFeeSchedule));
+  const src = resolveLabFeeScheduleSource(labFeeSchedule);
+  const items = normalizeLabFeeItems(src);
+  const { schedule } = legacyLabFeeScheduleFromItems(items, src);
+  const flat = normalizeLabFeeSchedule(schedule);
+  const legacy = {};
+  for (const key of AUTO_MATCH_BUDGET_KEYS) {
+    legacy[key] = Math.max(0, Math.round(Number(flat[key]) || 0));
+  }
+  return legacy;
 }
 
 /**
@@ -70,13 +185,21 @@ export function labUnitPricesFromSchedule(labFeeSchedule) {
 export async function resolveAutoMatchEligibleLabAnchorIds({
   toothWorks,
   budget,
+  catalog,
 }) {
-  const band = normalizeAutoMatchBudget(budget);
+  const catalogItems =
+    catalog != null
+      ? normalizeCatalogItems(catalog)
+      : await loadAutoMatchBudgetCatalog();
+  const band = normalizeAutoMatchBudget(budget, catalogItems);
   if (!band) {
     return { eligibleLabAnchorIds: [], labsScanned: 0, budget: null };
   }
 
-  const requiredKeys = collectRequiredAutoMatchBudgetKeys(toothWorks);
+  const requiredIds = collectRequiredAutoMatchBudgetIds(
+    toothWorks,
+    catalogItems,
+  );
   const labs = await loadAutoMatchEligibleLabAnchors({
     select: {
       _id: 1,
@@ -95,9 +218,17 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
     if (!isAutoMatchEligibleLabAnchor(lab)) continue;
     if (!isLabFeeScheduleConfigured(lab.labFeeSchedule)) continue;
 
-    const unitPrices = labUnitPricesFromSchedule(lab.labFeeSchedule);
+    const unitPrices = labUnitPricesByCatalogId(
+      lab.labFeeSchedule,
+      catalogItems,
+    );
     if (
-      !isLabUnitPricesWithinAutoMatchBudget(unitPrices, band, requiredKeys)
+      !isLabUnitPricesWithinAutoMatchBudget(
+        unitPrices,
+        band,
+        requiredIds,
+        catalogItems,
+      )
     ) {
       continue;
     }
@@ -116,18 +247,30 @@ export function assertLabWithinAutoMatchBudget({
   toothWorks,
   budget,
   labFeeSchedule,
+  catalog,
 }) {
-  const band = normalizeAutoMatchBudget(budget);
+  const catalogItems = normalizeCatalogItems(catalog);
+  const band = normalizeAutoMatchBudget(budget, catalogItems);
   if (!band) return { ok: true };
-  const requiredKeys = collectRequiredAutoMatchBudgetKeys(toothWorks);
-  const unitPrices = labUnitPricesFromSchedule(labFeeSchedule);
-  if (isLabUnitPricesWithinAutoMatchBudget(unitPrices, band, requiredKeys)) {
-    return { ok: true, budget: band, requiredKeys, unitPrices };
+  const requiredIds = collectRequiredAutoMatchBudgetIds(
+    toothWorks,
+    catalogItems,
+  );
+  const unitPrices = labUnitPricesByCatalogId(labFeeSchedule, catalogItems);
+  if (
+    isLabUnitPricesWithinAutoMatchBudget(
+      unitPrices,
+      band,
+      requiredIds,
+      catalogItems,
+    )
+  ) {
+    return { ok: true, budget: band, requiredKeys: requiredIds, unitPrices };
   }
   return {
     ok: false,
     budget: band,
-    requiredKeys,
+    requiredKeys: requiredIds,
     unitPrices,
     reason: "auto_match_budget_mismatch",
   };

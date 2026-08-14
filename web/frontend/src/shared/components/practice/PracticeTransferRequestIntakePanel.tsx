@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { AutoMatchLabFeeBudgetDialog } from "@/shared/components/practice/AutoMatchLabFeeBudgetDialog";
 import {
   resolveAutoMatchBudgetOrDefaults,
+  type AbutsLabFeeCatalogItem,
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
 import {
@@ -646,6 +647,8 @@ export type PracticeTransferRequestIntakePanelProps = {
   showFeeEstimate?: boolean;
   /** 자동매칭 기공비 예산(항목별 min/max) */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
+  /** 어벗츠 수가 카탈로그 — 예산 모달 항목 SSOT */
+  abutsLabFeeCatalog?: AbutsLabFeeCatalogItem[] | null;
   onAutoMatchBudgetChange?: (
     next: PracticeTransferAutoMatchBudget | null,
   ) => void | Promise<void>;
@@ -707,10 +710,14 @@ export const PracticeTransferRequestIntakePanel = ({
   toothChartResetNonce = 0,
   showFeeEstimate = false,
   autoMatchBudget = null,
+  abutsLabFeeCatalog = null,
   onAutoMatchBudgetChange,
 }: PracticeTransferRequestIntakePanelProps) => {
   const [autoMatchBudgetOpen, setAutoMatchBudgetOpen] = useState(false);
-  const resolvedAutoMatchBudget = resolveAutoMatchBudgetOrDefaults(autoMatchBudget);
+  const resolvedAutoMatchBudget = resolveAutoMatchBudgetOrDefaults(
+    autoMatchBudget,
+    abutsLabFeeCatalog,
+  );
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
   );
@@ -1611,12 +1618,12 @@ export const PracticeTransferRequestIntakePanel = ({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              className="h-11 w-11 text-muted-foreground hover:text-foreground"
               title="자동매칭 기공비 범위"
               aria-label="자동매칭 기공비 범위 설정"
               onClick={() => setAutoMatchBudgetOpen(true)}
             >
-              <Banknote className="h-4 w-4" />
+              <Banknote className="h-6 w-6" />
             </Button>
           </div>
           <Popover open={labOpen} onOpenChange={setLabOpen}>
@@ -1781,6 +1788,7 @@ export const PracticeTransferRequestIntakePanel = ({
             open={autoMatchBudgetOpen}
             onOpenChange={setAutoMatchBudgetOpen}
             value={resolvedAutoMatchBudget}
+            catalog={abutsLabFeeCatalog}
             onSave={async (next) => {
               await onAutoMatchBudgetChange?.(next);
             }}

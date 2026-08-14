@@ -14,12 +14,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  AUTO_MATCH_BUDGET_KEYS,
-  AUTO_MATCH_BUDGET_KEY_LABELS,
-  ADMIN_LAB_FEE_BASE,
   bandFromAdminBase,
+  catalogItemLabel,
+  normalizeAbutsLabFeeCatalog,
   resolveAutoMatchBudgetOrDefaults,
-  type AutoMatchBudgetKey,
+  type AbutsLabFeeCatalogItem,
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
 import { formatWon } from "@/shared/practice/practiceTransferFeeQuote";
@@ -29,6 +28,7 @@ type AutoMatchLabFeeBudgetDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   value: PracticeTransferAutoMatchBudget | null;
+  catalog?: AbutsLabFeeCatalogItem[] | null;
   onSave: (next: PracticeTransferAutoMatchBudget) => void | Promise<void>;
 };
 
@@ -36,29 +36,33 @@ export function AutoMatchLabFeeBudgetDialog({
   open,
   onOpenChange,
   value,
+  catalog,
   onSave,
 }: AutoMatchLabFeeBudgetDialogProps) {
+  const rows = normalizeAbutsLabFeeCatalog(catalog);
   const [draft, setDraft] = useState<PracticeTransferAutoMatchBudget>(() =>
-    resolveAutoMatchBudgetOrDefaults(value),
+    resolveAutoMatchBudgetOrDefaults(value, catalog),
   );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setDraft(resolveAutoMatchBudgetOrDefaults(value));
-  }, [open, value]);
+    setDraft(resolveAutoMatchBudgetOrDefaults(value, catalog));
+  }, [open, value, catalog]);
 
-  const setBand = (key: AutoMatchBudgetKey, side: "min" | "max", raw: string) => {
+  const setBand = (id: string, side: "min" | "max", raw: string) => {
     const n = Math.max(0, Math.ceil(Number(raw || 0)));
+    const baseRow = rows.find((row) => row.id === id);
     setDraft((prev) => {
-      const current = prev.items[key] || bandFromAdminBase(ADMIN_LAB_FEE_BASE[key]);
+      const current =
+        prev.items[id] || bandFromAdminBase(baseRow?.price || 0);
       const nextBand =
         side === "min"
           ? { min: Math.min(n, current.max), max: current.max }
           : { min: Math.min(current.min, n), max: Math.max(n, 1) };
       return {
         version: 2,
-        items: { ...prev.items, [key]: nextBand },
+        items: { ...prev.items, [id]: nextBand },
       };
     });
   };
@@ -66,7 +70,7 @@ export function AutoMatchLabFeeBudgetDialog({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(resolveAutoMatchBudgetOrDefaults(draft));
+      await onSave(resolveAutoMatchBudgetOrDefaults(draft, catalog));
       onOpenChange(false);
     } finally {
       setSaving(false);
@@ -88,12 +92,11 @@ export function AutoMatchLabFeeBudgetDialog({
         </div>
 
         <div className="grid grid-cols-1 gap-3 px-6 sm:grid-cols-2">
-          {AUTO_MATCH_BUDGET_KEYS.map((key) => {
-            const band = draft.items[key] || bandFromAdminBase(ADMIN_LAB_FEE_BASE[key]);
-            const base = ADMIN_LAB_FEE_BASE[key];
+          {rows.map((row) => {
+            const band = draft.items[row.id] || bandFromAdminBase(row.price);
             return (
               <div
-                key={key}
+                key={row.id}
                 className={cn(
                   "rounded-xl border border-slate-200/90 bg-slate-50/60 p-4",
                   "shadow-[0_1px_0_rgba(15,23,42,0.03)]",
@@ -101,45 +104,49 @@ export function AutoMatchLabFeeBudgetDialog({
               >
                 <div className="mb-3 flex items-baseline justify-between gap-2">
                   <p className="truncate text-sm font-semibold text-slate-900">
-                    {AUTO_MATCH_BUDGET_KEY_LABELS[key]}
+                    {catalogItemLabel(row)}
                   </p>
                   <p className="shrink-0 text-[11px] tabular-nums text-slate-400">
-                    기준 {formatWon(base)}
+                    기준 {formatWon(row.price)}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="space-y-1.5">
                     <Label
-                      htmlFor={`auto-match-fee-min-${key}`}
+                      htmlFor={`auto-match-fee-min-${row.id}`}
                       className="text-[11px] font-medium text-slate-500"
                     >
                       최소
                     </Label>
                     <Input
-                      id={`auto-match-fee-min-${key}`}
+                      id={`auto-match-fee-min-${row.id}`}
                       type="number"
                       min={0}
                       step={1000}
                       className="h-10 rounded-lg border-slate-200 bg-white tabular-nums shadow-none focus-visible:ring-slate-300"
                       value={band.min}
-                      onChange={(event) => setBand(key, "min", event.target.value)}
+                      onChange={(event) =>
+                        setBand(row.id, "min", event.target.value)
+                      }
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label
-                      htmlFor={`auto-match-fee-max-${key}`}
+                      htmlFor={`auto-match-fee-max-${row.id}`}
                       className="text-[11px] font-medium text-slate-500"
                     >
                       최대
                     </Label>
                     <Input
-                      id={`auto-match-fee-max-${key}`}
+                      id={`auto-match-fee-max-${row.id}`}
                       type="number"
                       min={0}
                       step={1000}
                       className="h-10 rounded-lg border-slate-200 bg-white tabular-nums shadow-none focus-visible:ring-slate-300"
                       value={band.max}
-                      onChange={(event) => setBand(key, "max", event.target.value)}
+                      onChange={(event) =>
+                        setBand(row.id, "max", event.target.value)
+                      }
                     />
                   </div>
                 </div>
