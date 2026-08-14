@@ -228,7 +228,7 @@ export const LabTradingPartnersTab = () => {
     Number(
       windowInfo?.feeRates?.platformFeeRate ??
         windowInfo?.feeRates?.nonPartnerFeeRate ??
-        0.25,
+        0.1,
     ) * 100,
   );
   const windowProgressPct =

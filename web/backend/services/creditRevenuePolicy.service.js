@@ -3,6 +3,8 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/scripts/db/migrate-request-spend-to-gl.js
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
+// change-log:
+// - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
 
 export const WITH_SALESMAN_DEFAULT_RATES = {
   manufacturerRate: 0.6,
@@ -45,7 +47,7 @@ export function resolveRatesWithoutSalesman(configuredRates) {
 
 export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_DEFAULT_RATES);
 
-export const DEFAULT_PLATFORM_FEE_RATE = 0.25;
+export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
 /** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
 export const DEFAULT_PARTNER_FEE_RATE = 0;
 export const DEFAULT_NON_PARTNER_FEE_RATE = DEFAULT_PLATFORM_FEE_RATE;

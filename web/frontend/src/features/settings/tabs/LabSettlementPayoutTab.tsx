@@ -183,7 +183,7 @@ export const LabSettlementPayoutTab = () => {
   const anyLoading = loading || snapLoading;
 
   const [settlementCredit, setSettlementCredit] = useState(0);
-  const [platformFeeRate, setPlatformFeeRate] = useState(0.25);
+  const [platformFeeRate, setPlatformFeeRate] = useState(0.1);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -227,7 +227,7 @@ export const LabSettlementPayoutTab = () => {
       if (!res.ok) return;
       const rates = res.data?.data?.window?.feeRates;
       const next = Number(
-        rates?.platformFeeRate ?? rates?.nonPartnerFeeRate ?? 0.25,
+        rates?.platformFeeRate ?? rates?.nonPartnerFeeRate ?? 0.1,
       );
       if (Number.isFinite(next)) setPlatformFeeRate(next);
     } catch {

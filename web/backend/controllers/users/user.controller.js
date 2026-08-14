@@ -465,7 +465,7 @@ async function updateProfile(req, res) {
         }
 
         const platformFeeRate = Number(
-          raw?.platformFeeRate ?? raw?.nonPartnerFeeRate ?? 0.25,
+          raw?.platformFeeRate ?? raw?.nonPartnerFeeRate ?? 0.1,
         );
         if (!Number.isFinite(platformFeeRate) || platformFeeRate < 0 || platformFeeRate > 1) {
           return res.status(400).json({

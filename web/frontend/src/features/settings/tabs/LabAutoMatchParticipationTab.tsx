@@ -4,22 +4,24 @@
 // - web/backend/services/labAutoMatchParticipation.service.js
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // change-log:
+// - 2026-08-14: 기공소 매칭/수수료 스트립 최신 스타일 정렬.
+// - 2026-08-14: 월 참여 수수료 이벤트 표시(정가 취소선 → 0원).
 // - 2026-08-14: 기공소 자동 매칭 월 참여 탭. 치과 등록·소개 UI 대체.
 import { useCallback, useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { FlaskConical, Info, Loader2 } from "lucide-react";
+import {
+  CalendarDays,
+  FlaskConical,
+  Info,
+  Loader2,
+  Percent,
+} from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -37,6 +39,9 @@ type ParticipationData = {
   verified?: boolean;
   canReceivePracticeTransfer?: boolean;
 };
+
+/** 안내용 정가. 실제 청구는 `autoMatchMonthlyFee`(이벤트 중 0원). */
+const AUTO_MATCH_MONTHLY_FEE_LIST = 55_000;
 
 const formatWon = (value: number) =>
   `${Math.max(0, Math.round(value || 0)).toLocaleString("ko-KR")}원`;
@@ -85,14 +90,19 @@ export const LabAutoMatchParticipationTab = () => {
   const cancelScheduled =
     active && Boolean(data?.autoMatchParticipationCancelAtPeriodEnd);
   const monthlyFee = Math.max(0, Number(data?.autoMatchMonthlyFee) || 0);
-  const successPct = Math.round(
-    Number(data?.platformFeeRate ?? 0.25) * 100,
-  );
+  const monthlyFeePromo = monthlyFee < AUTO_MATCH_MONTHLY_FEE_LIST;
+  const successPct = Math.round(Number(data?.platformFeeRate ?? 0.1) * 100);
   const nextBillingLabel = data?.autoMatchParticipationNextBillingAt
     ? formatKstYmdToKo(toKstYmd(data.autoMatchParticipationNextBillingAt) || "")
     : null;
   const canJoin =
     Boolean(data?.verified) && Boolean(data?.canReceivePracticeTransfer);
+
+  const statusLabel = active
+    ? cancelScheduled
+      ? "참여 중 · 해지 예약"
+      : "참여 중"
+    : "미참여";
 
   const submit = async (nextActive: boolean) => {
     if (!token || submitting) return;
@@ -118,7 +128,8 @@ export const LabAutoMatchParticipationTab = () => {
       }
       setData((prev) => ({ ...(prev || {}), ...(res.data?.data || {}) }));
       toast({
-        title: res.data?.message || (nextActive ? "참여했습니다." : "해지했습니다."),
+        title:
+          res.data?.message || (nextActive ? "참여했습니다." : "해지했습니다."),
         duration: 2500,
       });
     } finally {
@@ -132,53 +143,115 @@ export const LabAutoMatchParticipationTab = () => {
 
   return (
     <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-      <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FlaskConical className="h-5 w-5 text-primary-strong" />
-          자동 매칭 참여
-        </CardTitle>
-        <CardDescription className="text-[13px] leading-relaxed">
-          월 플랫폼 수수료를 내면 치과의 자동 매칭 의뢰에 참여할 수 있습니다.
-          성공 시 기공비의 {successPct}%가 플랫폼 수수료입니다. 치과·기공소 식별
-          정보는 비공개입니다.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3.5 shadow-sm">
-            <p className="text-[12px] font-medium text-slate-500">월 참여 수수료</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-900">
-              {formatWon(monthlyFee)}
-            </p>
+      <CardContent className="space-y-5 p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
+            <FlaskConical className="h-5 w-5 text-primary-strong" />
+          </span>
+          <div className="min-w-0 space-y-1">
+            <h3 className="text-base font-semibold tracking-tight text-slate-900">
+              자동 매칭 참여
+            </h3>
+            <div className="space-y-1 text-[13px] leading-relaxed text-muted-foreground">
+              <p>
+                월 플랫폼 수수료를 내면 치과의 자동 매칭 의뢰에 참여할 수 있습니다.
+              </p>
+              <p>
+                계약 체결 시 기공비의 {successPct}%가 플랫폼 수수료입니다.
+              </p>
+              <p>
+                치과에서 기공소명을 직접 입력하면(치과 지정) 수수료 없습니다.
+              </p>
+              <p>치과·기공소 식별 정보는 비공개입니다.</p>
+            </div>
           </div>
-          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3.5 shadow-sm">
-            <p className="text-[12px] font-medium text-slate-500">성공 수수료</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-900">
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
+                <CalendarDays className="h-4 w-4 text-primary-strong" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">
+                  월 참여 수수료
+                </p>
+                <p className="text-[12px] leading-snug text-muted-foreground">
+                  매칭 참여 구독료
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5">
+              {monthlyFeePromo ? (
+                <span className="text-sm font-normal tabular-nums text-slate-400 line-through">
+                  {formatWon(AUTO_MATCH_MONTHLY_FEE_LIST)}
+                </span>
+              ) : null}
+              <span className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
+                {formatWon(monthlyFee)}
+              </span>
+              {monthlyFeePromo ? (
+                <span className="inline-flex items-center rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-primary-strong ring-1 ring-primary-muted">
+                  이벤트 중
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
+                <Percent className="h-4 w-4 text-primary-strong" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">성공 수수료</p>
+                <p className="text-[12px] leading-snug text-muted-foreground">
+                  자동 매칭 성공 시 · 지정 0%
+                </p>
+              </div>
+            </div>
+            <span className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
               {successPct}%
-            </p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              지정 기공소 의뢰에는 적용되지 않습니다.
-            </p>
+            </span>
           </div>
         </div>
 
         <div
           className={cn(
-            "rounded-2xl border px-4 py-3.5",
-            active
-              ? "border-primary-muted/70 bg-primary-soft/40"
-              : "border-slate-200/80 bg-slate-50/60",
+            "overflow-hidden rounded-2xl border bg-white/80 shadow-sm",
+            active ? "border-primary-muted/70" : "border-slate-200/80",
           )}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-semibold text-slate-900">
-                {active
-                  ? cancelScheduled
-                    ? "참여 중 · 해지 예약"
-                    : "참여 중"
-                  : "미참여"}
-              </p>
+          <div
+            className={cn(
+              "h-1 w-full",
+              active
+                ? cancelScheduled
+                  ? "bg-amber-400"
+                  : "bg-primary-strong"
+                : "bg-slate-300",
+            )}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+            <div className="min-w-0 space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-slate-900">
+                  {statusLabel}
+                </p>
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                    active
+                      ? cancelScheduled
+                        ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
+                        : "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
+                      : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
+                  )}
+                >
+                  {active ? (cancelScheduled ? "해지 예약" : "ON") : "OFF"}
+                </span>
+              </div>
               {active && nextBillingLabel ? (
                 <p className="text-[12px] text-muted-foreground">
                   {cancelScheduled
@@ -187,7 +260,7 @@ export const LabAutoMatchParticipationTab = () => {
                 </p>
               ) : (
                 <p className="text-[12px] text-muted-foreground">
-                  검증된 기공소만 참여할 수 있습니다.
+                  인증 기공소만 참여할 수 있습니다.
                 </p>
               )}
             </div>
@@ -197,7 +270,7 @@ export const LabAutoMatchParticipationTab = () => {
                 type="button"
                 disabled={submitting || !canJoin}
                 onClick={() => void submit(true)}
-                className="shrink-0"
+                className="h-10 shrink-0 rounded-xl px-4"
               >
                 {submitting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -212,7 +285,7 @@ export const LabAutoMatchParticipationTab = () => {
                     variant="outline"
                     disabled={submitting}
                     onClick={() => void submit(true)}
-                    className="shrink-0"
+                    className="h-10 shrink-0 rounded-xl px-4"
                   >
                     {submitting ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -220,7 +293,9 @@ export const LabAutoMatchParticipationTab = () => {
                     해지 취소
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>해지 예약을 취소하고 계속 참여합니다.</TooltipContent>
+                <TooltipContent>
+                  해지 예약을 취소하고 계속 참여합니다.
+                </TooltipContent>
               </Tooltip>
             ) : (
               <Tooltip>
@@ -230,7 +305,7 @@ export const LabAutoMatchParticipationTab = () => {
                     variant="outline"
                     disabled={submitting}
                     onClick={() => void submit(false)}
-                    className="shrink-0"
+                    className="h-10 shrink-0 rounded-xl px-4"
                   >
                     {submitting ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -7,13 +7,14 @@
 // - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
 // - 2026-08-14: 환봉 단가 0원은 어벗츠 열에「별도 고지」.
 // - 2026-08-14: 툴팁 컬럼 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. 환봉 요청중은 기공소 어벗.
-// - 2026-08-14: 기공소 뷰 — 수수료는 기공비에만 적용(어벗 단가 비례 삭감 금지). 총액 텍스트만 툴팁 트리거.
-// - 2026-08-14: 기공소 툴팁 컬럼 기공소 몫/어벗츠 몫. 어벗츠 열은 금액 대신「커스텀어벗」표기·합계는 기공비만.
+// - 2026-08-14: 기공소 뷰 — 주 표기는 설정 수가. 수수료 수령은 보조. 총액 텍스트만 툴팁 트리거.
+// - 2026-08-14: 기공소 툴팁 컬럼 기공수가/어벗츠 몫. 어벗츠 열은 금액 대신「커스텀어벗」표기·합계는 기공수가.
 // - 2026-08-14: 카드 density에서 trailingAction(기공수가 할증)을 총액 오른쪽 끝에 배치.
 // - 2026-08-14: 할증 안내를「Nx 할증 적용」만 표시(견적은 생성 시 스냅샷 배수).
 // - 2026-08-14: 자동매칭 예산 툴팁도 치아번호별 기공소·어벗츠 어벗 + 하한~상한 총액.
 // - 2026-08-14: 치과-기공의뢰 견적에서 할증 문구 숨김(결과 가격만 표시).
 // - 2026-08-14: 기공소 뷰만 총액 옆·툴팁에 할증 표기. 의뢰카드 trailingAction은 채팅 헤더로 이동.
+// - 2026-08-14: 기공소 뷰는 설정 수가(labFeeTotal)를 제시. 수수료 차감 수령은 보조 표기.
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import {
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
+  formatFeeRatePct,
   formatWon,
   sortPracticeTransferFeeLines,
   type PracticeTransferFeeQuote,
@@ -45,9 +47,6 @@ type PracticeTransferFeeEstimateProps = {
   /** 카드 총액 오른쪽(선택) */
   trailingAction?: ReactNode;
 };
-
-const scaleWon = (value: number, keepRate: number) =>
-  Math.max(0, Math.round(Number(value || 0) * keepRate));
 
 const formatCell = (value: number) => (value > 0 ? formatWon(value) : "—");
 
@@ -138,7 +137,7 @@ function FeeBreakdownTable({
   labTotalMinOverride?: number | null;
   labTotalMaxOverride?: number | null;
 }) {
-  // 기공소 뷰: 기공물+기공소어벗을「기공소 몫」한 열로, 어벗츠는 라벨만.
+  // 기공소 뷰: 기공물+기공소어벗을「기공수가」한 열로, 어벗츠는 라벨만.
   const labShareColumn = labFacing
     ? showLabColumn || showLabAbutmentColumn
     : showLabColumn;
@@ -179,7 +178,7 @@ function FeeBreakdownTable({
         : colCount === 2
           ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
           : "grid-cols-1";
-  const labColumnLabel = labFacing ? "기공소 몫" : "기공소 기공물";
+  const labColumnLabel = labFacing ? "기공수가" : "기공소 기공물";
   const abutsColumnLabel = labFacing ? "어벗츠 몫" : "어벗츠 어벗";
 
   return (
@@ -306,8 +305,14 @@ export function PracticeTransferFeeEstimate({
   }
 
   const budget = quote.autoMatchBudget;
+  const feeRateApplied = Math.min(
+    1,
+    Math.max(0, Number(quote.feeRateApplied || 0)),
+  );
+  // 기공소: 확정 수가는 설정 스케줄(labFeeTotal). 치과 예산 min~max는 필터용.
+  // 플랫폼 수수료 차감 수령액은 보조로만 표기(예산 하한과 혼동 방지).
   const amount = isLab
-    ? quote.labSettlementAmount
+    ? quote.labFeeTotal
     : budget && Number(budget.maxLabFee) > 0
       ? Math.max(0, Number(budget.maxLabFee)) +
         Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))
@@ -319,27 +324,28 @@ export function PracticeTransferFeeEstimate({
       : quote.total;
   const title = quote.isRemake
     ? isLab
-      ? "리메이크 기공비"
+      ? "리메이크 기공수가"
       : "리메이크 견적"
     : isLab
-      ? "기공비 총액"
+      ? "기공수가"
       : budget && Number(budget.maxLabFee) > 0
         ? "예상 견적"
         : "견적";
-  // 플랫폼 수수료는 기공비(·기공소 어벗)에만. 어벗츠 단가는 전액 어벗츠.
-  // labSettlement/total로 나누면 지정 기공소(수수료 0)에서도 어벗 비중만큼 기공비가 깎여 보인다.
-  const labFeeKeepRate =
-    isLab && quote.labFeeTotal > 0
-      ? quote.labSettlementAmount / quote.labFeeTotal
-      : 1;
   const labProsthesisTotal = Math.max(
     0,
     Math.round(Number(quote.labFeeTotal || 0) - Number(quote.labAbutmentTotal || 0)),
   );
   const hasBudgetRange =
     Boolean(budget) && Number(budget?.maxLabFee) > 0;
+  const labSettlementDiffers =
+    isLab &&
+    feeRateApplied > 0 &&
+    Math.round(Number(quote.labSettlementAmount || 0)) !==
+      Math.round(Number(quote.labFeeTotal || 0));
   const simple = isLab
-    ? null
+    ? labSettlementDiffers
+      ? `수령 ${formatWon(quote.labSettlementAmount)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
+      : null
     : quote.isRemake
       ? `리메이크 기공비 ${formatWon(quote.labFeeTotal)}`
       : [
@@ -376,14 +382,15 @@ export function PracticeTransferFeeEstimate({
       ? sortPracticeTransferFeeLines(quote.lines).map((line) => ({
           toothNumber: line.toothNumber,
           prosthesisType: line.prosthesisType,
-          labFee: scaleWon(line.labFee, labFeeKeepRate),
+          // 기공소 뷰: 설정 수가 그대로(수수료 비례 삭감 금지 — 수령은 별도 표기).
+          labFee: Math.max(0, Math.round(Number(line.labFee || 0))),
           labFeeMin:
             line.labFeeMin != null
-              ? scaleWon(line.labFeeMin, labFeeKeepRate)
+              ? Math.max(0, Math.round(Number(line.labFeeMin)))
               : undefined,
-          labAbutmentFee: scaleWon(
-            line.labAbutmentFee || 0,
-            labFeeKeepRate,
+          labAbutmentFee: Math.max(
+            0,
+            Math.round(Number(line.labAbutmentFee || 0)),
           ),
           labAbutmentPending: Boolean(line.labAbutmentPending),
           abutmentRetail: Math.max(
@@ -497,6 +504,14 @@ export function PracticeTransferFeeEstimate({
                   labTotalMinOverride={labTotalMinOverride}
                   labTotalMaxOverride={labTotalMaxOverride}
                 />
+                {labSettlementDiffers ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
+                    <span className="font-medium text-foreground">
+                      {formatWon(quote.labSettlementAmount)}
+                    </span>
+                  </p>
+                ) : null}
                 {hasBudgetRange ? (
                   <p className="text-[11px] text-muted-foreground">
                     항목별 예산 구간의 인증 기공소만 자동매칭에 참여합니다. 수락

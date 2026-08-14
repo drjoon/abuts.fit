@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: 기본 성공 수수료율 10%. 월 참여 수수료 기본 0.
 // - 2026-08-14: 월 참여 수수료(원) 입력 추가. 성공 수수료율(%)과 함께 저장.
 // - 2026-08-14: 카드 없이 인라인 수수료 입력만. 긴 안내 문구 제거.
 // - 2026-08-14: 등록/미등록 2단계 폐지. 자동 매칭 성공 시 단일 플랫폼 수수료율.
@@ -47,12 +48,12 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
   const { toast } = useToast();
   const { token } = useAuthStore();
   const [loading, setLoading] = useState(Boolean(token));
-  const [platformFeeRate, setPlatformFeeRate] = useState("25");
+  const [platformFeeRate, setPlatformFeeRate] = useState("10");
   const [monthlyFee, setMonthlyFee] = useState("0");
   const hydratedRef = useRef(false);
-  const savedRateRef = useRef("25");
+  const savedRateRef = useRef("10");
   const savedMonthlyRef = useRef("0");
-  const rateRef = useRef("25");
+  const rateRef = useRef("10");
   const monthlyRef = useRef("0");
   rateRef.current = platformFeeRate;
   monthlyRef.current = monthlyFee;
@@ -77,7 +78,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         const settings = res.data?.data?.platformFeeSettings || {};
         const pct = toPctString(
           Number(settings.platformFeeRate ?? settings.nonPartnerFeeRate),
-          0.25,
+          0.1,
         );
         const won = toWonString(Number(settings.autoMatchMonthlyFee));
         savedRateRef.current = pct;
