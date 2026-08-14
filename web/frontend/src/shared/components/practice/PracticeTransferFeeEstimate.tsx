@@ -13,6 +13,7 @@
 // - 2026-08-14: 할증 안내를「Nx 할증 적용」만 표시(견적은 생성 시 스냅샷 배수).
 // - 2026-08-14: 자동매칭 예산 툴팁도 치아번호별 기공소·어벗츠 어벗 + 하한~상한 총액.
 // - 2026-08-14: 치과-기공의뢰 견적에서 할증 문구 숨김(결과 가격만 표시).
+// - 2026-08-14: 기공소 뷰만 총액 옆·툴팁에 할증 표기. 의뢰카드 trailingAction은 채팅 헤더로 이동.
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import {
@@ -28,6 +29,11 @@ import {
   type PracticeTransferFeeQuote,
   type PracticeTransferFeeQuoteViewer,
 } from "@/shared/practice/practiceTransferFeeQuote";
+import {
+  formatLabFeeMultiplierLabel,
+  normalizeLabFeeMultiplier,
+} from "@/shared/practice/labFeeSchedule";
+
 type PracticeTransferFeeEstimateProps = {
   quote: PracticeTransferFeeQuote;
   viewer: PracticeTransferFeeQuoteViewer;
@@ -36,7 +42,7 @@ type PracticeTransferFeeEstimateProps = {
   density?: "chart" | "card";
   /** 기공소 미선택 — 기공 수가 미산출 안내 */
   labPending?: boolean;
-  /** 카드 총액 오른쪽(예: 기공수가 할증) */
+  /** 카드 총액 오른쪽(선택) */
   trailingAction?: ReactNode;
 };
 
@@ -359,6 +365,11 @@ export function PracticeTransferFeeEstimate({
           ? `기공비 ${formatWon(Number(budget?.minLabFee || 0))}~${formatWon(Number(budget?.maxLabFee || 0))}`
           : `기공비 ${formatWon(quote.labFeeTotal)}`);
   const labFeeUnset = !isLab && quote.labFeeConfigured === false;
+  /** 기공소만: 생성 스냅샷 배수. 치과 견적에는 표기하지 않음 */
+  const surchargeLabel =
+    isLab && normalizeLabFeeMultiplier(quote.labFeeMultiplier) > 1
+      ? formatLabFeeMultiplierLabel(quote.labFeeMultiplier)
+      : null;
 
   const breakdownLines =
     quote.lines.length > 0
@@ -428,7 +439,14 @@ export function PracticeTransferFeeEstimate({
                 )}
               >
                 <span className="font-medium text-slate-600">{title} </span>
-                {formatWon(amount)}
+                {hasBudgetRange && !isLab
+                  ? formatWonRange(creditMin, amount)
+                  : formatWon(amount)}
+                {surchargeLabel ? (
+                  <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                    {surchargeLabel}
+                  </span>
+                ) : null}
               </p>
               {simple ? (
                 <p
@@ -521,6 +539,11 @@ export function PracticeTransferFeeEstimate({
             ) : (
               <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
             )}
+            {surchargeLabel ? (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
+                {surchargeLabel} 적용
+              </p>
+            ) : null}
             {!isLab && !(labFeeUnset && quote.total <= 0) ? (
               <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
                 {hasBudgetRange

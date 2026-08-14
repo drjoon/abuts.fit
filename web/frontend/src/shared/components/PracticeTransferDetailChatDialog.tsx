@@ -8,7 +8,8 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - 2026-08-13: 기공소 상세 모달 — 수락 전에도 치과 채팅 내역 표시. 수락 CTA는 채팅 상단 바.
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스를 버블에 전달.
-import type { RefObject } from "react";
+// - 2026-08-14: 기공소 기공수가 할증은 치과 채팅 헤더에 배치.
+import type { ReactNode, RefObject } from "react";
 import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -53,6 +54,8 @@ type PracticeTransferDetailChatDialogProps = {
   onOpenChange: (open: boolean) => void;
   title: string;
   conversationTitle: string;
+  /** 치과 채팅 헤더 오른쪽(예: 기공수가 할증) */
+  chatHeaderAction?: ReactNode;
   summaryItems: PracticeTransferDialogSummaryItem[];
   memo: string;
   /** 보철물 치식 차트(읽기 전용). 있으면 의뢰 메모 위에 표시 */
@@ -127,6 +130,7 @@ export function PracticeTransferDetailChatDialog({
   onOpenChange,
   title,
   conversationTitle,
+  chatHeaderAction = null,
   summaryItems,
   memo,
   toothWorks,
@@ -362,8 +366,13 @@ export function PracticeTransferDetailChatDialog({
             </div>
 
             <div className="rounded-lg border min-h-0 flex flex-col overflow-hidden">
-              <div className="px-3 py-2 border-b text-sm text-muted-foreground">
-                {conversationTitle}
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2.5">
+                <div className="min-w-0 text-sm font-medium text-slate-700">
+                  {conversationTitle}
+                </div>
+                {chatHeaderAction ? (
+                  <div className="shrink-0">{chatHeaderAction}</div>
+                ) : null}
               </div>
 
               {showAcceptBar ? (

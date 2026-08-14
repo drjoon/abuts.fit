@@ -2223,34 +2223,6 @@ function RequestorPracticeReceivePage({
                     quote={transfer.feeQuote}
                     viewer="lab"
                     density="card"
-                    trailingAction={
-                      transfer.matchingMode !== "auto" &&
-                      transfer.practiceBusinessAnchorId ? (
-                        <LabPracticeFeeSurchargeControl
-                          practiceAnchorId={transfer.practiceBusinessAnchorId}
-                          multiplier={transfer.labFeeMultiplier}
-                          size="xs"
-                          onChanged={(next) => {
-                            setTransfers((prev) =>
-                              prev.map((row) =>
-                                row.practiceBusinessAnchorId ===
-                                transfer.practiceBusinessAnchorId
-                                  ? { ...row, labFeeMultiplier: next }
-                                  : row,
-                              ),
-                            );
-                            setSelectedTransfer((prev) =>
-                              prev &&
-                              prev.practiceBusinessAnchorId ===
-                                transfer.practiceBusinessAnchorId
-                                ? { ...prev, labFeeMultiplier: next }
-                                : prev,
-                            );
-                            void loadFirstPage({ silent: true });
-                          }}
-                        />
-                      ) : null
-                    }
                   />
                 ) : null}
 
@@ -2471,6 +2443,34 @@ function RequestorPracticeReceivePage({
         }}
         title="의뢰 상세 · 치과 채팅"
         conversationTitle="치과와의 소통"
+        chatHeaderAction={
+          selectedTransfer &&
+          selectedTransfer.matchingMode !== "auto" &&
+          selectedTransfer.practiceBusinessAnchorId ? (
+            <LabPracticeFeeSurchargeControl
+              practiceAnchorId={selectedTransfer.practiceBusinessAnchorId}
+              multiplier={selectedTransfer.labFeeMultiplier}
+              size="sm"
+              onChanged={(next) => {
+                const practiceAnchorId =
+                  selectedTransfer.practiceBusinessAnchorId;
+                setTransfers((prev) =>
+                  prev.map((row) =>
+                    row.practiceBusinessAnchorId === practiceAnchorId
+                      ? { ...row, labFeeMultiplier: next }
+                      : row,
+                  ),
+                );
+                setSelectedTransfer((prev) =>
+                  prev && prev.practiceBusinessAnchorId === practiceAnchorId
+                    ? { ...prev, labFeeMultiplier: next }
+                    : prev,
+                );
+                void loadFirstPage({ silent: true });
+              }}
+            />
+          ) : null
+        }
         summaryItems={[
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
           { label: "전송시각", value: selectedTransfer ? formatDateTime(selectedTransfer.createdAt) : "-" },
