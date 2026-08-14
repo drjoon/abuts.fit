@@ -124,12 +124,17 @@ function FeeBreakdownTable({
   showLabAbutmentColumn,
   showAbutmentColumn,
   labFacing = false,
+  labTotalMinOverride = null,
+  labTotalMaxOverride = null,
 }: {
   lines: FeeBreakdownLine[];
   showLabColumn: boolean;
   showLabAbutmentColumn: boolean;
   showAbutmentColumn: boolean;
   labFacing?: boolean;
+  /** 라인에 labFeeMin이 없을 때 합계만 예산 하한~상한으로 표시 */
+  labTotalMinOverride?: number | null;
+  labTotalMaxOverride?: number | null;
 }) {
   // 기공소 뷰: 기공물+기공소어벗을「기공소 몫」한 열로, 어벗츠는 라벨만.
   const labShareColumn = labFacing
@@ -152,6 +157,14 @@ function FeeBreakdownTable({
   const hasLabFeeRange = lines.some(
     (line) => line.labFeeMin != null && Number.isFinite(line.labFeeMin),
   );
+  const labTotalDisplay =
+    !labFacing &&
+    labTotalMinOverride != null &&
+    labTotalMaxOverride != null
+      ? formatWonRange(labTotalMinOverride, labTotalMaxOverride)
+      : hasLabFeeRange && !labFacing
+        ? formatWonRange(labTotalMin, labTotal)
+        : formatCell(labTotal);
   const labAbutmentTotal = lines.reduce((sum, line) => sum + line.labAbutmentFee, 0);
   const labAbutmentPending = lines.some((line) => line.labAbutmentPending);
   const colCount =
@@ -226,9 +239,7 @@ function FeeBreakdownTable({
             <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
               {labFacing && labTotal <= 0 && labAbutmentPending
                 ? "요청중"
-                : hasLabFeeRange && !labFacing
-                  ? formatWonRange(labTotalMin, labTotal)
-                  : formatCell(labTotal)}
+                : labTotalDisplay}
             </span>
           ) : null}
           {labAbutmentColumn ? (
@@ -366,19 +377,7 @@ export function PracticeTransferFeeEstimate({
           labFeeMin:
             line.labFeeMin != null
               ? scaleWon(line.labFeeMin, labFeeKeepRate)
-              : hasBudgetRange &&
-                  Number(budget?.maxLabFee) > 0 &&
-                  Number(budget?.minLabFee) >= 0 &&
-                  line.labFee > 0
-                ? // 라인에 하한이 없으면 합산 비율로 분배(목록 등 레거시 견적).
-                  scaleWon(
-                    Math.round(
-                      (line.labFee * Number(budget?.minLabFee || 0)) /
-                        Number(budget?.maxLabFee || 1),
-                    ),
-                    labFeeKeepRate,
-                  )
-                : undefined,
+              : undefined,
           labAbutmentFee: scaleWon(
             line.labAbutmentFee || 0,
             labFeeKeepRate,
@@ -391,6 +390,14 @@ export function PracticeTransferFeeEstimate({
           abutmentRetailNote: line.abutmentRetailNote,
         }))
       : [];
+  const labTotalMinOverride =
+    hasBudgetRange && !breakdownLines.some((line) => line.labFeeMin != null)
+      ? Math.max(0, Math.round(Number(budget?.minLabFee || 0)))
+      : null;
+  const labTotalMaxOverride =
+    hasBudgetRange && labTotalMinOverride != null
+      ? Math.max(0, Math.round(Number(budget?.maxLabFee || 0)))
+      : null;
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -482,6 +489,8 @@ export function PracticeTransferFeeEstimate({
                       line.abutmentRetailNote === "quote",
                   )}
                   labFacing={isLab}
+                  labTotalMinOverride={labTotalMinOverride}
+                  labTotalMaxOverride={labTotalMaxOverride}
                 />
                 {hasBudgetRange ? (
                   <p className="text-[11px] text-muted-foreground">

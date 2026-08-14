@@ -55,6 +55,7 @@ import { isAutoMatchOpenPool } from "../utils/practiceTransferAutoMatch.js";
 import {
   assertLabWithinAutoMatchBudget,
   buildScheduleFromAutoMatchBudget,
+  loadAutoMatchBudgetCatalog,
   normalizeAutoMatchBudget,
   resolveAutoMatchBudgetOrDefaults,
 } from "../utils/practiceTransferAutoMatchBudget.js";
@@ -373,7 +374,8 @@ export async function assertPracticeTransferPaidCreditSufficient({
 
   let labFeeSchedule = null;
   const labId = String(labAnchorId || "").trim();
-  const budget = normalizeAutoMatchBudget(autoMatchBudget);
+  const catalog = await loadAutoMatchBudgetCatalog();
+  const budget = normalizeAutoMatchBudget(autoMatchBudget, catalog);
   const [lab, practice] =
     labId && Types.ObjectId.isValid(labId)
       ? await Promise.all([
@@ -398,7 +400,9 @@ export async function assertPracticeTransferPaidCreditSufficient({
     await resolvePracticeAbutmentPricingTier(practiceId);
   const abutmentPrices = await loadAbutmentCreditPrices();
   const autoSchedule =
-    noLab && budget ? buildScheduleFromAutoMatchBudget(budget, "max") : null;
+    noLab && budget
+      ? buildScheduleFromAutoMatchBudget(budget, "max", catalog)
+      : null;
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     implantFavorites: implantFavoritesFromPractice(practice),
@@ -523,6 +527,7 @@ export async function commitPracticeTransferBilling({
     toothWorks,
     budget: transfer?.billing?.autoMatchBudget,
     labFeeSchedule: lab?.labFeeSchedule,
+    catalog: await loadAutoMatchBudgetCatalog(),
   });
   if (
     String(transfer?.matchingMode || "").trim() === "auto" &&
