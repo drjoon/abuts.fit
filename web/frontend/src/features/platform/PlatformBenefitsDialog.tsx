@@ -4,7 +4,9 @@
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - web/frontend/src/features/lab/LabPlatformBenefitsBanner.tsx
 // - 2026-08-12: 기공소·치과 가입 이유 모달.
+// - 2026-08-14: 기공소 자동매칭 설정 링크.
 import { MessageCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   getPlatformBenefitsConfig,
+  normalizePlatformBenefitPoint,
   type PlatformBenefitsVariant,
 } from "@/shared/platform/platformBenefitsContent";
 import { PlatformBenefitsShareButtons } from "@/features/platform/PlatformBenefitsShareButtons";
@@ -63,15 +66,32 @@ export const PlatformBenefitsDialog = ({
                       {item.title}
                     </h3>
                     <ul className="space-y-1.5">
-                      {item.points.map((point) => (
-                        <li
-                          key={point}
-                          className="flex gap-2 text-sm leading-relaxed text-slate-600"
-                        >
-                          <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sky-400" />
-                          <span className="min-w-0">{point}</span>
-                        </li>
-                      ))}
+                      {item.points.map((rawPoint, pointIndex) => {
+                        const point = normalizePlatformBenefitPoint(rawPoint);
+                        return (
+                          <li
+                            key={`${item.title}-${pointIndex}`}
+                            className="flex gap-2 text-sm leading-relaxed text-slate-600"
+                          >
+                            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sky-400" />
+                            <span className="min-w-0">
+                              {point.text}
+                              {point.link ? (
+                                <>
+                                  {" "}
+                                  <Link
+                                    to={point.link.to}
+                                    className="font-medium text-sky-700 underline underline-offset-2 hover:text-sky-800"
+                                    onClick={() => onOpenChange(false)}
+                                  >
+                                    {point.link.label}
+                                  </Link>
+                                </>
+                              ) : null}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 </div>
