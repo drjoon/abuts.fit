@@ -51,8 +51,10 @@ import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
 import { isAutoMatchOpenPool } from "../utils/practiceTransferAutoMatch.js";
 import {
-  isLabFeeWithinAutoMatchBudget,
+  assertLabWithinAutoMatchBudget,
+  buildScheduleFromAutoMatchBudget,
   normalizeAutoMatchBudget,
+  resolveAutoMatchBudgetOrDefaults,
 } from "../utils/practiceTransferAutoMatchBudget.js";
 import {
   getRequestPerfCacheValue,
@@ -393,11 +395,13 @@ export async function assertPracticeTransferPaidCreditSufficient({
   const abutmentPricingTier =
     await resolvePracticeAbutmentPricingTier(practiceId);
   const abutmentPrices = await loadAbutmentCreditPrices();
+  const autoSchedule =
+    noLab && budget ? buildScheduleFromAutoMatchBudget(budget, "max") : null;
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     implantFavorites: implantFavoritesFromPractice(practice),
     labFeeSchedule: noLab
-      ? LAB_FEE_SCHEDULE_ZEROS
+      ? autoSchedule || LAB_FEE_SCHEDULE_ZEROS
       : resolveLabFeeScheduleSource(labFeeSchedule),
     abutmentPricingTier,
     abutmentPrices,
@@ -406,11 +410,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
     labFeeMultiplier: resolveLabPracticeFeeMultiplier(lab, practiceId),
   });
 
-  // 자동매칭: 기공비 0 대신 예산 상한으로 잔액 검사(수락 시 부족 실패 예방).
-  const required = noLab && budget
-    ? Math.max(0, budget.maxLabFee) +
-      Math.max(0, Math.round(Number(fees.abutmentRetailTotal || 0)))
-    : fees.total;
+  const required = fees.total;
 
   if (required <= 0) {
     return { ok: true, fees, paidCredit: null, freeCredit: null, required: 0 };
@@ -517,20 +517,25 @@ export async function commitPracticeTransferBilling({
     return { billed: false, reason: "zero_fee", fees };
   }
 
-  const budget = normalizeAutoMatchBudget(transfer?.billing?.autoMatchBudget);
+  const budgetCheck = assertLabWithinAutoMatchBudget({
+    toothWorks,
+    budget: transfer?.billing?.autoMatchBudget,
+    labFeeSchedule: lab?.labFeeSchedule,
+  });
   if (
     String(transfer?.matchingMode || "").trim() === "auto" &&
-    budget &&
-    !isLabFeeWithinAutoMatchBudget(fees.labFeeTotal, budget)
+    !budgetCheck.ok
   ) {
     const err = new Error(
-      `기공소 수가(${fees.labFeeTotal.toLocaleString("ko-KR")}원)가 치과 예산(${budget.minLabFee.toLocaleString("ko-KR")}~${budget.maxLabFee.toLocaleString("ko-KR")}원) 밖입니다.`,
+      "기공소 수가가 치과 자동매칭 예산(항목별 최소~최대) 밖입니다.",
     );
     err.statusCode = 409;
     err.payload = {
       reason: "auto_match_budget_mismatch",
       labFeeTotal: fees.labFeeTotal,
-      autoMatchBudget: budget,
+      autoMatchBudget: budgetCheck.budget,
+      requiredKeys: budgetCheck.requiredKeys,
+      unitPrices: budgetCheck.unitPrices,
     };
     throw err;
   }
@@ -872,12 +877,7 @@ export function toBillingPreviewFields(quote) {
     abutsRevenueAmount: api.abutsRevenueAmount,
     billedAt: null,
     isRemake: Boolean(api.isRemake),
-    autoMatchBudget: api.autoMatchBudget
-      ? {
-          minLabFee: api.autoMatchBudget.minLabFee,
-          maxLabFee: api.autoMatchBudget.maxLabFee,
-        }
-      : undefined,
+    autoMatchBudget: api.autoMatchBudget || undefined,
   };
 }
 
@@ -986,14 +986,15 @@ export async function buildPracticeTransferQuote({
       needRates ? loadCachedDevopsPayoutRates() : Promise.resolve(payoutRates),
     ]);
 
-  const resolvedBudget =
+  const resolvedBudgetRaw =
     autoMatchBudget !== undefined
-      ? normalizeAutoMatchBudget(autoMatchBudget)
+      ? autoMatchBudget
       : needBudget
-        ? normalizeAutoMatchBudget(
-            practice?.practiceTransferSettings?.autoMatchBudget,
-          )
-        : normalizeAutoMatchBudget(autoMatchBudget);
+        ? practice?.practiceTransferSettings?.autoMatchBudget
+        : autoMatchBudget;
+  const resolvedBudget = usedDefaultSchedule
+    ? resolveAutoMatchBudgetOrDefaults(resolvedBudgetRaw)
+    : normalizeAutoMatchBudget(resolvedBudgetRaw);
 
   if (schedule == null) {
     schedule = lab?.labFeeSchedule || null;
@@ -1004,7 +1005,7 @@ export async function buildPracticeTransferQuote({
     : isLabFeeScheduleConfigured(schedule);
 
   if (usedDefaultSchedule) {
-    schedule = LAB_FEE_SCHEDULE_ZEROS;
+    schedule = buildScheduleFromAutoMatchBudget(resolvedBudget, "max");
   } else if (loadedFromDb) {
     schedule = resolveLabFeeScheduleSource(schedule);
   }
@@ -1021,6 +1022,25 @@ export async function buildPracticeTransferQuote({
     skipAbutmentFees: useRemake,
     labFeeMultiplier,
   });
+
+  let autoMatchBudgetOut = null;
+  if (usedDefaultSchedule && resolvedBudget) {
+    const minFees = computePracticeTransferRetailFees({
+      toothWorks,
+      implantFavorites: implantFavoritesFromPractice(practice),
+      labFeeSchedule: buildScheduleFromAutoMatchBudget(resolvedBudget, "min"),
+      abutmentPricingTier,
+      abutmentPrices,
+      remake: useRemake,
+      skipAbutmentFees: true,
+      labFeeMultiplier: 1,
+    });
+    autoMatchBudgetOut = {
+      ...resolvedBudget,
+      minLabFee: minFees.labFeeTotal,
+      maxLabFee: fees.labFeeTotal,
+    };
+  }
 
   let kind = relationshipKind;
   let partnerId =
@@ -1065,7 +1085,7 @@ export async function buildPracticeTransferQuote({
     abutmentPricingTier,
     abutmentPrices,
     abutmentRetailPrice: 0,
-    autoMatchBudget: usedDefaultSchedule ? resolvedBudget : null,
+    autoMatchBudget: autoMatchBudgetOut,
     schedule: usedDefaultSchedule
       ? LAB_FEE_SCHEDULE_ZEROS
       : normalizeLabFeeSchedule(schedule),

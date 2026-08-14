@@ -129,6 +129,10 @@ import {
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
+import {
+  resolveAutoMatchBudgetOrDefaults,
+  type PracticeTransferAutoMatchBudget,
+} from "@/shared/practice/autoMatchBudget";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
@@ -473,7 +477,7 @@ type PracticeTransferSettingsPayload = {
   abutmentFavorites?: PracticeAbutmentFavorite[];
   skipDesignConfirm?: boolean;
   defaultAbutmentProductMode?: AbutmentProductMode;
-  autoMatchBudget?: { minLabFee: number; maxLabFee: number } | null;
+  autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   updatedAt?: string | null;
 };
 
@@ -987,10 +991,8 @@ export const PracticeFileTransferPage = ({
   const [remakeBusy, setRemakeBusy] = useState(false);
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
-  const [autoMatchBudget, setAutoMatchBudget] = useState<{
-    minLabFee: number;
-    maxLabFee: number;
-  } | null>(null);
+  const [autoMatchBudget, setAutoMatchBudget] =
+    useState<PracticeTransferAutoMatchBudget | null>(null);
   const [defaultAbutmentProductMode, setDefaultAbutmentProductMode] =
     useState<AbutmentProductMode>(() => normalizeAccountAbutmentProductMode(undefined));
   const [lastSavedFormFingerprint, setLastSavedFormFingerprint] = useState<string | null>(null);
@@ -1414,16 +1416,9 @@ export const PracticeFileTransferPage = ({
     const nextDefaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
       payload.defaultAbutmentProductMode,
     );
-    const nextBudgetRaw = payload.autoMatchBudget;
-    const nextAutoMatchBudget =
-      nextBudgetRaw &&
-      typeof nextBudgetRaw === "object" &&
-      Number(nextBudgetRaw.maxLabFee) > 0
-        ? {
-            minLabFee: Math.max(0, Math.round(Number(nextBudgetRaw.minLabFee || 0))),
-            maxLabFee: Math.max(0, Math.round(Number(nextBudgetRaw.maxLabFee || 0))),
-          }
-        : null;
+    const nextAutoMatchBudget = resolveAutoMatchBudgetOrDefaults(
+      payload.autoMatchBudget,
+    );
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
@@ -1498,14 +1493,9 @@ export const PracticeFileTransferPage = ({
         );
       }
       if (hasAutoMatchBudget) {
-        const band = params.autoMatchBudget;
-        jsonBody.autoMatchBudget =
-          band && Number(band.maxLabFee) > 0
-            ? {
-                minLabFee: Math.max(0, Math.round(Number(band.minLabFee || 0))),
-                maxLabFee: Math.max(0, Math.round(Number(band.maxLabFee || 0))),
-              }
-            : null;
+        jsonBody.autoMatchBudget = resolveAutoMatchBudgetOrDefaults(
+          params.autoMatchBudget,
+        );
       }
       if (Object.keys(jsonBody).length === 0) return true;
 
@@ -1989,15 +1979,7 @@ export const PracticeFileTransferPage = ({
         );
         setImplantFavorites(normalizeImplantFavorites(payload.implantFavorites));
         setAbutmentFavorites(normalizeAbutmentFavorites(payload.abutmentFavorites));
-        const band = payload.autoMatchBudget;
-        setAutoMatchBudget(
-          band && Number(band.maxLabFee) > 0
-            ? {
-                minLabFee: Math.max(0, Math.round(Number(band.minLabFee || 0))),
-                maxLabFee: Math.max(0, Math.round(Number(band.maxLabFee || 0))),
-              }
-            : null,
-        );
+        setAutoMatchBudget(resolveAutoMatchBudgetOrDefaults(payload.autoMatchBudget));
       }
       try {
         localStorage.setItem(
@@ -4896,15 +4878,13 @@ export const PracticeFileTransferPage = ({
         skipDesignConfirm,
       });
       const autoMatch = isAutoMatchLab(selectedLab);
-      if (autoMatch && !(autoMatchBudget && autoMatchBudget.maxLabFee > 0)) {
-        throw new Error("자동매칭에는 기공비 최대 예산이 필요합니다.");
-      }
+      const budgetForAuto = resolveAutoMatchBudgetOrDefaults(autoMatchBudget);
       const practiceRouting = {
         targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
         targetLabName: String(selectedLab?.name || "").trim(),
         matchingMode: autoMatch ? "auto" : "direct",
         skipDesignConfirm,
-        autoMatchBudget: autoMatch ? autoMatchBudget : undefined,
+        autoMatchBudget: autoMatch ? budgetForAuto : undefined,
       };
       const newSystemRequestBase = {
         requested: true,
@@ -4971,7 +4951,7 @@ export const PracticeFileTransferPage = ({
           transferMemo,
           toothWorks: syncToothWorks,
           skipDesignConfirm,
-          autoMatchBudget: autoMatch ? autoMatchBudget : undefined,
+          autoMatchBudget: autoMatch ? budgetForAuto : undefined,
           caseInfos: caseInfosPayload,
         },
       });

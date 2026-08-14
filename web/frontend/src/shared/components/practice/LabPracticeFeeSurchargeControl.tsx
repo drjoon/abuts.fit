@@ -117,10 +117,10 @@ export function LabPracticeFeeSurchargeControl({
     }
   };
 
-  const onTriggerClick = (event: MouseEvent) => {
+  const onTriggerPointerDown = (event: MouseEvent) => {
     if (stopPropagation) {
+      // 카드 클릭(상세 모달)만 막고, 팝오버 토글은 유지한다.
       event.stopPropagation();
-      event.preventDefault();
     }
   };
 
@@ -159,23 +159,23 @@ export function LabPracticeFeeSurchargeControl({
       <TooltipProvider delayDuration={200}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant={active ? "default" : "outline"}
-                size="sm"
-                className={cn(buttonSizeClass, className)}
-                onClick={onTriggerClick}
-                onPointerDown={onTriggerClick}
-                aria-label={
-                  active
-                    ? `기공수가 ${formatLabFeeMultiplierLabel(current)}`
-                    : "기공수가 할증 설정"
-                }
-              >
-                {active ? formatLabFeeMultiplierLabel(current) : "기공수가 할증"}
-              </Button>
-            </PopoverTrigger>
+            <span className="inline-flex" onPointerDown={onTriggerPointerDown}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant={active ? "default" : "outline"}
+                  size="sm"
+                  className={cn(buttonSizeClass, className)}
+                  aria-label={
+                    active
+                      ? `기공수가 ${formatLabFeeMultiplierLabel(current)}`
+                      : "기공수가 할증 설정"
+                  }
+                >
+                  {active ? formatLabFeeMultiplierLabel(current) : "기공수가 할증"}
+                </Button>
+              </PopoverTrigger>
+            </span>
           </TooltipTrigger>
           {!open ? (
             <TooltipContent side="top" className="max-w-[16rem] text-xs leading-relaxed">

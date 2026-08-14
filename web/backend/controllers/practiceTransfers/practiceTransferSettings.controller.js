@@ -2,7 +2,9 @@ import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { hydrateFavoritesWithRoundBarAdopted } from "./roundBarAbutmentRequest.controller.js";
 import { normalizeAdoptedKind } from "../../utils/roundBarAbutment.js";
-import { normalizeAutoMatchBudget } from "../../utils/practiceTransferAutoMatchBudget.js";
+import {
+  resolveAutoMatchBudgetOrDefaults,
+} from "../../utils/practiceTransferAutoMatchBudget.js";
 
 // related files:
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
@@ -188,7 +190,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     defaultAbutmentProductMode: normalizeDefaultAbutmentProductMode(
       settings?.defaultAbutmentProductMode,
     ),
-    autoMatchBudget: normalizeAutoMatchBudget(settings?.autoMatchBudget),
+    autoMatchBudget: resolveAutoMatchBudgetOrDefaults(settings?.autoMatchBudget),
     updatedAt: settings?.updatedAt || null,
   };
 };
@@ -306,10 +308,11 @@ export async function upsertPracticeTransferSettings(req, res) {
         normalizeDefaultAbutmentProductMode(body.defaultAbutmentProductMode);
     }
     if (hasAutoMatchBudget) {
-      const band = normalizeAutoMatchBudget(body.autoMatchBudget);
-      setPatch["practiceTransferSettings.autoMatchBudget"] = band
-        ? { minLabFee: band.minLabFee, maxLabFee: band.maxLabFee }
-        : { minLabFee: null, maxLabFee: null };
+      const band = resolveAutoMatchBudgetOrDefaults(body.autoMatchBudget);
+      setPatch["practiceTransferSettings.autoMatchBudget"] = {
+        version: 2,
+        items: band.items,
+      };
     }
 
     const anchor = await BusinessAnchor.findByIdAndUpdate(

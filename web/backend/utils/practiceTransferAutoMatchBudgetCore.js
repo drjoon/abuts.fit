@@ -1,17 +1,26 @@
 // related files:
 // - web/backend/utils/practiceTransferAutoMatchBudget.js
-// - web/backend/utils/labFeeSchedule.js
-// - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
+// - web/backend/utils/labFeeSchedule.js (LAB_FEE_SCHEDULE_DEFAULTS와 동기화)
+// - web/frontend/src/shared/practice/autoMatchBudget.ts
 //
 // 자동매칭 기공비 예산 — 항목별 min/max (순수, DB 의존 없음).
-// 기본값: 어벗츠 LAB_FEE_SCHEDULE_DEFAULTS 기준 ±20%, Math.ceil.
-
-import { LAB_FEE_SCHEDULE_DEFAULTS } from "./labFeeSchedule.js";
+// 기본값: 어벗츠 관리자 기본 수가 ±20%, Math.ceil.
 
 const MAX_UNIT_FEE = 50_000_000;
 const DEFAULT_SPREAD = 0.2;
 
-/** 자동매칭 예산에 쓰는 기공 항목(어벗츠 어벗·기공소 어벗 단가 키 제외) */
+/** SSOT 동기화: web/backend/utils/labFeeSchedule.js LAB_FEE_SCHEDULE_DEFAULTS */
+export const ADMIN_LAB_FEE_BASE = {
+  crown: 60000,
+  bridge: 60000,
+  inlay: 50000,
+  pontic: 40000,
+  retainer: 40000,
+  removableTemp3: 30000,
+  removableTemp6: 50000,
+};
+
+/** 자동매칭 예산에 쓰는 기공 항목(어벗츠/기공소 어벗 단가 키 제외) */
 export const AUTO_MATCH_BUDGET_KEYS = [
   "crown",
   "bridge",
@@ -40,16 +49,16 @@ export function bandFromAdminBase(basePrice, spread = DEFAULT_SPREAD) {
   const max = Math.ceil(base * (1 + s));
   return {
     min: Math.min(MAX_UNIT_FEE, Math.max(0, min)),
-    max: Math.min(MAX_UNIT_FEE, Math.max(0, max)),
+    max: Math.min(MAX_UNIT_FEE, Math.max(min, max)),
   };
 }
 
 export function buildDefaultAutoMatchBudgetItems(
-  adminDefaults = LAB_FEE_SCHEDULE_DEFAULTS,
+  adminDefaults = ADMIN_LAB_FEE_BASE,
 ) {
   const items = {};
   for (const key of AUTO_MATCH_BUDGET_KEYS) {
-    const base = Number(adminDefaults?.[key] ?? LAB_FEE_SCHEDULE_DEFAULTS[key] ?? 0);
+    const base = Number(adminDefaults?.[key] ?? ADMIN_LAB_FEE_BASE[key] ?? 0);
     items[key] = bandFromAdminBase(base);
   }
   return items;
@@ -70,24 +79,25 @@ export function normalizeAutoMatchBudgetBand(raw) {
 }
 
 /**
- * @returns {{ version: 2, items: Record<string, { min: number, max: number }> } | null}
+ * @returns {{
+ *   version: 2,
+ *   items: Record<string, { min: number, max: number }>,
+ *   minLabFee?: number,
+ *   maxLabFee?: number,
+ * } | null}
  */
 export function normalizeAutoMatchBudget(raw) {
   if (raw == null || typeof raw !== "object") return null;
 
-  // 레거시 총액 밴드 → 미설정(UI가 관리자 ±20% 기본으로 채움)
-  if (
+  // 레거시 총액만 있으면 미설정(모달이 관리자 ±20%로 채움)
+  const hasLegacyTotalOnly =
     (raw.minLabFee != null || raw.maxLabFee != null) &&
     raw.items == null &&
-    !AUTO_MATCH_BUDGET_KEYS.some((key) => raw[key] != null)
-  ) {
-    return null;
-  }
+    !AUTO_MATCH_BUDGET_KEYS.some((key) => raw[key] != null);
+  if (hasLegacyTotalOnly) return null;
 
   const srcItems =
-    raw.items && typeof raw.items === "object"
-      ? raw.items
-      : raw;
+    raw.items && typeof raw.items === "object" ? raw.items : raw;
 
   const items = {};
   let any = false;
@@ -98,7 +108,17 @@ export function normalizeAutoMatchBudget(raw) {
     any = true;
   }
   if (!any) return null;
-  return { version: 2, items };
+
+  const out = { version: 2, items };
+  const caseMin = Number(raw.minLabFee);
+  const caseMax = Number(raw.maxLabFee);
+  if (Number.isFinite(caseMax) && caseMax > 0) {
+    out.maxLabFee = Math.max(0, Math.round(caseMax));
+    out.minLabFee = Number.isFinite(caseMin)
+      ? Math.min(out.maxLabFee, Math.max(0, Math.round(caseMin)))
+      : 0;
+  }
+  return out;
 }
 
 export function isAutoMatchBudgetConfigured(budget) {
@@ -158,11 +178,7 @@ export function buildScheduleFromAutoMatchBudget(budget, side = "max") {
   return schedule;
 }
 
-/** @deprecated 총액 밴드 호환 — 항목 예산이면 max 합산 대신 null */
-export function isLabFeeWithinAutoMatchBudget(labFeeTotal, budget) {
-  const normalized = normalizeAutoMatchBudget(budget);
-  if (!normalized) return false;
-  // 항목별 모델에서는 총액만으로 판정하지 않는다.
-  void labFeeTotal;
-  return false;
+/** @deprecated 항목별 모델 — 총액만으로는 판정하지 않음 */
+export function isLabFeeWithinAutoMatchBudget(_labFeeTotal, budget) {
+  return isAutoMatchBudgetConfigured(budget);
 }

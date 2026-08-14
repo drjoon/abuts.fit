@@ -25,14 +25,21 @@ import {
   type AbutsAbutmentPricingTier,
 } from "@/shared/pricing/abutsAbutmentService";
 
+import {
+  normalizePracticeTransferAutoMatchBudget,
+  resolveAutoMatchBudgetOrDefaults,
+  AUTO_MATCH_BUDGET_KEYS,
+  type PracticeTransferAutoMatchBudget,
+} from "@/shared/practice/autoMatchBudget";
+
+export {
+  normalizePracticeTransferAutoMatchBudget,
+  type PracticeTransferAutoMatchBudget,
+} from "@/shared/practice/autoMatchBudget";
+
 export { sortPracticeTransferFeeLines };
 
 export type PracticeTransferRelationshipKind = "active" | "referred" | "none";
-
-export type PracticeTransferAutoMatchBudget = {
-  minLabFee: number;
-  maxLabFee: number;
-};
 
 export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   relationshipKind: PracticeTransferRelationshipKind;
@@ -46,7 +53,7 @@ export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   labFeeConfigured?: boolean;
   isRemake?: boolean;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
-  /** 자동매칭 기공비 예산(원). 있으면 견적 UI는 구간으로 표시 */
+  /** 자동매칭 기공비 예산(항목별). 합산 minLabFee/maxLabFee가 있으면 구간 표시 */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
 };
 
@@ -80,22 +87,6 @@ export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
   usedDefaultSchedule: true,
   labFeeConfigured: true,
   autoMatchBudget: null,
-};
-
-export const normalizePracticeTransferAutoMatchBudget = (
-  raw: unknown,
-): PracticeTransferAutoMatchBudget | null => {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  const maxRaw = Number(r.maxLabFee ?? r.max);
-  if (!Number.isFinite(maxRaw)) return null;
-  const maxLabFee = Math.max(0, Math.round(maxRaw));
-  if (maxLabFee <= 0) return null;
-  const minRaw = Number(r.minLabFee ?? r.min);
-  const minLabFee = Number.isFinite(minRaw)
-    ? Math.min(maxLabFee, Math.max(0, Math.round(minRaw)))
-    : 0;
-  return { minLabFee, maxLabFee };
 };
 
 const toRelationshipKind = (value: unknown): PracticeTransferRelationshipKind =>
@@ -264,21 +255,52 @@ export const buildFeeQuoteFromContext = (params: {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
   const labFeeMultiplier = normalizeLabFeeMultiplier(context.labFeeMultiplier);
+  const budgetRaw =
+    params.autoMatchBudget !== undefined
+      ? params.autoMatchBudget
+      : context.autoMatchBudget || null;
+  const budget = zeroed
+    ? resolveAutoMatchBudgetOrDefaults(budgetRaw)
+    : normalizePracticeTransferAutoMatchBudget(budgetRaw);
+
+  const scheduleFromBudget = (side: "min" | "max") => {
+    const schedule: Partial<LabFeeSchedule> = {};
+    if (!budget) return LAB_FEE_SCHEDULE_ZEROS;
+    for (const key of AUTO_MATCH_BUDGET_KEYS) {
+      const band = budget.items[key];
+      schedule[key] = side === "min" ? band.min : band.max;
+    }
+    return schedule as LabFeeSchedule;
+  };
+
   const fees = computePracticeTransferRetailFees({
     toothWorks: params.toothWorks,
     implantFavorites: params.implantFavorites,
     labFeeSchedule: zeroed
-      ? LAB_FEE_SCHEDULE_ZEROS
+      ? scheduleFromBudget("max")
       : { ...context.schedule, remake: context.remakeSchedule, items: context.items },
     abutmentPricingTier: context.abutmentPricingTier,
     abutmentPrices: context.abutmentPrices,
-    labFeeMultiplier,
+    labFeeMultiplier: zeroed ? 1 : labFeeMultiplier,
   });
   const feeRateApplied = Number(context.feeRateApplied || 0);
-  const budget =
-    params.autoMatchBudget !== undefined
-      ? params.autoMatchBudget
-      : context.autoMatchBudget || null;
+  let autoMatchBudgetOut: PracticeTransferAutoMatchBudget | null = null;
+  if (zeroed && budget) {
+    const minFees = computePracticeTransferRetailFees({
+      toothWorks: params.toothWorks,
+      implantFavorites: params.implantFavorites,
+      labFeeSchedule: scheduleFromBudget("min"),
+      abutmentPricingTier: context.abutmentPricingTier,
+      abutmentPrices: context.abutmentPrices,
+      skipAbutmentFees: true,
+      labFeeMultiplier: 1,
+    });
+    autoMatchBudgetOut = {
+      ...budget,
+      minLabFee: minFees.labFeeTotal,
+      maxLabFee: fees.labFeeTotal,
+    };
+  }
   const settlement = splitPracticeTransferSettlement({
     labFeeTotal: fees.labFeeTotal,
     abutmentRetailTotal: fees.abutmentRetailTotal,
@@ -288,13 +310,13 @@ export const buildFeeQuoteFromContext = (params: {
     ...fees,
     relationshipKind: context.relationshipKind,
     feeRateApplied,
-    labFeeMultiplier,
+    labFeeMultiplier: zeroed ? 1 : labFeeMultiplier,
     labSettlementAmount: settlement.labSettlementAmount,
     abutsRevenueAmount: settlement.abutsRevenueAmount,
     billed: false,
     usedDefaultSchedule: zeroed,
     labFeeConfigured: context.labFeeConfigured !== false,
-    autoMatchBudget: zeroed ? budget : null,
+    autoMatchBudget: autoMatchBudgetOut,
   };
 };
 

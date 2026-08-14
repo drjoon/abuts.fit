@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-08-14: 기공소 수신(labFacing) 치식 표시 — 커스텀어벗 → 어벗츠 지급.
 // - 2026-08-14: 같은 스펙이면 환봉 도입 프리셋을 일반 프리셋보다 우선한다.
 // - 2026-08-14: implantFavorites 환봉 제조사 추가요청(roundBar/adopted/roundBarRequestId).
 // - 2026-08-13: 커스텀어벗 치아별 생산만/디자인+생산(abutmentProductMode) 저장·직렬화.
@@ -963,21 +964,31 @@ export const collapseInnerBridgePonticsForDisplay = (
 
 export const formatToothWorksForDisplay = (
   rows: ToothWorkSelection[],
-  options?: { multiline?: boolean },
+  options?: {
+    multiline?: boolean;
+    /** 기공소 수신: 커스텀어벗 → 어벗츠 지급 */
+    labFacing?: boolean;
+  },
 ) => {
   const normalizedRows = collapseInnerBridgePonticsForDisplay(rows)
     .slice()
     .sort((a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber));
   if (!normalizedRows.length) return "";
 
+  const customAbutmentLabel = options?.labFacing ? "어벗츠 지급" : "커스텀어벗";
   const formattedRows = normalizedRows.map((row) => {
-    const details = [row.prosthesisType];
+    const prosthesisLabel = options?.labFacing
+      ? String(row.prosthesisType || "").replace(/커스텀어벗/g, customAbutmentLabel)
+      : row.prosthesisType;
+    const details = [prosthesisLabel];
     if (row.customAbutment) {
       const modeLabel =
         ABUTMENT_PRODUCT_MODE_SHORT_LABEL[resolveToothAbutmentProductMode(row)];
       if (!isCustomAbutmentProsthesisType(row.prosthesisType)) {
-        details.push(`커스텀어벗 ${modeLabel}`);
-      } else {
+        details.push(
+          options?.labFacing ? customAbutmentLabel : `${customAbutmentLabel} ${modeLabel}`,
+        );
+      } else if (!options?.labFacing) {
         details.push(modeLabel);
       }
       const specsSummary = formatCustomSpecsSummary(row);

@@ -423,10 +423,10 @@ const businessAnchorSchema = new mongoose.Schema(
         enum: ["custom_abutment", "design_custom_abutment"],
         default: "design_custom_abutment",
       },
-      // 자동매칭 기공비 예산(원). 치식 합산 labFeeTotal 기준. 어벗츠 어벗 제외.
+      // 자동매칭 기공비 예산 — 항목별 min/max (Mixed). 어벗츠 어벗 제외.
       autoMatchBudget: {
-        minLabFee: { type: Number, default: null, min: 0 },
-        maxLabFee: { type: Number, default: null, min: 0 },
+        type: mongoose.Schema.Types.Mixed,
+        default: null,
       },
       updatedAt: {
         type: Date,

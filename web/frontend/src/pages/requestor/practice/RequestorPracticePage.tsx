@@ -223,8 +223,10 @@ const formatBytes = (bytes: number) => {
   return `${(n / (1024 * 1024)).toFixed(2)}MB`;
 };
 
-const formatToothWorksSummary = (raw: string, options?: { multiline?: boolean }) =>
-  formatToothWorksForDisplay(parseToothWorks(raw), options);
+const formatToothWorksSummary = (
+  raw: string,
+  options?: { multiline?: boolean; labFacing?: boolean },
+) => formatToothWorksForDisplay(parseToothWorks(raw), options);
 
 const parsePracticeTransferMemoMeta = (rawMemo: string) => {
   const parsed = parsePracticeTransferMemoMetaShared(rawMemo);
@@ -2124,7 +2126,10 @@ function RequestorPracticeReceivePage({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {sortedFilteredTransfers.map((transfer) => {
             const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
-            const toothWorksPreview = formatToothWorksSummary(transfer.toothWorksSummary);
+            const toothWorksPreview = formatToothWorksSummary(
+              transfer.toothWorksSummary,
+              { labFacing: true },
+            );
             const displayStatus = getTransferDisplayStatus(transfer);
             const cardId = String(transfer.transferId || transfer._id || "").trim();
             const cardBusy = Boolean(cardActionBusyId) && cardActionBusyId === cardId;
@@ -2187,44 +2192,16 @@ function RequestorPracticeReceivePage({
                   </div>
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <span>
-                    치과:{" "}
-                    {transfer.matchingMode === "auto"
-                      ? "자동 매칭"
-                      : transfer.practice.businessName || "-"}
-                    {transfer.matchingMode === "auto"
-                      ? ""
-                      : transfer.practice.userName
-                        ? ` · 담당자 ${transfer.practice.userName}`
-                        : ""}
-                  </span>
-                  {transfer.matchingMode !== "auto" &&
-                  transfer.practiceBusinessAnchorId ? (
-                    <LabPracticeFeeSurchargeControl
-                      practiceAnchorId={transfer.practiceBusinessAnchorId}
-                      multiplier={transfer.labFeeMultiplier}
-                      size="xs"
-                      onChanged={(next) => {
-                        setTransfers((prev) =>
-                          prev.map((row) =>
-                            row.practiceBusinessAnchorId ===
-                            transfer.practiceBusinessAnchorId
-                              ? { ...row, labFeeMultiplier: next }
-                              : row,
-                          ),
-                        );
-                        setSelectedTransfer((prev) =>
-                          prev &&
-                          prev.practiceBusinessAnchorId ===
-                            transfer.practiceBusinessAnchorId
-                            ? { ...prev, labFeeMultiplier: next }
-                            : prev,
-                        );
-                        void loadFirstPage({ silent: true });
-                      }}
-                    />
-                  ) : null}
+                <div className="mt-2 text-sm text-muted-foreground">
+                  치과:{" "}
+                  {transfer.matchingMode === "auto"
+                    ? "자동 매칭"
+                    : transfer.practice.businessName || "-"}
+                  {transfer.matchingMode === "auto"
+                    ? ""
+                    : transfer.practice.userName
+                      ? ` · 담당자 ${transfer.practice.userName}`
+                      : ""}
                 </div>
 
                 <p className="mt-2 text-xs text-muted-foreground truncate">
@@ -2246,6 +2223,34 @@ function RequestorPracticeReceivePage({
                     quote={transfer.feeQuote}
                     viewer="lab"
                     density="card"
+                    trailingAction={
+                      transfer.matchingMode !== "auto" &&
+                      transfer.practiceBusinessAnchorId ? (
+                        <LabPracticeFeeSurchargeControl
+                          practiceAnchorId={transfer.practiceBusinessAnchorId}
+                          multiplier={transfer.labFeeMultiplier}
+                          size="xs"
+                          onChanged={(next) => {
+                            setTransfers((prev) =>
+                              prev.map((row) =>
+                                row.practiceBusinessAnchorId ===
+                                transfer.practiceBusinessAnchorId
+                                  ? { ...row, labFeeMultiplier: next }
+                                  : row,
+                              ),
+                            );
+                            setSelectedTransfer((prev) =>
+                              prev &&
+                              prev.practiceBusinessAnchorId ===
+                                transfer.practiceBusinessAnchorId
+                                ? { ...prev, labFeeMultiplier: next }
+                                : prev,
+                            );
+                            void loadFirstPage({ silent: true });
+                          }}
+                        />
+                      ) : null
+                    }
                   />
                 ) : null}
 

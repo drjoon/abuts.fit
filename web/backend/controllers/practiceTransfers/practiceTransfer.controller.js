@@ -40,7 +40,7 @@ import {
   toAutoMatchApiFields,
 } from "../../utils/practiceTransferAutoMatch.js";
 import {
-  normalizeAutoMatchBudget,
+  resolveAutoMatchBudgetOrDefaults,
   resolveAutoMatchEligibleLabAnchorIds,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
 import { resolveLabPracticeFeeMultiplier } from "../../utils/labFeeSchedule.js";
@@ -1593,32 +1593,22 @@ export async function createPracticeTransfer(req, res) {
           "practiceTransferSettings.implantFavorites": 1,
         })
         .lean();
-      autoMatchBudget = normalizeAutoMatchBudget(
+      autoMatchBudget = resolveAutoMatchBudgetOrDefaults(
         req.body?.autoMatchBudget ??
           practiceRouting?.autoMatchBudget ??
           practiceForBudget?.practiceTransferSettings?.autoMatchBudget,
       );
-      if (!autoMatchBudget) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "자동매칭에는 기공비 예산(최소·최대)이 필요합니다. 설정에서 예산을 지정해주세요.",
-          reason: "auto_match_budget_required",
-        });
-      }
 
       const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
         toothWorks: toothWorksRaw,
         budget: autoMatchBudget,
-        implantFavorites:
-          practiceForBudget?.practiceTransferSettings?.implantFavorites || [],
-        practiceAnchorId,
       });
       autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
       if (autoMatchEligibleLabAnchorIds.length === 0) {
         return res.status(409).json({
           success: false,
-          message: `예산(${autoMatchBudget.minLabFee.toLocaleString("ko-KR")}~${autoMatchBudget.maxLabFee.toLocaleString("ko-KR")}원)에 맞는 인증 기공소가 없습니다. 예산을 조정하거나 지정 기공소를 선택해주세요.`,
+          message:
+            "설정한 항목별 기공비 예산에 맞는 인증 기공소가 없습니다. 예산을 조정하거나 지정 기공소를 선택해주세요.",
           reason: "auto_match_no_eligible_labs",
           autoMatchBudget,
           labsScanned: eligibility.labsScanned,
@@ -1653,10 +1643,7 @@ export async function createPracticeTransfer(req, res) {
 
     const billingPreview = toBillingPreviewFields(feeQuote);
     if (autoMatchBudget) {
-      billingPreview.autoMatchBudget = {
-        minLabFee: autoMatchBudget.minLabFee,
-        maxLabFee: autoMatchBudget.maxLabFee,
-      };
+      billingPreview.autoMatchBudget = autoMatchBudget;
     }
 
     const transferDoc = await PracticeTransfer.create({

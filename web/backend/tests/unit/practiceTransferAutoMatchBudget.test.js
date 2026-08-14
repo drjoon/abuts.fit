@@ -1,38 +1,52 @@
 // related files:
-// - web/backend/utils/practiceTransferAutoMatchBudget.js
-// - web/backend/tests/unit/labFeeSchedule.test.js
+// - web/backend/utils/practiceTransferAutoMatchBudgetCore.js
 
 import {
+  bandFromAdminBase,
+  buildDefaultAutoMatchBudgetItems,
   isAutoMatchBudgetConfigured,
-  isLabFeeWithinAutoMatchBudget,
+  isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
+  resolveAutoMatchBudgetOrDefaults,
 } from "../../utils/practiceTransferAutoMatchBudgetCore.js";
 
-describe("practiceTransferAutoMatchBudget", () => {
-  test("normalizes min/max and clamps min to max", () => {
-    expect(normalizeAutoMatchBudget({ minLabFee: 80_000, maxLabFee: 50_000 })).toEqual({
-      minLabFee: 50_000,
-      maxLabFee: 50_000,
-    });
-    expect(normalizeAutoMatchBudget({ min: 0, max: 100_000 })).toEqual({
-      minLabFee: 0,
-      maxLabFee: 100_000,
+describe("practiceTransferAutoMatchBudgetCore", () => {
+  test("admin ±20% uses Math.ceil", () => {
+    expect(bandFromAdminBase(60000)).toEqual({ min: 48000, max: 72000 });
+    expect(bandFromAdminBase(50001)).toEqual({
+      min: Math.ceil(50001 * 0.8),
+      max: Math.ceil(50001 * 1.2),
     });
   });
 
-  test("rejects missing or non-positive max", () => {
-    expect(normalizeAutoMatchBudget(null)).toBeNull();
-    expect(normalizeAutoMatchBudget({ minLabFee: 0, maxLabFee: 0 })).toBeNull();
-    expect(normalizeAutoMatchBudget({ minLabFee: 10_000 })).toBeNull();
-    expect(isAutoMatchBudgetConfigured({ maxLabFee: 0 })).toBe(false);
-    expect(isAutoMatchBudgetConfigured({ maxLabFee: 40_000 })).toBe(true);
+  test("defaults cover all prosthetic keys", () => {
+    const items = buildDefaultAutoMatchBudgetItems();
+    expect(items.crown).toEqual({ min: 48000, max: 72000 });
+    expect(items.bridge).toEqual({ min: 48000, max: 72000 });
+    expect(isAutoMatchBudgetConfigured({ version: 2, items })).toBe(true);
   });
 
-  test("checks inclusive lab fee band", () => {
-    const band = { minLabFee: 40_000, maxLabFee: 60_000 };
-    expect(isLabFeeWithinAutoMatchBudget(40_000, band)).toBe(true);
-    expect(isLabFeeWithinAutoMatchBudget(60_000, band)).toBe(true);
-    expect(isLabFeeWithinAutoMatchBudget(39_999, band)).toBe(false);
-    expect(isLabFeeWithinAutoMatchBudget(60_001, band)).toBe(false);
+  test("unit price eligibility is inclusive per required key", () => {
+    const budget = resolveAutoMatchBudgetOrDefaults(null);
+    expect(
+      isLabUnitPricesWithinAutoMatchBudget(
+        { crown: 48000, bridge: 72000 },
+        budget,
+        ["crown", "bridge"],
+      ),
+    ).toBe(true);
+    expect(
+      isLabUnitPricesWithinAutoMatchBudget(
+        { crown: 47999, bridge: 72000 },
+        budget,
+        ["crown"],
+      ),
+    ).toBe(false);
+  });
+
+  test("legacy total-only budget is treated as unset", () => {
+    expect(
+      normalizeAutoMatchBudget({ minLabFee: 0, maxLabFee: 100000 }),
+    ).toBeNull();
   });
 });

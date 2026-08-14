@@ -159,10 +159,10 @@ const practiceTransferSchema = new mongoose.Schema(
       abutsRevenueAmount: { type: Number, default: 0 },
       billedAt: { type: Date, default: null },
       isRemake: { type: Boolean, default: false },
-      // 자동매칭 기공비 예산(원). 생성 시 스냅샷. 어벗츠 어벗 단가는 별도.
+      // 자동매칭 기공비 예산 스냅샷 — 항목별 min/max (+ 선택적 합산 minLabFee/maxLabFee)
       autoMatchBudget: {
-        minLabFee: { type: Number, default: null, min: 0 },
-        maxLabFee: { type: Number, default: null, min: 0 },
+        type: mongoose.Schema.Types.Mixed,
+        default: undefined,
       },
     },
     remake: {
