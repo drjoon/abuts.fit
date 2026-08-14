@@ -131,11 +131,11 @@ Notes:
   - `src/pages/admin/businesses/AdminBusinessPage.tsx`
   - 관리자 UI에서 별도 `치과`(practice) role 필터/생성은 제거. 레거시 practice는 의뢰자로 표시하고, 의뢰자 `requestorCapabilities`(발신(치과)/수신(기공소·기공실)) 뱃지로 구분.
 - 관리자 크레딧
-  - `src/pages/admin/credits/AdminCreditPage.tsx`
+  - `src/pages/admin/credits/AdminCreditPage.tsx` (탭: 치과 · 기공소 / 영업자)
   - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
   - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
   - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
-  - `src/shared/components/CreditLedgerModal.tsx`
+  - `src/shared/components/CreditLedgerModal.tsx` (내역: 잔액 카드 + rounded-2xl 테이블)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (커스텀어벗 요금 · 기공소 매칭. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧 · 어벗(CNC/환봉) · 어벗 추가 요청 · 멤버십·배송 · 특별 공급가)
@@ -269,6 +269,8 @@ Notes:
   - 기존 거래 치과 등록은 `max(pricingBaseDate, 2026-08-11)` 기준 **30일**간만 신규 초대 가능(D-day 배지·상단 배너). 탭 라벨: 「거래 치과 등록」.
   - 기공소 화면(기공의뢰수신·어벗생산의뢰) 상단: 등록 잔여일 alert + 가입 이유 alert(기간 중만, 2열). 기간 종료 후 대시보드 `[가입 이유]`(기공소·치과 각 variant).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
+    - 잔액 요약은 기공크레딧 탭과 동일하게 rounded-2xl 카드 그리드(현재/유료/무료/[기공]).
+    - 테이블·필터·관리자 모달도 rounded-2xl·slate border 톤으로 통일.
     - **치과**: 유료크레딧(+무료·의뢰/배송)만 표시. `기공크레딧` 잔액 행·정산 필터 숨김. 기공의뢰 차감은 유료크레딧에서 나가며 장부 항목=`기공비`. 기공의뢰 치식 차트(상·하악 사이)·전송 상세에 견적(크레딧 소비액) 표시.
     - **기공소 기공의뢰수신**: 의뢰카드·전송 상세에 수령액(청구 − 플랫폼 수수료) 표시.
     - **기공소**: 유료크레딧(입금·소비)과 기공크레딧(치과 수취·월 정산, `LAB_SETTLEMENT_CREDIT`)을 분리 표시. 「기공크레딧 정산」 탭은 lab만.

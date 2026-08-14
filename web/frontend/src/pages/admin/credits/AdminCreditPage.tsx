@@ -1,10 +1,12 @@
 // change-log:
+// - 2026-08-14: 의뢰자 탭 라벨을 「치과 · 기공소」로 표기.
 // - 2026-08-13: 무료 일반/배송 통합에 맞춰 페이지 props·탭 스타일 정리.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx
 // - web/frontend/src/pages/admin/credits/components/SalesmanCreditTab.tsx
 // - web/frontend/src/pages/admin/credits/hooks/useAdminCreditPage.ts
+// - web/frontend/src/shared/components/CreditLedgerModal.tsx
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Wrench } from "lucide-react";
@@ -89,7 +91,7 @@ export default function AdminCreditPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TabsList className="h-11 rounded-xl bg-slate-100/80 p-1">
             <TabsTrigger value="requestor" className="rounded-lg px-5 text-sm">
-              의뢰자
+              치과 · 기공소
             </TabsTrigger>
             <TabsTrigger value="salesman" className="rounded-lg px-5 text-sm">
               영업자

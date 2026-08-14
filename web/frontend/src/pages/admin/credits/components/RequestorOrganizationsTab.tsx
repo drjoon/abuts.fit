@@ -1,9 +1,11 @@
 // change-log:
+// - 2026-08-14: 섹션 제목을 「치과 · 기공소 크레딧」으로 표기.
 // - 2026-08-13: 무료 잔액 통합 표시, 카드 스타일 모던화.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx
 // - web/frontend/src/pages/admin/credits/creditPageUi.tsx
+// - web/frontend/src/shared/components/CreditLedgerModal.tsx
 import type { RefObject } from "react";
 import { Building2 } from "lucide-react";
 import { TabsContent } from "@/components/ui/tabs";
@@ -106,7 +108,7 @@ export function RequestorOrganizationsTab({
         <div className="space-y-5 p-5 sm:p-6">
           <CreditSectionHeader
             icon={Building2}
-            title="사업자별 크레딧"
+            title="치과 · 기공소 크레딧"
             description="유료·무료 잔액과 충전·사용 현황입니다. 카드를 누르면 원장을 엽니다."
             trailing={
               <select
@@ -136,7 +138,7 @@ export function RequestorOrganizationsTab({
             </div>
           ) : requestorBusinesses.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
-              의뢰자가 없습니다.
+              치과·기공소가 없습니다.
             </div>
           ) : (
             <div ref={orgScrollRef}>

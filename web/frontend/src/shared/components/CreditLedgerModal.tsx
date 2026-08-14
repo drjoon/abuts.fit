@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: 치과·기공소 크레딧 내역 UI — 잔액 카드·필터·테이블을 기공크레딧 탭과 동일 최신 스타일로 정리.
 // - 2026-08-13: 기공크레딧 표기 통일(잔액·필터·유형 라벨). 상단 잔액 요약(현재/유료/무료/정산) 중앙 정렬.
 // - 2026-08-12: 치과는 기공크레딧 잔액/필터 숨김. 유료→유료크레딧. 기공소만 settlement 버킷 표시.
 // - 2026-08-11: 초기 로드 시 테이블 스켈레톤(텍스트 "불러오는 중..." 대체).
@@ -15,13 +16,13 @@
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
+// - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
+// - web/frontend/src/shared/ui/skeletons/RequestorCreditsPageSkeleton.tsx
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
 // - web/backend/controllers/admin/adminCredit.controller.js
-// change-log:
-// - 2026-08-03: CreditLedgerModal: normalize manufacturer stage display labels (의뢰 -> 준비) in transaction rows. (display-only)
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -42,7 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, CreditCard } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -67,6 +68,46 @@ import {
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingMode } from "@/shared/shipping/shippingMode";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+
+function BalanceStatCard({
+  label,
+  value,
+  hint,
+  tone = "default",
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+  tone?: "default" | "primary";
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-h-[6.5rem] flex-col justify-center rounded-2xl border px-4 py-3.5 shadow-sm",
+        tone === "primary"
+          ? "border-primary-muted bg-primary-soft/40 ring-1 ring-primary-muted/70"
+          : "border-slate-200/80 bg-white/80",
+      )}
+    >
+      <div className="text-center text-[13px] font-medium text-slate-500">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-1 text-center text-2xl font-semibold tabular-nums tracking-tight sm:text-[1.55rem]",
+          tone === "primary" ? "text-primary-strong" : "text-slate-900",
+        )}
+      >
+        ₩{value.toLocaleString()}
+      </div>
+      {hint ? (
+        <div className="mt-2 border-t border-slate-100/80 pt-2 text-center text-[11px] text-slate-500 sm:text-xs">
+          {hint}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 type CreditLedgerType =
   | "CHARGE_PAID"
@@ -658,291 +699,285 @@ export const CreditLedgerModal = ({
         <Button
           type="button"
           size="sm"
-          className="h-8 shrink-0 px-4 font-semibold"
+          className="h-9 shrink-0 rounded-xl px-4 font-semibold"
           onClick={goCharge}
           disabled={loading}
         >
+          <CreditCard className="mr-1.5 h-3.5 w-3.5" />
           충전
         </Button>
       ) : null}
     </>
   );
 
+  const freeCreditTotal = currentBalanceSnapshot
+    ? Number(
+        currentBalanceSnapshot.freeCredit ??
+          Number(currentBalanceSnapshot.freeRequestCredit ?? 0) +
+            Number(currentBalanceSnapshot.freeShippingCredit ?? 0),
+      )
+    : 0;
+
   const body = (
-    <div className="flex flex-col gap-3 min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       {loading && items.length === 0 ? (
-        <CreditLedgerTableSkeleton />
+        <CreditLedgerTableSkeleton showSettlement={showSettlementCredit} />
       ) : (
         <>
-      {currentBalanceSnapshot ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <div
-            className={cn(
-              "grid min-w-0 flex-1 grid-cols-1 gap-1 text-center text-xs sm:grid-cols-2",
-              showSettlementCredit ? "lg:grid-cols-4" : "lg:grid-cols-3",
-            )}
-          >
-            <div className="tabular-nums">
-              <span className="text-muted-foreground">현재 잔액</span>{" "}
-              <span className="font-semibold text-slate-900">
-                {Number(currentBalanceSnapshot.balance || 0).toLocaleString()}원
-              </span>
+          {currentBalanceSnapshot ? (
+            <div
+              className={cn(
+                "grid gap-3",
+                showSettlementCredit
+                  ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4"
+                  : "grid-cols-1 sm:grid-cols-3",
+              )}
+            >
+              <BalanceStatCard
+                label="현재 잔액"
+                value={Number(currentBalanceSnapshot.balance || 0)}
+                tone="primary"
+                hint="유료 + 무료"
+              />
+              <BalanceStatCard
+                label="유료크레딧"
+                value={Number(currentBalanceSnapshot.paidCredit || 0)}
+              />
+              <BalanceStatCard label="무료크레딧" value={freeCreditTotal} />
+              {showSettlementCredit ? (
+                <BalanceStatCard
+                  label="기공크레딧"
+                  value={Number(currentBalanceSnapshot.settlementCredit ?? 0)}
+                  hint="월 정산 대기"
+                />
+              ) : null}
             </div>
-            <div className="tabular-nums">
-              <span className="text-muted-foreground">유료크레딧</span>{" "}
-              <span className="font-semibold text-slate-900">
-                {Number(currentBalanceSnapshot.paidCredit || 0).toLocaleString()}
-                원
-              </span>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <PeriodFilter
+              value={period}
+              onChange={setPeriod}
+              useStoreCustomRange={false}
+            />
+
+            <div className="w-[150px]">
+              <Select
+                value={type}
+                onValueChange={(v) => setType(v as CreditLedgerType | "all")}
+              >
+                <SelectTrigger className="h-9 rounded-xl border-slate-200">
+                  <SelectValue placeholder="전체" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체</SelectItem>
+                  <SelectItem value="SPEND_PAID">사용(유료)</SelectItem>
+                  <SelectItem value="SPEND_FREE_REQUEST">사용(무료)</SelectItem>
+                  <SelectItem value="SPEND_FREE_SHIPPING">사용(무료)</SelectItem>
+                  <SelectItem value="CHARGE_PAID">유료충전</SelectItem>
+                  <SelectItem value="CHARGE_FREE_REQUEST">무료충전</SelectItem>
+                  <SelectItem value="CHARGE_FREE_SHIPPING">무료충전</SelectItem>
+                  {showSettlementCredit ? (
+                    <>
+                      <SelectItem value="LAB_SETTLEMENT_CHARGE">
+                        기공크레딧 적립
+                      </SelectItem>
+                      <SelectItem value="LAB_SETTLEMENT_PAYOUT">
+                        기공크레딧 정산
+                      </SelectItem>
+                    </>
+                  ) : null}
+                  <SelectItem value="ADJUST">조정</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="tabular-nums">
-              <span className="text-muted-foreground">무료크레딧</span>{" "}
-              <span className="font-semibold text-slate-900">
-                {Number(
-                  currentBalanceSnapshot.freeCredit ??
-                    Number(currentBalanceSnapshot.freeRequestCredit ?? 0) +
-                      Number(currentBalanceSnapshot.freeShippingCredit ?? 0),
-                ).toLocaleString()}
-                원
-              </span>
-            </div>
-            {showSettlementCredit ? (
-              <div className="tabular-nums">
-                <span className="text-muted-foreground">기공크레딧</span>{" "}
-                <span className="font-semibold text-slate-900">
-                  {Number(
-                    currentBalanceSnapshot.settlementCredit ?? 0,
-                  ).toLocaleString()}
-                  원
-                </span>
-              </div>
+
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="검색 (거래내역/코드/refId)"
+              className="h-9 w-full rounded-xl border-slate-200 sm:w-[280px]"
+            />
+
+            {canCharge && currentBalanceSnapshot ? (
+              <Button
+                type="button"
+                size="sm"
+                className="ml-auto h-9 rounded-xl px-4 font-semibold"
+                onClick={goCharge}
+                disabled={loading}
+              >
+                <CreditCard className="mr-1.5 h-3.5 w-3.5" />
+                충전
+              </Button>
             ) : null}
           </div>
-          {canCharge ? (
-            <Button
-              type="button"
-              size="sm"
-              className="h-8 shrink-0 px-4 font-semibold"
-              onClick={goCharge}
-              disabled={loading}
-            >
-              충전
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2 py-0.5">
-        <PeriodFilter
-          value={period}
-          onChange={setPeriod}
-          useStoreCustomRange={false}
-        />
 
-        <div className="w-[140px]">
-          <Select
-            value={type}
-            onValueChange={(v) => setType(v as CreditLedgerType | "all")}
+          <div
+            ref={scrollRef}
+            className="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
           >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="전체" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체</SelectItem>
-              <SelectItem value="SPEND_PAID">사용(유료)</SelectItem>
-              <SelectItem value="SPEND_FREE_REQUEST">사용(무료)</SelectItem>
-              <SelectItem value="SPEND_FREE_SHIPPING">
-                사용(무료·배송계정)
-              </SelectItem>
-              <SelectItem value="CHARGE_PAID">유료충전</SelectItem>
-              <SelectItem value="CHARGE_FREE_REQUEST">무료충전</SelectItem>
-              <SelectItem value="CHARGE_FREE_SHIPPING">
-                무료충전(배송계정)
-              </SelectItem>
-              {showSettlementCredit ? (
-                <>
-                  <SelectItem value="LAB_SETTLEMENT_CHARGE">
-                    기공크레딧 적립
-                  </SelectItem>
-                  <SelectItem value="LAB_SETTLEMENT_PAYOUT">
-                    기공크레딧 정산
-                  </SelectItem>
-                </>
-              ) : null}
-              <SelectItem value="ADJUST">조정</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="검색 (거래내역/코드/refId)"
-          className="h-9 w-full sm:w-[320px]"
-        />
-      </div>
-
-      <div
-        ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-auto rounded-md border"
-      >
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[190px] text-center">
-                <button
-                  type="button"
-                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                  onClick={() => toggleSort("createdAt")}
-                >
-                  일시
-                  {renderSortIcon(sort.key === "createdAt", sort.direction)}
-                </button>
-              </TableHead>
-              <TableHead className="w-[110px] text-center">
-                <button
-                  type="button"
-                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                  onClick={() => toggleSort("type")}
-                >
-                  유형
-                  {renderSortIcon(sort.key === "type", sort.direction)}
-                </button>
-              </TableHead>
-              <TableHead className="min-w-[160px] text-center">
-                <button
-                  type="button"
-                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                  onClick={() => toggleSort("amount")}
-                >
-                  금액
-                  {renderSortIcon(sort.key === "amount", sort.direction)}
-                </button>
-              </TableHead>
-              <TableHead className="w-[150px] text-center">
-                <button
-                  type="button"
-                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                  onClick={() => toggleSort("balanceAfter")}
-                >
-                  행 시점 잔액
-                  {renderSortIcon(sort.key === "balanceAfter", sort.direction)}
-                </button>
-              </TableHead>
-              <TableHead className="min-w-[240px] text-center">
-                <button
-                  type="button"
-                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
-                  onClick={() => toggleSort("detail")}
-                >
-                  거래내역
-                  {renderSortIcon(sort.key === "detail", sort.direction)}
-                </button>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedRows.map((r) => {
-              const amount = Number(r.amount || 0);
-              const isMinus = amount < 0;
-              const spentPaid = Number(r.spentPaidAmount || 0);
-              const spentFree = Number(r.spentFreeAmount ?? 0);
-              const showSplit =
-                (String(r.type) === "SPEND_PAID" ||
-                  String(r.type) === "SPEND_FREE_REQUEST" ||
-                  String(r.type) === "SPEND_FREE_SHIPPING") &&
-                (spentPaid > 0 || spentFree > 0);
-              const safeRef = r.refRequestId
-                ? formatRequestIdSafe(
-                    r.refRequestId,
-                    `${String(r.refId || "")}::${String(r.uniqueKey || "")}`,
-                  )
-                : "";
-              const freeSpendLabel = (() => {
-                if (r.type === "SPEND_FREE_REQUEST") return "무료(의뢰)";
-                if (r.type === "SPEND_FREE_SHIPPING") return "무료(배송)";
-                const refType = String(r.refType || "");
-                if (refType === "REQUEST") return "무료(의뢰)";
-                if (refType === "SHIPPING_PACKAGE") return "무료(배송)";
-                return "무료";
-              })();
-              return (
-                <TableRow key={r._id}>
-                  <TableCell className="text-center text-xs whitespace-nowrap">
-                    {formatDate(String(r.createdAt || ""))}
-                  </TableCell>
-                  <TableCell className="text-center text-xs font-medium whitespace-nowrap">
-                    {typeLabel(r.type)}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      "text-center font-medium tabular-nums",
-                      isMinus ? "text-destructive" : "text-primary-strong",
-                    )}
-                  >
-                    {showSplit ? (
-                      <div className="flex flex-col items-center leading-4">
-                        {spentPaid > 0 && (
-                          <div className="tabular-nums text-xs">
-                            유료 -{spentPaid.toLocaleString()}원
-                          </div>
-                        )}
-                        {spentFree > 0 && (
-                          <div className="tabular-nums text-xs">
-                            {freeSpendLabel} -{spentFree.toLocaleString()}원
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      `${amount.toLocaleString()}원`
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                    {r.balanceAfter !== undefined
-                      ? `${Number(r.balanceAfter).toLocaleString()}원`
-                      : "-"}
-                  </TableCell>
-                  <TableCell className="text-center text-xs">
-                    <div className="flex flex-col items-center leading-4">
-                      {renderTransactionDetail({
-                        item: r,
-                        safeRef,
-                        onOpenRequestDetail: () =>
-                          setSelectedDetail(toRequestDetail(r)),
-                      })}
-                    </div>
-                  </TableCell>
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[190px] text-center">
+                    <button
+                      type="button"
+                      className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
+                      onClick={() => toggleSort("createdAt")}
+                    >
+                      일시
+                      {renderSortIcon(sort.key === "createdAt", sort.direction)}
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-[110px] text-center">
+                    <button
+                      type="button"
+                      className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
+                      onClick={() => toggleSort("type")}
+                    >
+                      유형
+                      {renderSortIcon(sort.key === "type", sort.direction)}
+                    </button>
+                  </TableHead>
+                  <TableHead className="min-w-[160px] text-center">
+                    <button
+                      type="button"
+                      className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
+                      onClick={() => toggleSort("amount")}
+                    >
+                      금액
+                      {renderSortIcon(sort.key === "amount", sort.direction)}
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-[150px] text-center">
+                    <button
+                      type="button"
+                      className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
+                      onClick={() => toggleSort("balanceAfter")}
+                    >
+                      행 시점 잔액
+                      {renderSortIcon(
+                        sort.key === "balanceAfter",
+                        sort.direction,
+                      )}
+                    </button>
+                  </TableHead>
+                  <TableHead className="min-w-[240px] text-center">
+                    <button
+                      type="button"
+                      className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
+                      onClick={() => toggleSort("detail")}
+                    >
+                      거래내역
+                      {renderSortIcon(sort.key === "detail", sort.direction)}
+                    </button>
+                  </TableHead>
                 </TableRow>
-              );
-            })}
+              </TableHeader>
+              <TableBody>
+                {sortedRows.map((r) => {
+                  const amount = Number(r.amount || 0);
+                  const isMinus = amount < 0;
+                  const spentPaid = Number(r.spentPaidAmount || 0);
+                  const spentFree = Number(r.spentFreeAmount ?? 0);
+                  const showSplit =
+                    (String(r.type) === "SPEND_PAID" ||
+                      String(r.type) === "SPEND_FREE_REQUEST" ||
+                      String(r.type) === "SPEND_FREE_SHIPPING") &&
+                    (spentPaid > 0 || spentFree > 0);
+                  const safeRef = r.refRequestId
+                    ? formatRequestIdSafe(
+                        r.refRequestId,
+                        `${String(r.refId || "")}::${String(r.uniqueKey || "")}`,
+                      )
+                    : "";
+                  const freeSpendLabel = (() => {
+                    if (r.type === "SPEND_FREE_REQUEST") return "무료(의뢰)";
+                    if (r.type === "SPEND_FREE_SHIPPING") return "무료(배송)";
+                    const refType = String(r.refType || "");
+                    if (refType === "REQUEST") return "무료(의뢰)";
+                    if (refType === "SHIPPING_PACKAGE") return "무료(배송)";
+                    return "무료";
+                  })();
+                  return (
+                    <TableRow key={r._id}>
+                      <TableCell className="whitespace-nowrap text-center text-xs">
+                        {formatDate(String(r.createdAt || ""))}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-center text-xs font-medium">
+                        {typeLabel(r.type)}
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          "text-center font-medium tabular-nums",
+                          isMinus ? "text-destructive" : "text-primary-strong",
+                        )}
+                      >
+                        {showSplit ? (
+                          <div className="flex flex-col items-center leading-4">
+                            {spentPaid > 0 && (
+                              <div className="text-xs tabular-nums">
+                                유료 -{spentPaid.toLocaleString()}원
+                              </div>
+                            )}
+                            {spentFree > 0 && (
+                              <div className="text-xs tabular-nums">
+                                {freeSpendLabel} -{spentFree.toLocaleString()}원
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          `${amount.toLocaleString()}원`
+                        )}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-center text-xs tabular-nums text-muted-foreground">
+                        {r.balanceAfter !== undefined
+                          ? `${Number(r.balanceAfter).toLocaleString()}원`
+                          : "-"}
+                      </TableCell>
+                      <TableCell className="text-center text-xs">
+                        <div className="flex flex-col items-center leading-4">
+                          {renderTransactionDetail({
+                            item: r,
+                            safeRef,
+                            onOpenRequestDetail: () =>
+                              setSelectedDetail(toRequestDetail(r)),
+                          })}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
 
-            {loading && rows.length > 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="text-center text-sm text-muted-foreground py-4"
-                >
-                  불러오는 중...
-                </TableCell>
-              </TableRow>
-            )}
+                {loading && rows.length > 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="py-4 text-center text-sm text-muted-foreground"
+                    >
+                      불러오는 중…
+                    </TableCell>
+                  </TableRow>
+                )}
 
-            {!loading && rows.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="text-center text-sm text-muted-foreground py-8"
-                >
-                  조회 결과가 없습니다.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+                {!loading && rows.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="py-10 text-center text-sm text-muted-foreground"
+                    >
+                      조회 결과가 없습니다.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
 
-        {hasMore ? (
-          <div ref={sentinelRef} className="h-8" aria-hidden="true" />
-        ) : null}
-      </div>
+            {hasMore ? (
+              <div ref={sentinelRef} className="h-8" aria-hidden="true" />
+            ) : null}
+          </div>
         </>
       )}
     </div>
@@ -958,7 +993,7 @@ export const CreditLedgerModal = ({
           )}
         >
           {canCharge && !currentBalanceSnapshot ? (
-            <div className="flex items-center justify-end gap-2 shrink-0">
+            <div className="flex shrink-0 items-center justify-end gap-2">
               {headerActions}
             </div>
           ) : null}
@@ -966,14 +1001,18 @@ export const CreditLedgerModal = ({
         </div>
       ) : (
         <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-            <DialogHeader className="pb-2">
+          <DialogContent className="flex max-h-[85vh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:rounded-2xl">
+            <DialogHeader className="space-y-0 border-b border-slate-100 px-5 pb-4 pt-5 pr-12 sm:px-6 sm:pr-14">
               <div className="flex items-center justify-between gap-2">
-                <DialogTitle className="text-lg">{title}</DialogTitle>
+                <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900">
+                  {title}
+                </DialogTitle>
                 {headerActions}
               </div>
             </DialogHeader>
-            {body}
+            <div className="min-h-0 flex-1 overflow-hidden px-5 py-4 sm:px-6">
+              {body}
+            </div>
           </DialogContent>
         </Dialog>
       )}

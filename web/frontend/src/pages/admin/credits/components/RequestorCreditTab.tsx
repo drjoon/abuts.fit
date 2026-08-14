@@ -1,9 +1,11 @@
 // change-log:
+// - 2026-08-14: 스탯 라벨 「치과 · 기공소」로 표기.
 // - 2026-08-13: 무료(의뢰/배송) 통합 표시, 스탯·탭 스타일 모던화.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
 // - web/frontend/src/pages/admin/credits/creditPageUi.tsx
+// - web/frontend/src/shared/components/CreditLedgerModal.tsx
 import type { RefObject } from "react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -156,7 +158,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
     <>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <CreditStatTile
-          label="의뢰자"
+          label="치과 · 기공소"
           value={loading ? "…" : requestorBusinesses.length.toLocaleString()}
         />
         <CreditStatTile

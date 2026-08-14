@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: 내역 탭 UI를 기공크레딧 탭과 동일 최신 스타일로 정리(CreditLedgerModal).
 // - 2026-08-13: 기공소 정산 탭 라벨을 「기공크레딧」으로 통일.
 // - 2026-08-12: 충전 탭 안내문(기공료 선입금)이 잘리지 않도록 overflow-auto.
 // - 2026-08-12: 치과는 기공크레딧 UI 미노출(유료크레딧으로 기공비 지불). 기공소만 정산 탭.
@@ -22,6 +23,7 @@
 // - web/frontend/src/features/settings/tabs/CreditPaymentTab.tsx
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
+// - web/frontend/src/shared/ui/skeletons/RequestorCreditsPageSkeleton.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CreditCard, Wallet, Landmark } from "lucide-react";
