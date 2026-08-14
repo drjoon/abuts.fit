@@ -387,10 +387,13 @@ const App = () => {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    loginWithToken(token).then((ok) => {
+    loginWithToken(token).then((result) => {
       if (cancelled) return;
-      // 계정 전환 직후 토큰이 바뀌었거나 요청이 중단된 경우 세션을 지우지 않음
-      if (!ok && useAuthStore.getState().token === token) {
+      // 계정 전환 직후 토큰이 바뀌었거나, 백엔드 재시작 등 일시 장애면 세션 유지
+      if (
+        result.status === "unauthorized" &&
+        useAuthStore.getState().token === token
+      ) {
         logout();
       }
     });

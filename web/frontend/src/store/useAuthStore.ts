@@ -162,6 +162,12 @@ const normalizeApiUser = (u: unknown): User | null => {
   };
 };
 
+/** /api/auth/me 재검증 결과. 백엔드 재시작·네트워크 장애는 unavailable로 세션을 유지한다. */
+export type LoginWithTokenResult =
+  | { status: "ok" }
+  | { status: "unauthorized" }
+  | { status: "unavailable" };
+
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
@@ -182,7 +188,7 @@ interface AuthState {
   loginWithToken: (
     token: string,
     refreshToken?: string | null,
-  ) => Promise<boolean>;
+  ) => Promise<LoginWithTokenResult>;
   setUser: (user: User | null) => void;
   setLastDashboardPath: (path: string | null) => void;
   logout: () => void;
@@ -416,16 +422,26 @@ export const useAuthStore = create<AuthState>((set, get) => {
           path: "/api/auth/me",
           method: "GET",
           token,
+          skipCache: true,
         });
         const json = (res.data || null) as
           | { success?: boolean; data?: unknown }
           | null;
-        if (!res.ok || !json?.success || !json?.data) return false;
+
+        // 토큰 무효·만료만 세션 제거. 백엔드 다운/5xx/파싱 실패는 유지.
+        if (res.status === 401 || res.status === 403) {
+          return { status: "unauthorized" };
+        }
+        if (!res.ok || !json?.success || !json?.data) {
+          return { status: "unavailable" };
+        }
 
         const u = json.data as Record<string, unknown>;
-        if (!u || typeof u !== "object" || Array.isArray(u)) return false;
+        if (!u || typeof u !== "object" || Array.isArray(u)) {
+          return { status: "unavailable" };
+        }
         const normalizedUser = normalizeApiUser(u);
-        if (!normalizedUser) return false;
+        if (!normalizedUser) return { status: "unavailable" };
 
         try {
           localStorage.setItem(AUTH_TOKEN_KEY, token);
@@ -440,11 +456,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
           user: normalizedUser,
           isAuthenticated: true,
           token,
-          refreshToken: refreshToken || null,
+          refreshToken: refreshToken || get().refreshToken,
         });
-        return true;
+        return { status: "ok" };
       } catch {
-        return false;
+        return { status: "unavailable" };
       }
     },
     setUser: (user: User | null) => {

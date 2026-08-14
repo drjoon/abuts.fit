@@ -553,8 +553,11 @@ export const DashboardLayout = () => {
     if (!user || !user.id) {
       setBootstrappingAuth(true);
       loginWithToken(token)
-        .then((ok) => {
-          if (!ok && useAuthStore.getState().token === token) {
+        .then((result) => {
+          if (
+            result.status === "unauthorized" &&
+            useAuthStore.getState().token === token
+          ) {
             logout();
             navigate("/login", { replace: true });
           }
@@ -568,8 +571,11 @@ export const DashboardLayout = () => {
 
     setBootstrappedOnce(true);
     if (user.role === "admin") return;
-    loginWithToken(token).then((ok) => {
-      if (!ok && useAuthStore.getState().token === token) {
+    loginWithToken(token).then((result) => {
+      if (
+        result.status === "unauthorized" &&
+        useAuthStore.getState().token === token
+      ) {
         logout();
         navigate("/login", { replace: true });
       }

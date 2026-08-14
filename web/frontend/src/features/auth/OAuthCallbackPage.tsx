@@ -106,13 +106,16 @@ export const OAuthCallbackPage = () => {
         return;
       }
 
-      const ok = await loginWithToken(token, refreshToken);
+      const result = await loginWithToken(token, refreshToken);
       if (cancelled) return;
 
-      if (!ok) {
+      if (result.status !== "ok") {
         toast({
           title: "소셜 로그인 실패",
-          description: "로그인 처리에 실패했습니다.",
+          description:
+            result.status === "unavailable"
+              ? "서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요."
+              : "로그인 처리에 실패했습니다.",
           variant: "destructive",
         });
         await navigateAfterDelay("/login", { replace: true });
