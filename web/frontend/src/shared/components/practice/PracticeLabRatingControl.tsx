@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/practiceLabRating.ts
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - 2026-08-14: 치과→기공소 rating(1~3)·메모. 채팅 헤더.
+// - 2026-08-14: 라벨「기공소 평가」·모달 최신 스타일(할증/기공비와 동일).
 import { useEffect, useState, type MouseEvent } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
@@ -27,6 +29,11 @@ import {
   type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
 import { cn } from "@/shared/ui/cn";
+
+const DIALOG_DESCRIPTION_LINES = [
+  "별 1~3점과 메모를 남길 수 있습니다.",
+  "자동매칭·지정 모두 기록됩니다.",
+] as const;
 
 type PracticeLabRatingControlProps = {
   transferMongoId: string;
@@ -135,7 +142,7 @@ export function PracticeLabRatingControl({
       });
       if (!res.ok) {
         toast({
-          title: "기공소 rating 저장 실패",
+          title: "기공소 평가 저장 실패",
           description: res.data?.message || "다시 시도해주세요.",
           variant: "destructive",
         });
@@ -154,7 +161,7 @@ export function PracticeLabRatingControl({
       }
       setOpen(false);
       toast({
-        title: "기공소 rating 저장",
+        title: "기공소 평가 저장",
         description: "이 기록은 치과와 관리자만 볼 수 있습니다.",
         duration: 2500,
       });
@@ -180,12 +187,12 @@ export function PracticeLabRatingControl({
           size="sm"
           className={cn(buttonSizeClass, "gap-1", className)}
           aria-label={
-            active ? `기공소 ${current?.stars}점` : "기공소 rating"
+            active ? `기공소 ${current?.stars}점` : "기공소 평가"
           }
           onClick={() => setOpen(true)}
         >
           <Star className="h-3.5 w-3.5 fill-current" />
-          {active ? `${current?.stars}점` : "rating"}
+          {active ? `${current?.stars}점` : "평가"}
         </Button>
       </span>
 
@@ -195,50 +202,66 @@ export function PracticeLabRatingControl({
           onClick={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <DialogHeader className="space-y-2 border-b px-5 py-4 text-left">
-            <DialogTitle>기공소 rating</DialogTitle>
-            <DialogDescription className="space-y-1 text-sm leading-relaxed">
-              <span className="block">
-                별 1~3점과 메모를 남길 수 있습니다. 자동매칭·지정 모두
-                기록됩니다.
-              </span>
-              <span className="block text-muted-foreground">
+          <div className="border-b border-slate-200/80 px-6 pb-4 pt-6">
+            <DialogHeader className="space-y-1.5 text-left">
+              <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900">
+                기공소 평가
+              </DialogTitle>
+              <DialogDescription className="text-sm text-slate-500">
+                {DIALOG_DESCRIPTION_LINES[0]}
+                <br />
+                {DIALOG_DESCRIPTION_LINES[1]}
+                <br />
                 이 기록은 치과와 관리자만 볼 수 있습니다.
-              </span>
-            </DialogDescription>
-          </DialogHeader>
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <div className="space-y-4 px-5 py-2">
+          <div className="space-y-4 px-6">
             <div className="space-y-2">
-              <div className="text-sm font-medium text-slate-700">별점</div>
+              <Label className="text-[11px] font-medium text-slate-500">
+                별점
+              </Label>
               <StarRow value={draftStars} onChange={setDraftStars} />
             </div>
             <div className="space-y-2">
-              <div className="text-sm font-medium text-slate-700">메모</div>
+              <Label
+                htmlFor="practice-lab-rating-memo"
+                className="text-[11px] font-medium text-slate-500"
+              >
+                메모
+              </Label>
               <Textarea
+                id="practice-lab-rating-memo"
                 value={draftMemo}
                 maxLength={PRACTICE_LAB_RATING_MEMO_MAX}
                 placeholder="내부 메모 (선택)"
-                className="min-h-[96px] resize-y"
+                className="min-h-[96px] resize-y rounded-lg border-slate-200 bg-white shadow-none focus-visible:ring-slate-300"
                 onChange={(e) => setDraftMemo(e.target.value)}
               />
-              <div className="text-right text-[11px] text-muted-foreground">
+              <div className="text-right text-[11px] tabular-nums text-slate-400">
                 {draftMemo.length}/{PRACTICE_LAB_RATING_MEMO_MAX}
               </div>
             </div>
           </div>
 
-          <DialogFooter className="gap-2 border-t px-5 py-4 sm:justify-end">
+          <DialogFooter className="border-t border-slate-200/80 px-6 py-4 sm:justify-end">
             <Button
               type="button"
               variant="outline"
+              className="h-10 min-w-[5.5rem] rounded-lg"
               disabled={saving}
               onClick={() => setOpen(false)}
             >
               취소
             </Button>
-            <Button type="button" disabled={saving} onClick={() => void save()}>
-              {saving ? "저장 중..." : "저장"}
+            <Button
+              type="button"
+              className="h-10 min-w-[5.5rem] rounded-lg"
+              disabled={saving}
+              onClick={() => void save()}
+            >
+              {saving ? "저장 중…" : "저장"}
             </Button>
           </DialogFooter>
         </DialogContent>
