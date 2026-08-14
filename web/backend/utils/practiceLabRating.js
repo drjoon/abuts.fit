@@ -91,7 +91,7 @@ export function isLabBlockedByPracticeRating({
   return row.stars < min;
 }
 
-/** upsert. stars 저장 시 ratingCount +1 (신규는 1). */
+/** upsert. 신규=1, 별점이 바뀌면 ratingCount +1 (메모만 수정은 횟수 유지). */
 export function upsertPracticeLabRatingList(existing, labAnchorId, stars, memo) {
   const labId = String(labAnchorId || "").trim();
   const nextStars = normalizePracticeLabStars(stars);
@@ -106,12 +106,14 @@ export function upsertPracticeLabRatingList(existing, labAnchorId, stars, memo) 
   const now = new Date();
   if (idx >= 0) {
     const prev = rows[idx] || {};
+    const prevStars = normalizePracticeLabStars(prev.stars);
     const prevCount = Math.max(1, Math.floor(Number(prev.ratingCount) || 1));
+    const starsChanged = prevStars !== nextStars;
     rows[idx] = {
       labAnchorId: prev.labAnchorId || labId,
       stars: nextStars,
       memo: nextMemo,
-      ratingCount: prevCount + 1,
+      ratingCount: starsChanged ? prevCount + 1 : prevCount,
       updatedAt: now,
     };
     return rows;
