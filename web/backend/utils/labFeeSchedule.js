@@ -18,6 +18,7 @@
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기. 요청중은 기공소 어벗.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
 // - 2026-08-14: 치과별 기공수가 할증(labFeeMultiplier). 기공비·기공소 어벗만 배수, 어벗츠 단가 제외.
+// - 2026-08-14: 할증 updatedAt — 의뢰 createdAt 이후 적용분은 해당 건에 소급하지 않음.
 import {
   resolveAbutsAbutmentPricingTier,
   resolveAbutsAbutmentUnitPrice,
@@ -30,7 +31,13 @@ export function normalizeLabFeeMultiplier(value) {
   return Math.min(5, Math.round(n * 100) / 100);
 }
 
-/** lab.labPracticeFeeMultipliers에서 치과별 배수 조회. */
+const toTimeMs = (value) => {
+  if (value == null || value === "") return NaN;
+  const ms = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : NaN;
+};
+
+/** lab.labPracticeFeeMultipliers에서 치과별 배수 조회(현재 live). */
 export function resolveLabPracticeFeeMultiplier(labDoc, practiceAnchorId) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId) return 1;
@@ -45,23 +52,64 @@ export function resolveLabPracticeFeeMultiplier(labDoc, practiceAnchorId) {
   return 1;
 }
 
+/**
+ * 의뢰 시점 기준 할증.
+ * 할증 updatedAt이 asOf(의뢰 createdAt)보다 이후면 이 건에는 미적용(다음 건부터).
+ * updatedAt 없는 레거시 행은 이미 적용 중으로 간주.
+ */
+export function resolveLabPracticeFeeMultiplierAsOf(
+  labDoc,
+  practiceAnchorId,
+  asOf,
+) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  if (!practiceId) return 1;
+  const asOfMs = toTimeMs(asOf);
+  const rows = Array.isArray(labDoc?.labPracticeFeeMultipliers)
+    ? labDoc.labPracticeFeeMultipliers
+    : [];
+  for (const row of rows) {
+    if (String(row?.practiceAnchorId || "") !== practiceId) continue;
+    const m = normalizeLabFeeMultiplier(row?.multiplier);
+    if (m <= 1) return 1;
+    const appliedMs = toTimeMs(row?.updatedAt);
+    if (Number.isFinite(asOfMs) && Number.isFinite(appliedMs) && appliedMs > asOfMs) {
+      return 1;
+    }
+    return m;
+  }
+  return 1;
+}
+
 /** 목록 upsert. multiplier<=1이면 해당 치과 항목 제거. */
 export function upsertLabPracticeFeeMultiplierList(
   existing,
   practiceAnchorId,
   multiplier,
+  { updatedAt = new Date() } = {},
 ) {
   const practiceId = String(practiceAnchorId || "").trim();
   const m = normalizeLabFeeMultiplier(multiplier);
+  const appliedAt =
+    updatedAt instanceof Date
+      ? updatedAt
+      : Number.isFinite(toTimeMs(updatedAt))
+        ? new Date(updatedAt)
+        : new Date();
   const rows = (Array.isArray(existing) ? existing : [])
     .filter((row) => String(row?.practiceAnchorId || "").trim() !== practiceId)
     .map((row) => ({
       practiceAnchorId: row.practiceAnchorId,
       multiplier: normalizeLabFeeMultiplier(row.multiplier),
+      updatedAt: row.updatedAt ? new Date(row.updatedAt) : null,
     }))
     .filter((row) => row.practiceAnchorId && row.multiplier > 1);
   if (practiceId && m > 1) {
-    rows.push({ practiceAnchorId: practiceId, multiplier: m });
+    rows.push({
+      practiceAnchorId: practiceId,
+      multiplier: m,
+      updatedAt: appliedAt,
+    });
   }
   return rows;
 }

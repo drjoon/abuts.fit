@@ -11,7 +11,10 @@ import {
   resolveRequestorProfile,
 } from "./requestorCapabilities.js";
 
-/** 기존 자동매칭 수락 건의 예상 소요 시간 기본값 */
+/**
+ * @deprecated 자동매칭 3시간 강제 클레임 만료는 폐기.
+ * 작업 기한은 치과가 지정한 도착일·소통으로 처리. 값은 레거시 문서 호환용.
+ */
 export const PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS = 3;
 
 export const AUTO_MATCH_LAB_DISPLAY_NAME = "자동 매칭";
@@ -89,16 +92,11 @@ export const isAutoMatchMode = (transfer) =>
 export const isAutoMatchCompleted = (transfer) =>
   Boolean(transfer?.autoMatch?.completedAt);
 
-export const isAutoMatchClaimActive = (transfer, now = Date.now()) => {
+/** 수락 기공소가 배정·미완료면 활성. 시간 만료로 재공개하지 않음. */
+export const isAutoMatchClaimActive = (transfer, _now = Date.now()) => {
   if (!isAutoMatchMode(transfer)) return false;
   if (isAutoMatchCompleted(transfer)) return false;
-  const targetId = String(transfer?.targetLabAnchorId || "").trim();
-  if (!targetId) return false;
-  const deadlineMs = transfer?.autoMatch?.deadlineAt
-    ? new Date(transfer.autoMatch.deadlineAt).getTime()
-    : NaN;
-  if (!Number.isFinite(deadlineMs)) return false;
-  return deadlineMs > now;
+  return Boolean(String(transfer?.targetLabAnchorId || "").trim());
 };
 
 export const isAutoMatchOpenPool = (transfer, now = Date.now()) => {
@@ -109,17 +107,11 @@ export const isAutoMatchOpenPool = (transfer, now = Date.now()) => {
   return false;
 };
 
+/** @deprecated 3시간 강제 마감 폐기. 호출부 호환용으로 null 반환. */
 export const buildAutoMatchDeadlineAt = (
-  now = new Date(),
-  hours = PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
-) => {
-  const base = now instanceof Date ? now.getTime() : Date.now();
-  const h = Number(hours);
-  const claimHours = Number.isFinite(h) && h > 0
-    ? h
-    : PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS;
-  return new Date(base + claimHours * 60 * 60 * 1000);
-};
+  _now = new Date(),
+  _hours = PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
+) => null;
 
 /**
  * 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀 ∪ 내가 클레임 중
@@ -166,9 +158,6 @@ export const buildReceivedScopeWithAutoMatch = ({
             $or: [
               { targetLabAnchorId: null },
               { targetLabAnchorId: { $exists: false } },
-              { "autoMatch.deadlineAt": null },
-              { "autoMatch.deadlineAt": { $exists: false } },
-              { "autoMatch.deadlineAt": { $lte: now } },
             ],
           },
         ],
@@ -177,9 +166,9 @@ export const buildReceivedScopeWithAutoMatch = ({
   };
 };
 
-/** 원자 클레임 조건: 공개 풀(미배정 또는 만료) + (있으면) 예산 적격 스냅샷 */
+/** 원자 클레임 조건: 공개 풀(미배정) + (있으면) 예산 적격 스냅샷 */
 export const buildAutoMatchClaimableFilter = (
-  now = new Date(),
+  _now = new Date(),
   { labAnchorId = null } = {},
 ) => {
   const labId = String(labAnchorId || "").trim();
@@ -208,9 +197,6 @@ export const buildAutoMatchClaimableFilter = (
         $or: [
           { targetLabAnchorId: null },
           { targetLabAnchorId: { $exists: false } },
-          { "autoMatch.deadlineAt": null },
-          { "autoMatch.deadlineAt": { $exists: false } },
-          { "autoMatch.deadlineAt": { $lte: now } },
         ],
       },
     ],
@@ -260,19 +246,12 @@ export const toAutoMatchApiFields = (transfer, viewerLabAnchorId = null) => {
   const mine =
     Boolean(claimActive && viewerId && targetId && viewerId === targetId);
 
-  const deadlineMs = auto?.deadlineAt
-    ? new Date(auto.deadlineAt).getTime()
-    : NaN;
-  const remainingMs =
-    mine && Number.isFinite(deadlineMs) ? Math.max(0, deadlineMs - now) : null;
-
   return {
     matchingMode,
     autoMatch: {
       claimedAt: auto?.claimedAt || null,
-      deadlineAt: auto?.deadlineAt || null,
-      claimHours:
-        auto?.claimHours ?? PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
+      deadlineAt: null,
+      claimHours: null,
       completedAt: auto?.completedAt || null,
       completedBy: auto?.completedBy
         ? String(auto.completedBy)
@@ -282,7 +261,7 @@ export const toAutoMatchApiFields = (transfer, viewerLabAnchorId = null) => {
       claimActive,
       completed,
       mine,
-      remainingMs,
+      remainingMs: null,
     },
   };
 };

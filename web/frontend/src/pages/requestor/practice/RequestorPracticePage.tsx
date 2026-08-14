@@ -17,7 +17,12 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-14: 자동매칭 채팅 헤더에도 기공수가 할증(표시명 비공개·practiceAnchorId 내부 키).
+// - 2026-08-14: 자동매칭 수락·3시간 남은시간 뱃지 제거(도착일·소통 기한. 강제 클레임 만료 없음).
 // - 2026-08-14: 의뢰수락 busy — transfer-room 재연결을 await하지 않음(수락 API만 대기).
+// - 2026-08-14: 의뢰수락 — 낙관적 UI(즉시 수락 표시) + API는 백그라운드 확정/롤백.
+// - 2026-08-14: 수락/취소 버튼 — 처리 즉시 시작, UI는 최소 1초「…중」후 전환.
+// - 2026-08-14: 상세 모달 수락 자리에 작업취소(mark-release) 노출.
+// - 2026-08-14: 작업취소 — 서버 사이드이펙트 비동기. UI는 수락과 동일 1초 딜레이.
 // - 2026-08-11: 역할 로딩 스켈레톤(발신/수신)·수신 목록 카드 스켈레톤.
 // - 2026-08-11: 디자인 페이지 삭제 — DesignQueueSection을 의뢰수신 UI에 통합(기간필터 공유).
 // - 2026-08-11: 기공소 의뢰수신 — 발신/수신 탭 제거·항상 수신. 디자인 큐를 의뢰수신으로 편입.
@@ -245,17 +250,6 @@ const parsePracticeTransferMemoMeta = (rawMemo: string) => {
   };
 };
 
-const formatRemainingMs = (remainingMs: number | null | undefined) => {
-  const ms = Number(remainingMs);
-  if (!Number.isFinite(ms) || ms <= 0) return "0분";
-  const totalMin = Math.ceil(ms / 60000);
-  const hours = Math.floor(totalMin / 60);
-  const mins = totalMin % 60;
-  if (hours <= 0) return `${mins}분`;
-  if (mins <= 0) return `${hours}시간`;
-  return `${hours}시간 ${mins}분`;
-};
-
 const getTransferDisplayStatus = (transfer: {
   status?: string;
   manufacturerStage?: string;
@@ -459,6 +453,7 @@ function RequestorPracticeReceivePage({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
+  const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
   const [completePrompt, setCompletePrompt] = useState<{
     transfer: ReceivedPracticeTransfer;
@@ -1220,6 +1215,31 @@ function RequestorPracticeReceivePage({
     [emitUnreadBadgeRefresh, token],
   );
 
+  const applyAcceptedLocalPatch = useCallback(
+    (
+      transfer: ReceivedPracticeTransfer,
+      patch: Partial<ReceivedPracticeTransfer>,
+    ) => {
+      setTransfers((prev) =>
+        prev.map((row) =>
+          row._id === transfer._id || row.transferId === transfer.transferId
+            ? { ...row, ...patch }
+            : row,
+        ),
+      );
+      setSelectedTransfer((prev) =>
+        prev &&
+        (prev._id === transfer._id || prev.transferId === transfer.transferId)
+          ? { ...prev, ...patch }
+          : prev,
+      );
+    },
+    [],
+  );
+
+  /** 수락/취소 버튼 UI 전환 최소 딜레이(처리는 병렬로 즉시 진행) */
+  const ACTION_UI_MIN_MS = 1000;
+
   const markTransferAccepted = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
@@ -1233,11 +1253,16 @@ function RequestorPracticeReceivePage({
       }
 
       try {
-        const res = await apiFetch<unknown>({
-          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-accepted`,
-          method: "POST",
-          token,
-        });
+        const [res] = await Promise.all([
+          apiFetch<unknown>({
+            path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-accepted`,
+            method: "POST",
+            token,
+          }),
+          new Promise<void>((resolve) => {
+            window.setTimeout(resolve, ACTION_UI_MIN_MS);
+          }),
+        ]);
 
         if (!res.ok) {
           const body =
@@ -1303,7 +1328,7 @@ function RequestorPracticeReceivePage({
               claimActive: true,
               completed: false,
               mine: true,
-              remainingMs: 3 * 60 * 60 * 1000,
+              remainingMs: null,
             };
 
         const patch = {
@@ -1326,18 +1351,7 @@ function RequestorPracticeReceivePage({
             : transfer.targetLabName,
         };
 
-        setTransfers((prev) =>
-          prev.map((row) =>
-            row._id === transfer._id || row.transferId === transfer.transferId
-              ? { ...row, ...patch }
-              : row,
-          ),
-        );
-        setSelectedTransfer((prev) =>
-          prev && (prev._id === transfer._id || prev.transferId === transfer.transferId)
-            ? { ...prev, ...patch }
-            : prev,
-        );
+        applyAcceptedLocalPatch(transfer, patch);
 
         emitUnreadBadgeRefresh(unreadCount);
         toast({
@@ -1357,7 +1371,7 @@ function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [emitUnreadBadgeRefresh, loadFirstPage, toast, token],
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, emitUnreadBadgeRefresh, loadFirstPage, toast, token],
   );
 
   const markTransferComplete = useCallback(
@@ -1609,12 +1623,20 @@ function RequestorPracticeReceivePage({
       if (!token) return false;
       if (transfer.autoMatch?.completed) return false;
 
+      const isAuto = String(transfer.matchingMode || "") === "auto";
+      const canceledAt = new Date().toISOString();
+
       try {
-        const res = await apiFetch<unknown>({
-          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-release`,
-          method: "POST",
-          token,
-        });
+        const [res] = await Promise.all([
+          apiFetch<unknown>({
+            path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-release`,
+            method: "POST",
+            token,
+          }),
+          new Promise<void>((resolve) => {
+            window.setTimeout(resolve, ACTION_UI_MIN_MS);
+          }),
+        ]);
         if (!res.ok) {
           const body =
             res.data && typeof res.data === "object"
@@ -1636,65 +1658,22 @@ function RequestorPracticeReceivePage({
           body.data && typeof body.data === "object"
             ? (body.data as Record<string, unknown>)
             : body;
-        const isAuto = String(transfer.matchingMode || "") === "auto";
         const autoMatchRaw =
           data.autoMatch && typeof data.autoMatch === "object"
             ? (data.autoMatch as Record<string, unknown>)
             : null;
 
-        if (isAuto) {
-          // 공개 풀로 돌아가면 목록에서 빼거나 openPool로 되돌린다.
-          setTransfers((prev) =>
-            prev
-              .map((row) => {
-                if (row._id !== transfer._id && row.transferId !== transfer.transferId) {
-                  return row;
-                }
-                return {
-                  ...row,
-                  isAccepted: false,
-                  isDownloaded: false,
-                  requestorDownloadedAt: null,
-                  requestorAcceptedAt: null,
-                  workCanceledAt: new Date().toISOString(),
-                  manufacturerStage: "작업취소",
-                  targetLabName: "자동 매칭",
-                  autoMatch: {
-                    ...(row.autoMatch || {}),
-                    claimedAt: null,
-                    deadlineAt: null,
-                    completedAt: null,
-                    openPool: true,
-                    claimActive: false,
-                    completed: false,
-                    mine: false,
-                    remainingMs: null,
-                    releaseCount:
-                      autoMatchRaw?.releaseCount != null
-                        ? Number(autoMatchRaw.releaseCount)
-                        : Number(row.autoMatch?.releaseCount || 0) + 1,
-                  },
-                };
-              }),
-          );
-          setSelectedTransfer((prev) => {
-            if (
-              !prev ||
-              (prev._id !== transfer._id && prev.transferId !== transfer.transferId)
-            ) {
-              return prev;
-            }
-            return {
-              ...prev,
+        const releasePatch: Partial<ReceivedPracticeTransfer> = isAuto
+          ? {
               isAccepted: false,
               isDownloaded: false,
               requestorDownloadedAt: null,
               requestorAcceptedAt: null,
-              workCanceledAt: new Date().toISOString(),
+              workCanceledAt: canceledAt,
               manufacturerStage: "작업취소",
               targetLabName: "자동 매칭",
               autoMatch: {
-                ...(prev.autoMatch || {}),
+                ...(transfer.autoMatch || {}),
                 claimedAt: null,
                 deadlineAt: null,
                 completedAt: null,
@@ -1703,56 +1682,29 @@ function RequestorPracticeReceivePage({
                 completed: false,
                 mine: false,
                 remainingMs: null,
+                releaseCount:
+                  autoMatchRaw?.releaseCount != null
+                    ? Number(autoMatchRaw.releaseCount)
+                    : Number(transfer.autoMatch?.releaseCount || 0) + 1,
               },
-            };
-          });
-        } else {
-          setTransfers((prev) =>
-            prev.map((row) =>
-              row._id === transfer._id || row.transferId === transfer.transferId
+            }
+          : {
+              isAccepted: false,
+              isDownloaded: false,
+              requestorDownloadedAt: null,
+              requestorAcceptedAt: null,
+              workCanceledAt: canceledAt,
+              manufacturerStage: "작업취소",
+              autoMatch: transfer.autoMatch
                 ? {
-                    ...row,
-                    isAccepted: false,
-                    isDownloaded: false,
-                    requestorDownloadedAt: null,
-                    requestorAcceptedAt: null,
-                    workCanceledAt: new Date().toISOString(),
-                    manufacturerStage: "작업취소",
-                    autoMatch: row.autoMatch
-                      ? {
-                          ...row.autoMatch,
-                          completedAt: null,
-                          completed: false,
-                          claimActive: false,
-                        }
-                      : row.autoMatch,
+                    ...transfer.autoMatch,
+                    completedAt: null,
+                    completed: false,
+                    claimActive: false,
                   }
-                : row,
-            ),
-          );
-          setSelectedTransfer((prev) =>
-            prev &&
-            (prev._id === transfer._id || prev.transferId === transfer.transferId)
-              ? {
-                  ...prev,
-                  isAccepted: false,
-                  isDownloaded: false,
-                  requestorDownloadedAt: null,
-                  requestorAcceptedAt: null,
-                  workCanceledAt: new Date().toISOString(),
-                  manufacturerStage: "작업취소",
-                  autoMatch: prev.autoMatch
-                    ? {
-                        ...prev.autoMatch,
-                        completedAt: null,
-                        completed: false,
-                        claimActive: false,
-                      }
-                    : prev.autoMatch,
-                }
-              : prev,
-          );
-        }
+                : transfer.autoMatch,
+            };
+        applyAcceptedLocalPatch(transfer, releasePatch);
 
         toast({
           title: "작업 취소",
@@ -1770,7 +1722,7 @@ function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [toast, token],
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, toast, token],
   );
 
   const resolveTransferChatRoom = useCallback(
@@ -1829,11 +1781,10 @@ function RequestorPracticeReceivePage({
   );
 
   const handleAcceptTransfer = useCallback(async () => {
-    if (!selectedTransfer || acceptBusy) return;
+    if (!selectedTransfer || acceptBusy || releaseBusy) return;
     setAcceptBusy(true);
     try {
       const ok = await markTransferAccepted(selectedTransfer);
-      // 채팅방 재연결은 수락 busy에 묶지 않는다(수락 API 응답 후 UI가 바로 풀리게).
       if (ok && dialogOpen) {
         const resolveSeq = ++chatRoomResolveSeqRef.current;
         setChatError("");
@@ -1846,9 +1797,20 @@ function RequestorPracticeReceivePage({
     acceptBusy,
     dialogOpen,
     markTransferAccepted,
+    releaseBusy,
     resolveTransferChatRoom,
     selectedTransfer,
   ]);
+
+  const handleReleaseTransfer = useCallback(async () => {
+    if (!selectedTransfer || releaseBusy || acceptBusy) return;
+    setReleaseBusy(true);
+    try {
+      await markTransferRelease(selectedTransfer);
+    } finally {
+      setReleaseBusy(false);
+    }
+  }, [acceptBusy, markTransferRelease, releaseBusy, selectedTransfer]);
 
   const handleCardComplete = useCallback(
     (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
@@ -2206,12 +2168,6 @@ function RequestorPracticeReceivePage({
                       )}
                     >
                       {toStatusBadgeLabel(displayStatus)}
-                      {displayStatus === "의뢰수락" &&
-                      transfer.matchingMode === "auto" &&
-                      transfer.autoMatch?.mine &&
-                      transfer.autoMatch?.claimActive
-                        ? ` · ${formatRemainingMs(transfer.autoMatch.remainingMs)}`
-                        : ""}
                     </Badge>
                     {transfer.isRemake ? (
                       <Badge
@@ -2575,15 +2531,15 @@ function RequestorPracticeReceivePage({
             selectedTransfer?.manufacturerStage === "작업취소" ||
             selectedTransfer?.manufacturerStage === "취소",
         )}
-        remainingLabel={
-          selectedTransfer?.matchingMode === "auto" &&
-          selectedTransfer?.autoMatch?.mine &&
-          selectedTransfer?.autoMatch?.claimActive &&
-          !selectedTransfer?.autoMatch?.completed
-            ? `남은 시간 ${formatRemainingMs(selectedTransfer.autoMatch?.remainingMs)}`
-            : null
-        }
+        workCompleted={Boolean(
+          selectedTransfer?.autoMatch?.completed ||
+            selectedTransfer?.production?.confirmedAt ||
+            selectedTransfer?.manufacturerStage === "작업완료",
+        )}
+        remainingLabel={null}
         onAccept={() => void handleAcceptTransfer()}
+        releaseBusy={releaseBusy}
+        onRelease={() => void handleReleaseTransfer()}
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
         chatMessages={displayChatMessages}

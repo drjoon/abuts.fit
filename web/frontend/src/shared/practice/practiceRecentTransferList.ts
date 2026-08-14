@@ -590,7 +590,12 @@ export const groupPracticeRecentRequests = (
       existing.resultFiles = Array.from(byS3Key.values());
     }
     if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
-    if (!existing.feeQuote && req.feeQuote) existing.feeQuote = req.feeQuote;
+    // 수락·청구 후 확정 feeQuote가 오면 예산 구간 견적을 덮어쓴다.
+    if (req.feeQuote) {
+      if (!existing.feeQuote || req.feeQuote.billed || !existing.feeQuote.billed) {
+        existing.feeQuote = req.feeQuote;
+      }
+    }
     if (!existing.remakeFeeQuote && req.remakeFeeQuote) {
       existing.remakeFeeQuote = req.remakeFeeQuote;
     }

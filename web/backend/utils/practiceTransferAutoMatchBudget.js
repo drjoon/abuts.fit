@@ -9,7 +9,7 @@
 // 자동매칭 기공비 예산 SSOT.
 // 성능: 적격 기공소는 전송 생성 시 1회 스냅샷(eligibleLabAnchorIds).
 // 수신 목록은 Mongo multikey로만 필터. 수락 시 항목별 단가 재검증.
-// 할증(labFeeMultiplier) 반영 단가가 치과 예산 min~max 안이어야 적격/수락.
+// 자동매칭은 할증 미적용(설정 수가) — 수락 직전 할증 인상으로 예산 상한 abuse 방지.
 // 항목 목록은 어벗츠 수가(시스템 카탈로그)에서 동적으로 온다.
 
 import {
@@ -25,7 +25,6 @@ import {
   normalizeLabFeeSchedule,
   resolveLabFeeKeyFromProsthesisType,
   resolveLabFeeScheduleSource,
-  resolveLabPracticeFeeMultiplier,
 } from "./labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
@@ -36,7 +35,7 @@ import {
   loadAutoMatchEligibleLabAnchors,
 } from "./practiceTransferAutoMatch.js";
 import { isLabBlockedByPracticeRating } from "./practiceLabRating.js";
-export {
+import {
   ADMIN_LAB_FEE_BASE,
   AUTO_MATCH_BUDGET_KEYS,
   AUTO_MATCH_BUDGET_KEY_LABELS,
@@ -53,13 +52,24 @@ export {
   resolveAutoMatchBudgetOrDefaults,
   scaleLabUnitPricesByMultiplier,
 } from "./practiceTransferAutoMatchBudgetCore.js";
-import {
+
+export {
+  ADMIN_LAB_FEE_BASE,
   AUTO_MATCH_BUDGET_KEYS,
+  AUTO_MATCH_BUDGET_KEY_LABELS,
+  bandFromAdminBase,
+  buildDefaultAutoMatchBudgetItems,
+  buildItemsScheduleFromAutoMatchBudget,
+  buildScheduleFromAutoMatchBudget,
+  fallbackAbutsLabFeeCatalog,
+  isAutoMatchBudgetConfigured,
+  isLabFeeWithinAutoMatchBudget,
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
   normalizeCatalogItems,
+  resolveAutoMatchBudgetOrDefaults,
   scaleLabUnitPricesByMultiplier,
-} from "./practiceTransferAutoMatchBudgetCore.js";
+};
 
 /** 어벗츠 수가 enabled 항목(자동매칭 모달·예산 기본값 SSOT) */
 export async function loadAutoMatchBudgetCatalog() {
@@ -239,11 +249,8 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
       continue;
     }
 
-    const multiplier = resolveLabPracticeFeeMultiplier(lab, practiceAnchorId);
-    const unitPrices = scaleLabUnitPricesByMultiplier(
-      labUnitPricesByCatalogId(lab.labFeeSchedule, catalogItems),
-      multiplier,
-    );
+    // 자동매칭 적격: 설정 수가만(할증 미적용).
+    const unitPrices = labUnitPricesByCatalogId(lab.labFeeSchedule, catalogItems);
     if (
       !isLabUnitPricesWithinAutoMatchBudget(
         unitPrices,
@@ -264,7 +271,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   };
 }
 
-/** 수락 시: 할증 반영 기공소 단가가 스냅샷 예산 안인지 */
+/** 수락 시: 기공소 설정 단가(할증 미적용)가 스냅샷 예산 안인지 */
 export function assertLabWithinAutoMatchBudget({
   toothWorks,
   budget,

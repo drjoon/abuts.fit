@@ -698,6 +698,7 @@ export async function updateLabPracticeFeeMultiplier(req, res) {
     ).map((row) => ({
       practiceAnchorId: new Types.ObjectId(String(row.practiceAnchorId)),
       multiplier: row.multiplier,
+      updatedAt: row.updatedAt ? new Date(row.updatedAt) : new Date(),
     }));
 
     await BusinessAnchor.findByIdAndUpdate(labAnchorId, {

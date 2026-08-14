@@ -61,6 +61,7 @@
  * - 2026-08-14: 기공의뢰 상단 「임시 저장」버튼 제거. 목록 반영은 자동 동기화만.
  * - 2026-08-14: 임시저장 디바운스·한글 IME 게이트. stale 저장 응답에서도 draftId 회수.
  * - 2026-08-14: 기공수가 할증 변경(practice:lab-fee-multiplier-updated) 시 견적·리메이크 미리보기 갱신.
+ * - 2026-08-14: 기공소 수락 시 웹소켓 feeQuote로 치과「확정 기공비」즉시 반영.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -3147,7 +3148,12 @@ export const PracticeFileTransferPage = ({
         existing.resultFiles = Array.from(byKey.values());
       }
       if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
-      if (!existing.feeQuote && req.feeQuote) existing.feeQuote = req.feeQuote;
+      // 수락·청구 후 확정 feeQuote가 오면 예산 구간 견적을 덮어쓴다.
+      if (req.feeQuote) {
+        if (!existing.feeQuote || req.feeQuote.billed || !existing.feeQuote.billed) {
+          existing.feeQuote = req.feeQuote;
+        }
+      }
       if (!existing.remakeFeeQuote && req.remakeFeeQuote) {
         existing.remakeFeeQuote = req.remakeFeeQuote;
       }
@@ -4846,35 +4852,44 @@ export const PracticeFileTransferPage = ({
         }
       }
 
-      // 기공소 의뢰수락 시: 열려 있는 상세 모달에서 기공소명 갱신 + 채팅방 재연결
+      // 기공소 의뢰수락 시: 확정 기공비·상태·기공소명 갱신 + 열린 상세 채팅 재연결
       const eventTransferId = String(payload.transferId || "").trim();
       const isAcceptChatEvent =
         action === "accepted" ||
         action === "auto-match-claimed" ||
         action === "downloaded";
-      if (
-        isAcceptChatEvent &&
-        transferDialogOpenRef.current &&
-        eventTransferId &&
-        eventTransferId === selectedTransferIdRef.current
-      ) {
+      if (isAcceptChatEvent && eventTransferId) {
         const labName = String(payload.targetLabName || "").trim();
         const labAnchorId = String(payload.targetLabAnchorId || "").trim();
-        const stage = String(payload.manufacturerStage || "").trim();
-        setSelectedTransfer((prev) => {
-          if (!prev || String(prev.transferId || "").trim() !== eventTransferId) {
-            return prev;
-          }
+        const stageRaw = String(payload.manufacturerStage || "").trim();
+        const stage = stageRaw ? toStatusLabel(stageRaw) : "";
+        const acceptedFeeQuote = parsePracticeTransferFeeQuote(payload.feeQuote);
+        const patchRow = <T extends {
+          transferId?: string;
+          targetLab?: string;
+          targetLabAnchorId?: string;
+          status?: string;
+          feeQuote?: ReturnType<typeof parsePracticeTransferFeeQuote>;
+        }>(row: T): T => {
+          if (String(row.transferId || "").trim() !== eventTransferId) return row;
           return {
-            ...prev,
+            ...row,
             ...(labName ? { targetLab: labName } : {}),
             ...(labAnchorId ? { targetLabAnchorId: labAnchorId } : {}),
             ...(stage ? { status: stage } : {}),
+            ...(acceptedFeeQuote ? { feeQuote: acceptedFeeQuote } : {}),
           };
-        });
-        const resolveSeq = ++chatRoomResolveSeqRef.current;
-        setChatError("");
-        void resolvePracticeTransferChatRoom(eventTransferId, resolveSeq);
+        };
+        setRecentRequests((prev) => prev.map(patchRow));
+        if (
+          transferDialogOpenRef.current &&
+          eventTransferId === selectedTransferIdRef.current
+        ) {
+          setSelectedTransfer((prev) => (prev ? patchRow(prev) : prev));
+          const resolveSeq = ++chatRoomResolveSeqRef.current;
+          setChatError("");
+          void resolvePracticeTransferChatRoom(eventTransferId, resolveSeq);
+        }
       }
     },
   });

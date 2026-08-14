@@ -15,8 +15,8 @@
 // - 2026-08-14: 환봉 요청중 판별용 치과 implantFavorites를 견적·청구 계산에 전달.
 // - 2026-08-14: 치과별 기공수가 할증(labPracticeFeeMultipliers → labFeeMultiplier).
 // - 2026-08-14: 지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
-// - 2026-08-14: 자동매칭: 생성 시 기공소 미정 → 수락·미청구 견적은 수락 기공소 live 할증.
-// - 2026-08-14: 자동매칭 수락 예산 검증에 할증 반영 단가 사용.
+// - 2026-08-14: 자동매칭: 치과별 할증 사용. 할증 updatedAt > 의뢰 createdAt 이면 해당 건 미적용.
+// - 2026-08-14: 자동매칭 수락 예산 검증은 의뢰시점 할증 반영 단가.
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -47,6 +47,7 @@ import {
   resolveAbutsAbutmentPricingTier,
   resolveLabFeeScheduleSource,
   resolveLabPracticeFeeMultiplier,
+  resolveLabPracticeFeeMultiplierAsOf,
   splitPracticeTransferSettlement,
 } from "../utils/labFeeSchedule.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
@@ -482,15 +483,24 @@ export async function commitPracticeTransferBilling({
   }
 
   const idempotencyKey = `practice_transfer:${String(transferId)}:spend`;
-  const existing = await getJournalByIdempotencyKey({
-    idempotencyKey,
-    session: outerSession,
-  });
-  if (existing?.journalId) {
-    return { billed: false, reason: "already_billed", journalId: existing.journalId };
-  }
+  const isAutoMatch =
+    String(transfer?.matchingMode || "").trim() === "auto";
 
-  const [lab, practice] = await Promise.all([
+  const [
+    existing,
+    lab,
+    practice,
+    abutmentPricingTier,
+    abutmentPrices,
+    partner,
+    devopsAnchorForFeeRate,
+    autoMatchCatalog,
+    revenueOwners,
+  ] = await Promise.all([
+    getJournalByIdempotencyKey({
+      idempotencyKey,
+      session: outerSession,
+    }),
     BusinessAnchor.findById(labAnchorId)
       .select({ labFeeSchedule: 1, labPracticeFeeMultipliers: 1 })
       .session(outerSession || null)
@@ -499,17 +509,6 @@ export async function commitPracticeTransferBilling({
       .select({ "practiceTransferSettings.implantFavorites": 1 })
       .session(outerSession || null)
       .lean(),
-  ]);
-  const remake = isPracticeTransferRemake(transfer);
-  const isAutoMatch =
-    String(transfer?.matchingMode || "").trim() === "auto";
-  const [
-    abutmentPricingTier,
-    abutmentPrices,
-    partner,
-    devopsAnchorForFeeRate,
-    autoMatchCatalog,
-  ] = await Promise.all([
     resolvePracticeAbutmentPricingTier(practiceAnchorId, outerSession),
     loadCachedAbutmentCreditPrices(),
     findLabPracticeRelationship({
@@ -523,10 +522,24 @@ export async function commitPracticeTransferBilling({
       .sort({ createdAt: 1 })
       .lean(),
     isAutoMatch ? loadAutoMatchBudgetCatalog() : Promise.resolve(null),
+    resolveRevenueOwners({
+      practiceAnchorId,
+      session: outerSession,
+    }),
   ]);
-  // 지정: 생성 시 스냅샷 유지(할증 소급 금지). 자동매칭: 수락 기공소의 live 할증.
+  if (existing?.journalId) {
+    return { billed: false, reason: "already_billed", journalId: existing.journalId };
+  }
+
+  const remake = isPracticeTransferRemake(transfer);
+  // 지정: 생성 시 스냅샷 유지(할증 소급 금지).
+  // 자동매칭: 의뢰 createdAt 기준 할증(이후 적용분은 미적용).
   const labFeeMultiplier = isAutoMatch
-    ? resolveLabPracticeFeeMultiplier(lab, practiceAnchorId)
+    ? resolveLabPracticeFeeMultiplierAsOf(
+        lab,
+        practiceAnchorId,
+        transfer?.createdAt,
+      )
     : normalizeLabFeeMultiplier(transfer?.billing?.labFeeMultiplier);
   const fees = computePracticeTransferRetailFees({
     toothWorks,
@@ -617,10 +630,7 @@ export async function commitPracticeTransferBilling({
       throw err;
     }
 
-    const owners = await resolveRevenueOwners({
-      practiceAnchorId,
-      session,
-    });
+    const owners = revenueOwners;
 
     const spendMetaBase = {
       labFee: fees.labFeeTotal,
@@ -762,6 +772,7 @@ export async function commitPracticeTransferBilling({
       },
       lines,
       session,
+      skipIdempotencyLookup: true,
     });
 
     // 기공소 기공크레딧(정산 대기) 충전은 단일 저널로 원자성 유지.
@@ -929,7 +940,10 @@ export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } =
     billed,
     usedDefaultSchedule: false,
     isRemake: Boolean(billing?.isRemake),
-    autoMatchBudget: normalizeAutoMatchBudget(billing?.autoMatchBudget),
+    // 청구 완료 후에는 예산 구간 대신 확정 금액만 노출
+    autoMatchBudget: billed
+      ? null
+      : normalizeAutoMatchBudget(billing?.autoMatchBudget),
   });
 }
 
@@ -1028,6 +1042,7 @@ export async function buildPracticeTransferQuote({
   }
 
   const useRemake = Boolean(remake);
+  // 작성 중 견적: live 할증(아직 의뢰 시각 없음). 지정·자동매칭 공통.
   const labFeeMultiplier = resolveLabPracticeFeeMultiplier(lab, practiceId);
   const fees = computePracticeTransferRetailFees({
     toothWorks,
@@ -1173,7 +1188,7 @@ export async function loadPracticeTransferQuoteContext({
 /**
  * 목록/상세용 견적. 과금 완료 건은 스냅샷 금액 유지.
  * 미청구·지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
- * 미청구·자동매칭: 수락/조회 기공소 live 할증(생성 시 기공소 미정).
+ * 미청구·자동매칭: 의뢰 createdAt 기준 할증(이후 적용분은 미적용).
  */
 export async function buildFeeQuotesForTransferDocs({
   docs,
@@ -1281,7 +1296,7 @@ export async function buildFeeQuotesForTransferDocs({
       practiceMembershipActive: Boolean(membershipByPractice.get(practiceId)),
     });
     const implantFavorites = favoritesByPractice.get(practiceId) || [];
-    // 지정: 생성 스냅샷. 자동매칭·리메이크 미리보기: live 할증.
+    // 지정: 생성 스냅샷. 자동매칭: 의뢰시점 할증. 리메이크 미리보기: live.
     const snapLabFeeMultiplier = normalizeLabFeeMultiplier(
       billing?.labFeeMultiplier,
     );
@@ -1289,10 +1304,16 @@ export async function buildFeeQuotesForTransferDocs({
       quoteLabId ? multiplierByLab.get(quoteLabId) : null,
       practiceId,
     );
+    const asOfLabFeeMultiplier = resolveLabPracticeFeeMultiplierAsOf(
+      quoteLabId ? multiplierByLab.get(quoteLabId) : null,
+      practiceId,
+      doc?.createdAt,
+    );
     const matchingMode =
       String(doc?.matchingMode || "").trim() === "auto" ? "auto" : "direct";
     const feeLabFeeMultiplier =
-      matchingMode === "auto" ? liveLabFeeMultiplier : snapLabFeeMultiplier;
+      matchingMode === "auto" ? asOfLabFeeMultiplier : snapLabFeeMultiplier;
+    const remakeLabFeeMultiplier = liveLabFeeMultiplier;
     const storedBudget = normalizeAutoMatchBudget(billing?.autoMatchBudget);
     const autoScheduleMax =
       noLab && storedBudget
@@ -1308,7 +1329,7 @@ export async function buildFeeQuotesForTransferDocs({
       abutmentPrices,
       remake: true,
       skipAbutmentFees: true,
-      labFeeMultiplier: liveLabFeeMultiplier,
+      labFeeMultiplier: remakeLabFeeMultiplier,
     });
     const fees = computePracticeTransferRetailFees({
       toothWorks,
@@ -1364,7 +1385,7 @@ export async function buildFeeQuotesForTransferDocs({
       fees: remakeFees,
       relationshipKind: kind,
       feeRateApplied: remakeFeeRateApplied,
-      labFeeMultiplier: liveLabFeeMultiplier,
+      labFeeMultiplier: remakeLabFeeMultiplier,
       labSettlementAmount: remakeSplit.labSettlementAmount,
       abutsRevenueAmount: remakeSplit.abutsRevenueAmount,
       labTradingPartnerId: partner?._id ? String(partner._id) : null,

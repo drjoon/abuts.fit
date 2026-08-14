@@ -342,7 +342,8 @@ const businessAnchorSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: null },
     },
     // 기공소→치과별 기공수가 할증(배수). 1 초과만 저장. 어벗츠 어벗 단가는 미적용.
-    // related: web/backend/utils/labFeeSchedule.js (normalizeLabFeeMultiplier)
+    // updatedAt: 할증 적용 시각. 의뢰 createdAt 이후면 해당 건 소급 금지.
+    // related: web/backend/utils/labFeeSchedule.js (resolveLabPracticeFeeMultiplierAsOf)
     labPracticeFeeMultipliers: {
       type: [
         {
@@ -353,6 +354,7 @@ const businessAnchorSchema = new mongoose.Schema(
             required: true,
           },
           multiplier: { type: Number, default: 1, min: 1, max: 5 },
+          updatedAt: { type: Date, default: null },
         },
       ],
       default: [],

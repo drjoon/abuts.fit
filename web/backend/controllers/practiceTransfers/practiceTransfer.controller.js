@@ -17,17 +17,17 @@ import {
   buildFeeQuotesForTransferDocs,
   buildPracticeTransferQuote,
   commitPracticeTransferBilling,
+  feeQuoteFromBillingDoc,
   loadPracticeTransferQuoteContext,
   rollbackPracticeTransferBilling,
   toBillingPreviewFields,
+  toFeeQuoteApi,
   toRemakeApiFields,
 } from "../../services/practiceTransferBilling.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
   AUTO_MATCH_LAB_DISPLAY_NAME,
-  PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
   buildAutoMatchClaimableFilter,
-  buildAutoMatchDeadlineAt,
   buildReceivedScopeWithAutoMatch,
   isAutoMatchClaimActive,
   isAutoMatchCompleted,
@@ -81,8 +81,12 @@ import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutm
 // - 2026-08-14: GET /my $or 분리 병렬 조회. drafts?trashed=all 1쿼리. GET에서 syncIndexes 제거.
 // - 2026-08-14: 치과→기공소 labRating(1~3)·메모. 자동매칭 최소 별 필터.
 // - 2026-08-14: 자동매칭도 practiceBusinessAnchorId 전달(표시명 비공개·기공수가 할증 키).
-// - 2026-08-14: 자동매칭 적격/수락 — 할증 반영 단가가 치과 예산 min~max 안이어야 함.
+// - 2026-08-14: 자동매칭 적격/수락 — 설정 수가(할증 미적용)가 치과 예산 min~max 안이어야 함.
+// - 2026-08-14: 자동매칭 3시간 강제 클레임 만료 폐기(작업완료/취소까지 유지·도착일은 소통 기한).
 // - 2026-08-14: mark-accepted — autoMatch pool emit N+1 제거·사이드이펙트 병렬. FE 수락 busy에서 chat resolve 분리.
+// - 2026-08-14: mark-accepted — 과금 직후 응답, billing $set, 사이드이펙트 비동기.
+// - 2026-08-14: mark-release — updateOne + 사이드이펙트 비동기(채팅/emit은 응답 후).
+// - 2026-08-14: mark-accepted — 치과 practice:transfer-updated에 확정 feeQuote 포함.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -176,9 +180,11 @@ const ensurePracticeTransferChatRoomOnAccept = async ({
 };
 
 const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
-  const prev = doc.autoMatch && typeof doc.autoMatch === "object"
-    ? doc.autoMatch
-    : {};
+  if (!doc) return;
+  const prev =
+    doc.autoMatch && typeof doc.autoMatch === "object"
+      ? doc.autoMatch
+      : {};
   const prevBilling =
     doc.billing && typeof doc.billing === "object" ? doc.billing : {};
   const releaseCount = Number(prev.releaseCount || 0);
@@ -211,42 +217,6 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
     completedBy: null,
     releaseCount: bumpRelease ? releaseCount + 1 : releaseCount,
   };
-};
-
-/**
- * 만료된 자동매칭 claim을 과금 롤백 후 공개 풀로 되돌린다.
- * @returns {{ released: boolean, previousLabAnchorId: string|null }}
- */
-const releaseExpiredAutoMatchClaim = async (doc) => {
-  if (!doc || !isAutoMatchMode(doc)) {
-    return { released: false, previousLabAnchorId: null };
-  }
-  if (isAutoMatchCompleted(doc)) {
-    return { released: false, previousLabAnchorId: null };
-  }
-  if (isAutoMatchClaimActive(doc)) {
-    return { released: false, previousLabAnchorId: null };
-  }
-  const previousLabAnchorId = String(doc.targetLabAnchorId || "").trim() || null;
-  const hadClaim =
-    Boolean(previousLabAnchorId) || Boolean(doc.requestorDownloadedAt);
-  if (!hadClaim) {
-    return { released: false, previousLabAnchorId: null };
-  }
-
-  try {
-    await rollbackPracticeTransferBilling({ transferId: doc._id });
-  } catch (rollbackErr) {
-    console.warn(
-      "[practiceTransfer] autoMatch release billing rollback failed",
-      String(doc?._id || ""),
-      rollbackErr?.message || rollbackErr,
-    );
-  }
-
-  clearAutoMatchClaimFields(doc, { bumpRelease: true });
-  await doc.save();
-  return { released: true, previousLabAnchorId };
 };
 
 const normalizeEligibleLabAnchorIds = (raw) =>
@@ -480,7 +450,16 @@ const buildReceivedScope = async (req) => {
     return { role, scope: null, labAnchorId: null, autoMatchEligible: false };
   }
 
-  const autoMatchEligible = await isLabAnchorAutoMatchEligible(targetLabAnchorId);
+  const eligibleCacheKey = `auto-match-eligible-lab:${targetLabAnchorId}`;
+  const cachedEligible = getRequestPerfCacheValue(eligibleCacheKey);
+  const autoMatchEligible =
+    typeof cachedEligible === "boolean"
+      ? cachedEligible
+      : await (async () => {
+          const eligible = await isLabAnchorAutoMatchEligible(targetLabAnchorId);
+          setRequestPerfCacheValue(eligibleCacheKey, eligible, 60 * 1000);
+          return eligible;
+        })();
   const scope = buildReceivedScopeWithAutoMatch({
     labAnchorId: targetLabAnchorId,
     autoMatchEligible,
@@ -492,6 +471,163 @@ const buildReceivedScope = async (req) => {
     labAnchorId: targetLabAnchorId,
     autoMatchEligible,
   };
+};
+
+const resolveUnreadCountForAccept = (labAnchorId, { wasUnread }) => {
+  const cached = getRequestPerfCacheValue(unreadCountCacheKey(labAnchorId));
+  const cachedCount = Number(cached?.unreadCount);
+  if (Number.isFinite(cachedCount)) {
+    const next = Math.max(0, cachedCount - (wasUnread ? 1 : 0));
+    setRequestPerfCacheValue(
+      unreadCountCacheKey(labAnchorId),
+      { unreadCount: next },
+      10 * 1000,
+    );
+    return next;
+  }
+  return null;
+};
+
+const persistAcceptedBillingFields = async (doc, billingResult) => {
+  if (!billingResult?.billed || !doc?._id) return doc?.billing || null;
+  const billing = {
+    ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
+    labFeeTotal: billingResult.fees?.labFeeTotal || 0,
+    abutmentRetailTotal: billingResult.fees?.abutmentRetailTotal || 0,
+    abutmentQty: billingResult.fees?.abutmentQty || 0,
+    total: billingResult.fees?.total || 0,
+    isTradingPartner: Boolean(billingResult.isPartner),
+    relationshipKind: billingResult.relationshipKind || "none",
+    feeRateApplied: Number(billingResult.feeRateApplied || 0),
+    labFeeMultiplier: Number(billingResult.labFeeMultiplier || 1),
+    labTradingPartnerId: billingResult.labTradingPartnerId || null,
+    labSettlementAmount: billingResult.labSettlementAmount || 0,
+    abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
+    billedAt: new Date(),
+    isRemake: toRemakeApiFields(doc).isRemake,
+  };
+  // 전체 doc.save()는 toothWorks 등 대량 필드를 다시 써 Atlas RTT를 키운다.
+  await PracticeTransfer.updateOne({ _id: doc._id }, { $set: { billing } });
+  doc.billing = billing;
+  return billing;
+};
+
+/** 수락 직후 치과/기공소 실시간 페이로드용 확정 기공비 견적 */
+const buildAcceptedFeeQuotePayload = (billingResult, doc) => {
+  if (billingResult?.billed && billingResult.fees) {
+    return toFeeQuoteApi({
+      fees: billingResult.fees,
+      relationshipKind: billingResult.relationshipKind || "none",
+      feeRateApplied: billingResult.feeRateApplied,
+      labFeeMultiplier: billingResult.labFeeMultiplier,
+      labSettlementAmount: billingResult.labSettlementAmount,
+      abutsRevenueAmount: billingResult.abutsRevenueAmount,
+      labTradingPartnerId: billingResult.labTradingPartnerId
+        ? String(billingResult.labTradingPartnerId)
+        : null,
+      billed: true,
+      usedDefaultSchedule: false,
+      isRemake: toRemakeApiFields(doc).isRemake,
+      // 확정 후에는 예산 구간 대신 확정 금액 표시
+      autoMatchBudget: null,
+    });
+  }
+  if (doc?.billing?.billedAt) {
+    return feeQuoteFromBillingDoc(doc.billing, { billed: true });
+  }
+  return null;
+};
+
+const scheduleAcceptSideEffects = ({
+  doc,
+  labAnchorId,
+  labOid,
+  scope,
+  labUserId,
+  billingResult,
+  realtimePayload,
+  practiceRealtimePayload = null,
+  poolPayload = null,
+}) => {
+  void (async () => {
+    try {
+      const jobs = [
+        PracticeTransfer.countDocuments({
+          ...scope,
+          status: { $ne: "canceled" },
+          requestorReadAt: null,
+        }).then((unreadCount) => {
+          if (labAnchorId) {
+            setRequestPerfCacheValue(
+              unreadCountCacheKey(labAnchorId),
+              { unreadCount },
+              10 * 1000,
+            );
+          }
+        }),
+        ensurePracticeTransferChatRoomOnAccept({
+          transferDoc: doc,
+          labUserId,
+        }),
+      ];
+      if (billingResult?.billed) {
+        const spendTotal = Number(billingResult.fees?.total || 0);
+        if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
+          jobs.push(
+            emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: doc.practiceBusinessAnchorId,
+              balanceDelta: -spendTotal,
+              reason: "practice_transfer_accept",
+              refId: doc._id,
+            }),
+          );
+        }
+        const settlement = Number(billingResult.labSettlementAmount || 0);
+        if (settlement > 0 && doc.targetLabAnchorId) {
+          jobs.push(
+            emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: doc.targetLabAnchorId,
+              balanceDelta: settlement,
+              reason: "practice_transfer_lab_settlement",
+              refId: doc._id,
+            }),
+          );
+        }
+      }
+      if (practiceRealtimePayload) {
+        jobs.push(
+          emitPracticeTransferEventToPracticeUsers({
+            practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+            type: "practice:transfer-updated",
+            payload: practiceRealtimePayload,
+            extraUserIds: [doc.practiceUserId],
+          }),
+        );
+      }
+      if (realtimePayload && labOid) {
+        jobs.push(
+          emitPracticeTransferEventToRequestorUsers({
+            targetLabAnchorId: labOid,
+            type: "practice:transfer-updated",
+            payload: realtimePayload,
+          }),
+        );
+      }
+      if (poolPayload) {
+        jobs.push(
+          emitAutoMatchPoolCreated(poolPayload, {
+            eligibleLabAnchorIds: doc.autoMatch?.eligibleLabAnchorIds,
+          }),
+        );
+      }
+      await Promise.all(jobs);
+    } catch (err) {
+      console.warn(
+        "[practiceTransfer] accept side-effects failed",
+        err?.message || err,
+      );
+    }
+  })();
 };
 
 const toDraftResponse = (doc, ownerMeta = null) => {
@@ -2403,58 +2539,7 @@ export async function getReceivedPracticeTransfers(req, res) {
       });
     }
 
-    // 만료 claim lazy release (목록에 잡힌 expired 건)
-    const expiredCandidates = await PracticeTransfer.find({
-      ...scope,
-      matchingMode: "auto",
-      status: "active",
-      targetLabAnchorId: { $ne: null },
-      "autoMatch.completedAt": null,
-      "autoMatch.deadlineAt": { $lte: new Date() },
-    }).limit(50);
-
-    for (const expiredDoc of expiredCandidates) {
-      const { released, previousLabAnchorId } =
-        await releaseExpiredAutoMatchClaim(expiredDoc);
-      if (released) {
-        if (previousLabAnchorId) invalidateUnreadCountCache(previousLabAnchorId);
-        const releasePayload = {
-          action: "auto-match-released",
-          transferId: String(expiredDoc.transferId || "").trim(),
-          transferMongoId: String(expiredDoc._id || "").trim(),
-          targetLabAnchorId: null,
-          previousLabAnchorId,
-          matchingMode: "auto",
-          practiceUserId: String(expiredDoc.practiceUserId || "").trim() || null,
-          status: "active",
-          manufacturerStage: "자동매칭",
-          updatedAt: expiredDoc.updatedAt || new Date(),
-          ...toAutoMatchApiFields(expiredDoc),
-        };
-        await emitPracticeTransferEventToPracticeUsers({
-          practiceBusinessAnchorId: expiredDoc.practiceBusinessAnchorId,
-          type: "practice:transfer-updated",
-          payload: releasePayload,
-          extraUserIds: [expiredDoc.practiceUserId],
-        });
-        if (previousLabAnchorId) {
-          await emitPracticeTransferEventToRequestorUsers({
-            targetLabAnchorId: previousLabAnchorId,
-            type: "practice:transfer-updated",
-            payload: releasePayload,
-          });
-        }
-        await emitAutoMatchPoolCreated(
-          {
-            ...releasePayload,
-            source: "autoMatchRelease",
-          },
-          {
-            eligibleLabAnchorIds: expiredDoc?.autoMatch?.eligibleLabAnchorIds,
-          },
-        );
-      }
-    }
+    // 레거시: 3시간 deadline 만료 재공개는 폐기(수락은 작업완료/취소까지 유지).
 
     const [docs, totalCount, unreadCount] = await Promise.all([
       PracticeTransfer.find(scope)
@@ -2908,25 +2993,8 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         });
       }
 
-      // 만료 claim이면 롤백 후 재공개 상태로 만든 뒤 클레임
-      if (isAutoMatchOpenPool(doc, now.getTime()) && doc.targetLabAnchorId) {
-        const prevLab = String(doc.targetLabAnchorId || "").trim();
-        await releaseExpiredAutoMatchClaim(doc);
-        if (prevLab) invalidateUnreadCountCache(prevLab);
-        doc = await PracticeTransfer.findById(doc._id);
-        if (!doc) {
-          return res.status(404).json({
-            success: false,
-            message: "전송 내역을 찾을 수 없습니다.",
-          });
-        }
-      }
-
       const labName = AUTO_MATCH_LAB_DISPLAY_NAME;
-      const deadlineAt = buildAutoMatchDeadlineAt(
-        now,
-        PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
-      );
+      const wasUnread = !doc.requestorReadAt;
 
       const claimed = await PracticeTransfer.findOneAndUpdate(
         {
@@ -2944,8 +3012,9 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             workCanceledAt: null,
             workCanceledBy: null,
             "autoMatch.claimedAt": now,
-            "autoMatch.deadlineAt": deadlineAt,
-            "autoMatch.claimHours": PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
+            // 3시간 강제 클레임 만료 폐기 — 작업완료/취소까지 유지
+            "autoMatch.deadlineAt": null,
+            "autoMatch.claimHours": null,
             "autoMatch.completedAt": null,
             "autoMatch.completedBy": null,
           },
@@ -2971,25 +3040,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
           actorUserId: req.user?._id,
         });
-        if (billingResult?.billed) {
-          doc.billing = {
-            ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
-            labFeeTotal: billingResult.fees?.labFeeTotal || 0,
-            abutmentRetailTotal: billingResult.fees?.abutmentRetailTotal || 0,
-            abutmentQty: billingResult.fees?.abutmentQty || 0,
-            total: billingResult.fees?.total || 0,
-            isTradingPartner: Boolean(billingResult.isPartner),
-            relationshipKind: billingResult.relationshipKind || "none",
-            feeRateApplied: Number(billingResult.feeRateApplied || 0),
-            labFeeMultiplier: Number(billingResult.labFeeMultiplier || 1),
-            labTradingPartnerId: billingResult.labTradingPartnerId || null,
-            labSettlementAmount: billingResult.labSettlementAmount || 0,
-            abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
-            billedAt: new Date(),
-            isRemake: toRemakeApiFields(doc).isRemake,
-          };
-          await doc.save();
-        }
+        await persistAcceptedBillingFields(doc, billingResult);
       } catch (billingErr) {
         // 과금 실패 시 claim 해제 (다른 기공소가 재시도 가능)
         try {
@@ -3007,50 +3058,8 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         });
       }
 
-      const creditEmitJobs = [];
-      if (billingResult?.billed) {
-        const spendTotal = Number(billingResult.fees?.total || 0);
-        if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
-          creditEmitJobs.push(
-            emitCreditBalanceUpdatedToBusiness({
-              businessAnchorId: doc.practiceBusinessAnchorId,
-              balanceDelta: -spendTotal,
-              reason: "practice_transfer_accept",
-              refId: doc._id,
-            }),
-          );
-        }
-        const settlement = Number(billingResult.labSettlementAmount || 0);
-        if (settlement > 0 && doc.targetLabAnchorId) {
-          creditEmitJobs.push(
-            emitCreditBalanceUpdatedToBusiness({
-              businessAnchorId: doc.targetLabAnchorId,
-              balanceDelta: settlement,
-              reason: "practice_transfer_lab_settlement",
-              refId: doc._id,
-            }),
-          );
-        }
-      }
-
-      invalidateUnreadCountCache(labAnchorId);
-      const [unreadCount] = await Promise.all([
-        PracticeTransfer.countDocuments({
-          ...scope,
-          status: { $ne: "canceled" },
-          requestorReadAt: null,
-        }),
-        ensurePracticeTransferChatRoomOnAccept({
-          transferDoc: doc,
-          labUserId: req.user?._id,
-        }),
-        ...creditEmitJobs,
-      ]);
-      setRequestPerfCacheValue(
-        unreadCountCacheKey(labAnchorId),
-        { unreadCount },
-        10 * 1000,
-      );
+      const unreadCount =
+        resolveUnreadCountForAccept(labAnchorId, { wasUnread }) ?? 0;
 
       const realtimePayload = {
         action: "accepted",
@@ -3067,6 +3076,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         status: String(doc.status || "active").trim(),
         manufacturerStage: "의뢰수락",
         billing: doc.billing || null,
+        feeQuote: buildAcceptedFeeQuotePayload(billingResult, doc),
         updatedAt: doc.updatedAt || new Date(),
         ...toAutoMatchApiFields(doc, labAnchorId),
       };
@@ -3079,30 +3089,21 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       };
 
       emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-      // 실시간 fan-out은 best-effort — 응답을 막지 않는다.
-      void Promise.all([
-        emitPracticeTransferEventToPracticeUsers({
-          practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
-          type: "practice:transfer-updated",
-          payload: practiceRealtimePayload,
-          extraUserIds: [doc.practiceUserId],
-        }),
-        emitPracticeTransferEventToRequestorUsers({
-          targetLabAnchorId: labOid,
-          type: "practice:transfer-updated",
-          payload: realtimePayload,
-        }),
-        emitAutoMatchPoolCreated(
-          {
-            ...realtimePayload,
-            action: "auto-match-claimed",
-            source: "autoMatchClaim",
-          },
-          {
-            eligibleLabAnchorIds: doc.autoMatch?.eligibleLabAnchorIds,
-          },
-        ),
-      ]).catch(() => {});
+      scheduleAcceptSideEffects({
+        doc,
+        labAnchorId,
+        labOid,
+        scope,
+        labUserId: req.user?._id,
+        billingResult,
+        realtimePayload,
+        practiceRealtimePayload,
+        poolPayload: {
+          ...realtimePayload,
+          action: "auto-match-claimed",
+          source: "autoMatchClaim",
+        },
+      });
 
       return res.status(200).json({
         success: true,
@@ -3121,6 +3122,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
 
     // —— direct (지정 기공소) 기존 로직 ——
     const alreadyAccepted = Boolean(doc.requestorDownloadedAt);
+    const wasUnread = !doc.requestorReadAt;
     let billingResult = null;
 
     if (!alreadyAccepted) {
@@ -3130,23 +3132,6 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
           actorUserId: req.user?._id,
         });
-        if (billingResult?.billed) {
-          doc.billing = {
-            labFeeTotal: billingResult.fees?.labFeeTotal || 0,
-            abutmentRetailTotal: billingResult.fees?.abutmentRetailTotal || 0,
-            abutmentQty: billingResult.fees?.abutmentQty || 0,
-            total: billingResult.fees?.total || 0,
-            isTradingPartner: Boolean(billingResult.isPartner),
-            relationshipKind: billingResult.relationshipKind || "none",
-            feeRateApplied: Number(billingResult.feeRateApplied || 0),
-            labFeeMultiplier: Number(billingResult.labFeeMultiplier || 1),
-            labTradingPartnerId: billingResult.labTradingPartnerId || null,
-            labSettlementAmount: billingResult.labSettlementAmount || 0,
-            abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
-            billedAt: new Date(),
-            isRemake: toRemakeApiFields(doc).isRemake,
-          };
-        }
       } catch (billingErr) {
         const status = Number(billingErr?.statusCode || 500);
         return res.status(status).json({
@@ -3157,75 +3142,38 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       }
     }
 
-    let didChangeRead = false;
+    const acceptSet = {};
     if (!doc.requestorReadAt) {
       doc.requestorReadAt = now;
       doc.requestorReadBy = req.user?._id || null;
-      didChangeRead = true;
+      acceptSet.requestorReadAt = now;
+      acceptSet.requestorReadBy = req.user?._id || null;
     }
     if (!doc.requestorDownloadedAt) {
       doc.requestorDownloadedAt = now;
       doc.requestorDownloadedBy = req.user?._id || null;
       doc.workCanceledAt = null;
       doc.workCanceledBy = null;
-      await doc.save();
-    } else if (didChangeRead || billingResult?.billed || doc.workCanceledAt) {
-      if (doc.workCanceledAt) {
-        doc.workCanceledAt = null;
-        doc.workCanceledBy = null;
-      }
-      await doc.save();
-    }
-
-    if (didChangeRead) {
-      invalidateUnreadCountCache(labAnchorId);
+      acceptSet.requestorDownloadedAt = now;
+      acceptSet.requestorDownloadedBy = req.user?._id || null;
+      acceptSet.workCanceledAt = null;
+      acceptSet.workCanceledBy = null;
+    } else if (doc.workCanceledAt) {
+      doc.workCanceledAt = null;
+      doc.workCanceledBy = null;
+      acceptSet.workCanceledAt = null;
+      acceptSet.workCanceledBy = null;
     }
 
     if (billingResult?.billed) {
-      const creditEmitJobs = [];
-      const spendTotal = Number(billingResult.fees?.total || 0);
-      if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
-        creditEmitJobs.push(
-          emitCreditBalanceUpdatedToBusiness({
-            businessAnchorId: doc.practiceBusinessAnchorId,
-            balanceDelta: -spendTotal,
-            reason: "practice_transfer_accept",
-            refId: doc._id,
-          }),
-        );
-      }
-      const settlement = Number(billingResult.labSettlementAmount || 0);
-      if (settlement > 0 && doc.targetLabAnchorId) {
-        creditEmitJobs.push(
-          emitCreditBalanceUpdatedToBusiness({
-            businessAnchorId: doc.targetLabAnchorId,
-            balanceDelta: settlement,
-            reason: "practice_transfer_lab_settlement",
-            refId: doc._id,
-          }),
-        );
-      }
-      if (creditEmitJobs.length) {
-        await Promise.all(creditEmitJobs);
-      }
+      await persistAcceptedBillingFields(doc, billingResult);
+    }
+    if (Object.keys(acceptSet).length > 0) {
+      await PracticeTransfer.updateOne({ _id: doc._id }, { $set: acceptSet });
     }
 
-    const [unreadCount] = await Promise.all([
-      PracticeTransfer.countDocuments({
-        ...scope,
-        status: { $ne: "canceled" },
-        requestorReadAt: null,
-      }),
-      ensurePracticeTransferChatRoomOnAccept({
-        transferDoc: doc,
-        labUserId: req.user?._id,
-      }),
-    ]);
-    setRequestPerfCacheValue(
-      unreadCountCacheKey(labAnchorId),
-      { unreadCount },
-      10 * 1000,
-    );
+    const unreadCount =
+      resolveUnreadCountForAccept(labAnchorId, { wasUnread }) ?? 0;
 
     const realtimePayload = {
       action: "accepted",
@@ -3242,24 +3190,21 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       status: String(doc.status || "active").trim(),
       manufacturerStage: "의뢰수락",
       billing: doc.billing || null,
+      feeQuote: buildAcceptedFeeQuotePayload(billingResult, doc),
       updatedAt: doc.updatedAt || new Date(),
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-
-    void Promise.all([
-      emitPracticeTransferEventToPracticeUsers({
-        practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
-        type: "practice:transfer-updated",
-        payload: realtimePayload,
-        extraUserIds: [doc.practiceUserId],
-      }),
-      emitPracticeTransferEventToRequestorUsers({
-        targetLabAnchorId: doc.targetLabAnchorId,
-        type: "practice:transfer-updated",
-        payload: realtimePayload,
-      }),
-    ]).catch(() => {});
+    scheduleAcceptSideEffects({
+      doc,
+      labAnchorId,
+      labOid: doc.targetLabAnchorId,
+      scope,
+      labUserId: req.user?._id,
+      billingResult,
+      realtimePayload,
+      practiceRealtimePayload: realtimePayload,
+    });
 
     return res.status(200).json({
       success: true,
@@ -3352,7 +3297,7 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     if (isAuto && !isAutoMatchClaimActive(doc)) {
       return res.status(409).json({
         success: false,
-        message: "작업 기한이 만료되었거나 수락되지 않은 의뢰입니다.",
+        message: "수락되지 않은 의뢰입니다.",
         data: toAutoMatchApiFields(doc, labAnchorId),
       });
     }
@@ -3738,6 +3683,10 @@ export async function markReceivedPracticeTransferRelease(req, res) {
     const previousLabAnchorId = String(doc.targetLabAnchorId || "").trim() || null;
     const previousLabName = String(doc.targetLabName || "").trim();
     const now = new Date();
+    const prevBilling =
+      doc.billing && typeof doc.billing === "object" ? doc.billing : {};
+    const spendTotal = Number(prevBilling.total || 0);
+    const settlementAmount = Number(prevBilling.labSettlementAmount || 0);
 
     try {
       await rollbackPracticeTransferBilling({ transferId: doc._id });
@@ -3753,13 +3702,25 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       clearAutoMatchClaimFields(doc, { bumpRelease: true });
       doc.workCanceledAt = now;
       doc.workCanceledBy = req.user?._id || null;
-      await doc.save();
+      await PracticeTransfer.updateOne(
+        { _id: doc._id },
+        {
+          $set: {
+            targetLabAnchorId: doc.targetLabAnchorId,
+            targetLabName: doc.targetLabName,
+            requestorReadAt: doc.requestorReadAt,
+            requestorReadBy: doc.requestorReadBy,
+            requestorDownloadedAt: doc.requestorDownloadedAt,
+            requestorDownloadedBy: doc.requestorDownloadedBy,
+            billing: doc.billing,
+            autoMatch: doc.autoMatch,
+            workCanceledAt: doc.workCanceledAt,
+            workCanceledBy: doc.workCanceledBy,
+          },
+        },
+      );
     } else {
-      doc.requestorDownloadedAt = null;
-      doc.requestorDownloadedBy = null;
-      doc.workCanceledAt = now;
-      doc.workCanceledBy = req.user?._id || null;
-      doc.billing = {
+      const billingReset = {
         labFeeTotal: 0,
         abutmentRetailTotal: 0,
         abutmentQty: 0,
@@ -3767,16 +3728,35 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         isTradingPartner: false,
         relationshipKind: "none",
         feeRateApplied: 0,
+        labFeeMultiplier: Number(prevBilling.labFeeMultiplier || 1),
         labTradingPartnerId: null,
         labSettlementAmount: 0,
         abutsRevenueAmount: 0,
         billedAt: null,
       };
+      doc.requestorDownloadedAt = null;
+      doc.requestorDownloadedBy = null;
+      doc.workCanceledAt = now;
+      doc.workCanceledBy = req.user?._id || null;
+      doc.billing = billingReset;
       if (doc.autoMatch && typeof doc.autoMatch === "object") {
         doc.autoMatch.completedAt = null;
         doc.autoMatch.completedBy = null;
       }
-      await doc.save();
+      await PracticeTransfer.updateOne(
+        { _id: doc._id },
+        {
+          $set: {
+            requestorDownloadedAt: null,
+            requestorDownloadedBy: null,
+            workCanceledAt: now,
+            workCanceledBy: req.user?._id || null,
+            billing: billingReset,
+            "autoMatch.completedAt": null,
+            "autoMatch.completedBy": null,
+          },
+        },
+      );
     }
 
     invalidateUnreadCountCache(labAnchorId);
@@ -3788,20 +3768,6 @@ export async function markReceivedPracticeTransferRelease(req, res) {
     const systemChatContent = isAuto
       ? "작업을 취소했습니다. 자동 매칭으로 다시 공개됩니다."
       : `기공소「${labLabel}」이(가) 작업을 취소했습니다. 다시 의뢰하거나 기공소에 안내할 수 있습니다.`;
-    try {
-      await postPracticeTransferSystemChatMessage({
-        transferMongoId: doc._id,
-        senderUserId: req.user?._id,
-        content: systemChatContent,
-        systemEvent: "work_cancel",
-      });
-    } catch (chatErr) {
-      console.warn(
-        "[practiceTransfer] work-cancel system chat failed",
-        String(doc?._id || ""),
-        chatErr?.message || chatErr,
-      );
-    }
 
     const realtimePayload = {
       action: isAuto ? "auto-match-released" : "accept-released",
@@ -3819,46 +3785,90 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       status: String(doc.status || "active").trim(),
       manufacturerStage: "작업취소",
       workCanceledAt: doc.workCanceledAt || now,
-      updatedAt: doc.updatedAt || now,
+      updatedAt: now,
       source: "workCancelRelease",
       ...toAutoMatchApiFields(doc, labAnchorId),
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-    await emitPracticeTransferEventToPracticeUsers({
-      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
-      type: "practice:transfer-updated",
-      payload: isAuto
-        ? {
-            ...realtimePayload,
-            ...redactAutoMatchLabIdentity("auto", {
-              targetLabName: realtimePayload.targetLabName,
-              targetLabAnchorId: realtimePayload.targetLabAnchorId,
+
+    void (async () => {
+      try {
+        const jobs = [
+          postPracticeTransferSystemChatMessage({
+            transferMongoId: doc._id,
+            senderUserId: req.user?._id,
+            content: systemChatContent,
+            systemEvent: "work_cancel",
+          }),
+          emitPracticeTransferEventToPracticeUsers({
+            practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+            type: "practice:transfer-updated",
+            payload: isAuto
+              ? {
+                  ...realtimePayload,
+                  ...redactAutoMatchLabIdentity("auto", {
+                    targetLabName: realtimePayload.targetLabName,
+                    targetLabAnchorId: realtimePayload.targetLabAnchorId,
+                  }),
+                  previousLabAnchorId: null,
+                  previousLabName: AUTO_MATCH_LAB_DISPLAY_NAME,
+                }
+              : realtimePayload,
+            extraUserIds: [doc.practiceUserId],
+          }),
+        ];
+        if (previousLabAnchorId) {
+          jobs.push(
+            emitPracticeTransferEventToRequestorUsers({
+              targetLabAnchorId: previousLabAnchorId,
+              type: "practice:transfer-updated",
+              payload: realtimePayload,
             }),
-            previousLabAnchorId: null,
-            previousLabName: AUTO_MATCH_LAB_DISPLAY_NAME,
-          }
-        : realtimePayload,
-      extraUserIds: [doc.practiceUserId],
-    });
-    if (previousLabAnchorId) {
-      await emitPracticeTransferEventToRequestorUsers({
-        targetLabAnchorId: previousLabAnchorId,
-        type: "practice:transfer-updated",
-        payload: realtimePayload,
-      });
-    }
-    if (isAuto) {
-      await emitAutoMatchPoolCreated(
-        {
-          ...realtimePayload,
-          source: "workCancelRelease",
-        },
-        {
-          eligibleLabAnchorIds: doc.autoMatch?.eligibleLabAnchorIds,
-        },
-      );
-    }
+          );
+        }
+        if (isAuto) {
+          jobs.push(
+            emitAutoMatchPoolCreated(
+              {
+                ...realtimePayload,
+                source: "workCancelRelease",
+              },
+              {
+                eligibleLabAnchorIds: doc.autoMatch?.eligibleLabAnchorIds,
+              },
+            ),
+          );
+        }
+        if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
+          jobs.push(
+            emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: doc.practiceBusinessAnchorId,
+              balanceDelta: spendTotal,
+              reason: "practice_transfer_release",
+              refId: doc._id,
+            }),
+          );
+        }
+        if (settlementAmount > 0 && previousLabAnchorId) {
+          jobs.push(
+            emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: previousLabAnchorId,
+              balanceDelta: -settlementAmount,
+              reason: "practice_transfer_lab_settlement_rollback",
+              refId: doc._id,
+            }),
+          );
+        }
+        await Promise.all(jobs);
+      } catch (err) {
+        console.warn(
+          "[practiceTransfer] work-cancel side-effects failed",
+          String(doc?._id || ""),
+          err?.message || err,
+        );
+      }
+    })();
 
     return res.status(200).json({
       success: true,

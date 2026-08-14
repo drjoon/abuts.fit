@@ -154,13 +154,15 @@ export const LabAutoMatchParticipationTab = () => {
             </h3>
             <div className="space-y-1 text-[13px] leading-relaxed text-muted-foreground">
               <p>
-                월 플랫폼 수수료를 내면 치과의 자동 매칭 의뢰에 참여할 수 있습니다.
+                매칭 참여 구독하시면 인증 기공소가 되어 치과의 자동 매칭 의뢰에
+                참여할 수 있습니다.
               </p>
               <p>
-                계약 체결 시 기공비의 {successPct}%가 플랫폼 수수료입니다.
+                계약 체결 시 기공비의 {successPct}%는 플랫폼 수수료입니다.
               </p>
               <p>
-                치과에서 기공소명을 직접 입력하면(치과 지정) 수수료 없습니다.
+                단, 자동 매칭이 아닌 지정 의뢰(치과에서 기공소를 직접 입력)는
+                플랫폼 수수료 면제입니다.
               </p>
               <p>치과·기공소 식별 정보는 비공개입니다.</p>
             </div>

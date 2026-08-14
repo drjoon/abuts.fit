@@ -144,33 +144,37 @@ export async function postGeneralLedgerJournal({
   meta = null,
   lines = [],
   session = null,
+  /** caller가 이미 조회했을 때 중복 find 생략(11000으로 경합 처리) */
+  skipIdempotencyLookup = false,
 }) {
   assertEventType(eventType);
   assertLines(lines);
 
-  const existing = await getJournalByIdempotencyKey({ idempotencyKey, session });
-  if (existing?.journalId) {
-    return {
-      posted: false,
-      idempotent: true,
-      journalId: existing.journalId,
-    };
-  }
-
-  // 트랜잭션 스냅샷 가시성 보강:
-  // 외부 session 트랜잭션에서는 "트랜잭션 시작 이후"에 커밋된 저널이 snapshot에 안 보일 수 있다.
-  // 중복 insert(11000)로 트랜잭션이 불필요하게 깨지지 않도록, 최신 committed view를 한 번 더 확인한다.
-  if (session) {
-    const latestCommitted = await getJournalByIdempotencyKey({
-      idempotencyKey,
-      session: null,
-    });
-    if (latestCommitted?.journalId) {
+  if (!skipIdempotencyLookup) {
+    const existing = await getJournalByIdempotencyKey({ idempotencyKey, session });
+    if (existing?.journalId) {
       return {
         posted: false,
         idempotent: true,
-        journalId: latestCommitted.journalId,
+        journalId: existing.journalId,
       };
+    }
+
+    // 트랜잭션 스냅샷 가시성 보강:
+    // 외부 session 트랜잭션에서는 "트랜잭션 시작 이후"에 커밋된 저널이 snapshot에 안 보일 수 있다.
+    // 중복 insert(11000)로 트랜잭션이 불필요하게 깨지지 않도록, 최신 committed view를 한 번 더 확인한다.
+    if (session) {
+      const latestCommitted = await getJournalByIdempotencyKey({
+        idempotencyKey,
+        session: null,
+      });
+      if (latestCommitted?.journalId) {
+        return {
+          posted: false,
+          idempotent: true,
+          journalId: latestCommitted.journalId,
+        };
+      }
     }
   }
 

@@ -9,6 +9,7 @@
 // - 2026-08-13: 기공소 상세 모달 — 수락 전에도 치과 채팅 내역 표시. 수락 CTA는 채팅 상단 바.
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스를 버블에 전달.
 // - 2026-08-14: 기공소 기공수가 할증은 치과 채팅 헤더에 배치(자동매칭 포함).
+// - 2026-08-14: 수락 후 같은 자리(채팅 상단 바)에 작업취소 버튼.
 import type { ReactNode, RefObject } from "react";
 import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -90,9 +91,14 @@ type PracticeTransferDetailChatDialogProps = {
   chatUnlocked?: boolean;
   /** 기공소 작업취소 후 재수락이 필요한 상태 */
   workCanceled?: boolean;
-  /** 예: "남은 시간 3시간" → 버튼 라벨 `수락 [남은 시간 3시간]` */
+  /** 작업완료된 건 — 작업취소 CTA 숨김 */
+  workCompleted?: boolean;
+  /** 레거시: 자동매칭 남은시간 라벨(강제 클레임 만료 폐기 후 미사용) */
   remainingLabel?: string | null;
   onAccept?: () => void | Promise<void>;
+  /** 수락 후 같은 자리의 작업취소 */
+  releaseBusy?: boolean;
+  onRelease?: () => void | Promise<void>;
   chatLoading: boolean;
   chatError: string;
   chatMessages: ChatMessage[];
@@ -153,7 +159,10 @@ export function PracticeTransferDetailChatDialog({
   acceptBusy = false,
   accepted = false,
   workCanceled = false,
+  workCompleted = false,
   onAccept,
+  releaseBusy = false,
+  onRelease,
   remainingLabel = null,
   chatLoading,
   chatError,
@@ -189,6 +198,9 @@ export function PracticeTransferDetailChatDialog({
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
   const showReacceptBar =
     Boolean(onAccept) && !accepted && workCanceled;
+  /** 수락 직후: 수락 버튼 자리에 작업취소 */
+  const showReleaseBar =
+    Boolean(onRelease) && accepted && !workCanceled && !workCompleted;
   const rawChatError = String(chatError || "").trim();
   const isPreAcceptChatHint =
     rawChatError === "의뢰수락 후 치과와 채팅할 수 있습니다." ||
@@ -206,6 +218,7 @@ export function PracticeTransferDetailChatDialog({
     : remainingLabel
       ? `다시 수락 [${remainingLabel}]`
       : "다시 수락";
+  const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업취소";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-[90rem] h-[86vh] p-0 overflow-hidden flex flex-col">
@@ -434,6 +447,25 @@ export function PracticeTransferDetailChatDialog({
                       disabled={acceptBusy}
                     >
                       {reacceptButtonLabel}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {showReleaseBar ? (
+                <div className="shrink-0 border-b bg-muted/40 px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    수락된 의뢰입니다. 작업취소하면 수락이 해제됩니다.
+                  </p>
+                  <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void onRelease?.()}
+                      disabled={releaseBusy}
+                    >
+                      {releaseButtonLabel}
                     </Button>
                   </div>
                 </div>

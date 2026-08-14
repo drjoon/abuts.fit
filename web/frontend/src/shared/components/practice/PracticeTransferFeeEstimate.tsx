@@ -16,6 +16,7 @@
 // - 2026-08-14: 기공소 뷰만 총액 옆·툴팁에 할증 표기. 의뢰카드 trailingAction은 채팅 헤더로 이동.
 // - 2026-08-14: 기공소 뷰는 설정 수가(labFeeTotal)를 제시. 수수료 차감 수령은 보조 표기.
 // - 2026-08-14: 합산 라벨은「기공비」, 단위(툴팁 컬럼)는「기공수가」.
+// - 2026-08-14: 수락·청구(billed) 후 치과는 예산 구간 대신「확정 기공비」표시.
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import {
@@ -306,20 +307,21 @@ export function PracticeTransferFeeEstimate({
   }
 
   const budget = quote.autoMatchBudget;
+  const confirmed = Boolean(quote.billed);
   const feeRateApplied = Math.min(
     1,
     Math.max(0, Number(quote.feeRateApplied || 0)),
   );
-  // 기공소: 확정 수가는 설정 스케줄(labFeeTotal). 치과 예산 min~max는 필터용.
-  // 플랫폼 수수료 차감 수령액은 보조로만 표기(예산 하한과 혼동 방지).
+  // 기공소: 확정 수가는 설정 스케줄(labFeeTotal). 치과 예산 min~max는 수락 전 필터용.
+  // 수락·청구 후(billed)에는 치과도 확정 기공비(total)를 표시.
   const amount = isLab
     ? quote.labFeeTotal
-    : budget && Number(budget.maxLabFee) > 0
+    : !confirmed && budget && Number(budget.maxLabFee) > 0
       ? Math.max(0, Number(budget.maxLabFee)) +
         Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))
       : quote.total;
   const creditMin =
-    budget && Number(budget.maxLabFee) > 0
+    !confirmed && budget && Number(budget.maxLabFee) > 0
       ? Math.max(0, Number(budget.minLabFee || 0)) +
         Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))
       : quote.total;
@@ -329,15 +331,17 @@ export function PracticeTransferFeeEstimate({
       : "리메이크 견적"
     : isLab
       ? "기공비"
-      : budget && Number(budget.maxLabFee) > 0
-        ? "예상 견적"
-        : "견적";
+      : confirmed
+        ? "확정 기공비"
+        : budget && Number(budget.maxLabFee) > 0
+          ? "예상 견적"
+          : "견적";
   const labProsthesisTotal = Math.max(
     0,
     Math.round(Number(quote.labFeeTotal || 0) - Number(quote.labAbutmentTotal || 0)),
   );
   const hasBudgetRange =
-    Boolean(budget) && Number(budget?.maxLabFee) > 0;
+    !confirmed && Boolean(budget) && Number(budget?.maxLabFee) > 0;
   const labSettlementDiffers =
     isLab &&
     feeRateApplied > 0 &&
