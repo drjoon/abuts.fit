@@ -40,6 +40,7 @@ import {
   toAutoMatchApiFields,
 } from "../../utils/practiceTransferAutoMatch.js";
 import {
+  loadAutoMatchBudgetCatalog,
   resolveAutoMatchBudgetOrDefaults,
   resolveAutoMatchEligibleLabAnchorIds,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
@@ -1597,15 +1598,18 @@ export async function createPracticeTransfer(req, res) {
           "practiceTransferSettings.implantFavorites": 1,
         })
         .lean();
+      const catalog = await loadAutoMatchBudgetCatalog();
       autoMatchBudget = resolveAutoMatchBudgetOrDefaults(
         req.body?.autoMatchBudget ??
           practiceRouting?.autoMatchBudget ??
           practiceForBudget?.practiceTransferSettings?.autoMatchBudget,
+        catalog,
       );
 
       const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
         toothWorks: toothWorksRaw,
         budget: autoMatchBudget,
+        catalog,
       });
       autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
       if (autoMatchEligibleLabAnchorIds.length === 0) {

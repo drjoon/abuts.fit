@@ -4,6 +4,7 @@
 // - 2026-08-13: 저장된 견적 라인도 치아번호 10→20→30→40번대 순.
 // - 2026-08-14: 환봉 단가 0원(별도 고지) 라인도 파싱.
 // - 2026-08-14: 환봉 요청중은 기공소 어벗 라인(labAbutmentFee)으로 파싱.
+// - 2026-08-14: 자동매칭 견적 라인에 labFeeMin(하한) 부착.
 import {
   attachLabFeeMinToLines,
   computePracticeTransferRetailFees,
@@ -27,9 +28,10 @@ import {
 } from "@/shared/pricing/abutsAbutmentService";
 
 import {
+  normalizeAbutsLabFeeCatalog,
   normalizePracticeTransferAutoMatchBudget,
   resolveAutoMatchBudgetOrDefaults,
-  AUTO_MATCH_BUDGET_KEYS,
+  type AbutsLabFeeCatalogItem,
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
 
@@ -73,6 +75,7 @@ export type PracticeTransferQuoteContext = {
   usedDefaultSchedule: boolean;
   labFeeConfigured: boolean;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
+  abutsLabFeeCatalog?: AbutsLabFeeCatalogItem[] | null;
 };
 
 export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
@@ -88,6 +91,7 @@ export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
   usedDefaultSchedule: true,
   labFeeConfigured: true,
   autoMatchBudget: null,
+  abutsLabFeeCatalog: null,
 };
 
 const toRelationshipKind = (value: unknown): PracticeTransferRelationshipKind =>
@@ -218,7 +222,10 @@ export const parsePracticeTransferQuoteContext = (
       ? LAB_FEE_SCHEDULE_ZEROS
       : normalizeLabFeeRemakeSchedule(remakeRaw),
     items: usedDefaultSchedule
-      ? normalizeLabFeeItems(LAB_FEE_SCHEDULE_ZEROS)
+      ? Array.isArray((r as { items?: LabFeeItem[] }).items) &&
+        (r as { items?: LabFeeItem[] }).items!.length
+        ? normalizeLabFeeItems({ items: (r as { items?: LabFeeItem[] }).items })
+        : normalizeLabFeeItems(LAB_FEE_SCHEDULE_ZEROS)
       : normalizeLabFeeItems(
           scheduleRaw && typeof scheduleRaw === "object" && "items" in scheduleRaw
             ? scheduleRaw
@@ -249,7 +256,15 @@ export const parsePracticeTransferQuoteContext = (
       : normalizeLabFeeMultiplier(r.labFeeMultiplier),
     usedDefaultSchedule,
     labFeeConfigured: usedDefaultSchedule ? true : r.labFeeConfigured !== false,
-    autoMatchBudget: normalizePracticeTransferAutoMatchBudget(r.autoMatchBudget),
+    autoMatchBudget: normalizePracticeTransferAutoMatchBudget(
+      r.autoMatchBudget,
+      Array.isArray(r.abutsLabFeeCatalog)
+        ? (r.abutsLabFeeCatalog as AbutsLabFeeCatalogItem[])
+        : null,
+    ),
+    abutsLabFeeCatalog: Array.isArray(r.abutsLabFeeCatalog)
+      ? (r.abutsLabFeeCatalog as AbutsLabFeeCatalogItem[])
+      : null,
   };
 };
 
@@ -261,23 +276,44 @@ export const buildFeeQuoteFromContext = (params: {
 }): PracticeTransferFeeQuote => {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
+  const catalog = normalizeAbutsLabFeeCatalog(context.abutsLabFeeCatalog);
   const labFeeMultiplier = normalizeLabFeeMultiplier(context.labFeeMultiplier);
   const budgetRaw =
     params.autoMatchBudget !== undefined
       ? params.autoMatchBudget
       : context.autoMatchBudget || null;
   const budget = zeroed
-    ? resolveAutoMatchBudgetOrDefaults(budgetRaw)
-    : normalizePracticeTransferAutoMatchBudget(budgetRaw);
+    ? resolveAutoMatchBudgetOrDefaults(budgetRaw, catalog)
+    : normalizePracticeTransferAutoMatchBudget(budgetRaw, catalog);
 
   const scheduleFromBudget = (side: "min" | "max") => {
-    const schedule: Partial<LabFeeSchedule> = {};
     if (!budget) return LAB_FEE_SCHEDULE_ZEROS;
-    for (const key of AUTO_MATCH_BUDGET_KEYS) {
-      const band = budget.items[key];
-      schedule[key] = side === "min" ? band.min : band.max;
-    }
-    return schedule as LabFeeSchedule;
+    const items = catalog.map((row) => {
+      const band = budget.items[row.id] || {
+        min: 0,
+        max: row.price,
+      };
+      const price = side === "min" ? band.min : band.max;
+      return {
+        id: row.id,
+        name: row.name,
+        unit: (row.unit || "perTooth") as LabFeeItem["unit"],
+        enabled: true,
+        price,
+        remake: 0,
+        tiers:
+          row.unit === "perNTeeth"
+            ? [
+                {
+                  n: Number(row.tiers?.[0]?.n) || 3,
+                  price,
+                  remake: 0,
+                },
+              ]
+            : [],
+      };
+    });
+    return { items, active: true } as LabFeeSchedule;
   };
 
   const fees = computePracticeTransferRetailFees({

@@ -16,6 +16,7 @@
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
 // - 2026-08-14: 치과별 기공수가 할증(labFeeMultiplier). 기공비·기공소 어벗만 배수.
+// - 2026-08-14: attachLabFeeMinToLines — 자동매칭 예산 하한을 라인에 붙인다.
 import {
   normalizeAbutsAbutmentCreditPrices,
   type AbutsAbutmentCreditPrices,

@@ -2,9 +2,11 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
 // - web/frontend/src/hooks/useSystemSettings.ts
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - 2026-08-14: quote-context 단가 + credit-settings 단가를 견적에 반영. 캐시 60s.
 // - 2026-08-14: quote-context 인 inflight 합류 — intake/치아차트 중복 GET 방지.
 // - 2026-08-14: 환봉 요청중 판별용 implantFavorites를 견적 계산에 전달.
+// - 2026-08-14: practice:lab-fee-multiplier-updated 수신 시 quote-context 재조회.
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
@@ -23,10 +25,14 @@ import {
 } from "@/shared/pricing/abutsAbutmentService";
 import type { ImplantFavoriteForFee } from "@/shared/practice/labFeeSchedule";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const AUTO_MATCH_LAB_ID = "__auto_match__";
 const CONTEXT_CACHE_TTL_MS = 60_000;
+export const LAB_FEE_MULTIPLIER_UPDATED_EVENT =
+  "practice:lab-fee-multiplier-updated";
+
 const contextCache = new Map<
   string,
   { value: PracticeTransferQuoteContext; expiresAt: number }
@@ -44,6 +50,21 @@ const readCachedContext = (cacheKey: string) => {
   }
   return hit.value;
 };
+
+/** 기공수가 할증·수가 변경 시 클라이언트 quote-context 캐시 무효화. */
+export function invalidatePracticeTransferQuoteContextCache(
+  labAnchorId?: string | null,
+) {
+  const raw = String(labAnchorId || "").trim();
+  if (!raw) {
+    contextCache.clear();
+    contextInflight.clear();
+    return;
+  }
+  const key = cacheKeyForLab(raw);
+  contextCache.delete(key);
+  contextInflight.delete(key);
+}
 
 const loadQuoteContext = (
   cacheKey: string,
@@ -128,6 +149,28 @@ export const usePracticeTransferFeeQuote = (params: {
       cancelled = true;
     };
   }, [cacheKey, enabled, labAnchorId, token]);
+
+  useAppEventListener({
+    enabled: enabled && Boolean(token) && Boolean(labAnchorId),
+    eventTypes: [LAB_FEE_MULTIPLIER_UPDATED_EVENT],
+    deferWhenEditing: false,
+    shouldHandle: (evt) => {
+      const data =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as { labAnchorId?: unknown })
+          : null;
+      const eventLabId = String(data?.labAnchorId || "").trim();
+      return Boolean(eventLabId) && eventLabId === labAnchorId;
+    },
+    onMatch: () => {
+      if (!token || !labAnchorId) return;
+      invalidatePracticeTransferQuoteContextCache(labAnchorId);
+      void loadQuoteContext(cacheKey, labAnchorId, token).then((parsed) => {
+        setContext(parsed);
+        setContextReady(true);
+      });
+    },
+  });
 
   const liveQuote = useMemo(
     () =>

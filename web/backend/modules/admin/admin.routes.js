@@ -63,6 +63,9 @@ import {
   getPlatformFeeSettings,
   updatePlatformFeeSettings,
 } from "../../controllers/admin/admin.settings.controller.js";
+// - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
+// - web/frontend/src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx
+// - web/backend/controllers/admin/admin.abutsLabFeeSchedule.controller.js
 import { listLabFeeSchedules } from "../../controllers/admin/admin.labFeeSchedules.controller.js";
 import {
   getAbutsLabFeeSchedule,

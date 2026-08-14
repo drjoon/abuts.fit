@@ -7,6 +7,7 @@
 // - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
 // - 2026-08-13: 기공비 GET은 미저장이면 0원·전부 off + configured=false.
 // - 2026-08-14: 기공비 저장 시 quote-context 캐시 무효화.
+// - 2026-08-14: 치과별 기공수가 할증 저장 시 해당 치과 사용자에 app-event 이밋.
 import { Types } from "mongoose";
 import LabTradingPartner from "../../models/labTradingPartner.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -36,6 +37,7 @@ import {
   resolvePlatformFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
+import { emitAppEventToUser } from "../../socket.js";
 
 /** 기공소 설정 화면 표시용 플랫폼 수수료율 조회 (개발운영사 설정 SSOT: BusinessAnchor.payoutRates) */
 async function resolvePlatformFeeRatesForDisplay() {
@@ -145,6 +147,42 @@ async function resolveCallerLabAnchorId(req) {
 
 function buildInvitePath(token) {
   return `/signup?labPartner=${encodeURIComponent(token)}`;
+}
+
+/** 치과별 할증 변경 → 해당 치과(practice/requestor) 사용자 app-event. */
+async function emitLabFeeMultiplierUpdatedToPractice({
+  practiceAnchorId,
+  labAnchorId,
+  labFeeMultiplier,
+}) {
+  try {
+    const practiceId = String(practiceAnchorId || "").trim();
+    const labId = String(labAnchorId || "").trim();
+    if (!practiceId || !Types.ObjectId.isValid(practiceId)) return;
+
+    const users = await User.find({
+      businessAnchorId: new Types.ObjectId(practiceId),
+      role: { $in: ["practice", "requestor"] },
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const payload = {
+      labAnchorId: labId || null,
+      practiceAnchorId: practiceId,
+      labFeeMultiplier: normalizeLabFeeMultiplier(labFeeMultiplier),
+      emittedAt: new Date().toISOString(),
+    };
+
+    for (const user of users) {
+      const userId = String(user?._id || "").trim();
+      if (!userId) continue;
+      emitAppEventToUser(userId, "practice:lab-fee-multiplier-updated", payload);
+    }
+  } catch {
+    // 실시간 이벤트 실패가 본 API 성공/실패를 좌우하지 않도록 무시
+  }
 }
 
 export async function getLabTradingPartnerWindow(req, res) {
@@ -633,6 +671,11 @@ export async function updateLabPracticeFeeMultiplier(req, res) {
       $set: { labPracticeFeeMultipliers: nextList },
     });
     invalidatePracticeTransferQuoteCaches(labAnchorId);
+    void emitLabFeeMultiplierUpdatedToPractice({
+      practiceAnchorId,
+      labAnchorId,
+      labFeeMultiplier: multiplier,
+    });
 
     return res.json({
       success: true,

@@ -970,7 +970,7 @@ export async function buildPracticeTransferQuote({
     autoMatchBudget === undefined &&
     needFavorites &&
     (!labId || String(matchingMode || "").trim() === "auto");
-  const [lab, practice, abutmentPricingTier, abutmentPrices, partner, cachedRates] =
+  const [lab, practice, abutmentPricingTier, abutmentPrices, partner, cachedRates, catalog] =
     await Promise.all([
       needLab
         ? BusinessAnchor.findById(labId)
@@ -991,6 +991,9 @@ export async function buildPracticeTransferQuote({
         ? findLabPracticeRelationship({ labAnchorId, practiceAnchorId })
         : Promise.resolve(null),
       needRates ? loadCachedDevopsPayoutRates() : Promise.resolve(payoutRates),
+      usedDefaultSchedule || needBudget
+        ? loadAutoMatchBudgetCatalog()
+        : Promise.resolve(null),
     ]);
 
   const resolvedBudgetRaw =
@@ -1000,8 +1003,8 @@ export async function buildPracticeTransferQuote({
         ? practice?.practiceTransferSettings?.autoMatchBudget
         : autoMatchBudget;
   const resolvedBudget = usedDefaultSchedule
-    ? resolveAutoMatchBudgetOrDefaults(resolvedBudgetRaw)
-    : normalizeAutoMatchBudget(resolvedBudgetRaw);
+    ? resolveAutoMatchBudgetOrDefaults(resolvedBudgetRaw, catalog)
+    : normalizeAutoMatchBudget(resolvedBudgetRaw, catalog);
 
   if (schedule == null) {
     schedule = lab?.labFeeSchedule || null;
@@ -1012,7 +1015,7 @@ export async function buildPracticeTransferQuote({
     : isLabFeeScheduleConfigured(schedule);
 
   if (usedDefaultSchedule) {
-    schedule = buildScheduleFromAutoMatchBudget(resolvedBudget, "max");
+    schedule = buildScheduleFromAutoMatchBudget(resolvedBudget, "max", catalog);
   } else if (loadedFromDb) {
     schedule = resolveLabFeeScheduleSource(schedule);
   }
@@ -1035,7 +1038,11 @@ export async function buildPracticeTransferQuote({
     const minFees = computePracticeTransferRetailFees({
       toothWorks,
       implantFavorites: implantFavoritesFromPractice(practice),
-      labFeeSchedule: buildScheduleFromAutoMatchBudget(resolvedBudget, "min"),
+      labFeeSchedule: buildScheduleFromAutoMatchBudget(
+        resolvedBudget,
+        "min",
+        catalog,
+      ),
       abutmentPricingTier,
       abutmentPrices,
       remake: useRemake,
@@ -1094,6 +1101,7 @@ export async function buildPracticeTransferQuote({
     abutmentPrices,
     abutmentRetailPrice: 0,
     autoMatchBudget: autoMatchBudgetOut,
+    abutsLabFeeCatalog: catalog || undefined,
     schedule: usedDefaultSchedule
       ? LAB_FEE_SCHEDULE_ZEROS
       : normalizeLabFeeSchedule(schedule),
@@ -1101,7 +1109,9 @@ export async function buildPracticeTransferQuote({
       ? LAB_FEE_SCHEDULE_ZEROS
       : normalizeLabFeeRemakeSchedule(schedule),
     items: usedDefaultSchedule
-      ? normalizeLabFeeItems(LAB_FEE_SCHEDULE_ZEROS)
+      ? normalizeLabFeeItems(
+          buildScheduleFromAutoMatchBudget(resolvedBudget, "max", catalog),
+        )
       : normalizeLabFeeItems(schedule),
   };
 }
@@ -1146,6 +1156,7 @@ export async function loadPracticeTransferQuoteContext({
       usedDefaultSchedule: quote.usedDefaultSchedule,
       labFeeConfigured: quote.labFeeConfigured !== false,
       autoMatchBudget: quote.autoMatchBudget || null,
+      abutsLabFeeCatalog: quote.abutsLabFeeCatalog || null,
     };
     setRequestPerfCacheValue(cacheKey, context, QUOTE_LOOKUP_CACHE_TTL_MS);
     return context;
@@ -1355,8 +1366,16 @@ export async function buildFeeQuotesForTransferDocs({
     });
 
     if (useStored) {
+      const storedQuote = feeQuoteFromBillingDoc(billing, {
+        lines: fees.lines,
+        billed,
+      });
       out.set(docId, {
-        ...feeQuoteFromBillingDoc(billing, { lines: fees.lines, billed }),
+        ...storedQuote,
+        // 목록 재계산 라인·합산 예산을 우선(구 스냅샷에 min/max 합산이 없을 수 있음).
+        ...(autoMatchBudgetOut
+          ? { autoMatchBudget: autoMatchBudgetOut, lines: fees.lines }
+          : {}),
         remakeFeeQuote,
       });
       continue;

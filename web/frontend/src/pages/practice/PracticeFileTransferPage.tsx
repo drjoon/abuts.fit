@@ -56,6 +56,7 @@
  * - 2026-08-14: 환봉 도입 이벤트 수신 시 프리셋 배지 즉시 갱신. 계정 프리셋은 서버 우선.
  * - 2026-08-14: 기공의뢰 상단 「임시 저장」버튼 제거. 목록 반영은 자동 동기화만.
  * - 2026-08-14: 임시저장 디바운스·한글 IME 게이트. stale 저장 응답에서도 draftId 회수.
+ * - 2026-08-14: 기공수가 할증 변경(practice:lab-fee-multiplier-updated) 시 견적·리메이크 미리보기 갱신.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -215,6 +216,10 @@ import {
   applyRoundBarRequestUpdate,
   type RoundBarRequestUpdatedPayload,
 } from "@/shared/practice/roundBarAbutment";
+import {
+  LAB_FEE_MULTIPLIER_UPDATED_EVENT,
+  invalidatePracticeTransferQuoteContextCache,
+} from "@/shared/practice/usePracticeTransferFeeQuote";
 import { kstYmdDiffDays } from "@/shared/date/kst";
 import {
   Collapsible,
@@ -4615,6 +4620,29 @@ export const PracticeFileTransferPage = ({
           ? (evt.data as RoundBarRequestUpdatedPayload)
           : {};
       setImplantFavorites((prev) => applyRoundBarRequestUpdate(prev, payload));
+    },
+  });
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(authToken),
+    eventTypes: [LAB_FEE_MULTIPLIER_UPDATED_EVENT],
+    delayMs: 120,
+    deferWhenEditing: false,
+    shouldHandle: (evt) => {
+      const data =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as { labAnchorId?: unknown })
+          : null;
+      return Boolean(String(data?.labAnchorId || "").trim());
+    },
+    onMatch: (evt) => {
+      const data =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as { labAnchorId?: unknown })
+          : null;
+      const labId = String(data?.labAnchorId || "").trim();
+      invalidatePracticeTransferQuoteContextCache(labId || null);
+      void loadRecentRequests({ silent: true });
     },
   });
 
