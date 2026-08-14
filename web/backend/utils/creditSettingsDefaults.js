@@ -89,10 +89,8 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       creditSettings.defaultRequestFreeCredit ??
         SCHEMA_DEFAULTS.defaultRequestFreeCredit,
     ),
-    defaultShippingFreeCredit: Number(
-      creditSettings.defaultShippingFreeCredit ??
-        SCHEMA_DEFAULTS.defaultShippingFreeCredit,
-    ),
+    // 환영 배송 분리 지급 폐기. 로드 시에도 0으로 정규화.
+    defaultShippingFreeCredit: 0,
     ...abutmentPrices,
     membershipRoundBarProductionPrice: Number(
       creditSettings.membershipRoundBarProductionPrice ??

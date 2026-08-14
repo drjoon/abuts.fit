@@ -139,7 +139,7 @@ Notes:
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (커스텀어벗 요금 · 기공소 매칭 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
-  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧 · 어벗(CNC/환봉) · 어벗 추가 요청 · 멤버십·배송 · 특별 공급가)
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧(단일 금액) · 어벗(CNC/환봉) · 어벗 추가 요청 · 멤버십·배송 · 특별 공급가)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (자동 매칭 단일 플랫폼 수수료율 인라인 입력. `PracticeTransferAutoMatchTab` 카드 안에 포함. 개발운영사 앵커 `payoutRates.platformFeeRate` SSOT)
 - 개발·운영사 설정
@@ -273,7 +273,7 @@ Notes:
     - 테이블·필터·관리자 모달도 rounded-2xl·slate border 톤으로 통일.
     - **치과**: 유료크레딧(+무료·의뢰/배송)만 표시. `기공크레딧` 잔액 행·정산 필터 숨김. 기공의뢰 차감은 유료크레딧에서 나가며 장부 항목=`기공비`. 기공의뢰 치식 차트(상·하악 사이)·전송 상세에 견적(크레딧 소비액) 표시.
     - **기공소 기공의뢰수신**: 의뢰카드·전송 상세에 수령액(청구 − 플랫폼 수수료) 표시.
-    - **기공소**: 유료크레딧(입금·소비)과 기공크레딧(치과 수취·월 정산, `LAB_SETTLEMENT_CREDIT`)을 분리 표시. 「기공크레딧 정산」 탭은 lab만.
+    - **기공소**: 유료크레딧(입금·소비)과 기공크레딧(치과 수취·월 정산, `LAB_SETTLEMENT_CREDIT`)을 분리 표시. 크레딧 페이지 탭은 내역·충전만(기공크레딧 정산 탭 없음). 내역 필터: 버킷(유료/무료/기공)·동작(충전/소비/조정).
   - 치과 장부 라벨: 기공비 / 어벗의뢰비 / 배송비.
   - 안내 모달([정책 안내])·어벗 라인 요약카드(무료 재제작 잔여) 문구는 동일한 `90일` 기준을 사용해야 합니다.
   - 관련 파일:
@@ -380,7 +380,7 @@ Notes:
 
 - 관리자 크레딧 원장 모달(`src/shared/components/CreditLedgerModal.tsx`) 표시 정책:
   - 모달 상단 잔액 요약은 단일 SSOT 장부 API의 `currentBalanceSnapshot` 값을 사용합니다.
-  - 테이블 `balanceAfter`는 현재 총잔액이 아니라 “행 시점 잔액”으로 표기합니다.
+  - 테이블 `balanceAfter` 칼럼 라벨은 「잔액」이며, 각 행 시점의 총잔액(유료+무료+기공)입니다.
   - 의뢰(REQUEST) 차감 행에는 신속/묶음배송 뱃지를 표시합니다 (`ShippingModeBadge`).
   - 신속 추가비(`express_surcharge`)는 API에서 생산비(`machining_spend`)와 합산해 1행으로 내려줍니다(표시 금액=생산비+추가비).
   - 레거시 `BONUS` 타입 문구/분기 사용 금지. 이벤트 타입/계정코드(`LedgerJournal.eventType`, `LedgerLine.accountCode`)를 기준으로 표시합니다.

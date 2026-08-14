@@ -24,10 +24,7 @@ import {
 } from "./business.validation.util.js";
 import { normalizeBusinessAddressFields } from "./business.address.util.js";
 import { findBusinessByAnchors } from "./business.find.util.js";
-import {
-  grantRequestFreeCreditIfEligible,
-  grantShippingFreeCreditIfEligible,
-} from "./business.freeCredit.util.js";
+import { grantWelcomeFreeCreditIfEligible } from "./business.freeCredit.util.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 import { invalidateMyBusinessCache } from "./business.controller.js";
 import {
@@ -943,18 +940,14 @@ export async function updateMyBusiness(req, res) {
         );
 
         // 환영 무료 크레딧: 의뢰자·기공소(lab) BusinessAnchor 신규 생성 시에만 1회 지급
-        const requestFreeCreditAmount =
-          await grantRequestFreeCreditIfEligible({
+        const welcomeFreeCreditAmount =
+          await grantWelcomeFreeCreditIfEligible({
             businessAnchorId: created._id,
             userId: req.user._id,
             userRole: req.user.role,
           });
-        const freeShippingCreditAmount =
-          await grantShippingFreeCreditIfEligible({
-            businessAnchorId: created._id,
-            userId: req.user._id,
-            userRole: req.user.role,
-          });
+        const welcomeGranted = !!welcomeFreeCreditAmount;
+        const welcomeAmount = Number(welcomeFreeCreditAmount || 0);
 
         const labTradingPartner = await bindLabTradingPartnerFromRequest({
           req,
@@ -970,10 +963,15 @@ export async function updateMyBusiness(req, res) {
             businessName: created.name,
             verification:
               created.status === "verified" ? { verified: true } : null,
-            requestFreeCreditGranted: !!requestFreeCreditAmount,
-            requestFreeCreditAmount: Number(requestFreeCreditAmount || 0),
-            freeShippingCreditGranted: !!freeShippingCreditAmount,
-            freeShippingCreditAmount: Number(freeShippingCreditAmount || 0),
+            welcomeFreeCreditGranted: welcomeGranted,
+            welcomeFreeCreditAmount: welcomeAmount,
+            // 하위호환 키
+            welcomeBonusGranted: welcomeGranted,
+            welcomeBonusAmount: welcomeAmount,
+            requestFreeCreditGranted: welcomeGranted,
+            requestFreeCreditAmount: welcomeAmount,
+            freeShippingCreditGranted: false,
+            freeShippingCreditAmount: 0,
             labTradingPartnerBound: labTradingPartner.bound,
             labTradingPartnerStatus: labTradingPartner.status,
           },
@@ -1106,30 +1104,21 @@ export async function updateMyBusiness(req, res) {
     }
 
     // 환영 무료 크레딧: 기공소(lab) synthetic→실BN 검증 승격 시에만 (사업자번호당 1회).
-    let requestFreeCreditGranted = false;
-    let requestFreeCreditAmount = 0;
-    let freeShippingCreditGranted = false;
-    let freeShippingCreditAmount = 0;
+    let welcomeFreeCreditGranted = false;
+    let welcomeFreeCreditAmount = 0;
     if (
       wasSyntheticBusinessNumber &&
       verificationResult?.verified &&
       businessNumber &&
       businessAnchor?._id
     ) {
-      requestFreeCreditAmount =
-        (await grantRequestFreeCreditIfEligible({
+      welcomeFreeCreditAmount =
+        (await grantWelcomeFreeCreditIfEligible({
           businessAnchorId: businessAnchor._id,
           userId: req.user._id,
           userRole: req.user.role,
         })) || 0;
-      freeShippingCreditAmount =
-        (await grantShippingFreeCreditIfEligible({
-          businessAnchorId: businessAnchor._id,
-          userId: req.user._id,
-          userRole: req.user.role,
-        })) || 0;
-      requestFreeCreditGranted = !!requestFreeCreditAmount;
-      freeShippingCreditGranted = !!freeShippingCreditAmount;
+      welcomeFreeCreditGranted = !!welcomeFreeCreditAmount;
     }
 
     // 기공소 기존 거래처 초대: 사업자 저장 시 pending, 검증 완료 시 active
@@ -1152,10 +1141,14 @@ export async function updateMyBusiness(req, res) {
       success: true,
       data: {
         updated: true,
-        requestFreeCreditGranted,
-        requestFreeCreditAmount: Number(requestFreeCreditAmount || 0),
-        freeShippingCreditGranted,
-        freeShippingCreditAmount: Number(freeShippingCreditAmount || 0),
+        welcomeFreeCreditGranted,
+        welcomeFreeCreditAmount: Number(welcomeFreeCreditAmount || 0),
+        welcomeBonusGranted: welcomeFreeCreditGranted,
+        welcomeBonusAmount: Number(welcomeFreeCreditAmount || 0),
+        requestFreeCreditGranted: welcomeFreeCreditGranted,
+        requestFreeCreditAmount: Number(welcomeFreeCreditAmount || 0),
+        freeShippingCreditGranted: false,
+        freeShippingCreditAmount: 0,
         labTradingPartnerBound,
         labTradingPartnerStatus,
         verification: verificationResult

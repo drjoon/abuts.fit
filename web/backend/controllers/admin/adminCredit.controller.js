@@ -27,6 +27,7 @@ import { Types } from "mongoose";
 import {
   buildCreditLedgerRequestSummary,
   buildFreeCreditGrantReason,
+  buildLedgerItemsWithBucketBalanceAfter,
   CREDIT_LEDGER_REQUEST_SELECT,
   mergeRequestExpressSurchargeIntoMachiningSpend,
   parseSpendKindFromUniqueKey,
@@ -819,33 +820,25 @@ export async function adminGetBusinessLedger(req, res) {
     const startIdx = (page - 1) * pageSize;
     const endIdx = startIdx + pageSize;
 
-    let runningBalance = Number(currentBalanceSnapshot.balance || 0);
-    let skippedSum = 0;
-    for (const r of allRows.slice(0, startIdx)) {
-      skippedSum += Number(r?.amount || 0);
-    }
-    runningBalance -= skippedSum;
-
-    const items = allRows.slice(startIdx, endIdx).map((r) => {
-      const balanceAfter = runningBalance;
-      runningBalance -= Number(r?.amount || 0);
-      const uniqueKey = String(r?.uniqueKey || "");
-      return {
-        _id: String(r?._id || ""),
-        type: String(r?.type || "ADJUST"),
-        amount: Number(r?.amount || 0),
-        spentPaidAmount: Number(r?.spentPaidAmount || 0),
-        spentFreeAmount: Number(r?.spentFreeAmount || 0),
-        refType: String(r?.refType || ""),
-        refId: r?.refId ? String(r.refId) : null,
-        uniqueKey,
-        spendKind:
-          r?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
-        includesExpressSurcharge: Boolean(r?.includesExpressSurcharge),
-        createdAt: r?.createdAt || r?.occurredAt || new Date(),
-        occurredAt: r?.occurredAt || null,
-        balanceAfter,
-      };
+    const items = buildLedgerItemsWithBucketBalanceAfter({
+      rows: allRows,
+      startIdx,
+      endIdx,
+      spendableBalance: Number(currentBalanceSnapshot.balance || 0),
+      settlementBalance: Number(currentBalanceSnapshot.settlementCredit || 0),
+      mapRow: (r, base) => {
+        const uniqueKey = String(r?.uniqueKey || base.uniqueKey || "");
+        return {
+          ...base,
+          refId: r?.refId ? String(r.refId) : null,
+          uniqueKey,
+          spendKind:
+            r?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
+          includesExpressSurcharge: Boolean(r?.includesExpressSurcharge),
+          createdAt: r?.createdAt || r?.occurredAt || new Date(),
+          occurredAt: r?.occurredAt || null,
+        };
+      },
     });
 
     const requestRefIds = Array.from(

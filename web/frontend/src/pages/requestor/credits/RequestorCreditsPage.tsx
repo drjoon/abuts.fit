@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: 기공크레딧(정산) 탭 제거. 내역·충전만. ?tab=settlement → ledger.
 // - 2026-08-14: 내역 탭 UI를 기공크레딧 탭과 동일 최신 스타일로 정리(CreditLedgerModal).
 // - 2026-08-13: 기공소 정산 탭 라벨을 「기공크레딧」으로 통일.
 // - 2026-08-12: 충전 탭 안내문(기공료 선입금)이 잘리지 않도록 overflow-auto.
@@ -21,34 +22,31 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/features/settings/tabs/CreditPaymentTab.tsx
-// - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/skeletons/RequestorCreditsPageSkeleton.tsx
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CreditCard, Wallet, Landmark } from "lucide-react";
+import { CreditCard, Wallet } from "lucide-react";
 import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
-import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPayoutTab";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { RequestorCreditsPageSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
 
-type TabKey = "ledger" | "charge" | "settlement";
+type TabKey = "ledger" | "charge";
 
 export default function RequestorCreditsPage() {
   const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { loading: accessLoading, kind } = useRequestorBusinessAccess();
-  const isLab = kind === "lab";
+  const { loading: accessLoading } = useRequestorBusinessAccess();
 
   // Hooks must run unconditionally (before accessLoading early return).
-  const tabs = useMemo<SettingsTabDef[]>(() => {
-    const list: SettingsTabDef[] = [
+  const tabs = useMemo<SettingsTabDef[]>(
+    () => [
       {
         key: "ledger",
         label: "내역",
@@ -71,26 +69,14 @@ export default function RequestorCreditsPage() {
           </div>
         ),
       },
-    ];
-    if (isLab) {
-      list.push({
-        key: "settlement",
-        label: "기공크레딧",
-        icon: Landmark,
-        content: (
-          <div className="h-full min-h-0 overflow-auto">
-            <LabSettlementPayoutTab />
-          </div>
-        ),
-      });
-    }
-    return list;
-  }, [isLab, user]);
+    ],
+    [user],
+  );
 
   if (accessLoading) {
     return (
       <div className="h-full min-h-0">
-        <RequestorCreditsPageSkeleton tabCount={isLab ? 3 : 2} />
+        <RequestorCreditsPageSkeleton tabCount={2} />
       </div>
     );
   }

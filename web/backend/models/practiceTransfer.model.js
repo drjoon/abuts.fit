@@ -157,7 +157,11 @@ const practiceTransferSchema = new mongoose.Schema(
       },
       labSettlementAmount: { type: Number, default: 0 },
       abutsRevenueAmount: { type: Number, default: 0 },
+      // 에스크로: 생성 시 보류, 수락 시 금액 확정(billedAt), 작업완료 시 기공 지급(settledAt)
+      heldAt: { type: Date, default: null },
+      heldTotal: { type: Number, default: 0 },
       billedAt: { type: Date, default: null },
+      settledAt: { type: Date, default: null },
       isRemake: { type: Boolean, default: false },
       // 자동매칭 기공비 예산 스냅샷 — 항목별 min/max (+ 선택적 합산 minLabFee/maxLabFee)
       autoMatchBudget: {

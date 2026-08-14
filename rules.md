@@ -180,11 +180,12 @@
   - `GET /api/credits/balance` 및 잔액 파생 조회는 `LedgerLine` 직접 집계값을 사용
   - `BusinessCreditBalance`는 레거시 스냅샷으로 취급하며 런타임 잔액 판정/표시에 사용하지 않음
 - 가입 환영 무료 크레딧(강제):
-  - 의뢰자·기공소(`requestorKind=lab`) `BusinessAnchor` **신규 생성(실 사업자등록번호)** 또는 **synthetic(`practice-*`)→실BN 검증 승격** 시에 `defaultRequestFreeCredit` / `defaultShippingFreeCredit`를 사업자번호당 1회 지급
+  - 의뢰자·기공소(`requestorKind=lab`) `BusinessAnchor` **신규 생성(실 사업자등록번호)** 또는 **synthetic(`practice-*`)→실BN 검증 승격** 시에 `defaultRequestFreeCredit`(기본 30,000원)을 사업자번호당 **무료크레딧 1회** 지급
   - 의뢰자·치과(`requestorKind=practice`)는 지급 대상에서 제외
-  - 구현: `business.update.controller.js` 생성 분기·synthetic 승격 분기 → `business.freeCredit.util.js`
+  - 구현: `business.update.controller.js` 생성 분기·synthetic 승격 분기 → `business.freeCredit.util.js` (`grantWelcomeFreeCreditIfEligible`)
   - 무BN synthetic 앵커 생성만으로는 지급하지 않음. 일반 사업자 정보 수정·재로그인·설정 저장 경로에서는 지급 호출 금지
-  - 사업자등록번호당 `FreeCreditGrant`(`REQUEST_FREE_CREDIT`/`SHIPPING_FREE_CREDIT`, legacy `WELCOME_BONUS`/`FREE_SHIPPING_CREDIT` 포함)로 중복 지급 차단
+  - 사업자등록번호당 `FreeCreditGrant`(`REQUEST_FREE_CREDIT`, legacy `WELCOME_BONUS`/`SHIPPING_FREE_CREDIT`/`FREE_SHIPPING_CREDIT` 포함)로 중복 지급 차단. GL은 `CHARGE_FREE_REQUEST`로만 기록
+  - 레거시 `defaultShippingFreeCredit` 설정 필드는 0 고정(분리 환영 지급 폐기). 관리자 수동 배송 무료크레딧 override 경로는 별도 유지 가능
 - 실시간 이벤트 발행 SSOT: 송신측은 대상 role 전체에 fan-out emit 한다.
 - 수신측 SSOT: 로그인한 role 클라이언트는 이벤트를 수신하되, 현재 열려 있는 페이지(활성 화면)만 즉시 갱신한다.
 - 비활성 페이지 데이터는 즉시 갱신하지 않고, 페이지 진입 시 재조회(또는 캐시 무효화)로 동기화한다.

@@ -312,7 +312,6 @@ export async function updateCreditSettings(req, res) {
       payload.practiceMembershipMonthlyFee,
     );
     const defaultRequestFreeCredit = Number(payload.defaultRequestFreeCredit);
-    const defaultShippingFreeCredit = Number(payload.defaultShippingFreeCredit);
     const specialRequestorPrices = Array.isArray(payload.specialRequestorPrices)
       ? payload.specialRequestorPrices
           .map((item) => {
@@ -410,12 +409,8 @@ export async function updateCreditSettings(req, res) {
     if (!Number.isNaN(defaultRequestFreeCredit) && defaultRequestFreeCredit >= 0) {
       sanitized.defaultRequestFreeCredit = defaultRequestFreeCredit;
     }
-    if (
-      !Number.isNaN(defaultShippingFreeCredit) &&
-      defaultShippingFreeCredit >= 0
-    ) {
-      sanitized.defaultShippingFreeCredit = defaultShippingFreeCredit;
-    }
+    // 환영 배송 분리 지급 폐기. 레거시 필드는 항상 0으로 정규화.
+    sanitized.defaultShippingFreeCredit = 0;
     if (specialRequestorPrices) {
       const uniquePrices = new Map();
       specialRequestorPrices.forEach((item) => {

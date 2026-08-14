@@ -55,10 +55,10 @@ export const refTypeLabel = (refType?: string) => {
   if (t === "SHIPPING_FEE") return "배송비 (발송 1회)";
   if (t === "REQUEST") return "의뢰";
   if (t === "FREE_REQUEST_CREDIT" || t === "REQUEST_FREE_CREDIT" || t === "WELCOME_BONUS") {
-    return "환영 무료 의뢰크레딧";
+    return "환영 무료크레딧";
   }
   if (t === "FREE_SHIPPING_CREDIT" || t === "SHIPPING_FREE_CREDIT") {
-    return "환영 무료 배송크레딧";
+    return "환영 무료크레딧";
   }
   return t;
 };

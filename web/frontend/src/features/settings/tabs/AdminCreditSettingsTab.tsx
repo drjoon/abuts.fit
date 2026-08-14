@@ -1,6 +1,6 @@
 // change-log:
+// - 2026-08-15: 환영 무료 크레딧을 단일 금액(defaultRequestFreeCredit)으로 정리. 배송 분리 설정 UI 제거.
 // - 2026-08-14: 5섹션(환영 무료 크레딧·어벗·어벗 추가 요청·멤버십·배송·특별 공급가). 의뢰·배송→어벗.
-// - 2026-08-14: 카드=큰제목, 안쪽 그룹=작은제목으로 계층 고정. 환영 크레딧 A/B 라벨 정리.
 // - 2026-08-14: 의뢰·배송에 CNC/환봉 라벨 분리, 환봉방식 커스텀어벗 요청 목록 포함.
 // - 2026-08-13: 디자인비 항목을 디자인+생산으로 교체. 생산만·디자인+생산을 멤버십/일반 단가로 분리.
 // - 2026-08-13: 치과 멤버십 월 구독료(practiceMembershipMonthlyFee) 추가.
@@ -160,9 +160,8 @@ function normalizeCreditSettings(
     defaultRequestFreeCredit: Number(
       raw.defaultRequestFreeCredit ?? fallback.defaultRequestFreeCredit,
     ),
-    defaultShippingFreeCredit: Number(
-      raw.defaultShippingFreeCredit ?? fallback.defaultShippingFreeCredit,
-    ),
+    // 환영 지급은 무료크레딧 단일. 레거시 배송 환영 설정값은 저장·표시 모두 0.
+    defaultShippingFreeCredit: 0,
     ...abutmentPrices,
     membershipRoundBarProductionPrice: Math.max(
       0,
@@ -598,32 +597,23 @@ export const AdminCreditSettingsTab = () => {
             <SectionHeader
               icon={Gift}
               title="환영 무료 크레딧"
-              description="기공소(의뢰 수신자) 신규 가입 시 1회 지급합니다. 치과에는 지급하지 않습니다."
+              description="기공소(의뢰 수신자) 신규 가입 시 무료크레딧으로 1회 지급합니다. 치과에는 지급하지 않습니다."
             />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <AmountField
-                id="defaultRequestFreeCredit"
-                label="의뢰 크레딧"
-                icon={Gift}
-                value={settings.defaultRequestFreeCredit}
-                onChange={(next) =>
-                  setSettings({ ...settings, defaultRequestFreeCredit: next })
-                }
-                disabled={loading}
-                help="원장에는 의뢰용으로 기록됩니다. 사용처는 배송 크레딧과 통합됩니다."
-              />
-              <AmountField
-                id="defaultShippingFreeCredit"
-                label="배송 크레딧"
-                icon={Truck}
-                value={settings.defaultShippingFreeCredit}
-                onChange={(next) =>
-                  setSettings({ ...settings, defaultShippingFreeCredit: next })
-                }
-                disabled={loading}
-                help="원장에는 배송용으로 기록됩니다. 사용처는 의뢰 크레딧과 통합됩니다."
-              />
-            </div>
+            <AmountField
+              id="defaultRequestFreeCredit"
+              label="무료 크레딧"
+              icon={Gift}
+              value={settings.defaultRequestFreeCredit}
+              onChange={(next) =>
+                setSettings({
+                  ...settings,
+                  defaultRequestFreeCredit: next,
+                  defaultShippingFreeCredit: 0,
+                })
+              }
+              disabled={loading}
+              help="가입 시 무료크레딧 잔액으로 1회 충전됩니다. 기공의뢰·어벗 생산·배송 등에 사용됩니다."
+            />
           </CardContent>
         </Card>
 

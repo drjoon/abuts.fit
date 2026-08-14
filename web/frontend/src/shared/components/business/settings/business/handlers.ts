@@ -386,8 +386,17 @@ export const handleSave = async (
 
     const body: any = res.data || {};
     const data = body?.data || body || {};
-    const welcomeBonusGranted = Boolean(data?.welcomeBonusGranted);
-    const welcomeBonusAmount = Number(data?.welcomeBonusAmount || 0);
+    const welcomeFreeCreditGranted = Boolean(
+      data?.welcomeFreeCreditGranted ??
+        data?.welcomeBonusGranted ??
+        data?.requestFreeCreditGranted,
+    );
+    const welcomeFreeCreditAmount = Number(
+      data?.welcomeFreeCreditAmount ??
+        data?.welcomeBonusAmount ??
+        data?.requestFreeCreditAmount ??
+        0,
+    );
     const verificationRaw = data?.verification;
     const verification = verificationRaw
       ? {
@@ -406,20 +415,20 @@ export const handleSave = async (
       businessNumber: normalizedBusinessNumber,
     }));
 
-    if (welcomeBonusGranted && welcomeBonusAmount > 0) {
+    if (welcomeFreeCreditGranted && welcomeFreeCreditAmount > 0) {
       const formatted = new Intl.NumberFormat("ko-KR").format(
-        Math.max(0, welcomeBonusAmount),
+        Math.max(0, welcomeFreeCreditAmount),
       );
       toast({
         title: "신규 사업자 등록 완료",
-        description: `축하 크레딧 ${formatted}원이 자동 적립되었어요.`,
+        description: `환영 무료크레딧 ${formatted}원이 자동 적립되었어요.`,
       });
     }
 
     return {
       success: true,
-      welcomeBonusGranted,
-      welcomeBonusAmount,
+      welcomeBonusGranted: welcomeFreeCreditGranted,
+      welcomeBonusAmount: welcomeFreeCreditAmount,
       verification,
     };
   } catch {

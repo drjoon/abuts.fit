@@ -14,11 +14,13 @@ import {
 } from "../../services/requestDashboardCache.service.js";
 import {
   assertPracticeTransferPaidCreditSufficient,
+  adjustPracticeTransferHold,
   buildFeeQuotesForTransferDocs,
   buildPracticeTransferQuote,
-  commitPracticeTransferBilling,
   feeQuoteFromBillingDoc,
+  holdPracticeTransferCredits,
   loadPracticeTransferQuoteContext,
+  releasePracticeTransferEscrow,
   rollbackPracticeTransferBilling,
   toBillingPreviewFields,
   toFeeQuoteApi,
@@ -490,7 +492,9 @@ const resolveUnreadCountForAccept = (labAnchorId, { wasUnread }) => {
 };
 
 const persistAcceptedBillingFields = async (doc, billingResult) => {
-  if (!billingResult?.billed || !doc?._id) return doc?.billing || null;
+  if (!doc?._id) return doc?.billing || null;
+  if (!billingResult?.billed && !billingResult?.fees) return doc?.billing || null;
+  const now = new Date();
   const billing = {
     ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
     labFeeTotal: billingResult.fees?.labFeeTotal || 0,
@@ -504,7 +508,24 @@ const persistAcceptedBillingFields = async (doc, billingResult) => {
     labTradingPartnerId: billingResult.labTradingPartnerId || null,
     labSettlementAmount: billingResult.labSettlementAmount || 0,
     abutsRevenueAmount: billingResult.abutsRevenueAmount || 0,
-    billedAt: new Date(),
+    billedAt: now,
+    heldAt: doc.billing?.heldAt || now,
+    heldTotal:
+      billingResult.heldTotal != null
+        ? Number(billingResult.heldTotal)
+        : Number(billingResult.fees?.total || doc.billing?.heldTotal || 0),
+    holdFromPaid:
+      billingResult.fromPaid != null
+        ? Number(billingResult.fromPaid)
+        : Number(doc.billing?.holdFromPaid || 0),
+    holdFromFreeRequest:
+      billingResult.fromFreeRequest != null
+        ? Number(billingResult.fromFreeRequest)
+        : Number(doc.billing?.holdFromFreeRequest || 0),
+    holdFromFreeShipping:
+      billingResult.fromFreeShipping != null
+        ? Number(billingResult.fromFreeShipping)
+        : Number(doc.billing?.holdFromFreeShipping || 0),
     isRemake: toRemakeApiFields(doc).isRemake,
   };
   // 전체 doc.save()는 toothWorks 등 대량 필드를 다시 써 Atlas RTT를 키운다.
@@ -515,7 +536,7 @@ const persistAcceptedBillingFields = async (doc, billingResult) => {
 
 /** 수락 직후 치과/기공소 실시간 페이로드용 확정 기공비 견적 */
 const buildAcceptedFeeQuotePayload = (billingResult, doc) => {
-  if (billingResult?.billed && billingResult.fees) {
+  if (billingResult?.fees && (billingResult?.billed || billingResult?.adjusted !== undefined)) {
     return toFeeQuoteApi({
       fees: billingResult.fees,
       relationshipKind: billingResult.relationshipKind || "none",
@@ -585,28 +606,23 @@ const scheduleAcceptSideEffects = ({
         );
       }
       if (billingResult?.billed) {
-        const spendTotal = Number(billingResult.fees?.total || 0);
-        if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
+        // 에스크로: 생성 시 이미 보류됨. 수락은 조정분만 알림(또는 silent refetch).
+        const adjustDelta =
+          billingResult.heldTotal != null && doc.billing?.heldTotal != null
+            ? Number(billingResult.heldTotal) - Number(doc.billing.heldTotal)
+            : 0;
+        if (doc.practiceBusinessAnchorId) {
           jobs.push(
             emitCreditBalanceUpdatedToBusiness({
               businessAnchorId: doc.practiceBusinessAnchorId,
-              balanceDelta: -spendTotal,
-              reason: "practice_transfer_accept",
+              balanceDelta: Number.isFinite(adjustDelta) ? -adjustDelta : 0,
+              reason: "practice_transfer_hold_adjust",
               refId: doc._id,
+              forceEmit: true,
             }),
           );
         }
-        const settlement = Number(billingResult.labSettlementAmount || 0);
-        if (settlement > 0 && doc.targetLabAnchorId) {
-          jobs.push(
-            emitCreditBalanceUpdatedToBusiness({
-              businessAnchorId: doc.targetLabAnchorId,
-              balanceDelta: settlement,
-              reason: "practice_transfer_lab_settlement",
-              refId: doc._id,
-            }),
-          );
-        }
+        // 기공크레딧 지급은 작업완료(release) 시점
       }
       if (practiceRealtimePayload) {
         jobs.push(
@@ -1783,7 +1799,7 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
-    // 잔액 검사: 전송 시점. 실제 과금은 기공소 의뢰수락(mark-accepted).
+    // 잔액 검사 후 생성. 크레딧은 생성 시 에스크로 보류(기공 적립은 작업완료).
     let autoMatchBudget = null;
     let autoMatchEligibleLabAnchorIds = undefined;
     if (matchingMode === "auto") {
@@ -1886,6 +1902,74 @@ export async function createPracticeTransfer(req, res) {
         relatedRequestIds: [],
       },
     });
+
+    try {
+      const holdResult = await holdPracticeTransferCredits({
+        transfer: transferDoc,
+        toothWorks: toothWorksRaw,
+        holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
+        actorUserId: req.user?._id,
+      });
+      if (holdResult?.held || holdResult?.reason === "already_held") {
+        const heldAt = new Date();
+        const heldBilling = {
+          ...(transferDoc.billing && typeof transferDoc.billing === "object"
+            ? transferDoc.billing
+            : billingPreview),
+          heldAt,
+          heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
+          holdFromPaid: Number(holdResult.fromPaid || 0),
+          holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
+          holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
+        };
+        transferDoc.billing = heldBilling;
+        await PracticeTransfer.updateOne(
+          { _id: transferDoc._id },
+          { $set: { billing: heldBilling } },
+        );
+        if (Number(holdResult.heldTotal || 0) > 0) {
+          await emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: practiceAnchorId,
+            balanceDelta: -Number(holdResult.heldTotal || 0),
+            reason: "practice_transfer_hold",
+            refId: transferDoc._id,
+          });
+        }
+      } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
+        try {
+          await PracticeTransfer.deleteOne({ _id: transferDoc._id });
+        } catch {
+          // ignore
+        }
+        try {
+          await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
+        } catch {
+          // ignore
+        }
+        return res.status(500).json({
+          success: false,
+          message: "기공의뢰 크레딧 보류에 실패했습니다.",
+          reason: holdResult.reason,
+        });
+      }
+    } catch (holdErr) {
+      try {
+        await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
+      } catch {
+        // ignore
+      }
+      try {
+        await PracticeTransfer.deleteOne({ _id: transferDoc._id });
+      } catch {
+        // ignore
+      }
+      const status = Number(holdErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message: holdErr?.message || "기공의뢰 크레딧 보류에 실패했습니다.",
+        ...(holdErr?.payload || {}),
+      });
+    }
 
     // 전송 성공 시 해당 임시저장은 완전 삭제(휴지통 아님). 최근 전송 내역만 남긴다.
     const rawDraftId = String(req.body?.draftId || "").trim();
@@ -3049,12 +3133,31 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
 
       let billingResult = null;
       try {
-        billingResult = await commitPracticeTransferBilling({
+        billingResult = await adjustPracticeTransferHold({
           transfer: doc,
           toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
           actorUserId: req.user?._id,
         });
-        await persistAcceptedBillingFields(doc, billingResult);
+        if (billingResult?.reason === "legacy_already_committed") {
+          billingResult = {
+            ...billingResult,
+            billed: true,
+            fees: billingResult.fees || {
+              labFeeTotal: Number(doc.billing?.labFeeTotal || 0),
+              abutmentRetailTotal: Number(doc.billing?.abutmentRetailTotal || 0),
+              abutmentQty: Number(doc.billing?.abutmentQty || 0),
+              total: Number(doc.billing?.total || 0),
+            },
+            labSettlementAmount: Number(doc.billing?.labSettlementAmount || 0),
+            abutsRevenueAmount: Number(doc.billing?.abutsRevenueAmount || 0),
+            isPartner: Boolean(doc.billing?.isTradingPartner),
+            relationshipKind: doc.billing?.relationshipKind || "none",
+            feeRateApplied: Number(doc.billing?.feeRateApplied || 0),
+            labFeeMultiplier: Number(doc.billing?.labFeeMultiplier || 1),
+          };
+        } else {
+          await persistAcceptedBillingFields(doc, billingResult);
+        }
       } catch (billingErr) {
         // 과금 실패 시 claim 해제 (다른 기공소가 재시도 가능)
         try {
@@ -3142,11 +3245,29 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
 
     if (!alreadyAccepted) {
       try {
-        billingResult = await commitPracticeTransferBilling({
+        billingResult = await adjustPracticeTransferHold({
           transfer: doc,
           toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
           actorUserId: req.user?._id,
         });
+        if (billingResult?.reason === "legacy_already_committed") {
+          billingResult = {
+            ...billingResult,
+            billed: true,
+            fees: billingResult.fees || {
+              labFeeTotal: Number(doc.billing?.labFeeTotal || 0),
+              abutmentRetailTotal: Number(doc.billing?.abutmentRetailTotal || 0),
+              abutmentQty: Number(doc.billing?.abutmentQty || 0),
+              total: Number(doc.billing?.total || 0),
+            },
+            labSettlementAmount: Number(doc.billing?.labSettlementAmount || 0),
+            abutsRevenueAmount: Number(doc.billing?.abutsRevenueAmount || 0),
+            isPartner: Boolean(doc.billing?.isTradingPartner),
+            relationshipKind: doc.billing?.relationshipKind || "none",
+            feeRateApplied: Number(doc.billing?.feeRateApplied || 0),
+            labFeeMultiplier: Number(doc.billing?.labFeeMultiplier || 1),
+          };
+        }
       } catch (billingErr) {
         const status = Number(billingErr?.statusCode || 500);
         return res.status(status).json({
@@ -3180,7 +3301,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       acceptSet.workCanceledBy = null;
     }
 
-    if (billingResult?.billed) {
+    if (billingResult?.billed || billingResult?.fees) {
       await persistAcceptedBillingFields(doc, billingResult);
     }
     if (Object.keys(acceptSet).length > 0) {
@@ -3353,6 +3474,63 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     const skipDesignConfirm = Boolean(doc.production?.skipDesignConfirm);
     const resolvedShippingMode = shippingMode || doc.production?.shippingMode || null;
 
+    let releaseResult = null;
+    try {
+      releaseResult = await releasePracticeTransferEscrow({
+        transfer: doc,
+        toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
+        actorUserId: req.user?._id,
+      });
+      if (
+        releaseResult?.reason === "no_hold" &&
+        !doc.billing?.settledAt &&
+        !doc.billing?.billedAt
+      ) {
+        // 보류 없는 레거시·0원 건은 통과
+      } else if (
+        releaseResult?.reason === "no_hold" &&
+        Number(doc.billing?.heldTotal || doc.billing?.total || 0) > 0 &&
+        !doc.billing?.settledAt
+      ) {
+        return res.status(409).json({
+          success: false,
+          message: "에스크로 보류 내역이 없어 기공크레딧을 지급할 수 없습니다.",
+        });
+      }
+    } catch (releaseErr) {
+      const status = Number(releaseErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message:
+          releaseErr?.message || "작업완료 기공크레딧 지급에 실패했습니다.",
+        ...(releaseErr?.payload || {}),
+      });
+    }
+
+    if (releaseResult?.released || releaseResult?.reason === "already_released") {
+      const settledAt = new Date();
+      const billing = {
+        ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
+        labFeeTotal:
+          releaseResult.fees?.labFeeTotal ?? Number(doc.billing?.labFeeTotal || 0),
+        abutmentRetailTotal:
+          releaseResult.fees?.abutmentRetailTotal ??
+          Number(doc.billing?.abutmentRetailTotal || 0),
+        abutmentQty:
+          releaseResult.fees?.abutmentQty ?? Number(doc.billing?.abutmentQty || 0),
+        total: releaseResult.fees?.total ?? Number(doc.billing?.total || 0),
+        labSettlementAmount:
+          releaseResult.labSettlementAmount ??
+          Number(doc.billing?.labSettlementAmount || 0),
+        abutsRevenueAmount:
+          releaseResult.abutsRevenueAmount ??
+          Number(doc.billing?.abutsRevenueAmount || 0),
+        settledAt,
+      };
+      doc.billing = billing;
+      await PracticeTransfer.updateOne({ _id: doc._id }, { $set: { billing } });
+    }
+
     let relatedRequestIds = [];
     let confirmedAt = null;
     let manufacturerStage = "작업완료";
@@ -3398,6 +3576,18 @@ export async function markReceivedPracticeTransferComplete(req, res) {
         : [],
     };
     await doc.save();
+
+    if (releaseResult?.released) {
+      const settlement = Number(releaseResult.labSettlementAmount || 0);
+      if (settlement > 0 && doc.targetLabAnchorId) {
+        await emitCreditBalanceUpdatedToBusiness({
+          businessAnchorId: doc.targetLabAnchorId,
+          balanceDelta: settlement,
+          reason: "practice_transfer_lab_settlement",
+          refId: doc._id,
+        });
+      }
+    }
 
     const realtimePayload = {
       action: confirmedAt ? "production-confirmed" : "completed",
@@ -3757,6 +3947,12 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         labSettlementAmount: 0,
         abutsRevenueAmount: 0,
         billedAt: null,
+        heldAt: null,
+        heldTotal: 0,
+        holdFromPaid: 0,
+        holdFromFreeRequest: 0,
+        holdFromFreeShipping: 0,
+        settledAt: null,
       };
       doc.requestorDownloadedAt = null;
       doc.requestorDownloadedBy = null;

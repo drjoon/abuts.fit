@@ -3,6 +3,142 @@
 // - web/backend/controllers/admin/adminCredit.controller.js
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/backend/controllers/requests/common.review.helpers.js
+// - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
+
+const SETTLEMENT_LEDGER_TYPES = new Set([
+  "LAB_SETTLEMENT_CHARGE",
+  "LAB_SETTLEMENT_PAYOUT",
+]);
+
+export function isSettlementLedgerType(type) {
+  return SETTLEMENT_LEDGER_TYPES.has(String(type || "").trim().toUpperCase());
+}
+
+const CHARGE_TYPES = [
+  "CHARGE_PAID",
+  "CHARGE_FREE_REQUEST",
+  "CHARGE_FREE_SHIPPING",
+  "LAB_SETTLEMENT_CHARGE",
+];
+const SPEND_TYPES = [
+  "SPEND_PAID",
+  "SPEND_FREE_REQUEST",
+  "SPEND_FREE_SHIPPING",
+  "SPEND_HOLD",
+  "LAB_SETTLEMENT_PAYOUT",
+];
+const ADJUST_TYPES = ["ADJUST"];
+
+const PAID_TYPES = ["CHARGE_PAID", "SPEND_PAID", "SPEND_HOLD"];
+const FREE_TYPES = [
+  "CHARGE_FREE_REQUEST",
+  "CHARGE_FREE_SHIPPING",
+  "SPEND_FREE_REQUEST",
+  "SPEND_FREE_SHIPPING",
+];
+const SETTLEMENT_FILTER_TYPES = [
+  "LAB_SETTLEMENT_CHARGE",
+  "LAB_SETTLEMENT_PAYOUT",
+];
+
+/** creditKind×action → ledger type 목록. 둘 다 있으면 교집합. */
+export function resolveLedgerTypesForFilters({
+  creditKind = "",
+  action = "",
+  type = "",
+} = {}) {
+  const typeRaw = String(type || "").trim().toUpperCase();
+  if (
+    typeRaw &&
+    typeRaw !== "ALL" &&
+    [
+      "CHARGE_PAID",
+      "CHARGE_FREE_REQUEST",
+      "CHARGE_FREE_SHIPPING",
+      "SPEND_PAID",
+      "SPEND_FREE_REQUEST",
+      "SPEND_FREE_SHIPPING",
+      "SPEND_HOLD",
+      "LAB_SETTLEMENT_CHARGE",
+      "LAB_SETTLEMENT_PAYOUT",
+      "ADJUST",
+    ].includes(typeRaw)
+  ) {
+    return [typeRaw];
+  }
+
+  const kind = String(creditKind || "").trim().toUpperCase();
+  const act = String(action || "").trim().toUpperCase();
+
+  let byKind = null;
+  if (kind === "PAID") byKind = new Set(PAID_TYPES);
+  else if (kind === "FREE") byKind = new Set(FREE_TYPES);
+  else if (kind === "SETTLEMENT" || kind === "LAB") {
+    byKind = new Set(SETTLEMENT_FILTER_TYPES);
+  }
+
+  let byAction = null;
+  if (act === "CHARGE") byAction = new Set(CHARGE_TYPES);
+  else if (act === "SPEND") byAction = new Set(SPEND_TYPES);
+  else if (act === "ADJUST") byAction = new Set(ADJUST_TYPES);
+
+  if (!byKind && !byAction) return null;
+
+  if (byKind && byAction) {
+    return [...byKind].filter((t) => byAction.has(t));
+  }
+  return [...(byKind || byAction)];
+}
+
+/**
+ * 장부「잔액」SSOT (행 시점 총잔액).
+ * - 기공소: paid+free(spendable) + settlementCredit
+ * - 치과: settlement=0 → spendable과 동일
+ * - newest-first: 현재 총잔액에서 페이지 스킵·각 행 amount를 역산
+ */
+export function buildLedgerItemsWithBucketBalanceAfter({
+  rows,
+  startIdx,
+  endIdx,
+  spendableBalance = 0,
+  settlementBalance = 0,
+  mapRow,
+}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const start = Math.max(0, Number(startIdx) || 0);
+  const end = Math.max(start, Number(endIdx) || start);
+
+  let skippedSum = 0;
+  for (const row of list.slice(0, start)) {
+    skippedSum += Number(row?.amount || 0);
+  }
+
+  const totalBalance =
+    Number(spendableBalance || 0) + Number(settlementBalance || 0);
+  let runningBalance = totalBalance - skippedSum;
+
+  return list.slice(start, end).map((row) => {
+    const amount = Number(row?.amount || 0);
+    const balanceAfter = runningBalance;
+    runningBalance -= amount;
+
+    const base = {
+      _id: String(row?._id || ""),
+      type: String(row?.type || "ADJUST"),
+      amount,
+      spentPaidAmount: Number(row?.spentPaidAmount || 0),
+      spentFreeAmount: Number(row?.spentFreeAmount || 0),
+      refType: String(row?.refType || ""),
+      refId: row?.refId ? String(row.refId) : "",
+      uniqueKey: String(row?.uniqueKey || ""),
+      spendKind: row?.spendKind || null,
+      includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
+      createdAt: row?.occurredAt || row?.createdAt || new Date(),
+      balanceAfter,
+    };
+    return typeof mapRow === "function" ? mapRow(row, base) : base;
+  });
+}
 
 /**
  * uniqueKey 예: gl:request:<mongoId>:machining_spend | express_surcharge

@@ -1,4 +1,8 @@
 // change-log:
+// - 2026-08-15: 테이블 잔액 칼럼 라벨「잔액」(행 시점 총잔액=유료+무료+기공).
+// - 2026-08-15: 선입금 안내를 유료 카드 툴팁으로 이동. 현재잔액=유료+무료(+기공). 무료·기공 툴팁 추가.
+// - 2026-08-14: 내역에 유료 크레딧=기공료 선입금(선납) 안내 표시.
+// - 2026-08-14: 내역 필터를 버킷(유료/무료/기공)·동작(충전/소비/조정) 이원으로 교체. 기공비 보류 라벨.
 // - 2026-08-14: 치과·기공소 크레딧 내역 UI — 잔액 카드·필터·테이블을 기공크레딧 탭과 동일 최신 스타일로 정리.
 // - 2026-08-13: 기공크레딧 표기 통일(잔액·필터·유형 라벨). 상단 잔액 요약(현재/유료/무료/정산) 중앙 정렬.
 // - 2026-08-12: 치과는 기공크레딧 잔액/필터 숨김. 유료→유료크레딧. 기공소만 settlement 버킷 표시.
@@ -21,6 +25,7 @@
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
+// - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 // - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
 // - web/backend/controllers/admin/adminCredit.controller.js
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -67,19 +72,61 @@ import {
 } from "@/features/requests/components/RequestDetailDialog";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingMode } from "@/shared/shipping/shippingMode";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import {
+  CREDIT_FREE_BUCKET_HINT,
+  CREDIT_LEDGER_FREE_NOTICE_BODY,
+  CREDIT_LEDGER_PREPAID_NOTICE_BODY,
+  CREDIT_LEDGER_SETTLEMENT_NOTICE_BODY,
+  CREDIT_PAID_BUCKET_HINT,
+  CREDIT_SETTLEMENT_BUCKET_HINT,
+} from "@/shared/legal/creditPrepaidCopy";
 
 function BalanceStatCard({
   label,
   value,
   hint,
+  hintTooltip,
   tone = "default",
 }: {
   label: string;
   value: number;
   hint?: string;
+  hintTooltip?: string;
   tone?: "default" | "primary";
 }) {
+  const hintNode =
+    hint && hintTooltip ? (
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="mx-auto cursor-help border-b border-dotted border-slate-400 text-[11px] text-slate-500 sm:text-xs"
+            >
+              {hint}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent
+            side="bottom"
+            className="max-w-xs text-xs leading-relaxed"
+          >
+            <p>{hintTooltip}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    ) : hint ? (
+      <div className="text-center text-[11px] text-slate-500 sm:text-xs">
+        {hint}
+      </div>
+    ) : null;
+
   return (
     <div
       className={cn(
@@ -100,9 +147,9 @@ function BalanceStatCard({
       >
         ₩{value.toLocaleString()}
       </div>
-      {hint ? (
-        <div className="mt-2 border-t border-slate-100/80 pt-2 text-center text-[11px] text-slate-500 sm:text-xs">
-          {hint}
+      {hintNode ? (
+        <div className="mt-2 border-t border-slate-100/80 pt-2 text-center">
+          {hintNode}
         </div>
       ) : null}
     </div>
@@ -116,9 +163,13 @@ type CreditLedgerType =
   | "SPEND_PAID"
   | "SPEND_FREE_REQUEST"
   | "SPEND_FREE_SHIPPING"
+  | "SPEND_HOLD"
   | "LAB_SETTLEMENT_CHARGE"
   | "LAB_SETTLEMENT_PAYOUT"
   | "ADJUST";
+
+type LedgerCreditKindFilter = "all" | "PAID" | "FREE" | "SETTLEMENT";
+type LedgerActionFilter = "all" | "CHARGE" | "SPEND" | "ADJUST";
 
 type CreditLedgerItem = {
   _id: string;
@@ -204,12 +255,13 @@ type SortDirection = "asc" | "desc";
 type LedgerSortKey = "createdAt" | "type" | "amount" | "balanceAfter" | "detail";
 
 const typeLabel = (t: CreditLedgerType) => {
-  if (t === "CHARGE_PAID") return "유료충전";
+  if (t === "CHARGE_PAID") return "유료충전(선입금)";
   if (t === "CHARGE_FREE_REQUEST") return "무료충전(의뢰)";
   if (t === "CHARGE_FREE_SHIPPING") return "무료충전(배송)";
-  if (t === "SPEND_PAID") return "사용(유료)";
+  if (t === "SPEND_PAID") return "사용(선입금)";
   if (t === "SPEND_FREE_REQUEST") return "사용(무료)";
   if (t === "SPEND_FREE_SHIPPING") return "사용(무료)";
+  if (t === "SPEND_HOLD") return "기공비 보류";
   if (t === "LAB_SETTLEMENT_CHARGE") return "기공크레딧 적립";
   if (t === "LAB_SETTLEMENT_PAYOUT") return "기공크레딧 정산";
   return "조정";
@@ -416,7 +468,8 @@ export const CreditLedgerModal = ({
   };
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
-  const [type, setType] = useState<"all" | CreditLedgerType>("all");
+  const [creditKind, setCreditKind] = useState<LedgerCreditKindFilter>("all");
+  const [action, setAction] = useState<LedgerActionFilter>("all");
   const [q, setQ] = useState("");
 
   const [loading, setLoading] = useState(Boolean(embedded));
@@ -447,13 +500,10 @@ export const CreditLedgerModal = ({
   ]);
 
   useEffect(() => {
-    if (
-      !showSettlementCredit &&
-      (type === "LAB_SETTLEMENT_CHARGE" || type === "LAB_SETTLEMENT_PAYOUT")
-    ) {
-      setType("all");
+    if (!showSettlementCredit && creditKind === "SETTLEMENT") {
+      setCreditKind("all");
     }
-  }, [showSettlementCredit, type]);
+  }, [showSettlementCredit, creditKind]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -475,7 +525,8 @@ export const CreditLedgerModal = ({
     } else if (period) {
       params.set("period", period);
     }
-    if (type && type !== "all") params.set("type", type);
+    if (creditKind && creditKind !== "all") params.set("creditKind", creditKind);
+    if (action && action !== "all") params.set("action", action);
     if (q.trim()) params.set("q", q.trim());
     params.set("page", String(pageNum));
     params.set("pageSize", String(PAGE_SIZE));
@@ -558,7 +609,7 @@ export const CreditLedgerModal = ({
     hasMoreRef.current = true;
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, period, type, q, businessAnchorId]);
+  }, [isOpen, period, creditKind, action, q, businessAnchorId]);
 
   // 무한 스크롤
   useEffect(() => {
@@ -717,6 +768,14 @@ export const CreditLedgerModal = ({
             Number(currentBalanceSnapshot.freeShippingCredit ?? 0),
       )
     : 0;
+  const settlementCreditTotal = currentBalanceSnapshot
+    ? Number(currentBalanceSnapshot.settlementCredit ?? 0)
+    : 0;
+  const currentBalanceTotal = currentBalanceSnapshot
+    ? Number(currentBalanceSnapshot.paidCredit || 0) +
+      freeCreditTotal +
+      (showSettlementCredit ? settlementCreditTotal : 0)
+    : 0;
 
   const body = (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -735,20 +794,32 @@ export const CreditLedgerModal = ({
             >
               <BalanceStatCard
                 label="현재 잔액"
-                value={Number(currentBalanceSnapshot.balance || 0)}
+                value={currentBalanceTotal}
                 tone="primary"
-                hint="유료 + 무료"
+                hint={
+                  showSettlementCredit
+                    ? "유료(선입금) + 무료 + 기공"
+                    : "유료(선입금) + 무료"
+                }
               />
               <BalanceStatCard
                 label="유료크레딧"
                 value={Number(currentBalanceSnapshot.paidCredit || 0)}
+                hint={CREDIT_PAID_BUCKET_HINT}
+                hintTooltip={CREDIT_LEDGER_PREPAID_NOTICE_BODY}
               />
-              <BalanceStatCard label="무료크레딧" value={freeCreditTotal} />
+              <BalanceStatCard
+                label="무료크레딧"
+                value={freeCreditTotal}
+                hint={CREDIT_FREE_BUCKET_HINT}
+                hintTooltip={CREDIT_LEDGER_FREE_NOTICE_BODY}
+              />
               {showSettlementCredit ? (
                 <BalanceStatCard
                   label="기공크레딧"
-                  value={Number(currentBalanceSnapshot.settlementCredit ?? 0)}
-                  hint="월 정산 대기"
+                  value={settlementCreditTotal}
+                  hint={CREDIT_SETTLEMENT_BUCKET_HINT}
+                  hintTooltip={CREDIT_LEDGER_SETTLEMENT_NOTICE_BODY}
                 />
               ) : null}
             </div>
@@ -761,32 +832,39 @@ export const CreditLedgerModal = ({
               useStoreCustomRange={false}
             />
 
-            <div className="w-[150px]">
+            <div className="w-[130px]">
               <Select
-                value={type}
-                onValueChange={(v) => setType(v as CreditLedgerType | "all")}
+                value={creditKind}
+                onValueChange={(v) =>
+                  setCreditKind(v as LedgerCreditKindFilter)
+                }
               >
                 <SelectTrigger className="h-9 rounded-xl border-slate-200">
-                  <SelectValue placeholder="전체" />
+                  <SelectValue placeholder="버킷" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  <SelectItem value="SPEND_PAID">사용(유료)</SelectItem>
-                  <SelectItem value="SPEND_FREE_REQUEST">사용(무료)</SelectItem>
-                  <SelectItem value="SPEND_FREE_SHIPPING">사용(무료)</SelectItem>
-                  <SelectItem value="CHARGE_PAID">유료충전</SelectItem>
-                  <SelectItem value="CHARGE_FREE_REQUEST">무료충전</SelectItem>
-                  <SelectItem value="CHARGE_FREE_SHIPPING">무료충전</SelectItem>
+                  <SelectItem value="all">전체 버킷</SelectItem>
+                  <SelectItem value="PAID">유료(선입금)</SelectItem>
+                  <SelectItem value="FREE">무료</SelectItem>
                   {showSettlementCredit ? (
-                    <>
-                      <SelectItem value="LAB_SETTLEMENT_CHARGE">
-                        기공크레딧 적립
-                      </SelectItem>
-                      <SelectItem value="LAB_SETTLEMENT_PAYOUT">
-                        기공크레딧 정산
-                      </SelectItem>
-                    </>
+                    <SelectItem value="SETTLEMENT">기공</SelectItem>
                   ) : null}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="w-[130px]">
+              <Select
+                value={action}
+                onValueChange={(v) => setAction(v as LedgerActionFilter)}
+              >
+                <SelectTrigger className="h-9 rounded-xl border-slate-200">
+                  <SelectValue placeholder="동작" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 동작</SelectItem>
+                  <SelectItem value="CHARGE">충전</SelectItem>
+                  <SelectItem value="SPEND">소비</SelectItem>
                   <SelectItem value="ADJUST">조정</SelectItem>
                 </SelectContent>
               </Select>
@@ -856,7 +934,7 @@ export const CreditLedgerModal = ({
                       className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
                       onClick={() => toggleSort("balanceAfter")}
                     >
-                      행 시점 잔액
+                      잔액
                       {renderSortIcon(
                         sort.key === "balanceAfter",
                         sort.direction,

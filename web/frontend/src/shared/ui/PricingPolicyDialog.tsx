@@ -520,12 +520,12 @@ export const PricingPolicyDialog = ({
 
               {showWelcomeCredit ? (
                 <div className='grid gap-3 sm:grid-cols-2'>
-                  <PolicySection title='가입 축하 무료 크레딧'>
+                  <PolicySection title='가입 환영 무료 크레딧'>
                     <p className='text-2xl font-semibold tracking-tight text-slate-900'>
                       {welcomeRequestCredit.toLocaleString('ko-KR')}원
                     </p>
                     <p className='text-xs text-slate-500'>
-                      신규 가입 기공소 1회 지급
+                      신규 가입 기공소에 무료크레딧으로 1회 지급
                     </p>
                   </PolicySection>
                   <PolicySection title='의뢰 취소'>

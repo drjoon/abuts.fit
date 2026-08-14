@@ -57,8 +57,9 @@ const systemSettingsSchema = new mongoose.Schema(
       abutmentRetailPrice: { type: Number, default: 40000 },
       // 치과(practice) 전용 멤버십 월 구독료. 기공소에는 적용하지 않음.
       practiceMembershipMonthlyFee: { type: Number, default: 55000 },
+      // 기공소 가입 환영 무료크레딧(단일). 레거시 defaultShippingFreeCredit는 0 고정.
       defaultRequestFreeCredit: { type: Number, default: 30000 },
-      defaultShippingFreeCredit: { type: Number, default: 7000 },
+      defaultShippingFreeCredit: { type: Number, default: 0 },
     },
     // 어벗츠 기공수가 카탈로그(자동매칭 예산 기준·플랫폼 SSOT)
     abutsLabFeeSchedule: {

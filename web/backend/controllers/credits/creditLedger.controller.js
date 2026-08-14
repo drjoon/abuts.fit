@@ -24,10 +24,12 @@ import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
   buildCreditLedgerRequestSummary,
   buildFreeCreditGrantReason,
+  buildLedgerItemsWithBucketBalanceAfter,
   CREDIT_LEDGER_REQUEST_SELECT,
   mergeRequestExpressSurchargeIntoMachiningSpend,
   parseSpendKindFromUniqueKey,
   resolveFreeCreditGrantIdFromLedgerItem,
+  resolveLedgerTypesForFilters,
 } from "./creditLedger.utils.js";
 
 async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
@@ -140,6 +142,8 @@ export async function listMyCreditLedger(req, res) {
   const anchorObjectId = new mongoose.Types.ObjectId(String(businessAnchorId));
 
   const typeRaw = String(req.query.type || "").trim().toUpperCase();
+  const creditKindRaw = String(req.query.creditKind || "").trim().toUpperCase();
+  const actionRaw = String(req.query.action || "").trim().toUpperCase();
   const periodRaw = String(req.query.period || "").trim();
   const qRaw = String(req.query.q || "").trim();
 
@@ -168,6 +172,7 @@ export async function listMyCreditLedger(req, res) {
     resolveRequestorKindForAnchor(anchorObjectId, req.user?.requestorKind),
   ]);
   const currentBalance = Number(balanceSnapshot?.balance || 0);
+  const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
 
   const occurredAt = {};
   const sinceFromPeriod = parsePeriod(periodRaw);
@@ -257,6 +262,8 @@ export async function listMyCreditLedger(req, res) {
                         "REQUEST_SPEND_COMMIT",
                         "SHIPPING_SPEND_COMMIT",
                         "PRACTICE_TRANSFER_SPEND_COMMIT",
+                        "PRACTICE_TRANSFER_SPEND_HOLD",
+                        "PRACTICE_TRANSFER_HOLD_ADJUST",
                       ],
                     ],
                   },
@@ -281,6 +288,8 @@ export async function listMyCreditLedger(req, res) {
                         "REQUEST_SPEND_COMMIT",
                         "SHIPPING_SPEND_COMMIT",
                         "PRACTICE_TRANSFER_SPEND_COMMIT",
+                        "PRACTICE_TRANSFER_SPEND_HOLD",
+                        "PRACTICE_TRANSFER_HOLD_ADJUST",
                       ],
                     ],
                   },
@@ -317,6 +326,18 @@ export async function listMyCreditLedger(req, res) {
               },
               {
                 case: {
+                  $in: [
+                    "$eventType",
+                    [
+                      "PRACTICE_TRANSFER_SPEND_HOLD",
+                      "PRACTICE_TRANSFER_HOLD_ADJUST",
+                    ],
+                  ],
+                },
+                then: "SPEND_HOLD",
+              },
+              {
+                case: {
                   $and: [
                     {
                       $in: [
@@ -332,6 +353,23 @@ export async function listMyCreditLedger(req, res) {
                   ],
                 },
                 then: "SPEND_PAID",
+              },
+              {
+                case: {
+                  $and: [
+                    {
+                      $in: [
+                        "$eventType",
+                        [
+                          "REQUEST_SPEND_COMMIT",
+                          "PRACTICE_TRANSFER_SPEND_COMMIT",
+                        ],
+                      ],
+                    },
+                    { $gt: ["$spentFreeAmount", 0] },
+                  ],
+                },
+                then: "SPEND_FREE_REQUEST",
               },
               {
                 case: { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
@@ -352,7 +390,15 @@ export async function listMyCreditLedger(req, res) {
               {
                 case: {
                   $and: [
-                    { $eq: ["$eventType", "PRACTICE_TRANSFER_SPEND_COMMIT"] },
+                    {
+                      $in: [
+                        "$eventType",
+                        [
+                          "PRACTICE_TRANSFER_SPEND_COMMIT",
+                          "PRACTICE_TRANSFER_ESCROW_RELEASE",
+                        ],
+                      ],
+                    },
                     { $gt: ["$amount", 0] },
                   ],
                 },
@@ -367,22 +413,15 @@ export async function listMyCreditLedger(req, res) {
     },
   ];
 
-  if (
-    typeRaw &&
-    typeRaw !== "ALL" &&
-    [
-      "CHARGE_PAID",
-      "CHARGE_FREE_REQUEST",
-      "CHARGE_FREE_SHIPPING",
-      "SPEND_PAID",
-      "SPEND_FREE_REQUEST",
-      "SPEND_FREE_SHIPPING",
-      "LAB_SETTLEMENT_CHARGE",
-      "LAB_SETTLEMENT_PAYOUT",
-      "ADJUST",
-    ].includes(typeRaw)
-  ) {
-    pipeline.push({ $match: { type: typeRaw } });
+  const filterTypes = resolveLedgerTypesForFilters({
+    creditKind: creditKindRaw,
+    action: actionRaw,
+    type: typeRaw,
+  });
+  if (Array.isArray(filterTypes)) {
+    pipeline.push({
+      $match: { type: { $in: filterTypes.length ? filterTypes : ["__none__"] } },
+    });
   }
 
   if (qRaw) {
@@ -410,31 +449,22 @@ export async function listMyCreditLedger(req, res) {
   const startIdx = (page - 1) * pageSize;
   const endIdx = startIdx + pageSize;
 
-  let skippedSum = 0;
-  for (const row of allRows.slice(0, startIdx)) {
-    skippedSum += Number(row?.amount || 0);
-  }
-
-  let runningBalance = currentBalance - skippedSum;
-  const items = allRows.slice(startIdx, endIdx).map((row) => {
-    const balanceAfter = runningBalance;
-    runningBalance -= Number(row?.amount || 0);
-    const uniqueKey = String(row?.uniqueKey || "");
-    return {
-      _id: String(row?._id || ""),
-      type: String(row?.type || "ADJUST"),
-      amount: Number(row?.amount || 0),
-      spentPaidAmount: Number(row?.spentPaidAmount || 0),
-      spentFreeAmount: Number(row?.spentFreeAmount || 0),
-      refType: String(row?.refType || ""),
-      refId: row?.refId ? String(row.refId) : "",
-      uniqueKey,
-      spendKind:
-        row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
-      includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
-      createdAt: row?.occurredAt || row?.createdAt || new Date(),
-      balanceAfter,
-    };
+  const items = buildLedgerItemsWithBucketBalanceAfter({
+    rows: allRows,
+    startIdx,
+    endIdx,
+    spendableBalance: currentBalance,
+    settlementBalance: currentSettlementCredit,
+    mapRow: (row, base) => {
+      const uniqueKey = String(row?.uniqueKey || base.uniqueKey || "");
+      return {
+        ...base,
+        uniqueKey,
+        spendKind:
+          row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
+        includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
+      };
+    },
   });
 
   const requestRefIds = Array.from(

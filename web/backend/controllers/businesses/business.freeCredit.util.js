@@ -51,16 +51,11 @@ async function upsertFreeCreditLedger({
   }
 
   const idempotencyKey = `gl:free_credit_grant:${String(refId)}`;
-  const isShipping = String(refType || "") === "FREE_SHIPPING_CREDIT";
-  const eventType = isShipping ? "CHARGE_FREE_SHIPPING" : "CHARGE_FREE_REQUEST";
-  const accountCode = isShipping
-    ? "REQ_FREE_SHIPPING_CREDIT"
-    : "REQ_FREE_REQUEST_CREDIT";
-  const creditKind = isShipping ? "FREE_SHIPPING" : "FREE_REQUEST";
-
+  // 환영 지급은 무료크레딧 단일(CHARGE_FREE_REQUEST). 레거시 FREE_SHIPPING 계정은
+  // 원장 추적용으로만 유지되며 자동 환영 지급에는 쓰지 않는다.
   const glResult = await postGeneralLedgerJournal({
     idempotencyKey,
-    eventType,
+    eventType: "CHARGE_FREE_REQUEST",
     businessAnchorId,
     refType,
     refId,
@@ -72,21 +67,19 @@ async function upsertFreeCreditLedger({
     },
     lines: [
       {
-        accountCode,
+        accountCode: "REQ_FREE_REQUEST_CREDIT",
         ownerRole: "requestor",
         ownerId: businessAnchorId,
         amount: normalizedAmount,
         amountExcludingVat: normalizedAmount,
         vatAmount: 0,
         amountIncludingVat: normalizedAmount,
-        creditKind,
+        creditKind: "FREE_REQUEST",
         refType,
         refId,
       },
     ],
   });
-
-
 
   return {
     ok: true,
@@ -97,18 +90,22 @@ async function upsertFreeCreditLedger({
 
 function resolveGrantTypeAlias(type) {
   const t = String(type || "").trim().toUpperCase();
-  // 사업자번호당 1회 지급 SSOT. BonusGrant에 남은 legacy type도 이미 지급된
-  // 것으로 간주해 생성 경로 재시도/중복 호출 시 재지급하지 않는다.
-  if (!t || t === "REQUEST_FREE_CREDIT" || t === "WELCOME_BONUS") {
+  // 사업자번호당 환영 무료크레딧 1회. legacy WELCOME_BONUS도 기지급으로 간주.
+  if (
+    !t ||
+    t === "REQUEST_FREE_CREDIT" ||
+    t === "WELCOME_BONUS" ||
+    t === "SHIPPING_FREE_CREDIT" ||
+    t === "FREE_SHIPPING_CREDIT"
+  ) {
     return {
-      queryTypes: ["REQUEST_FREE_CREDIT", "WELCOME_BONUS"],
+      queryTypes: [
+        "REQUEST_FREE_CREDIT",
+        "WELCOME_BONUS",
+        "SHIPPING_FREE_CREDIT",
+        "FREE_SHIPPING_CREDIT",
+      ],
       canonicalType: "REQUEST_FREE_CREDIT",
-    };
-  }
-  if (t === "SHIPPING_FREE_CREDIT" || t === "FREE_SHIPPING_CREDIT") {
-    return {
-      queryTypes: ["SHIPPING_FREE_CREDIT", "FREE_SHIPPING_CREDIT"],
-      canonicalType: "SHIPPING_FREE_CREDIT",
     };
   }
   return { queryTypes: [t], canonicalType: t };
@@ -166,7 +163,8 @@ async function ensureFreeCreditGrant({
   return grant;
 }
 
-export async function grantRequestFreeCreditIfEligible({
+/** 기공소 가입 환영 무료크레딧 1회 지급. 금액 SSOT: defaultRequestFreeCredit. */
+export async function grantWelcomeFreeCreditIfEligible({
   businessAnchorId,
   userId,
   userRole,
@@ -193,6 +191,7 @@ export async function grantRequestFreeCreditIfEligible({
   const amount =
     Number(defaults.defaultRequestFreeCredit ?? 0) ||
     CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultRequestFreeCredit;
+  if (!(amount > 0)) return null;
 
   const grant = await ensureFreeCreditGrant({
     businessAnchorId,
@@ -204,13 +203,17 @@ export async function grantRequestFreeCreditIfEligible({
 
   if (!grant?._id) return null;
 
+  // 레거시 배송 환영만 있고 REQUEST 건이 없으면 grant 문서가 이미 있어
+  // 신규 저널을 건너뛸 수 있다. grantJournalId가 있으면 기지급으로 본다.
+  if (grant.grantJournalId) return null;
+
   const postResult = await upsertFreeCreditLedger({
     businessAnchorId,
     userId,
     amount,
     refType: "FREE_REQUEST_CREDIT",
     refId: grant._id,
-    memo: "환영 무료 의뢰크레딧",
+    memo: "환영 무료크레딧",
   });
   if (!postResult?.ok) return null;
 
@@ -225,7 +228,7 @@ export async function grantRequestFreeCreditIfEligible({
     await emitCreditBalanceUpdatedToBusiness({
       businessAnchorId,
       balanceDelta: amount,
-      reason: "request_free_credit",
+      reason: "welcome_free_credit",
       refId: postResult.journalId || grant._id,
     });
   }
@@ -233,72 +236,8 @@ export async function grantRequestFreeCreditIfEligible({
   return amount;
 }
 
-export async function grantShippingFreeCreditIfEligible({
-  businessAnchorId,
-  userId,
-  userRole,
-}) {
-  if (!businessAnchorId) return null;
-  if (userRole !== "requestor") return null;
-  const businessAnchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({
-      businessType: 1,
-      requestorKind: 1,
-      requestorCapabilities: 1,
-      metadata: 1,
-    })
-    .lean();
-  if (!businessAnchor) return null;
-  if (!isWelcomeFreeCreditEligibleLabAnchor(businessAnchor)) return null;
-
-  const normalizedBusinessNumber = formatBusinessNumber(
-    businessAnchor?.metadata?.businessNumber,
-  );
-  if (!normalizedBusinessNumber) return null;
-
-  const defaults = await loadCreditSettingsDefaults();
-  const amount =
-    Number(defaults.defaultShippingFreeCredit ?? 0) ||
-    CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultShippingFreeCredit;
-
-  const grant = await ensureFreeCreditGrant({
-    businessAnchorId,
-    userId,
-    type: "SHIPPING_FREE_CREDIT",
-    businessNumber: normalizedBusinessNumber,
-    amount,
-  });
-
-  if (!grant?._id) return null;
-
-  const postResult = await upsertFreeCreditLedger({
-    businessAnchorId,
-    userId,
-    amount,
-    refType: "FREE_SHIPPING_CREDIT",
-    refId: grant._id,
-    memo: "환영 무료 배송크레딧",
-  });
-  if (!postResult?.ok) return amount;
-
-  if (!grant.grantJournalId && postResult.journalId) {
-    await FreeCreditGrant.updateOne(
-      { _id: grant._id },
-      { $set: { grantJournalId: String(postResult.journalId) } },
-    );
-  }
-
-  if (postResult.posted) {
-    await emitCreditBalanceUpdatedToBusiness({
-      businessAnchorId,
-      balanceDelta: amount,
-      reason: "free_shipping_credit",
-      refId: postResult.journalId || grant._id,
-    });
-  }
-
-  return amount;
-}
+/** @deprecated use grantWelcomeFreeCreditIfEligible */
+export const grantRequestFreeCreditIfEligible = grantWelcomeFreeCreditIfEligible;
 
 export async function grantSalesmanReferralBonusIfEligible() {
   // 정책 변경: 영업자에게는 정액 보너스를 지급하지 않고 매출 비율 정산으로 대체

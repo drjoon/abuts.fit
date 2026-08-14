@@ -6,7 +6,8 @@
 //
 // Reconciles existing requestor welcome free credits in MONGODB_URI_TEST:
 // - practice anchors: reverse all active welcome grants through an ADJUST journal.
-// - lab anchors with a real business number: create missing request/shipping welcome grants.
+// - lab anchors with a real business number: create missing welcome free-credit grants
+//   (single REQUEST_FREE_CREDIT; legacy shipping welcome is not created).
 // Ledger subaccounts remain distinct for audit; balance APIs expose their sum as freeCredit.
 //
 // Usage:
@@ -250,11 +251,16 @@ async function main() {
     );
     const missingLabGrants = eligibleLabs.flatMap((anchor) => {
       const missing = [];
+      // 환영 무료크레딧은 REQUEST_FREE_CREDIT 단일. 배송 환영은 더 이상 생성하지 않는다.
       if (!labGrantKeys.has(`${String(anchor._id)}:REQUEST_FREE_CREDIT`)) {
-        missing.push({ anchor, type: "REQUEST_FREE_CREDIT", amount: defaults.defaultRequestFreeCredit });
-      }
-      if (!labGrantKeys.has(`${String(anchor._id)}:SHIPPING_FREE_CREDIT`)) {
-        missing.push({ anchor, type: "SHIPPING_FREE_CREDIT", amount: defaults.defaultShippingFreeCredit });
+        // 레거시 SHIPPING만 있어도 기지급으로 본다.
+        if (!labGrantKeys.has(`${String(anchor._id)}:SHIPPING_FREE_CREDIT`)) {
+          missing.push({
+            anchor,
+            type: "REQUEST_FREE_CREDIT",
+            amount: defaults.defaultRequestFreeCredit,
+          });
+        }
       }
       return missing;
     }).filter((item) => Number(item.amount) > 0);
@@ -264,9 +270,7 @@ async function main() {
       requestorAnchors: anchors.length,
       eligibleLabs: eligibleLabs.length,
       welcomeDefaults: {
-        request: defaults.defaultRequestFreeCredit,
-        shipping: defaults.defaultShippingFreeCredit,
-        combinedFreeCredit: defaults.defaultRequestFreeCredit + defaults.defaultShippingFreeCredit,
+        freeCredit: defaults.defaultRequestFreeCredit,
       },
       practiceWelcomeGrantsToReverse: practiceGrants.length,
       practiceWelcomeAmountToReverse: practiceGrants.reduce((sum, { grant }) => sum + Number(grant.amount || 0), 0),
