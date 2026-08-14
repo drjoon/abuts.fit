@@ -12,12 +12,11 @@ import {
 } from "../../utils/practiceTransferAutoMatchBudgetCore.js";
 
 describe("practiceTransferAutoMatchBudgetCore", () => {
-  test("admin ±10% uses Math.ceil", () => {
+  test("admin ±10% floors to 1000원", () => {
     expect(bandFromAdminBase(60000)).toEqual({ min: 54000, max: 66000 });
-    expect(bandFromAdminBase(50001)).toEqual({
-      min: Math.ceil(50001 * 0.9),
-      max: Math.ceil(50001 * 1.1),
-    });
+    // 50000*1.1 부동소수점 → Math.ceil이면 55001; 1000원 절사로 55000
+    expect(bandFromAdminBase(50000)).toEqual({ min: 45000, max: 55000 });
+    expect(bandFromAdminBase(50001)).toEqual({ min: 45000, max: 55000 });
   });
 
   test("defaults cover all prosthetic keys", () => {
@@ -59,6 +58,18 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
         ["crown"],
       ),
     ).toBe(false);
+  });
+
+  test("normalize floors bands to 1000원", () => {
+    expect(
+      normalizeAutoMatchBudget({
+        version: 2,
+        items: { inlay: { min: 45001, max: 55001 } },
+      }),
+    ).toEqual({
+      version: 2,
+      items: { inlay: { min: 45000, max: 55000 } },
+    });
   });
 
   test("legacy total-only budget is treated as unset", () => {

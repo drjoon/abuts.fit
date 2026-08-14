@@ -4,10 +4,18 @@
 // - web/frontend/src/shared/practice/autoMatchBudget.ts
 //
 // 자동매칭 기공비 예산 — 항목별 min/max (순수).
-// 카탈로그(어벗츠 수가) 기준 ±10% Math.ceil 기본값.
+// 카탈로그(어벗츠 수가) 기준 ±10%, 1000원 단위 절사.
 
 const MAX_UNIT_FEE = 50_000_000;
 const DEFAULT_SPREAD = 0.1;
+const FEE_STEP = 1000;
+
+/** 1000원 단위 절사 (미만 버림) */
+export function floorToFeeStep(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n / FEE_STEP) * FEE_STEP;
+}
 
 /** 카탈로그 없을 때 fallback (어벗츠 기본 수가와 동기화) */
 export const ADMIN_LAB_FEE_BASE = {
@@ -70,8 +78,8 @@ export function fallbackAbutsLabFeeCatalog() {
 export function bandFromAdminBase(basePrice, spread = DEFAULT_SPREAD) {
   const base = Math.max(0, Math.round(Number(basePrice) || 0));
   const s = Number.isFinite(Number(spread)) ? Math.max(0, Number(spread)) : DEFAULT_SPREAD;
-  const min = Math.ceil(base * (1 - s));
-  const max = Math.ceil(base * (1 + s));
+  const min = floorToFeeStep(base * (1 - s));
+  const max = floorToFeeStep(base * (1 + s));
   return {
     min: Math.min(MAX_UNIT_FEE, Math.max(0, min)),
     max: Math.min(MAX_UNIT_FEE, Math.max(min, max)),
@@ -107,10 +115,10 @@ export function normalizeAutoMatchBudgetBand(raw) {
   const minRaw = Number(raw.min ?? raw.minLabFee);
   const maxRaw = Number(raw.max ?? raw.maxLabFee);
   if (!Number.isFinite(maxRaw)) return null;
-  const max = Math.min(MAX_UNIT_FEE, Math.max(0, Math.ceil(maxRaw)));
+  const max = Math.min(MAX_UNIT_FEE, Math.max(0, floorToFeeStep(maxRaw)));
   if (max <= 0) return null;
   const min = Number.isFinite(minRaw)
-    ? Math.min(max, Math.max(0, Math.ceil(minRaw)))
+    ? Math.min(max, Math.max(0, floorToFeeStep(minRaw)))
     : 0;
   return { min, max };
 }

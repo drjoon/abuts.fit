@@ -82,6 +82,7 @@ import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutm
 // - 2026-08-14: 치과→기공소 labRating(1~3)·메모. 자동매칭 최소 별 필터.
 // - 2026-08-14: 자동매칭도 practiceBusinessAnchorId 전달(표시명 비공개·기공수가 할증 키).
 // - 2026-08-14: 자동매칭 적격/수락 — 할증 반영 단가가 치과 예산 min~max 안이어야 함.
+// - 2026-08-14: mark-accepted — autoMatch pool emit N+1 제거·사이드이펙트 병렬. FE 수락 busy에서 chat resolve 분리.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -248,24 +249,55 @@ const releaseExpiredAutoMatchClaim = async (doc) => {
   return { released: true, previousLabAnchorId };
 };
 
-const emitAutoMatchPoolCreated = async (realtimePayload) => {
+const normalizeEligibleLabAnchorIds = (raw) =>
+  (Array.isArray(raw) ? raw : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id));
+
+/**
+ * 자동매칭 풀 변경을 적격 기공소 requestor에게 fan-out.
+ * 기공소별 User.find 직렬(N+1) 대신 1회 $in 조회로 수락/생성 지연을 줄인다.
+ */
+const emitAutoMatchPoolCreated = async (
+  realtimePayload,
+  { eligibleLabAnchorIds = undefined } = {},
+) => {
   try {
-    const labs = await loadAutoMatchEligibleLabAnchors({
-      select: { _id: 1, primaryContactUserId: 1 },
-    });
-    for (const lab of labs) {
-      const labId = String(lab?._id || "").trim();
-      if (!labId) continue;
-      invalidateUnreadCountCache(labId);
-      await emitPracticeTransferEventToRequestorUsers({
-        targetLabAnchorId: labId,
-        type: "practice:transfer-created",
-        payload: {
-          ...realtimePayload,
-          matchingMode: "auto",
-          targetLabAnchorId: null,
-        },
+    let labIds = normalizeEligibleLabAnchorIds(eligibleLabAnchorIds);
+    if (!Array.isArray(eligibleLabAnchorIds)) {
+      // 레거시(스냅샷 없음): 인증 자동매칭 기공소 전원
+      const labs = await loadAutoMatchEligibleLabAnchors({
+        select: { _id: 1 },
       });
+      labIds = labs
+        .map((lab) => String(lab?._id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id));
+    }
+    if (!labIds.length) return;
+
+    for (const labId of labIds) {
+      invalidateUnreadCountCache(labId);
+    }
+
+    const users = await User.find({
+      businessAnchorId: {
+        $in: labIds.map((id) => new Types.ObjectId(id)),
+      },
+      role: "requestor",
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const payload = {
+      ...realtimePayload,
+      matchingMode: "auto",
+      targetLabAnchorId: null,
+    };
+    for (const user of users) {
+      const userId = String(user?._id || "").trim();
+      if (!userId) continue;
+      emitAppEventToUser(userId, "practice:transfer-created", payload);
     }
   } catch (err) {
     console.warn(
@@ -1783,7 +1815,9 @@ export async function createPracticeTransfer(req, res) {
     }
 
     if (matchingMode === "auto") {
-      await emitAutoMatchPoolCreated(realtimePayload);
+      await emitAutoMatchPoolCreated(realtimePayload, {
+        eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds,
+      });
     } else {
       await emitPracticeTransferEventToRequestorUsers({
         targetLabAnchorId,
@@ -2410,10 +2444,15 @@ export async function getReceivedPracticeTransfers(req, res) {
             payload: releasePayload,
           });
         }
-        await emitAutoMatchPoolCreated({
-          ...releasePayload,
-          source: "autoMatchRelease",
-        });
+        await emitAutoMatchPoolCreated(
+          {
+            ...releasePayload,
+            source: "autoMatchRelease",
+          },
+          {
+            eligibleLabAnchorIds: expiredDoc?.autoMatch?.eligibleLabAnchorIds,
+          },
+        );
       }
     }
 
@@ -2968,43 +3007,50 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         });
       }
 
+      const creditEmitJobs = [];
       if (billingResult?.billed) {
         const spendTotal = Number(billingResult.fees?.total || 0);
         if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
-          await emitCreditBalanceUpdatedToBusiness({
-            businessAnchorId: doc.practiceBusinessAnchorId,
-            balanceDelta: -spendTotal,
-            reason: "practice_transfer_accept",
-            refId: doc._id,
-          });
+          creditEmitJobs.push(
+            emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: doc.practiceBusinessAnchorId,
+              balanceDelta: -spendTotal,
+              reason: "practice_transfer_accept",
+              refId: doc._id,
+            }),
+          );
         }
         const settlement = Number(billingResult.labSettlementAmount || 0);
         if (settlement > 0 && doc.targetLabAnchorId) {
-          await emitCreditBalanceUpdatedToBusiness({
-            businessAnchorId: doc.targetLabAnchorId,
-            balanceDelta: settlement,
-            reason: "practice_transfer_lab_settlement",
-            refId: doc._id,
-          });
+          creditEmitJobs.push(
+            emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: doc.targetLabAnchorId,
+              balanceDelta: settlement,
+              reason: "practice_transfer_lab_settlement",
+              refId: doc._id,
+            }),
+          );
         }
       }
 
       invalidateUnreadCountCache(labAnchorId);
-      const unreadCount = await PracticeTransfer.countDocuments({
-        ...scope,
-        status: { $ne: "canceled" },
-        requestorReadAt: null,
-      });
+      const [unreadCount] = await Promise.all([
+        PracticeTransfer.countDocuments({
+          ...scope,
+          status: { $ne: "canceled" },
+          requestorReadAt: null,
+        }),
+        ensurePracticeTransferChatRoomOnAccept({
+          transferDoc: doc,
+          labUserId: req.user?._id,
+        }),
+        ...creditEmitJobs,
+      ]);
       setRequestPerfCacheValue(
         unreadCountCacheKey(labAnchorId),
         { unreadCount },
         10 * 1000,
       );
-
-      await ensurePracticeTransferChatRoomOnAccept({
-        transferDoc: doc,
-        labUserId: req.user?._id,
-      });
 
       const realtimePayload = {
         action: "accepted",
@@ -3033,23 +3079,30 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       };
 
       emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-      await emitPracticeTransferEventToPracticeUsers({
-        practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
-        type: "practice:transfer-updated",
-        payload: practiceRealtimePayload,
-        extraUserIds: [doc.practiceUserId],
-      });
-      await emitPracticeTransferEventToRequestorUsers({
-        targetLabAnchorId: labOid,
-        type: "practice:transfer-updated",
-        payload: realtimePayload,
-      });
-      // 다른 eligible 기공소에는 풀에서 사라졌음을 알림
-      await emitAutoMatchPoolCreated({
-        ...realtimePayload,
-        action: "auto-match-claimed",
-        source: "autoMatchClaim",
-      });
+      // 실시간 fan-out은 best-effort — 응답을 막지 않는다.
+      void Promise.all([
+        emitPracticeTransferEventToPracticeUsers({
+          practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+          type: "practice:transfer-updated",
+          payload: practiceRealtimePayload,
+          extraUserIds: [doc.practiceUserId],
+        }),
+        emitPracticeTransferEventToRequestorUsers({
+          targetLabAnchorId: labOid,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+        }),
+        emitAutoMatchPoolCreated(
+          {
+            ...realtimePayload,
+            action: "auto-match-claimed",
+            source: "autoMatchClaim",
+          },
+          {
+            eligibleLabAnchorIds: doc.autoMatch?.eligibleLabAnchorIds,
+          },
+        ),
+      ]).catch(() => {});
 
       return res.status(200).json({
         success: true,
@@ -3129,41 +3182,50 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     }
 
     if (billingResult?.billed) {
+      const creditEmitJobs = [];
       const spendTotal = Number(billingResult.fees?.total || 0);
       if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
-        await emitCreditBalanceUpdatedToBusiness({
-          businessAnchorId: doc.practiceBusinessAnchorId,
-          balanceDelta: -spendTotal,
-          reason: "practice_transfer_accept",
-          refId: doc._id,
-        });
+        creditEmitJobs.push(
+          emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: doc.practiceBusinessAnchorId,
+            balanceDelta: -spendTotal,
+            reason: "practice_transfer_accept",
+            refId: doc._id,
+          }),
+        );
       }
       const settlement = Number(billingResult.labSettlementAmount || 0);
       if (settlement > 0 && doc.targetLabAnchorId) {
-        await emitCreditBalanceUpdatedToBusiness({
-          businessAnchorId: doc.targetLabAnchorId,
-          balanceDelta: settlement,
-          reason: "practice_transfer_lab_settlement",
-          refId: doc._id,
-        });
+        creditEmitJobs.push(
+          emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: doc.targetLabAnchorId,
+            balanceDelta: settlement,
+            reason: "practice_transfer_lab_settlement",
+            refId: doc._id,
+          }),
+        );
+      }
+      if (creditEmitJobs.length) {
+        await Promise.all(creditEmitJobs);
       }
     }
 
-    const unreadCount = await PracticeTransfer.countDocuments({
-      ...scope,
-      status: { $ne: "canceled" },
-      requestorReadAt: null,
-    });
+    const [unreadCount] = await Promise.all([
+      PracticeTransfer.countDocuments({
+        ...scope,
+        status: { $ne: "canceled" },
+        requestorReadAt: null,
+      }),
+      ensurePracticeTransferChatRoomOnAccept({
+        transferDoc: doc,
+        labUserId: req.user?._id,
+      }),
+    ]);
     setRequestPerfCacheValue(
       unreadCountCacheKey(labAnchorId),
       { unreadCount },
       10 * 1000,
     );
-
-    await ensurePracticeTransferChatRoomOnAccept({
-      transferDoc: doc,
-      labUserId: req.user?._id,
-    });
 
     const realtimePayload = {
       action: "accepted",
@@ -3185,18 +3247,19 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
 
-    await emitPracticeTransferEventToPracticeUsers({
-      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
-      type: "practice:transfer-updated",
-      payload: realtimePayload,
-      extraUserIds: [doc.practiceUserId],
-    });
-
-    await emitPracticeTransferEventToRequestorUsers({
-      targetLabAnchorId: doc.targetLabAnchorId,
-      type: "practice:transfer-updated",
-      payload: realtimePayload,
-    });
+    void Promise.all([
+      emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+        extraUserIds: [doc.practiceUserId],
+      }),
+      emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId: doc.targetLabAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+      }),
+    ]).catch(() => {});
 
     return res.status(200).json({
       success: true,
@@ -3786,10 +3849,15 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       });
     }
     if (isAuto) {
-      await emitAutoMatchPoolCreated({
-        ...realtimePayload,
-        source: "workCancelRelease",
-      });
+      await emitAutoMatchPoolCreated(
+        {
+          ...realtimePayload,
+          source: "workCancelRelease",
+        },
+        {
+          eligibleLabAnchorIds: doc.autoMatch?.eligibleLabAnchorIds,
+        },
+      );
     }
 
     return res.status(200).json({

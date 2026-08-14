@@ -2,9 +2,10 @@
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
  * 상단 6뱃지 취소=기공소 작업취소. 리메이크는 발송 건 재의뢰 플래그(파이프라인과 병행).
  * 치과 휴지통(status 취소)은 집계·필터에서 제외.
- * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함. 표시명만 UI 마스킹.
+ * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함. 카드 뱃지 문구도「의뢰」(수락 후「수락」).
+ * 표시명만 UI 마스킹.
  * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
- * 2026-08-14: 자동매칭 → 의뢰 집계/필터 포함. matchingMode=auto 기공소명 UI 마스킹.
+ * 2026-08-14: 자동매칭 → 의뢰 집계/필터·뱃지 라벨. matchingMode=auto 기공소명 UI 마스킹.
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -218,10 +219,16 @@ export const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·수락·완료·취소·발송)와 동일 문구 */
 export const toStatusBadgeLabel = (status: unknown) => {
   const s = String(status || "").trim();
-  if (s === "작업취소") return "취소";
-  return s || "-";
+  if (!s) return "-";
+  if (s === "발송완료" || s === "수신완료" || s === "자동매칭") return "의뢰";
+  if (s === "의뢰수락" || s === "다운로드완료") return "수락";
+  if (s === "작업완료") return "완료";
+  if (s === "작업취소" || s === "취소") return "취소";
+  if (s === "생산진행" || s === "포장.발송") return "발송";
+  return s;
 };
 
 export const canDeletePracticeTransferByStatus = (status: unknown) => {

@@ -501,13 +501,29 @@ export async function commitPracticeTransferBilling({
       .lean(),
   ]);
   const remake = isPracticeTransferRemake(transfer);
-  const abutmentPricingTier = await resolvePracticeAbutmentPricingTier(
-    practiceAnchorId,
-    outerSession,
-  );
-  const abutmentPrices = await loadAbutmentCreditPrices();
   const isAutoMatch =
     String(transfer?.matchingMode || "").trim() === "auto";
+  const [
+    abutmentPricingTier,
+    abutmentPrices,
+    partner,
+    devopsAnchorForFeeRate,
+    autoMatchCatalog,
+  ] = await Promise.all([
+    resolvePracticeAbutmentPricingTier(practiceAnchorId, outerSession),
+    loadCachedAbutmentCreditPrices(),
+    findLabPracticeRelationship({
+      labAnchorId,
+      practiceAnchorId,
+    }),
+    BusinessAnchor.findOne({
+      businessType: "devops",
+    })
+      .select({ payoutRates: 1 })
+      .sort({ createdAt: 1 })
+      .lean(),
+    isAutoMatch ? loadAutoMatchBudgetCatalog() : Promise.resolve(null),
+  ]);
   // 지정: 생성 시 스냅샷 유지(할증 소급 금지). 자동매칭: 수락 기공소의 live 할증.
   const labFeeMultiplier = isAutoMatch
     ? resolveLabPracticeFeeMultiplier(lab, practiceAnchorId)
@@ -532,12 +548,9 @@ export async function commitPracticeTransferBilling({
     budget: transfer?.billing?.autoMatchBudget,
     labFeeSchedule: lab?.labFeeSchedule,
     labFeeMultiplier,
-    catalog: await loadAutoMatchBudgetCatalog(),
+    catalog: autoMatchCatalog || undefined,
   });
-  if (
-    String(transfer?.matchingMode || "").trim() === "auto" &&
-    !budgetCheck.ok
-  ) {
+  if (isAutoMatch && !budgetCheck.ok) {
     const err = new Error(
       "기공소 수가(할증 포함)가 치과 자동매칭 예산(항목별 최소~최대) 밖입니다.",
     );
@@ -553,26 +566,14 @@ export async function commitPracticeTransferBilling({
     throw err;
   }
 
-  const partner = await findLabPracticeRelationship({
-    labAnchorId,
-    practiceAnchorId,
-  });
   const relationshipKind =
     partner?.status === "active" || partner?.status === "referred"
       ? partner.status
       : "none";
   const isPartner = relationshipKind === "active";
 
-  const devopsAnchorForFeeRate = await BusinessAnchor.findOne({
-    businessType: "devops",
-  })
-    .select({ payoutRates: 1 })
-    .sort({ createdAt: 1 })
-    .lean();
   const feeRateApplied = resolvePracticeTransferFeeRate({
-    matchingMode: String(transfer?.matchingMode || "").trim() === "auto"
-      ? "auto"
-      : "direct",
+    matchingMode: isAutoMatch ? "auto" : "direct",
     payoutRates: devopsAnchorForFeeRate?.payoutRates,
   });
 

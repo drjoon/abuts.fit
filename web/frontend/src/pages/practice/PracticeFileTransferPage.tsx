@@ -918,11 +918,16 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨. 작업취소는 UI에서 「취소」로 표기 */
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·수락·완료·취소·발송)와 동일 문구 */
 const toStatusBadgeLabel = (status: unknown) => {
   const s = String(status || "").trim();
-  if (s === "작업취소") return "취소";
-  return s || "-";
+  if (!s) return "-";
+  if (s === "발송완료" || s === "수신완료" || s === "자동매칭") return "의뢰";
+  if (s === "의뢰수락" || s === "다운로드완료") return "수락";
+  if (s === "작업완료") return "완료";
+  if (s === "작업취소" || s === "취소") return "취소";
+  if (s === "생산진행" || s === "포장.발송") return "발송";
+  return s;
 };
 
 /** 기공소 의뢰수락 이전만 치과에서 휴지통 이동 가능 */

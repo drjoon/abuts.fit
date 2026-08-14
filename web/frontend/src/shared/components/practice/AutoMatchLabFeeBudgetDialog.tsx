@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import {
   bandFromAdminBase,
   catalogItemLabel,
+  floorToFeeStep,
   normalizeAbutsLabFeeCatalog,
   resolveAutoMatchBudgetOrDefaults,
   type AbutsLabFeeCatalogItem,
@@ -51,7 +52,7 @@ export function AutoMatchLabFeeBudgetDialog({
   }, [open, value, catalog]);
 
   const setBand = (id: string, side: "min" | "max", raw: string) => {
-    const n = Math.max(0, Math.ceil(Number(raw || 0)));
+    const n = floorToFeeStep(Number(raw || 0));
     const baseRow = rows.find((row) => row.id === id);
     setDraft((prev) => {
       const current =
@@ -59,7 +60,7 @@ export function AutoMatchLabFeeBudgetDialog({
       const nextBand =
         side === "min"
           ? { min: Math.min(n, current.max), max: current.max }
-          : { min: Math.min(current.min, n), max: Math.max(n, 1) };
+          : { min: Math.min(current.min, n), max: Math.max(n, 1000) };
       return {
         version: 2,
         items: { ...prev.items, [id]: nextBand },

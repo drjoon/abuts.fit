@@ -17,6 +17,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-14: 자동매칭 채팅 헤더에도 기공수가 할증(표시명 비공개·practiceAnchorId 내부 키).
+// - 2026-08-14: 의뢰수락 busy — transfer-room 재연결을 await하지 않음(수락 API만 대기).
 // - 2026-08-11: 역할 로딩 스켈레톤(발신/수신)·수신 목록 카드 스켈레톤.
 // - 2026-08-11: 디자인 페이지 삭제 — DesignQueueSection을 의뢰수신 UI에 통합(기간필터 공유).
 // - 2026-08-11: 기공소 의뢰수신 — 발신/수신 탭 제거·항상 수신. 디자인 큐를 의뢰수신으로 편입.
@@ -73,7 +74,10 @@ import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { Building2, Search, UploadCloud } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
-import { PRACTICE_REMAKE_BADGE_CLASS } from "@/shared/practice/practiceRecentTransferList";
+import {
+  PRACTICE_REMAKE_BADGE_CLASS,
+  toStatusBadgeLabel,
+} from "@/shared/practice/practiceRecentTransferList";
 import {
   Dialog,
   DialogContent,
@@ -1829,11 +1833,11 @@ function RequestorPracticeReceivePage({
     setAcceptBusy(true);
     try {
       const ok = await markTransferAccepted(selectedTransfer);
-      // 수락으로 targetLab가 잡힌 뒤(자동매칭 포함) 치과 채팅방을 다시 연결한다.
+      // 채팅방 재연결은 수락 busy에 묶지 않는다(수락 API 응답 후 UI가 바로 풀리게).
       if (ok && dialogOpen) {
         const resolveSeq = ++chatRoomResolveSeqRef.current;
         setChatError("");
-        await resolveTransferChatRoom(selectedTransfer, resolveSeq);
+        void resolveTransferChatRoom(selectedTransfer, resolveSeq);
       }
     } finally {
       setAcceptBusy(false);
@@ -2201,7 +2205,7 @@ function RequestorPracticeReceivePage({
                           : "",
                       )}
                     >
-                      {displayStatus}
+                      {toStatusBadgeLabel(displayStatus)}
                       {displayStatus === "의뢰수락" &&
                       transfer.matchingMode === "auto" &&
                       transfer.autoMatch?.mine &&

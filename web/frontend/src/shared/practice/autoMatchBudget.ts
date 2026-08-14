@@ -56,6 +56,14 @@ export type PracticeTransferAutoMatchBudget = {
 
 const MAX_UNIT_FEE = 50_000_000;
 const DEFAULT_SPREAD = 0.1;
+const FEE_STEP = 1000;
+
+/** 1000원 단위 절사 (미만 버림) */
+export const floorToFeeStep = (value: number): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n / FEE_STEP) * FEE_STEP;
+};
 
 export const bandFromAdminBase = (
   basePrice: number,
@@ -63,8 +71,8 @@ export const bandFromAdminBase = (
 ): AutoMatchBudgetBand => {
   const base = Math.max(0, Math.round(Number(basePrice) || 0));
   const s = Number.isFinite(spread) ? Math.max(0, spread) : DEFAULT_SPREAD;
-  const min = Math.ceil(base * (1 - s));
-  const max = Math.ceil(base * (1 + s));
+  const min = floorToFeeStep(base * (1 - s));
+  const max = floorToFeeStep(base * (1 + s));
   return {
     min: Math.min(MAX_UNIT_FEE, Math.max(0, min)),
     max: Math.min(MAX_UNIT_FEE, Math.max(min, max)),
@@ -138,11 +146,11 @@ export const normalizeAutoMatchBudgetBand = (
   const r = raw as Record<string, unknown>;
   const maxRaw = Number(r.max ?? r.maxLabFee);
   if (!Number.isFinite(maxRaw)) return null;
-  const max = Math.min(MAX_UNIT_FEE, Math.max(0, Math.ceil(maxRaw)));
+  const max = Math.min(MAX_UNIT_FEE, Math.max(0, floorToFeeStep(maxRaw)));
   if (max <= 0) return null;
   const minRaw = Number(r.min ?? r.minLabFee);
   const min = Number.isFinite(minRaw)
-    ? Math.min(max, Math.max(0, Math.ceil(minRaw)))
+    ? Math.min(max, Math.max(0, floorToFeeStep(minRaw)))
     : 0;
   return { min, max };
 };
