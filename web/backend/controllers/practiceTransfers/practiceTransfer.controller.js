@@ -2681,7 +2681,21 @@ export async function markReceivedPracticeTransferRead(req, res) {
     }
 
     // 자동매칭 공개 풀(미클레임)은 특정 기공소 read로 잠그지 않는다.
+    // requestorReadAt을 세우면 전 기공소 공통 읽음이 되므로 no-op.
+    // unreadCount는 반환해 클라이언트가 배지를 0으로 잘못 덮지 않게 한다.
     if (isAutoMatchMode(doc) && isAutoMatchOpenPool(doc)) {
+      const unreadCount = await PracticeTransfer.countDocuments({
+        ...scope,
+        status: { $ne: "canceled" },
+        requestorReadAt: null,
+      });
+      if (labAnchorId) {
+        setRequestPerfCacheValue(
+          unreadCountCacheKey(labAnchorId),
+          { unreadCount },
+          10 * 1000,
+        );
+      }
       return res.status(200).json({
         success: true,
         data: {
@@ -2689,6 +2703,8 @@ export async function markReceivedPracticeTransferRead(req, res) {
           requestorReadAt: null,
           requestorDownloadedAt: null,
           matchingMode: "auto",
+          unreadCount,
+          readApplied: false,
           ...toAutoMatchApiFields(doc, labAnchorId),
         },
       });

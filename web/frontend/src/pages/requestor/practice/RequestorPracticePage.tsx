@@ -35,6 +35,7 @@
 // - 2026-08-11: 의뢰수락 후 치과 transfer-room 재연결. 모달 폭·lab peer 채팅 연결.
 // - 2026-08-13: 의뢰 상세 모달 — 수락 전에도 지정 기공소는 치과 채팅 내역을 표시.
 // - 2026-08-11: 수락 카드에 작업완료/작업취소 버튼. mark-release API.
+// - 2026-08-14: 자동매칭(공개 풀)도 의뢰 뱃지 집계·필터에 포함. 치과/기공소 표시명은 마스킹.
 // - 2026-08-13: 상단 뱃지 6칸 — 의뢰·수락·완료·취소·발송·리메이크(작업취소는 취소 집계).
 // - 2026-08-11: 상단 뱃지 5칸 — 의뢰·수락·완료·발송·추적관리(수신 제거, 수신완료는 의뢰 집계).
 // - 2026-08-12: 수락 카드 — 별도 결과파일 드롭존 제거·카드 점선 외곽·작업완료 왼쪽 드롭 아이콘.
@@ -851,7 +852,11 @@ function RequestorPracticeReceivePage({
 
       const transferId = String(payload.transferId || "").trim();
       const action = String(payload.action || "").trim().toLowerCase();
-      const unreadCount = Number(payload.unreadCount || 0);
+      const hasUnreadCount =
+        payload.unreadCount != null &&
+        Number.isFinite(Number(payload.unreadCount)) &&
+        Number(payload.unreadCount) >= 0;
+      const unreadCount = hasUnreadCount ? Number(payload.unreadCount) : undefined;
       const status = String(payload.status || "").trim();
       const statusLower = status.toLowerCase();
       const isRemovedEvent =
@@ -879,7 +884,7 @@ function RequestorPracticeReceivePage({
           action === "completed"
         ) {
           void loadFirstPage({ silent: true });
-          if (Number.isFinite(unreadCount) && unreadCount >= 0) {
+          if (hasUnreadCount) {
             emitUnreadBadgeRefresh(unreadCount);
           }
           return;
@@ -953,7 +958,8 @@ function RequestorPracticeReceivePage({
         }
       }
 
-      if (Number.isFinite(unreadCount) && unreadCount >= 0) {
+      // unreadCount 없는 fan-out(null/omit)을 0으로 강제하면 사이드바 배지가 잠깐 사라진다.
+      if (hasUnreadCount) {
         emitUnreadBadgeRefresh(unreadCount);
       }
 
@@ -1070,7 +1076,11 @@ function RequestorPracticeReceivePage({
         else if (status === "생산진행") acc.shipping += 1;
         else if (status === "의뢰수락") acc.accepted += 1;
         else if (status === "취소") acc.canceled += 1;
-        else if (status === "발송완료" || status === "수신완료") {
+        else if (
+          status === "발송완료" ||
+          status === "수신완료" ||
+          status === "자동매칭"
+        ) {
           acc.sent += 1;
         }
         if (transfer.isRemake) acc.remake += 1;
@@ -1086,7 +1096,11 @@ function RequestorPracticeReceivePage({
     return baseFilteredTransfers.filter((transfer) => {
       const status = getTransferDisplayStatus(transfer);
       if (statusFilter === "발송완료") {
-        return status === "발송완료" || status === "수신완료";
+        return (
+          status === "발송완료" ||
+          status === "수신완료" ||
+          status === "자동매칭"
+        );
       }
       if (statusFilter === "포장.발송") {
         return status === "생산진행";
@@ -1150,6 +1164,11 @@ function RequestorPracticeReceivePage({
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token || transfer.isRead) return;
+      // 자동매칭 공개 풀은 서버가 requestorReadAt을 세팅하지 않음(특정 기공소 read로 잠금 금지).
+      // 로컬 isRead/배지를 내리면 새로고침 때 다시 뜨는 불일치가 난다.
+      const isOpenPool =
+        transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
+      if (isOpenPool) return;
 
       try {
         const res = await apiFetch<unknown>({
@@ -1165,8 +1184,14 @@ function RequestorPracticeReceivePage({
           body.data && typeof body.data === "object"
             ? (body.data as Record<string, unknown>)
             : body;
-        const readAt = data.requestorReadAt ? String(data.requestorReadAt) : new Date().toISOString();
-        const unreadCount = Number(data.unreadCount || 0);
+        // 서버가 읽음 미적용(공개 풀 no-op 등)이면 로컬/배지를 갱신하지 않는다.
+        if (!data.requestorReadAt) return;
+        const readAt = String(data.requestorReadAt);
+        const hasUnreadCount =
+          data.unreadCount != null &&
+          Number.isFinite(Number(data.unreadCount)) &&
+          Number(data.unreadCount) >= 0;
+        const unreadCount = hasUnreadCount ? Number(data.unreadCount) : undefined;
 
         setTransfers((prev) =>
           prev.map((row) =>
@@ -1181,7 +1206,9 @@ function RequestorPracticeReceivePage({
             : prev,
         );
 
-        emitUnreadBadgeRefresh(unreadCount);
+        if (hasUnreadCount) {
+          emitUnreadBadgeRefresh(unreadCount);
+        }
       } catch {
         // ignore
       }

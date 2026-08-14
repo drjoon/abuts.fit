@@ -544,10 +544,11 @@ Notes:
   - 계정 전환: `AccountSwitcher`
 
 - practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`
-  - 상단 필터 뱃지 UI(기공의뢰·기공의뢰수신·대시보드 기공 행): **의뢰 · 수락 · 완료 · 발송 · 추적관리** (수신 뱃지 없음. `수신완료`는 의뢰 집계에 합산. 발송=`포장.발송` 슬롯)
+  - 상단 필터 뱃지 UI(기공의뢰·기공의뢰수신·대시보드 기공 행): **의뢰 · 수락 · 완료 · 발송 · 추적관리** (수신 뱃지 없음. `수신완료`·`자동매칭` 공개 풀은 의뢰 집계·필터에 합산. 발송=`포장.발송` 슬롯). 카드 뱃지 문구는 `자동매칭` 유지, 상대 표시명만「자동 매칭」마스킹(실명은 DB·앵커에 보존).
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
+    - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(수락 시 갱신).
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」(자동매칭 클레임 중이면 `수락 [남은 시간 …]`)→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서.
   - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto` + 기공비 예산(min/max) 필수. **인증 기공소** 중 예산 구간·기공비 설정 완료 기공소만 `eligibleLabAnchorIds` 스냅샷으로 공개 풀 수신. 선착순 수락(3시간)·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 만료 시 재공개. 성공 시 기공비의 `platformFeeRate`% 플랫폼 수수료. 표시명(치과·기공소)은 상대 비공개. 기공소 채팅 헤더「기공수가 할증」은 자동매칭에도 표시(`practiceBusinessAnchorId` 내부 키). UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「기공소 매칭」)
   - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(클릭 픽커·확장자 툴팁)/`[작업취소]` — 결과파일 필수. 커스텀어벗이면 배송선택. 치과 「생산 진행」 후 커스텀어벗은 어벗츠 자동의뢰

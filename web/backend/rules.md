@@ -357,12 +357,14 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
 - practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`을 사용합니다.
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
+    - 자동매칭 공개 풀(`openPool`)은 `POST .../mark-read`가 no-op(`requestorReadAt` 미설정).
+      미클레임 건은 열람만으로 안읽음 배지가 줄지 않으며, 수락(claim) 시 읽음·배지 갱신.
   - 의뢰수락 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`(레거시 필드명 유지; API alias `requestorAcceptedAt`/`isAccepted`)
   - 잔액 검사 SSOT: `POST /api/practice/transfers`에서 `assertPracticeTransferPaidCreditSufficient`(유료+무료 합산, 함수명 하위호환)
   - 과금 SSOT: `POST /api/practice/transfers/:transferId/mark-accepted`에서 `commitPracticeTransferBilling` (파일 다운로드는 상태·과금에 영향 없음)
   - **자동매칭 SSOT** (`matchingMode: "auto"`):
-    - 생성 시 `targetLabAnchorId=null`, 공개 풀. 자격(**인증 기공소**): `verified` + `practiceTransferAutoMatchEnabled`(참여 ON) + lab+free (`utils/practiceTransferAutoMatch.js`). 관리자 목록/ON은 `verifiedLabCapableAnchorFilter`(kind=lab 또는 레거시 caps.lab)
-    - 참여 ON: 기공소 `POST /api/businesses/me/auto-match-participation` `{ active }` (월 `autoMatchMonthlyFee`) 또는 관리자 `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }`. 성공 시 `platformFeeRate`. 식별 정보 비공개.
+    - 생성 시 `targetLabAnchorId=null`, 공개 풀. `manufacturerStage` UI=`자동매칭`(공정 뱃지 집계는 **의뢰**). 자격(**인증 기공소**): `verified` + `practiceTransferAutoMatchEnabled`(참여 ON) + lab+free (`utils/practiceTransferAutoMatch.js`). 관리자 목록/ON은 `verifiedLabCapableAnchorFilter`(kind=lab 또는 레거시 caps.lab)
+    - 참여 ON: 기공소 `POST /api/businesses/me/auto-match-participation` `{ active }` (월 `autoMatchMonthlyFee`) 또는 관리자 `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }`. 성공 시 `platformFeeRate`. 표시명(치과·기공소)은 API에서 마스킹(`redactAutoMatch*`), 실명은 앵커/클레임 후 `targetLab*`에 보존.
     - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정·만료 claim). 타인 활성 claim은 숨김
     - 수락=`mark-accepted` 원자 FCFS claim(3시간 `autoMatch.deadlineAt`) + 과금. 작업완료=`POST .../mark-complete`(결과파일 필수, 커스텀어벗 시 shippingMode). 작업취소=`POST .../mark-release`(auto는 풀 재공개, direct는 수락 해제+과금 롤백)
     - 치과 생산컨펌=`POST .../confirm-production` → 생산진행. 커스텀어벗이면 기공소→어벗츠 Request 자동 생성

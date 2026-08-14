@@ -2,7 +2,9 @@
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
  * 상단 6뱃지 취소=기공소 작업취소. 리메이크는 발송 건 재의뢰 플래그(파이프라인과 병행).
  * 치과 휴지통(status 취소)은 집계·필터에서 제외.
+ * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함. 표시명만 UI 마스킹.
  * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
+ * 2026-08-14: 자동매칭 → 의뢰 집계/필터 포함. matchingMode=auto 기공소명 UI 마스킹.
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -35,6 +37,7 @@ export type PracticeRecentRequestItem = {
   toothNumbers: string[];
   targetLab: string;
   targetLabAnchorId: string;
+  matchingMode?: "direct" | "auto";
   status: string;
   createdAtTs: number;
   transferId: string;
@@ -117,7 +120,7 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
     filter: "발송완료",
     label: "의뢰",
     countKey: "sent",
-    tooltip: "치과에서 기공의뢰서 전송 후",
+    tooltip: "치과에서 기공의뢰서 전송 후(자동매칭 공개 풀 포함)",
   },
   {
     filter: "의뢰수락",
@@ -278,10 +281,17 @@ export const mapMyPracticeTransferApiRows = (
       const targetLabAnchorId = String(
         practiceRouting.targetLabAnchorId || r.targetLabAnchorId || "",
       ).trim();
+      const matchingMode =
+        String(practiceRouting.matchingMode || r.matchingMode || "").trim() === "auto"
+          ? "auto"
+          : "direct";
       const targetLabFromRouting = String(
         practiceRouting.targetLabName || r.targetLabName || "",
       ).trim();
-      const targetLab = targetLabFromRouting || extractLabNameFromMessage(message) || "-";
+      const targetLab =
+        matchingMode === "auto"
+          ? "자동 매칭"
+          : targetLabFromRouting || extractLabNameFromMessage(message) || "-";
       const toothRaw = String(ci.tooth || "").trim();
       const createdAtRaw = String(r.createdAt || "");
       const strippedTransferMemo = stripPracticeTransferMessageEnvelope(message);
@@ -320,7 +330,8 @@ export const mapMyPracticeTransferApiRows = (
         patientKey: normalizePatientNameKey(patientName),
         toothNumbers: toothRaw ? [toothRaw] : [],
         targetLab,
-        targetLabAnchorId,
+        targetLabAnchorId: matchingMode === "auto" ? "" : targetLabAnchorId,
+        matchingMode,
         status: toStatusLabel(r.manufacturerStage),
         createdAtTs: new Date(createdAtRaw).getTime(),
         transferId: extractTransferIdFromMessage(message),
@@ -662,9 +673,10 @@ export const computeGroupedStatusCounts = (
         acc.accepted += 1;
       } else if (status === "작업취소") {
         acc.canceled += 1;
-      } else if (status === "자동매칭" || status === "취소") {
-        // 치과 휴지통(취소)·자동매칭은 최근전송 뱃지 집계에서 제외
+      } else if (status === "취소") {
+        // 치과 휴지통(취소)은 최근전송 뱃지 집계에서 제외
       } else {
+        // 발송완료·수신완료·자동매칭(공개 풀) → 의뢰
         acc.sent += 1;
       }
       if (request.isRemake) acc.remake += 1;
@@ -684,11 +696,11 @@ export const filterGroupedTransfersByStatus = (
       return (
         status === "발송완료" ||
         status === "수신완료" ||
+        status === "자동매칭" ||
         (status !== "의뢰수락" &&
           status !== "다운로드완료" &&
           status !== "작업완료" &&
           status !== "생산진행" &&
-          status !== "자동매칭" &&
           status !== "취소" &&
           status !== "작업취소" &&
           status !== "포장.발송")
