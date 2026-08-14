@@ -1624,17 +1624,25 @@ export const PracticeTransferRequestIntakePanel = ({
             <Label className="text-sm">
               기공소 <span className="text-destructive">*</span>
             </Label>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground [&_svg]:size-5"
-              title="자동매칭 기공비 범위"
-              aria-label="자동매칭 기공비 범위 설정"
-              onClick={() => setAutoMatchBudgetOpen(true)}
-            >
-              <SlidersHorizontal />
-            </Button>
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground [&_svg]:size-5"
+                    aria-label="자동매칭 기공비 범위 설정"
+                    onClick={() => setAutoMatchBudgetOpen(true)}
+                  >
+                    <SlidersHorizontal />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                  <p>기공비 범위에 맞는 인증 기공소만 자동매칭에 참여합니다.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <AutoMatchMinLabRatingStars
               value={resolvedMinLabRating}
               disabled={!onAutoMatchMinLabRatingChange}

@@ -549,7 +549,7 @@ Notes:
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」(자동매칭 클레임 중이면 `수락 [남은 시간 …]`)→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서.
-  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto` + 기공비 예산(min/max) 필수. **인증 기공소** 중 예산 구간·기공비 설정 완료 기공소만 `eligibleLabAnchorIds` 스냅샷으로 공개 풀 수신. 선착순 수락(3시간)·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 만료 시 재공개. 성공 시 기공비의 `platformFeeRate`% 플랫폼 수수료. 식별 정보 비공개. UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「기공소 매칭」)
+  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto` + 기공비 예산(min/max) 필수. **인증 기공소** 중 예산 구간·기공비 설정 완료 기공소만 `eligibleLabAnchorIds` 스냅샷으로 공개 풀 수신. 선착순 수락(3시간)·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 만료 시 재공개. 성공 시 기공비의 `platformFeeRate`% 플랫폼 수수료. 표시명(치과·기공소)은 상대 비공개. 기공소 채팅 헤더「기공수가 할증」은 자동매칭에도 표시(`practiceBusinessAnchorId` 내부 키). UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「기공소 매칭」)
   - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(클릭 픽커·확장자 툴팁)/`[작업취소]` — 결과파일 필수. 커스텀어벗이면 배송선택. 치과 「생산 진행」 후 커스텀어벗은 어벗츠 자동의뢰
 
 

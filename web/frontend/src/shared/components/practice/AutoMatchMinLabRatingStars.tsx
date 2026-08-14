@@ -3,6 +3,8 @@
 // - web/frontend/src/shared/practice/practiceLabRating.ts
 // - web/backend/utils/practiceLabRating.js
 // - 2026-08-14: 자동매칭 최소 별(클릭으로 채움). 1회 rating은 차단하지 않음.
+// - 2026-08-14: rating 기공소 10곳 이상일 때만 제한. 툴팁 문구 정리.
+// - 2026-08-14: 툴팁·차단 기준 — 2회 이하 평가는 참여 허용.
 import { Star } from "lucide-react";
 import {
   Tooltip,
@@ -11,15 +13,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  AUTO_MATCH_RATING_FILTER_MIN_LABS,
   PRACTICE_LAB_RATING_MAX,
   normalizeAutoMatchMinLabRating,
 } from "@/shared/practice/practiceLabRating";
 import { cn } from "@/shared/ui/cn";
 
 const TOOLTIP_LINES = [
-  "선택한 별 이상인 기공소만 자동매칭에 참여합니다.",
-  "이 치과에서 남긴 rating 기준이며, 기공소에는 보이지 않습니다.",
-  "rating이 1회뿐인 기공소는 차단되지 않습니다(2nd chance).",
+  "자동 매칭에 참여하는 기공소는 우리 치과가 지정한 별 갯수 이상의 평가를 가진 곳입니다.",
+  `우리 치과가 평가한 기공소가 ${AUTO_MATCH_RATING_FILTER_MIN_LABS}개 이상일 때부터 제한이 적용됩니다.`,
+  "기공소가 2회 이하로 평가된 경우 매칭에 참여할 수 있습니다.",
 ] as const;
 
 type AutoMatchMinLabRatingStarsProps = {

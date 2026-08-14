@@ -9,6 +9,7 @@
 // 자동매칭 기공비 예산 SSOT.
 // 성능: 적격 기공소는 전송 생성 시 1회 스냅샷(eligibleLabAnchorIds).
 // 수신 목록은 Mongo multikey로만 필터. 수락 시 항목별 단가 재검증.
+// 할증(labFeeMultiplier) 반영 단가가 치과 예산 min~max 안이어야 적격/수락.
 // 항목 목록은 어벗츠 수가(시스템 카탈로그)에서 동적으로 온다.
 
 import {
@@ -20,9 +21,11 @@ import {
   canonicalizeFeeItemName,
   legacyLabFeeScheduleFromItems,
   normalizeLabFeeItems,
+  normalizeLabFeeMultiplier,
   normalizeLabFeeSchedule,
   resolveLabFeeKeyFromProsthesisType,
   resolveLabFeeScheduleSource,
+  resolveLabPracticeFeeMultiplier,
 } from "./labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
@@ -48,12 +51,14 @@ export {
   normalizeAutoMatchBudget,
   normalizeCatalogItems,
   resolveAutoMatchBudgetOrDefaults,
+  scaleLabUnitPricesByMultiplier,
 } from "./practiceTransferAutoMatchBudgetCore.js";
 import {
   AUTO_MATCH_BUDGET_KEYS,
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
   normalizeCatalogItems,
+  scaleLabUnitPricesByMultiplier,
 } from "./practiceTransferAutoMatchBudgetCore.js";
 
 /** 어벗츠 수가 enabled 항목(자동매칭 모달·예산 기본값 SSOT) */
@@ -188,6 +193,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   toothWorks,
   budget,
   catalog,
+  practiceAnchorId = null,
   practiceLabRatings = null,
   autoMatchMinLabRating = 1,
 } = {}) {
@@ -214,6 +220,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
       requestorCapabilities: 1,
       practiceTransferAutoMatchEnabled: 1,
       labFeeSchedule: 1,
+      labPracticeFeeMultipliers: 1,
     },
   });
 
@@ -232,9 +239,10 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
       continue;
     }
 
-    const unitPrices = labUnitPricesByCatalogId(
-      lab.labFeeSchedule,
-      catalogItems,
+    const multiplier = resolveLabPracticeFeeMultiplier(lab, practiceAnchorId);
+    const unitPrices = scaleLabUnitPricesByMultiplier(
+      labUnitPricesByCatalogId(lab.labFeeSchedule, catalogItems),
+      multiplier,
     );
     if (
       !isLabUnitPricesWithinAutoMatchBudget(
@@ -256,11 +264,12 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   };
 }
 
-/** 수락 시: 현재 기공소 단가가 스냅샷 예산 안인지 */
+/** 수락 시: 할증 반영 기공소 단가가 스냅샷 예산 안인지 */
 export function assertLabWithinAutoMatchBudget({
   toothWorks,
   budget,
   labFeeSchedule,
+  labFeeMultiplier = 1,
   catalog,
 }) {
   const catalogItems = normalizeCatalogItems(catalog);
@@ -270,7 +279,10 @@ export function assertLabWithinAutoMatchBudget({
     toothWorks,
     catalogItems,
   );
-  const unitPrices = labUnitPricesByCatalogId(labFeeSchedule, catalogItems);
+  const unitPrices = scaleLabUnitPricesByMultiplier(
+    labUnitPricesByCatalogId(labFeeSchedule, catalogItems),
+    labFeeMultiplier,
+  );
   if (
     isLabUnitPricesWithinAutoMatchBudget(
       unitPrices,
@@ -279,13 +291,20 @@ export function assertLabWithinAutoMatchBudget({
       catalogItems,
     )
   ) {
-    return { ok: true, budget: band, requiredKeys: requiredIds, unitPrices };
+    return {
+      ok: true,
+      budget: band,
+      requiredKeys: requiredIds,
+      unitPrices,
+      labFeeMultiplier: normalizeLabFeeMultiplier(labFeeMultiplier),
+    };
   }
   return {
     ok: false,
     budget: band,
     requiredKeys: requiredIds,
     unitPrices,
+    labFeeMultiplier: normalizeLabFeeMultiplier(labFeeMultiplier),
     reason: "auto_match_budget_mismatch",
   };
 }

@@ -209,6 +209,22 @@ export function isLabUnitPricesWithinAutoMatchBudget(
   return true;
 }
 
+/** 할증 배수 반영 단가(원 단위 반올림). 예산 비교 SSOT. */
+export function scaleLabUnitPricesByMultiplier(unitPrices, labFeeMultiplier) {
+  const n = Number(labFeeMultiplier);
+  const m =
+    !Number.isFinite(n) || n <= 1
+      ? 1
+      : Math.min(5, Math.round(n * 100) / 100);
+  const src = unitPrices && typeof unitPrices === "object" ? unitPrices : {};
+  if (m === 1) return { ...src };
+  const out = {};
+  for (const [id, price] of Object.entries(src)) {
+    out[id] = Math.max(0, Math.round(Number(price || 0) * m));
+  }
+  return out;
+}
+
 /** 견적용 가상 스케줄 — 카탈로그 items의 min/max 단가 */
 export function buildItemsScheduleFromAutoMatchBudget(budget, catalog, side = "max") {
   const rows = normalizeCatalogItems(catalog);

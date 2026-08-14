@@ -14,7 +14,9 @@
 // - 2026-08-14: quote-context — 기공소/티어/단가/거래처/수수료율 parallel + 60s 캐시(5회 직렬 RTT 제거).
 // - 2026-08-14: 환봉 요청중 판별용 치과 implantFavorites를 견적·청구 계산에 전달.
 // - 2026-08-14: 치과별 기공수가 할증(labPracticeFeeMultipliers → labFeeMultiplier).
-// - 2026-08-14: 기존 의뢰 견적·수락은 생성 시 billing.labFeeMultiplier만(할증 소급 금지).
+// - 2026-08-14: 지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
+// - 2026-08-14: 자동매칭: 생성 시 기공소 미정 → 수락·미청구 견적은 수락 기공소 live 할증.
+// - 2026-08-14: 자동매칭 수락 예산 검증에 할증 반영 단가 사용.
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -504,10 +506,12 @@ export async function commitPracticeTransferBilling({
     outerSession,
   );
   const abutmentPrices = await loadAbutmentCreditPrices();
-  // 수락 과금도 생성 시 billing.labFeeMultiplier 스냅샷 유지(할증은 다음 의뢰부터).
-  const labFeeMultiplier = normalizeLabFeeMultiplier(
-    transfer?.billing?.labFeeMultiplier,
-  );
+  const isAutoMatch =
+    String(transfer?.matchingMode || "").trim() === "auto";
+  // 지정: 생성 시 스냅샷 유지(할증 소급 금지). 자동매칭: 수락 기공소의 live 할증.
+  const labFeeMultiplier = isAutoMatch
+    ? resolveLabPracticeFeeMultiplier(lab, practiceAnchorId)
+    : normalizeLabFeeMultiplier(transfer?.billing?.labFeeMultiplier);
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     implantFavorites: implantFavoritesFromPractice(practice),
@@ -527,6 +531,7 @@ export async function commitPracticeTransferBilling({
     toothWorks,
     budget: transfer?.billing?.autoMatchBudget,
     labFeeSchedule: lab?.labFeeSchedule,
+    labFeeMultiplier,
     catalog: await loadAutoMatchBudgetCatalog(),
   });
   if (
@@ -534,12 +539,13 @@ export async function commitPracticeTransferBilling({
     !budgetCheck.ok
   ) {
     const err = new Error(
-      "기공소 수가가 치과 자동매칭 예산(항목별 최소~최대) 밖입니다.",
+      "기공소 수가(할증 포함)가 치과 자동매칭 예산(항목별 최소~최대) 밖입니다.",
     );
     err.statusCode = 409;
     err.payload = {
       reason: "auto_match_budget_mismatch",
       labFeeTotal: fees.labFeeTotal,
+      labFeeMultiplier,
       autoMatchBudget: budgetCheck.budget,
       requiredKeys: budgetCheck.requiredKeys,
       unitPrices: budgetCheck.unitPrices,
@@ -1165,8 +1171,8 @@ export async function loadPracticeTransferQuoteContext({
 
 /**
  * 목록/상세용 견적. 과금 완료 건은 스냅샷 금액 유지.
- * 미청구는 현재 수가로 재계산하되, 할증은 생성 시 billing.labFeeMultiplier만 사용
- * (치과별 할증은 다음 의뢰부터 적용 — 기존 건에 소급하지 않음).
+ * 미청구·지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
+ * 미청구·자동매칭: 수락/조회 기공소 live 할증(생성 시 기공소 미정).
  */
 export async function buildFeeQuotesForTransferDocs({
   docs,
@@ -1274,7 +1280,7 @@ export async function buildFeeQuotesForTransferDocs({
       practiceMembershipActive: Boolean(membershipByPractice.get(practiceId)),
     });
     const implantFavorites = favoritesByPractice.get(practiceId) || [];
-    // 이 의뢰 견적: 생성 시 스냅샷. 리메이크 미리보기만 현재 할증(다음 의뢰) 반영.
+    // 지정: 생성 스냅샷. 자동매칭·리메이크 미리보기: live 할증.
     const snapLabFeeMultiplier = normalizeLabFeeMultiplier(
       billing?.labFeeMultiplier,
     );
@@ -1282,6 +1288,10 @@ export async function buildFeeQuotesForTransferDocs({
       quoteLabId ? multiplierByLab.get(quoteLabId) : null,
       practiceId,
     );
+    const matchingMode =
+      String(doc?.matchingMode || "").trim() === "auto" ? "auto" : "direct";
+    const feeLabFeeMultiplier =
+      matchingMode === "auto" ? liveLabFeeMultiplier : snapLabFeeMultiplier;
     const storedBudget = normalizeAutoMatchBudget(billing?.autoMatchBudget);
     const autoScheduleMax =
       noLab && storedBudget
@@ -1309,7 +1319,7 @@ export async function buildFeeQuotesForTransferDocs({
       abutmentPrices,
       remake,
       skipAbutmentFees: remake,
-      labFeeMultiplier: snapLabFeeMultiplier,
+      labFeeMultiplier: feeLabFeeMultiplier,
     });
 
     let autoMatchBudgetOut = null;
@@ -1336,8 +1346,6 @@ export async function buildFeeQuotesForTransferDocs({
       ? partnerByPair.get(pairKey(quoteLabId, practiceId))
       : null;
     const kind = relationshipKindFromPartner(partner);
-    const matchingMode =
-      String(doc?.matchingMode || "").trim() === "auto" ? "auto" : "direct";
     const feeRateApplied = resolvePracticeTransferFeeRate({
       matchingMode,
       payoutRates,
@@ -1394,7 +1402,7 @@ export async function buildFeeQuotesForTransferDocs({
           fees,
           relationshipKind: kind,
           feeRateApplied,
-          labFeeMultiplier: snapLabFeeMultiplier,
+          labFeeMultiplier: feeLabFeeMultiplier,
           labSettlementAmount,
           abutsRevenueAmount,
           labTradingPartnerId: partner?._id ? String(partner._id) : null,

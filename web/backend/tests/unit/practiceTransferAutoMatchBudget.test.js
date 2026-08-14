@@ -8,6 +8,7 @@ import {
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
   resolveAutoMatchBudgetOrDefaults,
+  scaleLabUnitPricesByMultiplier,
 } from "../../utils/practiceTransferAutoMatchBudgetCore.js";
 
 describe("practiceTransferAutoMatchBudgetCore", () => {
@@ -64,5 +65,35 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     expect(
       normalizeAutoMatchBudget({ minLabFee: 0, maxLabFee: 100000 }),
     ).toBeNull();
+  });
+
+  test("surcharge unit prices must stay within budget band", () => {
+    const budget = {
+      version: 2,
+      items: { crown: { min: 54000, max: 66000 } },
+    };
+    const base = { crown: 60000 };
+    expect(
+      isLabUnitPricesWithinAutoMatchBudget(
+        scaleLabUnitPricesByMultiplier(base, 1),
+        budget,
+        ["crown"],
+      ),
+    ).toBe(true);
+    expect(
+      isLabUnitPricesWithinAutoMatchBudget(
+        scaleLabUnitPricesByMultiplier(base, 1.1),
+        budget,
+        ["crown"],
+      ),
+    ).toBe(true);
+    expect(
+      isLabUnitPricesWithinAutoMatchBudget(
+        scaleLabUnitPricesByMultiplier(base, 1.2),
+        budget,
+        ["crown"],
+      ),
+    ).toBe(false);
+    expect(scaleLabUnitPricesByMultiplier(base, 1.2).crown).toBe(72000);
   });
 });

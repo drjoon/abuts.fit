@@ -6,11 +6,15 @@
 // - web/frontend/src/shared/practice/practiceLabRating.ts
 // - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
 // - 2026-08-14: 치과→기공소 rating(1~3)·메모. 기록 치과·관리자만. 자동매칭 최소 별(1회는 2nd chance).
+// - 2026-08-14: rating 기공소 10곳 이상일 때만 자동매칭 별 제한 적용.
+// - 2026-08-14: 동일 기공소 평가 2회 이하(3회부터 차단)는 매칭 참여 허용.
 
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 3;
 export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
 export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 1;
+/** 자동매칭 별 제한을 켜려면 이 치과가 rating한 서로 다른 기공소 수 */
+export const AUTO_MATCH_RATING_FILTER_MIN_LABS = 10;
 
 /** 별점 1~3. 범위 밖·비숫자면 null. */
 export function normalizePracticeLabStars(value) {
@@ -74,9 +78,24 @@ export function findPracticeLabRating(list, labAnchorId) {
   return null;
 }
 
+/** 이 치과가 rating을 남긴 서로 다른 기공소 수 */
+export function countRatedLabAnchors(ratings) {
+  const rows = Array.isArray(ratings) ? ratings : [];
+  const seen = new Set();
+  for (const row of rows) {
+    const labId = String(row?.labAnchorId || "").trim();
+    if (!labId) continue;
+    if (normalizePracticeLabStars(row?.stars) == null) continue;
+    seen.add(labId);
+  }
+  return seen.size;
+}
+
 /**
- * 자동매칭 차단: 이 치과가 해당 기공소를 2회 이상 rating했고,
- * 현재 별이 최소 별 미만이면 true. 1회(2nd chance)·미평가·이상이면 false.
+ * 자동매칭 차단:
+ * - rating한 기공소가 10곳 미만이면 제한 없음
+ * - 해당 기공소를 3회 이상 rating했고 현재 별 < 최소 별이면 true
+ * - 2회 이하·미평가·이상이면 false (2nd chance)
  */
 export function isLabBlockedByPracticeRating({
   ratings,
@@ -85,9 +104,12 @@ export function isLabBlockedByPracticeRating({
 } = {}) {
   const min = normalizeAutoMatchMinLabRating(minStars);
   if (min <= PRACTICE_LAB_RATING_MIN) return false;
+  if (countRatedLabAnchors(ratings) < AUTO_MATCH_RATING_FILTER_MIN_LABS) {
+    return false;
+  }
   const row = findPracticeLabRating(ratings, labAnchorId);
   if (!row) return false;
-  if (row.ratingCount < 2) return false;
+  if (row.ratingCount <= 2) return false;
   return row.stars < min;
 }
 

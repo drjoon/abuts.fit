@@ -8,7 +8,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - 2026-08-13: 기공소 상세 모달 — 수락 전에도 치과 채팅 내역 표시. 수락 CTA는 채팅 상단 바.
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스를 버블에 전달.
-// - 2026-08-14: 기공소 기공수가 할증은 치과 채팅 헤더에 배치.
+// - 2026-08-14: 기공소 기공수가 할증은 치과 채팅 헤더에 배치(자동매칭 포함).
 import type { ReactNode, RefObject } from "react";
 import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";

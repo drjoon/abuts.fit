@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-14: 자동매칭 채팅 헤더에도 기공수가 할증(표시명 비공개·practiceAnchorId 내부 키).
 // - 2026-08-11: 역할 로딩 스켈레톤(발신/수신)·수신 목록 카드 스켈레톤.
 // - 2026-08-11: 디자인 페이지 삭제 — DesignQueueSection을 의뢰수신 UI에 통합(기간필터 공유).
 // - 2026-08-11: 기공소 의뢰수신 — 발신/수신 탭 제거·항상 수신. 디자인 큐를 의뢰수신으로 편입.
@@ -2444,9 +2445,7 @@ function RequestorPracticeReceivePage({
         title="의뢰 상세 · 치과 채팅"
         conversationTitle="치과와의 소통"
         chatHeaderAction={
-          selectedTransfer &&
-          selectedTransfer.matchingMode !== "auto" &&
-          selectedTransfer.practiceBusinessAnchorId ? (
+          selectedTransfer?.practiceBusinessAnchorId ? (
             <LabPracticeFeeSurchargeControl
               practiceAnchorId={selectedTransfer.practiceBusinessAnchorId}
               multiplier={selectedTransfer.labFeeMultiplier}

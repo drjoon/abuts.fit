@@ -80,6 +80,8 @@ import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutm
 // - 2026-08-14: GET /my 목록 — countDocuments 제거·레거시 $or 축소·동료/견적 조회 캐시.
 // - 2026-08-14: GET /my $or 분리 병렬 조회. drafts?trashed=all 1쿼리. GET에서 syncIndexes 제거.
 // - 2026-08-14: 치과→기공소 labRating(1~3)·메모. 자동매칭 최소 별 필터.
+// - 2026-08-14: 자동매칭도 practiceBusinessAnchorId 전달(표시명 비공개·기공수가 할증 키).
+// - 2026-08-14: 자동매칭 적격/수락 — 할증 반영 단가가 치과 예산 min~max 안이어야 함.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -1623,6 +1625,7 @@ export async function createPracticeTransfer(req, res) {
         toothWorks: toothWorksRaw,
         budget: autoMatchBudget,
         catalog,
+        practiceAnchorId,
         practiceLabRatings: practiceForBudget?.practiceLabRatings,
         autoMatchMinLabRating:
           practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
@@ -2489,12 +2492,10 @@ export async function getReceivedPracticeTransfers(req, res) {
         },
         { reveal: revealIdentities },
       );
-      const practiceAnchorIdForSurcharge =
-        matchingMode === "auto" && openPool
-          ? null
-          : practiceBusiness
-            ? String(practiceBusiness._id || "")
-            : String(doc?.practiceBusinessAnchorId || "").trim() || null;
+      // 자동매칭도 치과 표시명은 비공개지만, 기공수가 할증 키용 practiceAnchorId는 내부 전달.
+      const practiceAnchorIdForSurcharge = practiceBusiness
+        ? String(practiceBusiness._id || "")
+        : String(doc?.practiceBusinessAnchorId || "").trim() || null;
       const isAccepted =
         Boolean(doc?.requestorDownloadedAt) && !openPool;
       const manufacturerStage = production?.confirmedAt
