@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-14: 기공소 수가 탭 추가(목록·호버 툴팁).
 // - 2026-08-14: 환봉방식 커스텀어벗은 커스텀어벗 요금·크레딧(의뢰·배송)으로 이전.
 // - 2026-08-14: 환봉방식 커스텀어벗(치과 제조사 추가요청) 탭 추가.
 // - 2026-08-13: 기공소 매칭 수수료율은 admin platform-fees API로 개발운영사 앵커에 저장.
@@ -7,6 +8,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
+// - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
@@ -17,11 +19,12 @@ import {
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
+import { AdminLabFeeSchedulesTab } from "@/features/settings/tabs/AdminLabFeeSchedulesTab";
 import { PracticeTransferAutoMatchTab } from "@/pages/devops/components/PracticeTransferAutoMatchTab";
 import { DevopsPlatformFeeTab } from "@/pages/devops/components/DevopsPlatformFeeTab";
-import { CreditCard, FlaskConical } from "lucide-react";
+import { Banknote, CreditCard, FlaskConical } from "lucide-react";
 
-type TabKey = "credits" | "autoMatch";
+type TabKey = "credits" | "autoMatch" | "labFees";
 
 const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
   design: "autoMatch",
@@ -51,6 +54,12 @@ export const AdminPlatformSettingsPage = () => {
             <PracticeTransferAutoMatchTab />
           </div>
         ),
+      },
+      {
+        key: "labFees",
+        label: "기공소 수가",
+        icon: Banknote,
+        content: <AdminLabFeeSchedulesTab />,
       },
     ],
     [],

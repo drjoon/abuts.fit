@@ -3,7 +3,9 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/controllers/admin/admin.settings.controller.js
+// - web/backend/controllers/admin/admin.labFeeSchedules.controller.js
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
+// - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
 // - web/backend/controllers/admin/admin.roundBarAbutment.controller.js
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 import { Router } from "express";
@@ -61,6 +63,7 @@ import {
   getPlatformFeeSettings,
   updatePlatformFeeSettings,
 } from "../../controllers/admin/admin.settings.controller.js";
+import { listLabFeeSchedules } from "../../controllers/admin/admin.labFeeSchedules.controller.js";
 import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { fixSubRole } from "../../controllers/admin/admin.fixSubRole.controller.js";
@@ -213,6 +216,12 @@ router.patch(
   authenticate,
   authorize(["admin", "devops"]),
   updatePlatformFeeSettings,
+);
+router.get(
+  "/settings/lab-fee-schedules",
+  authenticate,
+  authorize(["admin", "devops"]),
+  listLabFeeSchedules,
 );
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용

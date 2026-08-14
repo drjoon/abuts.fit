@@ -1,8 +1,10 @@
 // change-log:
+// - 2026-08-14: 카드 제목「인증 기공소」·ON=자동매칭 공개 풀 참여 자격 카피로 정리.
 // - 2026-08-13: 목록·검색·카드 UI를 최신 파트너 설정 스타일로 정리.
 // related files:
 // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
+// - web/backend/utils/practiceTransferAutoMatch.js
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Card,
@@ -195,16 +197,16 @@ export const PracticeTransferAutoMatchTab = () => {
     if (enabled && !row.verified) {
       toast({
         title: "검증 기공소만 가능",
-        description: "검증된 기공소만 자동매칭을 ON할 수 있습니다.",
+        description: "검증된 기공소만 인증(ON)할 수 있습니다.",
         variant: "destructive",
       });
       return;
     }
     if (enabled && !row.canReceivePracticeTransfer) {
       toast({
-        title: "자동매칭 불가",
+        title: "인증 불가",
         description:
-          "기공의뢰를 수신할 수 있는 기공소만 자동매칭을 ON할 수 있습니다.",
+          "기공의뢰를 수신할 수 있는 기공소만 인증(ON)할 수 있습니다.",
         variant: "destructive",
       });
       return;
@@ -262,7 +264,7 @@ export const PracticeTransferAutoMatchTab = () => {
       setEnabledCount(prevEnabled);
       toast({
         title: "저장 실패",
-        description: "자동매칭 설정을 저장하지 못했습니다.",
+        description: "인증 기공소 설정을 저장하지 못했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -280,17 +282,17 @@ export const PracticeTransferAutoMatchTab = () => {
             </span>
             <div className="min-w-0 space-y-1">
               <h3 className="text-base font-semibold tracking-tight text-slate-900">
-                기공소 매칭
+                인증 기공소
               </h3>
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                ON한 검증 기공소만 자동매칭 공개 풀을 보고 선착순 수락할 수
-                있습니다.
+                인증(ON)한 기공소만 치과의 자동 매칭 의뢰가 들어오면 공개 풀에
+                참여해 선착순 수락할 수 있습니다.
               </p>
             </div>
           </div>
           {!loading && totalCount > 0 ? (
             <span className="inline-flex items-center rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold tabular-nums text-primary-strong ring-1 ring-primary-muted">
-              지정 {enabledCount} / {totalCount}
+              인증 {enabledCount} / {totalCount}
             </span>
           ) : null}
         </div>
@@ -366,7 +368,7 @@ export const PracticeTransferAutoMatchTab = () => {
                             )}
                           >
                             {enabled
-                              ? "매칭 ON"
+                              ? "인증 ON"
                               : row.verified
                                 ? "검증"
                                 : row.status || "미검증"}
@@ -400,7 +402,7 @@ export const PracticeTransferAutoMatchTab = () => {
                         onCheckedChange={(checked) =>
                           void onToggle(row, checked)
                         }
-                        aria-label={`${row.name} 기공의뢰 자동매칭`}
+                        aria-label={`${row.name} 인증 기공소`}
                         className="mt-1 shrink-0"
                       />
                     </div>

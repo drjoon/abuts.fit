@@ -30,7 +30,8 @@ export const verifiedLabCapableAnchorFilter = () => ({
 });
 
 /**
- * 자동매칭 공개 풀 자격: lab+free + verified + devops ON
+ * 자동매칭 공개 풀 자격: lab+free + verified + 인증(ON)
+ * (`practiceTransferAutoMatchEnabled` = 어벗츠 인증 기공소)
  */
 export const isAutoMatchEligibleLabAnchor = (anchor) => {
   if (!anchor) return false;
