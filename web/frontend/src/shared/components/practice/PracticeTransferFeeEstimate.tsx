@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-15: 기공소 수령 — 어벗디자인비를 보철기공비와 함께 처음부터 합산 표시(연기 안내 제거).
 // - 2026-08-15: 기공소 뷰 — 보철기공비|어벗디자인비|어벗츠 몫, 소계(열별)+기공비 총액.
 // - 2026-08-15: 기공소 뷰 — 어벗디자인비를 기공수가·어벗츠 몫 사이 컬럼으로 표시.
 // - 2026-08-15: 기공소 뷰 — CA 시 어벗디자인비(플랫폼 단가×어벗수) 툴팁 행 추가.
@@ -144,7 +145,7 @@ function FeeBreakdownTable({
   /** 라인에 labFeeMin이 없을 때 합계만 예산 하한~상한으로 표시 */
   labTotalMinOverride?: number | null;
   labTotalMaxOverride?: number | null;
-  /** 기공소 뷰: 디자인 완료 시 지급 예정 어벗디자인비(1어벗당) */
+  /** 기공소 뷰: 어벗디자인비(1어벗당) — 보철기공비와 동일하게 기공소 몫 */
   abutmentDesignLabFee?: number;
   abutmentDesignQty?: number;
 }) {
@@ -340,14 +341,6 @@ function FeeBreakdownTable({
           ) : null}
         </>
       ) : null}
-      {designFeeColumn ? (
-        <p
-          className="text-[10px] leading-relaxed text-muted-foreground"
-          style={{ gridColumn: colCount > 1 ? "1 / -1" : undefined }}
-        >
-          어벗디자인비는 디자인 업로드 시 기공정산 크레딧으로 지급됩니다.
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -402,6 +395,7 @@ export function PracticeTransferFeeEstimate({
   );
   // 기공소: 설정 스케줄(labFeeTotal) + CA 어벗디자인비. 치과 예산 min~max는 수락 전 필터용.
   // 수락·청구 후(billed)에는 치과도 확정 기공비(total)를 표시.
+  // 어벗디자인비는 기공소 몫 — 수령 표시에 처음부터 합산(수수료는 보철기공비에만 적용).
   const labDesignFeePreview =
     isLab && abutmentDesignQty > 0 && abutmentDesignLabFee > 0
       ? abutmentDesignLabFee * abutmentDesignQty
@@ -434,14 +428,16 @@ export function PracticeTransferFeeEstimate({
   );
   const hasBudgetRange =
     !confirmed && Boolean(budget) && Number(budget?.maxLabFee) > 0;
+  const labSettlementDisplay =
+    Math.max(0, Math.round(Number(quote.labSettlementAmount || 0))) +
+    labDesignFeePreview;
   const labSettlementDiffers =
     isLab &&
     feeRateApplied > 0 &&
-    Math.round(Number(quote.labSettlementAmount || 0)) !==
-      Math.round(Number(quote.labFeeTotal || 0));
+    labSettlementDisplay !== amount;
   const simple = isLab
     ? labSettlementDiffers
-      ? `수령 ${formatWon(quote.labSettlementAmount)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
+      ? `수령 ${formatWon(labSettlementDisplay)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
       : null
     : quote.isRemake
       ? `리메이크 기공비 ${formatWon(quote.labFeeTotal)}`
@@ -612,7 +608,7 @@ export function PracticeTransferFeeEstimate({
                   <p className="text-[11px] text-muted-foreground">
                     수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
                     <span className="font-medium text-foreground">
-                      {formatWon(quote.labSettlementAmount)}
+                      {formatWon(labSettlementDisplay)}
                     </span>
                   </p>
                 ) : null}
