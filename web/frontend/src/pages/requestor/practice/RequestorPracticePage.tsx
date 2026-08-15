@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-15: 수락 카드 — 어벗디자인 업로드 / 보철 업로드&작업완료 / 취소 3버튼.
 // - 2026-08-15: 수락 기공소 CA 디자인 — 상세 모달 구강스캔 업로드 UI 제거(스캔 없이 수락).
 // - 2026-08-15: 자동매칭 CA — 치과 구강스캔 필수. 지정은 스캔 없이 수락.
 // - 2026-08-14: 자동매칭 채팅 헤더에도 기공수가 할증(표시명 비공개·practiceAnchorId 내부 키).
@@ -2314,6 +2315,170 @@ export function RequestorPracticeReceivePage({
     }
   }, [acceptBusy, markTransferRelease, rejectBusy, releaseBusy, selectedTransfer]);
 
+  const pickDesignAbutmentFile = useCallback((): Promise<File | null> => {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".stl,model/stl,application/sla";
+      input.multiple = false;
+      input.style.display = "none";
+      let settled = false;
+      const finish = (file: File | null) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener("focus", onWindowFocus);
+        input.removeEventListener("change", onChange);
+        input.remove();
+        resolve(file);
+      };
+      const onChange = () => {
+        finish(input.files?.[0] || null);
+      };
+      const onWindowFocus = () => {
+        window.setTimeout(() => {
+          if (!settled) finish(input.files?.[0] || null);
+        }, 400);
+      };
+      input.addEventListener("change", onChange);
+      window.addEventListener("focus", onWindowFocus);
+      document.body.appendChild(input);
+      input.click();
+    });
+  }, []);
+
+  const handleCardDesignUpload = useCallback(
+    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!token) return;
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || cardActionBusyId) return;
+
+      const relatedIds = (transfer.production?.relatedRequestIds || [])
+        .map((raw) => String(raw || "").trim())
+        .filter(Boolean);
+      if (relatedIds.length === 0) {
+        toast({
+          title: "디자인 의뢰 준비 중",
+          description:
+            "구강스캔이 확보되면 디자인 큐에 의뢰가 생성됩니다. 스캔 업로드 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const file = await pickDesignAbutmentFile();
+      if (!file) return;
+
+      setCardActionBusyId(id);
+      try {
+        const uploaded = await uploadFilesWithToast([file]);
+        const temp = uploaded?.[0];
+        const s3Key = String(temp?.key || "").trim();
+        if (!s3Key) {
+          throw new Error("파일 업로드에 실패했습니다.");
+        }
+
+        const requestId = relatedIds[0];
+        const res = await apiFetch<{
+          success?: boolean;
+          message?: string;
+          data?: {
+            productionStarted?: boolean;
+            message?: string;
+          };
+        }>({
+          path: `/api/requests/${encodeURIComponent(requestId)}/design-handoff`,
+          method: "POST",
+          token,
+          jsonBody: {
+            file: {
+              originalName: temp?.originalName || file.name,
+              size: temp?.size ?? file.size,
+              mimetype: temp?.mimetype || file.type || "application/octet-stream",
+              s3Key,
+              s3Url: temp?.location || "",
+            },
+          },
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          throw new Error(
+            String(body.message || "어벗디자인 파일 업로드에 실패했습니다."),
+          );
+        }
+
+        const payload =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const nested =
+          payload.data && typeof payload.data === "object"
+            ? (payload.data as Record<string, unknown>)
+            : {};
+        const productionStarted = Boolean(
+          nested.productionStarted ?? payload.productionStarted,
+        );
+        const nowIso = new Date().toISOString();
+        const nextCount =
+          Number(transfer.production?.designFileCount || 0) + 1;
+        const productionPatch: ReceivedPracticeTransfer["production"] = {
+          ...transfer.production,
+          designFileCount: nextCount,
+          designReadyAt: transfer.production?.designReadyAt || nowIso,
+          labDesignConfirmedAt:
+            transfer.production?.labDesignConfirmedAt || nowIso,
+          skipDesignConfirm: true,
+          abutmentProductionStartedAt: productionStarted
+            ? transfer.production?.abutmentProductionStartedAt || nowIso
+            : transfer.production?.abutmentProductionStartedAt || null,
+        };
+
+        setTransfers((prev) =>
+          prev.map((row) =>
+            row._id === transfer._id || row.transferId === transfer.transferId
+              ? { ...row, production: productionPatch }
+              : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev &&
+          (prev._id === transfer._id || prev.transferId === transfer.transferId)
+            ? { ...prev, production: productionPatch }
+            : prev,
+        );
+
+        toast({
+          title: productionStarted ? "제조 주문 시작" : "어벗디자인 업로드",
+          description: productionStarted
+            ? "완성 어벗 STL이 업로드되어 제조사에 주문이 들어갔습니다."
+            : "완성 어벗 STL이 업로드되었습니다.",
+        });
+      } catch (error) {
+        toast({
+          title: "업로드 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "어벗디자인 파일 업로드 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setCardActionBusyId("");
+      }
+    },
+    [
+      cardActionBusyId,
+      pickDesignAbutmentFile,
+      toast,
+      token,
+      uploadFilesWithToast,
+    ],
+  );
+
   const handleCardComplete = useCallback(
     (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
       event.preventDefault();
@@ -2781,8 +2946,8 @@ export function RequestorPracticeReceivePage({
                   0 &&
                 !transfer.production?.abutmentProductionStartedAt ? (
                   <div className="mt-2 rounded-md border border-dashed border-amber-400/50 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
-                    커스텀어벗 디자인을 완료한 뒤 상단 디자인 큐에서 완성 어벗 STL을
-                    업로드하세요. 업로드와 함께 제조사에 주문이 들어갑니다.
+                    커스텀어벗 디자인을 완료한 뒤 「어벗디자인 파일 업로드」로 완성 어벗
+                    STL을 올리세요. 업로드와 함께 제조사에 주문이 들어갑니다.
                   </div>
                 ) : null}
 
@@ -2812,21 +2977,60 @@ export function RequestorPracticeReceivePage({
                           : "어벗 디자인 확인"}
                       </Button>
                     ) : null}
+                    {transferHasCustomAbutment(transfer) &&
+                    Number(
+                      transfer.production?.designFileCount ||
+                        transfer.production?.designFiles?.length ||
+                        0,
+                    ) === 0 &&
+                    !transfer.production?.abutmentProductionStartedAt ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={cardBusy}
+                            className="focus-visible:ring-0 focus-visible:ring-offset-0"
+                            onClick={(event) =>
+                              void handleCardDesignUpload(transfer, event)
+                            }
+                          >
+                            <UploadCloud className="h-4 w-4" />
+                            {cardBusy ? "처리 중..." : "어벗디자인 파일 업로드"}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-xs">
+                          완성 어벗 STL을 올리면 제조사에 자동 주문되며, 어벗디자인비가
+                          지급됩니다.
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           type="button"
                           size="sm"
+                          variant={
+                            transferHasCustomAbutment(transfer) &&
+                            Number(
+                              transfer.production?.designFileCount ||
+                                transfer.production?.designFiles?.length ||
+                                0,
+                            ) === 0 &&
+                            !transfer.production?.abutmentProductionStartedAt
+                              ? "secondary"
+                              : "default"
+                          }
                           disabled={cardBusy}
                           className="focus-visible:ring-0 focus-visible:ring-offset-0"
                           onClick={(event) => handleCardComplete(transfer, event)}
                         >
                           <UploadCloud className="h-4 w-4" />
-                          {cardBusy ? "처리 중..." : "작업완료"}
+                          {cardBusy ? "처리 중..." : "보철 업로드 & 작업완료"}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs text-xs">
-                        크라운 결과 파일을 올려 작업완료합니다.
+                        크라운 등 보철 결과 파일을 올려 작업완료합니다.
                         {PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""}
                       </TooltipContent>
                     </Tooltip>
@@ -2837,7 +3041,7 @@ export function RequestorPracticeReceivePage({
                       disabled={cardBusy}
                       onClick={(event) => void handleCardRelease(transfer, event)}
                     >
-                      작업취소
+                      취소
                     </Button>
                   </div>
                 ) : null}

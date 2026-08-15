@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: PTX 수락 기공소는 design-claim 없이 핸드오프(카드 업로드). internalLab 허용.
 // - 2026-08-15: PTX 연동은 수락 기공소 디자인 → 업로드 즉시 제조 착수 + 어벗디자인비 지급.
 // - 2026-08-15: PTX 연동 의뢰는 디자인 STL만 저장·미러하고 가공 진입은 기공소/치과 컨펌 후.
 // - 2026-08-10: 디자인 완료 어벗 STL 업로드 → 동일 Request 제조사 가공 핸드오프.
@@ -59,7 +60,7 @@ export async function handoffDesignToProduction(req, res) {
     }
 
     const role = String(req.user?.role || "").trim();
-    if (role !== "requestor" && role !== "admin") {
+    if (role !== "requestor" && role !== "admin" && role !== "internalLab") {
       return res.status(403).json({
         success: false,
         message: "디자인 핸드오프는 지정 디자이너만 할 수 있습니다.",
@@ -115,11 +116,14 @@ export async function handoffDesignToProduction(req, res) {
       });
     }
 
+    // 수락 기공소(PTX)는 카드에서 바로 업로드 — 디자인 파트너 클레임 불필요.
+    const acceptingLabPtx = isAcceptingLabForPtxDesignRequest(req.user, request);
     const claimerId = request?.designClaim?.claimedBy
       ? String(request.designClaim.claimedBy)
       : "";
     if (
       role !== "admin" &&
+      !acceptingLabPtx &&
       (!isDesignClaimActive(request.designClaim) ||
         !claimerId ||
         claimerId !== userId)
