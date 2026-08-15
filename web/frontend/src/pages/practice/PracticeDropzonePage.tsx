@@ -844,7 +844,7 @@ export const PracticeDropzonePage = () => {
   const missingStep1Fields = useMemo(() => {
     const missing = [...missingRequiredFields];
     if (!orderDate) missing.push("주문일");
-    if (!arrivalDate) missing.push("도착일");
+    if (!arrivalDate) missing.push("치과도착일");
     return missing;
   }, [missingRequiredFields, orderDate, arrivalDate]);
   const autoClinicName = useMemo(() => {
@@ -1625,8 +1625,8 @@ export const PracticeDropzonePage = () => {
 
     if (arrivalDate < orderDate) {
       toast({
-        title: "도착일을 확인해주세요",
-        description: "도착일은 주문일보다 빠를 수 없습니다.",
+        title: "치과도착일을 확인해주세요",
+        description: "치과도착일은 주문일보다 빠를 수 없습니다.",
         variant: "destructive",
       });
       return false;

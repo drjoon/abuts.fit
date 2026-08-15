@@ -64,6 +64,7 @@ import {
   isAbutmentDesignReady,
   normalizeResultFiles,
   resolveOralScanFilesForAccept,
+  shouldLockLabOralScanDownload,
   tryStartAbutmentProduction,
 } from "../../services/practiceTransferProduction.service.js";
 import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutmentPresets.js";
@@ -361,9 +362,12 @@ const toProductionApiFields = (production) => {
   };
 };
 
-const toTransferFilesApiFields = (transferDoc) => {
+const toTransferFilesApiFields = (transferDoc, options = {}) => {
   const files = normalizeResultFiles(transferDoc?.files);
   const transferMongoId = String(transferDoc?._id || "").trim();
+  const redactLabOralScanKeys =
+    Boolean(options?.redactLabOralScanKeys) &&
+    shouldLockLabOralScanDownload(transferDoc);
   return {
     fileCount: files.length,
     files: files.map((item, idx) => ({
@@ -373,8 +377,11 @@ const toTransferFilesApiFields = (transferDoc) => {
       originalName: String(item?.file?.originalName || "").trim(),
       mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
       size: Number(item?.file?.size || 0),
-      s3Key: String(item?.file?.s3Key || "").trim(),
+      s3Key: redactLabOralScanKeys
+        ? ""
+        : String(item?.file?.s3Key || "").trim(),
     })),
+    oralScanDownloadLocked: redactLabOralScanKeys,
   };
 };
 
@@ -2837,6 +2844,7 @@ export async function getReceivedPracticeTransfers(req, res) {
                 : openPool
                   ? "자동매칭"
                   : "발송완료";
+      const oralScanDownloadLocked = shouldLockLabOralScanDownload(doc);
 
       return {
         _id: String(doc?._id || ""),
@@ -2878,8 +2886,11 @@ export async function getReceivedPracticeTransfers(req, res) {
           originalName: String(item?.file?.originalName || "").trim(),
           mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
           size: Number(item?.file?.size || 0),
-          s3Key: String(item?.file?.s3Key || "").trim(),
+          s3Key: oralScanDownloadLocked
+            ? ""
+            : String(item?.file?.s3Key || "").trim(),
         })),
+        oralScanDownloadLocked,
         resultFileCount: resultFiles.length,
         resultFiles: resultFiles.map((item, idx) => ({
           id: `${String(doc?._id || "")}::result::${idx + 1}`,
@@ -3218,7 +3229,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             billing: doc.billing || null,
             production: toProductionApiFields(doc.production),
             alreadyAccepted: true,
-            ...toTransferFilesApiFields(doc),
+            ...toTransferFilesApiFields(doc, { redactLabOralScanKeys: true }),
             ...toAutoMatchApiFields(doc, labAnchorId),
           },
         });
@@ -3403,7 +3414,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           production: toProductionApiFields(doc.production),
           unreadCount,
           abutmentRequestIds: abutmentEnsure.requestIds || [],
-          ...toTransferFilesApiFields(doc),
+          ...toTransferFilesApiFields(doc, { redactLabOralScanKeys: true }),
           ...toAutoMatchApiFields(doc, labAnchorId),
         },
       });
@@ -3554,7 +3565,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         production: toProductionApiFields(doc.production),
         abutmentRequestIds: abutmentEnsure.requestIds || [],
         unreadCount,
-        ...toTransferFilesApiFields(doc),
+        ...toTransferFilesApiFields(doc, { redactLabOralScanKeys: true }),
       },
     });
   } catch (error) {

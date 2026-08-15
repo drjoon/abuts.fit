@@ -6,6 +6,7 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - 2026-08-15: 기공소 CA — 어벗츠 디자인 미도착 시 구강스캔(의뢰 파일) 다운로드 잠금.
 // - 2026-08-15: 지정 기공소 CA — 치과 미첨부 시 수락 전 구강스캔 업로드. 자동매칭은 치과 필수.
 // - 2026-08-13: 기공소 상세 모달 — 수락 전에도 치과 채팅 내역 표시. 수락 CTA는 채팅 상단 바.
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스를 버블에 전달.
@@ -46,6 +47,7 @@ import {
 } from "@/shared/practice/practiceWorkPeriod";
 import { PracticeTransferFileDropTarget } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import {
+  ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   ORAL_SCAN_REQUIRED_FROM_LAB,
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
 } from "@/shared/practice/oralScanRequirement";
@@ -86,6 +88,12 @@ type PracticeTransferDetailChatDialogProps = {
   pendingOralScanFiles?: Array<{ id: string; name: string; size: number }>;
   onPickOralScanFiles?: (files: File[]) => void;
   onRemoveOralScanFile?: (id: string) => void;
+  /**
+   * 기공소: 어벗츠 CA 디자인 미도착 시 의뢰(구강스캔) 파일 다운로드 잠금.
+   * 디자인 큐·치과 발신 모달에서는 쓰지 않는다.
+   */
+  requestFilesDownloadLocked?: boolean;
+  requestFilesDownloadLockedReason?: string;
   /** 기공소 작업완료 결과 파일 (있을 때만 표시) */
   resultFilesLabel?: string;
   resultFiles?: PracticeTransferDialogFileItem[];
@@ -177,6 +185,8 @@ export function PracticeTransferDetailChatDialog({
   pendingOralScanFiles = [],
   onPickOralScanFiles,
   onRemoveOralScanFile,
+  requestFilesDownloadLocked = false,
+  requestFilesDownloadLockedReason = ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   resultFilesLabel = "작업 결과 파일",
   resultFiles = [],
   productionConfirmBusy = false,
@@ -338,11 +348,20 @@ export function PracticeTransferDetailChatDialog({
                     variant="outline"
                     size="sm"
                     onClick={() => void onDownloadAllFiles()}
-                    disabled={files.length === 0 || downloadAllBusy}
+                    disabled={
+                      files.length === 0 ||
+                      downloadAllBusy ||
+                      requestFilesDownloadLocked
+                    }
                   >
                     {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
                   </Button>
                 </div>
+                {requestFilesDownloadLocked && files.length > 0 ? (
+                  <p className="mt-2 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+                    {requestFilesDownloadLockedReason}
+                  </p>
+                ) : null}
                 {files.length ? (
                   <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">
                     {files.map((file, idx) => {
@@ -352,6 +371,7 @@ export function PracticeTransferDetailChatDialog({
                         (busyKey
                           ? downloadingFileKeys.includes(busyKey)
                           : false);
+                      const isLocked = requestFilesDownloadLocked;
                       const progress = busyKey
                         ? Number(downloadProgressByKey[busyKey] ?? 0)
                         : 0;
@@ -363,15 +383,22 @@ export function PracticeTransferDetailChatDialog({
                           <button
                             type="button"
                             onClick={() => {
-                              if (isBusy) return;
+                              if (isBusy || isLocked) return;
                               void onDownloadTransferFile(file);
                             }}
-                            disabled={isBusy}
+                            disabled={isBusy || isLocked}
+                            title={
+                              isLocked
+                                ? requestFilesDownloadLockedReason
+                                : undefined
+                            }
                             className="block w-full text-left text-sm hover:underline disabled:opacity-60 disabled:pointer-events-none disabled:no-underline"
                           >
                             {isBusy
                               ? `다운로드 중 ${Math.round(progress)}% · `
-                              : ""}
+                              : isLocked
+                                ? "다운로드 대기 · "
+                                : ""}
                             {file.fileName} ·{" "}
                             {formatFileSize(Number(file.size || 0))}
                           </button>

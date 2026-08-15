@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-15: 기공기간 5일 미만 시 빨간 표시·거부 가능 툴팁.
 // - 2026-08-15: 치과·기공소 툴팁 문구 분리.
+// - 2026-08-15: 작업기간 영업일 표기(+N영업일 / N영업일).
 
 import {
   Tooltip,
@@ -23,7 +24,7 @@ import {
 type PracticeWorkPeriodTextProps = {
   orderDate?: string | null;
   arrivalDate?: string | null;
-  /** lead: +N일(폼). days: N일(목록/상세). labeled: 작업기간 N일 */
+  /** lead: +N영업일(폼). days: N영업일(목록/상세). labeled: 작업기간 N영업일 */
   variant?: "lead" | "days" | "labeled";
   /** practice=치과 발신, lab=기공소 수신 */
   viewer?: PracticeWorkPeriodViewer;
@@ -41,8 +42,8 @@ export function PracticeWorkPeriodText({
   const short = isPracticeWorkPeriodShort(days);
   const daysLabel =
     variant === "lead"
-      ? formatPracticeWorkPeriodLeadLabel(days)
-      : formatPracticeWorkPeriodDaysLabel(days);
+      ? formatPracticeWorkPeriodLeadLabel(days, orderDate, arrivalDate)
+      : formatPracticeWorkPeriodDaysLabel(days, orderDate, arrivalDate);
   if (!daysLabel) return null;
 
   const label = variant === "labeled" ? `작업기간 ${daysLabel}` : daysLabel;

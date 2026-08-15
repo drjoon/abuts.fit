@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-15: 기공소 CA — 어벗츠 디자인 전 구강스캔 다운로드 잠금(상세 모달·핸들러).
 // - 2026-08-15: 지정 CA 미첨부 시 수락 전 구강스캔 업로드. 자동매칭은 치과 필수.
 // - 2026-08-14: 자동매칭 채팅 헤더에도 기공수가 할증(표시명 비공개·practiceAnchorId 내부 키).
 // - 2026-08-14: 자동매칭 수락·3시간 남은시간 뱃지 제거(도착일·소통 기한. 강제 클레임 만료 없음).
@@ -109,9 +110,11 @@ import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
 import { PRACTICE_ACCEPTED_HINT, filterPracticeTransferFiles } from "@/shared/practice/practiceTransferAccept";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import {
+  ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   ORAL_SCAN_REQUIRED_FROM_LAB,
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
   canLabAttachOralScanOnAccept,
+  isLabOralScanDownloadLocked,
   needsOralScanForAccept,
 } from "@/shared/practice/oralScanRequirement";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
@@ -2341,16 +2344,51 @@ function RequestorPracticeReceivePage({
   const handleDownload = useCallback(
     async (file: ReceivedPracticeFile) => {
       const s3Key = String(file.s3Key || "").trim();
+      const locked = isLabOralScanDownloadLocked({
+        hasCustomAbutment: transferHasCustomAbutment(selectedTransfer),
+        designReadyAt: selectedTransfer?.production?.designReadyAt,
+        designFileCount:
+          selectedTransfer?.production?.designFileCount ||
+          selectedTransfer?.production?.designFiles?.length ||
+          0,
+      });
+      if (locked) {
+        const isRequestFile = (selectedTransfer?.files || []).some(
+          (row) => String(row.s3Key || "").trim() === s3Key,
+        );
+        if (isRequestFile || !s3Key) {
+          toast({
+            title: "다운로드 대기",
+            description: ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
+          });
+          return;
+        }
+      }
       await downloadS3File({
         s3Key,
         fileName: String(file.originalName || "download").trim() || "download",
         busyKey: s3Key,
       });
     },
-    [downloadS3File],
+    [downloadS3File, selectedTransfer, toast],
   );
 
   const handleDownloadAllFiles = useCallback(async () => {
+    const locked = isLabOralScanDownloadLocked({
+      hasCustomAbutment: transferHasCustomAbutment(selectedTransfer),
+      designReadyAt: selectedTransfer?.production?.designReadyAt,
+      designFileCount:
+        selectedTransfer?.production?.designFileCount ||
+        selectedTransfer?.production?.designFiles?.length ||
+        0,
+    });
+    if (locked) {
+      toast({
+        title: "다운로드 대기",
+        description: ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
+      });
+      return;
+    }
     const files = [
       ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
       ...(Array.isArray(selectedTransfer?.production?.designFiles)
@@ -2367,7 +2405,7 @@ function RequestorPracticeReceivePage({
         busyKey: String(file.s3Key || "").trim(),
       })),
     );
-  }, [downloadAll, selectedTransfer]);
+  }, [downloadAll, selectedTransfer, toast]);
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
@@ -2700,7 +2738,7 @@ function RequestorPracticeReceivePage({
                     : ""}
                   {resultCount > 0 ? ` · 결과 ${resultCount}개` : ""}
                   {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
-                  {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                  {transfer.arrivalDate ? ` · 치과도착일 ${transfer.arrivalDate}` : ""}
                   {transfer.orderDate && transfer.arrivalDate ? (
                     <>
                       {" · "}
@@ -2974,7 +3012,7 @@ function RequestorPracticeReceivePage({
             : selectedTransfer?.practice.userName || "-" },
           { label: "환자명", value: selectedTransferPatientName || "-" },
           { label: "주문일", value: selectedTransfer?.orderDate || "-" },
-          { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
+          { label: "치과도착일", value: selectedTransfer?.arrivalDate || "-" },
           ...(selectedTransferWorkPeriodSummary
             ? [selectedTransferWorkPeriodSummary]
             : []),
@@ -3026,6 +3064,14 @@ function RequestorPracticeReceivePage({
               : "practice_required"
             : null
         }
+        requestFilesDownloadLocked={isLabOralScanDownloadLocked({
+          hasCustomAbutment: transferHasCustomAbutment(selectedTransfer),
+          designReadyAt: selectedTransfer?.production?.designReadyAt,
+          designFileCount:
+            selectedTransfer?.production?.designFileCount ||
+            selectedTransfer?.production?.designFiles?.length ||
+            0,
+        })}
         pendingOralScanFiles={pendingOralScanFiles.map((row) => ({
           id: row.id,
           name: row.file.name,

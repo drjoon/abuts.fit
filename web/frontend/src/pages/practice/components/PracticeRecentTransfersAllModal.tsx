@@ -486,7 +486,7 @@ export function PracticeRecentTransfersAllModal({
                     <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                       파일 {transfer.fileCount}개
                       {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
-                      {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                      {transfer.arrivalDate ? ` · 치과도착일 ${transfer.arrivalDate}` : ""}
                       {transfer.orderDate && transfer.arrivalDate ? (
                         <>
                           {" · "}

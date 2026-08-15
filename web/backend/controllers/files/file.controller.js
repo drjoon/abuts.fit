@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: 기공소 CA — 어벗츠 디자인 전 PracticeTransfer 구강스캔 S3 다운로드 차단.
 // - 2026-08-10: 디자인 파트너가 Request caseInfos 파일 S3 키 다운로드 가능.
 // - 2026-08-11: temp multipart + gzip ContentEncoding 지원, 다운로드 시 gunzip.
 // related files:
@@ -24,6 +25,9 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
+import {
+  shouldLockLabOralScanDownload,
+} from "../../services/practiceTransferProduction.service.js";
 
 const getFileType = (filename) => {
   const extension = filename.split(".").pop().toLowerCase();
@@ -780,7 +784,7 @@ const canUserAccessS3Key = async (req, key) => {
 
   // PracticeTransfer 파일 접근 허용
   // - practice 전송자(작성자)
-  // - 전송 대상 의뢰자(동일 businessAnchor)
+  // - 전송 대상 기공소(동일 businessAnchor) — CA면 어벗츠 디자인 도착 후만 구강스캔
   const practiceTransfer = await PracticeTransfer.findOne({
     "files.file.s3Key": key,
   })
@@ -788,6 +792,8 @@ const canUserAccessS3Key = async (req, key) => {
       practiceUserId: 1,
       practiceBusinessAnchorId: 1,
       targetLabAnchorId: 1,
+      toothWorks: 1,
+      production: 1,
     })
     .lean();
 
@@ -807,7 +813,13 @@ const canUserAccessS3Key = async (req, key) => {
       !!currentAnchorId &&
       currentAnchorId === String(practiceTransfer?.practiceBusinessAnchorId || "").trim();
 
-    if (isPracticeOwner || isTargetLabMember || isPracticeBusinessMember) {
+    if (isPracticeOwner || isPracticeBusinessMember) {
+      return true;
+    }
+    if (isTargetLabMember) {
+      if (shouldLockLabOralScanDownload(practiceTransfer)) {
+        return false;
+      }
       return true;
     }
   }

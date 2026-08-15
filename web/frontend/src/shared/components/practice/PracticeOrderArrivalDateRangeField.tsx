@@ -17,8 +17,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
-import { kstYmdDiffDays, toKstYmd, ymdToKstDate } from "@/shared/date/kst";
+import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
+import { getPracticeWorkPeriodDays } from "@/shared/practice/practiceWorkPeriod";
 
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
@@ -29,6 +30,7 @@ import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWor
 // - 2026-08-11: 캘린더 상단 안내문 제거 → 라벨 즉시툴팁.
 // - 2026-08-13: 라벨 오른쪽에 주문→도착 소요일 표시.
 // - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁.
+// - 2026-08-15: 작업기간 표시를 영업일(월~금) 기준으로 통일.
 
 const addDaysToYmd = (ymd: string, days: number) => {
   const base = String(ymd || "").trim();
@@ -41,7 +43,7 @@ const addDaysToYmd = (ymd: string, days: number) => {
 
 const formatArrivalLabel = (arrivalYmd: string) => {
   const arrival = ymdToKstDate(arrivalYmd);
-  if (!arrival) return "도착일 선택";
+  if (!arrival) return "치과도착일 선택";
   return `오늘 – ${format(arrival, "M월 d일", { locale: ko })}`;
 };
 
@@ -108,7 +110,7 @@ export function PracticeOrderArrivalDateRangeField({
   const appliedOrderYmd = String(orderDate || "").trim() || todayYmd;
   const leadFromYmd = open ? todayYmd : appliedOrderYmd;
   const leadToYmd = open ? draftArrivalYmd : appliedArrivalYmd;
-  const leadDays = kstYmdDiffDays(leadFromYmd, leadToYmd);
+  const leadDays = getPracticeWorkPeriodDays(leadFromYmd, leadToYmd);
 
   const handleApply = () => {
     if (!canApply || !todayYmd || !draftArrivalYmd) return;
@@ -136,19 +138,19 @@ export function PracticeOrderArrivalDateRangeField({
     <div className={cn("space-y-2", className)}>
       <div className="flex h-7 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1">
-          <Label className="text-sm leading-none">주문일–도착일</Label>
+          <Label className="text-sm leading-none">주문일–치과도착일</Label>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
-                aria-label="주문일–도착일 도움말"
+                aria-label="주문일–치과도착일 도움말"
               >
                 <CircleHelp className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
-              주문일은 오늘 고정. 도착일만 선택하면 됩니다. 변경한 간격(+{arrivalDefaultDays}일)이
+              주문일은 오늘 고정. 치과도착일만 선택하면 됩니다. 변경한 간격(+{arrivalDefaultDays}일)이
               다음 기본값으로 저장됩니다.
             </TooltipContent>
           </Tooltip>
@@ -206,7 +208,7 @@ export function PracticeOrderArrivalDateRangeField({
             />
             <div className="flex w-0 min-w-full items-center justify-between gap-2 border-t px-3 py-2">
               <p className="min-w-0 truncate text-[11px] text-muted-foreground">
-                {draftArrivalYmd ? formatArrivalLabel(draftArrivalYmd) : "도착일 선택"}
+                {draftArrivalYmd ? formatArrivalLabel(draftArrivalYmd) : "치과도착일 선택"}
               </p>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Button

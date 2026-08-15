@@ -52,7 +52,7 @@ export const DesignQueueSection = () => {
             </TooltipTrigger>
             <TooltipContent className="max-w-xs leading-relaxed">
               커스텀어벗이 포함된 기공의뢰는 어벗츠가 구강스캔으로 먼저 디자인해
-              기공소에 전달합니다. 기공소가 디자인을 확인하면 치과 도착일(기일)에
+              기공소에 전달합니다. 기공소가 디자인을 확인하면 치과도착일(기일)에
               맞춰 생산·발송됩니다.
               <br />
               작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 지연 시 치과와 미리

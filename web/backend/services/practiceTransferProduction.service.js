@@ -150,7 +150,9 @@ const parsePatientNameFromMemo = (memo) => {
 
 const parseArrivalYmdFromMemo = (memo) => {
   const raw = String(memo || "").trim();
-  const matched = raw.match(/\[\s*도착일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]/i);
+  const matched = raw.match(
+    /\[\s*(?:치과도착일|도착일)\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]/i,
+  );
   return String(matched?.[1] || "").trim() || null;
 };
 
@@ -633,6 +635,18 @@ export async function ensureAbutmentRequestsOnAccept({
 export function isAbutmentDesignReady(transferDoc) {
   const files = normalizeResultFiles(transferDoc?.production?.designFiles);
   return files.length > 0 || Boolean(transferDoc?.production?.designReadyAt);
+}
+
+/**
+ * 기공소: CA(어벗츠 선디자인) 의뢰의 구강스캔(의뢰 파일)은
+ * 어벗츠 디자인이 올라온 뒤에만 다운로드 가능.
+ * 치과·업로더·디자인 파트너는 해당 없음.
+ */
+export function shouldLockLabOralScanDownload(transferDoc) {
+  return (
+    hasCustomAbutmentToothWorks(transferDoc?.toothWorks) &&
+    !isAbutmentDesignReady(transferDoc)
+  );
 }
 
 export function canStartAbutmentProduction(transferDoc) {

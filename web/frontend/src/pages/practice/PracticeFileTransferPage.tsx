@@ -5043,7 +5043,7 @@ export const PracticeFileTransferPage = ({
     if (!orderDate || !arrivalDate) {
       toast({
         title: "날짜를 확인해주세요",
-        description: "주문일과 도착일을 모두 선택해주세요.",
+        description: "주문일과 치과도착일을 모두 선택해주세요.",
         variant: "destructive",
       });
       return;
@@ -5051,8 +5051,8 @@ export const PracticeFileTransferPage = ({
 
     if (arrivalDate < orderDate) {
       toast({
-        title: "도착일을 확인해주세요",
-        description: "도착일은 주문일보다 빠를 수 없습니다.",
+        title: "치과도착일을 확인해주세요",
+        description: "치과도착일은 주문일보다 빠를 수 없습니다.",
         variant: "destructive",
       });
       return;
@@ -6181,7 +6181,7 @@ export const PracticeFileTransferPage = ({
                               <p className="truncate text-xs text-muted-foreground">
                                 파일 {transfer.fileCount}개
                                 {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
-                                {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                                {transfer.arrivalDate ? ` · 치과도착일 ${transfer.arrivalDate}` : ""}
                                 {transfer.orderDate && transfer.arrivalDate ? (
                                   <>
                                     {" · "}
@@ -6380,7 +6380,7 @@ export const PracticeFileTransferPage = ({
                               <p className="truncate text-xs text-muted-foreground">
                                 파일 {transfer.fileCount}개
                                 {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
-                                {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                                {transfer.arrivalDate ? ` · 치과도착일 ${transfer.arrivalDate}` : ""}
                                 {transfer.orderDate && transfer.arrivalDate ? (
                                   <>
                                     {" · "}
@@ -6641,7 +6641,7 @@ export const PracticeFileTransferPage = ({
             { label: "기공소", value: selectedTransfer?.targetLab || "-" },
             { label: "환자명", value: selectedTransferPatientName || "-" },
             { label: "주문일", value: selectedTransfer?.orderDate || "-" },
-            { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
+            { label: "치과도착일", value: selectedTransfer?.arrivalDate || "-" },
             ...(selectedTransferWorkPeriodSummary
               ? [selectedTransferWorkPeriodSummary]
               : []),

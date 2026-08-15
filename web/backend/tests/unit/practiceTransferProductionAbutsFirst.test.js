@@ -11,6 +11,7 @@ import {
   normalizeResultFiles,
   parseArrivalYmdFromMemo,
   resolveOralScanFilesForAccept,
+  shouldLockLabOralScanDownload,
 } from "../../services/practiceTransferProduction.service.js";
 
 describe("practiceTransferProduction Abuts-first helpers", () => {
@@ -18,6 +19,9 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
     expect(
       parseArrivalYmdFromMemo("[주문일: 2026-08-10]\n[도착일: 2026-08-20]\n메모"),
     ).toBe("2026-08-20");
+    expect(
+      parseArrivalYmdFromMemo("[주문일: 2026-08-10]\n[치과도착일: 2026-08-21]\n메모"),
+    ).toBe("2026-08-21");
     expect(parseArrivalYmdFromMemo("no date")).toBeNull();
   });
 
@@ -51,6 +55,28 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
         },
       }),
     ).toBe(true);
+  });
+
+  test("shouldLockLabOralScanDownload until Abuts design ready", () => {
+    const ca = [{ customAbutment: true, toothNumber: "16" }];
+    expect(
+      shouldLockLabOralScanDownload({
+        toothWorks: ca,
+        production: {},
+      }),
+    ).toBe(true);
+    expect(
+      shouldLockLabOralScanDownload({
+        toothWorks: ca,
+        production: { designReadyAt: new Date() },
+      }),
+    ).toBe(false);
+    expect(
+      shouldLockLabOralScanDownload({
+        toothWorks: [{ customAbutment: false, toothNumber: "16" }],
+        production: {},
+      }),
+    ).toBe(false);
   });
 
   test("canStartAbutmentProduction gates", () => {

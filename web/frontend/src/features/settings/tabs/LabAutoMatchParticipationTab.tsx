@@ -4,6 +4,10 @@
 // - web/backend/services/labAutoMatchParticipation.service.js
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // change-log:
+// - 2026-08-15: 구독료 0원이면 결제일 대신 참여 안내 문구.
+// - 2026-08-15: 참여 상태 카드 1/2열·가운데 정렬·버튼 우측·상단 여백.
+// - 2026-08-15: 참여/해지 버튼 가로 1/3·가운데 정렬.
+// - 2026-08-15: 라벨 — 월 구독료 / 구독료 없음 / 작업 완료시 발생(지정 치과 0%).
 // - 2026-08-15: 월 참여 0원 정책(이벤트 취소선 제거). 성공 수수료만 안내.
 // - 2026-08-14: 기공소 매칭/수수료 스트립 최신 스타일 정렬.
 // - 2026-08-14: 월 참여 수수료 이벤트 표시(정가 취소선 → 0원).
@@ -174,10 +178,10 @@ export const LabAutoMatchParticipationTab = () => {
               </span>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-900">
-                  월 참여 수수료
+                  월 구독료
                 </p>
                 <p className="text-[12px] leading-snug text-muted-foreground">
-                  무료 · 성공 시에만 수수료
+                  구독료 없음
                 </p>
               </div>
             </div>
@@ -196,7 +200,7 @@ export const LabAutoMatchParticipationTab = () => {
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-900">성공 수수료</p>
                 <p className="text-[12px] leading-snug text-muted-foreground">
-                  자동 매칭 성공 시 · 지정 0%
+                  자동 매칭 작업 완료시 발생 (지정 치과는 0%)
                 </p>
               </div>
             </div>
@@ -206,107 +210,115 @@ export const LabAutoMatchParticipationTab = () => {
           </div>
         </div>
 
-        <div
-          className={cn(
-            "overflow-hidden rounded-2xl border bg-white/80 shadow-sm",
-            active ? "border-primary-muted/70" : "border-slate-200/80",
-          )}
-        >
+        <div className="flex justify-center pt-4">
           <div
             className={cn(
-              "h-1 w-full",
-              active
-                ? cancelScheduled
-                  ? "bg-amber-400"
-                  : "bg-primary-strong"
-                : "bg-slate-300",
+              "w-full overflow-hidden rounded-2xl border bg-white/80 shadow-sm sm:w-1/2",
+              active ? "border-primary-muted/70" : "border-slate-200/80",
             )}
-          />
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-semibold text-slate-900">
-                  {statusLabel}
-                </p>
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                    active
-                      ? cancelScheduled
-                        ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
-                        : "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
-                      : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
-                  )}
-                >
-                  {active ? (cancelScheduled ? "해지 예약" : "ON") : "OFF"}
-                </span>
+          >
+            <div
+              className={cn(
+                "h-1 w-full",
+                active
+                  ? cancelScheduled
+                    ? "bg-amber-400"
+                    : "bg-primary-strong"
+                  : "bg-slate-300",
+              )}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+              <div className="min-w-0 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-slate-900">
+                    {statusLabel}
+                  </p>
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                      active
+                        ? cancelScheduled
+                          ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
+                          : "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
+                        : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
+                    )}
+                  >
+                    {active ? (cancelScheduled ? "해지 예약" : "ON") : "OFF"}
+                  </span>
+                </div>
+                {active ? (
+                  <p className="text-[12px] text-muted-foreground">
+                    {cancelScheduled
+                      ? nextBillingLabel
+                        ? `${nextBillingLabel}까지 유지 · 이후 종료`
+                        : "해지 예약됨 · 기간 말 이후 종료"
+                      : monthlyFee > 0 && nextBillingLabel
+                        ? `다음 결제일 ${nextBillingLabel}`
+                        : "구독료 없음 · 성공 수수료만 적용"}
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-muted-foreground">
+                    인증 기공소만 참여할 수 있습니다.
+                  </p>
+                )}
               </div>
-              {active && nextBillingLabel ? (
-                <p className="text-[12px] text-muted-foreground">
-                  {cancelScheduled
-                    ? `${nextBillingLabel}까지 유지 · 이후 종료`
-                    : `다음 결제일 ${nextBillingLabel}`}
-                </p>
+
+              {!active ? (
+                <Button
+                  type="button"
+                  disabled={submitting || !canJoin}
+                  onClick={() => void submit(true)}
+                  className="h-10 shrink-0 rounded-xl px-4"
+                >
+                  {submitting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  참여하기
+                </Button>
+              ) : cancelScheduled ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={submitting}
+                      onClick={() => void submit(true)}
+                      className="h-10 shrink-0 rounded-xl px-4"
+                    >
+                      {submitting ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      해지 취소
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    해지 예약을 취소하고 계속 참여합니다.
+                  </TooltipContent>
+                </Tooltip>
               ) : (
-                <p className="text-[12px] text-muted-foreground">
-                  인증 기공소만 참여할 수 있습니다.
-                </p>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={submitting}
+                      onClick={() => void submit(false)}
+                      className="h-10 shrink-0 rounded-xl px-4"
+                    >
+                      {submitting ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      해지 예약
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {monthlyFee > 0
+                      ? "다음 결제일까지 유지되고, 이후 자동으로 종료됩니다."
+                      : "예약된 종료일까지 유지되고, 이후 자동으로 종료됩니다."}
+                  </TooltipContent>
+                </Tooltip>
               )}
             </div>
-
-            {!active ? (
-              <Button
-                type="button"
-                disabled={submitting || !canJoin}
-                onClick={() => void submit(true)}
-                className="h-10 shrink-0 rounded-xl px-4"
-              >
-                {submitting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                참여하기
-              </Button>
-            ) : cancelScheduled ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={submitting}
-                    onClick={() => void submit(true)}
-                    className="h-10 shrink-0 rounded-xl px-4"
-                  >
-                    {submitting ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : null}
-                    해지 취소
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  해지 예약을 취소하고 계속 참여합니다.
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={submitting}
-                    onClick={() => void submit(false)}
-                    className="h-10 shrink-0 rounded-xl px-4"
-                  >
-                    {submitting ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : null}
-                    해지 예약
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  다음 결제일까지 유지되고, 이후 자동으로 종료됩니다.
-                </TooltipContent>
-              </Tooltip>
-            )}
           </div>
         </div>
 

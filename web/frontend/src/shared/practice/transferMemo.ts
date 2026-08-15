@@ -1030,7 +1030,7 @@ export const formatTransferMemoForDisplay = (rawMemo: string) => {
   if (memo.includes("\n")) return memo;
 
   const compactParts = memo
-    .split(/\s*·\s*(?=(?:주문일|도착일|치아별|형태|보철물\s*형태)\b)/)
+    .split(/\s*·\s*(?=(?:주문일|치과도착일|도착일|치아별|형태|보철물\s*형태)\b)/)
     .map((part) => String(part || "").trim())
     .filter(Boolean);
 
@@ -1083,7 +1083,9 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
       continue;
     }
 
-    const arrivalMatch = trimmed.match(/^\[\s*도착일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/);
+    const arrivalMatch = trimmed.match(
+      /^\[\s*(?:치과도착일|도착일)\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/,
+    );
     if (arrivalMatch) {
       arrivalDate = arrivalMatch[1];
       continue;
@@ -1165,7 +1167,7 @@ export const buildPracticeTransferMemo = (params: {
 }) => {
   const lines = [
     `[주문일: ${String(params.orderDate || "").trim()}]`,
-    `[도착일: ${String(params.arrivalDate || "").trim()}]`,
+    `[치과도착일: ${String(params.arrivalDate || "").trim()}]`,
     `[도착기본일수: ${normalizeArrivalDefaultDays(params.arrivalDefaultDays)}]`,
     `[환자명: ${String(params.patientName || "").trim()}]`,
     `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
@@ -1188,7 +1190,9 @@ export const formatPracticeTransferMemoDetail = (
   if (!source) return "";
 
   const hasKnownMeta =
-    /\[\s*(주문일|도착일|도착기본일수|환자명|보철물형태목록|보철물형태|치아보철|디자인컨펌생략)\s*:/i.test(source);
+    /\[\s*(주문일|치과도착일|도착일|도착기본일수|환자명|보철물형태목록|보철물형태|치아보철|디자인컨펌생략)\s*:/i.test(
+      source,
+    );
   if (!hasKnownMeta) return formatTransferMemoForDisplay(source);
 
   const parsed = parsePracticeTransferMemoMeta(source);
@@ -1200,7 +1204,7 @@ export const formatPracticeTransferMemoDetail = (
   if (includeDateSummary) {
     const dateSummaryParts: string[] = [];
     if (parsed.orderDate) dateSummaryParts.push(`주문일 ${parsed.orderDate}`);
-    if (parsed.arrivalDate) dateSummaryParts.push(`도착일 ${parsed.arrivalDate}`);
+    if (parsed.arrivalDate) dateSummaryParts.push(`치과도착일 ${parsed.arrivalDate}`);
     if (dateSummaryParts.length > 0) {
       summarySections.push(dateSummaryParts.join(" · "));
     }
