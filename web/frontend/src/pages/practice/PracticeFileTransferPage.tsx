@@ -63,6 +63,7 @@
  * - 2026-08-14: 임시저장 디바운스·한글 IME 게이트. stale 저장 응답에서도 draftId 회수.
  * - 2026-08-14: 기공수가 할증 변경(practice:lab-fee-multiplier-updated) 시 견적·리메이크 미리보기 갱신.
  * - 2026-08-14: 기공소 수락 시 웹소켓 feeQuote로 치과「확정 기공비」즉시 반영.
+ * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1033,6 +1034,7 @@ export const PracticeFileTransferPage = ({
   const [remakeConfirmOpen, setRemakeConfirmOpen] = useState(false);
   const [remakeBusy, setRemakeBusy] = useState(false);
   const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const requestSubmittingRef = useRef(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(true);
   const [skipDesignConfirmUncheckOpen, setSkipDesignConfirmUncheckOpen] = useState(false);
   const [autoMatchBudget, setAutoMatchBudget] =
@@ -1929,13 +1931,18 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    const requestedDraftId = String(options?.draftId || activeDraftIdRef.current || "").trim();
+    // options.draftId를 넘긴 호출만 해당 건을 로드. 미지정 시 activeDraftId만 사용.
+    // draftId가 비면 최신 임시저장을 폼에 자동 주입하지 않는다(다중 임시저장·전송 후 연속 전송 방지).
+    const requestedDraftId = String(
+      options && "draftId" in options
+        ? options.draftId || ""
+        : activeDraftIdRef.current || "",
+    ).trim();
+    if (!requestedDraftId) return;
 
     try {
       const res = await apiFetch<unknown>({
-        path: requestedDraftId
-          ? `/api/practice/transfers/draft?draftId=${encodeURIComponent(requestedDraftId)}`
-          : "/api/practice/transfers/draft",
+        path: `/api/practice/transfers/draft?draftId=${encodeURIComponent(requestedDraftId)}`,
         method: "GET",
         token: authToken,
       });
@@ -1953,7 +1960,7 @@ export const PracticeFileTransferPage = ({
       if (!payload) {
         setDraftFiles([]);
         setDraftSummary(null);
-        // 요청한 draftId가 없거나(삭제/휴지통) 본인 최신도 없으면 stale id를 비운다.
+        // 요청한 draftId가 없거나(삭제/휴지통)면 stale id를 비운다.
         setActiveDraftId(null);
         activeDraftSeenInListRef.current = null;
         lastSavedFormFingerprintRef.current = null;
@@ -1965,7 +1972,7 @@ export const PracticeFileTransferPage = ({
       }
 
       applyPracticeDraftPayload(payload, {
-        keepActiveDraftIdOnEmpty: Boolean(requestedDraftId),
+        keepActiveDraftIdOnEmpty: true,
       });
     } catch {
       // ignore (초안 불러오기 실패는 사용자 흐름 중단 금지)
@@ -2863,9 +2870,15 @@ export const PracticeFileTransferPage = ({
 
   useEffect(() => {
     if (!localFormHydrated) return;
-    void loadPracticeTransferDraft();
+    // 로컬에 이어쓸 draftId가 있을 때만 해당 건을 폼에 복원. 목록만 항상 갱신.
+    const resumeDraftId = String(activeDraftIdRef.current || "").trim();
+    if (resumeDraftId) {
+      void loadPracticeTransferDraft({ draftId: resumeDraftId });
+    }
     void loadPracticeTransferDraftList();
-  }, [localFormHydrated, loadPracticeTransferDraft, loadPracticeTransferDraftList]);
+    // hydrate 직후 1회. 콜백 identity 변경으로 다른 임시저장을 폼에 넣지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot after local hydrate
+  }, [localFormHydrated]);
 
   /** 기공소 전송 성공 후 작성자·동료 모두 폼/로컬캐시를 비운다 */
   const resetIntakeFormAfterTransfer = useCallback(async () => {
@@ -3780,6 +3793,8 @@ export const PracticeFileTransferPage = ({
         return;
       }
 
+      // 다른 케이스의 로컬(미동기화) 파일이 섞여 전송되지 않게 비운다.
+      void clearLocalFilesWithCache();
       applyDraftSummaryToForm(draft);
       // 목록 카드보다 서버 최신 스냅샷을 우선해, 빈 기공소/환자명도 정확히 맞춘다.
       void loadPracticeTransferDraft({ draftId: draft.id });
@@ -3790,7 +3805,13 @@ export const PracticeFileTransferPage = ({
           : `${draft.practiceUserLabel || "동료"}의 임시저장에 참여했습니다. 입력 내용이 같은 케이스에 실시간 동기화됩니다.`,
       });
     },
-    [applyDraftSummaryToForm, loadPracticeTransferDraft, practiceDraftList, toast],
+    [
+      applyDraftSummaryToForm,
+      clearLocalFilesWithCache,
+      loadPracticeTransferDraft,
+      practiceDraftList,
+      toast,
+    ],
   );
 
   const handleOpenTransferDialog = async (
@@ -4993,7 +5014,7 @@ export const PracticeFileTransferPage = ({
   });
 
   const handleSubmitPracticeRequest = async () => {
-    if (requestSubmitting) return;
+    if (requestSubmittingRef.current || requestSubmitting) return;
 
     if (!authToken) {
       toast({
@@ -5045,6 +5066,15 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
+    // 전송 시작 시점의 작성 중 draft만 대상. 다른 임시저장은 목록에 남긴다.
+    const draftIdToSubmit = String(
+      activeDraftIdRef.current || draftSummary?.id || "",
+    ).trim();
+    const remainingDraftCount = practiceDraftList.filter(
+      (row) => row.id !== draftIdToSubmit,
+    ).length;
+
+    requestSubmittingRef.current = true;
     setRequestSubmitting(true);
     try {
       const uploadedTempFiles: TempUploadedFile[] =
@@ -5141,7 +5171,7 @@ export const PracticeFileTransferPage = ({
         token: authToken,
         jsonBody: {
           transferId,
-          draftId: String(activeDraftIdRef.current || draftSummary?.id || "").trim() || undefined,
+          draftId: draftIdToSubmit || undefined,
           matchingMode: autoMatch ? "auto" : "direct",
           targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
           targetLabName: String(selectedLab?.name || "").trim(),
@@ -5168,23 +5198,24 @@ export const PracticeFileTransferPage = ({
         formAutosaveTimerRef.current = null;
       }
 
-      const draftIdToClear = String(activeDraftIdRef.current || draftSummary?.id || "").trim();
-
       // 작성자 UI: transfer-created 목록 재조회가 DELETE보다 늦게 끝나 draft가 다시 붙는 레이스 방지
-      if (draftIdToClear) {
-        setPracticeDraftList((prev) => prev.filter((row) => row.id !== draftIdToClear));
-        setTrashedDraftList((prev) => prev.filter((row) => row.id !== draftIdToClear));
+      if (draftIdToSubmit) {
+        setPracticeDraftList((prev) => prev.filter((row) => row.id !== draftIdToSubmit));
+        setTrashedDraftList((prev) => prev.filter((row) => row.id !== draftIdToSubmit));
       }
       rememberLab(selectedLab);
 
-      // 전송 시 draft는 서버에서 완전 삭제됨. 휴지통(soft DELETE)으로 보내지 않는다.
+      // 전송 시 해당 draft만 서버에서 완전 삭제. 다른 임시저장·휴지통은 그대로.
       draftListSeqRef.current += 1;
       await resetIntakeFormAfterTransfer();
       await loadPracticeTransferDraftList();
 
       toast({
         title: "기공소 전송 완료",
-        description: "기공소로 정상 전송되었습니다.",
+        description:
+          remainingDraftCount > 0
+            ? `작성 중이던 의뢰만 전송했습니다. 임시저장 ${remainingDraftCount}건은 목록에 남아 있습니다.`
+            : "기공소로 정상 전송되었습니다.",
       });
       navigate("/practice/dashboard");
     } catch (error) {
@@ -5196,6 +5227,7 @@ export const PracticeFileTransferPage = ({
         duration: 5000,
       });
     } finally {
+      requestSubmittingRef.current = false;
       setRequestSubmitting(false);
     }
   };

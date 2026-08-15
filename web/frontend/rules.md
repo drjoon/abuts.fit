@@ -646,6 +646,8 @@ Notes:
     - 작성자: 전송 API 성공 시 `resetIntakeFormAfterTransfer`
     - 동료/다른 탭: `transfer-created`(clearedDraftId) · `draft-cleared`(활성 케이스) 수신 시 동일 초기화
     - 재진입 보호: local form에 `activeDraftId`를 저장하고, 서버 draft 목록에 없으면 복원값을 버린다.
+    - **작성 중 1건만 전송**: `[기공소로 전송]`은 폼의 `activeDraftId`만 서버에서 삭제·전송한다. 다른 임시저장은 목록에 남긴다.
+    - 전송/새로 작성 후 `activeDraftId`가 비면 최신 임시저장을 폼에 자동 주입하지 않는다(연속 전송 방지). 목록 클릭으로만 이어서 작성.
     - 공유 유틸: `src/shared/practice/practiceTransferFormLocal.ts`
 
 ### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
