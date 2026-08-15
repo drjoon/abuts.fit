@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-15: 모든 role 사이드바 상단에 익스프레스/엑스퍼트 모드 전환 버튼.
 // - 2026-08-14: 기공소 신규 기공비 → 관리자 토스트·플랫폼 설정 배지.
 // - 2026-08-13: 기공소 기공비 미설정 시 로그인 후 설정 탭 유도(LabFeeSetupPrompt).
 // - 2026-08-13: 파트너 페이지 → 관리자「플랫폼 설정」이전. 개발운영사 파트너 메뉴 제거. 설정 그룹(플랫폼 설정·설정).
@@ -40,8 +41,10 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 // - 2026-08-03: Dashboard 상단 워크시트 공정 탭의 '의뢰' 라벨을 '준비'로 변경(표시 레벨). wsSummary 조회/표시 로직과 연동됨.
 // related files:
 // - web/frontend/src/features/layout/AccountSwitcher.tsx
+// - web/frontend/src/features/layout/WorkspaceModeSwitch.tsx
 // - web/frontend/src/features/settings/LabFeeSetupPrompt.tsx
 // - web/frontend/src/store/useAuthStore.ts
+// - web/frontend/src/store/useWorkspaceModeStore.ts
 // - web/frontend/src/shared/navigation/lastDashboardPath.ts
 // - web/backend/controllers/users/user.controller.js
 // - web/backend/controllers/auth/auth.controller.js
@@ -128,6 +131,7 @@ import {
   AccountSwitchPasswordDialog,
   type ColleagueAccount,
 } from "@/features/layout/AccountSwitcher";
+import { WorkspaceModeSwitch } from "@/features/layout/WorkspaceModeSwitch";
 import {
   gigongAbutConnectorLineClass,
   type GigongAbutAccentKey,
@@ -1305,6 +1309,8 @@ export const DashboardLayout = () => {
               <PanelLeft className="w-4 h-4" />
             )}
           </button>
+
+          <WorkspaceModeSwitch collapsed={isCollapsed} />
 
           <nav className="hover-scrollbar flex-1 overflow-y-auto p-3 lg:p-4">
             {adminMenuSections ? (
