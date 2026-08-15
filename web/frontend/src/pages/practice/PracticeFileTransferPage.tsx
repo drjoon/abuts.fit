@@ -5787,10 +5787,8 @@ export const PracticeFileTransferPage = ({
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
                       isAutoMatchLab(selectedLab)
-                        ? "자동매칭은 구강스캔 첨부가 필수입니다. 지정 기공소로 보낼 때는 스캔을 기공소에서 올릴 수도 있습니다."
-                        : normalizedToothWorks.some((row) => row.customAbutment)
-                          ? "지정 기공소로 보낼 때 구강스캔이 없으면, 수락하는 기공소에서 업로드할 수 있습니다."
-                          : null,
+                        ? "자동매칭은 구강스캔 첨부가 필수입니다."
+                        : null,
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
                         file.kind === "local" ? files[file.localIndex] : null;

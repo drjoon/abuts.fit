@@ -76,7 +76,7 @@ export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
 export const ORAL_SCAN_REQUIRED_FROM_PRACTICE =
   "자동매칭 커스텀어벗 의뢰는 치과에서 구강스캔을 첨부해야 합니다.";
 
-/** 지정 기공소 CA: 치과 미첨부 시 수락 전 기공소 업로드 */
+/** @deprecated 수락 기공소 CA 디자인 — 기공소 구강스캔 업로드 UI 없음 */
 export const ORAL_SCAN_REQUIRED_FROM_LAB =
   "커스텀어벗 디자인을 위해 구강스캔 파일을 업로드해주세요.";
 
@@ -91,7 +91,7 @@ const makeOralScanError = (message, code) => {
  * 커스텀어벗 수락 시 구강스캔 확보.
  * - 이미 transfer.files 있으면 그대로
  * - 자동매칭: 치과 첨부만 허용(기공소 body.files 무시·거절)
- * - 지정: 기공소 body.files 첨부 가능. 없어도 수락은 허용(스캔은 수락 후 업로드 가능)
+ * - 지정: 스캔 없이 수락 가능(레거시 body.files 첨부는 허용)
  */
 export function resolveOralScanFilesForAccept({
   transferDoc,

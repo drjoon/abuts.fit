@@ -6,17 +6,18 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - 2026-08-15: 수락 기공소 CA 디자인 — 왼쪽 구강스캔 업로드 UI 제거(스캔 없이 수락).
 // - 2026-08-15: 수락 바 — 구강스캔 나중에 올리기 안내 문구 제거.
 // - 2026-08-15: 수락 기공소 CA 디자인 — 스캔 없이도 수락. 어벗디자인비 안내.
 // - 2026-08-15: 기공소 CA — 어벗츠 디자인 미도착 시 구강스캔(의뢰 파일) 다운로드 잠금.
-// - 2026-08-15: 지정 기공소 CA — 치과 미첨부 시 수락 전 구강스캔 업로드. 자동매칭은 치과 필수.
+// - 2026-08-15: 자동매칭 CA — 치과 구강스캔 필수(미첨부 시 수락 차단 안내).
 // - 2026-08-13: 기공소 상세 모달 — 수락 전에도 치과 채팅 내역 표시. 수락 CTA는 채팅 상단 바.
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스를 버블에 전달.
 // - 2026-08-14: 기공소 기공수가 할증은 치과 채팅 헤더에 배치(자동매칭 포함).
 // - 2026-08-14: 수락 후 같은 자리(채팅 상단 바)에 작업취소 버튼.
 // - 2026-08-15: 요약 작업기간 — 5일 미만 빨간 표시·툴팁. 수락 바 거부·짧은 작업기간.
 import type { ReactNode, RefObject } from "react";
-import { CircleHelp, Paperclip, Send, MessageSquare, X } from "lucide-react";
+import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -47,10 +48,8 @@ import {
   getPracticeWorkPeriodDays,
   isPracticeWorkPeriodShort,
 } from "@/shared/practice/practiceWorkPeriod";
-import { PracticeTransferFileDropTarget } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import {
   ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
-  ORAL_SCAN_REQUIRED_FROM_LAB,
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
 } from "@/shared/practice/oralScanRequirement";
 
@@ -85,11 +84,8 @@ type PracticeTransferDetailChatDialogProps = {
   labAnchorId?: string | null;
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
-  /** 수락 전 구강스캔 미첨부(CA). 지정=기공소 업로드, 자동=치과만 */
-  oralScanAttachMode?: "lab" | "practice_required" | null;
-  pendingOralScanFiles?: Array<{ id: string; name: string; size: number }>;
-  onPickOralScanFiles?: (files: File[]) => void;
-  onRemoveOralScanFile?: (id: string) => void;
+  /** 수락 전 구강스캔 미첨부(CA). 자동매칭만 치과 필수 안내 */
+  oralScanAttachMode?: "practice_required" | null;
   /**
    * 기공소: 어벗츠 CA 디자인 미도착 시 의뢰(구강스캔) 파일 다운로드 잠금.
    * 디자인 큐·치과 발신 모달에서는 쓰지 않는다.
@@ -184,9 +180,6 @@ export function PracticeTransferDetailChatDialog({
   filesLabel,
   files,
   oralScanAttachMode = null,
-  pendingOralScanFiles = [],
-  onPickOralScanFiles,
-  onRemoveOralScanFile,
   requestFilesDownloadLocked = false,
   requestFilesDownloadLockedReason = ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   resultFilesLabel = "작업 결과 파일",
@@ -408,40 +401,6 @@ export function PracticeTransferDetailChatDialog({
                         </div>
                       );
                     })}
-                  </div>
-                ) : oralScanAttachMode === "lab" ? (
-                  <div className="mt-2 space-y-2">
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      {ORAL_SCAN_REQUIRED_FROM_LAB}
-                    </p>
-                    <PracticeTransferFileDropTarget
-                      fileInputId="practice-transfer-accept-oral-scan-input"
-                      onFiles={(picked) => onPickOralScanFiles?.(picked)}
-                      compact={pendingOralScanFiles.length > 0}
-                      label="구강스캔 파일 추가"
-                    />
-                    {pendingOralScanFiles.length > 0 ? (
-                      <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
-                        {pendingOralScanFiles.map((file) => (
-                          <div
-                            key={file.id}
-                            className="flex items-center justify-between gap-2 rounded border px-2 py-1 text-sm"
-                          >
-                            <span className="min-w-0 truncate">
-                              {file.name} · {formatFileSize(file.size)}
-                            </span>
-                            <button
-                              type="button"
-                              className="shrink-0 text-muted-foreground hover:text-foreground"
-                              aria-label={`${file.name} 제거`}
-                              onClick={() => onRemoveOralScanFile?.(file.id)}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
                   </div>
                 ) : oralScanAttachMode === "practice_required" ? (
                   <p className="mt-2 text-sm text-destructive leading-relaxed">
