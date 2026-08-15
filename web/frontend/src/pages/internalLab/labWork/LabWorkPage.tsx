@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
 // change-log:
+// - 2026-08-16: acceptingLab 디자인큐 안내 문구 제거 — 수신 카드만.
 // - 2026-08-15: 수락 기공소와 동일 — acceptingLab 큐·문구 + 공통 수신 카드.
 import { RequestorPracticeReceivePage } from "@/pages/requestor/practice/RequestorPracticePage";
 
@@ -11,9 +12,8 @@ import { RequestorPracticeReceivePage } from "@/pages/requestor/practice/Request
 export default function LabWorkPage() {
   return (
     <RequestorPracticeReceivePage
-      showDesignQueue={true}
+      showDesignQueue={false}
       showTransfers={true}
-      designQueueListMode="acceptingLab"
     />
   );
 }

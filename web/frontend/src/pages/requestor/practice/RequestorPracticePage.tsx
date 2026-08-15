@@ -233,8 +233,8 @@ export default function RequestorPracticePage() {
 
     return (
       <RequestorPracticeReceivePage
-        showDesignQueue={designAccessEnabled || canReceiveTransfer}
-        designQueueListMode={canReceiveTransfer ? "acceptingLab" : "partner"}
+        showDesignQueue={designAccessEnabled && !canReceiveTransfer}
+        designQueueListMode="partner"
         showTransfers={canReceiveTransfer}
       />
     );
@@ -277,7 +277,7 @@ export function RequestorPracticeReceivePage({
   roleSwitcher?: ReactNode;
   /** 지정 기공소: 디자인+생산 준비 큐를 의뢰수신에 통합 */
   showDesignQueue?: boolean;
-  /** acceptingLab=본인 기공의뢰 CA, partner=디자인 파트너 전역 큐 */
+  /** partner=디자인 파트너 전역 큐. acceptingLab은 렌더 없음(호환용). */
   designQueueListMode?: "partner" | "acceptingLab";
   /** 무료 기공의뢰서 수신 목록 표시 */
   showTransfers?: boolean;

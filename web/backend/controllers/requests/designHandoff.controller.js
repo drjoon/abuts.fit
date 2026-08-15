@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: PTX 핸드오프 — productMode를 custom_abutment로 승격(제조사 CNC 준비 큐 노출). 취소 시 복원.
 // - 2026-08-15: PTX 핸드오프 — Request 저장 후 Transfer 미러. 취소는 orphan designFiles도 정리.
 // - 2026-08-15: 취소·핸드오프 — transfer.targetLabAnchorId로 수락 lab 판정(소유 어긋남 보정).
 // - 2026-08-15: PTX — 업로드 시 생산만 재견적·출고재계산, 준비 유지. 취소·재업로드(준비만).
@@ -32,6 +33,10 @@ import {
   grantAbutmentDesignLabFee,
   revokeAbutmentDesignLabFee,
 } from "../../services/practiceTransferBilling.service.js";
+import { emitAppEventToRoles } from "../../socket.js";
+
+const PRODUCT_MODE_DESIGN = "design_custom_abutment";
+const PRODUCT_MODE_PRODUCTION = "custom_abutment";
 
 const resolvePtxAcceptingLabContext = async (request) => {
   const relatedTransferId = request?.partnerBilling?.relatedPracticeTransferId
@@ -154,7 +159,7 @@ export async function handoffDesignToProduction(req, res) {
       await resolvePtxAcceptingLabContext(request);
 
     const productMode = String(request?.caseInfos?.productMode || "").trim();
-    if (productMode !== "design_custom_abutment") {
+    if (productMode !== PRODUCT_MODE_DESIGN) {
       return res.status(400).json({
         success: false,
         message: "디자인+생산 의뢰만 핸드오프할 수 있습니다.",
@@ -239,6 +244,11 @@ export async function handoffDesignToProduction(req, res) {
       let designFeeGrant = null;
       const now = new Date();
 
+      // 수락 기공소가 완성 STL을 올리면 디자인 큐가 아니라 제조사 CNC 준비 큐로 간다.
+      // (WorksheetPage productModeNe=design_custom_abutment / 디자인 파트너 큐는 PTX 제외)
+      if (!request.caseInfos) request.caseInfos = {};
+      request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
+
       if (transferDoc && isAcceptingLab) {
         await repriceAndReschedulePtxAbutmentRequest({
           requestDoc: request,
@@ -313,6 +323,15 @@ export async function handoffDesignToProduction(req, res) {
         throw mirrorErr;
       }
 
+      try {
+        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+          reason: "ptx-design-handoff",
+          requestId: String(request._id),
+        });
+      } catch (emitErr) {
+        console.error("[DESIGN_HANDOFF] worksheet count emit failed", emitErr);
+      }
+
       return res.status(200).json({
         success: true,
         message:
@@ -324,6 +343,7 @@ export async function handoffDesignToProduction(req, res) {
           // 준비 유지 — 취소·재업로드 가능. 가공은 제조사/CAM.
           productionStarted: false,
           manufacturerStage: "준비",
+          productMode: PRODUCT_MODE_PRODUCTION,
           shippingMode: request.shippingMode || null,
           price: request.price || null,
           abutmentDesignFee: designFeeGrant
@@ -486,11 +506,22 @@ export async function cancelDesignHandoff(req, res) {
     request.caseInfos.designSourceFiles = [];
     request.caseInfos.camFile = undefined;
     request.caseInfos.ncFile = undefined;
+    // 재업로드(핸드오프) 가능하도록 디자인+생산 모드로 복원
+    request.caseInfos.productMode = PRODUCT_MODE_DESIGN;
     request.designCompletedAt = undefined;
     request.designCompletedBy = undefined;
 
     await request.save();
     await clearPtxDesignMirror(relatedTransferId);
+
+    try {
+      emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+        reason: "ptx-design-handoff-cancel",
+        requestId: String(request._id),
+      });
+    } catch (emitErr) {
+      console.error("[DESIGN_HANDOFF_CANCEL] worksheet count emit failed", emitErr);
+    }
 
     let feeRevoke = null;
     try {

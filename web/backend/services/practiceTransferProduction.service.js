@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-15: PTX 핸드오프 재견적 — productMode·스케줄을 custom_abutment(생산)로.
 // - 2026-08-15: 재견적 시 timeline 필드만 갱신(shipOutcome undefined Cast 방지).
 // - 2026-08-15: 작업취소(release) 시 연동 CA Request 취소·디자인 미러 정리. 재수락 시 소유 동기화.
 // - 2026-08-15: PTX CA — 치과 멤버십/일반 생산단가·출고목표=기일-3영업일·묶음 우선. 디자인비는 기공소 지급 분리.
@@ -1078,12 +1079,18 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     ? await resolveManufacturerTargetShipYmd(arrivalYmd)
     : null;
 
+  // 핸드오프 시점 = 디자인 완료 → 생산 리드타임(custom_abutment). 디자인+1영업일 제외.
+  if (!requestDoc.caseInfos || typeof requestDoc.caseInfos !== "object") {
+    requestDoc.caseInfos = {};
+  }
+  requestDoc.caseInfos.productMode = "custom_abutment";
+
   let productionSchedule = await calculateInitialProductionSchedule({
     shippingMode,
     maxDiameter,
     requestedAt,
     weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
-    productMode: "design_custom_abutment",
+    productMode: "custom_abutment",
   });
   productionSchedule = await clampScheduleToTarget(
     productionSchedule,
