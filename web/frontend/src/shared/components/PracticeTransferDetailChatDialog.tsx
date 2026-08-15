@@ -550,7 +550,8 @@ export function PracticeTransferDetailChatDialog({
                               경우 치과와 미리 상의하시기 바랍니다.
                               <br />
                               커스텀어벗 디자인은 1영업일 내 어벗츠가 만들어서 기공소에
-                              전달합니다.
+                              전달합니다. 디자인이 도착하기 전에는 구강스캔을 다운로드할 수
+                              없습니다.
                             </TooltipContent>
                           </Tooltip>
                         </div>

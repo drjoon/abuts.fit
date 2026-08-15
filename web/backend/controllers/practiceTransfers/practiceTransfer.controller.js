@@ -98,6 +98,7 @@ import { resolvePracticeTransferManufacturerStage } from "../../utils/practiceTr
 // - 2026-08-14: 자동매칭 3시간 강제 클레임 만료 폐기(작업완료/취소까지 유지·도착일은 소통 기한).
 // - 2026-08-14: mark-accepted — autoMatch pool emit N+1 제거·사이드이펙트 병렬. FE 수락 busy에서 chat resolve 분리.
 // - 2026-08-14: mark-accepted — 과금 직후 응답, billing $set, 사이드이펙트 비동기.
+// - 2026-08-15: mark-accepted — billing+accept $set 병합, 과금 저널/수수료 조회 병렬.
 // - 2026-08-14: mark-release — updateOne + 사이드이펙트 비동기(채팅/emit은 응답 후).
 // - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김.
 // - 2026-08-14: mark-accepted — 치과 practice:transfer-updated에 확정 feeQuote 포함.
@@ -362,12 +363,9 @@ const toProductionApiFields = (production) => {
   };
 };
 
-const toTransferFilesApiFields = (transferDoc, options = {}) => {
+const toTransferFilesApiFields = (transferDoc) => {
   const files = normalizeResultFiles(transferDoc?.files);
   const transferMongoId = String(transferDoc?._id || "").trim();
-  const redactLabOralScanKeys =
-    Boolean(options?.redactLabOralScanKeys) &&
-    shouldLockLabOralScanDownload(transferDoc);
   return {
     fileCount: files.length,
     files: files.map((item, idx) => ({
@@ -377,11 +375,9 @@ const toTransferFilesApiFields = (transferDoc, options = {}) => {
       originalName: String(item?.file?.originalName || "").trim(),
       mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
       size: Number(item?.file?.size || 0),
-      s3Key: redactLabOralScanKeys
-        ? ""
-        : String(item?.file?.s3Key || "").trim(),
+      s3Key: String(item?.file?.s3Key || "").trim(),
     })),
-    oralScanDownloadLocked: redactLabOralScanKeys,
+    oralScanDownloadLocked: shouldLockLabOralScanDownload(transferDoc),
   };
 };
 
@@ -535,11 +531,10 @@ const resolveUnreadCountForAccept = (labAnchorId, { wasUnread }) => {
   return null;
 };
 
-const persistAcceptedBillingFields = async (doc, billingResult) => {
-  if (!doc?._id) return doc?.billing || null;
-  if (!billingResult?.billed && !billingResult?.fees) return doc?.billing || null;
+const buildAcceptedBillingFields = (doc, billingResult) => {
+  if (!billingResult?.billed && !billingResult?.fees) return null;
   const now = new Date();
-  const billing = {
+  return {
     ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
     labFeeTotal: billingResult.fees?.labFeeTotal || 0,
     abutmentRetailTotal: billingResult.fees?.abutmentRetailTotal || 0,
@@ -572,6 +567,12 @@ const persistAcceptedBillingFields = async (doc, billingResult) => {
         : Number(doc.billing?.holdFromFreeShipping || 0),
     isRemake: toRemakeApiFields(doc).isRemake,
   };
+};
+
+const persistAcceptedBillingFields = async (doc, billingResult) => {
+  if (!doc?._id) return doc?.billing || null;
+  const billing = buildAcceptedBillingFields(doc, billingResult);
+  if (!billing) return doc?.billing || null;
   // 전체 doc.save()는 toothWorks 등 대량 필드를 다시 써 Atlas RTT를 키운다.
   await PracticeTransfer.updateOne({ _id: doc._id }, { $set: { billing } });
   doc.billing = billing;
@@ -2886,9 +2887,7 @@ export async function getReceivedPracticeTransfers(req, res) {
           originalName: String(item?.file?.originalName || "").trim(),
           mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
           size: Number(item?.file?.size || 0),
-          s3Key: oralScanDownloadLocked
-            ? ""
-            : String(item?.file?.s3Key || "").trim(),
+          s3Key: String(item?.file?.s3Key || "").trim(),
         })),
         oralScanDownloadLocked,
         resultFileCount: resultFiles.length,
@@ -3229,7 +3228,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             billing: doc.billing || null,
             production: toProductionApiFields(doc.production),
             alreadyAccepted: true,
-            ...toTransferFilesApiFields(doc, { redactLabOralScanKeys: true }),
+            ...toTransferFilesApiFields(doc),
             ...toAutoMatchApiFields(doc, labAnchorId),
           },
         });
@@ -3414,7 +3413,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           production: toProductionApiFields(doc.production),
           unreadCount,
           abutmentRequestIds: abutmentEnsure.requestIds || [],
-          ...toTransferFilesApiFields(doc, { redactLabOralScanKeys: true }),
+          ...toTransferFilesApiFields(doc),
           ...toAutoMatchApiFields(doc, labAnchorId),
         },
       });
@@ -3484,7 +3483,11 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     }
 
     if (billingResult?.billed || billingResult?.fees) {
-      await persistAcceptedBillingFields(doc, billingResult);
+      const billing = buildAcceptedBillingFields(doc, billingResult);
+      if (billing) {
+        doc.billing = billing;
+        acceptSet.billing = billing;
+      }
     }
     if (Object.keys(acceptSet).length > 0) {
       await PracticeTransfer.updateOne({ _id: doc._id }, { $set: acceptSet });
@@ -3565,7 +3568,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         production: toProductionApiFields(doc.production),
         abutmentRequestIds: abutmentEnsure.requestIds || [],
         unreadCount,
-        ...toTransferFilesApiFields(doc, { redactLabOralScanKeys: true }),
+        ...toTransferFilesApiFields(doc),
       },
     });
   } catch (error) {

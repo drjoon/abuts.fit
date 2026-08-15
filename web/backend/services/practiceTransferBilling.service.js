@@ -1247,19 +1247,31 @@ export async function adjustPracticeTransferHold({
     return { adjusted: false, reason: "missing_anchors" };
   }
 
-  const legacySpend = await getJournalByIdempotencyKey({
-    idempotencyKey: practiceTransferLegacySpendKey(transferId),
-    session: outerSession,
-  });
+  // Atlas RTT: legacy/hold/adjust 저널 + 수수료 조회를 한 파도로 묶는다.
+  const [legacySpend, holdJournalPrefetch, adjustExistingPrefetch, computed] =
+    await Promise.all([
+      getJournalByIdempotencyKey({
+        idempotencyKey: practiceTransferLegacySpendKey(transferId),
+        session: outerSession,
+      }),
+      getJournalByIdempotencyKey({
+        idempotencyKey: practiceTransferHoldKey(transferId),
+        session: outerSession,
+      }),
+      getJournalByIdempotencyKey({
+        idempotencyKey: practiceTransferHoldAdjustKey(transferId),
+        session: outerSession,
+      }),
+      computeAcceptedPracticeTransferFees({
+        transfer,
+        toothWorks,
+        session: outerSession,
+      }),
+    ]);
   if (legacySpend?.journalId) {
     return { adjusted: false, reason: "legacy_already_committed" };
   }
 
-  const computed = await computeAcceptedPracticeTransferFees({
-    transfer,
-    toothWorks,
-    session: outerSession,
-  });
   const { fees } = computed;
   if (fees.total <= 0) {
     return {
@@ -1280,10 +1292,7 @@ export async function adjustPracticeTransferHold({
     };
   }
 
-  let holdJournal = await getJournalByIdempotencyKey({
-    idempotencyKey: practiceTransferHoldKey(transferId),
-    session: outerSession,
-  });
+  let holdJournal = holdJournalPrefetch;
 
   if (!holdJournal?.journalId) {
     const holdResult = await holdPracticeTransferCredits({
@@ -1378,10 +1387,7 @@ export async function adjustPracticeTransferHold({
     };
   }
 
-  const adjustExisting = await getJournalByIdempotencyKey({
-    idempotencyKey: practiceTransferHoldAdjustKey(transferId),
-    session: outerSession,
-  });
+  const adjustExisting = adjustExistingPrefetch;
   if (adjustExisting?.journalId) {
     // 이미 조정된 경우 billing 스냅샷을 신뢰
     return {

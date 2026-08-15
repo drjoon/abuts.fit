@@ -22,7 +22,8 @@
 // - 2026-08-14: 자동매칭 수락·3시간 남은시간 뱃지 제거(도착일·소통 기한. 강제 클레임 만료 없음).
 // - 2026-08-14: 의뢰수락 busy — transfer-room 재연결을 await하지 않음(수락 API만 대기).
 // - 2026-08-14: 의뢰수락 — 낙관적 UI(즉시 수락 표시) + API는 백그라운드 확정/롤백.
-// - 2026-08-14: 수락/취소 버튼 — 처리 즉시 시작, UI는 최소 1초「…중」후 전환.
+// - 2026-08-15: 수락/취소 — API(~1.8s) 대기 없이 최소 딜레이 후 UI 전환, 실패 시 롤백.
+// - 2026-08-14: 수락/취소 버튼 — 처리 즉시 시작, UI는 최소 0.5초「…중」후 전환.
 // - 2026-08-14: 상세 모달 수락 자리에 작업취소(mark-release) 노출.
 // - 2026-08-14: 작업취소 — 서버 사이드이펙트 비동기. UI는 수락과 동일 1초 딜레이.
 // - 2026-08-11: 역할 로딩 스켈레톤(발신/수신)·수신 목록 카드 스켈레톤.
@@ -330,7 +331,10 @@ const getTransferDisplayStatus = (transfer: {
   return transfer.isRead ? ("수신완료" as const) : ("발송완료" as const);
 };
 
-const transferHasCustomAbutment = (transfer: ReceivedPracticeTransfer) => {
+const transferHasCustomAbutment = (
+  transfer: ReceivedPracticeTransfer | null | undefined,
+) => {
+  if (!transfer) return false;
   if (typeof transfer.hasCustomAbutment === "boolean") {
     return transfer.hasCustomAbutment;
   }
@@ -1375,8 +1379,8 @@ function RequestorPracticeReceivePage({
     [],
   );
 
-  /** 수락/취소 버튼 UI 전환 최소 딜레이(처리는 병렬로 즉시 진행) */
-  const ACTION_UI_MIN_MS = 1000;
+  /** 수락/취소 버튼 UI 전환 최소 딜레이(API는 백그라운드, UI는 이 시간만 대기) */
+  const ACTION_UI_MIN_MS = 500;
 
   const markTransferAccepted = useCallback(
     async (
@@ -1460,157 +1464,79 @@ function RequestorPracticeReceivePage({
           }
         }
 
-        const [res] = await Promise.all([
-          apiFetch<unknown>({
-            path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-accepted`,
-            method: "POST",
-            token,
-            body: bodyFiles ? { files: bodyFiles } : undefined,
-          }),
-          new Promise<void>((resolve) => {
-            window.setTimeout(resolve, ACTION_UI_MIN_MS);
-          }),
-        ]);
+        const acceptedAtIso = new Date().toISOString();
+        const rollbackPatch: Partial<ReceivedPracticeTransfer> = {
+          isRead: transfer.isRead,
+          requestorReadAt: transfer.requestorReadAt,
+          isDownloaded: transfer.isDownloaded,
+          isAccepted: transfer.isAccepted,
+          requestorDownloadedAt: transfer.requestorDownloadedAt,
+          requestorAcceptedAt: transfer.requestorAcceptedAt,
+          workCanceledAt: transfer.workCanceledAt,
+          manufacturerStage: transfer.manufacturerStage,
+          matchingMode: transfer.matchingMode,
+          autoMatch: transfer.autoMatch,
+          targetLabName: transfer.targetLabName,
+          files: transfer.files,
+          fileCount: transfer.fileCount,
+        };
 
-        if (!res.ok) {
-          const body =
-            res.data && typeof res.data === "object"
-              ? (res.data as Record<string, unknown>)
-              : {};
-          toast({
-            title: "의뢰수락 실패",
-            description: String(body.message || "의뢰수락 중 오류가 발생했습니다."),
-            variant: "destructive",
-          });
-          if (String(body.message || "").includes("다른 기공소")) {
-            void loadFirstPage({ silent: true });
-          }
-          return false;
-        }
+        const optimisticFiles: ReceivedPracticeFile[] | undefined = bodyFiles
+          ? bodyFiles.map((row, idx) => ({
+              id: `${transfer.id}::scan::${idx + 1}`,
+              patientName: "",
+              tooth: "",
+              originalName: row.file.originalName,
+              mimetype: row.file.mimetype,
+              size: row.file.size,
+              s3Key: row.file.s3Key,
+            }))
+          : undefined;
 
-        const body = res.data && typeof res.data === "object" ? (res.data as Record<string, unknown>) : {};
-        const data =
-          body.data && typeof body.data === "object"
-            ? (body.data as Record<string, unknown>)
-            : body;
-        const readAt = data.requestorReadAt
-          ? String(data.requestorReadAt)
-          : transfer.requestorReadAt || new Date().toISOString();
-        const acceptedAt = data.requestorAcceptedAt
-          ? String(data.requestorAcceptedAt)
-          : data.requestorDownloadedAt
-            ? String(data.requestorDownloadedAt)
-            : transfer.requestorDownloadedAt || new Date().toISOString();
-        const unreadCount = Number(data.unreadCount || 0);
-        const autoMatchRaw =
-          data.autoMatch && typeof data.autoMatch === "object"
-            ? (data.autoMatch as Record<string, unknown>)
-            : null;
-        const autoMatchPatch = autoMatchRaw
-          ? {
-              claimedAt: autoMatchRaw.claimedAt
-                ? String(autoMatchRaw.claimedAt)
-                : null,
-              deadlineAt: autoMatchRaw.deadlineAt
-                ? String(autoMatchRaw.deadlineAt)
-                : null,
-              claimHours:
-                autoMatchRaw.claimHours != null
-                  ? Number(autoMatchRaw.claimHours)
-                  : null,
-              completedAt: autoMatchRaw.completedAt
-                ? String(autoMatchRaw.completedAt)
-                : null,
-              openPool: Boolean(autoMatchRaw.openPool),
-              claimActive: Boolean(autoMatchRaw.claimActive),
-              completed: Boolean(autoMatchRaw.completed),
-              mine: Boolean(autoMatchRaw.mine),
-              remainingMs:
-                autoMatchRaw.remainingMs != null
-                  ? Number(autoMatchRaw.remainingMs)
-                  : null,
-              releaseCount: Number(autoMatchRaw.releaseCount || 0),
-            }
-          : {
-              openPool: false,
-              claimActive: true,
-              completed: false,
-              mine: true,
-              remainingMs: null,
-            };
-
-        const responseFilesRaw = Array.isArray(data.files) ? data.files : null;
-        const responseFiles: ReceivedPracticeFile[] | undefined = responseFilesRaw
-          ? responseFilesRaw
-              .map((row, idx) => {
-                const item =
-                  row && typeof row === "object"
-                    ? (row as Record<string, unknown>)
-                    : {};
-                const fileObj =
-                  item.file && typeof item.file === "object"
-                    ? (item.file as Record<string, unknown>)
-                    : item;
-                const originalName = String(
-                  fileObj.originalName || item.originalName || "",
-                ).trim();
-                const s3Key = String(fileObj.s3Key || item.s3Key || "").trim();
-                if (!originalName || !s3Key) return null;
-                return {
-                  id: String(item.id || `${transfer.id}::scan::${idx + 1}`),
-                  patientName: String(item.patientName || "").trim(),
-                  tooth: String(item.tooth || "").trim(),
-                  originalName,
-                  mimetype: String(
-                    fileObj.mimetype || item.mimetype || "application/octet-stream",
-                  ).trim(),
-                  size: Number(fileObj.size || item.size || 0),
-                  s3Key,
-                } satisfies ReceivedPracticeFile;
-              })
-              .filter(Boolean) as ReceivedPracticeFile[]
-          : bodyFiles
-            ? bodyFiles.map((row, idx) => ({
-                id: `${transfer.id}::scan::${idx + 1}`,
-                patientName: "",
-                tooth: "",
-                originalName: row.file.originalName,
-                mimetype: row.file.mimetype,
-                size: row.file.size,
-                s3Key: row.file.s3Key,
-              }))
-            : undefined;
-
-        const patch = {
+        const optimisticPatch: Partial<ReceivedPracticeTransfer> = {
           isRead: true,
-          requestorReadAt: readAt,
+          requestorReadAt: transfer.requestorReadAt || acceptedAtIso,
           isDownloaded: true,
           isAccepted: true,
-          requestorDownloadedAt: acceptedAt,
-          requestorAcceptedAt: acceptedAt,
+          requestorDownloadedAt: acceptedAtIso,
+          requestorAcceptedAt: acceptedAtIso,
           workCanceledAt: null,
           manufacturerStage: "의뢰수락",
-          matchingMode:
-            String(data.matchingMode || transfer.matchingMode || "direct") ===
-            "auto"
-              ? ("auto" as const)
-              : ("direct" as const),
-          autoMatch: autoMatchPatch,
-          targetLabName: data.targetLabName
-            ? String(data.targetLabName)
-            : transfer.targetLabName,
-          ...(responseFiles
-            ? {
-                files: responseFiles,
-                fileCount: responseFiles.length,
-              }
+          matchingMode: transfer.matchingMode === "auto" ? "auto" : "direct",
+          autoMatch:
+            transfer.matchingMode === "auto"
+              ? {
+                  ...(transfer.autoMatch || {}),
+                  claimedAt: acceptedAtIso,
+                  deadlineAt: null,
+                  claimHours: null,
+                  completedAt: null,
+                  openPool: false,
+                  claimActive: true,
+                  completed: false,
+                  mine: true,
+                  remainingMs: null,
+                  releaseCount: Number(transfer.autoMatch?.releaseCount || 0),
+                }
+              : transfer.autoMatch,
+          ...(optimisticFiles
+            ? { files: optimisticFiles, fileCount: optimisticFiles.length }
             : {}),
         };
 
-        applyAcceptedLocalPatch(transfer, patch);
-        setPendingOralScanFiles([]);
+        const apiPromise = apiFetch<unknown>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-accepted`,
+          method: "POST",
+          token,
+          body: bodyFiles ? { files: bodyFiles } : undefined,
+        });
 
-        emitUnreadBadgeRefresh(unreadCount);
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, ACTION_UI_MIN_MS);
+        });
+
+        applyAcceptedLocalPatch(transfer, optimisticPatch);
+        setPendingOralScanFiles([]);
         toast({
           title: "의뢰수락 완료",
           description:
@@ -1618,6 +1544,145 @@ function RequestorPracticeReceivePage({
               ? "선착순 수락되었습니다."
               : "기공의뢰를 수락했습니다.",
         });
+
+        void apiPromise
+          .then((res) => {
+            if (!res.ok) {
+              const body =
+                res.data && typeof res.data === "object"
+                  ? (res.data as Record<string, unknown>)
+                  : {};
+              applyAcceptedLocalPatch(transfer, rollbackPatch);
+              toast({
+                title: "의뢰수락 실패",
+                description: String(
+                  body.message || "의뢰수락 중 오류가 발생했습니다.",
+                ),
+                variant: "destructive",
+              });
+              if (String(body.message || "").includes("다른 기공소")) {
+                void loadFirstPage({ silent: true });
+              }
+              return;
+            }
+
+            const body =
+              res.data && typeof res.data === "object"
+                ? (res.data as Record<string, unknown>)
+                : {};
+            const data =
+              body.data && typeof body.data === "object"
+                ? (body.data as Record<string, unknown>)
+                : body;
+            const readAt = data.requestorReadAt
+              ? String(data.requestorReadAt)
+              : optimisticPatch.requestorReadAt;
+            const acceptedAt = data.requestorAcceptedAt
+              ? String(data.requestorAcceptedAt)
+              : data.requestorDownloadedAt
+                ? String(data.requestorDownloadedAt)
+                : optimisticPatch.requestorAcceptedAt;
+            const unreadCount = Number(data.unreadCount);
+            if (Number.isFinite(unreadCount)) {
+              emitUnreadBadgeRefresh(unreadCount);
+            }
+            const autoMatchRaw =
+              data.autoMatch && typeof data.autoMatch === "object"
+                ? (data.autoMatch as Record<string, unknown>)
+                : null;
+            const autoMatchPatch = autoMatchRaw
+              ? {
+                  claimedAt: autoMatchRaw.claimedAt
+                    ? String(autoMatchRaw.claimedAt)
+                    : null,
+                  deadlineAt: autoMatchRaw.deadlineAt
+                    ? String(autoMatchRaw.deadlineAt)
+                    : null,
+                  claimHours:
+                    autoMatchRaw.claimHours != null
+                      ? Number(autoMatchRaw.claimHours)
+                      : null,
+                  completedAt: autoMatchRaw.completedAt
+                    ? String(autoMatchRaw.completedAt)
+                    : null,
+                  openPool: Boolean(autoMatchRaw.openPool),
+                  claimActive: Boolean(autoMatchRaw.claimActive),
+                  completed: Boolean(autoMatchRaw.completed),
+                  mine: Boolean(autoMatchRaw.mine),
+                  remainingMs:
+                    autoMatchRaw.remainingMs != null
+                      ? Number(autoMatchRaw.remainingMs)
+                      : null,
+                  releaseCount: Number(autoMatchRaw.releaseCount || 0),
+                }
+              : optimisticPatch.autoMatch;
+
+            const responseFilesRaw = Array.isArray(data.files) ? data.files : null;
+            const responseFiles: ReceivedPracticeFile[] | undefined = responseFilesRaw
+              ? (responseFilesRaw
+                  .map((row, idx) => {
+                    const item =
+                      row && typeof row === "object"
+                        ? (row as Record<string, unknown>)
+                        : {};
+                    const fileObj =
+                      item.file && typeof item.file === "object"
+                        ? (item.file as Record<string, unknown>)
+                        : item;
+                    const originalName = String(
+                      fileObj.originalName || item.originalName || "",
+                    ).trim();
+                    const s3Key = String(fileObj.s3Key || item.s3Key || "").trim();
+                    if (!originalName || !s3Key) return null;
+                    return {
+                      id: String(item.id || `${transfer.id}::scan::${idx + 1}`),
+                      patientName: String(item.patientName || "").trim(),
+                      tooth: String(item.tooth || "").trim(),
+                      originalName,
+                      mimetype: String(
+                        fileObj.mimetype ||
+                          item.mimetype ||
+                          "application/octet-stream",
+                      ).trim(),
+                      size: Number(fileObj.size || item.size || 0),
+                      s3Key,
+                    } satisfies ReceivedPracticeFile;
+                  })
+                  .filter(Boolean) as ReceivedPracticeFile[])
+              : undefined;
+
+            applyAcceptedLocalPatch(transfer, {
+              isRead: true,
+              requestorReadAt: readAt,
+              isDownloaded: true,
+              isAccepted: true,
+              requestorDownloadedAt: acceptedAt,
+              requestorAcceptedAt: acceptedAt,
+              workCanceledAt: null,
+              manufacturerStage: "의뢰수락",
+              matchingMode:
+                String(data.matchingMode || transfer.matchingMode || "direct") ===
+                "auto"
+                  ? ("auto" as const)
+                  : ("direct" as const),
+              autoMatch: autoMatchPatch,
+              targetLabName: data.targetLabName
+                ? String(data.targetLabName)
+                : transfer.targetLabName,
+              ...(responseFiles
+                ? { files: responseFiles, fileCount: responseFiles.length }
+                : {}),
+            });
+          })
+          .catch(() => {
+            applyAcceptedLocalPatch(transfer, rollbackPatch);
+            toast({
+              title: "의뢰수락 실패",
+              description: "의뢰수락 요청 중 오류가 발생했습니다.",
+              variant: "destructive",
+            });
+          });
+
         return true;
       } catch {
         toast({
@@ -1969,93 +2034,123 @@ function RequestorPracticeReceivePage({
 
       const isAuto = String(transfer.matchingMode || "") === "auto";
       const canceledAt = new Date().toISOString();
+      const rollbackPatch: Partial<ReceivedPracticeTransfer> = {
+        isAccepted: transfer.isAccepted,
+        isDownloaded: transfer.isDownloaded,
+        requestorDownloadedAt: transfer.requestorDownloadedAt,
+        requestorAcceptedAt: transfer.requestorAcceptedAt,
+        workCanceledAt: transfer.workCanceledAt,
+        manufacturerStage: transfer.manufacturerStage,
+        targetLabName: transfer.targetLabName,
+        autoMatch: transfer.autoMatch,
+      };
+
+      const releasePatch: Partial<ReceivedPracticeTransfer> = isAuto
+        ? {
+            isAccepted: false,
+            isDownloaded: false,
+            requestorDownloadedAt: null,
+            requestorAcceptedAt: null,
+            workCanceledAt: canceledAt,
+            manufacturerStage: "작업취소",
+            targetLabName: "자동 매칭",
+            autoMatch: {
+              ...(transfer.autoMatch || {}),
+              claimedAt: null,
+              deadlineAt: null,
+              completedAt: null,
+              openPool: true,
+              claimActive: false,
+              completed: false,
+              mine: false,
+              remainingMs: null,
+              releaseCount: Number(transfer.autoMatch?.releaseCount || 0) + 1,
+            },
+          }
+        : {
+            isAccepted: false,
+            isDownloaded: false,
+            requestorDownloadedAt: null,
+            requestorAcceptedAt: null,
+            workCanceledAt: canceledAt,
+            manufacturerStage: "작업취소",
+            autoMatch: transfer.autoMatch
+              ? {
+                  ...transfer.autoMatch,
+                  completedAt: null,
+                  completed: false,
+                  claimActive: false,
+                }
+              : transfer.autoMatch,
+          };
 
       try {
-        const [res] = await Promise.all([
-          apiFetch<unknown>({
-            path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-release`,
-            method: "POST",
-            token,
-          }),
-          new Promise<void>((resolve) => {
-            window.setTimeout(resolve, ACTION_UI_MIN_MS);
-          }),
-        ]);
-        if (!res.ok) {
-          const body =
-            res.data && typeof res.data === "object"
-              ? (res.data as Record<string, unknown>)
-              : {};
-          toast({
-            title: "작업 취소 실패",
-            description: String(body.message || "작업 취소 처리 중 오류가 발생했습니다."),
-            variant: "destructive",
-          });
-          return false;
-        }
+        const apiPromise = apiFetch<unknown>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-release`,
+          method: "POST",
+          token,
+        });
 
-        const body =
-          res.data && typeof res.data === "object"
-            ? (res.data as Record<string, unknown>)
-            : {};
-        const data =
-          body.data && typeof body.data === "object"
-            ? (body.data as Record<string, unknown>)
-            : body;
-        const autoMatchRaw =
-          data.autoMatch && typeof data.autoMatch === "object"
-            ? (data.autoMatch as Record<string, unknown>)
-            : null;
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, ACTION_UI_MIN_MS);
+        });
 
-        const releasePatch: Partial<ReceivedPracticeTransfer> = isAuto
-          ? {
-              isAccepted: false,
-              isDownloaded: false,
-              requestorDownloadedAt: null,
-              requestorAcceptedAt: null,
-              workCanceledAt: canceledAt,
-              manufacturerStage: "작업취소",
-              targetLabName: "자동 매칭",
-              autoMatch: {
-                ...(transfer.autoMatch || {}),
-                claimedAt: null,
-                deadlineAt: null,
-                completedAt: null,
-                openPool: true,
-                claimActive: false,
-                completed: false,
-                mine: false,
-                remainingMs: null,
-                releaseCount:
-                  autoMatchRaw?.releaseCount != null
-                    ? Number(autoMatchRaw.releaseCount)
-                    : Number(transfer.autoMatch?.releaseCount || 0) + 1,
-              },
-            }
-          : {
-              isAccepted: false,
-              isDownloaded: false,
-              requestorDownloadedAt: null,
-              requestorAcceptedAt: null,
-              workCanceledAt: canceledAt,
-              manufacturerStage: "작업취소",
-              autoMatch: transfer.autoMatch
-                ? {
-                    ...transfer.autoMatch,
-                    completedAt: null,
-                    completed: false,
-                    claimActive: false,
-                  }
-                : transfer.autoMatch,
-            };
         applyAcceptedLocalPatch(transfer, releasePatch);
-
         toast({
           title: "작업 취소",
           description: isAuto
             ? "수락을 취소해 공개 풀로 되돌렸습니다."
             : "의뢰수락을 취소했습니다.",
         });
+
+        void apiPromise
+          .then((res) => {
+            if (!res.ok) {
+              const body =
+                res.data && typeof res.data === "object"
+                  ? (res.data as Record<string, unknown>)
+                  : {};
+              applyAcceptedLocalPatch(transfer, rollbackPatch);
+              toast({
+                title: "작업 취소 실패",
+                description: String(
+                  body.message || "작업 취소 처리 중 오류가 발생했습니다.",
+                ),
+                variant: "destructive",
+              });
+              return;
+            }
+            const body =
+              res.data && typeof res.data === "object"
+                ? (res.data as Record<string, unknown>)
+                : {};
+            const data =
+              body.data && typeof body.data === "object"
+                ? (body.data as Record<string, unknown>)
+                : body;
+            const autoMatchRaw =
+              data.autoMatch && typeof data.autoMatch === "object"
+                ? (data.autoMatch as Record<string, unknown>)
+                : null;
+            if (isAuto && autoMatchRaw?.releaseCount != null) {
+              applyAcceptedLocalPatch(transfer, {
+                ...releasePatch,
+                autoMatch: {
+                  ...(releasePatch.autoMatch || {}),
+                  releaseCount: Number(autoMatchRaw.releaseCount),
+                },
+              });
+            }
+          })
+          .catch(() => {
+            applyAcceptedLocalPatch(transfer, rollbackPatch);
+            toast({
+              title: "작업 취소 실패",
+              description: "작업 취소 요청 중 오류가 발생했습니다.",
+              variant: "destructive",
+            });
+          });
+
         return true;
       } catch {
         toast({
@@ -2737,15 +2832,13 @@ function RequestorPracticeReceivePage({
                     ? ` · 어벗디자인 ${Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0)}개`
                     : ""}
                   {resultCount > 0 ? ` · 결과 ${resultCount}개` : ""}
-                  {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
-                  {transfer.arrivalDate ? ` · 치과도착일 ${transfer.arrivalDate}` : ""}
                   {transfer.orderDate && transfer.arrivalDate ? (
                     <>
                       {" · "}
                       <PracticeWorkPeriodText
                         orderDate={transfer.orderDate}
                         arrivalDate={transfer.arrivalDate}
-                        variant="labeled"
+                        variant="orderArrival"
                         viewer="lab"
                         className="text-xs"
                       />
