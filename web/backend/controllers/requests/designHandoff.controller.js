@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: PTX 핸드오프 — Request 저장 후 Transfer 미러. 취소는 orphan designFiles도 정리.
 // - 2026-08-15: 취소·핸드오프 — transfer.targetLabAnchorId로 수락 lab 판정(소유 어긋남 보정).
 // - 2026-08-15: PTX — 업로드 시 생산만 재견적·출고재계산, 준비 유지. 취소·재업로드(준비만).
 // - 2026-08-15: PTX 수락 기공소는 design-claim 없이 핸드오프(카드 업로드). internalLab 허용.
@@ -71,6 +72,25 @@ const toStoredFileMeta = (raw) => {
     s3Url: String(raw.s3Url || raw.location || "").trim() || undefined,
     uploadedAt: raw.uploadedAt ? new Date(raw.uploadedAt) : new Date(),
   };
+};
+
+/** PTX production 미러(디자인 파일·컨펌 플래그)만 비운다. */
+const clearPtxDesignMirror = async (transferId) => {
+  if (!transferId || !Types.ObjectId.isValid(String(transferId))) return;
+  await PracticeTransfer.updateOne(
+    { _id: transferId },
+    {
+      $set: {
+        "production.designFiles": [],
+      },
+      $unset: {
+        "production.designReadyAt": "",
+        "production.labDesignConfirmedAt": "",
+        "production.labDesignConfirmedBy": "",
+        "production.abutmentProductionStartedAt": "",
+      },
+    },
+  );
 };
 
 /**
@@ -207,20 +227,9 @@ export async function handoffDesignToProduction(req, res) {
       ? String(request.partnerBilling.relatedPracticeTransferId)
       : "";
 
-    // PTX: 수락 기공소 업로드 → 미러 + 컨펌 자동 + 생산만 재견적 + 준비 유지 + 어벗디자인비
+    // PTX: Request(designCompletedAt) 먼저 저장 → Transfer 미러.
+    // 미러를 먼저 쓰면 save 실패 시 UI만 디자인 있음·취소는 없음으로 갈라진다.
     if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
-      await mirrorDesignFileToPracticeTransfer({
-        transferId: relatedTransferId,
-        file: {
-          originalName: nextPrimary.originalName,
-          mimetype: nextPrimary.fileType,
-          size: nextPrimary.fileSize,
-          s3Key: nextPrimary.s3Key,
-        },
-        tooth: String(request?.caseInfos?.tooth || "").trim(),
-        patientName: String(request?.caseInfos?.patientName || "").trim(),
-      });
-
       let transferDoc = await PracticeTransfer.findById(relatedTransferId);
       const isAcceptingLab = isAcceptingLabForPtxDesignRequest(
         req.user,
@@ -228,53 +237,81 @@ export async function handoffDesignToProduction(req, res) {
         transferDoc?.targetLabAnchorId,
       );
       let designFeeGrant = null;
+      const now = new Date();
 
       if (transferDoc && isAcceptingLab) {
-        const now = new Date();
-        const productionPatch = {
-          ...(transferDoc.production && typeof transferDoc.production === "object"
-            ? transferDoc.production
-            : {}),
-          labDesignConfirmedAt:
-            transferDoc.production?.labDesignConfirmedAt || now,
-          labDesignConfirmedBy:
-            transferDoc.production?.labDesignConfirmedBy || req.user?._id || null,
-          // 수락 기공소가 직접 디자인 → 치과 컨펌 게이트 생략
-          skipDesignConfirm: true,
-        };
-        transferDoc.production = productionPatch;
-        await PracticeTransfer.updateOne(
-          { _id: transferDoc._id },
-          {
-            $set: {
-              "production.labDesignConfirmedAt": productionPatch.labDesignConfirmedAt,
-              "production.labDesignConfirmedBy":
-                productionPatch.labDesignConfirmedBy,
-              "production.skipDesignConfirm": true,
-            },
-          },
-        );
-
         await repriceAndReschedulePtxAbutmentRequest({
           requestDoc: request,
           transferDoc,
           requestedAt: now,
         });
-
-        try {
-          designFeeGrant = await grantAbutmentDesignLabFee({
-            requestDoc: request,
-            transferId: relatedTransferId,
-            labAnchorId:
-              labAnchorId || String(transferDoc.targetLabAnchorId || "").trim(),
-            actorUserId: userId,
-          });
-        } catch (grantErr) {
-          console.error("[DESIGN_HANDOFF] abutment design fee grant failed", grantErr);
-        }
       }
 
       await request.save();
+
+      try {
+        await mirrorDesignFileToPracticeTransfer({
+          transferId: relatedTransferId,
+          file: {
+            originalName: nextPrimary.originalName,
+            mimetype: nextPrimary.fileType,
+            size: nextPrimary.fileSize,
+            s3Key: nextPrimary.s3Key,
+          },
+          tooth: String(request?.caseInfos?.tooth || "").trim(),
+          patientName: String(request?.caseInfos?.patientName || "").trim(),
+        });
+
+        if (transferDoc && isAcceptingLab) {
+          const productionPatch = {
+            ...(transferDoc.production && typeof transferDoc.production === "object"
+              ? transferDoc.production
+              : {}),
+            labDesignConfirmedAt:
+              transferDoc.production?.labDesignConfirmedAt || now,
+            labDesignConfirmedBy:
+              transferDoc.production?.labDesignConfirmedBy || req.user?._id || null,
+            // 수락 기공소가 직접 디자인 → 치과 컨펌 게이트 생략
+            skipDesignConfirm: true,
+          };
+          transferDoc.production = productionPatch;
+          await PracticeTransfer.updateOne(
+            { _id: transferDoc._id },
+            {
+              $set: {
+                "production.labDesignConfirmedAt":
+                  productionPatch.labDesignConfirmedAt,
+                "production.labDesignConfirmedBy":
+                  productionPatch.labDesignConfirmedBy,
+                "production.skipDesignConfirm": true,
+              },
+            },
+          );
+
+          try {
+            designFeeGrant = await grantAbutmentDesignLabFee({
+              requestDoc: request,
+              transferId: relatedTransferId,
+              labAnchorId:
+                labAnchorId || String(transferDoc.targetLabAnchorId || "").trim(),
+              actorUserId: userId,
+            });
+          } catch (grantErr) {
+            console.error(
+              "[DESIGN_HANDOFF] abutment design fee grant failed",
+              grantErr,
+            );
+          }
+        }
+      } catch (mirrorErr) {
+        console.error("[DESIGN_HANDOFF] PTX mirror failed after request save", mirrorErr);
+        try {
+          await clearPtxDesignMirror(relatedTransferId);
+        } catch (rollbackErr) {
+          console.error("[DESIGN_HANDOFF] PTX mirror rollback failed", rollbackErr);
+        }
+        throw mirrorErr;
+      }
 
       return res.status(200).json({
         success: true,
@@ -394,10 +431,41 @@ export async function cancelDesignHandoff(req, res) {
       });
     }
 
-    if (!request.designCompletedAt) {
+    const transferDoc = await PracticeTransfer.findById(relatedTransferId)
+      .select({ "production.designFiles": 1, "production.designReadyAt": 1 })
+      .lean();
+    const mirroredDesignCount = Array.isArray(transferDoc?.production?.designFiles)
+      ? transferDoc.production.designFiles.length
+      : 0;
+    const hasMirroredDesign =
+      mirroredDesignCount > 0 || Boolean(transferDoc?.production?.designReadyAt);
+    const hasRequestDesign = Boolean(request.designCompletedAt);
+
+    if (!hasRequestDesign && !hasMirroredDesign) {
       return res.status(400).json({
         success: false,
         message: "업로드된 어벗디자인이 없습니다.",
+      });
+    }
+
+    const now = new Date();
+
+    // Request에 designCompletedAt이 없고 Transfer에만 미러가 남은 orphan:
+    // 구강스캔은 이미 primary — 미러만 비우면 재업로드 가능.
+    if (!hasRequestDesign && hasMirroredDesign) {
+      await clearPtxDesignMirror(relatedTransferId);
+      return res.status(200).json({
+        success: true,
+        message:
+          "어벗디자인 업로드가 취소되었습니다. 다시 업로드할 수 있습니다.",
+        data: {
+          requestId: String(request._id),
+          relatedPracticeTransferId: relatedTransferId,
+          manufacturerStage: "준비",
+          abutmentDesignFeeRevoked: false,
+          orphanMirrorCleared: true,
+          revokedAt: now.toISOString(),
+        },
       });
     }
 
@@ -422,22 +490,7 @@ export async function cancelDesignHandoff(req, res) {
     request.designCompletedBy = undefined;
 
     await request.save();
-
-    const now = new Date();
-    await PracticeTransfer.updateOne(
-      { _id: relatedTransferId },
-      {
-        $set: {
-          "production.designFiles": [],
-        },
-        $unset: {
-          "production.designReadyAt": "",
-          "production.labDesignConfirmedAt": "",
-          "production.labDesignConfirmedBy": "",
-          "production.abutmentProductionStartedAt": "",
-        },
-      },
-    );
+    await clearPtxDesignMirror(relatedTransferId);
 
     let feeRevoke = null;
     try {
