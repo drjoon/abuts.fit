@@ -74,6 +74,7 @@
  * - 2026-08-15: 「새로 작성」을 모드 전환 바로 오른쪽으로. 익스프레스 진행률·스텝 한 줄.
  * - 2026-08-15: 익스프레스 스텝·진행률을 기공의뢰 제목과 같은 헤더 행(좌·우)에 둔다.
  * - 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지(최근의뢰·전체보기).
+ * - 2026-08-16: 전체보기에서 휴지통 확인 후 최근의뢰 모달로 복귀(중첩 Confirm에 닫히지 않음).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1238,6 +1239,9 @@ export const PracticeFileTransferPage = ({
   const chatRoomResolveSeqRef = useRef(0);
   const transferDialogOpenRef = useRef(false);
   const returnToAllModalRef = useRef(false);
+  /** 전체보기 모달에서 휴지통 확인을 연 경우 — Confirm이 닫혀도 최근의뢰 모달 유지 */
+  const deleteReturnToAllModalRef = useRef(false);
+  const suppressRecentAllModalCloseRef = useRef(false);
   const selectedTransferIdRef = useRef("");
   const localFormUpdatedAtRef = useRef(0);
   const skipNextArrivalAutoSyncRef = useRef(false);
@@ -4417,6 +4421,21 @@ export const PracticeFileTransferPage = ({
     }
   };
 
+  const finishDeleteConfirmAndReturnToAllModal = () => {
+    setDeleteConfirmOpen(false);
+    setDeleteTargetTransfer(null);
+    if (deleteReturnToAllModalRef.current) {
+      setRecentTransfersAllOpen(true);
+      // Confirm 포털 unmount 직후 Radix Dialog onOpenChange(false)가 한 틱 더 올 수 있음
+      window.setTimeout(() => {
+        suppressRecentAllModalCloseRef.current = false;
+        deleteReturnToAllModalRef.current = false;
+      }, 0);
+      return;
+    }
+    suppressRecentAllModalCloseRef.current = false;
+  };
+
   const handleAskDeleteTransfer = (transfer: RecentTransferItem) => {
     if (
       transfer.status !== "임시저장" &&
@@ -4437,14 +4456,17 @@ export const PracticeFileTransferPage = ({
       void handleDeleteDraftTransfer(transfer);
       return;
     }
+    if (recentTransfersAllOpen) {
+      deleteReturnToAllModalRef.current = true;
+      suppressRecentAllModalCloseRef.current = true;
+    }
     setDeleteTargetTransfer(transfer);
     setDeleteConfirmOpen(true);
   };
 
   const handleCancelDeleteTransfer = () => {
     if (deletingTransfer) return;
-    setDeleteConfirmOpen(false);
-    setDeleteTargetTransfer(null);
+    finishDeleteConfirmAndReturnToAllModal();
   };
 
   const handleDeleteDraftTransfer = async (target: RecentTransferItem) => {
@@ -4507,8 +4529,7 @@ export const PracticeFileTransferPage = ({
 
     const target = deleteTargetTransfer;
     if (!target) {
-      setDeleteConfirmOpen(false);
-      setDeleteTargetTransfer(null);
+      finishDeleteConfirmAndReturnToAllModal();
       return;
     }
 
@@ -4516,8 +4537,7 @@ export const PracticeFileTransferPage = ({
       target.status === "임시저장" ||
       target.transferId === PRACTICE_DRAFT_TRANSFER_ID
     ) {
-      setDeleteConfirmOpen(false);
-      setDeleteTargetTransfer(null);
+      finishDeleteConfirmAndReturnToAllModal();
       void handleDeleteDraftTransfer(target);
       return;
     }
@@ -4528,8 +4548,7 @@ export const PracticeFileTransferPage = ({
         description: "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다.",
         variant: "destructive",
       });
-      setDeleteConfirmOpen(false);
-      setDeleteTargetTransfer(null);
+      finishDeleteConfirmAndReturnToAllModal();
       return;
     }
 
@@ -4546,8 +4565,7 @@ export const PracticeFileTransferPage = ({
         title: "삭제할 전송건이 없습니다",
         variant: "destructive",
       });
-      setDeleteConfirmOpen(false);
-      setDeleteTargetTransfer(null);
+      finishDeleteConfirmAndReturnToAllModal();
       return;
     }
 
@@ -4562,8 +4580,7 @@ export const PracticeFileTransferPage = ({
         deletedSet.has(row.id) ? { ...row, status: "취소" } : row,
       ),
     );
-    setDeleteConfirmOpen(false);
-    setDeleteTargetTransfer(null);
+    finishDeleteConfirmAndReturnToAllModal();
 
     try {
       // related files:
@@ -7240,7 +7257,11 @@ export const PracticeFileTransferPage = ({
 
         <PracticeRecentTransfersAllModal
           open={recentTransfersAllOpen}
-          onOpenChange={setRecentTransfersAllOpen}
+          onOpenChange={(open) => {
+            // ConfirmDialog(포털) 포커스/아웃사이드 상호작용으로 전체보기가 같이 닫히지 않게 함
+            if (!open && suppressRecentAllModalCloseRef.current) return;
+            setRecentTransfersAllOpen(open);
+          }}
           token={authToken}
           chatRooms={chatRooms}
           initialPeriod={period}
