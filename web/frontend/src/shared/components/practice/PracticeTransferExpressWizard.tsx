@@ -31,6 +31,10 @@ import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWor
 // - 2026-08-15: 기공의뢰 익스프레스 모드 — 한 화면 한 질문 위저드.
 // - 2026-08-15: Enter로 다음 단계(마지막은 전송). 메모 textarea·팝오버는 제외.
 // - 2026-08-15: 상단 1~6 단계 버튼은 언제든 바로가기.
+// - 2026-08-15: 스텝(좌)·진행률(우) 한 줄. 체크는 지나온+완료 단계만.
+// - 2026-08-15: 체크는 실제 방문 단계만. 새로 작성 시 방문·파일 캐시 리셋.
+// - 2026-08-15: 스텝·진행률은 카드 헤더(제목 오른쪽)로 이동.
+// - 2026-08-15: 체크 표시는 일정 기본값·빈 파일을 제외(게이트와 분리).
 
 export type PracticeTransferExpressStepId =
   | "lab"
@@ -106,7 +110,6 @@ type PracticeTransferExpressWizardProps = {
   summary: PracticeTransferExpressSummary;
   canProceed: boolean;
   proceedBlockedReason?: string;
-  stepOkById?: Partial<Record<PracticeTransferExpressStepId, boolean>>;
   oralScanRequired: boolean;
   skipDesignConfirm: boolean;
   onSkipDesignConfirmChange: (next: boolean) => void;
@@ -120,6 +123,67 @@ type PracticeTransferExpressWizardProps = {
 const stepIndexOf = (id: PracticeTransferExpressStepId) =>
   PRACTICE_TRANSFER_EXPRESS_STEPS.findIndex((step) => step.id === id);
 
+export function PracticeTransferExpressStepProgress({
+  stepId,
+  onStepIdChange,
+  stepOkById,
+  className,
+}: {
+  stepId: PracticeTransferExpressStepId;
+  onStepIdChange: (next: PracticeTransferExpressStepId) => void;
+  /** 체크 표시용. 일정 기본값·빈 파일은 false로 넘긴다(게이트 ok와 별개). */
+  stepOkById?: Partial<Record<PracticeTransferExpressStepId, boolean>>;
+  className?: string;
+}) {
+  const stepIndex = Math.max(0, stepIndexOf(stepId));
+  const progressPercent = Math.round(
+    ((stepIndex + 1) / PRACTICE_TRANSFER_EXPRESS_STEPS.length) * 100,
+  );
+
+  return (
+    <div className={cn("flex min-w-0 items-center gap-3", className)}>
+      <div className="flex shrink-0 flex-wrap gap-1.5">
+        {PRACTICE_TRANSFER_EXPRESS_STEPS.map((step, index) => {
+          const current = index === stepIndex;
+          // 지나온 단계 중, 의미 있는 입력이 있을 때만 체크(일정 기본·빈 파일 제외)
+          const done = index < stepIndex && Boolean(stepOkById?.[step.id]);
+          return (
+            <button
+              key={step.id}
+              type="button"
+              className={cn(
+                "inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-[11px] font-medium transition-colors cursor-pointer",
+                done && "bg-primary-soft text-primary-strong hover:bg-primary-soft/80",
+                current && "bg-primary-strong text-white",
+                !done && !current && "bg-muted text-foreground hover:bg-muted/80",
+              )}
+              onClick={() => {
+                if (current) return;
+                onStepIdChange(step.id);
+              }}
+              aria-current={current ? "step" : undefined}
+              aria-label={`${index + 1}단계 ${step.title}로 이동`}
+            >
+              {done ? <Check className="h-3.5 w-3.5" /> : index + 1}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex w-28 shrink-0 items-center gap-2 sm:w-36">
+        <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary-strong transition-[width] duration-300 ease-out"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {stepIndex + 1}/{PRACTICE_TRANSFER_EXPRESS_STEPS.length}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function PracticeTransferExpressWizard({
   stepId,
   onStepIdChange,
@@ -128,7 +192,6 @@ export function PracticeTransferExpressWizard({
   summary,
   canProceed,
   proceedBlockedReason,
-  stepOkById,
   oralScanRequired,
   skipDesignConfirm,
   onSkipDesignConfirmChange,
@@ -142,9 +205,6 @@ export function PracticeTransferExpressWizard({
   const stepMeta = PRACTICE_TRANSFER_EXPRESS_STEPS[stepIndex];
   const isFirst = stepIndex <= 0;
   const isLast = stepIndex >= PRACTICE_TRANSFER_EXPRESS_STEPS.length - 1;
-  const progressPercent = Math.round(
-    ((stepIndex + 1) / PRACTICE_TRANSFER_EXPRESS_STEPS.length) * 100,
-  );
 
   const filesHint = oralScanRequired
     ? "자동 매칭은 구강스캔 첨부가 필수입니다."
@@ -291,47 +351,6 @@ export function PracticeTransferExpressWizard({
 
   return (
     <div className="flex min-h-0 flex-col gap-6">
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-          <span>
-            {stepIndex + 1} / {PRACTICE_TRANSFER_EXPRESS_STEPS.length}
-          </span>
-          <span>{progressPercent}%</span>
-        </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary-strong transition-[width] duration-300 ease-out"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {PRACTICE_TRANSFER_EXPRESS_STEPS.map((step, index) => {
-            const current = index === stepIndex;
-            const done = !current && Boolean(stepOkById?.[step.id]);
-            return (
-              <button
-                key={step.id}
-                type="button"
-                className={cn(
-                  "inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-[11px] font-medium transition-colors cursor-pointer",
-                  done && "bg-primary-soft text-primary-strong hover:bg-primary-soft/80",
-                  current && "bg-primary-strong text-white",
-                  !done && !current && "bg-muted text-foreground hover:bg-muted/80",
-                )}
-                onClick={() => {
-                  if (current) return;
-                  onStepIdChange(step.id);
-                }}
-                aria-current={current ? "step" : undefined}
-                aria-label={`${index + 1}단계 ${step.title}로 이동`}
-              >
-                {done ? <Check className="h-3.5 w-3.5" /> : index + 1}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       <div className="space-y-2">
         <h2 className="text-2xl font-bold tracking-tight text-slate-900">
           {stepMeta.title}

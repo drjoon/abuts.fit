@@ -496,21 +496,23 @@ export const usePracticeTransferStep1 = (options?: Options) => {
   };
 
   const clearAllFiles = async () => {
-    const keys = files.map((file) => toPracticeFileKey(file));
-    if (keys.length === 0) return;
-
-    await Promise.all(
-      keys.map((key) =>
-        deleteFileFromIndexedDb(key).catch(() => {
-          // ignore
-        }),
-      ),
+    const stateKeys = files.map((file) => toPracticeFileKey(file));
+    const metaKeys = readPracticeFileCacheMeta(fileCacheMetaKey).map((row) =>
+      String(row.key || "").trim(),
     );
+    const keys = [...new Set([...stateKeys, ...metaKeys].filter(Boolean))];
 
-    const remainingMeta = readPracticeFileCacheMeta(fileCacheMetaKey).filter(
-      (row) => !keys.includes(row.key),
-    );
-    writePracticeFileCacheMeta(fileCacheMetaKey, remainingMeta);
+    if (keys.length > 0) {
+      await Promise.all(
+        keys.map((key) =>
+          deleteFileFromIndexedDb(key).catch(() => {
+            // ignore
+          }),
+        ),
+      );
+    }
+
+    writePracticeFileCacheMeta(fileCacheMetaKey, []);
     setFiles([]);
   };
 

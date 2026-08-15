@@ -70,6 +70,9 @@
  * - 2026-08-15: 치과 기공의뢰 카드 상단에 익스프레스/엑스퍼트 모드 전환.
  * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
  * - 2026-08-15: Express는 툴바 최근의뢰/임시저장/휴지통(다이얼로그). Expert는 xl 우측 접이식 카드.
+ * - 2026-08-15: 「새로 작성」을 기공의뢰 카드 위 툴바로 이동.
+ * - 2026-08-15: 「새로 작성」을 모드 전환 바로 오른쪽으로. 익스프레스 진행률·스텝 한 줄.
+ * - 2026-08-15: 익스프레스 스텝·진행률을 기공의뢰 제목과 같은 헤더 행(좌·우)에 둔다.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -168,6 +171,7 @@ import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeL
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import {
   PracticeTransferExpressDonePanel,
+  PracticeTransferExpressStepProgress,
   PracticeTransferExpressWizard,
   normalizeExpressStepId,
   resolveExpressLabLabel,
@@ -1069,6 +1073,8 @@ export const PracticeFileTransferPage = ({
   const [expressStepId, setExpressStepId] =
     useState<PracticeTransferExpressStepId>("lab");
   const [expressDone, setExpressDone] = useState(false);
+  /** 새로 작성 시 위저드 방문 단계(체크) 초기화용 */
+  const [expressWizardEpoch, setExpressWizardEpoch] = useState(0);
   const expressStepRestoredRef = useRef(false);
   const prevWorkspaceModeRef = useRef<"express" | "expert" | null>(null);
   const [autoMatchBudget, setAutoMatchBudget] =
@@ -5563,6 +5569,7 @@ export const PracticeFileTransferPage = ({
     setToothChartResetNonce((n) => n + 1);
     setExpressDone(false);
     setExpressStepId("lab");
+    setExpressWizardEpoch((n) => n + 1);
     expressStepRestoredRef.current = true;
 
     // 빈 폼 baseline — 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
@@ -5986,6 +5993,22 @@ export const PracticeFileTransferPage = ({
         <div className="flex flex-wrap items-center gap-2">
           {roleSwitcher}
           <WorkspaceModeSwitch />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 px-3"
+                onClick={() => void handleStartNewTransfer()}
+              >
+                새로 작성
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs">
+              작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
+            </TooltipContent>
+          </Tooltip>
           {isExpressMode ? (
             <>
               <Button
@@ -6036,8 +6059,8 @@ export const PracticeFileTransferPage = ({
           <div className={cn("flex min-w-0 flex-col gap-3", !isExpressMode && "xl:col-span-7")}>
           <Card className="border-slate-200/80 shadow-sm">
             <CardHeader className="pb-2 pt-3">
-              <div className="flex items-center justify-between gap-2">
-                <CardTitle className="flex min-w-0 items-center gap-2 text-xl font-bold tracking-tight">
+              <div className="flex items-center gap-4">
+                <CardTitle className="flex shrink-0 items-center gap-2 text-xl font-bold tracking-tight">
                   <UploadCloud className="h-5 w-5 shrink-0 text-primary-strong" />
                   <span className="shrink-0">기공의뢰</span>
                   {formSyncStatusLabel ? (
@@ -6053,27 +6076,32 @@ export const PracticeFileTransferPage = ({
                     </span>
                   ) : null}
                 </CardTitle>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-9 px-3 text-base"
-                      onClick={() => void handleStartNewTransfer()}
-                    >
-                      새로 작성
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs text-xs">
-                    작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
-                  </TooltipContent>
-                </Tooltip>
+              <div className="flex flex-1 items-center justify-end gap-4">
+                {showExpressWizard ? (
+                  <PracticeTransferExpressStepProgress
+                    key={expressWizardEpoch}
+                    className="min-w-0"
+                    stepId={expressStepId}
+                    onStepIdChange={setExpressStepId}
+                    stepOkById={{
+                      lab: expressStepGate.lab.ok,
+                      patient: expressStepGate.patient.ok,
+                      // 일정은 항상 기본값이 있어 게이트 ok여도 체크하지 않는다
+                      schedule: false,
+                      prosthesis: expressStepGate.prosthesis.ok,
+                      // 파일은 실제 첨부가 있을 때만 체크(선택 첨부의 빈 상태 제외)
+                      files: files.length + draftFiles.length > 0,
+                      confirm: expressStepGate.confirm.ok,
+                    }}
+                  />
+                ) : null}
+              </div>
               </div>
             </CardHeader>
             <CardContent className="pt-5">
               {showExpressWizard ? (
                 <PracticeTransferExpressWizard
+                  key={expressWizardEpoch}
                   stepId={expressStepId}
                   onStepIdChange={setExpressStepId}
                   filePaneProps={practiceTransferFilePaneProps}
@@ -6088,14 +6116,6 @@ export const PracticeFileTransferPage = ({
                   }}
                   canProceed={expressStepGate[expressStepId]?.ok ?? false}
                   proceedBlockedReason={expressStepGate[expressStepId]?.reason}
-                  stepOkById={{
-                    lab: expressStepGate.lab.ok,
-                    patient: expressStepGate.patient.ok,
-                    schedule: expressStepGate.schedule.ok,
-                    prosthesis: expressStepGate.prosthesis.ok,
-                    files: expressStepGate.files.ok,
-                    confirm: expressStepGate.confirm.ok,
-                  }}
                   oralScanRequired={expressOralScanRequired}
                   skipDesignConfirm={skipDesignConfirm}
                   onSkipDesignConfirmChange={persistSkipDesignConfirmSetting}
