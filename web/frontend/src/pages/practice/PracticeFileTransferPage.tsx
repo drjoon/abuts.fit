@@ -32,6 +32,8 @@
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+ * - web/frontend/src/features/layout/WorkspaceModeSwitch.tsx
+ * - web/frontend/src/shared/workspace/workspaceMode.ts
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
@@ -63,6 +65,7 @@
  * - 2026-08-14: 임시저장 디바운스·한글 IME 게이트. stale 저장 응답에서도 draftId 회수.
  * - 2026-08-14: 기공수가 할증 변경(practice:lab-fee-multiplier-updated) 시 견적·리메이크 미리보기 갱신.
  * - 2026-08-14: 기공소 수락 시 웹소켓 feeQuote로 치과「확정 기공비」즉시 반영.
+ * - 2026-08-15: 치과 기공의뢰 카드 상단에 익스프레스/엑스퍼트 모드 전환.
  * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
  */
 
@@ -98,6 +101,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
+import { WorkspaceModeSwitch } from "@/features/layout/WorkspaceModeSwitch";
 import {
   Popover,
   PopoverContent,
@@ -5615,6 +5619,7 @@ export const PracticeFileTransferPage = ({
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-2">
+                    <WorkspaceModeSwitch />
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button

@@ -4,8 +4,12 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/layout/AccountSwitcher.tsx
+// - web/frontend/src/features/layout/WorkspaceModeSwitch.tsx
+// - web/frontend/src/shared/workspace/workspaceMode.ts
 // - web/backend/controllers/auth/auth.controller.js
 // - web/backend/modules/auth/auth.routes.js
+// - web/backend/controllers/users/user.controller.js
+// - 2026-08-15: 계정(개인) preferences.workspaceMode 로그인·전환에 반영 (기본 expert)
 import { create } from "zustand";
 import { request } from "@/shared/api/apiClient";
 import type { AppUserRole } from "@/shared/types/role";
@@ -17,6 +21,10 @@ import {
   type RequestorKind,
   type RequestorServices,
 } from "@/shared/business/requestorCapabilities";
+import {
+  normalizeWorkspaceMode,
+  type WorkspaceMode,
+} from "@/shared/workspace/workspaceMode";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
@@ -64,6 +72,8 @@ export interface User {
   };
   /** 계정별 최근 대시보드 경로 (pathname+search) */
   lastDashboardPath?: string | null;
+  /** 계정(개인) 단위 UI 모드. 기본 엑스퍼트 */
+  workspaceMode?: WorkspaceMode;
 }
 
 const normalizeApiUser = (u: unknown): User | null => {
@@ -159,6 +169,15 @@ const normalizeApiUser = (u: unknown): User | null => {
       const raw = prefs?.lastDashboardPath;
       return typeof raw === "string" && raw.trim() ? String(raw).trim() : null;
     })(),
+    workspaceMode: (() => {
+      const prefs =
+        row.preferences && typeof row.preferences === "object"
+          ? (row.preferences as Record<string, unknown>)
+          : null;
+      return normalizeWorkspaceMode(
+        prefs?.workspaceMode ?? row.workspaceMode,
+      );
+    })(),
   };
 };
 
@@ -191,6 +210,7 @@ interface AuthState {
   ) => Promise<LoginWithTokenResult>;
   setUser: (user: User | null) => void;
   setLastDashboardPath: (path: string | null) => void;
+  setWorkspaceMode: (mode: WorkspaceMode) => void;
   logout: () => void;
 }
 
@@ -482,6 +502,20 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const current = get().user;
       if (!current) return;
       const next = { ...current, lastDashboardPath: path };
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      set({ user: next });
+    },
+    setWorkspaceMode: (mode: WorkspaceMode) => {
+      const current = get().user;
+      if (!current) return;
+      const next = {
+        ...current,
+        workspaceMode: normalizeWorkspaceMode(mode),
+      };
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
       } catch {

@@ -235,6 +235,12 @@ const userSchema = new mongoose.Schema(
         default: null,
         maxlength: 300,
       },
+      /** 계정(개인) 단위 UI 모드. 익스프레스는 추후. 기본 엑스퍼트 */
+      workspaceMode: {
+        type: String,
+        enum: ["express", "expert"],
+        default: "expert",
+      },
     },
   },
   {

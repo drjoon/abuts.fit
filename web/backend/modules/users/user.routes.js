@@ -35,6 +35,10 @@ router.put("/notification-settings", userController.updateNotificationSettings);
 router.get("/last-dashboard-path", userController.getLastDashboardPath);
 router.put("/last-dashboard-path", userController.updateLastDashboardPath);
 
+// 계정(개인) 워크스페이스 모드
+router.get("/workspace-mode", userController.getWorkspaceMode);
+router.put("/workspace-mode", userController.updateWorkspaceMode);
+
 // 내 보안 로그 (로그인 기록 등)
 router.get("/security-logs", userController.getMySecurityLogs);
 
