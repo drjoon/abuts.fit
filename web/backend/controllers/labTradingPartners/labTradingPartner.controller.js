@@ -10,6 +10,7 @@
 // - 2026-08-14: 치과별 기공수가 할증 저장 시 해당 치과 사용자에 app-event 이밋.
 // - 2026-08-15: 할증 upsert 시 history 보존(1x 해제·배수 변경도 기존 의뢰 소급 금지).
 // - 2026-08-14: 기공소 신규 기공비 → 어벗츠 수가(off·검토) 동기화 + 관리자 알림.
+// - 2026-08-15: internalLab 기공비 API 허용. 미저장 시 관리자 어벗츠 수가 카탈로그 복사.
 import { Types } from "mongoose";
 import LabTradingPartner from "../../models/labTradingPartner.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -30,8 +31,12 @@ import {
   normalizeLabFeeMultiplier,
   resolveLabPracticeFeeMultiplier,
   upsertLabPracticeFeeMultiplierList,
+  buildDefaultLabFeeSchedule,
 } from "../../utils/labFeeSchedule.js";
-import { syncNewLabFeeItemsToAbutsCatalog } from "../../utils/abutsLabFeeSchedule.js";
+import {
+  loadAbutsLabFeeSchedule,
+  syncNewLabFeeItemsToAbutsCatalog,
+} from "../../utils/abutsLabFeeSchedule.js";
 import {
   normalizeRequestorKind,
   resolveRequestorProfile,
@@ -41,6 +46,44 @@ import {
 } from "../../services/creditRevenuePolicy.service.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
+
+/**
+ * 설정 UI용 수가. 저장된 항목이 없으면 관리자 어벗츠 수가(카탈로그)를 복사.
+ * (하드코딩 기본값보다 관리자「어벗츠 수가」SSOT 우선)
+ */
+async function resolveLabFeeScheduleForSettingsFromCatalog(schedule) {
+  const hasItems =
+    Array.isArray(schedule?.items) && schedule.items.length > 0;
+  if (hasItems) {
+    return schedule;
+  }
+  try {
+    const abuts = await loadAbutsLabFeeSchedule();
+    const catalogItems = normalizeLabFeeItems({
+      items: Array.isArray(abuts?.items) ? abuts.items : [],
+    }).filter((item) => item?.name && item.pendingReview !== true);
+    if (catalogItems.length) {
+      return {
+        ...buildDefaultLabFeeSchedule(),
+        ...(schedule && typeof schedule === "object" ? schedule : {}),
+        items: catalogItems.map((item) => ({
+          ...item,
+          pendingReview: false,
+          proposedByLabName: "",
+          proposedByLabAnchorId: "",
+          proposedAt: null,
+        })),
+        active: false,
+      };
+    }
+  } catch (error) {
+    console.warn(
+      "[labTradingPartners] abuts catalog seed failed",
+      error?.message || error,
+    );
+  }
+  return resolveLabFeeScheduleForSettings(schedule);
+}
 
 /** 기공소 설정 화면 표시용 플랫폼 수수료율 조회 (개발운영사 설정 SSOT: BusinessAnchor.payoutRates) */
 async function resolvePlatformFeeRatesForDisplay() {
@@ -59,6 +102,7 @@ async function resolvePlatformFeeRatesForDisplay() {
 /**
  * 기공소 앵커 해석 — getMyBusiness와 동일하게 User/Anchor 프로필 SSOT 사용.
  * (앵커 requestorKind 미기입·유저 미러만 lab인 경우에도 403 방지)
+ * internalLab(어벗츠기공소)도 기공비·거래처 API 호출 가능.
  */
 async function resolveCallerLabAnchorId(req) {
   const userId = req.user?._id;
@@ -74,6 +118,7 @@ async function resolveCallerLabAnchorId(req) {
     })
     .lean();
 
+  const role = String(freshUser?.role || req.user?.role || "").trim();
   const candidateIds = [];
   const pushId = (raw) => {
     const id = String(raw || "").trim();
@@ -85,7 +130,7 @@ async function resolveCallerLabAnchorId(req) {
   pushId(req.user?.businessAnchorId);
 
   const membershipAnchors = await BusinessAnchor.find({
-    businessType: "requestor",
+    businessType: { $in: ["requestor", "internalLab"] },
     $or: [
       { primaryContactUserId: userId },
       { owners: userId },
@@ -124,7 +169,16 @@ async function resolveCallerLabAnchorId(req) {
         })
         .lean();
     }
-    if (!anchor || String(anchor.businessType || "") !== "requestor") continue;
+    if (!anchor) continue;
+
+    const businessType = String(anchor.businessType || "").trim();
+    if (businessType === "internalLab") {
+      if (role === "internalLab" || role === "admin") {
+        return String(anchor._id);
+      }
+      continue;
+    }
+    if (businessType !== "requestor") continue;
 
     const businessVerified =
       String(anchor.status || "") === "verified" ||
@@ -510,7 +564,9 @@ export async function getLabFeeSchedule(req, res) {
       .select({ labFeeSchedule: 1 })
       .lean();
     const configured = isLabFeeScheduleConfigured(lab?.labFeeSchedule);
-    const source = resolveLabFeeScheduleForSettings(lab?.labFeeSchedule);
+    const source = await resolveLabFeeScheduleForSettingsFromCatalog(
+      lab?.labFeeSchedule,
+    );
     const items = normalizeLabFeeItems(source);
     const schedule = normalizeLabFeeSchedule(source);
     const remake = normalizeLabFeeRemakeSchedule(source);
@@ -548,13 +604,19 @@ export async function updateLabFeeSchedule(req, res) {
     const existing = await BusinessAnchor.findById(labAnchorId)
       .select({ labFeeSchedule: 1, name: 1, metadata: 1 })
       .lean();
-    const items = Array.isArray(req.body?.items)
+    let items = Array.isArray(req.body?.items)
       ? normalizeLabFeeItems({ items: req.body.items })
       : normalizeLabFeeItems(
           existing?.labFeeSchedule?.items?.length
             ? existing.labFeeSchedule
             : req.body?.schedule || req.body || existing?.labFeeSchedule,
         );
+    if (!items.length) {
+      const seeded = await resolveLabFeeScheduleForSettingsFromCatalog(
+        existing?.labFeeSchedule,
+      );
+      items = normalizeLabFeeItems(seeded);
+    }
     const remakeRaw = req.body?.remake ?? req.body?.schedule?.remake;
     const remakeFallback = normalizeLabFeeRemakeSchedule(
       remakeRaw != null ? remakeRaw : existing?.labFeeSchedule,

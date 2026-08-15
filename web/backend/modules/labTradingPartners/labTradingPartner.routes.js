@@ -29,14 +29,14 @@ router.get(
 router.get(
   "/fee-schedule",
   authenticate,
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "internalLab", "admin"]),
   getLabFeeSchedule,
 );
 
 router.put(
   "/fee-schedule",
   authenticate,
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "internalLab", "admin"]),
   updateLabFeeSchedule,
 );
 
