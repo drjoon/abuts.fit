@@ -56,7 +56,7 @@ const systemSettingsSchema = new mongoose.Schema(
       // 치과 납품 커스텀어벗 소매가(1어벗당). 기공의뢰 분배·devops 요금 설정 SSOT
       abutmentRetailPrice: { type: Number, default: 40000 },
       // 치과(practice) 전용 멤버십 월 구독료. 기공소에는 적용하지 않음.
-      practiceMembershipMonthlyFee: { type: Number, default: 55000 },
+      practiceMembershipMonthlyFee: { type: Number, default: 50000 },
       // 기공소 가입 환영 무료크레딧(단일). 레거시 defaultShippingFreeCredit는 0 고정.
       defaultRequestFreeCredit: { type: Number, default: 30000 },
       defaultShippingFreeCredit: { type: Number, default: 0 },

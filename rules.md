@@ -143,6 +143,13 @@
   - 앱 내 의뢰/배송/정산 금액·장부(`LedgerLine`)·UI 표시는 **공급가(원)** 기준. 수익 라인에 VAT를 가산하지 않는다(`vatAmount = 0`).
   - 합계 비교·잔액 집계는 `amountExcludingVat`(없으면 `amount`)를 쓰며, 이는 공급가와 동일하다.
   - 사용자/약관/가격 안내에서 "VAT 별도·부가세 포함·VAT 10%" 표현 금지. 배송비 별도 안내는 유지.
+- **매칭·멤버십 과금 SSOT(강제):**
+  - 한 줄: **기공소 월 참여 수수료 0원 + 치과 멤버십만 월 과금(면세·부가세 없음, 유료 크레딧 차감).**
+  - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 0%.
+  - 치과(`practice`): **멤버십 월 구독료** `practiceMembershipMonthlyFee` **기본 50,000원(공급가, VAT 0)**. 혜택=커스텀어벗 멤버십 단가. 해지=기간말 예약(`practiceMembershipCancelAtPeriodEnd`), 다음 결제일까지 유지.
+  - 치과 멤버십 청구: 결제일 도래 시 **유료 크레딧(`REQ_PAID_CREDIT`)에서 공급가 차감**(무료·기공크레딧 미사용). 잔액 부족 시 갱신 실패 → 멤버십 OFF·일반 단가. `vatAmount = 0`.
+  - 유료 크레딧 사용처(확장): 기공물·어벗 주문 대금 **및 치과 멤버십 월 구독료**. 기공소 매칭 월정·기타 플랫폼 SaaS 과금에는 쓰지 않는다.
+  - 설정: 멤버십=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 매칭 성공율·월정(0)=`DevopsPlatformFeeTab` / `PATCH /api/admin/settings/platform-fees`.
 - 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
 - 기존 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
   **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
@@ -276,7 +283,7 @@
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 **10,000원 / 1어벗**). 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 55,000원).
+  - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 **10,000원 / 1어벗**). 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감 — §2.3 매칭·멤버십 과금 SSOT).
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`

@@ -288,7 +288,7 @@ export const PracticeTransferAutoMatchTab = () => {
                 기공소 매칭
               </h3>
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                월 참여 수수료를 낸 기공소만 자동 매칭에 참여합니다. 치과·기공소
+                자동 매칭에 참여한 기공소만 목록에 표시됩니다. 치과·기공소
                 식별 정보는 비공개입니다.
               </p>
             </div>

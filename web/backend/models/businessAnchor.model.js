@@ -191,7 +191,7 @@ const businessAnchorSchema = new mongoose.Schema(
       // 기공의뢰 플랫폼 수수료율. 자동 매칭 성공 시 기공비에만 적용(지정 의뢰 0%).
       // 걷힌 수수료 총액은 위 4자 배분율로 다시 나뉜다.
       platformFeeRate: { type: Number, default: 0.1, min: 0, max: 1 },
-      // 기공소 자동 매칭 월 참여 수수료(원). 관리자 플랫폼 설정「기공소 매칭」. 정가 안내는 55,000원(이벤트 중 0).
+      // 기공소 자동 매칭 월 참여 수수료(원). 정책상 0 고정(성공 %만 과금). 관리자「기공소 매칭」.
       autoMatchMonthlyFee: { type: Number, default: 0, min: 0 },
       // 레거시 2단계 필드. 신규 저장은 platformFeeRate. 읽기는 resolvePlatformFeeRate fallback.
       partnerFeeRate: { type: Number, default: 0, min: 0, max: 1 },

@@ -3,6 +3,7 @@
 // - 2026-08-14: 5섹션(환영 무료 크레딧·어벗·어벗 추가 요청·멤버십·배송·특별 공급가). 의뢰·배송→어벗.
 // - 2026-08-14: 의뢰·배송에 CNC/환봉 라벨 분리, 환봉방식 커스텀어벗 요청 목록 포함.
 // - 2026-08-13: 디자인비 항목을 디자인+생산으로 교체. 생산만·디자인+생산을 멤버십/일반 단가로 분리.
+// - 2026-08-15: 치과 멤버십 월 구독료 기본 50,000(면세).
 // - 2026-08-13: 치과 멤버십 월 구독료(practiceMembershipMonthlyFee) 추가.
 // - 2026-08-13: 디자인비(1어벗당) 입력 복구. 기본 생산 15,000 + 디자인 5,000.
 // - 2026-08-13: 파트너 요금·크레딧 UI를 카드/아이콘/자동저장 스타일로 정리.
@@ -155,7 +156,7 @@ function normalizeCreditSettings(
     practiceMembershipMonthlyFee: Number(
       raw.practiceMembershipMonthlyFee ??
         fallback.practiceMembershipMonthlyFee ??
-        55000,
+        50000,
     ),
     defaultRequestFreeCredit: Number(
       raw.defaultRequestFreeCredit ?? fallback.defaultRequestFreeCredit,

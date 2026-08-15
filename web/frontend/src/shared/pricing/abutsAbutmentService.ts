@@ -10,7 +10,8 @@
 // - 2026-08-14: 환봉 단가 필드 포함. 도입 종류별 단가 계산은 labFeeSchedule.
 // - 2026-08-13: creditSettings 멤버십/일반 생산·디자인+생산 단가 정규화.
 // - 2026-08-13: 생산 일반 2.0만·멤버십 1.5만 / 디자인+생산 일반 4.0만·멤버십 2.5만.
-// - 2026-08-13: 멤버십/일반 단가 + 치과 월 구독료(기본 55,000) SSOT.
+// - 2026-08-15: 치과 멤버십 월 구독 기본 50,000(면세). 멤버십/일반 단가 SSOT.
+// - 2026-08-13: 멤버십/일반 단가 + 치과 월 구독료 SSOT.
 // - 2026-08-13: 치과 멤버십 여부(practiceMembershipActive)로 안내 단가 한쪽만 고름.
 
 export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 15_000;
@@ -86,7 +87,7 @@ export const ABUTS_ABUTMENT_DESIGN_LIST_FEE =
   ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE -
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE;
 
-export const ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT = 55_000;
+export const ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT = 50_000;
 
 export const ABUTS_ABUTMENT_SERVICE_SHIPPING_NOTE = "배송비 별도, 박스당 과금";
 export const ABUTS_ABUTMENT_SERVICE_TAX_NOTE = "부가세 없음";

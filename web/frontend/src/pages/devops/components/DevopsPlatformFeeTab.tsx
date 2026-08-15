@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: 기공소 월 참여 기본 0(정책). 성공 수수료율과 함께 저장.
 // - 2026-08-14: 기본 성공 수수료율 10%. 월 참여 수수료 기본 0.
 // - 2026-08-14: 월 참여 수수료(원) 입력 추가. 성공 수수료율(%)과 함께 저장.
 // - 2026-08-14: 카드 없이 인라인 수수료 입력만. 긴 안내 문구 제거.
@@ -192,7 +193,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               월 참여 수수료
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              매칭 참여 구독료
+              정책 0원 · 성공 시에만 과금
             </p>
           </div>
         </div>

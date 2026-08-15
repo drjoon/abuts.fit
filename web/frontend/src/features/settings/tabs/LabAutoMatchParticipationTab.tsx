@@ -4,6 +4,7 @@
 // - web/backend/services/labAutoMatchParticipation.service.js
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // change-log:
+// - 2026-08-15: 월 참여 0원 정책(이벤트 취소선 제거). 성공 수수료만 안내.
 // - 2026-08-14: 기공소 매칭/수수료 스트립 최신 스타일 정렬.
 // - 2026-08-14: 월 참여 수수료 이벤트 표시(정가 취소선 → 0원).
 // - 2026-08-14: 기공소 자동 매칭 월 참여 탭. 치과 등록·소개 UI 대체.
@@ -39,9 +40,6 @@ type ParticipationData = {
   verified?: boolean;
   canReceivePracticeTransfer?: boolean;
 };
-
-/** 안내용 정가. 실제 청구는 `autoMatchMonthlyFee`(이벤트 중 0원). */
-const AUTO_MATCH_MONTHLY_FEE_LIST = 55_000;
 
 const formatWon = (value: number) =>
   `${Math.max(0, Math.round(value || 0)).toLocaleString("ko-KR")}원`;
@@ -90,7 +88,6 @@ export const LabAutoMatchParticipationTab = () => {
   const cancelScheduled =
     active && Boolean(data?.autoMatchParticipationCancelAtPeriodEnd);
   const monthlyFee = Math.max(0, Number(data?.autoMatchMonthlyFee) || 0);
-  const monthlyFeePromo = monthlyFee < AUTO_MATCH_MONTHLY_FEE_LIST;
   const successPct = Math.round(Number(data?.platformFeeRate ?? 0.1) * 100);
   const nextBillingLabel = data?.autoMatchParticipationNextBillingAt
     ? formatKstYmdToKo(toKstYmd(data.autoMatchParticipationNextBillingAt) || "")
@@ -180,24 +177,14 @@ export const LabAutoMatchParticipationTab = () => {
                   월 참여 수수료
                 </p>
                 <p className="text-[12px] leading-snug text-muted-foreground">
-                  매칭 참여 구독료
+                  무료 · 성공 시에만 수수료
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5">
-              {monthlyFeePromo ? (
-                <span className="text-sm font-normal tabular-nums text-slate-400 line-through">
-                  {formatWon(AUTO_MATCH_MONTHLY_FEE_LIST)}
-                </span>
-              ) : null}
               <span className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
                 {formatWon(monthlyFee)}
               </span>
-              {monthlyFeePromo ? (
-                <span className="inline-flex items-center rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-primary-strong ring-1 ring-primary-muted">
-                  이벤트 중
-                </span>
-              ) : null}
             </div>
           </div>
 

@@ -90,7 +90,7 @@
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
-    - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 10,000, **1어벗당**). 배송비 별도·박스당 과금. 치과 멤버십 `practiceMembershipMonthlyFee`(기본 55,000원). 해지 시 다음 결제일까지 유지, 그 다음 결제는 없음(`practiceMembershipCancelAtPeriodEnd`).
+    - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 10,000, **1어벗당**). 배송비 별도·박스당 과금. 치과 멤버십 `practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감). 해지 시 다음 결제일까지 유지, 그 다음 결제는 없음(`practiceMembershipCancelAtPeriodEnd`). 기공소 자동 매칭 **월 참여 수수료 0원**(성공 `%`만). 루트 `rules.md` §2.3 매칭·멤버십 과금 SSOT.
     - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic·작업X 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
       - `price.amount` = `(생산단가 + designFee) × qty`
@@ -365,7 +365,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 과금 SSOT: 수락=`adjustPracticeTransferHold`(금액 확정), 작업완료=`releasePracticeTransferEscrow`(기공크레딧 지급). 파일 다운로드는 상태·과금에 영향 없음
   - **자동매칭 SSOT** (`matchingMode: "auto"`):
     - 생성 시 `targetLabAnchorId=null`, 공개 풀. `manufacturerStage` UI=`자동매칭`(공정 뱃지 집계는 **의뢰**). 자격(**인증 기공소**): `verified` + `practiceTransferAutoMatchEnabled`(참여 ON) + lab+free (`utils/practiceTransferAutoMatch.js`). 관리자 목록/ON은 `verifiedLabCapableAnchorFilter`(kind=lab 또는 레거시 caps.lab)
-    - 참여 ON: 기공소 `POST /api/businesses/me/auto-match-participation` `{ active }` (월 `autoMatchMonthlyFee`) 또는 관리자 `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }`. 성공 시 `platformFeeRate`. 표시명(치과·기공소)은 API에서 마스킹(`redactAutoMatch*`), 실명은 앵커/클레임 후 `targetLab*`에 보존.
+    - 참여 ON: 기공소 `POST /api/businesses/me/auto-match-participation` `{ active }` (**월정 0원 정책**, `autoMatchMonthlyFee`) 또는 관리자 `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }`. 성공 시 `platformFeeRate`. 표시명(치과·기공소)은 API에서 마스킹(`redactAutoMatch*`), 실명은 앵커/클레임 후 `targetLab*`에 보존.
     - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정). 타인 활성 claim은 숨김
     - 수락=`mark-accepted` 원자 FCFS claim(강제 시간 만료 없음) + 보류액 확정. 치과에 `practice:transfer-updated`(action=`accepted`, 확정 `feeQuote`) emit. 작업완료=`POST .../mark-complete`(결과파일 필수, 커스텀어벗 시 shippingMode, 에스크로 해제·기공크레딧 지급). 작업취소=`POST .../mark-release`(auto는 풀 재공개, direct는 수락 해제+과금 롤백)
     - 치과 생산컨펌=`POST .../confirm-production` → 생산진행. 커스텀어벗이면 기공소→어벗츠 Request 자동 생성
@@ -761,7 +761,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트(`scripts/db/migrate-request-spend-to-gl.js`, `scripts/db/migrate-legacy-creditledger-to-gl.js`)는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
-    - 기본 분배(영업자 소개 있음): 제조사 60% / 개발운영사 10% / 영업자 10% / 관리자 20% (`BusinessAnchor.payoutRates` SSOT). 기공의뢰 성공 수수료율(`platformFeeRate`)·월 참여 수수료(`autoMatchMonthlyFee`)는 관리자 플랫폼 설정「기공소 매칭」(`GET|PATCH /api/admin/settings/platform-fees`)에서 개발운영사 앵커에 저장.
+    - 기본 분배(영업자 소개 있음): 제조사 60% / 개발운영사 10% / 영업자 10% / 관리자 20% (`BusinessAnchor.payoutRates` SSOT). 기공의뢰 성공 수수료율(`platformFeeRate`)·월 참여 수수료(`autoMatchMonthlyFee`, **정책 0원**)는 관리자 플랫폼 설정「기공소 매칭」(`GET|PATCH /api/admin/settings/platform-fees`)에서 개발운영사 앵커에 저장. 치과 멤버십 월정은 `practiceMembershipMonthlyFee`(기본 50,000·면세·유료 크레딧) — 루트 `rules.md` §2.3.
     - 영업자 소개 없음(`hasSalesmanReferrer=false`): 설정된 영업자 분배비의 **절반을 제조사**, **나머지 절반을 관리자**에 가산하고 영업자 0%. 기본값이면 제조사 65% / 개발운영사 10% / 영업자 0% / 관리자 25%. 하드코딩 고정비율이 아니라 `resolveRatesWithoutSalesman(configuredRates)`로 파생.
 
 - 관리자 credit-reconcile API 정책:

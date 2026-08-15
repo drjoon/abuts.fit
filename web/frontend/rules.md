@@ -159,7 +159,7 @@ Notes:
       - `src/shared/platform/platformBenefitsContent.ts`
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
-  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드 제목 **기공소 매칭**) — 월 참여 수수료·성공 수수료 스트립 + 참여(ON) 목록. 기공소는 설정「자동 매칭 참여」에서 월 수수료로 자가 참여(`POST /api/businesses/me/auto-match-participation`). 관리자 스위치도 동일 플래그. 성공 시 `platformFeeRate`%. 관리자 플랫폼 설정「기공소 매칭」탭
+  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드 제목 **기공소 매칭**) — 월 참여 0원·성공 수수료 스트립 + 참여(ON) 목록. 기공소는 설정「자동 매칭 참여」에서 자가 참여(`POST /api/businesses/me/auto-match-participation`, 월정 0). 관리자 스위치도 동일 플래그. 성공 시 `platformFeeRate`%. 관리자 플랫폼 설정「기공소 매칭」탭
   - 검증된 디자이너 지정: `DesignerAssignmentTab` / `BusinessAnchor.designAccessEnabled`(디자인 큐). API·게이트 유지, 파트너 탭 UI에서는 제거
   - 영업자 없을 때 분배: 설정된 영업자 분배비의 절반→제조사, 나머지 절반→관리자 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
   - 관리자 대시보드/소통
@@ -199,7 +199,7 @@ Notes:
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 디자인+생산 − 생산만. 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
-    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.0만원, 디자인+생산 멤버십 2.5만원·일반 4.0만원. 치과 멤버십만 membership. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 55,000원, 관리자 플랫폼 설정). 해지 시 다음 결제일까지 유지, 이후 결제 없음.
+    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.0만원, 디자인+생산 멤버십 2.5만원·일반 4.0만원. 치과 멤버십만 membership. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감, 관리자 플랫폼 설정). 해지 시 다음 결제일까지 유지, 이후 결제 없음. 기공소 매칭 월정 0·성공%만 — 루트 `rules.md` §2.3.
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
@@ -266,7 +266,7 @@ Notes:
 
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
   - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
-  - 기공소 자동 매칭 참여: 설정「자동 매칭 참여」에서 월 플랫폼 수수료(`payoutRates.autoMatchMonthlyFee`)로 참여. 성공 시 `platformFeeRate`%. 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지).
+  - 기공소 자동 매칭 참여: 설정「자동 매칭 참여」에서 ON/OFF. **월 참여 수수료 0원**(정책). 성공 시 `platformFeeRate`%. 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지).
   - 기공소 화면(기공의뢰수신·어벗생산의뢰) 상단: 등록 잔여일 alert + 가입 이유 alert(기간 중만, 2열). 기간 종료 후 대시보드 `[가입 이유]`(기공소·치과 각 variant).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
     - 잔액 요약은 기공크레딧 탭과 동일하게 rounded-2xl 카드 그리드(현재/유료/무료/[기공]).
