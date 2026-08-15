@@ -219,13 +219,6 @@ export function PracticeTransferLabReceiveCard({
         </div>
       ) : null}
 
-      {showWorkActions && hasCa && designFileCount === 0 ? (
-        <div className="mt-2 rounded-md border border-dashed border-amber-400/50 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
-          커스텀어벗 디자인을 완료한 뒤 「어벗디자인 파일 업로드」로 완성 어벗 STL을
-          올리세요. 업로드하면 제조사 준비 큐에 등록됩니다.
-        </div>
-      ) : null}
-
       {showWorkActions ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {hasCa &&
