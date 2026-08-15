@@ -21,6 +21,7 @@ import {
   Settings,
   SlidersHorizontal,
   Trash2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
@@ -66,6 +67,7 @@ import {
   AUTO_MATCH_LAB,
   AUTO_MATCH_LAB_TOOLTIP,
   getBusinessLabel,
+  isPinnedAbutsRecentLab,
   isAutoMatchLab,
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
@@ -609,6 +611,8 @@ export type PracticeTransferRequestIntakePanelProps = {
   labSearching: boolean;
   recentLabs: SearchBusinessResult[];
   recentLabsInitialized: boolean;
+  /** 최근 기공소 목록에서 제거(X) */
+  onRemoveRecentLab?: (lab: SearchBusinessResult) => void;
   patientName: string;
   setPatientName: (value: string) => void;
   orderDate: string;
@@ -688,6 +692,7 @@ export const PracticeTransferRequestIntakePanel = ({
   labSearching,
   recentLabs,
   recentLabsInitialized,
+  onRemoveRecentLab,
   patientName,
   setPatientName,
   orderDate,
@@ -1753,6 +1758,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           .filter(Boolean)
                           .join(" · ");
                         const searchValue = [b.name, rep, bn, addr].filter(Boolean).join(" ");
+                        const label = getBusinessLabel(b);
 
                         return (
                           <CommandItem
@@ -1762,17 +1768,37 @@ export const PracticeTransferRequestIntakePanel = ({
                               setSelectedLab(b);
                               setLabOpen(false);
                             }}
+                            className="group"
                           >
                             <Check
                               className={cn(
-                                "mr-2 h-4 w-4",
+                                "mr-2 h-4 w-4 shrink-0",
                                 selected ? "opacity-100" : "opacity-0",
                               )}
                             />
-                            <div className="min-w-0">
-                              <div className="truncate text-base font-medium">{getBusinessLabel(b)}</div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-base font-medium">{label}</div>
                               {meta ? <div className="truncate text-sm text-muted-foreground">{meta}</div> : null}
                             </div>
+                            {onRemoveRecentLab && !isPinnedAbutsRecentLab(b) ? (
+                              <button
+                                type="button"
+                                className="ml-2 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-muted hover:text-foreground hover:opacity-100"
+                                aria-label={`${label} 최근에서 제거`}
+                                title="최근에서 제거"
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onRemoveRecentLab(b);
+                                }}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
                           </CommandItem>
                         );
                       })}

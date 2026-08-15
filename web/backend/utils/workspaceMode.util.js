@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-15: 계정(개인) 단위 workspaceMode 정규화 (default: expert)
+// - 2026-08-15: 계정(개인) 단위 workspaceMode 정규화 (default: express)
 // related files:
 // - web/backend/models/user.model.js
 // - web/backend/controllers/users/user.controller.js
@@ -7,7 +7,7 @@
 
 export const WORKSPACE_MODES = Object.freeze(["express", "expert"]);
 
-export const DEFAULT_WORKSPACE_MODE = "expert";
+export const DEFAULT_WORKSPACE_MODE = "express";
 
 /**
  * @param {unknown} raw

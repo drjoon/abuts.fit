@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-15: 계정(개인) 단위 workspaceMode SSOT. 기본값 expert
+// - 2026-08-15: 계정(개인) 단위 workspaceMode SSOT. 기본값 express(첫 가입·미설정)
 // related files:
 // - web/backend/utils/workspaceMode.util.js
 // - web/frontend/src/store/useAuthStore.ts
@@ -7,7 +7,7 @@
 
 export type WorkspaceMode = "express" | "expert";
 
-export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "expert";
+export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "express";
 
 export const WORKSPACE_MODE_LABEL: Record<WorkspaceMode, string> = {
   express: "익스프레스 모드",

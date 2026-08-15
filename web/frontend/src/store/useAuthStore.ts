@@ -9,7 +9,7 @@
 // - web/backend/controllers/auth/auth.controller.js
 // - web/backend/modules/auth/auth.routes.js
 // - web/backend/controllers/users/user.controller.js
-// - 2026-08-15: 계정(개인) preferences.workspaceMode 로그인·전환에 반영 (기본 expert)
+// - 2026-08-15: 계정(개인) preferences.workspaceMode 로그인·전환에 반영 (기본 express)
 // - 2026-08-15: 탭 간 localStorage 인증 SSOT — stale 탭이 다른 계정 세션을 덮어쓰지 않게 가드
 import { create } from "zustand";
 import { request } from "@/shared/api/apiClient";

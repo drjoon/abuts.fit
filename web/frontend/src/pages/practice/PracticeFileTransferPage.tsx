@@ -979,6 +979,106 @@ const toStatusBadgeLabel = (status: unknown) => {
   return s;
 };
 
+/** 최근의뢰 카드와 동일한 메타(시각·뱃지·기공소·파일·일정·메모) */
+const PracticeListCardDetail = ({
+  createdAt,
+  statusLabel,
+  statusBadgeClassName,
+  extraBadges,
+  targetLabText,
+  fileCount,
+  orderDate,
+  arrivalDate,
+  transferMemo,
+  layout = "compact",
+}: {
+  createdAt: string;
+  statusLabel?: string;
+  statusBadgeClassName?: string;
+  extraBadges?: ReactNode;
+  targetLabText: string;
+  fileCount: number;
+  orderDate?: string;
+  arrivalDate?: string;
+  transferMemo?: string;
+  layout?: "compact" | "comfortable";
+}) => {
+  const memo = String(transferMemo || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const hasPeriod = Boolean(String(orderDate || "").trim() && String(arrivalDate || "").trim());
+  const periodNode = hasPeriod ? (
+    <PracticeWorkPeriodText
+      orderDate={String(orderDate)}
+      arrivalDate={String(arrivalDate)}
+      variant="orderArrival"
+      className="text-xs"
+    />
+  ) : null;
+
+  if (layout === "comfortable") {
+    return (
+      <div className="mt-2 space-y-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs text-muted-foreground">{createdAt}</p>
+          {statusLabel ? (
+            <Badge
+              variant="outline"
+              className={cn("h-5 whitespace-nowrap px-1.5 text-[10px]", statusBadgeClassName)}
+            >
+              {statusLabel}
+            </Badge>
+          ) : null}
+          {extraBadges}
+        </div>
+        <p className="truncate text-sm text-slate-700">{targetLabText}</p>
+        <p className="text-xs text-muted-foreground">
+          파일 {fileCount}개
+          {periodNode ? (
+            <>
+              {" · "}
+              {periodNode}
+            </>
+          ) : null}
+        </p>
+        {memo ? (
+          <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+            메모: {memo}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="mt-0.5 flex flex-wrap items-center gap-2">
+        <p className="truncate text-xs text-muted-foreground">{createdAt}</p>
+        {statusLabel ? (
+          <Badge
+            variant="outline"
+            className={cn("whitespace-nowrap", statusBadgeClassName)}
+          >
+            {statusLabel}
+          </Badge>
+        ) : null}
+        {extraBadges}
+      </div>
+      <p className="truncate text-xs text-muted-foreground">{targetLabText}</p>
+      <p className="truncate text-xs text-muted-foreground">
+        파일 {fileCount}개
+        {periodNode ? (
+          <>
+            {" · "}
+            {periodNode}
+          </>
+        ) : null}
+        {memo ? ` · 메모: ${memo}` : ""}
+      </p>
+    </>
+  );
+};
+
 /** 기공소 의뢰수락 이전만 치과에서 휴지통 이동 가능 */
 const canDeletePracticeTransferByStatus = (status: unknown) => {
   const s = String(status || "").trim();
@@ -1189,6 +1289,7 @@ export const PracticeFileTransferPage = ({
     removeFile,
     clearAllFiles,
     rememberLab,
+    removeRecentLab,
     syncRecentLabsFromTransfers,
   } = usePracticeTransferStep1();
 
@@ -3568,7 +3669,7 @@ export const PracticeFileTransferPage = ({
         transferMongoIds: [],
         fileNames: files.map((f) => f.fileName),
         files,
-        transferMemo: draft.transferMemo,
+        transferMemo: formatTransferMemoForDisplay(String(draft.transferMemo || "")),
         rawTransferMemo: String(draft.transferMemo || "").trim(),
         unreadCount: 0,
         practiceUserId: draft.practiceUserId,
@@ -5833,6 +5934,7 @@ export const PracticeFileTransferPage = ({
                   labSearching,
                   recentLabs,
                   recentLabsInitialized,
+                  onRemoveRecentLab: removeRecentLab,
                   patientName,
                   setPatientName,
                   orderDate,
@@ -6639,7 +6741,7 @@ export const PracticeFileTransferPage = ({
                     없음
                   </div>
                 ) : (
-                  <div className="max-h-[15.25rem] space-y-2 overflow-y-auto pr-1">
+                  <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
                     {draftGroupedTransfers.map((transfer) => {
                       const targetLabText =
                         String(transfer.targetLab || "-")
@@ -6650,6 +6752,7 @@ export const PracticeFileTransferPage = ({
                         : transfer.practiceUserLabel || "동료";
                       const patientLabel =
                         String(transfer.draftPatientName || "").trim() || "환자명 미입력";
+                      const isActive = transfer.id === activeDraftId;
 
                       return (
                         <div
@@ -6658,7 +6761,7 @@ export const PracticeFileTransferPage = ({
                           tabIndex={0}
                           className={cn(
                             "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            transfer.id === activeDraftId
+                            isActive
                               ? "border-primary/70 bg-primary-soft ring-1 ring-primary-muted"
                               : transfer.isMineDraft
                                 ? "border-primary-muted bg-primary-soft/50"
@@ -6678,29 +6781,24 @@ export const PracticeFileTransferPage = ({
                                 {patientLabel}
                                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                                   · {ownerLabel}
-                                  {transfer.id === activeDraftId ? " · 작성 중" : ""}
                                 </span>
                               </p>
-                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                {transfer.createdAt}
-                              </p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {targetLabText}
-                              </p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                파일 {transfer.fileCount}개
-                                {transfer.orderDate && transfer.arrivalDate ? (
-                                  <>
-                                    {" · "}
-                                    <PracticeWorkPeriodText
-                                      orderDate={transfer.orderDate}
-                                      arrivalDate={transfer.arrivalDate}
-                                      variant="orderArrival"
-                                      className="text-xs"
-                                    />
-                                  </>
-                                ) : null}
-                              </p>
+                              <PracticeListCardDetail
+                                createdAt={transfer.createdAt}
+                                statusLabel="임시저장"
+                                extraBadges={
+                                  isActive ? (
+                                    <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
+                                      작성 중
+                                    </Badge>
+                                  ) : null
+                                }
+                                targetLabText={targetLabText}
+                                fileCount={transfer.fileCount}
+                                orderDate={transfer.orderDate}
+                                arrivalDate={transfer.arrivalDate}
+                                transferMemo={transfer.transferMemo}
+                              />
                             </div>
                             <TooltipProvider delayDuration={0}>
                               <Tooltip>
@@ -6783,7 +6881,7 @@ export const PracticeFileTransferPage = ({
                     비어 있음
                   </div>
                 ) : (
-                  <div className="max-h-[18.25rem] space-y-2 overflow-y-auto pr-1">
+                  <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
                     {trashGroupedTransfers.map((transfer) => {
                       const targetLabText =
                         String(transfer.targetLab || "-")
@@ -6818,24 +6916,21 @@ export const PracticeFileTransferPage = ({
                             <div className="min-w-0">
                               <p className="truncate font-medium">
                                 {titleLabel}
-                                {isDraftTrash ? (
+                                {isDraftTrash && transfer.practiceUserLabel ? (
                                   <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                                    · 임시저장
-                                    {transfer.practiceUserLabel
-                                      ? ` · ${transfer.practiceUserLabel}`
-                                      : ""}
+                                    · {transfer.practiceUserLabel}
                                   </span>
                                 ) : null}
                               </p>
-                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                {transfer.createdAt}
-                              </p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {targetLabText}
-                              </p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                파일 {transfer.fileCount}개
-                              </p>
+                              <PracticeListCardDetail
+                                createdAt={transfer.createdAt}
+                                statusLabel={isDraftTrash ? "임시저장" : toStatusBadgeLabel(transfer.status)}
+                                targetLabText={targetLabText}
+                                fileCount={transfer.fileCount}
+                                orderDate={transfer.orderDate}
+                                arrivalDate={transfer.arrivalDate}
+                                transferMemo={transfer.transferMemo}
+                              />
                             </div>
 
                             <TooltipProvider delayDuration={0}>
@@ -6879,11 +6974,11 @@ export const PracticeFileTransferPage = ({
         {isExpressMode ? (
           <>
         <Dialog open={draftsOpen} onOpenChange={setDraftsOpen}>
-          <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-md">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 px-5 pb-3 pt-5 pr-12">
-              <DialogHeader className="space-y-0 text-left">
-                <DialogTitle className="flex items-center gap-2 text-base font-semibold tracking-tight">
-                  <BookmarkPlus className="h-4 w-4 text-primary-strong" />
+          <DialogContent className="flex max-h-[min(90vh,820px)] w-[min(96vw,720px)] max-w-none flex-col gap-0 overflow-hidden p-0">
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 px-6 pb-4 pt-5 pr-14">
+              <DialogHeader className="min-w-0 space-y-0 text-left">
+                <DialogTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+                  <BookmarkPlus className="h-5 w-5 shrink-0 text-primary-strong" />
                   임시저장
                   {draftGroupedTransfers.length > 0 ? (
                     <Badge
@@ -6898,9 +6993,9 @@ export const PracticeFileTransferPage = ({
               {draftGroupedTransfers.length > 0 ? (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="h-8 gap-1 px-2 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
+                  className="h-9 shrink-0 gap-1.5 border-destructive-muted px-3 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
                   disabled={clearingAllDrafts}
                   onClick={handleAskClearAllDrafts}
                 >
@@ -6909,17 +7004,17 @@ export const PracticeFileTransferPage = ({
                 </Button>
               ) : null}
             </div>
-            <div className="px-3 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
               {draftGroupedTransfers.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center">
-                  <BookmarkPlus className="h-8 w-8 text-slate-300" />
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 px-6 py-14 text-center">
+                  <BookmarkPlus className="h-9 w-9 text-slate-300" />
                   <p className="text-sm font-medium text-slate-600">임시저장 없음</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
                     기공소와 환자명을 입력하면 자동으로 저장됩니다.
                   </p>
                 </div>
               ) : (
-                <div className="max-h-[min(60vh,28rem)] space-y-2 overflow-y-auto px-1 pb-1">
+                <div className="space-y-3">
                   {draftGroupedTransfers.map((transfer) => {
                     const targetLabText =
                       String(transfer.targetLab || "-")
@@ -6938,7 +7033,7 @@ export const PracticeFileTransferPage = ({
                         role="button"
                         tabIndex={0}
                         className={cn(
-                          "group flex w-full items-stretch gap-2 rounded-xl border bg-white px-3.5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          "group flex w-full items-start gap-3 rounded-xl border bg-white px-4 py-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           isActive
                             ? "border-primary/50 bg-primary-soft/70 shadow-sm ring-1 ring-primary/20"
                             : "border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/80",
@@ -6951,38 +7046,30 @@ export const PracticeFileTransferPage = ({
                           }
                         }}
                       >
-                        <div className="min-w-0 flex-1 space-y-1.5">
-                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <p className="truncate text-sm font-semibold text-slate-900">
-                              {patientLabel}
-                            </p>
-                            {isActive ? (
-                              <Badge className="h-5 rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
-                                작성 중
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {ownerLabel}
-                            <span className="mx-1 text-slate-300">·</span>
-                            {transfer.createdAt}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-base font-semibold text-slate-900">
+                            {patientLabel}
+                            <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+                              · {ownerLabel}
+                            </span>
                           </p>
-                          <p className="truncate text-xs text-slate-600">
-                            {targetLabText}
-                            <span className="mx-1 text-slate-300">·</span>
-                            파일 {transfer.fileCount}개
-                            {transfer.orderDate && transfer.arrivalDate ? (
-                              <>
-                                <span className="mx-1 text-slate-300">·</span>
-                                <PracticeWorkPeriodText
-                                  orderDate={transfer.orderDate}
-                                  arrivalDate={transfer.arrivalDate}
-                                  variant="orderArrival"
-                                  className="text-xs"
-                                />
-                              </>
-                            ) : null}
-                          </p>
+                          <PracticeListCardDetail
+                            layout="comfortable"
+                            createdAt={transfer.createdAt}
+                            statusLabel="임시저장"
+                            extraBadges={
+                              isActive ? (
+                                <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
+                                  작성 중
+                                </Badge>
+                              ) : null
+                            }
+                            targetLabText={targetLabText}
+                            fileCount={transfer.fileCount}
+                            orderDate={transfer.orderDate}
+                            arrivalDate={transfer.arrivalDate}
+                            transferMemo={transfer.transferMemo}
+                          />
                         </div>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
@@ -6991,7 +7078,7 @@ export const PracticeFileTransferPage = ({
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 shrink-0 self-center text-slate-400 opacity-70 hover:bg-destructive-soft hover:text-destructive group-hover:opacity-100"
+                                className="mt-0.5 h-9 w-9 shrink-0 text-slate-400 opacity-70 hover:bg-destructive-soft hover:text-destructive group-hover:opacity-100"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   void handleAskDeleteTransfer(transfer);
@@ -7016,11 +7103,11 @@ export const PracticeFileTransferPage = ({
         </Dialog>
 
         <Dialog open={trashOpen} onOpenChange={setTrashOpen}>
-          <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-md">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 px-5 pb-3 pt-5 pr-12">
-              <DialogHeader className="space-y-0 text-left">
-                <DialogTitle className="flex items-center gap-2 text-base font-semibold tracking-tight">
-                  <Trash2 className="h-4 w-4 text-slate-500" />
+          <DialogContent className="flex max-h-[min(90vh,820px)] w-[min(96vw,720px)] max-w-none flex-col gap-0 overflow-hidden p-0">
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 px-6 pb-4 pt-5 pr-14">
+              <DialogHeader className="min-w-0 space-y-0 text-left">
+                <DialogTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+                  <Trash2 className="h-5 w-5 shrink-0 text-slate-500" />
                   휴지통
                   {trashGroupedTransfers.length > 0 ? (
                     <Badge
@@ -7035,9 +7122,9 @@ export const PracticeFileTransferPage = ({
               {trashGroupedTransfers.length > 0 ? (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="h-8 gap-1 px-2 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
+                  className="h-9 shrink-0 gap-1.5 border-destructive-muted px-3 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
                   disabled={emptyingTrash}
                   onClick={handleAskEmptyTrash}
                 >
@@ -7046,17 +7133,17 @@ export const PracticeFileTransferPage = ({
                 </Button>
               ) : null}
             </div>
-            <div className="px-3 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
               {trashGroupedTransfers.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center">
-                  <Trash2 className="h-8 w-8 text-slate-300" />
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 px-6 py-14 text-center">
+                  <Trash2 className="h-9 w-9 text-slate-300" />
                   <p className="text-sm font-medium text-slate-600">휴지통이 비어 있습니다</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
                     삭제한 임시저장·의뢰가 여기에 모입니다.
                   </p>
                 </div>
               ) : (
-                <div className="max-h-[min(60vh,28rem)] space-y-2 overflow-y-auto px-1 pb-1">
+                <div className="space-y-3">
                   {trashGroupedTransfers.map((transfer) => {
                     const targetLabText =
                       String(transfer.targetLab || "-")
@@ -7078,7 +7165,7 @@ export const PracticeFileTransferPage = ({
                         key={`trash:${transfer.id}:${transfer.createdAt}`}
                         role="button"
                         tabIndex={0}
-                        className="group flex w-full items-stretch gap-2 rounded-xl border border-slate-200/90 bg-white px-3.5 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="group flex w-full items-start gap-3 rounded-xl border border-slate-200/90 bg-white px-4 py-3.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => void handleOpenTransferDialog(transfer, { fromTrash: true })}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
@@ -7087,32 +7174,27 @@ export const PracticeFileTransferPage = ({
                           }
                         }}
                       >
-                        <div className="min-w-0 flex-1 space-y-1.5">
-                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <p className="truncate text-sm font-semibold text-slate-900">
-                              {titleLabel}
-                            </p>
-                            <Badge
-                              variant="outline"
-                              className="h-5 rounded-md px-1.5 text-[10px] font-medium text-muted-foreground"
-                            >
-                              {isDraftTrash ? "임시저장" : "의뢰"}
-                            </Badge>
-                          </div>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {isDraftTrash && transfer.practiceUserLabel
-                              ? transfer.practiceUserLabel
-                              : null}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-base font-semibold text-slate-900">
+                            {titleLabel}
                             {isDraftTrash && transfer.practiceUserLabel ? (
-                              <span className="mx-1 text-slate-300">·</span>
+                              <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+                                · {transfer.practiceUserLabel}
+                              </span>
                             ) : null}
-                            {transfer.createdAt}
                           </p>
-                          <p className="truncate text-xs text-slate-600">
-                            {targetLabText}
-                            <span className="mx-1 text-slate-300">·</span>
-                            파일 {transfer.fileCount}개
-                          </p>
+                          <PracticeListCardDetail
+                            layout="comfortable"
+                            createdAt={transfer.createdAt}
+                            statusLabel={
+                              isDraftTrash ? "임시저장" : toStatusBadgeLabel(transfer.status)
+                            }
+                            targetLabText={targetLabText}
+                            fileCount={transfer.fileCount}
+                            orderDate={transfer.orderDate}
+                            arrivalDate={transfer.arrivalDate}
+                            transferMemo={transfer.transferMemo}
+                          />
                         </div>
 
                         <TooltipProvider delayDuration={0}>
@@ -7122,7 +7204,7 @@ export const PracticeFileTransferPage = ({
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 shrink-0 self-center text-slate-400 opacity-70 hover:bg-primary-soft hover:text-primary-strong group-hover:opacity-100"
+                                className="mt-0.5 h-9 w-9 shrink-0 text-slate-400 opacity-70 hover:bg-primary-soft hover:text-primary-strong group-hover:opacity-100"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleAskRestoreTransfer(transfer);

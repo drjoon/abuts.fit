@@ -93,6 +93,28 @@ const DEFAULT_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const DEFAULT_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024;
 const PRACTICE_RECENT_LABS_STORAGE_KEY = "practice_recent_labs_v3";
 const PRACTICE_RECENT_LABS_MAX = 8;
+/** 최근 기공소 드롭다운 상단 고정(어벗츠 자체 기공소). 이력 없어도 항상 노출. */
+const ABUTS_PINNED_RECENT_LAB_NAME = "어벗츠기공소";
+const ABUTS_PINNED_RECENT_LAB_SEED: SearchBusinessResult = {
+  _id: `recent:${ABUTS_PINNED_RECENT_LAB_NAME}`,
+  name: ABUTS_PINNED_RECENT_LAB_NAME,
+  businessType: "requestor",
+  requestorKind: "lab",
+};
+
+const isRealRecentLabId = (id: string) => {
+  const raw = String(id || "").trim();
+  return Boolean(raw) && !raw.startsWith("recent:") && !raw.startsWith("draft-lab:");
+};
+
+/** 레거시 dismiss 플래그 정리(어벗츠는 항상 고정). */
+const clearLegacyAbutsRecentDismissed = () => {
+  try {
+    localStorage.removeItem("practice_abuts_recent_dismissed_v1");
+  } catch {
+    // ignore
+  }
+};
 
 const toPracticeFileKey = (file: File) =>
   `${file.name}:${file.size}:${file.lastModified}`;
@@ -126,10 +148,10 @@ const writePracticeFileCacheMeta = (metaKey: string, rows: PracticeFileCacheMeta
 const readRecentLabs = (): SearchBusinessResult[] => {
   try {
     const raw = localStorage.getItem(PRACTICE_RECENT_LABS_STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return ensureAbutsLabPinned([]);
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
+    if (!Array.isArray(parsed)) return ensureAbutsLabPinned([]);
+    const rows = parsed
       .map((item) => {
         if (!item || typeof item !== "object") return null;
         const id = String((item as { _id?: unknown })._id || "").trim();
@@ -163,8 +185,9 @@ const readRecentLabs = (): SearchBusinessResult[] => {
         } as SearchBusinessResult;
       })
       .filter((row): row is SearchBusinessResult => Boolean(row));
+    return ensureAbutsLabPinned(rows);
   } catch {
-    return [];
+    return ensureAbutsLabPinned([]);
   }
 };
 
@@ -202,6 +225,72 @@ const recentLabDedupeKey = (lab: SearchBusinessResult) => {
   return `name:${lab.name}|bn:${String(lab.businessNumber || "").trim()}`;
 };
 
+export const isPinnedAbutsRecentLab = (
+  lab?: { name?: string | null } | null,
+) => String(lab?.name || "").trim() === ABUTS_PINNED_RECENT_LAB_NAME;
+
+/**
+ * 「최근」맨 위에 어벗츠기공소를 항상 둔다.
+ * - 이력/검색에 있으면 실 _id 우선
+ * - 없으면 seed로라도 노출(드롭다운 열 때마다 고정)
+ */
+const ensureAbutsLabPinned = (
+  labs: SearchBusinessResult[],
+): SearchBusinessResult[] => {
+  const abuts: SearchBusinessResult[] = [];
+  const rest: SearchBusinessResult[] = [];
+  for (const lab of labs) {
+    if (isPinnedAbutsRecentLab(lab)) abuts.push(lab);
+    else rest.push(lab);
+  }
+  const preferred =
+    abuts.find((lab) => isRealRecentLabId(String(lab._id || ""))) ||
+    abuts[0] ||
+    ABUTS_PINNED_RECENT_LAB_SEED;
+  return [preferred, ...rest].slice(0, PRACTICE_RECENT_LABS_MAX);
+};
+
+const sameRecentLab = (
+  a: SearchBusinessResult,
+  b: SearchBusinessResult,
+): boolean => recentLabDedupeKey(a) === recentLabDedupeKey(b);
+
+/** 실 ObjectId·대표/사업자/주소가 더 채워진 쪽을 우선. */
+const mergeLabDetails = (
+  current: SearchBusinessResult,
+  incoming: SearchBusinessResult,
+): SearchBusinessResult => {
+  const currentReal = isRealRecentLabId(String(current._id || ""));
+  const incomingReal = isRealRecentLabId(String(incoming._id || ""));
+  const preferredId =
+    currentReal && !incomingReal
+      ? current._id
+      : incomingReal && !currentReal
+        ? incoming._id
+        : current._id || incoming._id;
+  return {
+    ...current,
+    ...incoming,
+    _id: String(preferredId || current._id || incoming._id).trim(),
+    name: String(incoming.name || current.name || "").trim() || current.name,
+    representativeName:
+      String(incoming.representativeName || "").trim() ||
+      current.representativeName,
+    businessNumber:
+      String(incoming.businessNumber || "").trim() || current.businessNumber,
+    address: String(incoming.address || "").trim() || current.address,
+    requestorKind: incoming.requestorKind || current.requestorKind,
+    businessType: "requestor",
+  };
+};
+
+const recentLabHasDetails = (lab: SearchBusinessResult) =>
+  Boolean(
+    String(lab.representativeName || "").trim() ||
+      String(lab.businessNumber || "").trim() ||
+      String(lab.address || "").trim(),
+  );
+
 const mergeRecentLabLists = (
   primary: SearchBusinessResult[],
   secondary: SearchBusinessResult[],
@@ -211,9 +300,138 @@ const mergeRecentLabLists = (
     const lab = normalizeRecentLab(raw);
     if (!lab) continue;
     const key = recentLabDedupeKey(lab);
-    if (!byKey.has(key)) byKey.set(key, lab);
+    const existing = byKey.get(key);
+    byKey.set(key, existing ? mergeLabDetails(existing, lab) : lab);
   }
-  return [...byKey.values()].slice(0, PRACTICE_RECENT_LABS_MAX);
+  return ensureAbutsLabPinned([...byKey.values()]);
+};
+
+const parseSearchBusinessResults = (body: unknown): SearchBusinessResult[] => {
+  const data =
+    body && typeof body === "object" && "data" in (body as Record<string, unknown>)
+      ? (body as { data?: unknown }).data
+      : body;
+  if (!Array.isArray(data)) return [];
+  return data.filter(
+    (item): item is SearchBusinessResult =>
+      Boolean(
+        item &&
+          typeof item === "object" &&
+          typeof (item as { _id?: unknown })._id === "string" &&
+          typeof (item as { name?: unknown }).name === "string",
+      ),
+  );
+};
+
+const parsePublicBusinessResult = (body: unknown): SearchBusinessResult | null => {
+  const data =
+    body && typeof body === "object" && "data" in (body as Record<string, unknown>)
+      ? (body as { data?: unknown }).data
+      : body;
+  if (!data || typeof data !== "object") return null;
+  const row = data as SearchBusinessResult;
+  if (typeof row._id !== "string" || typeof row.name !== "string") return null;
+  return row;
+};
+
+/** 공개 API로 최근 기공소의 대표·사업자·주소를 채운다. */
+const fetchRecentLabDetails = async (
+  lab: SearchBusinessResult,
+): Promise<SearchBusinessResult | null> => {
+  const id = String(lab._id || "").trim();
+  const name = String(lab.name || "").trim();
+
+  if (isRealRecentLabId(id)) {
+    try {
+      const res = await apiFetch<unknown>({
+        path: `/api/businesses/public/${encodeURIComponent(id)}?businessType=${encodeURIComponent("requestor")}`,
+        method: "GET",
+      });
+      if (res.ok) {
+        const parsed = normalizeRecentLab(parsePublicBusinessResult(res.data));
+        if (parsed && recentLabHasDetails(parsed)) return parsed;
+      }
+    } catch {
+      // name search fallback
+    }
+  }
+
+  if (!name) return null;
+  try {
+    const res = await apiFetch<unknown>({
+      path: `/api/businesses/search-public?q=${encodeURIComponent(name)}&businessType=${encodeURIComponent("requestor")}&requestorKind=${encodeURIComponent("lab")}`,
+      method: "GET",
+    });
+    if (!res.ok) return null;
+    const rows = parseSearchBusinessResults(res.data);
+    const exact =
+      rows.find((row) => String(row.name || "").trim() === name) ||
+      (isRealRecentLabId(id)
+        ? rows.find((row) => String(row._id || "").trim() === id)
+        : undefined) ||
+      rows[0];
+    return normalizeRecentLab(exact);
+  } catch {
+    return null;
+  }
+};
+
+const enrichRecentLabsMissingDetails = async (
+  labs: SearchBusinessResult[],
+): Promise<SearchBusinessResult[]> => {
+  const targets = labs.filter((lab) => !recentLabHasDetails(lab));
+  if (targets.length === 0) return [];
+  const results = await Promise.all(
+    targets.map(async (lab) => {
+      const enriched = await fetchRecentLabDetails(lab);
+      return enriched ? mergeLabDetails(lab, enriched) : null;
+    }),
+  );
+  return results.filter((row): row is SearchBusinessResult => Boolean(row));
+};
+
+/** 공개 검색으로 어벗츠기공소 앵커를 찾아 최근 고정용으로 정규화. */
+const resolveAbutsPinnedRecentLab = async (): Promise<SearchBusinessResult | null> => {
+  const asPinned = (lab: SearchBusinessResult): SearchBusinessResult | null => {
+    const normalized = normalizeRecentLab({
+      ...lab,
+      name: ABUTS_PINNED_RECENT_LAB_NAME,
+      businessType: "requestor",
+      requestorKind: "lab",
+    });
+    if (!normalized || !isRealRecentLabId(String(normalized._id || ""))) return null;
+    return normalized;
+  };
+
+  try {
+    const namedRes = await apiFetch<unknown>({
+      path: `/api/businesses/search-public?q=${encodeURIComponent(ABUTS_PINNED_RECENT_LAB_NAME)}&businessType=${encodeURIComponent("requestor")}&requestorKind=${encodeURIComponent("lab")}`,
+      method: "GET",
+    });
+    if (namedRes.ok) {
+      const exact = parseSearchBusinessResults(namedRes.data).find(
+        (row) => String(row.name || "").trim() === ABUTS_PINNED_RECENT_LAB_NAME,
+      );
+      const fromNamed = exact ? asPinned(exact) : null;
+      if (fromNamed) return fromNamed;
+    }
+  } catch {
+    // fall through — internalLab 조회로 재시도
+  }
+
+  try {
+    const internalRes = await apiFetch<unknown>({
+      path: `/api/businesses/search-public?q=${encodeURIComponent("어벗츠")}&businessType=${encodeURIComponent("internalLab")}`,
+      method: "GET",
+    });
+    if (!internalRes.ok) return null;
+    const internal = parseSearchBusinessResults(internalRes.data).find(
+      (row) => String(row.businessType || "").trim() === "internalLab",
+    );
+    return internal ? asPinned(internal) : null;
+  } catch {
+    return null;
+  }
 };
 
 export const getBusinessLabel = (b: {
@@ -239,9 +457,10 @@ export const usePracticeTransferStep1 = (options?: Options) => {
   const [labSearchResults, setLabSearchResults] = useState<SearchBusinessResult[]>([]);
   const [labOpen, setLabOpen] = useState(false);
   const [labSearching, setLabSearching] = useState(false);
-  const [recentLabs, setRecentLabs] = useState<SearchBusinessResult[]>([]);
-  const [recentLabsInitialized, setRecentLabsInitialized] = useState(false);
-  const didBootstrapRecentLabs = useRef(false);
+  const [recentLabs, setRecentLabs] = useState<SearchBusinessResult[]>(() =>
+    ensureAbutsLabPinned(readRecentLabs()),
+  );
+  const [recentLabsInitialized, setRecentLabsInitialized] = useState(true);
   const didRestoreCachedFiles = useRef(false);
 
   useEffect(() => {
@@ -527,6 +746,32 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     });
   }, []);
 
+  const removeRecentLab = useCallback((lab: SearchBusinessResult | null) => {
+    const normalizedLab = normalizeRecentLab(lab);
+    if (!normalizedLab) return;
+    // 어벗츠기공소는 「최근」상단 고정 — 제거 불가
+    if (isPinnedAbutsRecentLab(normalizedLab)) return;
+
+    setRecentLabs((prev) => {
+      const next = ensureAbutsLabPinned(
+        prev.filter((row) => {
+          const normalizedRow = normalizeRecentLab(row);
+          if (!normalizedRow) return false;
+          return !sameRecentLab(normalizedRow, normalizedLab);
+        }),
+      );
+      writeRecentLabs(next);
+      return next;
+    });
+
+    setSelectedLab((prev) => {
+      if (!prev) return prev;
+      const normalizedSelected = normalizeRecentLab(prev);
+      if (!normalizedSelected) return prev;
+      return sameRecentLab(normalizedSelected, normalizedLab) ? null : prev;
+    });
+  }, []);
+
   /** 서버 전송 내역(최신순)을 최근 기공소 SSOT로 merge. localStorage 캐시도 갱신. */
   const syncRecentLabsFromTransfers = useCallback(
     (
@@ -543,19 +788,71 @@ export const usePracticeTransferStep1 = (options?: Options) => {
         return next;
       });
       setRecentLabsInitialized(true);
+
+      void (async () => {
+        const enriched = await enrichRecentLabsMissingDetails(incoming);
+        if (enriched.length === 0) return;
+        setRecentLabs((prev) => {
+          const next = mergeRecentLabLists(enriched, prev);
+          writeRecentLabs(next);
+          return next;
+        });
+      })();
     },
     [],
   );
 
   useEffect(() => {
-    if (didBootstrapRecentLabs.current) return;
-    didBootstrapRecentLabs.current = true;
-
-    const loaded = readRecentLabs();
+    clearLegacyAbutsRecentDismissed();
+    const loaded = ensureAbutsLabPinned(readRecentLabs());
     setRecentLabs(loaded);
-    // 최근 기공소는 드롭다운 후보만 채운다. 페이지 진입/전송 후/새로 작성 시 자동 선택하지 않는다.
-    setRecentLabsInitialized(true);
-  }, [setSelectedLab]);
+    writeRecentLabs(loaded);
+
+    let cancelled = false;
+    void (async () => {
+      const resolved = await resolveAbutsPinnedRecentLab();
+      if (!cancelled && resolved) {
+        setRecentLabs((prev) => {
+          const next = mergeRecentLabLists([resolved], prev);
+          writeRecentLabs(next);
+          return next;
+        });
+      }
+
+      if (cancelled) return;
+      const snapshot = ensureAbutsLabPinned(readRecentLabs());
+      const enriched = await enrichRecentLabsMissingDetails(snapshot);
+      if (cancelled || enriched.length === 0) return;
+      setRecentLabs((prev) => {
+        const next = mergeRecentLabLists(enriched, prev);
+        writeRecentLabs(next);
+        return next;
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 드롭다운을 열 때마다 어벗츠기공소를 「최근」맨 위에 고정
+  useEffect(() => {
+    if (!labOpen) return;
+    setRecentLabs((prev) => {
+      const next = ensureAbutsLabPinned(prev);
+      if (
+        next.length === prev.length &&
+        next.every(
+          (lab, idx) =>
+            lab._id === prev[idx]?._id && lab.name === prev[idx]?.name,
+        )
+      ) {
+        return prev;
+      }
+      writeRecentLabs(next);
+      return next;
+    });
+  }, [labOpen]);
 
   useEffect(() => {
     const q = labSearch.trim();
@@ -632,6 +929,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     recentLabs,
     recentLabsInitialized,
     rememberLab,
+    removeRecentLab,
     syncRecentLabsFromTransfers,
     handleIncomingFiles,
     removeFile,
