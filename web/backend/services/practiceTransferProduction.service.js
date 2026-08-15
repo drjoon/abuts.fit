@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-16: PTX 출고모드·스케줄은 생산(custom_abutment) 리드로 판정(디자인+1일 오판으로 신속 승격 방지).
 // - 2026-08-16: PTX Request 생성 시 rnd.manufacturerHexRotation·PRC 파일명 시드(request-meta 500 방지).
 // - 2026-08-15: PTX 핸드오프 재견적 — productMode·스케줄을 custom_abutment(생산)로.
 // - 2026-08-15: 재견적 시 timeline 필드만 갱신(shipOutcome undefined Cast 방지).
@@ -292,6 +293,12 @@ async function resolvePracticePricingTierForTransfer(transferDoc) {
 }
 
 /**
+ * PTX CA: 디자인은 수락 기공소가 하므로 출고 ETA/신속 판정은 생산 리드(custom_abutment).
+ * Request.caseInfos.productMode는 핸드오프 전까지 design_custom_abutment를 유지할 수 있다.
+ */
+const PTX_SHIP_SCHEDULE_PRODUCT_MODE = "custom_abutment";
+
+/**
  * 제조사 출고 목표(기일−3영업일)에 맞추기 위한 shippingMode.
  * 묶음(normal) 우선. 목표를 못 맞추면 신속.
  */
@@ -314,7 +321,7 @@ export async function resolveShippingModeForPracticeTransferArrival({
       maxDiameter,
       requestedAt,
       weeklyBatchDays: batchDays,
-      productMode: "design_custom_abutment",
+      productMode: PTX_SHIP_SCHEDULE_PRODUCT_MODE,
     });
     const normalPickupYmd = normalSchedule?.scheduledShipPickup
       ? toKstYmd(normalSchedule.scheduledShipPickup)
@@ -333,7 +340,7 @@ export async function resolveShippingModeForPracticeTransferArrival({
     requestedAt,
     weeklyBatchDays: preferred === "normal" ? batchDays : [],
     maxDiameter,
-    productMode: "design_custom_abutment",
+    productMode: PTX_SHIP_SCHEDULE_PRODUCT_MODE,
   });
 }
 
@@ -433,7 +440,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
           shippingMode: shippingModeRaw,
           requestedAt,
           weeklyBatchDays: shippingModeRaw === "normal" ? weeklyBatchDays : [],
-          productMode: "design_custom_abutment",
+          productMode: PTX_SHIP_SCHEDULE_PRODUCT_MODE,
         })
       : await resolveShippingModeForPracticeTransferArrival({
           transferDoc,
@@ -522,7 +529,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 
     // Abuts-first: 워크플로(디자인 큐/핸드오프)는 design_custom_abutment 유지.
     // 과금은 생산만(멤버십 1.5만) — 디자인은 기공소 외주(abutmentDesignLabFee).
+    // 출고 ETA는 기공소 디자인이므로 생산 리드(custom_abutment)로 잡는다.
     const productMode = "design_custom_abutment";
+    const scheduleProductMode = PTX_SHIP_SCHEDULE_PRODUCT_MODE;
 
     const diameterRaw = String(row.abutmentDiameter || "").trim();
     const diameterNum = Number(diameterRaw.replace(/[^\d.]/g, ""));
@@ -574,7 +583,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt,
       weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
-      productMode,
+      productMode: scheduleProductMode,
     });
     productionSchedule = await clampScheduleToTarget(
       productionSchedule,
