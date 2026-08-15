@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-15: 기공기간 5일 미만 시 빨간 표시·거부 가능 툴팁.
+// - 2026-08-15: 치과·기공소 툴팁 문구 분리.
 
 import {
   Tooltip,
@@ -11,18 +12,21 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
-  PRACTICE_WORK_PERIOD_SHORT_TOOLTIP,
   formatPracticeWorkPeriodDaysLabel,
   formatPracticeWorkPeriodLeadLabel,
   getPracticeWorkPeriodDays,
+  getPracticeWorkPeriodShortTooltip,
   isPracticeWorkPeriodShort,
+  type PracticeWorkPeriodViewer,
 } from "@/shared/practice/practiceWorkPeriod";
 
 type PracticeWorkPeriodTextProps = {
   orderDate?: string | null;
   arrivalDate?: string | null;
-  /** lead: +N일(폼). days: N일(목록/상세). labeled: 기공기간 N일 */
+  /** lead: +N일(폼). days: N일(목록/상세). labeled: 작업기간 N일 */
   variant?: "lead" | "days" | "labeled";
+  /** practice=치과 발신, lab=기공소 수신 */
+  viewer?: PracticeWorkPeriodViewer;
   className?: string;
 };
 
@@ -30,6 +34,7 @@ export function PracticeWorkPeriodText({
   orderDate,
   arrivalDate,
   variant = "days",
+  viewer = "practice",
   className,
 }: PracticeWorkPeriodTextProps) {
   const days = getPracticeWorkPeriodDays(orderDate, arrivalDate);
@@ -40,7 +45,7 @@ export function PracticeWorkPeriodText({
       : formatPracticeWorkPeriodDaysLabel(days);
   if (!daysLabel) return null;
 
-  const label = variant === "labeled" ? `기공기간 ${daysLabel}` : daysLabel;
+  const label = variant === "labeled" ? `작업기간 ${daysLabel}` : daysLabel;
   const text = (
     <span
       className={cn(
@@ -61,7 +66,7 @@ export function PracticeWorkPeriodText({
         <span className="inline-flex cursor-help">{text}</span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
-        {PRACTICE_WORK_PERIOD_SHORT_TOOLTIP}
+        {getPracticeWorkPeriodShortTooltip(viewer)}
       </TooltipContent>
     </Tooltip>
   );

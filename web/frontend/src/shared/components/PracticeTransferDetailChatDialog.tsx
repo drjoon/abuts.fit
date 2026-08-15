@@ -10,7 +10,7 @@
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스를 버블에 전달.
 // - 2026-08-14: 기공소 기공수가 할증은 치과 채팅 헤더에 배치(자동매칭 포함).
 // - 2026-08-14: 수락 후 같은 자리(채팅 상단 바)에 작업취소 버튼.
-// - 2026-08-15: 요약 기공기간 — 5일 미만 빨간 표시·거부 가능 툴팁.
+// - 2026-08-15: 요약 작업기간 — 5일 미만 빨간 표시·툴팁. 수락 바 거부·짧은 작업기간.
 import type { ReactNode, RefObject } from "react";
 import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
+import {
+  getPracticeWorkPeriodDays,
+  isPracticeWorkPeriodShort,
+} from "@/shared/practice/practiceWorkPeriod";
 
 export type PracticeTransferDialogSummaryItem = {
   label: string;
@@ -101,6 +106,12 @@ type PracticeTransferDetailChatDialogProps = {
   /** 레거시: 자동매칭 남은시간 라벨(강제 클레임 만료 폐기 후 미사용) */
   remainingLabel?: string | null;
   onAccept?: () => void | Promise<void>;
+  /** 수락 전 거부 (수신 페이지). 자동매칭=풀에서 숨김, 지정=의뢰 취소 */
+  rejectBusy?: boolean;
+  onReject?: () => void | Promise<void>;
+  /** 수락 바 짧은 작업기간 표시용 */
+  orderDate?: string | null;
+  arrivalDate?: string | null;
   /** 수락 후 같은 자리의 작업취소 */
   releaseBusy?: boolean;
   onRelease?: () => void | Promise<void>;
@@ -168,6 +179,10 @@ export function PracticeTransferDetailChatDialog({
   workCanceled = false,
   workCompleted = false,
   onAccept,
+  rejectBusy = false,
+  onReject,
+  orderDate = null,
+  arrivalDate = null,
   releaseBusy = false,
   onRelease,
   remainingLabel = null,
@@ -226,6 +241,9 @@ export function PracticeTransferDetailChatDialog({
       ? `다시 수락 [${remainingLabel}]`
       : "다시 수락";
   const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업취소";
+  const rejectButtonLabel = rejectBusy ? "거부 중..." : "거부";
+  const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
+  const showShortWorkPeriod = isPracticeWorkPeriodShort(workPeriodDays);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-[90rem] h-[86vh] p-0 overflow-hidden flex flex-col">
@@ -455,11 +473,32 @@ export function PracticeTransferDetailChatDialog({
                     ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+                    {showShortWorkPeriod ? (
+                      <PracticeWorkPeriodText
+                        orderDate={orderDate}
+                        arrivalDate={arrivalDate}
+                        variant="labeled"
+                        viewer="lab"
+                        className="text-xs"
+                      />
+                    ) : null}
+                    {onReject ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+                        onClick={() => void onReject()}
+                        disabled={acceptBusy || rejectBusy}
+                      >
+                        {rejectButtonLabel}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"
                       onClick={() => void onAccept?.()}
-                      disabled={acceptBusy}
+                      disabled={acceptBusy || rejectBusy}
                     >
                       {acceptButtonLabel}
                     </Button>

@@ -227,6 +227,7 @@ export const toStatusBadgeLabel = (status: unknown) => {
   if (s === "의뢰수락" || s === "다운로드완료") return "수락";
   if (s === "작업완료") return "완료";
   if (s === "작업취소" || s === "취소") return "취소";
+  if (s === "거부") return "거부";
   if (s === "생산진행" || s === "포장.발송") return "발송";
   return s;
 };

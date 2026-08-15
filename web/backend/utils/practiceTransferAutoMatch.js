@@ -114,7 +114,7 @@ export const buildAutoMatchDeadlineAt = (
 ) => null;
 
 /**
- * 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀 ∪ 내가 클레임 중
+ * 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀 ∪ 내가 거부한 공개 풀 건
  */
 export const buildReceivedScopeWithAutoMatch = ({
   labAnchorId,
@@ -140,27 +140,44 @@ export const buildReceivedScopeWithAutoMatch = ({
     ],
   };
 
+  const openPoolBase = {
+    matchingMode: "auto",
+    status: "active",
+    $and: [
+      openPoolEligibleToMe,
+      {
+        $or: [
+          { "autoMatch.completedAt": null },
+          { "autoMatch.completedAt": { $exists: false } },
+        ],
+      },
+      {
+        $or: [
+          { targetLabAnchorId: null },
+          { targetLabAnchorId: { $exists: false } },
+        ],
+      },
+    ],
+  };
+
   return {
     $or: [
       mine,
+      // 아직 거부하지 않은 공개 풀
+      {
+        ...openPoolBase,
+        $and: [...openPoolBase.$and, { "autoMatch.declinedLabAnchorIds": { $nin: [labOid] } }],
+      },
+      // 내가 거부한 공개 풀(희미한 카드·거부 뱃지용)
       {
         matchingMode: "auto",
         status: "active",
-        $and: [
-          openPoolEligibleToMe,
-          {
-            $or: [
-              { "autoMatch.completedAt": null },
-              { "autoMatch.completedAt": { $exists: false } },
-            ],
-          },
-          {
-            $or: [
-              { targetLabAnchorId: null },
-              { targetLabAnchorId: { $exists: false } },
-            ],
-          },
-        ],
+        "autoMatch.declinedLabAnchorIds": labOid,
+      },
+      // 지정 의뢰를 거부·취소한 건
+      {
+        labRejectedByLabAnchorId: labOid,
+        labRejectedAt: { $ne: null },
       },
     ],
   };
@@ -187,6 +204,9 @@ export const buildAutoMatchClaimableFilter = (
     status: "active",
     $and: [
       ...(eligibleClause ? [eligibleClause] : []),
+      ...(labId && Types.ObjectId.isValid(labId)
+        ? [{ "autoMatch.declinedLabAnchorIds": { $nin: [new Types.ObjectId(labId)] } }]
+        : []),
       {
         $or: [
           { "autoMatch.completedAt": null },
@@ -245,6 +265,10 @@ export const toAutoMatchApiFields = (transfer, viewerLabAnchorId = null) => {
   const viewerId = String(viewerLabAnchorId || "").trim();
   const mine =
     Boolean(claimActive && viewerId && targetId && viewerId === targetId);
+  const declinedIds = Array.isArray(auto?.declinedLabAnchorIds)
+    ? auto.declinedLabAnchorIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  const declinedByMe = Boolean(viewerId && declinedIds.includes(viewerId));
 
   return {
     matchingMode,
@@ -261,6 +285,7 @@ export const toAutoMatchApiFields = (transfer, viewerLabAnchorId = null) => {
       claimActive,
       completed,
       mine,
+      declinedByMe,
       remainingMs: null,
     },
   };

@@ -2,15 +2,31 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
-// - 2026-08-15: 기공기간(주문→도착) 5일 미만 경고 SSOT.
+// - 2026-08-15: 작업기간(주문→도착) 5일 미만 경고 SSOT.
+// - 2026-08-15: 치과·기공소 툴팁 문구 분리. 표기 기공기간→작업기간.
 
 import { kstYmdDiffDays } from "@/shared/date/kst";
 
-/** 권장 기공기간(달력일). 미만이면 경고. */
+/** 권장 작업기간(달력일). 미만이면 경고. */
 export const PRACTICE_WORK_PERIOD_MIN_DAYS = 5;
 
-export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP =
-  "기공기간이 부족하면 기공소에서 작업을 거부할 수 있습니다";
+export type PracticeWorkPeriodViewer = "practice" | "lab";
+
+/** 치과(발신): 짧은 기간이면 수락 기공소가 없을 수 있음 */
+export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE =
+  "작업 기간이 충분하지 않아 수락하는 기공소가 없을 수도 있습니다.";
+
+/** 기공소(수신): 짧은 기간이면 수락하지 않아도 됨 */
+export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_LAB =
+  "작업기간이 짧으니 수락하지 않으셔도 됩니다.";
+
+export function getPracticeWorkPeriodShortTooltip(
+  viewer: PracticeWorkPeriodViewer = "practice",
+): string {
+  return viewer === "lab"
+    ? PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_LAB
+    : PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE;
+}
 
 export function getPracticeWorkPeriodDays(
   orderYmd?: string | null,
@@ -40,6 +56,7 @@ export function formatPracticeWorkPeriodDaysLabel(days: number | null): string {
 export function buildPracticeWorkPeriodSummaryItem(
   orderYmd?: string | null,
   arrivalYmd?: string | null,
+  viewer: PracticeWorkPeriodViewer = "practice",
 ): {
   label: string;
   value: string;
@@ -51,12 +68,12 @@ export function buildPracticeWorkPeriodSummaryItem(
   if (!value) return null;
   const short = isPracticeWorkPeriodShort(days);
   return {
-    label: "기공기간",
+    label: "작업기간",
     value,
     ...(short
       ? {
           valueClassName: "text-destructive",
-          tooltip: PRACTICE_WORK_PERIOD_SHORT_TOOLTIP,
+          tooltip: getPracticeWorkPeriodShortTooltip(viewer),
         }
       : {}),
   };

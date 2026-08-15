@@ -79,6 +79,17 @@ const practiceTransferSchema = new mongoose.Schema(
         default: undefined,
         index: true,
       },
+      // 공개 풀에서 기공소가 「거부」한 앵커. 해당 기공소 수신함·클레임에서 제외.
+      declinedLabAnchorIds: {
+        type: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "BusinessAnchor",
+          },
+        ],
+        default: undefined,
+        index: true,
+      },
     },
     transferMemo: {
       type: String,
@@ -237,6 +248,18 @@ const practiceTransferSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
+    },
+    // 기공소 수락 전 「거부」(지정 기공소). 자동매칭 거부는 autoMatch.declinedLabAnchorIds.
+    labRejectedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    labRejectedByLabAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
+      index: true,
     },
     canceledAt: {
       type: Date,

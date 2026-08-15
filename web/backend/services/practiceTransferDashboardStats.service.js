@@ -164,12 +164,16 @@ export async function getPracticeTransferDashboardStats({
       requestorReadAt: 1,
       workCanceledAt: 1,
       targetLabAnchorId: 1,
+      labRejectedAt: 1,
+      labRejectedByLabAnchorId: 1,
     })
     .lean();
 
   const stats = emptyPracticeTransferDashboardStats();
+  const stageOptions =
+    resolvedKind === "lab" ? { viewerLabAnchorId: anchorId } : {};
   for (const doc of docs) {
-    const stage = resolvePracticeTransferManufacturerStage(doc);
+    const stage = resolvePracticeTransferManufacturerStage(doc, stageOptions);
     const bucket = toPracticeTransferDashboardBucket(stage);
     if (!bucket) continue;
     stats[bucket] += 1;

@@ -2696,6 +2696,23 @@ export async function getReceivedPracticeTransfers(req, res) {
         ...scope,
         status: { $ne: "canceled" },
         requestorReadAt: null,
+        ...(labAnchorId && Types.ObjectId.isValid(labAnchorId)
+          ? {
+              $and: [
+                {
+                  $or: [
+                    { labRejectedAt: null },
+                    { labRejectedAt: { $exists: false } },
+                  ],
+                },
+                {
+                  "autoMatch.declinedLabAnchorIds": {
+                    $nin: [new Types.ObjectId(labAnchorId)],
+                  },
+                },
+              ],
+            }
+          : {}),
       }),
     ]);
 
@@ -2761,7 +2778,16 @@ export async function getReceivedPracticeTransfers(req, res) {
         : String(doc?.practiceBusinessAnchorId || "").trim() || null;
       const isAccepted =
         Boolean(doc?.requestorDownloadedAt) && !openPool;
-      const manufacturerStage = production?.confirmedAt
+      const declinedByMe = Boolean(autoFields.autoMatch?.declinedByMe);
+      const labRejectedByAnchor =
+        String(doc?.labRejectedByLabAnchorId || "").trim() ===
+        String(labAnchorId || "").trim();
+      const labRejected =
+        declinedByMe ||
+        (labRejectedByAnchor && Boolean(doc?.labRejectedAt));
+      const manufacturerStage = labRejected
+        ? "거부"
+        : production?.confirmedAt
         ? "생산진행"
         : autoFields.autoMatch?.completed
           ? "작업완료"
@@ -2783,6 +2809,8 @@ export async function getReceivedPracticeTransfers(req, res) {
         transferMemo: String(doc?.transferMemo || "").trim(),
         status: String(doc?.status || "").trim() || "active",
         manufacturerStage,
+        labRejected,
+        labRejectedAt: doc?.labRejectedAt || null,
         createdAt: doc?.createdAt || null,
         updatedAt: doc?.updatedAt || null,
         isRead: Boolean(doc?.requestorReadAt) && !openPool,
@@ -2884,6 +2912,23 @@ export async function getReceivedPracticeTransferUnreadCount(req, res) {
         ...scope,
         status: { $ne: "canceled" },
         requestorReadAt: null,
+        ...(labAnchorId && Types.ObjectId.isValid(labAnchorId)
+          ? {
+              $and: [
+                {
+                  $or: [
+                    { labRejectedAt: null },
+                    { labRejectedAt: { $exists: false } },
+                  ],
+                },
+                {
+                  "autoMatch.declinedLabAnchorIds": {
+                    $nin: [new Types.ObjectId(labAnchorId)],
+                  },
+                },
+              ],
+            }
+          : {}),
       });
       setRequestPerfCacheValue(cacheKey, { unreadCount: count }, 10 * 1000);
       return count;
@@ -4348,6 +4393,232 @@ export async function markReceivedPracticeTransferRelease(req, res) {
     return res.status(500).json({
       success: false,
       message: "기공의뢰 작업 취소 처리 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 기공소 수락 전 「거부」.
+ * - 자동매칭 공개 풀: 이 기공소만 declinedLabAnchorIds에 넣고 수신함에서 제외(의뢰는 유지).
+ * - 지정 기공소: 의뢰를 canceled 처리(치과 취소와 동일 상태, 에스크로 롤백).
+ */
+export async function markReceivedPracticeTransferReject(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "requestor" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const labOid = new Types.ObjectId(labAnchorId);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    if (String(doc.status || "").trim() === "canceled") {
+      return res.status(409).json({
+        success: false,
+        message: "이미 취소된 기공의뢰입니다.",
+      });
+    }
+
+    if (doc.requestorDownloadedAt) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 수락한 의뢰는 거부할 수 없습니다. 작업취소를 이용해주세요.",
+      });
+    }
+
+    if (isAutoMatchCompleted(doc)) {
+      return res.status(409).json({
+        success: false,
+        message: "작업 완료된 의뢰는 거부할 수 없습니다.",
+      });
+    }
+
+    const isAuto = isAutoMatchMode(doc);
+    const openPool = isAutoMatchOpenPool(doc);
+    const now = new Date();
+
+    if (isAuto && openPool) {
+      const declined = Array.isArray(doc.autoMatch?.declinedLabAnchorIds)
+        ? doc.autoMatch.declinedLabAnchorIds.map((id) => String(id || "").trim())
+        : [];
+      if (!declined.includes(labAnchorId)) {
+        if (!doc.autoMatch || typeof doc.autoMatch !== "object") {
+          doc.autoMatch = {};
+        }
+        await PracticeTransfer.updateOne(
+          { _id: doc._id },
+          {
+            $addToSet: { "autoMatch.declinedLabAnchorIds": labOid },
+            $set: {
+              labRejectedAt: now,
+              labRejectedByLabAnchorId: labOid,
+            },
+          },
+        );
+      }
+
+      const realtimePayload = {
+        action: "rejected",
+        transferId: String(doc.transferId || "").trim(),
+        transferMongoId: String(doc._id || "").trim(),
+        targetLabAnchorId: labAnchorId,
+        matchingMode: "auto",
+        practiceUserId: String(doc.practiceUserId || "").trim() || null,
+        status: String(doc.status || "active").trim(),
+        manufacturerStage: "거부",
+        labRejected: true,
+        labRejectedAt: now,
+        updatedAt: now,
+        source: "labReject",
+      };
+
+      emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+
+      return res.status(200).json({
+        success: true,
+        message: "의뢰를 거부했습니다. 다른 기공소에 계속 공개됩니다.",
+        data: {
+          transferId: String(doc.transferId || "").trim(),
+          rejected: true,
+          matchingMode: "auto",
+          canceled: false,
+          labRejected: true,
+          labRejectedAt: now,
+          manufacturerStage: "거부",
+        },
+      });
+    }
+
+    // 지정 기공소(또는 이미 배정된 자동매칭): 의뢰 취소
+    const targetId = String(doc.targetLabAnchorId || "").trim();
+    if (targetId && targetId !== labAnchorId && role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "지정된 기공소만 거부할 수 있습니다.",
+      });
+    }
+
+    try {
+      await rollbackPracticeTransferBilling({ transferId: doc._id });
+    } catch (rollbackErr) {
+      console.warn(
+        "[practiceTransfer] lab-reject billing rollback failed",
+        String(doc?._id || ""),
+        rollbackErr?.message || rollbackErr,
+      );
+    }
+
+    doc.status = "canceled";
+    doc.canceledAt = now;
+    doc.canceledBy = req.user?._id || null;
+    doc.labRejectedAt = now;
+    doc.labRejectedByLabAnchorId = labOid;
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      {
+        $set: {
+          status: "canceled",
+          canceledAt: now,
+          canceledBy: req.user?._id || null,
+          labRejectedAt: now,
+          labRejectedByLabAnchorId: labOid,
+        },
+      },
+    );
+
+    const transferId = String(doc.transferId || "").trim();
+    const transferMongoId = String(doc._id || "").trim();
+    const realtimePayload = {
+      action: "rejected",
+      transferId,
+      transferMongoId,
+      targetLabAnchorId: labAnchorId,
+      matchingMode: isAuto ? "auto" : "direct",
+      practiceUserId: String(doc.practiceUserId || "").trim() || null,
+      unreadCount: null,
+      status: "canceled",
+      manufacturerStage: "거부",
+      labRejected: true,
+      labRejectedAt: now,
+      updatedAt: now,
+      source: "labReject",
+    };
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+
+    void (async () => {
+      try {
+        await Promise.all([
+          postPracticeTransferSystemChatMessage({
+            transferMongoId: doc._id,
+            senderUserId: req.user?._id,
+            content: "기공소가 의뢰를 거부했습니다.",
+            systemEvent: "work_reject",
+          }),
+          emitPracticeTransferEventToPracticeUsers({
+            practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+            type: "practice:transfer-updated",
+            payload: {
+              ...realtimePayload,
+              action: "canceled",
+              manufacturerStage: "취소",
+              ...(isAuto
+                ? redactAutoMatchLabIdentity("auto", {
+                    targetLabName: String(doc.targetLabName || "").trim(),
+                    targetLabAnchorId: labAnchorId,
+                  })
+                : {}),
+            },
+            extraUserIds: [doc.practiceUserId],
+          }),
+        ]);
+      } catch (err) {
+        console.warn(
+          "[practiceTransfer] lab-reject side-effects failed",
+          String(doc?._id || ""),
+          err?.message || err,
+        );
+      }
+    })();
+
+    return res.status(200).json({
+      success: true,
+      message: "의뢰를 거부했습니다.",
+      data: {
+        transferId,
+        rejected: true,
+        matchingMode: isAuto ? "auto" : "direct",
+        canceled: true,
+        labRejected: true,
+        labRejectedAt: now,
+        manufacturerStage: "거부",
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "기공의뢰 거부 처리 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }

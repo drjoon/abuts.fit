@@ -156,6 +156,8 @@ type ReceivedPracticeTransfer = {
   requestorDownloadedAt: string | null;
   requestorAcceptedAt: string | null;
   workCanceledAt?: string | null;
+  labRejected?: boolean;
+  labRejectedAt?: string | null;
   matchingMode?: "direct" | "auto";
   autoMatch?: {
     claimedAt?: string | null;
@@ -166,6 +168,7 @@ type ReceivedPracticeTransfer = {
     claimActive?: boolean;
     completed?: boolean;
     mine?: boolean;
+    declinedByMe?: boolean;
     remainingMs?: number | null;
     releaseCount?: number;
   } | null;
@@ -269,6 +272,13 @@ const getTransferDisplayStatus = (transfer: {
     mine?: boolean;
   } | null;
 }) => {
+  if (
+    transfer.labRejected ||
+    transfer.manufacturerStage === "거부" ||
+    transfer.autoMatch?.declinedByMe
+  ) {
+    return "거부" as const;
+  }
   if (transfer.production?.confirmedAt || transfer.manufacturerStage === "생산진행") {
     return "생산진행" as const;
   }
@@ -446,12 +456,20 @@ function RequestorPracticeReceivePage({
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "발송완료" | "의뢰수락" | "작업완료" | "취소" | "포장.발송" | "리메이크"
+    | "all"
+    | "발송완료"
+    | "의뢰수락"
+    | "작업완료"
+    | "취소"
+    | "거부"
+    | "포장.발송"
+    | "리메이크"
   >("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
+  const [rejectBusy, setRejectBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
   const [designConfirmBusyId, setDesignConfirmBusyId] = useState<string>("");
@@ -611,6 +629,7 @@ function RequestorPracticeReceivePage({
               claimActive: Boolean(autoMatchRaw.claimActive),
               completed: Boolean(autoMatchRaw.completed),
               mine: Boolean(autoMatchRaw.mine),
+              declinedByMe: Boolean(autoMatchRaw.declinedByMe),
               remainingMs:
                 autoMatchRaw.remainingMs != null
                   ? Number(autoMatchRaw.remainingMs)
@@ -722,6 +741,11 @@ function RequestorPracticeReceivePage({
           requestorDownloadedAt,
           requestorAcceptedAt: requestorDownloadedAt,
           workCanceledAt: r.workCanceledAt ? String(r.workCanceledAt) : null,
+          labRejected:
+            Boolean(r.labRejected) ||
+            Boolean(autoMatch?.declinedByMe) ||
+            String(r.manufacturerStage || "").trim() === "거부",
+          labRejectedAt: r.labRejectedAt ? String(r.labRejectedAt) : null,
           matchingMode,
           autoMatch,
           hasCustomAbutment,
@@ -884,16 +908,17 @@ function RequestorPracticeReceivePage({
       const status = String(payload.status || "").trim();
       const statusLower = status.toLowerCase();
       const isRemovedEvent =
-        action === "canceled" ||
-        action === "cancelled" ||
-        action === "deleted" ||
-        action === "removed" ||
-        action === "purged" ||
-        statusLower === "canceled" ||
-        statusLower === "cancelled" ||
-        statusLower === "deleted" ||
-        statusLower === "removed" ||
-        status === "취소";
+        action !== "rejected" &&
+        (action === "canceled" ||
+          action === "cancelled" ||
+          action === "deleted" ||
+          action === "removed" ||
+          action === "purged" ||
+          statusLower === "canceled" ||
+          statusLower === "cancelled" ||
+          statusLower === "deleted" ||
+          statusLower === "removed" ||
+          status === "취소");
       const requestorReadAt = payload.requestorReadAt
         ? String(payload.requestorReadAt)
         : null;
@@ -908,6 +933,54 @@ function RequestorPracticeReceivePage({
           action === "completed"
         ) {
           void loadFirstPage({ silent: true });
+          if (hasUnreadCount) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
+        if (action === "rejected") {
+          const rejectedAt =
+            payload.labRejectedAt != null
+              ? String(payload.labRejectedAt)
+              : new Date().toISOString();
+          setTransfers((prev) =>
+            prev.map((row) => {
+              if (row.transferId !== transferId) return row;
+              return {
+                ...row,
+                status: status || row.status,
+                labRejected: true,
+                labRejectedAt: rejectedAt,
+                manufacturerStage: "거부",
+                autoMatch: row.autoMatch
+                  ? {
+                      ...row.autoMatch,
+                      declinedByMe: true,
+                      claimActive: false,
+                      mine: false,
+                    }
+                  : row.autoMatch,
+              };
+            }),
+          );
+          setSelectedTransfer((prev) => {
+            if (!prev || prev.transferId !== transferId) return prev;
+            return {
+              ...prev,
+              status: status || prev.status,
+              labRejected: true,
+              labRejectedAt: rejectedAt,
+              manufacturerStage: "거부",
+              autoMatch: prev.autoMatch
+                ? {
+                    ...prev.autoMatch,
+                    declinedByMe: true,
+                    claimActive: false,
+                    mine: false,
+                  }
+                : prev.autoMatch,
+            };
+          });
           if (hasUnreadCount) {
             emitUnreadBadgeRefresh(unreadCount);
           }
@@ -1041,7 +1114,11 @@ function RequestorPracticeReceivePage({
 
     const periodFiltered = transfers.filter((t) => {
       const rawStatus = String(t.status || "").trim().toLowerCase();
-      if (["canceled", "cancelled", "deleted", "removed", "취소"].includes(rawStatus)) {
+      const isCanceled = ["canceled", "cancelled", "deleted", "removed", "취소"].includes(
+        rawStatus,
+      );
+      // 기공소 거부(지정)는 canceled이어도 희미한 카드로 남긴다.
+      if (isCanceled && !t.labRejected && t.manufacturerStage !== "거부") {
         return false;
       }
 
@@ -1096,7 +1173,8 @@ function RequestorPracticeReceivePage({
     const counts = baseFilteredTransfers.reduce(
       (acc, transfer) => {
         const status = getTransferDisplayStatus(transfer);
-        if (status === "작업완료") acc.completed += 1;
+        if (status === "거부") acc.rejected += 1;
+        else if (status === "작업완료") acc.completed += 1;
         else if (status === "생산진행") acc.shipping += 1;
         else if (status === "의뢰수락") acc.accepted += 1;
         else if (status === "취소") acc.canceled += 1;
@@ -1110,7 +1188,15 @@ function RequestorPracticeReceivePage({
         if (transfer.isRemake) acc.remake += 1;
         return acc;
       },
-      { sent: 0, accepted: 0, completed: 0, canceled: 0, shipping: 0, remake: 0 },
+      {
+        sent: 0,
+        accepted: 0,
+        completed: 0,
+        canceled: 0,
+        rejected: 0,
+        shipping: 0,
+        remake: 0,
+      },
     );
     return counts;
   }, [baseFilteredTransfers]);
@@ -1119,6 +1205,10 @@ function RequestorPracticeReceivePage({
     if (statusFilter === "all") return baseFilteredTransfers;
     return baseFilteredTransfers.filter((transfer) => {
       const status = getTransferDisplayStatus(transfer);
+      if (statusFilter === "거부") {
+        return status === "거부";
+      }
+      if (status === "거부") return false;
       if (statusFilter === "발송완료") {
         return (
           status === "발송완료" ||
@@ -1184,6 +1274,7 @@ function RequestorPracticeReceivePage({
       buildPracticeWorkPeriodSummaryItem(
         selectedTransfer?.orderDate,
         selectedTransfer?.arrivalDate,
+        "lab",
       ),
     [selectedTransfer?.arrivalDate, selectedTransfer?.orderDate],
   );
@@ -1838,6 +1929,119 @@ function RequestorPracticeReceivePage({
     [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, toast, token],
   );
 
+  const markTransferReject = useCallback(
+    async (transfer: ReceivedPracticeTransfer) => {
+      if (!token) return false;
+      const isOpenPool =
+        transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
+      if (
+        !isOpenPool &&
+        (transfer.isAccepted || transfer.isDownloaded || transfer.requestorDownloadedAt)
+      ) {
+        toast({
+          title: "거부 불가",
+          description: "이미 수락한 의뢰는 거부할 수 없습니다. 작업취소를 이용해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      try {
+        const [res] = await Promise.all([
+          apiFetch<unknown>({
+            path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-reject`,
+            method: "POST",
+            token,
+          }),
+          new Promise<void>((resolve) => {
+            window.setTimeout(resolve, ACTION_UI_MIN_MS);
+          }),
+        ]);
+
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "거부 실패",
+            description: String(body.message || "의뢰 거부 중 오류가 발생했습니다."),
+            variant: "destructive",
+          });
+          return false;
+        }
+
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const data =
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : body;
+        const canceled = Boolean(data.canceled);
+        const rejectedAt =
+          data.labRejectedAt != null
+            ? String(data.labRejectedAt)
+            : new Date().toISOString();
+
+        applyAcceptedLocalPatch(transfer, {
+          labRejected: true,
+          labRejectedAt: rejectedAt,
+          manufacturerStage: "거부",
+          status: canceled ? "canceled" : transfer.status,
+          autoMatch: transfer.autoMatch
+            ? {
+                ...transfer.autoMatch,
+                declinedByMe: true,
+                openPool:
+                  transfer.matchingMode === "auto"
+                    ? true
+                    : transfer.autoMatch.openPool,
+                claimActive: false,
+                mine: false,
+              }
+            : transfer.matchingMode === "auto"
+              ? {
+                  declinedByMe: true,
+                  openPool: true,
+                  claimActive: false,
+                  mine: false,
+                  completed: false,
+                }
+              : transfer.autoMatch,
+        });
+
+        setDialogOpen(false);
+        chatRoomResolveSeqRef.current += 1;
+        setSelectedTransfer(null);
+        setActiveChatRoom(null);
+        setChatMessages([]);
+        setChatDraft("");
+        setChatReplyTo(null);
+        chatUploads.clear();
+        setChatError("");
+        resetDownloads();
+
+        toast({
+          title: "의뢰 거부",
+          description: canceled
+            ? "의뢰를 거부해 취소 처리했습니다."
+            : "의뢰를 거부했습니다. 다른 기공소에 계속 공개됩니다.",
+        });
+        return true;
+      } catch {
+        toast({
+          title: "거부 실패",
+          description: "의뢰 거부 요청 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, chatUploads, resetDownloads, toast, token],
+  );
+
   const resolveTransferChatRoom = useCallback(
     async (transfer: ReceivedPracticeTransfer, resolveSeq: number) => {
       if (!token) return;
@@ -1894,7 +2098,7 @@ function RequestorPracticeReceivePage({
   );
 
   const handleAcceptTransfer = useCallback(async () => {
-    if (!selectedTransfer || acceptBusy || releaseBusy) return;
+    if (!selectedTransfer || acceptBusy || releaseBusy || rejectBusy) return;
     setAcceptBusy(true);
     try {
       const ok = await markTransferAccepted(selectedTransfer);
@@ -1910,20 +2114,37 @@ function RequestorPracticeReceivePage({
     acceptBusy,
     dialogOpen,
     markTransferAccepted,
+    rejectBusy,
     releaseBusy,
     resolveTransferChatRoom,
     selectedTransfer,
   ]);
 
+  const handleRejectTransfer = useCallback(async () => {
+    if (!selectedTransfer || rejectBusy || acceptBusy || releaseBusy) return;
+    setRejectBusy(true);
+    try {
+      await markTransferReject(selectedTransfer);
+    } finally {
+      setRejectBusy(false);
+    }
+  }, [
+    acceptBusy,
+    markTransferReject,
+    rejectBusy,
+    releaseBusy,
+    selectedTransfer,
+  ]);
+
   const handleReleaseTransfer = useCallback(async () => {
-    if (!selectedTransfer || releaseBusy || acceptBusy) return;
+    if (!selectedTransfer || releaseBusy || acceptBusy || rejectBusy) return;
     setReleaseBusy(true);
     try {
       await markTransferRelease(selectedTransfer);
     } finally {
       setReleaseBusy(false);
     }
-  }, [acceptBusy, markTransferRelease, releaseBusy, selectedTransfer]);
+  }, [acceptBusy, markTransferRelease, rejectBusy, releaseBusy, selectedTransfer]);
 
   const handleCardComplete = useCallback(
     (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
@@ -2182,6 +2403,25 @@ function RequestorPracticeReceivePage({
         <button
           type="button"
           className="rounded-full"
+          onClick={() => setStatusFilter((prev) => (prev === "거부" ? "all" : "거부"))}
+          aria-pressed={statusFilter === "거부"}
+        >
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer",
+              statusFilter === "거부"
+                ? "border-primary/70 bg-primary-soft text-primary-strong"
+                : "hover:bg-muted/40",
+            )}
+          >
+            거부 {statusCounts.rejected}건
+          </Badge>
+        </button>
+
+        <button
+          type="button"
+          className="rounded-full"
           onClick={() => setStatusFilter((prev) => (prev === "포장.발송" ? "all" : "포장.발송"))}
           aria-pressed={statusFilter === "포장.발송"}
         >
@@ -2241,6 +2481,8 @@ function RequestorPracticeReceivePage({
               { labFacing: true },
             );
             const displayStatus = getTransferDisplayStatus(transfer);
+            const isRejectedCard = displayStatus === "거부";
+            const dimRejectedCard = isRejectedCard && statusFilter !== "거부";
             const cardId = String(transfer.transferId || transfer._id || "").trim();
             const cardBusy = Boolean(cardActionBusyId) && cardActionBusyId === cardId;
             const showWorkActions = displayStatus === "의뢰수락";
@@ -2270,7 +2512,8 @@ function RequestorPracticeReceivePage({
                       variant={
                         displayStatus === "발송완료" ||
                         displayStatus === "자동매칭" ||
-                        displayStatus === "취소"
+                        displayStatus === "취소" ||
+                        displayStatus === "거부"
                           ? "destructive"
                           : "secondary"
                       }
@@ -2324,6 +2567,7 @@ function RequestorPracticeReceivePage({
                         orderDate={transfer.orderDate}
                         arrivalDate={transfer.arrivalDate}
                         variant="labeled"
+                        viewer="lab"
                         className="text-xs"
                       />
                     </>
@@ -2438,6 +2682,7 @@ function RequestorPracticeReceivePage({
                   className={cn(
                     "w-full cursor-pointer rounded-lg border-2 border-dashed border-slate-300 p-4 text-left transition",
                     "hover:bg-muted/20",
+                    dimRejectedCard && "opacity-40 hover:opacity-55",
                   )}
                   activeClassName="border-primary bg-primary-soft/40"
                   onFiles={(files) => handleCardDropFiles(transfer, files)}
@@ -2463,7 +2708,10 @@ function RequestorPracticeReceivePage({
                 tabIndex={0}
                 onClick={openCardDialog}
                 onKeyDown={onCardKeyDown}
-                className="w-full cursor-pointer rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={cn(
+                  "w-full cursor-pointer rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  dimRejectedCard && "opacity-40 hover:opacity-55",
+                )}
                 data-transfer-card="true"
               >
                 {renderCardBody()}
@@ -2667,7 +2915,23 @@ function RequestorPracticeReceivePage({
             selectedTransfer?.manufacturerStage === "작업완료",
         )}
         remainingLabel={null}
-        onAccept={() => void handleAcceptTransfer()}
+        onAccept={
+          selectedTransfer?.labRejected ||
+          selectedTransfer?.manufacturerStage === "거부" ||
+          selectedTransfer?.autoMatch?.declinedByMe
+            ? undefined
+            : () => void handleAcceptTransfer()
+        }
+        rejectBusy={rejectBusy}
+        onReject={
+          selectedTransfer?.labRejected ||
+          selectedTransfer?.manufacturerStage === "거부" ||
+          selectedTransfer?.autoMatch?.declinedByMe
+            ? undefined
+            : () => void handleRejectTransfer()
+        }
+        orderDate={selectedTransfer?.orderDate || null}
+        arrivalDate={selectedTransfer?.arrivalDate || null}
         releaseBusy={releaseBusy}
         onRelease={() => void handleReleaseTransfer()}
         chatLoading={chatLoading}
