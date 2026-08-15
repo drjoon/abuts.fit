@@ -38,6 +38,21 @@ describe("designAccess PTX lab designer helpers", () => {
     expect(isAcceptingLabForPtxDesignRequest(labUser, directRequest)).toBe(
       false,
     );
+    // 작업취소 후 재수락: Request 소유는 이전 lab, transferLab은 현재 lab
+    expect(
+      isAcceptingLabForPtxDesignRequest(
+        otherLab,
+        ptxRequest,
+        otherLab.businessAnchorId,
+      ),
+    ).toBe(true);
+    expect(
+      isAcceptingLabForPtxDesignRequest(
+        otherLab,
+        ptxRequest,
+        labUser.businessAnchorId,
+      ),
+    ).toBe(false);
   });
 
   test("canClaimOrHandoffDesignRequest — PTX only accepting lab", async () => {

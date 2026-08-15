@@ -6,8 +6,10 @@
 // - web/backend/controllers/requests/designClaim.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-08-15: PTX 수락 판정 — Request.businessAnchorId 또는 transfer.targetLabAnchorId.
 // - 2026-08-15: 기공의뢰(PTX) 연동 디자인+생산은 수락 기공소만 claim/handoff.
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import PracticeTransfer from "../models/practiceTransfer.model.js";
 
 const DESIGN_ACCESS_CACHE_TTL_MS = 30 * 1000;
 const __designAccessCache = new Map();
@@ -65,14 +67,23 @@ export const isPtxLinkedDesignRequest = (request) => {
 };
 
 /**
- * PTX 연동 디자인+생산: 수락 기공소(Request.businessAnchorId)만 디자인 가능.
+ * PTX 연동 디자인+생산: 수락 기공소만 디자인 가능.
+ * - Request.businessAnchorId (생성 시점 소유)
+ * - 또는 PracticeTransfer.targetLabAnchorId (현재 수락 lab; 작업취소 후 재수락 시 소유가 어긋날 수 있음)
  */
-export const isAcceptingLabForPtxDesignRequest = (user, request) => {
+export const isAcceptingLabForPtxDesignRequest = (
+  user,
+  request,
+  transferTargetLabAnchorId = null,
+) => {
   if (!user || !request) return false;
   if (!isPtxLinkedDesignRequest(request)) return false;
   const myAnchor = String(user.businessAnchorId || "").trim();
+  if (!myAnchor) return false;
   const ownerAnchor = String(request.businessAnchorId || "").trim();
-  return Boolean(myAnchor && ownerAnchor && myAnchor === ownerAnchor);
+  if (ownerAnchor && myAnchor === ownerAnchor) return true;
+  const transferLab = String(transferTargetLabAnchorId || "").trim();
+  return Boolean(transferLab && myAnchor === transferLab);
 };
 
 /**
@@ -86,7 +97,19 @@ export const canClaimOrHandoffDesignRequest = async (user, request) => {
   if (role === "admin") return true;
 
   if (isPtxLinkedDesignRequest(request)) {
-    return isAcceptingLabForPtxDesignRequest(user, request);
+    if (isAcceptingLabForPtxDesignRequest(user, request)) return true;
+    const transferId = request?.partnerBilling?.relatedPracticeTransferId
+      ? String(request.partnerBilling.relatedPracticeTransferId).trim()
+      : "";
+    if (!transferId) return false;
+    const transfer = await PracticeTransfer.findById(transferId)
+      .select({ targetLabAnchorId: 1 })
+      .lean();
+    return isAcceptingLabForPtxDesignRequest(
+      user,
+      request,
+      transfer?.targetLabAnchorId,
+    );
   }
 
   return resolveDesignAccessForUser(user);

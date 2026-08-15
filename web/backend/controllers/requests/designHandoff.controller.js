@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: 취소·핸드오프 — transfer.targetLabAnchorId로 수락 lab 판정(소유 어긋남 보정).
 // - 2026-08-15: PTX — 업로드 시 생산만 재견적·출고재계산, 준비 유지. 취소·재업로드(준비만).
 // - 2026-08-15: PTX 수락 기공소는 design-claim 없이 핸드오프(카드 업로드). internalLab 허용.
 // - 2026-08-15: PTX 연동은 수락 기공소 디자인 → 업로드 즉시 제조 착수 + 어벗디자인비 지급.
@@ -30,6 +31,31 @@ import {
   grantAbutmentDesignLabFee,
   revokeAbutmentDesignLabFee,
 } from "../../services/practiceTransferBilling.service.js";
+
+const resolvePtxAcceptingLabContext = async (request) => {
+  const relatedTransferId = request?.partnerBilling?.relatedPracticeTransferId
+    ? String(request.partnerBilling.relatedPracticeTransferId).trim()
+    : "";
+  if (!relatedTransferId || !Types.ObjectId.isValid(relatedTransferId)) {
+    return { relatedTransferId: "", transferTargetLabAnchorId: "" };
+  }
+  const transfer = await PracticeTransfer.findById(relatedTransferId)
+    .select({ targetLabAnchorId: 1 })
+    .lean();
+  return {
+    relatedTransferId,
+    transferTargetLabAnchorId: String(transfer?.targetLabAnchorId || "").trim(),
+  };
+};
+
+const healRequestOwnershipToAcceptingLab = (request, transferTargetLabAnchorId) => {
+  const transferLab = String(transferTargetLabAnchorId || "").trim();
+  if (!transferLab || !Types.ObjectId.isValid(transferLab)) return false;
+  const current = String(request?.businessAnchorId || "").trim();
+  if (current === transferLab) return false;
+  request.businessAnchorId = new Types.ObjectId(transferLab);
+  return true;
+};
 
 const toStoredFileMeta = (raw) => {
   if (!raw || typeof raw !== "object") return null;
@@ -104,6 +130,9 @@ export async function handoffDesignToProduction(req, res) {
       });
     }
 
+    const { transferTargetLabAnchorId } =
+      await resolvePtxAcceptingLabContext(request);
+
     const productMode = String(request?.caseInfos?.productMode || "").trim();
     if (productMode !== "design_custom_abutment") {
       return res.status(400).json({
@@ -120,7 +149,14 @@ export async function handoffDesignToProduction(req, res) {
     }
 
     // 수락 기공소(PTX)는 카드에서 바로 업로드 — 디자인 파트너 클레임 불필요.
-    const acceptingLabPtx = isAcceptingLabForPtxDesignRequest(req.user, request);
+    const acceptingLabPtx = isAcceptingLabForPtxDesignRequest(
+      req.user,
+      request,
+      transferTargetLabAnchorId,
+    );
+    if (acceptingLabPtx) {
+      healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
+    }
     const claimerId = request?.designClaim?.claimedBy
       ? String(request.designClaim.claimedBy)
       : "";
@@ -186,7 +222,11 @@ export async function handoffDesignToProduction(req, res) {
       });
 
       let transferDoc = await PracticeTransfer.findById(relatedTransferId);
-      const isAcceptingLab = isAcceptingLabForPtxDesignRequest(req.user, request);
+      const isAcceptingLab = isAcceptingLabForPtxDesignRequest(
+        req.user,
+        request,
+        transferDoc?.targetLabAnchorId,
+      );
       let designFeeGrant = null;
 
       if (transferDoc && isAcceptingLab) {
@@ -328,12 +368,22 @@ export async function cancelDesignHandoff(req, res) {
       });
     }
 
-    if (!isAcceptingLabForPtxDesignRequest(req.user, request) && role !== "admin") {
+    const { transferTargetLabAnchorId } =
+      await resolvePtxAcceptingLabContext(request);
+    if (
+      !isAcceptingLabForPtxDesignRequest(
+        req.user,
+        request,
+        transferTargetLabAnchorId,
+      ) &&
+      role !== "admin"
+    ) {
       return res.status(403).json({
         success: false,
         message: "수락한 기공소만 디자인을 취소할 수 있습니다.",
       });
     }
+    healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
 
     if (String(request.manufacturerStage || "").trim() !== "준비") {
       return res.status(409).json({

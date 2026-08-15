@@ -68,6 +68,7 @@ import { postPracticeTransferSystemChatMessage } from "../../services/chatSystem
 import {
   assertOralScanFilesForCreate,
   canStartAbutmentProduction,
+  clearRelatedAbutmentProductionOnRelease,
   ensureAbutmentRequestsOnAccept,
   hasCustomAbutmentToothWorks,
   isAbutmentDesignReady,
@@ -107,6 +108,7 @@ import { resolvePracticeTransferManufacturerStage } from "../../utils/practiceTr
 // - 2026-08-15: 적격 스냅샷에서 practice 할증 제외. 카탈로그·practice 병렬 로드.
 // - 2026-08-14: 자동매칭 3시간 강제 클레임 만료 폐기(작업완료/취소까지 유지·도착일은 소통 기한).
 // - 2026-08-14: mark-accepted — autoMatch pool emit N+1 제거·사이드이펙트 병렬. FE 수락 busy에서 chat resolve 분리.
+// - 2026-08-15: mark-release — 연동 CA Request/디자인 미러 정리(재수락 소유 어긋남 방지).
 // - 2026-08-14: mark-accepted — 과금 직후 응답, billing $set, 사이드이펙트 비동기.
 // - 2026-08-15: mark-accepted — billing+accept $set 병합, 과금 저널/수수료 조회 병렬.
 // - 2026-08-14: mark-release — updateOne + 사이드이펙트 비동기(채팅/emit은 응답 후).
@@ -4313,6 +4315,16 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         "[practiceTransfer] work-cancel billing rollback failed",
         String(doc?._id || ""),
         rollbackErr?.message || rollbackErr,
+      );
+    }
+
+    try {
+      await clearRelatedAbutmentProductionOnRelease(doc);
+    } catch (clearErr) {
+      console.warn(
+        "[practiceTransfer] work-cancel abutment production clear failed",
+        String(doc?._id || ""),
+        clearErr?.message || clearErr,
       );
     }
 

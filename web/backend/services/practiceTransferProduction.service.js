@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-15: 작업취소(release) 시 연동 CA Request 취소·디자인 미러 정리. 재수락 시 소유 동기화.
 // - 2026-08-15: PTX CA — 치과 멤버십/일반 생산단가·출고목표=기일-3영업일·묶음 우선. 디자인비는 기공소 지급 분리.
 // - 2026-08-15: 지정 CA — 스캔 없이 수락 가능. 스캔은 수락 후 업로드 후 Request 생성.
 // - 2026-08-15: 구강스캔 — 자동매칭은 치과 필수, 지정은 수락 기공소 업로드 허용.
@@ -674,6 +675,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 
 /**
  * CA 포함이면 Request 생성(이미 있으면 no-op) 후 production.relatedRequestIds·shippingMode 갱신.
+ * 이미 생성된 Request는 현재 수락 기공소(targetLabAnchorId)로 소유를 맞춘다.
  */
 export async function ensureAbutmentRequestsOnAccept({
   transferDoc,
@@ -723,12 +725,115 @@ export async function ensureAbutmentRequestsOnAccept({
     },
   );
 
+  if (result.skippedReason === "already_created") {
+    await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
+  }
+
   return {
     created: result.skippedReason !== "already_created" && requestIds.length > 0,
     skippedReason: result.skippedReason || null,
     requestIds,
     shippingMode,
   };
+}
+
+/**
+ * 작업취소·자동매칭 재공개 시: 이전 기공소가 만든 CA Request/디자인 미러를 정리.
+ * 다음 수락 기공소가 소유·디자인 권한을 깨끗이 받도록 한다.
+ */
+export async function clearRelatedAbutmentProductionOnRelease(transferDoc) {
+  if (!transferDoc?._id) {
+    return { cleared: false, canceledRequestCount: 0 };
+  }
+
+  const requestIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
+    ? transferDoc.production.relatedRequestIds
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+    : [];
+
+  let canceledRequestCount = 0;
+  if (requestIds.length > 0) {
+    const cancelResult = await Request.updateMany(
+      {
+        _id: { $in: requestIds.map((id) => new Types.ObjectId(id)) },
+        manufacturerStage: { $ne: "취소" },
+      },
+      {
+        $set: { manufacturerStage: "취소" },
+        $unset: {
+          designCompletedAt: "",
+          designCompletedBy: "",
+          designLabBusinessAnchorId: "",
+        },
+      },
+    );
+    canceledRequestCount = Number(cancelResult?.modifiedCount || 0);
+  }
+
+  const productionNext = {
+    ...(transferDoc.production && typeof transferDoc.production === "object"
+      ? transferDoc.production
+      : {}),
+    relatedRequestIds: [],
+    designFiles: [],
+    designReadyAt: null,
+    labDesignConfirmedAt: null,
+    labDesignConfirmedBy: null,
+    practiceDesignConfirmedAt: null,
+    practiceDesignConfirmedBy: null,
+    abutmentProductionStartedAt: null,
+  };
+  transferDoc.production = productionNext;
+
+  await PracticeTransfer.updateOne(
+    { _id: transferDoc._id },
+    {
+      $set: {
+        "production.relatedRequestIds": [],
+        "production.designFiles": [],
+      },
+      $unset: {
+        "production.designReadyAt": "",
+        "production.labDesignConfirmedAt": "",
+        "production.labDesignConfirmedBy": "",
+        "production.practiceDesignConfirmedAt": "",
+        "production.practiceDesignConfirmedBy": "",
+        "production.abutmentProductionStartedAt": "",
+      },
+    },
+  );
+
+  return { cleared: true, canceledRequestCount };
+}
+
+/**
+ * 재수락 등으로 relatedRequestIds는 유지됐지만 Request.businessAnchorId가
+ * 이전 기공소로 남은 경우, 현재 targetLabAnchorId로 맞춘다.
+ */
+export async function syncRelatedRequestOwnershipToAcceptingLab(transferDoc) {
+  const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+  if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
+    return { updated: 0 };
+  }
+
+  const requestIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
+    ? transferDoc.production.relatedRequestIds
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+    : [];
+  if (requestIds.length === 0) return { updated: 0 };
+
+  const labOid = new Types.ObjectId(labAnchorId);
+  const result = await Request.updateMany(
+    {
+      _id: { $in: requestIds.map((id) => new Types.ObjectId(id)) },
+      manufacturerStage: { $ne: "취소" },
+      businessAnchorId: { $ne: labOid },
+    },
+    { $set: { businessAnchorId: labOid } },
+  );
+  return { updated: Number(result?.modifiedCount || 0) };
 }
 
 export function isAbutmentDesignReady(transferDoc) {
