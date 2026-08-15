@@ -91,6 +91,7 @@ interface CreditSettings {
   affiliateVatRate: number;
   expressFee: number;
   designFee: number;
+  abutmentDesignLabFee: number;
   abutmentRetailPrice: number;
   practiceMembershipMonthlyFee: number;
   defaultRequestFreeCredit: number;
@@ -220,6 +221,14 @@ function normalizeCreditSettings(
       0,
       abutmentPrices.membershipDesignAndProductionPrice -
         abutmentPrices.membershipProductionPrice,
+    ),
+    abutmentDesignLabFee: Math.max(
+      0,
+      Number(
+        (raw as CreditSettings).abutmentDesignLabFee ??
+          (fallback as CreditSettings).abutmentDesignLabFee ??
+          10000,
+      ) || 0,
     ),
     abutmentRetailPrice: Number(
       raw.abutmentRetailPrice ?? fallback.abutmentRetailPrice ?? 40000,
@@ -835,6 +844,19 @@ export const AdminCreditSettingsTab = () => {
                   }
                   disabled={loading}
                   help={designAndProductionHelp}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <AmountField
+                  id="abutmentDesignLabFee"
+                  label="어벗디자인비"
+                  icon={HandCoins}
+                  value={settings.abutmentDesignLabFee}
+                  onChange={(next) =>
+                    setSettings({ ...settings, abutmentDesignLabFee: next })
+                  }
+                  disabled={loading}
+                  help="기공의뢰에 커스텀어벗이 포함되면 수락 기공소가 디자인한 뒤 지급합니다. 1어벗당. 기본 10,000원."
                 />
               </div>
             </div>

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-15: 수락 기공소는 본인 기공의뢰(CA) 디자인 큐(/my). 파트너는 기존 /all.
+// - 2026-08-15: 카피 — 수락 기공소가 디자인·업로드 시 제조 주문.
 // - 2026-08-11: DesignPage 삭제 → 의뢰수신 내장 섹션으로 통합(독립 페이지/사이드메뉴 없음).
 // - 2026-08-11: 로딩/서스펜스·빈 목록 시 빈 상태 카드 미표시(의뢰수신 전송 내역과 중복 방지).
 // - 2026-08-10: detailMode=transferChat — 기공의뢰서형 카드·상세/채팅 모달.
@@ -30,16 +32,30 @@ const RequestPage = lazy(() =>
   })),
 );
 
+export type DesignQueueListMode = "partner" | "acceptingLab";
+
 /**
  * 의뢰수신에 편입된 디자인+생산(준비) 큐.
  * PeriodFilter는 상위(의뢰수신)에서 공유한다.
+ * - partner: 디자인 파트너 전역 큐(/all), 기공의뢰(PTX) 제외
+ * - acceptingLab: 수락 기공소 본인 기공의뢰 CA(/my)
  */
-export const DesignQueueSection = () => {
+export const DesignQueueSection = ({
+  listMode = "partner",
+}: {
+  listMode?: DesignQueueListMode;
+}) => {
+  const isAcceptingLab = listMode === "acceptingLab";
+
   return (
     <div className="w-full min-h-0 flex flex-col items-stretch">
       <TooltipProvider delayDuration={0}>
         <div className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground">
-          <span>커스텀 어벗 디자인은 1영업일 내 기공소 전달</span>
+          <span>
+            {isAcceptingLab
+              ? "커스텀 어벗 디자인은 수락 기공소가 진행 · 업로드 시 제조 주문"
+              : "커스텀 어벗 디자인은 1영업일 내 기공소 전달"}
+          </span>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -51,12 +67,25 @@ export const DesignQueueSection = () => {
               </button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs leading-relaxed">
-              커스텀어벗이 포함된 기공의뢰는 어벗츠가 구강스캔으로 먼저 디자인해
-              기공소에 전달합니다. 기공소가 디자인을 확인하면 치과도착일(기일)에
-              맞춰 생산·발송됩니다.
-              <br />
-              작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 지연 시 치과와 미리
-              상의하세요.
+              {isAcceptingLab ? (
+                <>
+                  커스텀어벗이 포함된 기공의뢰는 수락한 기공소가 구강스캔으로
+                  디자인한 뒤 완성 어벗 STL을 올리면 제조사에 자동 주문됩니다.
+                  어벗디자인비는 플랫폼 설정 단가로 기공정산 크레딧에
+                  지급됩니다.
+                  <br />
+                  보철 작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 지연 시
+                  치과와 미리 상의하세요.
+                </>
+              ) : (
+                <>
+                  어벗생산의뢰(디자인+생산) 큐입니다. 기공의뢰에 포함된
+                  커스텀어벗 디자인은 수락 기공소가 담당합니다.
+                  <br />
+                  작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 지연 시 치과와
+                  미리 상의하세요.
+                </>
+              )}
             </TooltipContent>
           </Tooltip>
         </div>
@@ -65,7 +94,7 @@ export const DesignQueueSection = () => {
         <RequestPage
           showQueueBar={false}
           showBulkCamRegenerate={false}
-          useManufacturerQueueList
+          useManufacturerQueueList={!isAcceptingLab}
           detailMode="transferChat"
           productMode={PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT}
           filterRequests={(req) =>

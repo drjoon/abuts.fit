@@ -350,3 +350,53 @@ export const authorizeManufacturerOrDesignPartner = () => {
     }
   };
 };
+
+/**
+ * 디자인 claim/handoff: 디자인 파트너 + 기공의뢰(PTX) 수락 기공소.
+ * 세부 PTX/비PTX 권한은 컨트롤러에서 재검증.
+ */
+export const authorizeDesignClaimOrHandoff = () => {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: "인증이 필요합니다.",
+        });
+      }
+
+      const role = String(req.user.role || "").trim();
+      if (role === "manufacturer" || role === "admin") {
+        return next();
+      }
+
+      if (role === "requestor" || role === "internalLab") {
+        const enabled = await resolveDesignAccessForUser(req.user);
+        if (enabled) {
+          req.__designPartner = true;
+          return next();
+        }
+        if (role === "requestor") {
+          req.__ptxLabDesignerCandidate = true;
+          return next();
+        }
+      }
+
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    } catch (error) {
+      console.error("[authorizeDesignClaimOrHandoff] error", {
+        path: req.path,
+        method: req.method,
+        userId: req.user?._id,
+        error: error?.message,
+      });
+      return res.status(500).json({
+        success: false,
+        message: "권한 확인 중 오류가 발생했습니다.",
+      });
+    }
+  };
+};

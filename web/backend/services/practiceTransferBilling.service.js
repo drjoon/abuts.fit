@@ -2500,3 +2500,145 @@ export async function buildFeeQuotesForTransferDocs({
   }
   return out;
 }
+
+/**
+ * 기공의뢰 CA: 수락 기공소가 디자인을 올리면 어벗디자인비 지급.
+ * REV_DEVOPS → LAB_SETTLEMENT_CREDIT (idempotent per Request).
+ */
+export async function grantAbutmentDesignLabFee({
+  requestDoc,
+  transferId = null,
+  labAnchorId = null,
+  actorUserId = null,
+}) {
+  const requestId = requestDoc?._id ? String(requestDoc._id) : "";
+  if (!requestId || !Types.ObjectId.isValid(requestId)) {
+    return { granted: false, reason: "missing_request" };
+  }
+
+  const resolvedLabAnchorId = String(
+    labAnchorId || requestDoc?.businessAnchorId || "",
+  ).trim();
+  if (!resolvedLabAnchorId || !Types.ObjectId.isValid(resolvedLabAnchorId)) {
+    return { granted: false, reason: "missing_lab" };
+  }
+
+  const creditSettings = await loadCreditSettingsDefaults();
+  const unitFee = Math.max(
+    0,
+    Math.round(Number(creditSettings?.abutmentDesignLabFee ?? 10000) || 0),
+  );
+  const { countDesignAbutmentQty } = await import(
+    "../controllers/requests/designPrice.utils.js"
+  );
+  const qty = Math.max(1, countDesignAbutmentQty(requestDoc?.caseInfos) || 1);
+  const amount = unitFee * qty;
+  if (amount <= 0) {
+    return { granted: false, reason: "zero_amount", unitFee, qty };
+  }
+
+  const idempotencyKey = `gl:request:${requestId}:abutment_design_fee`;
+  const existing = await getJournalByIdempotencyKey({ idempotencyKey });
+  if (existing) {
+    return {
+      granted: false,
+      reason: "already_granted",
+      journalId: existing.journalId,
+      amount,
+      unitFee,
+      qty,
+    };
+  }
+
+  const devopsAnchorId = await resolveDevopsEscrowOwnerId();
+  if (!devopsAnchorId) {
+    return { granted: false, reason: "missing_devops" };
+  }
+
+  const relatedTransferId = String(
+    transferId ||
+      requestDoc?.partnerBilling?.relatedPracticeTransferId ||
+      "",
+  ).trim();
+
+  const journal = await postGeneralLedgerJournal({
+    idempotencyKey,
+    eventType: "ADJUST",
+    businessAnchorId: resolvedLabAnchorId,
+    refType: relatedTransferId ? "PRACTICE_TRANSFER" : "REQUEST",
+    refId: relatedTransferId || requestId,
+    createdBy: actorUserId || null,
+    meta: {
+      source: "abutment_design_lab_fee",
+      displayKind: "lab_credit",
+      displayLabel: "어벗디자인비",
+      requestId,
+      relatedPracticeTransferId: relatedTransferId || null,
+      unitFee,
+      qty,
+      amount,
+    },
+    lines: [
+      {
+        accountCode: "REV_DEVOPS",
+        ownerRole: "devops",
+        ownerId: devopsAnchorId,
+        amount: -amount,
+        amountExcludingVat: -amount,
+        vatAmount: 0,
+        creditKind: null,
+        refType: "REQUEST",
+        refId: requestId,
+        meta: {
+          source: "abutment_design_lab_fee",
+          displayLabel: "어벗디자인비",
+        },
+      },
+      {
+        accountCode: "LAB_SETTLEMENT_CREDIT",
+        ownerRole: "requestor",
+        ownerId: resolvedLabAnchorId,
+        amount,
+        amountExcludingVat: amount,
+        vatAmount: 0,
+        creditKind: "SETTLEMENT",
+        refType: "REQUEST",
+        refId: requestId,
+        meta: {
+          source: "abutment_design_lab_fee",
+          displayKind: "lab_credit",
+          displayLabel: "어벗디자인비",
+          itemLabel: "어벗디자인비",
+          unitFee,
+          qty,
+        },
+      },
+    ],
+  });
+
+  if (journal?.posted) {
+    try {
+      const { emitCreditBalanceUpdatedToBusiness } = await import(
+        "../utils/creditRealtime.js"
+      );
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId: resolvedLabAnchorId,
+        balanceDelta: amount,
+        reason: "abutment_design_lab_fee",
+        refId: journal.journalId || requestId,
+      });
+    } catch {
+      // best-effort realtime
+    }
+  }
+
+  return {
+    granted: Boolean(journal?.posted),
+    reason: journal?.posted ? "posted" : "not_posted",
+    journalId: journal?.journalId || null,
+    amount,
+    unitFee,
+    qty,
+  };
+}
+

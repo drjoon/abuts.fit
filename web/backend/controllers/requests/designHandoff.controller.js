@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: PTX 연동은 수락 기공소 디자인 → 업로드 즉시 제조 착수 + 어벗디자인비 지급.
 // - 2026-08-15: PTX 연동 의뢰는 디자인 STL만 저장·미러하고 가공 진입은 기공소/치과 컨펌 후.
 // - 2026-08-10: 디자인 완료 어벗 STL 업로드 → 동일 Request 제조사 가공 핸드오프.
 // related files:
@@ -9,10 +10,14 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/middlewares/auth.middleware.js
 // - web/backend/services/practiceTransferProduction.service.js
+// - web/backend/services/practiceTransferBilling.service.js
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
-import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
+import {
+  canClaimOrHandoffDesignRequest,
+  isAcceptingLabForPtxDesignRequest,
+} from "../../utils/designAccess.js";
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { updateReviewStatusByStage } from "./common.review.controller.js";
 import {
@@ -20,6 +25,7 @@ import {
   mirrorDesignFileToPracticeTransfer,
   tryStartAbutmentProduction,
 } from "../../services/practiceTransferProduction.service.js";
+import { grantAbutmentDesignLabFee } from "../../services/practiceTransferBilling.service.js";
 
 const toStoredFileMeta = (raw) => {
   if (!raw || typeof raw !== "object") return null;
@@ -40,7 +46,7 @@ const toStoredFileMeta = (raw) => {
 /**
  * POST /api/requests/:id/design-handoff
  * 완성 어벗 STL을 primary로 교체.
- * PTX 연동: 미러만 하고 가공 진입은 confirm-abutment-design 후.
+ * PTX 연동(수락 기공소): 미러 + lab confirm 자동 + 즉시 제조 착수 + 어벗디자인비.
  * 비PTX: 기존처럼 제조사 가공 핸드오프.
  */
 export async function handoffDesignToProduction(req, res) {
@@ -65,16 +71,6 @@ export async function handoffDesignToProduction(req, res) {
       return res.status(401).json({ success: false, message: "인증이 필요합니다." });
     }
 
-    if (role === "requestor") {
-      const hasAccess = await resolveDesignAccessForUser(req.user);
-      if (!hasAccess) {
-        return res.status(403).json({
-          success: false,
-          message: "디자인 큐 접근 권한이 없습니다.",
-        });
-      }
-    }
-
     const bodyFile =
       req.body?.file && typeof req.body.file === "object"
         ? req.body.file
@@ -92,6 +88,16 @@ export async function handoffDesignToProduction(req, res) {
       return res
         .status(404)
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const allowed = await canClaimOrHandoffDesignRequest(req.user, request);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: request?.partnerBilling?.relatedPracticeTransferId
+          ? "기공의뢰 커스텀어벗 디자인은 수락한 기공소만 할 수 있습니다."
+          : "디자인 큐 접근 권한이 없습니다.",
+      });
     }
 
     const productMode = String(request?.caseInfos?.productMode || "").trim();
@@ -160,7 +166,7 @@ export async function handoffDesignToProduction(req, res) {
       ? String(request.partnerBilling.relatedPracticeTransferId)
       : "";
 
-    // PTX Abuts-first: 디자인 미러만. 가공은 기공소(·치과) 컨펌 후.
+    // PTX: 수락 기공소 업로드 → 미러 + 컨펌 자동 + 즉시 제조 + 어벗디자인비
     if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
       await mirrorDesignFileToPracticeTransfer({
         transferId: relatedTransferId,
@@ -174,9 +180,64 @@ export async function handoffDesignToProduction(req, res) {
         patientName: String(request?.caseInfos?.patientName || "").trim(),
       });
 
-      const transferDoc = await PracticeTransfer.findById(relatedTransferId);
+      // mirror 후 production.designReadyAt 반영된 최신 문서 사용
+      let transferDoc = await PracticeTransfer.findById(relatedTransferId);
+      const isAcceptingLab = isAcceptingLabForPtxDesignRequest(req.user, request);
       let productionStarted = false;
-      if (transferDoc && canStartAbutmentProduction(transferDoc)) {
+      let designFeeGrant = null;
+
+      if (transferDoc && isAcceptingLab) {
+        const now = new Date();
+        const productionPatch = {
+          ...(transferDoc.production && typeof transferDoc.production === "object"
+            ? transferDoc.production
+            : {}),
+          labDesignConfirmedAt:
+            transferDoc.production?.labDesignConfirmedAt || now,
+          labDesignConfirmedBy:
+            transferDoc.production?.labDesignConfirmedBy || req.user?._id || null,
+          // 수락 기공소가 직접 디자인 → 치과 컨펌 게이트 생략
+          skipDesignConfirm: true,
+        };
+        transferDoc.production = productionPatch;
+        await PracticeTransfer.updateOne(
+          { _id: transferDoc._id },
+          {
+            $set: {
+              "production.labDesignConfirmedAt": productionPatch.labDesignConfirmedAt,
+              "production.labDesignConfirmedBy":
+                productionPatch.labDesignConfirmedBy,
+              "production.skipDesignConfirm": true,
+            },
+          },
+        );
+
+        try {
+          designFeeGrant = await grantAbutmentDesignLabFee({
+            requestDoc: request,
+            transferId: relatedTransferId,
+            labAnchorId:
+              labAnchorId || String(transferDoc.targetLabAnchorId || "").trim(),
+            actorUserId: userId,
+          });
+        } catch (grantErr) {
+          console.error("[DESIGN_HANDOFF] abutment design fee grant failed", grantErr);
+        }
+
+        if (canStartAbutmentProduction(transferDoc)) {
+          try {
+            const start = await tryStartAbutmentProduction({
+              transferDoc,
+              actorUserId: userId,
+            });
+            productionStarted = Boolean(start?.started);
+          } catch (startErr) {
+            console.error("[DESIGN_HANDOFF] production start failed", startErr);
+            productionStarted = false;
+          }
+        }
+      } else if (transferDoc && canStartAbutmentProduction(transferDoc)) {
+        // 레거시(파트너 디자인 후 컨펌 완료된 건) 호환
         try {
           const start = await tryStartAbutmentProduction({
             transferDoc,
@@ -191,13 +252,22 @@ export async function handoffDesignToProduction(req, res) {
       return res.status(200).json({
         success: true,
         message: productionStarted
-          ? "디자인 업로드 및 생산이 시작되었습니다."
-          : "디자인 파일이 기공소에 전달되었습니다. 기공소(필요 시 치과) 컨펌 후 생산이 시작됩니다.",
+          ? "디자인 업로드 및 제조 주문이 시작되었습니다."
+          : "디자인 파일이 저장되었습니다.",
         data: {
           requestId: String(request._id),
           relatedPracticeTransferId: relatedTransferId,
           awaitingDesignConfirm: !productionStarted,
           productionStarted,
+          abutmentDesignFee: designFeeGrant
+            ? {
+                granted: Boolean(designFeeGrant.granted),
+                amount: designFeeGrant.amount ?? 0,
+                unitFee: designFeeGrant.unitFee ?? 0,
+                qty: designFeeGrant.qty ?? 0,
+                reason: designFeeGrant.reason || null,
+              }
+            : null,
         },
       });
     }

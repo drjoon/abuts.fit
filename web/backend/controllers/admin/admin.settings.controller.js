@@ -294,6 +294,7 @@ export async function updateCreditSettings(req, res) {
     const affiliateVatRate = Number(payload.affiliateVatRate);
     const expressFee = Number(payload.expressFee);
     const designFee = Number(payload.designFee);
+    const abutmentDesignLabFee = Number(payload.abutmentDesignLabFee);
     const membershipProductionPrice = Number(payload.membershipProductionPrice);
     const regularProductionPrice = Number(payload.regularProductionPrice);
     const membershipDesignAndProductionPrice = Number(
@@ -393,6 +394,9 @@ export async function updateCreditSettings(req, res) {
     }
     if (!Number.isNaN(designFee) && designFee >= 0) {
       sanitized.designFee = designFee;
+    }
+    if (!Number.isNaN(abutmentDesignLabFee) && abutmentDesignLabFee >= 0) {
+      sanitized.abutmentDesignLabFee = abutmentDesignLabFee;
     }
     if (
       !Number.isNaN(membershipProductionPrice) &&

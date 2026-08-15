@@ -259,7 +259,7 @@
   - 조회(발신): `GET /api/practice/transfers/my`
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
-  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → 어벗츠 디자인 → 기공소 `confirm-abutment-design`(·치과 `confirm-production` 디자인 게이트) → 기일 내 발송. 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 「디자인 컨펌 생략」기본 ON
+  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수 + `abutmentDesignLabFee`(기본 10,000원×어벗수)를 기공정산 크레딧 지급. 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
 - 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐
@@ -295,7 +295,7 @@
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 **10,000원 / 1어벗**). 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감 — §2.3 매칭·멤버십 과금 SSOT).
+  - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 **10,000원 / 1어벗**). 기공의뢰 CA 수락 기공소 지급은 `abutmentDesignLabFee`(기본 **10,000원 / 1어벗**, `designFee`와 분리). 배송비 별도·박스당 과금. 치과 멤버십 월 구독료 `practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감 — §2.3 매칭·멤버십 과금 SSOT).
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`

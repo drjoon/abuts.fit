@@ -637,15 +637,11 @@ export function isAbutmentDesignReady(transferDoc) {
 }
 
 /**
- * 기공소: CA(어벗츠 선디자인) 의뢰의 구강스캔(의뢰 파일)은
- * 어벗츠 디자인이 올라온 뒤에만 다운로드 가능.
- * 치과·업로더·디자인 파트너는 해당 없음.
+ * 기공소: 예전 Abuts 선디자인 정책에서 구강스캔 다운로드를 잠갔.
+ * 수락 기공소가 디자인하는 현재 정책에서는 잠그지 않는다.
  */
-export function shouldLockLabOralScanDownload(transferDoc) {
-  return (
-    hasCustomAbutmentToothWorks(transferDoc?.toothWorks) &&
-    !isAbutmentDesignReady(transferDoc)
-  );
+export function shouldLockLabOralScanDownload(_transferDoc) {
+  return false;
 }
 
 export function canStartAbutmentProduction(transferDoc) {

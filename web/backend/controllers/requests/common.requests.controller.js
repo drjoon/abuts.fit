@@ -1317,6 +1317,7 @@ export async function getAllRequests(req, res) {
     }
 
     // 디자인 파트너 큐: 활성 클레임 가시성 (본인 / 발표 1분 / 미클레임·만료)
+    // 기공의뢰(PTX) 연동 건은 수락 기공소 전용 → 파트너 큐에서 제외
     const productModeFilter = String(req.query.productMode || "").trim();
     const isDesignPartnerQueue =
       Boolean(req.__designPartner) &&
@@ -1326,12 +1327,19 @@ export async function getAllRequests(req, res) {
         req.user?._id,
         new Date(),
       );
+      const excludePtxLinked = {
+        $or: [
+          { "partnerBilling.relatedPracticeTransferId": null },
+          { "partnerBilling.relatedPracticeTransferId": { $exists: false } },
+        ],
+      };
+      const partnerQueueGuard = { $and: [claimVisibility, excludePtxLinked] };
       if (Array.isArray(filter.$and)) {
-        filter.$and = [...filter.$and, claimVisibility];
+        filter.$and = [...filter.$and, partnerQueueGuard];
       } else if (Object.keys(filter).length === 0) {
-        filter = claimVisibility;
+        filter = partnerQueueGuard;
       } else {
-        filter = { $and: [filter, claimVisibility] };
+        filter = { $and: [filter, partnerQueueGuard] };
       }
     }
 
@@ -1946,6 +1954,19 @@ export async function getMyRequests(req, res) {
     }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
+    if (typeof req.query.productMode === "string") {
+      const productMode = String(req.query.productMode || "").trim();
+      if (productMode) {
+        filter["caseInfos.productMode"] = productMode;
+      }
+    }
+    if (typeof req.query.productModeNe === "string") {
+      const productModeNe = String(req.query.productModeNe || "").trim();
+      if (productModeNe) {
+        filter["caseInfos.productMode"] = { $ne: productModeNe };
+      }
+    }
+
     const cacheKey = `my-requests:${String(req.user?._id || "")}:${String(
       req.user?.businessAnchorId || "",
     )}:${JSON.stringify({
@@ -1954,6 +1975,8 @@ export async function getMyRequests(req, res) {
       manufacturerStage: req.query.manufacturerStage || "",
       manufacturerStageIn: req.query.manufacturerStageIn || "",
       implantType: req.query.implantType || "",
+      productMode: req.query.productMode || "",
+      productModeNe: req.query.productModeNe || "",
       sortBy: req.query.sortBy || "",
       sortOrder: req.query.sortOrder || "",
     })}`;
@@ -1988,6 +2011,13 @@ export async function getMyRequests(req, res) {
             description: 1,
             manufacturerStage: 1,
             caseInfos: 1,
+            designClaim: 1,
+            designCompletedAt: 1,
+            designLabBusinessAnchorId: 1,
+            partnerBilling: 1,
+            businessAnchorId: 1,
+            shippingMode: 1,
+            timeline: 1,
           })
           .sort(sort)
           .skip(skip)

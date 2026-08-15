@@ -10,7 +10,7 @@ import express from "express";
 const router = express.Router();
 import requestController from "../../controllers/requests/request.controller.js";
 import * as cncEventController from "../../controllers/cnc/cncEvent.controller.js";
-import { authenticate, authorize, authorizeManufacturerOrDesignPartner } from "../../middlewares/auth.middleware.js";
+import { authenticate, authorize, authorizeManufacturerOrDesignPartner, authorizeDesignClaimOrHandoff } from "../../middlewares/auth.middleware.js";
 import { authorizePaidRequestor } from "../../middlewares/paidRequestor.middleware.js";
 import {
   getQueueStatus,
@@ -79,19 +79,19 @@ router.get(
   requestController.getAllRequests,
 );
 
-// 디자인 파트너: 준비 단계 디자인+생산 클레임
+// 디자인: 준비 단계 디자인+생산 클레임 (파트너 또는 PTX 수락 기공소)
 router.post(
   "/:id/design-claim",
   authenticate,
-  authorizeManufacturerOrDesignPartner(),
+  authorizeDesignClaimOrHandoff(),
   claimDesignRequest,
 );
 
-// 디자인 파트너: 완성 어벗 STL 업로드 + 제조사 가공 핸드오프
+// 디자인: 완성 어벗 STL 업로드 + 제조사 가공 핸드오프
 router.post(
   "/:id/design-handoff",
   authenticate,
-  authorizeManufacturerOrDesignPartner(),
+  authorizeDesignClaimOrHandoff(),
   handoffDesignToProduction,
 );
 

@@ -62,6 +62,8 @@ const systemSettingsSchema = new mongoose.Schema(
       // 디자인비 (1어벗당). 멤버십 디자인+생산 − 멤버십 생산만과 동기화.
       // 생산만 멤버십 15,000 / 일반 20,000, 디자인+생산 멤버십 25,000 / 일반 40,000
       designFee: { type: Number, default: 10000 },
+      // 기공의뢰(CA) 수락 기공소 어벗디자인비 지급(1어벗당). designFee(의뢰자 과금)와 분리.
+      abutmentDesignLabFee: { type: Number, default: 10000 },
       // 치과 납품 커스텀어벗 소매가(1어벗당). 기공의뢰 분배·devops 요금 설정 SSOT
       abutmentRetailPrice: { type: Number, default: 40000 },
       // 치과(practice) 전용 멤버십 월 구독료. 기공소에는 적용하지 않음.

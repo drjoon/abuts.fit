@@ -35,6 +35,7 @@ const SCHEMA_DEFAULTS = (() => {
       0.1,
     expressFee: pickDefault("creditSettings.expressFee"),
     designFee: pickDefault("creditSettings.designFee"),
+    abutmentDesignLabFee: pickDefault("creditSettings.abutmentDesignLabFee"),
     abutmentRetailPrice: pickDefault("creditSettings.abutmentRetailPrice"),
     practiceMembershipMonthlyFee: pickDefault(
       "creditSettings.practiceMembershipMonthlyFee",
@@ -220,6 +221,13 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       creditSettings.expressFee ?? SCHEMA_DEFAULTS.expressFee,
     ),
     designFee: membership.designFeePerTooth,
+    abutmentDesignLabFee: Math.max(
+      0,
+      Number(
+        creditSettings.abutmentDesignLabFee ??
+          SCHEMA_DEFAULTS.abutmentDesignLabFee,
+      ) || 0,
+    ),
     abutmentRetailPrice: Number(
       creditSettings.abutmentRetailPrice ?? SCHEMA_DEFAULTS.abutmentRetailPrice,
     ),

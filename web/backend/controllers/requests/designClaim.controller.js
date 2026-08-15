@@ -1,10 +1,13 @@
 // related files:
 // - web/backend/utils/designClaim.js
 // - web/backend/utils/designClaimRealtime.js
+// - web/backend/utils/designAccess.js
 // - web/backend/models/request.model.js
 // - web/backend/models/systemSettings.model.js
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/middlewares/auth.middleware.js
+// change-log:
+// - 2026-08-15: PTX 연동 건은 수락 기공소만 클레임. 디자인 파트너는 비PTX만.
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
@@ -14,6 +17,7 @@ import {
   enrichDesignClaimForViewer,
 } from "../../utils/designClaim.js";
 import { notifyDesignClaimChanged } from "../../utils/designClaimRealtime.js";
+import { canClaimOrHandoffDesignRequest } from "../../utils/designAccess.js";
 
 async function loadClaimHours() {
   const doc = await SystemSettings.findOne({ key: "global" })
@@ -48,6 +52,33 @@ export async function claimDesignRequest(req, res) {
     const userId = req.user?._id;
     if (!userId) {
       return res.status(401).json({ success: false, message: "인증이 필요합니다." });
+    }
+
+    const existingForAuth = await Request.findById(id)
+      .select({
+        _id: 1,
+        businessAnchorId: 1,
+        manufacturerStage: 1,
+        "caseInfos.productMode": 1,
+        "partnerBilling.relatedPracticeTransferId": 1,
+        designClaim: 1,
+      })
+      .lean();
+
+    if (!existingForAuth) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const allowed = await canClaimOrHandoffDesignRequest(req.user, existingForAuth);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: existingForAuth?.partnerBilling?.relatedPracticeTransferId
+          ? "기공의뢰 커스텀어벗 디자인은 수락한 기공소만 할 수 있습니다."
+          : "디자인 큐 접근 권한이 없습니다.",
+      });
     }
 
     const claimHours = await loadClaimHours();

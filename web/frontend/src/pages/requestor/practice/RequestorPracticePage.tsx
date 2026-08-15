@@ -404,7 +404,8 @@ export default function RequestorPracticePage() {
 
     return (
       <RequestorPracticeReceivePage
-        showDesignQueue={designAccessEnabled}
+        showDesignQueue={designAccessEnabled || canReceiveTransfer}
+        designQueueListMode={canReceiveTransfer ? "acceptingLab" : "partner"}
         showTransfers={canReceiveTransfer}
       />
     );
@@ -441,11 +442,14 @@ export default function RequestorPracticePage() {
 export function RequestorPracticeReceivePage({
   roleSwitcher,
   showDesignQueue = false,
+  designQueueListMode = "partner",
   showTransfers = true,
 }: {
   roleSwitcher?: ReactNode;
   /** 지정 기공소: 디자인+생산 준비 큐를 의뢰수신에 통합 */
   showDesignQueue?: boolean;
+  /** acceptingLab=본인 기공의뢰 CA, partner=디자인 파트너 전역 큐 */
+  designQueueListMode?: "partner" | "acceptingLab";
   /** 무료 기공의뢰서 수신 목록 표시 */
   showTransfers?: boolean;
 }) {
@@ -2876,10 +2880,22 @@ export function RequestorPracticeReceivePage({
                   0 &&
                 !transfer.production?.labDesignConfirmedAt ? (
                   <div className="mt-2 rounded-md border border-dashed border-primary/40 bg-primary-soft/40 px-3 py-2 text-xs text-primary-strong">
-                    어벗츠 디자인이 도착했습니다. 확인 후 크라운 작업을 진행하세요.
+                    어벗 디자인이 도착했습니다. 레거시 건은 「어벗 디자인 확인」으로
+                    생산을 시작할 수 있습니다.
                     {!transfer.production?.abutmentProductionStartedAt
-                      ? " 「어벗 디자인 확인」을 누르면 생산이 시작됩니다."
+                      ? " (신규 건은 디자인 업로드 시 자동으로 제조 주문이 들어갑니다.)"
                       : ""}
+                  </div>
+                ) : null}
+
+                {showWorkActions &&
+                transferHasCustomAbutment(transfer) &&
+                Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0) ===
+                  0 &&
+                !transfer.production?.abutmentProductionStartedAt ? (
+                  <div className="mt-2 rounded-md border border-dashed border-amber-400/50 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
+                    커스텀어벗 디자인을 완료한 뒤 상단 디자인 큐에서 완성 어벗 STL을
+                    업로드하세요. 업로드와 함께 제조사에 주문이 들어갑니다.
                   </div>
                 ) : null}
 
@@ -3026,7 +3042,7 @@ export function RequestorPracticeReceivePage({
                 className="shrink-0"
               />
             </div>
-            <DesignQueueSection />
+            <DesignQueueSection listMode={designQueueListMode} />
           </div>
         ) : null}
 
@@ -3046,7 +3062,7 @@ export function RequestorPracticeReceivePage({
             >
               {showDesignQueue ? (
                 <div className="shrink-0">
-                  <DesignQueueSection />
+                  <DesignQueueSection listMode={designQueueListMode} />
                 </div>
               ) : null}
               {transferListBody}

@@ -31,6 +31,7 @@ export interface CreditSettings {
   affiliateVatRate: number;
   expressFee: number;
   designFee: number;
+  abutmentDesignLabFee: number;
   abutmentRetailPrice: number;
   practiceMembershipMonthlyFee: number;
   defaultRequestFreeCredit: number;
@@ -55,6 +56,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   designFee:
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE -
     ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  abutmentDesignLabFee: 10000,
   abutmentRetailPrice: 40000,
   practiceMembershipMonthlyFee: ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
   defaultRequestFreeCredit: 30000,
@@ -116,6 +118,13 @@ export const useSystemSettings = () => {
           0,
           abutmentPrices.membershipDesignAndProductionPrice -
             abutmentPrices.membershipProductionPrice,
+        ),
+        abutmentDesignLabFee: Math.max(
+          0,
+          Number(
+            raw.abutmentDesignLabFee ??
+              CREDIT_SETTINGS_DEFAULTS.abutmentDesignLabFee,
+          ) || 0,
         ),
         abutmentRetailPrice: Number(
           raw.abutmentRetailPrice ?? CREDIT_SETTINGS_DEFAULTS.abutmentRetailPrice,

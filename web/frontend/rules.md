@@ -139,7 +139,7 @@ Notes:
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (커스텀어벗 요금 · 기공소 매칭 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
-  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧(단일·1/2열) · 커스텀어벗(CNC/환봉) · 어벗 추가 요청 · 멤버십·배송(배송 500원 step) · 특별 공급가(CNC/환봉 × 생산만·디자인+생산))
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧(단일·1/2열) · 커스텀어벗(CNC/환봉·어벗디자인비) · 어벗 추가 요청 · 멤버십·배송(배송 500원 step) · 특별 공급가(CNC/환봉 × 생산만·디자인+생산))
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (자동 매칭 단일 플랫폼 수수료율 인라인 입력. `PracticeTransferAutoMatchTab` 카드 안에 포함. 개발운영사 앵커 `payoutRates.platformFeeRate` SSOT)
 - 개발·운영사 설정
@@ -564,7 +564,7 @@ Notes:
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(수락 시 갱신).
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서. 수락 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
   - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto` + 기공비 예산(min/max) 필수. **인증 기공소** 중 예산 구간·기공비 설정 완료 기공소만 `eligibleLabAnchorIds` 스냅샷으로 공개 풀 수신. 선착순 수락·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 수락 후 강제 시간 만료 없음(치과 도착일·소통으로 처리). 성공 시 기공비의 `platformFeeRate`% 플랫폼 수수료. 표시명(치과·기공소)은 상대 비공개. **자동매칭도 치과별 할증 사용** — 다만 할증 적용 시각이 의뢰 생성 이후면 해당 건 미적용(다음 건부터). 기공소 채팅 헤더「기공수가 할증」(`practiceBusinessAnchorId` 내부 키). UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「기공소 매칭」)
-  - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(크라운 결과파일)·`[작업취소]`. **커스텀어벗 배송선택 모달 없음.** 어벗츠가 디자인을 올리면 「어벗 디자인 확인」 CTA. 수락 시 CA면 어벗츠 Request(스캔 기반·`design_custom_abutment`) 조기 생성. 기공소(+필요 시 치과) 디자인 컨펌 후 기일(도착일) 기준 생산·발송. 치과 「디자인 컨펌 생략」기본 체크(해제 시 안내 모달).
+  - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(크라운 결과파일)·`[작업취소]`. **커스텀어벗 배송선택 모달 없음.** CA면 수락 시 Request(`design_custom_abutment`) 조기 생성. **수락 기공소가 디자인**해 상단 디자인 큐에서 STL 업로드 → 제조 자동 주문·어벗디자인비 지급. 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
 
 
 - 드롭존 가입(치과 전용, requestor+practice)

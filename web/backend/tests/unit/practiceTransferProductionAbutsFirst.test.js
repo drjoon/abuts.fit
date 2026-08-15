@@ -57,14 +57,14 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
     ).toBe(true);
   });
 
-  test("shouldLockLabOralScanDownload until Abuts design ready", () => {
+  test("shouldLockLabOralScanDownload always unlocked (lab designs CA)", () => {
     const ca = [{ customAbutment: true, toothNumber: "16" }];
     expect(
       shouldLockLabOralScanDownload({
         toothWorks: ca,
         production: {},
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldLockLabOralScanDownload({
         toothWorks: ca,
