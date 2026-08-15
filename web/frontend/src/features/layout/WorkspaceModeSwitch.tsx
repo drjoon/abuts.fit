@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-15: 전환 안내는 툴팁, 버튼 라벨 중앙 정렬
+// - 2026-08-15: 모드 버튼 아래에 전환 안내 문구 추가
 // - 2026-08-15: 사이드바 상단 익스프레스↔엑스퍼트 모드 전환 버튼
 // related files:
 // - web/frontend/src/store/useWorkspaceModeStore.ts
@@ -28,41 +30,35 @@ export const WorkspaceModeSwitch = ({
   const label = WORKSPACE_MODE_LABEL[mode];
   const nextLabel =
     WORKSPACE_MODE_LABEL[mode === "express" ? "expert" : "express"];
+  const hint = `클릭시 ${nextLabel}로 전환`;
   const Icon = mode === "express" ? Zap : Gauge;
 
   const button = (
     <Button
       type="button"
       variant="outline"
-      className={`w-full h-9 lg:h-10 gap-1.5 text-xs lg:text-sm font-medium border-border/80 bg-muted/40 text-foreground hover:bg-muted hover:text-foreground ${
-        collapsed ? "justify-center px-2" : "justify-start px-3"
+      className={`w-full h-9 lg:h-10 gap-1.5 text-xs lg:text-sm font-medium border-border/80 bg-muted/40 text-foreground hover:bg-muted hover:text-foreground justify-center ${
+        collapsed ? "px-2" : "px-3"
       }`}
       onClick={toggleMode}
-      aria-label={`${label} — 클릭 시 ${nextLabel}로 전환`}
+      aria-label={`${label} — ${hint}`}
     >
       <Icon className="h-3.5 w-3.5 flex-shrink-0 text-accent-strong" />
       {!collapsed && <span className="truncate">{label}</span>}
     </Button>
   );
 
-  if (!collapsed) {
-    return (
-      <div className="px-3 lg:px-4 pt-3 lg:pt-4 pb-1">
-        {button}
-      </div>
-    );
-  }
-
   return (
-    <div className="px-3 lg:px-4 pt-3 lg:pt-4 pb-1 flex justify-center">
+    <div
+      className={`px-3 lg:px-4 pt-3 lg:pt-4 pb-1 ${
+        collapsed ? "flex justify-center" : ""
+      }`}
+    >
       <TooltipProvider delayDuration={200}>
         <Tooltip>
           <TooltipTrigger asChild>{button}</TooltipTrigger>
-          <TooltipContent side="right">
-            <p>{label}</p>
-            <p className="text-muted-foreground text-xs">
-              클릭 시 {nextLabel}로 전환
-            </p>
+          <TooltipContent side={collapsed ? "right" : "bottom"}>
+            <p>{hint}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
