@@ -110,7 +110,7 @@
 - 사용자-사업자 연결 키: `User.businessAnchorId`
 - `subRole`만 사용 (`owner|staff|null`), 레거시 role 필드 금지
 - 사업자 타입 허용: `requestor | manufacturer | internalLab | admin | salesman | devops`
-  - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 메뉴=대시보드·기공의뢰수신·설정. 관리자 생성만(공개 가입 없음).
+  - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 메뉴=기공의뢰수신·설정. 관리자 생성만(공개 가입 없음).
     - 동일 법인 BN을 `businessType`별로 공유 가능(`businessNumberNormalized`+`businessType` 복합 unique). 하위조직은 `parentBusinessAnchorId` → 예: admin「어벗츠 주식회사」←「기공사업부」.
   - `practice` role은 제거. 기존 계정은 `requestor`+`requestorCapabilities.practice` 마이그레이션 대상(신규 생성 금지). 백필: `scripts/db/backfill-requestor-capabilities.js --apply`.
 

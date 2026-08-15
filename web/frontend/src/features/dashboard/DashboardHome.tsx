@@ -1,4 +1,3 @@
-import { lazy, Suspense } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { RequestorDashboardPage } from "@/pages/requestor/dashboard/RequestorDashboardPage";
 import { AdminDashboardPage } from "@/pages/admin/dashboard/AdminDashboardPage";
@@ -7,12 +6,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
-const InternalLabAbutDesignPage = lazy(
-  () => import("@/pages/internalLab/abutDesign/AbutDesignPage"),
-);
-
 // change-log:
-// - 2026-08-15: 어벗츠기공소 대시보드 — 커스텀어벗 디자인 큐 홈.
 // - 2026-08-09: 신규의뢰 제출 등 refreshDashboardAt 의도 이동은 last path 허브 리다이렉트를 건너뛴다.
 // - 2026-08-09: 모든 role에서 /dashboard 허브가 lastDashboardPath(없으면 역할 기본값)로 복원.
 // related files:
@@ -58,14 +52,6 @@ export const DashboardHome = () => {
     return <AdminDashboardPage />;
   }
 
-  if (user.role === "internalLab") {
-    return (
-      <Suspense fallback={null}>
-        <InternalLabAbutDesignPage />
-      </Suspense>
-    );
-  }
-
-  // manufacturer / practice 등은 entry가 역할 기본으로 보정되어 위에서 Navigate 됨
+  // manufacturer / internalLab / practice 등은 entry가 역할 기본으로 보정되어 위에서 Navigate 됨
   return <Navigate to={entry} replace />;
 };

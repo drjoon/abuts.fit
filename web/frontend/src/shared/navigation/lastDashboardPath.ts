@@ -40,7 +40,7 @@ export function getRoleDefaultDashboardPath(role: string | null | undefined): st
     case "manufacturer":
       return "/dashboard/worksheet";
     case "internalLab":
-      return "/dashboard";
+      return "/dashboard/lab-work";
     case "practice":
       return "/practice/dashboard";
     case "devops":
@@ -63,9 +63,12 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/practice/devops는 `/dashboard`에 콘텐츠가 없음
+  // manufacturer/internalLab/practice/devops는 `/dashboard`에 콘텐츠가 없음
   if (
-    (role === "manufacturer" || role === "practice" || role === "devops") &&
+    (role === "manufacturer" ||
+      role === "internalLab" ||
+      role === "practice" ||
+      role === "devops") &&
     (last === "/dashboard" || last === "/dashboard/")
   ) {
     return roleDefault;
@@ -73,13 +76,13 @@ export function resolveEntryDashboardPath(user: {
 
   const lastPathname = last.split("?")[0];
 
-  // 어벗츠기공소: 구 어벗디자인 경로 → 대시보드
+  // 어벗츠기공소: 구 어벗디자인·대시보드 경로 → 기공의뢰수신
   if (
     role === "internalLab" &&
     (lastPathname === "/dashboard/abut-design" ||
       lastPathname.startsWith("/dashboard/abut-design/"))
   ) {
-    return "/dashboard";
+    return "/dashboard/lab-work";
   }
 
   // 디자인 큐는 지정 의뢰자 전용 (제조사 last path 호환)

@@ -530,7 +530,7 @@ const App = () => {
                     path="abut-design"
                     element={
                       <RoleProtectedRoute roles={["internalLab"]}>
-                        <Navigate to="/dashboard" replace />
+                        <Navigate to="/dashboard/lab-work" replace />
                       </RoleProtectedRoute>
                     }
                   />
