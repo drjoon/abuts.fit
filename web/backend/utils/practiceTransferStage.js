@@ -38,9 +38,9 @@ export const resolvePracticeTransferManufacturerStage = (transferDoc) => {
 
 /**
  * 대시보드 기공 행 5칸 버킷.
- * 의뢰←발송완료|수신완료|자동매칭, 수락←의뢰수락, 완료←작업완료,
+ * 의뢰←발송완료|수신완료|자동매칭, 수락←의뢰수락,
+ * 완료←작업완료 / 취소←작업취소|취소(완료/취소 카드에 병기),
  * 발송←생산진행|포장.발송, 추적관리←추적관리.
- * 취소/작업취소는 집계 제외(대시보드에 취소 카드 없음).
  */
 export const toPracticeTransferDashboardBucket = (manufacturerStage) => {
   const stage = String(manufacturerStage || "").trim();
@@ -53,6 +53,7 @@ export const toPracticeTransferDashboardBucket = (manufacturerStage) => {
   }
   if (stage === "의뢰수락" || stage === "다운로드완료") return "accepted";
   if (stage === "작업완료") return "completed";
+  if (stage === "작업취소" || stage === "취소") return "canceled";
   if (stage === "생산진행" || stage === "포장.발송") return "shipping";
   if (stage === "추적관리") return "tracking";
   return null;
@@ -62,6 +63,7 @@ export const emptyPracticeTransferDashboardStats = () => ({
   sent: 0,
   accepted: 0,
   completed: 0,
+  canceled: 0,
   shipping: 0,
   tracking: 0,
 });

@@ -78,6 +78,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-15: 기공 요약「완료」카드 →「완료/취소」병기(completed/canceled).
 // - 2026-08-15: 기공 요약 카드 — dashboard-cards-summary.practiceTransferStats 연동.
 // - 2026-08-12: 무료 재제작 잔여를 헤더에서 어벗 라인 요약카드로 이동.
 // - 2026-08-11: 대시보드 컨텐츠 max-w-7xl — 기공/어벗 요약카드 가로 여유.
@@ -1953,7 +1954,7 @@ export const RequestorDashboardPage = () => {
   })();
 
   // 기공(기공의뢰서) 라인 — dashboard-cards-summary.practiceTransferStats
-  // 뱃지 SSOT: 의뢰 · 수락 · 완료 · 발송 · 추적관리 (수신 제거)
+  // 뱃지 SSOT: 의뢰 · 수락 · 완료/취소 · 발송 · 추적관리 (수신 제거)
   const practiceTransferStats: RequestorDashboardStat[] = (() => {
     const raw =
       cardsSummaryResponse?.success &&
@@ -1963,8 +1964,11 @@ export const RequestorDashboardPage = () => {
     const sent = Number(raw?.sent ?? 0);
     const accepted = Number(raw?.accepted ?? 0);
     const completed = Number(raw?.completed ?? 0);
+    const canceled = Number(raw?.canceled ?? 0);
     const shipping = Number(raw?.shipping ?? 0);
     const tracking = Number(raw?.tracking ?? 0);
+    const completedSafe = Number.isFinite(completed) ? completed : 0;
+    const canceledSafe = Number.isFinite(canceled) ? canceled : 0;
     return [
       {
         label: "의뢰",
@@ -1979,8 +1983,8 @@ export const RequestorDashboardPage = () => {
         interactive: false,
       },
       {
-        label: "완료",
-        value: String(Number.isFinite(completed) ? completed : 0),
+        label: "완료/취소",
+        value: `${completedSafe}/${canceledSafe}`,
         icon: ClipboardCheck,
         interactive: false,
       },
