@@ -10,6 +10,7 @@
 // - web/backend/modules/auth/auth.routes.js
 // - web/backend/controllers/users/user.controller.js
 // - 2026-08-15: 계정(개인) preferences.workspaceMode 로그인·전환에 반영 (기본 expert)
+// - 2026-08-15: 탭 간 localStorage 인증 SSOT — stale 탭이 다른 계정 세션을 덮어쓰지 않게 가드
 import { create } from "zustand";
 import { request } from "@/shared/api/apiClient";
 import type { AppUserRole } from "@/shared/types/role";
@@ -230,6 +231,33 @@ const loadStoredAuth = () => {
   }
 };
 
+/** localStorage 토큰이 메모리와 다르면 다른 탭이 세션을 가져간 것. */
+const readLocalStorageToken = (): string | null => {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY) || null;
+  } catch {
+    return null;
+  }
+};
+
+const isMemoryAuthStale = (memoryToken: string | null): boolean => {
+  const lsToken = readLocalStorageToken();
+  if (!lsToken || !memoryToken) return false;
+  return lsToken !== memoryToken;
+};
+
+const persistAuthCredentials = (args: {
+  token: string;
+  refreshToken?: string | null;
+  user: User;
+}) => {
+  localStorage.setItem(AUTH_TOKEN_KEY, args.token);
+  if (args.refreshToken) {
+    localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, args.refreshToken);
+  }
+  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(args.user));
+};
+
 export const useAuthStore = create<AuthState>((set, get) => {
   const stored = loadStoredAuth();
 
@@ -273,10 +301,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
         }
 
         try {
-          localStorage.setItem(AUTH_TOKEN_KEY, token);
-          if (refreshToken)
-            localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
+          persistAuthCredentials({
+            token,
+            refreshToken,
+            user: normalizedUser,
+          });
         } catch {
           return {
             success: false,
@@ -338,10 +367,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
         }
 
         try {
-          localStorage.setItem(AUTH_TOKEN_KEY, token);
-          if (refreshToken)
-            localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
+          persistAuthCredentials({
+            token,
+            refreshToken,
+            user: normalizedUser,
+          });
         } catch {
           return {
             success: false,
@@ -408,10 +438,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
         }
 
         try {
-          localStorage.setItem(AUTH_TOKEN_KEY, token);
-          if (refreshToken)
-            localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
+          persistAuthCredentials({
+            token,
+            refreshToken,
+            user: normalizedUser,
+          });
         } catch {
           return {
             success: false,
@@ -438,10 +469,24 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
     loginWithToken: async (token: string, refreshToken?: string | null) => {
       try {
+        // 다른 탭이 이미 다른 계정으로 localStorage를 갱신했으면 덮어쓰지 않고 그 세션을 따른다.
+        const lsToken = readLocalStorageToken();
+        let effectiveToken = token;
+        let effectiveRefresh = refreshToken;
+        if (lsToken && lsToken !== token) {
+          effectiveToken = lsToken;
+          try {
+            effectiveRefresh =
+              localStorage.getItem(AUTH_REFRESH_TOKEN_KEY) || refreshToken;
+          } catch {
+            effectiveRefresh = refreshToken;
+          }
+        }
+
         const res = await request<unknown>({
           path: "/api/auth/me",
           method: "GET",
-          token,
+          token: effectiveToken,
           skipCache: true,
         });
         const json = (res.data || null) as
@@ -463,11 +508,27 @@ export const useAuthStore = create<AuthState>((set, get) => {
         const normalizedUser = normalizeApiUser(u);
         if (!normalizedUser) return { status: "unavailable" };
 
+        // /me 응답 전에 다른 탭이 세션을 바꿨으면 localStorage를 따른다.
+        const latestLs = readLocalStorageToken();
+        if (latestLs && latestLs !== effectiveToken) {
+          const stored = loadStoredAuth();
+          set({
+            user: stored.user,
+            token: stored.token,
+            refreshToken: stored.refreshToken,
+            isAuthenticated: Boolean(stored.token && stored.user),
+          });
+          return stored.token && stored.user
+            ? { status: "ok" }
+            : { status: "unavailable" };
+        }
+
         try {
-          localStorage.setItem(AUTH_TOKEN_KEY, token);
-          if (refreshToken)
-            localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
+          persistAuthCredentials({
+            token: effectiveToken,
+            refreshToken: effectiveRefresh,
+            user: normalizedUser,
+          });
         } catch {
           // ignore
         }
@@ -475,8 +536,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
         set({
           user: normalizedUser,
           isAuthenticated: true,
-          token,
-          refreshToken: refreshToken || get().refreshToken,
+          token: effectiveToken,
+          refreshToken: effectiveRefresh || get().refreshToken,
         });
         return { status: "ok" };
       } catch {
@@ -484,6 +545,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       }
     },
     setUser: (user: User | null) => {
+      if (isMemoryAuthStale(get().token)) return;
       try {
         if (user) {
           localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
@@ -499,6 +561,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       }));
     },
     setLastDashboardPath: (path: string | null) => {
+      if (isMemoryAuthStale(get().token)) return;
       const current = get().user;
       if (!current) return;
       const next = { ...current, lastDashboardPath: path };
@@ -510,6 +573,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       set({ user: next });
     },
     setWorkspaceMode: (mode: WorkspaceMode) => {
+      if (isMemoryAuthStale(get().token)) return;
       const current = get().user;
       if (!current) return;
       const next = {
@@ -524,12 +588,15 @@ export const useAuthStore = create<AuthState>((set, get) => {
       set({ user: next });
     },
     logout: () => {
-      try {
-        localStorage.removeItem(AUTH_TOKEN_KEY);
-        localStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
-        localStorage.removeItem(AUTH_USER_KEY);
-      } catch {
-        // ignore
+      // 다른 탭 세션이 localStorage에 있으면 지우지 않는다 (stale 탭 로그아웃로 활성 세션 로그아웃 방지).
+      if (!isMemoryAuthStale(get().token)) {
+        try {
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+          localStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
+          localStorage.removeItem(AUTH_USER_KEY);
+        } catch {
+          // ignore
+        }
       }
       set({
         user: null,
@@ -540,3 +607,34 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
   };
 });
+
+/** 다른 탭의 로그인/로그아웃을 이 탭 메모리에 반영한다. */
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (
+      event.key !== AUTH_TOKEN_KEY &&
+      event.key !== AUTH_REFRESH_TOKEN_KEY &&
+      event.key !== AUTH_USER_KEY &&
+      event.key !== null
+    ) {
+      return;
+    }
+    const next = loadStoredAuth();
+    const current = useAuthStore.getState();
+    if (
+      current.token === next.token &&
+      current.refreshToken === next.refreshToken &&
+      current.user?.id === next.user?.id &&
+      current.user?.role === next.user?.role &&
+      current.isAuthenticated === Boolean(next.token && next.user)
+    ) {
+      return;
+    }
+    useAuthStore.setState({
+      user: next.user,
+      token: next.token,
+      refreshToken: next.refreshToken,
+      isAuthenticated: Boolean(next.token && next.user),
+    });
+  });
+}
