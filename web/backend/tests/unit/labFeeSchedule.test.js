@@ -2,6 +2,7 @@
 // - web/backend/utils/labFeeSchedule.js
 // - 2026-08-13: 견적 라인 치아번호 10→20→30→40번대 정렬.
 // - 2026-08-14: 환봉 요청중은 기공소 어벗, 도입·CNC는 어벗츠 어벗.
+// - 2026-08-15: 치아 미선택 자리표시 행은 견적 0원.
 import {
   buildUnsetLabFeeSchedule,
   computePracticeTransferRetailFees,
@@ -18,6 +19,19 @@ import {
 } from "../../utils/labFeeSchedule.js";
 
 describe("labFeeSchedule", () => {
+  test("치아번호 없는 자리표시 행은 견적에 넣지 않는다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        { toothNumber: "", prosthesisType: "크라운" },
+        { toothNumber: "  ", prosthesisType: "인레이" },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+    });
+    expect(fees.labFeeTotal).toBe(0);
+    expect(fees.total).toBe(0);
+    expect(fees.lines).toEqual([]);
+  });
+
   test("치과별 기공수가 할증은 기공비·기공소 어벗만 배수한다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [

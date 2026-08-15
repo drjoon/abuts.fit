@@ -67,9 +67,9 @@ const normalizeResultFiles = (raw) => {
     .filter(Boolean);
 };
 
-/** 자동매칭 CA: 치과 전송 시 구강스캔 필수 */
+/** 자동매칭: 치과 전송 시 구강스캔 필수 */
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
-  "자동매칭으로 커스텀어벗을 보낼 때는 구강스캔 파일을 첨부해주세요.";
+  "자동매칭으로 보낼 때는 구강스캔 파일을 첨부해주세요.";
 
 /** 자동매칭 CA: 스캔 없이 수락 불가(치과 첨부만) */
 export const ORAL_SCAN_REQUIRED_FROM_PRACTICE =
@@ -124,14 +124,13 @@ export function resolveOralScanFilesForAccept({
   return { files: incoming, attachedByLab: true };
 }
 
-/** 자동매칭 생성 시 CA면 구강스캔 필수 */
+/** 자동매칭 생성 시 구강스캔 필수 */
 export function assertOralScanFilesForCreate({
   matchingMode,
   toothWorks,
   files,
 } = {}) {
   if (String(matchingMode || "").trim() !== "auto") return;
-  if (!hasCustomAbutmentToothWorks(toothWorks)) return;
   const list = normalizeResultFiles(files);
   if (list.length > 0) return;
   const err = makeOralScanError(

@@ -30,6 +30,7 @@ import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWor
 // - web/frontend/src/shared/workspace/workspaceMode.ts
 // - 2026-08-15: 기공의뢰 익스프레스 모드 — 한 화면 한 질문 위저드.
 // - 2026-08-15: Enter로 다음 단계(마지막은 전송). 메모 textarea·팝오버는 제외.
+// - 2026-08-15: 상단 1~6 단계 버튼은 언제든 바로가기.
 
 export type PracticeTransferExpressStepId =
   | "lab"
@@ -76,6 +77,18 @@ export const PRACTICE_TRANSFER_EXPRESS_STEPS: Array<{
   },
 ];
 
+export const normalizeExpressStepId = (
+  raw: unknown,
+): PracticeTransferExpressStepId | null => {
+  const value = String(raw || "").trim();
+  if (
+    PRACTICE_TRANSFER_EXPRESS_STEPS.some((step) => step.id === value)
+  ) {
+    return value as PracticeTransferExpressStepId;
+  }
+  return null;
+};
+
 export type PracticeTransferExpressSummary = {
   labLabel: string;
   patientName: string;
@@ -93,6 +106,7 @@ type PracticeTransferExpressWizardProps = {
   summary: PracticeTransferExpressSummary;
   canProceed: boolean;
   proceedBlockedReason?: string;
+  stepOkById?: Partial<Record<PracticeTransferExpressStepId, boolean>>;
   oralScanRequired: boolean;
   skipDesignConfirm: boolean;
   onSkipDesignConfirmChange: (next: boolean) => void;
@@ -114,6 +128,7 @@ export function PracticeTransferExpressWizard({
   summary,
   canProceed,
   proceedBlockedReason,
+  stepOkById,
   oralScanRequired,
   skipDesignConfirm,
   onSkipDesignConfirmChange,
@@ -132,7 +147,7 @@ export function PracticeTransferExpressWizard({
   );
 
   const filesHint = oralScanRequired
-    ? "자동 매칭 + 커스텀어벗은 구강스캔 첨부가 필수입니다."
+    ? "자동 매칭은 구강스캔 첨부가 필수입니다."
     : stepMeta.hint;
 
   const stepIntakeProps = useMemo((): PracticeTransferRequestIntakePanelProps => {
@@ -291,23 +306,24 @@ export function PracticeTransferExpressWizard({
         </div>
         <div className="flex flex-wrap gap-1.5">
           {PRACTICE_TRANSFER_EXPRESS_STEPS.map((step, index) => {
-            const done = index < stepIndex;
             const current = index === stepIndex;
+            const done = !current && Boolean(stepOkById?.[step.id]);
             return (
               <button
                 key={step.id}
                 type="button"
                 className={cn(
-                  "inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-[11px] font-medium transition-colors",
-                  done && "bg-primary-soft text-primary-strong",
+                  "inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-[11px] font-medium transition-colors cursor-pointer",
+                  done && "bg-primary-soft text-primary-strong hover:bg-primary-soft/80",
                   current && "bg-primary-strong text-white",
-                  !done && !current && "bg-muted/60 text-muted-foreground",
+                  !done && !current && "bg-muted text-foreground hover:bg-muted/80",
                 )}
                 onClick={() => {
-                  if (index <= stepIndex) onStepIdChange(step.id);
+                  if (current) return;
+                  onStepIdChange(step.id);
                 }}
                 aria-current={current ? "step" : undefined}
-                aria-label={`${index + 1}단계 ${step.title}`}
+                aria-label={`${index + 1}단계 ${step.title}로 이동`}
               >
                 {done ? <Check className="h-3.5 w-3.5" /> : index + 1}
               </button>
@@ -331,7 +347,7 @@ export function PracticeTransferExpressWizard({
         ) : (
           <>
             {stepId === "confirm" ? (
-              <div className="mb-6 space-y-2 rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm">
+              <div className="mb-6 w-full max-w-sm space-y-1.5 rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm">
                 <SummaryRow label="기공소" value={summary.labLabel || "-"} />
                 <SummaryRow label="환자" value={summary.patientName || "-"} />
                 <SummaryRow
@@ -406,7 +422,7 @@ export function PracticeTransferExpressWizard({
                 <span className="inline-flex">
                   <Button
                     type="button"
-                    className="h-10 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none"
+                    className="h-10 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none disabled:opacity-40"
                     onClick={onSubmit}
                     disabled={submitting || !canSubmit}
                   >
@@ -437,7 +453,7 @@ export function PracticeTransferExpressWizard({
               <span className="inline-flex">
                 <Button
                   type="button"
-                  className="h-10 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none"
+                  className="h-10 gap-1.5 bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none disabled:opacity-40"
                   onClick={goNext}
                   disabled={!canProceed}
                 >
@@ -466,17 +482,19 @@ function SummaryRow({
   value: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 text-right font-medium text-slate-900">{value}</span>
+    <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-0.5">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="min-w-0 font-medium text-slate-900">{value}</span>
     </div>
   );
 }
 
 export function PracticeTransferExpressDonePanel({
   onStartNew,
+  onViewRecent,
 }: {
   onStartNew: () => void;
+  onViewRecent: () => void;
 }) {
   return (
     <div className="flex flex-col items-start gap-4 py-2">
@@ -489,17 +507,22 @@ export function PracticeTransferExpressDonePanel({
             전송이 완료되었습니다
           </h2>
           <p className="text-sm text-muted-foreground">
-            최근 의뢰·임시저장을 확인하거나, 새 의뢰를 이어서 작성할 수 있습니다.
+            방금 보낸 의뢰는 「최근 의뢰」에서 확인할 수 있습니다.
           </p>
         </div>
       </div>
-      <Button
-        type="button"
-        className="h-10 bg-primary-strong text-white hover:bg-primary-strong"
-        onClick={onStartNew}
-      >
-        새 의뢰 작성
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          className="h-10 bg-primary-strong text-white hover:bg-primary-strong"
+          onClick={onViewRecent}
+        >
+          최근 의뢰 보기
+        </Button>
+        <Button type="button" variant="outline" className="h-10" onClick={onStartNew}>
+          새 의뢰 작성
+        </Button>
+      </div>
     </div>
   );
 }

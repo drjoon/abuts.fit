@@ -15,6 +15,7 @@
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote). 견적에서 열이 사라지지 않게.
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
+// - 2026-08-15: 치아번호 없는 자리표시 행(빈 toothNumber+기본 크라운)은 견적에서 제외.
 // - 2026-08-14: 치과별 기공수가 할증(labFeeMultiplier). 기공비·기공소 어벗만 배수.
 // - 2026-08-14: attachLabFeeMinToLines — 자동매칭 예산 하한을 라인에 붙인다.
 import {
@@ -956,6 +957,9 @@ export const computePracticeTransferRetailFees = (params: {
     split.quote ? "quote" : undefined;
 
   for (const row of rows) {
+    const toothNumber = String(row?.toothNumber || row?.tooth || "").trim();
+    // 작성 중 자리표시(치아 미선택·기본 형태만)는 과금하지 않는다
+    if (!/^[1-4][1-8]$/.test(toothNumber)) continue;
     const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
     if (!prosthesisType) continue;
     if (isMissingToothProsthesisType(prosthesisType)) continue;
@@ -972,7 +976,7 @@ export const computePracticeTransferRetailFees = (params: {
           labAbutmentPending = true;
         }
         lines.push({
-          toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
+          toothNumber,
           prosthesisType,
           labFee: pending ? 0 : remakeFee,
           labAbutmentFee: pending ? remakeFee : 0,
@@ -984,7 +988,7 @@ export const computePracticeTransferRetailFees = (params: {
       const split = abutmentSplitForRow(row);
       addAbutment(split);
       lines.push({
-        toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
+        toothNumber,
         prosthesisType,
         labFee: 0,
         labAbutmentFee: split.lab,
@@ -1006,7 +1010,7 @@ export const computePracticeTransferRetailFees = (params: {
       labFeeTotal += labFee;
       addAbutment(split);
       lines.push({
-        toothNumber: String(row?.toothNumber || row?.tooth || "").trim(),
+        toothNumber,
         prosthesisType,
         labFee,
         labAbutmentFee: split.lab,

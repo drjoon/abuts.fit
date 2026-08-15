@@ -1852,7 +1852,7 @@ export async function createPracticeTransfer(req, res) {
         success: false,
         message:
           scanErr?.message ||
-          "자동매칭 커스텀어벗 의뢰는 구강스캔 파일이 필요합니다.",
+          "자동매칭 의뢰는 구강스캔 파일이 필요합니다.",
         reason: scanErr?.code || "oral_scan_required_for_auto_match",
       });
     }

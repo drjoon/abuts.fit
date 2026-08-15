@@ -69,6 +69,7 @@
  * - 2026-08-14: 기공소 수락 시 웹소켓 feeQuote로 치과「확정 기공비」즉시 반영.
  * - 2026-08-15: 치과 기공의뢰 카드 상단에 익스프레스/엑스퍼트 모드 전환.
  * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
+ * - 2026-08-15: Express는 툴바 최근의뢰/임시저장/휴지통(다이얼로그). Expert는 xl 우측 접이식 카드.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -135,6 +136,8 @@ import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   PRACTICE_ACCEPTED_HINT,
+  AUTO_MATCH_LAB,
+  coerceAutoMatchLab,
   getBusinessLabel,
   usePracticeTransferStep1,
   isAutoMatchLab,
@@ -166,6 +169,7 @@ import { PracticeTransferIntakeSection } from "@/shared/components/practice/Prac
 import {
   PracticeTransferExpressDonePanel,
   PracticeTransferExpressWizard,
+  normalizeExpressStepId,
   resolveExpressLabLabel,
   type PracticeTransferExpressStepId,
 } from "@/shared/components/practice/PracticeTransferExpressWizard";
@@ -1065,6 +1069,8 @@ export const PracticeFileTransferPage = ({
   const [expressStepId, setExpressStepId] =
     useState<PracticeTransferExpressStepId>("lab");
   const [expressDone, setExpressDone] = useState(false);
+  const expressStepRestoredRef = useRef(false);
+  const prevWorkspaceModeRef = useRef<"express" | "expert" | null>(null);
   const [autoMatchBudget, setAutoMatchBudget] =
     useState<PracticeTransferAutoMatchBudget | null>(null);
   const [autoMatchMinLabRating, setAutoMatchMinLabRating] = useState(1);
@@ -1176,6 +1182,14 @@ export const PracticeFileTransferPage = ({
     rememberLab,
     syncRecentLabsFromTransfers,
   } = usePracticeTransferStep1();
+
+  // 임시저장/서버 echo가 `draft-lab:자동 매칭`으로 남기면 센티널로 되돌린다.
+  useEffect(() => {
+    if (!selectedLab) return;
+    if (!isAutoMatchLab(selectedLab)) return;
+    if (String(selectedLab._id || "").trim() === AUTO_MATCH_LAB._id) return;
+    setSelectedLab(AUTO_MATCH_LAB);
+  }, [selectedLab, setSelectedLab]);
   pendingLocalFilesRef.current = files;
   draftFilesRef.current = draftFiles;
   activeDraftIdRef.current = activeDraftId;
@@ -1199,10 +1213,12 @@ export const PracticeFileTransferPage = ({
   const [memoSnippets, setMemoSnippets] = useState<string[]>([]);
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
-  const [recentTransfersOpen, setRecentTransfersOpen] = useState(true);
   const [recentTransfersAllOpen, setRecentTransfersAllOpen] = useState(false);
-  const [draftsOpen, setDraftsOpen] = useState(true);
-  const [trashOpen, setTrashOpen] = useState(true);
+  const [recentTransfersOpen, setRecentTransfersOpen] = useState(true);
+  const [draftsPanelOpen, setDraftsPanelOpen] = useState(true);
+  const [trashPanelOpen, setTrashPanelOpen] = useState(true);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
 
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
@@ -1819,6 +1835,14 @@ export const PracticeFileTransferPage = ({
         // 서버 스냅샷이 비어 있으면 로컬/최근 기공소 캐시를 남기지 않는다.
         if (labName) {
           setSelectedLab((prev) => {
+            const coerced = coerceAutoMatchLab({
+              labId,
+              labName,
+              matchingMode:
+                (payload as { matchingMode?: string | null })?.matchingMode ??
+                null,
+            });
+            if (coerced) return coerced;
             const fromRecent =
               recentLabsRef.current.find((b) => {
                 const id = String(b?._id || "").trim();
@@ -2514,14 +2538,17 @@ export const PracticeFileTransferPage = ({
         const id = String(lab._id || "").trim();
         const name = String(lab.name || "").trim();
         if (id && name) {
-          setSelectedLab({
-            _id: id,
-            name,
-            businessNumber: String(lab.businessNumber || "").trim(),
-            representativeName: String(lab.representativeName || "").trim(),
-            address: String(lab.address || "").trim(),
-            businessType: String(lab.businessType || "requestor").trim(),
-          });
+          const coerced = coerceAutoMatchLab({ labId: id, labName: name });
+          setSelectedLab(
+            coerced || {
+              _id: id,
+              name,
+              businessNumber: String(lab.businessNumber || "").trim(),
+              representativeName: String(lab.representativeName || "").trim(),
+              address: String(lab.address || "").trim(),
+              businessType: String(lab.businessType || "requestor").trim(),
+            },
+          );
         }
       }
 
@@ -2546,6 +2573,12 @@ export const PracticeFileTransferPage = ({
           setToothWorks(restoredRows);
         }
       }
+
+      const restoredExpressStep = normalizeExpressStepId(parsed.expressStepId);
+      if (restoredExpressStep) {
+        setExpressStepId(restoredExpressStep);
+        expressStepRestoredRef.current = true;
+      }
     } catch {
       // ignore
     } finally {
@@ -2567,16 +2600,26 @@ export const PracticeFileTransferPage = ({
       requestMemo,
       patientName,
       selectedLab: selectedLab
-        ? {
-            _id: String(selectedLab._id || "").trim(),
-            name: String(selectedLab.name || "").trim(),
-            businessNumber: String(selectedLab.businessNumber || "").trim(),
-            representativeName: String(selectedLab.representativeName || "").trim(),
-            address: String(selectedLab.address || "").trim(),
-            businessType: String(selectedLab.businessType || "requestor").trim(),
-          }
+        ? isAutoMatchLab(selectedLab)
+          ? {
+              _id: AUTO_MATCH_LAB._id,
+              name: AUTO_MATCH_LAB.name,
+              businessNumber: "",
+              representativeName: "",
+              address: "",
+              businessType: "requestor",
+            }
+          : {
+              _id: String(selectedLab._id || "").trim(),
+              name: String(selectedLab.name || "").trim(),
+              businessNumber: String(selectedLab.businessNumber || "").trim(),
+              representativeName: String(selectedLab.representativeName || "").trim(),
+              address: String(selectedLab.address || "").trim(),
+              businessType: String(selectedLab.businessType || "requestor").trim(),
+            }
         : null,
       toothWorks,
+      expressStepId,
       activeDraftId: String(activeDraftId || "").trim() || null,
       updatedAt,
     };
@@ -2599,6 +2642,7 @@ export const PracticeFileTransferPage = ({
           arrivalDefaultDays,
           prosthesisTypes: normalizedProsthesisTypes,
           toothWorksCount: toothWorks.length,
+          expressStepId,
           firstToothWork: toothWorks[0]
             ? {
                 toothNumber: String(toothWorks[0].toothNumber || ""),
@@ -2615,6 +2659,7 @@ export const PracticeFileTransferPage = ({
     arrivalDate,
     arrivalDefaultDays,
     currentFormFingerprint,
+    expressStepId,
     localFormHydrated,
     normalizedProsthesisTypes,
     orderDate,
@@ -3679,22 +3724,31 @@ export const PracticeFileTransferPage = ({
 
       // 케이스에 기공소가 없으면 로컬/최근 기공소 캐시를 반드시 비운다.
       if (labName) {
-        const fromRecent = recentLabsRef.current.find((b) => {
-          const id = String(b?._id || "").trim();
-          if (labId && id === labId) return true;
-          return String(b?.name || "").trim() === labName;
+        const coerced = coerceAutoMatchLab({
+          labId,
+          labName,
+          matchingMode: (draft as { matchingMode?: string | null })?.matchingMode,
         });
-        setSelectedLab({
-          _id:
-            (isMongoObjectIdString(labId) ? labId : "") ||
-            (isMongoObjectIdString(fromRecent?._id) ? String(fromRecent?._id) : "") ||
-            `draft-lab:${labName}`,
-          name: labName,
-          businessNumber: String(fromRecent?.businessNumber || "").trim(),
-          representativeName: String(fromRecent?.representativeName || "").trim(),
-          address: String(fromRecent?.address || "").trim(),
-          businessType: "requestor",
-        });
+        if (coerced) {
+          setSelectedLab(coerced);
+        } else {
+          const fromRecent = recentLabsRef.current.find((b) => {
+            const id = String(b?._id || "").trim();
+            if (labId && id === labId) return true;
+            return String(b?.name || "").trim() === labName;
+          });
+          setSelectedLab({
+            _id:
+              (isMongoObjectIdString(labId) ? labId : "") ||
+              (isMongoObjectIdString(fromRecent?._id) ? String(fromRecent?._id) : "") ||
+              `draft-lab:${labName}`,
+            name: labName,
+            businessNumber: String(fromRecent?.businessNumber || "").trim(),
+            representativeName: String(fromRecent?.representativeName || "").trim(),
+            address: String(fromRecent?.address || "").trim(),
+            businessType: "requestor",
+          });
+        }
       } else {
         setSelectedLab(null);
       }
@@ -3783,7 +3837,7 @@ export const PracticeFileTransferPage = ({
             requestMemo: String(parsed.memo || ""),
             patientName: nextPatientName,
             selectedLab: labName
-              ? {
+              ? coerceAutoMatchLab({ labId, labName }) || {
                   _id:
                     (isMongoObjectIdString(labId) ? labId : "") ||
                     `draft-lab:${labName}`,
@@ -3828,6 +3882,7 @@ export const PracticeFileTransferPage = ({
       applyDraftSummaryToForm(draft);
       // 목록 카드보다 서버 최신 스냅샷을 우선해, 빈 기공소/환자명도 정확히 맞춘다.
       void loadPracticeTransferDraft({ draftId: draft.id });
+      setDraftsOpen(false);
       toast({
         title: draft.isMine ? "임시저장 불러옴" : "같은 케이스로 이어쓰기",
         description: draft.isMine
@@ -5254,6 +5309,7 @@ export const PracticeFileTransferPage = ({
         setExpressDone(true);
         setExpressStepId("lab");
         void loadRecentRequests({ silent: true });
+        setRecentTransfersAllOpen(true);
       } else {
         navigate("/practice/dashboard");
       }
@@ -5297,15 +5353,8 @@ export const PracticeFileTransferPage = ({
     if (missingAbutmentPresetTeeth.length > 0) {
       missing.push(`어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`);
     }
-    const hasCustomAbutment = normalizedToothWorks.some((row) =>
-      Boolean(row.customAbutment),
-    );
     const attachmentCount = files.length + draftFiles.length;
-    if (
-      isAutoMatchLab(selectedLab) &&
-      hasCustomAbutment &&
-      attachmentCount === 0
-    ) {
+    if (isAutoMatchLab(selectedLab) && attachmentCount === 0) {
       missing.push("구강스캔 파일");
     }
     return missing;
@@ -5321,11 +5370,8 @@ export const PracticeFileTransferPage = ({
   const hasRequiredSubmitFields = missingRequiredFields.length === 0;
 
   const showExpressWizard = isExpressMode && !expressDone;
-  const showSidePanels = !isExpressMode || expressDone;
 
-  const expressOralScanRequired =
-    isAutoMatchLab(selectedLab) &&
-    normalizedToothWorks.some((row) => Boolean(row.customAbutment));
+  const expressOralScanRequired = isAutoMatchLab(selectedLab);
 
   const expressStepGate = useMemo(() => {
     const hasLab = Boolean(String(selectedLab?._id || "").trim());
@@ -5369,7 +5415,7 @@ export const PracticeFileTransferPage = ({
       },
       files: {
         ok: hasRequiredFiles,
-        reason: "자동 매칭 커스텀어벗은 구강스캔 파일이 필요합니다.",
+        reason: "자동 매칭은 구강스캔 파일이 필요합니다.",
       },
       confirm: {
         ok: hasRequiredSubmitFields,
@@ -5395,8 +5441,10 @@ export const PracticeFileTransferPage = ({
   ]);
 
   useEffect(() => {
-    if (!isExpressMode) return;
-    setExpressDone(false);
+    if (!isExpressMode) {
+      prevWorkspaceModeRef.current = workspaceMode;
+      return;
+    }
     const order: PracticeTransferExpressStepId[] = [
       "lab",
       "patient",
@@ -5407,10 +5455,21 @@ export const PracticeFileTransferPage = ({
     ];
     const firstIncomplete =
       order.find((id) => !expressStepGate[id]?.ok) || "confirm";
+    const prev = prevWorkspaceModeRef.current;
+    if (prev === null) {
+      if (!localFormHydrated) return;
+      prevWorkspaceModeRef.current = workspaceMode;
+      if (expressStepRestoredRef.current) return;
+      expressStepRestoredRef.current = true;
+      setExpressStepId(firstIncomplete);
+      return;
+    }
+    prevWorkspaceModeRef.current = workspaceMode;
+    if (prev === "express") return;
+    setExpressDone(false);
+    expressStepRestoredRef.current = true;
     setExpressStepId(firstIncomplete);
-    // expressStepGate는 모드 전환 시점의 작성 상태만 반영하면 됨
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 모드 진입 시에만 시작 단계 결정
-  }, [isExpressMode]);
+  }, [expressStepGate, isExpressMode, localFormHydrated, workspaceMode]);
 
   useEffect(() => {
     if (!orderDate) return;
@@ -5504,6 +5563,7 @@ export const PracticeFileTransferPage = ({
     setToothChartResetNonce((n) => n + 1);
     setExpressDone(false);
     setExpressStepId("lab");
+    expressStepRestoredRef.current = true;
 
     // 빈 폼 baseline — 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
     const baselineFingerprint = buildPracticeTransferFormFingerprint({
@@ -5530,7 +5590,7 @@ export const PracticeFileTransferPage = ({
       title: "새로 작성",
       description: isExpressMode
         ? "작성 화면을 비웠습니다. 전송 후에는 최근 의뢰에서 다시 확인할 수 있습니다."
-        : "작성 화면을 비웠습니다. 임시저장은 오른쪽 목록에 남아 다시 불러올 수 있습니다.",
+        : "작성 화면을 비웠습니다. 임시저장은 임시저장 목록에 남아 다시 불러올 수 있습니다.",
     });
   };
 
@@ -5716,9 +5776,8 @@ export const PracticeFileTransferPage = ({
     acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
-                      isAutoMatchLab(selectedLab) &&
-                      normalizedToothWorks.some((row) => row.customAbutment)
-                        ? "자동매칭 커스텀어벗은 구강스캔 첨부가 필수입니다. 지정 기공소로 보낼 때는 스캔을 기공소에서 올릴 수도 있습니다."
+                      isAutoMatchLab(selectedLab)
+                        ? "자동매칭은 구강스캔 첨부가 필수입니다. 지정 기공소로 보낼 때는 스캔을 기공소에서 올릴 수도 있습니다."
                         : normalizedToothWorks.some((row) => row.customAbutment)
                           ? "지정 기공소로 보낼 때 구강스캔이 없으면, 수락하는 기공소에서 업로드할 수 있습니다."
                           : null,
@@ -5924,241 +5983,282 @@ export const PracticeFileTransferPage = ({
       className="h-full min-h-0 bg-gradient-subtle"
     >
       <div className="mx-auto h-full min-h-0 max-w-6xl space-y-3 p-4">
-        <div
-          className={cn(
-            "grid grid-cols-1 gap-3",
-            showExpressWizard ? "xl:grid-cols-1" : "xl:grid-cols-10",
-          )}
-        >
-          <div
-            className={cn(
-              "flex min-w-0 flex-col gap-3",
-              showExpressWizard ? "xl:col-span-1" : "xl:col-span-7",
-            )}
-          >
-            <Card className="border-slate-200/80 shadow-sm">
-              <CardHeader className="pb-2 pt-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-3">
-                    {roleSwitcher}
-                    <CardTitle className="flex min-w-0 items-center gap-2 text-xl font-bold tracking-tight">
-                      <UploadCloud className="h-5 w-5 shrink-0 text-primary-strong" />
-                      <span className="shrink-0">기공의뢰</span>
-                      {formSyncStatusLabel ? (
-                        <span
-                          className={cn(
-                            "truncate text-xs font-normal",
-                            formSyncStatus === "error"
-                              ? "text-destructive"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {formSyncStatusLabel}
-                        </span>
-                      ) : null}
-                    </CardTitle>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <WorkspaceModeSwitch />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-9 px-3 text-base"
-                          onClick={() => void handleStartNewTransfer()}
-                        >
-                          새로 작성
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs text-xs">
-                        작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-5">
-                {showExpressWizard ? (
-                  <PracticeTransferExpressWizard
-                    stepId={expressStepId}
-                    onStepIdChange={setExpressStepId}
-                    filePaneProps={practiceTransferFilePaneProps}
-                    requestIntakeProps={practiceTransferRequestIntakeProps}
-                    summary={{
-                      labLabel: resolveExpressLabLabel(selectedLab),
-                      patientName: normalizedPatientName,
-                      orderDate,
-                      arrivalDate,
-                      toothCount: normalizedToothWorks.length,
-                      fileCount: files.length + draftFiles.length,
-                    }}
-                    canProceed={expressStepGate[expressStepId]?.ok ?? false}
-                    proceedBlockedReason={expressStepGate[expressStepId]?.reason}
-                    oralScanRequired={expressOralScanRequired}
-                    skipDesignConfirm={skipDesignConfirm}
-                    onSkipDesignConfirmChange={persistSkipDesignConfirmSetting}
-                    onOpenSkipDesignConfirmUncheck={() =>
-                      setSkipDesignConfirmUncheckOpen(true)
-                    }
-                    onSubmit={() => void handleSubmitPracticeRequest()}
-                    submitting={requestSubmitting}
-                    canSubmit={hasRequiredSubmitFields}
-                    missingRequiredFields={missingRequiredFields}
-                  />
-                ) : isExpressMode && expressDone ? (
-                  <PracticeTransferExpressDonePanel
-                    onStartNew={() => void handleStartNewTransfer()}
-                  />
-                ) : (
-                  <PracticeTransferIntakeSection
-                    filePaneProps={practiceTransferFilePaneProps}
-                    requestIntakeProps={practiceTransferRequestIntakeProps}
-                  />
-                )}
-              </CardContent>
-            </Card>
+        <div className="flex flex-wrap items-center gap-2">
+          {roleSwitcher}
+          <WorkspaceModeSwitch />
+          {isExpressMode ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5 px-3"
+                onClick={() => setRecentTransfersAllOpen(true)}
+              >
+                <ClipboardList className="h-4 w-4 shrink-0" />
+                최근 의뢰
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5 px-3"
+                onClick={() => setDraftsOpen(true)}
+              >
+                <BookmarkPlus className="h-4 w-4 shrink-0" />
+                임시저장
+                {draftGroupedTransfers.length > 0 ? (
+                  <Badge variant="secondary" className="ml-0.5">
+                    {draftGroupedTransfers.length}
+                  </Badge>
+                ) : null}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5 px-3"
+                onClick={() => setTrashOpen(true)}
+              >
+                <Trash2 className="h-4 w-4 shrink-0" />
+                휴지통
+                {trashGroupedTransfers.length > 0 ? (
+                  <Badge variant="secondary" className="ml-0.5">
+                    {trashGroupedTransfers.length}
+                  </Badge>
+                ) : null}
+              </Button>
+            </>
+          ) : null}
+        </div>
 
-            {!isExpressMode ? (
-            <div className="flex items-center justify-end gap-4">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <label
-                    htmlFor="practice-skip-design-confirm"
-                    className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 select-none"
-                  >
-                    <Checkbox
-                      id="practice-skip-design-confirm"
-                      checked={skipDesignConfirm}
-                      onCheckedChange={(value) => {
-                        if (value === true) {
-                          persistSkipDesignConfirmSetting(true);
-                          return;
-                        }
-                        // 해제 시 안내 모달 후 확인
-                        setSkipDesignConfirmUncheckOpen(true);
-                      }}
-                      disabled={requestSubmitting}
-                    />
-                    <span>디자인 컨펌 생략</span>
-                  </label>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-                  <p>
-                    커스텀어벗은 어벗츠가 디자인한 뒤 기공소가 확인하면 생산합니다.
-                    체크를 해제하면 치과도 디자인을 컨펌해야 생산이 시작되어 일정이
-                    늦어질 수 있습니다. 기본은 생략(체크)입니다.
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex">
+        <div className={cn("grid grid-cols-1 gap-3", !isExpressMode && "xl:grid-cols-10")}>
+          <div className={cn("flex min-w-0 flex-col gap-3", !isExpressMode && "xl:col-span-7")}>
+          <Card className="border-slate-200/80 shadow-sm">
+            <CardHeader className="pb-2 pt-3">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex min-w-0 items-center gap-2 text-xl font-bold tracking-tight">
+                  <UploadCloud className="h-5 w-5 shrink-0 text-primary-strong" />
+                  <span className="shrink-0">기공의뢰</span>
+                  {formSyncStatusLabel ? (
+                    <span
+                      className={cn(
+                        "truncate text-xs font-normal",
+                        formSyncStatus === "error"
+                          ? "text-destructive"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {formSyncStatusLabel}
+                    </span>
+                  ) : null}
+                </CardTitle>
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <Button
                       type="button"
-                      className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none"
-                      onClick={() => void handleSubmitPracticeRequest()}
-                      disabled={requestSubmitting || !hasRequiredSubmitFields}
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-3 text-base"
+                      onClick={() => void handleStartNewTransfer()}
                     >
-                      {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
+                      새로 작성
                     </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent
-                  side="top"
-                  align="end"
-                  className="max-w-xs border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-snug text-slate-900 shadow-lg"
-                >
-                  {requestSubmitting ? (
-                    <p>전송 중…</p>
-                  ) : hasRequiredSubmitFields ? (
-                    <p className="text-primary-strong">전송 가능</p>
-                  ) : (
-                    <ul className="space-y-1">
-                      {(
-                        [
-                          { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
-                          { key: "환자명", ok: Boolean(normalizedPatientName) },
-                          { key: "보철물", ok: normalizedToothWorks.length > 0 },
-                          ...(missingAbutmentPresetTeeth.length > 0 ||
-                          normalizedToothWorks.some((row) => row.customAbutment)
-                            ? [
-                                {
-                                  key:
-                                    missingAbutmentPresetTeeth.length > 0
-                                      ? `어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`
-                                      : "어벗 프리셋",
-                                  ok: missingAbutmentPresetTeeth.length === 0,
-                                },
-                              ]
-                            : []),
-                          ...(isAutoMatchLab(selectedLab) &&
-                          normalizedToothWorks.some((row) => row.customAbutment)
-                            ? [
-                                {
-                                  key: "구강스캔 파일",
-                                  ok: files.length + draftFiles.length > 0,
-                                },
-                              ]
-                            : []),
-                        ]
-                      ).map((item) => (
-                        <li
-                          key={item.key}
-                          className={
-                            item.ok
-                              ? "text-primary-strong"
-                              : "font-semibold text-accent-strong"
-                          }
-                        >
-                          {item.key}
-                          {item.ok ? " ✓" : " · 필요"}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            ) : null}
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs text-xs">
+                    작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5">
+              {showExpressWizard ? (
+                <PracticeTransferExpressWizard
+                  stepId={expressStepId}
+                  onStepIdChange={setExpressStepId}
+                  filePaneProps={practiceTransferFilePaneProps}
+                  requestIntakeProps={practiceTransferRequestIntakeProps}
+                  summary={{
+                    labLabel: resolveExpressLabLabel(selectedLab),
+                    patientName: normalizedPatientName,
+                    orderDate,
+                    arrivalDate,
+                    toothCount: normalizedToothWorks.length,
+                    fileCount: files.length + draftFiles.length,
+                  }}
+                  canProceed={expressStepGate[expressStepId]?.ok ?? false}
+                  proceedBlockedReason={expressStepGate[expressStepId]?.reason}
+                  stepOkById={{
+                    lab: expressStepGate.lab.ok,
+                    patient: expressStepGate.patient.ok,
+                    schedule: expressStepGate.schedule.ok,
+                    prosthesis: expressStepGate.prosthesis.ok,
+                    files: expressStepGate.files.ok,
+                    confirm: expressStepGate.confirm.ok,
+                  }}
+                  oralScanRequired={expressOralScanRequired}
+                  skipDesignConfirm={skipDesignConfirm}
+                  onSkipDesignConfirmChange={persistSkipDesignConfirmSetting}
+                  onOpenSkipDesignConfirmUncheck={() =>
+                    setSkipDesignConfirmUncheckOpen(true)
+                  }
+                  onSubmit={() => void handleSubmitPracticeRequest()}
+                  submitting={requestSubmitting}
+                  canSubmit={hasRequiredSubmitFields}
+                  missingRequiredFields={missingRequiredFields}
+                />
+              ) : isExpressMode && expressDone ? (
+                <PracticeTransferExpressDonePanel
+                  onStartNew={() => void handleStartNewTransfer()}
+                  onViewRecent={() => setRecentTransfersAllOpen(true)}
+                />
+              ) : (
+                <PracticeTransferIntakeSection
+                  filePaneProps={practiceTransferFilePaneProps}
+                  requestIntakeProps={practiceTransferRequestIntakeProps}
+                />
+              )}
+            </CardContent>
+          </Card>
 
-            <Dialog
-              open={skipDesignConfirmUncheckOpen}
-              onOpenChange={setSkipDesignConfirmUncheckOpen}
-            >
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>디자인 컨펌을 직접 하시겠어요?</DialogTitle>
-                  <DialogDescription className="leading-relaxed">
-                    생략을 해제하면 어벗츠 디자인 후 치과 컨펌을 기다려야 생산이
-                    시작됩니다. 기일이 촉박한 경우 지연될 수 있습니다. 꼭 확인이
-                    필요한 의뢰만 해제해 주세요.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setSkipDesignConfirmUncheckOpen(false)}
-                  >
-                    취소
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      persistSkipDesignConfirmSetting(false);
-                      setSkipDesignConfirmUncheckOpen(false);
+          {!isExpressMode ? (
+          <div className="flex items-center justify-end gap-4">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <label
+                  htmlFor="practice-skip-design-confirm"
+                  className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 select-none"
+                >
+                  <Checkbox
+                    id="practice-skip-design-confirm"
+                    checked={skipDesignConfirm}
+                    onCheckedChange={(value) => {
+                      if (value === true) {
+                        persistSkipDesignConfirmSetting(true);
+                        return;
+                      }
+                      // 해제 시 안내 모달 후 확인
+                      setSkipDesignConfirmUncheckOpen(true);
                     }}
+                    disabled={requestSubmitting}
+                  />
+                  <span>디자인 컨펌 생략</span>
+                </label>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                <p>
+                  커스텀어벗은 어벗츠가 디자인한 뒤 기공소가 확인하면 생산합니다.
+                  체크를 해제하면 치과도 디자인을 컨펌해야 생산이 시작되어 일정이
+                  늦어질 수 있습니다. 기본은 생략(체크)입니다.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    type="button"
+                    className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none disabled:opacity-40"
+                    onClick={() => void handleSubmitPracticeRequest()}
+                    disabled={requestSubmitting || !hasRequiredSubmitFields}
                   >
-                    컨펌 받기로 설정
+                    {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
                   </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent
+                side="top"
+                align="end"
+                className="max-w-xs border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-snug text-slate-900 shadow-lg"
+              >
+                {requestSubmitting ? (
+                  <p>전송 중…</p>
+                ) : hasRequiredSubmitFields ? (
+                  <p className="text-primary-strong">전송 가능</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {(
+                      [
+                        { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
+                        { key: "환자명", ok: Boolean(normalizedPatientName) },
+                        { key: "보철물", ok: normalizedToothWorks.length > 0 },
+                        ...(missingAbutmentPresetTeeth.length > 0 ||
+                        normalizedToothWorks.some((row) => row.customAbutment)
+                          ? [
+                              {
+                                key:
+                                  missingAbutmentPresetTeeth.length > 0
+                                    ? `어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`
+                                    : "어벗 프리셋",
+                                ok: missingAbutmentPresetTeeth.length === 0,
+                              },
+                            ]
+                          : []),
+                        ...(isAutoMatchLab(selectedLab)
+                          ? [
+                              {
+                                key: "구강스캔 파일",
+                                ok: files.length + draftFiles.length > 0,
+                              },
+                            ]
+                          : []),
+                      ]
+                    ).map((item) => (
+                      <li
+                        key={item.key}
+                        className={
+                          item.ok
+                            ? "text-primary-strong"
+                            : "font-semibold text-accent-strong"
+                        }
+                      >
+                        {item.key}
+                        {item.ok ? " ✓" : " · 필요"}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          ) : null}
+
+          <Dialog
+            open={skipDesignConfirmUncheckOpen}
+            onOpenChange={setSkipDesignConfirmUncheckOpen}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>디자인 컨펌을 직접 하시겠어요?</DialogTitle>
+                <DialogDescription className="leading-relaxed">
+                  생략을 해제하면 어벗츠 디자인 후 치과 컨펌을 기다려야 생산이
+                  시작됩니다. 기일이 촉박한 경우 지연될 수 있습니다. 꼭 확인이
+                  필요한 의뢰만 해제해 주세요.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSkipDesignConfirmUncheckOpen(false)}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    persistSkipDesignConfirmSetting(false);
+                    setSkipDesignConfirmUncheckOpen(false);
+                  }}
+                >
+                  컨펌 받기로 설정
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           </div>
 
-          {showSidePanels ? (
+          {!isExpressMode ? (
           <div className="space-y-3 xl:col-span-3">
             <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={recentTransfersOpen} onOpenChange={setRecentTransfersOpen}>
@@ -6461,7 +6561,7 @@ export const PracticeFileTransferPage = ({
             </Card>
 
             <Card className="border-slate-200/80 shadow-sm">
-              <Collapsible open={draftsOpen} onOpenChange={setDraftsOpen}>
+              <Collapsible open={draftsPanelOpen} onOpenChange={setDraftsPanelOpen}>
               <CardHeader className="pb-2 pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <CollapsibleTrigger asChild>
@@ -6494,7 +6594,7 @@ export const PracticeFileTransferPage = ({
                     <CollapsibleTrigger asChild>
                       <button type="button" className="shrink-0 text-muted-foreground">
                         <ChevronDown
-                          className={`h-4 w-4 transition-transform ${draftsOpen ? "rotate-180" : ""}`}
+                          className={`h-4 w-4 transition-transform ${draftsPanelOpen ? "rotate-180" : ""}`}
                         />
                       </button>
                     </CollapsibleTrigger>
@@ -6605,7 +6705,7 @@ export const PracticeFileTransferPage = ({
             </Card>
 
             <Card className="border-slate-200/80 shadow-sm">
-              <Collapsible open={trashOpen} onOpenChange={setTrashOpen}>
+              <Collapsible open={trashPanelOpen} onOpenChange={setTrashPanelOpen}>
               <CardHeader className="pb-2 pt-3">
                 <div className="flex items-center justify-between gap-2">
                   <CollapsibleTrigger asChild>
@@ -6638,7 +6738,7 @@ export const PracticeFileTransferPage = ({
                     <CollapsibleTrigger asChild>
                       <button type="button" className="shrink-0 text-muted-foreground">
                         <ChevronDown
-                          className={`h-4 w-4 transition-transform ${trashOpen ? "rotate-180" : ""}`}
+                          className={`h-4 w-4 transition-transform ${trashPanelOpen ? "rotate-180" : ""}`}
                         />
                       </button>
                     </CollapsibleTrigger>
@@ -6744,6 +6844,280 @@ export const PracticeFileTransferPage = ({
           </div>
           ) : null}
         </div>
+
+        {isExpressMode ? (
+          <>
+        <Dialog open={draftsOpen} onOpenChange={setDraftsOpen}>
+          <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-md">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 px-5 pb-3 pt-5 pr-12">
+              <DialogHeader className="space-y-0 text-left">
+                <DialogTitle className="flex items-center gap-2 text-base font-semibold tracking-tight">
+                  <BookmarkPlus className="h-4 w-4 text-primary-strong" />
+                  임시저장
+                  {draftGroupedTransfers.length > 0 ? (
+                    <Badge
+                      variant="secondary"
+                      className="rounded-md px-1.5 py-0 text-[11px] font-medium tabular-nums"
+                    >
+                      {draftGroupedTransfers.length}
+                    </Badge>
+                  ) : null}
+                </DialogTitle>
+              </DialogHeader>
+              {draftGroupedTransfers.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1 px-2 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
+                  disabled={clearingAllDrafts}
+                  onClick={handleAskClearAllDrafts}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {clearingAllDrafts ? "삭제 중..." : "전체삭제"}
+                </Button>
+              ) : null}
+            </div>
+            <div className="px-3 py-3">
+              {draftGroupedTransfers.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center">
+                  <BookmarkPlus className="h-8 w-8 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-600">임시저장 없음</p>
+                  <p className="text-xs text-muted-foreground">
+                    기공소와 환자명을 입력하면 자동으로 저장됩니다.
+                  </p>
+                </div>
+              ) : (
+                <div className="max-h-[min(60vh,28rem)] space-y-2 overflow-y-auto px-1 pb-1">
+                  {draftGroupedTransfers.map((transfer) => {
+                    const targetLabText =
+                      String(transfer.targetLab || "-")
+                        .replace(/\s*→.*$/g, "")
+                        .trim() || "-";
+                    const ownerLabel = transfer.isMineDraft
+                      ? "나"
+                      : transfer.practiceUserLabel || "동료";
+                    const patientLabel =
+                      String(transfer.draftPatientName || "").trim() || "환자명 미입력";
+                    const isActive = transfer.id === activeDraftId;
+
+                    return (
+                      <div
+                        key={`draft:${transfer.id}:${transfer.createdAt}`}
+                        role="button"
+                        tabIndex={0}
+                        className={cn(
+                          "group flex w-full items-stretch gap-2 rounded-xl border bg-white px-3.5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          isActive
+                            ? "border-primary/50 bg-primary-soft/70 shadow-sm ring-1 ring-primary/20"
+                            : "border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/80",
+                        )}
+                        onClick={() => handleAdoptDraftTransfer(transfer)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleAdoptDraftTransfer(transfer);
+                          }
+                        }}
+                      >
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <p className="truncate text-sm font-semibold text-slate-900">
+                              {patientLabel}
+                            </p>
+                            {isActive ? (
+                              <Badge className="h-5 rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
+                                작성 중
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {ownerLabel}
+                            <span className="mx-1 text-slate-300">·</span>
+                            {transfer.createdAt}
+                          </p>
+                          <p className="truncate text-xs text-slate-600">
+                            {targetLabText}
+                            <span className="mx-1 text-slate-300">·</span>
+                            파일 {transfer.fileCount}개
+                            {transfer.orderDate && transfer.arrivalDate ? (
+                              <>
+                                <span className="mx-1 text-slate-300">·</span>
+                                <PracticeWorkPeriodText
+                                  orderDate={transfer.orderDate}
+                                  arrivalDate={transfer.arrivalDate}
+                                  variant="orderArrival"
+                                  className="text-xs"
+                                />
+                              </>
+                            ) : null}
+                          </p>
+                        </div>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0 self-center text-slate-400 opacity-70 hover:bg-destructive-soft hover:text-destructive group-hover:opacity-100"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleAskDeleteTransfer(transfer);
+                                }}
+                                aria-label="임시저장을 휴지통으로"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left" className="max-w-xs text-xs">
+                              휴지통으로 이동
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={trashOpen} onOpenChange={setTrashOpen}>
+          <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-md">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 px-5 pb-3 pt-5 pr-12">
+              <DialogHeader className="space-y-0 text-left">
+                <DialogTitle className="flex items-center gap-2 text-base font-semibold tracking-tight">
+                  <Trash2 className="h-4 w-4 text-slate-500" />
+                  휴지통
+                  {trashGroupedTransfers.length > 0 ? (
+                    <Badge
+                      variant="secondary"
+                      className="rounded-md px-1.5 py-0 text-[11px] font-medium tabular-nums"
+                    >
+                      {trashGroupedTransfers.length}
+                    </Badge>
+                  ) : null}
+                </DialogTitle>
+              </DialogHeader>
+              {trashGroupedTransfers.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1 px-2 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive"
+                  disabled={emptyingTrash}
+                  onClick={handleAskEmptyTrash}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {emptyingTrash ? "비우는 중..." : "비우기"}
+                </Button>
+              ) : null}
+            </div>
+            <div className="px-3 py-3">
+              {trashGroupedTransfers.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center">
+                  <Trash2 className="h-8 w-8 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-600">휴지통이 비어 있습니다</p>
+                  <p className="text-xs text-muted-foreground">
+                    삭제한 임시저장·의뢰가 여기에 모입니다.
+                  </p>
+                </div>
+              ) : (
+                <div className="max-h-[min(60vh,28rem)] space-y-2 overflow-y-auto px-1 pb-1">
+                  {trashGroupedTransfers.map((transfer) => {
+                    const targetLabText =
+                      String(transfer.targetLab || "-")
+                        .replace(/\s*→.*$/g, "")
+                        .trim() || "-";
+                    const isDraftTrash =
+                      transfer.status === "임시저장" ||
+                      transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
+                    const titleLabel = isDraftTrash
+                      ? transfer.draftPatientName ||
+                        transfer.deleteTargetLabel ||
+                        "임시저장"
+                      : transfer.transferId !== "-"
+                        ? transfer.transferId
+                        : transfer.id;
+
+                    return (
+                      <div
+                        key={`trash:${transfer.id}:${transfer.createdAt}`}
+                        role="button"
+                        tabIndex={0}
+                        className="group flex w-full items-stretch gap-2 rounded-xl border border-slate-200/90 bg-white px-3.5 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => void handleOpenTransferDialog(transfer, { fromTrash: true })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            void handleOpenTransferDialog(transfer, { fromTrash: true });
+                          }
+                        }}
+                      >
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <p className="truncate text-sm font-semibold text-slate-900">
+                              {titleLabel}
+                            </p>
+                            <Badge
+                              variant="outline"
+                              className="h-5 rounded-md px-1.5 text-[10px] font-medium text-muted-foreground"
+                            >
+                              {isDraftTrash ? "임시저장" : "의뢰"}
+                            </Badge>
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {isDraftTrash && transfer.practiceUserLabel
+                              ? transfer.practiceUserLabel
+                              : null}
+                            {isDraftTrash && transfer.practiceUserLabel ? (
+                              <span className="mx-1 text-slate-300">·</span>
+                            ) : null}
+                            {transfer.createdAt}
+                          </p>
+                          <p className="truncate text-xs text-slate-600">
+                            {targetLabText}
+                            <span className="mx-1 text-slate-300">·</span>
+                            파일 {transfer.fileCount}개
+                          </p>
+                        </div>
+
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0 self-center text-slate-400 opacity-70 hover:bg-primary-soft hover:text-primary-strong group-hover:opacity-100"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAskRestoreTransfer(transfer);
+                                }}
+                                aria-label={isDraftTrash ? "임시저장 복구" : "의뢰서 복구"}
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
+                              {isDraftTrash
+                                ? "임시저장 목록으로 되돌립니다. 복구 후 카드를 눌러 이어서 작성할 수 있습니다."
+                                : "최근 전송 내역으로 되돌립니다. 기공소에서도 다시 확인할 수 있습니다."}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+          </>
+        ) : null}
 
         <PracticeRecentTransfersAllModal
           open={recentTransfersAllOpen}

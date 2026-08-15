@@ -38,8 +38,39 @@ export const AUTO_MATCH_LAB: SearchBusinessResult = {
   businessType: "requestor",
 };
 
-export const isAutoMatchLab = (lab?: { _id?: string | null } | null) =>
-  String(lab?._id || "").trim() === AUTO_MATCH_LAB_ID;
+/**
+ * 자동매칭 센티널 여부.
+ * 서버/임시저장 복원 시 anchor가 비어 `draft-lab:자동 매칭`으로 남을 수 있어
+ * 예약 표시명도 함께 본다.
+ */
+export const isAutoMatchLab = (
+  lab?: { _id?: string | null; name?: string | null } | null,
+) => {
+  const id = String(lab?._id || "").trim();
+  if (id === AUTO_MATCH_LAB_ID) return true;
+  if (id === `draft-lab:${AUTO_MATCH_LAB_NAME}`) return true;
+  return String(lab?.name || "").trim() === AUTO_MATCH_LAB_NAME;
+};
+
+/** 복원 시 자동매칭이면 센티널로 정규화, 아니면 null(호출측에서 일반 기공소 구성) */
+export const coerceAutoMatchLab = (params: {
+  labId?: string | null;
+  labName?: string | null;
+  matchingMode?: string | null;
+}): SearchBusinessResult | null => {
+  const id = String(params.labId || "").trim();
+  const name = String(params.labName || "").trim();
+  const mode = String(params.matchingMode || "").trim();
+  if (
+    mode === "auto" ||
+    id === AUTO_MATCH_LAB_ID ||
+    id === `draft-lab:${AUTO_MATCH_LAB_NAME}` ||
+    name === AUTO_MATCH_LAB_NAME
+  ) {
+    return AUTO_MATCH_LAB;
+  }
+  return null;
+};
 
 type ClassifiedUploadBatch = {
   modelFiles: File[];

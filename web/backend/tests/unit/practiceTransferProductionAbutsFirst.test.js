@@ -136,7 +136,7 @@ describe("oral scan requirement for CA accept/create", () => {
     file: { originalName: "scan.stl", s3Key: "scan-key", size: 100 },
   };
 
-  test("assertOralScanFilesForCreate — auto CA requires files", () => {
+  test("assertOralScanFilesForCreate — auto requires files", () => {
     expect(() =>
       assertOralScanFilesForCreate({
         matchingMode: "auto",
@@ -164,14 +164,14 @@ describe("oral scan requirement for CA accept/create", () => {
     ).not.toThrow();
   });
 
-  test("assertOralScanFilesForCreate — auto without CA skips", () => {
+  test("assertOralScanFilesForCreate — auto without CA still requires files", () => {
     expect(() =>
       assertOralScanFilesForCreate({
         matchingMode: "auto",
         toothWorks: [{ customAbutment: false, toothNumber: "21" }],
         files: [],
       }),
-    ).not.toThrow();
+    ).toThrow(ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE);
   });
 
   test("resolveOralScanFilesForAccept — existing files win", () => {

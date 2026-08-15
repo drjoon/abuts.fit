@@ -4,9 +4,9 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 
-/** 자동매칭 CA: 치과 전송 시 구강스캔 필수 */
+/** 자동매칭: 치과 전송 시 구강스캔 필수(지정 기공소는 수락 전 기공소 업로드 가능) */
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
-  "자동매칭으로 커스텀어벗을 보낼 때는 구강스캔 파일을 첨부해주세요.";
+  "자동매칭으로 보낼 때는 구강스캔 파일을 첨부해주세요.";
 
 /** 자동매칭 CA: 스캔 없이 수락 불가 */
 export const ORAL_SCAN_REQUIRED_FROM_PRACTICE =
