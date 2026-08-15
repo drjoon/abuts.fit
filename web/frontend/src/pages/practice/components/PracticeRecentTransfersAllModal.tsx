@@ -46,6 +46,7 @@ import {
   mapMyPracticeTransferApiRows,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
+import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 
 const PAGE_SIZE = PRACTICE_MY_TRANSFERS_PAGE_SIZE;
 
@@ -486,6 +487,17 @@ export function PracticeRecentTransfersAllModal({
                       파일 {transfer.fileCount}개
                       {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
                       {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                      {transfer.orderDate && transfer.arrivalDate ? (
+                        <>
+                          {" · "}
+                          <PracticeWorkPeriodText
+                            orderDate={transfer.orderDate}
+                            arrivalDate={transfer.arrivalDate}
+                            variant="labeled"
+                            className="text-xs"
+                          />
+                        </>
+                      ) : null}
                       {String(transfer.transferMemo || "").trim()
                         ? ` · 메모: ${String(transfer.transferMemo || "")
                             .replace(/\s+/g, " ")

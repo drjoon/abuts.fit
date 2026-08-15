@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
  * - 2026-08-14: 의뢰 상세 · 기공소 채팅 rating(1~3)·메모. 자동매칭 최소 별.
+ * - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁(목록·상세).
  * - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
@@ -233,6 +234,8 @@ import {
   invalidatePracticeTransferQuoteContextCache,
 } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { kstYmdDiffDays } from "@/shared/date/kst";
+import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
+import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import {
   Collapsible,
   CollapsibleContent,
@@ -3601,6 +3604,15 @@ export const PracticeFileTransferPage = ({
     return String(selectedTransfer?.draftPatientName || "").trim();
   }, [selectedTransfer?.draftPatientName, selectedTransferRawMemo]);
 
+  const selectedTransferWorkPeriodSummary = useMemo(
+    () =>
+      buildPracticeWorkPeriodSummaryItem(
+        selectedTransfer?.orderDate,
+        selectedTransfer?.arrivalDate,
+      ),
+    [selectedTransfer?.arrivalDate, selectedTransfer?.orderDate],
+  );
+
   const selectedTransferToothWorks = useMemo(
     () => parsePracticeTransferMemoMetaShared(selectedTransferRawMemo).toothWorks,
     [selectedTransferRawMemo],
@@ -6095,6 +6107,17 @@ export const PracticeFileTransferPage = ({
                                 파일 {transfer.fileCount}개
                                 {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
                                 {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                                {transfer.orderDate && transfer.arrivalDate ? (
+                                  <>
+                                    {" · "}
+                                    <PracticeWorkPeriodText
+                                      orderDate={transfer.orderDate}
+                                      arrivalDate={transfer.arrivalDate}
+                                      variant="labeled"
+                                      className="text-xs"
+                                    />
+                                  </>
+                                ) : null}
                                 {String(transfer.transferMemo || "").trim()
                                   ? ` · 메모: ${String(transfer.transferMemo || "")
                                       .replace(/\s+/g, " ")
@@ -6283,6 +6306,17 @@ export const PracticeFileTransferPage = ({
                                 파일 {transfer.fileCount}개
                                 {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
                                 {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                                {transfer.orderDate && transfer.arrivalDate ? (
+                                  <>
+                                    {" · "}
+                                    <PracticeWorkPeriodText
+                                      orderDate={transfer.orderDate}
+                                      arrivalDate={transfer.arrivalDate}
+                                      variant="labeled"
+                                      className="text-xs"
+                                    />
+                                  </>
+                                ) : null}
                               </p>
                             </div>
                             <TooltipProvider delayDuration={0}>
@@ -6533,6 +6567,9 @@ export const PracticeFileTransferPage = ({
             { label: "환자명", value: selectedTransferPatientName || "-" },
             { label: "주문일", value: selectedTransfer?.orderDate || "-" },
             { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
+            ...(selectedTransferWorkPeriodSummary
+              ? [selectedTransferWorkPeriodSummary]
+              : []),
             { label: "파일 수", value: `${selectedTransfer?.fileCount || 0}개` },
             {
               label: "결과파일",

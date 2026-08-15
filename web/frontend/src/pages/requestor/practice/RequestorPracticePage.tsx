@@ -47,6 +47,7 @@
 // - 2026-08-12: 수락 카드 — 별도 결과파일 드롭존 제거·카드 점선 외곽·작업완료 왼쪽 드롭 아이콘.
 // - 2026-08-13: 채팅 첨부 즉시 백그라운드 업로드 + 칩 프로그레스바.
 // - 2026-08-13: 채팅/의뢰 파일 다운로드 프로그레스바.
+// - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁(목록·상세).
 import {
   useCallback,
   useEffect,
@@ -105,6 +106,8 @@ import {
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
 import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
+import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
+import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
@@ -1175,6 +1178,15 @@ function RequestorPracticeReceivePage({
       .find(Boolean);
     return fromFiles || "";
   }, [selectedTransfer?.files, selectedTransfer?.rawTransferMemo]);
+
+  const selectedTransferWorkPeriodSummary = useMemo(
+    () =>
+      buildPracticeWorkPeriodSummaryItem(
+        selectedTransfer?.orderDate,
+        selectedTransfer?.arrivalDate,
+      ),
+    [selectedTransfer?.arrivalDate, selectedTransfer?.orderDate],
+  );
 
   const selectedTransferToothWorks = useMemo(
     () =>
@@ -2305,6 +2317,17 @@ function RequestorPracticeReceivePage({
                   {resultCount > 0 ? ` · 결과 ${resultCount}개` : ""}
                   {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
                   {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                  {transfer.orderDate && transfer.arrivalDate ? (
+                    <>
+                      {" · "}
+                      <PracticeWorkPeriodText
+                        orderDate={transfer.orderDate}
+                        arrivalDate={transfer.arrivalDate}
+                        variant="labeled"
+                        className="text-xs"
+                      />
+                    </>
+                  ) : null}
                   {toothWorksPreview
                     ? ` · 치아별 ${toothWorksPreview}`
                     : transfer.prosthesisTypes.length
@@ -2561,6 +2584,9 @@ function RequestorPracticeReceivePage({
           { label: "환자명", value: selectedTransferPatientName || "-" },
           { label: "주문일", value: selectedTransfer?.orderDate || "-" },
           { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
+          ...(selectedTransferWorkPeriodSummary
+            ? [selectedTransferWorkPeriodSummary]
+            : []),
           {
             label: "어벗디자인",
             value: `${Number(selectedTransfer?.production?.designFileCount || selectedTransfer?.production?.designFiles?.length || 0)}개`,

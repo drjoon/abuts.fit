@@ -10,6 +10,7 @@
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스를 버블에 전달.
 // - 2026-08-14: 기공소 기공수가 할증은 치과 채팅 헤더에 배치(자동매칭 포함).
 // - 2026-08-14: 수락 후 같은 자리(채팅 상단 바)에 작업취소 버튼.
+// - 2026-08-15: 요약 기공기간 — 5일 미만 빨간 표시·거부 가능 툴팁.
 import type { ReactNode, RefObject } from "react";
 import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,8 @@ import {
 export type PracticeTransferDialogSummaryItem = {
   label: string;
   value: string;
+  valueClassName?: string;
+  tooltip?: string;
 };
 
 export type PracticeTransferDialogFileItem = {
@@ -237,12 +240,39 @@ export function PracticeTransferDetailChatDialog({
           <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="rounded-lg border bg-muted/20 p-3 text-[15px] min-h-0 overflow-y-auto space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                {summaryItems.map((row, idx) => (
-                  <div key={`${row.label}:${idx}`}>
-                    <p className="text-muted-foreground">{row.label}</p>
-                    <p className="font-medium break-words">{row.value || "-"}</p>
-                  </div>
-                ))}
+                {summaryItems.map((row, idx) => {
+                  const valueNode = (
+                    <p
+                      className={
+                        row.valueClassName
+                          ? `font-medium break-words ${row.valueClassName}`
+                          : "font-medium break-words"
+                      }
+                    >
+                      {row.value || "-"}
+                    </p>
+                  );
+                  return (
+                    <div key={`${row.label}:${idx}`}>
+                      <p className="text-muted-foreground">{row.label}</p>
+                      {row.tooltip ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex cursor-help">{valueNode}</span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="top"
+                            className="max-w-xs text-left text-xs leading-relaxed"
+                          >
+                            {row.tooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        valueNode
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {hasToothWorks ? (

@@ -18,13 +18,17 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import { kstYmdDiffDays, toKstYmd, ymdToKstDate } from "@/shared/date/kst";
+import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+// - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
+// - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
 // - 2026-08-11: 캘린더 상단 안내문 제거 → 라벨 즉시툴팁.
 // - 2026-08-13: 라벨 오른쪽에 주문→도착 소요일 표시.
+// - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁.
 
 const addDaysToYmd = (ymd: string, days: number) => {
   const base = String(ymd || "").trim();
@@ -39,12 +43,6 @@ const formatArrivalLabel = (arrivalYmd: string) => {
   const arrival = ymdToKstDate(arrivalYmd);
   if (!arrival) return "도착일 선택";
   return `오늘 – ${format(arrival, "M월 d일", { locale: ko })}`;
-};
-
-const formatLeadDaysLabel = (days: number | null) => {
-  if (days == null || days < 0) return "";
-  if (days === 0) return "당일";
-  return `+${days}일`;
 };
 
 const pinRangeToToday = (
@@ -110,7 +108,7 @@ export function PracticeOrderArrivalDateRangeField({
   const appliedOrderYmd = String(orderDate || "").trim() || todayYmd;
   const leadFromYmd = open ? todayYmd : appliedOrderYmd;
   const leadToYmd = open ? draftArrivalYmd : appliedArrivalYmd;
-  const leadDaysLabel = formatLeadDaysLabel(kstYmdDiffDays(leadFromYmd, leadToYmd));
+  const leadDays = kstYmdDiffDays(leadFromYmd, leadToYmd);
 
   const handleApply = () => {
     if (!canApply || !todayYmd || !draftArrivalYmd) return;
@@ -155,8 +153,13 @@ export function PracticeOrderArrivalDateRangeField({
             </TooltipContent>
           </Tooltip>
         </div>
-        {leadDaysLabel ? (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{leadDaysLabel}</span>
+        {leadDays != null && leadDays >= 0 ? (
+          <PracticeWorkPeriodText
+            orderDate={leadFromYmd}
+            arrivalDate={leadToYmd}
+            variant="lead"
+            className="shrink-0 text-xs"
+          />
         ) : null}
       </div>
       <Popover open={open} onOpenChange={setOpen}>
