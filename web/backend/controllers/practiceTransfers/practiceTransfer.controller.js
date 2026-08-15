@@ -57,11 +57,13 @@ import {
 import ChatRoom from "../../models/chatRoom.model.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
+  assertOralScanFilesForCreate,
   canStartAbutmentProduction,
   ensureAbutmentRequestsOnAccept,
   hasCustomAbutmentToothWorks,
   isAbutmentDesignReady,
   normalizeResultFiles,
+  resolveOralScanFilesForAccept,
   tryStartAbutmentProduction,
 } from "../../services/practiceTransferProduction.service.js";
 import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutmentPresets.js";
@@ -83,6 +85,7 @@ import { resolvePracticeTransferManufacturerStage } from "../../utils/practiceTr
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
 // - 2026-08-15: practiceTransferManufacturerStage SSOT를 utils/practiceTransferStage로 분리.
 // - 2026-08-13: 어벗 치아에 임플란트·스캔바디 프리셋이 없으면 전송 거절.
 // - 2026-08-14: GET /my 목록 — countDocuments 제거·레거시 $or 축소·동료/견적 조회 캐시.
@@ -355,6 +358,23 @@ const toProductionApiFields = (production) => {
     relatedRequestIds: Array.isArray(p.relatedRequestIds)
       ? p.relatedRequestIds.map((id) => String(id))
       : [],
+  };
+};
+
+const toTransferFilesApiFields = (transferDoc) => {
+  const files = normalizeResultFiles(transferDoc?.files);
+  const transferMongoId = String(transferDoc?._id || "").trim();
+  return {
+    fileCount: files.length,
+    files: files.map((item, idx) => ({
+      id: `${transferMongoId}::${idx + 1}`,
+      patientName: String(item?.patientName || "").trim(),
+      tooth: String(item?.tooth || "").trim(),
+      originalName: String(item?.file?.originalName || "").trim(),
+      mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
+      size: Number(item?.file?.size || 0),
+      s3Key: String(item?.file?.s3Key || "").trim(),
+    })),
   };
 };
 
@@ -1812,6 +1832,23 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
+    try {
+      assertOralScanFilesForCreate({
+        matchingMode,
+        toothWorks: toothWorksRaw,
+        files,
+      });
+    } catch (scanErr) {
+      const status = Number(scanErr?.statusCode || 400);
+      return res.status(status >= 400 && status < 600 ? status : 400).json({
+        success: false,
+        message:
+          scanErr?.message ||
+          "자동매칭 커스텀어벗 의뢰는 구강스캔 파일이 필요합니다.",
+        reason: scanErr?.code || "oral_scan_required_for_auto_match",
+      });
+    }
+
     // 잔액 검사 후 생성. 크레딧은 생성 시 에스크로 보류(기공 적립은 작업완료).
     let autoMatchBudget = null;
     let autoMatchEligibleLabAnchorIds = undefined;
@@ -3113,6 +3150,30 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       });
     }
 
+    // 커스텀어벗: 구강스캔 확보(자동=치과만, 지정=기공소 body.files 허용)
+    try {
+      const resolvedScan = resolveOralScanFilesForAccept({
+        transferDoc: doc,
+        incomingFiles: req.body?.files,
+      });
+      if (resolvedScan.attachedByLab) {
+        doc.files = resolvedScan.files;
+        await PracticeTransfer.updateOne(
+          { _id: doc._id },
+          { $set: { files: resolvedScan.files } },
+        );
+      }
+    } catch (scanErr) {
+      const status = Number(scanErr?.statusCode || 409);
+      return res.status(status >= 400 && status < 600 ? status : 409).json({
+        success: false,
+        message:
+          String(scanErr?.message || "").trim() ||
+          "구강스캔 파일이 없어 의뢰를 수락할 수 없습니다.",
+        reason: scanErr?.code || "oral_scan_required",
+      });
+    }
+
     const isAuto = isAutoMatchMode(doc);
 
     if (isAuto) {
@@ -3157,6 +3218,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             billing: doc.billing || null,
             production: toProductionApiFields(doc.production),
             alreadyAccepted: true,
+            ...toTransferFilesApiFields(doc),
             ...toAutoMatchApiFields(doc, labAnchorId),
           },
         });
@@ -3341,6 +3403,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           production: toProductionApiFields(doc.production),
           unreadCount,
           abutmentRequestIds: abutmentEnsure.requestIds || [],
+          ...toTransferFilesApiFields(doc),
           ...toAutoMatchApiFields(doc, labAnchorId),
         },
       });
@@ -3491,6 +3554,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         production: toProductionApiFields(doc.production),
         abutmentRequestIds: abutmentEnsure.requestIds || [],
         unreadCount,
+        ...toTransferFilesApiFields(doc),
       },
     });
   } catch (error) {

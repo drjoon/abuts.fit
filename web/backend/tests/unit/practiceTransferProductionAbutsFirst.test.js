@@ -1,11 +1,16 @@
 // related files:
 // - web/backend/services/practiceTransferProduction.service.js
 import {
+  ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
+  ORAL_SCAN_REQUIRED_FROM_LAB,
+  ORAL_SCAN_REQUIRED_FROM_PRACTICE,
+  assertOralScanFilesForCreate,
   canStartAbutmentProduction,
   hasCustomAbutmentToothWorks,
   isAbutmentDesignReady,
   normalizeResultFiles,
   parseArrivalYmdFromMemo,
+  resolveOralScanFilesForAccept,
 } from "../../services/practiceTransferProduction.service.js";
 
 describe("practiceTransferProduction Abuts-first helpers", () => {
@@ -80,20 +85,118 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
     expect(
       canStartAbutmentProduction({
         production: {
-          designReadyAt: new Date(),
+          designReadyAt: null,
+          labDesignConfirmedAt: new Date(),
           skipDesignConfirm: true,
         },
       }),
     ).toBe(false);
   });
 
-  test("normalizeResultFiles drops incomplete rows", () => {
+  test("normalizeResultFiles keeps valid rows only", () => {
     expect(
       normalizeResultFiles([
-        { file: { originalName: "a.stl", s3Key: "k" } },
-        { file: { originalName: "b.stl" } },
-        null,
+        { file: { originalName: "a.stl", s3Key: "k1", size: 10 } },
+        { originalName: "b.ply", s3Key: "k2" },
+        { file: { originalName: "bad.stl" } },
       ]),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+  });
+});
+
+describe("oral scan requirement for CA accept/create", () => {
+  const caTooth = [{ customAbutment: true, toothNumber: "21" }];
+  const scanFile = {
+    file: { originalName: "scan.stl", s3Key: "scan-key", size: 100 },
+  };
+
+  test("assertOralScanFilesForCreate — auto CA requires files", () => {
+    expect(() =>
+      assertOralScanFilesForCreate({
+        matchingMode: "auto",
+        toothWorks: caTooth,
+        files: [],
+      }),
+    ).toThrow(ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE);
+
+    expect(() =>
+      assertOralScanFilesForCreate({
+        matchingMode: "auto",
+        toothWorks: caTooth,
+        files: [scanFile],
+      }),
+    ).not.toThrow();
+  });
+
+  test("assertOralScanFilesForCreate — direct CA may omit files", () => {
+    expect(() =>
+      assertOralScanFilesForCreate({
+        matchingMode: "direct",
+        toothWorks: caTooth,
+        files: [],
+      }),
+    ).not.toThrow();
+  });
+
+  test("assertOralScanFilesForCreate — auto without CA skips", () => {
+    expect(() =>
+      assertOralScanFilesForCreate({
+        matchingMode: "auto",
+        toothWorks: [{ customAbutment: false, toothNumber: "21" }],
+        files: [],
+      }),
+    ).not.toThrow();
+  });
+
+  test("resolveOralScanFilesForAccept — existing files win", () => {
+    const resolved = resolveOralScanFilesForAccept({
+      transferDoc: {
+        matchingMode: "direct",
+        toothWorks: caTooth,
+        files: [scanFile],
+      },
+      incomingFiles: [],
+    });
+    expect(resolved.attachedByLab).toBe(false);
+    expect(resolved.files).toHaveLength(1);
+  });
+
+  test("resolveOralScanFilesForAccept — auto without files rejects", () => {
+    expect(() =>
+      resolveOralScanFilesForAccept({
+        transferDoc: {
+          matchingMode: "auto",
+          toothWorks: caTooth,
+          files: [],
+        },
+        incomingFiles: [scanFile],
+      }),
+    ).toThrow(ORAL_SCAN_REQUIRED_FROM_PRACTICE);
+  });
+
+  test("resolveOralScanFilesForAccept — direct allows lab upload", () => {
+    const resolved = resolveOralScanFilesForAccept({
+      transferDoc: {
+        matchingMode: "direct",
+        toothWorks: caTooth,
+        files: [],
+      },
+      incomingFiles: [scanFile],
+    });
+    expect(resolved.attachedByLab).toBe(true);
+    expect(resolved.files[0].file.s3Key).toBe("scan-key");
+  });
+
+  test("resolveOralScanFilesForAccept — direct without upload rejects", () => {
+    expect(() =>
+      resolveOralScanFilesForAccept({
+        transferDoc: {
+          matchingMode: "direct",
+          toothWorks: caTooth,
+          files: [],
+        },
+        incomingFiles: [],
+      }),
+    ).toThrow(ORAL_SCAN_REQUIRED_FROM_LAB);
   });
 });

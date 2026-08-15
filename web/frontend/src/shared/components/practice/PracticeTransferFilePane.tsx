@@ -47,6 +47,8 @@ export type PracticeTransferFilePaneProps = {
   onClearAllFiles: () => void;
   listViewportClassName?: string;
   disabled?: boolean;
+  /** 드롭존 아래 안내(예: 자동매칭 구강스캔 필수) */
+  requirementNote?: string | null;
   /** 대기 중인 로컬 파일을 서버 임시저장으로 업로드 */
   syncUploadLabel?: string;
   syncUploadBusyLabel?: string;
@@ -91,6 +93,7 @@ export const PracticeTransferFilePane = ({
   onClearAllFiles,
   listViewportClassName = PRACTICE_FILE_LIST_VIEWPORT_CLASS,
   disabled = false,
+  requirementNote = null,
   syncUploadLabel = "업로드",
   syncUploadBusyLabel = "업로드 중...",
   syncUploadDisabled = false,
@@ -110,6 +113,12 @@ export const PracticeTransferFilePane = ({
         compact={hasFiles}
         label="클릭하거나 파일을 드래그해 추가"
       />
+
+      {requirementNote ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {requirementNote}
+        </p>
+      ) : null}
 
       {hasFiles ? (
         <>

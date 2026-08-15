@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-15: 지정 CA 미첨부 시 수락 전 구강스캔 업로드. 자동매칭은 치과 필수.
 // - 2026-08-14: 자동매칭 채팅 헤더에도 기공수가 할증(표시명 비공개·practiceAnchorId 내부 키).
 // - 2026-08-14: 자동매칭 수락·3시간 남은시간 뱃지 제거(도착일·소통 기한. 강제 클레임 만료 없음).
 // - 2026-08-14: 의뢰수락 busy — transfer-room 재연결을 await하지 않음(수락 API만 대기).
@@ -105,8 +106,14 @@ import {
   type PracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
-import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
+import { PRACTICE_ACCEPTED_HINT, filterPracticeTransferFiles } from "@/shared/practice/practiceTransferAccept";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
+import {
+  ORAL_SCAN_REQUIRED_FROM_LAB,
+  ORAL_SCAN_REQUIRED_FROM_PRACTICE,
+  canLabAttachOralScanOnAccept,
+  needsOralScanForAccept,
+} from "@/shared/practice/oralScanRequirement";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
@@ -471,6 +478,9 @@ function RequestorPracticeReceivePage({
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [rejectBusy, setRejectBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
+  const [pendingOralScanFiles, setPendingOralScanFiles] = useState<
+    Array<{ id: string; file: File }>
+  >([]);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
   const [designConfirmBusyId, setDesignConfirmBusyId] = useState<string>("");
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
@@ -1366,7 +1376,10 @@ function RequestorPracticeReceivePage({
   const ACTION_UI_MIN_MS = 1000;
 
   const markTransferAccepted = useCallback(
-    async (transfer: ReceivedPracticeTransfer) => {
+    async (
+      transfer: ReceivedPracticeTransfer,
+      options?: { oralScanFiles?: File[] },
+    ) => {
       if (!token) return false;
       const isOpenPool =
         transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
@@ -1377,12 +1390,79 @@ function RequestorPracticeReceivePage({
         return true;
       }
 
+      const needsScan = needsOralScanForAccept({
+        hasCustomAbutment: transferHasCustomAbutment(transfer),
+        fileCount: transfer.files?.length || transfer.fileCount || 0,
+      });
+      const oralScanFiles = Array.isArray(options?.oralScanFiles)
+        ? options.oralScanFiles
+        : [];
+
+      if (needsScan) {
+        if (!canLabAttachOralScanOnAccept(transfer.matchingMode)) {
+          toast({
+            title: "의뢰수락 실패",
+            description: ORAL_SCAN_REQUIRED_FROM_PRACTICE,
+            variant: "destructive",
+          });
+          return false;
+        }
+        if (oralScanFiles.length === 0) {
+          toast({
+            title: "의뢰수락 실패",
+            description: ORAL_SCAN_REQUIRED_FROM_LAB,
+            variant: "destructive",
+          });
+          return false;
+        }
+      }
+
       try {
+        let bodyFiles:
+          | Array<{
+              patientName: string;
+              tooth: string;
+              file: {
+                originalName: string;
+                mimetype: string;
+                size: number;
+                s3Key: string;
+              };
+            }>
+          | undefined;
+        if (needsScan && oralScanFiles.length > 0) {
+          const uploadedFiles: TempUploadedFile[] =
+            await uploadFilesWithToast(oralScanFiles);
+          bodyFiles = uploadedFiles
+            .map((f) => ({
+              patientName: "",
+              tooth: "",
+              file: {
+                originalName: String(f.originalName || "").trim(),
+                mimetype: String(
+                  f.mimetype || f.fileType || "application/octet-stream",
+                ).trim(),
+                size: Number(f.size || 0),
+                s3Key: String(f.key || "").trim(),
+              },
+            }))
+            .filter((row) => row.file.originalName && row.file.s3Key);
+          if (!bodyFiles.length) {
+            toast({
+              title: "의뢰수락 실패",
+              description: "구강스캔 파일 업로드에 실패했습니다.",
+              variant: "destructive",
+            });
+            return false;
+          }
+        }
+
         const [res] = await Promise.all([
           apiFetch<unknown>({
             path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-accepted`,
             method: "POST",
             token,
+            body: bodyFiles ? { files: bodyFiles } : undefined,
           }),
           new Promise<void>((resolve) => {
             window.setTimeout(resolve, ACTION_UI_MIN_MS);
@@ -1456,6 +1536,48 @@ function RequestorPracticeReceivePage({
               remainingMs: null,
             };
 
+        const responseFilesRaw = Array.isArray(data.files) ? data.files : null;
+        const responseFiles: ReceivedPracticeFile[] | undefined = responseFilesRaw
+          ? responseFilesRaw
+              .map((row, idx) => {
+                const item =
+                  row && typeof row === "object"
+                    ? (row as Record<string, unknown>)
+                    : {};
+                const fileObj =
+                  item.file && typeof item.file === "object"
+                    ? (item.file as Record<string, unknown>)
+                    : item;
+                const originalName = String(
+                  fileObj.originalName || item.originalName || "",
+                ).trim();
+                const s3Key = String(fileObj.s3Key || item.s3Key || "").trim();
+                if (!originalName || !s3Key) return null;
+                return {
+                  id: String(item.id || `${transfer.id}::scan::${idx + 1}`),
+                  patientName: String(item.patientName || "").trim(),
+                  tooth: String(item.tooth || "").trim(),
+                  originalName,
+                  mimetype: String(
+                    fileObj.mimetype || item.mimetype || "application/octet-stream",
+                  ).trim(),
+                  size: Number(fileObj.size || item.size || 0),
+                  s3Key,
+                } satisfies ReceivedPracticeFile;
+              })
+              .filter(Boolean) as ReceivedPracticeFile[]
+          : bodyFiles
+            ? bodyFiles.map((row, idx) => ({
+                id: `${transfer.id}::scan::${idx + 1}`,
+                patientName: "",
+                tooth: "",
+                originalName: row.file.originalName,
+                mimetype: row.file.mimetype,
+                size: row.file.size,
+                s3Key: row.file.s3Key,
+              }))
+            : undefined;
+
         const patch = {
           isRead: true,
           requestorReadAt: readAt,
@@ -1474,9 +1596,16 @@ function RequestorPracticeReceivePage({
           targetLabName: data.targetLabName
             ? String(data.targetLabName)
             : transfer.targetLabName,
+          ...(responseFiles
+            ? {
+                files: responseFiles,
+                fileCount: responseFiles.length,
+              }
+            : {}),
         };
 
         applyAcceptedLocalPatch(transfer, patch);
+        setPendingOralScanFiles([]);
 
         emitUnreadBadgeRefresh(unreadCount);
         toast({
@@ -1496,7 +1625,15 @@ function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, emitUnreadBadgeRefresh, loadFirstPage, toast, token],
+    [
+      ACTION_UI_MIN_MS,
+      applyAcceptedLocalPatch,
+      emitUnreadBadgeRefresh,
+      loadFirstPage,
+      toast,
+      token,
+      uploadFilesWithToast,
+    ],
   );
 
   const markTransferComplete = useCallback(
@@ -2101,7 +2238,9 @@ function RequestorPracticeReceivePage({
     if (!selectedTransfer || acceptBusy || releaseBusy || rejectBusy) return;
     setAcceptBusy(true);
     try {
-      const ok = await markTransferAccepted(selectedTransfer);
+      const ok = await markTransferAccepted(selectedTransfer, {
+        oralScanFiles: pendingOralScanFiles.map((row) => row.file),
+      });
       if (ok && dialogOpen) {
         const resolveSeq = ++chatRoomResolveSeqRef.current;
         setChatError("");
@@ -2114,6 +2253,7 @@ function RequestorPracticeReceivePage({
     acceptBusy,
     dialogOpen,
     markTransferAccepted,
+    pendingOralScanFiles,
     rejectBusy,
     releaseBusy,
     resolveTransferChatRoom,
@@ -2188,13 +2328,14 @@ function RequestorPracticeReceivePage({
       setSelectedTransfer(transfer);
       setDialogOpen(true);
       setChatError("");
+      setPendingOralScanFiles([]);
       chatUploads.clear();
       setActiveChatRoom(null);
       setChatMessages([]);
       void markTransferRead(transfer);
       await resolveTransferChatRoom(transfer, resolveSeq);
     },
-    [markTransferRead, resolveTransferChatRoom, setChatMessages, token],
+    [chatUploads, markTransferRead, resolveTransferChatRoom, setChatMessages, token],
   );
 
   const handleDownload = useCallback(
@@ -2787,6 +2928,7 @@ function RequestorPracticeReceivePage({
             setChatMessages([]);
             setChatDraft("");
             setChatReplyTo(null);
+            setPendingOralScanFiles([]);
             chatUploads.clear();
             setChatError("");
             resetDownloads();
@@ -2867,6 +3009,42 @@ function RequestorPracticeReceivePage({
             })),
           ] satisfies PracticeTransferDialogFileItem[]
         }
+        oralScanAttachMode={
+          selectedTransfer &&
+          needsOralScanForAccept({
+            hasCustomAbutment: transferHasCustomAbutment(selectedTransfer),
+            fileCount:
+              selectedTransfer.files?.length || selectedTransfer.fileCount || 0,
+          }) &&
+          !(
+            selectedTransfer.isAccepted ||
+            selectedTransfer.isDownloaded ||
+            selectedTransfer.requestorDownloadedAt
+          )
+            ? canLabAttachOralScanOnAccept(selectedTransfer.matchingMode)
+              ? "lab"
+              : "practice_required"
+            : null
+        }
+        pendingOralScanFiles={pendingOralScanFiles.map((row) => ({
+          id: row.id,
+          name: row.file.name,
+          size: row.file.size,
+        }))}
+        onPickOralScanFiles={(picked) => {
+          const next = filterPracticeTransferFiles(picked);
+          if (next.length === 0) return;
+          setPendingOralScanFiles((prev) => [
+            ...prev,
+            ...next.map((file) => ({
+              id: `${file.name}:${file.size}:${file.lastModified}:${Math.random().toString(36).slice(2, 8)}`,
+              file,
+            })),
+          ]);
+        }}
+        onRemoveOralScanFile={(id) => {
+          setPendingOralScanFiles((prev) => prev.filter((row) => row.id !== id));
+        }}
         resultFilesLabel="작업 결과 파일"
         resultFiles={
           (selectedTransfer?.resultFiles || []).map((file) => ({

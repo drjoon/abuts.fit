@@ -236,6 +236,9 @@ import {
 } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { kstYmdDiffDays } from "@/shared/date/kst";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
+import {
+  ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
+} from "@/shared/practice/oralScanRequirement";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import {
   Collapsible,
@@ -5026,9 +5029,12 @@ export const PracticeFileTransferPage = ({
     }
 
     if (missingRequiredFields.length > 0) {
+      const needsOralScan = missingRequiredFields.includes("구강스캔 파일");
       toast({
         title: "필수 입력 항목을 확인해주세요",
-        description: `미입력 항목: ${missingRequiredFields.join(", ")}`,
+        description: needsOralScan
+          ? ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE
+          : `미입력 항목: ${missingRequiredFields.join(", ")}`,
         variant: "destructive",
       });
       return;
@@ -5258,12 +5264,25 @@ export const PracticeFileTransferPage = ({
     if (missingAbutmentPresetTeeth.length > 0) {
       missing.push(`어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`);
     }
+    const hasCustomAbutment = normalizedToothWorks.some((row) =>
+      Boolean(row.customAbutment),
+    );
+    const attachmentCount = files.length + draftFiles.length;
+    if (
+      isAutoMatchLab(selectedLab) &&
+      hasCustomAbutment &&
+      attachmentCount === 0
+    ) {
+      missing.push("구강스캔 파일");
+    }
     return missing;
   }, [
-    selectedLab?._id,
+    selectedLab,
     normalizedPatientName,
-    normalizedToothWorks.length,
+    normalizedToothWorks,
     missingAbutmentPresetTeeth,
+    files.length,
+    draftFiles.length,
   ]);
 
   const hasRequiredSubmitFields = missingRequiredFields.length === 0;
@@ -5620,6 +5639,13 @@ export const PracticeFileTransferPage = ({
                   filePaneProps={{
                     acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-file-transfer-input",
+                    requirementNote:
+                      isAutoMatchLab(selectedLab) &&
+                      normalizedToothWorks.some((row) => row.customAbutment)
+                        ? "자동매칭 커스텀어벗은 구강스캔 첨부가 필수입니다. 지정 기공소로 보낼 때는 스캔을 기공소에서 올릴 수도 있습니다."
+                        : normalizedToothWorks.some((row) => row.customAbutment)
+                          ? "지정 기공소로 보낼 때 구강스캔이 없으면, 수락하는 기공소에서 업로드할 수 있습니다."
+                          : null,
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
                         file.kind === "local" ? files[file.localIndex] : null;
@@ -5894,13 +5920,17 @@ export const PracticeFileTransferPage = ({
                     </Button>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent side="top" align="end" className="max-w-xs text-xs leading-relaxed">
+                <TooltipContent
+                  side="top"
+                  align="end"
+                  className="max-w-xs border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-snug text-slate-900 shadow-lg"
+                >
                   {requestSubmitting ? (
                     <p>전송 중…</p>
                   ) : hasRequiredSubmitFields ? (
-                    <p>전송 가능</p>
+                    <p className="text-primary-strong">전송 가능</p>
                   ) : (
-                    <ul className="space-y-0.5">
+                    <ul className="space-y-1">
                       {(
                         [
                           { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
@@ -5918,11 +5948,24 @@ export const PracticeFileTransferPage = ({
                                 },
                               ]
                             : []),
+                          ...(isAutoMatchLab(selectedLab) &&
+                          normalizedToothWorks.some((row) => row.customAbutment)
+                            ? [
+                                {
+                                  key: "구강스캔 파일",
+                                  ok: files.length + draftFiles.length > 0,
+                                },
+                              ]
+                            : []),
                         ]
                       ).map((item) => (
                         <li
                           key={item.key}
-                          className={item.ok ? "text-primary-muted" : "text-accent-muted"}
+                          className={
+                            item.ok
+                              ? "text-primary-strong"
+                              : "font-semibold text-accent-strong"
+                          }
                         >
                           {item.key}
                           {item.ok ? " ✓" : " · 필요"}

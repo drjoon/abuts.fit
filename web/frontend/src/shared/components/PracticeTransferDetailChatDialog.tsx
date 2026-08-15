@@ -6,13 +6,14 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - 2026-08-15: 지정 기공소 CA — 치과 미첨부 시 수락 전 구강스캔 업로드. 자동매칭은 치과 필수.
 // - 2026-08-13: 기공소 상세 모달 — 수락 전에도 치과 채팅 내역 표시. 수락 CTA는 채팅 상단 바.
 // - 2026-08-13: 채팅 첨부 다운로드 프로그레스를 버블에 전달.
 // - 2026-08-14: 기공소 기공수가 할증은 치과 채팅 헤더에 배치(자동매칭 포함).
 // - 2026-08-14: 수락 후 같은 자리(채팅 상단 바)에 작업취소 버튼.
 // - 2026-08-15: 요약 작업기간 — 5일 미만 빨간 표시·툴팁. 수락 바 거부·짧은 작업기간.
 import type { ReactNode, RefObject } from "react";
-import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
+import { CircleHelp, Paperclip, Send, MessageSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -43,6 +44,11 @@ import {
   getPracticeWorkPeriodDays,
   isPracticeWorkPeriodShort,
 } from "@/shared/practice/practiceWorkPeriod";
+import { PracticeTransferFileDropTarget } from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import {
+  ORAL_SCAN_REQUIRED_FROM_LAB,
+  ORAL_SCAN_REQUIRED_FROM_PRACTICE,
+} from "@/shared/practice/oralScanRequirement";
 
 export type PracticeTransferDialogSummaryItem = {
   label: string;
@@ -75,6 +81,11 @@ type PracticeTransferDetailChatDialogProps = {
   labAnchorId?: string | null;
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
+  /** 수락 전 구강스캔 미첨부(CA). 지정=기공소 업로드, 자동=치과만 */
+  oralScanAttachMode?: "lab" | "practice_required" | null;
+  pendingOralScanFiles?: Array<{ id: string; name: string; size: number }>;
+  onPickOralScanFiles?: (files: File[]) => void;
+  onRemoveOralScanFile?: (id: string) => void;
   /** 기공소 작업완료 결과 파일 (있을 때만 표시) */
   resultFilesLabel?: string;
   resultFiles?: PracticeTransferDialogFileItem[];
@@ -162,6 +173,10 @@ export function PracticeTransferDetailChatDialog({
   labAnchorId = null,
   filesLabel,
   files,
+  oralScanAttachMode = null,
+  pendingOralScanFiles = [],
+  onPickOralScanFiles,
+  onRemoveOralScanFile,
   resultFilesLabel = "작업 결과 파일",
   resultFiles = [],
   productionConfirmBusy = false,
@@ -223,6 +238,10 @@ export function PracticeTransferDetailChatDialog({
   /** 수락 직후: 수락 버튼 자리에 작업취소 */
   const showReleaseBar =
     Boolean(onRelease) && accepted && !workCanceled && !workCompleted;
+  const needsLabOralScan =
+    oralScanAttachMode === "lab" && pendingOralScanFiles.length === 0;
+  const oralScanBlocksAccept =
+    oralScanAttachMode === "practice_required" || needsLabOralScan;
   const rawChatError = String(chatError || "").trim();
   const isPreAcceptChatHint =
     rawChatError === "의뢰수락 후 치과와 채팅할 수 있습니다." ||
@@ -244,6 +263,7 @@ export function PracticeTransferDetailChatDialog({
   const rejectButtonLabel = rejectBusy ? "거부 중..." : "거부";
   const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
   const showShortWorkPeriod = isPracticeWorkPeriodShort(workPeriodDays);
+  const acceptDisabled = acceptBusy || rejectBusy || oralScanBlocksAccept;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-[90rem] h-[86vh] p-0 overflow-hidden flex flex-col">
@@ -362,6 +382,44 @@ export function PracticeTransferDetailChatDialog({
                       );
                     })}
                   </div>
+                ) : oralScanAttachMode === "lab" ? (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      {ORAL_SCAN_REQUIRED_FROM_LAB}
+                    </p>
+                    <PracticeTransferFileDropTarget
+                      fileInputId="practice-transfer-accept-oral-scan-input"
+                      onFiles={(picked) => onPickOralScanFiles?.(picked)}
+                      compact={pendingOralScanFiles.length > 0}
+                      label="구강스캔 파일 추가"
+                    />
+                    {pendingOralScanFiles.length > 0 ? (
+                      <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+                        {pendingOralScanFiles.map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex items-center justify-between gap-2 rounded border px-2 py-1 text-sm"
+                          >
+                            <span className="min-w-0 truncate">
+                              {file.name} · {formatFileSize(file.size)}
+                            </span>
+                            <button
+                              type="button"
+                              className="shrink-0 text-muted-foreground hover:text-foreground"
+                              aria-label={`${file.name} 제거`}
+                              onClick={() => onRemoveOralScanFile?.(file.id)}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : oralScanAttachMode === "practice_required" ? (
+                  <p className="mt-2 text-sm text-destructive leading-relaxed">
+                    {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
+                  </p>
                 ) : (
                   <p className="font-medium">-</p>
                 )}
@@ -471,6 +529,16 @@ export function PracticeTransferDetailChatDialog({
                         </div>
                       </TooltipProvider>
                     ) : null}
+                    {needsLabOralScan ? (
+                      <p className="text-xs text-destructive leading-relaxed">
+                        왼쪽에서 구강스캔을 올린 뒤 수락할 수 있습니다.
+                      </p>
+                    ) : null}
+                    {oralScanAttachMode === "practice_required" ? (
+                      <p className="text-xs text-destructive leading-relaxed">
+                        {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
                     {showShortWorkPeriod ? (
@@ -498,7 +566,7 @@ export function PracticeTransferDetailChatDialog({
                       type="button"
                       size="sm"
                       onClick={() => void onAccept?.()}
-                      disabled={acceptBusy || rejectBusy}
+                      disabled={acceptDisabled}
                     >
                       {acceptButtonLabel}
                     </Button>
@@ -517,7 +585,7 @@ export function PracticeTransferDetailChatDialog({
                       type="button"
                       size="sm"
                       onClick={() => void onAccept?.()}
-                      disabled={acceptBusy}
+                      disabled={acceptBusy || oralScanBlocksAccept}
                     >
                       {reacceptButtonLabel}
                     </Button>

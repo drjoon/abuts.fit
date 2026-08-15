@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-15: 구강스캔 — 자동매칭은 치과 필수, 지정은 수락 기공소 업로드 허용.
 // - 2026-08-15: Abuts-first — 수락 시 스캔(files)로 Request 생성, 기일 기준 스케줄, 디자인 컨펌 후 생산.
 // - 2026-08-13: 치아별 abutmentProductMode(생산만/디자인+생산)를 어벗츠 의뢰 productMode로 전달.
 import { Types } from "mongoose";
@@ -65,6 +66,81 @@ const normalizeResultFiles = (raw) => {
     })
     .filter(Boolean);
 };
+
+/** 자동매칭 CA: 치과 전송 시 구강스캔 필수 */
+export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
+  "자동매칭으로 커스텀어벗을 보낼 때는 구강스캔 파일을 첨부해주세요.";
+
+/** 자동매칭 CA: 스캔 없이 수락 불가(치과 첨부만) */
+export const ORAL_SCAN_REQUIRED_FROM_PRACTICE =
+  "자동매칭 커스텀어벗 의뢰는 치과에서 구강스캔을 첨부해야 합니다.";
+
+/** 지정 기공소 CA: 치과 미첨부 시 수락 전 기공소 업로드 */
+export const ORAL_SCAN_REQUIRED_FROM_LAB =
+  "커스텀어벗 의뢰를 수락하려면 구강스캔 파일을 업로드해주세요.";
+
+const makeOralScanError = (message, code) => {
+  const err = new Error(message);
+  err.code = code;
+  err.statusCode = 409;
+  return err;
+};
+
+/**
+ * 커스텀어벗 수락 전 구강스캔 확보.
+ * - 이미 transfer.files 있으면 그대로
+ * - 자동매칭: 치과 첨부만 허용(기공소 body.files 무시·거절)
+ * - 지정: 기공소가 body.files로 첨부 가능 → attachedByLab
+ */
+export function resolveOralScanFilesForAccept({
+  transferDoc,
+  incomingFiles = null,
+} = {}) {
+  const existing = normalizeResultFiles(transferDoc?.files);
+  if (!hasCustomAbutmentToothWorks(transferDoc?.toothWorks)) {
+    return { files: existing, attachedByLab: false };
+  }
+  if (existing.length > 0) {
+    return { files: existing, attachedByLab: false };
+  }
+
+  const isAuto = String(transferDoc?.matchingMode || "").trim() === "auto";
+  const incoming = normalizeResultFiles(incomingFiles);
+
+  if (isAuto) {
+    throw makeOralScanError(
+      ORAL_SCAN_REQUIRED_FROM_PRACTICE,
+      "oral_scan_required_from_practice",
+    );
+  }
+
+  if (incoming.length === 0) {
+    throw makeOralScanError(
+      ORAL_SCAN_REQUIRED_FROM_LAB,
+      "oral_scan_required_from_lab",
+    );
+  }
+
+  return { files: incoming, attachedByLab: true };
+}
+
+/** 자동매칭 생성 시 CA면 구강스캔 필수 */
+export function assertOralScanFilesForCreate({
+  matchingMode,
+  toothWorks,
+  files,
+} = {}) {
+  if (String(matchingMode || "").trim() !== "auto") return;
+  if (!hasCustomAbutmentToothWorks(toothWorks)) return;
+  const list = normalizeResultFiles(files);
+  if (list.length > 0) return;
+  const err = makeOralScanError(
+    ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
+    "oral_scan_required_for_auto_match",
+  );
+  err.statusCode = 400;
+  throw err;
+}
 
 const parsePatientNameFromMemo = (memo) => {
   const raw = String(memo || "").trim();
@@ -223,7 +299,13 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 
   const scanFiles = normalizeResultFiles(transferDoc?.files);
   if (scanFiles.length === 0) {
-    throw new Error("구강스캔 파일이 없어 어벗츠 의뢰를 생성할 수 없습니다.");
+    const isAuto = String(transferDoc?.matchingMode || "").trim() === "auto";
+    throw makeOralScanError(
+      isAuto ? ORAL_SCAN_REQUIRED_FROM_PRACTICE : ORAL_SCAN_REQUIRED_FROM_LAB,
+      isAuto
+        ? "oral_scan_required_from_practice"
+        : "oral_scan_required_from_lab",
+    );
   }
 
   const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
