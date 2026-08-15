@@ -7,6 +7,7 @@
 // - 2026-08-15: 작업기간을 영업일(월~금) 기준으로 계산·표시.
 // - 2026-08-15: 작업=도착-2영업일·배송=2일. 라벨 작업+배송기간, 표기 3+2영업일.
 // - 2026-08-15: 카드/필드 라벨 주문-치과도착. lead 앞 + 제거.
+// - 2026-08-15: N+2영업일 의미 툴팁(N일=기공작업, 2일=배송) 상시 표시.
 
 import { kstYmdDiffBusinessDays } from "@/shared/date/kst";
 
@@ -17,6 +18,17 @@ export const PRACTICE_SHIPPING_BUSINESS_DAYS = 2;
 export const PRACTICE_WORK_PERIOD_MIN_DAYS = 5;
 
 export type PracticeWorkPeriodViewer = "practice" | "lab";
+
+/** N+2영업일: N일=기공작업시간, 2일=배송시간 */
+export function formatPracticeWorkPlusShipMeaningTooltip(
+  totalBusinessDays: number | null | undefined,
+): string {
+  const workDays = getPracticeWorkOnlyBusinessDays(totalBusinessDays);
+  if (workDays == null) {
+    return `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`;
+  }
+  return `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`;
+}
 
 /** 치과(발신): 짧은 기간이면 수락 기공소가 없을 수 있음 */
 export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE =
@@ -32,6 +44,18 @@ export function getPracticeWorkPeriodShortTooltip(
   return viewer === "lab"
     ? PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_LAB
     : PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE;
+}
+
+/** N+2 의미 + (짧은 기간이면) 경고 문구 */
+export function getPracticeWorkPeriodTooltip(
+  viewer: PracticeWorkPeriodViewer = "practice",
+  days?: number | null,
+): string {
+  const meaning = formatPracticeWorkPlusShipMeaningTooltip(days);
+  if (isPracticeWorkPeriodShort(days)) {
+    return `${meaning} ${getPracticeWorkPeriodShortTooltip(viewer)}`;
+  }
+  return meaning;
 }
 
 /** 주문일→치과도착일 영업일 합계(작업+배송). 같은 날=0. */
@@ -99,11 +123,7 @@ export function buildPracticeWorkPeriodSummaryItem(
   return {
     label: "작업+배송기간",
     value,
-    ...(short
-      ? {
-          valueClassName: "text-destructive",
-          tooltip: getPracticeWorkPeriodShortTooltip(viewer),
-        }
-      : {}),
+    tooltip: getPracticeWorkPeriodTooltip(viewer, days),
+    ...(short ? { valueClassName: "text-destructive" } : {}),
   };
 }

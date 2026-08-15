@@ -7,6 +7,7 @@
 // - 2026-08-15: 작업기간 영업일 표기(+N영업일 / N영업일).
 // - 2026-08-15: 작업+배송기간 표기(3+2영업일).
 // - 2026-08-15: 주문-치과도착 + 1+2영업일(카드/필드). lead 앞 + 제거.
+// - 2026-08-15: N+2영업일 의미 툴팁 상시(짧은 기간 경고 병기).
 
 import {
   Tooltip,
@@ -19,7 +20,7 @@ import {
   formatPracticeWorkPeriodDaysLabel,
   formatPracticeWorkPeriodLeadLabel,
   getPracticeWorkPeriodDays,
-  getPracticeWorkPeriodShortTooltip,
+  getPracticeWorkPeriodTooltip,
   isPracticeWorkPeriodShort,
   type PracticeWorkPeriodViewer,
 } from "@/shared/practice/practiceWorkPeriod";
@@ -72,15 +73,13 @@ export function PracticeWorkPeriodText({
     </span>
   );
 
-  if (!short) return text;
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex cursor-help">{text}</span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
-        {getPracticeWorkPeriodShortTooltip(viewer)}
+        {getPracticeWorkPeriodTooltip(viewer, days)}
       </TooltipContent>
     </Tooltip>
   );
