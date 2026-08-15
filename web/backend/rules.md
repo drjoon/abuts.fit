@@ -91,6 +91,7 @@
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
     - 단가: `creditSettings` 멤버십/일반 4값(생산만 15,000/20,000, 디자인+생산 25,000/40,000). 치과 멤버십만 membership. `designFee`는 디자인+생산 − 생산만과 동기화(멤버십 기본 10,000, **1어벗당**). 배송비 별도·박스당 과금. 치과 멤버십 `practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감, `PRACTICE_MEMBERSHIP_SPEND`). 해지 시 다음 결제일까지 유지, 그 다음 결제는 없음(`practiceMembershipCancelAtPeriodEnd`). 결제일 워커가 실차감·부족 시 OFF. 기공소 자동 매칭 **월 참여 수수료 0원**(성공 `%`만). 루트 `rules.md` §2.3 매칭·멤버십 과금 SSOT.
+    - 특별 공급가: `creditSettings.specialRequestorPrices[]` — 의뢰자별 CNC/환봉 × 생산만·디자인+생산. `amount`=`productionPrice`(레거시). 지정 시 멤버십/일반·가입할인보다 우선.
     - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic·작업X 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
       - `price.amount` = `(생산단가 + designFee) × qty`

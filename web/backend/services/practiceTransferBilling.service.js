@@ -52,7 +52,10 @@ import {
   resolveLabPracticeFeeMultiplierAsOf,
   splitPracticeTransferSettlement,
 } from "../utils/labFeeSchedule.js";
-import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+import {
+  applySpecialRequestorPricesToCreditSettings,
+  loadCreditSettingsDefaults,
+} from "../utils/creditSettingsDefaults.js";
 import { normalizeAbutsAbutmentCreditPrices } from "../utils/abutsAbutmentService.js";
 import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
@@ -94,22 +97,27 @@ async function loadCachedDevopsPayoutRates() {
   });
 }
 
-async function loadCachedAbutmentCreditPrices() {
-  const cacheKey = "practice-transfer:abutment-prices";
+async function loadCachedAbutmentCreditPrices(practiceAnchorId = null) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  const cacheKey = practiceId
+    ? `practice-transfer:abutment-prices:${practiceId}`
+    : "practice-transfer:abutment-prices";
   const cached = getRequestPerfCacheValue(cacheKey);
   if (cached) return cached;
   return withRequestPerfInFlight(cacheKey, async () => {
-    const prices = await loadAbutmentCreditPrices();
+    const prices = await loadAbutmentCreditPrices(practiceId || null);
     setRequestPerfCacheValue(cacheKey, prices, QUOTE_LOOKUP_CACHE_TTL_MS);
     return prices;
   });
 }
 
-async function loadAbutmentCreditPrices() {
+async function loadAbutmentCreditPrices(practiceAnchorId = null) {
   try {
-    return normalizeAbutsAbutmentCreditPrices(
-      await loadCreditSettingsDefaults(),
-    );
+    const settings = await loadCreditSettingsDefaults();
+    const withSpecial = practiceAnchorId
+      ? applySpecialRequestorPricesToCreditSettings(settings, practiceAnchorId)
+      : settings;
+    return normalizeAbutsAbutmentCreditPrices(withSpecial);
   } catch {
     return normalizeAbutsAbutmentCreditPrices();
   }
@@ -395,7 +403,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
         .select({ "practiceTransferSettings.implantFavorites": 1 })
         .lean(),
       resolvePracticeAbutmentPricingTier(practiceId),
-      loadCachedAbutmentCreditPrices(),
+      loadCachedAbutmentCreditPrices(practiceId),
     ]);
   const budget = normalizeAutoMatchBudget(autoMatchBudget, catalog);
   if (lab) labFeeSchedule = lab.labFeeSchedule || null;
@@ -510,7 +518,7 @@ export async function commitPracticeTransferBilling({
       .session(outerSession || null)
       .lean(),
     resolvePracticeAbutmentPricingTier(practiceAnchorId, outerSession),
-    loadCachedAbutmentCreditPrices(),
+    loadCachedAbutmentCreditPrices(practiceAnchorId),
     findLabPracticeRelationship({
       labAnchorId,
       practiceAnchorId,
@@ -1141,7 +1149,7 @@ async function computeAcceptedPracticeTransferFees({
         .session(session || null)
         .lean(),
       resolvePracticeAbutmentPricingTier(practiceAnchorId, session),
-      loadCachedAbutmentCreditPrices(),
+      loadCachedAbutmentCreditPrices(practiceAnchorId),
       findLabPracticeRelationship({ labAnchorId, practiceAnchorId }),
       BusinessAnchor.findOne({ businessType: "devops" })
         .select({ payoutRates: 1 })
@@ -2038,7 +2046,7 @@ export async function buildPracticeTransferQuote({
             .lean()
         : Promise.resolve(null),
       resolvePracticeAbutmentPricingTier(practiceAnchorId),
-      loadCachedAbutmentCreditPrices(),
+      loadCachedAbutmentCreditPrices(practiceAnchorId),
       needPartner
         ? findLabPracticeRelationship({ labAnchorId, practiceAnchorId })
         : Promise.resolve(null),
@@ -2247,7 +2255,7 @@ export async function buildFeeQuotesForTransferDocs({
 
   const labIdList = [...labIds];
   const practiceIdList = [...practiceIds];
-  const [payoutRates, abutmentPrices, labs, practices, partners] =
+  const [payoutRates, abutmentPricesBase, labs, practices, partners, creditSettings] =
     await Promise.all([
       loadCachedDevopsPayoutRates(),
       loadCachedAbutmentCreditPrices(),
@@ -2275,7 +2283,19 @@ export async function buildFeeQuotesForTransferDocs({
             .select({ labAnchorId: 1, practiceAnchorId: 1, status: 1 })
             .lean()
         : Promise.resolve([]),
+      loadCreditSettingsDefaults(),
     ]);
+
+  const abutmentPricesForPractice = (practiceId) =>
+    normalizeAbutsAbutmentCreditPrices(
+      applySpecialRequestorPricesToCreditSettings(
+        {
+          ...creditSettings,
+          ...abutmentPricesBase,
+        },
+        practiceId,
+      ),
+    );
 
   const scheduleByLab = new Map(
     labs.map((lab) => [String(lab._id), lab.labFeeSchedule || null]),
@@ -2352,6 +2372,7 @@ export async function buildFeeQuotesForTransferDocs({
       noLab && storedBudget
         ? buildScheduleFromAutoMatchBudget(storedBudget, "max")
         : null;
+    const abutmentPrices = abutmentPricesForPractice(practiceId);
     const remakeFees = computePracticeTransferRetailFees({
       toothWorks,
       implantFavorites,

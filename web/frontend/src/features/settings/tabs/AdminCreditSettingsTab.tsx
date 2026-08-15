@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-15: 특별 공급가 치과카드 4항목을 4열 1행 배치.
+// - 2026-08-15: 특별 공급가 CNC/환봉 × 생산만·디자인+생산 입력. 배송 500원·그 외 1000원 step.
+// - 2026-08-15: 섹션명 커스텀어벗, 환영 무료 크레딧 입력 1/2열.
 // - 2026-08-15: 환영 무료 크레딧을 단일 금액(defaultRequestFreeCredit)으로 정리. 배송 분리 설정 UI 제거.
 // - 2026-08-14: 5섹션(환영 무료 크레딧·어벗·어벗 추가 요청·멤버십·배송·특별 공급가). 의뢰·배송→어벗.
 // - 2026-08-14: 의뢰·배송에 CNC/환봉 라벨 분리, 환봉방식 커스텀어벗 요청 목록 포함.
@@ -101,6 +104,10 @@ interface CreditSettings {
 type SpecialRequestorPrice = {
   requestorAnchorId: string;
   amount: number;
+  productionPrice: number;
+  designAndProductionPrice: number;
+  roundBarProductionPrice: number;
+  roundBarDesignAndProductionPrice: number;
 };
 
 type RequestorItem = {
@@ -126,6 +133,52 @@ type CreditPriceRequestorsApiResponse = {
 };
 
 const AUTO_SAVE_DELAY_MS = 700;
+const AMOUNT_STEP = 1000;
+const SHIPPING_AMOUNT_STEP = 500;
+
+function normalizeSpecialRequestorPrice(
+  item: Partial<SpecialRequestorPrice> & { amount?: number },
+  fallback: CreditSettings,
+): SpecialRequestorPrice {
+  const productionPrice = Math.max(
+    0,
+    Number(item.productionPrice ?? item.amount) || 0,
+  );
+  const legacyDesignFee = Math.max(
+    0,
+    Number(fallback.designFee) ||
+      fallback.membershipDesignAndProductionPrice -
+        fallback.membershipProductionPrice,
+  );
+  const hasExplicitDesign = item.designAndProductionPrice != null;
+  return {
+    requestorAnchorId: String(item.requestorAnchorId || ""),
+    amount: productionPrice,
+    productionPrice,
+    designAndProductionPrice: Math.max(
+      0,
+      Number(
+        hasExplicitDesign
+          ? item.designAndProductionPrice
+          : productionPrice + legacyDesignFee,
+      ) || 0,
+    ),
+    roundBarProductionPrice: Math.max(
+      0,
+      Number(
+        item.roundBarProductionPrice ??
+          fallback.membershipRoundBarProductionPrice,
+      ) || 0,
+    ),
+    roundBarDesignAndProductionPrice: Math.max(
+      0,
+      Number(
+        item.roundBarDesignAndProductionPrice ??
+          fallback.membershipRoundBarDesignAndProductionPrice,
+      ) || 0,
+    ),
+  };
+}
 
 function normalizeCreditSettings(
   raw: Partial<CreditSettings> | typeof CREDIT_SETTINGS_DEFAULTS,
@@ -135,14 +188,9 @@ function normalizeCreditSettings(
     ...fallback,
     ...raw,
   });
-  return {
+  const withPrices: CreditSettings = {
     minCreditForRequest: abutmentPrices.membershipProductionPrice,
-    specialRequestorPrices: Array.isArray(raw.specialRequestorPrices)
-      ? raw.specialRequestorPrices.map((item) => ({
-          requestorAnchorId: String(item.requestorAnchorId || ""),
-          amount: Math.max(0, Number(item.amount) || 0),
-        }))
-      : fallback.specialRequestorPrices,
+    specialRequestorPrices: [],
     shippingFee: Number(raw.shippingFee ?? fallback.shippingFee),
     expressFee: Number(raw.expressFee ?? fallback.expressFee),
     designFee: Math.max(
@@ -197,6 +245,12 @@ function normalizeCreditSettings(
       ) || 0,
     ),
   };
+  withPrices.specialRequestorPrices = Array.isArray(raw.specialRequestorPrices)
+    ? raw.specialRequestorPrices
+        .map((item) => normalizeSpecialRequestorPrice(item, withPrices))
+        .filter((item) => item.requestorAnchorId)
+    : fallback.specialRequestorPrices;
+  return withPrices;
 }
 
 function FieldHelp({ text }: { text: string }) {
@@ -226,6 +280,7 @@ function AmountField({
   disabled,
   help,
   icon: Icon,
+  step = AMOUNT_STEP,
 }: {
   id: string;
   label: string;
@@ -234,6 +289,7 @@ function AmountField({
   disabled?: boolean;
   help?: string;
   icon?: typeof Gift;
+  step?: number;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
@@ -257,6 +313,7 @@ function AmountField({
           id={id}
           type="number"
           min="0"
+          step={step}
           className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
           value={value}
           onChange={(e) => onChange(Math.max(0, Number(e.target.value)))}
@@ -281,6 +338,7 @@ function DualTierAmountField({
   disabled,
   help,
   icon: Icon,
+  step = AMOUNT_STEP,
 }: {
   label: string;
   membershipId: string;
@@ -292,6 +350,7 @@ function DualTierAmountField({
   disabled?: boolean;
   help?: string;
   icon?: typeof Gift;
+  step?: number;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
@@ -321,6 +380,7 @@ function DualTierAmountField({
               id={membershipId}
               type="number"
               min="0"
+              step={step}
               className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
               value={membershipValue}
               onChange={(e) =>
@@ -345,6 +405,7 @@ function DualTierAmountField({
               id={regularId}
               type="number"
               min="0"
+              step={step}
               className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
               value={regularValue}
               onChange={(e) =>
@@ -357,6 +418,50 @@ function DualTierAmountField({
             </span>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function CompactAmountInput({
+  id,
+  label,
+  value,
+  onChange,
+  disabled,
+  step = AMOUNT_STEP,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (next: number) => void;
+  disabled?: boolean;
+  step?: number;
+}) {
+  return (
+    <div>
+      <Label
+        htmlFor={id}
+        className="mb-1.5 block text-[11px] font-medium text-slate-500"
+      >
+        {label}
+      </Label>
+      <div className="relative">
+        <Input
+          id={id}
+          type="number"
+          min="0"
+          step={step}
+          className="h-10 rounded-xl border-slate-200 bg-slate-50/60 pr-9 text-right font-semibold tabular-nums"
+          value={value}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange(Math.max(0, Number(event.target.value)))
+          }
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">
+          원
+        </span>
       </div>
     </div>
   );
@@ -463,6 +568,28 @@ export const AdminCreditSettingsTab = () => {
     return [item.name, kindLabel, bn ? `(${bn})` : ""].filter(Boolean).join(" ");
   };
 
+  const updateSpecialPrice = (
+    requestorAnchorId: string,
+    patch: Partial<SpecialRequestorPrice>,
+  ) => {
+    setSettings({
+      ...settings,
+      specialRequestorPrices: settings.specialRequestorPrices.map((price) => {
+        if (price.requestorAnchorId !== requestorAnchorId) return price;
+        const next = { ...price, ...patch };
+        if (patch.productionPrice != null || patch.amount != null) {
+          const productionPrice = Math.max(
+            0,
+            Number(patch.productionPrice ?? patch.amount) || 0,
+          );
+          next.productionPrice = productionPrice;
+          next.amount = productionPrice;
+        }
+        return next;
+      }),
+    });
+  };
+
   const addSpecialRequestor = (requestor: RequestorItem) => {
     if (
       settings.specialRequestorPrices.some(
@@ -478,6 +605,11 @@ export const AdminCreditSettingsTab = () => {
         {
           requestorAnchorId: requestor.id,
           amount: settings.membershipProductionPrice,
+          productionPrice: settings.membershipProductionPrice,
+          designAndProductionPrice: settings.membershipDesignAndProductionPrice,
+          roundBarProductionPrice: settings.membershipRoundBarProductionPrice,
+          roundBarDesignAndProductionPrice:
+            settings.membershipRoundBarDesignAndProductionPrice,
         },
       ],
     });
@@ -600,21 +732,23 @@ export const AdminCreditSettingsTab = () => {
               title="환영 무료 크레딧"
               description="기공소(의뢰 수신자) 신규 가입 시 무료크레딧으로 1회 지급합니다. 치과에는 지급하지 않습니다."
             />
-            <AmountField
-              id="defaultRequestFreeCredit"
-              label="무료 크레딧"
-              icon={Gift}
-              value={settings.defaultRequestFreeCredit}
-              onChange={(next) =>
-                setSettings({
-                  ...settings,
-                  defaultRequestFreeCredit: next,
-                  defaultShippingFreeCredit: 0,
-                })
-              }
-              disabled={loading}
-              help="가입 시 무료크레딧 잔액으로 1회 충전됩니다. 기공의뢰·어벗 생산·배송 등에 사용됩니다."
-            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <AmountField
+                id="defaultRequestFreeCredit"
+                label="무료 크레딧"
+                icon={Gift}
+                value={settings.defaultRequestFreeCredit}
+                onChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    defaultRequestFreeCredit: next,
+                    defaultShippingFreeCredit: 0,
+                  })
+                }
+                disabled={loading}
+                help="가입 시 무료크레딧 잔액으로 1회 충전됩니다. 기공의뢰·어벗 생산·배송 등에 사용됩니다."
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -622,8 +756,8 @@ export const AdminCreditSettingsTab = () => {
           <CardContent className="space-y-5 p-5 sm:p-6">
             <SectionHeader
               icon={Package}
-              title="어벗"
-              description="기본 요금입니다. 특별 공급가가 없으면 이 금액이 적용됩니다."
+              title="커스텀어벗"
+              description="특별 공급가가 없으면 이 금액이 적용됩니다."
             />
 
             <div className="space-y-3">
@@ -771,6 +905,7 @@ export const AdminCreditSettingsTab = () => {
                 }
                 disabled={loading}
                 help="박스단위 별도"
+                step={SHIPPING_AMOUNT_STEP}
               />
               <AmountField
                 id="expressFee"
@@ -782,6 +917,7 @@ export const AdminCreditSettingsTab = () => {
                 }
                 disabled={loading}
                 help={expressHelp}
+                step={SHIPPING_AMOUNT_STEP}
               />
             </div>
           </CardContent>
@@ -792,7 +928,7 @@ export const AdminCreditSettingsTab = () => {
             <SectionHeader
               icon={Search}
               title="특별 공급가"
-              description="의뢰자를 검색해 추가한 뒤 커스텀어벗 가격을 입력하세요."
+              description="의뢰자를 검색해 추가한 뒤 CNC어벗·환봉어벗 가격을 입력하세요."
               trailing={
                 <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
                   {settings.specialRequestorPrices.length}곳
@@ -824,83 +960,94 @@ export const AdminCreditSettingsTab = () => {
                     return (
                       <div
                         key={item.requestorAnchorId}
-                        className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm"
+                        className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm"
                       >
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold text-slate-900">
-                            {requestor?.name || "삭제된 의뢰자"}
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold text-slate-900">
+                              {requestor?.name || "삭제된 의뢰자"}
+                            </div>
+                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {[
+                                kindLabel,
+                                requestor?.representativeName
+                                  ? `대표 ${requestor.representativeName}`
+                                  : "",
+                                requestor?.businessNumber || "",
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "—"}
+                            </div>
                           </div>
-                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {[
-                              kindLabel,
-                              requestor?.representativeName
-                                ? `대표 ${requestor.representativeName}`
-                                : "",
-                              requestor?.businessNumber || "",
-                            ]
-                              .filter(Boolean)
-                              .join(" · ") || "—"}
-                          </div>
-                        </div>
-                        <div className="w-36">
-                          <Label
-                            htmlFor={`special-price-${item.requestorAnchorId}`}
-                            className="sr-only"
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            disabled={loading}
+                            aria-label={`${requestor?.name || "의뢰자"} 특별 공급가 삭제`}
+                            onClick={() =>
+                              setSettings({
+                                ...settings,
+                                specialRequestorPrices:
+                                  settings.specialRequestorPrices.filter(
+                                    (price) =>
+                                      price.requestorAnchorId !==
+                                      item.requestorAnchorId,
+                                  ),
+                              })
+                            }
                           >
-                            커스텀어벗 가격
-                          </Label>
-                          <div className="relative">
-                            <Input
-                              id={`special-price-${item.requestorAnchorId}`}
-                              type="number"
-                              min="0"
-                              className="h-10 rounded-xl border-slate-200 bg-slate-50/60 pr-9 text-right font-semibold tabular-nums"
-                              value={item.amount}
-                              disabled={loading}
-                              onChange={(event) => {
-                                const amount = Math.max(
-                                  0,
-                                  Number(event.target.value),
-                                );
-                                setSettings({
-                                  ...settings,
-                                  specialRequestorPrices:
-                                    settings.specialRequestorPrices.map(
-                                      (price) =>
-                                        price.requestorAnchorId ===
-                                        item.requestorAnchorId
-                                          ? { ...price, amount }
-                                          : price,
-                                    ),
-                                });
-                              }}
-                            />
-                            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">
-                              원
-                            </span>
-                          </div>
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                          disabled={loading}
-                          aria-label={`${requestor?.name || "의뢰자"} 특별 공급가 삭제`}
-                          onClick={() =>
-                            setSettings({
-                              ...settings,
-                              specialRequestorPrices:
-                                settings.specialRequestorPrices.filter(
-                                  (price) =>
-                                    price.requestorAnchorId !==
-                                    item.requestorAnchorId,
-                                ),
-                            })
-                          }
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+
+                        <div className="grid grid-cols-4 gap-2">
+                          <CompactAmountInput
+                            id={`special-cnc-production-${item.requestorAnchorId}`}
+                            label="CNC 생산만"
+                            value={item.productionPrice}
+                            disabled={loading}
+                            onChange={(productionPrice) =>
+                              updateSpecialPrice(item.requestorAnchorId, {
+                                productionPrice,
+                              })
+                            }
+                          />
+                          <CompactAmountInput
+                            id={`special-cnc-design-${item.requestorAnchorId}`}
+                            label="CNC 디자인+생산"
+                            value={item.designAndProductionPrice}
+                            disabled={loading}
+                            onChange={(designAndProductionPrice) =>
+                              updateSpecialPrice(item.requestorAnchorId, {
+                                designAndProductionPrice,
+                              })
+                            }
+                          />
+                          <CompactAmountInput
+                            id={`special-round-production-${item.requestorAnchorId}`}
+                            label="환봉 생산만"
+                            value={item.roundBarProductionPrice}
+                            disabled={loading}
+                            onChange={(roundBarProductionPrice) =>
+                              updateSpecialPrice(item.requestorAnchorId, {
+                                roundBarProductionPrice,
+                              })
+                            }
+                          />
+                          <CompactAmountInput
+                            id={`special-round-design-${item.requestorAnchorId}`}
+                            label="환봉 디자인+생산"
+                            value={item.roundBarDesignAndProductionPrice}
+                            disabled={loading}
+                            onChange={(roundBarDesignAndProductionPrice) =>
+                              updateSpecialPrice(item.requestorAnchorId, {
+                                roundBarDesignAndProductionPrice,
+                              })
+                            }
+                          />
+                        </div>
                       </div>
                     );
                   })

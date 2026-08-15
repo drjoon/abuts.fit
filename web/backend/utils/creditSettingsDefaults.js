@@ -4,6 +4,9 @@
 // - web/backend/server.js
 // - web/backend/utils/abutsAbutmentService.js
 // - web/backend/controllers/admin/admin.settings.controller.js
+// - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
+// change-log:
+// - 2026-08-15: 특별 공급가 CNC/환봉 × 생산만·디자인+생산 정규화. 의뢰자 로드 시 단가 오버라이드.
 import { Types } from "mongoose";
 import SystemSettings from "../models/systemSettings.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -57,20 +60,134 @@ const SCHEMA_DEFAULTS = (() => {
   };
 })();
 
+export function normalizeSpecialRequestorPrice(item = {}, fallback = {}) {
+  const requestorAnchorId = String(item?.requestorAnchorId || "").trim();
+  const productionPrice = Math.max(
+    0,
+    Number(item?.productionPrice ?? item?.amount) || 0,
+  );
+  const legacyDesignFee = Math.max(
+    0,
+    Number(fallback.designFee) ||
+      (Number(fallback.membershipDesignAndProductionPrice) || 0) -
+        (Number(fallback.membershipProductionPrice) || 0),
+  );
+  const hasExplicitDesign = item?.designAndProductionPrice != null;
+  const designAndProductionPrice = Math.max(
+    0,
+    Number(
+      hasExplicitDesign
+        ? item.designAndProductionPrice
+        : productionPrice + legacyDesignFee,
+    ) || 0,
+  );
+  const hasExplicitRoundProduction = item?.roundBarProductionPrice != null;
+  const hasExplicitRoundDesign =
+    item?.roundBarDesignAndProductionPrice != null;
+  const roundBarProductionPrice = Math.max(
+    0,
+    Number(
+      hasExplicitRoundProduction
+        ? item.roundBarProductionPrice
+        : (fallback.membershipRoundBarProductionPrice ?? 0),
+    ) || 0,
+  );
+  const roundBarDesignAndProductionPrice = Math.max(
+    0,
+    Number(
+      hasExplicitRoundDesign
+        ? item.roundBarDesignAndProductionPrice
+        : (fallback.membershipRoundBarDesignAndProductionPrice ?? 0),
+    ) || 0,
+  );
+  return {
+    requestorAnchorId,
+    amount: productionPrice,
+    productionPrice,
+    designAndProductionPrice,
+    roundBarProductionPrice,
+    roundBarDesignAndProductionPrice,
+  };
+}
+
+export function findSpecialRequestorPrice(creditSettings, requestorOrgId) {
+  const id = String(requestorOrgId || "").trim();
+  if (!id) return null;
+  const list = Array.isArray(creditSettings?.specialRequestorPrices)
+    ? creditSettings.specialRequestorPrices
+    : [];
+  return (
+    list.find((item) => String(item?.requestorAnchorId || "") === id) || null
+  );
+}
+
+/** 특별 공급가가 있으면 CNC/환봉 단가를 멤버십·일반 모두 동일 금액으로 덮어쓴다. */
+export function applySpecialRequestorPricesToCreditSettings(
+  creditSettings,
+  requestorOrgId,
+) {
+  const special = findSpecialRequestorPrice(creditSettings, requestorOrgId);
+  if (!special) return creditSettings;
+  const productionPrice = Math.max(0, Number(special.productionPrice) || 0);
+  const designAndProductionPrice = Math.max(
+    0,
+    Number(special.designAndProductionPrice) || 0,
+  );
+  const roundBarProductionPrice = Math.max(
+    0,
+    Number(special.roundBarProductionPrice) || 0,
+  );
+  const roundBarDesignAndProductionPrice = Math.max(
+    0,
+    Number(special.roundBarDesignAndProductionPrice) || 0,
+  );
+  return {
+    ...creditSettings,
+    minCreditForRequest: productionPrice,
+    designFee: Math.max(0, designAndProductionPrice - productionPrice),
+    membershipProductionPrice: productionPrice,
+    regularProductionPrice: productionPrice,
+    membershipDesignAndProductionPrice: designAndProductionPrice,
+    regularDesignAndProductionPrice: designAndProductionPrice,
+    membershipRoundBarProductionPrice: roundBarProductionPrice,
+    regularRoundBarProductionPrice: roundBarProductionPrice,
+    membershipRoundBarDesignAndProductionPrice:
+      roundBarDesignAndProductionPrice,
+    regularRoundBarDesignAndProductionPrice:
+      roundBarDesignAndProductionPrice,
+  };
+}
+
 export function normalizeLoadedCreditSettings(creditSettings = {}) {
   const abutmentPrices = normalizeAbutsAbutmentCreditPrices({
     ...SCHEMA_DEFAULTS,
     ...creditSettings,
   });
   const membership = pickAbutsAbutmentCreditPrices(abutmentPrices, "membership");
+  const withRoundBar = {
+    ...abutmentPrices,
+    membershipRoundBarProductionPrice: Number(
+      creditSettings.membershipRoundBarProductionPrice ??
+        SCHEMA_DEFAULTS.membershipRoundBarProductionPrice,
+    ),
+    regularRoundBarProductionPrice: Number(
+      creditSettings.regularRoundBarProductionPrice ??
+        SCHEMA_DEFAULTS.regularRoundBarProductionPrice,
+    ),
+    membershipRoundBarDesignAndProductionPrice: Number(
+      creditSettings.membershipRoundBarDesignAndProductionPrice ??
+        SCHEMA_DEFAULTS.membershipRoundBarDesignAndProductionPrice,
+    ),
+    regularRoundBarDesignAndProductionPrice: Number(
+      creditSettings.regularRoundBarDesignAndProductionPrice ??
+        SCHEMA_DEFAULTS.regularRoundBarDesignAndProductionPrice,
+    ),
+  };
   return {
     minCreditForRequest: membership.productionPrice,
     specialRequestorPrices: Array.isArray(creditSettings.specialRequestorPrices)
       ? creditSettings.specialRequestorPrices
-          .map((item) => ({
-            requestorAnchorId: String(item?.requestorAnchorId || "").trim(),
-            amount: Math.max(0, Number(item?.amount) || 0),
-          }))
+          .map((item) => normalizeSpecialRequestorPrice(item, withRoundBar))
           .filter((item) => item.requestorAnchorId)
       : [],
     shippingFee: Number(creditSettings.shippingFee ?? SCHEMA_DEFAULTS.shippingFee),
@@ -91,23 +208,7 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     ),
     // 환영 배송 분리 지급 폐기. 로드 시에도 0으로 정규화.
     defaultShippingFreeCredit: 0,
-    ...abutmentPrices,
-    membershipRoundBarProductionPrice: Number(
-      creditSettings.membershipRoundBarProductionPrice ??
-        SCHEMA_DEFAULTS.membershipRoundBarProductionPrice,
-    ),
-    regularRoundBarProductionPrice: Number(
-      creditSettings.regularRoundBarProductionPrice ??
-        SCHEMA_DEFAULTS.regularRoundBarProductionPrice,
-    ),
-    membershipRoundBarDesignAndProductionPrice: Number(
-      creditSettings.membershipRoundBarDesignAndProductionPrice ??
-        SCHEMA_DEFAULTS.membershipRoundBarDesignAndProductionPrice,
-    ),
-    regularRoundBarDesignAndProductionPrice: Number(
-      creditSettings.regularRoundBarDesignAndProductionPrice ??
-        SCHEMA_DEFAULTS.regularRoundBarDesignAndProductionPrice,
-    ),
+    ...withRoundBar,
   };
 }
 
@@ -131,11 +232,15 @@ export async function loadCreditSettingsDefaults(options = {}) {
   const requestorOrgId = options?.requestorOrgId;
   if (!requestorOrgId) return base;
 
+  const withSpecial = applySpecialRequestorPricesToCreditSettings(
+    base,
+    requestorOrgId,
+  );
   const pricingTier =
     await resolveRequestorAbutmentPricingTier(requestorOrgId);
-  const picked = pickAbutsAbutmentCreditPrices(base, pricingTier);
+  const picked = pickAbutsAbutmentCreditPrices(withSpecial, pricingTier);
   return {
-    ...base,
+    ...withSpecial,
     minCreditForRequest: picked.productionPrice,
     designFee: picked.designFeePerTooth,
     abutmentPricingTier: picked.pricingTier,

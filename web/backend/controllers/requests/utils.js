@@ -1114,6 +1114,7 @@ export async function computePriceForRequest({
     (item) =>
       String(item?.requestorAnchorId || "") === String(requestorOrgId || ""),
   );
+  // special.amount / productionPrice = CNC 생산만. 디자인+생산은 designFee로 가산.
   const BASE_UNIT_PRICE = baseUnitPrice;
 
   let isRemake = false;
@@ -1174,7 +1175,10 @@ export async function computePriceForRequest({
   // 개발운영사가 지정한 공급가는 가입/주문량 할인보다 우선한다.
   // 단, 무상 리메이크는 품질보증 정책이므로 위에서 그대로 유지한다.
   if (specialPrice) {
-    const amount = Math.max(0, Number(specialPrice.amount) || 0);
+    const amount = Math.max(
+      0,
+      Number(specialPrice.productionPrice ?? specialPrice.amount) || 0,
+    );
     return {
       baseAmount: amount,
       discountAmount: 0,

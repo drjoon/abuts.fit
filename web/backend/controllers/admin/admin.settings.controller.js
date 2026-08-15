@@ -318,17 +318,42 @@ export async function updateCreditSettings(req, res) {
             const requestorAnchorId = String(
               item?.requestorAnchorId || "",
             ).trim();
-            const amount = Number(item?.amount);
+            const productionPrice = Number(
+              item?.productionPrice ?? item?.amount,
+            );
+            const designAndProductionPrice = Number(
+              item?.designAndProductionPrice,
+            );
+            const roundBarProductionPrice = Number(
+              item?.roundBarProductionPrice,
+            );
+            const roundBarDesignAndProductionPrice = Number(
+              item?.roundBarDesignAndProductionPrice,
+            );
             if (
               !Types.ObjectId.isValid(requestorAnchorId) ||
-              !Number.isFinite(amount) ||
-              amount < 0
+              !Number.isFinite(productionPrice) ||
+              productionPrice < 0
             ) {
               return null;
             }
             return {
               requestorAnchorId: new Types.ObjectId(requestorAnchorId),
-              amount,
+              amount: productionPrice,
+              productionPrice,
+              designAndProductionPrice: Number.isFinite(
+                designAndProductionPrice,
+              )
+                ? Math.max(0, designAndProductionPrice)
+                : productionPrice,
+              roundBarProductionPrice: Number.isFinite(roundBarProductionPrice)
+                ? Math.max(0, roundBarProductionPrice)
+                : 0,
+              roundBarDesignAndProductionPrice: Number.isFinite(
+                roundBarDesignAndProductionPrice,
+              )
+                ? Math.max(0, roundBarDesignAndProductionPrice)
+                : 0,
             };
           })
           .filter(Boolean)
@@ -442,13 +467,44 @@ export async function updateCreditSettings(req, res) {
         ? mergedRaw.specialRequestorPrices
             .map((item) => {
               const id = String(item?.requestorAnchorId || "").trim();
-              const amount = Number(item?.amount);
-              if (!Types.ObjectId.isValid(id) || !Number.isFinite(amount) || amount < 0) {
+              const productionPrice = Number(
+                item?.productionPrice ?? item?.amount,
+              );
+              const designAndProductionPrice = Number(
+                item?.designAndProductionPrice,
+              );
+              const roundBarProductionPrice = Number(
+                item?.roundBarProductionPrice,
+              );
+              const roundBarDesignAndProductionPrice = Number(
+                item?.roundBarDesignAndProductionPrice,
+              );
+              if (
+                !Types.ObjectId.isValid(id) ||
+                !Number.isFinite(productionPrice) ||
+                productionPrice < 0
+              ) {
                 return null;
               }
               return {
                 requestorAnchorId: new Types.ObjectId(id),
-                amount,
+                amount: productionPrice,
+                productionPrice,
+                designAndProductionPrice: Number.isFinite(
+                  designAndProductionPrice,
+                )
+                  ? Math.max(0, designAndProductionPrice)
+                  : productionPrice,
+                roundBarProductionPrice: Number.isFinite(
+                  roundBarProductionPrice,
+                )
+                  ? Math.max(0, roundBarProductionPrice)
+                  : 0,
+                roundBarDesignAndProductionPrice: Number.isFinite(
+                  roundBarDesignAndProductionPrice,
+                )
+                  ? Math.max(0, roundBarDesignAndProductionPrice)
+                  : 0,
               };
             })
             .filter(Boolean)

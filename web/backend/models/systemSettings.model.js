@@ -33,7 +33,8 @@ const systemSettingsSchema = new mongoose.Schema(
       regularRoundBarProductionPrice: { type: Number, default: 0 },
       membershipRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
       regularRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
-      // 개발운영사 지정 의뢰자별 커스텀 어벗 의뢰비. 미지정 의뢰자는 minCreditForRequest를 사용한다.
+      // 개발운영사 지정 의뢰자별 커스텀어벗 공급가(CNC/환봉 × 생산만/디자인+생산).
+      // amount는 CNC 생산만 레거시 호환(productionPrice와 동기화).
       specialRequestorPrices: {
         type: [
           {
@@ -43,6 +44,10 @@ const systemSettingsSchema = new mongoose.Schema(
               required: true,
             },
             amount: { type: Number, required: true, min: 0 },
+            productionPrice: { type: Number, min: 0 },
+            designAndProductionPrice: { type: Number, min: 0 },
+            roundBarProductionPrice: { type: Number, min: 0 },
+            roundBarDesignAndProductionPrice: { type: Number, min: 0 },
           },
         ],
         default: [],
