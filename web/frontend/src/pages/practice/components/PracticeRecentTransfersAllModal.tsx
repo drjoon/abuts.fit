@@ -3,6 +3,7 @@
  * 3열 그리드 + 무한 스크롤, 기간·검색·상태 뱃지 필터.
  * 취소 뱃지=기공소 작업취소(치과 휴지통 제외). 6뱃지 빠른툴팁.
  * 2026-08-14: 사이드바 1페이지를 시드로 재사용. 열 때 /my 재요청하지 않음.
+ * 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Repeat, Search, Trash2 } from "lucide-react";
@@ -46,6 +47,8 @@ import {
   mapMyPracticeTransferApiRows,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
+import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
+import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 
 const PAGE_SIZE = PRACTICE_MY_TRANSFERS_PAGE_SIZE;
@@ -390,6 +393,11 @@ export function PracticeRecentTransfersAllModal({
                 ).trim();
                 const canRemake = canRemakePracticeTransferByStatus(transfer.status);
                 const remakeChecked = remakeSelectedIds.includes(remakeKey);
+                const acceptOverdue = isPracticeTransferAcceptOverdue({
+                  status: transfer.status,
+                  orderDate: transfer.orderDate,
+                  createdAtTs: transfer.createdAtTs,
+                });
 
                 return (
                   <div
@@ -417,6 +425,9 @@ export function PracticeRecentTransfersAllModal({
                           <Badge variant="outline" className="whitespace-nowrap">
                             {toStatusBadgeLabel(transfer.status)}
                           </Badge>
+                          {acceptOverdue ? (
+                            <PracticeAcceptOverdueBadge viewer="practice" />
+                          ) : null}
                           {transfer.isRemake ? (
                             <Badge
                               variant="outline"

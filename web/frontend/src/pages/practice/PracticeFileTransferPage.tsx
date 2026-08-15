@@ -73,6 +73,7 @@
  * - 2026-08-15: 「새로 작성」을 기공의뢰 카드 위 툴바로 이동.
  * - 2026-08-15: 「새로 작성」을 모드 전환 바로 오른쪽으로. 익스프레스 진행률·스텝 한 줄.
  * - 2026-08-15: 익스프레스 스텝·진행률을 기공의뢰 제목과 같은 헤더 행(좌·우)에 둔다.
+ * - 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지(최근의뢰·전체보기).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -193,6 +194,8 @@ import {
   filterGroupedTransfersByStatus,
   type PracticeRecentStatusFilter,
 } from "@/shared/practice/practiceRecentTransferList";
+import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
+import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import { formatWon } from "@/shared/practice/practiceTransferFeeQuote";
 import {
   normalizeAutoMatchMinLabRating,
@@ -6440,6 +6443,13 @@ export const PracticeFileTransferPage = ({
                       ).trim();
                       const canRemake = canRemakePracticeTransferByStatus(transfer.status);
                       const remakeChecked = remakeSelectedIds.includes(remakeKey);
+                      const acceptOverdue =
+                        !isDraftTransfer &&
+                        isPracticeTransferAcceptOverdue({
+                          status: transfer.status,
+                          orderDate: transfer.orderDate,
+                          createdAtTs: transfer.createdAtTs,
+                        });
 
                       return (
                         <div
@@ -6469,6 +6479,9 @@ export const PracticeFileTransferPage = ({
                                 <Badge variant="outline" className="whitespace-nowrap">
                                   {toStatusBadgeLabel(transfer.status)}
                                 </Badge>
+                                {acceptOverdue ? (
+                                  <PracticeAcceptOverdueBadge viewer="practice" />
+                                ) : null}
                                 {transfer.isRemake ? (
                                   <Badge
                                     variant="outline"

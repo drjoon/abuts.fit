@@ -51,6 +51,7 @@
 // - 2026-08-13: 채팅 첨부 즉시 백그라운드 업로드 + 칩 프로그레스바.
 // - 2026-08-13: 채팅/의뢰 파일 다운로드 프로그레스바.
 // - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁(목록·상세).
+// - 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지(목록).
 import {
   useCallback,
   useEffect,
@@ -87,6 +88,7 @@ import {
   PRACTICE_REMAKE_BADGE_CLASS,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
+import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
 import {
   Tooltip,
   TooltipContent,
@@ -103,6 +105,7 @@ import {
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
+import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import {
   parsePracticeTransferFeeQuote,
   type PracticeTransferFeeQuote,
@@ -2762,6 +2765,11 @@ function RequestorPracticeReceivePage({
             const showWorkActions = displayStatus === "의뢰수락";
             const resultCount = Number(transfer.resultFileCount || transfer.resultFiles?.length || 0);
             const completeInputId = `practice-complete-${cardId}`;
+            const acceptOverdue = isPracticeTransferAcceptOverdue({
+              status: displayStatus,
+              orderDate: transfer.orderDate,
+              createdAt: transfer.createdAt,
+            });
 
             const renderCardBody = () => (
               <>
@@ -2802,6 +2810,7 @@ function RequestorPracticeReceivePage({
                     >
                       {toStatusBadgeLabel(displayStatus)}
                     </Badge>
+                    {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}
                     {transfer.isRemake ? (
                       <Badge
                         variant="outline"
