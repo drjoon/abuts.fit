@@ -508,6 +508,7 @@ Notes:
 - 어벗츠기공소(`internalLab`) UI SSOT:
   - Role: top-level `User.role=internalLab`(제조사와 대칭). 공개 가입 없음·관리자 생성. UI 라벨 「어벗츠기공소」.
   - 사이드: 기공의뢰수신(`/dashboard/lab-work`, 디자인 큐 포함) · 설정(`/dashboard/settings`).
+  - 상단 `LabDashboardTopBanners`(자동매칭 참여·가입 이유)는 미표시.
   - 페이지: `src/pages/internalLab/labWork` — 기공의뢰수신 셸. 구 `/dashboard/abut-design` → `/dashboard/lab-work`.
   - 랜딩: `/dashboard/lab-work`.
   - 조직: 법인「어벗츠 주식회사」하위 「기공사업부」(`parentBusinessAnchorId` + 설정 `InternalLabOrgBanner`). 사업자등록증·BN은 법인과 공유(type별 앵커).
