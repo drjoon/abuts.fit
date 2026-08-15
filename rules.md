@@ -136,13 +136,18 @@
 
 ### 2.3 크레딧/정산
 
-- **부가세(VAT) / 면세 정책(강제):**
-  - 운영 주체는 **면세 사업자**다. 크레딧 충전·앱 내 과금·정산·안내 문구 모두 **부가세 없음**.
+- **부가세(VAT) / 면세 정책(강제) — 이중 체계:**
+  - **면세(치과–기공소–어벗츠[기공소])**: 크레딧 충전·소비·기공정산·치과↔기공소 기공의뢰. `vatAmount = 0`. 고객/약관 가격 안내에 "VAT 별도·부가세 포함·VAT 10%" 금지(배송비 별도 안내는 유지).
+  - **과세(어벗츠↔관계사)**: 제조사·영업자·개발운영사 등. 부가세 **10%**. 어벗츠는 기공소로 보고 치과–기공소 경로는 면세이나, **하청 제조사(애크로덴트) 지급은 과세**.
   - 크레딧은 선불전자지급수단(선불페이)이 아니라 **기공물 구매용 기공료 선입금(선납 대금)**이다. 충전 화면·FAQ·약관·입금 확인 메시지에 `크레딧(기공료 선입금)`을 명시한다.
   - 크레딧 충전: `vatAmount = 0`, `amountTotal = supplyAmount`(공급가 = 입금/결제 금액).
-  - 앱 내 의뢰/배송/정산 금액·장부(`LedgerLine`)·UI 표시는 **공급가(원)** 기준. 수익 라인에 VAT를 가산하지 않는다(`vatAmount = 0`).
-  - 합계 비교·잔액 집계는 `amountExcludingVat`(없으면 `amount`)를 쓰며, 이는 공급가와 동일하다.
-  - 사용자/약관/가격 안내에서 "VAT 별도·부가세 포함·VAT 10%" 표현 금지. 배송비 별도 안내는 유지.
+  - 의뢰자 소비·비제조사 `REV_*` 라인: 공급가 기준, `vatAmount = 0`.
+  - 제조사 `REV_MANUFACTURER`: `amountExcludingVat`=공급가, `vatAmount`=공급가×`affiliateVatRate`(기본 0.1), `amount`=공급가+VAT. 월 지급은 **부가세 포함액**.
+  - 보존식·의뢰자 잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 제조사 VAT는 어벗츠 추가 지급분(의뢰자 크레딧에서 차감하지 않음).
+- **어벗츠 사업 다각화 SSOT:**
+  1. **커스텀 어벗 생산·공급** — 어벗츠 내 기공사 디자인 → 애크로덴트(하청) 생산 → 기공소 납품.
+  2. **자동매칭 수수료** — 기공비의 `platformFeeRate`(기본 10%). 관리자 플랫폼 설정.
+  3. **기공소 직접 운영** — 치과 의뢰를 어벗츠가 직접 처리·기공료 수취.
 - **매칭·멤버십 과금 SSOT(강제):**
   - 한 줄: **기공소 월 참여 수수료 0원 + 치과 멤버십만 월 과금(면세·부가세 없음, 유료 크레딧 차감).**
   - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 0%.
@@ -159,8 +164,9 @@
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
-  - 유료/무료 모두 수익 라인을 기록하되, 정산 지급은 유료만 대상
-  - 배송비 정책(강제): 배송 크레딧 소비(`SHIPPING_SPEND_COMMIT`)의 수익은 **전액 제조사 귀속**으로 기록
+  - **제조사(하청)**: % 분배 금지. 건당 고정 공급가 — `creditSettings.manufacturerRequestUnitPrice`(기본 8,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT(`affiliateVatRate` 기본 0.1 → 지급합 8,800 / 3,850). 유료·무료 모두 **적립(확인용)** 하되, **정산 지급은 유료만**(무료 지급 0).
+  - **잔여 분배**: 의뢰자 소비 공급가 − 제조사 공급가 → 영업자·개발운영사·관리자 상대비율로 재분배(`vatAmount = 0`). 배송 잔여(고객 배송비 − 제조사 배송 공급가) → 관리자.
+  - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **의뢰 1건 1회**만. express는 잔여 분배에만 포함.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능
@@ -171,16 +177,18 @@
   - 충전은 `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`으로 분리 표기 (`CHARGE` 단일표시 금지)
   - 소비는 `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`으로 분리 표기 (`SPEND` 단일표시 금지)
 - 정산 보존식 SSOT(의뢰 단위):
-  - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `어벗츠/제조사/개발운영사/영업자 수익합`
-  - 합계 비교는 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`; 면세이므로 VAT 가산분 없음)
+  - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `어벗츠/제조사/개발운영사/영업자` **공급가** 합(`amountExcludingVat`)
+  - 합계 비교는 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`). 제조사 `vatAmount`는 보존식에 포함하지 않음
 - 제조사/역할 정산 건수 SSOT(강제):
   - 일별·기간 정산의 의뢰/배송 **건수**는 `LedgerLine` 개수가 아니라 `(eventType, creditKind, refId)` 유니크다.
-  - 동일 의뢰의 `machining_spend` + `express_surcharge`(각각 `REQUEST_SPEND_COMMIT`)는 금액은 합산하되 건수는 의뢰 1건으로 센다.
+  - 동일 의뢰의 `machining_spend` + `express_surcharge`(각각 `REQUEST_SPEND_COMMIT`)는 제조사 단가 1회·건수 의뢰 1건.
   - paid/free 혼합으로 `REV_*` 라인이 쪼개져도 같은 `creditKind`·`refId`는 1건이다.
   - 구현: `controllers/manufacturers/manufacturer.controller.js` (`buildManufacturerEarnCollapseAndGroupStages`)
-- 정산 지급 가능 잔액 집계 원칙(공통):
+- 정산 지급 가능 잔액 집계 원칙:
   - `SETTLEMENT_PAYOUT`은 포함
-  - `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 수익/무료 조정은 지급 대상 제외)
+  - **제조사**: `EARN/ADJUST`는 `creditKind=PAID|null`만, 지급액은 `amount`(VAT 포함)
+  - **그 외 관계사**: `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 제외). 공급가(`amountExcludingVat`) 기준
+  - 무료(`FREE_REQUEST|FREE_SHIPPING`) 수익은 지급 대상에서 제외(표시·확인용만)
 - CreditLedger → GL 이관 보정 원칙:
   - 레거시 `CreditLedger`를 원본으로 이관하되, 정책 위반/무효 행(예: 0원 SPEND, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍)은 장부 반영 대신 무시 처리
   - 샘플(`rnd_sample|copied_sample`) 및 비의뢰 수동 NC 작업은 장부 무기록 원칙 유지

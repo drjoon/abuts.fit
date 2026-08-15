@@ -26,6 +26,9 @@ type CreditSettingsApiResponse = {
 export interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
+  manufacturerRequestUnitPrice: number;
+  manufacturerShippingUnitPrice: number;
+  affiliateVatRate: number;
   expressFee: number;
   designFee: number;
   abutmentRetailPrice: number;
@@ -45,6 +48,9 @@ export interface CreditSettings {
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   minCreditForRequest: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   shippingFee: 3500,
+  manufacturerRequestUnitPrice: 8000,
+  manufacturerShippingUnitPrice: 3500,
+  affiliateVatRate: 0.1,
   expressFee: 2000,
   designFee:
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE -
@@ -86,6 +92,23 @@ export const useSystemSettings = () => {
       const creditSettings: CreditSettings = {
         minCreditForRequest: abutmentPrices.membershipProductionPrice,
         shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
+        manufacturerRequestUnitPrice: Number(
+          raw.manufacturerRequestUnitPrice ??
+            CREDIT_SETTINGS_DEFAULTS.manufacturerRequestUnitPrice,
+        ),
+        manufacturerShippingUnitPrice: Number(
+          raw.manufacturerShippingUnitPrice ??
+            CREDIT_SETTINGS_DEFAULTS.manufacturerShippingUnitPrice,
+        ),
+        affiliateVatRate: (() => {
+          const rawRate = Number(
+            raw.affiliateVatRate ?? CREDIT_SETTINGS_DEFAULTS.affiliateVatRate,
+          );
+          if (!Number.isFinite(rawRate) || rawRate < 0) {
+            return CREDIT_SETTINGS_DEFAULTS.affiliateVatRate;
+          }
+          return Math.min(1, rawRate);
+        })(),
         expressFee: Number(
           raw.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
         ),

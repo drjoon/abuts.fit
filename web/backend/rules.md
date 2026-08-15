@@ -259,9 +259,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
   - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic + items). **마스터 `active`(기본 off)가 켜져야 설정 완료.** 수가 디폴트는 기본값·항목 on. 꺼져 있으면 청구 0원(로그인 시 설정 탭 유도). 임시치아는 설정 카드 두 장(이름 모두 「임시치아」, 3치 이하·6치 이하)으로 분리하고, 의뢰서 「임시치아」 청구 시 치아 수 구간으로 합산. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 `+`로 끊기면 별도 세트, 연결 정보 없는 레거시는 악궁당 1세트). **단독 커스텀어벗은 기공소 수가가 아니라 어벗츠 단가**(멤버십 생산 1.5만·디자인+생산 2.5만 / 일반 생산 2.0만·디자인+생산 4.0만). **환봉 요청중(미도입)은 기공소 어벗** — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 기공비로 합산. **크라운·브리지 등에 어벗을 붙이면 기공수가 + 어벗 단가**(요청중=기공소 어벗, 그 외=어벗츠 어벗). 치과 멤버십=`BusinessAnchor.practiceMembershipActive`. 브리지 스팬의 `작업X`는 보철이 아니므로 기공비·어벗 단가에서 제외. **기공소가 카탈로그에 없는 신규 항목을 저장하면** `SystemSettings.abutsLabFeeSchedule`에 **Off·`pendingReview`**로 동기화하고 `abuts-lab-fee:pending-items`로 관리자에게 알린다(관리자「어벗츠 수가」에서 검증 후 On=적용).
   - PracticeTransfer 에스크로 SSOT: **생성(`POST /api/practice/transfers`)** 시 치과 유료+무료 잔액 검사 후 `PRACTICE_TRANSFER_SPEND_HOLD`로 `PLATFORM_ESCROW`에 보류(`billing.heldAt`/`heldTotal`). UI 견적: `GET /api/practice/transfers/quote-context`(스케줄·수수료율·멤버십 티어) + 치식별 합산(`labFeeSchedule.js`). **자동매칭**은 치과 `practiceTransferSettings.autoMatchBudget`(기공비 min/max, 어벗츠 어벗 제외) 필수. 생성 시 예산에 맞는 인증 기공소를 `autoMatch.eligibleLabAnchorIds`에 스냅샷. 견적은 예산 구간+어벗츠 어벗, 보류·잔액 검사는 상한(`maxLabFee`)+어벗. **수락(`mark-accepted`)** 시 실수가로 보류 조정(`PRACTICE_TRANSFER_HOLD_ADJUST`)·`billing.billedAt` 확정(기공크레딧 미지급). **작업완료(`mark-complete`)** 시 `PRACTICE_TRANSFER_ESCROW_RELEASE`로 에스크로 해제 → 기공비에 플랫폼 수수료율 적용, 커스텀어벗 단가 전액 어벗츠 매출, 나머지 기공소 `LAB_SETTLEMENT_CREDIT`(`billing.settledAt`). 무료로 지불해도 기공소 정산 적립은 유지. 취소/작업취소는 hold·adjust·release(+레거시 commit) 롤백. 목록 `feeQuote`: 치과=크레딧 소비(`total`), 기공소 UI 주 표기=설정 수가(`labFeeTotal`)·수수료 시 수령(`labSettlementAmount`) 보조.
-    - **자동 매칭 성공**(`matchingMode=auto`): 수수료 `BusinessAnchor.payoutRates.platformFeeRate`(기본 25%, 레거시 `nonPartnerFeeRate` fallback). 등록/미등록 치과를 나누지 않는다.
+    - **자동 매칭 성공**(`matchingMode=auto`): 수수료 `BusinessAnchor.payoutRates.platformFeeRate`(기본 **10%**, 레거시 `nonPartnerFeeRate` fallback). 등록/미등록 치과를 나누지 않는다.
     - **지정 기공소**(`matchingMode=direct`): 플랫폼 수수료 0%.
-    - 걷힌 수수료 금액은 기존 4자 분배율(`manufacturerRate`/`devopsRate`/`salesmanRate`/`adminRate`)로 다시 나뉜다(영업자 추천 유무에 따른 재배분 로직 동일 적용).
+    - 걷힌 수수료 금액의 잔여 분배: 제조사는 하청 고정단가 경로와 분리. 수수료 잔액은 영업자·개발운영사·관리자 상대비율로 재분배(루트 `rules.md` §2.3).
     - 자동 매칭 식별 정보: 치과명·담당자명·기공소명·담당자명은 상대방에게 비공개(`AUTO_MATCH_LAB_DISPLAY_NAME` 유지, 수신 목록 치과 식별 마스킹). **`practiceBusinessAnchorId`는 기공수가 할증 키로 기공소 API에 전달**(표시명과 별개). 지정 기공소는 생성 시 `billing.labFeeMultiplier` 스냅샷, **자동매칭은 치과별 할증을 청구에 사용**하되 `labPracticeFeeMultipliers.updatedAt`이 의뢰 `createdAt`보다 이후면 해당 건에 미적용(상세·채팅에서 올린 할증은 다음 건부터). **적격 스냅샷·수락 예산 게이트는 공개 수가(할증 제외)**가 `autoMatchBudget` 항목별 min~max 안이어야 함. 미평가·동일 기공소 평가 2회 이하는 최소 별 제한에서 제외.
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
   - eventType: `PRACTICE_TRANSFER_SPEND_HOLD` / `PRACTICE_TRANSFER_HOLD_ADJUST` / `PRACTICE_TRANSFER_ESCROW_RELEASE`(레거시 `PRACTICE_TRANSFER_SPEND_COMMIT` 유지); accountCode: `PLATFORM_ESCROW`, `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부: `기공비 보류` / 기공소: `기공크레딧` 적립(완료 시).
@@ -735,8 +735,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     크레딧/정산 이벤트를 **전혀 기록하지 않음**(무자료/무상)
   - 해당 작업은 생산/장비 운영 이벤트로만 취급하고 General Ledger 쓰기를 금지합니다.
 
-- 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3):
-  - 운영 주체는 면세 사업자. 크레딧 충전·앱 내 과금·정산 모두 부가세 없음.
+- 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3) — 이중 체계:
+  - **면세**: 치과–기공소–어벗츠(기공소). 크레딧 충전·소비·기공정산. `vatAmount = 0`.
+  - **과세**: 어벗츠↔관계사(제조사 등). 부가세 10%. 제조사 `REV_MANUFACTURER` 커밋 시 VAT 기록.
   - 크레딧은 선불전자지급수단이 아니라 **기공료 선입금(선납 대금)**. 충전 화면·FAQ·약관·입금 확인 알림에 동일 용어를 쓴다.
     프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
     입금 매칭 알림: `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied` / 템플릿 `ats_credit_charged`
@@ -745,10 +746,11 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     주문 검증 `creditBPlan.controller.js`, insights(월사용량/3·한 달분) `credit.controller.js`.
     UI 2회차 기본 배수 3은 프론트(`CreditPaymentTab`). 잔액 < 단위 시 사이드바 충전 강조는 `DashboardLayout`.
     구현: `controllers/credits/creditBPlan.controller.js`
-  - 수익 라인(`REV_*`) 적재 시 VAT 가산 금지. `amount = amountExcludingVat = base`, `vatAmount = 0`.
-    구현: `controllers/requests/common.review.helpers.js`
-  - 정산/잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가.
-  - 세금계산서 드래프트의 세액 기본값은 0(면세). 자동 10% 세액 계산 금지.
+  - 비제조사 `REV_*`: `amount = amountExcludingVat = base`, `vatAmount = 0`.
+  - 제조사 `REV_MANUFACTURER`: `amountExcludingVat`=하청 공급가, `vatAmount`=공급가×`affiliateVatRate`(기본 0.1), `amount`=합.
+    구현: `controllers/requests/common.review.helpers.js`, `services/creditRevenuePolicy.service.js`
+  - 의뢰자 잔액·보존식 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 제조사 VAT는 어벗츠 추가 지급.
+  - 고객향 세금계산서 드래프트 세액 기본값 0(면세). 관계사 `AFFILIATE_TO_ABUTS`는 과세 10%.
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
   - `ABUTS_TO_CUSTOMER`(기존 크레딧 충전 계산서, 치과·기공소→어벗츠 결제의 반대방향): `taxType="면세"`, `issuanceMode="SELF"`(어벗츠가 실제 공급자).
@@ -759,16 +761,17 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 정산/지급 정책:
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - 정산 지급(PAYOUT) 대상은 유료 수익만 허용합니다.
-  - 지급 가능 잔액 계산 시 `EARN/ADJUST`는 `creditKind=PAID|null`만 포함하고, 무료(`FREE_REQUEST|FREE_SHIPPING`)는 제외합니다.
-  - 배송비 정산은 제조사 실비 부담 정책을 반영해 `SHIPPING_SPEND_COMMIT` 수익을 전액 `REV_MANUFACTURER`로 귀속합니다.
+  - **제조사(하청)**: 고정단가 — `creditSettings.manufacturerRequestUnitPrice`(기본 8,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT. 유료·무료 모두 적립(확인용). **정산 지급은 유료만**(무료 지급 0). 지급액=`amount`(VAT 포함).
+  - **그 외 관계사**: 정산 지급(PAYOUT)은 유료 수익만. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
+  - 배송: 제조사 고정 배송 공급가(+VAT). 고객 배송비−제조사 공급가 잔여 → 관리자(`vatAmount=0`).
   - 무료 수익은 지급금액 0으로 정산 완료 상태만 표시할 수 있습니다.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공 → 유료** 차감을 사용합니다.
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
-    - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트(`scripts/db/migrate-request-spend-to-gl.js`, `scripts/db/migrate-legacy-creditledger-to-gl.js`)는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
-    - 기본 분배(영업자 소개 있음): 제조사 60% / 개발운영사 10% / 영업자 10% / 관리자 20% (`BusinessAnchor.payoutRates` SSOT). 기공의뢰 성공 수수료율(`platformFeeRate`)·월 참여 수수료(`autoMatchMonthlyFee`, **정책 0원**)는 관리자 플랫폼 설정「기공소 매칭」(`GET|PATCH /api/admin/settings/platform-fees`)에서 개발운영사 앵커에 저장. 치과 멤버십 월정은 `practiceMembershipMonthlyFee`(기본 50,000·면세·유료 크레딧) — 루트 `rules.md` §2.3.
-    - 영업자 소개 없음(`hasSalesmanReferrer=false`): 설정된 영업자 분배비의 **절반을 제조사**, **나머지 절반을 관리자**에 가산하고 영업자 0%. 기본값이면 제조사 65% / 개발운영사 10% / 영업자 0% / 관리자 25%. 하드코딩 고정비율이 아니라 `resolveRatesWithoutSalesman(configuredRates)`로 파생.
+    - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
+    - 제조사 = 고정 공급가(의뢰/배송). 잔여 = 소비 공급가 − 제조사 공급가 → 영업자·개발운영사·관리자 상대비율(`BusinessAnchor.payoutRates`의 salesman/devops/admin). 영업자 없으면 salesman 몫을 admin에 가산.
+    - 기공의뢰 성공 수수료율(`platformFeeRate` 기본 10%)·월 참여 수수료(`autoMatchMonthlyFee`, **정책 0원**)는 관리자 플랫폼 설정「기공소 매칭」. 치과 멤버십 월정은 `practiceMembershipMonthlyFee`(기본 50,000·면세) — 루트 `rules.md` §2.3.
+    - `machining_spend`+`express_surcharge`: 제조사 단가 1회만(`manufacturerUnitApplied` / 기존 의뢰 유니크와 정합).
 
 - 관리자 credit-reconcile API 정책:
   - `credit-reconcile/check`는 General Ledger 기준 누락 의심 건만 점검합니다.

@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-08-15: 하청 고정단가(의뢰/배송·VAT 포함 지급). 유료/무료는 보조 필터.
 // - 2026-08-11: 기공소 기공크레딧 정산과 동일 UX — 요약 카드 축소·(N건), 일자 제거, 액션 세로열, 초기화 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -58,25 +59,47 @@ type ManufacturerDailySnapshotRow = {
   ymd: string;
   earnRequestAmount: number;
   earnRequestCount: number;
+  earnRequestVat?: number;
+  earnRequestTotal?: number;
   earnRequestPaidAmount?: number;
+  earnRequestPaidVat?: number;
+  earnRequestPaidTotal?: number;
   earnRequestPaidCount?: number;
   earnRequestFreeAmount?: number;
+  earnRequestFreeVat?: number;
+  earnRequestFreeTotal?: number;
   earnRequestFreeCount?: number;
   earnShippingAmount: number;
   earnShippingCount: number;
+  earnShippingVat?: number;
+  earnShippingTotal?: number;
   earnShippingPaidAmount?: number;
+  earnShippingPaidVat?: number;
+  earnShippingPaidTotal?: number;
   earnShippingPaidCount?: number;
   earnShippingFreeAmount?: number;
+  earnShippingFreeVat?: number;
+  earnShippingFreeTotal?: number;
   earnShippingFreeCount?: number;
   refundAmount: number; // legacy 표시 호환(정책상 신규 REFUND 적재 금지, 일반적으로 0)
   payoutAmount: number;
   adjustAmount: number;
   netAmount: number;
+  netPayoutAmount?: number;
   netPaidAmount?: number;
   netFreeRequestAmount?: number;
   netFreeShippingAmount?: number;
   netFreeAmount?: number;
 };
+
+type SnapshotSortKey =
+  | "ymd"
+  | "request"
+  | "shipping"
+  | "deduction"
+  | "payoutNet"
+  | "paidNet"
+  | "freeNet";
 
 type SnapshotValidationResult =
   | { valid: true }
@@ -91,13 +114,6 @@ type ApiEnvelope<T> = {
 const PAGE_SIZE = 50;
 
 type SortDirection = "asc" | "desc";
-type SnapshotSortKey =
-  | "ymd"
-  | "request"
-  | "shipping"
-  | "deduction"
-  | "paidNet"
-  | "freeNet";
 type PaymentSortKey = "occurredAt" | "status" | "amount" | "note";
 
 const formatDate = (iso: string) => {
@@ -225,28 +241,41 @@ const validateSnapshotRow = (
     return { valid: false, reason: "음수 분해값 존재" };
   }
 
-  // 정책: 화면 총액/총건수는 paid 분해값만 반영한다.
-  if (requestTotalAmount !== paidAmount) {
-    return { valid: false, reason: "의뢰 총금액이 paid 분해값과 불일치" };
+  // 하청: 총액/총건수 = 유료+무료 공급가 합
+  if (requestTotalAmount !== paidAmount + freeAmount) {
+    return { valid: false, reason: "의뢰 총금액이 paid+free 분해값과 불일치" };
   }
-  if (requestTotalCount !== paidCount) {
-    return { valid: false, reason: "의뢰 총건수가 paid 분해값과 불일치" };
+  if (requestTotalCount !== paidCount + freeCount) {
+    return { valid: false, reason: "의뢰 총건수가 paid+free 분해값과 불일치" };
   }
-  if (shippingTotalAmount !== shippingPaidAmount) {
-    return { valid: false, reason: "배송 총금액이 paid 분해값과 불일치" };
+  if (shippingTotalAmount !== shippingPaidAmount + shippingFreeAmount) {
+    return { valid: false, reason: "배송 총금액이 paid+free 분해값과 불일치" };
   }
-  if (shippingTotalCount !== shippingPaidCount) {
-    return { valid: false, reason: "배송 총건수가 paid 분해값과 불일치" };
-  }
-
-  const expectedNet =
-    requestTotalAmount + shippingTotalAmount + refundAmount + payoutAmount + adjustAmount;
-  if (expectedNet !== netAmount) {
-    return { valid: false, reason: "유료 순액 계산값 불일치" };
+  if (shippingTotalCount !== shippingPaidCount + shippingFreeCount) {
+    return { valid: false, reason: "배송 총건수가 paid+free 분해값과 불일치" };
   }
 
-  if (netPaidAmountRaw !== undefined && Number(netPaidAmountRaw || 0) !== expectedNet) {
-    return { valid: false, reason: "netPaidAmount 불일치" };
+  const requestTotalWithVat =
+    Number(r.earnRequestPaidTotal ?? 0) ||
+    paidAmount + Number(r.earnRequestPaidVat || 0);
+  const shippingTotalWithVat =
+    Number(r.earnShippingPaidTotal ?? 0) ||
+    shippingPaidAmount + Number(r.earnShippingPaidVat || 0);
+  const expectedPayoutNet =
+    requestTotalWithVat +
+    shippingTotalWithVat +
+    refundAmount +
+    payoutAmount +
+    adjustAmount;
+  if (expectedPayoutNet !== netAmount) {
+    return { valid: false, reason: "지급 순액(유료·VAT 포함) 계산값 불일치" };
+  }
+
+  if (
+    r.netPayoutAmount !== undefined &&
+    Number(r.netPayoutAmount || 0) !== expectedPayoutNet
+  ) {
+    return { valid: false, reason: "netPayoutAmount 불일치" };
   }
 
   const expectedFreeRequest = freeAmount;
@@ -464,7 +493,16 @@ export const ManufacturerPaymentPage = () => {
   };
 
   const snapshotTotals = useMemo(() => {
-    let paidUnsettledTotal = 0;
+    let payoutEligibleTotal = 0;
+    let requestSupplyTotal = 0;
+    let requestVatTotal = 0;
+    let requestTotalWithVat = 0;
+    let requestCountTotal = 0;
+    let shippingSupplyTotal = 0;
+    let shippingVatTotal = 0;
+    let shippingTotalWithVat = 0;
+    let shippingCountTotal = 0;
+
     let paidRequestTotal = 0;
     let paidRequestCountTotal = 0;
     let paidShippingTotal = 0;
@@ -479,7 +517,28 @@ export const ManufacturerPaymentPage = () => {
     let payoutCount = 0;
 
     for (const row of snapItems) {
-      paidUnsettledTotal += Number(row.netPaidAmount ?? row.netAmount ?? 0);
+      payoutEligibleTotal += Number(
+        row.netPayoutAmount ?? row.netAmount ?? 0,
+      );
+
+      // 지급 카드: 유료 의뢰/배송만
+      requestSupplyTotal += Number(row.earnRequestPaidAmount || 0);
+      requestVatTotal += Number(row.earnRequestPaidVat || 0);
+      requestTotalWithVat += Number(
+        row.earnRequestPaidTotal ??
+          Number(row.earnRequestPaidAmount || 0) +
+            Number(row.earnRequestPaidVat || 0),
+      );
+      requestCountTotal += Number(row.earnRequestPaidCount || 0);
+
+      shippingSupplyTotal += Number(row.earnShippingPaidAmount || 0);
+      shippingVatTotal += Number(row.earnShippingPaidVat || 0);
+      shippingTotalWithVat += Number(
+        row.earnShippingPaidTotal ??
+          Number(row.earnShippingPaidAmount || 0) +
+            Number(row.earnShippingPaidVat || 0),
+      );
+      shippingCountTotal += Number(row.earnShippingPaidCount || 0);
 
       paidRequestTotal += Number(row.earnRequestPaidAmount ?? 0);
       paidRequestCountTotal += Number(row.earnRequestPaidCount ?? 0);
@@ -501,10 +560,17 @@ export const ManufacturerPaymentPage = () => {
       if (payoutAmount !== 0) payoutCount += 1;
     }
 
-    const freeUnsettledTotal = freeRequestTotal + freeShippingTotal;
-
     return {
-      paidUnsettledTotal,
+      payoutEligibleTotal,
+      requestSupplyTotal,
+      requestVatTotal,
+      requestTotalWithVat,
+      requestCountTotal,
+      shippingSupplyTotal,
+      shippingVatTotal,
+      shippingTotalWithVat,
+      shippingCountTotal,
+      paidUnsettledTotal: paidRequestTotal + paidShippingTotal,
       paidRequestTotal,
       paidRequestCountTotal,
       paidShippingTotal,
@@ -513,7 +579,7 @@ export const ManufacturerPaymentPage = () => {
       freeRequestCountTotal,
       freeShippingTotal,
       freeShippingCountTotal,
-      freeUnsettledTotal,
+      freeUnsettledTotal: freeRequestTotal + freeShippingTotal,
       payoutTotal,
       payoutCount,
     };
@@ -555,7 +621,7 @@ export const ManufacturerPaymentPage = () => {
       Number(r.payoutAmount || 0) +
       Number(r.adjustAmount || 0);
     const paidNetValueOf = (r: ManufacturerDailySnapshotRow) =>
-      Number(r.netPaidAmount ?? r.netAmount ?? 0);
+      Number(r.netPayoutAmount ?? r.netAmount ?? 0);
     const freeNetValueOf = (r: ManufacturerDailySnapshotRow) =>
       Number(r.netFreeAmount ?? 0) ||
       Number(r.earnRequestFreeAmount ?? 0) + Number(r.earnShippingFreeAmount ?? 0);
@@ -576,7 +642,10 @@ export const ManufacturerPaymentPage = () => {
       } else if (snapshotSort.key === "deduction") {
         av = deductionValueOf(a);
         bv = deductionValueOf(b);
-      } else if (snapshotSort.key === "paidNet") {
+      } else if (
+        snapshotSort.key === "paidNet" ||
+        snapshotSort.key === "payoutNet"
+      ) {
         av = paidNetValueOf(a);
         bv = paidNetValueOf(b);
       } else {
@@ -636,29 +705,43 @@ export const ManufacturerPaymentPage = () => {
           <Card>
             <CardHeader className="p-3 pb-1">
               <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                유료 미정산액 합계
+                유료 미지급 합계 (VAT 포함)
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0">
               <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
-                ₩{snapshotTotals.paidUnsettledTotal.toLocaleString()}
+                ₩{snapshotTotals.payoutEligibleTotal.toLocaleString()}
                 <span className="ml-1 text-sm font-medium text-muted-foreground">
                   (
-                  {snapshotTotals.paidRequestCountTotal +
-                    snapshotTotals.paidShippingCountTotal}
+                  {snapshotTotals.requestCountTotal +
+                    snapshotTotals.shippingCountTotal}
                   건)
                 </span>
+              </div>
+              <div className="mt-1 space-y-0.5 text-center text-[11px] text-muted-foreground tabular-nums">
+                <div>
+                  의뢰 ₩{snapshotTotals.requestTotalWithVat.toLocaleString()} (
+                  {snapshotTotals.requestCountTotal}) · 공급{" "}
+                  {snapshotTotals.requestSupplyTotal.toLocaleString()}+VAT{" "}
+                  {snapshotTotals.requestVatTotal.toLocaleString()}
+                </div>
+                <div>
+                  배송 ₩{snapshotTotals.shippingTotalWithVat.toLocaleString()} (
+                  {snapshotTotals.shippingCountTotal}) · 공급{" "}
+                  {snapshotTotals.shippingSupplyTotal.toLocaleString()}+VAT{" "}
+                  {snapshotTotals.shippingVatTotal.toLocaleString()}
+                </div>
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="p-3 pb-1">
               <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                무료 미정산액 합계
+                무료 미정산(참고·지급 0)
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0">
-              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
+              <div className="text-center text-lg font-semibold text-muted-foreground tabular-nums sm:text-xl">
                 ₩{snapshotTotals.freeUnsettledTotal.toLocaleString()}
                 <span className="ml-1 text-sm font-medium text-muted-foreground">
                   (
@@ -666,6 +749,16 @@ export const ManufacturerPaymentPage = () => {
                     snapshotTotals.freeShippingCountTotal}
                   건)
                 </span>
+              </div>
+              <div className="mt-1 space-y-0.5 text-center text-[11px] text-muted-foreground tabular-nums">
+                <div>
+                  의뢰 ₩{snapshotTotals.freeRequestTotal.toLocaleString()} (
+                  {snapshotTotals.freeRequestCountTotal})
+                </div>
+                <div>
+                  배송 ₩{snapshotTotals.freeShippingTotal.toLocaleString()} (
+                  {snapshotTotals.freeShippingCountTotal})
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -726,10 +819,10 @@ export const ManufacturerPaymentPage = () => {
                     </span>
                     <HandCoins className="mt-0.5 h-4 w-4 text-muted-foreground" />
                     <div className="min-w-0">
-                      <div className="font-medium">가공 승인 적립</div>
+                      <div className="font-medium">가공 승인 적립 (하청)</div>
                       <div className="text-muted-foreground">
-                        유료 의뢰비 기준 제조사 분배율 적용 (기본 60%, 영업자
-                        미연결 시 65%)
+                        의뢰 1건당 공급가 8,000원 + 부가세 10%(합 8,800원).
+                        유료·무료 모두 적립하되, 지급은 유료만(무료 지급 0).
                       </div>
                     </div>
                   </div>
@@ -739,9 +832,10 @@ export const ManufacturerPaymentPage = () => {
                     </span>
                     <ReceiptText className="mt-0.5 h-4 w-4 text-muted-foreground" />
                     <div className="min-w-0">
-                      <div className="font-medium">배송비 적립</div>
+                      <div className="font-medium">배송비 적립 (하청)</div>
                       <div className="text-muted-foreground">
-                        발송 패키지 1박스당 +3,500원
+                        발송 패키지 1박스당 공급가 3,500원 + 부가세 10%(합
+                        3,850원).
                       </div>
                     </div>
                   </div>
@@ -766,7 +860,8 @@ export const ManufacturerPaymentPage = () => {
                     <div className="min-w-0">
                       <div className="font-medium">일별 정산 집계</div>
                       <div className="text-muted-foreground">
-                        원장 기준 KST 일자별 실시간 집계
+                        원장 기준 KST 일자별 실시간 집계. 월 지급은 부가세
+                        포함액.
                       </div>
                     </div>
                   </div>
@@ -804,7 +899,7 @@ export const ManufacturerPaymentPage = () => {
                   onClick={() => setRequestSettlementFilter("paid")}
                   disabled={anyLoading}
                 >
-                  유료(의뢰+배송)
+                  유료
                 </Button>
                 <Button
                   type="button"
@@ -816,7 +911,7 @@ export const ManufacturerPaymentPage = () => {
                   onClick={() => setRequestSettlementFilter("free")}
                   disabled={anyLoading}
                 >
-                  무료(의뢰+배송)
+                  무료
                 </Button>
               </div>
               <Input
@@ -882,10 +977,14 @@ export const ManufacturerPaymentPage = () => {
                         <button
                           type="button"
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("paidNet")}
+                          onClick={() => toggleSnapshotSort("payoutNet")}
                         >
-                          유료 순액
-                          {renderSortIcon(snapshotSort.key === "paidNet", snapshotSort.direction)}
+                          지급순액
+                          {renderSortIcon(
+                            snapshotSort.key === "payoutNet" ||
+                              snapshotSort.key === "paidNet",
+                            snapshotSort.direction,
+                          )}
                         </button>
                       </TableHead>
                       <TableHead className="min-w-[170px] text-center">
@@ -894,7 +993,7 @@ export const ManufacturerPaymentPage = () => {
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
                           onClick={() => toggleSnapshotSort("freeNet")}
                         >
-                          무료순액
+                          유료/무료(참고)
                           {renderSortIcon(snapshotSort.key === "freeNet", snapshotSort.direction)}
                         </button>
                       </TableHead>
@@ -920,10 +1019,21 @@ export const ManufacturerPaymentPage = () => {
                         r.earnShippingFreeCount ?? 0,
                       );
 
-                      let requestText = `유료₩${paidAmount.toLocaleString()}(${paidCount}) / 무료₩${freeAmount.toLocaleString()}(${freeCount})`;
-                      let shippingText = `유료₩${shippingPaidAmount.toLocaleString()}(${shippingPaidCount}) / 무료₩${shippingFreeAmount.toLocaleString()}(${shippingFreeCount})`;
-                      // 정책상 롤백은 REFUND가 아니라 COMMIT 삭제이므로 refundAmount는 보통 0이다.
-                      // 기존 스냅샷 스키마/컬럼 호환을 위해 표시만 유지한다.
+                      const requestTotal = Number(
+                        r.earnRequestTotal ??
+                          Number(r.earnRequestAmount || 0) +
+                            Number(r.earnRequestVat || 0),
+                      );
+                      const shippingTotal = Number(
+                        r.earnShippingTotal ??
+                          Number(r.earnShippingAmount || 0) +
+                            Number(r.earnShippingVat || 0),
+                      );
+                      const requestCount = Number(r.earnRequestCount || 0);
+                      const shippingCount = Number(r.earnShippingCount || 0);
+
+                      let requestText = `₩${requestTotal.toLocaleString()}(${requestCount}) · 공급${Number(r.earnRequestAmount || 0).toLocaleString()}+VAT${Number(r.earnRequestVat || 0).toLocaleString()}`;
+                      let shippingText = `₩${shippingTotal.toLocaleString()}(${shippingCount}) · 공급${Number(r.earnShippingAmount || 0).toLocaleString()}+VAT${Number(r.earnShippingVat || 0).toLocaleString()}`;
                       const deductionParts: string[] = [];
                       const refundAmount = Number(r.refundAmount || 0);
                       const payoutAmount = Number(r.payoutAmount || 0);
@@ -932,23 +1042,36 @@ export const ManufacturerPaymentPage = () => {
                       if (payoutAmount !== 0) deductionParts.push(`지급 ₩${payoutAmount.toLocaleString()}`);
                       if (adjustAmount !== 0) deductionParts.push(`조정 ₩${adjustAmount.toLocaleString()}`);
                       let deductionText = deductionParts.length ? deductionParts.join(" / ") : "-";
-                      const paidNetValue = Number(
-                        (r.netPaidAmount ?? r.netAmount ?? 0),
+                      const payoutNetValue = Number(
+                        r.netPayoutAmount ?? r.netAmount ?? 0,
                       );
-                      let paidNetText = `₩${paidNetValue.toLocaleString()}`;
-                      let freeNetText = `의뢰₩${freeAmount.toLocaleString()} / 배송₩${shippingFreeAmount.toLocaleString()}`;
+                      let payoutNetText = `₩${payoutNetValue.toLocaleString()}`;
+                      let refText = `유료 의뢰₩${paidAmount.toLocaleString()}(${paidCount}) / 배송₩${shippingPaidAmount.toLocaleString()}(${shippingPaidCount}) · 무료 의뢰₩${freeAmount.toLocaleString()}(${freeCount}) / 배송₩${shippingFreeAmount.toLocaleString()}(${shippingFreeCount})`;
 
                       if (requestSettlementFilter === "paid") {
-                        requestText = `₩${paidAmount.toLocaleString()}(${paidCount})`;
-                        shippingText = `₩${shippingPaidAmount.toLocaleString()}(${shippingPaidCount})`;
-                        freeNetText = "-";
+                        const paidReqTotal = Number(
+                          r.earnRequestPaidTotal ?? paidAmount,
+                        );
+                        const paidShipTotal = Number(
+                          r.earnShippingPaidTotal ?? shippingPaidAmount,
+                        );
+                        requestText = `₩${paidReqTotal.toLocaleString()}(${paidCount})`;
+                        shippingText = `₩${paidShipTotal.toLocaleString()}(${shippingPaidCount})`;
+                        refText = "-";
                       }
 
                       if (requestSettlementFilter === "free") {
-                        requestText = `₩${freeAmount.toLocaleString()}(${freeCount})`;
-                        shippingText = `₩${shippingFreeAmount.toLocaleString()}(${shippingFreeCount})`;
+                        const freeReqTotal = Number(
+                          r.earnRequestFreeTotal ?? freeAmount,
+                        );
+                        const freeShipTotal = Number(
+                          r.earnShippingFreeTotal ?? shippingFreeAmount,
+                        );
+                        requestText = `₩${freeReqTotal.toLocaleString()}(${freeCount})`;
+                        shippingText = `₩${freeShipTotal.toLocaleString()}(${shippingFreeCount})`;
                         deductionText = "-";
-                        paidNetText = "-";
+                        payoutNetText = "-";
+                        refText = "-";
                       }
 
                       return (
@@ -967,10 +1090,10 @@ export const ManufacturerPaymentPage = () => {
                             {deductionText}
                           </TableCell>
                           <TableCell className="text-center text-xs font-semibold tabular-nums text-primary-strong whitespace-nowrap">
-                            {paidNetText}
+                            {payoutNetText}
                           </TableCell>
-                          <TableCell className="text-center text-[11px] tabular-nums text-primary-strong whitespace-nowrap">
-                            {freeNetText}
+                          <TableCell className="text-center text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
+                            {refText}
                           </TableCell>
                         </TableRow>
                       );

@@ -53,6 +53,10 @@ const systemSettingsSchema = new mongoose.Schema(
         default: [],
       },
       shippingFee: { type: Number, default: 3500 },
+      // 제조사(애크로덴트) 하청 공급가 — 어벗츠 지급 시 affiliateVatRate 부가세 가산
+      manufacturerRequestUnitPrice: { type: Number, default: 8000 },
+      manufacturerShippingUnitPrice: { type: Number, default: 3500 },
+      affiliateVatRate: { type: Number, default: 0.1 },
       // 신속 배송 추가 의뢰크레딧 (생산=건당, 디자인+생산=1어벗당, 가공 진입 시 차감)
       expressFee: { type: Number, default: 2000 },
       // 디자인비 (1어벗당). 멤버십 디자인+생산 − 멤버십 생산만과 동기화.

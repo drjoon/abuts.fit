@@ -2131,7 +2131,14 @@ export async function adminGetManufacturerSummary(req, res) {
             },
           },
           ownerIdStr: { $toString: "$ownerId" },
-          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          amountBase: {
+            $ifNull: [
+              "$amount",
+              { $ifNull: ["$amountIncludingVat", "$amountExcludingVat"] },
+            ],
+          },
+          amountSupply: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          amountVat: { $ifNull: ["$vatAmount", 0] },
           settlementEligible: {
             $or: [
               { $eq: ["$type", "PAYOUT"] },
@@ -2202,7 +2209,17 @@ export async function adminGetManufacturerSummary(req, res) {
             {
               $addFields: {
                 eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-                baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+                // 제조사 하청: 표시·합계는 VAT 포함액
+                baseAmount: {
+                  $ifNull: [
+                    "$amount",
+                    {
+                      $ifNull: ["$amountIncludingVat", "$amountExcludingVat"],
+                    },
+                  ],
+                },
+                supplyAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+                vatAmountField: { $ifNull: ["$vatAmount", 0] },
               },
             },
             {
@@ -2320,6 +2337,42 @@ export async function adminGetManufacturerSummary(req, res) {
                     ],
                   },
                 },
+                periodRequestVat: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                      "$vatAmountField",
+                      0,
+                    ],
+                  },
+                },
+                periodShippingVat: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                      "$vatAmountField",
+                      0,
+                    ],
+                  },
+                },
+                periodRequestSupply: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                      "$supplyAmount",
+                      0,
+                    ],
+                  },
+                },
+                periodShippingSupply: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                      "$supplyAmount",
+                      0,
+                    ],
+                  },
+                },
               },
             },
           ])
@@ -2392,6 +2445,23 @@ export async function adminGetManufacturerSummary(req, res) {
     const periodShippingAmount = normalizeNumber(
       periodPaidShippingAmount + periodFreeShippingAmount,
     );
+    const periodRequestVat = normalizeNumber(
+      Number(periodFreeRows?.[0]?.periodRequestVat || 0),
+    );
+    const periodShippingVat = normalizeNumber(
+      Number(periodFreeRows?.[0]?.periodShippingVat || 0),
+    );
+    const periodRequestSupply = normalizeNumber(
+      Number(periodFreeRows?.[0]?.periodRequestSupply || 0),
+    );
+    const periodShippingSupply = normalizeNumber(
+      Number(periodFreeRows?.[0]?.periodShippingSupply || 0),
+    );
+
+    const { loadCreditSettingsDefaults } = await import(
+      "../../utils/creditSettingsDefaults.js"
+    );
+    const creditSettings = await loadCreditSettingsDefaults();
 
     return res.json({
       success: true,
@@ -2411,6 +2481,17 @@ export async function adminGetManufacturerSummary(req, res) {
         periodPaidShippingCount,
         periodShippingAmount,
         periodFreeAmount,
+        periodRequestSupply,
+        periodRequestVat,
+        periodShippingSupply,
+        periodShippingVat,
+        manufacturerRequestUnitPrice: Number(
+          creditSettings.manufacturerRequestUnitPrice || 8000,
+        ),
+        manufacturerShippingUnitPrice: Number(
+          creditSettings.manufacturerShippingUnitPrice || 3500,
+        ),
+        affiliateVatRate: Number(creditSettings.affiliateVatRate ?? 0.1),
       },
     });
   } catch (error) {

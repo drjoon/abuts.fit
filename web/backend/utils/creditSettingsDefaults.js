@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
+// - 2026-08-15: 제조사 하청 단가·affiliateVatRate 설정 필드 추가.
 // - 2026-08-15: 특별 공급가 CNC/환봉 × 생산만·디자인+생산 정규화. 의뢰자 로드 시 단가 오버라이드.
 import { Types } from "mongoose";
 import SystemSettings from "../models/systemSettings.model.js";
@@ -23,6 +24,15 @@ const SCHEMA_DEFAULTS = (() => {
   return {
     minCreditForRequest: pickDefault("creditSettings.minCreditForRequest"),
     shippingFee: pickDefault("creditSettings.shippingFee"),
+    manufacturerRequestUnitPrice: pickDefault(
+      "creditSettings.manufacturerRequestUnitPrice",
+    ),
+    manufacturerShippingUnitPrice: pickDefault(
+      "creditSettings.manufacturerShippingUnitPrice",
+    ),
+    affiliateVatRate:
+      Number(SystemSettings.schema.path("creditSettings.affiliateVatRate")?.options?.default) ||
+      0.1,
     expressFee: pickDefault("creditSettings.expressFee"),
     designFee: pickDefault("creditSettings.designFee"),
     abutmentRetailPrice: pickDefault("creditSettings.abutmentRetailPrice"),
@@ -191,6 +201,21 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
           .filter((item) => item.requestorAnchorId)
       : [],
     shippingFee: Number(creditSettings.shippingFee ?? SCHEMA_DEFAULTS.shippingFee),
+    manufacturerRequestUnitPrice: Number(
+      creditSettings.manufacturerRequestUnitPrice ??
+        SCHEMA_DEFAULTS.manufacturerRequestUnitPrice,
+    ),
+    manufacturerShippingUnitPrice: Number(
+      creditSettings.manufacturerShippingUnitPrice ??
+        SCHEMA_DEFAULTS.manufacturerShippingUnitPrice,
+    ),
+    affiliateVatRate: (() => {
+      const raw = Number(
+        creditSettings.affiliateVatRate ?? SCHEMA_DEFAULTS.affiliateVatRate,
+      );
+      if (!Number.isFinite(raw) || raw < 0) return SCHEMA_DEFAULTS.affiliateVatRate;
+      return Math.min(1, raw);
+    })(),
     expressFee: Number(
       creditSettings.expressFee ?? SCHEMA_DEFAULTS.expressFee,
     ),

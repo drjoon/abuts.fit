@@ -4,6 +4,7 @@
 // - web/backend/scripts/db/migrate-request-spend-to-gl.js
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // change-log:
+// - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송)+VAT. 잔여는 salesman/devops/admin 재분배.
 // - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
 
 export const WITH_SALESMAN_DEFAULT_RATES = {
@@ -12,6 +13,11 @@ export const WITH_SALESMAN_DEFAULT_RATES = {
   salesmanRate: 0.1,
   adminRate: 0.2,
 };
+
+/** 제조사 하청 공급가·부가세 SSOT 기본값 (creditSettings와 동기). */
+export const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8000;
+export const DEFAULT_MANUFACTURER_SHIPPING_UNIT_PRICE = 3500;
+export const DEFAULT_AFFILIATE_VAT_RATE = 0.1;
 
 export function resolveConfiguredRevenueRates(devopsPayoutRates) {
   return {
@@ -32,7 +38,7 @@ function roundRate4(value) {
 
 /**
  * 영업자 소개가 없을 때: 영업자 분배비의 절반 → 제조사, 나머지 절반 → 관리자.
- * 기본값(영업자 10%)이면 제조사 65% / 관리자 25% / 개발운영사 10% / 영업자 0%.
+ * 레거시 %분배용. 제조사 고정단가 경로에서는 salesman 몫만 admin에 가산한다.
  */
 export function resolveRatesWithoutSalesman(configuredRates) {
   const rates = resolveConfiguredRevenueRates(configuredRates);
@@ -42,6 +48,16 @@ export function resolveRatesWithoutSalesman(configuredRates) {
     devopsRate: roundRate4(rates.devopsRate),
     salesmanRate: 0,
     adminRate: roundRate4(Number(rates.adminRate || 0) + halfSalesman),
+  };
+}
+
+/** 잔여(비제조사) 분배율: 영업자 없으면 salesman 몫 → admin. */
+export function resolveResidualRatesWithoutSalesman(configuredRates) {
+  const rates = resolveConfiguredRevenueRates(configuredRates);
+  return {
+    devopsRate: roundRate4(rates.devopsRate),
+    salesmanRate: 0,
+    adminRate: roundRate4(Number(rates.adminRate || 0) + Number(rates.salesmanRate || 0)),
   };
 }
 
@@ -68,10 +84,6 @@ export function resolvePlatformFeeRate(payoutRates) {
 /**
  * 기공의뢰 플랫폼 수수료율.
  * 자동 매칭 성공(수락) 시에만 기공비에 적용. 지정 기공소 의뢰는 0%.
- * 등록/미등록 치과를 나누지 않는다.
- * 걷힌 수수료는 resolveRevenueOwnerBaseAllocation()으로 4자 분배.
- * 요율 SSOT: BusinessAnchor.payoutRates.platformFeeRate
- * (관리자 플랫폼 설정「기공소 매칭」).
  */
 export function resolvePracticeTransferFeeRate({
   matchingMode,
@@ -88,6 +100,57 @@ export function isShippingSpendRevenueContext({ refType, freeAccountCode }) {
   );
 }
 
+export function resolveManufacturerUnitSettings(creditSettings = {}) {
+  const requestSupply = Math.max(
+    0,
+    Math.round(
+      Number(
+        creditSettings?.manufacturerRequestUnitPrice ??
+          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+      ) || 0,
+    ),
+  );
+  const shippingSupply = Math.max(
+    0,
+    Math.round(
+      Number(
+        creditSettings?.manufacturerShippingUnitPrice ??
+          DEFAULT_MANUFACTURER_SHIPPING_UNIT_PRICE,
+      ) || 0,
+    ),
+  );
+  const vatRateRaw = Number(
+    creditSettings?.affiliateVatRate ?? DEFAULT_AFFILIATE_VAT_RATE,
+  );
+  const vatRate =
+    Number.isFinite(vatRateRaw) && vatRateRaw >= 0
+      ? Math.min(1, vatRateRaw)
+      : DEFAULT_AFFILIATE_VAT_RATE;
+  return { requestSupply, shippingSupply, vatRate };
+}
+
+/**
+ * 제조사 하청 단가(공급가·VAT·합계).
+ * applyManufacturerUnit=false(express_surcharge 등)이면 0.
+ */
+export function resolveManufacturerUnitEarn({
+  isShippingSpend,
+  creditSettings,
+  applyManufacturerUnit = true,
+} = {}) {
+  if (!applyManufacturerUnit) {
+    return { supply: 0, vat: 0, total: 0, vatRate: 0 };
+  }
+  const { requestSupply, shippingSupply, vatRate } =
+    resolveManufacturerUnitSettings(creditSettings);
+  const supply = isShippingSpend ? shippingSupply : requestSupply;
+  const vat = Math.round(supply * vatRate);
+  return { supply, vat, total: supply + vat, vatRate };
+}
+
+/**
+ * @deprecated 레거시 %분배. 신규 커밋은 resolveRevenueOwnerBaseAllocation(고정단가) 사용.
+ */
 export function resolveRevenueBaseAllocation({ spendAmount, hasSalesmanReferrer, configuredRates }) {
   const effectiveRates = hasSalesmanReferrer
     ? resolveConfiguredRevenueRates(configuredRates)
@@ -113,50 +176,105 @@ export function resolveRevenueBaseAllocation({ spendAmount, hasSalesmanReferrer,
   };
 }
 
+function allocateResidualAmongAffiliates({
+  residualAmount,
+  hasSalesmanReferrer,
+  configuredRates,
+  owners,
+}) {
+  const residual = Math.max(0, Math.round(Number(residualAmount || 0)));
+  const rates = resolveConfiguredRevenueRates(configuredRates);
+  const devopsWeight = Math.max(0, Number(rates.devopsRate || 0));
+  const salesmanWeight = hasSalesmanReferrer
+    ? Math.max(0, Number(rates.salesmanRate || 0))
+    : 0;
+  const adminWeight = Math.max(0, Number(rates.adminRate || 0)) +
+    (hasSalesmanReferrer ? 0 : Math.max(0, Number(rates.salesmanRate || 0)));
+  const weightSum = devopsWeight + salesmanWeight + adminWeight;
+
+  let plannedDevops = 0;
+  let plannedSalesman = 0;
+  let plannedAdmin = residual;
+  if (weightSum > 0 && residual > 0) {
+    plannedDevops = Math.round((residual * devopsWeight) / weightSum);
+    plannedSalesman = Math.round((residual * salesmanWeight) / weightSum);
+    plannedAdmin = Math.max(0, residual - plannedDevops - plannedSalesman);
+  }
+
+  const devops = owners?.devopsAnchorId ? plannedDevops : 0;
+  const salesman = owners?.salesmanAnchorId ? plannedSalesman : 0;
+  let admin =
+    plannedAdmin +
+    (plannedDevops - devops) +
+    (plannedSalesman - salesman);
+
+  const allocated = devops + salesman + admin;
+  const gap = residual - allocated;
+  if (gap !== 0) admin += gap;
+
+  return { devops, salesman, admin };
+}
+
 export const REVENUE_OWNER_ORDER = ["manufacturer", "devops", "salesman", "admin"];
 
+/**
+ * 제조사 = 하청 고정 공급가. 잔여 = spend − 제조사 공급가 → salesman/devops/admin.
+ * express 등 applyManufacturerUnit=false 이면 제조사 0·전액 잔여 분배.
+ * 배송: 제조사 배송 공급가, 잔여 → admin(및 잔여 비율이 있으면 동일 로직).
+ */
 export function resolveRevenueOwnerBaseAllocation({
   spendAmount,
   hasSalesmanReferrer,
   configuredRates,
   owners,
   isShippingSpend,
+  creditSettings,
+  applyManufacturerUnit = true,
 }) {
+  const spend = Math.max(0, Math.round(Number(spendAmount || 0)));
+  const unitEarn = resolveManufacturerUnitEarn({
+    isShippingSpend,
+    creditSettings,
+    applyManufacturerUnit,
+  });
+
+  // 저널 균형(의뢰자 소비 공급가 = REV 공급가 합): 단가는 소비액으로 캡.
+  // VAT는 캡된 공급가×요율(어벗츠 추가 지급, 보존식 밖).
+  const manufacturer =
+    owners?.manufacturerAnchorId && applyManufacturerUnit
+      ? Math.min(unitEarn.supply, spend)
+      : 0;
+  const manufacturerVat =
+    manufacturer > 0 ? Math.round(manufacturer * Number(unitEarn.vatRate || 0)) : 0;
+
+  const residual = Math.max(0, spend - manufacturer);
+
   if (isShippingSpend) {
-    const manufacturer = owners?.manufacturerAnchorId ? spendAmount : 0;
+    // 배송 잔여는 기본적으로 관리자. 타 role 앵커가 있어도 배송은 admin 귀속.
     return {
       manufacturer,
       devops: 0,
       salesman: 0,
-      admin: Math.max(0, spendAmount - manufacturer),
+      admin: residual,
+      manufacturerVat,
+      manufacturerVatRate: unitEarn.vatRate,
     };
   }
 
-  const planned = resolveRevenueBaseAllocation({
-    spendAmount,
+  const residualSplit = allocateResidualAmongAffiliates({
+    residualAmount: residual,
     hasSalesmanReferrer,
     configuredRates,
+    owners,
   });
-
-  const manufacturer = owners?.manufacturerAnchorId ? planned.manufacturer : 0;
-  const devops = owners?.devopsAnchorId ? planned.devops : 0;
-  const salesman = owners?.salesmanAnchorId ? planned.salesman : 0;
-
-  let admin =
-    planned.admin +
-    (planned.manufacturer - manufacturer) +
-    (planned.devops - devops) +
-    (planned.salesman - salesman);
-
-  const allocatedTotal = manufacturer + devops + salesman + admin;
-  const allocationGap = spendAmount - allocatedTotal;
-  if (allocationGap !== 0) admin += allocationGap;
 
   return {
     manufacturer,
-    devops,
-    salesman,
-    admin,
+    devops: residualSplit.devops,
+    salesman: residualSplit.salesman,
+    admin: residualSplit.admin,
+    manufacturerVat,
+    manufacturerVatRate: unitEarn.vatRate,
   };
 }
 

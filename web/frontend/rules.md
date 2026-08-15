@@ -167,8 +167,8 @@ Notes:
   - `src/pages/admin/support/AdminChatManagement.tsx`
   - `src/pages/admin/support/AdminSmsPage.tsx` (로컬 SMS 템플릿 CRUD·사업자/사용자 휴대폰 수신자 선택)
 - 제조사 정산
-  - `src/pages/manufacturer/payments/PaymentsPage.tsx`
-  - `src/pages/admin/AdminPaymentsPage.tsx`
+  - `src/pages/manufacturer/payments/PaymentsPage.tsx` — 하청 고정단가(의뢰/배송·VAT 포함 지급)
+  - `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 3사업 축(커스텀어벗 생산·자동매칭 수수료·기공소 직접운영) + 제조사 탭
 
 ## 1. 구조
 
@@ -395,8 +395,9 @@ Notes:
   - 관리자 크레딧 집계 카드는 `totalChargedFreeAmount`, `totalSpentFreeAmount` 또는
     `totalFreeRequest+totalFreeShipping`, `totalSpentFreeRequestAmount+totalSpentFreeShippingAmount`를 SSOT로 사용합니다.
 
-- 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3):
-  - 운영 주체는 면세 사업자. 가격·충전·약관·정산 안내에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지.
+- 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 이중 체계:
+  - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지.
+  - **관계사 정산(과세)**: 제조사 등 하청·관계사 지급 UI에는 공급가·부가세·합계(부가세 포함) 표시 허용.
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
     화면 제목/안내: **크레딧(기공료 선입금)** — 선불페이(전자금융업)가 아니라 B2B 기공물 대금 선납임을 충전 화면·FAQ·약관에 명시.
     카피 SSOT: `src/shared/legal/creditPrepaidCopy.ts`
@@ -406,15 +407,16 @@ Notes:
     충전 단위 SSOT: 기공소(`lab`) 50만원, 치과(`practice`) 100만원.
     첫 충전 기본 1단위. 2회차부터 기본 추천 = 월사용량(90일/3)의 1/3을 단위로 반올림(0이면 최소 1단위).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
-  - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금), 미사용 잔액은 요청 시 환불(마이너스 수정 계산서). 선불페이/선결제 잔액 표현 금지.
+  - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 치과·기공소 경로는 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금).
   - 가격 정책/대시보드: `PricingPolicyDialog` — CNC어벗 생산만(2만/멤버십 1.5만) · CNC어벗 디자인+생산(4만/멤버십 2.5만) · 환봉어벗 생산만/디자인+생산(`creditSettings` 단가, 0원이면 별도 고지) + 배송비 별도(박스당 과금).
-  - 제조사 정산규칙 안내: 분배율만 안내하고 "+ VAT 10%" 표기 금지.
-  - 관리자 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0).
+  - 제조사 정산규칙: 원청–하청 고정단가(의뢰 공급가+VAT / 배송 공급가+VAT). % 분배 안내 금지.
+  - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 관계사 `AFFILIATE_TO_ABUTS`는 과세.
 
 - 단일 SSOT 장부 UI 필드 계약(초안):
   - Journal: `journalId`, `eventType`, `businessAnchorId`, `refType`, `refId`, `stageFrom`, `stageTo`, `occurredAt`
   - Line: `lineNo`, `accountCode`, `ownerRole`, `ownerId`, `amount`, `amountExcludingVat`, `vatAmount`, `amountIncludingVat`, `creditKind`
-    - 면세 정책상 신규 적재는 `vatAmount = 0`, `amount = amountExcludingVat = amountIncludingVat`
+    - 의뢰자·비제조사: `vatAmount = 0`, `amount = amountExcludingVat = amountIncludingVat`
+    - 제조사 `REV_MANUFACTURER`: `amountExcludingVat`=공급가, `vatAmount`>0, `amount`=`amountIncludingVat`=합
   - 수익 계정코드: `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - 워크시트/정산 저장 이벤트: `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_COMMIT`, `SETTLEMENT_PAYOUT`
   - 발생 타이밍: `REQUEST_SPEND_COMMIT`=가공 진입 승인(준비→가공), `SHIPPING_SPEND_COMMIT`=세척.패킹 승인(포장.발송 진입)
@@ -489,15 +491,16 @@ Notes:
     - `src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
 
 - 제조사 정산(일별) 표시 정책:
-  - 제조사 결제 페이지의 일별 정산 표는 `의뢰/배송/환불·지급·조정(단일 셀)/유료 순액/무료 순액(의뢰·배송·합계)` 컬럼으로 표시합니다.
-  - 의뢰/배송 **건수**는 백엔드가 반환하는 의뢰·패키지 유니크 건수를 그대로 표시한다.
-    (`machining_spend`와 `express_surcharge`를 프론트에서 각각 세지 않는다.)
+  - 하청 고정단가: 의뢰/배송을 **반드시 분리** 표시(공급가·VAT·합계·건수). 유료/무료는 보조 필터(`유료`/`무료`, 「의뢰+배송」 묶음 라벨 금지).
+  - 일별 표 컬럼: `의뢰/배송/환불·지급·조정/지급 순액(VAT 포함)·참고(유료·무료 분해)`.
+  - 의뢰/배송 **건수**는 백엔드 유니크 건수 SSOT. (`machining_spend`+`express_surcharge`를 프론트에서 각각 세지 않음.)
   - 일별 목록은 KST **오늘 이후(미도래 일자)를 표시하지 않는다**. `이번달` 프리셋 종료일도 오늘이다.
-  - `환불·지급·조정` 셀은 `환불 ₩x / 지급 ₩y / 조정 ₩z` 형식으로 항목 라벨과 금액을 함께 표기합니다.
-  - `무료(의뢰+배송)` 필터에서는 `환불·지급·조정/유료 순액`을 `-`로 표시하고 무료 분해값/무료 순액만 노출합니다.
-  - `유료(의뢰+배송)` 필터에서는 무료 순액을 `-`로 표시합니다.
-  - 정산 유료 순액은 지급 대상 기준과 일치해야 하며, 무료 기원 조정은 지급 잔액 계산에 포함하지 않습니다.
+  - 제조사 지급 대상은 **유료 하청비만**(VAT 포함). 무료는 적립·표시만 하고 지급 0. 상단 카드는 의뢰·배송 분해.
   - 상단 합계 카드는 `DashboardShell.statsGridClassName`을 명시해 카드가 과도하게 좁아지지 않도록 유지합니다.
+
+- 관리자 정산(`AdminPaymentsPage`) 표시 정책:
+  - 상단 3사업 축: (1) 커스텀 어벗 생산·공급(제조사 하청) (2) 자동매칭 수수료 (3) 기공소 직접 운영.
+  - 제조사 탭: 고정단가·의뢰/배송·VAT. 영업자·개발운영사·관리자 탭은 기존 유지(후속 세션).
 
 - 제조사 워크시트 크레딧 승인/롤백 정책:
   - 가공 진입 승인으로 `가공` 단계 이동 시 의뢰 크레딧 소비가 발생합니다.
@@ -752,7 +755,7 @@ Notes:
 - 제조사 정산(`src/pages/manufacturer/payments/PaymentsPage.tsx`) 표시 정책:
   - 백엔드 `GET /api/manufacturer/credits/daily-summary`는 `LedgerLine` 집계 결과를 반환하며, 프론트는 해당 응답을 SSOT로 사용합니다.
   - 건수 필드(`earnRequest*Count`, `earnShipping*Count`)는 의뢰/패키지 `refId` 유니크이며, 라인·저널 수가 아니다.
-  - paid/free 분해값 표시는 fallback 없이 `earnRequestPaid*`, `earnRequestFree*`, `earnShippingPaid*`, `earnShippingFree*`를 SSOT로 사용합니다.
+  - 의뢰/배송 금액은 공급가·VAT·합계 필드를 우선 표시. paid/free 분해는 `earnRequestPaid*` 등 SSOT.
   - 분해 필드 누락/합계 불일치 시 행을 화면에서 제외하고 오류 토스트/배너로 예외를 노출합니다.
   - 운영자 확인은 관리자 대시보드의 `systemAlerts` 경고를 통해 추적합니다.
 

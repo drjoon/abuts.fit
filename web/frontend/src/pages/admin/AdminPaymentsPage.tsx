@@ -83,6 +83,13 @@ type ManufacturerSummary = {
   periodPaidShippingCount?: number;
   periodShippingAmount?: number;
   periodFreeAmount?: number;
+  periodRequestSupply?: number;
+  periodRequestVat?: number;
+  periodShippingSupply?: number;
+  periodShippingVat?: number;
+  manufacturerRequestUnitPrice?: number;
+  manufacturerShippingUnitPrice?: number;
+  affiliateVatRate?: number;
 };
 
 const formatMoney = (value?: number) =>
@@ -360,9 +367,13 @@ function RoleSummarySection({
     <div className="space-y-4">
       <div className={cardGridClassName || "grid gap-3 sm:grid-cols-2 xl:grid-cols-4"}>
         <SummaryCard
-          title={`${title} 배분율`}
+          title={`${title} ${title === "제조사" ? "하청 단가" : "배분율"}`}
           value={rate}
-          description="유료의뢰비 기준"
+          description={
+            title === "제조사"
+              ? "의뢰/배송 공급가 (+VAT)"
+              : "유료의뢰비 기준"
+          }
         />
         <SummaryCard
           title="사업자 수"
@@ -370,12 +381,14 @@ function RoleSummarySection({
           description="BusinessAnchor 기준"
         />
         <SummaryCard
-          title="유료 미정산액 합계"
+          title={title === "제조사" ? "미지급 합계(VAT 포함)" : "유료 미정산액 합계"}
           value={`${formatMoney(summaryData?.balance ?? fallbackBalanceTotal)}원`}
-          description="누적 미지급 잔액"
+          description={
+            title === "제조사" ? "유료 하청 미지급" : "누적 미지급 잔액"
+          }
         />
         <SummaryBreakdownCard
-          title="무료 미정산액 합계"
+          title={title === "제조사" ? "무료 하청(참고·지급 0)" : "무료 미정산액 합계"}
           totalValue={`${formatMoney(summaryData?.freeTotal ?? fallbackFreeTotal)}원`}
           requestValue={`${formatMoney(summaryData?.freeRequest ?? fallbackFreeRequestTotal)}원`}
           shippingValue={`${formatMoney(summaryData?.freeShipping ?? fallbackFreeShippingTotal)}원`}
@@ -1004,7 +1017,7 @@ export default function AdminPaymentsPage() {
   return (
     <DashboardShell
       title="정산"
-      subtitle="유료의뢰비 기준 수익 배분 및 정산 현황"
+      subtitle="어벗츠 3사업 · 제조사 하청(부가세 포함) 정산"
       headerRight={undefined}
       statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
       stats={
@@ -1012,19 +1025,44 @@ export default function AdminPaymentsPage() {
           <Card className="min-h-[116px]">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
-                유료 의뢰비/배송비 총액
+                1. 커스텀 어벗 생산·공급
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1">
-              <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums">
-                {isLoading ? "-" : `${formatMoney(totals.paidRevenueTotal)}원`}
+              <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums text-primary-strong">
+                {isLoading
+                  ? "-"
+                  : `${formatMoney(totals.manufacturerPaid)}원`}
               </div>
               <div className="space-y-0.5 text-xs text-muted-foreground tabular-nums leading-tight">
                 <div>
-                  의뢰비 {isLoading ? "-" : `${formatMoney(totals.paidRequestRevenue)}원`} ({isLoading ? "-" : totals.paidRequestCount.toLocaleString()})
+                  하청 유료 미지급(VAT 포함) · 의뢰{" "}
+                  {isLoading
+                    ? "-"
+                    : `${formatMoney(
+                        Number(manufacturerSummary?.periodPaidRequestAmount || 0),
+                      )}원`}{" "}
+                  / 배송{" "}
+                  {isLoading
+                    ? "-"
+                    : `${formatMoney(
+                        Number(manufacturerSummary?.periodPaidShippingAmount || 0),
+                      )}원`}
                 </div>
                 <div>
-                  배송비 {isLoading ? "-" : `${formatMoney(totals.paidShippingRevenue)}원`} ({isLoading ? "-" : totals.paidShippingCount.toLocaleString()})
+                  단가 의뢰{" "}
+                  {formatMoney(
+                    Number(
+                      manufacturerSummary?.manufacturerRequestUnitPrice || 8000,
+                    ),
+                  )}
+                  +VAT / 배송{" "}
+                  {formatMoney(
+                    Number(
+                      manufacturerSummary?.manufacturerShippingUnitPrice || 3500,
+                    ),
+                  )}
+                  +VAT
                 </div>
               </div>
             </CardContent>
@@ -1032,39 +1070,33 @@ export default function AdminPaymentsPage() {
           <Card className="min-h-[116px]">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
-                유료 미정산액 합계
+                2. 자동매칭 수수료
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-start justify-between gap-3">
-                <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums text-primary-strong leading-tight">
-                  {isLoading ? "-" : `${formatMoney(totals.unpaidBalance)}원`}
-                </div>
-                <div className="space-y-0.5 text-right text-xs text-muted-foreground tabular-nums leading-tight">
-                  <div>
-                    제조사 {isLoading ? "-" : `${formatMoney(totals.manufacturerPaid)}원`} ({isLoading ? "-" : totals.manufacturerPaidCount.toLocaleString()})
-                  </div>
-                  <div>
-                    영업자 {isLoading ? "-" : `${formatMoney(totals.salesmanPaid)}원`} ({isLoading ? "-" : totals.salesmanPaidCount.toLocaleString()})
-                  </div>
-                  <div>
-                    개발운영사 {isLoading ? "-" : `${formatMoney(totals.devopsPaid)}원`} ({isLoading ? "-" : totals.devopsPaidCount.toLocaleString()})
-                  </div>
-                  <div>
-                    관리자 {isLoading ? "-" : `${formatMoney(totals.adminPaid)}원`} ({isLoading ? "-" : totals.adminPaidCount.toLocaleString()})
-                  </div>
-                </div>
+            <CardContent className="space-y-1">
+              <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums">
+                —
+              </div>
+              <div className="text-xs text-muted-foreground leading-tight">
+                기공비의 platformFeeRate(기본 10%). 상세 집계는 후속 세션.
               </div>
             </CardContent>
           </Card>
-          <SummaryBreakdownCard
-            title="무료 미정산액 합계"
-            totalValue={isLoading ? "-" : `${formatMoney(totals.freeTotal)}원`}
-            requestValue={isLoading ? "-" : `${formatMoney(totals.freeRequestTotal)}원`}
-            shippingValue={isLoading ? "-" : `${formatMoney(totals.freeShippingTotal)}원`}
-            requestCount={isLoading ? undefined : totals.requestDetailCount}
-            shippingCount={isLoading ? undefined : totals.shippingDetailCount}
-          />
+          <Card className="min-h-[116px]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
+                3. 기공소 직접 운영
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums">
+                —
+              </div>
+              <div className="text-xs text-muted-foreground leading-tight">
+                치과 의뢰 직접 처리·기공크레딧. 상세는 후속 세션.
+              </div>
+            </CardContent>
+          </Card>
         </>
       }
       mainLeft={
@@ -1088,9 +1120,23 @@ export default function AdminPaymentsPage() {
           </div>
 
           <TabsContent value="manufacturer">
+            <div className="mb-2 text-xs text-muted-foreground">
+              원청(어벗츠)–하청(애크로덴트) 고정단가. 유료·무료 모두 적립하되,
+              지급은 유료만(VAT 포함·무료 지급 0).
+            </div>
             <RoleSummarySection
               title="제조사"
-              rate="60% / 65%"
+              rate={`${formatMoney(
+                Number(
+                  manufacturerSummary?.manufacturerRequestUnitPrice || 8000,
+                ),
+              )} / ${formatMoney(
+                Number(
+                  manufacturerSummary?.manufacturerShippingUnitPrice || 3500,
+                ),
+              )} (+VAT ${(
+                Number(manufacturerSummary?.affiliateVatRate ?? 0.1) * 100
+              ).toFixed(0)}%)`}
               groups={groupsByType.manufacturer}
               displayGroups={filteredBySearch.manufacturer}
               summaryData={{
@@ -1116,20 +1162,38 @@ export default function AdminPaymentsPage() {
                 <Card className="min-h-[116px]">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
-                      배송비 합계액
+                      의뢰/배송 하청(VAT 포함)
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-1">
-                    <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums">
-                      {formatMoney(totals.manufacturerShippingAmount)}원
+                  <CardContent className="space-y-0.5 text-xs text-muted-foreground tabular-nums">
+                    <div>
+                      의뢰 공급{" "}
+                      {formatMoney(
+                        Number(manufacturerSummary?.periodRequestSupply || 0),
+                      )}
+                      원 + VAT{" "}
+                      {formatMoney(
+                        Number(manufacturerSummary?.periodRequestVat || 0),
+                      )}
+                      원
                     </div>
-                    <div className="space-y-0.5 text-xs text-muted-foreground tabular-nums leading-tight">
-                      <div>
-                        유료 배송비 {formatMoney(totals.manufacturerPaidShippingAmount)}원 ({totals.manufacturerPaidShippingCount.toLocaleString()})
-                      </div>
-                      <div>
-                        무료 배송비 {formatMoney(manufacturerSummary?.periodFreeShippingAmount || 0)}원 ({totals.manufacturerShippingDetailCount.toLocaleString()})
-                      </div>
+                    <div>
+                      배송 공급{" "}
+                      {formatMoney(
+                        Number(manufacturerSummary?.periodShippingSupply || 0),
+                      )}
+                      원 + VAT{" "}
+                      {formatMoney(
+                        Number(manufacturerSummary?.periodShippingVat || 0),
+                      )}
+                      원
+                    </div>
+                    <div>
+                      배송 합계{" "}
+                      {formatMoney(
+                        Number(manufacturerSummary?.periodShippingAmount || 0),
+                      )}
+                      원
                     </div>
                   </CardContent>
                 </Card>
@@ -1138,6 +1202,9 @@ export default function AdminPaymentsPage() {
           </TabsContent>
 
           <TabsContent value="salesman">
+            <div className="mb-2 text-xs text-muted-foreground">
+              영업자 탭 UI는 다음 세션에서 리팩터합니다.
+            </div>
             <RoleSummarySection
               title="영업자"
               rate="10%"
@@ -1163,6 +1230,9 @@ export default function AdminPaymentsPage() {
           </TabsContent>
 
           <TabsContent value="devops">
+            <div className="mb-2 text-xs text-muted-foreground">
+              개발운영사 탭 UI는 다음 세션에서 리팩터합니다.
+            </div>
             <RoleSummarySection
               title="개발운영사"
               rate="10%"

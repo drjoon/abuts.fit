@@ -52,6 +52,36 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
     },
   });
 
+  const vatCond = (eventType, creditKind) => ({
+    $sum: {
+      $cond: [
+        {
+          $and: [
+            { $eq: ["$_id.eventType", eventType] },
+            { $eq: ["$_id.creditKind", creditKind] },
+          ],
+        },
+        "$vat",
+        0,
+      ],
+    },
+  });
+
+  const totalCond = (eventType, creditKind) => ({
+    $sum: {
+      $cond: [
+        {
+          $and: [
+            { $eq: ["$_id.eventType", eventType] },
+            { $eq: ["$_id.creditKind", creditKind] },
+          ],
+        },
+        "$total",
+        0,
+      ],
+    },
+  });
+
   const countCond = (eventType, creditKind) => ({
     $sum: {
       $cond: [
@@ -82,6 +112,13 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
             }
           : {}),
         baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        vatAmountField: { $ifNull: ["$vatAmount", 0] },
+        totalAmount: {
+          $ifNull: [
+            "$amountIncludingVat",
+            { $ifNull: ["$amount", { $ifNull: ["$amountExcludingVat", 0] }] },
+          ],
+        },
         eventType: { $ifNull: ["$journalDoc.eventType", ""] },
         // refId 누락 이관 데이터는 journalId로라도 유니크 키를 유지
         settleRefKey: { $ifNull: ["$refId", "$journalId"] },
@@ -96,18 +133,31 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
           refId: "$settleRefKey",
         },
         amount: { $sum: "$baseAmount" },
+        vat: { $sum: "$vatAmountField" },
+        total: { $sum: "$totalAmount" },
       },
     },
     {
       $group: {
         _id: groupByYmd ? "$_id.ymd" : null,
         earnRequestPaidAmount: amountCond("REQUEST_SPEND_COMMIT", "PAID"),
+        earnRequestPaidVat: vatCond("REQUEST_SPEND_COMMIT", "PAID"),
+        earnRequestPaidTotal: totalCond("REQUEST_SPEND_COMMIT", "PAID"),
         earnRequestPaidCount: countCond("REQUEST_SPEND_COMMIT", "PAID"),
         earnRequestFreeAmount: amountCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
+        earnRequestFreeVat: vatCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
+        earnRequestFreeTotal: totalCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
         earnRequestFreeCount: countCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
         earnShippingPaidAmount: amountCond("SHIPPING_SPEND_COMMIT", "PAID"),
+        earnShippingPaidVat: vatCond("SHIPPING_SPEND_COMMIT", "PAID"),
+        earnShippingPaidTotal: totalCond("SHIPPING_SPEND_COMMIT", "PAID"),
         earnShippingPaidCount: countCond("SHIPPING_SPEND_COMMIT", "PAID"),
         earnShippingFreeAmount: amountCond(
+          "SHIPPING_SPEND_COMMIT",
+          "FREE_SHIPPING",
+        ),
+        earnShippingFreeVat: vatCond("SHIPPING_SPEND_COMMIT", "FREE_SHIPPING"),
+        earnShippingFreeTotal: totalCond(
           "SHIPPING_SPEND_COMMIT",
           "FREE_SHIPPING",
         ),
@@ -119,7 +169,7 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
           $sum: {
             $cond: [
               { $eq: ["$_id.eventType", "SETTLEMENT_PAYOUT"] },
-              "$amount",
+              "$total",
               0,
             ],
           },
@@ -138,7 +188,7 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
                   },
                 ],
               },
-              "$amount",
+              "$total",
               0,
             ],
           },
@@ -471,23 +521,34 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
       {
         $project: {
           _id: 0,
-          earnRequestAmount: "$earnRequestPaidAmount",
-          earnRequestCount: "$earnRequestPaidCount",
-          earnShippingAmount: "$earnShippingPaidAmount",
-          earnShippingCount: "$earnShippingPaidCount",
-          refundAmount: { $literal: 0 },
-          payoutAmount: "$payoutAmount",
-          adjustAmount: "$adjustAmount",
+          earnRequestPaidAmount: 1,
+          earnRequestFreeAmount: 1,
+          earnRequestPaidTotal: 1,
+          earnRequestFreeTotal: 1,
+          earnRequestPaidCount: 1,
+          earnRequestFreeCount: 1,
+          earnShippingPaidAmount: 1,
+          earnShippingFreeAmount: 1,
+          earnShippingPaidTotal: 1,
+          earnShippingFreeTotal: 1,
+          earnShippingPaidCount: 1,
+          earnShippingFreeCount: 1,
+          payoutAmount: 1,
+          adjustAmount: 1,
         },
       },
     ]);
 
+    const requestTotal =
+      Number(summary?.earnRequestPaidTotal || 0);
+    const shippingTotal =
+      Number(summary?.earnShippingPaidTotal || 0);
     const sums = {
-      earnRequestAmount: Number(summary?.earnRequestAmount || 0),
-      earnRequestCount: Number(summary?.earnRequestCount || 0),
-      earnShippingAmount: Number(summary?.earnShippingAmount || 0),
-      earnShippingCount: Number(summary?.earnShippingCount || 0),
-      refundAmount: Number(summary?.refundAmount || 0),
+      earnRequestAmount: requestTotal,
+      earnRequestCount: Number(summary?.earnRequestPaidCount || 0),
+      earnShippingAmount: shippingTotal,
+      earnShippingCount: Number(summary?.earnShippingPaidCount || 0),
+      refundAmount: 0,
       payoutAmount: Number(summary?.payoutAmount || 0),
       adjustAmount: Number(summary?.adjustAmount || 0),
     };
@@ -832,12 +893,20 @@ export async function getManufacturerCreditDailySummary(req, res) {
           _id: 0,
           ymd: "$_id",
           earnRequestPaidAmount: 1,
+          earnRequestPaidVat: 1,
+          earnRequestPaidTotal: 1,
           earnRequestPaidCount: 1,
           earnRequestFreeAmount: 1,
+          earnRequestFreeVat: 1,
+          earnRequestFreeTotal: 1,
           earnRequestFreeCount: 1,
           earnShippingPaidAmount: 1,
+          earnShippingPaidVat: 1,
+          earnShippingPaidTotal: 1,
           earnShippingPaidCount: 1,
           earnShippingFreeAmount: 1,
+          earnShippingFreeVat: 1,
+          earnShippingFreeTotal: 1,
           earnShippingFreeCount: 1,
           payoutAmount: 1,
           adjustAmount: 1,
@@ -849,43 +918,101 @@ export async function getManufacturerCreditDailySummary(req, res) {
       ymd,
       earnRequestAmount: 0,
       earnRequestCount: 0,
+      earnRequestVat: 0,
+      earnRequestTotal: 0,
       earnShippingAmount: 0,
       earnShippingCount: 0,
+      earnShippingVat: 0,
+      earnShippingTotal: 0,
       refundAmount: 0,
       payoutAmount: 0,
       adjustAmount: 0,
       netAmount: 0,
       netPaidAmount: 0,
+      netPayoutAmount: 0,
       netFreeRequestAmount: 0,
       netFreeShippingAmount: 0,
       netFreeAmount: 0,
       earnRequestPaidAmount: 0,
+      earnRequestPaidVat: 0,
+      earnRequestPaidTotal: 0,
       earnRequestPaidCount: 0,
       earnRequestFreeAmount: 0,
+      earnRequestFreeVat: 0,
+      earnRequestFreeTotal: 0,
       earnRequestFreeCount: 0,
       earnShippingPaidAmount: 0,
+      earnShippingPaidVat: 0,
+      earnShippingPaidTotal: 0,
       earnShippingPaidCount: 0,
       earnShippingFreeAmount: 0,
+      earnShippingFreeVat: 0,
+      earnShippingFreeTotal: 0,
       earnShippingFreeCount: 0,
     });
 
     const recomputeNetAmount = (targetRow) => {
-      const paidNet =
-        Number(targetRow.earnRequestAmount || 0) +
-        Number(targetRow.earnShippingAmount || 0) +
+      const requestSupply =
+        Number(targetRow.earnRequestPaidAmount || 0) +
+        Number(targetRow.earnRequestFreeAmount || 0);
+      const requestVat =
+        Number(targetRow.earnRequestPaidVat || 0) +
+        Number(targetRow.earnRequestFreeVat || 0);
+      const requestTotal =
+        Number(targetRow.earnRequestPaidTotal || 0) +
+        Number(targetRow.earnRequestFreeTotal || 0) ||
+        requestSupply + requestVat;
+      const shippingSupply =
+        Number(targetRow.earnShippingPaidAmount || 0) +
+        Number(targetRow.earnShippingFreeAmount || 0);
+      const shippingVat =
+        Number(targetRow.earnShippingPaidVat || 0) +
+        Number(targetRow.earnShippingFreeVat || 0);
+      const shippingTotal =
+        Number(targetRow.earnShippingPaidTotal || 0) +
+        Number(targetRow.earnShippingFreeTotal || 0) ||
+        shippingSupply + shippingVat;
+
+      // 표시용 총액(유료+무료). 지급 순액은 유료만.
+      targetRow.earnRequestAmount = requestSupply;
+      targetRow.earnRequestVat = requestVat;
+      targetRow.earnRequestTotal = requestTotal;
+      targetRow.earnRequestCount =
+        Number(targetRow.earnRequestPaidCount || 0) +
+        Number(targetRow.earnRequestFreeCount || 0);
+      targetRow.earnShippingAmount = shippingSupply;
+      targetRow.earnShippingVat = shippingVat;
+      targetRow.earnShippingTotal = shippingTotal;
+      targetRow.earnShippingCount =
+        Number(targetRow.earnShippingPaidCount || 0) +
+        Number(targetRow.earnShippingFreeCount || 0);
+
+      const paidRequestTotal =
+        Number(targetRow.earnRequestPaidTotal || 0) ||
+        Number(targetRow.earnRequestPaidAmount || 0) +
+          Number(targetRow.earnRequestPaidVat || 0);
+      const paidShippingTotal =
+        Number(targetRow.earnShippingPaidTotal || 0) ||
+        Number(targetRow.earnShippingPaidAmount || 0) +
+          Number(targetRow.earnShippingPaidVat || 0);
+
+      const payoutEligibleTotal =
+        paidRequestTotal +
+        paidShippingTotal +
         Number(targetRow.refundAmount || 0) +
         Number(targetRow.payoutAmount || 0) +
         Number(targetRow.adjustAmount || 0);
+
       const freeRequestNet = Number(targetRow.earnRequestFreeAmount || 0);
       const freeShippingNet = Number(targetRow.earnShippingFreeAmount || 0);
-      const freeNet = freeRequestNet + freeShippingNet;
 
-      targetRow.netPaidAmount = paidNet;
+      // 지급 순액: 유료만(VAT 포함). 무료는 표시·확인용.
+      targetRow.netPayoutAmount = payoutEligibleTotal;
+      targetRow.netPaidAmount = payoutEligibleTotal;
       targetRow.netFreeRequestAmount = freeRequestNet;
       targetRow.netFreeShippingAmount = freeShippingNet;
-      targetRow.netFreeAmount = freeNet;
-      // 하위호환: 기존 netAmount는 유료 정산 순액으로 유지
-      targetRow.netAmount = paidNet;
+      targetRow.netFreeAmount = freeRequestNet + freeShippingNet;
+      targetRow.netAmount = payoutEligibleTotal;
       return targetRow;
     };
 
@@ -898,12 +1025,6 @@ export async function getManufacturerCreditDailySummary(req, res) {
         ...makeEmptyRow(ymd),
         ...row,
       };
-
-      // 정책: 화면 총액/총건수는 paid 분해값만 반영
-      normalized.earnRequestAmount = Number(normalized.earnRequestPaidAmount || 0);
-      normalized.earnRequestCount = Number(normalized.earnRequestPaidCount || 0);
-      normalized.earnShippingAmount = Number(normalized.earnShippingPaidAmount || 0);
-      normalized.earnShippingCount = Number(normalized.earnShippingPaidCount || 0);
 
       rowMap.set(ymd, recomputeNetAmount(normalized));
     }

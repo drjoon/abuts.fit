@@ -178,6 +178,13 @@ async function postSpendCommitGeneralLedger({
     return { posted: false, reason: "requestor_anchor_not_found" };
   }
 
+  const { loadCreditSettingsDefaults } = await import(
+    "../../utils/creditSettingsDefaults.js"
+  );
+  const creditSettings = await loadCreditSettingsDefaults();
+  const applyManufacturerUnit =
+    String(usageKind || "").trim() !== "express_surcharge";
+
   const lines = [];
   const spendMeta = {
     spendUniqueKey,
@@ -254,12 +261,15 @@ async function postSpendCommitGeneralLedger({
       refType,
       freeAccountCode: primaryFreeAccountCode,
     }),
+    creditSettings,
+    applyManufacturerUnit,
   });
 
   const assignManufacturer = revenueBaseByOwner.manufacturer;
   const assignDevops = revenueBaseByOwner.devops;
   const assignSalesman = revenueBaseByOwner.salesman;
   const adminBase = revenueBaseByOwner.admin;
+  const manufacturerVatRate = Number(revenueBaseByOwner.manufacturerVatRate || 0);
 
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: {
@@ -285,60 +295,43 @@ async function postSpendCommitGeneralLedger({
     };
   };
 
-  const pushRevenueLinesBySplit = ({ accountCode, ownerRole, ownerId, paidBase, freeBase }) => {
+  const pushRevenueLinesBySplit = ({
+    accountCode,
+    ownerRole,
+    ownerId,
+    paidBase,
+    freeBase,
+    vatRate = 0,
+  }) => {
     if (!ownerId) return;
 
     const paid = Math.max(0, Math.round(Number(paidBase || 0)));
     const freeParts = splitFreeBasesBySource(freeBase);
+    const applyVat = Number(vatRate || 0) > 0;
 
-    // 면세: 수익 라인은 공급가 그대로 기록 (VAT 가산 없음)
-    if (freeParts.freeRequest > 0) {
+    const pushOne = (supplyAmount, creditKind) => {
+      const supply = Math.max(0, Math.round(Number(supplyAmount || 0)));
+      if (supply <= 0) return;
+      const vat = applyVat ? Math.round(supply * Number(vatRate || 0)) : 0;
+      const total = supply + vat;
       lines.push({
         accountCode,
         ownerRole,
         ownerId,
-        amount: freeParts.freeRequest,
-        amountExcludingVat: freeParts.freeRequest,
-        vatAmount: 0,
-        amountIncludingVat: freeParts.freeRequest,
-        creditKind: "FREE_REQUEST",
+        amount: total,
+        amountExcludingVat: supply,
+        vatAmount: vat,
+        amountIncludingVat: total,
+        creditKind,
         refType,
         refId,
         meta: spendMeta,
       });
-    }
+    };
 
-    if (freeParts.freeShipping > 0) {
-      lines.push({
-        accountCode,
-        ownerRole,
-        ownerId,
-        amount: freeParts.freeShipping,
-        amountExcludingVat: freeParts.freeShipping,
-        vatAmount: 0,
-        amountIncludingVat: freeParts.freeShipping,
-        creditKind: "FREE_SHIPPING",
-        refType,
-        refId,
-        meta: spendMeta,
-      });
-    }
-
-    if (paid > 0) {
-      lines.push({
-        accountCode,
-        ownerRole,
-        ownerId,
-        amount: paid,
-        amountExcludingVat: paid,
-        vatAmount: 0,
-        amountIncludingVat: paid,
-        creditKind: "PAID",
-        refType,
-        refId,
-        meta: spendMeta,
-      });
-    }
+    pushOne(freeParts.freeRequest, "FREE_REQUEST");
+    pushOne(freeParts.freeShipping, "FREE_SHIPPING");
+    pushOne(paid, "PAID");
   };
 
   pushRevenueLinesBySplit({
@@ -347,6 +340,7 @@ async function postSpendCommitGeneralLedger({
     ownerId: owners.manufacturerAnchorId,
     paidBase: revenueKindSplit.manufacturer.paid,
     freeBase: revenueKindSplit.manufacturer.free,
+    vatRate: manufacturerVatRate,
   });
 
   pushRevenueLinesBySplit({

@@ -69,6 +69,7 @@ import {
   CircleHelp,
   Crown,
   Gift,
+  HandCoins,
   Hexagon,
   Package,
   PenLine,
@@ -85,6 +86,9 @@ interface CreditSettings {
   minCreditForRequest: number;
   specialRequestorPrices: SpecialRequestorPrice[];
   shippingFee: number;
+  manufacturerRequestUnitPrice: number;
+  manufacturerShippingUnitPrice: number;
+  affiliateVatRate: number;
   expressFee: number;
   designFee: number;
   abutmentRetailPrice: number;
@@ -192,6 +196,25 @@ function normalizeCreditSettings(
     minCreditForRequest: abutmentPrices.membershipProductionPrice,
     specialRequestorPrices: [],
     shippingFee: Number(raw.shippingFee ?? fallback.shippingFee),
+    manufacturerRequestUnitPrice: Number(
+      (raw as CreditSettings).manufacturerRequestUnitPrice ??
+        (fallback as CreditSettings).manufacturerRequestUnitPrice ??
+        8000,
+    ),
+    manufacturerShippingUnitPrice: Number(
+      (raw as CreditSettings).manufacturerShippingUnitPrice ??
+        (fallback as CreditSettings).manufacturerShippingUnitPrice ??
+        3500,
+    ),
+    affiliateVatRate: (() => {
+      const rawRate = Number(
+        (raw as CreditSettings).affiliateVatRate ??
+          (fallback as CreditSettings).affiliateVatRate ??
+          0.1,
+      );
+      if (!Number.isFinite(rawRate) || rawRate < 0) return 0.1;
+      return Math.min(1, rawRate);
+    })(),
     expressFee: Number(raw.expressFee ?? fallback.expressFee),
     designFee: Math.max(
       0,
@@ -904,7 +927,37 @@ export const AdminCreditSettingsTab = () => {
                   setSettings({ ...settings, shippingFee: next })
                 }
                 disabled={loading}
-                help="박스단위 별도"
+                help="박스단위 별도(의뢰자 청구)"
+                step={SHIPPING_AMOUNT_STEP}
+              />
+              <AmountField
+                id="manufacturerRequestUnitPrice"
+                label="제조사 하청 의뢰 공급가"
+                icon={HandCoins}
+                value={settings.manufacturerRequestUnitPrice}
+                onChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    manufacturerRequestUnitPrice: next,
+                  })
+                }
+                disabled={loading}
+                help={`부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerRequestUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
+                step={SHIPPING_AMOUNT_STEP}
+              />
+              <AmountField
+                id="manufacturerShippingUnitPrice"
+                label="제조사 하청 배송 공급가"
+                icon={Truck}
+                value={settings.manufacturerShippingUnitPrice}
+                onChange={(next) =>
+                  setSettings({
+                    ...settings,
+                    manufacturerShippingUnitPrice: next,
+                  })
+                }
+                disabled={loading}
+                help={`부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerShippingUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
                 step={SHIPPING_AMOUNT_STEP}
               />
               <AmountField

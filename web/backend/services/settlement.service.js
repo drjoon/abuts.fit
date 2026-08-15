@@ -19,6 +19,8 @@ export async function computeAffiliateSettlementBalance({
   accountCode = AFFILIATE_SETTLEMENT_ACCOUNTS[ownerRole],
 }) {
   if (!accountCode) throw new Error("Unsupported affiliate ownerRole.");
+  const isManufacturer = ownerRole === "manufacturer";
+  // 제조사 하청도 지급은 유료만. 금액만 VAT 포함(amount). 그 외는 유료·공급가.
   const rows = await LedgerLine.aggregate([
     { $match: { ownerRole, ownerId: ownerAnchorId, accountCode } },
     {
@@ -47,7 +49,9 @@ export async function computeAffiliateSettlementBalance({
             default: "EARN",
           },
         },
-        base: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        base: isManufacturer
+          ? { $ifNull: ["$amount", { $ifNull: ["$amountIncludingVat", "$amountExcludingVat"] }] }
+          : { $ifNull: ["$amountExcludingVat", "$amount"] },
       },
     },
     {

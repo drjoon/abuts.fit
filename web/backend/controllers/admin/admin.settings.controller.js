@@ -285,6 +285,13 @@ export async function updateCreditSettings(req, res) {
 
     const minCreditForRequest = Number(payload.minCreditForRequest);
     const shippingFee = Number(payload.shippingFee);
+    const manufacturerRequestUnitPrice = Number(
+      payload.manufacturerRequestUnitPrice,
+    );
+    const manufacturerShippingUnitPrice = Number(
+      payload.manufacturerShippingUnitPrice,
+    );
+    const affiliateVatRate = Number(payload.affiliateVatRate);
     const expressFee = Number(payload.expressFee);
     const designFee = Number(payload.designFee);
     const membershipProductionPrice = Number(payload.membershipProductionPrice);
@@ -365,6 +372,21 @@ export async function updateCreditSettings(req, res) {
     }
     if (!Number.isNaN(shippingFee) && shippingFee >= 0) {
       sanitized.shippingFee = shippingFee;
+    }
+    if (
+      !Number.isNaN(manufacturerRequestUnitPrice) &&
+      manufacturerRequestUnitPrice >= 0
+    ) {
+      sanitized.manufacturerRequestUnitPrice = manufacturerRequestUnitPrice;
+    }
+    if (
+      !Number.isNaN(manufacturerShippingUnitPrice) &&
+      manufacturerShippingUnitPrice >= 0
+    ) {
+      sanitized.manufacturerShippingUnitPrice = manufacturerShippingUnitPrice;
+    }
+    if (!Number.isNaN(affiliateVatRate) && affiliateVatRate >= 0) {
+      sanitized.affiliateVatRate = Math.min(1, affiliateVatRate);
     }
     if (!Number.isNaN(expressFee) && expressFee >= 0) {
       sanitized.expressFee = expressFee;
