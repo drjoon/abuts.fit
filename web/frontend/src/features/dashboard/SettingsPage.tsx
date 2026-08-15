@@ -33,7 +33,7 @@ export const SettingsPage = () => {
     return <PracticeSettingsPage />;
   }
 
-  if (user?.role === "requestor") {
+  if (user?.role === "requestor" || user?.role === "internalLab") {
     return <RequestorSettingsPage />;
   }
 

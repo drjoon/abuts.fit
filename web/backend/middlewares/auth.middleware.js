@@ -324,7 +324,7 @@ export const authorizeManufacturerOrDesignPartner = () => {
         return next();
       }
 
-      if (role === "requestor") {
+      if (role === "requestor" || role === "internalLab") {
         const enabled = await resolveDesignAccessForUser(req.user);
         if (enabled) {
           req.__designPartner = true;

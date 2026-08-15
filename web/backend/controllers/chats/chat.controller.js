@@ -788,10 +788,14 @@ export async function getOrCreateRequestChatRoom(req, res) {
     const isDesignCustomAbutment = productMode === "design_custom_abutment";
     const callerRole = String(req.user?.role || "").trim();
     const hasDesignAccess =
-      callerRole === "requestor" && (await resolveDesignAccessForUser(req.user));
+      (callerRole === "requestor" || callerRole === "internalLab") &&
+      (await resolveDesignAccessForUser(req.user));
 
     // 디자인 큐: 디자인 담당 ↔ 발신 의뢰자(치과). 제조사/기공소 라우팅으로 떨어지지 않는다.
-    if (isDesignCustomAbutment && callerRole === "requestor") {
+    if (
+      isDesignCustomAbutment &&
+      (callerRole === "requestor" || callerRole === "internalLab")
+    ) {
       if (!hasDesignAccess && currentUserId !== requestorId) {
         return res.status(403).json({
           success: false,

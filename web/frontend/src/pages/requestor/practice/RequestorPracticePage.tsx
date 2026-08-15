@@ -438,7 +438,7 @@ export default function RequestorPracticePage() {
   return <PracticeFileTransferPage />;
 }
 
-function RequestorPracticeReceivePage({
+export function RequestorPracticeReceivePage({
   roleSwitcher,
   showDesignQueue = false,
   showTransfers = true,

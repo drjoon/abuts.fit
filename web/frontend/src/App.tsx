@@ -65,6 +65,12 @@ const ManufacturerWorksheetPage = lazy(() =>
     default: m.ManufacturerWorksheetPage,
   })),
 );
+const InternalLabAbutDesignPage = lazy(
+  () => import("./pages/internalLab/abutDesign/AbutDesignPage"),
+);
+const InternalLabLabWorkPage = lazy(
+  () => import("./pages/internalLab/labWork/LabWorkPage"),
+);
 const AdminPlatformSettingsPage = lazy(() =>
   import("./pages/admin/system/AdminPlatformSettingsPage").then((m) => ({
     default: m.AdminPlatformSettingsPage,
@@ -253,7 +259,9 @@ const CreditsRoute = () => {
 
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "admin") return <AdminCreditPage />;
-  if (user.role === "requestor") return <RequestorCreditsPage />;
+  if (user.role === "requestor" || user.role === "internalLab") {
+    return <RequestorCreditsPage />;
+  }
   return <Navigate to="/dashboard" replace />;
 };
 
@@ -280,7 +288,10 @@ const SettingsRoute = () => {
     return <Navigate to="/dashboard/platform-settings?tab=credits" replace />;
   }
   // 구 북마크: 의뢰자 설정 결제 → 사이드바 크레딧 충전
-  if (user.role === "requestor" && tab === "payment") {
+  if (
+    (user.role === "requestor" || user.role === "internalLab") &&
+    tab === "payment"
+  ) {
     return <Navigate to="/dashboard/credits?tab=charge" replace />;
   }
   return <SettingsPage />;
@@ -519,6 +530,22 @@ const App = () => {
                     }
                   />
                   <Route
+                    path="abut-design"
+                    element={
+                      <RoleProtectedRoute roles={["internalLab"]}>
+                        <InternalLabAbutDesignPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="lab-work"
+                    element={
+                      <RoleProtectedRoute roles={["internalLab"]}>
+                        <InternalLabLabWorkPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
                     path="design"
                     element={
                       <RoleProtectedRoute roles={["requestor"]}>
@@ -681,7 +708,9 @@ const App = () => {
                   <Route
                     path="credits"
                     element={
-                      <RoleProtectedRoute roles={["admin", "requestor"]}>
+                      <RoleProtectedRoute
+                        roles={["admin", "requestor", "internalLab"]}
+                      >
                         <CreditsRoute />
                       </RoleProtectedRoute>
                     }
@@ -713,6 +742,7 @@ const App = () => {
                           "practice",
                           "salesman",
                           "manufacturer",
+                          "internalLab",
                           "admin",
                           "devops",
                         ]}

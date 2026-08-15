@@ -39,6 +39,8 @@ export function getRoleDefaultDashboardPath(role: string | null | undefined): st
   switch (role) {
     case "manufacturer":
       return "/dashboard/worksheet";
+    case "internalLab":
+      return "/dashboard/abut-design";
     case "practice":
       return "/practice/dashboard";
     case "devops":
@@ -61,9 +63,12 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/practice/devops는 `/dashboard`에 콘텐츠가 없음
+  // manufacturer/internalLab/practice/devops는 `/dashboard`에 콘텐츠가 없음
   if (
-    (role === "manufacturer" || role === "practice" || role === "devops") &&
+    (role === "manufacturer" ||
+      role === "internalLab" ||
+      role === "practice" ||
+      role === "devops") &&
     (last === "/dashboard" || last === "/dashboard/")
   ) {
     return roleDefault;

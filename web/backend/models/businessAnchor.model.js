@@ -20,14 +20,32 @@ const businessAnchorSchema = new mongoose.Schema(
     businessNumberNormalized: {
       type: String,
       required: true,
-      unique: true,
+      // unique는 (BN + businessType) 복합 — 동일 법인의 role별 사업부 앵커 허용
       index: true,
       trim: true,
     },
     businessType: {
       type: String,
-      enum: ["requestor", "salesman", "manufacturer", "devops", "admin", "practice"],
+      enum: [
+        "requestor",
+        "salesman",
+        "manufacturer",
+        "internalLab",
+        "devops",
+        "admin",
+        "practice",
+      ],
       default: "requestor",
+      index: true,
+    },
+    /**
+     * 동일 법인(사업자등록) 하위 조직.
+     * 예: admin「어벗츠 주식회사」← internalLab「기공사업부」
+     */
+    parentBusinessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
       index: true,
     },
     // 의뢰자 역할 XOR: practice=치과(기공실), lab=기공소
@@ -543,6 +561,12 @@ const businessAnchorSchema = new mongoose.Schema(
 
 businessAnchorSchema.index({ businessType: 1, name: 1 });
 businessAnchorSchema.index({ referredByAnchorId: 1, businessType: 1 });
+// 동일 사업자번호는 businessType(역할/사업부)별로 1개까지 — 법인 공유·역할 분리
+businessAnchorSchema.index(
+  { businessNumberNormalized: 1, businessType: 1 },
+  { unique: true },
+);
+businessAnchorSchema.index({ parentBusinessAnchorId: 1, businessType: 1 });
 
 // 소개 트리 조회 성능 최적화 ($graphLookup)
 businessAnchorSchema.index({

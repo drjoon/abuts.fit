@@ -26,6 +26,7 @@ import { RequestorSecurity } from "./Security";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 
 // related files:
 // - web/backend/controllers/businesses/business.controller.js
@@ -57,7 +58,7 @@ export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const { loading: accessLoading, kind } = useRequestorBusinessAccess();
-  const isLab = kind === "lab";
+  const isLab = kind === "lab" || user?.role === "internalLab";
 
   const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
   const [pricingBaseDate, setPricingBaseDate] = useState<string | null>(null);
@@ -142,6 +143,7 @@ export const RequestorSettingsPage = () => {
         icon: Building2,
         content: (
           <div className="space-y-5">
+            {user?.role === "internalLab" ? <InternalLabOrgBanner /> : null}
             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
               <div className="mb-3 flex items-center gap-2">
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">

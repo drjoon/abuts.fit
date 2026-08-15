@@ -115,7 +115,7 @@ router.get("/received", authenticate, receiveAuth, getReceivedPracticeTransfers)
 router.get(
   "/received-unread-count",
   authenticate,
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "internalLab", "admin"]),
   getReceivedPracticeTransferUnreadCount,
 );
 

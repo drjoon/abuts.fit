@@ -1069,8 +1069,14 @@ export async function updateReviewStatusByStage(req, res) {
     }
 
     if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
-      // 디자인 파트너: design_custom_abutment + 준비 단계 승인만, 본인 활성 클레임 필수
-      if (!(req.__designPartner && String(req.user.role || "").trim() === "requestor")) {
+      // 디자인 파트너/어벗츠기공소: design_custom_abutment + 준비 단계 승인만, 본인 활성 클레임 필수
+      const partnerRole = String(req.user.role || "").trim();
+      if (
+        !(
+          req.__designPartner &&
+          (partnerRole === "requestor" || partnerRole === "internalLab")
+        )
+      ) {
         return res
           .status(403)
           .json({ success: false, message: "변경 권한이 없습니다." });
@@ -1141,8 +1147,12 @@ export async function updateReviewStatusByStage(req, res) {
 
       await assertAndClaimManufacturerRequestAccess({ req, request });
 
-      // 디자인 파트너: 디자인+생산 준비→가공 핸드오프만, 본인 활성 클레임 필수
-      if (req.__designPartner && String(req.user?.role || "").trim() === "requestor") {
+      // 디자인 파트너/어벗츠기공소: 디자인+생산 준비→가공 핸드오프만, 본인 활성 클레임 필수
+      const partnerRole = String(req.user?.role || "").trim();
+      if (
+        req.__designPartner &&
+        (partnerRole === "requestor" || partnerRole === "internalLab")
+      ) {
         const productMode = String(request?.caseInfos?.productMode || "").trim();
         if (productMode !== "design_custom_abutment") {
           const err = new Error("디자인+생산 의뢰만 처리할 수 있습니다.");

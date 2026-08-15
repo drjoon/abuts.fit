@@ -9,7 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/ui/cn";
 import {
   getPracticeAcceptOverdueTooltip,
   PRACTICE_ACCEPT_OVERDUE_BADGE_CLASS,

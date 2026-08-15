@@ -502,6 +502,13 @@ Notes:
   - 상단 3사업 축: (1) 커스텀 어벗 생산·공급(제조사 하청) (2) 자동매칭 수수료 (3) 기공소 직접 운영.
   - 제조사 탭: 고정단가·의뢰/배송·VAT. 영업자·개발운영사·관리자 탭은 기존 유지(후속 세션).
 
+- 어벗츠기공소(`internalLab`) UI SSOT:
+  - Role: top-level `User.role=internalLab`(제조사와 대칭). 공개 가입 없음·관리자 생성. UI 라벨 「어벗츠기공소」.
+  - 사이드: 어벗디자인(`/dashboard/abut-design`) · 기공작업(`/dashboard/lab-work`) · 정산(`/dashboard/credits`) · 설정(`/dashboard/settings`).
+  - 페이지: `src/pages/internalLab/` — 디자인 큐·기공의뢰수신·기공소 크레딧/설정을 감싼 셸.
+  - 랜딩: `/dashboard/abut-design`.
+  - 조직: 법인「어벗츠 주식회사」하위 「기공사업부」(`parentBusinessAnchorId` + 설정 `InternalLabOrgBanner`). 사업자등록증·BN은 법인과 공유(type별 앵커).
+
 - 제조사 워크시트 크레딧 승인/롤백 정책:
   - 가공 진입 승인으로 `가공` 단계 이동 시 의뢰 크레딧 소비가 발생합니다.
   - `가공`에서 준비로 롤백 시 소비된 의뢰 크레딧은 "환불" 행 추가가 아니라, 기존 소비 행 삭제로 복구됩니다.

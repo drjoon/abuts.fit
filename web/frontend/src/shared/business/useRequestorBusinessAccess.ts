@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/business/requestorCapabilities.ts
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
 // change-log:
+// - 2026-08-15: internalLab(어벗츠기공소) — lab 수신 + 사업자 me, 디자인 큐는 별도 메뉴.
 // - 2026-08-11: 초기 1회만 loading=true — 이후 refresh는 silent(페이지 스켈레톤 플리커 방지).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -27,6 +28,11 @@ const emptyProfile = (): RequestorProfile => ({
   services: { free: false, paid: false },
 });
 
+const INTERNAL_LAB_PROFILE: RequestorProfile = {
+  kind: "lab",
+  services: { free: false, paid: true },
+};
+
 export const useRequestorBusinessAccess = () => {
   const { token, user } = useAuthStore();
   const [loading, setLoading] = useState(true);
@@ -36,13 +42,49 @@ export const useRequestorBusinessAccess = () => {
   const [designAccessEnabled, setDesignAccessEnabled] = useState(false);
   const hasLoadedOnceRef = useRef(false);
 
+  const isInternalLab = user?.role === "internalLab";
+
   const businessType = useMemo(
     () => resolveBusinessType(user?.role, "requestor"),
     [user?.role],
   );
 
   const refresh = useCallback(async () => {
-    if (!token || user?.role !== "requestor") {
+    if (!token) {
+      setLoading(false);
+      hasLoadedOnceRef.current = true;
+      setBusinessVerified(false);
+      setDesignAccessEnabled(false);
+      setProfile(emptyProfile());
+      return;
+    }
+
+    // 어벗츠기공소: 기공작업용 lab 수신. 디자인 큐는 /abut-design 전용(중복 노출 방지).
+    if (isInternalLab) {
+      if (!hasLoadedOnceRef.current) {
+        setLoading(true);
+      }
+      try {
+        const data = await loadBusinessMeCached({
+          token,
+          businessType: "internalLab",
+          force: true,
+        });
+        setBusinessVerified(Boolean(data?.businessVerified));
+        setMembership(String(data?.membership || "none"));
+      } catch {
+        setBusinessVerified(Boolean(user?.businessVerified));
+        setMembership("none");
+      } finally {
+        setDesignAccessEnabled(false);
+        setProfile(INTERNAL_LAB_PROFILE);
+        hasLoadedOnceRef.current = true;
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (user?.role !== "requestor") {
       setLoading(false);
       hasLoadedOnceRef.current = true;
       setBusinessVerified(Boolean(user?.businessVerified));
@@ -103,6 +145,7 @@ export const useRequestorBusinessAccess = () => {
     }
   }, [
     businessType,
+    isInternalLab,
     token,
     user?.businessVerified,
     user?.requestorCapabilities,
@@ -153,6 +196,7 @@ export const useRequestorBusinessAccess = () => {
     canUseFree: canUseFreeServices(profile),
     canSendTransfer:
       canSendPracticeTransfer(profile) || user?.role === "practice",
-    canReceiveTransfer: canReceivePracticeTransfer(profile),
+    canReceiveTransfer:
+      canReceivePracticeTransfer(profile) || isInternalLab,
   };
 };

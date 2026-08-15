@@ -136,6 +136,7 @@ export const RequestPage = ({
   const canUseManufacturerQueue =
     user?.role === "manufacturer" ||
     user?.role === "admin" ||
+    user?.role === "internalLab" ||
     (useManufacturerQueueList && user?.role === "requestor");
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;

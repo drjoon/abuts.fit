@@ -13,12 +13,14 @@ export const isDesignAccessEnabled = (anchor) =>
 
 /**
  * 의뢰자 유저의 소속 앵커 기준 디자인 큐 접근 여부.
- * manufacturer/admin은 호출측에서 별도 허용.
+ * manufacturer/admin/internalLab(어벗츠기공소)은 호출측에서 별도 허용.
  */
 export const resolveDesignAccessForUser = async (user) => {
   if (!user) return false;
   const role = String(user.role || "").trim();
-  if (role === "manufacturer" || role === "admin") return true;
+  if (role === "manufacturer" || role === "admin" || role === "internalLab") {
+    return true;
+  }
   if (role !== "requestor") return false;
 
   const anchorId = user.businessAnchorId;

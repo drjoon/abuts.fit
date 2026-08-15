@@ -227,6 +227,24 @@ const sidebarItems = {
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
+  internalLab: [
+    {
+      icon: Sparkles,
+      label: "어벗디자인",
+      href: "/dashboard/abut-design",
+      tooltip: "어벗츠 커스텀어벗 디자인 수신·작업",
+      accent: "어벗",
+    },
+    {
+      icon: Building2,
+      label: "기공작업",
+      href: "/dashboard/lab-work",
+      tooltip: "어벗츠기공소 기공의뢰 수신·작업",
+      accent: "기공",
+    },
+    { icon: Wallet, label: "정산", href: "/dashboard/credits" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
   admin: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Building2, label: "사업자", href: "/dashboard/businesses" },
@@ -382,6 +400,8 @@ const getRoleLabel = (
       return "개발운영사";
     case "manufacturer":
       return "제조사";
+    case "internalLab":
+      return "어벗츠기공소";
     case "practice":
       return getRequestorRoleBadgeLabel(requestorKind ?? "practice");
     case "admin":
@@ -400,6 +420,8 @@ const getRoleBadgeVariant = (role: string) => {
     case "devops":
       return "secondary";
     case "manufacturer":
+      return "secondary";
+    case "internalLab":
       return "secondary";
     case "practice":
       return "default";
@@ -1266,8 +1288,8 @@ export const DashboardLayout = () => {
   return (
     <div className="min-h-screen bg-background">
       <LabFeeSetupPrompt
-        isLab={requestorKind === "lab"}
-        ready={!requestorAccessLoading}
+        isLab={requestorKind === "lab" || user.role === "internalLab"}
+        ready={!requestorAccessLoading || user.role === "internalLab"}
       />
       <div className="flex h-screen">
         <div

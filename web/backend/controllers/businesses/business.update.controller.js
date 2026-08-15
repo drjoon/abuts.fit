@@ -127,15 +127,17 @@ export async function ensureBusinessAnchor({
 }) {
   if (!businessNumberNormalized) return null;
   if (!name) return null;
+  if (!businessType) return null;
 
   const existingAnchor = await BusinessAnchor.findOne({
     businessNumberNormalized,
+    businessType,
   })
     .select({ _id: 1, referredByAnchorId: 1 })
     .lean();
 
   const anchor = await BusinessAnchor.findOneAndUpdate(
-    { businessNumberNormalized },
+    { businessNumberNormalized, businessType },
     {
       $set: {
         businessType,

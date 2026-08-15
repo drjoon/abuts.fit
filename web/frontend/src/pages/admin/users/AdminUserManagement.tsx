@@ -46,6 +46,7 @@ import {
   Eye,
   Trash2,
   Download,
+  FlaskConical,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -86,6 +87,9 @@ const normalizeRole = (rawRole?: string) => {
   if (normalized.startsWith("practice")) return "requestor";
   if (normalized.startsWith("requestor")) return "requestor";
   if (normalized.startsWith("manufacturer")) return "manufacturer";
+  if (normalized === "internallab" || normalized.startsWith("internal_lab")) {
+    return "internalLab";
+  }
   if (normalized.startsWith("salesman")) return "salesman";
   if (normalized.startsWith("devops")) return "devops";
   if (normalized.startsWith("admin")) return "admin";
@@ -98,6 +102,8 @@ const getRoleLabel = (role: string) => {
       return "의뢰자";
     case "manufacturer":
       return "제조사";
+    case "internalLab":
+      return "어벗츠기공소";
     case "admin":
       return "어벗츠.핏";
     case "salesman":
@@ -143,6 +149,8 @@ const getRoleBadgeVariant = (role: string) => {
     case "devops":
       return "secondary";
     case "manufacturer":
+      return "secondary";
+    case "internalLab":
       return "secondary";
     case "admin":
       return "destructive";
@@ -860,6 +868,9 @@ export const AdminUserManagement = () => {
   const totalManufacturer = sourceUsers.filter(
     (u) => normalizeRole(u.role) === "manufacturer",
   ).length;
+  const totalInternalLab = sourceUsers.filter(
+    (u) => normalizeRole(u.role) === "internalLab",
+  ).length;
   const totalAdmin = sourceUsers.filter(
     (u) => normalizeRole(u.role) === "admin",
   ).length;
@@ -921,6 +932,16 @@ export const AdminUserManagement = () => {
       active: selectedRole === "manufacturer",
     },
     {
+      key: "internalLab",
+      label: "어벗츠기공소",
+      count: totalInternalLab,
+      icon: FlaskConical,
+      iconWrap: "bg-primary-soft",
+      iconClass: "text-primary-strong",
+      onClick: () => setSelectedRole("internalLab"),
+      active: selectedRole === "internalLab",
+    },
+    {
       key: "admin",
       label: "관리자",
       count: totalAdmin,
@@ -948,6 +969,7 @@ export const AdminUserManagement = () => {
     ["salesman", "영업자"],
     ["devops", "개발운영사"],
     ["manufacturer", "제조사"],
+    ["internalLab", "어벗츠기공소"],
     ["admin", "관리자"],
   ] as const;
 
@@ -1628,6 +1650,7 @@ export const AdminUserManagement = () => {
                           <SelectItem value="salesman">영업자</SelectItem>
                           <SelectItem value="devops">개발운영사</SelectItem>
                           <SelectItem value="manufacturer">제조사</SelectItem>
+                          <SelectItem value="internalLab">어벗츠기공소</SelectItem>
                           <SelectItem value="admin">관리자</SelectItem>
                         </SelectContent>
                       </Select>

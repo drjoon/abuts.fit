@@ -109,7 +109,9 @@
 - 사업자 SSOT: `BusinessAnchor`
 - 사용자-사업자 연결 키: `User.businessAnchorId`
 - `subRole`만 사용 (`owner|staff|null`), 레거시 role 필드 금지
-- 사업자 타입 허용: `requestor | manufacturer | admin | salesman | devops`
+- 사업자 타입 허용: `requestor | manufacturer | internalLab | admin | salesman | devops`
+  - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 메뉴=어벗디자인·기공작업·정산·설정. 관리자 생성만(공개 가입 없음).
+    - 동일 법인 BN을 `businessType`별로 공유 가능(`businessNumberNormalized`+`businessType` 복합 unique). 하위조직은 `parentBusinessAnchorId` → 예: admin「어벗츠 주식회사」←「기공사업부」.
   - `practice` role은 제거. 기존 계정은 `requestor`+`requestorCapabilities.practice` 마이그레이션 대상(신규 생성 금지). 백필: `scripts/db/backfill-requestor-capabilities.js --apply`.
 
 
@@ -147,7 +149,7 @@
 - **어벗츠 사업 다각화 SSOT:**
   1. **커스텀 어벗 생산·공급** — 어벗츠 내 기공사 디자인 → 애크로덴트(하청) 생산 → 기공소 납품.
   2. **자동매칭 수수료** — 기공비의 `platformFeeRate`(기본 10%). 관리자 플랫폼 설정.
-  3. **기공소 직접 운영** — 치과 의뢰를 어벗츠가 직접 처리·기공료 수취.
+  3. **기공소 직접 운영** — 치과 의뢰를 어벗츠가 직접 처리·기공료 수취. Role SSOT: `internalLab`(어벗츠기공소).
 - **매칭·멤버십 과금 SSOT(강제):**
   - 한 줄: **기공소 월 참여 수수료 0원 + 치과 멤버십만 월 과금(면세·부가세 없음, 유료 크레딧 차감).**
   - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 0%.

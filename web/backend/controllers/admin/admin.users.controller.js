@@ -149,6 +149,7 @@ export async function createUser(req, res) {
     const validRoles = [
       "requestor",
       "manufacturer",
+      "internalLab",
       "admin",
       "salesman",
       "devops",
@@ -459,6 +460,7 @@ export async function changeUserRole(req, res) {
     const validRoles = [
       "requestor",
       "manufacturer",
+      "internalLab",
       "admin",
       "salesman",
       "devops",

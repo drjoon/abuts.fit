@@ -9,6 +9,7 @@ export const APP_USER_ROLES = [
   "practice",
   "salesman",
   "manufacturer",
+  "internalLab",
   "admin",
   "devops",
 ] as const;

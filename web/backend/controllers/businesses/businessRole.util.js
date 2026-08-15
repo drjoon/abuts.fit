@@ -6,6 +6,7 @@ export const BUSINESS_ALLOWED_ROLES = [
   "requestor",
   "salesman",
   "manufacturer",
+  "internalLab",
   "admin",
   "devops",
   "practice",

@@ -484,12 +484,38 @@ export async function getMyBusiness(req, res) {
       businessVerified,
     });
 
+    let parentBusiness = null;
+    const parentId = anchor?.parentBusinessAnchorId;
+    if (parentId) {
+      const parent = await BusinessAnchor.findById(parentId)
+        .select({
+          _id: 1,
+          name: 1,
+          businessType: 1,
+          businessNumberNormalized: 1,
+          status: 1,
+        })
+        .lean();
+      if (parent) {
+        parentBusiness = {
+          id: parent._id,
+          name: parent.name || "",
+          businessType: parent.businessType || "",
+          businessNumberNormalized: parent.businessNumberNormalized || "",
+          status: parent.status || "",
+        };
+      }
+    }
+
     const responseData = {
       success: true,
       data: {
         membership,
         business: safeBusiness,
         businessId: anchor._id,
+        divisionName: String(anchor?.name || "").trim() || null,
+        parentBusiness,
+        parentBusinessAnchorId: parentId || null,
         hasBusinessNumber,
         businessVerified,
         metadata, // SSOT

@@ -27,13 +27,13 @@ router.get("/me/request-settings", businessController.getMyRequestSettings);
 // 사업자 정보 수정
 router.put(
   "/me",
-  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
+  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
   businessController.updateMyBusiness,
 );
 
 router.patch(
   "/me",
-  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
+  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
   businessController.updateMyBusiness,
 );
 
@@ -45,31 +45,31 @@ router.post(
 
 router.get(
   "/me/auto-match-participation",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "internalLab", "admin"]),
   businessController.getMyAutoMatchParticipation,
 );
 
 router.post(
   "/me/auto-match-participation",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "internalLab", "admin"]),
   businessController.setMyAutoMatchParticipation,
 );
 
 router.put(
   "/me/request-settings",
-  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
+  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
   businessController.updateMyRequestSettings,
 );
 
 router.post(
   "/postal-code-lookup",
-  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
+  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
   businessController.lookupPostalCode,
 );
 
 router.post(
   "/check-business-number",
-  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
+  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
   businessController.checkBusinessNumberDuplicate,
 );
 
@@ -91,6 +91,7 @@ router.get(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",
@@ -103,6 +104,7 @@ router.post(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",
@@ -115,6 +117,7 @@ router.delete(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",
@@ -130,6 +133,7 @@ router.post(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",
@@ -142,6 +146,7 @@ router.post(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",
@@ -157,6 +162,7 @@ router.get(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",
@@ -169,6 +175,7 @@ router.get(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",
@@ -181,6 +188,7 @@ router.delete(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",
@@ -193,6 +201,7 @@ router.post(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",
@@ -205,6 +214,7 @@ router.post(
     "requestor",
     "salesman",
     "manufacturer",
+    "internalLab",
     "practice",
     "admin",
     "devops",

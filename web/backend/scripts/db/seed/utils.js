@@ -160,7 +160,7 @@ export async function findOrCreateOrganization({
   let organization = null;
   if (!skipBusinessAnchorCreation && businessNumberNormalized) {
     organization = await BusinessAnchor.findOneAndUpdate(
-      { businessNumberNormalized },
+      { businessNumberNormalized, businessType: businessAnchorType || organizationType },
       {
         $set: {
           businessType: businessAnchorType || organizationType,

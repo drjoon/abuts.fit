@@ -142,7 +142,7 @@ export const authorizePracticeTransferSend = (options = {}) => {
 };
 
 /**
- * 기공의뢰서 수신: requestor+lab
+ * 기공의뢰서 수신: requestor+lab 또는 internalLab(어벗츠기공소)
  */
 export const authorizePracticeTransferReceive = () => {
   return async (req, res, next) => {
@@ -155,6 +155,16 @@ export const authorizePracticeTransferReceive = () => {
       }
 
       if (req.user.role === "admin") return next();
+
+      if (req.user.role === "internalLab") {
+        req.requestorProfile = {
+          kind: "lab",
+          services: { free: false, paid: true },
+        };
+        req.requestorCapabilities = { practice: false, lab: true };
+        return next();
+      }
+
       if (req.user.role !== "requestor") {
         return res.status(403).json({
           success: false,
