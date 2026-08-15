@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-15: 수신 카드 → PracticeTransferLabReceiveCard(어벗츠기공소·lab 공통).
 // - 2026-08-15: 디자인 STL 업로드 후 버튼 라벨「어벗생산 취소」(준비 단계만).
 // - 2026-08-15: 어벗디자인 취소·재업로드(제조사 준비 단계만). 업로드 후 준비 큐 등록.
 // - 2026-08-15: 수락 카드 — 어벗디자인 업로드 / 보철 업로드&작업완료 / 취소 3버튼.
@@ -61,7 +62,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
   type MouseEvent,
 } from "react";
 import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
@@ -85,42 +85,23 @@ import {
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
-import { Building2, Search, UploadCloud, X } from "lucide-react";
+import { Search } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
-import {
-  PRACTICE_REMAKE_BADGE_CLASS,
-  toStatusBadgeLabel,
-} from "@/shared/practice/practiceRecentTransferList";
-import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   PracticeTransferDetailChatDialog,
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
-import {
-  PracticeTransferFileDropTarget,
-  openPracticeTransferFilePicker,
-} from "@/shared/components/practice/PracticeTransferFileDropTarget";
-import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import { openPracticeTransferFilePicker } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
-import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
-import {
-  parsePracticeTransferFeeQuote,
-  type PracticeTransferFeeQuote,
-} from "@/shared/practice/practiceTransferFeeQuote";
+import { PracticeTransferLabReceiveCard } from "@/shared/components/practice/PracticeTransferLabReceiveCard";
+import { parsePracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
-import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import {
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
   needsOralScanForAccept,
 } from "@/shared/practice/oralScanRequirement";
-import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
@@ -131,87 +112,18 @@ import {
 } from "@/shared/ui/skeletons/RequestorPracticePageSkeleton";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  formatToothWorksForDisplay,
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
   parseToothWorks,
   serializeToothWorks,
 } from "@/shared/practice/transferMemo";
+import {
+  getPracticeTransferLabReceiveDisplayStatus,
+  practiceTransferHasCustomAbutment,
+  type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
+  type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
+} from "@/shared/practice/practiceTransferLabReceive";
 import type { ReactNode } from "react";
 
-type ReceivedPracticeFile = {
-  id: string;
-  patientName: string;
-  tooth: string;
-  originalName: string;
-  mimetype: string;
-  size: number;
-  s3Key: string;
-};
-
-type ReceivedPracticeTransfer = {
-  _id: string;
-  transferId: string;
-  targetLabName: string;
-  transferMemo: string;
-  rawTransferMemo: string;
-  orderDate: string;
-  arrivalDate: string;
-  prosthesisTypes: string[];
-  toothWorksSummary: string;
-  status: string;
-  manufacturerStage?: string;
-  createdAt: string;
-  updatedAt: string;
-  isRead: boolean;
-  requestorReadAt: string | null;
-  isDownloaded: boolean;
-  isAccepted: boolean;
-  requestorDownloadedAt: string | null;
-  requestorAcceptedAt: string | null;
-  workCanceledAt?: string | null;
-  labRejected?: boolean;
-  labRejectedAt?: string | null;
-  matchingMode?: "direct" | "auto";
-  autoMatch?: {
-    claimedAt?: string | null;
-    deadlineAt?: string | null;
-    claimHours?: number | null;
-    completedAt?: string | null;
-    openPool?: boolean;
-    claimActive?: boolean;
-    completed?: boolean;
-    mine?: boolean;
-    declinedByMe?: boolean;
-    remainingMs?: number | null;
-    releaseCount?: number;
-  } | null;
-  hasCustomAbutment?: boolean;
-  production?: {
-    shippingMode?: "normal" | "express" | null;
-    skipDesignConfirm?: boolean;
-    designReadyAt?: string | null;
-    designFileCount?: number;
-    designFiles?: ReceivedPracticeFile[];
-    labDesignConfirmedAt?: string | null;
-    practiceDesignConfirmedAt?: string | null;
-    abutmentProductionStartedAt?: string | null;
-    confirmedAt?: string | null;
-    relatedRequestIds?: string[];
-  } | null;
-  practice: {
-    businessName: string;
-    userName: string;
-  };
-  practiceBusinessAnchorId?: string | null;
-  labFeeMultiplier?: number;
-  fileCount: number;
-  files: ReceivedPracticeFile[];
-  resultFileCount?: number;
-  resultFiles?: ReceivedPracticeFile[];
-  feeQuote?: PracticeTransferFeeQuote | null;
-  isRemake?: boolean;
-  remakeSourceTransferId?: string;
-};
 
 type ReceivedTransfersResponse = {
   transfers: unknown[];
@@ -249,11 +161,6 @@ const formatBytes = (bytes: number) => {
   return `${(n / (1024 * 1024)).toFixed(2)}MB`;
 };
 
-const formatToothWorksSummary = (
-  raw: string,
-  options?: { multiline?: boolean; labFacing?: boolean },
-) => formatToothWorksForDisplay(parseToothWorks(raw), options);
-
 const parsePracticeTransferMemoMeta = (rawMemo: string) => {
   const parsed = parsePracticeTransferMemoMetaShared(rawMemo);
   return {
@@ -265,85 +172,8 @@ const parsePracticeTransferMemoMeta = (rawMemo: string) => {
   };
 };
 
-const getTransferDisplayStatus = (transfer: {
-  status?: string;
-  manufacturerStage?: string;
-  isRead?: boolean;
-  isDownloaded?: boolean;
-  isAccepted?: boolean;
-  requestorDownloadedAt?: string | null;
-  requestorAcceptedAt?: string | null;
-  workCanceledAt?: string | null;
-  matchingMode?: string | null;
-  production?: {
-    confirmedAt?: string | null;
-  } | null;
-  autoMatch?: {
-    openPool?: boolean;
-    completed?: boolean;
-    claimActive?: boolean;
-    mine?: boolean;
-  } | null;
-}) => {
-  if (
-    transfer.labRejected ||
-    transfer.manufacturerStage === "거부" ||
-    transfer.autoMatch?.declinedByMe
-  ) {
-    return "거부" as const;
-  }
-  if (transfer.production?.confirmedAt || transfer.manufacturerStage === "생산진행") {
-    return "생산진행" as const;
-  }
-  if (transfer.autoMatch?.completed || transfer.manufacturerStage === "작업완료") {
-    return "작업완료" as const;
-  }
-
-  const stage = String(transfer.manufacturerStage || "").trim();
-  if (
-    stage === "작업취소" ||
-    stage === "취소" ||
-    Boolean(String(transfer.workCanceledAt || "").trim())
-  ) {
-    // 기공소 작업취소 — 카드 뱃지는 「취소」
-    return "취소" as const;
-  }
-
-  if (
-    String(transfer.matchingMode || "") === "auto" &&
-    transfer.autoMatch?.openPool
-  ) {
-    return "자동매칭" as const;
-  }
-
-  const rawStatus = String(transfer.status || "").trim().toLowerCase();
-  if (
-    Boolean(transfer.isAccepted) ||
-    Boolean(transfer.isDownloaded) ||
-    Boolean(String(transfer.requestorAcceptedAt || "").trim()) ||
-    Boolean(String(transfer.requestorDownloadedAt || "").trim()) ||
-    rawStatus === "downloaded" ||
-    rawStatus === "accepted" ||
-    rawStatus === "다운로드완료" ||
-    rawStatus === "의뢰수락"
-  ) {
-    return "의뢰수락" as const;
-  }
-
-  return transfer.isRead ? ("수신완료" as const) : ("발송완료" as const);
-};
-
-const transferHasCustomAbutment = (
-  transfer: ReceivedPracticeTransfer | null | undefined,
-) => {
-  if (!transfer) return false;
-  if (typeof transfer.hasCustomAbutment === "boolean") {
-    return transfer.hasCustomAbutment;
-  }
-  return parseToothWorks(transfer.toothWorksSummary).some((row) =>
-    Boolean(row.customAbutment),
-  );
-};
+const getTransferDisplayStatus = getPracticeTransferLabReceiveDisplayStatus;
+const transferHasCustomAbutment = practiceTransferHasCustomAbutment;
 
 export default function RequestorPracticePage() {
   const navigate = useNavigate();
@@ -2885,339 +2715,38 @@ export function RequestorPracticeReceivePage({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {sortedFilteredTransfers.map((transfer) => {
             const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
-            const toothWorksPreview = formatToothWorksSummary(
-              transfer.toothWorksSummary,
-              { labFacing: true },
-            );
             const displayStatus = getTransferDisplayStatus(transfer);
             const isRejectedCard = displayStatus === "거부";
             const dimRejectedCard = isRejectedCard && statusFilter !== "거부";
             const cardId = String(transfer.transferId || transfer._id || "").trim();
             const cardBusy = Boolean(cardActionBusyId) && cardActionBusyId === cardId;
-            const showWorkActions = displayStatus === "의뢰수락";
-            const resultCount = Number(transfer.resultFileCount || transfer.resultFiles?.length || 0);
-            const completeInputId = `practice-complete-${cardId}`;
-            const acceptOverdue = isPracticeTransferAcceptOverdue({
-              status: displayStatus,
-              orderDate: transfer.orderDate,
-              createdAt: transfer.createdAt,
-            });
-
-            const renderCardBody = () => (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-semibold">{transfer.transferId}</span>
-                    {chatUnreadCount > 0 ? (
-                      <Badge
-                        variant="destructive"
-                        className="h-5 min-w-5 justify-center px-1 text-[11px] leading-none"
-                      >
-                        {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {formatDateTime(transfer.createdAt)}
-                    </span>
-                    <Badge
-                      variant={
-                        displayStatus === "발송완료" ||
-                        displayStatus === "자동매칭" ||
-                        displayStatus === "취소" ||
-                        displayStatus === "거부"
-                          ? "destructive"
-                          : "secondary"
-                      }
-                      className={cn(
-                        "shrink-0 whitespace-nowrap",
-                        displayStatus === "의뢰수락" ||
-                          displayStatus === "작업완료" ||
-                          displayStatus === "생산진행"
-                          ? "bg-primary-soft text-primary-strong hover:bg-primary-soft"
-                          : "",
-                      )}
-                    >
-                      {toStatusBadgeLabel(displayStatus)}
-                    </Badge>
-                    {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}
-                    {transfer.isRemake ? (
-                      <Badge
-                        variant="outline"
-                        className={cn("shrink-0 whitespace-nowrap", PRACTICE_REMAKE_BADGE_CLASS)}
-                      >
-                        리메이크
-                      </Badge>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="mt-2 text-sm text-muted-foreground">
-                  치과:{" "}
-                  {transfer.matchingMode === "auto"
-                    ? "자동 매칭"
-                    : transfer.practice.businessName || "-"}
-                  {transfer.matchingMode === "auto"
-                    ? ""
-                    : transfer.practice.userName
-                      ? ` · 담당자 ${transfer.practice.userName}`
-                      : ""}
-                </div>
-
-                <p className="mt-2 text-xs text-muted-foreground truncate">
-                  파일 {transfer.fileCount}개
-                  {Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0) >
-                  0
-                    ? ` · 어벗디자인 ${Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0)}개`
-                    : ""}
-                  {resultCount > 0 ? ` · 결과 ${resultCount}개` : ""}
-                  {transfer.orderDate && transfer.arrivalDate ? (
-                    <>
-                      {" · "}
-                      <PracticeWorkPeriodText
-                        orderDate={transfer.orderDate}
-                        arrivalDate={transfer.arrivalDate}
-                        variant="orderArrival"
-                        viewer="lab"
-                        className="text-xs"
-                      />
-                    </>
-                  ) : null}
-                  {toothWorksPreview
-                    ? ` · 치아별 ${toothWorksPreview}`
-                    : transfer.prosthesisTypes.length
-                      ? ` · 형태 ${transfer.prosthesisTypes.join(", ")}`
-                      : ""}
-                  {String(transfer.transferMemo || "").trim()
-                    ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
-                    : ""}
-                </p>
-                {transfer.feeQuote ? (
-                  <PracticeTransferFeeEstimate
-                    quote={transfer.feeQuote}
-                    viewer="lab"
-                    density="card"
-                  />
-                ) : null}
-
-                {showWorkActions &&
-                transferHasCustomAbutment(transfer) &&
-                Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0) >
-                  0 &&
-                !transfer.production?.labDesignConfirmedAt ? (
-                  <div className="mt-2 rounded-md border border-dashed border-primary/40 bg-primary-soft/40 px-3 py-2 text-xs text-primary-strong">
-                    어벗 디자인이 도착했습니다. 레거시 건은 「어벗 디자인 확인」으로
-                    생산을 시작할 수 있습니다.
-                    {!transfer.production?.abutmentProductionStartedAt
-                      ? " (신규 건은 디자인 업로드 시 자동으로 제조 주문이 들어갑니다.)"
-                      : ""}
-                  </div>
-                ) : null}
-
-                {showWorkActions &&
-                transferHasCustomAbutment(transfer) &&
-                Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0) ===
-                  0 ? (
-                  <div className="mt-2 rounded-md border border-dashed border-amber-400/50 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
-                    커스텀어벗 디자인을 완료한 뒤 「어벗디자인 파일 업로드」로 완성 어벗
-                    STL을 올리세요. 업로드하면 제조사 준비 큐에 등록됩니다.
-                  </div>
-                ) : null}
-
-                {showWorkActions &&
-                transferHasCustomAbutment(transfer) &&
-                Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0) >
-                  0 ? (
-                  <div className="mt-2 rounded-md border border-dashed border-primary/40 bg-primary-soft/40 px-3 py-2 text-xs text-primary-strong">
-                    어벗디자인이 업로드되어 제조사 준비 큐에 있습니다. 준비 단계에서는
-                    「어벗생산 취소」로 되돌릴 수 있습니다.
-                  </div>
-                ) : null}
-
-                {showWorkActions ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {transferHasCustomAbutment(transfer) &&
-                    Number(
-                      transfer.production?.designFileCount ||
-                        transfer.production?.designFiles?.length ||
-                        0,
-                    ) > 0 &&
-                    !transfer.production?.labDesignConfirmedAt ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        disabled={
-                          Boolean(designConfirmBusyId) && designConfirmBusyId === cardId
-                        }
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void confirmAbutmentDesign(transfer);
-                        }}
-                      >
-                        {designConfirmBusyId === cardId
-                          ? "확인 중..."
-                          : "어벗 디자인 확인"}
-                      </Button>
-                    ) : null}
-                    {transferHasCustomAbutment(transfer) &&
-                    Number(
-                      transfer.production?.designFileCount ||
-                        transfer.production?.designFiles?.length ||
-                        0,
-                    ) === 0 ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={cardBusy}
-                            className="focus-visible:ring-0 focus-visible:ring-offset-0"
-                            onClick={(event) =>
-                              void handleCardDesignUpload(transfer, event)
-                            }
-                          >
-                            <UploadCloud className="h-4 w-4" />
-                            {cardBusy ? "처리 중..." : "어벗디자인 파일 업로드"}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs text-xs">
-                          완성 어벗 STL을 올리면 제조사에서 커스텀 어벗
-                          생산을 진행합니다.
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : null}
-                    {transferHasCustomAbutment(transfer) &&
-                    Number(
-                      transfer.production?.designFileCount ||
-                        transfer.production?.designFiles?.length ||
-                        0,
-                    ) > 0 ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            disabled={cardBusy}
-                            className="focus-visible:ring-0 focus-visible:ring-offset-0"
-                            onClick={(event) =>
-                              void handleCardAbutmentProductionCancel(
-                                transfer,
-                                event,
-                              )
-                            }
-                          >
-                            <X className="h-4 w-4" />
-                            {cardBusy ? "처리 중..." : "어벗생산 취소"}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs text-xs">
-                          제조사가 준비 단계일 때만 어벗생산을 취소할 수 있습니다.
-                          가공이 시작되면 변경할 수 없습니다.
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : null}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={
-                            transferHasCustomAbutment(transfer) &&
-                            Number(
-                              transfer.production?.designFileCount ||
-                                transfer.production?.designFiles?.length ||
-                                0,
-                            ) === 0
-                              ? "secondary"
-                              : "default"
-                          }
-                          disabled={cardBusy}
-                          className="focus-visible:ring-0 focus-visible:ring-offset-0"
-                          onClick={(event) => handleCardComplete(transfer, event)}
-                        >
-                          <UploadCloud className="h-4 w-4" />
-                          {cardBusy ? "처리 중..." : "보철 업로드 & 작업완료"}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs text-xs">
-                        크라운 등 보철 결과 파일을 올려 작업완료합니다.
-                        {PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""}
-                      </TooltipContent>
-                    </Tooltip>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={cardBusy}
-                      onClick={(event) => void handleCardRelease(transfer, event)}
-                    >
-                      취소
-                    </Button>
-                  </div>
-                ) : null}
-              </>
-            );
-
-            const openCardDialog = () => {
-              void openTransferDialog(transfer);
-            };
-
-            const onCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openCardDialog();
-              }
-            };
-
-            if (showWorkActions) {
-              return (
-                <PracticeTransferFileDropTarget
-                  key={transfer._id || transfer.transferId}
-                  fileInputId={completeInputId}
-                  disabled={cardBusy}
-                  acceptedHint={PRACTICE_ACCEPTED_HINT}
-                  showDefaultUi={false}
-                  className={cn(
-                    "w-full cursor-pointer rounded-lg border-2 border-dashed border-slate-300 p-4 text-left transition",
-                    "hover:bg-muted/20",
-                    dimRejectedCard && "opacity-40 hover:opacity-55",
-                  )}
-                  activeClassName="border-primary bg-primary-soft/40"
-                  onFiles={(files) => handleCardDropFiles(transfer, files)}
-                >
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={openCardDialog}
-                    onKeyDown={onCardKeyDown}
-                    className="focus-visible:outline-none"
-                    data-transfer-card="true"
-                  >
-                    {renderCardBody()}
-                  </div>
-                </PracticeTransferFileDropTarget>
-              );
-            }
 
             return (
-              <div
+              <PracticeTransferLabReceiveCard
                 key={transfer._id || transfer.transferId}
-                role="button"
-                tabIndex={0}
-                onClick={openCardDialog}
-                onKeyDown={onCardKeyDown}
-                className={cn(
-                  "w-full cursor-pointer rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  dimRejectedCard && "opacity-40 hover:opacity-55",
-                )}
-                data-transfer-card="true"
-              >
-                {renderCardBody()}
-              </div>
+                transfer={transfer}
+                chatUnreadCount={chatUnreadCount}
+                cardBusy={cardBusy}
+                designConfirmBusy={
+                  Boolean(designConfirmBusyId) && designConfirmBusyId === cardId
+                }
+                dimRejected={dimRejectedCard}
+                onOpen={() => {
+                  void openTransferDialog(transfer);
+                }}
+                onDesignUpload={(event) =>
+                  void handleCardDesignUpload(transfer, event)
+                }
+                onAbutmentProductionCancel={(event) =>
+                  void handleCardAbutmentProductionCancel(transfer, event)
+                }
+                onComplete={(event) => handleCardComplete(transfer, event)}
+                onRelease={(event) => void handleCardRelease(transfer, event)}
+                onDesignConfirm={() => {
+                  void confirmAbutmentDesign(transfer);
+                }}
+                onDropFiles={(files) => handleCardDropFiles(transfer, files)}
+              />
             );
           })}
         </div>
