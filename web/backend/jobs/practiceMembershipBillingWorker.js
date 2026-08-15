@@ -2,6 +2,7 @@
 // - web/backend/services/practiceMembership.service.js
 // - web/backend/server.js
 // change-log:
+// - 2026-08-15: 결제일 도래 시 유료 크레딧 실차감. 부족·해지 예약은 미결제·만료.
 // - 2026-08-13: 치과 멤버십 결제일 도래 시 해지 예약건은 미결제·만료, 유지건은 다음 결제일만 연장.
 import { processDuePracticeMemberships } from "../services/practiceMembership.service.js";
 
@@ -12,7 +13,7 @@ const INTERVAL_MS = 60 * 60 * 1000;
 
 async function tick() {
   const result = await processDuePracticeMemberships();
-  if (result.due || result.backfilled) {
+  if (result.due || result.backfilled || result.charged) {
     console.log("[practiceMembershipBilling] completed", result);
   }
 }

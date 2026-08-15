@@ -664,6 +664,7 @@ export async function adminGetBusinessLedger(req, res) {
                           "REQUEST_SPEND_COMMIT",
                           "SHIPPING_SPEND_COMMIT",
                           "PRACTICE_TRANSFER_SPEND_COMMIT",
+                          "PRACTICE_MEMBERSHIP_SPEND",
                         ],
                       ],
                     },
@@ -743,6 +744,10 @@ export async function adminGetBusinessLedger(req, res) {
                 {
                   case: { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
                   then: "CHARGE_FREE_SHIPPING",
+                },
+                {
+                  case: { $eq: ["$eventType", "PRACTICE_MEMBERSHIP_SPEND"] },
+                  then: "SPEND_PAID",
                 },
                 {
                   case: {

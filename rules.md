@@ -147,7 +147,7 @@
   - 한 줄: **기공소 월 참여 수수료 0원 + 치과 멤버십만 월 과금(면세·부가세 없음, 유료 크레딧 차감).**
   - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 0%.
   - 치과(`practice`): **멤버십 월 구독료** `practiceMembershipMonthlyFee` **기본 50,000원(공급가, VAT 0)**. 혜택=커스텀어벗 멤버십 단가. 해지=기간말 예약(`practiceMembershipCancelAtPeriodEnd`), 다음 결제일까지 유지.
-  - 치과 멤버십 청구: 결제일 도래 시 **유료 크레딧(`REQ_PAID_CREDIT`)에서 공급가 차감**(무료·기공크레딧 미사용). 잔액 부족 시 갱신 실패 → 멤버십 OFF·일반 단가. `vatAmount = 0`.
+  - 치과 멤버십 청구: 결제일 도래 시 `PRACTICE_MEMBERSHIP_SPEND`로 **유료 크레딧(`REQ_PAID_CREDIT`)에서 공급가 차감**(무료·기공크레딧 미사용). 워커 `practiceMembershipBillingWorker` / `processDuePracticeMembership`. 잔액 부족 시 갱신 실패 → 멤버십 OFF·일반 단가. `vatAmount = 0`. 가입 시점 선과금 없음(첫 결제는 `nextBillingAt`).
   - 유료 크레딧 사용처(확장): 기공물·어벗 주문 대금 **및 치과 멤버십 월 구독료**. 기공소 매칭 월정·기타 플랫폼 SaaS 과금에는 쓰지 않는다.
   - 설정: 멤버십=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 매칭 성공율·월정(0)=`DevopsPlatformFeeTab` / `PATCH /api/admin/settings/platform-fees`.
 - 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
@@ -155,6 +155,7 @@
   **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
 - 필수 이벤트 타입 SSOT(저장형):
   - `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_COMMIT`
+  - `PRACTICE_MEMBERSHIP_SPEND`(치과 멤버십 월 구독·유료 크레딧만)
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`

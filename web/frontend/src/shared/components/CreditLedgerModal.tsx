@@ -286,6 +286,7 @@ const REF_TYPE_LABELS: Record<string, string> = {
   SHIPPING_PACKAGE: "택배비",
   REQUEST: "의뢰",
   PRACTICE_TRANSFER: "기공비",
+  PRACTICE_MEMBERSHIP: "치과 멤버십",
   LAB_SETTLEMENT_PAYOUT: "기공크레딧 정산",
   SETTLEMENT_BATCH_ITEM: "기공크레딧 정산",
   FREE_REQUEST_CREDIT: "환영 무료크레딧",

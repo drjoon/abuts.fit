@@ -139,7 +139,7 @@ Notes:
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (커스텀어벗 요금 · 기공소 매칭 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
-  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧(단일 금액) · 어벗(CNC/환봉) · 어벗 추가 요청 · 멤버십·배송 · 특별 공급가)
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧(단일·1/2열) · 커스텀어벗(CNC/환봉) · 어벗 추가 요청 · 멤버십·배송(배송 500원 step) · 특별 공급가(CNC/환봉 × 생산만·디자인+생산))
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (자동 매칭 단일 플랫폼 수수료율 인라인 입력. `PracticeTransferAutoMatchTab` 카드 안에 포함. 개발운영사 앵커 `payoutRates.platformFeeRate` SSOT)
 - 개발·운영사 설정
@@ -199,7 +199,7 @@ Notes:
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 디자인+생산 − 생산만. 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
-    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.0만원, 디자인+생산 멤버십 2.5만원·일반 4.0만원. 치과 멤버십만 membership. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감, 관리자 플랫폼 설정). 해지 시 다음 결제일까지 유지, 이후 결제 없음. 기공소 매칭 월정 0·성공%만 — 루트 `rules.md` §2.3.
+    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 멤버십 1.5만원·일반 2.0만원, 디자인+생산 멤버십 2.5만원·일반 4.0만원. 치과 멤버십만 membership. 배송비 별도·박스당 과금. 치과 멤버십 월 구독료는 `creditSettings.practiceMembershipMonthlyFee`(기본 **50,000원**, 면세·유료 크레딧 차감 `PRACTICE_MEMBERSHIP_SPEND`, 관리자 플랫폼 설정). 해지 시 다음 결제일까지 유지, 이후 결제 없음. 기공소 매칭 월정 0·성공%만 — 루트 `rules.md` §2.3.
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
