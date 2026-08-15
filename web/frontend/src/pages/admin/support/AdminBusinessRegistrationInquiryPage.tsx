@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/backend/controllers/support/support.controller.js
 // change-log:
+// - 2026-08-15: lab_fee_item_add_request(기공비 항목 추가 요청) 유형 라벨.
 // - 2026-08-14: manufacturer_add_request(제조사 추가 요청) 유형 라벨.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -79,6 +80,7 @@ const typeLabelMap: Record<string, string> = {
   business_registration: "사업자등록",
   user_registration: "사용자등록",
   manufacturer_add_request: "제조사 추가 요청",
+  lab_fee_item_add_request: "기공비 항목 추가 요청",
 };
 
 const toErrorMessage = (error: unknown, fallback: string) => {

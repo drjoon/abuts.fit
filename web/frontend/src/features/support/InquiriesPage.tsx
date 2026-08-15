@@ -3,6 +3,7 @@
 // - 2026-08-15: FAQ — 기공물 서비스·기공소 가입 이유 반영, 진행상태 항목 삭제.
 // - 2026-08-15: FAQ 탭 라벨 단축·어벗츠 특징+크레딧 핵심만 정리.
 // - 2026-08-15: 크레딧·기공료 선입금 FAQ를 내 문의 내역 옆 탭으로 이동(의뢰자).
+// - 2026-08-15: lab_fee_item_add_request(기공비 항목 추가 요청) 라벨.
 // - 2026-08-14: manufacturer_add_request(제조사 추가 요청) 라벨.
 // - 2026-08-13: ?type= 쿼리로 문의 유형 프리필.
 // - 2026-08-12: 의뢰자 문의 화면에 기공료 선입금 FAQ 노출.
@@ -128,6 +129,7 @@ export const INQUIRY_TYPE_LABEL: Record<string, string> = {
   business_registration: "사업자등록",
   user_registration: "사용자등록",
   manufacturer_add_request: "제조사 추가 요청",
+  lab_fee_item_add_request: "기공비 항목 추가 요청",
 };
 
 const STATUS_CONFIG: Record<

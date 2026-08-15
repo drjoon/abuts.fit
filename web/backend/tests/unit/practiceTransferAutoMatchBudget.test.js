@@ -12,17 +12,17 @@ import {
 } from "../../utils/practiceTransferAutoMatchBudgetCore.js";
 
 describe("practiceTransferAutoMatchBudgetCore", () => {
-  test("admin ±10% floors to 1000원", () => {
-    expect(bandFromAdminBase(60000)).toEqual({ min: 54000, max: 66000 });
-    // 50000*1.1 부동소수점 → Math.ceil이면 55001; 1000원 절사로 55000
-    expect(bandFromAdminBase(50000)).toEqual({ min: 45000, max: 55000 });
-    expect(bandFromAdminBase(50001)).toEqual({ min: 45000, max: 55000 });
+  test("admin ±40% floors to 1000원", () => {
+    expect(bandFromAdminBase(60000)).toEqual({ min: 36000, max: 84000 });
+    // 50000*1.4 부동소수점 → 1000원 절사로 70000
+    expect(bandFromAdminBase(50000)).toEqual({ min: 30000, max: 70000 });
+    expect(bandFromAdminBase(50001)).toEqual({ min: 30000, max: 70000 });
   });
 
   test("defaults cover all prosthetic keys", () => {
     const items = buildDefaultAutoMatchBudgetItems();
-    expect(items.crown).toEqual({ min: 54000, max: 66000 });
-    expect(items.bridge).toEqual({ min: 54000, max: 66000 });
+    expect(items.crown).toEqual({ min: 36000, max: 84000 });
+    expect(items.bridge).toEqual({ min: 36000, max: 84000 });
     expect(isAutoMatchBudgetConfigured({ version: 2, items })).toBe(true);
   });
 
@@ -32,13 +32,13 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
       { id: "custom-veneer", name: "비니어", price: 80000, enabled: true },
     ];
     const budget = resolveAutoMatchBudgetOrDefaults(
-      { version: 2, items: { crown: { min: 54000, max: 66000 } } },
+      { version: 2, items: { crown: { min: 36000, max: 84000 } } },
       catalog,
     );
-    expect(budget.items.crown).toEqual({ min: 54000, max: 66000 });
+    expect(budget.items.crown).toEqual({ min: 36000, max: 84000 });
     expect(budget.items["custom-veneer"]).toEqual({
-      min: 72000,
-      max: 88000,
+      min: 48000,
+      max: 112000,
     });
   });
 
@@ -46,14 +46,14 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     const budget = resolveAutoMatchBudgetOrDefaults(null);
     expect(
       isLabUnitPricesWithinAutoMatchBudget(
-        { crown: 54000, bridge: 66000 },
+        { crown: 36000, bridge: 84000 },
         budget,
         ["crown", "bridge"],
       ),
     ).toBe(true);
     expect(
       isLabUnitPricesWithinAutoMatchBudget(
-        { crown: 53999, bridge: 66000 },
+        { crown: 35999, bridge: 84000 },
         budget,
         ["crown"],
       ),
@@ -81,7 +81,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
   test("unit price helper scales surcharge (eligibility uses base; billing may scale)", () => {
     const budget = {
       version: 2,
-      items: { crown: { min: 54000, max: 66000 } },
+      items: { crown: { min: 36000, max: 84000 } },
     };
     const base = { crown: 60000 };
     expect(
@@ -100,11 +100,11 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     ).toBe(true);
     expect(
       isLabUnitPricesWithinAutoMatchBudget(
-        scaleLabUnitPricesByMultiplier(base, 1.2),
+        scaleLabUnitPricesByMultiplier(base, 1.5),
         budget,
         ["crown"],
       ),
     ).toBe(false);
-    expect(scaleLabUnitPricesByMultiplier(base, 1.2).crown).toBe(72000);
+    expect(scaleLabUnitPricesByMultiplier(base, 1.5).crown).toBe(90000);
   });
 });

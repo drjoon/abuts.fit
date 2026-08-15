@@ -4,10 +4,10 @@
 // - web/frontend/src/shared/practice/autoMatchBudget.ts
 //
 // 자동매칭 기공비 예산 — 항목별 min/max (순수).
-// 카탈로그(어벗츠 수가) 기준 ±10%, 1000원 단위 절사.
+// 카탈로그(어벗츠 수가) 기준 ±40%, 1000원 단위 절사.
 
 const MAX_UNIT_FEE = 50_000_000;
-const DEFAULT_SPREAD = 0.1;
+const DEFAULT_SPREAD = 0.4;
 const FEE_STEP = 1000;
 
 /** 1000원 단위 절사 (미만 버림) */
@@ -185,7 +185,7 @@ export function isAutoMatchBudgetConfigured(budget, catalog) {
   });
 }
 
-/** 설정/모달용 — 카탈로그 항목마다 저장값 또는 ±10% */
+/** 설정/모달용 — 카탈로그 항목마다 저장값 또는 ±40% */
 export function resolveAutoMatchBudgetOrDefaults(raw, catalog) {
   const rows = normalizeCatalogItems(catalog);
   const normalized = normalizeAutoMatchBudget(raw, catalog);

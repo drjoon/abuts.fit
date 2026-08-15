@@ -55,7 +55,8 @@ export type PracticeTransferAutoMatchBudget = {
 };
 
 const MAX_UNIT_FEE = 50_000_000;
-const DEFAULT_SPREAD = 0.1;
+/** 어벗츠 수가 기준 기본 허용 폭 (±40%) */
+const DEFAULT_SPREAD = 0.4;
 const FEE_STEP = 1000;
 
 /** 1000원 단위 절사 (미만 버림) */
