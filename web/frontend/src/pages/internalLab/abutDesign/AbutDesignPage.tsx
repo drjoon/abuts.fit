@@ -6,7 +6,7 @@ import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { DesignQueueSection } from "@/pages/requestor/design/DesignQueueSection";
 
-/** 어벗츠기공소 — 어벗츠 커스텀어벗 디자인 수신·작업 */
+/** 어벗츠기공소 대시보드 — 어벗츠 커스텀어벗 디자인 수신·작업 */
 export default function AbutDesignPage() {
   const { period, setPeriod } = usePeriodStore();
 

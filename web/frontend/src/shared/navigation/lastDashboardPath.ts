@@ -40,7 +40,7 @@ export function getRoleDefaultDashboardPath(role: string | null | undefined): st
     case "manufacturer":
       return "/dashboard/worksheet";
     case "internalLab":
-      return "/dashboard/abut-design";
+      return "/dashboard";
     case "practice":
       return "/practice/dashboard";
     case "devops":
@@ -63,19 +63,26 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/internalLab/practice/devops는 `/dashboard`에 콘텐츠가 없음
+  // manufacturer/practice/devops는 `/dashboard`에 콘텐츠가 없음
   if (
-    (role === "manufacturer" ||
-      role === "internalLab" ||
-      role === "practice" ||
-      role === "devops") &&
+    (role === "manufacturer" || role === "practice" || role === "devops") &&
     (last === "/dashboard" || last === "/dashboard/")
   ) {
     return roleDefault;
   }
 
-  // 디자인 큐는 지정 의뢰자 전용 (제조사 last path 호환)
   const lastPathname = last.split("?")[0];
+
+  // 어벗츠기공소: 구 어벗디자인 경로 → 대시보드
+  if (
+    role === "internalLab" &&
+    (lastPathname === "/dashboard/abut-design" ||
+      lastPathname.startsWith("/dashboard/abut-design/"))
+  ) {
+    return "/dashboard";
+  }
+
+  // 디자인 큐는 지정 의뢰자 전용 (제조사 last path 호환)
   if (
     role === "manufacturer" &&
     (lastPathname === "/dashboard/design" ||

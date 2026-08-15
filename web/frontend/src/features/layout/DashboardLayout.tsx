@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-15: 어벗츠기공소 사이드 — 대시보드·기공의뢰수신·설정 3메뉴(어벗디자인·정산 제거).
 // - 2026-08-15: 모드 전환은 치과 기공의뢰 카드로 이전(사이드바 제거).
 // - 2026-08-14: 기공소 신규 기공비 → 관리자 토스트·플랫폼 설정 배지.
 // - 2026-08-13: 기공소 기공비 미설정 시 로그인 후 설정 탭 유도(LabFeeSetupPrompt).
@@ -107,7 +108,6 @@ import {
   ClipboardList,
   Printer,
   Search,
-  Sparkles,
   Share2,
   Clock,
   Boxes,
@@ -228,21 +228,14 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   internalLab: [
-    {
-      icon: Sparkles,
-      label: "어벗디자인",
-      href: "/dashboard/abut-design",
-      tooltip: "어벗츠 커스텀어벗 디자인 수신·작업",
-      accent: "어벗",
-    },
+    { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     {
       icon: Building2,
-      label: "기공작업",
+      label: "기공의뢰수신",
       href: "/dashboard/lab-work",
       tooltip: "어벗츠기공소 기공의뢰 수신·작업",
       accent: "기공",
     },
-    { icon: Wallet, label: "정산", href: "/dashboard/credits" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [

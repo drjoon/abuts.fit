@@ -2,7 +2,7 @@
 // - web/frontend/src/shared/business/requestorCapabilities.ts
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
 // change-log:
-// - 2026-08-15: internalLab(어벗츠기공소) — lab 수신 + 사업자 me, 디자인 큐는 별도 메뉴.
+// - 2026-08-15: internalLab(어벗츠기공소) — lab 수신 + 사업자 me, 디자인 큐는 대시보드.
 // - 2026-08-11: 초기 1회만 loading=true — 이후 refresh는 silent(페이지 스켈레톤 플리커 방지).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -59,7 +59,7 @@ export const useRequestorBusinessAccess = () => {
       return;
     }
 
-    // 어벗츠기공소: 기공작업용 lab 수신. 디자인 큐는 /abut-design 전용(중복 노출 방지).
+    // 어벗츠기공소: 기공의뢰수신용 lab 수신. 디자인 큐는 대시보드 전용(중복 노출 방지).
     if (isInternalLab) {
       if (!hasLoadedOnceRef.current) {
         setLoading(true);

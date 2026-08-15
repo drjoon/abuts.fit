@@ -65,9 +65,6 @@ const ManufacturerWorksheetPage = lazy(() =>
     default: m.ManufacturerWorksheetPage,
   })),
 );
-const InternalLabAbutDesignPage = lazy(
-  () => import("./pages/internalLab/abutDesign/AbutDesignPage"),
-);
 const InternalLabLabWorkPage = lazy(
   () => import("./pages/internalLab/labWork/LabWorkPage"),
 );
@@ -533,7 +530,7 @@ const App = () => {
                     path="abut-design"
                     element={
                       <RoleProtectedRoute roles={["internalLab"]}>
-                        <InternalLabAbutDesignPage />
+                        <Navigate to="/dashboard" replace />
                       </RoleProtectedRoute>
                     }
                   />
