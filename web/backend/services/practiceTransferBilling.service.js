@@ -17,6 +17,7 @@
 // - 2026-08-14: 지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
 // - 2026-08-14: 자동매칭: 치과별 할증 사용. 할증 updatedAt > 의뢰 createdAt 이면 해당 건 미적용.
 // - 2026-08-14: 자동매칭 수락 예산 검증은 공개 수가(할증 제외). 할증은 청구에만.
+// - 2026-08-15: 지정·수락된 자동매칭 견적은 billing 스냅샷. 공개풀만 as-of(history).
 // - 2026-08-15: 전송 전 잔액검사 — catalog 재사용·어벗 단가 캐시·조회 병렬화.
 // - 2026-08-15: 청구 완료 목록 견적에 autoMatchBudget 재부착 금지(확정 기공비 유지).
 import mongoose, { Types } from "mongoose";
@@ -2228,8 +2229,8 @@ export async function loadPracticeTransferQuoteContext({
 
 /**
  * 목록/상세용 견적. 과금 완료 건은 스냅샷 금액 유지.
- * 미청구·지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
- * 미청구·자동매칭: 의뢰 createdAt 기준 할증(이후 적용분은 미적용).
+ * 미청구·지정·수락된 자동매칭: billing.labFeeMultiplier 스냅샷(할증 소급 금지).
+ * 미청구·자동매칭 공개풀: 의뢰 createdAt 기준 as-of(history).
  */
 export async function buildFeeQuotesForTransferDocs({
   docs,
@@ -2349,7 +2350,7 @@ export async function buildFeeQuotesForTransferDocs({
       practiceMembershipActive: Boolean(membershipByPractice.get(practiceId)),
     });
     const implantFavorites = favoritesByPractice.get(practiceId) || [];
-    // 지정: 생성 스냅샷. 자동매칭: 의뢰시점 할증. 리메이크 미리보기: live.
+    // 지정·수락됨: billing 스냅샷(있으면). 공개풀·스냅 없는 자동매칭: as-of(history).
     const snapLabFeeMultiplier = normalizeLabFeeMultiplier(
       billing?.labFeeMultiplier,
     );
@@ -2364,8 +2365,11 @@ export async function buildFeeQuotesForTransferDocs({
     );
     const matchingMode =
       String(doc?.matchingMode || "").trim() === "auto" ? "auto" : "direct";
-    const feeLabFeeMultiplier =
-      matchingMode === "auto" ? asOfLabFeeMultiplier : snapLabFeeMultiplier;
+    const feeLabFeeMultiplier = openPool
+      ? asOfLabFeeMultiplier
+      : snapLabFeeMultiplier > 1 || matchingMode === "direct"
+        ? snapLabFeeMultiplier
+        : asOfLabFeeMultiplier;
     const remakeLabFeeMultiplier = liveLabFeeMultiplier;
     const storedBudget = normalizeAutoMatchBudget(billing?.autoMatchBudget);
     const autoScheduleMax =

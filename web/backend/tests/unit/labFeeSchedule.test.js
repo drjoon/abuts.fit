@@ -720,6 +720,63 @@ describe("labFeeSchedule", () => {
     ).toBe(1.2);
   });
 
+  test("할증을 1x로 해제해도 기존 의뢰는 당시 배수를 유지한다", () => {
+    const practiceId = "64b000000000000000000001";
+    const orderAt = new Date("2026-08-14T10:00:00+09:00");
+    const setAt = new Date("2026-08-14T09:00:00+09:00");
+    const clearAt = new Date("2026-08-14T11:00:00+09:00");
+    const rows = upsertLabPracticeFeeMultiplierList([], practiceId, 1.1, {
+      updatedAt: setAt,
+    });
+    const cleared = upsertLabPracticeFeeMultiplierList(rows, practiceId, 1, {
+      updatedAt: clearAt,
+    });
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0].multiplier).toBe(1);
+    expect(cleared[0].history.map((h) => h.multiplier)).toEqual([1.1, 1]);
+    expect(
+      resolveLabPracticeFeeMultiplierAsOf(
+        { labPracticeFeeMultipliers: cleared },
+        practiceId,
+        orderAt,
+      ),
+    ).toBe(1.1);
+    expect(
+      resolveLabPracticeFeeMultiplierAsOf(
+        { labPracticeFeeMultipliers: cleared },
+        practiceId,
+        clearAt,
+      ),
+    ).toBe(1);
+  });
+
+  test("할증 배수를 바꿔도 기존 의뢰는 이전 배수를 유지한다", () => {
+    const practiceId = "64b000000000000000000001";
+    const orderAt = new Date("2026-08-14T10:00:00+09:00");
+    const firstAt = new Date("2026-08-14T09:00:00+09:00");
+    const secondAt = new Date("2026-08-14T11:00:00+09:00");
+    const rows = upsertLabPracticeFeeMultiplierList([], practiceId, 1.1, {
+      updatedAt: firstAt,
+    });
+    const changed = upsertLabPracticeFeeMultiplierList(rows, practiceId, 1.2, {
+      updatedAt: secondAt,
+    });
+    expect(
+      resolveLabPracticeFeeMultiplierAsOf(
+        { labPracticeFeeMultipliers: changed },
+        practiceId,
+        orderAt,
+      ),
+    ).toBe(1.1);
+    expect(
+      resolveLabPracticeFeeMultiplierAsOf(
+        { labPracticeFeeMultipliers: changed },
+        practiceId,
+        secondAt,
+      ),
+    ).toBe(1.2);
+  });
+
   test("upsertLabPracticeFeeMultiplierList는 updatedAt을 기록한다", () => {
     const practiceId = "64b000000000000000000001";
     const at = new Date("2026-08-14T12:00:00+09:00");
@@ -729,5 +786,7 @@ describe("labFeeSchedule", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].multiplier).toBe(1.1);
     expect(rows[0].updatedAt.getTime()).toBe(at.getTime());
+    expect(rows[0].history).toHaveLength(1);
+    expect(rows[0].history[0].multiplier).toBe(1.1);
   });
 });

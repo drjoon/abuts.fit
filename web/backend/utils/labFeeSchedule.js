@@ -19,6 +19,7 @@
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
 // - 2026-08-14: 치과별 기공수가 할증(labFeeMultiplier). 기공비·기공소 어벗만 배수, 어벗츠 단가 제외.
 // - 2026-08-14: 할증 updatedAt — 의뢰 createdAt 이후 적용분은 해당 건에 소급하지 않음.
+// - 2026-08-15: 할증 history — 배수 변경·해제(1x)도 기존 의뢰는 당시 배수 유지(다음 건부터).
 import {
   resolveAbutsAbutmentPricingTier,
   resolveAbutsAbutmentUnitPrice,
@@ -37,6 +38,39 @@ const toTimeMs = (value) => {
   return Number.isFinite(ms) ? ms : NaN;
 };
 
+/** history 항목 정규화. at 없는 항목은 제외. */
+function normalizeLabFeeMultiplierHistory(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const out = [];
+  for (const entry of list) {
+    const atMs = toTimeMs(entry?.at ?? entry?.updatedAt);
+    if (!Number.isFinite(atMs)) continue;
+    out.push({
+      multiplier: normalizeLabFeeMultiplier(entry?.multiplier),
+      at: new Date(atMs),
+    });
+  }
+  out.sort((a, b) => a.at.getTime() - b.at.getTime());
+  return out;
+}
+
+/**
+ * as-of용 이벤트 목록.
+ * history가 있으면 그대로. 없으면 레거시 updatedAt 한 건으로 시드.
+ */
+function labFeeMultiplierEventsForRow(row) {
+  const history = normalizeLabFeeMultiplierHistory(row?.history);
+  if (history.length > 0) return history;
+  const appliedMs = toTimeMs(row?.updatedAt);
+  if (!Number.isFinite(appliedMs)) return [];
+  return [
+    {
+      multiplier: normalizeLabFeeMultiplier(row?.multiplier),
+      at: new Date(appliedMs),
+    },
+  ];
+}
+
 /** lab.labPracticeFeeMultipliers에서 치과별 배수 조회(현재 live). */
 export function resolveLabPracticeFeeMultiplier(labDoc, practiceAnchorId) {
   const practiceId = String(practiceAnchorId || "").trim();
@@ -54,8 +88,8 @@ export function resolveLabPracticeFeeMultiplier(labDoc, practiceAnchorId) {
 
 /**
  * 의뢰 시점 기준 할증.
- * 할증 updatedAt이 asOf(의뢰 createdAt)보다 이후면 이 건에는 미적용(다음 건부터).
- * updatedAt 없는 레거시 행은 이미 적용 중으로 간주.
+ * history에서 asOf 이하 최신 배수를 쓴다(변경·1x 해제도 기존 건 소급 금지).
+ * history 없는 레거시: updatedAt > asOf 이면 미적용, 아니면 현재 배수.
  */
 export function resolveLabPracticeFeeMultiplierAsOf(
   labDoc,
@@ -70,10 +104,27 @@ export function resolveLabPracticeFeeMultiplierAsOf(
     : [];
   for (const row of rows) {
     if (String(row?.practiceAnchorId || "") !== practiceId) continue;
+    const events = labFeeMultiplierEventsForRow(row);
+    if (events.length > 0 && Number.isFinite(asOfMs)) {
+      let effective = 1;
+      for (const event of events) {
+        if (event.at.getTime() <= asOfMs) {
+          effective = event.multiplier;
+        } else {
+          break;
+        }
+      }
+      return effective;
+    }
+    // 레거시(history·updatedAt 없음): 현재 배수. updatedAt 이후 적용분은 위에서 처리.
     const m = normalizeLabFeeMultiplier(row?.multiplier);
     if (m <= 1) return 1;
     const appliedMs = toTimeMs(row?.updatedAt);
-    if (Number.isFinite(asOfMs) && Number.isFinite(appliedMs) && appliedMs > asOfMs) {
+    if (
+      Number.isFinite(asOfMs) &&
+      Number.isFinite(appliedMs) &&
+      appliedMs > asOfMs
+    ) {
       return 1;
     }
     return m;
@@ -81,7 +132,10 @@ export function resolveLabPracticeFeeMultiplierAsOf(
   return 1;
 }
 
-/** 목록 upsert. multiplier<=1이면 해당 치과 항목 제거. */
+/**
+ * 목록 upsert.
+ * 배수 변경마다 history에 남긴다. 1x 해제해도 과거 할증 이력이 있으면 행을 유지(as-of용).
+ */
 export function upsertLabPracticeFeeMultiplierList(
   existing,
   practiceAnchorId,
@@ -96,19 +150,46 @@ export function upsertLabPracticeFeeMultiplierList(
       : Number.isFinite(toTimeMs(updatedAt))
         ? new Date(updatedAt)
         : new Date();
-  const rows = (Array.isArray(existing) ? existing : [])
+  const existingRows = Array.isArray(existing) ? existing : [];
+  const prev = existingRows.find(
+    (row) => String(row?.practiceAnchorId || "").trim() === practiceId,
+  );
+  const rows = existingRows
     .filter((row) => String(row?.practiceAnchorId || "").trim() !== practiceId)
-    .map((row) => ({
-      practiceAnchorId: row.practiceAnchorId,
-      multiplier: normalizeLabFeeMultiplier(row.multiplier),
-      updatedAt: row.updatedAt ? new Date(row.updatedAt) : null,
-    }))
-    .filter((row) => row.practiceAnchorId && row.multiplier > 1);
-  if (practiceId && m > 1) {
+    .map((row) => {
+      const history = labFeeMultiplierEventsForRow(row);
+      const current = normalizeLabFeeMultiplier(row.multiplier);
+      return {
+        practiceAnchorId: row.practiceAnchorId,
+        multiplier: current,
+        updatedAt: row.updatedAt ? new Date(row.updatedAt) : null,
+        history,
+      };
+    })
+    .filter(
+      (row) =>
+        row.practiceAnchorId &&
+        (row.multiplier > 1 || row.history.some((h) => h.multiplier > 1)),
+    );
+
+  if (!practiceId) return rows;
+
+  let history = labFeeMultiplierEventsForRow(prev);
+  const last = history[history.length - 1];
+  const changed = !last || last.multiplier !== m;
+  if (changed) {
+    history = [...history, { multiplier: m, at: appliedAt }];
+  } else if (history.length === 0 && m > 1) {
+    history = [{ multiplier: m, at: appliedAt }];
+  }
+
+  const keep = m > 1 || history.some((h) => h.multiplier > 1);
+  if (keep) {
     rows.push({
       practiceAnchorId: practiceId,
       multiplier: m,
       updatedAt: appliedAt,
+      history,
     });
   }
   return rows;

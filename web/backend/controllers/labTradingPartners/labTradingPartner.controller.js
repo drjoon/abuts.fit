@@ -8,6 +8,7 @@
 // - 2026-08-13: 기공비 GET은 미저장이면 0원·전부 off + configured=false.
 // - 2026-08-14: 기공비 저장 시 quote-context 캐시 무효화.
 // - 2026-08-14: 치과별 기공수가 할증 저장 시 해당 치과 사용자에 app-event 이밋.
+// - 2026-08-15: 할증 upsert 시 history 보존(1x 해제·배수 변경도 기존 의뢰 소급 금지).
 // - 2026-08-14: 기공소 신규 기공비 → 어벗츠 수가(off·검토) 동기화 + 관리자 알림.
 import { Types } from "mongoose";
 import LabTradingPartner from "../../models/labTradingPartner.model.js";
@@ -699,6 +700,10 @@ export async function updateLabPracticeFeeMultiplier(req, res) {
       practiceAnchorId: new Types.ObjectId(String(row.practiceAnchorId)),
       multiplier: row.multiplier,
       updatedAt: row.updatedAt ? new Date(row.updatedAt) : new Date(),
+      history: (Array.isArray(row.history) ? row.history : []).map((h) => ({
+        multiplier: normalizeLabFeeMultiplier(h.multiplier),
+        at: h.at ? new Date(h.at) : new Date(),
+      })),
     }));
 
     await BusinessAnchor.findByIdAndUpdate(labAnchorId, {

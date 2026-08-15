@@ -3,6 +3,7 @@
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
 // - 2026-08-14: 치과별 기공수가 할증(1x·1.1x·1.2x·1.5x·직접). Dialog + 취소/저장.
+// - 2026-08-15: 버튼 툴팁·모달 강조. 저장은 다음 의뢰부터(현재 건 소급 금지).
 import { useEffect, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -30,9 +36,12 @@ const PRESETS = [
   { value: 1.5, label: "1.5x" },
 ] as const;
 
+const SURCHARGE_NEXT_ORDER_HINT =
+  "저장하면 해당 치과의 다음 의뢰부터 반영됩니다.";
+
 const DIALOG_DESCRIPTION_LINES = [
   "세심한 작업으로 시간이 더 드는 치과는 기공수가를 할증할 수 있습니다.",
-  "저장하면 해당 치과의 다음 의뢰부터 반영됩니다.",
+  SURCHARGE_NEXT_ORDER_HINT,
 ] as const;
 
 function matchesPreset(value: number, preset: number) {
@@ -119,10 +128,7 @@ export function LabPracticeFeeSurchargeControl({
           saved > 1
             ? `기공수가 ${formatLabFeeMultiplierLabel(saved)} 적용`
             : "기공수가 할증 해제",
-        description:
-          saved > 1
-            ? "이후 이 치과에서 보내는 의뢰에 할증 수가가 적용됩니다."
-            : "이후 이 치과 의뢰는 기본 기공수가로 계산됩니다.",
+        description: SURCHARGE_NEXT_ORDER_HINT,
         duration: 2500,
       });
     } finally {
@@ -174,22 +180,29 @@ export function LabPracticeFeeSurchargeControl({
 
   return (
     <>
-      <span className="inline-flex" onPointerDown={onTriggerPointerDown}>
-        <Button
-          type="button"
-          variant={active ? "default" : "outline"}
-          size="sm"
-          className={cn(buttonSizeClass, className)}
-          aria-label={
-            active
-              ? `기공수가 ${formatLabFeeMultiplierLabel(current)}`
-              : "기공수가 할증 설정"
-          }
-          onClick={() => setOpen(true)}
-        >
-          {active ? formatLabFeeMultiplierLabel(current) : "기공수가 할증"}
-        </Button>
-      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex" onPointerDown={onTriggerPointerDown}>
+            <Button
+              type="button"
+              variant={active ? "default" : "outline"}
+              size="sm"
+              className={cn(buttonSizeClass, className)}
+              aria-label={
+                active
+                  ? `기공수가 ${formatLabFeeMultiplierLabel(current)}`
+                  : "기공수가 할증 설정"
+              }
+              onClick={() => setOpen(true)}
+            >
+              {active ? formatLabFeeMultiplierLabel(current) : "기공수가 할증"}
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs text-xs">
+          {SURCHARGE_NEXT_ORDER_HINT}
+        </TooltipContent>
+      </Tooltip>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
@@ -202,10 +215,13 @@ export function LabPracticeFeeSurchargeControl({
               <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900">
                 기공수가 할증
               </DialogTitle>
-              <DialogDescription className="text-sm text-slate-500">
-                {DIALOG_DESCRIPTION_LINES[0]}
-                <br />
-                {DIALOG_DESCRIPTION_LINES[1]}
+              <DialogDescription asChild>
+                <div className="space-y-2 text-sm">
+                  <p className="text-slate-500">{DIALOG_DESCRIPTION_LINES[0]}</p>
+                  <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm font-medium leading-snug text-amber-950">
+                    {DIALOG_DESCRIPTION_LINES[1]}
+                  </p>
+                </div>
               </DialogDescription>
             </DialogHeader>
           </div>

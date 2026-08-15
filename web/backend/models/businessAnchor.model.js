@@ -341,8 +341,8 @@ const businessAnchorSchema = new mongoose.Schema(
       },
       updatedAt: { type: Date, default: null },
     },
-    // 기공소→치과별 기공수가 할증(배수). 1 초과만 저장. 어벗츠 어벗 단가는 미적용.
-    // updatedAt: 할증 적용 시각. 의뢰 createdAt 이후면 해당 건 소급 금지.
+    // 기공소→치과별 기공수가 할증(배수). 현재값 + history(변경·1x 해제 이력).
+    // as-of: 의뢰 createdAt 기준 당시 배수. 이후 변경분은 다음 건부터.
     // related: web/backend/utils/labFeeSchedule.js (resolveLabPracticeFeeMultiplierAsOf)
     labPracticeFeeMultipliers: {
       type: [
@@ -353,8 +353,20 @@ const businessAnchorSchema = new mongoose.Schema(
             ref: "BusinessAnchor",
             required: true,
           },
+          // 현재 적용 배수(1=할증 없음). history가 있으면 1이어도 행 유지.
           multiplier: { type: Number, default: 1, min: 1, max: 5 },
           updatedAt: { type: Date, default: null },
+          // 배수 변경 이벤트. at 시점부터 multiplier 적용.
+          history: {
+            type: [
+              {
+                _id: false,
+                multiplier: { type: Number, min: 1, max: 5 },
+                at: { type: Date },
+              },
+            ],
+            default: [],
+          },
         },
       ],
       default: [],
