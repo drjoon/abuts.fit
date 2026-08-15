@@ -1723,14 +1723,52 @@ export async function updateReviewStatusByStage(req, res) {
           }
 
           // 샘플/치과 드롭존 의뢰는 전체 공정 진행은 동일하게 허용하되, 배송비 크레딧은 차감하지 않는다.
+          // PTX CA: 배송비는 치과(practice)에 부과(부가세 없음). 제조사 배송 몫 3850은 GL에 기록.
           if (
             resolvedBusinessAnchorId &&
             !isManufacturerSampleRequest(request) &&
             !isPracticeDropzoneRequest
           ) {
+            let spendBusinessAnchorId = null;
+            const pb =
+              request?.partnerBilling &&
+              typeof request.partnerBilling === "object"
+                ? request.partnerBilling
+                : {};
+            const practiceFromBilling = String(
+              pb.practiceBusinessAnchorId || "",
+            ).trim();
+            const relatedPtxId = String(
+              pb.relatedPracticeTransferId || "",
+            ).trim();
+            if (
+              practiceFromBilling &&
+              Types.ObjectId.isValid(practiceFromBilling)
+            ) {
+              spendBusinessAnchorId = practiceFromBilling;
+            } else if (relatedPtxId && Types.ObjectId.isValid(relatedPtxId)) {
+              try {
+                const PracticeTransfer = (
+                  await import("../../models/practiceTransfer.model.js")
+                ).default;
+                const ptx = await PracticeTransfer.findById(relatedPtxId)
+                  .select({ practiceBusinessAnchorId: 1 })
+                  .session(session || null)
+                  .lean();
+                const practiceId = String(
+                  ptx?.practiceBusinessAnchorId || "",
+                ).trim();
+                if (practiceId && Types.ObjectId.isValid(practiceId)) {
+                  spendBusinessAnchorId = practiceId;
+                }
+              } catch {
+                // keep lab payer
+              }
+            }
             await ensureShippingFeeSpendOnPackingApprove({
               request,
               businessAnchorId: resolvedBusinessAnchorId,
+              spendBusinessAnchorId,
               actorUserId: req.user?._id || null,
               session,
               deferredCreditEvents,

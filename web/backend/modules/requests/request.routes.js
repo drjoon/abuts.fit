@@ -18,7 +18,10 @@ import {
 } from "../../services/reviewApprovalQueue.service.js";
 import Request from "../../models/request.model.js";
 import { claimDesignRequest } from "../../controllers/requests/designClaim.controller.js";
-import { handoffDesignToProduction } from "../../controllers/requests/designHandoff.controller.js";
+import {
+  cancelDesignHandoff,
+  handoffDesignToProduction,
+} from "../../controllers/requests/designHandoff.controller.js";
 
 // 새 의뢰 생성 (의뢰자만 가능) — 유료(paid+verified) 필수
 router.post(
@@ -93,6 +96,14 @@ router.post(
   authenticate,
   authorizeDesignClaimOrHandoff(),
   handoffDesignToProduction,
+);
+
+// PTX: 준비 단계에서 어벗디자인 업로드 취소(재업로드용)
+router.post(
+  "/:id/design-handoff/cancel",
+  authenticate,
+  authorizeDesignClaimOrHandoff(),
+  cancelDesignHandoff,
 );
 
 // 내 의뢰 목록 조회 (의뢰자 전용)

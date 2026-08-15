@@ -16,6 +16,8 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-15: 디자인 STL 업로드 후 버튼 라벨「어벗생산 취소」(준비 단계만).
+// - 2026-08-15: 어벗디자인 취소·재업로드(제조사 준비 단계만). 업로드 후 준비 큐 등록.
 // - 2026-08-15: 수락 카드 — 어벗디자인 업로드 / 보철 업로드&작업완료 / 취소 3버튼.
 // - 2026-08-15: 수락 기공소 CA 디자인 — 상세 모달 구강스캔 업로드 UI 제거(스캔 없이 수락).
 // - 2026-08-15: 자동매칭 CA — 치과 구강스캔 필수. 지정은 스캔 없이 수락.
@@ -83,7 +85,7 @@ import {
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
-import { Building2, Search, UploadCloud } from "lucide-react";
+import { Building2, Search, UploadCloud, X } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import {
   PRACTICE_REMAKE_BADGE_CLASS,
@@ -2411,17 +2413,6 @@ export function RequestorPracticeReceivePage({
           );
         }
 
-        const payload =
-          res.data && typeof res.data === "object"
-            ? (res.data as Record<string, unknown>)
-            : {};
-        const nested =
-          payload.data && typeof payload.data === "object"
-            ? (payload.data as Record<string, unknown>)
-            : {};
-        const productionStarted = Boolean(
-          nested.productionStarted ?? payload.productionStarted,
-        );
         const nowIso = new Date().toISOString();
         const nextCount =
           Number(transfer.production?.designFileCount || 0) + 1;
@@ -2432,9 +2423,8 @@ export function RequestorPracticeReceivePage({
           labDesignConfirmedAt:
             transfer.production?.labDesignConfirmedAt || nowIso,
           skipDesignConfirm: true,
-          abutmentProductionStartedAt: productionStarted
-            ? transfer.production?.abutmentProductionStartedAt || nowIso
-            : transfer.production?.abutmentProductionStartedAt || null,
+          // 업로드 후 제조사 준비 유지 — 취소·재업로드 가능
+          abutmentProductionStartedAt: null,
         };
 
         setTransfers((prev) =>
@@ -2452,10 +2442,9 @@ export function RequestorPracticeReceivePage({
         );
 
         toast({
-          title: productionStarted ? "제조 주문 시작" : "어벗디자인 업로드",
-          description: productionStarted
-            ? "완성 어벗 STL이 업로드되어 제조사에 주문이 들어갔습니다."
-            : "완성 어벗 STL이 업로드되었습니다.",
+          title: "어벗디자인 업로드",
+          description:
+            "완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.",
         });
       } catch (error) {
         toast({
@@ -2477,6 +2466,93 @@ export function RequestorPracticeReceivePage({
       token,
       uploadFilesWithToast,
     ],
+  );
+
+  const handleCardAbutmentProductionCancel = useCallback(
+    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!token) return;
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || cardActionBusyId) return;
+
+      const relatedIds = (transfer.production?.relatedRequestIds || [])
+        .map((raw) => String(raw || "").trim())
+        .filter(Boolean);
+      if (relatedIds.length === 0) {
+        toast({
+          title: "디자인 의뢰 없음",
+          description: "연결된 제조 의뢰를 찾지 못했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setCardActionBusyId(id);
+      try {
+        const requestId = relatedIds[0];
+        const cancelRes = await apiFetch<{
+          success?: boolean;
+          message?: string;
+        }>({
+          path: `/api/requests/${encodeURIComponent(requestId)}/design-handoff/cancel`,
+          method: "POST",
+          token,
+        });
+        if (!cancelRes.ok) {
+          const body =
+            cancelRes.data && typeof cancelRes.data === "object"
+              ? (cancelRes.data as Record<string, unknown>)
+              : {};
+          throw new Error(
+            String(
+              body.message ||
+                "제조사가 준비 단계일 때만 어벗생산을 취소할 수 있습니다.",
+            ),
+          );
+        }
+
+        const clearedProduction: ReceivedPracticeTransfer["production"] = {
+          ...transfer.production,
+          designFileCount: 0,
+          designFiles: [],
+          designReadyAt: null,
+          labDesignConfirmedAt: null,
+          abutmentProductionStartedAt: null,
+        };
+        setTransfers((prev) =>
+          prev.map((row) =>
+            row._id === transfer._id || row.transferId === transfer.transferId
+              ? { ...row, production: clearedProduction }
+              : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev &&
+          (prev._id === transfer._id || prev.transferId === transfer.transferId)
+            ? { ...prev, production: clearedProduction }
+            : prev,
+        );
+
+        toast({
+          title: "어벗생산 취소",
+          description:
+            "제조사 주문이 취소되었습니다. 필요하면 어벗디자인을 다시 업로드하세요.",
+        });
+      } catch (error) {
+        toast({
+          title: "어벗생산 취소 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "어벗생산 취소 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setCardActionBusyId("");
+      }
+    },
+    [cardActionBusyId, toast, token],
   );
 
   const handleCardComplete = useCallback(
@@ -2943,11 +3019,20 @@ export function RequestorPracticeReceivePage({
                 {showWorkActions &&
                 transferHasCustomAbutment(transfer) &&
                 Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0) ===
-                  0 &&
-                !transfer.production?.abutmentProductionStartedAt ? (
+                  0 ? (
                   <div className="mt-2 rounded-md border border-dashed border-amber-400/50 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
                     커스텀어벗 디자인을 완료한 뒤 「어벗디자인 파일 업로드」로 완성 어벗
-                    STL을 올리세요. 업로드와 함께 제조사에 주문이 들어갑니다.
+                    STL을 올리세요. 업로드하면 제조사 준비 큐에 등록됩니다.
+                  </div>
+                ) : null}
+
+                {showWorkActions &&
+                transferHasCustomAbutment(transfer) &&
+                Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0) >
+                  0 ? (
+                  <div className="mt-2 rounded-md border border-dashed border-primary/40 bg-primary-soft/40 px-3 py-2 text-xs text-primary-strong">
+                    어벗디자인이 업로드되어 제조사 준비 큐에 있습니다. 준비 단계에서는
+                    「어벗생산 취소」로 되돌릴 수 있습니다.
                   </div>
                 ) : null}
 
@@ -2982,8 +3067,7 @@ export function RequestorPracticeReceivePage({
                       transfer.production?.designFileCount ||
                         transfer.production?.designFiles?.length ||
                         0,
-                    ) === 0 &&
-                    !transfer.production?.abutmentProductionStartedAt ? (
+                    ) === 0 ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
@@ -3000,8 +3084,39 @@ export function RequestorPracticeReceivePage({
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="max-w-xs text-xs">
-                          완성 어벗 STL을 올리면 제조사에 자동 주문되며, 어벗디자인비가
-                          지급됩니다.
+                          완성 어벗 STL을 올리면 제조사에서 커스텀 어벗
+                          생산을 진행합니다.
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                    {transferHasCustomAbutment(transfer) &&
+                    Number(
+                      transfer.production?.designFileCount ||
+                        transfer.production?.designFiles?.length ||
+                        0,
+                    ) > 0 ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={cardBusy}
+                            className="focus-visible:ring-0 focus-visible:ring-offset-0"
+                            onClick={(event) =>
+                              void handleCardAbutmentProductionCancel(
+                                transfer,
+                                event,
+                              )
+                            }
+                          >
+                            <X className="h-4 w-4" />
+                            {cardBusy ? "처리 중..." : "어벗생산 취소"}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-xs">
+                          제조사가 준비 단계일 때만 어벗생산을 취소할 수 있습니다.
+                          가공이 시작되면 변경할 수 없습니다.
                         </TooltipContent>
                       </Tooltip>
                     ) : null}
@@ -3016,8 +3131,7 @@ export function RequestorPracticeReceivePage({
                               transfer.production?.designFileCount ||
                                 transfer.production?.designFiles?.length ||
                                 0,
-                            ) === 0 &&
-                            !transfer.production?.abutmentProductionStartedAt
+                            ) === 0
                               ? "secondary"
                               : "default"
                           }

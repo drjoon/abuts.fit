@@ -19,6 +19,7 @@
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
 // - 2026-08-14: 치과별 기공수가 할증(labFeeMultiplier). 기공비·기공소 어벗만 배수, 어벗츠 단가 제외.
 // - 2026-08-14: 할증 updatedAt — 의뢰 createdAt 이후 적용분은 해당 건에 소급하지 않음.
+// - 2026-08-15: Abuts CA 치과 청구=디자인+생산가(멤버 2.5만/일반 4만). 기공소 디자인은 abutmentDesignLabFee 외주.
 // - 2026-08-15: 치아번호 없는 자리표시 행(빈 toothNumber+기본 크라운)은 견적에서 제외.
 // - 2026-08-15: 할증 history — 배수 변경·해제(1x)도 기존 의뢰는 당시 배수 유지(다음 건부터).
 import {
@@ -1059,8 +1060,17 @@ export function computePracticeTransferRetailFees({
       };
     }
     const kind = resolveAdoptedAbutmentKind(row, implantFavorites);
+    const rowMode = String(
+      row?.abutmentProductMode || row?.productMode || "",
+    ).trim();
+    // CNC Abuts CA: 치과는 디자인+생산가(멤버 2.5만/일반 4만). 기공소 디자인은 abutmentDesignLabFee.
+    // 환봉은 치아별 productMode 유지(환봉 D+P 단가 미설정 시 생산가만 쓰는 케이스 포함).
+    const productMode =
+      kind === "round_bar"
+        ? rowMode || "custom_abutment"
+        : "design_custom_abutment";
     const abuts = resolveAbutsAbutmentUnitPrice({
-      productMode: row?.abutmentProductMode || row?.productMode,
+      productMode,
       pricingTier,
       prices: abutmentPrices,
       kind,

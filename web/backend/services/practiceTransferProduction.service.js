@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-15: PTX CA — 치과 멤버십/일반 생산단가·출고목표=기일-3영업일·묶음 우선. 디자인비는 기공소 지급 분리.
 // - 2026-08-15: 지정 CA — 스캔 없이 수락 가능. 스캔은 수락 후 업로드 후 Request 생성.
 // - 2026-08-15: 구강스캔 — 자동매칭은 치과 필수, 지정은 수락 기공소 업로드 허용.
 // - 2026-08-15: Abuts-first — 수락 시 스캔(files)로 Request 생성, 기일 기준 스케줄, 디자인 컨펌 후 생산.
@@ -16,21 +17,30 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import {
   normalizeCaseInfosImplantFields,
-  computePriceForRequest,
   addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
   normalizeKoreanBusinessDay,
 } from "../controllers/requests/utils.js";
 import { calculateInitialProductionSchedule } from "../controllers/requests/production.utils.js";
-import { resolveQuotedPriceWithExtras } from "../controllers/requests/designPrice.utils.js";
+import {
+  countDesignAbutmentQty,
+} from "../controllers/requests/designPrice.utils.js";
+import { resolveQuotedPriceWithExpressFee } from "../controllers/requests/expressPrice.utils.js";
 import { resolveSelectableShippingMode } from "../controllers/requests/expressSelectable.utils.js";
 import { getManufacturerLeadTimesUtil } from "../controllers/businesses/leadTime.controller.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+import {
+  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  pickAbutsAbutmentCreditPrices,
+  resolveAbutsAbutmentPricingTier,
+} from "../utils/abutsAbutmentService.js";
 import { checkCreditLock } from "../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "./requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
+import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
 
 const hasCustomAbutmentToothWorks = (toothWorks) =>
   (Array.isArray(toothWorks) ? toothWorks : []).some(
@@ -198,73 +208,140 @@ const ymdToUtcNoonMs = (ymd) => {
 };
 
 /**
- * 치과 도착일(기일)에 맞추기 위한 shippingMode.
- * 묶음요일이 있으면 normal 우선, 없으면 express. 기일 임박이면 express.
+ * 제조사 출고 목표 = 치과도착일 − 3영업일
+ * (= 기공작업 종료일(도착−2) − 1영업일).
+ */
+export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
+  let ymd = String(arrivalYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  for (let i = 0; i < 3; i += 1) {
+    ymd = await prevKoreanBusinessDayYmd({ fromYmd: ymd });
+  }
+  return ymd;
+}
+
+/**
+ * PTX CA 어벗츠 생산 몫 견적(관리자·제조 의뢰비 표시).
+ * 치과 청구(디자인+생산)와 분리: 멤버십 치과 2.5만 → 어벗츠 생산 1.5만 + 기공소 디자인 1만.
+ * 배송 3,500은 치과→어벗츠. 제조사 정산 장부: 의뢰 9,900 + 배송 3,850(VAT 포함).
+ */
+export function buildPtxAbutsProductionQuote({
+  creditSettings,
+  pricingTier = "regular",
+  shippingMode,
+  abutmentQty = 1,
+  expressFeePerRequest = 2000,
+  quotedAt = new Date(),
+}) {
+  const picked = pickAbutsAbutmentCreditPrices(creditSettings || {}, pricingTier);
+  const unit = Math.max(
+    0,
+    Number(picked.productionPrice) ||
+      (pricingTier === "membership"
+        ? ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
+        : ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE),
+  );
+  const practiceUnit = Math.max(
+    0,
+    Number(picked.designAndProductionPrice) || unit,
+  );
+  const qty = Math.max(1, Math.floor(Number(abutmentQty) || 1));
+  const tier = pricingTier === "membership" ? "membership" : "regular";
+  const base = {
+    baseAmount: unit,
+    discountAmount: 0,
+    amount: unit * qty,
+    currency: "KRW",
+    rule:
+      tier === "membership"
+        ? "ptx_abuts_production_membership"
+        : "ptx_abuts_production_regular",
+    designFee: null,
+    abutmentQty: qty,
+    quotedAt,
+    discountMeta: {
+      pricingTier: tier,
+      // 치과 지불(디자인+생산) vs 어벗츠 생산 수취 vs 기공소 디자인비
+      practiceDesignAndProductionUnit: practiceUnit,
+      abutsProductionUnit: unit,
+      labDesignFeeUnit: Math.max(0, practiceUnit - unit),
+    },
+  };
+  return resolveQuotedPriceWithExpressFee({
+    price: base,
+    shippingMode,
+    expressFee: expressFeePerRequest,
+    expressQty: qty,
+  });
+}
+
+async function resolvePracticePricingTierForTransfer(transferDoc) {
+  const practiceId = String(transferDoc?.practiceBusinessAnchorId || "").trim();
+  if (!practiceId || !Types.ObjectId.isValid(practiceId)) return "regular";
+  const practice = await BusinessAnchor.findById(practiceId)
+    .select({ practiceMembershipActive: 1 })
+    .lean();
+  return resolveAbutsAbutmentPricingTier({
+    practiceMembershipActive: Boolean(practice?.practiceMembershipActive),
+  });
+}
+
+/**
+ * 제조사 출고 목표(기일−3영업일)에 맞추기 위한 shippingMode.
+ * 묶음(normal) 우선. 목표를 못 맞추면 신속.
  */
 export async function resolveShippingModeForPracticeTransferArrival({
   transferDoc,
   weeklyBatchDays = [],
   requestedAt = new Date(),
+  maxDiameter = 8,
 }) {
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  const hasBatch = (Array.isArray(weeklyBatchDays) ? weeklyBatchDays : []).length > 0;
-  let preferred = hasBatch ? "normal" : "express";
+  const targetYmd = arrivalYmd
+    ? await resolveManufacturerTargetShipYmd(arrivalYmd)
+    : null;
+  const batchDays = Array.isArray(weeklyBatchDays) ? weeklyBatchDays : [];
+  let preferred = "normal";
 
-  if (arrivalYmd) {
-    try {
-      const expressSchedule = await calculateInitialProductionSchedule({
-        shippingMode: "express",
-        maxDiameter: 8,
-        requestedAt,
-        weeklyBatchDays: [],
-        productMode: "design_custom_abutment",
-      });
-      const expressPickupYmd = expressSchedule?.scheduledShipPickup
-        ? toKstYmd(expressSchedule.scheduledShipPickup)
-        : null;
-      const arrivalMs = ymdToUtcNoonMs(arrivalYmd);
-      const expressMs = expressPickupYmd ? ymdToUtcNoonMs(expressPickupYmd) : null;
-      if (arrivalMs != null && expressMs != null && arrivalMs <= expressMs) {
-        preferred = "express";
-      } else if (hasBatch) {
-        const normalSchedule = await calculateInitialProductionSchedule({
-          shippingMode: "normal",
-          maxDiameter: 8,
-          requestedAt,
-          weeklyBatchDays,
-          productMode: "design_custom_abutment",
-        });
-        const normalPickupYmd = normalSchedule?.scheduledShipPickup
-          ? toKstYmd(normalSchedule.scheduledShipPickup)
-          : null;
-        const normalMs = normalPickupYmd ? ymdToUtcNoonMs(normalPickupYmd) : null;
-        if (arrivalMs != null && normalMs != null && normalMs > arrivalMs) {
-          preferred = "express";
-        }
-      }
-    } catch {
-      // keep preferred
+  try {
+    const normalSchedule = await calculateInitialProductionSchedule({
+      shippingMode: "normal",
+      maxDiameter,
+      requestedAt,
+      weeklyBatchDays: batchDays,
+      productMode: "design_custom_abutment",
+    });
+    const normalPickupYmd = normalSchedule?.scheduledShipPickup
+      ? toKstYmd(normalSchedule.scheduledShipPickup)
+      : null;
+    const targetMs = targetYmd ? ymdToUtcNoonMs(targetYmd) : null;
+    const normalMs = normalPickupYmd ? ymdToUtcNoonMs(normalPickupYmd) : null;
+    if (targetMs != null && normalMs != null && normalMs > targetMs) {
+      preferred = "express";
     }
+  } catch {
+    // keep normal preference
   }
 
   return resolveSelectableShippingMode({
     shippingMode: preferred,
     requestedAt,
-    weeklyBatchDays: preferred === "normal" ? weeklyBatchDays : [],
+    weeklyBatchDays: preferred === "normal" ? batchDays : [],
+    maxDiameter,
     productMode: "design_custom_abutment",
   });
-};
+}
 
-const clampScheduleToArrival = async (productionSchedule, arrivalYmd) => {
-  if (!arrivalYmd || !productionSchedule) return productionSchedule;
-  const arrivalMs = ymdToUtcNoonMs(arrivalYmd);
-  if (arrivalMs == null) return productionSchedule;
+const clampScheduleToTarget = async (productionSchedule, targetYmd) => {
+  if (!targetYmd || !productionSchedule) return productionSchedule;
+  const targetMs = ymdToUtcNoonMs(targetYmd);
+  if (targetMs == null) return productionSchedule;
   const next = { ...productionSchedule };
   const pickup = next.scheduledShipPickup
     ? new Date(next.scheduledShipPickup)
     : null;
-  if (pickup && !Number.isNaN(pickup.getTime()) && pickup.getTime() > arrivalMs) {
-    next.scheduledShipPickup = new Date(arrivalMs);
+  if (pickup && !Number.isNaN(pickup.getTime()) && pickup.getTime() > targetMs) {
+    next.scheduledShipPickup = new Date(targetMs);
   }
   return next;
 };
@@ -381,6 +458,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
+  const targetShipYmd = arrivalYmd
+    ? await resolveManufacturerTargetShipYmd(arrivalYmd)
+    : null;
 
   const billing =
     transferDoc?.billing && typeof transferDoc.billing === "object"
@@ -395,23 +475,21 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   const practicePrepaidAbutment = abutmentQty > 0 || abutmentRetailTotal > 0;
 
   let expressFeePerRequest = 2000;
-  let designFeePerTooth = 5000;
+  let creditSettingsForQuote = {};
   try {
-    const creditSettings = await loadCreditSettingsDefaults({
+    creditSettingsForQuote = await loadCreditSettingsDefaults({
       requestorOrgId: labAnchorId,
     });
     expressFeePerRequest = Math.max(
       0,
-      Number(creditSettings?.expressFee ?? 2000) || 2000,
-    );
-    designFeePerTooth = Math.max(
-      0,
-      Number(creditSettings?.designFee ?? 5000) || 5000,
+      Number(creditSettingsForQuote?.expressFee ?? 2000) || 2000,
     );
   } catch {
     expressFeePerRequest = 2000;
-    designFeePerTooth = 5000;
+    creditSettingsForQuote = {};
   }
+
+  const pricingTier = await resolvePracticePricingTierForTransfer(transferDoc);
 
   const manufacturerSettings = await getManufacturerLeadTimesUtil();
   const leadTimes = manufacturerSettings?.leadTimes || {};
@@ -437,7 +515,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       );
     }
 
-    // Abuts-first: 항상 디자인+생산
+    // Abuts-first: 워크플로(디자인 큐/핸드오프)는 design_custom_abutment 유지.
+    // 과금은 생산만(멤버십 1.5만) — 디자인은 기공소 외주(abutmentDesignLabFee).
     const productMode = "design_custom_abutment";
 
     const diameterRaw = String(row.abutmentDiameter || "").trim();
@@ -472,20 +551,17 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     const normalizedCaseInfos =
       await normalizeCaseInfosImplantFields(caseInfosRaw);
 
-    const computedPrice = await computePriceForRequest({
-      requestorId: labUserId,
-      requestorOrgId: labAnchorId,
-      clinicName,
-      patientName,
-      tooth,
-    });
-
-    const quotedPrice = resolveQuotedPriceWithExtras({
-      price: computedPrice,
-      caseInfos: normalizedCaseInfos,
+    const abutmentQty = Math.max(
+      1,
+      countDesignAbutmentQty(normalizedCaseInfos) || 1,
+    );
+    const quotedPrice = buildPtxAbutsProductionQuote({
+      creditSettings: creditSettingsForQuote,
+      pricingTier,
       shippingMode,
-      expressFee: expressFeePerRequest,
-      designFeePerTooth,
+      abutmentQty,
+      expressFeePerRequest,
+      quotedAt: requestedAt,
     });
 
     let productionSchedule = await calculateInitialProductionSchedule({
@@ -495,14 +571,17 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
       productMode,
     });
-    productionSchedule = await clampScheduleToArrival(productionSchedule, arrivalYmd);
+    productionSchedule = await clampScheduleToTarget(
+      productionSchedule,
+      targetShipYmd,
+    );
 
     const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
     const pickupYmd = productionSchedule?.scheduledShipPickup
       ? toKstYmd(productionSchedule.scheduledShipPickup)
       : null;
 
-    let estimatedShipYmdRaw = pickupYmd || arrivalYmd;
+    let estimatedShipYmdRaw = pickupYmd || targetShipYmd || arrivalYmd;
     if (!estimatedShipYmdRaw) {
       const d =
         typeof normalizedCaseInfos?.maxDiameter === "number" &&
@@ -521,11 +600,11 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       });
     }
 
-    if (arrivalYmd) {
-      const arrivalMs = ymdToUtcNoonMs(arrivalYmd);
+    if (targetShipYmd) {
+      const targetMs = ymdToUtcNoonMs(targetShipYmd);
       const estMs = ymdToUtcNoonMs(estimatedShipYmdRaw);
-      if (arrivalMs != null && estMs != null && estMs > arrivalMs) {
-        estimatedShipYmdRaw = arrivalYmd;
+      if (targetMs != null && estMs != null && estMs > targetMs) {
+        estimatedShipYmdRaw = targetShipYmd;
       }
     }
 
@@ -559,6 +638,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         labTradingPartnerId: billing.labTradingPartnerId || null,
         relatedPracticeTransferId: transferDoc._id,
         billingOwnerAnchorId: isTradingPartner ? labAnchorId : null,
+        labDesignedAbutment: true,
+        practiceBusinessAnchorId:
+          transferDoc.practiceBusinessAnchorId || null,
       },
       timeline: {
         originalEstimatedShipYmd: estimatedShipYmd,
@@ -817,3 +899,139 @@ export {
   parseArrivalYmdFromMemo,
   pickFileForTooth,
 };
+
+/**
+ * 디자인 핸드오프 시 PTX CA Request 가격·출고모드·스케줄을 생산만/기일-3 기준으로 재계산.
+ * 제조 단계는 준비로 유지(취소·재업로드 가능).
+ */
+export async function repriceAndReschedulePtxAbutmentRequest({
+  requestDoc,
+  transferDoc,
+  requestedAt = new Date(),
+}) {
+  if (!requestDoc || !transferDoc) return requestDoc;
+
+  const labAnchorId = String(
+    requestDoc.businessAnchorId || transferDoc.targetLabAnchorId || "",
+  ).trim();
+  const labOrg = labAnchorId && Types.ObjectId.isValid(labAnchorId)
+    ? await BusinessAnchor.findById(labAnchorId)
+        .select({ "shippingPolicy.weeklyBatchDays": 1 })
+        .lean()
+    : null;
+  const weeklyBatchDays = Array.isArray(labOrg?.shippingPolicy?.weeklyBatchDays)
+    ? labOrg.shippingPolicy.weeklyBatchDays
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    : [];
+
+  let expressFeePerRequest = 2000;
+  let creditSettingsForQuote = {};
+  try {
+    creditSettingsForQuote = await loadCreditSettingsDefaults({
+      requestorOrgId: labAnchorId || null,
+    });
+    expressFeePerRequest = Math.max(
+      0,
+      Number(creditSettingsForQuote?.expressFee ?? 2000) || 2000,
+    );
+  } catch {
+    // defaults
+  }
+
+  const pricingTier = await resolvePracticePricingTierForTransfer(transferDoc);
+
+  const maxDiameter =
+    typeof requestDoc?.caseInfos?.maxDiameter === "number" &&
+    !Number.isNaN(requestDoc.caseInfos.maxDiameter)
+      ? requestDoc.caseInfos.maxDiameter
+      : 8;
+
+  const shippingMode = await resolveShippingModeForPracticeTransferArrival({
+    transferDoc,
+    weeklyBatchDays,
+    requestedAt,
+    maxDiameter,
+  });
+
+  const abutmentQty = Math.max(
+    1,
+    countDesignAbutmentQty(requestDoc.caseInfos) || 1,
+  );
+  const quotedPrice = buildPtxAbutsProductionQuote({
+    creditSettings: creditSettingsForQuote,
+    pricingTier,
+    shippingMode,
+    abutmentQty,
+    expressFeePerRequest,
+    quotedAt: requestedAt,
+  });
+
+  const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
+  const targetShipYmd = arrivalYmd
+    ? await resolveManufacturerTargetShipYmd(arrivalYmd)
+    : null;
+
+  let productionSchedule = await calculateInitialProductionSchedule({
+    shippingMode,
+    maxDiameter,
+    requestedAt,
+    weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
+    productMode: "design_custom_abutment",
+  });
+  productionSchedule = await clampScheduleToTarget(
+    productionSchedule,
+    targetShipYmd,
+  );
+
+  const pickupYmd = productionSchedule?.scheduledShipPickup
+    ? toKstYmd(productionSchedule.scheduledShipPickup)
+    : null;
+  let estimatedShipYmdRaw = pickupYmd || targetShipYmd || arrivalYmd;
+  if (targetShipYmd) {
+    const targetMs = ymdToUtcNoonMs(targetShipYmd);
+    const estMs = ymdToUtcNoonMs(estimatedShipYmdRaw);
+    if (targetMs != null && estMs != null && estMs > targetMs) {
+      estimatedShipYmdRaw = targetShipYmd;
+    }
+  }
+  const estimatedShipYmd = estimatedShipYmdRaw
+    ? await normalizeKoreanBusinessDay({ ymd: estimatedShipYmdRaw })
+    : null;
+
+  requestDoc.price = quotedPrice;
+  requestDoc.shippingMode = shippingMode;
+  requestDoc.originalShipping = {
+    ...(requestDoc.originalShipping && typeof requestDoc.originalShipping === "object"
+      ? requestDoc.originalShipping
+      : {}),
+    mode: shippingMode,
+    requestedAt,
+  };
+  requestDoc.finalShipping = {
+    mode: shippingMode,
+    updatedAt: requestedAt,
+  };
+  requestDoc.productionSchedule = productionSchedule;
+  if (!requestDoc.partnerBilling || typeof requestDoc.partnerBilling !== "object") {
+    requestDoc.partnerBilling = {};
+  }
+  requestDoc.partnerBilling.labDesignedAbutment = true;
+  if (transferDoc.practiceBusinessAnchorId) {
+    requestDoc.partnerBilling.practiceBusinessAnchorId =
+      transferDoc.practiceBusinessAnchorId;
+  }
+  if (estimatedShipYmd) {
+    requestDoc.timeline = {
+      ...(requestDoc.timeline && typeof requestDoc.timeline === "object"
+        ? requestDoc.timeline
+        : {}),
+      originalEstimatedShipYmd:
+        requestDoc.timeline?.originalEstimatedShipYmd || estimatedShipYmd,
+      nextEstimatedShipYmd: estimatedShipYmd,
+      estimatedShipYmd,
+    };
+  }
+
+  return requestDoc;
+}

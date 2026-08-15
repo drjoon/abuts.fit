@@ -2503,6 +2503,10 @@ export async function buildFeeQuotesForTransferDocs({
 
 /**
  * 기공의뢰 CA: 수락 기공소가 디자인을 올리면 어벗디자인비 지급.
+ * 크레딧 흐름 SSOT:
+ *   치과 →(디자인+생산가, 멤버 2.5만/일반 4만)→ 어벗츠
+ *   어벗츠 →(abutmentDesignLabFee, 기본 1만)→ 기공소
+ *   어벗츠 생산 몫(멤버 1.5만/일반 2만)은 제조 의뢰비로 표시·제조사 정산(9,900) 재원.
  * REV_DEVOPS → LAB_SETTLEMENT_CREDIT (idempotent per Request).
  */
 export async function grantAbutmentDesignLabFee({
@@ -2639,6 +2643,75 @@ export async function grantAbutmentDesignLabFee({
     amount,
     unitFee,
     qty,
+  };
+}
+
+/**
+ * 어벗디자인비 지급 회수(디자인 업로드 취소 시). ADJUST 저널 삭제.
+ */
+export async function revokeAbutmentDesignLabFee({
+  requestDoc,
+  transferId = null,
+  labAnchorId = null,
+  actorUserId = null,
+}) {
+  const requestId = requestDoc?._id ? String(requestDoc._id) : "";
+  if (!requestId || !Types.ObjectId.isValid(requestId)) {
+    return { revoked: false, reason: "missing_request" };
+  }
+
+  const idempotencyKey = `gl:request:${requestId}:abutment_design_fee`;
+  const existing = await getJournalByIdempotencyKey({ idempotencyKey });
+  if (!existing?.journalId) {
+    return { revoked: false, reason: "not_found" };
+  }
+
+  const amount = Math.max(
+    0,
+    Math.round(Number(existing?.meta?.amount || 0)) || 0,
+  );
+  const resolvedLabAnchorId = String(
+    labAnchorId ||
+      existing?.businessAnchorId ||
+      requestDoc?.businessAnchorId ||
+      "",
+  ).trim();
+
+  const deleted = await deleteGeneralLedgerCommitJournal({
+    journalId: existing.journalId,
+    expectedEventTypes: ["ADJUST"],
+  });
+
+  if (!deleted?.deleted) {
+    return {
+      revoked: false,
+      reason: deleted?.reason || "delete_failed",
+      journalId: existing.journalId,
+    };
+  }
+
+  if (resolvedLabAnchorId && amount > 0) {
+    try {
+      const { emitCreditBalanceUpdatedToBusiness } = await import(
+        "../utils/creditRealtime.js"
+      );
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId: resolvedLabAnchorId,
+        balanceDelta: -amount,
+        reason: "abutment_design_lab_fee_revoke",
+        refId: existing.journalId || requestId,
+      });
+    } catch {
+      // best-effort
+    }
+  }
+
+  return {
+    revoked: true,
+    journalId: existing.journalId,
+    amount,
+    actorUserId: actorUserId || null,
+    transferId: transferId || null,
   };
 }
 

@@ -49,8 +49,104 @@ import {
 } from "../../services/creditRevenuePolicy.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import { ensureMailboxAddressForBusiness } from "./mailbox.utils.js";
+import {
+  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  pickAbutsAbutmentCreditPrices,
+  resolveAbutsAbutmentPricingTier,
+} from "../../utils/abutsAbutmentService.js";
 
 const SHIPPING_FEE_SUPPLY = 3500;
+
+function isPtxLabDesignedAbutmentRequest(request) {
+  const pb =
+    request?.partnerBilling && typeof request.partnerBilling === "object"
+      ? request.partnerBilling
+      : {};
+  if (!pb.relatedPracticeTransferId) return false;
+  if (pb.labDesignedAbutment === false) return false;
+  return true;
+}
+
+function buildPtxAbutsProductionQuoteLocal({
+  creditSettings,
+  pricingTier = "regular",
+  shippingMode,
+  abutmentQty = 1,
+  expressFeePerRequest = 2000,
+}) {
+  const picked = pickAbutsAbutmentCreditPrices(creditSettings || {}, pricingTier);
+  const unit = Math.max(
+    0,
+    Number(picked.productionPrice) ||
+      (pricingTier === "membership"
+        ? ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
+        : ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE),
+  );
+  const practiceUnit = Math.max(
+    0,
+    Number(picked.designAndProductionPrice) || unit,
+  );
+  const qty = Math.max(1, Math.floor(Number(abutmentQty) || 1));
+  const tier = pricingTier === "membership" ? "membership" : "regular";
+  return resolveQuotedPriceWithExpressFee({
+    price: {
+      baseAmount: unit,
+      discountAmount: 0,
+      amount: unit * qty,
+      currency: "KRW",
+      rule:
+        tier === "membership"
+          ? "ptx_abuts_production_membership"
+          : "ptx_abuts_production_regular",
+      designFee: null,
+      abutmentQty: qty,
+      quotedAt: new Date(),
+      discountMeta: {
+        pricingTier: tier,
+        practiceDesignAndProductionUnit: practiceUnit,
+        abutsProductionUnit: unit,
+        labDesignFeeUnit: Math.max(0, practiceUnit - unit),
+      },
+    },
+    shippingMode,
+    expressFee: expressFeePerRequest,
+    expressQty: qty,
+  });
+}
+
+async function resolvePtxPracticePricingTier(request, session = null) {
+  const pb =
+    request?.partnerBilling && typeof request.partnerBilling === "object"
+      ? request.partnerBilling
+      : {};
+  let practiceId = String(pb.practiceBusinessAnchorId || "").trim();
+  if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
+    const relatedPtxId = String(pb.relatedPracticeTransferId || "").trim();
+    if (relatedPtxId && Types.ObjectId.isValid(relatedPtxId)) {
+      try {
+        const PracticeTransfer = (
+          await import("../../models/practiceTransfer.model.js")
+        ).default;
+        const ptx = await PracticeTransfer.findById(relatedPtxId)
+          .select({ practiceBusinessAnchorId: 1 })
+          .session(session || null)
+          .lean();
+        practiceId = String(ptx?.practiceBusinessAnchorId || "").trim();
+      } catch {
+        practiceId = "";
+      }
+    }
+  }
+  if (!practiceId || !Types.ObjectId.isValid(practiceId)) return "regular";
+  const practice = await BusinessAnchor.findById(practiceId)
+    .select({ practiceMembershipActive: 1 })
+    .session(session || null)
+    .lean();
+  return resolveAbutsAbutmentPricingTier({
+    practiceMembershipActive: Boolean(practice?.practiceMembershipActive),
+  });
+}
 
 async function emitOrQueueCreditBalanceUpdate({
   deferredCreditEvents,
@@ -572,13 +668,48 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       : {};
   const practicePrepaid = Boolean(partnerBilling.practicePrepaidAbutment);
   const isTradingPartner = Boolean(partnerBilling.isTradingPartner);
+  const isPtxLabDesigned = isPtxLabDesignedAbutmentRequest(request);
 
   // 비거래처: 기공의뢰에서 어벗 소매가가 이미 REV_*로 반영됨 → 생산 차감 스킵
+  // PTX 기공소 디자인: 표시 의뢰비는 생산만(멤버십/일반 + 신속)으로 스탬프.
   if (practicePrepaid && !isTradingPartner) {
-    request.price = {
-      ...toPlainRequestPrice(request.price),
-      rule: String(request?.price?.rule || "") || "practice_transfer_prepaid_non_partner",
-    };
+    if (isPtxLabDesigned) {
+      const shippingMode = resolveEffectiveShippingMode(request);
+      let expressFeePerRequest = 2000;
+      let creditSettingsForQuote = {};
+      try {
+        const { loadCreditSettingsDefaults } =
+          await import("../../utils/creditSettingsDefaults.js");
+        creditSettingsForQuote = await loadCreditSettingsDefaults({
+          requestorOrgId: businessAnchorId,
+        });
+        expressFeePerRequest = Math.max(
+          0,
+          Number(creditSettingsForQuote?.expressFee ?? 2000) || 2000,
+        );
+      } catch {
+        // defaults
+      }
+      const pricingTier = await resolvePtxPracticePricingTier(request, session);
+      const abutmentQty = Math.max(
+        1,
+        countDesignAbutmentQty(request?.caseInfos) || 1,
+      );
+      request.price = buildPtxAbutsProductionQuoteLocal({
+        creditSettings: creditSettingsForQuote,
+        pricingTier,
+        shippingMode,
+        abutmentQty,
+        expressFeePerRequest,
+      });
+    } else {
+      request.price = {
+        ...toPlainRequestPrice(request.price),
+        rule:
+          String(request?.price?.rule || "") ||
+          "practice_transfer_prepaid_non_partner",
+      };
+    }
     return;
   }
 
@@ -591,34 +722,26 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     if (forcedLabAnchor) spendAnchorId = forcedLabAnchor;
   }
 
-  const computedPrice = await computePriceForRequest({
-    requestorId: request?.requestor,
-    requestorOrgId: spendAnchorId,
-    clinicName: request?.caseInfos?.clinicName || "",
-    patientName: request?.caseInfos?.patientName || "",
-    tooth: request?.caseInfos?.tooth || "",
-    currentRequestId: request?._id,
-  });
-
   const shippingMode = resolveEffectiveShippingMode(request);
 
   let expressFeeUnit = 0;
   let designFeePerTooth = 5000;
+  let creditSettingsForQuote = {};
   try {
     const { loadCreditSettingsDefaults } =
       await import("../../utils/creditSettingsDefaults.js");
-    const creditSettings = await loadCreditSettingsDefaults({
+    creditSettingsForQuote = await loadCreditSettingsDefaults({
       requestorOrgId: spendAnchorId,
     });
     if (shippingMode === "express") {
       expressFeeUnit = Math.max(
         0,
-        Number(creditSettings?.expressFee ?? 2000) || 0,
+        Number(creditSettingsForQuote?.expressFee ?? 2000) || 0,
       );
     }
     designFeePerTooth = Math.max(
       0,
-      Number(creditSettings?.designFee ?? 5000) || 5000,
+      Number(creditSettingsForQuote?.designFee ?? 5000) || 5000,
     );
   } catch {
     if (shippingMode === "express") expressFeeUnit = 2000;
@@ -628,21 +751,72 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const caseInfos = request?.caseInfos || {};
   const abutmentQty = countDesignAbutmentQty(caseInfos);
   const productMode = String(caseInfos?.productMode || "").trim();
-  const expressQty =
-    productMode === "design_custom_abutment" ? Math.max(0, abutmentQty) : 1;
-  const expressFee = expressFeeUnit * expressQty;
 
-  const machiningAmount = resolveMachiningSpendAmount({
-    price: computedPrice,
-    caseInfos,
-    designFeePerTooth,
-  });
-  const withDesign = resolveQuotedPriceWithDesignFee({
-    price: computedPrice,
-    productMode: caseInfos?.productMode,
-    toothCount: abutmentQty,
-    designFeePerTooth,
-  });
+  // PTX 기공소 디자인: 생산만(디자인비 0). 치과 멤버십/일반 단가.
+  let computedPrice;
+  let machiningAmount;
+  let withDesign;
+  let expressQty;
+  if (isPtxLabDesigned) {
+    designFeePerTooth = 0;
+    const pricingTier = await resolvePtxPracticePricingTier(request, session);
+    const picked = pickAbutsAbutmentCreditPrices(
+      creditSettingsForQuote,
+      pricingTier,
+    );
+    const unit = Math.max(
+      0,
+      Number(picked.productionPrice) ||
+        (pricingTier === "membership"
+          ? ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
+          : ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE),
+    );
+    const qty = Math.max(1, abutmentQty || 1);
+    expressQty = qty;
+    const tier = pricingTier === "membership" ? "membership" : "regular";
+    computedPrice = {
+      baseAmount: unit,
+      discountAmount: 0,
+      amount: unit * qty,
+      currency: "KRW",
+      rule:
+        tier === "membership"
+          ? "ptx_abuts_production_membership"
+          : "ptx_abuts_production_regular",
+      designFee: null,
+      abutmentQty: qty,
+      quotedAt: new Date(),
+      discountMeta: { pricingTier: tier },
+    };
+    withDesign = {
+      ...computedPrice,
+      designFee: null,
+    };
+    machiningAmount = unit * qty;
+  } else {
+    computedPrice = await computePriceForRequest({
+      requestorId: request?.requestor,
+      requestorOrgId: spendAnchorId,
+      clinicName: request?.caseInfos?.clinicName || "",
+      patientName: request?.caseInfos?.patientName || "",
+      tooth: request?.caseInfos?.tooth || "",
+      currentRequestId: request?._id,
+    });
+    expressQty =
+      productMode === "design_custom_abutment" ? Math.max(0, abutmentQty) : 1;
+    machiningAmount = resolveMachiningSpendAmount({
+      price: computedPrice,
+      caseInfos,
+      designFeePerTooth,
+    });
+    withDesign = resolveQuotedPriceWithDesignFee({
+      price: computedPrice,
+      productMode: caseInfos?.productMode,
+      toothCount: abutmentQty,
+      designFeePerTooth,
+    });
+  }
+  const expressFee = expressFeeUnit * expressQty;
 
   request.price = {
     ...toPlainRequestPrice(request.price),
@@ -1207,14 +1381,19 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
 }
 
 // 타이밍 SSOT: 세척.패킹 승인으로 포장.발송 진입할 때만 호출되어야 한다.
+// spendBusinessAnchorId: PTX CA는 치과(practice)에 배송비 부과(부가세 없음). 패키지 운영 키는 businessAnchorId 유지.
 export async function ensureShippingFeeSpendOnPackingApprove({
   request,
   businessAnchorId,
+  spendBusinessAnchorId = null,
   actorUserId,
   session,
   deferredCreditEvents,
 }) {
   if (!request?._id || !businessAnchorId) return;
+
+  const payerAnchorId = String(spendBusinessAnchorId || businessAnchorId).trim();
+  if (!payerAnchorId || !Types.ObjectId.isValid(payerAnchorId)) return;
 
   const mailboxAddress = String(request?.mailboxAddress || "").trim();
   if (!mailboxAddress) {
@@ -1418,7 +1597,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   // - 장부 SSOT는 General Ledger로 통합되며 레거시 원장 조회에 의존하지 않음
 
   const spendResult = await spendShippingCreditAtomic({
-    businessAnchorId,
+    businessAnchorId: payerAnchorId,
     shippingPackageId: pkg._id,
     actorUserId,
     fee: SHIPPING_FEE_SUPPLY,
@@ -1442,14 +1621,15 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     amount: Number(spendResult.amount || SHIPPING_FEE_SUPPLY),
     fromBonusShipping: Number(spendResult.fromBonusShipping || 0),
     fromPaid: Number(spendResult.fromPaid || 0),
-    businessAnchorId: String(businessAnchorId),
+    businessAnchorId: String(payerAnchorId),
+    packageBusinessAnchorId: String(businessAnchorId),
   });
 
   const glPostResult = await postSpendCommitGeneralLedger({
     eventType: "SHIPPING_SPEND_COMMIT",
     spendUniqueKey: spendResult.uniqueKey,
     request,
-    businessAnchorId,
+    businessAnchorId: payerAnchorId,
     actorUserId,
     amount: Number(spendResult.amount || 0),
     fromPaid: Number(spendResult.fromPaid || 0),
@@ -1484,7 +1664,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
 
   await emitOrQueueCreditBalanceUpdate({
     deferredCreditEvents,
-    businessAnchorId,
+    businessAnchorId: payerAnchorId,
     balanceDelta: -Number(spendResult.amount || SHIPPING_FEE_SUPPLY),
     reason: "shipping_fee_spend",
     refId: pkg._id,

@@ -48,8 +48,8 @@ describe("labFeeSchedule", () => {
       labFeeMultiplier: 1.5,
     });
     expect(fees.labFeeTotal).toBe(90000);
-    expect(fees.abutmentRetailTotal).toBe(20000);
-    expect(fees.total).toBe(110000);
+    expect(fees.abutmentRetailTotal).toBe(40000);
+    expect(fees.total).toBe(130000);
     expect(fees.labFeeMultiplier).toBe(1.5);
     expect(fees.lines.find((l) => l.prosthesisType === "크라운")?.labFee).toBe(
       90000,
@@ -103,9 +103,9 @@ describe("labFeeSchedule", () => {
       abutmentPricingTier: "regular",
     });
     expect(fees.labFeeTotal).toBe(0);
-    expect(fees.abutmentRetailTotal).toBe(60000);
+    expect(fees.abutmentRetailTotal).toBe(80000);
     expect(fees.abutmentQty).toBe(2);
-    expect(fees.total).toBe(60000);
+    expect(fees.total).toBe(80000);
   });
 
   test("크라운·브리지+어벗은 기공수가와 어벗츠 단가를 함께 합산한다", () => {
@@ -140,15 +140,15 @@ describe("labFeeSchedule", () => {
       abutmentPricingTier: "membership",
     });
     expect(fees.labFeeTotal).toBe(180000);
-    expect(fees.abutmentRetailTotal).toBe(90000);
+    expect(fees.abutmentRetailTotal).toBe(100000);
     expect(fees.abutmentQty).toBe(4);
-    expect(fees.total).toBe(270000);
+    expect(fees.total).toBe(280000);
     const byTooth = Object.fromEntries(
       fees.lines.map((line) => [line.toothNumber, line]),
     );
     expect(byTooth["11"]).toMatchObject({ labFee: 0, abutmentRetail: 25000 });
     expect(byTooth["21"]).toMatchObject({ labFee: 60000, abutmentRetail: 25000 });
-    expect(byTooth["22"]).toMatchObject({ labFee: 60000, abutmentRetail: 15000 });
+    expect(byTooth["22"]).toMatchObject({ labFee: 60000, abutmentRetail: 25000 });
     expect(byTooth["23"]).toMatchObject({ labFee: 60000, abutmentRetail: 25000 });
   });
 
@@ -200,8 +200,8 @@ describe("labFeeSchedule", () => {
       abutmentPricingTier: "membership",
     });
     expect(fees.labFeeTotal).toBe(0);
-    expect(fees.abutmentRetailTotal).toBe(40000);
-    expect(fees.total).toBe(40000);
+    expect(fees.abutmentRetailTotal).toBe(50000);
+    expect(fees.total).toBe(50000);
   });
 
   test("리메이크는 기공소 리메이크 수가를 쓰고 어벗 단가는 제외한다", () => {
@@ -551,12 +551,12 @@ describe("labFeeSchedule", () => {
       labFeeSchedule: LAB_FEE_SCHEDULE_ZEROS,
       abutmentPricingTier: "regular",
     });
-    expect(fees.abutmentRetailTotal).toBe(20000);
+    expect(fees.abutmentRetailTotal).toBe(40000);
     expect(fees.labAbutmentPending).toBe(false);
     expect(fees.lines[0]).toMatchObject({
       labAbutmentFee: 0,
       labAbutmentPending: false,
-      abutmentRetail: 20000,
+      abutmentRetail: 40000,
     });
   });
 

@@ -2,8 +2,9 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-15: 기공소 뷰 — 기공소몫(보철기공비·어벗디자인비) / 어벗츠몫(어벗생산비) 2단 헤더.
 // - 2026-08-15: 기공소 수령 — 어벗디자인비를 기공비 총액에 합산 후 수수료 차감(연기 안내 제거).
-// - 2026-08-15: 기공소 뷰 — 보철기공비|어벗디자인비|어벗츠 몫, 소계(열별)+기공비 총액.
+// - 2026-08-15: 기공소 뷰 — 보철기공비|어벗디자인비|어벗생산비, 소계(열별)+기공비 총액.
 // - 2026-08-15: 기공소 뷰 — 어벗디자인비를 기공수가·어벗츠 몫 사이 컬럼으로 표시.
 // - 2026-08-15: 기공소 뷰 — CA 시 어벗디자인비(플랫폼 단가×어벗수) 툴팁 행 추가.
 // - 2026-08-14: 기공소 기공비 Off면 미설정 안내.
@@ -93,7 +94,7 @@ const formatAbutsCell = (line: {
   return "—";
 };
 
-/** 기공소 뷰: 어벗츠 몫 — 금액 대신 역할 라벨 */
+/** 기공소 뷰: 어벗생산비 — 금액 대신 역할 라벨 */
 const formatLabFacingAbutsShareCell = (line: {
   abutmentRetail: number;
   abutmentRetailNote?: "quote";
@@ -149,7 +150,7 @@ function FeeBreakdownTable({
   abutmentDesignLabFee?: number;
   abutmentDesignQty?: number;
 }) {
-  // 기공소 뷰: 기공비 | 어벗디자인비 | 어벗츠 몫 컬럼.
+  // 기공소 뷰: 기공소몫(보철기공비·어벗디자인비) | 어벗츠몫(어벗생산비).
   // 소계=열별 합산, 기공비 총액=기공비+어벗디자인비.
   const labShareColumn = labFacing
     ? showLabColumn || showLabAbutmentColumn
@@ -197,6 +198,8 @@ function FeeBreakdownTable({
         : formatCell(labSubtotal);
   const labAbutmentTotal = lines.reduce((sum, line) => sum + line.labAbutmentFee, 0);
   const labAbutmentPending = lines.some((line) => line.labAbutmentPending);
+  const labGroupColSpan =
+    Number(labShareColumn) + Number(designFeeColumn) + Number(labAbutmentColumn);
   const colCount =
     1 +
     Number(labShareColumn) +
@@ -214,34 +217,47 @@ function FeeBreakdownTable({
             ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
             : "grid-cols-1";
   const labColumnLabel = labFacing ? "보철기공비" : "기공소 기공물";
-  const abutsColumnLabel = labFacing ? "어벗츠 몫" : "어벗츠 어벗";
+  const abutsColumnLabel = labFacing ? "어벗생산비" : "어벗츠 어벗";
+  const showShareGroupHeaders =
+    labFacing && labGroupColSpan > 0 && abutsColumn;
   const showLabGrandTotal = designFeeColumn && labGrandTotal > 0;
   const subtotalLabel = labFacing ? "소계" : "합계";
+  const groupHeaderClass =
+    "whitespace-nowrap border-b border-foreground/10 pb-0.5 text-center text-[10px] font-semibold tracking-tight text-muted-foreground";
+  const columnHeaderClass =
+    "whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground";
+  const labGroupSpanClass =
+    labGroupColSpan >= 3
+      ? "col-span-3"
+      : labGroupColSpan === 2
+        ? "col-span-2"
+        : "col-span-1";
 
   return (
     <div className={cn("grid gap-x-3 gap-y-0.5 tabular-nums", gridClass)}>
+      {showShareGroupHeaders ? (
+        <>
+          <span aria-hidden className="pb-0.5" />
+          <span className={cn(groupHeaderClass, labGroupSpanClass)}>
+            기공소몫
+          </span>
+          <span className={groupHeaderClass}>어벗츠몫</span>
+        </>
+      ) : null}
       <span className="pb-0.5 text-[10px] font-medium text-muted-foreground">
         보철물
       </span>
       {labShareColumn ? (
-        <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
-          {labColumnLabel}
-        </span>
+        <span className={columnHeaderClass}>{labColumnLabel}</span>
       ) : null}
       {designFeeColumn ? (
-        <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
-          어벗디자인비
-        </span>
+        <span className={columnHeaderClass}>어벗디자인비</span>
       ) : null}
       {labAbutmentColumn ? (
-        <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
-          기공소 어벗
-        </span>
+        <span className={columnHeaderClass}>기공소 어벗</span>
       ) : null}
       {abutsColumn ? (
-        <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
-          {abutsColumnLabel}
-        </span>
+        <span className={columnHeaderClass}>{abutsColumnLabel}</span>
       ) : null}
       {lines.map((line, idx) => {
         const labShare = labFacing
@@ -633,7 +649,7 @@ export function PracticeTransferFeeEstimate({
                 </p>
                 {quote.abutmentRetailTotal > 0 || quote.abutmentQuotePending ? (
                   <p>
-                    {isLab ? "어벗츠 몫" : "어벗츠 어벗"}{" "}
+                    {isLab ? "어벗생산비" : "어벗츠 어벗"}{" "}
                     <span className="font-medium">
                       {isLab
                         ? quote.abutmentQuotePending &&

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: PTX — 업로드 시 생산만 재견적·출고재계산, 준비 유지. 취소·재업로드(준비만).
 // - 2026-08-15: PTX 수락 기공소는 design-claim 없이 핸드오프(카드 업로드). internalLab 허용.
 // - 2026-08-15: PTX 연동은 수락 기공소 디자인 → 업로드 즉시 제조 착수 + 어벗디자인비 지급.
 // - 2026-08-15: PTX 연동 의뢰는 디자인 STL만 저장·미러하고 가공 진입은 기공소/치과 컨펌 후.
@@ -22,11 +23,13 @@ import {
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { updateReviewStatusByStage } from "./common.review.controller.js";
 import {
-  canStartAbutmentProduction,
   mirrorDesignFileToPracticeTransfer,
-  tryStartAbutmentProduction,
+  repriceAndReschedulePtxAbutmentRequest,
 } from "../../services/practiceTransferProduction.service.js";
-import { grantAbutmentDesignLabFee } from "../../services/practiceTransferBilling.service.js";
+import {
+  grantAbutmentDesignLabFee,
+  revokeAbutmentDesignLabFee,
+} from "../../services/practiceTransferBilling.service.js";
 
 const toStoredFileMeta = (raw) => {
   if (!raw || typeof raw !== "object") return null;
@@ -47,7 +50,7 @@ const toStoredFileMeta = (raw) => {
 /**
  * POST /api/requests/:id/design-handoff
  * 완성 어벗 STL을 primary로 교체.
- * PTX 연동(수락 기공소): 미러 + lab confirm 자동 + 즉시 제조 착수 + 어벗디자인비.
+ * PTX 연동(수락 기공소): 미러 + lab confirm 자동 + 어벗디자인비 + 준비 큐 등록(가공은 제조사/CAM).
  * 비PTX: 기존처럼 제조사 가공 핸드오프.
  */
 export async function handoffDesignToProduction(req, res) {
@@ -164,13 +167,11 @@ export async function handoffDesignToProduction(req, res) {
     request.designCompletedBy = new Types.ObjectId(userId);
     request.designCompletedAt = new Date();
 
-    await request.save();
-
     const relatedTransferId = request?.partnerBilling?.relatedPracticeTransferId
       ? String(request.partnerBilling.relatedPracticeTransferId)
       : "";
 
-    // PTX: 수락 기공소 업로드 → 미러 + 컨펌 자동 + 즉시 제조 + 어벗디자인비
+    // PTX: 수락 기공소 업로드 → 미러 + 컨펌 자동 + 생산만 재견적 + 준비 유지 + 어벗디자인비
     if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
       await mirrorDesignFileToPracticeTransfer({
         transferId: relatedTransferId,
@@ -184,10 +185,8 @@ export async function handoffDesignToProduction(req, res) {
         patientName: String(request?.caseInfos?.patientName || "").trim(),
       });
 
-      // mirror 후 production.designReadyAt 반영된 최신 문서 사용
       let transferDoc = await PracticeTransfer.findById(relatedTransferId);
       const isAcceptingLab = isAcceptingLabForPtxDesignRequest(req.user, request);
-      let productionStarted = false;
       let designFeeGrant = null;
 
       if (transferDoc && isAcceptingLab) {
@@ -216,6 +215,12 @@ export async function handoffDesignToProduction(req, res) {
           },
         );
 
+        await repriceAndReschedulePtxAbutmentRequest({
+          requestDoc: request,
+          transferDoc,
+          requestedAt: now,
+        });
+
         try {
           designFeeGrant = await grantAbutmentDesignLabFee({
             requestDoc: request,
@@ -227,42 +232,23 @@ export async function handoffDesignToProduction(req, res) {
         } catch (grantErr) {
           console.error("[DESIGN_HANDOFF] abutment design fee grant failed", grantErr);
         }
-
-        if (canStartAbutmentProduction(transferDoc)) {
-          try {
-            const start = await tryStartAbutmentProduction({
-              transferDoc,
-              actorUserId: userId,
-            });
-            productionStarted = Boolean(start?.started);
-          } catch (startErr) {
-            console.error("[DESIGN_HANDOFF] production start failed", startErr);
-            productionStarted = false;
-          }
-        }
-      } else if (transferDoc && canStartAbutmentProduction(transferDoc)) {
-        // 레거시(파트너 디자인 후 컨펌 완료된 건) 호환
-        try {
-          const start = await tryStartAbutmentProduction({
-            transferDoc,
-            actorUserId: userId,
-          });
-          productionStarted = Boolean(start?.started);
-        } catch {
-          productionStarted = false;
-        }
       }
+
+      await request.save();
 
       return res.status(200).json({
         success: true,
-        message: productionStarted
-          ? "디자인 업로드 및 제조 주문이 시작되었습니다."
-          : "디자인 파일이 저장되었습니다.",
+        message:
+          "디자인 파일이 저장되었습니다. 제조사 준비 큐에 등록되었습니다.",
         data: {
           requestId: String(request._id),
           relatedPracticeTransferId: relatedTransferId,
-          awaitingDesignConfirm: !productionStarted,
-          productionStarted,
+          awaitingDesignConfirm: false,
+          // 준비 유지 — 취소·재업로드 가능. 가공은 제조사/CAM.
+          productionStarted: false,
+          manufacturerStage: "준비",
+          shippingMode: request.shippingMode || null,
+          price: request.price || null,
           abutmentDesignFee: designFeeGrant
             ? {
                 granted: Boolean(designFeeGrant.granted),
@@ -275,6 +261,8 @@ export async function handoffDesignToProduction(req, res) {
         },
       });
     }
+
+    await request.save();
 
     // 제조사 준비→가공 진입 SSOT 재사용 (비PTX)
     req.body = {
@@ -293,6 +281,144 @@ export async function handoffDesignToProduction(req, res) {
     return res.status(error?.statusCode || 500).json({
       success: false,
       message: error?.message || "디자인 핸드오프 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+/**
+ * POST /api/requests/:id/design-handoff/cancel
+ * PTX: 준비 단계에서만 디자인 업로드 취소(구강스캔 복원) + 어벗디자인비 회수.
+ */
+export async function cancelDesignHandoff(req, res) {
+  try {
+    const { id } = req.params;
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+
+    const role = String(req.user?.role || "").trim();
+    if (role !== "requestor" && role !== "admin" && role !== "internalLab") {
+      return res.status(403).json({
+        success: false,
+        message: "디자인 취소는 수락 기공소만 할 수 있습니다.",
+      });
+    }
+
+    const userId = req.user?._id ? String(req.user._id) : "";
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "인증이 필요합니다." });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const relatedTransferId = request?.partnerBilling?.relatedPracticeTransferId
+      ? String(request.partnerBilling.relatedPracticeTransferId)
+      : "";
+    if (!relatedTransferId || !Types.ObjectId.isValid(relatedTransferId)) {
+      return res.status(400).json({
+        success: false,
+        message: "기공의뢰 연동 건만 디자인 업로드를 취소할 수 있습니다.",
+      });
+    }
+
+    if (!isAcceptingLabForPtxDesignRequest(req.user, request) && role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "수락한 기공소만 디자인을 취소할 수 있습니다.",
+      });
+    }
+
+    if (String(request.manufacturerStage || "").trim() !== "준비") {
+      return res.status(409).json({
+        success: false,
+        message:
+          "제조사가 준비 단계일 때만 어벗디자인을 취소·재업로드할 수 있습니다.",
+        code: "manufacturer_not_ready",
+      });
+    }
+
+    if (!request.designCompletedAt) {
+      return res.status(400).json({
+        success: false,
+        message: "업로드된 어벗디자인이 없습니다.",
+      });
+    }
+
+    const sourceRows = Array.isArray(request.caseInfos?.designSourceFiles)
+      ? request.caseInfos.designSourceFiles.map(toStoredFileMeta).filter(Boolean)
+      : [];
+    const restorePrimary = sourceRows[0] || null;
+    if (!restorePrimary?.s3Key) {
+      return res.status(400).json({
+        success: false,
+        message: "복원할 구강스캔 파일이 없어 취소할 수 없습니다.",
+      });
+    }
+
+    if (!request.caseInfos) request.caseInfos = {};
+    request.caseInfos.file = restorePrimary;
+    request.caseInfos.files = sourceRows.slice(1);
+    request.caseInfos.designSourceFiles = [];
+    request.caseInfos.camFile = undefined;
+    request.caseInfos.ncFile = undefined;
+    request.designCompletedAt = undefined;
+    request.designCompletedBy = undefined;
+
+    await request.save();
+
+    const now = new Date();
+    await PracticeTransfer.updateOne(
+      { _id: relatedTransferId },
+      {
+        $set: {
+          "production.designFiles": [],
+        },
+        $unset: {
+          "production.designReadyAt": "",
+          "production.labDesignConfirmedAt": "",
+          "production.labDesignConfirmedBy": "",
+          "production.abutmentProductionStartedAt": "",
+        },
+      },
+    );
+
+    let feeRevoke = null;
+    try {
+      feeRevoke = await revokeAbutmentDesignLabFee({
+        requestDoc: request,
+        transferId: relatedTransferId,
+        labAnchorId: String(
+          req.user?.businessAnchorId || request.businessAnchorId || "",
+        ).trim(),
+        actorUserId: userId,
+      });
+    } catch (revokeErr) {
+      console.error("[DESIGN_HANDOFF_CANCEL] fee revoke failed", revokeErr);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "어벗디자인 업로드가 취소되었습니다. 다시 업로드할 수 있습니다.",
+      data: {
+        requestId: String(request._id),
+        relatedPracticeTransferId: relatedTransferId,
+        manufacturerStage: "준비",
+        abutmentDesignFeeRevoked: Boolean(feeRevoke?.revoked),
+        revokedAt: now.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("[DESIGN_HANDOFF_CANCEL_ERROR]", error);
+    return res.status(error?.statusCode || 500).json({
+      success: false,
+      message: error?.message || "디자인 취소 중 오류가 발생했습니다.",
     });
   }
 }
