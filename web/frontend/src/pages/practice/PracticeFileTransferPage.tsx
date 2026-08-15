@@ -34,6 +34,8 @@
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/features/layout/WorkspaceModeSwitch.tsx
  * - web/frontend/src/shared/workspace/workspaceMode.ts
+ * - web/frontend/src/shared/components/practice/PracticeTransferExpressWizard.tsx
+ * - 2026-08-15: 익스프레스 모드 위저드(한 화면 한 질문). 최근의뢰는 전송 후 표시.
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
@@ -161,7 +163,19 @@ import {
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
+import {
+  PracticeTransferExpressDonePanel,
+  PracticeTransferExpressWizard,
+  resolveExpressLabLabel,
+  type PracticeTransferExpressStepId,
+} from "@/shared/components/practice/PracticeTransferExpressWizard";
+import type { PracticeTransferFilePaneProps } from "@/shared/components/practice/PracticeTransferFilePane";
+import type { PracticeTransferRequestIntakePanelProps } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
+import {
+  DEFAULT_WORKSPACE_MODE,
+  normalizeWorkspaceMode,
+} from "@/shared/workspace/workspaceMode";
 import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   PRACTICE_RECENT_STATUS_BADGES,
@@ -1034,6 +1048,10 @@ export const PracticeFileTransferPage = ({
   const { toast } = useToast();
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
+  const workspaceMode = normalizeWorkspaceMode(
+    authUser?.workspaceMode ?? DEFAULT_WORKSPACE_MODE,
+  );
+  const isExpressMode = workspaceMode === "express";
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
   const [recentStatusFilter, setRecentStatusFilter] =
     useState<PracticeRecentStatusFilter>("all");
@@ -1044,6 +1062,9 @@ export const PracticeFileTransferPage = ({
   const requestSubmittingRef = useRef(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(true);
   const [skipDesignConfirmUncheckOpen, setSkipDesignConfirmUncheckOpen] = useState(false);
+  const [expressStepId, setExpressStepId] =
+    useState<PracticeTransferExpressStepId>("lab");
+  const [expressDone, setExpressDone] = useState(false);
   const [autoMatchBudget, setAutoMatchBudget] =
     useState<PracticeTransferAutoMatchBudget | null>(null);
   const [autoMatchMinLabRating, setAutoMatchMinLabRating] = useState(1);
@@ -3725,6 +3746,8 @@ export const PracticeFileTransferPage = ({
       setDraftFiles(draft.files);
       setDraftSummary(draft);
       setActiveDraftId(draft.id);
+      setExpressDone(false);
+      setExpressStepId("confirm");
 
       const fingerprint = buildPracticeTransferFormFingerprint({
         targetLabAnchorId: labId,
@@ -5227,7 +5250,13 @@ export const PracticeFileTransferPage = ({
             ? `작성 중이던 의뢰만 전송했습니다. 임시저장 ${remainingDraftCount}건은 목록에 남아 있습니다.`
             : "기공소로 정상 전송되었습니다.",
       });
-      navigate("/practice/dashboard");
+      if (isExpressMode) {
+        setExpressDone(true);
+        setExpressStepId("lab");
+        void loadRecentRequests({ silent: true });
+      } else {
+        navigate("/practice/dashboard");
+      }
     } catch (error) {
       toast({
         title: "기공소 전송 실패",
@@ -5290,6 +5319,98 @@ export const PracticeFileTransferPage = ({
   ]);
 
   const hasRequiredSubmitFields = missingRequiredFields.length === 0;
+
+  const showExpressWizard = isExpressMode && !expressDone;
+  const showSidePanels = !isExpressMode || expressDone;
+
+  const expressOralScanRequired =
+    isAutoMatchLab(selectedLab) &&
+    normalizedToothWorks.some((row) => Boolean(row.customAbutment));
+
+  const expressStepGate = useMemo(() => {
+    const hasLab = Boolean(String(selectedLab?._id || "").trim());
+    const hasPatient = Boolean(normalizedPatientName);
+    const hasSchedule = Boolean(orderDate && arrivalDate && arrivalDate >= orderDate);
+    const hasProsthesis = normalizedToothWorks.length > 0;
+    const hasBridgeLinkIssue = normalizedToothWorks.some(
+      (row) =>
+        isBridgeLikeProsthesisType(row.prosthesisType) &&
+        row.bridgeLinkedTeeth.length === 0,
+    );
+    const hasAbutmentPresetIssue = missingAbutmentPresetTeeth.length > 0;
+    const attachmentCount = files.length + draftFiles.length;
+    const hasRequiredFiles = !expressOralScanRequired || attachmentCount > 0;
+
+    const byStep: Record<
+      PracticeTransferExpressStepId,
+      { ok: boolean; reason: string }
+    > = {
+      lab: {
+        ok: hasLab,
+        reason: "기공소를 선택해 주세요.",
+      },
+      patient: {
+        ok: hasPatient,
+        reason: "환자명을 입력해 주세요.",
+      },
+      schedule: {
+        ok: hasSchedule,
+        reason: "치과 도착일을 확인해 주세요.",
+      },
+      prosthesis: {
+        ok: hasProsthesis && !hasBridgeLinkIssue && !hasAbutmentPresetIssue,
+        reason: !hasProsthesis
+          ? "보철할 치아를 선택해 주세요."
+          : hasBridgeLinkIssue
+            ? "브리지 등은 인접 치아를 연결해 주세요."
+            : hasAbutmentPresetIssue
+              ? `어벗 프리셋을 설정해 주세요 (#${missingAbutmentPresetTeeth.join(", #")}).`
+              : "",
+      },
+      files: {
+        ok: hasRequiredFiles,
+        reason: "자동 매칭 커스텀어벗은 구강스캔 파일이 필요합니다.",
+      },
+      confirm: {
+        ok: hasRequiredSubmitFields,
+        reason:
+          missingRequiredFields.length > 0
+            ? `미입력: ${missingRequiredFields.join(", ")}`
+            : "",
+      },
+    };
+    return byStep;
+  }, [
+    selectedLab,
+    normalizedPatientName,
+    orderDate,
+    arrivalDate,
+    normalizedToothWorks,
+    missingAbutmentPresetTeeth,
+    files.length,
+    draftFiles.length,
+    expressOralScanRequired,
+    hasRequiredSubmitFields,
+    missingRequiredFields,
+  ]);
+
+  useEffect(() => {
+    if (!isExpressMode) return;
+    setExpressDone(false);
+    const order: PracticeTransferExpressStepId[] = [
+      "lab",
+      "patient",
+      "schedule",
+      "prosthesis",
+      "files",
+      "confirm",
+    ];
+    const firstIncomplete =
+      order.find((id) => !expressStepGate[id]?.ok) || "confirm";
+    setExpressStepId(firstIncomplete);
+    // expressStepGate는 모드 전환 시점의 작성 상태만 반영하면 됨
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 모드 진입 시에만 시작 단계 결정
+  }, [isExpressMode]);
 
   useEffect(() => {
     if (!orderDate) return;
@@ -5381,6 +5502,8 @@ export const PracticeFileTransferPage = ({
     setActiveDraftId(null);
     activeDraftSeenInListRef.current = null;
     setToothChartResetNonce((n) => n + 1);
+    setExpressDone(false);
+    setExpressStepId("lab");
 
     // 빈 폼 baseline — 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
     const baselineFingerprint = buildPracticeTransferFormFingerprint({
@@ -5405,8 +5528,9 @@ export const PracticeFileTransferPage = ({
 
     toast({
       title: "새로 작성",
-      description:
-        "작성 화면을 비웠습니다. 임시저장은 오른쪽 목록에 남아 다시 불러올 수 있습니다.",
+      description: isExpressMode
+        ? "작성 화면을 비웠습니다. 전송 후에는 최근 의뢰에서 다시 확인할 수 있습니다."
+        : "작성 화면을 비웠습니다. 임시저장은 오른쪽 목록에 남아 다시 불러올 수 있습니다.",
     });
   };
 
@@ -5587,62 +5711,9 @@ export const PracticeFileTransferPage = ({
     }
   };
 
-  return (
-    <PageFileDropZone
-      onFiles={handleIncomingFiles}
-      activeClassName="ring-2 ring-primary/30"
-      className="h-full min-h-0 bg-gradient-subtle"
-    >
-      <div className="mx-auto h-full min-h-0 max-w-6xl space-y-3 p-4">
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
-          <div className="flex min-w-0 flex-col gap-3 xl:col-span-7">
-            <Card className="border-slate-200/80 shadow-sm">
-              <CardHeader className="pb-2 pt-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-3">
-                    {roleSwitcher}
-                    <CardTitle className="flex min-w-0 items-center gap-2 text-xl font-bold tracking-tight">
-                      <UploadCloud className="h-5 w-5 shrink-0 text-primary-strong" />
-                      <span className="shrink-0">기공의뢰</span>
-                      {formSyncStatusLabel ? (
-                        <span
-                          className={cn(
-                            "truncate text-xs font-normal",
-                            formSyncStatus === "error"
-                              ? "text-destructive"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {formSyncStatusLabel}
-                        </span>
-                      ) : null}
-                    </CardTitle>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <WorkspaceModeSwitch />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-9 px-3 text-base"
-                          onClick={() => void handleStartNewTransfer()}
-                        >
-                          새로 작성
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs text-xs">
-                        작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-5">
-                <PracticeTransferIntakeSection
-                  filePaneProps={{
-                    acceptedHint: PRACTICE_ACCEPTED_HINT,
+
+  const practiceTransferFilePaneProps: PracticeTransferFilePaneProps = {
+    acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
                       isAutoMatchLab(selectedLab) &&
@@ -5681,9 +5752,10 @@ export const PracticeFileTransferPage = ({
                     onClearAllFiles: () => {
                       void handleClearAllTransferFiles();
                     },
-                  }}
-                  requestIntakeProps={{
-                    variant: "plain",
+  };
+
+  const practiceTransferRequestIntakeProps: PracticeTransferRequestIntakePanelProps = {
+    variant: "plain",
                     selectedLab,
                   setSelectedLab,
                   labOpen,
@@ -5843,11 +5915,112 @@ export const PracticeFileTransferPage = ({
                   },
                   prosthesisTypeSelectWidthClassName: "w-[7rem]",
                   showBridgeConnections: true,
-                }}
-              />
+  };
+
+  return (
+    <PageFileDropZone
+      onFiles={handleIncomingFiles}
+      activeClassName="ring-2 ring-primary/30"
+      className="h-full min-h-0 bg-gradient-subtle"
+    >
+      <div className="mx-auto h-full min-h-0 max-w-6xl space-y-3 p-4">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-3",
+            showExpressWizard ? "xl:grid-cols-1" : "xl:grid-cols-10",
+          )}
+        >
+          <div
+            className={cn(
+              "flex min-w-0 flex-col gap-3",
+              showExpressWizard ? "xl:col-span-1" : "xl:col-span-7",
+            )}
+          >
+            <Card className="border-slate-200/80 shadow-sm">
+              <CardHeader className="pb-2 pt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-3">
+                    {roleSwitcher}
+                    <CardTitle className="flex min-w-0 items-center gap-2 text-xl font-bold tracking-tight">
+                      <UploadCloud className="h-5 w-5 shrink-0 text-primary-strong" />
+                      <span className="shrink-0">기공의뢰</span>
+                      {formSyncStatusLabel ? (
+                        <span
+                          className={cn(
+                            "truncate text-xs font-normal",
+                            formSyncStatus === "error"
+                              ? "text-destructive"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {formSyncStatusLabel}
+                        </span>
+                      ) : null}
+                    </CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <WorkspaceModeSwitch />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-9 px-3 text-base"
+                          onClick={() => void handleStartNewTransfer()}
+                        >
+                          새로 작성
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs text-xs">
+                        작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-5">
+                {showExpressWizard ? (
+                  <PracticeTransferExpressWizard
+                    stepId={expressStepId}
+                    onStepIdChange={setExpressStepId}
+                    filePaneProps={practiceTransferFilePaneProps}
+                    requestIntakeProps={practiceTransferRequestIntakeProps}
+                    summary={{
+                      labLabel: resolveExpressLabLabel(selectedLab),
+                      patientName: normalizedPatientName,
+                      orderDate,
+                      arrivalDate,
+                      toothCount: normalizedToothWorks.length,
+                      fileCount: files.length + draftFiles.length,
+                    }}
+                    canProceed={expressStepGate[expressStepId]?.ok ?? false}
+                    proceedBlockedReason={expressStepGate[expressStepId]?.reason}
+                    oralScanRequired={expressOralScanRequired}
+                    skipDesignConfirm={skipDesignConfirm}
+                    onSkipDesignConfirmChange={persistSkipDesignConfirmSetting}
+                    onOpenSkipDesignConfirmUncheck={() =>
+                      setSkipDesignConfirmUncheckOpen(true)
+                    }
+                    onSubmit={() => void handleSubmitPracticeRequest()}
+                    submitting={requestSubmitting}
+                    canSubmit={hasRequiredSubmitFields}
+                    missingRequiredFields={missingRequiredFields}
+                  />
+                ) : isExpressMode && expressDone ? (
+                  <PracticeTransferExpressDonePanel
+                    onStartNew={() => void handleStartNewTransfer()}
+                  />
+                ) : (
+                  <PracticeTransferIntakeSection
+                    filePaneProps={practiceTransferFilePaneProps}
+                    requestIntakeProps={practiceTransferRequestIntakeProps}
+                  />
+                )}
               </CardContent>
             </Card>
 
+            {!isExpressMode ? (
             <div className="flex items-center justify-end gap-4">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -5879,39 +6052,6 @@ export const PracticeFileTransferPage = ({
                   </p>
                 </TooltipContent>
               </Tooltip>
-              <Dialog
-                open={skipDesignConfirmUncheckOpen}
-                onOpenChange={setSkipDesignConfirmUncheckOpen}
-              >
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>디자인 컨펌을 직접 하시겠어요?</DialogTitle>
-                    <DialogDescription className="leading-relaxed">
-                      생략을 해제하면 어벗츠 디자인 후 치과 컨펌을 기다려야 생산이
-                      시작됩니다. 기일이 촉박한 경우 지연될 수 있습니다. 꼭 확인이
-                      필요한 의뢰만 해제해 주세요.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setSkipDesignConfirmUncheckOpen(false)}
-                    >
-                      취소
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        persistSkipDesignConfirmSetting(false);
-                        setSkipDesignConfirmUncheckOpen(false);
-                      }}
-                    >
-                      컨펌 받기로 설정
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="inline-flex">
@@ -5981,8 +6121,44 @@ export const PracticeFileTransferPage = ({
                 </TooltipContent>
               </Tooltip>
             </div>
+            ) : null}
+
+            <Dialog
+              open={skipDesignConfirmUncheckOpen}
+              onOpenChange={setSkipDesignConfirmUncheckOpen}
+            >
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>디자인 컨펌을 직접 하시겠어요?</DialogTitle>
+                  <DialogDescription className="leading-relaxed">
+                    생략을 해제하면 어벗츠 디자인 후 치과 컨펌을 기다려야 생산이
+                    시작됩니다. 기일이 촉박한 경우 지연될 수 있습니다. 꼭 확인이
+                    필요한 의뢰만 해제해 주세요.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setSkipDesignConfirmUncheckOpen(false)}
+                  >
+                    취소
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      persistSkipDesignConfirmSetting(false);
+                      setSkipDesignConfirmUncheckOpen(false);
+                    }}
+                  >
+                    컨펌 받기로 설정
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
 
+          {showSidePanels ? (
           <div className="space-y-3 xl:col-span-3">
             <Card className="border-slate-200/80 shadow-sm">
               <Collapsible open={recentTransfersOpen} onOpenChange={setRecentTransfersOpen}>
@@ -6566,6 +6742,7 @@ export const PracticeFileTransferPage = ({
               </Collapsible>
             </Card>
           </div>
+          ) : null}
         </div>
 
         <PracticeRecentTransfersAllModal

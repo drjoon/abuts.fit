@@ -140,6 +140,7 @@ import { resolveAdoptedAbutmentKind } from "@/shared/practice/labFeeSchedule";
 // - 2026-08-11: 기공의뢰 카드 내 행(섹션) 수직 간격 gap-10.
 // - 2026-08-13: 커스텀어벗 설정 모달에 생산만/디자인+생산 배타 선택 + 가격 툴팁.
 // - 2026-08-13: 상·하악 사이 견적(크레딧 소비액) + 빠른툴팁 세부내역.
+// - 2026-08-15: showLabField/showPatientField/showDateFields — 익스프레스 위저드용 개별 표시.
 // - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
 // - 2026-08-14: 생산만/디자인+생산 툴팁을「커스텀어벗 - 어벗츠 자체 제공」(+생산만은 어벗생산의뢰 안내)로 통일.
 // - 2026-08-14: 커스텀어벗 설정 모달 가로폭을 프리셋 편집과 같이 max-w-5xl로 맞춘다.
@@ -577,6 +578,10 @@ const persistLocalMemoSnippets = (items: string[]) => {
 export type PracticeTransferRequestIntakePanelProps = {
   /** false면 기공소·환자명·날짜를 숨기고 보철물·메모만 렌더 (기본 true) */
   showHeaderFields?: boolean;
+  /** 헤더 필드 개별 표시. 미지정 시 showHeaderFields 따름 (익스프레스 위저드용) */
+  showLabField?: boolean;
+  showPatientField?: boolean;
+  showDateFields?: boolean;
   /** false면 보철물 치식 섹션 숨김 (기본 true) */
   showProsthesisSection?: boolean;
   /** false면 메모 섹션 숨김 (기본 true) */
@@ -661,6 +666,9 @@ export type PracticeTransferRequestIntakePanelProps = {
 
 export const PracticeTransferRequestIntakePanel = ({
   showHeaderFields = true,
+  showLabField: showLabFieldProp,
+  showPatientField: showPatientFieldProp,
+  showDateFields: showDateFieldsProp,
   showProsthesisSection = true,
   showMemoSection = true,
   variant = "card",
@@ -1594,6 +1602,19 @@ export const PracticeTransferRequestIntakePanel = ({
   const memoOnly =
     showMemoSection && !showHeaderFields && !showProsthesisSection;
 
+  const showLabField = showLabFieldProp ?? showHeaderFields;
+  const showPatientField = showPatientFieldProp ?? showHeaderFields;
+  const showDateFields = showDateFieldsProp ?? showHeaderFields;
+  const showAnyHeaderFields = showLabField || showPatientField || showDateFields;
+  const headerFieldCount =
+    Number(showLabField) + Number(showPatientField) + Number(showDateFields);
+  const headerGridClassName =
+    headerFieldCount <= 1
+      ? "grid grid-cols-1 items-end gap-3 max-w-lg"
+      : headerFieldCount === 2
+        ? "grid grid-cols-1 items-end gap-3 sm:grid-cols-2"
+        : "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]";
+
   return (
     <div
       className={cn(
@@ -1603,7 +1624,7 @@ export const PracticeTransferRequestIntakePanel = ({
           "rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-primary-soft/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]",
       )}
     >
-      {showHeaderFields && onClearAll ? (
+      {showAnyHeaderFields && onClearAll ? (
         <div className="flex justify-end">
           <Button
             type="button"
@@ -1617,8 +1638,9 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
       ) : null}
 
-      {showHeaderFields ? (
-      <div className="grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]">
+      {showAnyHeaderFields ? (
+      <div className={headerGridClassName}>
+        {showLabField ? (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
             <Label className="text-sm">
@@ -1819,7 +1841,9 @@ export const PracticeTransferRequestIntakePanel = ({
             }}
           />
         </div>
+        ) : null}
 
+        {showPatientField ? (
         <div className="space-y-2">
           <Label className="text-sm">환자명 <span className="text-destructive">*</span></Label>
           <ImeSafeInput
@@ -1833,7 +1857,9 @@ export const PracticeTransferRequestIntakePanel = ({
             className="h-11 text-base"
           />
         </div>
+        ) : null}
 
+        {showDateFields ? (
         <PracticeOrderArrivalDateRangeField
           orderDate={orderDate}
           arrivalDate={arrivalDate}
@@ -1847,6 +1873,7 @@ export const PracticeTransferRequestIntakePanel = ({
             setArrivalDate(next.arrivalDate);
           }}
         />
+        ) : null}
       </div>
       ) : null}
 
