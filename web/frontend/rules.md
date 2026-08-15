@@ -615,7 +615,8 @@ Notes:
 
 - practice 최근 전송 기공소(기공소 선택 드롭다운) SSOT:
   - 서버: `GET /api/practice/transfers/my` 응답의 `caseInfos.practiceRouting.targetLabAnchorId/targetLabName`(최신순)이 권위 소스.
-  - 로컬 캐시: `localStorage.practice_recent_labs_v2` (최대 8개). 전송 성공 시 `rememberLab`, 목록 로드 시 `syncRecentLabsFromTransfers`로 merge.
+  - 로컬 캐시: `localStorage.practice_recent_labs_v3` (최대 8개). 전송 성공 시 `rememberLab`, 목록 로드 시 `syncRecentLabsFromTransfers`로 merge.
+  - 사용자 고정: `localStorage.practice_pinned_labs_v1` (최대 5개, 어벗츠 제외). 드롭다운 「고정」= 어벗츠기공소(항상) + 사용자 pin. 「최근」에서는 pin·어벗츠를 제외. `togglePinLab`로 토글(어벗츠 해제 불가).
   - 「새로 작성」은 의뢰 폼/임시저장 캐시만 비우고, 최근 기공소 목록은 드롭다운 후보로만 유지한다. 기공소 선택은 비워 다시 고르게 한다. 보철물 차트는 M(전치부) 위치로 되돌린다.
   - 기공의뢰 상단에는 수동 「임시 저장」버튼이 없다. 목록 반영은 기공소·환자명 입력 후 자동 동기화만 수행한다.
   - 신규 draft 생성(autosave) 및 갱신: 기공소·환자명 둘 다 필요. 치아·메모·파일만으로는 목록에 올리지 않는다. 둘 다 입력된 뒤의 기존 draft 갱신에서는 치아 변경도 동기화한다.

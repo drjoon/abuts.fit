@@ -262,6 +262,7 @@ export function NewRequestDesignAbutmentFields({
     labSearching: false,
     recentLabs: [] as [],
     recentLabsInitialized: true,
+    pinnedLabs: [] as [],
     patientName: String(caseInfos?.patientName || ""),
     setPatientName: (value: string) => setCaseInfos({ patientName: value }),
     orderDate: today,

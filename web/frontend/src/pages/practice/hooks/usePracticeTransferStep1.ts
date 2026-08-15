@@ -93,6 +93,9 @@ const DEFAULT_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const DEFAULT_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024;
 const PRACTICE_RECENT_LABS_STORAGE_KEY = "practice_recent_labs_v3";
 const PRACTICE_RECENT_LABS_MAX = 8;
+/** 사용자가 고정한 기공소(어벗츠 제외). 「고정」 섹션. */
+const PRACTICE_PINNED_LABS_STORAGE_KEY = "practice_pinned_labs_v1";
+const PRACTICE_PINNED_LABS_MAX = 5;
 /** 최근 기공소 드롭다운 상단 고정(어벗츠 자체 기공소). 이력 없어도 항상 노출. */
 const ABUTS_PINNED_RECENT_LAB_NAME = "어벗츠기공소";
 const ABUTS_PINNED_RECENT_LAB_SEED: SearchBusinessResult = {
@@ -145,6 +148,40 @@ const writePracticeFileCacheMeta = (metaKey: string, rows: PracticeFileCacheMeta
   }
 };
 
+const parseStoredLabRow = (item: unknown): SearchBusinessResult | null => {
+  if (!item || typeof item !== "object") return null;
+  const id = String((item as { _id?: unknown })._id || "").trim();
+  const name = String((item as { name?: unknown }).name || "").trim();
+  if (!name) return null;
+  const businessType = String(
+    (item as { businessType?: unknown }).businessType || "requestor",
+  ).trim();
+  if (businessType && businessType !== "requestor") return null;
+  const requestorKindRaw = String(
+    (item as { requestorKind?: unknown }).requestorKind || "",
+  ).trim();
+  const requestorKind =
+    requestorKindRaw === "lab" || requestorKindRaw === "practice"
+      ? requestorKindRaw
+      : undefined;
+  if (requestorKind === "practice") return null;
+
+  return {
+    _id: id || `recent:${name}`,
+    name,
+    representativeName:
+      String((item as { representativeName?: unknown }).representativeName || "").trim() ||
+      undefined,
+    businessNumber:
+      String((item as { businessNumber?: unknown }).businessNumber || "").trim() ||
+      undefined,
+    address:
+      String((item as { address?: unknown }).address || "").trim() || undefined,
+    businessType: "requestor",
+    requestorKind,
+  };
+};
+
 const readRecentLabs = (): SearchBusinessResult[] => {
   try {
     const raw = localStorage.getItem(PRACTICE_RECENT_LABS_STORAGE_KEY);
@@ -152,38 +189,7 @@ const readRecentLabs = (): SearchBusinessResult[] => {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return ensureAbutsLabPinned([]);
     const rows = parsed
-      .map((item) => {
-        if (!item || typeof item !== "object") return null;
-        const id = String((item as { _id?: unknown })._id || "").trim();
-        const name = String((item as { name?: unknown }).name || "").trim();
-        if (!name) return null;
-        const businessType = String(
-          (item as { businessType?: unknown }).businessType || "requestor",
-        ).trim();
-        if (businessType && businessType !== "requestor") return null;
-        const requestorKindRaw = String(
-          (item as { requestorKind?: unknown }).requestorKind || "",
-        ).trim();
-        const requestorKind =
-          requestorKindRaw === "lab" || requestorKindRaw === "practice"
-            ? requestorKindRaw
-            : undefined;
-        if (requestorKind === "practice") return null;
-
-        return {
-          _id: id || `recent:${name}`,
-          name,
-          representativeName: String(
-            (item as { representativeName?: unknown }).representativeName || "",
-          ).trim() || undefined,
-          businessNumber: String(
-            (item as { businessNumber?: unknown }).businessNumber || "",
-          ).trim() || undefined,
-          address: String((item as { address?: unknown }).address || "").trim() || undefined,
-          businessType: "requestor",
-          requestorKind,
-        } as SearchBusinessResult;
-      })
+      .map(parseStoredLabRow)
       .filter((row): row is SearchBusinessResult => Boolean(row));
     return ensureAbutsLabPinned(rows);
   } catch {
@@ -282,6 +288,91 @@ const mergeLabDetails = (
     requestorKind: incoming.requestorKind || current.requestorKind,
     businessType: "requestor",
   };
+};
+
+/** 사용자 pin만(어벗츠·자동매칭 제외). */
+const readPinnedLabs = (): SearchBusinessResult[] => {
+  try {
+    const raw = localStorage.getItem(PRACTICE_PINNED_LABS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const byKey = new Map<string, SearchBusinessResult>();
+    for (const item of parsed) {
+      const row = parseStoredLabRow(item);
+      if (!row) continue;
+      if (isPinnedAbutsRecentLab(row) || isAutoMatchLab(row)) continue;
+      const key = recentLabDedupeKey(row);
+      const existing = byKey.get(key);
+      byKey.set(key, existing ? mergeLabDetails(existing, row) : row);
+    }
+    return [...byKey.values()].slice(0, PRACTICE_PINNED_LABS_MAX);
+  } catch {
+    return [];
+  }
+};
+
+const writePinnedLabs = (rows: SearchBusinessResult[]) => {
+  try {
+    const sanitized = rows
+      .map((row) => normalizeRecentLab(row))
+      .filter((row): row is SearchBusinessResult => Boolean(row))
+      .filter((row) => !isPinnedAbutsRecentLab(row) && !isAutoMatchLab(row))
+      .slice(0, PRACTICE_PINNED_LABS_MAX);
+    localStorage.setItem(PRACTICE_PINNED_LABS_STORAGE_KEY, JSON.stringify(sanitized));
+  } catch {
+    // ignore
+  }
+};
+
+/**
+ * 「고정」 섹션: 어벗츠(항상) + 사용자 pin.
+ * recent에 더 풍부한 메타가 있으면 merge.
+ */
+const buildDisplayPinnedLabs = (
+  userPinned: SearchBusinessResult[],
+  recent: SearchBusinessResult[],
+): SearchBusinessResult[] => {
+  const abutsCandidates = [
+    ...recent.filter((lab) => isPinnedAbutsRecentLab(lab)),
+    ...userPinned.filter((lab) => isPinnedAbutsRecentLab(lab)),
+  ];
+  const abutsPreferred =
+    abutsCandidates.find((lab) => isRealRecentLabId(String(lab._id || ""))) ||
+    abutsCandidates[0] ||
+    ABUTS_PINNED_RECENT_LAB_SEED;
+
+  const byKey = new Map<string, SearchBusinessResult>();
+  for (const raw of userPinned) {
+    const lab = normalizeRecentLab(raw);
+    if (!lab || isPinnedAbutsRecentLab(lab) || isAutoMatchLab(lab)) continue;
+    const key = recentLabDedupeKey(lab);
+    const fromRecent = recent.find((row) => {
+      const normalized = normalizeRecentLab(row);
+      return normalized ? sameRecentLab(normalized, lab) : false;
+    });
+    const merged = fromRecent ? mergeLabDetails(lab, fromRecent) : lab;
+    const existing = byKey.get(key);
+    byKey.set(key, existing ? mergeLabDetails(existing, merged) : merged);
+  }
+  return [abutsPreferred, ...byKey.values()].slice(
+    0,
+    1 + PRACTICE_PINNED_LABS_MAX,
+  );
+};
+
+/** 어벗츠(시스템) 또는 사용자 pin 여부. */
+export const isLabPinned = (
+  lab: SearchBusinessResult | null | undefined,
+  userPinned: SearchBusinessResult[],
+): boolean => {
+  const normalized = normalizeRecentLab(lab);
+  if (!normalized) return false;
+  if (isPinnedAbutsRecentLab(normalized)) return true;
+  return userPinned.some((row) => {
+    const pinned = normalizeRecentLab(row);
+    return pinned ? sameRecentLab(pinned, normalized) : false;
+  });
 };
 
 const recentLabHasDetails = (lab: SearchBusinessResult) =>
@@ -460,8 +551,23 @@ export const usePracticeTransferStep1 = (options?: Options) => {
   const [recentLabs, setRecentLabs] = useState<SearchBusinessResult[]>(() =>
     ensureAbutsLabPinned(readRecentLabs()),
   );
+  const [userPinnedLabs, setUserPinnedLabs] = useState<SearchBusinessResult[]>(() =>
+    readPinnedLabs(),
+  );
   const [recentLabsInitialized, setRecentLabsInitialized] = useState(true);
   const didRestoreCachedFiles = useRef(false);
+
+  const pinnedLabs = useMemo(
+    () => buildDisplayPinnedLabs(userPinnedLabs, recentLabs),
+    [userPinnedLabs, recentLabs],
+  );
+
+  const displayRecentLabs = useMemo(() => {
+    return recentLabs.filter((lab) => {
+      if (isPinnedAbutsRecentLab(lab)) return false;
+      return !isLabPinned(lab, userPinnedLabs);
+    });
+  }, [recentLabs, userPinnedLabs]);
 
   useEffect(() => {
     if (didRestoreCachedFiles.current) return;
@@ -772,6 +878,29 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     });
   }, []);
 
+  const togglePinLab = useCallback((lab: SearchBusinessResult | null) => {
+    const normalizedLab = normalizeRecentLab(lab);
+    if (!normalizedLab) return;
+    if (isPinnedAbutsRecentLab(normalizedLab) || isAutoMatchLab(normalizedLab)) {
+      return;
+    }
+
+    setUserPinnedLabs((prev) => {
+      const exists = prev.some((row) => {
+        const pinned = normalizeRecentLab(row);
+        return pinned ? sameRecentLab(pinned, normalizedLab) : false;
+      });
+      const next = exists
+        ? prev.filter((row) => {
+            const pinned = normalizeRecentLab(row);
+            return pinned ? !sameRecentLab(pinned, normalizedLab) : false;
+          })
+        : [normalizedLab, ...prev].slice(0, PRACTICE_PINNED_LABS_MAX);
+      writePinnedLabs(next);
+      return next;
+    });
+  }, []);
+
   /** 서버 전송 내역(최신순)을 최근 기공소 SSOT로 merge. localStorage 캐시도 갱신. */
   const syncRecentLabsFromTransfers = useCallback(
     (
@@ -808,6 +937,10 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     setRecentLabs(loaded);
     writeRecentLabs(loaded);
 
+    const loadedPins = readPinnedLabs();
+    setUserPinnedLabs(loadedPins);
+    writePinnedLabs(loadedPins);
+
     let cancelled = false;
     void (async () => {
       const resolved = await resolveAbutsPinnedRecentLab();
@@ -826,6 +959,23 @@ export const usePracticeTransferStep1 = (options?: Options) => {
       setRecentLabs((prev) => {
         const next = mergeRecentLabLists(enriched, prev);
         writeRecentLabs(next);
+        return next;
+      });
+
+      const pinSnapshot = readPinnedLabs();
+      const enrichedPins = await enrichRecentLabsMissingDetails(pinSnapshot);
+      if (cancelled || enrichedPins.length === 0) return;
+      setUserPinnedLabs((prev) => {
+        const byKey = new Map<string, SearchBusinessResult>();
+        for (const raw of [...enrichedPins, ...prev]) {
+          const lab = normalizeRecentLab(raw);
+          if (!lab || isPinnedAbutsRecentLab(lab) || isAutoMatchLab(lab)) continue;
+          const key = recentLabDedupeKey(lab);
+          const existing = byKey.get(key);
+          byKey.set(key, existing ? mergeLabDetails(existing, lab) : lab);
+        }
+        const next = [...byKey.values()].slice(0, PRACTICE_PINNED_LABS_MAX);
+        writePinnedLabs(next);
         return next;
       });
     })();
@@ -926,10 +1076,12 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     labOpen,
     setLabOpen,
     labSearching,
-    recentLabs,
+    recentLabs: displayRecentLabs,
     recentLabsInitialized,
+    pinnedLabs,
     rememberLab,
     removeRecentLab,
+    togglePinLab,
     syncRecentLabsFromTransfers,
     handleIncomingFiles,
     removeFile,

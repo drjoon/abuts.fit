@@ -1285,11 +1285,13 @@ export const PracticeFileTransferPage = ({
     labSearching,
     recentLabs,
     recentLabsInitialized,
+    pinnedLabs,
     handleIncomingFiles,
     removeFile,
     clearAllFiles,
     rememberLab,
     removeRecentLab,
+    togglePinLab,
     syncRecentLabsFromTransfers,
   } = usePracticeTransferStep1();
 
@@ -1306,6 +1308,17 @@ export const PracticeFileTransferPage = ({
   draftSummaryIdRef.current = String(draftSummary?.id || "").trim() || null;
   const recentLabsRef = useRef(recentLabs);
   recentLabsRef.current = recentLabs;
+  const pinnedLabsRef = useRef(pinnedLabs);
+  pinnedLabsRef.current = pinnedLabs;
+  const findCachedLab = useCallback(
+    (labId: string, labName: string) =>
+      [...pinnedLabsRef.current, ...recentLabsRef.current].find((b) => {
+        const id = String(b?._id || "").trim();
+        if (labId && id === labId) return true;
+        return String(b?.name || "").trim() === labName;
+      }),
+    [],
+  );
   const todayDate = useMemo(() => toKstDateInputValue(new Date()), []);
   const [orderDate, setOrderDate] = useState(todayDate);
   const [arrivalDefaultDays, setArrivalDefaultDays] = useState(DEFAULT_ARRIVAL_OFFSET_DAYS);
@@ -1953,12 +1966,7 @@ export const PracticeFileTransferPage = ({
                 null,
             });
             if (coerced) return coerced;
-            const fromRecent =
-              recentLabsRef.current.find((b) => {
-                const id = String(b?._id || "").trim();
-                if (labId && id === labId) return true;
-                return String(b?.name || "").trim() === labName;
-              }) || undefined;
+            const fromRecent = findCachedLab(labId, labName);
             const samePrev =
               prev &&
               ((labId && String(prev._id || "").trim() === labId) ||
@@ -3842,11 +3850,7 @@ export const PracticeFileTransferPage = ({
         if (coerced) {
           setSelectedLab(coerced);
         } else {
-          const fromRecent = recentLabsRef.current.find((b) => {
-            const id = String(b?._id || "").trim();
-            if (labId && id === labId) return true;
-            return String(b?.name || "").trim() === labName;
-          });
+          const fromRecent = findCachedLab(labId, labName);
           setSelectedLab({
             _id:
               (isMongoObjectIdString(labId) ? labId : "") ||
@@ -3972,7 +3976,7 @@ export const PracticeFileTransferPage = ({
         skipFormAutosaveRef.current = false;
       });
     },
-    [setLabOpen, setLabSearch, setRequestMemo, setSelectedLab],
+    [findCachedLab, setLabOpen, setLabSearch, setRequestMemo, setSelectedLab],
   );
 
   const handleAdoptDraftTransfer = useCallback(
@@ -5934,7 +5938,9 @@ export const PracticeFileTransferPage = ({
                   labSearching,
                   recentLabs,
                   recentLabsInitialized,
+                  pinnedLabs,
                   onRemoveRecentLab: removeRecentLab,
+                  onTogglePinLab: togglePinLab,
                   patientName,
                   setPatientName,
                   orderDate,

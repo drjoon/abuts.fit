@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronsUpDown,
   Minus,
+  Pin,
   Plus,
   CircleHelp,
   Settings,
@@ -67,6 +68,7 @@ import {
   AUTO_MATCH_LAB,
   AUTO_MATCH_LAB_TOOLTIP,
   getBusinessLabel,
+  isLabPinned,
   isPinnedAbutsRecentLab,
   isAutoMatchLab,
   type SearchBusinessResult,
@@ -611,8 +613,12 @@ export type PracticeTransferRequestIntakePanelProps = {
   labSearching: boolean;
   recentLabs: SearchBusinessResult[];
   recentLabsInitialized: boolean;
+  /** 「고정」섹션(어벗츠 항상 + 사용자 pin) */
+  pinnedLabs?: SearchBusinessResult[];
   /** 최근 기공소 목록에서 제거(X) */
   onRemoveRecentLab?: (lab: SearchBusinessResult) => void;
+  /** 기공소 고정/해제(어벗츠는 no-op) */
+  onTogglePinLab?: (lab: SearchBusinessResult) => void;
   patientName: string;
   setPatientName: (value: string) => void;
   orderDate: string;
@@ -692,7 +698,9 @@ export const PracticeTransferRequestIntakePanel = ({
   labSearching,
   recentLabs,
   recentLabsInitialized,
+  pinnedLabs = [],
   onRemoveRecentLab,
+  onTogglePinLab,
   patientName,
   setPatientName,
   orderDate,
@@ -1714,10 +1722,11 @@ export const PracticeTransferRequestIntakePanel = ({
                         setSelectedLab(AUTO_MATCH_LAB);
                         setLabOpen(false);
                       }}
+                      className="group items-start py-2.5"
                     >
                       <Check
                         className={cn(
-                          "mr-2 h-4 w-4",
+                          "mr-2 mt-0.5 h-4 w-4 shrink-0",
                           isAutoMatchLab(selectedLab)
                             ? "opacity-100"
                             : "opacity-0",
@@ -1728,6 +1737,9 @@ export const PracticeTransferRequestIntakePanel = ({
                           <div className="min-w-0 flex-1 text-left">
                             <div className="truncate text-base font-medium">
                               {AUTO_MATCH_LAB.name}
+                            </div>
+                            <div className="truncate text-sm text-muted-foreground group-data-[selected=true]:text-accent-foreground/85">
+                              {AUTO_MATCH_LAB_TOOLTIP}
                             </div>
                           </div>
                         </TooltipTrigger>
@@ -1745,6 +1757,79 @@ export const PracticeTransferRequestIntakePanel = ({
 
                   {!recentLabsInitialized ? (
                     <div className="px-3 py-2 text-sm text-muted-foreground">불러오는 중...</div>
+                  ) : null}
+
+                  {pinnedLabs.length > 0 ? (
+                    <CommandGroup heading="고정">
+                      {pinnedLabs.map((b) => {
+                        const selected = selectedLab?._id === b._id;
+                        const rep = String(b.representativeName || "").trim();
+                        const bn = String(b.businessNumber || "").trim();
+                        const addr = String(b.address || "").trim();
+                        const meta = [rep ? `대표: ${rep}` : "", bn ? `사업자: ${bn}` : "", addr || ""]
+                          .filter(Boolean)
+                          .join(" · ");
+                        const searchValue = [b.name, rep, bn, addr, "고정"].filter(Boolean).join(" ");
+                        const label = getBusinessLabel(b);
+                        const systemPinned = isPinnedAbutsRecentLab(b);
+
+                        return (
+                          <CommandItem
+                            key={`pinned-${b._id}`}
+                            value={searchValue}
+                            onSelect={() => {
+                              setSelectedLab(b);
+                              setLabOpen(false);
+                            }}
+                            className="group items-start py-2.5"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 mt-0.5 h-4 w-4 shrink-0",
+                                selected ? "opacity-100" : "opacity-0",
+                              )}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-base font-medium">{label}</div>
+                              {meta ? (
+                                <div className="truncate text-sm text-muted-foreground group-data-[selected=true]:text-accent-foreground/85">
+                                  {meta}
+                                </div>
+                              ) : null}
+                            </div>
+                            {onTogglePinLab ? (
+                              <button
+                                type="button"
+                                className={cn(
+                                  "ml-2 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+                                  systemPinned
+                                    ? "cursor-default text-primary opacity-80"
+                                    : "text-primary hover:bg-muted hover:opacity-100",
+                                )}
+                                aria-label={
+                                  systemPinned
+                                    ? `${label} 고정(해제 불가)`
+                                    : `${label} 고정 해제`
+                                }
+                                title={systemPinned ? "항상 고정" : "고정 해제"}
+                                disabled={systemPinned}
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (!systemPinned) onTogglePinLab(b);
+                                }}
+                              >
+                                <Pin className="h-3.5 w-3.5 fill-current" />
+                              </button>
+                            ) : null}
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
                   ) : null}
 
                   {recentLabs.length > 0 ? (
@@ -1768,22 +1853,45 @@ export const PracticeTransferRequestIntakePanel = ({
                               setSelectedLab(b);
                               setLabOpen(false);
                             }}
-                            className="group"
+                            className="group items-start py-2.5"
                           >
                             <Check
                               className={cn(
-                                "mr-2 h-4 w-4 shrink-0",
+                                "mr-2 mt-0.5 h-4 w-4 shrink-0",
                                 selected ? "opacity-100" : "opacity-0",
                               )}
                             />
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-base font-medium">{label}</div>
-                              {meta ? <div className="truncate text-sm text-muted-foreground">{meta}</div> : null}
+                              {meta ? (
+                                <div className="truncate text-sm text-muted-foreground group-data-[selected=true]:text-accent-foreground/85">
+                                  {meta}
+                                </div>
+                              ) : null}
                             </div>
-                            {onRemoveRecentLab && !isPinnedAbutsRecentLab(b) ? (
+                            {onTogglePinLab ? (
                               <button
                                 type="button"
-                                className="ml-2 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-muted hover:text-foreground hover:opacity-100"
+                                className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-muted hover:text-foreground hover:opacity-100"
+                                aria-label={`${label} 고정`}
+                                title="고정"
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onTogglePinLab(b);
+                                }}
+                              >
+                                <Pin className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
+                            {onRemoveRecentLab ? (
+                              <button
+                                type="button"
+                                className="ml-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-muted hover:text-foreground hover:opacity-100"
                                 aria-label={`${label} 최근에서 제거`}
                                 title="최근에서 제거"
                                 onPointerDown={(e) => {
@@ -1821,6 +1929,9 @@ export const PracticeTransferRequestIntakePanel = ({
                             .filter(Boolean)
                             .join(" · ");
                           const searchValue = [b.name, rep, bn, addr].filter(Boolean).join(" ");
+                          const label = getBusinessLabel(b);
+                          const pinned = isLabPinned(b, pinnedLabs);
+                          const systemPinned = isPinnedAbutsRecentLab(b);
 
                           return (
                             <CommandItem
@@ -1830,19 +1941,64 @@ export const PracticeTransferRequestIntakePanel = ({
                                 setSelectedLab(b);
                                 setLabOpen(false);
                               }}
+                              className="group"
                             >
                               <Check
                                 className={cn(
-                                  "mr-2 h-4 w-4",
+                                  "mr-2 h-4 w-4 shrink-0",
                                   selected ? "opacity-100" : "opacity-0",
                                 )}
                               />
-                              <div className="min-w-0">
-                                <div className="truncate text-base font-medium">{getBusinessLabel(b)}</div>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-base font-medium">{label}</div>
                                 {meta ? (
                                   <div className="truncate text-sm text-muted-foreground">{meta}</div>
                                 ) : null}
                               </div>
+                              {onTogglePinLab ? (
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    "ml-2 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+                                    pinned
+                                      ? systemPinned
+                                        ? "cursor-default text-primary opacity-80"
+                                        : "text-primary hover:bg-muted"
+                                      : "text-muted-foreground opacity-70 hover:bg-muted hover:text-foreground hover:opacity-100",
+                                  )}
+                                  aria-label={
+                                    systemPinned
+                                      ? `${label} 고정(해제 불가)`
+                                      : pinned
+                                        ? `${label} 고정 해제`
+                                        : `${label} 고정`
+                                  }
+                                  title={
+                                    systemPinned
+                                      ? "항상 고정"
+                                      : pinned
+                                        ? "고정 해제"
+                                        : "고정"
+                                  }
+                                  disabled={systemPinned}
+                                  onPointerDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (!systemPinned) onTogglePinLab(b);
+                                  }}
+                                >
+                                  <Pin
+                                    className={cn(
+                                      "h-3.5 w-3.5",
+                                      pinned && "fill-current",
+                                    )}
+                                  />
+                                </button>
+                              ) : null}
                             </CommandItem>
                           );
                         })
