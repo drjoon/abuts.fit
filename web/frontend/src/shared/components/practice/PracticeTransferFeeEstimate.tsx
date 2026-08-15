@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-15: 기공소 뷰 어벗생산비 = 치과 납부(abutmentRetail) − 어벗디자인비.
 // - 2026-08-15: 기공소 뷰 — 기공소몫(보철기공비·어벗디자인비) / 어벗츠몫(어벗생산비) 2단 헤더.
 // - 2026-08-15: 기공소 수령 — 어벗디자인비를 기공비 총액에 합산 후 수수료 차감(연기 안내 제거).
 // - 2026-08-15: 기공소 뷰 — 보철기공비|어벗디자인비|어벗생산비, 소계(열별)+기공비 총액.
@@ -94,17 +95,39 @@ const formatAbutsCell = (line: {
   return "—";
 };
 
-/** 기공소 뷰: 어벗생산비 — 금액 대신 역할 라벨 */
-const formatLabFacingAbutsShareCell = (line: {
-  abutmentRetail: number;
-  abutmentRetailNote?: "quote";
-}) => {
-  if (line.abutmentRetail > 0 || line.abutmentRetailNote === "quote") {
-    return line.abutmentRetailNote === "quote" && line.abutmentRetail <= 0
-      ? "별도 고지"
-      : "커스텀어벗";
+/** 기공소 뷰: 어벗생산비 = 치과 납부 − 어벗디자인비(멤버·일반 동일). */
+const formatLabFacingAbutsProductionCell = (
+  line: {
+    abutmentRetail: number;
+    abutmentRetailNote?: "quote";
+  },
+  designFee: number,
+) => {
+  if (line.abutmentRetailNote === "quote" && line.abutmentRetail <= 0) {
+    return "별도 고지";
   }
-  return "—";
+  if (line.abutmentRetail <= 0) return "—";
+  const production = Math.max(
+    0,
+    Math.round(Number(line.abutmentRetail || 0)) -
+      Math.max(0, Math.round(Number(designFee || 0))),
+  );
+  return formatWon(production);
+};
+
+const labFacingAbutsProductionAmount = (
+  line: {
+    abutmentRetail: number;
+    abutmentRetailNote?: "quote";
+  },
+  designFee: number,
+) => {
+  if (line.abutmentRetail <= 0) return 0;
+  return Math.max(
+    0,
+    Math.round(Number(line.abutmentRetail || 0)) -
+      Math.max(0, Math.round(Number(designFee || 0))),
+  );
 };
 
 const formatLabShareCell = (
@@ -171,6 +194,14 @@ function FeeBreakdownTable({
   const designFeeTotal = lines.reduce(
     (sum, line) => sum + designFeeForLine(line),
     0,
+  );
+  const abutsProductionTotal = lines.reduce(
+    (sum, line) =>
+      sum + labFacingAbutsProductionAmount(line, designFeeForLine(line)),
+    0,
+  );
+  const abutsQuotePending = lines.some(
+    (line) => line.abutmentRetailNote === "quote" && line.abutmentRetail <= 0,
   );
   const labSubtotal = lines.reduce(
     (sum, line) =>
@@ -288,7 +319,7 @@ function FeeBreakdownTable({
             {abutsColumn ? (
               <span className="whitespace-nowrap text-right">
                 {labFacing
-                  ? formatLabFacingAbutsShareCell(line)
+                  ? formatLabFacingAbutsProductionCell(line, lineDesignFee)
                   : formatAbutsCell(line)}
               </span>
             ) : null}
@@ -324,7 +355,11 @@ function FeeBreakdownTable({
           {abutsColumn ? (
             <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
               {labFacing
-                ? ""
+                ? abutsProductionTotal > 0
+                  ? formatWon(abutsProductionTotal)
+                  : abutsQuotePending
+                    ? "별도 고지"
+                    : "—"
                 : lines.reduce((sum, line) => sum + line.abutmentRetail, 0) > 0
                   ? formatWon(
                       lines.reduce((sum, line) => sum + line.abutmentRetail, 0),
@@ -655,7 +690,16 @@ export function PracticeTransferFeeEstimate({
                         ? quote.abutmentQuotePending &&
                           quote.abutmentRetailTotal <= 0
                           ? "별도 고지"
-                          : "커스텀어벗"
+                          : formatWon(
+                              Math.max(
+                                0,
+                                Math.round(Number(quote.abutmentRetailTotal || 0)) -
+                                  (abutmentDesignQty > 0 &&
+                                  abutmentDesignLabFee > 0
+                                    ? abutmentDesignLabFee * abutmentDesignQty
+                                    : 0),
+                              ),
+                            )
                         : quote.abutmentQuotePending &&
                             quote.abutmentRetailTotal <= 0
                           ? "별도 고지"
