@@ -7,6 +7,12 @@
 
 ## 실행
 
+- **로컬 agent / one-off 스크립트 DB**: `MONGODB_URI_TEST` (`abuts_fit_test`).
+  `ENV_FILE=local.env NODE_ENV=test` (+ Atlas 쓰기 시 `ABUTS_DB_FORCE=true`).
+  SSOT: `.cursor/rules/mongodb-uri-test.mdc`, `backend/rules.md` §0.
+- **레거시 수락즉시 기공크레딧 → 에스크로 보류**:
+  `migrate-legacy-practice-transfer-spend-to-escrow-hold.js --transfer PTX-...` (dry-run) / `--apply`.
+
 - **DB 전체 초기화(컬렉션 deleteMany, 더미 데이터 없음)**
 
 ```bash

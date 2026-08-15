@@ -1,0 +1,32 @@
+---
+description: Local agent/script DB work uses MONGODB_URI_TEST (abuts_fit_test)
+alwaysApply: true
+---
+
+# Mongo DB for agent / local scripts (강제)
+
+## Policy
+
+- Local agent inspection, backfill, reconcile, and one-off DB scripts use **`MONGODB_URI_TEST`** (`abuts_fit_test`).
+- Do **not** default to `MONGODB_URI` / prod, or bare `mongodb://localhost:27017/...`, for this work.
+- Match the running local backend: `ENV_FILE=local.env` → Test DB.
+
+## How to connect
+
+```bash
+# ✅ GOOD — scripts/db/_mongo.js picks MONGODB_URI_TEST when NODE_ENV=test
+cd web/backend && \
+  ENV_FILE=local.env NODE_ENV=test ABUTS_DB_FORCE=true \
+  node scripts/db/<script>.js
+
+# ❌ BAD — ENV_FILE 없이 실행 → localhost fallback / wrong DB
+node scripts/db/<script>.js
+```
+
+- Atlas mutate: `ABUTS_DB_FORCE=true` (see `scripts/db/_mongo.js` `assertSafeToMutateDb`).
+- Jest wipe: still **local Mongo only** (`tests/mongoSafety.js`). Never point Jest wipe at Atlas test.
+
+## Don't
+
+- Don't print full Mongo URIs or credentials in chat/logs (redact `user:pass@`).
+- Don't use prod (`prod.env` / prod cluster) unless the user explicitly asks.

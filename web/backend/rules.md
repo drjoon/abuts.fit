@@ -20,6 +20,10 @@
   - `bootstrap/env.js` — `process.env.TZ = "Asia/Seoul"` (엔트리/스크립트 공통)
   - `../Procfile`, `../.ebextensions/06_timezone.config`, `../eb.sh`
   - `local.env` / `test.env` / `prod.env` 의 `TZ=Asia/Seoul`
+- 로컬 agent/스크립트 DB (강제)
+  - 조회·백필·reconcile 등 one-off는 **`MONGODB_URI_TEST`** (`abuts_fit_test`).
+  - 실행: `ENV_FILE=local.env NODE_ENV=test` (`scripts/db/_mongo.js`가 TEST URI 선택).
+  - Atlas 쓰기: `ABUTS_DB_FORCE=true`. Cursor 룰: `.cursor/rules/mongodb-uri-test.mdc`.
 - 서버 엔트리
   - `app.js`
   - `server.js`
