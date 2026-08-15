@@ -2,7 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
-// - 2026-08-15: 기공소 뷰 — 기공비|어벗디자인비|어벗츠 몫 컬럼, 소계(열별)+기공비 총액.
+// - 2026-08-15: 기공소 뷰 — 보철기공비|어벗디자인비|어벗츠 몫, 소계(열별)+기공비 총액.
 // - 2026-08-15: 기공소 뷰 — 어벗디자인비를 기공수가·어벗츠 몫 사이 컬럼으로 표시.
 // - 2026-08-15: 기공소 뷰 — CA 시 어벗디자인비(플랫폼 단가×어벗수) 툴팁 행 추가.
 // - 2026-08-14: 기공소 기공비 Off면 미설정 안내.
@@ -212,7 +212,7 @@ function FeeBreakdownTable({
           : colCount === 2
             ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
             : "grid-cols-1";
-  const labColumnLabel = labFacing ? "기공비" : "기공소 기공물";
+  const labColumnLabel = labFacing ? "보철기공비" : "기공소 기공물";
   const abutsColumnLabel = labFacing ? "어벗츠 몫" : "어벗츠 어벗";
   const showLabGrandTotal = designFeeColumn && labGrandTotal > 0;
   const subtotalLabel = labFacing ? "소계" : "합계";
@@ -330,19 +330,13 @@ function FeeBreakdownTable({
             </span>
           ) : null}
           {designFeeColumn ? (
-            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-semibold">
-              —
-            </span>
+            <span className="mt-0.5 border-t border-foreground/15 pt-1.5" />
           ) : null}
           {labAbutmentColumn ? (
-            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-semibold">
-              —
-            </span>
+            <span className="mt-0.5 border-t border-foreground/15 pt-1.5" />
           ) : null}
           {abutsColumn ? (
-            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-semibold">
-              —
-            </span>
+            <span className="mt-0.5 border-t border-foreground/15 pt-1.5" />
           ) : null}
         </>
       ) : null}
