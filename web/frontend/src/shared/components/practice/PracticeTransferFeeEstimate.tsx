@@ -2,6 +2,8 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-15: 기공소 뷰 — 기공비|어벗디자인비|어벗츠 몫 컬럼, 소계(열별)+기공비 총액.
+// - 2026-08-15: 기공소 뷰 — 어벗디자인비를 기공수가·어벗츠 몫 사이 컬럼으로 표시.
 // - 2026-08-15: 기공소 뷰 — CA 시 어벗디자인비(플랫폼 단가×어벗수) 툴팁 행 추가.
 // - 2026-08-14: 기공소 기공비 Off면 미설정 안내.
 // - 2026-08-13: 치아번호 10→20→30→40번대 순으로 표시.
@@ -146,22 +148,34 @@ function FeeBreakdownTable({
   abutmentDesignLabFee?: number;
   abutmentDesignQty?: number;
 }) {
-  // 기공소 뷰: 기공물+기공소어벗을「기공수가」한 열로, 어벗츠는 라벨만.
+  // 기공소 뷰: 기공비 | 어벗디자인비 | 어벗츠 몫 컬럼.
+  // 소계=열별 합산, 기공비 총액=기공비+어벗디자인비.
   const labShareColumn = labFacing
     ? showLabColumn || showLabAbutmentColumn
     : showLabColumn;
   const labAbutmentColumn = labFacing ? false : showLabAbutmentColumn;
   const abutsColumn = showAbutmentColumn;
-  const designFeeTotal =
-    labFacing && abutmentDesignQty > 0 && abutmentDesignLabFee > 0
-      ? Math.round(abutmentDesignLabFee) * Math.round(abutmentDesignQty)
-      : 0;
-  const labTotal = lines.reduce(
+  const unitDesignFee = Math.max(0, Math.round(Number(abutmentDesignLabFee || 0)));
+  const designFeeColumn =
+    labFacing &&
+    unitDesignFee > 0 &&
+    Math.max(0, Math.round(Number(abutmentDesignQty || 0))) > 0;
+  const designFeeForLine = (line: FeeBreakdownLine) => {
+    if (!designFeeColumn) return 0;
+    const hasCa =
+      line.abutmentRetail > 0 || line.abutmentRetailNote === "quote";
+    return hasCa ? unitDesignFee : 0;
+  };
+  const designFeeTotal = lines.reduce(
+    (sum, line) => sum + designFeeForLine(line),
+    0,
+  );
+  const labSubtotal = lines.reduce(
     (sum, line) =>
       sum + line.labFee + (labFacing ? line.labAbutmentFee : 0),
     0,
   );
-  const labTotalWithDesign = labTotal + designFeeTotal;
+  const labGrandTotal = labSubtotal + designFeeTotal;
   const labTotalMin = lines.reduce((sum, line) => {
     const min =
       line.labFeeMin != null && Number.isFinite(line.labFeeMin)
@@ -172,28 +186,36 @@ function FeeBreakdownTable({
   const hasLabFeeRange = lines.some(
     (line) => line.labFeeMin != null && Number.isFinite(line.labFeeMin),
   );
-  const labTotalDisplay =
+  const labSubtotalDisplay =
     !labFacing &&
     labTotalMinOverride != null &&
     labTotalMaxOverride != null
       ? formatWonRange(labTotalMinOverride, labTotalMaxOverride)
       : hasLabFeeRange && !labFacing
-        ? formatWonRange(labTotalMin, labTotal)
-        : formatCell(labFacing ? labTotalWithDesign : labTotal);
+        ? formatWonRange(labTotalMin, labSubtotal)
+        : formatCell(labSubtotal);
   const labAbutmentTotal = lines.reduce((sum, line) => sum + line.labAbutmentFee, 0);
   const labAbutmentPending = lines.some((line) => line.labAbutmentPending);
   const colCount =
-    1 + Number(labShareColumn) + Number(labAbutmentColumn) + Number(abutsColumn);
+    1 +
+    Number(labShareColumn) +
+    Number(designFeeColumn) +
+    Number(labAbutmentColumn) +
+    Number(abutsColumn);
   const gridClass =
-    colCount === 4
-      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto_auto]"
-      : colCount === 3
-        ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto]"
-        : colCount === 2
-          ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
-          : "grid-cols-1";
-  const labColumnLabel = labFacing ? "기공수가" : "기공소 기공물";
+    colCount === 5
+      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto_auto_auto]"
+      : colCount === 4
+        ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto_auto]"
+        : colCount === 3
+          ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto]"
+          : colCount === 2
+            ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
+            : "grid-cols-1";
+  const labColumnLabel = labFacing ? "기공비" : "기공소 기공물";
   const abutsColumnLabel = labFacing ? "어벗츠 몫" : "어벗츠 어벗";
+  const showLabGrandTotal = designFeeColumn && labGrandTotal > 0;
+  const subtotalLabel = labFacing ? "소계" : "합계";
 
   return (
     <div className={cn("grid gap-x-3 gap-y-0.5 tabular-nums", gridClass)}>
@@ -203,6 +225,11 @@ function FeeBreakdownTable({
       {labShareColumn ? (
         <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
           {labColumnLabel}
+        </span>
+      ) : null}
+      {designFeeColumn ? (
+        <span className="whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground">
+          어벗디자인비
         </span>
       ) : null}
       {labAbutmentColumn ? (
@@ -219,6 +246,7 @@ function FeeBreakdownTable({
         const labShare = labFacing
           ? line.labFee + line.labAbutmentFee
           : line.labFee;
+        const lineDesignFee = designFeeForLine(line);
         return (
           <div key={`${line.toothNumber}:${idx}`} className="contents">
             <span className="min-w-0 truncate">
@@ -228,6 +256,11 @@ function FeeBreakdownTable({
             {labShareColumn ? (
               <span className="whitespace-nowrap text-right">
                 {formatLabShareCell(line, labShare, labFacing)}
+              </span>
+            ) : null}
+            {designFeeColumn ? (
+              <span className="whitespace-nowrap text-right">
+                {lineDesignFee > 0 ? formatWon(lineDesignFee) : "—"}
               </span>
             ) : null}
             {labAbutmentColumn ? (
@@ -245,32 +278,21 @@ function FeeBreakdownTable({
           </div>
         );
       })}
-      {designFeeTotal > 0 ? (
-        <div className="contents">
-          <span className="min-w-0 truncate">어벗디자인비</span>
-          {labShareColumn ? (
-            <span className="whitespace-nowrap text-right">
-              {formatWon(designFeeTotal)}
-            </span>
-          ) : null}
-          {labAbutmentColumn ? (
-            <span className="whitespace-nowrap text-right">—</span>
-          ) : null}
-          {abutsColumn ? (
-            <span className="whitespace-nowrap text-right">—</span>
-          ) : null}
-        </div>
-      ) : null}
       {colCount > 1 ? (
         <>
           <span className="mt-0.5 border-t border-foreground/15 pt-1.5 font-medium">
-            합계
+            {subtotalLabel}
           </span>
           {labShareColumn ? (
             <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
-              {labFacing && labTotalWithDesign <= 0 && labAbutmentPending
+              {labFacing && labSubtotal <= 0 && labAbutmentPending
                 ? "요청중"
-                : labTotalDisplay}
+                : labSubtotalDisplay}
+            </span>
+          ) : null}
+          {designFeeColumn ? (
+            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
+              {designFeeTotal > 0 ? formatWon(designFeeTotal) : "—"}
             </span>
           ) : null}
           {labAbutmentColumn ? (
@@ -297,13 +319,37 @@ function FeeBreakdownTable({
           ) : null}
         </>
       ) : null}
-      {designFeeTotal > 0 ? (
+      {showLabGrandTotal ? (
+        <>
+          <span className="mt-0.5 border-t border-foreground/15 pt-1.5 font-semibold">
+            기공비 총액
+          </span>
+          {labShareColumn ? (
+            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-semibold">
+              {formatWon(labGrandTotal)}
+            </span>
+          ) : null}
+          {designFeeColumn ? (
+            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-semibold">
+              —
+            </span>
+          ) : null}
+          {labAbutmentColumn ? (
+            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-semibold">
+              —
+            </span>
+          ) : null}
+          {abutsColumn ? (
+            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-semibold">
+              —
+            </span>
+          ) : null}
+        </>
+      ) : null}
+      {designFeeColumn ? (
         <p
-          className={cn(
-            "text-[10px] leading-relaxed text-muted-foreground",
-            colCount > 1 ? `col-span-${colCount}` : "",
-          )}
-          style={{ gridColumn: colCount > 1 ? `1 / -1` : undefined }}
+          className="text-[10px] leading-relaxed text-muted-foreground"
+          style={{ gridColumn: colCount > 1 ? "1 / -1" : undefined }}
         >
           어벗디자인비는 디자인 업로드 시 기공정산 크레딧으로 지급됩니다.
         </p>
@@ -360,10 +406,14 @@ export function PracticeTransferFeeEstimate({
     1,
     Math.max(0, Number(quote.feeRateApplied || 0)),
   );
-  // 기공소: 확정 수가는 설정 스케줄(labFeeTotal). 치과 예산 min~max는 수락 전 필터용.
+  // 기공소: 설정 스케줄(labFeeTotal) + CA 어벗디자인비. 치과 예산 min~max는 수락 전 필터용.
   // 수락·청구 후(billed)에는 치과도 확정 기공비(total)를 표시.
+  const labDesignFeePreview =
+    isLab && abutmentDesignQty > 0 && abutmentDesignLabFee > 0
+      ? abutmentDesignLabFee * abutmentDesignQty
+      : 0;
   const amount = isLab
-    ? quote.labFeeTotal
+    ? Math.max(0, Math.round(Number(quote.labFeeTotal || 0))) + labDesignFeePreview
     : !confirmed && budget && Number(budget.maxLabFee) > 0
       ? Math.max(0, Number(budget.maxLabFee)) +
         Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))

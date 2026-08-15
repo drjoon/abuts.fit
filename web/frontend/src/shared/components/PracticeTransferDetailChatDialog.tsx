@@ -6,6 +6,7 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - 2026-08-15: 수락 바 — 구강스캔 나중에 올리기 안내 문구 제거.
 // - 2026-08-15: 수락 기공소 CA 디자인 — 스캔 없이도 수락. 어벗디자인비 안내.
 // - 2026-08-15: 기공소 CA — 어벗츠 디자인 미도착 시 구강스캔(의뢰 파일) 다운로드 잠금.
 // - 2026-08-15: 지정 기공소 CA — 치과 미첨부 시 수락 전 구강스캔 업로드. 자동매칭은 치과 필수.
@@ -249,8 +250,6 @@ export function PracticeTransferDetailChatDialog({
   /** 수락 직후: 수락 버튼 자리에 작업취소 */
   const showReleaseBar =
     Boolean(onRelease) && accepted && !workCanceled && !workCompleted;
-  const needsLabOralScan =
-    oralScanAttachMode === "lab" && pendingOralScanFiles.length === 0;
   /** 지정 기공소: 스캔 없이도 수락 가능. 자동매칭(practice_required)만 차단 */
   const oralScanBlocksAccept = oralScanAttachMode === "practice_required";
   const rawChatError = String(chatError || "").trim();
@@ -557,12 +556,6 @@ export function PracticeTransferDetailChatDialog({
                           </Tooltip>
                         </div>
                       </TooltipProvider>
-                    ) : null}
-                    {needsLabOralScan ? (
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        구강스캔이 없으면 왼쪽에서 나중에 올릴 수 있습니다. 커스텀어벗
-                        디자인 Request 생성에는 스캔이 필요합니다.
-                      </p>
                     ) : null}
                     {oralScanAttachMode === "practice_required" ? (
                       <p className="text-xs text-destructive leading-relaxed">
