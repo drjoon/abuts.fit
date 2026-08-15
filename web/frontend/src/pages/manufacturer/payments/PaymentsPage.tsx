@@ -821,7 +821,7 @@ export const ManufacturerPaymentPage = () => {
                     <div className="min-w-0">
                       <div className="font-medium">가공 승인 적립 (하청)</div>
                       <div className="text-muted-foreground">
-                        의뢰 1건당 공급가 8,000원 + 부가세 10%(합 8,800원).
+                        의뢰 1건당 공급가 9,000원 + 부가세 10%(합 9,900원).
                         유료·무료 모두 적립하되, 지급은 유료만(무료 지급 0).
                       </div>
                     </div>

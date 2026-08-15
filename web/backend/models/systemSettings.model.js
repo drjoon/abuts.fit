@@ -54,7 +54,7 @@ const systemSettingsSchema = new mongoose.Schema(
       },
       shippingFee: { type: Number, default: 3500 },
       // 제조사(애크로덴트) 하청 공급가 — 어벗츠 지급 시 affiliateVatRate 부가세 가산
-      manufacturerRequestUnitPrice: { type: Number, default: 8000 },
+      manufacturerRequestUnitPrice: { type: Number, default: 9000 },
       manufacturerShippingUnitPrice: { type: Number, default: 3500 },
       affiliateVatRate: { type: Number, default: 0.1 },
       // 신속 배송 추가 의뢰크레딧 (생산=건당, 디자인+생산=1어벗당, 가공 진입 시 차감)

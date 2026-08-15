@@ -761,7 +761,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 정산/지급 정책:
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - **제조사(하청)**: 고정단가 — `creditSettings.manufacturerRequestUnitPrice`(기본 8,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT. 유료·무료 모두 적립(확인용). **정산 지급은 유료만**(무료 지급 0). 지급액=`amount`(VAT 포함).
+  - **제조사(하청)**: 고정단가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT. 유료·무료 모두 적립(확인용). **정산 지급은 유료만**(무료 지급 0). 지급액=`amount`(VAT 포함).
   - **그 외 관계사**: 정산 지급(PAYOUT)은 유료 수익만. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
   - 배송: 제조사 고정 배송 공급가(+VAT). 고객 배송비−제조사 공급가 잔여 → 관리자(`vatAmount=0`).
   - 무료 수익은 지급금액 0으로 정산 완료 상태만 표시할 수 있습니다.

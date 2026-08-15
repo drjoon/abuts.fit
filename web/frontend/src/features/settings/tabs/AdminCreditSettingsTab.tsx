@@ -199,7 +199,7 @@ function normalizeCreditSettings(
     manufacturerRequestUnitPrice: Number(
       (raw as CreditSettings).manufacturerRequestUnitPrice ??
         (fallback as CreditSettings).manufacturerRequestUnitPrice ??
-        8000,
+        9000,
     ),
     manufacturerShippingUnitPrice: Number(
       (raw as CreditSettings).manufacturerShippingUnitPrice ??

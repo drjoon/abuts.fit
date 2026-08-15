@@ -1053,7 +1053,7 @@ export default function AdminPaymentsPage() {
                   단가 의뢰{" "}
                   {formatMoney(
                     Number(
-                      manufacturerSummary?.manufacturerRequestUnitPrice || 8000,
+                      manufacturerSummary?.manufacturerRequestUnitPrice || 9000,
                     ),
                   )}
                   +VAT / 배송{" "}
@@ -1128,7 +1128,7 @@ export default function AdminPaymentsPage() {
               title="제조사"
               rate={`${formatMoney(
                 Number(
-                  manufacturerSummary?.manufacturerRequestUnitPrice || 8000,
+                  manufacturerSummary?.manufacturerRequestUnitPrice || 9000,
                 ),
               )} / ${formatMoney(
                 Number(

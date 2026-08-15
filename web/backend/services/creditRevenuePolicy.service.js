@@ -4,6 +4,7 @@
 // - web/backend/scripts/db/migrate-request-spend-to-gl.js
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // change-log:
+// - 2026-08-15: 제조사 의뢰 공급가 기본 8,000 → 9,000 (VAT 포함 지급 9,900).
 // - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송)+VAT. 잔여는 salesman/devops/admin 재분배.
 // - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
 
@@ -15,7 +16,7 @@ export const WITH_SALESMAN_DEFAULT_RATES = {
 };
 
 /** 제조사 하청 공급가·부가세 SSOT 기본값 (creditSettings와 동기). */
-export const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8000;
+export const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 9000;
 export const DEFAULT_MANUFACTURER_SHIPPING_UNIT_PRICE = 3500;
 export const DEFAULT_AFFILIATE_VAT_RATE = 0.1;
 

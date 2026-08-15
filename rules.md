@@ -164,7 +164,7 @@
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
-  - **제조사(하청)**: % 분배 금지. 건당 고정 공급가 — `creditSettings.manufacturerRequestUnitPrice`(기본 8,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT(`affiliateVatRate` 기본 0.1 → 지급합 8,800 / 3,850). 유료·무료 모두 **적립(확인용)** 하되, **정산 지급은 유료만**(무료 지급 0).
+  - **제조사(하청)**: % 분배 금지. 건당 고정 공급가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT(`affiliateVatRate` 기본 0.1 → 지급합 9,900 / 3,850). 유료·무료 모두 **적립(확인용)** 하되, **정산 지급은 유료만**(무료 지급 0).
   - **잔여 분배**: 의뢰자 소비 공급가 − 제조사 공급가 → 영업자·개발운영사·관리자 상대비율로 재분배(`vatAmount = 0`). 배송 잔여(고객 배송비 − 제조사 배송 공급가) → 관리자.
   - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **의뢰 1건 1회**만. express는 잔여 분배에만 포함.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감

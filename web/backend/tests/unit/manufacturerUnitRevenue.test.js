@@ -14,7 +14,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
   };
 
   const creditSettings = {
-    manufacturerRequestUnitPrice: 8000,
+    manufacturerRequestUnitPrice: 9000,
     manufacturerShippingUnitPrice: 3500,
     affiliateVatRate: 0.1,
   };
@@ -25,9 +25,9 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
     expect(request).toEqual({
-      supply: 8000,
-      vat: 800,
-      total: 8800,
+      supply: 9000,
+      vat: 900,
+      total: 9900,
       vatRate: 0.1,
     });
 
@@ -68,12 +68,12 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
 
-    expect(alloc.manufacturer).toBe(8000);
-    expect(alloc.manufacturerVat).toBe(800);
-    // residual 12000 · weights devops:salesman:admin = 1:1:2
-    expect(alloc.devops).toBe(3000);
-    expect(alloc.salesman).toBe(3000);
-    expect(alloc.admin).toBe(6000);
+    expect(alloc.manufacturer).toBe(9000);
+    expect(alloc.manufacturerVat).toBe(900);
+    // residual 11000 · weights devops:salesman:admin = 1:1:2
+    expect(alloc.devops).toBe(2750);
+    expect(alloc.salesman).toBe(2750);
+    expect(alloc.admin).toBe(5500);
     expect(alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin).toBe(
       20000,
     );
@@ -94,11 +94,11 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
 
-    expect(alloc.manufacturer).toBe(8000);
+    expect(alloc.manufacturer).toBe(9000);
     expect(alloc.salesman).toBe(0);
-    // residual weights devops:admin = 0.1 : (0.2+0.1) = 1:3 of 12000
-    expect(alloc.devops).toBe(3000);
-    expect(alloc.admin).toBe(9000);
+    // residual weights devops:admin = 0.1 : (0.2+0.1) = 1:3 of 11000
+    expect(alloc.devops).toBe(2750);
+    expect(alloc.admin).toBe(8250);
   });
 
   test("shipping spend: manufacturer unit, residual to admin", () => {
