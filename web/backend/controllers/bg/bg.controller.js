@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-16: request-meta — manufacturerHexRotation 누락 시 caseInfos/STL모델대로 폴백(500 제거).
 // related files:
 // - web/backend/rules.md
 // - web/backend/controllers/requests/common.review.helpers.js
@@ -1436,19 +1438,31 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   // 제조사 수동 좌표계 전처리 모드는 request-meta에서 canonical 값으로 전달한다.
   // canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
   // Rhino align 기능으로 구성정보 전처리를 대체하므로, 개별 구성정보 파일 기반 모드는 사용하지 않는다.
-  const manufacturerHexRotationRaw = String(
-    request?.rnd?.manufacturerHexRotation || "",
-  ).trim();
-  const manufacturerHexRotationMode = parseManufacturerHexRotationModeOrNull(
-    manufacturerHexRotationRaw,
-  );
+  // PTX 생성 등 rnd 미설정 건: caseInfos.final/requestorHexRotation → STL모델대로 폴백.
+  // (빈 rnd로 500 나면 connectionTargetDiameter도 함께 못 내려 Rhino align이 기본값으로 흐른다.)
+  const manufacturerHexRotationCandidates = [
+    request?.rnd?.manufacturerHexRotation,
+    ci?.finalHexRotation,
+    ci?.requestorHexRotation,
+    ci?.manufacturerHexRotation,
+  ];
+  let manufacturerHexRotationRaw = "";
+  let manufacturerHexRotationMode = null;
+  for (const candidate of manufacturerHexRotationCandidates) {
+    const raw = String(candidate || "").trim();
+    if (!raw) continue;
+    const parsed = parseManufacturerHexRotationModeOrNull(raw);
+    if (parsed) {
+      manufacturerHexRotationRaw = raw;
+      manufacturerHexRotationMode = parsed;
+      break;
+    }
+  }
   if (!manufacturerHexRotationMode) {
-    return res.status(500).json(
-      new ApiResponse(
-        500,
-        { ok: false },
-        `유효하지 않은 manufacturerHexRotation 값입니다. requestId=${request.requestId}, value='${manufacturerHexRotationRaw}'`,
-      ),
+    manufacturerHexRotationRaw = "STL모델대로";
+    manufacturerHexRotationMode = "STL모델대로";
+    console.warn(
+      `[BG] getRequestMeta: manufacturerHexRotation missing; fallback STL모델대로 requestId=${request.requestId}`,
     );
   }
   const normalizedFinishLine = normalizeFinishLineWithZExtrema(ci?.finishLine);

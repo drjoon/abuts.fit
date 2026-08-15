@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: PTX 핸드오프 — hex/PRC 시드 + Rhino filled STL 트리거(request-meta 파라미터 누락 보완).
 // - 2026-08-15: PTX 핸드오프 — productMode를 custom_abutment로 승격(제조사 CNC 준비 큐 노출). 취소 시 복원.
 // - 2026-08-15: PTX 핸드오프 — Request 저장 후 Transfer 미러. 취소는 orphan designFiles도 정리.
 // - 2026-08-15: 취소·핸드오프 — transfer.targetLabAnchorId로 수락 lab 판정(소유 어긋남 보정).
@@ -34,9 +35,69 @@ import {
   revokeAbutmentDesignLabFee,
 } from "../../services/practiceTransferBilling.service.js";
 import { emitAppEventToRoles } from "../../socket.js";
+import { resolvePrcFileNames } from "./prcMapping.utils.js";
+import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
 
 const PRODUCT_MODE_DESIGN = "design_custom_abutment";
 const PRODUCT_MODE_PRODUCTION = "custom_abutment";
+const DEFAULT_HEX_ROTATION = "STL모델대로";
+
+const buildRhinoInputFileName = (request) => {
+  const requestId = String(request?.requestId || "").trim();
+  const ci = request?.caseInfos || {};
+  const original = String(
+    ci?.file?.filePath || ci?.file?.originalName || "",
+  ).trim();
+  const ext = original.includes(".")
+    ? `.${original.split(".").pop()?.toLowerCase() || "stl"}`
+    : ".stl";
+  if (!requestId) return original || "";
+  return `${requestId}-${String(ci.clinicName || "").trim()}-${String(ci.patientName || "").trim()}-${String(ci.tooth || "").trim()}${ext}`;
+};
+
+const ensurePtxProductionRhinoReadyFields = async (request) => {
+  if (!request.caseInfos) request.caseInfos = {};
+  if (!request.rnd) request.rnd = {};
+
+  const hex =
+    String(request.rnd.manufacturerHexRotation || "").trim() ||
+    String(request.caseInfos.finalHexRotation || "").trim() ||
+    String(request.caseInfos.requestorHexRotation || "").trim() ||
+    DEFAULT_HEX_ROTATION;
+  request.rnd.manufacturerHexRotation = hex;
+  if (!String(request.caseInfos.finalHexRotation || "").trim()) {
+    request.caseInfos.finalHexRotation = hex;
+  }
+  if (!String(request.caseInfos.requestorHexRotation || "").trim()) {
+    request.caseInfos.requestorHexRotation = hex;
+  }
+
+  if (
+    !String(request.caseInfos.faceHolePrcFileName || "").trim() ||
+    !String(request.caseInfos.connectionPrcFileName || "").trim()
+  ) {
+    try {
+      const prc = await resolvePrcFileNames(request.caseInfos);
+      if (prc.faceHolePrcFileName) {
+        request.caseInfos.faceHolePrcFileName = prc.faceHolePrcFileName;
+      }
+      if (prc.connectionPrcFileName) {
+        request.caseInfos.connectionPrcFileName = prc.connectionPrcFileName;
+      }
+    } catch (e) {
+      console.warn(
+        "[DESIGN_HANDOFF] PRC resolve failed",
+        e?.message || e,
+      );
+    }
+  }
+
+  const standardName = buildRhinoInputFileName(request);
+  if (standardName && request.caseInfos.file) {
+    request.caseInfos.file.filePath = standardName;
+  }
+  return standardName;
+};
 
 const resolvePtxAcceptingLabContext = async (request) => {
   const relatedTransferId = request?.partnerBilling?.relatedPracticeTransferId
@@ -248,6 +309,7 @@ export async function handoffDesignToProduction(req, res) {
       // (WorksheetPage productModeNe=design_custom_abutment / 디자인 파트너 큐는 PTX 제외)
       if (!request.caseInfos) request.caseInfos = {};
       request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
+      const rhinoFileName = await ensurePtxProductionRhinoReadyFields(request);
 
       if (transferDoc && isAcceptingLab) {
         await repriceAndReschedulePtxAbutmentRequest({
@@ -321,6 +383,22 @@ export async function handoffDesignToProduction(req, res) {
           console.error("[DESIGN_HANDOFF] PTX mirror rollback failed", rollbackErr);
         }
         throw mirrorErr;
+      }
+
+      // 디자인 STL → filled STL (제조사 준비 큐). fire-and-forget.
+      try {
+        if (rhinoFileName) {
+          triggerRhinoProcessFileForRequest({
+            requestId: request.requestId,
+            filePath: rhinoFileName,
+            fileName: rhinoFileName,
+          });
+        }
+      } catch (rhinoErr) {
+        console.warn(
+          "[DESIGN_HANDOFF] rhino trigger failed",
+          rhinoErr?.message || rhinoErr,
+        );
       }
 
       try {

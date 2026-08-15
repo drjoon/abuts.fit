@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-16: PTX Request 생성 시 rnd.manufacturerHexRotation·PRC 파일명 시드(request-meta 500 방지).
 // - 2026-08-15: PTX 핸드오프 재견적 — productMode·스케줄을 custom_abutment(생산)로.
 // - 2026-08-15: 재견적 시 timeline 필드만 갱신(shipOutcome undefined Cast 방지).
 // - 2026-08-15: 작업취소(release) 시 연동 CA Request 취소·디자인 미러 정리. 재수락 시 소유 동기화.
@@ -29,6 +30,7 @@ import { calculateInitialProductionSchedule } from "../controllers/requests/prod
 import {
   countDesignAbutmentQty,
 } from "../controllers/requests/designPrice.utils.js";
+import { resolvePrcFileNames } from "../controllers/requests/prcMapping.utils.js";
 import { resolveQuotedPriceWithExpressFee } from "../controllers/requests/expressPrice.utils.js";
 import { resolveSelectableShippingMode } from "../controllers/requests/expressSelectable.utils.js";
 import { getManufacturerLeadTimesUtil } from "../controllers/businesses/leadTime.controller.js";
@@ -615,9 +617,22 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       ymd: estimatedShipYmdRaw,
     });
 
+    let resolvedPrc = { faceHolePrcFileName: "", connectionPrcFileName: "" };
+    try {
+      resolvedPrc = await resolvePrcFileNames(normalizedCaseInfos);
+    } catch {
+      // best-effort — request-meta에서도 동적 계산
+    }
+
+    const manufacturerHexRotation = "STL모델대로";
+
     const newRequest = new Request({
       caseInfos: {
         ...normalizedCaseInfos,
+        requestorHexRotation: manufacturerHexRotation,
+        finalHexRotation: manufacturerHexRotation,
+        faceHolePrcFileName: resolvedPrc.faceHolePrcFileName || undefined,
+        connectionPrcFileName: resolvedPrc.connectionPrcFileName || undefined,
         reviewByStage: {
           request: {
             status: "PENDING",
@@ -626,6 +641,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
             reason: "",
           },
         },
+      },
+      rnd: {
+        manufacturerHexRotation,
       },
       requestor: labUserId,
       businessAnchorId: labAnchorId,
