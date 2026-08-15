@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-15: 재견적 시 timeline 필드만 갱신(shipOutcome undefined Cast 방지).
 // - 2026-08-15: 작업취소(release) 시 연동 CA Request 취소·디자인 미러 정리. 재수락 시 소유 동기화.
 // - 2026-08-15: PTX CA — 치과 멤버십/일반 생산단가·출고목표=기일-3영업일·묶음 우선. 디자인비는 기공소 지급 분리.
 // - 2026-08-15: 지정 CA — 스캔 없이 수락 가능. 스캔은 수락 후 업로드 후 Request 생성.
@@ -1126,16 +1127,20 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     requestDoc.partnerBilling.practiceBusinessAnchorId =
       transferDoc.practiceBusinessAnchorId;
   }
+  // timeline 통째 교체(…spread) 시 shipOutcome: undefined 가 들어가면
+  // Cast to Object failed — 필드만 갱신한다.
   if (estimatedShipYmd) {
-    requestDoc.timeline = {
-      ...(requestDoc.timeline && typeof requestDoc.timeline === "object"
-        ? requestDoc.timeline
-        : {}),
-      originalEstimatedShipYmd:
-        requestDoc.timeline?.originalEstimatedShipYmd || estimatedShipYmd,
-      nextEstimatedShipYmd: estimatedShipYmd,
-      estimatedShipYmd,
-    };
+    if (!requestDoc.timeline || typeof requestDoc.timeline !== "object") {
+      requestDoc.timeline = {};
+    }
+    if (!requestDoc.timeline.originalEstimatedShipYmd) {
+      requestDoc.timeline.originalEstimatedShipYmd = estimatedShipYmd;
+    }
+    requestDoc.timeline.nextEstimatedShipYmd = estimatedShipYmd;
+    requestDoc.timeline.estimatedShipYmd = estimatedShipYmd;
+    if (typeof requestDoc.markModified === "function") {
+      requestDoc.markModified("timeline");
+    }
   }
 
   return requestDoc;

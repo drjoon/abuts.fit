@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: acceptingLab — 안내 문구만. PTX CA는 수신 카드에서 처리(디자인큐 카드 중복·이형 방지).
 // - 2026-08-15: 수락 기공소는 본인 기공의뢰(CA) 디자인 큐(/my). 파트너는 기존 /all.
 // - 2026-08-15: 카피 — 수락 기공소가 디자인·업로드 시 제조 주문.
 // - 2026-08-11: DesignPage 삭제 → 의뢰수신 내장 섹션으로 통합(독립 페이지/사이드메뉴 없음).
@@ -38,7 +39,7 @@ export type DesignQueueListMode = "partner" | "acceptingLab";
  * 의뢰수신에 편입된 디자인+생산(준비) 큐.
  * PeriodFilter는 상위(의뢰수신)에서 공유한다.
  * - partner: 디자인 파트너 전역 큐(/all), 기공의뢰(PTX) 제외
- * - acceptingLab: 수락 기공소 본인 기공의뢰 CA(/my)
+ * - acceptingLab: 안내 문구만(PTX CA 업로드·완료는 수신 카드)
  */
 export const DesignQueueSection = ({
   listMode = "partner",
@@ -50,7 +51,13 @@ export const DesignQueueSection = ({
   return (
     <div className="w-full min-h-0 flex flex-col items-stretch">
       <TooltipProvider delayDuration={0}>
-        <div className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground">
+        <div
+          className={
+            isAcceptingLab
+              ? "flex items-center gap-1.5 text-sm text-muted-foreground"
+              : "mb-3 flex items-center gap-1.5 text-sm text-muted-foreground"
+          }
+        >
           <span>
             {isAcceptingLab
               ? "커스텀 어벗 디자인은 수락 기공소가 진행 · 업로드 시 제조 주문"
@@ -90,19 +97,22 @@ export const DesignQueueSection = ({
           </Tooltip>
         </div>
       </TooltipProvider>
-      <Suspense fallback={null}>
-        <RequestPage
-          showQueueBar={false}
-          showBulkCamRegenerate={false}
-          useManufacturerQueueList={!isAcceptingLab}
-          detailMode="transferChat"
-          productMode={PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT}
-          filterRequests={(req) =>
-            isDesignCustomAbutmentRequest(req) &&
-            deriveStageForFilter(req) === "준비"
-          }
-        />
-      </Suspense>
+      {/* 수락 lab: PTX CA는 아래 수신 카드에서 업로드·완료. 디자인큐 Request 카드는 이형·중복. */}
+      {!isAcceptingLab ? (
+        <Suspense fallback={null}>
+          <RequestPage
+            showQueueBar={false}
+            showBulkCamRegenerate={false}
+            useManufacturerQueueList={true}
+            detailMode="transferChat"
+            productMode={PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT}
+            filterRequests={(req) =>
+              isDesignCustomAbutmentRequest(req) &&
+              deriveStageForFilter(req) === "준비"
+            }
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 };
