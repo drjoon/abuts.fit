@@ -485,15 +485,13 @@ export function PracticeRecentTransfersAllModal({
                     <p className="mt-2 truncate text-xs text-muted-foreground">{targetLabText}</p>
                     <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                       파일 {transfer.fileCount}개
-                      {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
-                      {transfer.arrivalDate ? ` · 치과도착일 ${transfer.arrivalDate}` : ""}
                       {transfer.orderDate && transfer.arrivalDate ? (
                         <>
                           {" · "}
                           <PracticeWorkPeriodText
                             orderDate={transfer.orderDate}
                             arrivalDate={transfer.arrivalDate}
-                            variant="labeled"
+                            variant="orderArrival"
                             className="text-xs"
                           />
                         </>

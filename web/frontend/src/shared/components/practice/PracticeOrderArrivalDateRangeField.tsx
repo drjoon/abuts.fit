@@ -19,8 +19,10 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
-import { getPracticeWorkPeriodDays } from "@/shared/practice/practiceWorkPeriod";
-
+import {
+  PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL,
+  getPracticeWorkPeriodDays,
+} from "@/shared/practice/practiceWorkPeriod";
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
@@ -31,6 +33,7 @@ import { getPracticeWorkPeriodDays } from "@/shared/practice/practiceWorkPeriod"
 // - 2026-08-13: 라벨 오른쪽에 주문→도착 소요일 표시.
 // - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁.
 // - 2026-08-15: 작업기간 표시를 영업일(월~금) 기준으로 통일.
+// - 2026-08-15: 라벨 주문-치과도착 · 기간 1+2영업일.
 
 const addDaysToYmd = (ymd: string, days: number) => {
   const base = String(ymd || "").trim();
@@ -138,13 +141,13 @@ export function PracticeOrderArrivalDateRangeField({
     <div className={cn("space-y-2", className)}>
       <div className="flex h-7 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1">
-          <Label className="text-sm leading-none">주문일–치과도착일</Label>
+          <Label className="text-sm leading-none">{PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL}</Label>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
-                aria-label="주문일–치과도착일 도움말"
+                aria-label={`${PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL} 도움말`}
               >
                 <CircleHelp className="h-3.5 w-3.5" />
               </button>
