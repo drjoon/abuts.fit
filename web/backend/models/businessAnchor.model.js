@@ -432,10 +432,10 @@ const businessAnchorSchema = new mongoose.Schema(
         type: Date,
         default: null,
       },
-      // 기공의뢰 「디자인 컨펌 생략」마지막 설정 (계정/앵커 SSOT). 전송 시 의뢰건에 스냅샷.
+      // 기공의뢰 「디자인 컨펌 생략」마지막 설정 (계정/앵커 SSOT). 전송 시 의뢰건에 스냅샷. 기본=생략.
       skipDesignConfirm: {
         type: Boolean,
-        default: false,
+        default: true,
       },
       // 커스텀어벗 설정 모달 기본 모드. 미설정·신규 계정은 디자인+생산.
       // 치아별 스냅샷은 toothWorks.abutmentProductMode (레거시 미설정=생산만).

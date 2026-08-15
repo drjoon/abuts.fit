@@ -39,7 +39,7 @@ export const DesignQueueSection = () => {
     <div className="w-full min-h-0 flex flex-col items-stretch">
       <TooltipProvider delayDuration={0}>
         <div className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground">
-          <span>커스텀 어벗 디자인은 1일 내 작업 완료</span>
+          <span>커스텀 어벗 디자인은 1영업일 내 기공소 전달</span>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -51,10 +51,12 @@ export const DesignQueueSection = () => {
               </button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs leading-relaxed">
-              작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 혹시 지연될 경우 치과와
-              미리 상의하시기 바랍니다.
+              커스텀어벗이 포함된 기공의뢰는 어벗츠가 구강스캔으로 먼저 디자인해
+              기공소에 전달합니다. 기공소가 디자인을 확인하면 치과 도착일(기일)에
+              맞춰 생산·발송됩니다.
               <br />
-              커스텀어벗 디자인은 1영업일 내 어벗츠가 만들어서 기공소에 전달합니다.
+              작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 지연 시 치과와 미리
+              상의하세요.
             </TooltipContent>
           </Tooltip>
         </div>

@@ -70,9 +70,11 @@ type PracticeTransferDetailChatDialogProps = {
   /** 기공소 작업완료 결과 파일 (있을 때만 표시) */
   resultFilesLabel?: string;
   resultFiles?: PracticeTransferDialogFileItem[];
-  /** 치과 「생산 진행」 컨펌 (작업완료 후) */
+  /** 치과 「생산 진행」/디자인 컨펌 */
   productionConfirmBusy?: boolean;
   showProductionConfirm?: boolean;
+  productionConfirmTitle?: string;
+  productionConfirmButtonLabel?: string;
   onConfirmProduction?: () => void | Promise<void>;
   /** 다운로드 진행 중 파일 키(s3Key 또는 id). 재클릭 방지 */
   downloadingFileKeys?: string[];
@@ -150,6 +152,8 @@ export function PracticeTransferDetailChatDialog({
   resultFiles = [],
   productionConfirmBusy = false,
   showProductionConfirm = false,
+  productionConfirmTitle = "작업 결과를 확인한 뒤 생산을 진행하세요.",
+  productionConfirmButtonLabel = "생산 진행",
   onConfirmProduction,
   downloadingFileKeys = [],
   downloadProgressByKey = {},
@@ -364,7 +368,7 @@ export function PracticeTransferDetailChatDialog({
               {showProductionConfirm && onConfirmProduction ? (
                 <div className="rounded-md border border-primary/30 bg-primary-soft/40 p-3">
                   <p className="text-sm text-primary-strong">
-                    작업 결과를 확인한 뒤 생산을 진행하세요.
+                    {productionConfirmTitle}
                   </p>
                   <Button
                     type="button"
@@ -372,7 +376,7 @@ export function PracticeTransferDetailChatDialog({
                     disabled={productionConfirmBusy}
                     onClick={() => void onConfirmProduction()}
                   >
-                    {productionConfirmBusy ? "처리 중..." : "생산 진행"}
+                    {productionConfirmBusy ? "처리 중..." : productionConfirmButtonLabel}
                   </Button>
                 </div>
               ) : null}

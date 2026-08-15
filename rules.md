@@ -249,6 +249,7 @@
   - 조회(발신): `GET /api/practice/transfers/my`
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
+  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → 어벗츠 디자인 → 기공소 `confirm-abutment-design`(·치과 `confirm-production` 디자인 게이트) → 기일 내 발송. 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 「디자인 컨펌 생략」기본 ON
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
 - 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐

@@ -184,6 +184,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -262,6 +263,11 @@ type RecentRequestItem = {
   resultFiles?: TransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
+  skipDesignConfirm?: boolean;
+  designReadyAt?: string | null;
+  designFileCount?: number;
+  practiceDesignConfirmedAt?: string | null;
+  labDesignConfirmedAt?: string | null;
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   isRemake?: boolean;
@@ -382,6 +388,11 @@ type RecentTransferItem = {
   resultFiles?: TransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
+  skipDesignConfirm?: boolean;
+  designReadyAt?: string | null;
+  designFileCount?: number;
+  practiceDesignConfirmedAt?: string | null;
+  labDesignConfirmedAt?: string | null;
   transferMemo: string;
   /** 메타 태그 포함 원본 메모 — 보철물 차트 파싱용 */
   rawTransferMemo?: string;
@@ -808,7 +819,7 @@ const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferM
     toothWorks: [],
     patientName: "",
     memo: source,
-    skipDesignConfirm: false,
+    skipDesignConfirm: true,
   };
   if (!source) return defaults;
 
@@ -825,7 +836,8 @@ const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferM
     toothWorks: normalizeToothWorksForSync(parsed.toothWorks),
     patientName: String(parsed.patientName || "").trim(),
     memo: String(parsed.memo || ""),
-    skipDesignConfirm: parsed.skipDesignConfirm === true,
+    // 미설정·레거시는 생략(true). 명시 false만 미생략
+    skipDesignConfirm: parsed.skipDesignConfirm !== false,
   };
 };
 
@@ -842,7 +854,7 @@ const buildPracticeTransferMemo = (params: {
   buildPracticeTransferMemoShared({
     ...params,
     prosthesisTypes: ensurePresetProsthesisTypes(params.prosthesisTypes),
-    skipDesignConfirm: params.skipDesignConfirm === true,
+    skipDesignConfirm: params.skipDesignConfirm !== false,
   });
 
 const normalizePatientNameKey = (value: string) => {
@@ -1018,7 +1030,8 @@ export const PracticeFileTransferPage = ({
   const [remakeConfirmOpen, setRemakeConfirmOpen] = useState(false);
   const [remakeBusy, setRemakeBusy] = useState(false);
   const [requestSubmitting, setRequestSubmitting] = useState(false);
-  const [skipDesignConfirm, setSkipDesignConfirm] = useState(false);
+  const [skipDesignConfirm, setSkipDesignConfirm] = useState(true);
+  const [skipDesignConfirmUncheckOpen, setSkipDesignConfirmUncheckOpen] = useState(false);
   const [autoMatchBudget, setAutoMatchBudget] =
     useState<PracticeTransferAutoMatchBudget | null>(null);
   const [autoMatchMinLabRating, setAutoMatchMinLabRating] = useState(1);
@@ -1444,7 +1457,7 @@ export const PracticeFileTransferPage = ({
     const nextMemoSnippets = normalizeMemoSnippets(payload.memoSnippets);
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
-    const nextSkipDesignConfirm = Boolean(payload.skipDesignConfirm);
+    const nextSkipDesignConfirm = payload.skipDesignConfirm !== false;
     const nextDefaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
       payload.defaultAbutmentProductMode,
     );
@@ -1529,7 +1542,7 @@ export const PracticeFileTransferPage = ({
         jsonBody.abutmentFavorites = normalizeAbutmentFavorites(params.abutmentFavorites || []);
       }
       if (hasSkipDesignConfirm) {
-        jsonBody.skipDesignConfirm = params.skipDesignConfirm === true;
+        jsonBody.skipDesignConfirm = params.skipDesignConfirm !== false;
       }
       if (hasDefaultAbutmentProductMode) {
         jsonBody.defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
@@ -1595,7 +1608,7 @@ export const PracticeFileTransferPage = ({
                 ? payload?.abutmentFavorites
                 : abutmentFavorites,
             ),
-            skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
+            skipDesignConfirm: payload?.skipDesignConfirm !== false,
             defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
               payload?.defaultAbutmentProductMode,
             ),
@@ -2023,7 +2036,7 @@ export const PracticeFileTransferPage = ({
       } else if (payload) {
         // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·커스텀어벗 기본모드·자동매칭 예산)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
-        setSkipDesignConfirm(Boolean(payload.skipDesignConfirm));
+        setSkipDesignConfirm(payload.skipDesignConfirm !== false);
         setDefaultAbutmentProductMode(
           normalizeAccountAbutmentProductMode(payload.defaultAbutmentProductMode),
         );
@@ -2058,7 +2071,7 @@ export const PracticeFileTransferPage = ({
             abutmentFavorites: normalizeAbutmentFavorites(
               Array.isArray(payload?.abutmentFavorites) ? payload?.abutmentFavorites : [],
             ),
-            skipDesignConfirm: Boolean(payload?.skipDesignConfirm),
+            skipDesignConfirm: payload?.skipDesignConfirm !== false,
             defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
               payload?.defaultAbutmentProductMode,
             ),
@@ -2219,6 +2232,17 @@ export const PracticeFileTransferPage = ({
             hasCustomAbutment: Boolean(r.hasCustomAbutment),
             productionConfirmedAt: productionRaw?.confirmedAt
               ? String(productionRaw.confirmedAt)
+              : null,
+            skipDesignConfirm: productionRaw?.skipDesignConfirm !== false,
+            designReadyAt: productionRaw?.designReadyAt
+              ? String(productionRaw.designReadyAt)
+              : null,
+            designFileCount: Number(productionRaw?.designFileCount || 0),
+            practiceDesignConfirmedAt: productionRaw?.practiceDesignConfirmedAt
+              ? String(productionRaw.practiceDesignConfirmedAt)
+              : null,
+            labDesignConfirmedAt: productionRaw?.labDesignConfirmedAt
+              ? String(productionRaw.labDesignConfirmedAt)
               : null,
             feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
             remakeFeeQuote: parsePracticeTransferFeeQuote(
@@ -3098,6 +3122,11 @@ export const PracticeFileTransferPage = ({
           resultFiles: Array.isArray(req.resultFiles) ? [...req.resultFiles] : [],
           hasCustomAbutment: Boolean(req.hasCustomAbutment),
           productionConfirmedAt: req.productionConfirmedAt || null,
+          skipDesignConfirm: req.skipDesignConfirm !== false,
+          designReadyAt: req.designReadyAt || null,
+          designFileCount: Number(req.designFileCount || 0),
+          practiceDesignConfirmedAt: req.practiceDesignConfirmedAt || null,
+          labDesignConfirmedAt: req.labDesignConfirmedAt || null,
           transferMemo: req.transferMemo,
           rawTransferMemo: req.rawTransferMemo,
           targetLabAnchorId: req.targetLabAnchorId,
@@ -3178,6 +3207,17 @@ export const PracticeFileTransferPage = ({
         existing.resultFiles = Array.from(byKey.values());
       }
       if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
+      if (req.skipDesignConfirm === false) existing.skipDesignConfirm = false;
+      if (req.designReadyAt) existing.designReadyAt = req.designReadyAt;
+      if (Number(req.designFileCount || 0) > Number(existing.designFileCount || 0)) {
+        existing.designFileCount = Number(req.designFileCount || 0);
+      }
+      if (req.practiceDesignConfirmedAt) {
+        existing.practiceDesignConfirmedAt = req.practiceDesignConfirmedAt;
+      }
+      if (req.labDesignConfirmedAt) {
+        existing.labDesignConfirmedAt = req.labDesignConfirmedAt;
+      }
       // 수락·청구 후 확정 feeQuote가 오면 예산 구간 견적을 덮어쓴다.
       if (req.feeQuote) {
         if (!existing.feeQuote || req.feeQuote.billed || !existing.feeQuote.billed) {
@@ -3961,13 +4001,23 @@ export const PracticeFileTransferPage = ({
         });
         return;
       }
+      const data =
+        res.data && typeof res.data === "object"
+          ? (res.data as Record<string, unknown>)
+          : {};
+      const mode = String(data.mode || "").trim();
+      const isDesignGate = mode === "abutment-design-gate";
       const confirmedAt = new Date().toISOString();
       setSelectedTransfer((prev) =>
         prev && prev.transferId === transferId
           ? {
               ...prev,
-              status: "생산진행",
-              productionConfirmedAt: confirmedAt,
+              ...(isDesignGate
+                ? { practiceDesignConfirmedAt: confirmedAt }
+                : {
+                    status: "생산진행",
+                    productionConfirmedAt: confirmedAt,
+                  }),
             }
           : prev,
       );
@@ -3976,17 +4026,23 @@ export const PracticeFileTransferPage = ({
           row.transferId === transferId
             ? {
                 ...row,
-                status: "생산진행",
-                productionConfirmedAt: confirmedAt,
+                ...(isDesignGate
+                  ? { practiceDesignConfirmedAt: confirmedAt }
+                  : {
+                      status: "생산진행",
+                      productionConfirmedAt: confirmedAt,
+                    }),
               }
             : row,
         ),
       );
       toast({
-        title: "생산 진행",
-        description: selectedTransfer.hasCustomAbutment
-          ? "생산을 확정했습니다. 커스텀 어벗은 어벗츠에 자동 의뢰됩니다."
-          : "생산을 확정했습니다. 기공소에서 생산을 진행합니다.",
+        title: isDesignGate ? "어벗 디자인 컨펌" : "생산 진행",
+        description: isDesignGate
+          ? data.abutmentProductionStarted
+            ? "디자인을 컨펌했습니다. 어벗츠 생산이 시작됩니다."
+            : "디자인을 컨펌했습니다. 기공소 확인 후 생산이 시작됩니다."
+          : "생산을 확정했습니다.",
       });
     } catch {
       toast({
@@ -5727,7 +5783,14 @@ export const PracticeFileTransferPage = ({
                     <Checkbox
                       id="practice-skip-design-confirm"
                       checked={skipDesignConfirm}
-                      onCheckedChange={(value) => persistSkipDesignConfirmSetting(value === true)}
+                      onCheckedChange={(value) => {
+                        if (value === true) {
+                          persistSkipDesignConfirmSetting(true);
+                          return;
+                        }
+                        // 해제 시 안내 모달 후 확인
+                        setSkipDesignConfirmUncheckOpen(true);
+                      }}
                       disabled={requestSubmitting}
                     />
                     <span>디자인 컨펌 생략</span>
@@ -5735,11 +5798,45 @@ export const PracticeFileTransferPage = ({
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
                   <p>
-                    기공소에서 작업 완료하여 디자인을 올리면 치과에서 확인해야 생산을
-                    시작합니다. 빠른 작업을 위해 치과측 컨펌을 생략합니다.
+                    커스텀어벗은 어벗츠가 디자인한 뒤 기공소가 확인하면 생산합니다.
+                    체크를 해제하면 치과도 디자인을 컨펌해야 생산이 시작되어 일정이
+                    늦어질 수 있습니다. 기본은 생략(체크)입니다.
                   </p>
                 </TooltipContent>
               </Tooltip>
+              <Dialog
+                open={skipDesignConfirmUncheckOpen}
+                onOpenChange={setSkipDesignConfirmUncheckOpen}
+              >
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>디자인 컨펌을 직접 하시겠어요?</DialogTitle>
+                    <DialogDescription className="leading-relaxed">
+                      생략을 해제하면 어벗츠 디자인 후 치과 컨펌을 기다려야 생산이
+                      시작됩니다. 기일이 촉박한 경우 지연될 수 있습니다. 꼭 확인이
+                      필요한 의뢰만 해제해 주세요.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setSkipDesignConfirmUncheckOpen(false)}
+                    >
+                      취소
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        persistSkipDesignConfirmSetting(false);
+                        setSkipDesignConfirmUncheckOpen(false);
+                      }}
+                    >
+                      컨펌 받기로 설정
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="inline-flex">
@@ -6471,9 +6568,35 @@ export const PracticeFileTransferPage = ({
             })) satisfies PracticeTransferDialogFileItem[]
           }
           showProductionConfirm={
-            String(selectedTransfer?.status || "").trim() === "작업완료" &&
-            !selectedTransfer?.productionConfirmedAt &&
-            Number(selectedTransfer?.resultFiles?.length || 0) > 0
+            (String(selectedTransfer?.status || "").trim() === "작업완료" &&
+              !selectedTransfer?.productionConfirmedAt &&
+              Number(selectedTransfer?.resultFiles?.length || 0) > 0) ||
+            Boolean(
+              selectedTransfer?.hasCustomAbutment &&
+                selectedTransfer?.skipDesignConfirm === false &&
+                (selectedTransfer?.designReadyAt ||
+                  Number(selectedTransfer?.designFileCount || 0) > 0) &&
+                !selectedTransfer?.practiceDesignConfirmedAt &&
+                String(selectedTransfer?.status || "").trim() !== "작업완료" &&
+                String(selectedTransfer?.status || "").trim() !== "생산진행" &&
+                String(selectedTransfer?.status || "").trim() !== "포장.발송",
+            )
+          }
+          productionConfirmTitle={
+            selectedTransfer?.hasCustomAbutment &&
+            selectedTransfer?.skipDesignConfirm === false &&
+            !selectedTransfer?.practiceDesignConfirmedAt &&
+            String(selectedTransfer?.status || "").trim() !== "작업완료"
+              ? "어벗츠 디자인을 확인한 뒤 컨펌하세요. 기공소 확인과 함께 생산이 시작됩니다."
+              : "작업 결과를 확인한 뒤 생산을 진행하세요."
+          }
+          productionConfirmButtonLabel={
+            selectedTransfer?.hasCustomAbutment &&
+            selectedTransfer?.skipDesignConfirm === false &&
+            !selectedTransfer?.practiceDesignConfirmedAt &&
+            String(selectedTransfer?.status || "").trim() !== "작업완료"
+              ? "어벗 디자인 컨펌"
+              : "생산 진행"
           }
           productionConfirmBusy={productionConfirmBusy}
           onConfirmProduction={() => void handleConfirmProduction()}

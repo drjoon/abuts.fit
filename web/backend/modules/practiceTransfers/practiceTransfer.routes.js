@@ -28,6 +28,7 @@ import {
   markReceivedPracticeTransferComplete,
   markReceivedPracticeTransferRelease,
   markReceivedPracticeTransferDownloaded,
+  confirmPracticeTransferAbutmentDesign,
   confirmPracticeTransferProduction,
   remakePracticeTransfers,
   restorePracticeTransfersBatch,
@@ -143,6 +144,13 @@ router.post(
   authenticate,
   receiveAuth,
   markReceivedPracticeTransferComplete,
+);
+
+router.post(
+  "/:transferId/confirm-abutment-design",
+  authenticate,
+  receiveAuth,
+  confirmPracticeTransferAbutmentDesign,
 );
 
 router.post(

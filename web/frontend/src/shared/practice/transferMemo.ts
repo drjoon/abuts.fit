@@ -1068,7 +1068,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
   let prosthesisTypes: string[] = [];
   let toothWorks: ToothWorkSelection[] = [];
   let patientName = "";
-  let skipDesignConfirm = false;
+  let skipDesignConfirm = true;
 
   for (const line of lines) {
     const trimmed = String(line || "").trim();
@@ -1170,7 +1170,7 @@ export const buildPracticeTransferMemo = (params: {
     `[환자명: ${String(params.patientName || "").trim()}]`,
     `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
     `[치아보철: ${serializeToothWorksForSync(params.toothWorks)}]`,
-    `[디자인컨펌생략: ${params.skipDesignConfirm === true ? "Y" : "N"}]`,
+    `[디자인컨펌생략: ${params.skipDesignConfirm !== false ? "Y" : "N"}]`,
   ];
   const memo = String(params.memo || "").trim();
   return memo ? `${lines.join("\n")}\n${memo}` : lines.join("\n");

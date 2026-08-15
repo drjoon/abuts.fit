@@ -191,7 +191,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     implantFavorites,
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
     promoNoticeDismissedAt,
-    skipDesignConfirm: Boolean(settings?.skipDesignConfirm),
+    skipDesignConfirm: settings?.skipDesignConfirm !== false,
     defaultAbutmentProductMode: normalizeDefaultAbutmentProductMode(
       settings?.defaultAbutmentProductMode,
     ),
@@ -316,8 +316,12 @@ export async function upsertPracticeTransferSettings(req, res) {
       }
     }
     if (hasSkipDesignConfirm) {
-      setPatch["practiceTransferSettings.skipDesignConfirm"] =
-        body.skipDesignConfirm === true || body.skipDesignConfirm === "true";
+      setPatch["practiceTransferSettings.skipDesignConfirm"] = !(
+        body.skipDesignConfirm === false ||
+        body.skipDesignConfirm === "false" ||
+        body.skipDesignConfirm === 0 ||
+        body.skipDesignConfirm === "0"
+      );
     }
     if (hasDefaultAbutmentProductMode) {
       setPatch["practiceTransferSettings.defaultAbutmentProductMode"] =

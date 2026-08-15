@@ -31,7 +31,7 @@ export type RequestorDashboardStat = {
   label: string;
   value: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** false면 클릭/포인터 비활성(기공 라인 placeholder 등) */
+  /** false면 클릭/포인터 비활성(상세 모달 미연동 카드 등) */
   interactive?: boolean;
 };
 

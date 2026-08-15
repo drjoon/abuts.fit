@@ -5,9 +5,11 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-15: Abuts-first — 수락 시 스캔(files)로 Request 생성, 기일 기준 스케줄, 디자인 컨펌 후 생산.
 // - 2026-08-13: 치아별 abutmentProductMode(생산만/디자인+생산)를 어벗츠 의뢰 productMode로 전달.
 import { Types } from "mongoose";
 import Request from "../models/request.model.js";
+import PracticeTransfer from "../models/practiceTransfer.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import {
@@ -26,6 +28,7 @@ import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 import { checkCreditLock } from "../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "./requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
+import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 
 const hasCustomAbutmentToothWorks = (toothWorks) =>
   (Array.isArray(toothWorks) ? toothWorks : []).some(
@@ -36,13 +39,6 @@ const listCustomAbutmentToothWorks = (toothWorks) =>
   (Array.isArray(toothWorks) ? toothWorks : []).filter(
     (row) => Boolean(row?.customAbutment) && String(row?.toothNumber || "").trim(),
   );
-
-const resolveAbutmentProductMode = (row) => {
-  const raw = String(row?.abutmentProductMode || row?.productMode || "").trim();
-  return raw === "design_custom_abutment"
-    ? "design_custom_abutment"
-    : "custom_abutment";
-};
 
 const normalizeResultFiles = (raw) => {
   const list = Array.isArray(raw) ? raw : [];
@@ -76,21 +72,28 @@ const parsePatientNameFromMemo = (memo) => {
   return String(matched?.[1] || "").trim();
 };
 
-const pickResultFileForTooth = (resultFiles, toothNumber, index) => {
+const parseArrivalYmdFromMemo = (memo) => {
+  const raw = String(memo || "").trim();
+  const matched = raw.match(/\[\s*도착일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]/i);
+  return String(matched?.[1] || "").trim() || null;
+};
+
+const pickFileForTooth = (files, toothNumber, index) => {
   const tooth = String(toothNumber || "").trim();
   if (tooth) {
-    const byTooth = resultFiles.find(
-      (f) => String(f?.tooth || "").trim() === tooth,
-    );
+    const byTooth = files.find((f) => String(f?.tooth || "").trim() === tooth);
     if (byTooth) return byTooth;
   }
-  if (resultFiles[index]) return resultFiles[index];
-  return resultFiles[0] || null;
+  if (files[index]) return files[index];
+  return files[0] || null;
 };
 
 const resolveLabRequestorUserId = async ({ transferDoc, fallbackUserId }) => {
   const completedBy = String(transferDoc?.autoMatch?.completedBy || "").trim();
   if (completedBy && Types.ObjectId.isValid(completedBy)) return completedBy;
+
+  const acceptedBy = String(transferDoc?.requestorDownloadedBy || "").trim();
+  if (acceptedBy && Types.ObjectId.isValid(acceptedBy)) return acceptedBy;
 
   const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
   if (labAnchorId && Types.ObjectId.isValid(labAnchorId)) {
@@ -109,23 +112,118 @@ const resolveLabRequestorUserId = async ({ transferDoc, fallbackUserId }) => {
   return null;
 };
 
+const ymdToUtcNoonMs = (ymd) => {
+  const m = String(ymd || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!y || !mo || !d) return null;
+  return Date.UTC(y, mo - 1, d, 12);
+};
+
 /**
- * 기공의뢰 생산 컨펌 시 커스텀어벗 → 어벗츠 생산의뢰 자동 생성.
- * requestor = 기공소, partnerBilling으로 치과 선결제/거래처 차감 연동.
+ * 치과 도착일(기일)에 맞추기 위한 shippingMode.
+ * 묶음요일이 있으면 normal 우선, 없으면 express. 기일 임박이면 express.
+ */
+export async function resolveShippingModeForPracticeTransferArrival({
+  transferDoc,
+  weeklyBatchDays = [],
+  requestedAt = new Date(),
+}) {
+  const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
+  const hasBatch = (Array.isArray(weeklyBatchDays) ? weeklyBatchDays : []).length > 0;
+  let preferred = hasBatch ? "normal" : "express";
+
+  if (arrivalYmd) {
+    try {
+      const expressSchedule = await calculateInitialProductionSchedule({
+        shippingMode: "express",
+        maxDiameter: 8,
+        requestedAt,
+        weeklyBatchDays: [],
+        productMode: "design_custom_abutment",
+      });
+      const expressPickupYmd = expressSchedule?.scheduledShipPickup
+        ? toKstYmd(expressSchedule.scheduledShipPickup)
+        : null;
+      const arrivalMs = ymdToUtcNoonMs(arrivalYmd);
+      const expressMs = expressPickupYmd ? ymdToUtcNoonMs(expressPickupYmd) : null;
+      if (arrivalMs != null && expressMs != null && arrivalMs <= expressMs) {
+        preferred = "express";
+      } else if (hasBatch) {
+        const normalSchedule = await calculateInitialProductionSchedule({
+          shippingMode: "normal",
+          maxDiameter: 8,
+          requestedAt,
+          weeklyBatchDays,
+          productMode: "design_custom_abutment",
+        });
+        const normalPickupYmd = normalSchedule?.scheduledShipPickup
+          ? toKstYmd(normalSchedule.scheduledShipPickup)
+          : null;
+        const normalMs = normalPickupYmd ? ymdToUtcNoonMs(normalPickupYmd) : null;
+        if (arrivalMs != null && normalMs != null && normalMs > arrivalMs) {
+          preferred = "express";
+        }
+      }
+    } catch {
+      // keep preferred
+    }
+  }
+
+  return resolveSelectableShippingMode({
+    shippingMode: preferred,
+    requestedAt,
+    weeklyBatchDays: preferred === "normal" ? weeklyBatchDays : [],
+    productMode: "design_custom_abutment",
+  });
+};
+
+const clampScheduleToArrival = async (productionSchedule, arrivalYmd) => {
+  if (!arrivalYmd || !productionSchedule) return productionSchedule;
+  const arrivalMs = ymdToUtcNoonMs(arrivalYmd);
+  if (arrivalMs == null) return productionSchedule;
+  const next = { ...productionSchedule };
+  const pickup = next.scheduledShipPickup
+    ? new Date(next.scheduledShipPickup)
+    : null;
+  if (pickup && !Number.isNaN(pickup.getTime()) && pickup.getTime() > arrivalMs) {
+    next.scheduledShipPickup = new Date(arrivalMs);
+  }
+  return next;
+};
+
+/**
+ * 기공소 수락 시 커스텀어벗 → 어벗츠 디자인+생산 의뢰 생성.
+ * 소스 파일 = PTX 구강스캔(files). productMode 고정 design_custom_abutment.
  */
 export async function createAbutmentRequestsFromPracticeTransfer({
   transferDoc,
-  shippingMode: shippingModeRaw,
+  shippingMode: shippingModeRaw = null,
   actorUserId = null,
 }) {
   const customRows = listCustomAbutmentToothWorks(transferDoc?.toothWorks);
   if (customRows.length === 0) {
-    return { created: [], skippedReason: "no_custom_abutment" };
+    return { created: [], skippedReason: "no_custom_abutment", requestIds: [] };
   }
 
-  const resultFiles = normalizeResultFiles(transferDoc?.resultFiles);
-  if (resultFiles.length === 0) {
-    throw new Error("작업 결과 파일이 없어 어벗츠 의뢰를 생성할 수 없습니다.");
+  const existingIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
+    ? transferDoc.production.relatedRequestIds
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+    : [];
+  if (existingIds.length > 0) {
+    return {
+      created: [],
+      skippedReason: "already_created",
+      requestIds: existingIds,
+    };
+  }
+
+  const scanFiles = normalizeResultFiles(transferDoc?.files);
+  if (scanFiles.length === 0) {
+    throw new Error("구강스캔 파일이 없어 어벗츠 의뢰를 생성할 수 없습니다.");
   }
 
   const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
@@ -158,14 +256,20 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       ? labOrg.requestSettings.anodizingEnabled
       : true;
 
-  const requestedShippingMode =
-    shippingModeRaw === "express" ? "express" : "normal";
-
-  if (requestedShippingMode === "normal" && weeklyBatchDays.length === 0) {
-    throw new Error(
-      "묶음 배송을 쓰려면 기공소 설정 > 배송에서 묶음 요일을 먼저 지정해주세요.",
-    );
-  }
+  const requestedAt = new Date();
+  const shippingMode =
+    shippingModeRaw === "express" || shippingModeRaw === "normal"
+      ? await resolveSelectableShippingMode({
+          shippingMode: shippingModeRaw,
+          requestedAt,
+          weeklyBatchDays: shippingModeRaw === "normal" ? weeklyBatchDays : [],
+          productMode: "design_custom_abutment",
+        })
+      : await resolveShippingModeForPracticeTransferArrival({
+          transferDoc,
+          weeklyBatchDays,
+          requestedAt,
+        });
 
   const labUserId = await resolveLabRequestorUserId({
     transferDoc,
@@ -186,8 +290,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     "치과";
   const patientNameFallback =
     parsePatientNameFromMemo(transferDoc?.transferMemo) ||
-    String(resultFiles[0]?.patientName || "").trim() ||
+    String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
+  const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
 
   const billing =
     transferDoc?.billing && typeof transferDoc.billing === "object"
@@ -223,18 +328,17 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   const manufacturerSettings = await getManufacturerLeadTimesUtil();
   const leadTimes = manufacturerSettings?.leadTimes || {};
   const created = [];
-  const requestedAt = new Date();
 
   for (let i = 0; i < customRows.length; i += 1) {
     const row = customRows[i];
     const tooth = String(row.toothNumber || "").trim();
-    const resultFile = pickResultFileForTooth(resultFiles, tooth, i);
-    if (!resultFile?.file?.s3Key) {
-      throw new Error(`치아 #${tooth} 작업 결과 파일을 찾지 못했습니다.`);
+    const scanFile = pickFileForTooth(scanFiles, tooth, i);
+    if (!scanFile?.file?.s3Key) {
+      throw new Error(`치아 #${tooth} 구강스캔 파일을 찾지 못했습니다.`);
     }
 
     const patientName =
-      String(resultFile.patientName || "").trim() || patientNameFallback;
+      String(scanFile.patientName || "").trim() || patientNameFallback;
     const implantManufacturer = String(row.implantManufacturer || "").trim();
     const implantBrand = String(row.implantBrand || "").trim();
     const implantFamily = String(row.implantFamily || "").trim();
@@ -245,13 +349,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       );
     }
 
-    const productMode = resolveAbutmentProductMode(row);
-    const shippingMode = await resolveSelectableShippingMode({
-      shippingMode: requestedShippingMode,
-      requestedAt,
-      weeklyBatchDays,
-      productMode,
-    });
+    // Abuts-first: 항상 디자인+생산
+    const productMode = "design_custom_abutment";
 
     const diameterRaw = String(row.abutmentDiameter || "").trim();
     const diameterNum = Number(diameterRaw.replace(/[^\d.]/g, ""));
@@ -274,10 +373,10 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       maxDiameter,
       anodizingEnabled,
       file: {
-        originalName: resultFile.file.originalName,
-        mimetype: resultFile.file.mimetype,
-        size: resultFile.file.size,
-        s3Key: resultFile.file.s3Key,
+        originalName: scanFile.file.originalName,
+        mimetype: scanFile.file.mimetype,
+        size: scanFile.file.size,
+        s3Key: scanFile.file.s3Key,
       },
       toothWorks: [row],
     };
@@ -301,20 +400,21 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       designFeePerTooth,
     });
 
-    const productionSchedule = await calculateInitialProductionSchedule({
+    let productionSchedule = await calculateInitialProductionSchedule({
       shippingMode,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt,
       weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
       productMode,
     });
+    productionSchedule = await clampScheduleToArrival(productionSchedule, arrivalYmd);
 
     const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
     const pickupYmd = productionSchedule?.scheduledShipPickup
       ? toKstYmd(productionSchedule.scheduledShipPickup)
       : null;
 
-    let estimatedShipYmdRaw = pickupYmd;
+    let estimatedShipYmdRaw = pickupYmd || arrivalYmd;
     if (!estimatedShipYmdRaw) {
       const d =
         typeof normalizedCaseInfos?.maxDiameter === "number" &&
@@ -331,6 +431,14 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         startYmd: createdYmd,
         days: Math.max(1, leadDays),
       });
+    }
+
+    if (arrivalYmd) {
+      const arrivalMs = ymdToUtcNoonMs(arrivalYmd);
+      const estMs = ymdToUtcNoonMs(estimatedShipYmdRaw);
+      if (arrivalMs != null && estMs != null && estMs > arrivalMs) {
+        estimatedShipYmdRaw = arrivalYmd;
+      }
     }
 
     const estimatedShipYmd = await normalizeKoreanBusinessDay({
@@ -390,11 +498,213 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     created,
     skippedReason: null,
     requestIds: created.map((doc) => String(doc._id)),
+    shippingMode,
   };
+}
+
+/**
+ * CA 포함이면 Request 생성(이미 있으면 no-op) 후 production.relatedRequestIds·shippingMode 갱신.
+ */
+export async function ensureAbutmentRequestsOnAccept({
+  transferDoc,
+  actorUserId = null,
+}) {
+  if (!hasCustomAbutmentToothWorks(transferDoc?.toothWorks)) {
+    return { created: false, requestIds: [], shippingMode: null };
+  }
+
+  const result = await createAbutmentRequestsFromPracticeTransfer({
+    transferDoc,
+    actorUserId,
+  });
+  const requestIds = Array.isArray(result.requestIds) ? result.requestIds : [];
+  const shippingMode = result.shippingMode || transferDoc?.production?.shippingMode || null;
+
+  const oidList = requestIds
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+
+  transferDoc.production = {
+    ...(transferDoc.production && typeof transferDoc.production === "object"
+      ? transferDoc.production
+      : {}),
+    relatedRequestIds: oidList,
+    ...(shippingMode ? { shippingMode } : {}),
+  };
+  await PracticeTransfer.updateOne(
+    { _id: transferDoc._id },
+    {
+      $set: {
+        "production.relatedRequestIds": oidList,
+        ...(shippingMode ? { "production.shippingMode": shippingMode } : {}),
+      },
+    },
+  );
+
+  return {
+    created: result.skippedReason !== "already_created" && requestIds.length > 0,
+    requestIds,
+    shippingMode,
+  };
+}
+
+export function isAbutmentDesignReady(transferDoc) {
+  const files = normalizeResultFiles(transferDoc?.production?.designFiles);
+  return files.length > 0 || Boolean(transferDoc?.production?.designReadyAt);
+}
+
+export function canStartAbutmentProduction(transferDoc) {
+  if (!isAbutmentDesignReady(transferDoc)) return false;
+  if (!transferDoc?.production?.labDesignConfirmedAt) return false;
+  const skip = transferDoc?.production?.skipDesignConfirm !== false;
+  if (skip) return true;
+  return Boolean(
+    transferDoc?.production?.practiceDesignConfirmedAt ||
+      transferDoc?.production?.confirmedAt,
+  );
+}
+
+const invokeMachiningApproval = (requestId, actorUserId) =>
+  new Promise((resolve, reject) => {
+    const fakeReq = {
+      params: { id: String(requestId) },
+      user: {
+        role: "admin",
+        _id: actorUserId || undefined,
+      },
+      body: {
+        status: "APPROVED",
+        stage: "machining",
+        nextUpCamRunGuard: true,
+        forceReprocess: false,
+        approvalTriggerSource: "practice-transfer-design-confirm",
+      },
+      __designPartner: false,
+    };
+    const fakeRes = {
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        if ((this.statusCode || 200) >= 400) {
+          reject(
+            Object.assign(new Error(payload?.message || "가공 진입 실패"), {
+              statusCode: this.statusCode,
+              payload,
+            }),
+          );
+        } else {
+          resolve(payload);
+        }
+        return this;
+      },
+    };
+    Promise.resolve(updateReviewStatusByStage(fakeReq, fakeRes)).catch(reject);
+  });
+
+/**
+ * 디자인 컨펌 게이트 충족 시 연결 Request를 가공(생산) 단계로 진입.
+ */
+export async function tryStartAbutmentProduction({
+  transferDoc,
+  actorUserId = null,
+}) {
+  if (!canStartAbutmentProduction(transferDoc)) {
+    return { started: false, reason: "gates_not_met" };
+  }
+  if (transferDoc?.production?.abutmentProductionStartedAt) {
+    return { started: false, reason: "already_started" };
+  }
+
+  const requestIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
+    ? transferDoc.production.relatedRequestIds.map((id) => String(id || "").trim())
+    : [];
+  if (requestIds.length === 0) {
+    return { started: false, reason: "no_requests" };
+  }
+
+  const startedIds = [];
+  for (const requestId of requestIds) {
+    if (!Types.ObjectId.isValid(requestId)) continue;
+    const reqDoc = await Request.findById(requestId).select({
+      manufacturerStage: 1,
+      designCompletedAt: 1,
+      "caseInfos.file": 1,
+    });
+    if (!reqDoc) continue;
+    const stage = String(reqDoc.manufacturerStage || "").trim();
+    if (stage !== "준비") {
+      startedIds.push(requestId);
+      continue;
+    }
+    if (!reqDoc.designCompletedAt && !reqDoc.caseInfos?.file?.s3Key) {
+      continue;
+    }
+    await invokeMachiningApproval(requestId, actorUserId);
+    startedIds.push(requestId);
+  }
+
+  if (startedIds.length === 0) {
+    return { started: false, reason: "no_ready_requests" };
+  }
+
+  const now = new Date();
+  transferDoc.production = {
+    ...(transferDoc.production && typeof transferDoc.production === "object"
+      ? transferDoc.production
+      : {}),
+    abutmentProductionStartedAt: now,
+  };
+  await PracticeTransfer.updateOne(
+    { _id: transferDoc._id },
+    { $set: { "production.abutmentProductionStartedAt": now } },
+  );
+
+  return { started: true, requestIds: startedIds };
+}
+
+/**
+ * design-handoff 후 PTX에 디자인 파일 미러 (가공 진입은 컨펌 후).
+ */
+export async function mirrorDesignFileToPracticeTransfer({
+  transferId,
+  file,
+  tooth = "",
+  patientName = "",
+}) {
+  if (!transferId || !Types.ObjectId.isValid(String(transferId))) {
+    return null;
+  }
+  const normalized = normalizeResultFiles([
+    {
+      patientName,
+      tooth,
+      file,
+    },
+  ]);
+  if (normalized.length === 0) return null;
+
+  const now = new Date();
+  const doc = await PracticeTransfer.findByIdAndUpdate(
+    transferId,
+    {
+      $set: {
+        "production.designReadyAt": now,
+      },
+      $push: {
+        "production.designFiles": { $each: normalized },
+      },
+    },
+    { new: true },
+  );
+  return doc;
 }
 
 export {
   hasCustomAbutmentToothWorks,
   listCustomAbutmentToothWorks,
   normalizeResultFiles,
+  parseArrivalYmdFromMemo,
+  pickFileForTooth,
 };

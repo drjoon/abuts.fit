@@ -84,16 +84,6 @@ import {
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -180,6 +170,12 @@ type ReceivedPracticeTransfer = {
   production?: {
     shippingMode?: "normal" | "express" | null;
     skipDesignConfirm?: boolean;
+    designReadyAt?: string | null;
+    designFileCount?: number;
+    designFiles?: ReceivedPracticeFile[];
+    labDesignConfirmedAt?: string | null;
+    practiceDesignConfirmedAt?: string | null;
+    abutmentProductionStartedAt?: string | null;
     confirmedAt?: string | null;
     relatedRequestIds?: string[];
   } | null;
@@ -455,13 +451,7 @@ function RequestorPracticeReceivePage({
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
-  const [completePrompt, setCompletePrompt] = useState<{
-    transfer: ReceivedPracticeTransfer;
-    files: File[];
-  } | null>(null);
-  const [completeShippingMode, setCompleteShippingMode] = useState<"normal" | "express">(
-    "normal",
-  );
+  const [designConfirmBusyId, setDesignConfirmBusyId] = useState<string>("");
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -637,7 +627,39 @@ function RequestorPracticeReceivePage({
                   : productionRaw.shippingMode === "normal"
                     ? ("normal" as const)
                     : null,
-              skipDesignConfirm: Boolean(productionRaw.skipDesignConfirm),
+              skipDesignConfirm: productionRaw.skipDesignConfirm !== false,
+              designReadyAt: productionRaw.designReadyAt
+                ? String(productionRaw.designReadyAt)
+                : null,
+              designFileCount: Number(productionRaw.designFileCount || 0),
+              designFiles: Array.isArray(productionRaw.designFiles)
+                ? (productionRaw.designFiles as unknown[])
+                    .map((row, idx) => {
+                      if (!row || typeof row !== "object") return null;
+                      const f = row as Record<string, unknown>;
+                      const s3Key = String(f.s3Key || "").trim();
+                      if (!s3Key) return null;
+                      return {
+                        id: String(f.id || `design-${idx + 1}`),
+                        patientName: String(f.patientName || "").trim(),
+                        tooth: String(f.tooth || "").trim(),
+                        originalName: String(f.originalName || "").trim(),
+                        mimetype: String(f.mimetype || "application/octet-stream").trim(),
+                        size: Number(f.size || 0),
+                        s3Key,
+                      };
+                    })
+                    .filter(Boolean) as ReceivedPracticeFile[]
+                : [],
+              labDesignConfirmedAt: productionRaw.labDesignConfirmedAt
+                ? String(productionRaw.labDesignConfirmedAt)
+                : null,
+              practiceDesignConfirmedAt: productionRaw.practiceDesignConfirmedAt
+                ? String(productionRaw.practiceDesignConfirmedAt)
+                : null,
+              abutmentProductionStartedAt: productionRaw.abutmentProductionStartedAt
+                ? String(productionRaw.abutmentProductionStartedAt)
+                : null,
               confirmedAt: productionRaw.confirmedAt
                 ? String(productionRaw.confirmedAt)
                 : null,
@@ -1379,7 +1401,6 @@ function RequestorPracticeReceivePage({
       transfer: ReceivedPracticeTransfer,
       options: {
         files: File[];
-        shippingMode?: "normal" | "express" | null;
       },
     ) => {
       if (!token) return false;
@@ -1389,18 +1410,7 @@ function RequestorPracticeReceivePage({
       if (files.length === 0) {
         toast({
           title: "결과 파일 필요",
-          description: "작업 완료하려면 결과 파일을 선택해주세요.",
-          variant: "destructive",
-        });
-        return false;
-      }
-
-      const needsShipping = transferHasCustomAbutment(transfer);
-      const shippingMode = options.shippingMode || null;
-      if (needsShipping && shippingMode !== "normal" && shippingMode !== "express") {
-        toast({
-          title: "배송설정 필요",
-          description: "커스텀 어벗먼트가 포함되어 일반/신속 배송을 선택해주세요.",
+          description: "작업 완료하려면 크라운 결과 파일을 선택해주세요.",
           variant: "destructive",
         });
         return false;
@@ -1436,7 +1446,6 @@ function RequestorPracticeReceivePage({
           token,
           body: {
             resultFiles,
-            ...(shippingMode ? { shippingMode } : {}),
           },
         });
         if (!res.ok) {
@@ -1512,19 +1521,38 @@ function RequestorPracticeReceivePage({
             : "작업완료";
         const productionPatch = {
           shippingMode:
-            shippingMode ||
-            (productionRawFromRes?.shippingMode === "express"
+            productionRawFromRes?.shippingMode === "express"
               ? ("express" as const)
-              : shippingMode === "normal" || productionRawFromRes?.shippingMode === "normal"
+              : productionRawFromRes?.shippingMode === "normal"
                 ? ("normal" as const)
-                : null),
-          skipDesignConfirm: Boolean(
-            productionRawFromRes?.skipDesignConfirm ?? transfer.production?.skipDesignConfirm,
+                : transfer.production?.shippingMode || null,
+          skipDesignConfirm:
+            productionRawFromRes?.skipDesignConfirm !== false &&
+            transfer.production?.skipDesignConfirm !== false,
+          designReadyAt: productionRawFromRes?.designReadyAt
+            ? String(productionRawFromRes.designReadyAt)
+            : transfer.production?.designReadyAt || null,
+          designFileCount: Number(
+            productionRawFromRes?.designFileCount ??
+              transfer.production?.designFileCount ??
+              0,
           ),
+          designFiles: Array.isArray(productionRawFromRes?.designFiles)
+            ? (transfer.production?.designFiles || [])
+            : transfer.production?.designFiles || [],
+          labDesignConfirmedAt: productionRawFromRes?.labDesignConfirmedAt
+            ? String(productionRawFromRes.labDesignConfirmedAt)
+            : transfer.production?.labDesignConfirmedAt || null,
+          practiceDesignConfirmedAt: productionRawFromRes?.practiceDesignConfirmedAt
+            ? String(productionRawFromRes.practiceDesignConfirmedAt)
+            : transfer.production?.practiceDesignConfirmedAt || null,
+          abutmentProductionStartedAt: productionRawFromRes?.abutmentProductionStartedAt
+            ? String(productionRawFromRes.abutmentProductionStartedAt)
+            : transfer.production?.abutmentProductionStartedAt || null,
           confirmedAt: autoConfirmedAt,
           relatedRequestIds: Array.isArray(productionRawFromRes?.relatedRequestIds)
             ? productionRawFromRes.relatedRequestIds.map((id) => String(id))
-            : [],
+            : transfer.production?.relatedRequestIds || [],
         };
 
         setTransfers((prev) =>
@@ -1558,10 +1586,8 @@ function RequestorPracticeReceivePage({
         toast({
           title: "작업 완료",
           description: autoConfirmedAt
-            ? "결과 파일을 올렸습니다. 치과가 디자인 컨펌을 생략해 생산이 자동 진행되었습니다."
-            : needsShipping
-              ? "결과 파일을 올렸습니다. 치과 생산 진행 컨펌 후 어벗츠 의뢰가 생성됩니다."
-              : "결과 파일을 올렸습니다. 치과에서 생산 진행을 컨펌하면 됩니다.",
+            ? "크라운 결과 파일을 올렸습니다. 생산이 자동 진행되었습니다."
+            : "크라운 결과 파일을 올렸습니다. 치과에서 생산 진행을 컨펌하면 됩니다.",
         });
         return true;
       } catch {
@@ -1580,13 +1606,6 @@ function RequestorPracticeReceivePage({
     (transfer: ReceivedPracticeTransfer, files: File[]) => {
       const nextFiles = Array.from(files || []).filter(Boolean);
       if (!nextFiles.length) return;
-      if (transferHasCustomAbutment(transfer)) {
-        setCompleteShippingMode(
-          transfer.production?.shippingMode === "express" ? "express" : "normal",
-        );
-        setCompletePrompt({ transfer, files: nextFiles });
-        return;
-      }
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id || cardActionBusyId) return;
       setCardActionBusyId(id);
@@ -1601,22 +1620,104 @@ function RequestorPracticeReceivePage({
     [cardActionBusyId, markTransferComplete],
   );
 
-  const handleConfirmCompletePrompt = useCallback(async () => {
-    if (!completePrompt || cardActionBusyId) return;
-    const { transfer, files } = completePrompt;
-    const id = String(transfer.transferId || transfer._id || "").trim();
-    if (!id) return;
-    setCardActionBusyId(id);
-    try {
-      const ok = await markTransferComplete(transfer, {
-        files,
-        shippingMode: completeShippingMode,
-      });
-      if (ok) setCompletePrompt(null);
-    } finally {
-      setCardActionBusyId("");
-    }
-  }, [cardActionBusyId, completePrompt, completeShippingMode, markTransferComplete]);
+  const confirmAbutmentDesign = useCallback(
+    async (transfer: ReceivedPracticeTransfer) => {
+      if (!token) return false;
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || designConfirmBusyId) return false;
+      setDesignConfirmBusyId(id);
+      try {
+        const res = await apiFetch<{
+          production?: ReceivedPracticeTransfer["production"];
+          abutmentProductionStarted?: boolean;
+          awaitingPracticeDesignConfirm?: boolean;
+        }>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/confirm-abutment-design`,
+          method: "POST",
+          token,
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "디자인 확인 실패",
+            description: String(body.message || "어벗 디자인 확인 중 오류가 발생했습니다."),
+            variant: "destructive",
+          });
+          return false;
+        }
+        const data =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const productionRaw =
+          data.production && typeof data.production === "object"
+            ? (data.production as Record<string, unknown>)
+            : null;
+        const productionPatch: ReceivedPracticeTransfer["production"] = productionRaw
+          ? {
+              ...transfer.production,
+              skipDesignConfirm: productionRaw.skipDesignConfirm !== false,
+              labDesignConfirmedAt: productionRaw.labDesignConfirmedAt
+                ? String(productionRaw.labDesignConfirmedAt)
+                : new Date().toISOString(),
+              practiceDesignConfirmedAt: productionRaw.practiceDesignConfirmedAt
+                ? String(productionRaw.practiceDesignConfirmedAt)
+                : transfer.production?.practiceDesignConfirmedAt || null,
+              abutmentProductionStartedAt: productionRaw.abutmentProductionStartedAt
+                ? String(productionRaw.abutmentProductionStartedAt)
+                : transfer.production?.abutmentProductionStartedAt || null,
+              designReadyAt: productionRaw.designReadyAt
+                ? String(productionRaw.designReadyAt)
+                : transfer.production?.designReadyAt || null,
+              designFileCount: Number(
+                productionRaw.designFileCount ?? transfer.production?.designFileCount ?? 0,
+              ),
+              designFiles: transfer.production?.designFiles || [],
+            }
+          : {
+              ...transfer.production,
+              labDesignConfirmedAt: new Date().toISOString(),
+            };
+
+        setTransfers((prev) =>
+          prev.map((row) =>
+            row._id === transfer._id || row.transferId === transfer.transferId
+              ? { ...row, production: productionPatch }
+              : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev &&
+          (prev._id === transfer._id || prev.transferId === transfer.transferId)
+            ? { ...prev, production: productionPatch }
+            : prev,
+        );
+
+        toast({
+          title: "어벗 디자인 확인",
+          description: data.abutmentProductionStarted
+            ? "디자인을 확인했습니다. 어벗츠 생산이 시작됩니다."
+            : data.awaitingPracticeDesignConfirm
+              ? "디자인을 확인했습니다. 치과 컨펌 후 생산이 시작됩니다."
+              : "디자인을 확인했습니다.",
+        });
+        return true;
+      } catch {
+        toast({
+          title: "디자인 확인 실패",
+          description: "어벗 디자인 확인 요청 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      } finally {
+        setDesignConfirmBusyId("");
+      }
+    },
+    [designConfirmBusyId, toast, token],
+  );
 
   const markTransferRelease = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -1878,6 +1979,9 @@ function RequestorPracticeReceivePage({
   const handleDownloadAllFiles = useCallback(async () => {
     const files = [
       ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
+      ...(Array.isArray(selectedTransfer?.production?.designFiles)
+        ? selectedTransfer.production.designFiles
+        : []),
       ...(Array.isArray(selectedTransfer?.resultFiles)
         ? selectedTransfer.resultFiles
         : []),
@@ -2194,6 +2298,10 @@ function RequestorPracticeReceivePage({
 
                 <p className="mt-2 text-xs text-muted-foreground truncate">
                   파일 {transfer.fileCount}개
+                  {Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0) >
+                  0
+                    ? ` · 어벗디자인 ${Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0)}개`
+                    : ""}
                   {resultCount > 0 ? ` · 결과 ${resultCount}개` : ""}
                   {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
                   {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
@@ -2214,8 +2322,45 @@ function RequestorPracticeReceivePage({
                   />
                 ) : null}
 
+                {showWorkActions &&
+                transferHasCustomAbutment(transfer) &&
+                Number(transfer.production?.designFileCount || transfer.production?.designFiles?.length || 0) >
+                  0 &&
+                !transfer.production?.labDesignConfirmedAt ? (
+                  <div className="mt-2 rounded-md border border-dashed border-primary/40 bg-primary-soft/40 px-3 py-2 text-xs text-primary-strong">
+                    어벗츠 디자인이 도착했습니다. 확인 후 크라운 작업을 진행하세요.
+                    {!transfer.production?.abutmentProductionStartedAt
+                      ? " 「어벗 디자인 확인」을 누르면 생산이 시작됩니다."
+                      : ""}
+                  </div>
+                ) : null}
+
                 {showWorkActions ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {transferHasCustomAbutment(transfer) &&
+                    Number(
+                      transfer.production?.designFileCount ||
+                        transfer.production?.designFiles?.length ||
+                        0,
+                    ) > 0 &&
+                    !transfer.production?.labDesignConfirmedAt ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={
+                          Boolean(designConfirmBusyId) && designConfirmBusyId === cardId
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void confirmAbutmentDesign(transfer);
+                        }}
+                      >
+                        {designConfirmBusyId === cardId
+                          ? "확인 중..."
+                          : "어벗 디자인 확인"}
+                      </Button>
+                    ) : null}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -2230,7 +2375,8 @@ function RequestorPracticeReceivePage({
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs text-xs">
-                        {PRACTICE_ACCEPTED_HINT}
+                        크라운 결과 파일을 올려 작업완료합니다.
+                        {PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""}
                       </TooltipContent>
                     </Tooltip>
                     <Button
@@ -2359,60 +2505,6 @@ function RequestorPracticeReceivePage({
 
       {showTransfers ? (
       <>
-      <Dialog
-        open={Boolean(completePrompt)}
-        onOpenChange={(open) => {
-          if (!open && !cardActionBusyId) setCompletePrompt(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>배송설정 후 작업완료</DialogTitle>
-            <DialogDescription>
-              커스텀 어벗먼트가 포함되어 있습니다. 치과가 생산 진행을 컨펌하면 선택한
-              배송으로 어벗츠에 자동 의뢰됩니다.
-            </DialogDescription>
-          </DialogHeader>
-          <RadioGroup
-            value={completeShippingMode}
-            onValueChange={(value) =>
-              setCompleteShippingMode(value === "express" ? "express" : "normal")
-            }
-            className="gap-3"
-          >
-            <div className="flex items-center space-x-2 rounded-md border p-3">
-              <RadioGroupItem value="normal" id="complete-ship-normal" />
-              <Label htmlFor="complete-ship-normal" className="cursor-pointer">
-                일반(묶음) 배송
-              </Label>
-            </div>
-            <div className="flex items-center space-x-2 rounded-md border p-3">
-              <RadioGroupItem value="express" id="complete-ship-express" />
-              <Label htmlFor="complete-ship-express" className="cursor-pointer">
-                신속 배송
-              </Label>
-            </div>
-          </RadioGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={Boolean(cardActionBusyId)}
-              onClick={() => setCompletePrompt(null)}
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              disabled={Boolean(cardActionBusyId)}
-              onClick={() => void handleConfirmCompletePrompt()}
-            >
-              {cardActionBusyId ? "처리 중..." : "작업완료"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <PracticeTransferDetailChatDialog
         open={dialogOpen}
         onOpenChange={(open) => {
@@ -2470,6 +2562,10 @@ function RequestorPracticeReceivePage({
           { label: "주문일", value: selectedTransfer?.orderDate || "-" },
           { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
           {
+            label: "어벗디자인",
+            value: `${Number(selectedTransfer?.production?.designFileCount || selectedTransfer?.production?.designFiles?.length || 0)}개`,
+          },
+          {
             label: "결과파일",
             value: `${Number(selectedTransfer?.resultFileCount || selectedTransfer?.resultFiles?.length || 0)}개`,
           },
@@ -2479,14 +2575,22 @@ function RequestorPracticeReceivePage({
         toothWorksKey={selectedTransfer?.transferId || "requestor-transfer"}
         feeQuote={selectedTransfer?.feeQuote || null}
         feeViewer="lab"
-        filesLabel="의뢰 파일"
+        filesLabel="의뢰·어벗 디자인 파일"
         files={
-          (selectedTransfer?.files || []).map((file) => ({
-            id: file.id,
-            fileName: file.originalName,
-            size: Number(file.size || 0),
-            s3Key: String(file.s3Key || "").trim(),
-          })) satisfies PracticeTransferDialogFileItem[]
+          [
+            ...(selectedTransfer?.files || []).map((file) => ({
+              id: file.id,
+              fileName: file.originalName,
+              size: Number(file.size || 0),
+              s3Key: String(file.s3Key || "").trim(),
+            })),
+            ...(selectedTransfer?.production?.designFiles || []).map((file) => ({
+              id: file.id,
+              fileName: `[어벗디자인] ${file.originalName}`,
+              size: Number(file.size || 0),
+              s3Key: String(file.s3Key || "").trim(),
+            })),
+          ] satisfies PracticeTransferDialogFileItem[]
         }
         resultFilesLabel="작업 결과 파일"
         resultFiles={

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: PTX 연동 의뢰는 디자인 STL만 저장·미러하고 가공 진입은 기공소/치과 컨펌 후.
 // - 2026-08-10: 디자인 완료 어벗 STL 업로드 → 동일 Request 제조사 가공 핸드오프.
 // related files:
 // - web/backend/utils/designClaim.js
@@ -7,11 +8,18 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/middlewares/auth.middleware.js
+// - web/backend/services/practiceTransferProduction.service.js
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { updateReviewStatusByStage } from "./common.review.controller.js";
+import {
+  canStartAbutmentProduction,
+  mirrorDesignFileToPracticeTransfer,
+  tryStartAbutmentProduction,
+} from "../../services/practiceTransferProduction.service.js";
 
 const toStoredFileMeta = (raw) => {
   if (!raw || typeof raw !== "object") return null;
@@ -31,7 +39,9 @@ const toStoredFileMeta = (raw) => {
 
 /**
  * POST /api/requests/:id/design-handoff
- * 완성 어벗 STL을 생산 primary로 교체한 뒤 제조사 가공 진입(기존 review-status 경로 재사용).
+ * 완성 어벗 STL을 primary로 교체.
+ * PTX 연동: 미러만 하고 가공 진입은 confirm-abutment-design 후.
+ * 비PTX: 기존처럼 제조사 가공 핸드오프.
  */
 export async function handoffDesignToProduction(req, res) {
   try {
@@ -146,7 +156,53 @@ export async function handoffDesignToProduction(req, res) {
 
     await request.save();
 
-    // 제조사 준비→가공 진입 SSOT 재사용
+    const relatedTransferId = request?.partnerBilling?.relatedPracticeTransferId
+      ? String(request.partnerBilling.relatedPracticeTransferId)
+      : "";
+
+    // PTX Abuts-first: 디자인 미러만. 가공은 기공소(·치과) 컨펌 후.
+    if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
+      await mirrorDesignFileToPracticeTransfer({
+        transferId: relatedTransferId,
+        file: {
+          originalName: nextPrimary.originalName,
+          mimetype: nextPrimary.fileType,
+          size: nextPrimary.fileSize,
+          s3Key: nextPrimary.s3Key,
+        },
+        tooth: String(request?.caseInfos?.tooth || "").trim(),
+        patientName: String(request?.caseInfos?.patientName || "").trim(),
+      });
+
+      const transferDoc = await PracticeTransfer.findById(relatedTransferId);
+      let productionStarted = false;
+      if (transferDoc && canStartAbutmentProduction(transferDoc)) {
+        try {
+          const start = await tryStartAbutmentProduction({
+            transferDoc,
+            actorUserId: userId,
+          });
+          productionStarted = Boolean(start?.started);
+        } catch {
+          productionStarted = false;
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: productionStarted
+          ? "디자인 업로드 및 생산이 시작되었습니다."
+          : "디자인 파일이 기공소에 전달되었습니다. 기공소(필요 시 치과) 컨펌 후 생산이 시작됩니다.",
+        data: {
+          requestId: String(request._id),
+          relatedPracticeTransferId: relatedTransferId,
+          awaitingDesignConfirm: !productionStarted,
+          productionStarted,
+        },
+      });
+    }
+
+    // 제조사 준비→가공 진입 SSOT 재사용 (비PTX)
     req.body = {
       ...(req.body && typeof req.body === "object" ? req.body : {}),
       status: "APPROVED",

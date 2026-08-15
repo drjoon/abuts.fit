@@ -78,6 +78,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-15: 기공 요약 카드 — dashboard-cards-summary.practiceTransferStats 연동.
 // - 2026-08-12: 무료 재제작 잔여를 헤더에서 어벗 라인 요약카드로 이동.
 // - 2026-08-11: 대시보드 컨텐츠 max-w-7xl — 기공/어벗 요약카드 가로 여유.
 // - 2026-08-11: 기공 요약 — 의뢰·수락·완료·발송·추적관리 5칸(수신 제거).
@@ -343,6 +344,8 @@ export const RequestorDashboardPage = () => {
             requestorBusinessAnchorId?: unknown;
             businessAnchorId?: unknown;
             ownerBusinessAnchorId?: unknown;
+            practiceBusinessAnchorId?: unknown;
+            targetLabAnchorId?: unknown;
             request?: {
               requestorBusinessAnchorId?: unknown;
               businessAnchorId?: unknown;
@@ -373,6 +376,8 @@ export const RequestorDashboardPage = () => {
     pushId(payload.requestorBusinessAnchorId);
     pushId(payload.businessAnchorId);
     pushId(payload.ownerBusinessAnchorId);
+    pushId(payload.practiceBusinessAnchorId);
+    pushId(payload.targetLabAnchorId);
     pushId(payload.request?.requestorBusinessAnchorId);
     pushId(payload.request?.businessAnchorId);
     pushId(payload.request?.requestor?.businessAnchorId);
@@ -920,9 +925,20 @@ export const RequestorDashboardPage = () => {
       "request:delivery-updated",
       "request:delivery-updated-batch",
       "credit:balance-updated",
+      "practice:transfer-created",
+      "practice:transfer-updated",
     ],
     delayMs: 120,
     shouldHandle: (evt) => {
+      const type = String(evt?.type || "").trim();
+      // 소켓이 이미 대상 유저에게만 fan-out. 공개 풀 생성 등은 targetLabAnchorId가 비어 있을 수 있음.
+      if (
+        type === "practice:transfer-created" ||
+        type === "practice:transfer-updated"
+      ) {
+        return true;
+      }
+
       const myOrgId = normalizeEventId(user?.businessAnchorId);
       if (!myOrgId) {
         dashDebug("event:shouldHandle skip(no-my-org)", { type: evt?.type });
@@ -1146,6 +1162,15 @@ export const RequestorDashboardPage = () => {
         });
         scheduleHeavySummaryRefresh(1200, "credit:balance-updated");
         scheduleCardsSummaryRevalidate(1700, "credit:balance-updated");
+        return;
+      }
+
+      if (
+        type === "practice:transfer-created" ||
+        type === "practice:transfer-updated"
+      ) {
+        void refreshDashboard({ cardsSummary: true });
+        scheduleCardsSummaryRevalidate(1200, type);
         return;
       }
 
@@ -1822,6 +1847,8 @@ export const RequestorDashboardPage = () => {
     if (!cardsSummaryResponse?.success) return;
     dashDebug("query:cardsSummary updated", {
       stats: cardsSummaryResponse?.data?.stats || null,
+      practiceTransferStats:
+        cardsSummaryResponse?.data?.practiceTransferStats || null,
     });
   }, [cardsSummaryResponse]);
 
@@ -1925,40 +1952,52 @@ export const RequestorDashboardPage = () => {
     ];
   })();
 
-  // 기공(무료 기공의뢰서) 라인 — 집계 API 연동 전 UI 슬롯. 수치는 placeholder.
+  // 기공(기공의뢰서) 라인 — dashboard-cards-summary.practiceTransferStats
   // 뱃지 SSOT: 의뢰 · 수락 · 완료 · 발송 · 추적관리 (수신 제거)
-  const practiceTransferStats: RequestorDashboardStat[] = [
-    {
-      label: "의뢰",
-      value: "0",
-      icon: Send,
-      interactive: false,
-    },
-    {
-      label: "수락",
-      value: "0",
-      icon: Download,
-      interactive: false,
-    },
-    {
-      label: "완료",
-      value: "0",
-      icon: ClipboardCheck,
-      interactive: false,
-    },
-    {
-      label: "발송",
-      value: "0",
-      icon: Package,
-      interactive: false,
-    },
-    {
-      label: "추적관리",
-      value: "0",
-      icon: CheckCircle,
-      interactive: false,
-    },
-  ];
+  const practiceTransferStats: RequestorDashboardStat[] = (() => {
+    const raw =
+      cardsSummaryResponse?.success &&
+      cardsSummaryResponse?.data?.practiceTransferStats
+        ? cardsSummaryResponse.data.practiceTransferStats
+        : null;
+    const sent = Number(raw?.sent ?? 0);
+    const accepted = Number(raw?.accepted ?? 0);
+    const completed = Number(raw?.completed ?? 0);
+    const shipping = Number(raw?.shipping ?? 0);
+    const tracking = Number(raw?.tracking ?? 0);
+    return [
+      {
+        label: "의뢰",
+        value: String(Number.isFinite(sent) ? sent : 0),
+        icon: Send,
+        interactive: false,
+      },
+      {
+        label: "수락",
+        value: String(Number.isFinite(accepted) ? accepted : 0),
+        icon: Download,
+        interactive: false,
+      },
+      {
+        label: "완료",
+        value: String(Number.isFinite(completed) ? completed : 0),
+        icon: ClipboardCheck,
+        interactive: false,
+      },
+      {
+        label: "발송",
+        value: String(Number.isFinite(shipping) ? shipping : 0),
+        icon: Package,
+        interactive: false,
+      },
+      {
+        label: "추적관리",
+        value: String(Number.isFinite(tracking) ? tracking : 0),
+        icon: CheckCircle,
+        interactive: false,
+      },
+    ];
+  })();
 
   const requestorStatRows: RequestorDashboardStatRow[] = [
     { rowLabel: "기공", stats: practiceTransferStats },

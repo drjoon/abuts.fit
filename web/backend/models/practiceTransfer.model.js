@@ -110,15 +110,35 @@ const practiceTransferSchema = new mongoose.Schema(
       type: [mongoose.Schema.Types.Mixed],
       default: [],
     },
-    // 치과 「생산 진행」 컨펌 + 커스텀어벗 → 어벗츠 자동의뢰 메타
+    // Abuts-first: 수락 시 Request 생성 → 어벗 디자인 → 기공소(·치과) 컨펌 → 생산
     production: {
       shippingMode: {
         type: String,
         enum: ["normal", "express", null],
         default: null,
       },
-      // 전송 시점 스냅샷. 체크 UI 기본값은 계정 practiceTransferSettings.skipDesignConfirm
-      skipDesignConfirm: { type: Boolean, default: false },
+      // 전송 시점 스냅샷. 체크 UI 기본값은 계정 practiceTransferSettings.skipDesignConfirm(기본 true)
+      skipDesignConfirm: { type: Boolean, default: true },
+      // 어벗츠 디자인 완료 STL (design-handoff 미러). 기공소 다운로드·컨펌용
+      designFiles: {
+        type: [practiceTransferFileSchema],
+        default: [],
+      },
+      designReadyAt: { type: Date, default: null },
+      labDesignConfirmedAt: { type: Date, default: null },
+      labDesignConfirmedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      practiceDesignConfirmedAt: { type: Date, default: null },
+      practiceDesignConfirmedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      abutmentProductionStartedAt: { type: Date, default: null },
+      // 크라운 작업완료 후 치과 「생산 진행」또는 skip 시 자동 확정
       confirmedAt: { type: Date, default: null, index: true },
       confirmedBy: {
         type: mongoose.Schema.Types.ObjectId,

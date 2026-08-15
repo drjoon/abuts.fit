@@ -139,8 +139,8 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
     toothWorks: fields.toothWorks,
     skipDesignConfirm:
       fields.skipDesignConfirm !== undefined
-        ? fields.skipDesignConfirm === true
-        : Boolean(existing?.skipDesignConfirm),
+        ? fields.skipDesignConfirm !== false
+        : existing?.skipDesignConfirm !== false,
     activeDraftId:
       fields.activeDraftId !== undefined
         ? fields.activeDraftId
@@ -174,7 +174,7 @@ export const adoptDropzoneDraftIntoTransferFormIfNeeded =
         patientName: String(parsed.patientName || ""),
         selectedLab: parsed.selectedLab || null,
         toothWorks: Array.isArray(parsed.toothWorks) ? parsed.toothWorks : [],
-        skipDesignConfirm: Boolean(existing?.skipDesignConfirm),
+        skipDesignConfirm: existing?.skipDesignConfirm !== false,
         activeDraftId: existing?.activeDraftId ?? null,
         updatedAt: Date.now(),
       };
@@ -211,6 +211,6 @@ export const readPreferredIntakeFormForDropzone = (
     patientName: dropzoneDraft.patientName,
     selectedLab: dropzoneDraft.selectedLab || null,
     toothWorks: dropzoneDraft.toothWorks,
-    skipDesignConfirm: Boolean(transfer?.skipDesignConfirm),
+    skipDesignConfirm: transfer?.skipDesignConfirm !== false,
   };
 };

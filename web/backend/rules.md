@@ -372,11 +372,12 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 생성 시 `targetLabAnchorId=null`, 공개 풀. `manufacturerStage` UI=`자동매칭`(공정 뱃지 집계는 **의뢰**). 자격(**인증 기공소**): `verified` + `practiceTransferAutoMatchEnabled`(참여 ON) + lab+free (`utils/practiceTransferAutoMatch.js`). 관리자 목록/ON은 `verifiedLabCapableAnchorFilter`(kind=lab 또는 레거시 caps.lab)
     - 참여 ON: 기공소 `POST /api/businesses/me/auto-match-participation` `{ active }` (**월정 0원 정책**, `autoMatchMonthlyFee`) 또는 관리자 `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }`. 성공 시 `platformFeeRate`. 표시명(치과·기공소)은 API에서 마스킹(`redactAutoMatch*`), 실명은 앵커/클레임 후 `targetLab*`에 보존.
     - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정). 타인 활성 claim은 숨김
-    - 수락=`mark-accepted` 원자 FCFS claim(강제 시간 만료 없음) + 보류액 확정. 치과에 `practice:transfer-updated`(action=`accepted`, 확정 `feeQuote`) emit. 작업완료=`POST .../mark-complete`(결과파일 필수, 커스텀어벗 시 shippingMode, 에스크로 해제·기공크레딧 지급). 작업취소=`POST .../mark-release`(auto는 풀 재공개, direct는 수락 해제+과금 롤백)
-    - 치과 생산컨펌=`POST .../confirm-production` → 생산진행. 커스텀어벗이면 기공소→어벗츠 Request 자동 생성
-    - 「디자인 컨펌 생략」체크 UI는 계정 `practiceTransferSettings.skipDesignConfirm`(마지막 설정). 전송 시 `PracticeTransfer.production.skipDesignConfirm`으로 의뢰건에 스냅샷. 체크된 건은 기공소 `mark-complete` 시 생산컨펌을 자동 처리
+    - 수락=`mark-accepted` 원자 FCFS claim(강제 시간 만료 없음) + 보류액 확정. 치과에 `practice:transfer-updated`(action=`accepted`, 확정 `feeQuote`) emit. **CA 포함 시 수락 직후** 구강스캔(`files`) 기반 어벗츠 Request 조기 생성(`design_custom_abutment`, 스케줄=치과 도착일/기일). 작업완료=`POST .../mark-complete`(크라운 결과파일 필수, **shippingMode 불필요**, 에스크로 해제·기공크레딧 지급). 작업취소=`POST .../mark-release`(auto는 풀 재공개, direct는 수락 해제+과금 롤백)
+    - 어벗 디자인 컨펌=`POST .../confirm-abutment-design`(기공소). design-handoff가 PTX `production.designFiles`에 미러한 뒤, 기공소(+ `skipDesignConfirm=false`면 치과) 컨펌 시 가공 진입
+    - 치과=`POST .../confirm-production` — (a) 크라운 완료 전·CA·미생략: 어벗 디자인 생산 게이트 (b) 크라운 완료 후: `작업완료→생산진행` (Request 재생성 없음)
+    - 「디자인 컨펌 생략」체크 UI는 계정 `practiceTransferSettings.skipDesignConfirm`(기본 **true**). 전송 시 `PracticeTransfer.production.skipDesignConfirm` 스냅샷. 해제 시 FE 안내 모달. 체크된 건은 기공소 `mark-complete` 시 생산진행 자동. 미체크면 어벗 생산에 치과 디자인 컨펌도 필요
     - 작업 기한은 치과 도착일·채팅 소통. (레거시 3시간 `deadlineAt` 만료 재공개는 폐기)
-    - 기공소 수신 카드(의뢰수락): `PracticeTransferFileDropTarget` + `[작업완료]` / `[작업취소]` (`RequestorPracticePage`)
+    - 기공소 수신 카드(의뢰수락): `PracticeTransferFileDropTarget` + `[작업완료]`(크라운) / `[어벗 디자인 확인]` / `[작업취소]` (`RequestorPracticePage`). 배송선택 모달 없음
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
   - practice 전송 목록/취소/복구 권한 범위 SSOT: 동일 치과 `practiceBusinessAnchorId`(=`req.user.businessAnchorId`) 구성원 공유.
     구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch` / draft list·DELETE by id).

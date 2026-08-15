@@ -2,6 +2,8 @@
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - web/backend/services/requestorDashboardSummarySnapshot.service.js
+// - web/backend/services/practiceTransferDashboardStats.service.js
+// - web/backend/utils/practiceTransferStage.js
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -47,6 +49,10 @@ import {
   waitForDashboardSummaryRefreshForAnchorId,
 } from "../../services/requestSnapshotTriggers.service.js";
 import { getAssignedLikeDashboardSummary } from "../../services/requestDashboardStats.service.js";
+import {
+  emptyPracticeTransferDashboardStats,
+  getPracticeTransferDashboardStats,
+} from "../../services/practiceTransferDashboardStats.service.js";
 
 function getLastMonthRangeKst() {
   // KST 기준 지난 달 범위
@@ -777,14 +783,32 @@ export async function getMyDashboardCardsSummary(req, res) {
     const snapshotComputedAtMs = summarySnapshot?.computedAt
       ? new Date(summarySnapshot.computedAt).getTime()
       : 0;
-    const cardsCacheKey = `dashboard-cards-summary:v2:${String(userId || "")}:${businessAnchorId}:${period}:${snapshotComputedAtMs}`;
+    // v3: practiceTransferStats(기공 행) 포함
+    const cardsCacheKey = `dashboard-cards-summary:v3:${String(userId || "")}:${businessAnchorId}:${period}:${snapshotComputedAtMs}`;
+
+    const loadPracticeTransferStats = () =>
+      getPracticeTransferDashboardStats({
+        businessAnchorId,
+        period,
+      }).catch((err) => {
+        console.warn(
+          "[getMyDashboardCardsSummary] practiceTransferStats failed",
+          err?.message || err,
+        );
+        return emptyPracticeTransferDashboardStats();
+      });
 
     if (!debug) {
       const cached = getRequestPerfCacheValue(cardsCacheKey);
       if (cached) {
+        // 기공 집계는 스냅샷과 별도 — 캐시 hit여도 짧게 재조회해 신선도 유지
+        const practiceTransferStats = await loadPracticeTransferStats();
         return res.status(200).json({
           success: true,
-          data: cached,
+          data: {
+            ...cached,
+            practiceTransferStats,
+          },
           cached: true,
         });
       }
@@ -792,6 +816,7 @@ export async function getMyDashboardCardsSummary(req, res) {
 
     const responseData = await withRequestPerfInFlight(cardsInFlightKey, async () => {
       const snapshotStats = summarySnapshot?.stats || null;
+      const practiceTransferStats = await loadPracticeTransferStats();
 
       const data = {
         stats: {
@@ -823,10 +848,13 @@ export async function getMyDashboardCardsSummary(req, res) {
             unmachinableJudgedTotalCount: 0,
           }),
         },
+        practiceTransferStats,
       };
 
       if (!debug) {
         // 스냅샷 computedAt 기반 버전드 캐시이므로 TTL을 늘려도 stale 위험이 낮다.
+        // practiceTransferStats는 응답 시 재조회하므로 캐시 본문에서 제외해도 되지만
+        // miss 경로 응답 형태를 맞추기 위해 함께 저장한다.
         setRequestPerfCacheValue(cardsCacheKey, data, 30 * 1000);
       }
 
