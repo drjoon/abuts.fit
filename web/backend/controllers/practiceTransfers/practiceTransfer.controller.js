@@ -30,17 +30,26 @@ import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.j
 import {
   AUTO_MATCH_LAB_DISPLAY_NAME,
   buildAutoMatchClaimableFilter,
+  buildAutoMatchPriorityFields,
   buildReceivedScopeWithAutoMatch,
   isAutoMatchClaimActive,
   isAutoMatchCompleted,
   isAutoMatchMode,
   isAutoMatchOpenPool,
+  isAutoMatchPriorityActive,
+  isAutoMatchPriorityLabAnchorId,
+  isPracticeTransferLabReceiverRole,
   isLabAnchorAutoMatchEligible,
   loadAutoMatchEligibleLabAnchors,
   redactAutoMatchLabIdentity,
   redactAutoMatchPracticeIdentity,
   toAutoMatchApiFields,
 } from "../../utils/practiceTransferAutoMatch.js";
+import {
+  clearAutoMatchPriorityTimers,
+  notifyAutoMatchPoolCreatedWithPriority,
+  notifyAutoMatchPriorityOpenedEarly,
+} from "../../utils/practiceTransferAutoMatchRealtime.js";
 import {
   loadAutoMatchBudgetCatalog,
   resolveAutoMatchBudgetOrDefaults,
@@ -87,6 +96,7 @@ import { resolvePracticeTransferManufacturerStage } from "../../utils/practiceTr
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
+// - 2026-08-15: 자동매칭 어벗츠(internalLab) 5분 우선창 — 목록·클레임 게이트, 거부 시 조기 공개.
 // - 2026-08-15: practiceTransferManufacturerStage SSOT를 utils/practiceTransferStage로 분리.
 // - 2026-08-13: 어벗 치아에 임플란트·스캔바디 프리셋이 없으면 전송 거절.
 // - 2026-08-14: GET /my 목록 — countDocuments 제거·레거시 $or 축소·동료/견적 조회 캐시.
@@ -231,6 +241,11 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
     completedAt: null,
     completedBy: null,
     releaseCount: bumpRelease ? releaseCount + 1 : releaseCount,
+    eligibleLabAnchorIds: prev.eligibleLabAnchorIds,
+    declinedLabAnchorIds: prev.declinedLabAnchorIds,
+    priorityLabAnchorIds: prev.priorityLabAnchorIds,
+    // 작업취소 재공개 시 우선창 종료 → 타 기공소 즉시 노출
+    priorityUntil: bumpRelease ? new Date() : prev.priorityUntil ?? null,
   };
 };
 
@@ -268,7 +283,7 @@ const emitAutoMatchPoolCreated = async (
       businessAnchorId: {
         $in: labIds.map((id) => new Types.ObjectId(id)),
       },
-      role: "requestor",
+      role: { $in: ["requestor", "internalLab"] },
       active: true,
     })
       .select({ _id: 1 })
@@ -817,7 +832,7 @@ const resolveRequestorUserIdsByAnchor = async (anchorId) => {
 
   const users = await User.find({
     businessAnchorId: new Types.ObjectId(raw),
-    role: "requestor",
+    role: { $in: ["requestor", "internalLab"] },
     active: true,
   })
     .select({ _id: 1 })
@@ -1860,6 +1875,7 @@ export async function createPracticeTransfer(req, res) {
     // 잔액 검사 후 생성. 크레딧은 생성 시 에스크로 보류(기공 적립은 작업완료).
     let autoMatchBudget = null;
     let autoMatchEligibleLabAnchorIds = undefined;
+    let autoMatchPriorityLabAnchorIds = [];
     let autoMatchCatalog = null;
     if (matchingMode === "auto") {
       const [practiceForBudget, catalog] = await Promise.all([
@@ -1890,6 +1906,7 @@ export async function createPracticeTransfer(req, res) {
           practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
       });
       autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
+      autoMatchPriorityLabAnchorIds = eligibility.priorityLabAnchorIds || [];
       if (autoMatchEligibleLabAnchorIds.length === 0) {
         const skipped = eligibility.skipped || {};
         let message =
@@ -1945,6 +1962,14 @@ export async function createPracticeTransfer(req, res) {
     const billingPreview = toBillingPreviewFields(feeQuote);
     // feeQuote.autoMatchBudget에 합산 minLabFee/maxLabFee가 포함된다.
 
+    const autoMatchPriorityFields =
+      matchingMode === "auto"
+        ? buildAutoMatchPriorityFields({
+            eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds || [],
+            priorityLabAnchorIds: autoMatchPriorityLabAnchorIds || [],
+          })
+        : null;
+
     const transferDoc = await PracticeTransfer.create({
       transferId,
       practiceUserId: req.user?._id,
@@ -1962,6 +1987,13 @@ export async function createPracticeTransfer(req, res) {
               completedBy: null,
               releaseCount: 0,
               eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds || [],
+              priorityUntil: autoMatchPriorityFields?.priorityUntil ?? null,
+              ...(autoMatchPriorityFields?.priorityLabAnchorIds
+                ? {
+                    priorityLabAnchorIds:
+                      autoMatchPriorityFields.priorityLabAnchorIds,
+                  }
+                : {}),
             }
           : undefined,
       transferMemo,
@@ -2130,8 +2162,11 @@ export async function createPracticeTransfer(req, res) {
     }
 
     if (matchingMode === "auto") {
-      await emitAutoMatchPoolCreated(realtimePayload, {
+      await notifyAutoMatchPoolCreatedWithPriority({
+        transfer: transferDoc,
+        realtimePayload,
         eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds,
+        emitPoolCreated: emitAutoMatchPoolCreated,
       });
     } else {
       await emitPracticeTransferEventToRequestorUsers({
@@ -2697,7 +2732,7 @@ export async function getPracticeTransferQuoteContext(req, res) {
 export async function getReceivedPracticeTransfers(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "requestor" && role !== "admin") {
+    if (!isPracticeTransferLabReceiverRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -2931,7 +2966,7 @@ export async function getReceivedPracticeTransfers(req, res) {
 export async function getReceivedPracticeTransferUnreadCount(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "requestor" && role !== "admin") {
+    if (!isPracticeTransferLabReceiverRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -2997,7 +3032,7 @@ export async function getReceivedPracticeTransferUnreadCount(req, res) {
 export async function markReceivedPracticeTransferRead(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "requestor" && role !== "admin") {
+    if (!isPracticeTransferLabReceiverRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -3124,7 +3159,7 @@ export async function markReceivedPracticeTransferRead(req, res) {
 export async function markReceivedPracticeTransferAccepted(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "requestor" && role !== "admin") {
+    if (!isPracticeTransferLabReceiverRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -3285,6 +3320,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       }
 
       doc = claimed;
+      clearAutoMatchPriorityTimers(doc._id);
 
       let billingResult = null;
       try {
@@ -3587,7 +3623,7 @@ export const markReceivedPracticeTransferDownloaded =
 export async function markReceivedPracticeTransferComplete(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "requestor" && role !== "admin") {
+    if (!isPracticeTransferLabReceiverRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -3840,7 +3876,7 @@ export async function markReceivedPracticeTransferComplete(req, res) {
 export async function confirmPracticeTransferAbutmentDesign(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "requestor" && role !== "admin") {
+    if (!isPracticeTransferLabReceiverRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -4207,7 +4243,7 @@ export async function confirmPracticeTransferProduction(req, res) {
 export async function markReceivedPracticeTransferRelease(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "requestor" && role !== "admin") {
+    if (!isPracticeTransferLabReceiverRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -4417,15 +4453,20 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         }
         if (isAuto) {
           jobs.push(
-            emitAutoMatchPoolCreated(
-              {
+            notifyAutoMatchPriorityOpenedEarly({
+              transfer: doc,
+              realtimePayload: {
                 ...realtimePayload,
+                action: "auto-match-released",
                 source: "workCancelRelease",
+                targetLabAnchorId: null,
+                manufacturerStage: "자동매칭",
               },
-              {
-                eligibleLabAnchorIds: doc.autoMatch?.eligibleLabAnchorIds,
-              },
-            ),
+              excludeLabAnchorIds: previousLabAnchorId
+                ? [previousLabAnchorId]
+                : [],
+              emitPoolCreated: emitAutoMatchPoolCreated,
+            }),
           );
         }
         if (spendTotal > 0 && doc.practiceBusinessAnchorId) {
@@ -4484,7 +4525,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
 export async function markReceivedPracticeTransferReject(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "requestor" && role !== "admin") {
+    if (!isPracticeTransferLabReceiverRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -4540,20 +4581,41 @@ export async function markReceivedPracticeTransferReject(req, res) {
       const declined = Array.isArray(doc.autoMatch?.declinedLabAnchorIds)
         ? doc.autoMatch.declinedLabAnchorIds.map((id) => String(id || "").trim())
         : [];
-      if (!declined.includes(labAnchorId)) {
+      const priorityWasActive = isAutoMatchPriorityActive(doc, now);
+      const wasPriorityLab = isAutoMatchPriorityLabAnchorId(doc, labAnchorId);
+      const shouldOpenPriorityEarly = priorityWasActive && wasPriorityLab;
+
+      if (!declined.includes(labAnchorId) || shouldOpenPriorityEarly) {
         if (!doc.autoMatch || typeof doc.autoMatch !== "object") {
           doc.autoMatch = {};
+        }
+        const $set = {
+          labRejectedAt: now,
+          labRejectedByLabAnchorId: labOid,
+        };
+        if (shouldOpenPriorityEarly) {
+          $set["autoMatch.priorityUntil"] = now;
         }
         await PracticeTransfer.updateOne(
           { _id: doc._id },
           {
-            $addToSet: { "autoMatch.declinedLabAnchorIds": labOid },
-            $set: {
-              labRejectedAt: now,
-              labRejectedByLabAnchorId: labOid,
-            },
+            ...(declined.includes(labAnchorId)
+              ? {}
+              : { $addToSet: { "autoMatch.declinedLabAnchorIds": labOid } }),
+            $set,
           },
         );
+      }
+
+      const nextDeclined = declined.includes(labAnchorId)
+        ? declined
+        : [...declined, labAnchorId];
+      if (!doc.autoMatch || typeof doc.autoMatch !== "object") {
+        doc.autoMatch = {};
+      }
+      doc.autoMatch.declinedLabAnchorIds = nextDeclined;
+      if (shouldOpenPriorityEarly) {
+        doc.autoMatch.priorityUntil = now;
       }
 
       const realtimePayload = {
@@ -4573,9 +4635,34 @@ export async function markReceivedPracticeTransferReject(req, res) {
 
       emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
 
+      if (shouldOpenPriorityEarly) {
+        void notifyAutoMatchPriorityOpenedEarly({
+          transfer: doc,
+          realtimePayload: {
+            ...realtimePayload,
+            action: "auto-match-priority-opened",
+            source: "labRejectPriorityOpen",
+            manufacturerStage: "자동매칭",
+            labRejected: false,
+            targetLabAnchorId: null,
+            ...toAutoMatchApiFields(doc, null),
+          },
+          excludeLabAnchorIds: [labAnchorId],
+          emitPoolCreated: emitAutoMatchPoolCreated,
+        }).catch((err) => {
+          console.warn(
+            "[practiceTransfer] priority early open emit failed",
+            String(doc?._id || ""),
+            err?.message || err,
+          );
+        });
+      }
+
       return res.status(200).json({
         success: true,
-        message: "의뢰를 거부했습니다. 다른 기공소에 계속 공개됩니다.",
+        message: shouldOpenPriorityEarly
+          ? "의뢰를 거부했습니다. 다른 기공소에 공개됩니다."
+          : "의뢰를 거부했습니다. 다른 기공소에 계속 공개됩니다.",
         data: {
           transferId: String(doc.transferId || "").trim(),
           rejected: true,
@@ -4584,6 +4671,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
           labRejected: true,
           labRejectedAt: now,
           manufacturerStage: "거부",
+          priorityOpenedEarly: shouldOpenPriorityEarly,
         },
       });
     }

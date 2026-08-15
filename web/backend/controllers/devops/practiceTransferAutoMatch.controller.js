@@ -44,11 +44,14 @@ const toListRow = (row) => {
     name: row.name || row?.metadata?.companyName || "",
     businessNumberNormalized: row.businessNumberNormalized || "",
     status: row.status || "",
+    businessType: row.businessType || "",
     requestorKind: row.requestorKind || profile.kind || "",
     representativeName: String(row?.metadata?.representativeName || "").trim(),
     address: formatAddress(row?.metadata),
     practiceTransferAutoMatchEnabled: isPracticeTransferAutoMatchEnabled(row),
-    canReceivePracticeTransfer: canReceivePracticeTransfer(profile),
+    canReceivePracticeTransfer:
+      String(row.businessType || "").trim() === "internalLab" ||
+      canReceivePracticeTransfer(profile),
     verified: String(row.status || "").trim() === "verified",
   };
 };
@@ -104,6 +107,7 @@ export async function listPracticeTransferAutoMatch(req, res) {
           requestorServices: 1,
           requestorCapabilities: 1,
           practiceTransferAutoMatchEnabled: 1,
+          businessType: 1,
           "metadata.companyName": 1,
           "metadata.representativeName": 1,
           "metadata.address": 1,
@@ -165,6 +169,7 @@ export async function patchPracticeTransferAutoMatch(req, res) {
     })
       .select({
         status: 1,
+        businessType: 1,
         requestorKind: 1,
         requestorServices: 1,
         requestorCapabilities: 1,
@@ -197,7 +202,9 @@ export async function patchPracticeTransferAutoMatch(req, res) {
     });
 
     if (enabled) {
-      if (!canReceivePracticeTransfer(profile)) {
+      const isInternalLab =
+        String(existing.businessType || "").trim() === "internalLab";
+      if (!isInternalLab && !canReceivePracticeTransfer(profile)) {
         return res.status(400).json({
           success: false,
           message:

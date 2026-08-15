@@ -90,6 +90,18 @@ const practiceTransferSchema = new mongoose.Schema(
         default: undefined,
         index: true,
       },
+      // 어벗츠기공소(internalLab) 우선창: 생성 시 적격이면 +5분. 거부·작업취소 시 조기 종료.
+      priorityUntil: { type: Date, default: null, index: true },
+      priorityLabAnchorIds: {
+        type: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "BusinessAnchor",
+          },
+        ],
+        default: undefined,
+        index: true,
+      },
     },
     transferMemo: {
       type: String,

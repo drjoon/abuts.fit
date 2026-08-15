@@ -224,6 +224,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   if (!band) {
     return {
       eligibleLabAnchorIds: [],
+      priorityLabAnchorIds: [],
       labsScanned: 0,
       budget: null,
       skipped: { noBudget: true, feeUnconfigured: 0, rating: 0, budget: 0 },
@@ -248,6 +249,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   });
 
   const eligibleLabAnchorIds = [];
+  const priorityLabAnchorIds = [];
   const skipped = { feeUnconfigured: 0, rating: 0, budget: 0 };
   for (const lab of labs) {
     if (!isAutoMatchEligibleLabAnchor(lab)) continue;
@@ -283,10 +285,14 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
       continue;
     }
     eligibleLabAnchorIds.push(lab._id);
+    if (String(lab.businessType || "").trim() === "internalLab") {
+      priorityLabAnchorIds.push(lab._id);
+    }
   }
 
   return {
     eligibleLabAnchorIds,
+    priorityLabAnchorIds,
     labsScanned: labs.length,
     budget: band,
     skipped,

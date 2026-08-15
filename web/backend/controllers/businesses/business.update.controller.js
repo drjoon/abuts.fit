@@ -37,6 +37,7 @@ import {
   normalizeRequestorKind,
   canReceivePracticeTransfer,
 } from "../../utils/requestorCapabilities.js";
+import { isInternalLabBusinessType } from "../../utils/practiceTransferAutoMatch.js";
 import { isSyntheticPracticeBusinessNumber } from "./requestorOrgAnchor.util.js";
 import {
   activateLabTradingPartnerInvite,
@@ -61,6 +62,22 @@ function resolveLabPartnerInviteToken(req) {
       req.body?.labTradingPartnerToken ||
       "",
   ).trim();
+}
+
+/** 자동매칭 참여: requestor lab 또는 어벗츠기공소(internalLab). */
+function assertAutoMatchParticipationActor({ profile, anchor, role }) {
+  if (isInternalLabBusinessType(anchor)) return null;
+  if (String(role || "").trim() === "internalLab") return null;
+  if (String(profile?.kind || "").trim() !== "lab") {
+    return "자동 매칭 참여는 기공소만 이용할 수 있습니다.";
+  }
+  return null;
+}
+
+function canJoinAutoMatchParticipation({ profile, anchor, role }) {
+  if (isInternalLabBusinessType(anchor)) return true;
+  if (String(role || "").trim() === "internalLab") return true;
+  return canReceivePracticeTransfer(profile);
 }
 
 async function bindLabTradingPartnerFromRequest({
@@ -1324,7 +1341,11 @@ export async function getMyAutoMatchParticipation(req, res) {
       businessVerified: String(anchor.status || "").trim() === "verified",
     });
 
-    if (profile.kind !== "lab") {
+    if (assertAutoMatchParticipationActor({
+      profile,
+      anchor,
+      role: freshUser?.role || req.user.role,
+    })) {
       return res.status(403).json({
         success: false,
         message: "자동 매칭 참여는 기공소만 이용할 수 있습니다.",
@@ -1338,7 +1359,11 @@ export async function getMyAutoMatchParticipation(req, res) {
         ...autoMatchParticipationResponseFields(anchor),
         ...fees,
         verified: String(anchor.status || "").trim() === "verified",
-        canReceivePracticeTransfer: canReceivePracticeTransfer(profile),
+        canReceivePracticeTransfer: canJoinAutoMatchParticipation({
+          profile,
+          anchor,
+          role: freshUser?.role || req.user.role,
+        }),
       },
     });
   } catch (error) {
@@ -1394,10 +1419,15 @@ export async function setMyAutoMatchParticipation(req, res) {
       businessVerified: String(anchor.status || "").trim() === "verified",
     });
 
-    if (profile.kind !== "lab") {
+    const actorDenied = assertAutoMatchParticipationActor({
+      profile,
+      anchor,
+      role: freshUser?.role || req.user.role,
+    });
+    if (actorDenied) {
       return res.status(403).json({
         success: false,
-        message: "자동 매칭 참여는 기공소만 이용할 수 있습니다.",
+        message: actorDenied,
       });
     }
 
@@ -1428,7 +1458,13 @@ export async function setMyAutoMatchParticipation(req, res) {
         message: "사업자 검증 후 참여할 수 있습니다.",
       });
     }
-    if (!canReceivePracticeTransfer(profile)) {
+    if (
+      !canJoinAutoMatchParticipation({
+        profile,
+        anchor,
+        role: freshUser?.role || req.user.role,
+      })
+    ) {
       return res.status(400).json({
         success: false,
         message: "기공의뢰를 수신할 수 있는 기공소만 참여할 수 있습니다.",

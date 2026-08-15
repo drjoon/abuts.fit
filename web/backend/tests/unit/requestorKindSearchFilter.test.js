@@ -90,10 +90,17 @@ describe("matchesRequestedRequestorKind", () => {
 });
 
 describe("verifiedLabCapableAnchorFilter", () => {
-  test("검증 기공소 필터에 lab kind 절을 포함", () => {
+  test("검증 기공소 필터에 requestor lab + internalLab 절을 포함", () => {
     const filter = verifiedLabCapableAnchorFilter();
-    expect(filter.businessType).toBe("requestor");
     expect(filter.status).toBe("verified");
-    expect(filter.$or).toEqual(requestorKindCapableAnchorFilter("lab").$or);
+    expect(filter.$or).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          businessType: "requestor",
+          $or: requestorKindCapableAnchorFilter("lab").$or,
+        }),
+        { businessType: "internalLab" },
+      ]),
+    );
   });
 });
