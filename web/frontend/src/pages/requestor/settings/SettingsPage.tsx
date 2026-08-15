@@ -12,6 +12,7 @@ import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { LabAutoMatchParticipationTab } from "@/features/settings/tabs/LabAutoMatchParticipationTab";
 import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
+import { PracticeSubscriptionTab } from "@/features/settings/tabs/PracticeSubscriptionTab";
 import {
   User,
   Building2,
@@ -20,6 +21,7 @@ import {
   Shield,
   FlaskConical,
   Banknote,
+  Sparkles,
 } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
@@ -39,6 +41,7 @@ import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 // 2026-08-13: 기공비 마스터 Off면 로그인 후 `?tab=lab-fees&setup=1`로 유도(LabFeeSetupPrompt).
 // 2026-08-14: 「치과 등록」탭 제거 → 「자동 매칭 참여」.
 // 2026-08-11: 기공소 전용 「치과 등록」「기공비」탭(알림 왼쪽).
+// 2026-08-15: 치과(`practice`) 전용 「구독」탭(알림 왼쪽).
 
 type TabKey =
   | "account"
@@ -46,6 +49,7 @@ type TabKey =
   | "staff"
   | "lab-fees"
   | "auto-match"
+  | "subscription"
   | "trading-partners"
   | "notifications"
   | "security";
@@ -59,6 +63,7 @@ export const RequestorSettingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { loading: accessLoading, kind } = useRequestorBusinessAccess();
   const isLab = kind === "lab" || user?.role === "internalLab";
+  const isPractice = kind === "practice";
 
   const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
   const [pricingBaseDate, setPricingBaseDate] = useState<string | null>(null);
@@ -219,6 +224,15 @@ export const RequestorSettingsPage = () => {
       );
     }
 
+    if (isPractice) {
+      base.push({
+        key: "subscription",
+        label: "구독",
+        icon: Sparkles,
+        content: <PracticeSubscriptionTab />,
+      });
+    }
+
     base.push(
       {
         key: "notifications",
@@ -237,6 +251,7 @@ export const RequestorSettingsPage = () => {
     return base;
   }, [
     isLab,
+    isPractice,
     launchEventRemainingDays,
     pricingBaseDate,
     pricingElapsedDays,
@@ -258,7 +273,7 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (loadingMembership || accessLoading) {
-    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 5} />;
+    return <SettingsTabsSkeleton tabCount={isLab ? 7 : isPractice ? 6 : 5} />;
   }
 
   return (

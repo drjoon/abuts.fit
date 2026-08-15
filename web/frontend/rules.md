@@ -158,6 +158,9 @@ Notes:
       - `src/features/platform/PlatformBenefitsDialog.tsx` (`variant`: lab | practice)
       - `src/shared/platform/platformBenefitsContent.ts`
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
+  - 의뢰자(치과) 설정: `requestorKind=practice`일 때 알림 **왼쪽**에 「구독」탭 (`?tab=subscription`)
+    - `src/features/settings/tabs/PracticeSubscriptionTab.tsx` — 월 구독료·멤버십 단가 혜택 + 구독/해지. 대시보드 헤더 `[구독]`(미구독 시 빨간 하이라이트) → 이 탭
+    - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드 제목 **기공소 매칭**) — 월 참여 0원·성공 수수료 스트립 + 참여(ON) 목록. 기공소는 설정「자동 매칭 참여」에서 자가 참여(`POST /api/businesses/me/auto-match-participation`, 월정 0). 관리자 스위치도 동일 플래그. 성공 시 `platformFeeRate`%. 관리자 플랫폼 설정「기공소 매칭」탭
   - 검증된 디자이너 지정: `DesignerAssignmentTab` / `BusinessAnchor.designAccessEnabled`(디자인 큐). API·게이트 유지, 파트너 탭 UI에서는 제거

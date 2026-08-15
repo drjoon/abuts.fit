@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: [구독] 라벨. 미구독 시 빨간 하이라이트 → 설정 `?tab=subscription`.
 // - 2026-08-13: 치과 [멤버십] → 가입 모달. [가입 이유] 제거.
 // - 2026-08-12: 기공소·치과 — [정책 안내] 오른쪽 [가입 이유] 버튼(PlatformBenefitsDialog).
 // - 2026-08-12: 무료 재제작 잔여를 어벗 요약카드로 이전. 헤더는 [정책 안내]만 유지.
@@ -11,16 +12,18 @@
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
-// - web/frontend/src/features/platform/PracticeMembershipJoinDialog.tsx
+// - web/frontend/src/features/settings/tabs/PracticeSubscriptionTab.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
-import { PracticeMembershipJoinDialog } from "@/features/platform/PracticeMembershipJoinDialog";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { usePracticeMembershipStatus } from "@/shared/pricing/useAbutsAbutmentPricingTier";
+import { cn } from "@/shared/ui/cn";
+import { useState } from "react";
 
 type PricingReferralStats = {
   monthlyRemakeFreeLimit?: number;
@@ -82,9 +85,11 @@ export const useRequestorMonthlyRemakeFreeRemaining = () => {
 
 export const RequestorPolicyRemakeHeader = () => {
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [membershipOpen, setMembershipOpen] = useState(false);
+  const navigate = useNavigate();
   const { kind, loading } = useRequestorBusinessAccess();
-  const showMembership = !loading && kind === "practice";
+  const membership = usePracticeMembershipStatus();
+  const showSubscription = !loading && kind === "practice";
+  const needsSubscription = showSubscription && !membership.active;
 
   return (
     <>
@@ -97,23 +102,24 @@ export const RequestorPolicyRemakeHeader = () => {
         정책 안내
       </Button>
 
-      {showMembership ? (
+      {showSubscription ? (
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="h-8 border border-input bg-white px-10 text-xs text-foreground hover:bg-slate-50 hover:text-foreground"
-          onClick={() => setMembershipOpen(true)}
+          className={cn(
+            "h-8 px-10 text-xs",
+            needsSubscription
+              ? "border-red-500 bg-red-50 text-red-700 ring-2 ring-red-500/40 hover:bg-red-100 hover:text-red-800"
+              : "border border-input bg-white text-foreground hover:bg-slate-50 hover:text-foreground",
+          )}
+          onClick={() => navigate("/dashboard/settings?tab=subscription")}
         >
-          멤버십
+          구독
         </Button>
       ) : null}
 
       <PricingPolicyDialog open={policyOpen} onOpenChange={setPolicyOpen} />
-      <PracticeMembershipJoinDialog
-        open={membershipOpen}
-        onOpenChange={setMembershipOpen}
-      />
     </>
   );
 };
