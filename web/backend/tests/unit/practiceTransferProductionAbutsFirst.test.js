@@ -213,16 +213,16 @@ describe("oral scan requirement for CA accept/create", () => {
     expect(resolved.files[0].file.s3Key).toBe("scan-key");
   });
 
-  test("resolveOralScanFilesForAccept — direct without upload rejects", () => {
-    expect(() =>
-      resolveOralScanFilesForAccept({
-        transferDoc: {
-          matchingMode: "direct",
-          toothWorks: caTooth,
-          files: [],
-        },
-        incomingFiles: [],
-      }),
-    ).toThrow(ORAL_SCAN_REQUIRED_FROM_LAB);
+  test("resolveOralScanFilesForAccept — direct without upload allows (scan later)", () => {
+    const resolved = resolveOralScanFilesForAccept({
+      transferDoc: {
+        matchingMode: "direct",
+        toothWorks: caTooth,
+        files: [],
+      },
+      incomingFiles: [],
+    });
+    expect(resolved.attachedByLab).toBe(false);
+    expect(resolved.files).toHaveLength(0);
   });
 });

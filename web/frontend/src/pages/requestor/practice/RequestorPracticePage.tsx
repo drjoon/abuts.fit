@@ -114,11 +114,8 @@ import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
 import { PRACTICE_ACCEPTED_HINT, filterPracticeTransferFiles } from "@/shared/practice/practiceTransferAccept";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import {
-  ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
-  ORAL_SCAN_REQUIRED_FROM_LAB,
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
   canLabAttachOralScanOnAccept,
-  isLabOralScanDownloadLocked,
   needsOralScanForAccept,
 } from "@/shared/practice/oralScanRequirement";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
@@ -1397,20 +1394,37 @@ export function RequestorPracticeReceivePage({
       if (!token) return false;
       const isOpenPool =
         transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
+      const fileCount = transfer.files?.length || transfer.fileCount || 0;
+      const hasCa = transferHasCustomAbutment(transfer);
+      const oralScanFiles = Array.isArray(options?.oralScanFiles)
+        ? options.oralScanFiles
+        : [];
+      const attachingScanAfterAccept =
+        Boolean(
+          transfer.isAccepted ||
+            transfer.isDownloaded ||
+            transfer.requestorDownloadedAt,
+        ) &&
+        hasCa &&
+        fileCount <= 0 &&
+        oralScanFiles.length > 0 &&
+        canLabAttachOralScanOnAccept(transfer.matchingMode);
+
       if (
         !isOpenPool &&
-        (transfer.isAccepted || transfer.isDownloaded || transfer.requestorDownloadedAt)
+        (transfer.isAccepted ||
+          transfer.isDownloaded ||
+          transfer.requestorDownloadedAt) &&
+        !attachingScanAfterAccept
       ) {
         return true;
       }
 
       const needsScan = needsOralScanForAccept({
-        hasCustomAbutment: transferHasCustomAbutment(transfer),
-        fileCount: transfer.files?.length || transfer.fileCount || 0,
+        hasCustomAbutment: hasCa,
+        fileCount,
+        matchingMode: transfer.matchingMode,
       });
-      const oralScanFiles = Array.isArray(options?.oralScanFiles)
-        ? options.oralScanFiles
-        : [];
 
       if (needsScan) {
         if (!canLabAttachOralScanOnAccept(transfer.matchingMode)) {
@@ -1424,7 +1438,7 @@ export function RequestorPracticeReceivePage({
         if (oralScanFiles.length === 0) {
           toast({
             title: "의뢰수락 실패",
-            description: ORAL_SCAN_REQUIRED_FROM_LAB,
+            description: ORAL_SCAN_REQUIRED_FROM_PRACTICE,
             variant: "destructive",
           });
           return false;
@@ -1444,7 +1458,11 @@ export function RequestorPracticeReceivePage({
               };
             }>
           | undefined;
-        if (needsScan && oralScanFiles.length > 0) {
+        if (
+          (needsScan || attachingScanAfterAccept || oralScanFiles.length > 0) &&
+          oralScanFiles.length > 0 &&
+          canLabAttachOralScanOnAccept(transfer.matchingMode)
+        ) {
           const uploadedFiles: TempUploadedFile[] =
             await uploadFilesWithToast(oralScanFiles);
           bodyFiles = uploadedFiles
@@ -2446,51 +2464,16 @@ export function RequestorPracticeReceivePage({
   const handleDownload = useCallback(
     async (file: ReceivedPracticeFile) => {
       const s3Key = String(file.s3Key || "").trim();
-      const locked = isLabOralScanDownloadLocked({
-        hasCustomAbutment: transferHasCustomAbutment(selectedTransfer),
-        designReadyAt: selectedTransfer?.production?.designReadyAt,
-        designFileCount:
-          selectedTransfer?.production?.designFileCount ||
-          selectedTransfer?.production?.designFiles?.length ||
-          0,
-      });
-      if (locked) {
-        const isRequestFile = (selectedTransfer?.files || []).some(
-          (row) => String(row.s3Key || "").trim() === s3Key,
-        );
-        if (isRequestFile || !s3Key) {
-          toast({
-            title: "다운로드 대기",
-            description: ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
-          });
-          return;
-        }
-      }
       await downloadS3File({
         s3Key,
         fileName: String(file.originalName || "download").trim() || "download",
         busyKey: s3Key,
       });
     },
-    [downloadS3File, selectedTransfer, toast],
+    [downloadS3File],
   );
 
   const handleDownloadAllFiles = useCallback(async () => {
-    const locked = isLabOralScanDownloadLocked({
-      hasCustomAbutment: transferHasCustomAbutment(selectedTransfer),
-      designReadyAt: selectedTransfer?.production?.designReadyAt,
-      designFileCount:
-        selectedTransfer?.production?.designFileCount ||
-        selectedTransfer?.production?.designFiles?.length ||
-        0,
-    });
-    if (locked) {
-      toast({
-        title: "다운로드 대기",
-        description: ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
-      });
-      return;
-    }
     const files = [
       ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
       ...(Array.isArray(selectedTransfer?.production?.designFiles)
@@ -2507,7 +2490,7 @@ export function RequestorPracticeReceivePage({
         busyKey: String(file.s3Key || "").trim(),
       })),
     );
-  }, [downloadAll, selectedTransfer, toast]);
+  }, [downloadAll, selectedTransfer]);
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
@@ -3165,31 +3148,22 @@ export function RequestorPracticeReceivePage({
             })),
           ] satisfies PracticeTransferDialogFileItem[]
         }
-        oralScanAttachMode={
-          selectedTransfer &&
-          needsOralScanForAccept({
-            hasCustomAbutment: transferHasCustomAbutment(selectedTransfer),
-            fileCount:
-              selectedTransfer.files?.length || selectedTransfer.fileCount || 0,
-          }) &&
-          !(
+        oralScanAttachMode={(() => {
+          if (!selectedTransfer) return null;
+          const hasCa = transferHasCustomAbutment(selectedTransfer);
+          const fileCount =
+            selectedTransfer.files?.length || selectedTransfer.fileCount || 0;
+          if (!hasCa || fileCount > 0) return null;
+          if (canLabAttachOralScanOnAccept(selectedTransfer.matchingMode)) {
+            return "lab";
+          }
+          const accepted =
             selectedTransfer.isAccepted ||
             selectedTransfer.isDownloaded ||
-            selectedTransfer.requestorDownloadedAt
-          )
-            ? canLabAttachOralScanOnAccept(selectedTransfer.matchingMode)
-              ? "lab"
-              : "practice_required"
-            : null
-        }
-        requestFilesDownloadLocked={isLabOralScanDownloadLocked({
-          hasCustomAbutment: transferHasCustomAbutment(selectedTransfer),
-          designReadyAt: selectedTransfer?.production?.designReadyAt,
-          designFileCount:
-            selectedTransfer?.production?.designFileCount ||
-            selectedTransfer?.production?.designFiles?.length ||
-            0,
-        })}
+            selectedTransfer.requestorDownloadedAt;
+          return accepted ? null : "practice_required";
+        })()}
+        requestFilesDownloadLocked={false}
         pendingOralScanFiles={pendingOralScanFiles.map((row) => ({
           id: row.id,
           name: row.file.name,
@@ -3198,6 +3172,15 @@ export function RequestorPracticeReceivePage({
         onPickOralScanFiles={(picked) => {
           const next = filterPracticeTransferFiles(picked);
           if (next.length === 0) return;
+          const accepted = Boolean(
+            selectedTransfer?.isAccepted ||
+              selectedTransfer?.isDownloaded ||
+              selectedTransfer?.requestorDownloadedAt,
+          );
+          if (accepted && selectedTransfer) {
+            void markTransferAccepted(selectedTransfer, { oralScanFiles: next });
+            return;
+          }
           setPendingOralScanFiles((prev) => [
             ...prev,
             ...next.map((file) => ({

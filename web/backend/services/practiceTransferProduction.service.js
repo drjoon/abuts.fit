@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-15: 지정 CA — 스캔 없이 수락 가능. 스캔은 수락 후 업로드 후 Request 생성.
 // - 2026-08-15: 구강스캔 — 자동매칭은 치과 필수, 지정은 수락 기공소 업로드 허용.
 // - 2026-08-15: Abuts-first — 수락 시 스캔(files)로 Request 생성, 기일 기준 스케줄, 디자인 컨펌 후 생산.
 // - 2026-08-13: 치아별 abutmentProductMode(생산만/디자인+생산)를 어벗츠 의뢰 productMode로 전달.
@@ -77,7 +78,7 @@ export const ORAL_SCAN_REQUIRED_FROM_PRACTICE =
 
 /** 지정 기공소 CA: 치과 미첨부 시 수락 전 기공소 업로드 */
 export const ORAL_SCAN_REQUIRED_FROM_LAB =
-  "커스텀어벗 의뢰를 수락하려면 구강스캔 파일을 업로드해주세요.";
+  "커스텀어벗 디자인을 위해 구강스캔 파일을 업로드해주세요.";
 
 const makeOralScanError = (message, code) => {
   const err = new Error(message);
@@ -87,10 +88,10 @@ const makeOralScanError = (message, code) => {
 };
 
 /**
- * 커스텀어벗 수락 전 구강스캔 확보.
+ * 커스텀어벗 수락 시 구강스캔 확보.
  * - 이미 transfer.files 있으면 그대로
  * - 자동매칭: 치과 첨부만 허용(기공소 body.files 무시·거절)
- * - 지정: 기공소가 body.files로 첨부 가능 → attachedByLab
+ * - 지정: 기공소 body.files 첨부 가능. 없어도 수락은 허용(스캔은 수락 후 업로드 가능)
  */
 export function resolveOralScanFilesForAccept({
   transferDoc,
@@ -115,10 +116,7 @@ export function resolveOralScanFilesForAccept({
   }
 
   if (incoming.length === 0) {
-    throw makeOralScanError(
-      ORAL_SCAN_REQUIRED_FROM_LAB,
-      "oral_scan_required_from_lab",
-    );
+    return { files: [], attachedByLab: false };
   }
 
   return { files: incoming, attachedByLab: true };
@@ -301,12 +299,19 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   const scanFiles = normalizeResultFiles(transferDoc?.files);
   if (scanFiles.length === 0) {
     const isAuto = String(transferDoc?.matchingMode || "").trim() === "auto";
-    throw makeOralScanError(
-      isAuto ? ORAL_SCAN_REQUIRED_FROM_PRACTICE : ORAL_SCAN_REQUIRED_FROM_LAB,
-      isAuto
-        ? "oral_scan_required_from_practice"
-        : "oral_scan_required_from_lab",
-    );
+    if (isAuto) {
+      throw makeOralScanError(
+        ORAL_SCAN_REQUIRED_FROM_PRACTICE,
+        "oral_scan_required_from_practice",
+      );
+    }
+    // 지정 기공소: 수락 후 스캔 업로드 가능 — CA Request는 스캔 확보 시 생성
+    return {
+      created: [],
+      skippedReason: "awaiting_oral_scan",
+      requestIds: [],
+      shippingMode: null,
+    };
   }
 
   const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
@@ -600,6 +605,18 @@ export async function ensureAbutmentRequestsOnAccept({
     transferDoc,
     actorUserId,
   });
+  if (result.skippedReason === "awaiting_oral_scan") {
+    return {
+      created: false,
+      skippedReason: "awaiting_oral_scan",
+      requestIds: [],
+      shippingMode: null,
+    };
+  }
+  if (result.skippedReason === "no_custom_abutment") {
+    return { created: false, requestIds: [], shippingMode: null };
+  }
+
   const requestIds = Array.isArray(result.requestIds) ? result.requestIds : [];
   const shippingMode = result.shippingMode || transferDoc?.production?.shippingMode || null;
 
@@ -626,6 +643,7 @@ export async function ensureAbutmentRequestsOnAccept({
 
   return {
     created: result.skippedReason !== "already_created" && requestIds.length > 0,
+    skippedReason: result.skippedReason || null,
     requestIds,
     shippingMode,
   };

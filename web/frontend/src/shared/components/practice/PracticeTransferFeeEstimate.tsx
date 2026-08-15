@@ -2,7 +2,8 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
-// - 2026-08-13: 기공소 기공비 Off면 미설정 안내.
+// - 2026-08-15: 기공소 뷰 — CA 시 어벗디자인비(플랫폼 단가×어벗수) 툴팁 행 추가.
+// - 2026-08-14: 기공소 기공비 Off면 미설정 안내.
 // - 2026-08-13: 치아번호 10→20→30→40번대 순으로 표시.
 // - 2026-08-14: 기공소 미선택 시 견적 계산 없이 안내만.
 // - 2026-08-14: 환봉 단가 0원은 어벗츠 열에「별도 고지」.
@@ -37,6 +38,7 @@ import {
   formatLabFeeMultiplierLabel,
   normalizeLabFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
+import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 type PracticeTransferFeeEstimateProps = {
   quote: PracticeTransferFeeQuote;
@@ -129,6 +131,8 @@ function FeeBreakdownTable({
   labFacing = false,
   labTotalMinOverride = null,
   labTotalMaxOverride = null,
+  abutmentDesignLabFee = 0,
+  abutmentDesignQty = 0,
 }: {
   lines: FeeBreakdownLine[];
   showLabColumn: boolean;
@@ -138,6 +142,9 @@ function FeeBreakdownTable({
   /** 라인에 labFeeMin이 없을 때 합계만 예산 하한~상한으로 표시 */
   labTotalMinOverride?: number | null;
   labTotalMaxOverride?: number | null;
+  /** 기공소 뷰: 디자인 완료 시 지급 예정 어벗디자인비(1어벗당) */
+  abutmentDesignLabFee?: number;
+  abutmentDesignQty?: number;
 }) {
   // 기공소 뷰: 기공물+기공소어벗을「기공수가」한 열로, 어벗츠는 라벨만.
   const labShareColumn = labFacing
@@ -145,11 +152,16 @@ function FeeBreakdownTable({
     : showLabColumn;
   const labAbutmentColumn = labFacing ? false : showLabAbutmentColumn;
   const abutsColumn = showAbutmentColumn;
+  const designFeeTotal =
+    labFacing && abutmentDesignQty > 0 && abutmentDesignLabFee > 0
+      ? Math.round(abutmentDesignLabFee) * Math.round(abutmentDesignQty)
+      : 0;
   const labTotal = lines.reduce(
     (sum, line) =>
       sum + line.labFee + (labFacing ? line.labAbutmentFee : 0),
     0,
   );
+  const labTotalWithDesign = labTotal + designFeeTotal;
   const labTotalMin = lines.reduce((sum, line) => {
     const min =
       line.labFeeMin != null && Number.isFinite(line.labFeeMin)
@@ -167,7 +179,7 @@ function FeeBreakdownTable({
       ? formatWonRange(labTotalMinOverride, labTotalMaxOverride)
       : hasLabFeeRange && !labFacing
         ? formatWonRange(labTotalMin, labTotal)
-        : formatCell(labTotal);
+        : formatCell(labFacing ? labTotalWithDesign : labTotal);
   const labAbutmentTotal = lines.reduce((sum, line) => sum + line.labAbutmentFee, 0);
   const labAbutmentPending = lines.some((line) => line.labAbutmentPending);
   const colCount =
@@ -233,6 +245,22 @@ function FeeBreakdownTable({
           </div>
         );
       })}
+      {designFeeTotal > 0 ? (
+        <div className="contents">
+          <span className="min-w-0 truncate">어벗디자인비</span>
+          {labShareColumn ? (
+            <span className="whitespace-nowrap text-right">
+              {formatWon(designFeeTotal)}
+            </span>
+          ) : null}
+          {labAbutmentColumn ? (
+            <span className="whitespace-nowrap text-right">—</span>
+          ) : null}
+          {abutsColumn ? (
+            <span className="whitespace-nowrap text-right">—</span>
+          ) : null}
+        </div>
+      ) : null}
       {colCount > 1 ? (
         <>
           <span className="mt-0.5 border-t border-foreground/15 pt-1.5 font-medium">
@@ -240,7 +268,7 @@ function FeeBreakdownTable({
           </span>
           {labShareColumn ? (
             <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
-              {labFacing && labTotal <= 0 && labAbutmentPending
+              {labFacing && labTotalWithDesign <= 0 && labAbutmentPending
                 ? "요청중"
                 : labTotalDisplay}
             </span>
@@ -269,6 +297,17 @@ function FeeBreakdownTable({
           ) : null}
         </>
       ) : null}
+      {designFeeTotal > 0 ? (
+        <p
+          className={cn(
+            "text-[10px] leading-relaxed text-muted-foreground",
+            colCount > 1 ? `col-span-${colCount}` : "",
+          )}
+          style={{ gridColumn: colCount > 1 ? `1 / -1` : undefined }}
+        >
+          어벗디자인비는 디자인 업로드 시 기공정산 크레딧으로 지급됩니다.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -285,6 +324,15 @@ export function PracticeTransferFeeEstimate({
   const isCard = density === "card";
   const showLabPendingHint = Boolean(labPending) && !isLab;
   const hasTrailing = Boolean(trailingAction);
+  const { data: systemSettings } = useSystemSettings();
+  const abutmentDesignLabFee = Math.max(
+    0,
+    Math.round(Number(systemSettings?.creditSettings?.abutmentDesignLabFee ?? 10000) || 0),
+  );
+  const abutmentDesignQty = Math.max(
+    0,
+    Math.round(Number(quote.abutmentQty || 0)),
+  );
 
   if (showLabPendingHint) {
     return (
@@ -490,11 +538,16 @@ export function PracticeTransferFeeEstimate({
               <div className="space-y-1.5">
                 <FeeBreakdownTable
                   lines={breakdownLines}
-                  showLabColumn={breakdownLines.some(
-                    (line) =>
-                      line.labFee > 0 ||
-                      (line.labFeeMin != null && line.labFeeMin > 0),
-                  )}
+                  showLabColumn={
+                    breakdownLines.some(
+                      (line) =>
+                        line.labFee > 0 ||
+                        (line.labFeeMin != null && line.labFeeMin > 0),
+                    ) ||
+                    (isLab &&
+                      abutmentDesignQty > 0 &&
+                      abutmentDesignLabFee > 0)
+                  }
                   showLabAbutmentColumn={breakdownLines.some(
                     (line) =>
                       Number(line.labAbutmentFee || 0) > 0 ||
@@ -508,6 +561,8 @@ export function PracticeTransferFeeEstimate({
                   labFacing={isLab}
                   labTotalMinOverride={labTotalMinOverride}
                   labTotalMaxOverride={labTotalMaxOverride}
+                  abutmentDesignLabFee={abutmentDesignLabFee}
+                  abutmentDesignQty={abutmentDesignQty}
                 />
                 {labSettlementDiffers ? (
                   <p className="text-[11px] text-muted-foreground">

@@ -6,6 +6,7 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - 2026-08-15: 수락 기공소 CA 디자인 — 스캔 없이도 수락. 어벗디자인비 안내.
 // - 2026-08-15: 기공소 CA — 어벗츠 디자인 미도착 시 구강스캔(의뢰 파일) 다운로드 잠금.
 // - 2026-08-15: 지정 기공소 CA — 치과 미첨부 시 수락 전 구강스캔 업로드. 자동매칭은 치과 필수.
 // - 2026-08-13: 기공소 상세 모달 — 수락 전에도 치과 채팅 내역 표시. 수락 CTA는 채팅 상단 바.
@@ -250,8 +251,8 @@ export function PracticeTransferDetailChatDialog({
     Boolean(onRelease) && accepted && !workCanceled && !workCompleted;
   const needsLabOralScan =
     oralScanAttachMode === "lab" && pendingOralScanFiles.length === 0;
-  const oralScanBlocksAccept =
-    oralScanAttachMode === "practice_required" || needsLabOralScan;
+  /** 지정 기공소: 스캔 없이도 수락 가능. 자동매칭(practice_required)만 차단 */
+  const oralScanBlocksAccept = oralScanAttachMode === "practice_required";
   const rawChatError = String(chatError || "").trim();
   const isPreAcceptChatHint =
     rawChatError === "의뢰수락 후 치과와 채팅할 수 있습니다." ||
@@ -534,7 +535,7 @@ export function PracticeTransferDetailChatDialog({
                     {hasCustomAbutment ? (
                       <TooltipProvider delayDuration={0}>
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span>커스텀 어벗 디자인은 1일 내 작업 완료</span>
+                          <span>커스텀 어벗 디자인은 수락 기공소가 진행</span>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <button
@@ -549,7 +550,7 @@ export function PracticeTransferDetailChatDialog({
                               작업 완료 책임은 의뢰를 수락한 기공소에 있으며, 혹시 지연될
                               경우 치과와 미리 상의하시기 바랍니다.
                               <br />
-                              커스텀어벗 디자인은 수락한 기공소가 1영업일 내 진행합니다.
+                              커스텀어벗·크라운 디자인은 수락한 기공소가 진행합니다.
                               완성 어벗 STL을 올리면 제조사에 자동 주문되며, 어벗디자인비가
                               지급됩니다.
                             </TooltipContent>
@@ -558,8 +559,9 @@ export function PracticeTransferDetailChatDialog({
                       </TooltipProvider>
                     ) : null}
                     {needsLabOralScan ? (
-                      <p className="text-xs text-destructive leading-relaxed">
-                        왼쪽에서 구강스캔을 올린 뒤 수락할 수 있습니다.
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        구강스캔이 없으면 왼쪽에서 나중에 올릴 수 있습니다. 커스텀어벗
+                        디자인 Request 생성에는 스캔이 필요합니다.
                       </p>
                     ) : null}
                     {oralScanAttachMode === "practice_required" ? (
