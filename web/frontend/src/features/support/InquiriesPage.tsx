@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-15: FAQ — 치과·기공소 가입 이유를 각각 재구성(배너 SSOT, 유형별 노출).
 // - 2026-08-15: FAQ — 기공물 서비스·기공소 가입 이유 반영, 진행상태 항목 삭제.
 // - 2026-08-15: FAQ 탭 라벨 단축·어벗츠 특징+크레딧 핵심만 정리.
 // - 2026-08-15: 크레딧·기공료 선입금 FAQ를 내 문의 내역 옆 탭으로 이동(의뢰자).
@@ -13,6 +14,7 @@
 // - web/frontend/src/features/components/SettingsScaffold.tsx
 // - web/backend/models/businessRegistrationInquiry.model.js
 // - web/backend/controllers/support/support.controller.js
+// - web/frontend/src/shared/platform/platformBenefitsContent.ts
 // 문의 페이지는 requestor, salesman, admin 역할에서만 사용됩니다.
 // manufacturer(제조사)와 devops(개발운영사)는 문의 페이지가 불필요하며,
 // 사이드메뉴 및 라우트 접근에서 제외되어 있습니다.
@@ -57,15 +59,29 @@ import {
   Phone,
 } from "lucide-react";
 
-/** 의뢰자 문의 FAQ — 서비스·기공소 가입 이유·크레딧 핵심만. */
-const REQUESTOR_FAQS: { q: string; a: string }[] = [
+type RequestorFaqItem = {
+  q: string;
+  a: string;
+  /** 미지정=공통. practice/lab은 해당 유형(또는 미확정)에만. */
+  audience?: "practice" | "lab";
+};
+
+/** 의뢰자 문의 FAQ — 서비스·치과/기공소 가입 이유·크레딧 핵심.
+ * 가입 이유 카피 SSOT: `platformBenefitsContent.ts` */
+const REQUESTOR_FAQS: RequestorFaqItem[] = [
   {
     q: "어벗츠는 어떤 서비스인가요?",
     a: "치과·기공소가 기공물 제작과 커스텀 어벗먼트 의뢰·제작·배송을 한곳에서 관리하는 B2B 플랫폼입니다.",
   },
   {
+    q: "치과가 어벗츠를 쓰는 이유는?",
+    a: "기공의뢰·채팅으로 이메일 없이 소통하고, 크레딧·계산서·인증 기공소 매칭·커스텀어벗 디자인 생산까지 한곳에서 이어갑니다.",
+    audience: "practice",
+  },
+  {
     q: "기공소가 어벗츠를 쓰는 이유는?",
-    a: "의뢰·채팅으로 이메일 없이 소통하고, 정산·계산서·자동 매칭·커스텀어벗 생산까지 한곳에서 이어갑니다.",
+    a: "의뢰 접수·채팅으로 이메일 없이 소통하고, 정산·계산서·자동 매칭 수주·커스텀어벗 생산 의뢰까지 한곳에서 이어갑니다.",
+    audience: "lab",
   },
   {
     q: "크레딧은 선불페이인가요?",
@@ -80,6 +96,15 @@ const REQUESTOR_FAQS: { q: string; a: string }[] = [
     a: "없습니다. 면세로 운영되며, 충전 시 면세 계산서가 발행됩니다.",
   },
 ];
+
+const faqVisibleForKind = (
+  item: RequestorFaqItem,
+  kind: "practice" | "lab" | null | undefined,
+) => {
+  if (!item.audience) return true;
+  if (!kind) return true;
+  return item.audience === kind;
+};
 
 export const INQUIRY_TYPE_LABEL: Record<string, string> = {
   manufacturing: "의뢰/제작",
@@ -228,6 +253,13 @@ export const InquiriesPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<"new" | "history" | "faq">("new");
   const showFaq = user?.role === "requestor";
+  const visibleFaqs = useMemo(
+    () =>
+      REQUESTOR_FAQS.filter((item) =>
+        faqVisibleForKind(item, user?.requestorKind),
+      ),
+    [user?.requestorKind],
+  );
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [type, setType] = useState<string>(preset.typeChips[0].value);
@@ -644,7 +676,7 @@ export const InquiriesPage = () => {
                 </CardHeader>
                 <CardContent className="pt-0">
                   <Accordion type="multiple" className="w-full">
-                    {REQUESTOR_FAQS.map((item, index) => (
+                    {visibleFaqs.map((item, index) => (
                       <AccordionItem key={item.q} value={`faq-${index}`}>
                         <AccordionTrigger className="text-left text-sm hover:no-underline">
                           {item.q}
