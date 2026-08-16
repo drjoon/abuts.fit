@@ -42,9 +42,6 @@ export function AutoMatchMinLabRatingStars({
   disabled = false,
 }: AutoMatchMinLabRatingStarsProps) {
   const current = normalizeAutoMatchMinLabRating(value);
-  const mult = feeMultiplierForStars(current);
-  const multLabel =
-    mult === 1 ? "평균" : `평균×${mult.toFixed(1).replace(/\.0$/, "")}`;
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -95,9 +92,6 @@ export function AutoMatchMinLabRatingStars({
                 </button>
               );
             })}
-            <span className="ml-0.5 hidden text-[10px] font-medium tabular-nums text-slate-500 sm:inline">
-              {multLabel}
-            </span>
           </div>
         </TooltipTrigger>
         <TooltipContent
