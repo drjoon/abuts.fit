@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 기공소는 멤버십 없이 CNC 1만/2만·환봉 2만/3만(지그 제외) 고정 단가. 치과는 기존 멤버십 안내 유지.
 // - 2026-08-14: 환봉어벗 단가를 creditSettings에서 읽어 표시(0원이면 별도 고지).
 // - 2026-08-14: CNC어벗 디자인+생산 의뢰 멤버십/일반가 복구.
 // - 2026-08-14: CNC어벗 생산만(2만/멤버십 1.5만) · CNC어벗 디자인+생산(4만) · 환봉어벗 별도 고지 순.
@@ -72,6 +73,12 @@ const DEFAULT_LEAD_TIMES: Record<DiameterKey, LeadTimeRange> = {
   d10: { minBusinessDays: 4, maxBusinessDays: 7 },
   d12: { minBusinessDays: 4, maxBusinessDays: 7 }
 };
+
+/** 기공소 안내 단가(멤버십 없음). 치과 creditSettings 단가와 별도. */
+const LAB_POLICY_CNC_PRODUCTION_PRICE = 10_000;
+const LAB_POLICY_CNC_DESIGN_AND_PRODUCTION_PRICE = 20_000;
+const LAB_POLICY_ROUND_BAR_PRODUCTION_PRICE = 20_000;
+const LAB_POLICY_ROUND_BAR_DESIGN_AND_PRODUCTION_PRICE = 30_000;
 
 function PolicySection({
   title,
@@ -201,7 +208,8 @@ export const PricingPolicyDialog = ({
   const { token } = useAuthStore();
   const { kind } = useRequestorBusinessAccess();
   const membership = usePracticeMembershipStatus();
-  const showWelcomeCredit = kind === 'lab';
+  const isLab = kind === 'lab';
+  const showWelcomeCredit = isLab;
   const showMembershipJoin = kind === 'practice';
   const isPracticeMember = membership.active;
   const cancelScheduled = isPracticeMember && membership.cancelAtPeriodEnd;
@@ -431,70 +439,110 @@ export const PricingPolicyDialog = ({
             <div className='space-y-3'>
               <section className='rounded-xl border border-slate-200 bg-white px-4 py-4'>
                 <div className='space-y-3'>
-                  <PriceRow
-                    label='CNC어벗 생산만'
-                    strikeValue={formatAbutsManwon(productionRegular)}
-                    value={`멤버십 ${formatAbutsManwon(productionMembership)}`}
-                    unitLabel='1개당'
-                  />
-                  <div className='h-px bg-slate-100' />
-                  <PriceRow
-                    label='CNC어벗 디자인+생산 의뢰'
-                    strikeValue={formatAbutsManwon(designAndProductionRegular)}
-                    value={`멤버십 ${formatAbutsManwon(
-                      designAndProductionMembership
-                    )}`}
-                    unitLabel='1개당'
-                  />
-                  <div className='h-px bg-slate-100' />
-                  <PriceRow
-                    label='환봉어벗 생산만'
-                    strikeValue={roundBarProductionRow.strikeValue}
-                    value={roundBarProductionRow.value}
-                    unitLabel={roundBarProductionRow.unitLabel}
-                  />
-                  <div className='h-px bg-slate-100' />
-                  <PriceRow
-                    label='환봉어벗 디자인+생산'
-                    strikeValue={roundBarDesignRow.strikeValue}
-                    value={roundBarDesignRow.value}
-                    unitLabel={roundBarDesignRow.unitLabel}
-                  />
-                  <div className='h-px bg-slate-100' />
-                  <PriceRow
-                    label='치과 멤버십'
-                    value={`월 ${formatAbutsAbutmentServiceWon(
-                      membershipMonthlyFee
-                    )}`}
-                    note={
-                      cancelScheduled
-                        ? '해지 예약 · 다음 결제일까지 유지'
-                        : '매월 구독료 자동 결제'
-                    }
-                    noteAction={
-                      showMembershipJoin ? (
-                        isPracticeMember ? (
-                          <Button
-                            type='button'
-                            variant='link'
-                            className='h-auto shrink-0 px-0 py-0 text-xs font-semibold'
-                            onClick={() => setMembershipOpen(true)}
-                          >
-                            {cancelScheduled ? '해지 예약' : '이용 중'}
-                          </Button>
-                        ) : (
-                          <Button
-                            type='button'
-                            variant='link'
-                            className='h-auto shrink-0 px-0 py-0 text-xs font-semibold'
-                            onClick={() => setMembershipOpen(true)}
-                          >
-                            멤버십 가입
-                          </Button>
-                        )
-                      ) : null
-                    }
-                  />
+                  {isLab ? (
+                    <>
+                      <PriceRow
+                        label='CNC어벗 생산만'
+                        value={formatAbutsManwon(
+                          LAB_POLICY_CNC_PRODUCTION_PRICE
+                        )}
+                        unitLabel='1개당'
+                      />
+                      <div className='h-px bg-slate-100' />
+                      <PriceRow
+                        label='CNC어벗 디자인+생산 의뢰'
+                        value={formatAbutsManwon(
+                          LAB_POLICY_CNC_DESIGN_AND_PRODUCTION_PRICE
+                        )}
+                        unitLabel='1개당 (지그 제외)'
+                      />
+                      <div className='h-px bg-slate-100' />
+                      <PriceRow
+                        label='환봉어벗 생산만'
+                        value={formatAbutsManwon(
+                          LAB_POLICY_ROUND_BAR_PRODUCTION_PRICE
+                        )}
+                        unitLabel='1개당'
+                      />
+                      <div className='h-px bg-slate-100' />
+                      <PriceRow
+                        label='환봉어벗 디자인+생산'
+                        value={formatAbutsManwon(
+                          LAB_POLICY_ROUND_BAR_DESIGN_AND_PRODUCTION_PRICE
+                        )}
+                        unitLabel='1개당 (지그 제외)'
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <PriceRow
+                        label='CNC어벗 생산만'
+                        strikeValue={formatAbutsManwon(productionRegular)}
+                        value={`멤버십 ${formatAbutsManwon(productionMembership)}`}
+                        unitLabel='1개당'
+                      />
+                      <div className='h-px bg-slate-100' />
+                      <PriceRow
+                        label='CNC어벗 디자인+생산 의뢰'
+                        strikeValue={formatAbutsManwon(
+                          designAndProductionRegular
+                        )}
+                        value={`멤버십 ${formatAbutsManwon(
+                          designAndProductionMembership
+                        )}`}
+                        unitLabel='1개당'
+                      />
+                      <div className='h-px bg-slate-100' />
+                      <PriceRow
+                        label='환봉어벗 생산만'
+                        strikeValue={roundBarProductionRow.strikeValue}
+                        value={roundBarProductionRow.value}
+                        unitLabel={roundBarProductionRow.unitLabel}
+                      />
+                      <div className='h-px bg-slate-100' />
+                      <PriceRow
+                        label='환봉어벗 디자인+생산'
+                        strikeValue={roundBarDesignRow.strikeValue}
+                        value={roundBarDesignRow.value}
+                        unitLabel={roundBarDesignRow.unitLabel}
+                      />
+                      <div className='h-px bg-slate-100' />
+                      <PriceRow
+                        label='치과 멤버십'
+                        value={`월 ${formatAbutsAbutmentServiceWon(
+                          membershipMonthlyFee
+                        )}`}
+                        note={
+                          cancelScheduled
+                            ? '해지 예약 · 다음 결제일까지 유지'
+                            : '매월 구독료 자동 결제'
+                        }
+                        noteAction={
+                          showMembershipJoin ? (
+                            isPracticeMember ? (
+                              <Button
+                                type='button'
+                                variant='link'
+                                className='h-auto shrink-0 px-0 py-0 text-xs font-semibold'
+                                onClick={() => setMembershipOpen(true)}
+                              >
+                                {cancelScheduled ? '해지 예약' : '이용 중'}
+                              </Button>
+                            ) : (
+                              <Button
+                                type='button'
+                                variant='link'
+                                className='h-auto shrink-0 px-0 py-0 text-xs font-semibold'
+                                onClick={() => setMembershipOpen(true)}
+                              >
+                                멤버십 가입
+                              </Button>
+                            )
+                          ) : null
+                        }
+                      />
+                    </>
+                  )}
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='커스텀 어벗 신속 출고'
