@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: lab-handoff confirmLabel·progressLabel(다파일 큐).
 // - 2026-08-16: 어벗생산의뢰·기공의뢰수신 공통 3D 확인 다이얼로그로 통합.
 // - 2026-08-16: 유지홈 미선택 허용(강제 선택). 기본 none 자동주입 제거.
 // related files:
@@ -111,6 +112,10 @@ export type AbutmentModelConfirmDialogProps = {
   onSelectPreviewIndex?: (index: number) => void;
   /** lab-handoff 업로드 중 닫기 방지 */
   confirming?: boolean;
+  /** lab-handoff 확인 버튼 문구(미지정 시「확인 & 업로드」) */
+  confirmLabel?: string;
+  /** 다파일 큐 진행 표시 (예: 1/3) */
+  progressLabel?: string;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -157,8 +162,12 @@ export function AbutmentModelConfirmDialog({
   previewFileIndices,
   onSelectPreviewIndex,
   confirming = false,
+  confirmLabel,
+  progressLabel,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
+  const labConfirmLabel = String(confirmLabel || "").trim() || "확인 & 업로드";
+  const labProgressLabel = String(progressLabel || "").trim();
   const [showNewSystemForm, setShowNewSystemForm] = useState(false);
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
   const [newSystemBrand, setNewSystemBrand] = useState("");
@@ -257,6 +266,11 @@ export function AbutmentModelConfirmDialog({
           <DialogHeader className="relative shrink-0 space-y-0 pr-8">
             <DialogTitle className="text-lg font-semibold">
               3D 모델 확인 및 정보 입력
+              {labProgressLabel ? (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  {labProgressLabel}
+                </span>
+              ) : null}
             </DialogTitle>
             <DialogDescription className="sr-only">
               {isLabHandoff
@@ -472,7 +486,7 @@ export function AbutmentModelConfirmDialog({
                           }}
                           disabled={!detailFile || confirming}
                         >
-                          {confirming ? "업로드 중…" : "확인 & 업로드"}
+                          {confirming ? "업로드 중…" : labConfirmLabel}
                         </Button>
                       </>
                     ) : (

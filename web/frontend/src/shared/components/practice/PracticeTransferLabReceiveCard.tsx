@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
 // change-log:
+// - 2026-08-16: 다치아 어벗 — 부족분 추가 업로드 CTA·보철 다중 업로드 안내.
 // - 2026-08-16: 어벗 가공 시작 시「어벗 생산 취소」는 숨기지 않고 비활성(의뢰 수락 취소와 동일).
 // - 2026-08-16: 어벗 가공 시작(준비 아님)이면 의뢰 수락 취소 비활성.
 // - 2026-08-16: 취소 라벨 — 수락중「의뢰 수락 취소」·보철완료후「작업 완료 취소」.
@@ -52,6 +53,7 @@ import {
   getPracticeTransferLabReceiveDisplayStatus,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
+  practiceTransferNeedsMoreAbutmentDesigns,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
 
@@ -121,6 +123,8 @@ export function PracticeTransferLabReceiveCard({
   );
   const designFileCount = countPracticeTransferDesignFiles(transfer);
   const hasCa = practiceTransferHasCustomAbutment(transfer);
+  const needsMoreAbutmentDesigns =
+    practiceTransferNeedsMoreAbutmentDesigns(transfer);
   const isLabAccepted =
     Boolean(transfer.isAccepted) ||
     Boolean(transfer.isDownloaded) ||
@@ -481,7 +485,7 @@ export function PracticeTransferLabReceiveCard({
               {designConfirmBusy ? "확인 중..." : "어벗 디자인 확인"}
             </Button>
           ) : null}
-          {hasCa && designFileCount === 0 ? (
+          {hasCa && needsMoreAbutmentDesigns ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -492,11 +496,16 @@ export function PracticeTransferLabReceiveCard({
                   onClick={(event) => void onDesignUpload(event)}
                 >
                   <UploadCloud className="h-4 w-4" />
-                  {cardBusy ? "처리 중..." : "어벗 업로드"}
+                  {cardBusy
+                    ? "처리 중..."
+                    : designFileCount > 0
+                      ? `어벗 추가 업로드 (${designFileCount})`
+                      : "어벗 업로드"}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs">
-                완성 어벗 STL을 올리면 제조사에서 커스텀 어벗 생산을 진행합니다.
+                완성 어벗 STL을 여러 개 올릴 수 있습니다. 치아별 파일을
+                올리면 제조사에서 커스텀 어벗 생산을 진행합니다.
               </TooltipContent>
             </Tooltip>
           ) : null}
@@ -506,9 +515,7 @@ export function PracticeTransferLabReceiveCard({
               <Button
                 type="button"
                 size="sm"
-                variant={
-                  hasCa && designFileCount === 0 ? "secondary" : "default"
-                }
+                variant={needsMoreAbutmentDesigns ? "secondary" : "default"}
                 disabled={cardBusy}
                 className="focus-visible:ring-0 focus-visible:ring-offset-0"
                 onClick={(event) => onComplete(event)}
@@ -518,7 +525,7 @@ export function PracticeTransferLabReceiveCard({
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-xs">
-              크라운 등 보철 결과 파일을 올려 작업완료합니다.
+              크라운 등 보철 결과 파일을 여러 개 올려 작업완료합니다.
               {PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""}
             </TooltipContent>
           </Tooltip>

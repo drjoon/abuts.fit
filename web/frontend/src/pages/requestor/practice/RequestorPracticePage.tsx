@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-16: 어벗 STL 다중 선택·치아별 handoff 큐(relatedRequestIds 매칭).
 // - 2026-08-16: 수락 직후 relatedRequestIds 로컬 반영(어벗 업로드 stale toast 방지).
 // - 2026-08-16: 의뢰 수락 취소 — API 성공 후에만 UI 반영. 가공중 409면 abutmentPastReady 로컬 고정.
 // - 2026-08-16: 수락 취소 성공·accept-released 실시간 — 로컬 해제 패치 + 목록 재동기화(수락 잔상/409 방지).
@@ -140,6 +141,7 @@ import {
   parseToothWorks,
   serializeToothWorks,
 } from "@/shared/practice/transferMemo";
+import { parseFilename } from "@/shared/filename/parseFilename";
 import {
   getPracticeTransferLabReceiveDisplayStatus,
   practiceTransferAbutmentMachiningStarted,
@@ -376,12 +378,21 @@ export function RequestorPracticeReceivePage({
   const [designConfirmBusyId, setDesignConfirmBusyId] = useState<string>("");
   const [designConfirmOpen, setDesignConfirmOpen] = useState(false);
   const [designConfirmBusy, setDesignConfirmBusy] = useState(false);
-  const [designConfirmFile, setDesignConfirmFile] = useState<File | null>(null);
+  const [designConfirmQueue, setDesignConfirmQueue] = useState<
+    Array<{
+      file: File;
+      requestId: string;
+      caseInfos: AbutmentDesignConfirmCaseInfos;
+    }>
+  >([]);
+  const [designConfirmQueueIndex, setDesignConfirmQueueIndex] = useState(0);
   const [designConfirmTransfer, setDesignConfirmTransfer] =
     useState<ReceivedPracticeTransfer | null>(null);
-  const [designConfirmRequestId, setDesignConfirmRequestId] = useState("");
-  const [designConfirmCaseInfos, setDesignConfirmCaseInfos] =
-    useState<AbutmentDesignConfirmCaseInfos | null>(null);
+  const designConfirmEntry =
+    designConfirmQueue[designConfirmQueueIndex] || null;
+  const designConfirmFile = designConfirmEntry?.file || null;
+  const designConfirmRequestId = designConfirmEntry?.requestId || "";
+  const designConfirmCaseInfos = designConfirmEntry?.caseInfos || null;
   const { connections } = useNewRequestImplant({ token });
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
@@ -2513,28 +2524,28 @@ export function RequestorPracticeReceivePage({
     }
   }, [acceptBusy, markTransferRelease, rejectBusy, releaseBusy, selectedTransfer]);
 
-  const pickDesignAbutmentFile = useCallback((): Promise<File | null> => {
+  const pickDesignAbutmentFiles = useCallback((): Promise<File[]> => {
     return new Promise((resolve) => {
       const input = document.createElement("input");
       input.type = "file";
       input.accept = ".stl,model/stl,application/sla";
-      input.multiple = false;
+      input.multiple = true;
       input.style.display = "none";
       let settled = false;
-      const finish = (file: File | null) => {
+      const finish = (files: File[]) => {
         if (settled) return;
         settled = true;
         window.removeEventListener("focus", onWindowFocus);
         input.removeEventListener("change", onChange);
         input.remove();
-        resolve(file);
+        resolve(files);
       };
       const onChange = () => {
-        finish(input.files?.[0] || null);
+        finish(Array.from(input.files || []));
       };
       const onWindowFocus = () => {
         window.setTimeout(() => {
-          if (!settled) finish(input.files?.[0] || null);
+          if (!settled) finish(Array.from(input.files || []));
         }, 400);
       };
       input.addEventListener("change", onChange);
@@ -2547,19 +2558,27 @@ export function RequestorPracticeReceivePage({
   const clearDesignConfirmState = useCallback(() => {
     setDesignConfirmOpen(false);
     setDesignConfirmBusy(false);
-    setDesignConfirmFile(null);
+    setDesignConfirmQueue([]);
+    setDesignConfirmQueueIndex(0);
     setDesignConfirmTransfer(null);
-    setDesignConfirmRequestId("");
-    setDesignConfirmCaseInfos(null);
   }, []);
 
   const buildDesignConfirmDefaults = useCallback(
     (
       transfer: ReceivedPracticeTransfer,
       requestCaseInfos?: Record<string, unknown> | null,
+      toothOverride?: string,
     ): AbutmentDesignConfirmCaseInfos => {
       const toothRows = parseToothWorks(transfer.toothWorksSummary || "");
-      const firstTooth = toothRows[0];
+      const overrideTooth = String(toothOverride || "").trim();
+      const matchedToothRow =
+        (overrideTooth
+          ? toothRows.find(
+              (row) => String(row.toothNumber || "").trim() === overrideTooth,
+            )
+          : null) ||
+        toothRows.find((row) => Boolean(row.customAbutment)) ||
+        toothRows[0];
       const scanPatient =
         transfer.files?.find((f) => String(f.patientName || "").trim())
           ?.patientName ||
@@ -2578,25 +2597,73 @@ export function RequestorPracticeReceivePage({
           String(requestCaseInfos?.patientName || "").trim() ||
           String(scanPatient || "").trim(),
         tooth:
+          overrideTooth ||
           String(requestCaseInfos?.tooth || "").trim() ||
-          String(firstTooth?.toothNumber || "").trim() ||
+          String(matchedToothRow?.toothNumber || "").trim() ||
           String(scanTooth || "").trim(),
         implantManufacturer:
           String(requestCaseInfos?.implantManufacturer || "").trim() ||
-          String(firstTooth?.implantManufacturer || "").trim(),
+          String(matchedToothRow?.implantManufacturer || "").trim(),
         implantBrand:
           String(requestCaseInfos?.implantBrand || "").trim() ||
-          String(firstTooth?.implantBrand || "").trim(),
+          String(matchedToothRow?.implantBrand || "").trim(),
         implantFamily:
           String(requestCaseInfos?.implantFamily || "").trim() ||
-          String(firstTooth?.implantFamily || "").trim(),
+          String(matchedToothRow?.implantFamily || "").trim(),
         implantType:
           String(requestCaseInfos?.implantType || "").trim() ||
-          String(firstTooth?.implantType || "").trim(),
+          String(matchedToothRow?.implantType || "").trim(),
         retentionGroove: "",
       };
     },
     [],
+  );
+
+  const fetchRequestCaseInfos = useCallback(
+    async (requestId: string) => {
+      if (!token || !requestId) {
+        return {
+          caseInfos: null as Record<string, unknown> | null,
+          designCompletedAt: "",
+        };
+      }
+      try {
+        const res = await apiFetch<{
+          data?: {
+            caseInfos?: Record<string, unknown>;
+            designCompletedAt?: string | null;
+          };
+          caseInfos?: Record<string, unknown>;
+          designCompletedAt?: string | null;
+        }>({
+          path: `/api/requests/${encodeURIComponent(requestId)}`,
+          method: "GET",
+          token,
+        });
+        if (!res.ok) {
+          return { caseInfos: null, designCompletedAt: "" };
+        }
+        const body = (res.data || {}) as {
+          data?: {
+            caseInfos?: Record<string, unknown>;
+            designCompletedAt?: string | null;
+          };
+          caseInfos?: Record<string, unknown>;
+          designCompletedAt?: string | null;
+        };
+        const data = body.data || body;
+        return {
+          caseInfos:
+            data?.caseInfos && typeof data.caseInfos === "object"
+              ? data.caseInfos
+              : null,
+          designCompletedAt: String(data?.designCompletedAt || "").trim(),
+        };
+      } catch {
+        return { caseInfos: null, designCompletedAt: "" };
+      }
+    },
+    [token],
   );
 
   const handleCardDesignUpload = useCallback(
@@ -2659,40 +2726,97 @@ export function RequestorPracticeReceivePage({
         return;
       }
 
-      const file = await pickDesignAbutmentFile();
-      if (!file) return;
+      const pickedFiles = await pickDesignAbutmentFiles();
+      if (!pickedFiles.length) return;
 
-      const requestId = relatedIds[0];
-      let requestCaseInfos: Record<string, unknown> | null = null;
-      try {
-        const res = await apiFetch<{
-          data?: { caseInfos?: Record<string, unknown> };
-          caseInfos?: Record<string, unknown>;
-        }>({
-          path: `/api/requests/${encodeURIComponent(requestId)}`,
-          method: "GET",
-          token,
-        });
-        if (res.ok) {
-          const body = (res.data || {}) as {
-            data?: { caseInfos?: Record<string, unknown> };
-            caseInfos?: Record<string, unknown>;
+      const existingTeeth = new Set(
+        (workingTransfer.production?.designFiles || [])
+          .map((row) => String(row.tooth || "").trim())
+          .filter(Boolean),
+      );
+
+      const requestMetas = await Promise.all(
+        relatedIds.map(async (requestId) => {
+          const meta = await fetchRequestCaseInfos(requestId);
+          const tooth = String(meta.caseInfos?.tooth || "").trim();
+          return {
+            requestId,
+            tooth,
+            caseInfos: meta.caseInfos,
+            designCompletedAt: meta.designCompletedAt,
           };
-          const data = body.data || body;
-          if (data?.caseInfos && typeof data.caseInfos === "object") {
-            requestCaseInfos = data.caseInfos;
-          }
-        }
-      } catch {
-        // fallback to transfer defaults
+        }),
+      );
+
+      const pendingMetas = requestMetas.filter((meta) => {
+        if (meta.designCompletedAt) return false;
+        if (meta.tooth && existingTeeth.has(meta.tooth)) return false;
+        return true;
+      });
+
+      if (pendingMetas.length === 0) {
+        toast({
+          title: "어벗디자인 완료",
+          description: "이미 모든 치아의 어벗디자인이 업로드되어 있습니다.",
+        });
+        return;
+      }
+
+      const usedRequestIds = new Set<string>();
+      const queue: Array<{
+        file: File;
+        requestId: string;
+        caseInfos: AbutmentDesignConfirmCaseInfos;
+      }> = [];
+
+      for (const file of pickedFiles) {
+        if (queue.length >= pendingMetas.length) break;
+        const parsedTooth = String(
+          parseFilename(file.name)?.tooth || "",
+        ).trim();
+        const byTooth =
+          parsedTooth
+            ? pendingMetas.find(
+                (meta) =>
+                  !usedRequestIds.has(meta.requestId) &&
+                  meta.tooth === parsedTooth,
+              )
+            : null;
+        const meta =
+          byTooth ||
+          pendingMetas.find((row) => !usedRequestIds.has(row.requestId));
+        if (!meta) break;
+        usedRequestIds.add(meta.requestId);
+        queue.push({
+          file,
+          requestId: meta.requestId,
+          caseInfos: buildDesignConfirmDefaults(
+            workingTransfer,
+            meta.caseInfos,
+            parsedTooth || meta.tooth,
+          ),
+        });
+      }
+
+      if (queue.length === 0) {
+        toast({
+          title: "업로드 대상 없음",
+          description: "연결할 어벗 의뢰를 찾지 못했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (pickedFiles.length > queue.length) {
+        toast({
+          title: "일부만 등록",
+          description: `${pickedFiles.length}개 중 ${queue.length}개만 남은 치아에 맞춰 확인합니다.`,
+        });
       }
 
       setDesignConfirmTransfer(workingTransfer);
-      setDesignConfirmRequestId(requestId);
-      setDesignConfirmFile(file);
-      setDesignConfirmCaseInfos(
-        buildDesignConfirmDefaults(workingTransfer, requestCaseInfos),
-      );
+      setDesignConfirmQueue(queue);
+      setDesignConfirmQueueIndex(0);
       setDesignConfirmOpen(true);
     },
     [
@@ -2700,8 +2824,9 @@ export function RequestorPracticeReceivePage({
       buildDesignConfirmDefaults,
       cardActionBusyId,
       designConfirmBusy,
+      fetchRequestCaseInfos,
       mergeProductionRelatedRequestIds,
-      pickDesignAbutmentFile,
+      pickDesignAbutmentFiles,
       pickRelatedRequestIdsFromPayload,
       toast,
       token,
@@ -2714,6 +2839,8 @@ export function RequestorPracticeReceivePage({
       const transfer = designConfirmTransfer;
       const requestId = designConfirmRequestId;
       const file = designConfirmFile;
+      const queueTotal = designConfirmQueue.length;
+      const queueIndex = designConfirmQueueIndex;
       if (!requestId) return;
 
       setDesignConfirmBusy(true);
@@ -2770,7 +2897,7 @@ export function RequestorPracticeReceivePage({
 
         const nowIso = new Date().toISOString();
         const uploadedDesignFile: ReceivedPracticeFile = {
-          id: `design-local-${Date.now()}`,
+          id: `design-local-${Date.now()}-${queueIndex}`,
           patientName: String(caseInfos.patientName || "").trim(),
           tooth: String(caseInfos.tooth || "").trim(),
           originalName: String(temp?.originalName || file.name || "").trim(),
@@ -2798,26 +2925,43 @@ export function RequestorPracticeReceivePage({
           abutmentProductionStartedAt: null,
           abutmentPastReady: false,
         };
+        const patchedTransfer: ReceivedPracticeTransfer = {
+          ...transfer,
+          production: productionPatch,
+        };
 
         setTransfers((prev) =>
           prev.map((row) =>
             row._id === transfer._id || row.transferId === transfer.transferId
-              ? { ...row, production: productionPatch }
+              ? patchedTransfer
               : row,
           ),
         );
         setSelectedTransfer((prev) =>
           prev &&
           (prev._id === transfer._id || prev.transferId === transfer.transferId)
-            ? { ...prev, production: productionPatch }
+            ? patchedTransfer
             : prev,
         );
+        setDesignConfirmTransfer(patchedTransfer);
+
+        const nextIndex = queueIndex + 1;
+        if (nextIndex < queueTotal) {
+          setDesignConfirmQueueIndex(nextIndex);
+          toast({
+            title: `어벗디자인 업로드 (${nextIndex}/${queueTotal})`,
+            description: "다음 파일을 확인해주세요.",
+          });
+          return;
+        }
 
         clearDesignConfirmState();
         toast({
           title: "어벗디자인 업로드",
           description:
-            "완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.",
+            queueTotal > 1
+              ? `${queueTotal}개 완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.`
+              : "완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.",
         });
       } catch (error) {
         toast({
@@ -2836,6 +2980,8 @@ export function RequestorPracticeReceivePage({
     [
       clearDesignConfirmState,
       designConfirmFile,
+      designConfirmQueue.length,
+      designConfirmQueueIndex,
       designConfirmRequestId,
       designConfirmTransfer,
       toast,
@@ -3345,6 +3491,7 @@ export function RequestorPracticeReceivePage({
         onAnodizingChange={setModalAnodizingEnabled}
       />
       <AbutmentDesignConfirmDialog
+        key={`${designConfirmRequestId}:${designConfirmQueueIndex}`}
         open={designConfirmOpen}
         onOpenChange={(open) => {
           if (!open && !designConfirmBusy) clearDesignConfirmState();
@@ -3356,6 +3503,12 @@ export function RequestorPracticeReceivePage({
         onRetentionGrooveAccountSave={saveRetentionGroove}
         connections={connections}
         confirming={designConfirmBusy}
+        queueCurrent={
+          designConfirmQueue.length > 0 ? designConfirmQueueIndex + 1 : undefined
+        }
+        queueTotal={
+          designConfirmQueue.length > 0 ? designConfirmQueue.length : undefined
+        }
         onConfirm={handleDesignConfirmSubmit}
         onCancel={clearDesignConfirmState}
       />

@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-08-16: expectedAbutmentDesigns / needsMoreAbutmentDesigns — 다치아 어벗 업로드 CTA.
 // - 2026-08-16: machiningStarted — abutmentPastReady 우선(준비 복귀 후 sticky startedAt 무시).
 // - 2026-08-16: abutmentPastReady — 가공 시작 시 생산/수락 취소 불가 판정.
 // - 2026-08-16: 별점 다운그레이드(starDowngrade) 수신 타입.
@@ -228,4 +229,31 @@ export function countPracticeTransferDesignFiles(
       transfer.production?.designFiles?.length ||
       0,
   );
+}
+
+/** 치식 요약·연동 Request 기준, 올려야 할 어벗디자인 개수 */
+export function countPracticeTransferExpectedAbutmentDesigns(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  if (!transfer) return 0;
+  const caTeeth = parseToothWorks(transfer.toothWorksSummary).filter((row) =>
+    Boolean(row.customAbutment),
+  ).length;
+  const related = Array.isArray(transfer.production?.relatedRequestIds)
+    ? transfer.production.relatedRequestIds.filter((id) =>
+        Boolean(String(id || "").trim()),
+      ).length
+    : 0;
+  return Math.max(caTeeth, related, 0);
+}
+
+/** 커스텀어벗이 있고 아직 치아별 어벗디자인이 부족한지 */
+export function practiceTransferNeedsMoreAbutmentDesigns(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  if (!practiceTransferHasCustomAbutment(transfer)) return false;
+  const designCount = countPracticeTransferDesignFiles(transfer);
+  const expected = countPracticeTransferExpectedAbutmentDesigns(transfer);
+  if (expected <= 0) return designCount === 0;
+  return designCount < expected;
 }

@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/RetentionGrooveField.tsx
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-08-16: 다파일 큐 progress·확인 버튼 라벨 전달.
 // - 2026-08-16: AbutmentModelConfirmDialog(lab-handoff) 어댑터로 통합.
 // - 2026-08-16: 유지홈 공통 필드·안내 모달. 계정 기본값(없음) 적용.
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -35,6 +36,10 @@ type Props = {
   onRetentionGrooveAccountSave?: (value: RetentionGrooveChoice) => void;
   connections: Connection[];
   confirming?: boolean;
+  /** 1-based index in multi-file queue */
+  queueCurrent?: number;
+  /** total files in multi-file queue */
+  queueTotal?: number;
   onConfirm: (caseInfos: AbutmentDesignConfirmCaseInfos) => void | Promise<void>;
   onCancel?: () => void;
 };
@@ -75,6 +80,8 @@ export function AbutmentDesignConfirmDialog({
   onRetentionGrooveAccountSave,
   connections,
   confirming = false,
+  queueCurrent,
+  queueTotal,
   onConfirm,
   onCancel,
 }: Props) {
@@ -192,6 +199,19 @@ export function AbutmentDesignConfirmDialog({
 
   const files = useMemo(() => (file ? [file] : []), [file]);
 
+  const queueProgress = useMemo(() => {
+    const total = Number(queueTotal || 0);
+    const current = Number(queueCurrent || 0);
+    if (!(total > 1) || !(current >= 1)) {
+      return { progressLabel: "", confirmLabel: "확인 & 업로드" };
+    }
+    const isLast = current >= total;
+    return {
+      progressLabel: `${current}/${total}`,
+      confirmLabel: isLast ? "확인 & 업로드" : "확인 & 다음",
+    };
+  }, [queueCurrent, queueTotal]);
+
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (confirming) return;
@@ -275,6 +295,8 @@ export function AbutmentDesignConfirmDialog({
       toast={toast}
       lockProductionProductMode
       confirming={confirming}
+      confirmLabel={queueProgress.confirmLabel}
+      progressLabel={queueProgress.progressLabel}
       onRetentionGrooveAccountSave={onRetentionGrooveAccountSave}
     />
   );

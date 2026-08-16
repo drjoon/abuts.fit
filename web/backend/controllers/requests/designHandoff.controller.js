@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 다치아 생산 취소 시 연동 Request 전원 구강스캔 복원.
 // - 2026-08-16: 생산 취소 가드 — stage뿐 아니라 actualCamStart(가공 진입 중)도 차단.
 // - 2026-08-16: PTX 핸드오프 시 기공소 designSoftware·아노다이징·헥스·유지홈을 Request에 스탬프.
 // - 2026-08-16: 어벗디자인 취소·재업로드 시 requestor 대시보드 스냅샷 갱신(준비 카운트 stale 방지).
@@ -209,7 +210,7 @@ const clearPtxDesignMirror = async (transferId) => {
 
 /**
  * PTX 생산 취소: 연동 CA Request들을 관리자·제조사 큐에서 「취소」로 내린다.
- * (productMode를 design으로 두면 제조사 준비 큐에선 빠지지만 관리자「준비」에는 남음)
+ * 다치아: 각 Request의 구강스캔(designSourceFiles)도 복원해 재업로드 가능하게 한다.
  */
 const markPtxRelatedRequestsCancelled = async (transferId) => {
   if (!transferId || !Types.ObjectId.isValid(String(transferId))) {
@@ -227,23 +228,29 @@ const markPtxRelatedRequestsCancelled = async (transferId) => {
     .map((id) => new Types.ObjectId(id));
   if (!ids.length) return { modifiedCount: 0 };
 
-  const result = await Request.updateMany(
-    {
-      _id: { $in: ids },
-      manufacturerStage: { $ne: "취소" },
-    },
-    {
-      $set: {
-        manufacturerStage: "취소",
-        "caseInfos.productMode": PRODUCT_MODE_DESIGN,
-      },
-      $unset: {
-        designCompletedAt: "",
-        designCompletedBy: "",
-      },
-    },
-  );
-  return { modifiedCount: Number(result?.modifiedCount || 0) };
+  const requests = await Request.find({ _id: { $in: ids } });
+  let modifiedCount = 0;
+  for (const request of requests) {
+    const sourceRows = Array.isArray(request.caseInfos?.designSourceFiles)
+      ? request.caseInfos.designSourceFiles.map(toStoredFileMeta).filter(Boolean)
+      : [];
+    const restorePrimary = sourceRows[0] || null;
+    if (!request.caseInfos) request.caseInfos = {};
+    if (restorePrimary?.s3Key) {
+      request.caseInfos.file = restorePrimary;
+      request.caseInfos.files = sourceRows.slice(1);
+      request.caseInfos.designSourceFiles = [];
+      request.caseInfos.camFile = undefined;
+      request.caseInfos.ncFile = undefined;
+    }
+    request.caseInfos.productMode = PRODUCT_MODE_DESIGN;
+    request.designCompletedAt = undefined;
+    request.designCompletedBy = undefined;
+    request.manufacturerStage = "취소";
+    await request.save();
+    modifiedCount += 1;
+  }
+  return { modifiedCount };
 };
 
 /**
@@ -877,14 +884,38 @@ export async function cancelDesignHandoff(req, res) {
 
     let feeRevoke = null;
     try {
-      feeRevoke = await revokeAbutmentDesignLabFee({
-        requestDoc: request,
-        transferId: relatedTransferId,
-        labAnchorId: String(
-          req.user?.businessAnchorId || request.businessAnchorId || "",
-        ).trim(),
-        actorUserId: userId,
-      });
+      const transferForRevoke = await PracticeTransfer.findById(relatedTransferId)
+        .select({ "production.relatedRequestIds": 1 })
+        .lean();
+      const relatedForRevoke = (
+        Array.isArray(transferForRevoke?.production?.relatedRequestIds)
+          ? transferForRevoke.production.relatedRequestIds
+          : []
+      )
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id));
+      const uniqueRevokeIds = Array.from(
+        new Set([String(request._id), ...relatedForRevoke]),
+      );
+      let revokedAny = false;
+      for (const revokeId of uniqueRevokeIds) {
+        const revokeDoc =
+          String(revokeId) === String(request._id)
+            ? request
+            : await Request.findById(revokeId);
+        if (!revokeDoc) continue;
+        const row = await revokeAbutmentDesignLabFee({
+          requestDoc: revokeDoc,
+          transferId: relatedTransferId,
+          labAnchorId: String(
+            req.user?.businessAnchorId || request.businessAnchorId || "",
+          ).trim(),
+          actorUserId: userId,
+        });
+        if (row?.revoked) revokedAny = true;
+        if (String(revokeId) === String(request._id)) feeRevoke = row;
+      }
+      if (!feeRevoke) feeRevoke = { revoked: revokedAny };
     } catch (revokeErr) {
       console.error("[DESIGN_HANDOFF_CANCEL] fee revoke failed", revokeErr);
     }
