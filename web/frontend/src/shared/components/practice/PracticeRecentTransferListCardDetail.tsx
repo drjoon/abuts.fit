@@ -1,14 +1,20 @@
 /**
  * 치과·기공소 의뢰 목록 카드 본문 메타 SSOT.
- * 필수만: 시각 / 상태 / 주문일·치과도착일 / 상대(기공소|치과)·환자명.
+ * 필수만: 시각 / 상태 / 주문일·치과도착일 / 상대(기공소|치과)·환자명·치아번호.
  * 2026-08-16: 전송ID·파일수·기간·메모 덤프 제거, 2열 메타·시맨틱 뱃지.
  * 2026-08-16: 기공소 수신 카드와 동일 레이아웃(counterpart 라벨로 분기).
+ * 2026-08-16: 카드에 치아번호(11,21)만 — 보철 형태 등은 상세 모달.
+ * 2026-08-16: 상태 뱃지를 시각과 같은 줄에 배치(행 높이 절약).
  */
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/shared/ui/cn";
 import { SEMANTIC_BADGE } from "@/shared/ui/semanticStatus";
-import { parsePracticeTransferMemoMeta } from "@/shared/practice/transferMemo";
+import {
+  formatToothNumbersForCard,
+  parsePracticeTransferMemoMeta,
+  parseToothWorks,
+} from "@/shared/practice/transferMemo";
 import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList";
 
 export function resolvePracticeTransferListPatientName(transfer: {
@@ -35,6 +41,48 @@ export function resolvePracticeTransferListPatientName(transfer: {
     .map((f) => String(f?.patientName || "").trim())
     .find(Boolean);
   return fromFile || "";
+}
+
+/** 목록 카드용 치아번호 라벨 (예: 11,21). 보철 형태는 상세 모달. */
+export function resolvePracticeTransferListToothNumbers(transfer: {
+  rawTransferMemo?: string | null;
+  transferMemo?: string | null;
+  toothWorksSummary?: string | null;
+  toothWorks?: Array<{ toothNumber?: string | null }> | null;
+  toothNumbers?: string[] | null;
+}): string {
+  if (Array.isArray(transfer.toothWorks) && transfer.toothWorks.length > 0) {
+    const fromRows = formatToothNumbersForCard(transfer.toothWorks);
+    if (fromRows) return fromRows;
+  }
+
+  const summary = String(transfer.toothWorksSummary || "").trim();
+  if (summary) {
+    const fromSummary = formatToothNumbersForCard(parseToothWorks(summary));
+    if (fromSummary) return fromSummary;
+  }
+
+  const raw = String(transfer.rawTransferMemo || "").trim();
+  if (raw) {
+    const fromRaw = formatToothNumbersForCard(
+      parsePracticeTransferMemoMeta(raw).toothWorks,
+    );
+    if (fromRaw) return fromRaw;
+  }
+
+  const display = String(transfer.transferMemo || "").trim();
+  if (display) {
+    const fromDisplay = formatToothNumbersForCard(
+      parsePracticeTransferMemoMeta(display).toothWorks,
+    );
+    if (fromDisplay) return fromDisplay;
+  }
+
+  if (Array.isArray(transfer.toothNumbers) && transfer.toothNumbers.length > 0) {
+    return formatToothNumbersForCard(transfer.toothNumbers);
+  }
+
+  return "";
 }
 
 /** 목록 뱃지 라벨(의뢰·수락…) 또는 원 상태(발송완료…) → semantic class */
@@ -83,6 +131,8 @@ export type PracticeTransferRequestCardMetaProps = {
   orderDate?: string;
   arrivalDate?: string;
   patientName?: string;
+  /** 예: 11,21 — 보철 형태 등 세부는 상세 모달 */
+  toothNumbers?: string;
   layout?: "compact" | "comfortable";
   /** 기공비 등 필수 부가 행 */
   afterMeta?: ReactNode;
@@ -98,6 +148,7 @@ export function PracticeTransferRequestCardMeta({
   orderDate,
   arrivalDate,
   patientName,
+  toothNumbers,
   layout = "compact",
   afterMeta,
 }: PracticeTransferRequestCardMetaProps) {
@@ -105,16 +156,16 @@ export function PracticeTransferRequestCardMeta({
   const arrival = String(arrivalDate || "").trim();
   const counterpart = String(counterpartValue || "").trim() || "-";
   const patient = String(patientName || "").trim();
+  const teeth = String(toothNumbers || "").trim();
   const comfortable = layout === "comfortable";
   const hasDates = Boolean(order || arrival);
 
   return (
     <div className={cn("min-w-0", comfortable ? "space-y-2.5" : "space-y-2")}>
-      <p className="text-[11px] tabular-nums tracking-tight text-muted-foreground">
-        {createdAt}
-      </p>
-
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="min-w-0 truncate text-[11px] tabular-nums tracking-tight text-muted-foreground">
+          {createdAt}
+        </p>
         {statusLabel ? (
           <Badge
             variant="outline"
@@ -144,6 +195,7 @@ export function PracticeTransferRequestCardMeta({
         ) : null}
         <MetaField label={counterpartLabel} value={counterpart} />
         {patient ? <MetaField label="환자명" value={patient} /> : null}
+        {teeth ? <MetaField label="치아번호" value={teeth} tabular /> : null}
       </div>
 
       {afterMeta}

@@ -289,6 +289,7 @@ import {
 import {
   PracticeTransferRequestCardMeta,
   resolvePracticeTransferListPatientName,
+  resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import {
   Collapsible,
@@ -6210,6 +6211,7 @@ export const PracticeFileTransferPage = ({
                                 orderDate={transfer.orderDate}
                                 arrivalDate={transfer.arrivalDate}
                                 patientName={resolvePracticeTransferListPatientName(transfer)}
+                                toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
                               />
                             </div>
 
@@ -6395,6 +6397,7 @@ export const PracticeFileTransferPage = ({
                                 orderDate={transfer.orderDate}
                                 arrivalDate={transfer.arrivalDate}
                                 patientName={resolvePracticeTransferListPatientName(transfer)}
+                                toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
                               />
                             </div>
                             <TooltipProvider>
@@ -6519,6 +6522,7 @@ export const PracticeFileTransferPage = ({
                                 orderDate={transfer.orderDate}
                                 arrivalDate={transfer.arrivalDate}
                                 patientName={resolvePracticeTransferListPatientName(transfer)}
+                                toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
                               />
                             </div>
 
@@ -6655,6 +6659,7 @@ export const PracticeFileTransferPage = ({
                             orderDate={transfer.orderDate}
                             arrivalDate={transfer.arrivalDate}
                             patientName={resolvePracticeTransferListPatientName(transfer)}
+                            toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
                           />
                         </div>
                         <TooltipProvider>
@@ -6772,6 +6777,7 @@ export const PracticeFileTransferPage = ({
                             orderDate={transfer.orderDate}
                             arrivalDate={transfer.arrivalDate}
                             patientName={resolvePracticeTransferListPatientName(transfer)}
+                            toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
                           />
                         </div>
 

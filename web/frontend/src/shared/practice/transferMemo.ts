@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-08-16: formatToothNumbersForCard — 의뢰 목록 카드용 치아번호만(11,21).
 // - 2026-08-14: 기공소 수신(labFacing) 치식 표시 — 커스텀어벗 → 어벗츠 지급.
 // - 2026-08-14: 같은 스펙이면 환봉 도입 프리셋을 일반 프리셋보다 우선한다.
 // - 2026-08-14: implantFavorites 환봉 제조사 추가요청(roundBar/adopted/roundBarRequestId).
@@ -1049,6 +1050,26 @@ export const formatToothWorksForDisplay = (
   });
 
   return options?.multiline ? formattedRows.join("\n") : formattedRows.join(" / ");
+};
+
+/** 의뢰 목록 카드용 — 치아번호만 (예: 11,21). 보철 형태는 상세 모달. */
+export const formatToothNumbersForCard = (
+  rows:
+    | Array<{ toothNumber?: string | null } | string | null | undefined>
+    | null
+    | undefined,
+): string => {
+  const numbers = [
+    ...new Set(
+      (rows || [])
+        .map((row) => {
+          if (typeof row === "string") return String(row || "").trim();
+          return String(row?.toothNumber || "").trim();
+        })
+        .filter((n) => /^[1-4][1-8]$/.test(n)),
+    ),
+  ].sort((a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b));
+  return numbers.join(",");
 };
 
 const parseLegacyToothWorksSummary = (value: string): ToothWorkSelection[] => {

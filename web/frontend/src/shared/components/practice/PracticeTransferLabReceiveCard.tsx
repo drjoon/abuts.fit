@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
 // - 2026-08-16: 어벗 미완이면 보철 업로드 CTA 비활성(드롭은 어벗→보철 순).
+// - 2026-08-16: 카드 메타에 치아번호(11,21) — 보철 형태는 상세 모달.
 // - 2026-08-16: 치과와 동일 최신 메타(시각·상태·주문/도착·치과/환자). 메모·기간·메타뱃지·헤더 별점 제거.
 // - 2026-08-16: 수신 카드 — 상태·메타·별점 / 매칭·시각 / 작업기간 / 기공비·수령 4줄로 압축.
 // - 2026-08-16: 수신 카드 — 치과 중심 계층·칩 메타·상태 색·compact 셸(간단 명료).
@@ -44,6 +45,7 @@ import {
 import {
   PracticeTransferRequestCardMeta,
   resolvePracticeTransferListPatientName,
+  resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import { formatLabStarsLabel } from "@/shared/practice/practiceLabRating";
 import { SEMANTIC_BADGE, SEMANTIC_CALLOUT } from "@/shared/ui/semanticStatus";
@@ -438,6 +440,7 @@ export function PracticeTransferLabReceiveCard({
         orderDate={transfer.orderDate}
         arrivalDate={transfer.arrivalDate}
         patientName={patientName}
+        toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
         afterMeta={
           transfer.feeQuote || starDowngrade ? (
             <div className="space-y-2">

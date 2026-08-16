@@ -57,6 +57,7 @@ import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/Practic
 import {
   PracticeTransferRequestCardMeta,
   resolvePracticeTransferListPatientName,
+  resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 
 const PAGE_SIZE = PRACTICE_MY_TRANSFERS_PAGE_SIZE;
@@ -460,6 +461,7 @@ export function PracticeRecentTransfersAllModal({
                           orderDate={transfer.orderDate}
                           arrivalDate={transfer.arrivalDate}
                           patientName={resolvePracticeTransferListPatientName(transfer)}
+                          toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
                         />
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
