@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
 // change-log:
+// - 2026-08-16: 수신 카드 — 치과 중심 계층·칩 메타·상태 색·compact 셸(간단 명료).
 // - 2026-08-16: 다치아 어벗 — 부족분 추가 업로드 CTA·보철 다중 업로드 안내.
 // - 2026-08-16: 어벗 가공 시작 시「어벗 생산 취소」는 숨기지 않고 비활성(의뢰 수락 취소와 동일).
 // - 2026-08-16: 어벗 가공 시작(준비 아님)이면 의뢰 수락 취소 비활성.
@@ -61,18 +62,45 @@ const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
   if (Number.isNaN(d.getTime())) return "-";
   return d.toLocaleString("ko-KR", {
-    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
     hour12: false,
+    timeZone: "Asia/Seoul",
   });
 };
 
 const formatWonCompact = (value: number) =>
   `₩${Math.max(0, Math.round(value)).toLocaleString("ko-KR")}`;
+
+const META_CHIP_CLASS =
+  "inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-600";
+
+const statusBadgeClass = (displayStatus: string) => {
+  if (
+    displayStatus === "취소" ||
+    displayStatus === "거부" ||
+    displayStatus === "작업취소"
+  ) {
+    return SEMANTIC_BADGE.dangerSoft;
+  }
+  if (
+    displayStatus === "의뢰수락" ||
+    displayStatus === "작업완료" ||
+    displayStatus === "생산진행" ||
+    displayStatus === "포장.발송"
+  ) {
+    return SEMANTIC_BADGE.primarySoft;
+  }
+  if (displayStatus === "발송완료" || displayStatus === "자동매칭") {
+    return SEMANTIC_BADGE.neutral;
+  }
+  return SEMANTIC_BADGE.neutral;
+};
+
+const CARD_SHELL =
+  "w-full cursor-pointer rounded-xl border bg-white p-3.5 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 
 export type PracticeTransferLabReceiveCardProps = {
@@ -191,9 +219,9 @@ export function PracticeTransferLabReceiveCard({
               size="sm"
               variant="secondary"
               disabled
-              className="focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
             >
-              <X className="h-4 w-4" />
+              <X className="h-3.5 w-3.5" />
               어벗 생산 취소
             </Button>
           </span>
@@ -211,10 +239,10 @@ export function PracticeTransferLabReceiveCard({
             size="sm"
             variant="secondary"
             disabled={cardBusy}
-            className="focus-visible:ring-0 focus-visible:ring-offset-0"
+            className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
             onClick={(event) => void onAbutmentProductionCancel(event)}
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
             {cardBusy ? "처리 중..." : "어벗 생산 취소"}
           </Button>
         </TooltipTrigger>
@@ -229,14 +257,14 @@ export function PracticeTransferLabReceiveCard({
   /** 보철 완료·발송 단계: 3버튼 유지, 업로드 2개 비활성, 오른쪽 취소만(의뢰수락 재오픈) */
   const completedStageCancelActions =
     !showWorkActions && showAbutmentProductionCancel ? (
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         <Button
           type="button"
           size="sm"
           disabled
-          className="focus-visible:ring-0 focus-visible:ring-offset-0"
+          className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
         >
-          <UploadCloud className="h-4 w-4" />
+          <UploadCloud className="h-3.5 w-3.5" />
           어벗 업로드
         </Button>
         <Button
@@ -244,16 +272,16 @@ export function PracticeTransferLabReceiveCard({
           size="sm"
           variant="secondary"
           disabled
-          className="focus-visible:ring-0 focus-visible:ring-offset-0"
+          className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
         >
-          <UploadCloud className="h-4 w-4" />
+          <UploadCloud className="h-3.5 w-3.5" />
           보철 업로드 & 작업완료
         </Button>
         {productionStarted ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="inline-flex">
-                <Button type="button" size="sm" variant="outline" disabled>
+                <Button type="button" size="sm" variant="outline" disabled className="h-8">
                   작업 완료 취소
                 </Button>
               </span>
@@ -271,6 +299,7 @@ export function PracticeTransferLabReceiveCard({
                 size="sm"
                 variant="outline"
                 disabled={cardBusy}
+                className="h-8"
                 onClick={(event) => void onAbutmentProductionCancel(event)}
               >
                 {cardBusy ? "처리 중..." : "작업 완료 취소"}
@@ -286,45 +315,137 @@ export function PracticeTransferLabReceiveCard({
       </div>
     ) : null;
 
+  const clinicLabel =
+    transfer.matchingMode === "auto"
+      ? "자동 매칭"
+      : String(transfer.practice.businessName || "").trim() || "-";
+  const contactLabel =
+    transfer.matchingMode === "auto"
+      ? ""
+      : String(transfer.practice.userName || "").trim();
+  const memoPreview = String(transfer.transferMemo || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const workPreview =
+    toothWorksPreview ||
+    (transfer.prosthesisTypes.length
+      ? transfer.prosthesisTypes.join(", ")
+      : "");
+
+  const actionBar =
+    showWorkActions || completedStageCancelActions ? (
+      <div className="mt-3 border-t border-slate-100 pt-3">
+        {showWorkActions ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {hasCa &&
+            designFileCount > 0 &&
+            !transfer.production?.labDesignConfirmedAt ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={designConfirmBusy}
+                className="h-8"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDesignConfirm();
+                }}
+              >
+                {designConfirmBusy ? "확인 중..." : "어벗 디자인 확인"}
+              </Button>
+            ) : null}
+            {hasCa && needsMoreAbutmentDesigns ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={cardBusy}
+                    className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    onClick={(event) => void onDesignUpload(event)}
+                  >
+                    <UploadCloud className="h-3.5 w-3.5" />
+                    {cardBusy
+                      ? "처리 중..."
+                      : designFileCount > 0
+                        ? `어벗 추가 업로드 (${designFileCount})`
+                        : "어벗 업로드"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-xs">
+                  완성 어벗 STL을 여러 개 올릴 수 있습니다. 치아별 파일을
+                  올리면 제조사에서 커스텀 어벗 생산을 진행합니다.
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+            {productionCancelButton}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={needsMoreAbutmentDesigns ? "secondary" : "default"}
+                  disabled={cardBusy}
+                  className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  onClick={(event) => onComplete(event)}
+                >
+                  <UploadCloud className="h-3.5 w-3.5" />
+                  {cardBusy ? "처리 중..." : "보철 업로드 & 작업완료"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">
+                크라운 등 보철 결과 파일을 여러 개 올려 작업완료합니다.
+                {PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""}
+              </TooltipContent>
+            </Tooltip>
+            {productionStarted ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled
+                      className="h-8"
+                    >
+                      의뢰 수락 취소
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-xs">
+                  어벗 가공이 시작된 뒤에는 의뢰 수락을 취소할 수 없습니다. 제조사가
+                  준비 단계일 때만 가능합니다.
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={cardBusy}
+                className="h-8"
+                onClick={(event) => void onRelease(event)}
+              >
+                {cardBusy ? "처리 중..." : "의뢰 수락 취소"}
+              </Button>
+            )}
+          </div>
+        ) : (
+          completedStageCancelActions
+        )}
+      </div>
+    ) : null;
+
   const body = (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="font-semibold truncate">{transfer.transferId}</span>
-          {chatUnreadCount > 0 ? (
-            <Badge
-              variant="destructive"
-              className="h-5 min-w-5 justify-center px-1 text-[11px] leading-none"
-            >
-              {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
-            </Badge>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <RequestCaseMetaBadges
-            designSoftware={designSoftwareLabel}
-            anodizingEnabled={anodizingEnabled}
-          />
-          <span className="text-xs text-muted-foreground">
-            {formatDateTime(transfer.createdAt)}
-          </span>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <Badge
-            variant={
-              displayStatus === "발송완료" ||
-              displayStatus === "자동매칭" ||
-              displayStatus === "취소" ||
-              displayStatus === "거부"
-                ? "destructive"
-                : "secondary"
-            }
+            variant="outline"
             className={cn(
-              "shrink-0 whitespace-nowrap",
-              displayStatus === "의뢰수락" ||
-                displayStatus === "작업완료" ||
-                displayStatus === "생산진행"
-                ? "bg-primary-soft text-primary-strong hover:bg-primary-soft"
-                : "",
+              "h-5 shrink-0 px-1.5 text-[11px] font-semibold leading-none",
+              statusBadgeClass(displayStatus),
             )}
           >
             {toStatusBadgeLabel(displayStatus)}
@@ -334,73 +455,121 @@ export function PracticeTransferLabReceiveCard({
             <Badge
               variant="outline"
               className={cn(
-                "shrink-0 whitespace-nowrap",
+                "h-5 shrink-0 px-1.5 text-[11px] leading-none",
                 PRACTICE_REMAKE_BADGE_CLASS,
               )}
             >
               리메이크
             </Badge>
           ) : null}
-          <Tooltip>
-            <TooltipTrigger asChild>
+          <RequestCaseMetaBadges
+            designSoftware={designSoftwareLabel}
+            anodizingEnabled={anodizingEnabled}
+          />
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-950">
+              <Star
+                className="h-3 w-3 fill-amber-500 text-amber-500"
+                aria-hidden
+              />
+              <span className="font-semibold tabular-nums">
+                {formatLabStarsLabel(myStarsDisplay)}
+              </span>
+              <span className="text-amber-800/70">·{myRatingCount}</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs text-xs">
+            내 별점(전체 치과 평가 합산). 평가{" "}
+            {AUTO_MATCH_RATING_COUNT_GRACE + 1}회부터 실제 평균이 적용됩니다.
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      <div className="mt-2.5 flex items-start gap-2.5">
+        <div
+          className={cn(
+            "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+            transfer.matchingMode === "auto"
+              ? "bg-primary-soft text-primary-strong"
+              : "bg-slate-100 text-slate-600",
+          )}
+        >
+          <Building2 className="h-4 w-4" aria-hidden />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <h3 className="truncate text-[15px] font-semibold leading-tight tracking-tight text-slate-900">
+              {clinicLabel}
+            </h3>
+            {chatUnreadCount > 0 ? (
               <Badge
-                variant="outline"
-                className="shrink-0 gap-1 whitespace-nowrap border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-50"
+                variant="destructive"
+                className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
               >
-                <Star className="h-3 w-3 fill-amber-500 text-amber-500" aria-hidden />
-                <span className="font-semibold">
-                  {formatLabStarsLabel(myStarsDisplay)}
-                </span>
-                <span className="font-normal text-amber-800/80">
-                  · 평가 {myRatingCount}회
-                </span>
+                {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
               </Badge>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs text-xs">
-              내 별점(전체 치과 평가 합산). 평가{" "}
-              {AUTO_MATCH_RATING_COUNT_GRACE + 1}회부터 실제 평균이 적용됩니다.
-            </TooltipContent>
-          </Tooltip>
+            ) : null}
+          </div>
+          {contactLabel ? (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              담당 {contactLabel}
+            </p>
+          ) : null}
+          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
+            <span className="font-medium tabular-nums text-slate-600">
+              {transfer.transferId}
+            </span>
+            <span aria-hidden className="text-slate-300">
+              ·
+            </span>
+            <span className="tabular-nums">
+              {formatDateTime(transfer.createdAt)}
+            </span>
+          </p>
         </div>
       </div>
 
-      <div className="mt-2 text-sm text-muted-foreground">
-        치과:{" "}
-        {transfer.matchingMode === "auto"
-          ? "자동 매칭"
-          : transfer.practice.businessName || "-"}
-        {transfer.matchingMode === "auto"
-          ? ""
-          : transfer.practice.userName
-            ? ` · 담당자 ${transfer.practice.userName}`
-            : ""}
-      </div>
-
-      <p className="mt-2 text-xs text-muted-foreground truncate">
-        파일 {transfer.fileCount}개
-        {designFileCount > 0 ? ` · 어벗디자인 ${designFileCount}개` : ""}
-        {resultCount > 0 ? ` · 결과 ${resultCount}개` : ""}
+      <div className="mt-3 space-y-1.5">
         {transfer.orderDate && transfer.arrivalDate ? (
-          <>
-            {" · "}
+          <div className="text-[12px] leading-snug">
             <PracticeWorkPeriodText
               orderDate={transfer.orderDate}
               arrivalDate={transfer.arrivalDate}
               variant="orderArrival"
               viewer="lab"
-              className="text-xs"
+              className="text-[12px]"
             />
-          </>
+          </div>
         ) : null}
-        {toothWorksPreview
-          ? ` · 치아별 ${toothWorksPreview}`
-          : transfer.prosthesisTypes.length
-            ? ` · 형태 ${transfer.prosthesisTypes.join(", ")}`
-            : ""}
-        {String(transfer.transferMemo || "").trim()
-          ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
-          : ""}
-      </p>
+        {workPreview ? (
+          <p
+            className="truncate text-[12px] font-medium leading-snug text-slate-700"
+            title={workPreview}
+          >
+            {toothWorksPreview ? workPreview : `형태 ${workPreview}`}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-1">
+          <span className={META_CHIP_CLASS}>파일 {transfer.fileCount}</span>
+          {designFileCount > 0 ? (
+            <span className={META_CHIP_CLASS}>어벗 {designFileCount}</span>
+          ) : null}
+          {resultCount > 0 ? (
+            <span className={META_CHIP_CLASS}>결과 {resultCount}</span>
+          ) : null}
+        </div>
+        {memoPreview ? (
+          <p
+            className="truncate text-[11px] leading-snug text-muted-foreground"
+            title={memoPreview}
+          >
+            메모 {memoPreview}
+          </p>
+        ) : null}
+      </div>
+
       {transfer.feeQuote ? (
         <PracticeTransferFeeEstimate
           quote={transfer.feeQuote}
@@ -414,40 +583,40 @@ export function PracticeTransferLabReceiveCard({
         <div
           role="note"
           className={cn(
-            "mt-2 rounded-lg px-3 py-2 text-xs",
+            "mt-2.5 rounded-lg px-2.5 py-2 text-[11px]",
             SEMANTIC_CALLOUT.attentionBorder,
           )}
         >
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-accent-strong">
             <span className="inline-flex items-center gap-1">
-              <Star className="h-3.5 w-3.5 fill-current" aria-hidden />
+              <Star className="h-3 w-3 fill-current" aria-hidden />
               별점 다운그레이드
             </span>
             <span className="font-normal text-accent-strong/80">
-              우리 별점보다 낮은 의뢰입니다. 수락 여부를 선택하세요.
+              낮은 별점 의뢰 · 수락 전 확인
             </span>
           </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <span
               className={cn(
-                "inline-flex items-center rounded-md px-2 py-0.5 font-semibold tabular-nums",
+                "inline-flex items-center rounded-md px-1.5 py-0.5 font-semibold tabular-nums",
                 SEMANTIC_BADGE.attentionSoft,
               )}
             >
-              내 별점 {formatLabStarsLabel(starDowngrade.labEffectiveStars)}
-              <span className="mx-1.5 font-normal text-accent-strong/70" aria-hidden>
+              {formatLabStarsLabel(starDowngrade.labEffectiveStars)}
+              <span className="mx-1 font-normal text-accent-strong/70" aria-hidden>
                 →
               </span>
-              자동매칭 별점 {formatLabStarsLabel(starDowngrade.autoMatchStars)}
+              {formatLabStarsLabel(starDowngrade.autoMatchStars)}
             </span>
             {starDowngrade.labFeeDeltaWon > 0 ? (
               <span
                 className={cn(
-                  "inline-flex items-center rounded-md px-2 py-0.5 font-semibold tabular-nums",
+                  "inline-flex items-center rounded-md px-1.5 py-0.5 font-semibold tabular-nums",
                   SEMANTIC_BADGE.dangerSoft,
                 )}
               >
-                수가 {formatWonCompact(starDowngrade.labFeeDeltaWon)} 낮음
+                수가 {formatWonCompact(starDowngrade.labFeeDeltaWon)}↓
               </span>
             ) : null}
           </div>
@@ -458,111 +627,15 @@ export function PracticeTransferLabReceiveCard({
       hasCa &&
       designFileCount > 0 &&
       !transfer.production?.labDesignConfirmedAt ? (
-        <div className="mt-2 rounded-md border border-dashed border-primary/40 bg-primary-soft/40 px-3 py-2 text-xs text-primary-strong">
-          어벗 디자인이 도착했습니다. 레거시 건은 「어벗 디자인 확인」으로 생산을
-          시작할 수 있습니다.
+        <div className="mt-2.5 rounded-lg border border-dashed border-primary/35 bg-primary-soft/50 px-2.5 py-1.5 text-[11px] leading-snug text-primary-strong">
+          어벗 디자인 도착
           {!transfer.production?.abutmentProductionStartedAt
-            ? " (신규 건은 디자인 업로드 시 자동으로 제조 주문이 들어갑니다.)"
-            : ""}
+            ? " · 신규 건은 업로드 시 자동 주문"
+            : " · 레거시는 「어벗 디자인 확인」"}
         </div>
       ) : null}
 
-      {showWorkActions ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {hasCa &&
-          designFileCount > 0 &&
-          !transfer.production?.labDesignConfirmedAt ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={designConfirmBusy}
-              onClick={(event) => {
-                event.stopPropagation();
-                onDesignConfirm();
-              }}
-            >
-              {designConfirmBusy ? "확인 중..." : "어벗 디자인 확인"}
-            </Button>
-          ) : null}
-          {hasCa && needsMoreAbutmentDesigns ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={cardBusy}
-                  className="focus-visible:ring-0 focus-visible:ring-offset-0"
-                  onClick={(event) => void onDesignUpload(event)}
-                >
-                  <UploadCloud className="h-4 w-4" />
-                  {cardBusy
-                    ? "처리 중..."
-                    : designFileCount > 0
-                      ? `어벗 추가 업로드 (${designFileCount})`
-                      : "어벗 업로드"}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs text-xs">
-                완성 어벗 STL을 여러 개 올릴 수 있습니다. 치아별 파일을
-                올리면 제조사에서 커스텀 어벗 생산을 진행합니다.
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
-          {productionCancelButton}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant={needsMoreAbutmentDesigns ? "secondary" : "default"}
-                disabled={cardBusy}
-                className="focus-visible:ring-0 focus-visible:ring-offset-0"
-                onClick={(event) => onComplete(event)}
-              >
-                <UploadCloud className="h-4 w-4" />
-                {cardBusy ? "처리 중..." : "보철 업로드 & 작업완료"}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs text-xs">
-              크라운 등 보철 결과 파일을 여러 개 올려 작업완료합니다.
-              {PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""}
-            </TooltipContent>
-          </Tooltip>
-          {productionStarted ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled
-                  >
-                    의뢰 수락 취소
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs text-xs">
-                어벗 가공이 시작된 뒤에는 의뢰 수락을 취소할 수 없습니다. 제조사가
-                준비 단계일 때만 가능합니다.
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={cardBusy}
-              onClick={(event) => void onRelease(event)}
-            >
-              {cardBusy ? "처리 중..." : "의뢰 수락 취소"}
-            </Button>
-          )}
-        </div>
-      ) : (
-        completedStageCancelActions
-      )}
+      {actionBar}
     </>
   );
 
@@ -574,16 +647,17 @@ export function PracticeTransferLabReceiveCard({
         acceptedHint={PRACTICE_ACCEPTED_HINT}
         showDefaultUi={false}
         className={cn(
-          "w-full cursor-pointer rounded-lg border-2 border-dashed p-4 text-left transition",
+          CARD_SHELL,
+          "border-2 border-dashed shadow-none",
           hasStarDowngrade
-            ? "border-accent/70 bg-accent-soft/40 hover:border-accent hover:bg-accent-soft/70"
-            : "border-slate-300 hover:bg-muted/20",
+            ? "border-accent/70 bg-accent-soft/35 hover:border-accent hover:bg-accent-soft/60"
+            : "border-slate-300/90 hover:border-primary/50 hover:bg-primary-soft/20",
           dimRejected && "opacity-40 hover:opacity-55",
         )}
         activeClassName={
           hasStarDowngrade
             ? "border-accent bg-accent-soft/80"
-            : "border-primary bg-primary-soft/40"
+            : "border-primary bg-primary-soft/45"
         }
         onFiles={onDropFiles}
       >
@@ -608,10 +682,10 @@ export function PracticeTransferLabReceiveCard({
       onClick={onOpen}
       onKeyDown={onCardKeyDown}
       className={cn(
-        "w-full cursor-pointer rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        CARD_SHELL,
         hasStarDowngrade
-          ? "border-accent/70 bg-accent-soft/40 hover:border-accent hover:bg-accent-soft/70"
-          : "hover:border-primary/40 hover:bg-muted/20",
+          ? "border-accent/70 bg-accent-soft/35 hover:border-accent hover:bg-accent-soft/60 hover:shadow-md"
+          : "border-slate-200/90 hover:border-primary/35 hover:bg-slate-50/60 hover:shadow-md",
         dimRejected && "opacity-40 hover:opacity-55",
       )}
       data-transfer-card="true"

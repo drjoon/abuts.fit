@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 수신 카드 스켈레톤 — 상태/치과 타이틀/칩 메타 계층에 맞춤.
 // - 2026-08-13: 수신 스켈레톤 상태 뱃지 5→6(취소 추가).
 // - 2026-08-13: 수신 스켈레톤 — 치과초대 제거·작업영역 카드 전체 높이.
 // - 2026-08-11: 기공의뢰(발신)·기공의뢰수신 레이아웃에 맞춘 페이지 스켈레톤 신설.
@@ -16,16 +17,30 @@ type RequestorPracticePageSkeletonProps = {
 };
 
 const TransferCardSkeleton = () => (
-  <div className="rounded-lg border p-4 space-y-3">
+  <div className="space-y-2.5 rounded-xl border border-slate-200/90 bg-white p-3.5 shadow-sm">
     <div className="flex items-center justify-between gap-2">
-      <Skeleton className="h-4 w-28" />
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        <Skeleton className="h-5 w-12 rounded-md" />
+        <Skeleton className="h-5 w-14 rounded-md" />
+      </div>
+      <Skeleton className="h-5 w-12 rounded-md" />
+    </div>
+    <div className="flex items-start gap-2.5">
+      <Skeleton className="h-8 w-8 shrink-0 rounded-lg" />
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <Skeleton className="h-4 w-36" />
         <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-5 w-14 rounded-full" />
+        <Skeleton className="h-3 w-40" />
       </div>
     </div>
-    <Skeleton className="h-3 w-48" />
-    <Skeleton className="h-3 w-full" />
+    <div className="space-y-1.5">
+      <Skeleton className="h-3 w-48" />
+      <Skeleton className="h-3 w-56" />
+      <div className="flex gap-1">
+        <Skeleton className="h-5 w-14 rounded-md" />
+        <Skeleton className="h-5 w-12 rounded-md" />
+      </div>
+    </div>
   </div>
 );
 
