@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-10: worksheet select에 caseInfos.memo/toothWorks/prosthesisType/files 추가(디자인 큐).
+// - 2026-08-17: 취소/삭제 시 PTX 연동 어벗 디자인비(ADJUST) revoke.
 // related files:
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
@@ -538,6 +539,30 @@ async function ensureRequestCancelRollbackDelete({
     session: session || null,
     deferredCreditEvents,
   });
+
+  // PTX 연동 CA: 어벗 디자인비(ADJUST)도 함께 회수(관리자/의뢰자 삭제·취소).
+  const relatedTransferId = String(
+    request?.partnerBilling?.relatedPracticeTransferId || "",
+  ).trim();
+  if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
+    try {
+      const { revokeAbutmentDesignLabFee } = await import(
+        "../../services/practiceTransferBilling.service.js"
+      );
+      await revokeAbutmentDesignLabFee({
+        requestDoc: request,
+        transferId: relatedTransferId,
+        labAnchorId: String(request.businessAnchorId || "").trim() || null,
+        actorUserId: actorUserId || null,
+      });
+    } catch (revokeErr) {
+      console.warn(
+        "[ensureRequestCancelRollbackDelete] abutment design fee revoke failed",
+        String(request?._id || ""),
+        revokeErr?.message || revokeErr,
+      );
+    }
+  }
 }
 
 async function ensureDeliveryInfoShippedAtNow({ request, session }) {

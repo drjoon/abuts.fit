@@ -243,6 +243,12 @@ export async function listMyCreditLedger(req, res) {
         amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
         uniqueKey: buildLedgerUniqueKeyExpr(),
         requestIdMeta: { $ifNull: ["$journalDoc.meta.requestId", ""] },
+        displayLabel: {
+          $ifNull: [
+            "$meta.displayLabel",
+            { $ifNull: ["$journalDoc.meta.displayLabel", ""] },
+          ],
+        },
       },
     },
     {
@@ -254,6 +260,7 @@ export async function listMyCreditLedger(req, res) {
         refType: { $first: "$refType" },
         refId: { $first: "$refId" },
         uniqueKey: { $first: "$uniqueKey" },
+        displayLabel: { $first: "$displayLabel" },
         amount: { $sum: "$amountBase" },
         spentPaidAmount: {
           $sum: {
@@ -425,6 +432,12 @@ export async function listMyCreditLedger(req, res) {
                 then: "LAB_SETTLEMENT_CHARGE",
               },
               {
+                case: {
+                  $eq: ["$eventType", "PRACTICE_TRANSFER_LAB_PLATFORM_FEE"],
+                },
+                then: "SPEND_SETTLEMENT",
+              },
+              {
                 case: { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] },
                 then: "LAB_SETTLEMENT_PAYOUT",
               },
@@ -501,6 +514,7 @@ export async function listMyCreditLedger(req, res) {
       return {
         ...base,
         uniqueKey,
+        displayLabel: String(row?.displayLabel || "").trim() || null,
         spendKind:
           row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
         includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),

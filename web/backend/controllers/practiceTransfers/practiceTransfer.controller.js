@@ -20,7 +20,8 @@ import {
   feeQuoteFromBillingDoc,
   holdPracticeTransferCredits,
   loadPracticeTransferQuoteContext,
-  releasePracticeTransferEscrow,
+  releasePracticeTransferLabShare,
+  releasePracticeTransferAbutmentShare,
   chargePracticeTransferLabShipping,
   rollbackPracticeTransferBilling,
   toBillingPreviewFields,
@@ -108,6 +109,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
 // - 2026-08-16: pastReady — 라이브 stage 우선(sticky startedAt OR 제거 시 목록 인자 우선).
+// - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
 // - 2026-08-15: 자동매칭 어벗츠(internalLab) 5분 우선창 — 목록·클레임 게이트, 거부 시 조기 공개.
@@ -263,10 +265,14 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
     billedAt: null,
     heldAt: null,
     heldTotal: 0,
+    heldLabTotal: 0,
+    heldAbutmentTotal: 0,
     holdFromPaid: 0,
     holdFromFreeRequest: 0,
     holdFromFreeShipping: 0,
     settledAt: null,
+    labSettledAt: null,
+    abutmentSettledAt: null,
     ...(preservedAutoMatchBudget
       ? { autoMatchBudget: preservedAutoMatchBudget }
       : {}),
@@ -626,6 +632,20 @@ const buildAcceptedBillingFields = (doc, billingResult) => {
       billingResult.heldTotal != null
         ? Number(billingResult.heldTotal)
         : Number(billingResult.fees?.total || doc.billing?.heldTotal || 0),
+    heldLabTotal:
+      billingResult.heldLabTotal != null
+        ? Number(billingResult.heldLabTotal)
+        : Number(
+            billingResult.fees?.labFeeTotal || doc.billing?.heldLabTotal || 0,
+          ),
+    heldAbutmentTotal:
+      billingResult.heldAbutmentTotal != null
+        ? Number(billingResult.heldAbutmentTotal)
+        : Number(
+            billingResult.fees?.abutmentRetailTotal ||
+              doc.billing?.heldAbutmentTotal ||
+              0,
+          ),
     holdFromPaid:
       billingResult.fromPaid != null
         ? Number(billingResult.fromPaid)
@@ -1696,6 +1716,20 @@ export async function emptyPracticeTransferTrash(req, res) {
     }
 
     if (transferMongoIds.length > 0) {
+      for (const transferMongoId of transferMongoIds) {
+        try {
+          await rollbackPracticeTransferBilling({
+            transferId: transferMongoId,
+            emitRealtime: true,
+          });
+        } catch (rollbackErr) {
+          console.warn(
+            "[practiceTransfer] trash-empty billing rollback failed",
+            transferMongoId,
+            rollbackErr?.message || rollbackErr,
+          );
+        }
+      }
       await PracticeTransfer.deleteMany({
         _id: {
           $in: transferMongoIds
@@ -2092,6 +2126,8 @@ export async function createPracticeTransfer(req, res) {
         transfer: transferDoc,
         toothWorks: toothWorksRaw,
         holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
+        holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
+        holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
         actorUserId: req.user?._id,
       });
       if (holdResult?.held || holdResult?.reason === "already_held") {
@@ -2102,6 +2138,14 @@ export async function createPracticeTransfer(req, res) {
             : billingPreview),
           heldAt,
           heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
+          heldLabTotal: Number(
+            holdResult.heldLabTotal ?? billingPreview?.labFeeTotal ?? 0,
+          ),
+          heldAbutmentTotal: Number(
+            holdResult.heldAbutmentTotal ??
+              billingPreview?.abutmentRetailTotal ??
+              0,
+          ),
           holdFromPaid: Number(holdResult.fromPaid || 0),
           holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
           holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
@@ -2121,12 +2165,12 @@ export async function createPracticeTransfer(req, res) {
         }
       } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
         try {
-          await PracticeTransfer.deleteOne({ _id: transferDoc._id });
+          await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
         } catch {
           // ignore
         }
         try {
-          await rollbackPracticeTransferBilling({ transferId: transferDoc._id });
+          await PracticeTransfer.deleteOne({ _id: transferDoc._id });
         } catch {
           // ignore
         }
@@ -3814,20 +3858,26 @@ export async function markReceivedPracticeTransferComplete(req, res) {
 
     let releaseResult = null;
     try {
-      releaseResult = await releasePracticeTransferEscrow({
+      releaseResult = await releasePracticeTransferLabShare({
         transfer: doc,
         toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
         actorUserId: req.user?._id,
       });
       if (
         releaseResult?.reason === "no_hold" &&
+        !doc.billing?.labSettledAt &&
         !doc.billing?.settledAt &&
         !doc.billing?.billedAt
       ) {
         // 보류 없는 레거시·0원 건은 통과
       } else if (
+        releaseResult?.reason === "zero_lab_fee"
+      ) {
+        // 기공비 0(어벗만 등) — 기공소몫 해제 불필요
+      } else if (
         releaseResult?.reason === "no_hold" &&
-        Number(doc.billing?.heldTotal || doc.billing?.total || 0) > 0 &&
+        Number(doc.billing?.heldLabTotal || doc.billing?.heldTotal || 0) > 0 &&
+        !doc.billing?.labSettledAt &&
         !doc.billing?.settledAt
       ) {
         return res.status(409).json({
@@ -3874,12 +3924,32 @@ export async function markReceivedPracticeTransferComplete(req, res) {
       ? doc.production.relatedRequestIds
       : existingRelated;
 
-    if (releaseResult?.released || releaseResult?.reason === "already_released") {
-      const settledAt = new Date();
+    if (
+      releaseResult?.released ||
+      releaseResult?.reason === "already_released" ||
+      releaseResult?.reason === "zero_lab_fee"
+    ) {
+      const labSettledAt = new Date();
+      const heldAbutment = Math.max(
+        0,
+        Math.round(
+          Number(
+            releaseResult.fees?.abutmentRetailTotal ??
+              doc.billing?.heldAbutmentTotal ??
+              doc.billing?.abutmentRetailTotal ??
+              0,
+          ),
+        ),
+      );
+      const abutmentAlreadySettled = Boolean(
+        doc.billing?.abutmentSettledAt || heldAbutment <= 0,
+      );
       doc.billing = {
         ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
         labFeeTotal:
-          releaseResult.fees?.labFeeTotal ?? Number(doc.billing?.labFeeTotal || 0),
+          releaseResult.fees?.labFeeTotal ??
+          releaseResult.labFeeTotal ??
+          Number(doc.billing?.labFeeTotal || 0),
         abutmentRetailTotal:
           releaseResult.fees?.abutmentRetailTotal ??
           Number(doc.billing?.abutmentRetailTotal || 0),
@@ -3892,7 +3962,14 @@ export async function markReceivedPracticeTransferComplete(req, res) {
         abutsRevenueAmount:
           releaseResult.abutsRevenueAmount ??
           Number(doc.billing?.abutsRevenueAmount || 0),
-        settledAt,
+        labSettledAt,
+        ...(abutmentAlreadySettled
+          ? {
+              abutmentSettledAt:
+                doc.billing?.abutmentSettledAt || labSettledAt,
+              settledAt: labSettledAt,
+            }
+          : {}),
       };
     }
 
@@ -3943,13 +4020,14 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     ];
     if (releaseResult?.released) {
       const settlement = Number(releaseResult.labSettlementAmount || 0);
-      if (settlement > 0 && doc.targetLabAnchorId) {
+      if (settlement !== 0 && doc.targetLabAnchorId) {
         emitJobs.push(
           emitCreditBalanceUpdatedToBusiness({
             businessAnchorId: doc.targetLabAnchorId,
             balanceDelta: settlement,
             reason: "practice_transfer_lab_settlement",
             refId: doc._id,
+            forceEmit: true,
           }),
         );
       }
@@ -4668,10 +4746,14 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         billedAt: null,
         heldAt: null,
         heldTotal: 0,
+        heldLabTotal: 0,
+        heldAbutmentTotal: 0,
         holdFromPaid: 0,
         holdFromFreeRequest: 0,
         holdFromFreeShipping: 0,
         settledAt: null,
+        labSettledAt: null,
+        abutmentSettledAt: null,
       };
       doc.requestorDownloadedAt = null;
       doc.requestorDownloadedBy = null;
@@ -5029,10 +5111,14 @@ export async function markReceivedPracticeTransferReject(req, res) {
       billedAt: null,
       heldAt: null,
       heldTotal: 0,
+      heldLabTotal: 0,
+      heldAbutmentTotal: 0,
       holdFromPaid: 0,
       holdFromFreeRequest: 0,
       holdFromFreeShipping: 0,
       settledAt: null,
+      labSettledAt: null,
+      abutmentSettledAt: null,
     };
 
     doc.requestorDownloadedAt = null;
@@ -5428,6 +5514,8 @@ export async function retargetPracticeTransferLab(req, res) {
         transfer: doc,
         toothWorks,
         holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
+        holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
+        holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
         actorUserId: req.user?._id,
       });
       if (holdResult?.held || holdResult?.reason === "already_held") {
@@ -5437,6 +5525,14 @@ export async function retargetPracticeTransferLab(req, res) {
             : billingPreview),
           heldAt: now,
           heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
+          heldLabTotal: Number(
+            holdResult.heldLabTotal ?? billingPreview?.labFeeTotal ?? 0,
+          ),
+          heldAbutmentTotal: Number(
+            holdResult.heldAbutmentTotal ??
+              billingPreview?.abutmentRetailTotal ??
+              0,
+          ),
           holdFromPaid: Number(holdResult.fromPaid || 0),
           holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
           holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),

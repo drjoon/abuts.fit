@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-17: 어벗츠기공소 사이드 — 대기보드·기공의뢰수신·어벗생산의뢰·크레딧·설정.
 // - 2026-08-15: 어벗츠기공소 사이드 — 기공의뢰수신·설정 2메뉴(대시보드·어벗디자인·정산 제거).
 // - 2026-08-15: 모드 전환은 치과 기공의뢰 카드로 이전(사이드바 제거).
 // - 2026-08-14: 기공소 신규 기공비 → 관리자 토스트·플랫폼 설정 배지.
@@ -230,12 +231,26 @@ const sidebarItems = {
   ],
   internalLab: [
     {
+      icon: LayoutDashboard,
+      label: "대기보드",
+      href: "/dashboard",
+      tooltip: "어벗 생산·출고 대기 현황",
+    },
+    {
       icon: Building2,
       label: "기공의뢰수신",
       href: "/dashboard/lab-work",
       tooltip: "어벗츠기공소 기공의뢰 수신·작업",
       accent: "기공",
     },
+    {
+      icon: FileText,
+      label: "어벗생산의뢰",
+      href: "/dashboard/new-request",
+      tooltip: ABUTMENT_REQUEST_TOOLTIP,
+      accent: "어벗",
+    },
+    { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [
@@ -704,7 +719,7 @@ export const DashboardLayout = () => {
   const fetchCreditBalance = useCallback(async () => {
     if (!token) return;
     if (!user) return;
-    if (isPracticeUser || user.role !== "requestor") {
+    if (isPracticeUser || (user.role !== "requestor" && user.role !== "internalLab")) {
       setCreditBalance(null);
       setPaidCredit(null);
       setFreeRequestCredit(null);
@@ -842,7 +857,7 @@ export const DashboardLayout = () => {
       Boolean(token) &&
       Boolean(user) &&
       !isPracticeUser &&
-      user?.role === "requestor" &&
+      (user?.role === "requestor" || user?.role === "internalLab") &&
       Boolean(user?.businessAnchorId),
     eventTypes: ["credit:balance-updated"],
     delayMs: 80,
@@ -1009,7 +1024,7 @@ export const DashboardLayout = () => {
   })();
 
   const isCreditLow =
-    user.role === "requestor" &&
+    (user.role === "requestor" || user.role === "internalLab") &&
     typeof creditBalance === "number" &&
     Number.isFinite(creditBalance) &&
     creditBalance < CREDIT_LOW_BALANCE_THRESHOLD;

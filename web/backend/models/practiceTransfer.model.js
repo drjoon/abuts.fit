@@ -203,11 +203,16 @@ const practiceTransferSchema = new mongoose.Schema(
       },
       labSettlementAmount: { type: Number, default: 0 },
       abutsRevenueAmount: { type: Number, default: 0 },
-      // 에스크로: 생성 시 보류, 수락 시 금액 확정(billedAt), 작업완료 시 기공 지급(settledAt)
+      // 에스크로: 생성 시 보류(기공소몫/어벗츠몫 분리), 수락 시 금액 확정(billedAt),
+      // 기공소 발송=labSettledAt, 제조사 발송=abutmentSettledAt. settledAt=둘 다(해당분만) 완료.
       heldAt: { type: Date, default: null },
       heldTotal: { type: Number, default: 0 },
+      heldLabTotal: { type: Number, default: 0 },
+      heldAbutmentTotal: { type: Number, default: 0 },
       billedAt: { type: Date, default: null },
       settledAt: { type: Date, default: null },
+      labSettledAt: { type: Date, default: null },
+      abutmentSettledAt: { type: Date, default: null },
       isRemake: { type: Boolean, default: false },
       // 자동매칭 기공비 스냅샷 — v4 고정수가(stars/feeMultiplier/items min=max) 또는 레거시 밴드
       autoMatchBudget: {

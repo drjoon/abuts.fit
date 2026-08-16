@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-15: 테이블 잔액 칼럼 라벨「잔액」(행 시점 총잔액=유료+무료+기공).
 // - 2026-08-15: 선입금 안내를 유료 카드 툴팁으로 이동. 현재잔액=유료+무료(+기공). 무료·기공 툴팁 추가.
+// - 2026-08-17: 기공소몫/어벗츠몫 보류·플랫폼 수수료 displayLabel 우선 표시.
 // - 2026-08-14: 내역에 유료 크레딧=기공료 선입금(선납) 안내 표시.
 // - 2026-08-14: 내역 필터를 버킷(유료/무료/기공)·동작(충전/소비/조정) 이원으로 교체. 기공비 보류 라벨.
 // - 2026-08-14: 치과·기공소 크레딧 내역 UI — 잔액 카드·필터·테이블을 기공크레딧 탭과 동일 최신 스타일로 정리.
@@ -183,6 +184,7 @@ type CreditLedgerItem = {
   refRequestId?: string;
   refPracticeTransferId?: string;
   uniqueKey: string;
+  displayLabel?: string | null;
   spendKind?: string | null;
   includesExpressSurcharge?: boolean;
   createdAt: string;
@@ -987,7 +989,7 @@ export const CreditLedgerModal = ({
                         {formatDate(String(r.createdAt || ""))}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-center text-xs font-medium">
-                        {typeLabel(r.type)}
+                        {String(r.displayLabel || "").trim() || typeLabel(r.type)}
                       </TableCell>
                       <TableCell
                         className={cn(

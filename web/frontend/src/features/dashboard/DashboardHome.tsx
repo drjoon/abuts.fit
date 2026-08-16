@@ -7,6 +7,7 @@ import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // change-log:
+// - 2026-08-17: internalLab `/dashboard` = 대기보드(RequestorDashboardPage). 기본 랜딩은 lab-work 유지.
 // - 2026-08-09: 신규의뢰 제출 등 refreshDashboardAt 의도 이동은 last path 허브 리다이렉트를 건너뛴다.
 // - 2026-08-09: 모든 role에서 /dashboard 허브가 lastDashboardPath(없으면 역할 기본값)로 복원.
 // related files:
@@ -36,7 +37,7 @@ export const DashboardHome = () => {
     return <Navigate to={entry} replace />;
   }
 
-  if (user.role === "requestor") {
+  if (user.role === "requestor" || user.role === "internalLab") {
     return (
       <BusinessPaidAccessGate>
         <RequestorDashboardPage />
@@ -52,6 +53,6 @@ export const DashboardHome = () => {
     return <AdminDashboardPage />;
   }
 
-  // manufacturer / internalLab / practice 등은 entry가 역할 기본으로 보정되어 위에서 Navigate 됨
+  // manufacturer / practice / devops 등은 entry가 역할 기본으로 보정되어 위에서 Navigate 됨
   return <Navigate to={entry} replace />;
 };

@@ -179,6 +179,8 @@ import {
 // - 2026-08-13: 어벗 체크·커스텀어벗인데 프리셋 미선택이면 치식 카드 빨강.
 // - 2026-08-13: 기공의뢰 치식 카드에서 디자인+생산 라벨 제거(모드는 디자인+생산 고정).
 // - 2026-08-13: 형태 글자 클릭은 마키 억제와 별개로 순환(브리지·크라운 여백 클릭 포함).
+// - 2026-08-17: 치아카드 하단 복사 뱃지 드래그로 다른 치아에 형태·어벗·규격 복사(브리지 연결은 유지).
+// - 2026-08-17: 복사 뱃지 — 괄호 제거, 11px·primary soft pill.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -418,6 +420,61 @@ const applyBridgeLinksInWorks = (
       next = toggleAdjacentBridgeLink(next, idxB, toothA, connect, prosthesisTypes);
     }
   }
+  return next;
+};
+
+/** 소스 치아의 형태·어벗·규격을 대상 치아에 복사. 대상의 브리지 연결은 유지. */
+const copyToothWorkContentToTooth = (
+  prev: ToothWorkSelection[],
+  sourceTooth: string,
+  targetTooth: string,
+  defaultProsthesisType: string,
+  prosthesisTypes: string[],
+  lockedAbutmentProductMode: AbutmentProductMode | null,
+): ToothWorkSelection[] => {
+  const src = String(sourceTooth || "").trim();
+  const dst = String(targetTooth || "").trim();
+  if (!src || !dst || src === dst) return prev;
+  if (!/^[1-4][1-8]$/.test(src) || !/^[1-4][1-8]$/.test(dst)) return prev;
+
+  const sourceIdx = prev.findIndex(
+    (row) => String(row.toothNumber || "").trim() === src,
+  );
+  if (sourceIdx < 0) return prev;
+  const source = prev[sourceIdx];
+
+  let next = activateToothInWorks(prev, dst, defaultProsthesisType, prosthesisTypes, {
+    autoLinkBridgeNeighbor: false,
+  });
+  const targetIdx = next.findIndex(
+    (row) => String(row.toothNumber || "").trim() === dst,
+  );
+  if (targetIdx < 0) return prev;
+  const target = next[targetIdx];
+  const wantsCustom =
+    Boolean(source.customAbutment) ||
+    isCustomAbutmentProsthesisType(source.prosthesisType);
+  const abutmentProductMode = wantsCustom
+    ? lockedAbutmentProductMode ??
+      (isAbutmentProductMode(source.abutmentProductMode)
+        ? source.abutmentProductMode
+        : undefined)
+    : undefined;
+
+  next = [...next];
+  next[targetIdx] = {
+    toothNumber: dst,
+    prosthesisType:
+      String(source.prosthesisType || "").trim() || defaultProsthesisType,
+    customAbutment: wantsCustom,
+    abutmentProductMode,
+    bridgeLinkedTeeth: Array.isArray(target.bridgeLinkedTeeth)
+      ? [...target.bridgeLinkedTeeth]
+      : [],
+    ...(wantsCustom
+      ? pickToothWorkCustomSpecs(source, true)
+      : emptyToothWorkCustomSpecs()),
+  };
   return next;
 };
 
@@ -912,6 +969,16 @@ export const PracticeTransferRequestIntakePanel = ({
     teeth: ReadonlySet<string>;
     bridges: ReadonlySet<string>;
   } | null>(null);
+  const toothCopyDragRef = useRef<{
+    pointerId: number;
+    sourceTooth: string;
+    onMove: ((ev: PointerEvent) => void) | null;
+    onUp: ((ev: PointerEvent) => void) | null;
+  } | null>(null);
+  const [toothCopyDrag, setToothCopyDrag] = useState<{
+    sourceTooth: string;
+    hoverTooth: string | null;
+  } | null>(null);
 
   const selectedToothSet = useMemo(() => {
     const teeth = new Set<string>();
@@ -1292,9 +1359,130 @@ export const PracticeTransferRequestIntakePanel = ({
     return () => {
       endToothMarqueeListeners();
       toothMarqueeSessionRef.current = null;
+      const copySession = toothCopyDragRef.current;
+      if (copySession?.onMove) {
+        window.removeEventListener("pointermove", copySession.onMove);
+      }
+      if (copySession?.onUp) {
+        window.removeEventListener("pointerup", copySession.onUp);
+        window.removeEventListener("pointercancel", copySession.onUp);
+      }
+      toothCopyDragRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only
   }, []);
+
+  const endToothCopyDragListeners = () => {
+    const session = toothCopyDragRef.current;
+    if (!session) return;
+    if (session.onMove) window.removeEventListener("pointermove", session.onMove);
+    if (session.onUp) {
+      window.removeEventListener("pointerup", session.onUp);
+      window.removeEventListener("pointercancel", session.onUp);
+    }
+  };
+
+  const resolveToothUnderPoint = (clientX: number, clientY: number) => {
+    const el = document.elementFromPoint(clientX, clientY);
+    if (!(el instanceof Element)) return null;
+    const tooth = el.closest("[data-tooth-select]")?.getAttribute("data-tooth-select");
+    const trimmed = String(tooth || "").trim();
+    return /^[1-4][1-8]$/.test(trimmed) ? trimmed : null;
+  };
+
+  const beginToothCopyDrag = (
+    event: ReactPointerEvent,
+    sourceTooth: string,
+  ) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const source = String(sourceTooth || "").trim();
+    if (!/^[1-4][1-8]$/.test(source)) return;
+    if (!selectedToothSet.has(source)) return;
+
+    endToothCopyDragListeners();
+    suppressToothClickRef.current = true;
+
+    const session: {
+      pointerId: number;
+      sourceTooth: string;
+      onMove: ((ev: PointerEvent) => void) | null;
+      onUp: ((ev: PointerEvent) => void) | null;
+    } = {
+      pointerId: event.pointerId,
+      sourceTooth: source,
+      onMove: null,
+      onUp: null,
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== session.pointerId) return;
+      const hoverTooth = resolveToothUnderPoint(ev.clientX, ev.clientY);
+      setToothCopyDrag((prev) => {
+        if (!prev) return prev;
+        if (prev.hoverTooth === hoverTooth) return prev;
+        return { ...prev, hoverTooth };
+      });
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== session.pointerId) return;
+      endToothCopyDragListeners();
+      toothCopyDragRef.current = null;
+      const targetTooth = resolveToothUnderPoint(ev.clientX, ev.clientY);
+      setToothCopyDrag(null);
+      if (targetTooth && targetTooth !== session.sourceTooth) {
+        setToothWorks((prev) =>
+          copyToothWorkContentToTooth(
+            prev,
+            session.sourceTooth,
+            targetTooth,
+            defaultProsthesisType,
+            normalizedProsthesisTypes,
+            lockedMode,
+          ),
+        );
+        toothSelectAnchorRef.current = targetTooth;
+      }
+      window.setTimeout(() => {
+        suppressToothClickRef.current = false;
+      }, 0);
+    };
+
+    session.onMove = onMove;
+    session.onUp = onUp;
+    toothCopyDragRef.current = session;
+    setToothCopyDrag({ sourceTooth: source, hoverTooth: null });
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
+
+  const renderToothCopyHandle = (toothNumber: string, canDrag: boolean) => {
+    const isSource = toothCopyDrag?.sourceTooth === toothNumber;
+    return (
+      <span
+        data-no-tooth-marquee=""
+        data-tooth-copy-handle={toothNumber}
+        className={cn(
+          "relative z-20 mt-auto mb-0.5 inline-flex shrink-0 select-none items-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-tight transition-colors",
+          canDrag
+            ? "cursor-grab border border-primary-muted/80 bg-primary-soft text-primary-strong shadow-sm hover:border-primary/70 hover:bg-primary/15 hover:text-primary-strong active:cursor-grabbing"
+            : "cursor-default border border-transparent bg-slate-100/70 text-slate-400",
+          isSource && "opacity-40",
+        )}
+        title={canDrag ? "드래그해서 다른 치아에 복사" : undefined}
+        onPointerDown={
+          canDrag
+            ? (event) => beginToothCopyDrag(event, toothNumber)
+            : undefined
+        }
+      >
+        복사
+      </span>
+    );
+  };
 
   useEffect(() => {
     let overlayPointer = false;
@@ -1306,6 +1494,8 @@ export const PracticeTransferRequestIntakePanel = ({
     const onPointerUp = () => {
       if (!overlayPointer) return;
       overlayPointer = false;
+      // 복사 드래그는 beginToothCopyDrag가 suppress 생명주기를 담당
+      if (toothCopyDragRef.current) return;
       window.setTimeout(() => {
         suppressToothClickRef.current = false;
       }, 0);
@@ -2278,7 +2468,7 @@ export const PracticeTransferRequestIntakePanel = ({
             });
 
             const handleEmptyToothClick = (
-              e: ReactMouseEvent<HTMLButtonElement>,
+              e: ReactMouseEvent<HTMLElement>,
               toothNumber: string,
             ) => {
               if (suppressToothClickRef.current) return;
@@ -2293,6 +2483,13 @@ export const PracticeTransferRequestIntakePanel = ({
               }
               toothSelectAnchorRef.current = toothNumber;
             };
+
+            const isToothCopyDropTarget = (toothNumber: string) =>
+              Boolean(
+                toothCopyDrag &&
+                  toothCopyDrag.hoverTooth === toothNumber &&
+                  toothCopyDrag.sourceTooth !== toothNumber,
+              );
 
             const shiftDecade = (decadeKey: string, delta: number, maxOffset: number) => {
               setToothChartOffsets((prev) => {
@@ -2348,8 +2545,9 @@ export const PracticeTransferRequestIntakePanel = ({
                       );
 
                       const card = !configured ? (
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           title={`${toothNumber} 크라운 선택`}
                           data-tooth-select={toothNumber}
                           data-tooth-slot-empty=""
@@ -2363,13 +2561,23 @@ export const PracticeTransferRequestIntakePanel = ({
                             toothMarqueePreview?.teeth.has(toothNumber) &&
                               toothMarqueePreview.mode === "deselect" &&
                               "border-destructive/80 ring-2 ring-destructive/70",
+                            isToothCopyDropTarget(toothNumber) &&
+                              "border-primary ring-2 ring-primary/80 from-primary-soft/70 to-white",
                           )}
                           onClick={(e) => handleEmptyToothClick(e, toothNumber)}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            if (suppressToothClickRef.current) return;
+                            applyToothChartHits("select", [toothNumber], []);
+                            toothSelectAnchorRef.current = toothNumber;
+                          }}
                         >
                           <span className="flex h-10 items-center text-xl font-semibold tabular-nums tracking-tight text-slate-400/90">
                             {toothNumber}
                           </span>
-                        </button>
+                          {renderToothCopyHandle(toothNumber, false)}
+                        </div>
                       ) : null;
 
                       if (!configured) {
@@ -2599,6 +2807,8 @@ export const PracticeTransferRequestIntakePanel = ({
                               toothMarqueePreview?.teeth.has(toothNumber) &&
                                 toothMarqueePreview.mode === "deselect" &&
                                 "ring-2 ring-destructive/80 opacity-80",
+                              isToothCopyDropTarget(toothNumber) &&
+                                "ring-2 ring-primary/80 brightness-[1.02]",
                             )}
                           >
                             {isMissingTooth ? (
@@ -2858,6 +3068,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 </p>
                               );
                             })()}
+                            {renderToothCopyHandle(toothNumber, true)}
                           </div>
                           </div>
                           {bridgeControl}
@@ -2891,6 +3102,7 @@ export const PracticeTransferRequestIntakePanel = ({
                 className={cn(
                   "relative select-none space-y-2 px-1 py-1",
                   toothMarquee ? "cursor-crosshair" : null,
+                  toothCopyDrag ? "cursor-copy" : null,
                 )}
                 onPointerDown={handleToothChartPointerDown}
               >

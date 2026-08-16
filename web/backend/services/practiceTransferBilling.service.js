@@ -7,6 +7,8 @@
 // - web/backend/utils/labTradingPartner.util.js
 // - web/backend/services/generalLedger.service.js
 // - web/backend/services/creditRevenuePolicy.service.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-08-14: 목록 견적 조회(devops/단가/기공소/거래처) parallel + 60s 캐시.
@@ -26,12 +28,17 @@
 // - 2026-08-16: 자동매칭 수락·기공소 수신 견적 — 유효 별점 배수 확정가(상한 대역 아님).
 // - 2026-08-16: billed 확정 견적 — labFeeMin/예산 구간 제거·수락 기공소 별점 단일가.
 // - 2026-08-16: 기공소 수신 billed — 스냅샷이 구 상한가여도 라인·labFeeTotal을 별점 확정가로 맞춤.
+// - 2026-08-17: rollbackPracticeTransferBilling — 배송·디자인비 ADJUST·refId 스윕 포함. 잔액 emit.
+// - 2026-08-17: 보류/해제 기공소몫·어벗츠몫 분리. 기공소 발송=lab share, 제조사 발송=abutment. 기공소 수수료 차감.
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
+import LedgerJournal from "../models/ledgerJournal.model.js";
+import LedgerLine from "../models/ledgerLine.model.js";
 import {
   allocateSpendFromCreditBuckets,
   computeBusinessCreditBalanceFromLedger,
   spendShippingCreditAtomic,
+  upsertBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
 import {
   postGeneralLedgerJournal,
@@ -1006,23 +1013,269 @@ async function resolveDevopsEscrowOwnerId(session = null) {
 function practiceTransferHoldKey(transferId) {
   return `practice_transfer:${String(transferId)}:hold`;
 }
+function practiceTransferHoldLabKey(transferId) {
+  return `practice_transfer:${String(transferId)}:hold_lab`;
+}
+function practiceTransferHoldAbutmentKey(transferId) {
+  return `practice_transfer:${String(transferId)}:hold_abutment`;
+}
 function practiceTransferHoldAdjustKey(transferId) {
   return `practice_transfer:${String(transferId)}:hold_adjust`;
 }
 function practiceTransferEscrowReleaseKey(transferId) {
   return `practice_transfer:${String(transferId)}:escrow_release`;
 }
+function practiceTransferEscrowReleaseLabKey(transferId) {
+  return `practice_transfer:${String(transferId)}:escrow_release_lab`;
+}
+function practiceTransferEscrowReleaseAbutmentKey(transferId) {
+  return `practice_transfer:${String(transferId)}:escrow_release_abutment`;
+}
+function practiceTransferLabPlatformFeeKey(transferId) {
+  return `practice_transfer:${String(transferId)}:lab_platform_fee`;
+}
 function practiceTransferLegacySpendKey(transferId) {
   return `practice_transfer:${String(transferId)}:spend`;
+}
+function practiceTransferLabShippingKey(transferId) {
+  return `gl:practice_transfer:${String(transferId)}:lab_shipping`;
+}
+
+/** 취소·삭제 시 물리 삭제 대상 PTX GL eventType */
+const PRACTICE_TRANSFER_ROLLBACK_EVENT_TYPES = [
+  "PRACTICE_TRANSFER_ESCROW_RELEASE",
+  "PRACTICE_TRANSFER_LAB_PLATFORM_FEE",
+  "PRACTICE_TRANSFER_HOLD_ADJUST",
+  "PRACTICE_TRANSFER_SPEND_HOLD",
+  "PRACTICE_TRANSFER_SPEND_COMMIT",
+  "SHIPPING_SPEND_COMMIT",
+  "ADJUST",
+];
+
+const PRACTICE_TRANSFER_BALANCE_ACCOUNT_CODES = new Set([
+  "REQ_PAID_CREDIT",
+  "REQ_FREE_REQUEST_CREDIT",
+  "REQ_FREE_SHIPPING_CREDIT",
+  "LAB_SETTLEMENT_CREDIT",
+]);
+
+async function findAnyPracticeTransferHoldJournal(transferId, session = null) {
+  const id = String(transferId || "").trim();
+  const [legacy, lab, abut] = await Promise.all([
+    getJournalByIdempotencyKey({
+      idempotencyKey: practiceTransferHoldKey(id),
+      session,
+    }),
+    getJournalByIdempotencyKey({
+      idempotencyKey: practiceTransferHoldLabKey(id),
+      session,
+    }),
+    getJournalByIdempotencyKey({
+      idempotencyKey: practiceTransferHoldAbutmentKey(id),
+      session,
+    }),
+  ]);
+  return {
+    legacy: legacy?.journalId ? legacy : null,
+    lab: lab?.journalId ? lab : null,
+    abutment: abut?.journalId ? abut : null,
+    any: Boolean(legacy?.journalId || lab?.journalId || abut?.journalId),
+  };
+}
+
+async function resolveHoldShareAmounts({
+  transfer,
+  toothWorks,
+  holdAmount = null,
+  holdLabAmount = null,
+  holdAbutmentAmount = null,
+}) {
+  let lab =
+    holdLabAmount != null
+      ? Math.max(0, Math.round(Number(holdLabAmount) || 0))
+      : null;
+  let abut =
+    holdAbutmentAmount != null
+      ? Math.max(0, Math.round(Number(holdAbutmentAmount) || 0))
+      : null;
+
+  if (lab == null) {
+    const fromBilling = transfer?.billing?.labFeeTotal;
+    if (fromBilling != null && Number.isFinite(Number(fromBilling))) {
+      lab = Math.max(0, Math.round(Number(fromBilling) || 0));
+    }
+  }
+  if (abut == null) {
+    const fromBilling = transfer?.billing?.abutmentRetailTotal;
+    if (fromBilling != null && Number.isFinite(Number(fromBilling))) {
+      abut = Math.max(0, Math.round(Number(fromBilling) || 0));
+    }
+  }
+
+  if (lab == null || abut == null) {
+    const check = await assertPracticeTransferPaidCreditSufficient({
+      practiceAnchorId: transfer?.practiceBusinessAnchorId,
+      labAnchorId: transfer?.targetLabAnchorId || null,
+      toothWorks: toothWorks || transfer?.toothWorks || [],
+      remake: isPracticeTransferRemake(transfer),
+      autoMatchBudget: transfer?.billing?.autoMatchBudget || null,
+    });
+    if (lab == null) {
+      lab = Math.max(0, Math.round(Number(check?.fees?.labFeeTotal || 0)));
+    }
+    if (abut == null) {
+      abut = Math.max(
+        0,
+        Math.round(Number(check?.fees?.abutmentRetailTotal || 0)),
+      );
+    }
+  }
+
+  let total = lab + abut;
+  const forcedTotal =
+    holdAmount != null ? Math.max(0, Math.round(Number(holdAmount) || 0)) : null;
+  if (forcedTotal != null && forcedTotal > 0 && total <= 0) {
+    lab = forcedTotal;
+    abut = 0;
+    total = forcedTotal;
+  } else if (forcedTotal != null && forcedTotal > 0 && total !== forcedTotal) {
+    // billing 분할을 우선. total은 합.
+    total = lab + abut;
+  }
+
+  return { lab, abut, total };
+}
+
+async function postOneHoldSlice({
+  transferId,
+  practiceAnchorId,
+  devopsAnchorId,
+  amount,
+  shareKind,
+  displayLabel,
+  split,
+  actorUserId,
+  session,
+}) {
+  const amt = Math.max(0, Math.round(Number(amount) || 0));
+  if (amt <= 0) {
+    return { posted: false, journalId: null, fromPaid: 0, fromFreeRequest: 0, fromFreeShipping: 0 };
+  }
+
+  const sliceSplit = allocateSpendFromCreditBuckets({
+    amount: amt,
+    paidCredit: Number(split.remainingPaid ?? split.paidCredit ?? 0),
+    freeRequestCredit: Number(
+      split.remainingFreeRequest ?? split.freeRequestCredit ?? 0,
+    ),
+    freeShippingCredit: Number(
+      split.remainingFreeShipping ?? split.freeShippingCredit ?? 0,
+    ),
+    freeOrder: ["freeRequest", "freeShipping"],
+  });
+  if (!sliceSplit.ok) {
+    const err = new Error("치과 크레딧이 부족합니다.");
+    err.statusCode = 402;
+    err.payload = {
+      reason: "insufficient_credit_for_practice_transfer",
+      available: sliceSplit.available,
+      required: amt,
+      shareKind,
+    };
+    throw err;
+  }
+
+  const spendMetaBase = {
+    displayKind: "lab_fee_hold",
+    displayLabel,
+    usageKind: "practice_transfer",
+    escrow: true,
+    holdShare: shareKind,
+    fromPaid: sliceSplit.fromPaid,
+    fromFreeRequest: sliceSplit.fromFreeRequest,
+    fromFreeShipping: sliceSplit.fromFreeShipping,
+  };
+
+  const idempotencyKey =
+    shareKind === "abutment"
+      ? practiceTransferHoldAbutmentKey(transferId)
+      : practiceTransferHoldLabKey(transferId);
+
+  const journal = await postGeneralLedgerJournal({
+    idempotencyKey,
+    eventType: "PRACTICE_TRANSFER_SPEND_HOLD",
+    businessAnchorId: practiceAnchorId,
+    refType: "PRACTICE_TRANSFER",
+    refId: transferId,
+    createdBy: actorUserId,
+    meta: {
+      heldTotal: amt,
+      holdShare: shareKind,
+      fromPaid: sliceSplit.fromPaid,
+      fromFreeRequest: sliceSplit.fromFreeRequest,
+      fromFreeShipping: sliceSplit.fromFreeShipping,
+      devopsAnchorId,
+    },
+    lines: [
+      ...buildPracticeDebitLines({
+        split: sliceSplit,
+        practiceAnchorId,
+        transferId,
+        meta: spendMetaBase,
+      }),
+      {
+        accountCode: "PLATFORM_ESCROW",
+        ownerRole: "devops",
+        ownerId: devopsAnchorId,
+        amount: amt,
+        amountExcludingVat: amt,
+        vatAmount: 0,
+        creditKind: null,
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: {
+          ...spendMetaBase,
+          source: "practice_transfer_escrow_hold",
+        },
+      },
+    ],
+    session,
+    skipIdempotencyLookup: true,
+  });
+
+  return {
+    posted: true,
+    journalId: journal?.journalId || null,
+    fromPaid: sliceSplit.fromPaid,
+    fromFreeRequest: sliceSplit.fromFreeRequest,
+    fromFreeShipping: sliceSplit.fromFreeShipping,
+    remainingPaid: Math.max(
+      0,
+      Number(split.remainingPaid ?? split.paidCredit ?? 0) - sliceSplit.fromPaid,
+    ),
+    remainingFreeRequest: Math.max(
+      0,
+      Number(split.remainingFreeRequest ?? split.freeRequestCredit ?? 0) -
+        sliceSplit.fromFreeRequest,
+    ),
+    remainingFreeShipping: Math.max(
+      0,
+      Number(split.remainingFreeShipping ?? split.freeShippingCredit ?? 0) -
+        sliceSplit.fromFreeShipping,
+    ),
+  };
 }
 
 /**
  * 전송 생성 시 치과 크레딧을 PLATFORM_ESCROW로 보류(기공 적립 없음).
+ * 기공소몫·어벗츠몫을 별도 SPEND_HOLD 저널로 기재.
  */
 export async function holdPracticeTransferCredits({
   transfer,
   toothWorks = null,
   holdAmount = null,
+  holdLabAmount = null,
+  holdAbutmentAmount = null,
   actorUserId = null,
   session: outerSession = null,
 }) {
@@ -1032,34 +1285,70 @@ export async function holdPracticeTransferCredits({
     return { held: false, reason: "missing_anchors" };
   }
 
-  const idempotencyKey = practiceTransferHoldKey(transferId);
-  const existing = await getJournalByIdempotencyKey({
-    idempotencyKey,
-    session: outerSession,
-  });
-  if (existing?.journalId) {
+  const existingHolds = await findAnyPracticeTransferHoldJournal(
+    transferId,
+    outerSession,
+  );
+  if (existingHolds.any) {
+    const heldTotal = Math.max(
+      0,
+      Math.round(
+        Number(
+          transfer?.billing?.heldTotal ||
+            (Number(existingHolds.lab?.meta?.heldTotal || 0) +
+              Number(existingHolds.abutment?.meta?.heldTotal || 0) +
+              Number(existingHolds.legacy?.meta?.heldTotal || 0)),
+        ),
+      ),
+    );
     return {
       held: false,
       reason: "already_held",
-      journalId: existing.journalId,
-      heldTotal: Number(transfer?.billing?.heldTotal || 0),
+      journalId:
+        existingHolds.lab?.journalId ||
+        existingHolds.abutment?.journalId ||
+        existingHolds.legacy?.journalId ||
+        null,
+      heldTotal,
+      heldLabTotal: Math.max(
+        0,
+        Math.round(
+          Number(
+            transfer?.billing?.heldLabTotal ??
+              existingHolds.lab?.meta?.heldTotal ??
+              0,
+          ),
+        ),
+      ),
+      heldAbutmentTotal: Math.max(
+        0,
+        Math.round(
+          Number(
+            transfer?.billing?.heldAbutmentTotal ??
+              existingHolds.abutment?.meta?.heldTotal ??
+              0,
+          ),
+        ),
+      ),
     };
   }
 
-  let required = Math.max(0, Math.round(Number(holdAmount)));
-  if (!Number.isFinite(required) || required <= 0) {
-    const check = await assertPracticeTransferPaidCreditSufficient({
-      practiceAnchorId,
-      labAnchorId: transfer?.targetLabAnchorId || null,
-      toothWorks: toothWorks || transfer?.toothWorks || [],
-      remake: isPracticeTransferRemake(transfer),
-      autoMatchBudget: transfer?.billing?.autoMatchBudget || null,
-    });
-    required = Math.max(0, Math.round(Number(check?.required || check?.fees?.total || 0)));
-  }
-
+  const shares = await resolveHoldShareAmounts({
+    transfer,
+    toothWorks,
+    holdAmount,
+    holdLabAmount,
+    holdAbutmentAmount,
+  });
+  const required = shares.total;
   if (required <= 0) {
-    return { held: false, reason: "zero_fee", heldTotal: 0 };
+    return {
+      held: false,
+      reason: "zero_fee",
+      heldTotal: 0,
+      heldLabTotal: 0,
+      heldAbutmentTotal: 0,
+    };
   }
 
   const ownSession = !outerSession;
@@ -1081,90 +1370,92 @@ export async function holdPracticeTransferCredits({
       throw err;
     }
 
-    const split = allocateSpendFromCreditBuckets({
+    const totalSplit = allocateSpendFromCreditBuckets({
       amount: required,
       paidCredit: Number(balance?.paidCredit || 0),
       freeRequestCredit: Number(balance?.freeRequestCredit || 0),
       freeShippingCredit: Number(balance?.freeShippingCredit || 0),
       freeOrder: ["freeRequest", "freeShipping"],
     });
-    if (!split.ok) {
+    if (!totalSplit.ok) {
       const err = new Error("치과 크레딧이 부족합니다.");
       err.statusCode = 402;
       err.payload = {
         reason: "insufficient_credit_for_practice_transfer",
-        paidCredit: split.paidCredit,
-        freeCredit: split.freeCredit,
-        freeRequestCredit: split.freeRequestCredit,
-        freeShippingCredit: split.freeShippingCredit,
-        available: split.available,
+        paidCredit: totalSplit.paidCredit,
+        freeCredit: totalSplit.freeCredit,
+        freeRequestCredit: totalSplit.freeRequestCredit,
+        freeShippingCredit: totalSplit.freeShippingCredit,
+        available: totalSplit.available,
         required,
       };
       throw err;
     }
 
-    const spendMetaBase = {
-      displayKind: "lab_fee_hold",
-      displayLabel: "기공비 보류",
-      usageKind: "practice_transfer",
-      escrow: true,
-      fromPaid: split.fromPaid,
-      fromFreeRequest: split.fromFreeRequest,
-      fromFreeShipping: split.fromFreeShipping,
+    let bucket = {
+      remainingPaid: Number(balance?.paidCredit || 0),
+      remainingFreeRequest: Number(balance?.freeRequestCredit || 0),
+      remainingFreeShipping: Number(balance?.freeShippingCredit || 0),
     };
 
-    const lines = [
-      ...buildPracticeDebitLines({
-        split,
-        practiceAnchorId,
-        transferId,
-        meta: spendMetaBase,
-      }),
-      {
-        accountCode: "PLATFORM_ESCROW",
-        ownerRole: "devops",
-        ownerId: devopsAnchorId,
-        amount: required,
-        amountExcludingVat: required,
-        vatAmount: 0,
-        creditKind: null,
-        refType: "PRACTICE_TRANSFER",
-        refId: transferId,
-        meta: {
-          ...spendMetaBase,
-          source: "practice_transfer_escrow_hold",
-        },
-      },
-    ];
+    let fromPaid = 0;
+    let fromFreeRequest = 0;
+    let fromFreeShipping = 0;
+    const journalIds = [];
 
-    const journal = await postGeneralLedgerJournal({
-      idempotencyKey,
-      eventType: "PRACTICE_TRANSFER_SPEND_HOLD",
-      businessAnchorId: practiceAnchorId,
-      refType: "PRACTICE_TRANSFER",
-      refId: transferId,
-      createdBy: actorUserId,
-      meta: {
-        heldTotal: required,
-        fromPaid: split.fromPaid,
-        fromFreeRequest: split.fromFreeRequest,
-        fromFreeShipping: split.fromFreeShipping,
-        devopsAnchorId,
-      },
-      lines,
+    const labPost = await postOneHoldSlice({
+      transferId,
+      practiceAnchorId,
+      devopsAnchorId,
+      amount: shares.lab,
+      shareKind: "lab",
+      displayLabel: "기공소몫 보류",
+      split: bucket,
+      actorUserId,
       session,
-      skipIdempotencyLookup: true,
     });
+    if (labPost.posted) {
+      journalIds.push(labPost.journalId);
+      fromPaid += labPost.fromPaid;
+      fromFreeRequest += labPost.fromFreeRequest;
+      fromFreeShipping += labPost.fromFreeShipping;
+      bucket = {
+        remainingPaid: labPost.remainingPaid,
+        remainingFreeRequest: labPost.remainingFreeRequest,
+        remainingFreeShipping: labPost.remainingFreeShipping,
+      };
+    }
+
+    const abutPost = await postOneHoldSlice({
+      transferId,
+      practiceAnchorId,
+      devopsAnchorId,
+      amount: shares.abut,
+      shareKind: "abutment",
+      displayLabel: "어벗츠몫 보류",
+      split: bucket,
+      actorUserId,
+      session,
+    });
+    if (abutPost.posted) {
+      journalIds.push(abutPost.journalId);
+      fromPaid += abutPost.fromPaid;
+      fromFreeRequest += abutPost.fromFreeRequest;
+      fromFreeShipping += abutPost.fromFreeShipping;
+    }
 
     if (ownSession) await session.commitTransaction();
 
     return {
-      held: true,
-      journalId: journal?.journalId || null,
+      held: journalIds.length > 0,
+      journalId: journalIds[0] || null,
+      journalIds,
       heldTotal: required,
-      fromPaid: split.fromPaid,
-      fromFreeRequest: split.fromFreeRequest,
-      fromFreeShipping: split.fromFreeShipping,
+      heldLabTotal: shares.lab,
+      heldAbutmentTotal: shares.abut,
+      fromPaid,
+      fromFreeRequest,
+      fromFreeShipping,
     };
   } catch (e) {
     if (ownSession) {
@@ -1306,16 +1597,13 @@ export async function adjustPracticeTransferHold({
   }
 
   // Atlas RTT: legacy/hold/adjust 저널 + 수수료 조회를 한 파도로 묶는다.
-  const [legacySpend, holdJournalPrefetch, adjustExistingPrefetch, computed] =
+  const [legacySpend, holdsPrefetch, adjustExistingPrefetch, computed] =
     await Promise.all([
       getJournalByIdempotencyKey({
         idempotencyKey: practiceTransferLegacySpendKey(transferId),
         session: outerSession,
       }),
-      getJournalByIdempotencyKey({
-        idempotencyKey: practiceTransferHoldKey(transferId),
-        session: outerSession,
-      }),
+      findAnyPracticeTransferHoldJournal(transferId, outerSession),
       getJournalByIdempotencyKey({
         idempotencyKey: practiceTransferHoldAdjustKey(transferId),
         session: outerSession,
@@ -1347,16 +1635,21 @@ export async function adjustPracticeTransferHold({
         ? String(computed.partner._id)
         : null,
       heldTotal: 0,
+      heldLabTotal: 0,
+      heldAbutmentTotal: 0,
     };
   }
 
-  let holdJournal = holdJournalPrefetch;
+  let holdJournal =
+    holdsPrefetch.legacy || holdsPrefetch.lab || holdsPrefetch.abutment || null;
 
-  if (!holdJournal?.journalId) {
+  if (!holdsPrefetch.any) {
     const holdResult = await holdPracticeTransferCredits({
       transfer,
       toothWorks,
       holdAmount: fees.total,
+      holdLabAmount: fees.labFeeTotal,
+      holdAbutmentAmount: fees.abutmentRetailTotal,
       actorUserId,
       session: outerSession,
     });
@@ -1375,17 +1668,41 @@ export async function adjustPracticeTransferHold({
         ? String(computed.partner._id)
         : null,
       heldTotal: holdResult.heldTotal ?? fees.total,
+      heldLabTotal: holdResult.heldLabTotal ?? fees.labFeeTotal,
+      heldAbutmentTotal:
+        holdResult.heldAbutmentTotal ?? fees.abutmentRetailTotal,
       fromPaid: holdResult.fromPaid,
       fromFreeRequest: holdResult.fromFreeRequest,
       fromFreeShipping: holdResult.fromFreeShipping,
     };
   }
 
+  const heldLabTotal = Math.max(
+    0,
+    Math.round(
+      Number(
+        transfer?.billing?.heldLabTotal ??
+          holdsPrefetch.lab?.meta?.heldTotal ??
+          (holdsPrefetch.legacy ? fees.labFeeTotal : 0),
+      ),
+    ),
+  );
+  const heldAbutmentTotal = Math.max(
+    0,
+    Math.round(
+      Number(
+        transfer?.billing?.heldAbutmentTotal ??
+          holdsPrefetch.abutment?.meta?.heldTotal ??
+          (holdsPrefetch.legacy ? fees.abutmentRetailTotal : 0),
+      ),
+    ),
+  );
   const heldTotal = Math.max(
     0,
     Math.round(
       Number(
         transfer?.billing?.heldTotal ||
+          heldLabTotal + heldAbutmentTotal ||
           holdJournal?.meta?.heldTotal ||
           0,
       ),
@@ -1439,6 +1756,8 @@ export async function adjustPracticeTransferHold({
         ? String(computed.partner._id)
         : null,
       heldTotal,
+      heldLabTotal: fees.labFeeTotal,
+      heldAbutmentTotal: fees.abutmentRetailTotal,
       fromPaid,
       fromFreeRequest,
       fromFreeShipping,
@@ -1465,6 +1784,20 @@ export async function adjustPracticeTransferHold({
       heldTotal: Math.max(
         0,
         Math.round(Number(transfer?.billing?.heldTotal || target)),
+      ),
+      heldLabTotal: Math.max(
+        0,
+        Math.round(
+          Number(transfer?.billing?.heldLabTotal ?? fees.labFeeTotal),
+        ),
+      ),
+      heldAbutmentTotal: Math.max(
+        0,
+        Math.round(
+          Number(
+            transfer?.billing?.heldAbutmentTotal ?? fees.abutmentRetailTotal,
+          ),
+        ),
       ),
       fromPaid,
       fromFreeRequest,
@@ -1595,6 +1928,8 @@ export async function adjustPracticeTransferHold({
       meta: {
         previousHeldTotal: heldTotal,
         heldTotal: target,
+        heldLabTotal: fees.labFeeTotal,
+        heldAbutmentTotal: fees.abutmentRetailTotal,
         delta,
         fromPaid,
         fromFreeRequest,
@@ -1622,6 +1957,8 @@ export async function adjustPracticeTransferHold({
         ? String(computed.partner._id)
         : null,
       heldTotal: target,
+      heldLabTotal: fees.labFeeTotal,
+      heldAbutmentTotal: fees.abutmentRetailTotal,
       fromPaid,
       fromFreeRequest,
       fromFreeShipping,
@@ -1641,9 +1978,9 @@ export async function adjustPracticeTransferHold({
 }
 
 /**
- * 작업완료 시 에스크로 해제 → 기공크레딧 + 플랫폼 매출.
+ * 기공소 발송(mark-complete): 기공소몫 에스크로 해제 → 기공크레딧 총액 적립 + 플랫폼 수수료 차감.
  */
-export async function releasePracticeTransferEscrow({
+export async function releasePracticeTransferLabShare({
   transfer,
   toothWorks = null,
   actorUserId = null,
@@ -1656,37 +1993,58 @@ export async function releasePracticeTransferEscrow({
     return { released: false, reason: "missing_anchors" };
   }
 
-  // Atlas RTT: legacy/hold/release 저널 + 수수료 조회를 한 파도로 묶는다.
-  const releaseKey = practiceTransferEscrowReleaseKey(transferId);
+  const releaseLabKey = practiceTransferEscrowReleaseLabKey(transferId);
+  const feeKey = practiceTransferLabPlatformFeeKey(transferId);
+  const legacyReleaseKey = practiceTransferEscrowReleaseKey(transferId);
   const works = toothWorks || transfer?.toothWorks || [];
-  const [existingRelease, legacySpend, holdJournal, computed] =
-    await Promise.all([
-      getJournalByIdempotencyKey({
-        idempotencyKey: releaseKey,
-        session: outerSession,
-      }),
-      getJournalByIdempotencyKey({
-        idempotencyKey: practiceTransferLegacySpendKey(transferId),
-        session: outerSession,
-      }),
-      getJournalByIdempotencyKey({
-        idempotencyKey: practiceTransferHoldKey(transferId),
-        session: outerSession,
-      }),
-      computeAcceptedPracticeTransferFees({
-        transfer,
-        toothWorks: works,
-        session: outerSession,
-      }),
-    ]);
-  if (existingRelease?.journalId) {
+
+  const [
+    existingLabRelease,
+    existingFee,
+    legacyRelease,
+    legacySpend,
+    holds,
+    computed,
+  ] = await Promise.all([
+    getJournalByIdempotencyKey({
+      idempotencyKey: releaseLabKey,
+      session: outerSession,
+    }),
+    getJournalByIdempotencyKey({
+      idempotencyKey: feeKey,
+      session: outerSession,
+    }),
+    getJournalByIdempotencyKey({
+      idempotencyKey: legacyReleaseKey,
+      session: outerSession,
+    }),
+    getJournalByIdempotencyKey({
+      idempotencyKey: practiceTransferLegacySpendKey(transferId),
+      session: outerSession,
+    }),
+    findAnyPracticeTransferHoldJournal(transferId, outerSession),
+    computeAcceptedPracticeTransferFees({
+      transfer,
+      toothWorks: works,
+      session: outerSession,
+    }),
+  ]);
+
+  if (legacyRelease?.journalId) {
     return {
       released: false,
       reason: "already_released",
-      journalId: existingRelease.journalId,
+      journalId: legacyRelease.journalId,
+      legacyFullRelease: true,
     };
   }
-
+  if (existingLabRelease?.journalId) {
+    return {
+      released: false,
+      reason: "already_released",
+      journalId: existingLabRelease.journalId,
+    };
+  }
   if (legacySpend?.journalId) {
     return {
       released: false,
@@ -1694,33 +2052,57 @@ export async function releasePracticeTransferEscrow({
       journalId: legacySpend.journalId,
     };
   }
-
-  if (!holdJournal?.journalId) {
+  if (!holds.any) {
     return { released: false, reason: "no_hold" };
   }
 
-  const { fees, labSettlementAmount, abutsRevenueAmount } = computed;
-  const releaseTotal = Math.max(
+  const { fees, feeRateApplied } = computed;
+  const labFeeTotal = Math.max(
     0,
     Math.round(
-      Number(transfer?.billing?.heldTotal || fees.total || 0),
+      Number(
+        transfer?.billing?.labFeeTotal ??
+          transfer?.billing?.heldLabTotal ??
+          fees.labFeeTotal ??
+          0,
+      ),
     ),
   );
-  if (releaseTotal <= 0 && fees.total <= 0) {
-    return { released: false, reason: "zero_fee", fees };
+  if (labFeeTotal <= 0) {
+    return {
+      released: false,
+      reason: "zero_lab_fee",
+      fees,
+      labFeeTotal: 0,
+      platformFee: 0,
+      labSettlementAmount: 0,
+    };
   }
 
-  const escrowAmount = fees.total > 0 ? fees.total : releaseTotal;
+  const platformFee = Math.max(
+    0,
+    Math.round(labFeeTotal * Number(feeRateApplied || 0)),
+  );
+  const labNet = Math.max(0, labFeeTotal - platformFee);
+
   const fromPaid = Math.max(
     0,
-    Math.round(Number(transfer?.billing?.holdFromPaid ?? holdJournal?.meta?.fromPaid ?? 0)),
+    Math.round(
+      Number(
+        transfer?.billing?.holdFromPaid ??
+          holds.lab?.meta?.fromPaid ??
+          holds.legacy?.meta?.fromPaid ??
+          0,
+      ),
+    ),
   );
   const fromFreeRequest = Math.max(
     0,
     Math.round(
       Number(
         transfer?.billing?.holdFromFreeRequest ??
-          holdJournal?.meta?.fromFreeRequest ??
+          holds.lab?.meta?.fromFreeRequest ??
+          holds.legacy?.meta?.fromFreeRequest ??
           0,
       ),
     ),
@@ -1730,12 +2112,317 @@ export async function releasePracticeTransferEscrow({
     Math.round(
       Number(
         transfer?.billing?.holdFromFreeShipping ??
-          holdJournal?.meta?.fromFreeShipping ??
+          holds.lab?.meta?.fromFreeShipping ??
+          holds.legacy?.meta?.fromFreeShipping ??
+          0,
+      ),
+    ),
+  );
+
+  const ownSession = !outerSession;
+  const session = outerSession || (await mongoose.startSession());
+  if (ownSession) session.startTransaction();
+
+  try {
+    await lockGuard(practiceAnchorId, session);
+    const revenueOwners = await resolveRevenueOwners({
+      practiceAnchorId,
+      session,
+    });
+    const devopsAnchorId = revenueOwners?.devopsAnchorId || null;
+    if (!devopsAnchorId) {
+      const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
+      err.statusCode = 500;
+      throw err;
+    }
+
+    const releaseLines = [
+      {
+        accountCode: "PLATFORM_ESCROW",
+        ownerRole: "devops",
+        ownerId: devopsAnchorId,
+        amount: -labFeeTotal,
+        amountExcludingVat: -labFeeTotal,
+        vatAmount: 0,
+        creditKind: null,
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: {
+          source: "practice_transfer_escrow_release_lab",
+          displayKind: "lab_share",
+          displayLabel: "기공소몫",
+          holdShare: "lab",
+        },
+      },
+      {
+        accountCode: "LAB_SETTLEMENT_CREDIT",
+        ownerRole: "requestor",
+        ownerId: String(labAnchorId),
+        amount: labFeeTotal,
+        amountExcludingVat: labFeeTotal,
+        vatAmount: 0,
+        creditKind: "SETTLEMENT",
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: {
+          source: "practice_transfer_lab_share_gross",
+          displayKind: "lab_credit",
+          displayLabel: "기공크레딧 적립",
+          itemLabel: "기공소몫",
+          feeRateApplied,
+          labFee: labFeeTotal,
+        },
+      },
+    ];
+
+    const releaseJournal = await postGeneralLedgerJournal({
+      idempotencyKey: releaseLabKey,
+      eventType: "PRACTICE_TRANSFER_ESCROW_RELEASE",
+      businessAnchorId: practiceAnchorId,
+      refType: "PRACTICE_TRANSFER",
+      refId: transferId,
+      createdBy: actorUserId,
+      meta: {
+        holdShare: "lab",
+        labAnchorId: String(labAnchorId),
+        labFeeTotal,
+        platformFee,
+        labSettlementAmount: labNet,
+        feeRateApplied,
+        relationshipKind: computed.relationshipKind,
+        fees,
+      },
+      lines: releaseLines,
+      session,
+      skipIdempotencyLookup: true,
+    });
+
+    let feeJournalId = existingFee?.journalId || null;
+    if (platformFee > 0 && !existingFee?.journalId) {
+      const feeLines = [
+        {
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          ownerRole: "requestor",
+          ownerId: String(labAnchorId),
+          amount: -platformFee,
+          amountExcludingVat: -platformFee,
+          vatAmount: 0,
+          creditKind: "SETTLEMENT",
+          refType: "PRACTICE_TRANSFER",
+          refId: transferId,
+          meta: {
+            source: "practice_transfer_lab_platform_fee",
+            displayKind: "platform_fee",
+            displayLabel: "플랫폼 수수료",
+            feeRateApplied,
+            labFee: labFeeTotal,
+          },
+        },
+      ];
+      const heldTotalForFree =
+        Number(transfer?.billing?.heldTotal || labFeeTotal || 0) || labFeeTotal;
+      const freeShareOfPlatformFee =
+        heldTotalForFree > 0
+          ? Math.round(
+              (platformFee * (fromFreeRequest + fromFreeShipping)) /
+                heldTotalForFree,
+            )
+          : 0;
+      const fromFree = fromFreeRequest + fromFreeShipping;
+      const freeReqShareOfPlatformFee =
+        fromFree > 0
+          ? Math.round((freeShareOfPlatformFee * fromFreeRequest) / fromFree)
+          : 0;
+      const freeShipShareOfPlatformFee = Math.max(
+        0,
+        freeShareOfPlatformFee - freeReqShareOfPlatformFee,
+      );
+      pushRevenueLines({
+        lines: feeLines,
+        owners: revenueOwners,
+        spendAmount: platformFee,
+        freeAmount: freeShareOfPlatformFee,
+        fromFreeRequest: freeReqShareOfPlatformFee,
+        fromFreeShipping: freeShipShareOfPlatformFee,
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: {
+          source: "lab_platform_fee",
+          displayKind: "platform_fee",
+          displayLabel: "플랫폼 수수료",
+          relationshipKind: computed.relationshipKind,
+          feeRateApplied,
+          feeTotal: labFeeTotal,
+        },
+      });
+
+      const feeJournal = await postGeneralLedgerJournal({
+        idempotencyKey: feeKey,
+        eventType: "PRACTICE_TRANSFER_LAB_PLATFORM_FEE",
+        businessAnchorId: labAnchorId,
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        createdBy: actorUserId,
+        meta: {
+          labAnchorId: String(labAnchorId),
+          labFeeTotal,
+          platformFee,
+          feeRateApplied,
+          relationshipKind: computed.relationshipKind,
+        },
+        lines: feeLines,
+        session,
+        skipIdempotencyLookup: true,
+      });
+      feeJournalId = feeJournal?.journalId || null;
+    }
+
+    if (ownSession) await session.commitTransaction();
+
+    return {
+      released: true,
+      journalId: releaseJournal?.journalId || null,
+      feeJournalId,
+      fees,
+      isPartner: computed.isPartner,
+      relationshipKind: computed.relationshipKind,
+      feeRateApplied,
+      labFeeMultiplier: computed.labFeeMultiplier,
+      labFeeTotal,
+      platformFee,
+      labSettlementAmount: labNet,
+      abutsRevenueAmount: platformFee + Number(fees.abutmentRetailTotal || 0),
+      labTradingPartnerId: computed.partner?._id
+        ? String(computed.partner._id)
+        : null,
+    };
+  } catch (e) {
+    if (ownSession) {
+      try {
+        await session.abortTransaction();
+      } catch {
+        // ignore
+      }
+    }
+    throw e;
+  } finally {
+    if (ownSession) session.endSession();
+  }
+}
+
+/**
+ * 제조사 발송(포장.발송): 어벗츠몫 에스크로 해제 → 어벗츠 매출.
+ */
+export async function releasePracticeTransferAbutmentShare({
+  transfer,
+  toothWorks = null,
+  actorUserId = null,
+  session: outerSession = null,
+}) {
+  const transferId = transfer?._id;
+  const practiceAnchorId = transfer?.practiceBusinessAnchorId;
+  if (!transferId || !practiceAnchorId) {
+    return { released: false, reason: "missing_anchors" };
+  }
+
+  const releaseAbutKey = practiceTransferEscrowReleaseAbutmentKey(transferId);
+  const legacyReleaseKey = practiceTransferEscrowReleaseKey(transferId);
+  const works = toothWorks || transfer?.toothWorks || [];
+
+  const [existingAbutRelease, legacyRelease, holds, computed] =
+    await Promise.all([
+      getJournalByIdempotencyKey({
+        idempotencyKey: releaseAbutKey,
+        session: outerSession,
+      }),
+      getJournalByIdempotencyKey({
+        idempotencyKey: legacyReleaseKey,
+        session: outerSession,
+      }),
+      findAnyPracticeTransferHoldJournal(transferId, outerSession),
+      computeAcceptedPracticeTransferFees({
+        transfer,
+        toothWorks: works,
+        session: outerSession,
+      }),
+    ]);
+
+  if (legacyRelease?.journalId) {
+    return {
+      released: false,
+      reason: "already_released",
+      journalId: legacyRelease.journalId,
+      legacyFullRelease: true,
+    };
+  }
+  if (existingAbutRelease?.journalId) {
+    return {
+      released: false,
+      reason: "already_released",
+      journalId: existingAbutRelease.journalId,
+    };
+  }
+  if (!holds.any) {
+    return { released: false, reason: "no_hold" };
+  }
+
+  const abutmentRetailTotal = Math.max(
+    0,
+    Math.round(
+      Number(
+        transfer?.billing?.abutmentRetailTotal ??
+          transfer?.billing?.heldAbutmentTotal ??
+          computed.fees?.abutmentRetailTotal ??
+          0,
+      ),
+    ),
+  );
+  if (abutmentRetailTotal <= 0) {
+    return {
+      released: false,
+      reason: "zero_abutment",
+      fees: computed.fees,
+      abutmentRetailTotal: 0,
+    };
+  }
+
+  const fromPaid = Math.max(
+    0,
+    Math.round(
+      Number(
+        transfer?.billing?.holdFromPaid ??
+          holds.abutment?.meta?.fromPaid ??
+          holds.legacy?.meta?.fromPaid ??
+          0,
+      ),
+    ),
+  );
+  const fromFreeRequest = Math.max(
+    0,
+    Math.round(
+      Number(
+        transfer?.billing?.holdFromFreeRequest ??
+          holds.abutment?.meta?.fromFreeRequest ??
+          holds.legacy?.meta?.fromFreeRequest ??
+          0,
+      ),
+    ),
+  );
+  const fromFreeShipping = Math.max(
+    0,
+    Math.round(
+      Number(
+        transfer?.billing?.holdFromFreeShipping ??
+          holds.abutment?.meta?.fromFreeShipping ??
+          holds.legacy?.meta?.fromFreeShipping ??
           0,
       ),
     ),
   );
   const fromFree = fromFreeRequest + fromFreeShipping;
+  const heldTotalForFree =
+    Number(transfer?.billing?.heldTotal || abutmentRetailTotal) ||
+    abutmentRetailTotal;
 
   const ownSession = !outerSession;
   const session = outerSession || (await mongoose.startSession());
@@ -1759,92 +2446,57 @@ export async function releasePracticeTransferEscrow({
         accountCode: "PLATFORM_ESCROW",
         ownerRole: "devops",
         ownerId: devopsAnchorId,
-        amount: -escrowAmount,
-        amountExcludingVat: -escrowAmount,
+        amount: -abutmentRetailTotal,
+        amountExcludingVat: -abutmentRetailTotal,
         vatAmount: 0,
         creditKind: null,
         refType: "PRACTICE_TRANSFER",
         refId: transferId,
         meta: {
-          source: "practice_transfer_escrow_release",
-          displayKind: "lab_fee",
-          displayLabel: "기공비",
+          source: "practice_transfer_escrow_release_abutment",
+          displayKind: "abuts_share",
+          displayLabel: "어벗츠몫",
+          holdShare: "abutment",
         },
       },
     ];
 
-    if (labSettlementAmount > 0) {
-      lines.push({
-        accountCode: "LAB_SETTLEMENT_CREDIT",
-        ownerRole: "requestor",
-        ownerId: String(labAnchorId),
-        amount: labSettlementAmount,
-        amountExcludingVat: labSettlementAmount,
-        vatAmount: 0,
-        creditKind: "SETTLEMENT",
-        refType: "PRACTICE_TRANSFER",
-        refId: transferId,
-        meta: {
-          source: "practice_transfer_settlement",
-          isTradingPartner: computed.isPartner,
-          relationshipKind: computed.relationshipKind,
-          feeRateApplied: computed.feeRateApplied,
-          labFee: fees.labFeeTotal,
-          abutmentRetailIncluded: 0,
-          displayKind: "lab_credit",
-          displayLabel: "기공정산크레딧",
-          itemLabel: "기공비",
-        },
-      });
-    }
-
-    if (abutsRevenueAmount > 0) {
-      const freeShareOfPlatformFee =
-        escrowAmount > 0
-          ? Math.round((abutsRevenueAmount * fromFree) / escrowAmount)
-          : 0;
-      const freeReqShareOfPlatformFee =
-        fromFree > 0
-          ? Math.round((freeShareOfPlatformFee * fromFreeRequest) / fromFree)
-          : 0;
-      const freeShipShareOfPlatformFee = Math.max(
-        0,
-        freeShareOfPlatformFee - freeReqShareOfPlatformFee,
-      );
-      pushRevenueLines({
-        lines,
-        owners: revenueOwners,
-        spendAmount: abutsRevenueAmount,
-        freeAmount: freeShareOfPlatformFee,
-        fromFreeRequest: freeReqShareOfPlatformFee,
-        fromFreeShipping: freeShipShareOfPlatformFee,
-        refType: "PRACTICE_TRANSFER",
-        refId: transferId,
-        meta: {
-          source:
-            computed.relationshipKind === "active" ||
-            computed.relationshipKind === "referred"
-              ? "partner_platform_fee"
-              : "non_partner_platform_fee",
-          relationshipKind: computed.relationshipKind,
-          feeRateApplied: computed.feeRateApplied,
-          feeTotal: escrowAmount,
-        },
-      });
-    }
+    const freeShare =
+      heldTotalForFree > 0
+        ? Math.round((abutmentRetailTotal * fromFree) / heldTotalForFree)
+        : 0;
+    const freeReqShare =
+      fromFree > 0 ? Math.round((freeShare * fromFreeRequest) / fromFree) : 0;
+    const freeShipShare = Math.max(0, freeShare - freeReqShare);
+    pushRevenueLines({
+      lines,
+      owners: revenueOwners,
+      spendAmount: abutmentRetailTotal,
+      freeAmount: freeShare,
+      fromFreeRequest: freeReqShare,
+      fromFreeShipping: freeShipShare,
+      refType: "PRACTICE_TRANSFER",
+      refId: transferId,
+      meta: {
+        source: "abutment_retail",
+        displayKind: "abuts_share",
+        displayLabel: "어벗츠몫",
+        relationshipKind: computed.relationshipKind,
+        feeRateApplied: computed.feeRateApplied,
+      },
+    });
 
     const journal = await postGeneralLedgerJournal({
-      idempotencyKey: releaseKey,
+      idempotencyKey: releaseAbutKey,
       eventType: "PRACTICE_TRANSFER_ESCROW_RELEASE",
       businessAnchorId: practiceAnchorId,
       refType: "PRACTICE_TRANSFER",
       refId: transferId,
       createdBy: actorUserId,
       meta: {
-        labAnchorId: String(labAnchorId),
-        fees,
-        labSettlementAmount,
-        abutsRevenueAmount,
+        holdShare: "abutment",
+        abutmentRetailTotal,
+        fees: computed.fees,
         feeRateApplied: computed.feeRateApplied,
         relationshipKind: computed.relationshipKind,
       },
@@ -1858,16 +2510,10 @@ export async function releasePracticeTransferEscrow({
     return {
       released: true,
       journalId: journal?.journalId || null,
-      fees,
-      isPartner: computed.isPartner,
-      relationshipKind: computed.relationshipKind,
+      fees: computed.fees,
+      abutmentRetailTotal,
       feeRateApplied: computed.feeRateApplied,
-      labFeeMultiplier: computed.labFeeMultiplier,
-      labSettlementAmount,
-      abutsRevenueAmount,
-      labTradingPartnerId: computed.partner?._id
-        ? String(computed.partner._id)
-        : null,
+      relationshipKind: computed.relationshipKind,
     };
   } catch (e) {
     if (ownSession) {
@@ -1883,16 +2529,88 @@ export async function releasePracticeTransferEscrow({
   }
 }
 
+/**
+ * @deprecated 신규는 lab/abutment 분리 해제. 레거시·일괄 호환용 래퍼.
+ */
+export async function releasePracticeTransferEscrow({
+  transfer,
+  toothWorks = null,
+  actorUserId = null,
+  session: outerSession = null,
+}) {
+  const lab = await releasePracticeTransferLabShare({
+    transfer,
+    toothWorks,
+    actorUserId,
+    session: outerSession,
+  });
+  const abut = await releasePracticeTransferAbutmentShare({
+    transfer,
+    toothWorks,
+    actorUserId,
+    session: outerSession,
+  });
+  const released = Boolean(lab?.released || abut?.released);
+  const already =
+    lab?.reason === "already_released" || abut?.reason === "already_released";
+  return {
+    released,
+    reason: released
+      ? null
+      : already
+        ? "already_released"
+        : lab?.reason || abut?.reason || "no_hold",
+    journalId: lab?.journalId || abut?.journalId || null,
+    fees: lab?.fees || abut?.fees,
+    isPartner: lab?.isPartner,
+    relationshipKind: lab?.relationshipKind || abut?.relationshipKind,
+    feeRateApplied: lab?.feeRateApplied ?? abut?.feeRateApplied,
+    labFeeMultiplier: lab?.labFeeMultiplier,
+    labSettlementAmount: lab?.labSettlementAmount ?? 0,
+    abutsRevenueAmount:
+      Number(lab?.platformFee || 0) + Number(abut?.abutmentRetailTotal || 0),
+    labTradingPartnerId: lab?.labTradingPartnerId || null,
+    labRelease: lab,
+    abutmentRelease: abut,
+  };
+}
+
+/**
+ * 기공의뢰 관련 GL 전부 삭제형 롤백.
+ * - hold / hold_adjust / escrow_release / legacy spend
+ * - lab_shipping (작업완료 시 배송비)
+ * - ADJUST(어벗 디자인비 등) — refType+refId 스윕으로 누락 방지
+ * 치과 cancel-batch·휴지통 비우기·기공소 작업취소/거부·생성 실패 정리에서 공통 사용.
+ */
 export async function rollbackPracticeTransferBilling({
   transferId,
   session: outerSession = null,
+  emitRealtime = true,
 }) {
   const id = String(transferId || "").trim();
   if (!id || !Types.ObjectId.isValid(id)) {
-    return { didRollback: false, reason: "invalid_id" };
+    return {
+      didRollback: false,
+      reason: "invalid_id",
+      deletedJournalIds: [],
+      balanceRestoreByAnchor: {},
+    };
   }
 
+  const transferOid = new Types.ObjectId(id);
   const keys = [
+    {
+      key: practiceTransferEscrowReleaseAbutmentKey(id),
+      events: ["PRACTICE_TRANSFER_ESCROW_RELEASE"],
+    },
+    {
+      key: practiceTransferLabPlatformFeeKey(id),
+      events: ["PRACTICE_TRANSFER_LAB_PLATFORM_FEE"],
+    },
+    {
+      key: practiceTransferEscrowReleaseLabKey(id),
+      events: ["PRACTICE_TRANSFER_ESCROW_RELEASE"],
+    },
     {
       key: practiceTransferEscrowReleaseKey(id),
       events: ["PRACTICE_TRANSFER_ESCROW_RELEASE"],
@@ -1902,6 +2620,14 @@ export async function rollbackPracticeTransferBilling({
       events: ["PRACTICE_TRANSFER_HOLD_ADJUST"],
     },
     {
+      key: practiceTransferHoldAbutmentKey(id),
+      events: ["PRACTICE_TRANSFER_SPEND_HOLD"],
+    },
+    {
+      key: practiceTransferHoldLabKey(id),
+      events: ["PRACTICE_TRANSFER_SPEND_HOLD"],
+    },
+    {
       key: practiceTransferHoldKey(id),
       events: ["PRACTICE_TRANSFER_SPEND_HOLD"],
     },
@@ -1909,32 +2635,129 @@ export async function rollbackPracticeTransferBilling({
       key: practiceTransferLegacySpendKey(id),
       events: ["PRACTICE_TRANSFER_SPEND_COMMIT"],
     },
+    {
+      key: practiceTransferLabShippingKey(id),
+      events: ["SHIPPING_SPEND_COMMIT"],
+    },
   ];
 
-  let didRollback = false;
-  let lastReason = "no_spend";
+  const journalEventById = new Map();
+
   for (const { key, events } of keys) {
     const existing = await getJournalByIdempotencyKey({
       idempotencyKey: key,
       session: outerSession,
     });
-    if (!existing?.journalId) continue;
+    const jid = String(existing?.journalId || "").trim();
+    if (!jid) continue;
+    journalEventById.set(jid, events);
+  }
+
+  // 키 누락·과거 포맷·디자인비 ADJUST 보강: refType+refId 스윕
+  const byRef = await LedgerJournal.find({
+    refType: "PRACTICE_TRANSFER",
+    refId: { $in: [transferOid, id] },
+    eventType: { $in: PRACTICE_TRANSFER_ROLLBACK_EVENT_TYPES },
+  })
+    .select({ journalId: 1, eventType: 1 })
+    .session(outerSession || null)
+    .lean();
+
+  for (const row of byRef || []) {
+    const jid = String(row?.journalId || "").trim();
+    if (!jid) continue;
+    if (!journalEventById.has(jid)) {
+      journalEventById.set(jid, PRACTICE_TRANSFER_ROLLBACK_EVENT_TYPES);
+    }
+  }
+
+  if (journalEventById.size === 0) {
+    return {
+      didRollback: false,
+      reason: "no_spend",
+      deletedJournalIds: [],
+      balanceRestoreByAnchor: {},
+    };
+  }
+
+  const journalIds = [...journalEventById.keys()];
+  const lines = await LedgerLine.find({ journalId: { $in: journalIds } })
+    .select({ journalId: 1, accountCode: 1, ownerId: 1, amount: 1 })
+    .session(outerSession || null)
+    .lean();
+
+  const balanceRestoreByAnchor = {};
+  for (const line of lines || []) {
+    const code = String(line?.accountCode || "").trim();
+    if (!PRACTICE_TRANSFER_BALANCE_ACCOUNT_CODES.has(code)) continue;
+    const ownerId = String(line?.ownerId || "").trim();
+    if (!ownerId || !Types.ObjectId.isValid(ownerId)) continue;
+    const amount = Number(line?.amount || 0);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+    // 소비(-) 삭제 → 잔액 복원(+). 적립(+) 삭제 → 잔액 차감(-).
+    balanceRestoreByAnchor[ownerId] =
+      Number(balanceRestoreByAnchor[ownerId] || 0) - amount;
+  }
+
+  let didRollback = false;
+  let lastReason = "no_spend";
+  const deletedJournalIds = [];
+
+  for (const [journalId, events] of journalEventById.entries()) {
     const deleteResult = await deleteGeneralLedgerCommitJournal({
-      journalId: existing.journalId,
+      journalId,
       expectedEventTypes: events,
       session: outerSession,
     });
     if (deleteResult?.deleted) {
       didRollback = true;
       lastReason = null;
+      deletedJournalIds.push(journalId);
     } else {
       lastReason = deleteResult?.reason || lastReason;
+    }
+  }
+
+  if (didRollback) {
+    const affectedAnchorIds = Object.keys(balanceRestoreByAnchor);
+    for (const anchorId of affectedAnchorIds) {
+      try {
+        await upsertBusinessCreditBalanceFromLedger({
+          businessAnchorId: anchorId,
+          session: outerSession,
+        });
+      } catch {
+        // best-effort cache; ledger lines are SSOT
+      }
+    }
+
+    if (emitRealtime) {
+      try {
+        const { emitCreditBalanceUpdatedToBusiness } = await import(
+          "../utils/creditRealtime.js"
+        );
+        await Promise.all(
+          affectedAnchorIds.map((anchorId) =>
+            emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: anchorId,
+              balanceDelta: Number(balanceRestoreByAnchor[anchorId] || 0),
+              reason: "practice_transfer_billing_rollback",
+              refId: id,
+              forceEmit: true,
+            }),
+          ),
+        );
+      } catch {
+        // best-effort
+      }
     }
   }
 
   return {
     didRollback,
     reason: didRollback ? null : lastReason,
+    deletedJournalIds,
+    balanceRestoreByAnchor,
   };
 }
 

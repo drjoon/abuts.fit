@@ -10,6 +10,7 @@
 // - 2026-08-13: 커스텀어벗 단가는 creditSettings 멤버십/일반값을 우선 사용.
 // - 2026-08-13: 유지장치 등 perSet는 연결 스팬당 1세트(끊기면 별도). 연결 없는 레거시는 악궁당.
 // - 2026-08-13: 견적 라인은 치아번호 10→20→30→40번대 순.
+// - 2026-08-17: 번대 안은 임상 치식(18→11, 21→28, 31→38, 48→41).
 // - 2026-08-13: 유지장치·임시치아에 남은 커스텀 플래그는 어벗 과금하지 않는다.
 // - 2026-08-14: 환봉 프리셋 타입 변경 후에도 제조사·브랜드·패밀리로 매칭.
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote). 견적에서 열이 사라지지 않게.
@@ -366,13 +367,23 @@ export const toothArchFromNumber = (toothNumber: string) => {
   return "other" as const;
 };
 
-/** 표시용: 11..18 → 21..28 → 31..38 → 41..48. 아치 순회(18→11)와 분리 */
+/** 표시용: 18..11 → 21..28 → 31..38 → 48..41 (10→20→30→40번대).
+ * 아치 한 바퀴(18→28→48→38)와 달리 30번대가 40번대보다 먼저다. */
 export const toToothDecadeSortNumber = (toothNumber: string) => {
   const tokens = String(toothNumber || "")
     .split(/[^\d]+/)
     .filter((token) => /^[1-4][1-8]$/.test(token));
   if (tokens.length === 0) return Number.MAX_SAFE_INTEGER;
-  return Math.min(...tokens.map(Number));
+  return Math.min(
+    ...tokens.map((token) => {
+      const tens = Number(token[0]);
+      const ones = Number(token[1]);
+      const decadeBase = (tens - 1) * 10;
+      // 10·40번대: 후방→정중선(18..11 / 48..41). 20·30번대: 정중선→후방(21..28 / 31..38)
+      if (tens === 1 || tens === 4) return decadeBase + (8 - ones);
+      return decadeBase + (ones - 1);
+    }),
+  );
 };
 
 export const sortPracticeTransferFeeLines = <T extends { toothNumber?: string }>(

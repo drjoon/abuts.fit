@@ -12,6 +12,7 @@
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // change-log:
 // - 2026-08-16: PTX 가공 진입 시 practiceTransfer.abutmentProductionStartedAt 기록(수락 취소 가드).
+// - 2026-08-17: PTX CA 포장.발송 시 어벗츠몫 에스크로 해제(releasePracticeTransferAbutmentShare).
 // - 2026-08-10: 디자인 파트너 준비→가공(nextUpCamRunGuard) 핸드오프 승인 허용.
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
@@ -1790,6 +1791,83 @@ export async function updateReviewStatusByStage(req, res) {
               session,
               deferredCreditEvents,
             });
+          }
+
+          // PTX 연동 CA: 제조사 발송=어벗츠몫 에스크로 해제(배송비 면제 경로에서도 실행).
+          {
+            const pb =
+              request?.partnerBilling &&
+              typeof request.partnerBilling === "object"
+                ? request.partnerBilling
+                : {};
+            const relatedPtxId = String(
+              pb.relatedPracticeTransferId || "",
+            ).trim();
+            if (relatedPtxId && Types.ObjectId.isValid(relatedPtxId)) {
+              try {
+                const PracticeTransfer = (
+                  await import("../../models/practiceTransfer.model.js")
+                ).default;
+                const {
+                  releasePracticeTransferAbutmentShare,
+                } = await import(
+                  "../../services/practiceTransferBilling.service.js"
+                );
+                const ptxDoc = await PracticeTransfer.findById(relatedPtxId)
+                  .session(session || null);
+                if (ptxDoc?._id && !ptxDoc.billing?.abutmentSettledAt) {
+                  const abutRelease =
+                    await releasePracticeTransferAbutmentShare({
+                      transfer: ptxDoc,
+                      toothWorks: Array.isArray(ptxDoc.toothWorks)
+                        ? ptxDoc.toothWorks
+                        : [],
+                      actorUserId: req.user?._id || null,
+                      session: session || null,
+                    });
+                  if (
+                    abutRelease?.released ||
+                    abutRelease?.reason === "already_released" ||
+                    abutRelease?.reason === "zero_abutment"
+                  ) {
+                    const abutmentSettledAt = new Date();
+                    const labAlready =
+                      Boolean(ptxDoc.billing?.labSettledAt) ||
+                      Math.max(
+                        0,
+                        Math.round(
+                          Number(
+                            ptxDoc.billing?.heldLabTotal ??
+                              ptxDoc.billing?.labFeeTotal ??
+                              0,
+                          ),
+                        ),
+                      ) <= 0;
+                    ptxDoc.billing = {
+                      ...(ptxDoc.billing && typeof ptxDoc.billing === "object"
+                        ? ptxDoc.billing
+                        : {}),
+                      abutmentSettledAt,
+                      ...(labAlready
+                        ? {
+                            labSettledAt:
+                              ptxDoc.billing?.labSettledAt || abutmentSettledAt,
+                            settledAt: abutmentSettledAt,
+                          }
+                        : {}),
+                    };
+                    await ptxDoc.save({ session: session || undefined });
+                  }
+                }
+              } catch (abutReleaseErr) {
+                console.error(
+                  "[PACKING_APPROVAL] PTX abutment share release failed",
+                  relatedPtxId,
+                  abutReleaseErr?.message || abutReleaseErr,
+                );
+                throw abutReleaseErr;
+              }
+            }
           }
         }
 

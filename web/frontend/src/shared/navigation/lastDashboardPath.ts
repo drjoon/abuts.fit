@@ -3,6 +3,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 // - web/frontend/src/store/useAuthStore.ts
+// - 2026-08-17: internalLab `/dashboard` = 대기보드 허용(기본 랜딩은 lab-work).
 
 /**
  * 최근 대시보드 경로 정규화/검증 (프론트 ↔ 백엔드 SSOT 규칙 동기).
@@ -63,10 +64,10 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/internalLab/practice/devops는 `/dashboard`에 콘텐츠가 없음
+  // manufacturer/practice/devops는 `/dashboard`에 콘텐츠가 없음.
+  // internalLab은 `/dashboard` = 대기보드(RequestorDashboardPage).
   if (
     (role === "manufacturer" ||
-      role === "internalLab" ||
       role === "practice" ||
       role === "devops") &&
     (last === "/dashboard" || last === "/dashboard/")

@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/utils/labFeeSchedule.js
 // - 2026-08-13: 견적 라인 치아번호 10→20→30→40번대 정렬.
+// - 2026-08-17: 번대 안은 임상 치식(18→11, 21→28, 31→38, 48→41).
 // - 2026-08-14: 환봉 요청중은 기공소 어벗, 도입·CNC는 어벗츠 어벗.
 // - 2026-08-15: 치아 미선택 자리표시 행은 견적 0원.
 import {
@@ -424,19 +425,25 @@ describe("labFeeSchedule", () => {
         { toothNumber: "41", prosthesisType: "Pontic" },
         { toothNumber: "31", prosthesisType: "Pontic" },
         { toothNumber: "32", prosthesisType: "Pontic" },
+        { toothNumber: "11", prosthesisType: "크라운" },
+        { toothNumber: "12", prosthesisType: "크라운" },
+        { toothNumber: "21", prosthesisType: "크라운" },
       ],
       labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
       abutmentPricingTier: "regular",
     });
     expect(fees.lines.map((line) => line.toothNumber)).toEqual([
+      "12",
+      "11",
+      "21",
       "22",
       "23",
       "31",
       "32",
       "33",
-      "41",
-      "42",
       "43",
+      "42",
+      "41",
     ]);
   });
 

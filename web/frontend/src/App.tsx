@@ -497,7 +497,7 @@ const App = () => {
                   <Route
                     path="new-request"
                     element={
-                      <RoleProtectedRoute roles={["requestor"]}>
+                      <RoleProtectedRoute roles={["requestor", "internalLab"]}>
                         <NewRequestPage />
                       </RoleProtectedRoute>
                     }
@@ -505,7 +505,7 @@ const App = () => {
                   <Route
                     path="new-request/:id"
                     element={
-                      <RoleProtectedRoute roles={["requestor"]}>
+                      <RoleProtectedRoute roles={["requestor", "internalLab"]}>
                         <NewRequestPage />
                       </RoleProtectedRoute>
                     }
