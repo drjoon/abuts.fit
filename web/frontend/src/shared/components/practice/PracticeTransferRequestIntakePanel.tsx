@@ -34,7 +34,10 @@ import {
   type AbutsLabFeeCatalogItem,
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
-import { normalizeAutoMatchMinLabRating } from "@/shared/practice/practiceLabRating";
+import {
+  DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  normalizeAutoMatchMinLabRating,
+} from "@/shared/practice/practiceLabRating";
 import {
   Popover,
   PopoverContent,
@@ -738,7 +741,7 @@ export const PracticeTransferRequestIntakePanel = ({
   autoMatchBudget = null,
   abutsLabFeeCatalog = null,
   onAutoMatchBudgetChange,
-  autoMatchMinLabRating = 1,
+  autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   onAutoMatchMinLabRatingChange,
 }: PracticeTransferRequestIntakePanelProps) => {
   const [autoMatchBudgetOpen, setAutoMatchBudgetOpen] = useState(false);

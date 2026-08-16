@@ -6,11 +6,12 @@
 // - 2026-08-14: rating 기공소 10곳 이상일 때만 자동매칭 별 제한.
 // - 2026-08-16: 10곳 게이트 제거. 평가 5회 이하는 별 제한 제외.
 // - 2026-08-16: 자동매칭 별점은 전체 치과 평가 합산·평균.
+// - 2026-08-16: 자동매칭 최소 별 기본값 2(사업자 세팅 저장·재사용).
 
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 3;
 export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
-export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 1;
+export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 2;
 /** 이 횟수 이하 평가면 최소 별 제한에서 제외(미평가 포함). */
 export const AUTO_MATCH_RATING_COUNT_GRACE = 5;
 

@@ -14,6 +14,7 @@
 // 항목 목록은 어벗츠 수가(시스템 카탈로그)에서 동적으로 온다.
 // - 2026-08-15: 자동매칭 예산 필터에서 practice 할증 제외(공개 수가 기준).
 // - 2026-08-16: 별점 게이트는 전체 치과 평가 합산·평균.
+// - 2026-08-16: 자동매칭 최소 별 기본값 2.
 
 import {
   isLabFeeScheduleConfigured,
@@ -38,7 +39,11 @@ import {
   isAutoMatchEligibleLabAnchor,
   loadAutoMatchEligibleLabAnchors,
 } from "./practiceTransferAutoMatch.js";
-import { isLabBlockedByPracticeRating, loadGlobalLabRatingAggregates } from "./practiceLabRating.js";
+import {
+  DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  isLabBlockedByPracticeRating,
+  loadGlobalLabRatingAggregates,
+} from "./practiceLabRating.js";
 import {
   ADMIN_LAB_FEE_BASE,
   AUTO_MATCH_BUDGET_KEYS,
@@ -215,7 +220,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   toothWorks,
   budget,
   catalog,
-  autoMatchMinLabRating = 1,
+  autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
 } = {}) {
   const catalogItems =
     catalog != null

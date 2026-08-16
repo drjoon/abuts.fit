@@ -504,10 +504,10 @@ const businessAnchorSchema = new mongoose.Schema(
         default: null,
       },
       // 자동매칭 참여 최소 별(1~3). 전체 치과 평가 평균 기준.
-      // 미평가·합산 평가 5회 이하는 차단하지 않음.
+      // 미평가·합산 평가 5회 이하는 차단하지 않음. 기본 2.
       autoMatchMinLabRating: {
         type: Number,
-        default: 1,
+        default: 2,
         min: 1,
         max: 3,
       },

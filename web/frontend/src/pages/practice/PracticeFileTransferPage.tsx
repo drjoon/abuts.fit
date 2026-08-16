@@ -199,6 +199,7 @@ import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAccep
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import { formatWon } from "@/shared/practice/practiceTransferFeeQuote";
 import {
+  DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   normalizeAutoMatchMinLabRating,
   parsePracticeLabRatingPublic,
   type PracticeLabRatingPublic,
@@ -1183,7 +1184,9 @@ export const PracticeFileTransferPage = ({
   const prevWorkspaceModeRef = useRef<"express" | "expert" | null>(null);
   const [autoMatchBudget, setAutoMatchBudget] =
     useState<PracticeTransferAutoMatchBudget | null>(null);
-  const [autoMatchMinLabRating, setAutoMatchMinLabRating] = useState(1);
+  const [autoMatchMinLabRating, setAutoMatchMinLabRating] = useState(
+    DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  );
   const [abutsLabFeeCatalog, setAbutsLabFeeCatalog] = useState<
     AbutsLabFeeCatalogItem[] | null
   >(null);
@@ -1637,13 +1640,20 @@ export const PracticeFileTransferPage = ({
     const nextDefaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
       payload.defaultAbutmentProductMode,
     );
-    const nextAutoMatchBudget = resolveAutoMatchBudgetOrDefaults(
-      payload.autoMatchBudget,
-      payload.abutsLabFeeCatalog,
+    const hasAutoMatchBudget = Object.prototype.hasOwnProperty.call(
+      payload,
+      "autoMatchBudget",
     );
-    const nextAutoMatchMinLabRating = normalizeAutoMatchMinLabRating(
-      payload.autoMatchMinLabRating,
+    const hasAutoMatchMinLabRating = Object.prototype.hasOwnProperty.call(
+      payload,
+      "autoMatchMinLabRating",
     );
+    const nextAutoMatchBudget = hasAutoMatchBudget
+      ? resolveAutoMatchBudgetOrDefaults(
+          payload.autoMatchBudget,
+          payload.abutsLabFeeCatalog,
+        )
+      : null;
     if (Array.isArray(payload.abutsLabFeeCatalog)) {
       setAbutsLabFeeCatalog(payload.abutsLabFeeCatalog);
     }
@@ -1656,8 +1666,15 @@ export const PracticeFileTransferPage = ({
     setAbutmentFavorites(nextAbutmentFavorites);
     setSkipDesignConfirm(nextSkipDesignConfirm);
     setDefaultAbutmentProductMode(nextDefaultAbutmentProductMode);
-    setAutoMatchBudget(nextAutoMatchBudget);
-    setAutoMatchMinLabRating(nextAutoMatchMinLabRating);
+    // 로컬 캐시에 키가 없으면 기본값으로 덮지 않음(서버 응답·명시 저장만 반영)
+    if (nextAutoMatchBudget) {
+      setAutoMatchBudget(nextAutoMatchBudget);
+    }
+    if (hasAutoMatchMinLabRating) {
+      setAutoMatchMinLabRating(
+        normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating),
+      );
+    }
     setToothWorks((prev) =>
       prev.map((row) => {
         const customAbutment = Boolean(row.customAbutment);
@@ -1787,6 +1804,12 @@ export const PracticeFileTransferPage = ({
             skipDesignConfirm: payload?.skipDesignConfirm !== false,
             defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
               payload?.defaultAbutmentProductMode,
+            ),
+            autoMatchMinLabRating: normalizeAutoMatchMinLabRating(
+              payload?.autoMatchMinLabRating ??
+                (hasAutoMatchMinLabRating
+                  ? params.autoMatchMinLabRating
+                  : undefined),
             ),
             savedAt: Date.now(),
           }),
@@ -2218,7 +2241,7 @@ export const PracticeFileTransferPage = ({
       if (localFormUpdatedAtRef.current <= 0) {
         applyPracticeTransferSettings(payload);
       } else if (payload) {
-        // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·커스텀어벗 기본모드·자동매칭 예산)은 서버를 우선 반영
+        // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         setSkipDesignConfirm(payload.skipDesignConfirm !== false);
         setDefaultAbutmentProductMode(
@@ -2231,6 +2254,9 @@ export const PracticeFileTransferPage = ({
             payload.autoMatchBudget,
             payload.abutsLabFeeCatalog ?? abutsLabFeeCatalog,
           ),
+        );
+        setAutoMatchMinLabRating(
+          normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating),
         );
         if (Array.isArray(payload.abutsLabFeeCatalog)) {
           setAbutsLabFeeCatalog(payload.abutsLabFeeCatalog);
@@ -2258,6 +2284,9 @@ export const PracticeFileTransferPage = ({
             skipDesignConfirm: payload?.skipDesignConfirm !== false,
             defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
               payload?.defaultAbutmentProductMode,
+            ),
+            autoMatchMinLabRating: normalizeAutoMatchMinLabRating(
+              payload?.autoMatchMinLabRating,
             ),
             savedAt: Date.now(),
           }),

@@ -10,6 +10,7 @@
 // - 2026-08-14: 동일 기공소 평가 2회 이하(3회부터 차단)는 매칭 참여 허용.
 // - 2026-08-16: 10곳 게이트 제거. 평가 5회 이하(6회부터 별 제한)는 매칭 참여 허용.
 // - 2026-08-16: 자동매칭 별점은 주문 치과만이 아니라 전체 치과 평가 합산·평균.
+// - 2026-08-16: 자동매칭 최소 별 기본값 2(사업자 세팅 저장·재사용).
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -18,7 +19,7 @@ import { requestorKindCapableAnchorFilter } from "./requestorCapabilities.js";
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 3;
 export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
-export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 1;
+export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 2;
 /** 이 횟수 이하 평가면 최소 별 제한에서 제외(미평가 포함). 초과 시 별점 게이트 적용. */
 export const AUTO_MATCH_RATING_COUNT_GRACE = 5;
 
@@ -33,7 +34,7 @@ export function normalizePracticeLabStars(value) {
   return stars;
 }
 
-/** 자동매칭 최소 별. 미설정·범위 밖 → 1(필터 없음에 가깝게). */
+/** 자동매칭 최소 별. 미설정·범위 밖 → 기본 2. */
 export function normalizeAutoMatchMinLabRating(value) {
   const stars = normalizePracticeLabStars(value);
   return stars == null ? DEFAULT_AUTO_MATCH_MIN_LAB_RATING : stars;

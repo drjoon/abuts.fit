@@ -6,6 +6,7 @@
 // - 2026-08-14: rating 기공소 10곳 이상일 때만 제한. 툴팁 문구 정리.
 // - 2026-08-14: 툴팁·차단 기준 — 2회 이하 평가는 참여 허용.
 // - 2026-08-16: 툴팁·차단 기준 — 인증 기공소 + 전체 치과 평가 평균/합산(5회 이하 유예).
+// - 2026-08-16: 최소 별 기본값 2.
 import { Star } from "lucide-react";
 import {
   Tooltip,
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   AUTO_MATCH_RATING_COUNT_GRACE,
+  DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   PRACTICE_LAB_RATING_MAX,
   normalizeAutoMatchMinLabRating,
 } from "@/shared/practice/practiceLabRating";
@@ -34,7 +36,7 @@ type AutoMatchMinLabRatingStarsProps = {
 };
 
 export function AutoMatchMinLabRatingStars({
-  value = 1,
+  value = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   onChange,
   className,
   disabled = false,
