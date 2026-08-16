@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
+// - 2026-08-17: 최소 작업+배송 2+2(4영업일)·신속처리 상수/고지.
 // - 2026-08-16: 커스텀어벗 치과 직납·출고=도착−2영업일 안내를 작업+배송 툴팁에 포함.
 // - 2026-08-15: 작업기간(주문→도착) 5일 미만 경고 SSOT.
 // - 2026-08-15: 치과·기공소 툴팁 문구 분리. 표기 기공기간→작업기간.
@@ -15,8 +16,20 @@ import { kstYmdDiffBusinessDays } from "@/shared/date/kst";
 /** 배송기간(영업일). 작업기간 = (주문→치과도착 영업일) − 이 값. */
 export const PRACTICE_SHIPPING_BUSINESS_DAYS = 2;
 
-/** 권장 작업+배송 합계(영업일). 미만이면 경고. */
-export const PRACTICE_WORK_PERIOD_MIN_DAYS = 5;
+/** 권장·필수 최소 작업+배송 합계(영업일) = 2+2. 미만이면 전송 차단. */
+export const PRACTICE_WORK_PERIOD_MIN_DAYS = 4;
+
+/** 신속처리: 주문일 + N영업일 도착 고정 */
+export const PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS = 2;
+
+/** 신속처리 기공/어벗 할증 */
+export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.5;
+
+export const PRACTICE_RUSH_COURIER_DISCLAIMER =
+  "택배 사정에 따라 도착이 늦어질 수 있으며 도착을 보장하지 않습니다.";
+
+export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
+  "납품 기일은 작업+배송 2+2영업일 이상이어야 합니다.";
 
 export type PracticeWorkPeriodViewer = "practice" | "lab";
 
@@ -26,19 +39,20 @@ export function formatPracticeWorkPlusShipMeaningTooltip(
 ): string {
   const workDays = getPracticeWorkOnlyBusinessDays(totalBusinessDays);
   const shipNote = `커스텀어벗은 치과로 직납되며, 출고 목표는 치과도착일 ${PRACTICE_SHIPPING_BUSINESS_DAYS}영업일 전입니다.`;
+  const minNote = `일반 의뢰는 ${PRACTICE_SHIPPING_BUSINESS_DAYS}+${PRACTICE_SHIPPING_BUSINESS_DAYS}영업일 이상이어야 합니다.`;
   if (workDays == null) {
-    return `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote}`;
+    return `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote} ${minNote}`;
   }
-  return `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote}`;
+  return `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote} ${minNote}`;
 }
 
-/** 치과(발신): 짧은 기간이면 수락 기공소가 없을 수 있음 */
+/** 치과(발신): 짧은 기간이면 전송 불가 */
 export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE =
-  "작업+배송 기간이 충분하지 않아 수락하는 기공소가 없을 수도 있습니다.";
+  "작업+배송은 2+2영업일 이상이어야 합니다. 기간이 짧으면 전송할 수 없습니다.";
 
 /** 기공소(수신): 짧은 기간이면 수락하지 않아도 됨 */
 export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_LAB =
-  "작업+배송기간이 짧으니 수락하지 않으셔도 됩니다.";
+  "작업+배송기간이 2+2영업일 미만입니다. 수락하지 않으셔도 됩니다.";
 
 export function getPracticeWorkPeriodShortTooltip(
   viewer: PracticeWorkPeriodViewer = "practice",

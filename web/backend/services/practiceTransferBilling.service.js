@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-17: 신속처리 rushFeeMultiplier — 기공/어벗 1.5배 스택.
 // - 2026-08-14: 목록 견적 조회(devops/단가/기공소/거래처) parallel + 60s 캐시.
 // - 2026-08-14: quote-context에 abutmentPrices 포함. 환봉 단가가 치과 견적에 전달.
 // - 2026-08-14: quote-context — 기공소/티어/단가/거래처/수수료율 parallel + 60s 캐시(5회 직렬 RTT 제거).
@@ -80,6 +81,10 @@ import {
   resolveLabPracticeFeeMultiplierAsOf,
   splitPracticeTransferSettlement,
 } from "../utils/labFeeSchedule.js";
+import {
+  normalizeRushFeeMultiplier,
+  resolveRushFeeMultiplier,
+} from "../utils/practiceTransferRush.js";
 import {
   applySpecialRequestorPricesToCreditSettings,
   loadCreditSettingsDefaults,
@@ -444,6 +449,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
   remake = false,
   autoMatchBudget = null,
   catalog: catalogInput = null,
+  rushFeeMultiplier = 1,
 }) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
@@ -491,6 +497,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
     remake: useRemake,
     skipAbutmentFees: useRemake,
     labFeeMultiplier: resolveLabPracticeFeeMultiplier(lab, practiceId),
+    rushFeeMultiplier: normalizeRushFeeMultiplier(rushFeeMultiplier),
   });
 
   const required = fees.total;
@@ -621,6 +628,7 @@ export async function commitPracticeTransferBilling({
   const labFeeMultiplier = isAutoMatch
     ? 1
     : normalizeLabFeeMultiplier(transfer?.billing?.labFeeMultiplier);
+  const rushFeeMultiplier = rushFeeMultiplierFromTransfer(transfer);
   const labEffectiveStars = isAutoMatch
     ? await resolveLabEffectiveStarsForFee(labAnchorId)
     : DEFAULT_EFFECTIVE_LAB_STARS;
@@ -642,6 +650,7 @@ export async function commitPracticeTransferBilling({
     remake,
     skipAbutmentFees: remake,
     labFeeMultiplier,
+    rushFeeMultiplier,
   });
 
   if (fees.total <= 0) {
@@ -1586,6 +1595,7 @@ async function computeAcceptedPracticeTransferFees({
   const labFeeMultiplier = isAutoMatch
     ? 1
     : normalizeLabFeeMultiplier(transfer?.billing?.labFeeMultiplier);
+  const rushFeeMultiplier = rushFeeMultiplierFromTransfer(transfer);
 
   const labEffectiveStars = isAutoMatch
     ? await resolveLabEffectiveStarsForFee(labAnchorId)
@@ -1609,6 +1619,7 @@ async function computeAcceptedPracticeTransferFees({
     remake,
     skipAbutmentFees: remake,
     labFeeMultiplier,
+    rushFeeMultiplier,
   });
 
   if (isAutoMatch) {
@@ -2886,6 +2897,16 @@ function implantFavoritesFromPractice(practice) {
   return Array.isArray(raw) ? raw : [];
 }
 
+function rushFeeMultiplierFromTransfer(transfer, override) {
+  if (override !== undefined) {
+    return normalizeRushFeeMultiplier(override);
+  }
+  return resolveRushFeeMultiplier({
+    rushProcessing: Boolean(transfer?.production?.rushProcessing),
+    rushFeeMultiplier: transfer?.billing?.rushFeeMultiplier,
+  });
+}
+
 export function toFeeQuoteApi(quote) {
   const fees = quote?.fees || {};
   const billed = Boolean(quote?.billed);
@@ -2914,6 +2935,9 @@ export function toFeeQuoteApi(quote) {
     feeRateApplied: Number(quote?.feeRateApplied || 0),
     labFeeMultiplier: normalizeLabFeeMultiplier(
       quote?.labFeeMultiplier ?? quote?.fees?.labFeeMultiplier,
+    ),
+    rushFeeMultiplier: normalizeRushFeeMultiplier(
+      quote?.rushFeeMultiplier ?? quote?.fees?.rushFeeMultiplier,
     ),
     labSettlementAmount: Math.max(
       0,
@@ -2944,6 +2968,7 @@ export function toBillingPreviewFields(quote) {
     relationshipKind: api.relationshipKind,
     feeRateApplied: api.feeRateApplied,
     labFeeMultiplier: api.labFeeMultiplier,
+    rushFeeMultiplier: api.rushFeeMultiplier,
     labTradingPartnerId: api.labTradingPartnerId,
     labSettlementAmount: api.labSettlementAmount,
     abutsRevenueAmount: api.abutsRevenueAmount,
@@ -2987,10 +3012,12 @@ export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } =
       total,
       lines: billed ? stripLabFeeMinFromFeeLines(lines) : lines,
       labFeeMultiplier: billing?.labFeeMultiplier,
+      rushFeeMultiplier: billing?.rushFeeMultiplier,
     },
     relationshipKind: billing?.relationshipKind || "none",
     feeRateApplied,
     labFeeMultiplier: billing?.labFeeMultiplier,
+    rushFeeMultiplier: billing?.rushFeeMultiplier,
     labSettlementAmount,
     abutsRevenueAmount,
     labTradingPartnerId: billing?.labTradingPartnerId
@@ -3036,6 +3063,7 @@ export async function buildPracticeTransferQuote({
   matchingMode = undefined,
   autoMatchBudget = undefined,
   catalog: catalogInput = undefined,
+  rushFeeMultiplier: rushFeeMultiplierInput = 1,
 }) {
   let schedule = labFeeSchedule;
   const labId = String(labAnchorId || "").trim();
@@ -3113,6 +3141,7 @@ export async function buildPracticeTransferQuote({
   const labFeeMultiplier = isAutoMatchQuote
     ? 1
     : resolveLabPracticeFeeMultiplier(lab, practiceId);
+  const rushFeeMultiplier = normalizeRushFeeMultiplier(rushFeeMultiplierInput);
   const fees = computePracticeTransferRetailFees({
     toothWorks,
     implantFavorites: implantFavoritesFromPractice(practice),
@@ -3122,6 +3151,7 @@ export async function buildPracticeTransferQuote({
     remake: useRemake,
     skipAbutmentFees: useRemake,
     labFeeMultiplier,
+    rushFeeMultiplier,
   });
 
   let autoMatchBudgetOut = null;
@@ -3139,6 +3169,7 @@ export async function buildPracticeTransferQuote({
       remake: useRemake,
       skipAbutmentFees: true,
       labFeeMultiplier: 1,
+      rushFeeMultiplier,
     });
     fees.lines = attachLabFeeMinToLines(fees.lines, minFees.lines);
     autoMatchBudgetOut = {
@@ -3180,6 +3211,7 @@ export async function buildPracticeTransferQuote({
     relationshipKind: kind === "active" || kind === "referred" ? kind : "none",
     feeRateApplied,
     labFeeMultiplier,
+    rushFeeMultiplier,
     labSettlementAmount,
     abutsRevenueAmount,
     labTradingPartnerId: partnerId,
@@ -3456,6 +3488,7 @@ export async function buildFeeQuotesForTransferDocs({
       remake: true,
       skipAbutmentFees: true,
       labFeeMultiplier: remakeLabFeeMultiplier,
+      rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
     });
     const fees = computePracticeTransferRetailFees({
       toothWorks,
@@ -3466,6 +3499,7 @@ export async function buildFeeQuotesForTransferDocs({
       remake,
       skipAbutmentFees: remake,
       labFeeMultiplier: feeLabFeeMultiplier,
+      rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
     });
 
     let autoMatchBudgetOut = null;
@@ -3480,6 +3514,7 @@ export async function buildFeeQuotesForTransferDocs({
         remake,
         skipAbutmentFees: true,
         labFeeMultiplier: 1,
+        rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
       });
       const maxFeesForBand =
         useLabStarFeeSchedule && autoScheduleMax
@@ -3492,6 +3527,7 @@ export async function buildFeeQuotesForTransferDocs({
               remake,
               skipAbutmentFees: remake,
               labFeeMultiplier: 1,
+              rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
             })
           : fees;
       fees.lines = attachLabFeeMinToLines(fees.lines, minFees.lines);

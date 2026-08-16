@@ -77,6 +77,9 @@ export type PracticeOrderArrivalDateRangeFieldProps = {
   onChange: (next: { orderDate: string; arrivalDate: string }) => void;
   className?: string;
   triggerClassName?: string;
+  /** 신속처리: 날짜 선택 잠금 */
+  locked?: boolean;
+  lockedHint?: string;
 };
 
 export function PracticeOrderArrivalDateRangeField({
@@ -86,6 +89,8 @@ export function PracticeOrderArrivalDateRangeField({
   onChange,
   className,
   triggerClassName,
+  locked = false,
+  lockedHint,
 }: PracticeOrderArrivalDateRangeFieldProps) {
   const [open, setOpen] = useState(false);
   const todayYmd = useMemo(() => toKstYmd(new Date()) || "", []);
@@ -157,6 +162,7 @@ export function PracticeOrderArrivalDateRangeField({
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
               주문일은 오늘 고정. 치과도착일만 선택하면 됩니다.
+              일반 의뢰는 작업+배송 2+2영업일 이상이어야 합니다.
               {leadLabel
                 ? ` 변경한 간격(${leadLabel})이 다음 기본값으로 저장됩니다.`
                 : " 변경한 간격이 다음 기본값으로 저장됩니다."}{" "}
@@ -174,11 +180,12 @@ export function PracticeOrderArrivalDateRangeField({
           />
         ) : null}
       </div>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={locked ? false : open} onOpenChange={locked ? undefined : setOpen}>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="outline"
+            disabled={locked}
             className={cn(
               "h-11 w-full justify-between gap-2 px-3 text-left text-base font-normal",
               triggerClassName,
@@ -191,6 +198,7 @@ export function PracticeOrderArrivalDateRangeField({
             <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
+        {!locked ? (
         <PopoverContent
           align="end"
           side="bottom"
@@ -243,7 +251,11 @@ export function PracticeOrderArrivalDateRangeField({
             </div>
           </div>
         </PopoverContent>
+        ) : null}
       </Popover>
+      {locked && lockedHint ? (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">{lockedHint}</p>
+      ) : null}
     </div>
   );
 }

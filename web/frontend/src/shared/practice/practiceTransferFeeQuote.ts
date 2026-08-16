@@ -12,6 +12,7 @@ import {
   LAB_FEE_SCHEDULE_ZEROS,
   normalizeLabFeeItems,
   normalizeLabFeeMultiplier,
+  normalizeRushFeeMultiplier,
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
   sortPracticeTransferFeeLines,
@@ -50,6 +51,7 @@ export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   labSettlementAmount: number;
   abutsRevenueAmount: number;
   labFeeMultiplier?: number;
+  rushFeeMultiplier?: number;
   billed?: boolean;
   usedDefaultSchedule?: boolean;
   /** 지정 기공소 마스터 스위치. 자동매칭(기공소 없음)은 true */
@@ -182,6 +184,7 @@ export const parsePracticeTransferFeeQuote = (
     relationshipKind: toRelationshipKind(r.relationshipKind),
     feeRateApplied: Number.isFinite(feeRateApplied) ? Math.min(1, Math.max(0, feeRateApplied)) : 0,
     labFeeMultiplier: normalizeLabFeeMultiplier(r.labFeeMultiplier),
+    rushFeeMultiplier: normalizeRushFeeMultiplier(r.rushFeeMultiplier),
     labSettlementAmount,
     abutsRevenueAmount,
     billed: Boolean(r.billed),
@@ -273,6 +276,7 @@ export const buildFeeQuoteFromContext = (params: {
   implantFavorites?: Parameters<typeof computePracticeTransferRetailFees>[0]["implantFavorites"];
   context?: PracticeTransferQuoteContext | null;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
+  rushFeeMultiplier?: number;
 }): PracticeTransferFeeQuote => {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
@@ -281,6 +285,7 @@ export const buildFeeQuoteFromContext = (params: {
   const labFeeMultiplier = zeroed
     ? 1
     : normalizeLabFeeMultiplier(context.labFeeMultiplier);
+  const rushFeeMultiplier = normalizeRushFeeMultiplier(params.rushFeeMultiplier);
   const budgetRaw =
     params.autoMatchBudget !== undefined
       ? params.autoMatchBudget
@@ -342,6 +347,7 @@ export const buildFeeQuoteFromContext = (params: {
     abutmentPricingTier: context.abutmentPricingTier,
     abutmentPrices: context.abutmentPrices,
     labFeeMultiplier: zeroed ? 1 : labFeeMultiplier,
+    rushFeeMultiplier,
   });
   const feeRateApplied = Number(context.feeRateApplied || 0);
   let autoMatchBudgetOut: PracticeTransferAutoMatchBudget | null = null;
@@ -355,6 +361,7 @@ export const buildFeeQuoteFromContext = (params: {
       abutmentPrices: context.abutmentPrices,
       skipAbutmentFees: true,
       labFeeMultiplier: 1,
+      rushFeeMultiplier,
     });
     lines = attachLabFeeMinToLines(fees.lines, minFees.lines);
     autoMatchBudgetOut = {
@@ -374,6 +381,7 @@ export const buildFeeQuoteFromContext = (params: {
     relationshipKind: context.relationshipKind,
     feeRateApplied,
     labFeeMultiplier: zeroed ? 1 : labFeeMultiplier,
+    rushFeeMultiplier,
     labSettlementAmount: settlement.labSettlementAmount,
     abutsRevenueAmount: settlement.abutsRevenueAmount,
     billed: false,

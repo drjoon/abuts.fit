@@ -112,6 +112,7 @@ export const usePracticeTransferFeeQuote = (params: {
   abutmentPricingTier?: AbutsAbutmentPricingTier | null;
   abutmentPrices?: Partial<AbutsAbutmentCreditPrices> | null;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
+  rushFeeMultiplier?: number;
 }): {
   quote: PracticeTransferFeeQuote;
   contextReady: boolean;
@@ -178,6 +179,7 @@ export const usePracticeTransferFeeQuote = (params: {
         toothWorks,
         implantFavorites: params.implantFavorites,
         autoMatchBudget: params.autoMatchBudget,
+        rushFeeMultiplier: params.rushFeeMultiplier,
         context: {
           ...context,
           abutmentPricingTier:
@@ -193,6 +195,7 @@ export const usePracticeTransferFeeQuote = (params: {
       params.abutmentPricingTier,
       params.autoMatchBudget,
       params.implantFavorites,
+      params.rushFeeMultiplier,
       settingsPrices,
       toothWorks,
     ],

@@ -282,7 +282,14 @@ import {
   LAB_FEE_MULTIPLIER_UPDATED_EVENT,
   invalidatePracticeTransferQuoteContextCache,
 } from "@/shared/practice/usePracticeTransferFeeQuote";
-import { kstYmdDiffDays } from "@/shared/date/kst";
+import { kstAddBusinessDays, kstYmdDiffDays } from "@/shared/date/kst";
+import {
+  PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
+  PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
+  PRACTICE_WORK_PERIOD_MIN_DAYS,
+  getPracticeWorkPeriodDays,
+  isPracticeWorkPeriodShort,
+} from "@/shared/practice/practiceWorkPeriod";
 import {
   ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
 } from "@/shared/practice/oralScanRequirement";
@@ -1006,6 +1013,7 @@ export const PracticeFileTransferPage = ({
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(true);
   const [skipDesignConfirmUncheckOpen, setSkipDesignConfirmUncheckOpen] = useState(false);
   const [skipJig, setSkipJig] = useState(true);
+  const [rushProcessing, setRushProcessing] = useState(false);
   const [expressStepId, setExpressStepId] =
     useState<PracticeTransferExpressStepId>("lab");
   const [expressDone, setExpressDone] = useState(false);
@@ -2879,6 +2887,7 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
+    setRushProcessing(false);
     setOrderDate(todayDate);
     setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
     setToothWorks([]);
@@ -4755,6 +4764,24 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
+    if (rushProcessing) {
+      const lockedArrival =
+        kstAddBusinessDays(orderDate, PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS) || "";
+      if (lockedArrival && arrivalDate !== lockedArrival) {
+        setArrivalDate(lockedArrival);
+      }
+    } else {
+      const periodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
+      if (isPracticeWorkPeriodShort(periodDays)) {
+        toast({
+          title: PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
+          description: `현재 ${periodDays ?? "—"}영업일입니다. 최소 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2)이 필요합니다.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
 
 
     const hasBridgeLikeWithoutLinkedTooth = normalizedToothWorks.some(
@@ -4797,10 +4824,14 @@ export const PracticeFileTransferPage = ({
       const transferFiles = [...draftFiles, ...localTempFiles];
       const clinicName = autoClinicName;
       const transferId = makeTransferId();
+      const submitArrivalDate = rushProcessing
+        ? kstAddBusinessDays(orderDate, PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS) ||
+          arrivalDate
+        : arrivalDate;
       const transferMemo = buildPracticeTransferMemo({
         memo: requestMemo,
         orderDate,
-        arrivalDate,
+        arrivalDate: submitArrivalDate,
         arrivalDefaultDays,
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: syncToothWorks,
@@ -4823,6 +4854,7 @@ export const PracticeFileTransferPage = ({
         matchingMode: autoMatch ? "auto" : "direct",
         skipDesignConfirm,
         skipJig: effectiveSkipJig,
+        rushProcessing,
         autoMatchBudget: autoMatch ? budgetForAuto : undefined,
       };
       const newSystemRequestBase = {
@@ -4885,12 +4917,13 @@ export const PracticeFileTransferPage = ({
           targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
           targetLabName: String(selectedLab?.name || "").trim(),
           orderDate,
-          arrivalDate,
+          arrivalDate: submitArrivalDate,
           arrivalDefaultDays,
           transferMemo,
           toothWorks: syncToothWorks,
           skipDesignConfirm,
           skipJig: effectiveSkipJig,
+          rushProcessing,
           autoMatchBudget: autoMatch ? budgetForAuto : undefined,
           autoMatchMinLabRating: autoMatch ? autoMatchMinLabRating : undefined,
           autoMatchMaxLabRating: autoMatch ? autoMatchMaxLabRating : undefined,
@@ -5163,6 +5196,7 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
+    setRushProcessing(false);
     const nextOrderDate = todayDate;
     const nextArrivalDate = addDaysToDateInput(todayDate, arrivalDefaultDays);
     setOrderDate(nextOrderDate);
@@ -5673,8 +5707,23 @@ export const PracticeFileTransferPage = ({
                   },
                   prosthesisTypeSelectWidthClassName: "w-[7rem]",
                   showBridgeConnections: true,
+                  showFeeEstimate: true,
                   skipJig,
                   onSkipJigChange: persistSkipJigSetting,
+                  rushProcessing,
+                  onRushProcessingChange: (next) => {
+                    setRushProcessing(next);
+                    if (!next) return;
+                    const locked =
+                      kstAddBusinessDays(
+                        todayDate,
+                        PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
+                      ) || "";
+                    if (!locked) return;
+                    skipNextArrivalAutoSyncRef.current = true;
+                    setOrderDate(todayDate);
+                    setArrivalDate(locked);
+                  },
   };
 
   return (

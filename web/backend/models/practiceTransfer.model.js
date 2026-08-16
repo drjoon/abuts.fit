@@ -140,6 +140,8 @@ const practiceTransferSchema = new mongoose.Schema(
         enum: ["normal", "express", null],
         default: null,
       },
+      // 신속처리(의뢰+2영업일·기공/어벗 1.5배). 일반 건은 묶음출고만.
+      rushProcessing: { type: Boolean, default: false },
       // 전송 시점 스냅샷. 체크 UI 기본값은 계정 practiceTransferSettings.skipDesignConfirm(기본 true)
       skipDesignConfirm: { type: Boolean, default: true },
       // 지그 제작 불필요 — 기공소→치과 배송비 면제(디자인비 금액은 유지).
@@ -196,6 +198,8 @@ const practiceTransferSchema = new mongoose.Schema(
       feeRateApplied: { type: Number, default: 0 },
       // 기공수가 할증 배수(1=없음). 생성·수락 시점 스냅샷.
       labFeeMultiplier: { type: Number, default: 1, min: 1, max: 5 },
+      // 신속처리 할증(1 | 1.5). 기공비·어벗츠 모두. 생성 스냅샷.
+      rushFeeMultiplier: { type: Number, default: 1, min: 1, max: 2 },
       labTradingPartnerId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "LabTradingPartner",

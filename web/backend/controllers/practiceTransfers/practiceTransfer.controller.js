@@ -60,6 +60,10 @@ import {
 } from "../../utils/practiceTransferAutoMatchBudget.js";
 import { resolveLabPracticeFeeMultiplier } from "../../utils/labFeeSchedule.js";
 import {
+  normalizeRushFeeMultiplier,
+  resolvePracticeTransferArrivalPolicy,
+} from "../../utils/practiceTransferRush.js";
+import {
   findPracticeLabRating,
   loadGlobalLabRatingAggregates,
   normalizeAutoMatchMinLabRating,
@@ -404,6 +408,7 @@ const toProductionApiFields = (production, { abutmentPastReady } = {}) => {
         : p.shippingMode === "normal"
           ? "normal"
           : null,
+    rushProcessing: Boolean(p.rushProcessing),
     // 미설정·레거시 null은 생략(true)로 취급
     skipDesignConfirm: p.skipDesignConfirm !== false,
     skipJig: Boolean(p.skipJig),
@@ -470,6 +475,18 @@ const parseSkipJigInput = (body, practiceRouting) => {
     return true;
   }
   return true;
+};
+
+/** body에서 rushProcessing 파싱. 명시 true만 신속처리 */
+const parseRushProcessingInput = (body, practiceRouting) => {
+  const raw =
+    body?.rushProcessing !== undefined
+      ? body.rushProcessing
+      : practiceRouting?.rushProcessing;
+  if (raw === true || raw === "true" || raw === 1 || raw === "1" || raw === "Y") {
+    return true;
+  }
+  return false;
 };
 
 /** 의뢰수락 이전 공정만 치과 cancel-batch(휴지통) 허용 */
@@ -1940,6 +1957,26 @@ export async function createPracticeTransfer(req, res) {
       toothWorksRaw,
       parseSkipJigInput(req.body, practiceRouting),
     );
+    const rushProcessing = parseRushProcessingInput(req.body, practiceRouting);
+
+    const arrivalPolicy = await resolvePracticeTransferArrivalPolicy({
+      transferMemo,
+      rushProcessing,
+    });
+    if (!arrivalPolicy.ok) {
+      return res.status(arrivalPolicy.statusCode || 400).json({
+        success: false,
+        message: arrivalPolicy.message,
+        reason: arrivalPolicy.reason,
+        orderYmd: arrivalPolicy.orderYmd,
+        arrivalYmd: arrivalPolicy.arrivalYmd,
+        workPlusShipDays: arrivalPolicy.workPlusShipDays,
+      });
+    }
+    const transferMemoResolved = arrivalPolicy.transferMemo;
+    const rushFeeMultiplier = normalizeRushFeeMultiplier(
+      arrivalPolicy.rushFeeMultiplier,
+    );
 
     try {
       assertAbutmentPresetsComplete(toothWorksRaw);
@@ -2044,6 +2081,7 @@ export async function createPracticeTransfer(req, res) {
         toothWorks: toothWorksRaw,
         autoMatchBudget,
         catalog: autoMatchCatalog,
+        rushFeeMultiplier,
       });
     } catch (creditErr) {
       const status = Number(creditErr?.statusCode || 500);
@@ -2062,9 +2100,13 @@ export async function createPracticeTransfer(req, res) {
       matchingMode,
       autoMatchBudget,
       catalog: autoMatchCatalog,
+      rushFeeMultiplier,
     });
 
-    const billingPreview = toBillingPreviewFields(feeQuote);
+    const billingPreview = {
+      ...toBillingPreviewFields(feeQuote),
+      rushFeeMultiplier,
+    };
     // feeQuote.autoMatchBudget에 합산 minLabFee/maxLabFee가 포함된다.
 
     const autoMatchPriorityFields =
@@ -2101,7 +2143,7 @@ export async function createPracticeTransfer(req, res) {
                 : {}),
             }
           : undefined,
-      transferMemo,
+      transferMemo: transferMemoResolved,
       tag,
       status: "active",
       files,
@@ -2110,6 +2152,7 @@ export async function createPracticeTransfer(req, res) {
       production: {
         skipDesignConfirm,
         skipJig,
+        rushProcessing,
         shippingMode: null,
         confirmedAt: null,
         confirmedBy: null,
@@ -2463,6 +2506,7 @@ export async function remakePracticeTransfers(req, res) {
         production: {
           skipDesignConfirm: production?.skipDesignConfirm !== false,
           skipJig: Boolean(production?.skipJig),
+          rushProcessing: false,
           shippingMode: null,
           confirmedAt: null,
           confirmedBy: null,

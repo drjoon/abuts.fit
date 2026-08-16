@@ -80,6 +80,7 @@ export type PracticeTransferLabReceiveItem = {
     shippingMode?: "normal" | "express" | null;
     skipDesignConfirm?: boolean;
     skipJig?: boolean;
+    rushProcessing?: boolean;
     designReadyAt?: string | null;
     designFileCount?: number;
     designFiles?: PracticeTransferLabReceiveFile[];

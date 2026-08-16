@@ -81,6 +81,59 @@ export const formatLabFeeMultiplierLabel = (multiplier: unknown): string => {
   return `${text}x 할증`;
 };
 
+/** 신속처리 할증(1 | 1.5). */
+export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.5;
+
+export const normalizeRushFeeMultiplier = (value: unknown): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 1) return 1;
+  if (Math.abs(n - PRACTICE_RUSH_FEE_MULTIPLIER) < 0.001) {
+    return PRACTICE_RUSH_FEE_MULTIPLIER;
+  }
+  return 1;
+};
+
+export const applyRushFeeMultiplierToFees = <
+  T extends {
+    labFeeTotal?: number;
+    labAbutmentTotal?: number;
+    abutmentRetailTotal?: number;
+    total?: number;
+    lines?: Array<{
+      labFee?: number;
+      labAbutmentFee?: number;
+      abutmentRetail?: number;
+      [key: string]: unknown;
+    }>;
+  },
+>(
+  fees: T,
+  rushFeeMultiplier: unknown,
+): T & { rushFeeMultiplier: number } => {
+  const m = normalizeRushFeeMultiplier(rushFeeMultiplier);
+  if (m === 1) {
+    return { ...fees, rushFeeMultiplier: 1 };
+  }
+  const scale = (n: unknown) => Math.max(0, Math.round(Number(n || 0) * m));
+  const labFeeTotal = scale(fees.labFeeTotal);
+  const labAbutmentTotal = scale(fees.labAbutmentTotal);
+  const abutmentRetailTotal = scale(fees.abutmentRetailTotal);
+  return {
+    ...fees,
+    labFeeTotal,
+    labAbutmentTotal,
+    abutmentRetailTotal,
+    total: labFeeTotal + abutmentRetailTotal,
+    lines: (Array.isArray(fees.lines) ? fees.lines : []).map((line) => ({
+      ...line,
+      labFee: scale(line?.labFee),
+      labAbutmentFee: scale(line?.labAbutmentFee),
+      abutmentRetail: scale(line?.abutmentRetail),
+    })),
+    rushFeeMultiplier: m,
+  };
+};
+
 export const LAB_FEE_SCHEDULE_KEYS = [
   "crown",
   "bridge",
@@ -874,6 +927,7 @@ export type PracticeTransferRetailFees = {
   total: number;
   lines: PracticeTransferFeeLine[];
   labFeeMultiplier?: number;
+  rushFeeMultiplier?: number;
 };
 
 export const computePracticeTransferRetailFees = (params: {
@@ -904,6 +958,7 @@ export const computePracticeTransferRetailFees = (params: {
   remake?: boolean;
   skipAbutmentFees?: boolean;
   labFeeMultiplier?: number;
+  rushFeeMultiplier?: number;
 }): PracticeTransferRetailFees => {
   const useRemake = Boolean(params.remake);
   const items = normalizeLabFeeItems(params.labFeeSchedule);
@@ -1074,18 +1129,21 @@ export const computePracticeTransferRetailFees = (params: {
     }
   }
 
-  return applyLabFeeMultiplierToFees(
-    {
-      labFeeTotal,
-      labAbutmentTotal,
-      labAbutmentPending,
-      abutmentRetailTotal,
-      abutmentQuotePending,
-      abutmentQty,
-      total: labFeeTotal + abutmentRetailTotal,
-      lines: sortPracticeTransferFeeLines(lines),
-    },
-    params.labFeeMultiplier,
+  return applyRushFeeMultiplierToFees(
+    applyLabFeeMultiplierToFees(
+      {
+        labFeeTotal,
+        labAbutmentTotal,
+        labAbutmentPending,
+        abutmentRetailTotal,
+        abutmentQuotePending,
+        abutmentQty,
+        total: labFeeTotal + abutmentRetailTotal,
+        lines: sortPracticeTransferFeeLines(lines),
+      },
+      params.labFeeMultiplier,
+    ),
+    params.rushFeeMultiplier,
   );
 };
 

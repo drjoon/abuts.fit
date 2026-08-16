@@ -150,6 +150,12 @@ import {
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { kstYmdDiffDays } from "@/shared/date/kst";
 import {
+  PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
+  PRACTICE_WORK_PERIOD_MIN_DAYS,
+  getPracticeWorkPeriodDays,
+  isPracticeWorkPeriodShort,
+} from "@/shared/practice/practiceWorkPeriod";
+import {
   PRACTICE_DROPZONE_DRAFT_KEY,
   clearPracticeSharedFormLocalStorage,
   readPreferredIntakeFormForDropzone,
@@ -1633,6 +1639,18 @@ export const PracticeDropzonePage = () => {
         variant: "destructive",
       });
       return false;
+    }
+
+    {
+      const periodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
+      if (isPracticeWorkPeriodShort(periodDays)) {
+        toast({
+          title: PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
+          description: `현재 ${periodDays ?? "—"}영업일입니다. 최소 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2)이 필요합니다.`,
+          variant: "destructive",
+        });
+        return false;
+      }
     }
 
     if (!options?.skipSecondRequestGate) {

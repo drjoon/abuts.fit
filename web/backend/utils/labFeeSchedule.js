@@ -18,6 +18,7 @@
 // - 2026-08-14: 환봉 단가 0원은 별도 고지(abutmentRetailNote=quote).
 // - 2026-08-14: 도입 종류(cnc/round_bar)에 따라 어벗츠 CNC·환봉 단가 분기. 요청중은 기공소 어벗.
 // - 2026-08-14: 환봉 요청중(헥스 사이즈 미정)은 기공소 어벗. 도입된 환봉·CNC는 어벗츠 어벗.
+// - 2026-08-17: 신속처리 rushFeeMultiplier — 기공비·어벗츠 단가 모두 배수.
 // - 2026-08-14: 치과별 기공수가 할증(labFeeMultiplier). 기공비·기공소 어벗만 배수, 어벗츠 단가 제외.
 // - 2026-08-14: 할증 updatedAt — 의뢰 createdAt 이후 적용분은 해당 건에 소급하지 않음.
 // - 2026-08-15: Abuts CA 치과 청구=디자인+생산가(멤버 2.5만/일반 4만). 기공소 디자인은 abutmentDesignLabFee 외주.
@@ -27,6 +28,17 @@ import {
   resolveAbutsAbutmentPricingTier,
   resolveAbutsAbutmentUnitPrice,
 } from "./abutsAbutmentService.js";
+import { applyRushFeeMultiplierToFees } from "./practiceTransferRush.js";
+
+export {
+  PRACTICE_RUSH_FEE_MULTIPLIER,
+  PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
+  PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS,
+  normalizeRushFeeMultiplier,
+  resolveRushFeeMultiplier,
+  isPracticeTransferRushProcessing,
+  applyRushFeeMultiplierToFees,
+} from "./practiceTransferRush.js";
 
 /** 기공수가 할증 배수. 1=없음, 최대 5, 소수 둘째 자리. */
 export function normalizeLabFeeMultiplier(value) {
@@ -1041,6 +1053,7 @@ export function computePracticeTransferRetailFees({
   skipAbutmentFees = false,
   remake = false,
   labFeeMultiplier = 1,
+  rushFeeMultiplier = 1,
 }) {
   const useRemake = Boolean(remake);
   const items = normalizeLabFeeItems(labFeeSchedule);
@@ -1223,7 +1236,7 @@ export function computePracticeTransferRetailFees({
     }
   }
 
-  return applyLabFeeMultiplierToFees(
+  const withLabMult = applyLabFeeMultiplierToFees(
     {
       labFeeTotal,
       labAbutmentTotal,
@@ -1236,6 +1249,7 @@ export function computePracticeTransferRetailFees({
     },
     labFeeMultiplier,
   );
+  return applyRushFeeMultiplierToFees(withLabMult, rushFeeMultiplier);
 }
 
 function groupRowsByArch(rows) {

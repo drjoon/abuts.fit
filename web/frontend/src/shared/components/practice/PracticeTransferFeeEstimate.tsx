@@ -56,6 +56,7 @@ import {
 import {
   formatLabFeeMultiplierLabel,
   normalizeLabFeeMultiplier,
+  normalizeRushFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
 import { scaleAutoMatchFeeToLabStars } from "@/shared/practice/practiceLabRating";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
@@ -72,6 +73,8 @@ type PracticeTransferFeeEstimateProps = {
   trailingAction?: ReactNode;
   /** 지그 제작 불필요 — 기공소→치과 배송비 면제, 라벨은 디자인비 */
   skipJig?: boolean;
+  /** 신속처리 1.5배 표기 */
+  rushProcessing?: boolean;
   /** 기공소 뷰 — 자동매칭 기공비를 유효 별점 배수로 단일 확정 */
   labEffectiveStars?: number | null;
 };
@@ -504,6 +507,7 @@ export function PracticeTransferFeeEstimate({
   labPending = false,
   trailingAction = null,
   skipJig = true,
+  rushProcessing = false,
   labEffectiveStars = null,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
@@ -738,6 +742,10 @@ export function PracticeTransferFeeEstimate({
     isLab && normalizeLabFeeMultiplier(quote.labFeeMultiplier) > 1
       ? formatLabFeeMultiplierLabel(quote.labFeeMultiplier)
       : null;
+  const rushLabel =
+    rushProcessing || normalizeRushFeeMultiplier(quote.rushFeeMultiplier) > 1
+      ? "신속처리 1.5배"
+      : null;
 
   const labTotalMinOverride =
     hasBudgetSpread && !hasLineLabFeeRange ? budgetLabFeeMin : null;
@@ -840,6 +848,11 @@ export function PracticeTransferFeeEstimate({
                 {surchargeLabel ? (
                   <span className="ml-1.5 text-[11px] font-medium text-amber-700">
                     {surchargeLabel}
+                  </span>
+                ) : null}
+                {rushLabel ? (
+                  <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                    {rushLabel}
                   </span>
                 ) : null}
               </span>
@@ -981,6 +994,11 @@ export function PracticeTransferFeeEstimate({
             {surchargeLabel ? (
               <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
                 {surchargeLabel} 적용
+              </p>
+            ) : null}
+            {rushLabel ? (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
+                {rushLabel} 적용
               </p>
             ) : null}
             {shippingHintLines.length > 0 ? (

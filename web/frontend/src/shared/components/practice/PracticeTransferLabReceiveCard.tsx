@@ -465,6 +465,14 @@ export function PracticeTransferLabReceiveCard({
                 리메이크
               </Badge>
             ) : null}
+            {transfer.production?.rushProcessing ? (
+              <Badge
+                variant="outline"
+                className="h-5 shrink-0 border-orange-300 bg-orange-50 px-1.5 text-[11px] leading-none text-orange-800"
+              >
+                신속처리
+              </Badge>
+            ) : null}
             {chatUnreadCount > 0 ? (
               <Badge
                 variant="destructive"
@@ -490,6 +498,7 @@ export function PracticeTransferLabReceiveCard({
                   viewer="lab"
                   density="card"
                   skipJig={Boolean(transfer.production?.skipJig)}
+                  rushProcessing={Boolean(transfer.production?.rushProcessing)}
                   labEffectiveStars={
                     transfer.labRatingSummary?.effectiveStars ??
                     starDowngrade?.labEffectiveStars ??

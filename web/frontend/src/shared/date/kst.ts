@@ -86,6 +86,27 @@ export function kstYmdDiffBusinessDays(
   return count;
 }
 
+/** startYmd 기준 N영업일 후 YMD(월~금, 공휴일 미제외). */
+export function kstAddBusinessDays(
+  startYmd?: string | null,
+  days = 0,
+): string | null {
+  const start = String(startYmd || "").trim();
+  if (!ymdToKstDate(start)) return null;
+  const n = Math.max(0, Math.floor(Number(days) || 0));
+  if (n === 0) return start;
+  let cursor = start;
+  let added = 0;
+  let guard = 0;
+  while (added < n && guard < 3700) {
+    cursor = addOneCivilDayYmd(cursor) || "";
+    if (!cursor) return null;
+    if (isKstWeekdayYmd(cursor)) added += 1;
+    guard += 1;
+  }
+  return cursor || null;
+}
+
 export function formatKstYmdToKo(ymd?: string | null): string {
   const d = ymdToKstDate(ymd);
   if (!d) return "-";

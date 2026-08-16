@@ -21,6 +21,33 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
     expect(PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(2);
   });
 
+  test("resolveShippingModeForPracticeTransferArrival forces normal when not rush", async () => {
+    const { resolveShippingModeForPracticeTransferArrival } = await import(
+      "../../services/practiceTransferProduction.service.js"
+    );
+    const mode = await resolveShippingModeForPracticeTransferArrival({
+      transferDoc: {
+        production: { rushProcessing: false },
+        transferMemo: "[주문일: 2026-08-17]\n[도착일: 2026-08-19]",
+      },
+      weeklyBatchDays: ["wed"],
+      requestedAt: new Date("2026-08-17T03:00:00.000Z"),
+    });
+    expect(mode).toBe("normal");
+  });
+
+  test("resolveShippingModeForPracticeTransferArrival uses express when rush", async () => {
+    const { resolveShippingModeForPracticeTransferArrival } = await import(
+      "../../services/practiceTransferProduction.service.js"
+    );
+    const mode = await resolveShippingModeForPracticeTransferArrival({
+      transferDoc: { production: { rushProcessing: true } },
+      weeklyBatchDays: ["wed"],
+      requestedAt: new Date("2026-08-17T03:00:00.000Z"),
+    });
+    expect(mode).toBe("express");
+  });
+
   test("resolveManufacturerTargetShipYmd subtracts 2 business days", async () => {
     // 2026-08-21(금) → 20(목) → 19(수)
     expect(await resolveManufacturerTargetShipYmd("2026-08-21")).toBe(

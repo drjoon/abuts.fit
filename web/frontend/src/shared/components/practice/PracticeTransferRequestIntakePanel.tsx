@@ -70,6 +70,10 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { PracticeOrderArrivalDateRangeField } from "@/shared/components/practice/PracticeOrderArrivalDateRangeField";
 import {
+  PRACTICE_RUSH_COURIER_DISCLAIMER,
+  PRACTICE_RUSH_FEE_MULTIPLIER,
+} from "@/shared/practice/practiceWorkPeriod";
+import {
   AUTO_MATCH_LAB,
   AUTO_MATCH_LAB_TOOLTIP,
   getBusinessLabel,
@@ -735,6 +739,9 @@ export type PracticeTransferRequestIntakePanelProps = {
   /** 지그 제작 불필요 — 견적 툴팁 배송·라벨 반영 */
   skipJig?: boolean;
   onSkipJigChange?: (next: boolean) => void;
+  /** 신속처리(의뢰+2영업일·1.5배) */
+  rushProcessing?: boolean;
+  onRushProcessingChange?: (next: boolean) => void;
   /** 자동매칭 기공비(v4 고정수가 스냅샷) */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   /** 어벗츠 수가 카탈로그 — 평균×배수 견적 SSOT */
@@ -814,6 +821,8 @@ export const PracticeTransferRequestIntakePanel = ({
   showFeeEstimate = false,
   skipJig = true,
   onSkipJigChange,
+  rushProcessing = false,
+  onRushProcessingChange,
   autoMatchBudget = null,
   abutsLabFeeCatalog = null,
   onAutoMatchBudgetChange,
@@ -877,6 +886,7 @@ export const PracticeTransferRequestIntakePanel = ({
     implantFavorites,
     abutmentPricingTier,
     autoMatchBudget: isAutoMatchLab(selectedLab) ? resolvedAutoMatchBudget : null,
+    rushFeeMultiplier: rushProcessing ? 1.5 : 1,
   });
   const labFeeByTooth = useMemo(() => {
     const map = new Map<string, { min: number; max: number }>();
@@ -2263,19 +2273,65 @@ export const PracticeTransferRequestIntakePanel = ({
         ) : null}
 
         {showDateFields ? (
-        <PracticeOrderArrivalDateRangeField
-          orderDate={orderDate}
-          arrivalDate={arrivalDate}
-          arrivalDefaultDays={arrivalDefaultDays}
-          onChange={(next) => {
-            if (onOrderArrivalDatesChange) {
-              onOrderArrivalDatesChange(next);
-              return;
+        <div className="space-y-2">
+          <PracticeOrderArrivalDateRangeField
+            orderDate={orderDate}
+            arrivalDate={arrivalDate}
+            arrivalDefaultDays={arrivalDefaultDays}
+            locked={rushProcessing}
+            lockedHint={
+              rushProcessing
+                ? `신속처리: 의뢰+2영업일 도착 고정. 커스텀어벗은 익영업일 16시 출고·모레 오후 도착 예상, 보철은 수락 후 의뢰+2일 도착 목표. ${PRACTICE_RUSH_COURIER_DISCLAIMER} 의뢰비 ${PRACTICE_RUSH_FEE_MULTIPLIER}배.`
+                : undefined
             }
-            setOrderDate(next.orderDate);
-            setArrivalDate(next.arrivalDate);
-          }}
-        />
+            onChange={(next) => {
+              if (onOrderArrivalDatesChange) {
+                onOrderArrivalDatesChange(next);
+                return;
+              }
+              setOrderDate(next.orderDate);
+              setArrivalDate(next.arrivalDate);
+            }}
+          />
+          {onRushProcessingChange ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <label
+                    htmlFor="practice-intake-rush-processing"
+                    className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 select-none"
+                  >
+                    <Checkbox
+                      id="practice-intake-rush-processing"
+                      checked={rushProcessing}
+                      onCheckedChange={(value) => {
+                        onRushProcessingChange(value === true);
+                      }}
+                    />
+                    <span>신속처리 ({PRACTICE_RUSH_FEE_MULTIPLIER}배)</span>
+                  </label>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="bottom"
+                  className="max-w-xs text-left text-xs leading-relaxed"
+                >
+                  <div className="space-y-1">
+                    <p>
+                      의뢰+2영업일 도착 옵션입니다. 커스텀어벗은 오늘 자정 이전
+                      의뢰 시 익영업일 16시 출고·모레 오후 치과 도착을
+                      예상합니다.
+                    </p>
+                    <p>
+                      기공소 보철은 수락 후 의뢰+2일까지 도착을 목표로 합니다.
+                    </p>
+                    <p>{PRACTICE_RUSH_COURIER_DISCLAIMER}</p>
+                    <p>기공비·어벗츠 의뢰비 모두 {PRACTICE_RUSH_FEE_MULTIPLIER}배입니다.</p>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
+        </div>
         ) : null}
       </div>
       ) : null}
@@ -3114,6 +3170,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       viewer="practice"
                       labPending={!selectedLab}
                       skipJig={effectiveSkipJig}
+                      rushProcessing={rushProcessing}
                     />
                     {onSkipJigChange && showSkipJigCheckbox ? (
                       <TooltipProvider>
