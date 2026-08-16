@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 어벗디자인 취소·재업로드 시 requestor 대시보드 스냅샷 갱신(준비 카운트 stale 방지).
 // - 2026-08-16: 생산 취소 시 PTX Request manufacturerStage→취소(관리자 준비 잔존 방지). 재업로드 시 준비 복원.
 // - 2026-08-16: 디자인 없이 완료 플래그만 남은 건도 cancel로 스테이지 재오픈.
 // - 2026-08-16: 생산 취소 시 PTX 작업완료/결과파일도 열어 의뢰수락 UI 복원(에스크로·정산은 유지).
@@ -37,6 +38,7 @@ import {
   grantAbutmentDesignLabFee,
   revokeAbutmentDesignLabFee,
 } from "../../services/practiceTransferBilling.service.js";
+import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
@@ -44,6 +46,18 @@ import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js"
 const PRODUCT_MODE_DESIGN = "design_custom_abutment";
 const PRODUCT_MODE_PRODUCTION = "custom_abutment";
 const DEFAULT_HEX_ROTATION = "STL모델대로";
+
+/** 기공소 대시보드「어벗 > 준비」스냅샷 — 취소/재업로드 직후 stale 방지 */
+const refreshLabDashboardAfterPtxDesignChange = (anchorId, reason) => {
+  const id = String(anchorId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) return;
+  triggerDashboardSummaryRefreshForAnchorId(id, reason).catch((err) => {
+    console.error(
+      `[DESIGN_HANDOFF] dashboard refresh failed (${reason})`,
+      err,
+    );
+  });
+};
 
 const buildRhinoInputFileName = (request) => {
   const requestId = String(request?.requestId || "").trim();
@@ -467,6 +481,14 @@ export async function handoffDesignToProduction(req, res) {
         console.error("[DESIGN_HANDOFF] worksheet count emit failed", emitErr);
       }
 
+      refreshLabDashboardAfterPtxDesignChange(
+        labAnchorId ||
+          transferTargetLabAnchorId ||
+          request.businessAnchorId ||
+          req.user?.businessAnchorId,
+        "ptx-design-handoff",
+      );
+
       return res.status(200).json({
         success: true,
         message:
@@ -629,6 +651,12 @@ export async function cancelDesignHandoff(req, res) {
       } catch {
         // best-effort
       }
+      refreshLabDashboardAfterPtxDesignChange(
+        req.user?.businessAnchorId ||
+          request.businessAnchorId ||
+          transferTargetLabAnchorId,
+        "ptx-design-handoff-cancel-reopen",
+      );
       return res.status(200).json({
         success: true,
         message: "생산 단계를 다시 열었습니다. 어벗디자인·보철을 다시 업로드할 수 있습니다.",
@@ -656,6 +684,12 @@ export async function cancelDesignHandoff(req, res) {
       } catch {
         // best-effort
       }
+      refreshLabDashboardAfterPtxDesignChange(
+        req.user?.businessAnchorId ||
+          request.businessAnchorId ||
+          transferTargetLabAnchorId,
+        "ptx-design-handoff-cancel-orphan",
+      );
       return res.status(200).json({
         success: true,
         message:
@@ -706,6 +740,13 @@ export async function cancelDesignHandoff(req, res) {
     } catch (emitErr) {
       console.error("[DESIGN_HANDOFF_CANCEL] worksheet count emit failed", emitErr);
     }
+
+    refreshLabDashboardAfterPtxDesignChange(
+      req.user?.businessAnchorId ||
+        request.businessAnchorId ||
+        transferTargetLabAnchorId,
+      "ptx-design-handoff-cancel",
+    );
 
     let feeRevoke = null;
     try {
