@@ -2,6 +2,7 @@
 // - 2026-08-17: 동일 PTX 기공의뢰 크레딧 행을 한 건으로 묶어 표시(세부 라벨·합계).
 // - 2026-08-17: PTX 묶음 행 — 치과→기공소/어벗츠 트리(기공비·디자인·어벗제작·배송).
 // - 2026-08-17: PTX 트리 — ASCII 이중선 제거, 인덴트·접기/펼치기.
+// - 2026-08-17: 크레딧 기공의뢰 — 호버 툴팁에 기공비 내역. 거래내역은 기공소/환자명.
 // - 2026-08-15: 테이블 잔액 칼럼 라벨「잔액」(행 시점 총잔액=유료+무료+기공).
 // - 2026-08-15: 선입금 안내를 유료 카드 툴팁으로 이동. 현재잔액=유료+무료(+기공). 무료·기공 툴팁 추가.
 // - 2026-08-17: 기공소몫/어벗츠몫 보류·플랫폼 수수료 displayLabel 우선 표시.
@@ -53,7 +54,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, CreditCard } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, CircleHelp, CreditCard } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -194,6 +195,7 @@ type CreditLedgerItem = {
   createdAt: string;
   balanceAfter?: number;
   patientName?: string;
+  labName?: string;
   tooth?: string;
   clinicName?: string;
   manufacturerStage?: string;
@@ -418,30 +420,11 @@ function PracticeTransferLedgerTree({
     () => buildPracticeTransferFeeTree(parts),
     [parts],
   );
-  const [rootOpen, setRootOpen] = useState(true);
-  const [openRoutes, setOpenRoutes] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(branches.map((b) => [b.route, true])),
-  );
 
-  const toggleRoute = (route: string) => {
-    setOpenRoutes((prev) => ({ ...prev, [route]: !prev[route] }));
-  };
-
-  return (
-    <div className="mx-auto w-full max-w-[24rem] overflow-hidden rounded-xl border border-slate-200/80 bg-white text-left shadow-sm">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-slate-50/80"
-        onClick={() => setRootOpen((v) => !v)}
-        aria-expanded={rootOpen}
-      >
-        <ChevronDown
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform",
-            rootOpen ? "rotate-0" : "-rotate-90",
-          )}
-        />
-        <span className="min-w-0 flex-1 text-xs font-semibold text-slate-800">
+  const treeBody = (
+    <div className="w-[min(100vw-2rem,22rem)] overflow-hidden rounded-xl border border-slate-200/80 bg-white text-left shadow-md">
+      <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+        <span className="min-w-0 text-xs font-semibold text-slate-800">
           기공의뢰
         </span>
         <span
@@ -452,60 +435,78 @@ function PracticeTransferLedgerTree({
         >
           {formatSignedWon(totalAmount)}
         </span>
-      </button>
-
-      {rootOpen ? (
-        <div className="space-y-1.5 border-t border-slate-100 bg-slate-50/40 px-2.5 py-2">
-          {branches.map((branch) => {
-            const routeOpen = openRoutes[branch.route] !== false;
-            return (
-              <div
-                key={branch.route}
-                className="overflow-hidden rounded-lg border border-slate-200/70 bg-white"
-              >
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-slate-50/90"
-                  onClick={() => toggleRoute(branch.route)}
-                  aria-expanded={routeOpen}
-                >
-                  <ChevronDown
-                    className={cn(
-                      "h-3 w-3 shrink-0 text-slate-400 transition-transform",
-                      routeOpen ? "rotate-0" : "-rotate-90",
-                    )}
-                  />
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-700">
-                    {branch.title}
-                  </span>
-                  <span className="shrink-0 text-[11px] font-medium tabular-nums text-slate-600">
-                    {formatSignedWon(branch.amount)}
-                  </span>
-                </button>
-
-                {routeOpen && branch.leaves.length > 0 ? (
-                  <ul className="border-t border-slate-100 px-2.5 py-1.5">
-                    {branch.leaves.map((leaf) => (
-                      <li
-                        key={`${branch.route}-${leaf.kind}`}
-                        className="flex items-center justify-between gap-2 py-1 pl-5"
-                      >
-                        <span className="min-w-0 truncate text-[11px] text-slate-500">
-                          {leaf.label}
-                        </span>
-                        <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
-                          {formatSignedWon(leaf.amount)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      </div>
+      <div className="space-y-1.5 border-t border-slate-100 bg-slate-50/40 px-2.5 py-2">
+        {branches.map((branch) => (
+          <div
+            key={branch.route}
+            className="overflow-hidden rounded-lg border border-slate-200/70 bg-white"
+          >
+            <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+              <span className="min-w-0 truncate text-[11px] font-medium text-slate-700">
+                {branch.title}
+              </span>
+              <span className="shrink-0 text-[11px] font-medium tabular-nums text-slate-600">
+                {formatSignedWon(branch.amount)}
+              </span>
+            </div>
+            {branch.leaves.length > 0 ? (
+              <ul className="border-t border-slate-100 px-2.5 py-1.5">
+                {branch.leaves.map((leaf) => (
+                  <li
+                    key={`${branch.route}-${leaf.kind}`}
+                    className="flex items-center justify-between gap-2 py-1 pl-5"
+                  >
+                    <span className="min-w-0 truncate text-[11px] text-slate-500">
+                      {leaf.label}
+                    </span>
+                    <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+                      {formatSignedWon(leaf.amount)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ))}
+      </div>
     </div>
+  );
+
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="mx-auto flex w-full max-w-[14rem] items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-slate-50/80"
+          >
+            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">
+              기공의뢰
+            </span>
+            <span
+              className={cn(
+                "shrink-0 text-xs font-semibold tabular-nums",
+                totalAmount < 0 ? "text-destructive" : "text-primary-strong",
+              )}
+            >
+              {formatSignedWon(totalAmount)}
+            </span>
+            <CircleHelp
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
+              aria-hidden
+            />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          align="center"
+          className="max-w-none border-0 bg-transparent p-0 shadow-none"
+        >
+          {treeBody}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -760,12 +761,13 @@ const renderTransactionDetail = ({
   }
 
   if (refType === "PRACTICE_TRANSFER") {
-    const transferId = String(item.refPracticeTransferId || "").trim();
+    const labName = String(item.labName || "").trim() || "-";
+    const patientName = String(item.patientName || "").trim() || "-";
     return (
       <>
         <span className="text-[11px] text-muted-foreground">기공의뢰</span>
-        <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
-          {transferId || "참조 내역 없음"}
+        <span className="pt-1 text-[11px] text-slate-700">
+          {labName} / {patientName}
         </span>
       </>
     );
@@ -1337,11 +1339,11 @@ export const CreditLedgerModal = ({
                   })();
                   return (
                     <TableRow key={r.key}>
-                      <TableCell className="whitespace-nowrap text-center align-top text-xs">
+                      <TableCell className="whitespace-nowrap text-center align-middle text-xs">
                         {formatDate(String(r.createdAt || ""))}
                       </TableCell>
                       {hasParts ? (
-                        <TableCell colSpan={2} className="px-2 py-2.5 align-top">
+                        <TableCell colSpan={2} className="px-2 py-2.5 align-middle">
                           <PracticeTransferLedgerTree
                             totalAmount={amount}
                             parts={r.parts!}
@@ -1349,14 +1351,14 @@ export const CreditLedgerModal = ({
                         </TableCell>
                       ) : (
                         <>
-                          <TableCell className="text-center text-xs font-medium align-top">
+                          <TableCell className="text-center text-xs font-medium align-middle">
                             <span className="whitespace-nowrap">
                               {r.displayLabel || typeLabel(r.type)}
                             </span>
                           </TableCell>
                           <TableCell
                             className={cn(
-                              "text-center font-medium tabular-nums align-top",
+                              "text-center font-medium tabular-nums align-middle",
                               isMinus
                                 ? "text-destructive"
                                 : "text-primary-strong",
@@ -1382,12 +1384,12 @@ export const CreditLedgerModal = ({
                           </TableCell>
                         </>
                       )}
-                      <TableCell className="whitespace-nowrap text-center align-top text-xs tabular-nums text-muted-foreground">
+                      <TableCell className="whitespace-nowrap text-center align-middle text-xs tabular-nums text-muted-foreground">
                         {r.balanceAfter !== undefined
                           ? `${Number(r.balanceAfter).toLocaleString()}원`
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-center align-top text-xs">
+                      <TableCell className="text-center align-middle text-xs">
                         <div className="flex flex-col items-center leading-4">
                           {renderTransactionDetail({
                             item: r.item,

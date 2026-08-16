@@ -996,22 +996,39 @@ export async function adminGetBusinessLedger(req, res) {
     }
 
     const practiceTransferIdById = new Map();
+    const practiceTransferMetaById = new Map();
     if (practiceTransferRefIds.length > 0) {
       const transferDocs = await PracticeTransfer.find({
         _id: {
           $in: practiceTransferRefIds.map((id) => new Types.ObjectId(id)),
         },
       })
-        .select({ _id: 1, transferId: 1 })
+        .select({
+          _id: 1,
+          transferId: 1,
+          targetLabName: 1,
+          transferMemo: 1,
+          files: 1,
+        })
         .lean();
 
       for (const doc of transferDocs || []) {
-        if (doc?._id) {
-          practiceTransferIdById.set(
-            String(doc._id),
-            String(doc.transferId || ""),
-          );
-        }
+        if (!doc?._id) continue;
+        const id = String(doc._id);
+        const memo = String(doc.transferMemo || "");
+        const memoPatient = String(
+          memo.match(/\[\s*환자명\s*:\s*([^\]]*)\]/)?.[1] || "",
+        ).trim();
+        const filePatient = String(
+          (Array.isArray(doc.files) ? doc.files : [])
+            .map((f) => String(f?.patientName || "").trim())
+            .find(Boolean) || "",
+        ).trim();
+        practiceTransferIdById.set(id, String(doc.transferId || ""));
+        practiceTransferMetaById.set(id, {
+          patientName: memoPatient || filePatient,
+          labName: String(doc.targetLabName || "").trim(),
+        });
       }
     }
 
@@ -1065,11 +1082,14 @@ export async function adminGetBusinessLedger(req, res) {
 
       if (refType === "PRACTICE_TRANSFER") {
         const refId = it?.refId ? String(it.refId) : "";
+        const meta = refId ? practiceTransferMetaById.get(refId) || null : null;
         return {
           ...it,
           refPracticeTransferId: refId
             ? practiceTransferIdById.get(refId) || ""
             : "",
+          patientName: meta?.patientName || "",
+          labName: meta?.labName || "",
         };
       }
 
