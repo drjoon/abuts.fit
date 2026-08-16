@@ -133,7 +133,10 @@ import {
 } from "@/shared/practice/usePracticeToothWorkEditor";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
-import { resolveAdoptedAbutmentKind } from "@/shared/practice/labFeeSchedule";
+import {
+  normalizeConfiguredRushFeeMultiplier,
+  resolveAdoptedAbutmentKind,
+} from "@/shared/practice/labFeeSchedule";
 import {
   formatWonRange,
 } from "@/shared/practice/practiceTransferFeeQuote";
@@ -735,7 +738,7 @@ export type PracticeTransferRequestIntakePanelProps = {
   /** 지그 제작 불필요 — 견적 툴팁 배송·라벨 반영 */
   skipJig?: boolean;
   onSkipJigChange?: (next: boolean) => void;
-  /** 신속처리(합계≤3영업일 확인 후). 견적 1.5배 */
+  /** 신속처리(합계≤3영업일 확인 후). 견적 할증 */
   rushProcessing?: boolean;
   /** 자동매칭 기공비(v4 고정수가 스냅샷) */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
@@ -873,6 +876,9 @@ export const PracticeTransferRequestIntakePanel = ({
     : normalizedProsthesisTypes[0] || "크라운";
   const abutmentPricingTier = useAbutsAbutmentPricingTier();
   const { data: systemSettings } = useSystemSettings();
+  const configuredRushFeeMultiplier = normalizeConfiguredRushFeeMultiplier(
+    systemSettings?.creditSettings?.practiceRushFeeMultiplier,
+  );
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
     enabled: showFeeEstimate && Boolean(selectedLab),
     labAnchorId: selectedLab?._id,
@@ -880,7 +886,7 @@ export const PracticeTransferRequestIntakePanel = ({
     implantFavorites,
     abutmentPricingTier,
     autoMatchBudget: isAutoMatchLab(selectedLab) ? resolvedAutoMatchBudget : null,
-    rushFeeMultiplier: rushProcessing ? 1.5 : 1,
+    rushFeeMultiplier: rushProcessing ? configuredRushFeeMultiplier : 1,
   });
   const labFeeByTooth = useMemo(() => {
     const map = new Map<string, { min: number; max: number }>();

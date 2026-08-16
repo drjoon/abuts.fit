@@ -55,6 +55,7 @@ import {
 } from "@/shared/practice/practiceTransferFeeQuote";
 import {
   formatLabFeeMultiplierLabel,
+  formatRushFeeMultiplierLabel,
   normalizeLabFeeMultiplier,
   normalizeRushFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
@@ -73,7 +74,7 @@ type PracticeTransferFeeEstimateProps = {
   trailingAction?: ReactNode;
   /** 지그 제작 불필요 — 기공소→치과 배송비 면제, 라벨은 디자인비 */
   skipJig?: boolean;
-  /** 신속처리 1.5배 표기 */
+  /** 신속처리 할증 표기 */
   rushProcessing?: boolean;
   /** 기공소 뷰 — 자동매칭 기공비를 유효 별점 배수로 단일 확정 */
   labEffectiveStars?: number | null;
@@ -744,7 +745,7 @@ export function PracticeTransferFeeEstimate({
       : null;
   const rushLabel =
     rushProcessing || normalizeRushFeeMultiplier(quote.rushFeeMultiplier) > 1
-      ? "신속처리 1.5배"
+      ? `신속처리 ${formatRushFeeMultiplierLabel(quote.rushFeeMultiplier)}`
       : null;
 
   const labTotalMinOverride =

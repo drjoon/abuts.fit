@@ -4,13 +4,14 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // change-log:
+// - 2026-08-17: 신속처리 할증 기본 1.2·(1,2] 정규화. SystemSettings 설정값 반영.
 // - 2026-08-17: 신속처리=합계≤3영업일 허용(선택 도착일 유지). 일반은 2+2 이상.
-// - 2026-08-17: 기공의뢰 신속처리(의뢰+2일·기공/어벗 1.5배). 일반 건은 묶음출고만.
+// - 2026-08-17: 기공의뢰 신속처리(의뢰+2일·기공/어벗 할증). 일반 건은 묶음출고만.
 
 import { addKoreanBusinessDays, toKstYmd } from "../controllers/requests/utils.js";
 
-/** 신속처리 시 기공비·어벗츠 의뢰비 할증 배수 */
-export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.5;
+/** 신속처리 할증 기본(플랫폼 설정 없을 때). SystemSettings.creditSettings.practiceRushFeeMultiplier */
+export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.2;
 
 /** 신속처리 기본 치과도착 = 주문일 + N영업일(도착일 미지정·초과 시) */
 export const PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS = 2;
@@ -22,27 +23,33 @@ export const PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS = 3;
 export const PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS = 4;
 
 export const PRACTICE_RUSH_COURIER_DISCLAIMER =
-  "택배 사정에 따라 도착이 늦어질 수 있으며 도착을 보장하지 않습니다.";
+  "택배 사정으로 도착을 보장하지 않습니다.";
 
 export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
   "납품 기일은 작업+배송 2+2영업일 이상이어야 합니다. 3영업일 이하는 신속처리로 진행하세요.";
 
+/** 청구/스냅샷용. 1 이하면 1, (1,2]는 소수 둘째 자리. */
 export function normalizeRushFeeMultiplier(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 1) return 1;
-  if (Math.abs(n - PRACTICE_RUSH_FEE_MULTIPLIER) < 0.001) {
-    return PRACTICE_RUSH_FEE_MULTIPLIER;
-  }
-  return 1;
+  return Math.min(2, Math.round(n * 100) / 100);
+}
+
+/** 플랫폼 설정값. 비정상이면 기본 배수. */
+export function normalizeConfiguredRushFeeMultiplier(value) {
+  const n = normalizeRushFeeMultiplier(value);
+  return n > 1 ? n : PRACTICE_RUSH_FEE_MULTIPLIER;
 }
 
 export function resolveRushFeeMultiplier({
   rushProcessing = false,
   rushFeeMultiplier = undefined,
+  configuredMultiplier = undefined,
 } = {}) {
   const fromBilling = normalizeRushFeeMultiplier(rushFeeMultiplier);
   if (fromBilling > 1) return fromBilling;
-  return rushProcessing ? PRACTICE_RUSH_FEE_MULTIPLIER : 1;
+  if (!rushProcessing) return 1;
+  return normalizeConfiguredRushFeeMultiplier(configuredMultiplier);
 }
 
 export function isPracticeTransferRushProcessing(transfer) {
@@ -179,12 +186,29 @@ export async function resolvePracticeTransferArrivalPolicy({
   transferMemo,
   rushProcessing = false,
   now = new Date(),
+  configuredRushFeeMultiplier = undefined,
 }) {
   let memo = String(transferMemo || "");
   const orderYmd = parseOrderYmdFromMemo(memo) || toKstYmd(now);
   let arrivalYmd = parseArrivalYmdFromMemo(memo);
   const rush = Boolean(rushProcessing);
-  const rushFeeMultiplier = resolveRushFeeMultiplier({ rushProcessing: rush });
+
+  let configured = configuredRushFeeMultiplier;
+  if (rush && configured == null) {
+    try {
+      const { loadCreditSettingsDefaults } = await import(
+        "./creditSettingsDefaults.js"
+      );
+      const creditSettings = await loadCreditSettingsDefaults();
+      configured = creditSettings?.practiceRushFeeMultiplier;
+    } catch {
+      configured = PRACTICE_RUSH_FEE_MULTIPLIER;
+    }
+  }
+  const rushFeeMultiplier = resolveRushFeeMultiplier({
+    rushProcessing: rush,
+    configuredMultiplier: configured,
+  });
 
   if (rush) {
     const days = countWeekdayBusinessDays(orderYmd, arrivalYmd);

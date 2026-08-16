@@ -18,7 +18,10 @@ import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
   getDeliveryEtaLeadDays,
 } from "./admin.shared.controller.js";
-import { normalizeLoadedCreditSettings } from "../../utils/creditSettingsDefaults.js";
+import {
+  loadCreditSettingsDefaults,
+  normalizeLoadedCreditSettings,
+} from "../../utils/creditSettingsDefaults.js";
 import { normalizeAbutsAbutmentCreditPrices } from "../../utils/abutsAbutmentService.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
 import {
@@ -26,6 +29,7 @@ import {
   resolveDirectPlatformFeeRateConfigured,
   resolvePlatformFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
+import { normalizeConfiguredRushFeeMultiplier } from "../../utils/practiceTransferRush.js";
 
 const normalizeCreditSettings = (raw = {}) =>
   normalizeLoadedCreditSettings(raw);
@@ -297,6 +301,7 @@ export async function updateCreditSettings(req, res) {
     );
     const affiliateVatRate = Number(payload.affiliateVatRate);
     const expressFee = Number(payload.expressFee);
+    const practiceRushFeeMultiplier = Number(payload.practiceRushFeeMultiplier);
     const designFee = Number(payload.designFee);
     const abutmentDesignLabFee = Number(payload.abutmentDesignLabFee);
     const membershipProductionPrice = Number(payload.membershipProductionPrice);
@@ -395,6 +400,14 @@ export async function updateCreditSettings(req, res) {
     }
     if (!Number.isNaN(expressFee) && expressFee >= 0) {
       sanitized.expressFee = expressFee;
+    }
+    if (
+      Number.isFinite(practiceRushFeeMultiplier) &&
+      practiceRushFeeMultiplier > 1 &&
+      practiceRushFeeMultiplier <= 2
+    ) {
+      sanitized.practiceRushFeeMultiplier =
+        Math.round(practiceRushFeeMultiplier * 100) / 100;
     }
     if (!Number.isNaN(designFee) && designFee >= 0) {
       sanitized.designFee = designFee;
@@ -653,7 +666,7 @@ async function findDevopsPayoutAnchor() {
     .lean();
 }
 
-function normalizePlatformFeeRates(payoutRates = {}) {
+function normalizePlatformFeeRates(payoutRates = {}, creditSettings = {}) {
   const platformFeeRate = resolvePlatformFeeRate(payoutRates);
   const directPlatformFeeEnabled = isDirectPlatformFeeEnabled(payoutRates);
   const directPlatformFeeRate =
@@ -667,6 +680,9 @@ function normalizePlatformFeeRates(payoutRates = {}) {
     directPlatformFeeEnabled,
     directPlatformFeeRate,
     autoMatchMonthlyFee,
+    practiceRushFeeMultiplier: normalizeConfiguredRushFeeMultiplier(
+      creditSettings?.practiceRushFeeMultiplier,
+    ),
     partnerFeeRate: platformFeeRate,
     nonPartnerFeeRate: platformFeeRate,
     updatedAt: payoutRates?.updatedAt || null,
@@ -675,11 +691,17 @@ function normalizePlatformFeeRates(payoutRates = {}) {
 
 export async function getPlatformFeeSettings(req, res) {
   try {
-    const devops = await findDevopsPayoutAnchor();
+    const [devops, creditSettings] = await Promise.all([
+      findDevopsPayoutAnchor(),
+      loadCreditSettingsDefaults(),
+    ]);
     res.status(200).json({
       success: true,
       data: {
-        platformFeeSettings: normalizePlatformFeeRates(devops?.payoutRates),
+        platformFeeSettings: normalizePlatformFeeRates(
+          devops?.payoutRates,
+          creditSettings,
+        ),
       },
     });
   } catch (error) {
@@ -744,6 +766,23 @@ export async function updatePlatformFeeSettings(req, res) {
       autoMatchMonthlyFee = Math.round(autoMatchMonthlyFee);
     }
 
+    let practiceRushFeeMultiplier;
+    if (payload.practiceRushFeeMultiplier != null) {
+      practiceRushFeeMultiplier = Number(payload.practiceRushFeeMultiplier);
+      if (
+        !Number.isFinite(practiceRushFeeMultiplier) ||
+        practiceRushFeeMultiplier <= 1 ||
+        practiceRushFeeMultiplier > 2
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "신속처리 할증은 1 초과 2 이하여야 합니다.",
+        });
+      }
+      practiceRushFeeMultiplier =
+        Math.round(practiceRushFeeMultiplier * 100) / 100;
+    }
+
     const devops = await findDevopsPayoutAnchor();
     if (!devops?._id) {
       return res.status(404).json({
@@ -769,14 +808,35 @@ export async function updatePlatformFeeSettings(req, res) {
     }
 
     await BusinessAnchor.updateOne({ _id: devops._id }, { $set });
+
+    if (practiceRushFeeMultiplier != null) {
+      await SystemSettings.findOneAndUpdate(
+        { key: "global" },
+        {
+          $set: {
+            "creditSettings.practiceRushFeeMultiplier":
+              practiceRushFeeMultiplier,
+          },
+          $setOnInsert: { key: "global" },
+        },
+        { upsert: true, new: true },
+      );
+    }
+
     invalidatePracticeTransferQuoteCaches();
 
-    const next = await findDevopsPayoutAnchor();
+    const [next, creditSettings] = await Promise.all([
+      findDevopsPayoutAnchor(),
+      loadCreditSettingsDefaults(),
+    ]);
     res.status(200).json({
       success: true,
       message: "플랫폼 수수료 설정이 저장되었습니다.",
       data: {
-        platformFeeSettings: normalizePlatformFeeRates(next?.payoutRates),
+        platformFeeSettings: normalizePlatformFeeRates(
+          next?.payoutRates,
+          creditSettings,
+        ),
       },
     });
   } catch (error) {

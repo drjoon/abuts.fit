@@ -140,7 +140,7 @@ const practiceTransferSchema = new mongoose.Schema(
         enum: ["normal", "express", null],
         default: null,
       },
-      // 신속처리(의뢰+2영업일·기공/어벗 1.5배). 일반 건은 묶음출고만.
+      // 신속처리(의뢰+2영업일·기공/어벗 할증). 일반 건은 묶음출고만.
       rushProcessing: { type: Boolean, default: false },
       // 전송 시점 스냅샷. 체크 UI 기본값은 계정 practiceTransferSettings.skipDesignConfirm(기본 true)
       skipDesignConfirm: { type: Boolean, default: true },

@@ -31,19 +31,46 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
         transferMemo: "[주문일: 2026-08-17]\n[도착일: 2026-08-19]",
       },
       weeklyBatchDays: ["wed"],
-      requestedAt: new Date("2026-08-17T03:00:00.000Z"),
+      // 12시 이전(KST)이어도 일반 건은 묶음
+      requestedAt: new Date("2026-08-17T00:00:00.000Z"),
     });
     expect(mode).toBe("normal");
   });
 
-  test("resolveShippingModeForPracticeTransferArrival uses express when rush", async () => {
+  test("resolveShippingModeForPracticeTransferArrival: rush express before noon, normal after", async () => {
+    const { resolveShippingModeForPracticeTransferArrival } = await import(
+      "../../services/practiceTransferProduction.service.js"
+    );
+    // UTC 00:00 = KST 09:00
+    const modeBeforeNoon = await resolveShippingModeForPracticeTransferArrival({
+      transferDoc: { production: { rushProcessing: true } },
+      weeklyBatchDays: ["wed"],
+      requestedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    expect(modeBeforeNoon).toBe("express");
+    // UTC 05:00 = KST 14:00 → 묶음
+    const modeAfterNoon = await resolveShippingModeForPracticeTransferArrival({
+      transferDoc: {
+        production: { rushProcessing: true },
+        billing: { rushFeeMultiplier: 1.5 },
+      },
+      weeklyBatchDays: ["wed"],
+      requestedAt: new Date("2026-08-17T05:00:00.000Z"),
+    });
+    expect(modeAfterNoon).toBe("normal");
+  });
+
+  test("resolveShippingModeForPracticeTransferArrival detects rush via billing multiplier before noon", async () => {
     const { resolveShippingModeForPracticeTransferArrival } = await import(
       "../../services/practiceTransferProduction.service.js"
     );
     const mode = await resolveShippingModeForPracticeTransferArrival({
-      transferDoc: { production: { rushProcessing: true } },
-      weeklyBatchDays: ["wed"],
-      requestedAt: new Date("2026-08-17T03:00:00.000Z"),
+      transferDoc: {
+        production: { rushProcessing: false },
+        billing: { rushFeeMultiplier: 1.5 },
+      },
+      weeklyBatchDays: ["fri"],
+      requestedAt: new Date("2026-08-17T00:00:00.000Z"),
     });
     expect(mode).toBe("express");
   });

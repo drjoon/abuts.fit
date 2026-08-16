@@ -21,6 +21,7 @@ import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import {
   PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL,
+  formatPracticeRushFeeParenLabel,
   formatPracticeWorkPeriodLeadLabel,
   getPracticeWorkPeriodDays,
 } from "@/shared/practice/practiceWorkPeriod";
@@ -162,7 +163,8 @@ export function PracticeOrderArrivalDateRangeField({
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
               주문일은 오늘 고정. 치과도착일만 선택하면 됩니다.
-              일반 의뢰는 2+2영업일 이상, 3영업일 이하는 신속처리(1.5배)입니다.
+              일반 의뢰는 2+2영업일 이상, 3영업일 이하는{" "}
+              {formatPracticeRushFeeParenLabel()}입니다.
               {leadLabel
                 ? ` 변경한 간격(${leadLabel})이 다음 기본값으로 저장됩니다.`
                 : " 변경한 간격이 다음 기본값으로 저장됩니다."}{" "}

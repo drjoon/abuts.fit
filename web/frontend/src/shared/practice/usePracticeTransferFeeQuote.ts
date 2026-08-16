@@ -24,6 +24,7 @@ import {
   type AbutsAbutmentPricingTier,
 } from "@/shared/pricing/abutsAbutmentService";
 import type { ImplantFavoriteForFee } from "@/shared/practice/labFeeSchedule";
+import { normalizeConfiguredRushFeeMultiplier } from "@/shared/practice/labFeeSchedule";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -173,33 +174,38 @@ export const usePracticeTransferFeeQuote = (params: {
     },
   });
 
-  const liveQuote = useMemo(
-    () =>
-      buildFeeQuoteFromContext({
-        toothWorks,
-        implantFavorites: params.implantFavorites,
-        autoMatchBudget: params.autoMatchBudget,
-        rushFeeMultiplier: params.rushFeeMultiplier,
-        context: {
-          ...context,
-          abutmentPricingTier:
-            params.abutmentPricingTier || context.abutmentPricingTier,
-          abutmentPrices: normalizeAbutsAbutmentCreditPrices(
-            params.abutmentPrices || settingsPrices || context.abutmentPrices,
-          ),
-        },
-      }),
-    [
-      context,
-      params.abutmentPrices,
-      params.abutmentPricingTier,
-      params.autoMatchBudget,
-      params.implantFavorites,
-      params.rushFeeMultiplier,
-      settingsPrices,
+  const liveQuote = useMemo(() => {
+    const requestedRush = Number(params.rushFeeMultiplier);
+    const rushFeeMultiplier =
+      Number.isFinite(requestedRush) && requestedRush > 1
+        ? normalizeConfiguredRushFeeMultiplier(
+            context.practiceRushFeeMultiplier || requestedRush,
+          )
+        : 1;
+    return buildFeeQuoteFromContext({
       toothWorks,
-    ],
-  );
+      implantFavorites: params.implantFavorites,
+      autoMatchBudget: params.autoMatchBudget,
+      rushFeeMultiplier,
+      context: {
+        ...context,
+        abutmentPricingTier:
+          params.abutmentPricingTier || context.abutmentPricingTier,
+        abutmentPrices: normalizeAbutsAbutmentCreditPrices(
+          params.abutmentPrices || settingsPrices || context.abutmentPrices,
+        ),
+      },
+    });
+  }, [
+    context,
+    params.abutmentPrices,
+    params.abutmentPricingTier,
+    params.autoMatchBudget,
+    params.implantFavorites,
+    params.rushFeeMultiplier,
+    settingsPrices,
+    toothWorks,
+  ]);
 
   const quote = storedQuote && storedQuote.total > 0 ? storedQuote : liveQuote;
 

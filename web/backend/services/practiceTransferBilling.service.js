@@ -11,7 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
-// - 2026-08-17: 신속처리 rushFeeMultiplier — 기공/어벗 1.5배 스택.
+// - 2026-08-17: 신속처리 rushFeeMultiplier — 기공/어벗 배수 스택(기본 1.2·플랫폼 설정).
 // - 2026-08-14: 목록 견적 조회(devops/단가/기공소/거래처) parallel + 60s 캐시.
 // - 2026-08-14: quote-context에 abutmentPrices 포함. 환봉 단가가 치과 견적에 전달.
 // - 2026-08-14: quote-context — 기공소/티어/단가/거래처/수수료율 parallel + 60s 캐시(5회 직렬 RTT 제거).
@@ -82,6 +82,7 @@ import {
   splitPracticeTransferSettlement,
 } from "../utils/labFeeSchedule.js";
 import {
+  normalizeConfiguredRushFeeMultiplier,
   normalizeRushFeeMultiplier,
   resolveRushFeeMultiplier,
 } from "../utils/practiceTransferRush.js";
@@ -3260,12 +3261,15 @@ export async function loadPracticeTransferQuoteContext({
   if (cached && typeof cached === "object") return cached;
 
   return withRequestPerfInFlight(cacheKey, async () => {
-    const quote = await buildPracticeTransferQuote({
-      labAnchorId,
-      practiceAnchorId,
-      toothWorks: [],
-      matchingMode: labAnchorId ? "direct" : "auto",
-    });
+    const [quote, creditSettings] = await Promise.all([
+      buildPracticeTransferQuote({
+        labAnchorId,
+        practiceAnchorId,
+        toothWorks: [],
+        matchingMode: labAnchorId ? "direct" : "auto",
+      }),
+      loadCreditSettingsDefaults(),
+    ]);
     const context = {
       schedule: quote.schedule,
       remakeSchedule: quote.remakeSchedule || LAB_FEE_SCHEDULE_ZEROS,
@@ -3276,6 +3280,9 @@ export async function loadPracticeTransferQuoteContext({
       relationshipKind: quote.relationshipKind,
       feeRateApplied: quote.feeRateApplied,
       labFeeMultiplier: normalizeLabFeeMultiplier(quote.labFeeMultiplier),
+      practiceRushFeeMultiplier: normalizeConfiguredRushFeeMultiplier(
+        creditSettings?.practiceRushFeeMultiplier,
+      ),
       usedDefaultSchedule: quote.usedDefaultSchedule,
       labFeeConfigured: quote.labFeeConfigured !== false,
       autoMatchBudget: quote.autoMatchBudget || null,

@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
+// - 2026-08-17: practiceRushFeeMultiplier(기공의뢰 신속처리 할증) 추가.
 // - 2026-08-15: 제조사 하청 단가·affiliateVatRate 설정 필드 추가.
 // - 2026-08-15: 특별 공급가 CNC/환봉 × 생산만·디자인+생산 정규화. 의뢰자 로드 시 단가 오버라이드.
 import { Types } from "mongoose";
@@ -16,6 +17,12 @@ import {
   normalizeAbutsAbutmentCreditPrices,
   resolveAbutsAbutmentPricingTier,
 } from "./abutsAbutmentService.js";
+
+const clampPracticeRushFeeMultiplier = (value, fallback = 1.2) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 1) return fallback;
+  return Math.min(2, Math.round(n * 100) / 100);
+};
 
 const SCHEMA_DEFAULTS = (() => {
   const pickDefault = (path) =>
@@ -34,6 +41,11 @@ const SCHEMA_DEFAULTS = (() => {
       Number(SystemSettings.schema.path("creditSettings.affiliateVatRate")?.options?.default) ||
       0.1,
     expressFee: pickDefault("creditSettings.expressFee"),
+    practiceRushFeeMultiplier:
+      Number(
+        SystemSettings.schema.path("creditSettings.practiceRushFeeMultiplier")
+          ?.options?.default,
+      ) || 1.2,
     designFee: pickDefault("creditSettings.designFee"),
     abutmentDesignLabFee: pickDefault("creditSettings.abutmentDesignLabFee"),
     abutmentRetailPrice: pickDefault("creditSettings.abutmentRetailPrice"),
@@ -219,6 +231,11 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     })(),
     expressFee: Number(
       creditSettings.expressFee ?? SCHEMA_DEFAULTS.expressFee,
+    ),
+    practiceRushFeeMultiplier: clampPracticeRushFeeMultiplier(
+      creditSettings.practiceRushFeeMultiplier ??
+        SCHEMA_DEFAULTS.practiceRushFeeMultiplier,
+      SCHEMA_DEFAULTS.practiceRushFeeMultiplier,
     ),
     designFee: membership.designFeePerTooth,
     abutmentDesignLabFee: Math.max(

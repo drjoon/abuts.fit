@@ -12,6 +12,7 @@ import {
   LAB_FEE_SCHEDULE_ZEROS,
   normalizeLabFeeItems,
   normalizeLabFeeMultiplier,
+  normalizeConfiguredRushFeeMultiplier,
   normalizeRushFeeMultiplier,
   normalizeLabFeeRemakeSchedule,
   normalizeLabFeeSchedule,
@@ -74,6 +75,8 @@ export type PracticeTransferQuoteContext = {
   relationshipKind: PracticeTransferRelationshipKind;
   feeRateApplied: number;
   labFeeMultiplier: number;
+  /** 플랫폼 설정 신속처리 할증(기본 1.2) */
+  practiceRushFeeMultiplier: number;
   usedDefaultSchedule: boolean;
   labFeeConfigured: boolean;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
@@ -90,6 +93,7 @@ export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
   relationshipKind: "none",
   feeRateApplied: 0,
   labFeeMultiplier: 1,
+  practiceRushFeeMultiplier: 1.2,
   usedDefaultSchedule: true,
   labFeeConfigured: true,
   autoMatchBudget: null,
@@ -257,6 +261,9 @@ export const parsePracticeTransferQuoteContext = (
     labFeeMultiplier: usedDefaultSchedule
       ? 1
       : normalizeLabFeeMultiplier(r.labFeeMultiplier),
+    practiceRushFeeMultiplier: normalizeConfiguredRushFeeMultiplier(
+      r.practiceRushFeeMultiplier,
+    ),
     usedDefaultSchedule,
     labFeeConfigured: usedDefaultSchedule ? true : r.labFeeConfigured !== false,
     autoMatchBudget: normalizePracticeTransferAutoMatchBudget(

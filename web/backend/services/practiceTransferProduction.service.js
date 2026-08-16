@@ -5,7 +5,9 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
-// - 2026-08-17: 일반 PTX CA는 항상 묶음(normal). 신속처리는 익영업일 16시 출고·expressFee 0(1.5배는 PTX 과금).
+// - 2026-08-17: 신속처리 CA — 12시 전 express, 12시 이후 묶음. 일반은 항상 묶음.
+// - 2026-08-17: 신속처리 CA는 제조사 express 고정(선택가능 강등·견적 normal 위장 제거). 일반은 묶음.
+// - 2026-08-17: 일반 PTX CA는 항상 묶음(normal). 신속처리는 익영업일 16시 출고·expressFee 0(배수는 PTX 과금).
 // - 2026-08-16: 준비 복귀 시 abutmentProductionStartedAt 클리어·pastReady는 라이브 stage SSOT.
 // - 2026-08-16: past-ready 판정 — partnerBilling 링크 + actualCamStart. 가공 진입 시 startedAt 기록.
 // - 2026-08-16: 어벗 가공(준비 아님) 시 release·생산취소 가드 + 목록 abutmentPastReady.
@@ -40,7 +42,6 @@ import {
 } from "../controllers/requests/designPrice.utils.js";
 import { resolvePrcFileNames } from "../controllers/requests/prcMapping.utils.js";
 import { resolveQuotedPriceWithExpressFee } from "../controllers/requests/expressPrice.utils.js";
-import { resolveSelectableShippingMode } from "../controllers/requests/expressSelectable.utils.js";
 import { getManufacturerLeadTimesUtil } from "../controllers/businesses/leadTime.controller.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 import {
@@ -52,7 +53,8 @@ import {
 import { checkCreditLock } from "../utils/creditLock.util.js";
 import {
   isPracticeTransferRushProcessing,
-  PRACTICE_RUSH_FEE_MULTIPLIER,
+  normalizeConfiguredRushFeeMultiplier,
+  resolveRushFeeMultiplier,
 } from "../utils/practiceTransferRush.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "./requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShippingSnapshot.service.js";
@@ -408,45 +410,45 @@ async function resolvePracticePricingTierForTransfer(transferDoc) {
 const PTX_SHIP_SCHEDULE_PRODUCT_MODE = "custom_abutment";
 
 /**
- * PTX CA 출고모드.
- * - 일반: 항상 묶음(normal). 도착일이 촉박해도 신속출고로 승격하지 않음.
- * - 신속처리: 익영업일 16시 출고(express). 할증은 PTX 1.5배(expressFee 없음).
+ * PTX CA 출고모드(제조사 주문 shippingMode).
+ * - 신속처리·KST 12시 전: express(제조사 신속배송)
+ * - 신속처리·12시 이후 / 일반: 묶음(normal)
  */
+const PTX_RUSH_EXPRESS_CUTOFF_HOUR_KST = 12;
+
+function getKstHourForShipping(date = new Date()) {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Seoul",
+      hour: "numeric",
+      hour12: false,
+    }).format(date instanceof Date ? date : new Date(date)),
+  );
+  return Number.isFinite(hour) ? hour : 0;
+}
+
 export async function resolveShippingModeForPracticeTransferArrival({
   transferDoc,
   weeklyBatchDays = [],
   requestedAt = new Date(),
   maxDiameter = 8,
 }) {
+  void weeklyBatchDays;
+  void maxDiameter;
   const rush = isPracticeTransferRushProcessing(transferDoc);
-  if (rush) {
+  if (!rush) return "normal";
+  const at =
+    requestedAt instanceof Date ? requestedAt : new Date(requestedAt || Date.now());
+  // 12시 이전만 제조사 신속배송. 이후는 묶음.
+  if (getKstHourForShipping(at) < PTX_RUSH_EXPRESS_CUTOFF_HOUR_KST) {
     return "express";
   }
-  const batchDays = Array.isArray(weeklyBatchDays) ? weeklyBatchDays : [];
-  return resolveSelectableShippingMode({
-    shippingMode: "normal",
-    requestedAt,
-    weeklyBatchDays: batchDays,
-    maxDiameter,
-    productMode: PTX_SHIP_SCHEDULE_PRODUCT_MODE,
-  });
+  return "normal";
 }
 
-/**
- * 신속처리: 오늘 자정 이전 의뢰 → 익영업일 16시 출고(당일 출고 없음).
- * express 스케줄에 오후 시각을 넣어 12시 컷오프를 항상 넘긴다.
- */
-function rushScheduleRequestedAt(requestedAt = new Date()) {
-  const ymd = toKstYmd(requestedAt) || getTodayYmdInKst();
-  // KST 13:00 = UTC 04:00 same civil day
-  const m = String(ymd || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return requestedAt;
-  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 4, 0, 0, 0));
-}
-
-function applyRushMultiplierToPtxQuote(quote) {
+function applyRushMultiplierToPtxQuote(quote, rushFeeMultiplier) {
   const base = quote && typeof quote === "object" ? quote : {};
-  const m = PRACTICE_RUSH_FEE_MULTIPLIER;
+  const m = normalizeConfiguredRushFeeMultiplier(rushFeeMultiplier);
   const scale = (n) => Math.max(0, Math.round(Number(n || 0) * m));
   return {
     ...base,
@@ -575,17 +577,13 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 
   const requestedAt = new Date();
   const rush = isPracticeTransferRushProcessing(transferDoc);
-  // 일반 PTX는 항상 묶음. 신속처리만 express(익영업일 16시). caller shippingModeRaw는 무시.
-  const shippingMode = rush
-    ? "express"
-    : await resolveShippingModeForPracticeTransferArrival({
-        transferDoc,
-        weeklyBatchDays,
-        requestedAt,
-      });
-  const scheduleRequestedAt = rush
-    ? rushScheduleRequestedAt(requestedAt)
-    : requestedAt;
+  // 신속처리·12시 전 → express, 그 외 → 묶음. caller shippingModeRaw 무시.
+  const shippingMode = await resolveShippingModeForPracticeTransferArrival({
+    transferDoc,
+    weeklyBatchDays,
+    requestedAt,
+  });
+  const scheduleRequestedAt = requestedAt;
 
   const practiceAnchor = transferDoc?.practiceBusinessAnchorId
     ? await BusinessAnchor.findById(transferDoc.practiceBusinessAnchorId)
@@ -601,9 +599,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // 신속처리는 의뢰+2 도착·익영업일 출고 — arrival−2 clamp 하면 출고가 당일로 끌림
+  // express(12시 전 신속)는 당일 출고 스케줄 — arrival−2 clamp 생략. 묶음은 목표 출고일 반영.
   const targetShipYmd =
-    rush || !arrivalYmd
+    shippingMode === "express" || !arrivalYmd
       ? null
       : await resolveManufacturerTargetShipYmd(arrivalYmd);
 
@@ -633,7 +631,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     expressFeePerRequest = 2000;
     creditSettingsForQuote = {};
   }
-  // PTX 신속처리는 flat expressFee 대신 1.5배(PTX hold). Request 표시가도 동일.
+  // PTX 신속처리는 flat expressFee 대신 배수 할증(PTX hold). Request 표시가도 동일.
   if (rush) expressFeePerRequest = 0;
 
   const pricingTier = await resolvePracticePricingTierForTransfer(transferDoc);
@@ -709,14 +707,22 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     let quotedPrice = buildPtxAbutsProductionQuote({
       creditSettings: creditSettingsForQuote,
       pricingTier,
-      // 신속: expressFee=0 이므로 shippingMode와 무관하게 flat fee 없음
-      shippingMode: rush ? "normal" : shippingMode,
+      // 신속처리 할증은 PTX 1.5배(expressFee=0). shippingMode는 12시 컷오프 결과 그대로.
+      shippingMode,
       abutmentQty,
       expressFeePerRequest,
       quotedAt: requestedAt,
     });
     if (rush) {
-      quotedPrice = applyRushMultiplierToPtxQuote(quotedPrice);
+      quotedPrice = applyRushMultiplierToPtxQuote(
+        quotedPrice,
+        resolveRushFeeMultiplier({
+          rushProcessing: true,
+          rushFeeMultiplier: billing?.rushFeeMultiplier,
+          configuredMultiplier:
+            creditSettingsForQuote?.practiceRushFeeMultiplier,
+        }),
+      );
     }
 
     let productionSchedule = await calculateInitialProductionSchedule({
@@ -726,7 +732,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
       productMode: scheduleProductMode,
     });
-    if (!rush) {
+    if (shippingMode === "normal") {
       productionSchedule = await clampScheduleToTarget(
         productionSchedule,
         targetShipYmd,
@@ -779,6 +785,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     const newRequest = new Request({
       caseInfos: {
         ...normalizedCaseInfos,
+        shippingMode,
         designSoftware,
         anodizingEnabled,
         retentionGroove,
@@ -1511,9 +1518,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     requestedAt,
     maxDiameter,
   });
-  const scheduleRequestedAt = rush
-    ? rushScheduleRequestedAt(requestedAt)
-    : requestedAt;
+  const scheduleRequestedAt = requestedAt;
 
   const abutmentQty = Math.max(
     1,
@@ -1522,18 +1527,25 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   let quotedPrice = buildPtxAbutsProductionQuote({
     creditSettings: creditSettingsForQuote,
     pricingTier,
-    shippingMode: rush ? "normal" : shippingMode,
+    shippingMode,
     abutmentQty,
     expressFeePerRequest,
     quotedAt: requestedAt,
   });
   if (rush) {
-    quotedPrice = applyRushMultiplierToPtxQuote(quotedPrice);
+    quotedPrice = applyRushMultiplierToPtxQuote(
+      quotedPrice,
+      resolveRushFeeMultiplier({
+        rushProcessing: true,
+        rushFeeMultiplier: transferDoc?.billing?.rushFeeMultiplier,
+        configuredMultiplier: creditSettingsForQuote?.practiceRushFeeMultiplier,
+      }),
+    );
   }
 
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
   const targetShipYmd =
-    rush || !arrivalYmd
+    shippingMode === "express" || !arrivalYmd
       ? null
       : await resolveManufacturerTargetShipYmd(arrivalYmd);
 
@@ -1542,6 +1554,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     requestDoc.caseInfos = {};
   }
   requestDoc.caseInfos.productMode = "custom_abutment";
+  requestDoc.caseInfos.shippingMode = shippingMode;
 
   let productionSchedule = await calculateInitialProductionSchedule({
     shippingMode,
@@ -1550,7 +1563,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
     productMode: "custom_abutment",
   });
-  if (!rush) {
+  if (shippingMode === "normal") {
     productionSchedule = await clampScheduleToTarget(
       productionSchedule,
       targetShipYmd,

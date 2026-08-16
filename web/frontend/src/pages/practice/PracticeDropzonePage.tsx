@@ -150,11 +150,10 @@ import {
 } from "@/shared/practice/roundBarAbutment";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { kstAddBusinessDays, kstYmdDiffDays } from "@/shared/date/kst";
+import { PracticeRushConfirmDialog } from "@/shared/components/practice/PracticeRushConfirmDialog";
 import {
   PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
   PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
-  PRACTICE_RUSH_CONFIRM_BODY_LINES,
-  PRACTICE_RUSH_CONFIRM_TITLE,
   PRACTICE_WORK_PERIOD_MIN_DAYS,
   getPracticeWorkPeriodDays,
   isPracticeRushPeriod,
@@ -3172,66 +3171,37 @@ export const PracticeDropzonePage = () => {
               </form>
             )}
 
-            <Dialog
+            <PracticeRushConfirmDialog
               open={rushConfirmOpen}
               onOpenChange={(open) => {
                 setRushConfirmOpen(open);
                 if (!open) setPendingRushArrivalYmd("");
               }}
-            >
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{PRACTICE_RUSH_CONFIRM_TITLE}</DialogTitle>
-                  <DialogDescription asChild>
-                    <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
-                      {PRACTICE_RUSH_CONFIRM_BODY_LINES.map((line) => (
-                        <p key={line}>{line}</p>
-                      ))}
-                    </div>
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setRushConfirmOpen(false);
-                      setPendingRushArrivalYmd("");
-                    }}
-                  >
-                    취소
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      const nextArrival =
-                        pendingRushArrivalYmd ||
-                        kstAddBusinessDays(
-                          todayDate,
-                          PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
-                        ) ||
-                        "";
-                      setOrderDate(todayDate);
-                      if (nextArrival) {
-                        setArrivalDate(nextArrival);
-                        const diff = kstYmdDiffDays(todayDate, nextArrival);
-                        if (diff != null) {
-                          const nextDays = normalizeArrivalDefaultDays(diff);
-                          if (nextDays !== arrivalDefaultDays) {
-                            setArrivalDefaultDays(nextDays);
-                          }
-                        }
-                      }
-                      setRushProcessing(true);
-                      setRushConfirmOpen(false);
-                      setPendingRushArrivalYmd("");
-                    }}
-                  >
-                    신속처리로 진행
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+              onCancel={() => setPendingRushArrivalYmd("")}
+              onConfirm={() => {
+                const nextArrival =
+                  pendingRushArrivalYmd ||
+                  kstAddBusinessDays(
+                    todayDate,
+                    PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
+                  ) ||
+                  "";
+                setOrderDate(todayDate);
+                if (nextArrival) {
+                  setArrivalDate(nextArrival);
+                  const diff = kstYmdDiffDays(todayDate, nextArrival);
+                  if (diff != null) {
+                    const nextDays = normalizeArrivalDefaultDays(diff);
+                    if (nextDays !== arrivalDefaultDays) {
+                      setArrivalDefaultDays(nextDays);
+                    }
+                  }
+                }
+                setRushProcessing(true);
+                setRushConfirmOpen(false);
+                setPendingRushArrivalYmd("");
+              }}
+            />
 
             <Dialog
               open={prosthesisTypeSettingsDialogOpen}

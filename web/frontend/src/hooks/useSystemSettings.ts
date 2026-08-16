@@ -30,6 +30,8 @@ export interface CreditSettings {
   manufacturerShippingUnitPrice: number;
   affiliateVatRate: number;
   expressFee: number;
+  /** 기공의뢰 신속처리 할증(1 초과~2) */
+  practiceRushFeeMultiplier: number;
   designFee: number;
   abutmentDesignLabFee: number;
   abutmentRetailPrice: number;
@@ -53,6 +55,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   manufacturerShippingUnitPrice: 3500,
   affiliateVatRate: 0.1,
   expressFee: 2000,
+  practiceRushFeeMultiplier: 1.2,
   designFee:
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE -
     ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
@@ -114,6 +117,16 @@ export const useSystemSettings = () => {
         expressFee: Number(
           raw.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
         ),
+        practiceRushFeeMultiplier: (() => {
+          const n = Number(
+            raw.practiceRushFeeMultiplier ??
+              CREDIT_SETTINGS_DEFAULTS.practiceRushFeeMultiplier,
+          );
+          if (!Number.isFinite(n) || n <= 1) {
+            return CREDIT_SETTINGS_DEFAULTS.practiceRushFeeMultiplier;
+          }
+          return Math.min(2, Math.round(n * 100) / 100);
+        })(),
         designFee: Math.max(
           0,
           abutmentPrices.membershipDesignAndProductionPrice -

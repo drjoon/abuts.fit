@@ -34,6 +34,7 @@ export {
   PRACTICE_RUSH_FEE_MULTIPLIER,
   PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
   PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS,
+  normalizeConfiguredRushFeeMultiplier,
   normalizeRushFeeMultiplier,
   resolveRushFeeMultiplier,
   isPracticeTransferRushProcessing,

@@ -81,16 +81,27 @@ export const formatLabFeeMultiplierLabel = (multiplier: unknown): string => {
   return `${text}x 할증`;
 };
 
-/** 신속처리 할증(1 | 1.5). */
-export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.5;
+/** 신속처리 할증(1 | 설정값). 기본 1.2. */
+export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.2;
 
 export const normalizeRushFeeMultiplier = (value: unknown): number => {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 1) return 1;
-  if (Math.abs(n - PRACTICE_RUSH_FEE_MULTIPLIER) < 0.001) {
-    return PRACTICE_RUSH_FEE_MULTIPLIER;
-  }
-  return 1;
+  return Math.min(2, Math.round(n * 100) / 100);
+};
+
+export const normalizeConfiguredRushFeeMultiplier = (
+  value: unknown,
+): number => {
+  const n = normalizeRushFeeMultiplier(value);
+  return n > 1 ? n : PRACTICE_RUSH_FEE_MULTIPLIER;
+};
+
+/** UI 표기: `1.2배` */
+export const formatRushFeeMultiplierLabel = (value?: unknown): string => {
+  const m = normalizeConfiguredRushFeeMultiplier(value);
+  const text = Number.isInteger(m) ? String(m) : String(m);
+  return `${text}배`;
 };
 
 export const applyRushFeeMultiplierToFees = <
