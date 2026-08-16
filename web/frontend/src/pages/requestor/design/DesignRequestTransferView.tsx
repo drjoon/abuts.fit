@@ -328,9 +328,9 @@ export function DesignRequestTransferView({
     [downloadS3File],
   );
 
-  const handleAttachChatFiles = useCallback((files: FileList | null) => {
-    if (!files?.length) return;
-    chatUploads.addFiles(Array.from(files));
+  const handleAttachChatFiles = useCallback((files: File[]) => {
+    if (!files.length) return;
+    chatUploads.addFiles(files);
   }, [chatUploads.addFiles]);
 
   const handleSendChat = useCallback(async () => {
@@ -491,7 +491,6 @@ export function DesignRequestTransferView({
         onRemoveAttachedChatFile={chatUploads.removeItem}
         onRetryAttachedChatFile={chatUploads.retryItem}
         onAttachChatFiles={handleAttachChatFiles}
-        attachmentInputId="design-request-chat-attachment-input"
         chatDraft={chatDraft}
         onChangeChatDraft={setChatDraft}
         onSendChatMessage={() => void handleSendChat()}
@@ -510,12 +509,7 @@ export function DesignRequestTransferView({
         onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
         composerPlaceholder="치과에 전달할 내용을 입력하세요"
         inputDisabled={chatLoading || chatSending || !activeChatRoom?._id}
-        sendDisabled={
-          chatLoading ||
-          chatSending ||
-          !activeChatRoom?._id ||
-          (!chatDraft.trim() && chatUploads.items.length === 0)
-        }
+        sendDisabled={chatSending}
       />
     </>
   );

@@ -2962,8 +2962,7 @@ export function RequestorPracticeReceivePage({
     [downloadS3File],
   );
 
-  const handleAttachChatFiles = useCallback((inputFiles: FileList | null) => {
-    const nextFiles = Array.from(inputFiles || []);
+  const handleAttachChatFiles = useCallback((nextFiles: File[]) => {
     if (!nextFiles.length) return;
     chatUploads.addFiles(nextFiles);
   }, [chatUploads.addFiles]);
@@ -3528,7 +3527,6 @@ export function RequestorPracticeReceivePage({
         onRemoveAttachedChatFile={chatUploads.removeItem}
         onRetryAttachedChatFile={chatUploads.retryItem}
         onAttachChatFiles={handleAttachChatFiles}
-        attachmentInputId="requestor-practice-chat-attachment-input"
         chatDraft={chatDraft}
         onChangeChatDraft={setChatDraft}
         onSendChatMessage={() => void handleSendChat()}
@@ -3547,12 +3545,7 @@ export function RequestorPracticeReceivePage({
         onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
         composerPlaceholder="치과에 전달할 내용을 입력하세요"
         inputDisabled={chatLoading || chatSending || !activeChatRoom?._id}
-        sendDisabled={
-          chatLoading ||
-          chatSending ||
-          !activeChatRoom?._id ||
-          (!chatDraft.trim() && chatUploads.items.length === 0)
-        }
+        sendDisabled={chatSending}
       />
       </>
       ) : null}

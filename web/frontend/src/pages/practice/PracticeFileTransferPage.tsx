@@ -3819,8 +3819,7 @@ export const PracticeFileTransferPage = ({
     [downloadS3File],
   );
 
-  const handleAttachChatFiles = (inputFiles: FileList | null) => {
-    const nextFiles = Array.from(inputFiles || []);
+  const handleAttachChatFiles = (nextFiles: File[]) => {
     if (!nextFiles.length) return;
     chatUploads.addFiles(nextFiles);
   };
@@ -6972,7 +6971,6 @@ export const PracticeFileTransferPage = ({
           onRemoveAttachedChatFile={chatUploads.removeItem}
           onRetryAttachedChatFile={chatUploads.retryItem}
           onAttachChatFiles={handleAttachChatFiles}
-          attachmentInputId="practice-transfer-chat-attachment-input"
           chatDraft={chatDraft}
           onChangeChatDraft={setChatDraft}
           onSendChatMessage={() => void handleSendChatMessage()}
@@ -6991,13 +6989,7 @@ export const PracticeFileTransferPage = ({
           onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
           composerPlaceholder="문의 내용을 입력하세요"
           inputDisabled={chatLoading || chatMessagesLoading || chatSending || !activeChatRoom?._id}
-          sendDisabled={
-            chatLoading ||
-            chatMessagesLoading ||
-            chatSending ||
-            !activeChatRoom?._id ||
-            (!String(chatDraft || "").trim() && chatUploads.items.length === 0)
-          }
+          sendDisabled={chatSending}
         />
 
         <Dialog
