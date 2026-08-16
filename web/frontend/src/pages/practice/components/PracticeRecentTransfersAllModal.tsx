@@ -4,6 +4,7 @@
  * 취소 뱃지=기공소 작업취소(치과 휴지통 제외). 6뱃지 빠른툴팁.
  * 2026-08-14: 사이드바 1페이지를 시드로 재사용. 열 때 /my 재요청하지 않음.
  * 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지.
+ * 2026-08-16: 기공소 작업취소 카드 깜빡임 하이라이트.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Repeat, Search, Trash2 } from "lucide-react";
@@ -44,6 +45,7 @@ import {
   filterGroupedTransfersByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
+  isPracticeTransferActionNeededStatus,
   mapMyPracticeTransferApiRows,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
@@ -398,13 +400,24 @@ export function PracticeRecentTransfersAllModal({
                   orderDate: transfer.orderDate,
                   createdAtTs: transfer.createdAtTs,
                 });
+                const needsAction = isPracticeTransferActionNeededStatus(
+                  transfer.status,
+                );
 
                 return (
                   <div
                     key={`${transfer.id}:${transfer.createdAt}:${transfer.transferId}`}
                     role="button"
                     tabIndex={0}
-                    className="flex min-h-[8.5rem] cursor-pointer flex-col rounded-lg border px-3 py-3 text-left text-sm transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className={cn(
+                      "flex min-h-[8.5rem] cursor-pointer flex-col rounded-lg border px-3 py-3 text-left text-sm transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      needsAction && "practice-transfer-attention",
+                    )}
+                    aria-label={
+                      needsAction
+                        ? `${transfer.transferId !== "-" ? transfer.transferId : transfer.id} 조치 대기`
+                        : undefined
+                    }
                     onClick={() => onSelectTransfer(transfer)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {

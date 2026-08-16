@@ -4844,6 +4844,471 @@ export async function markReceivedPracticeTransferReject(req, res) {
   }
 }
 
+/**
+ * 치과: 기공소 거부·작업취소 건의 기공소를 바꿔 다시 공개/지정 전송.
+ * - 기존 transferId 유지. workCanceled/labRejected 해제 후 새 기공소(또는 자동매칭)로 보류 재설정.
+ */
+export async function retargetPracticeTransferLab(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    if (String(doc.status || "").trim() === "canceled") {
+      return res.status(409).json({
+        success: false,
+        message: "휴지통의 의뢰는 기공소를 변경할 수 없습니다. 먼저 복구해 주세요.",
+      });
+    }
+
+    const stage = resolvePracticeTransferManufacturerStage(doc);
+    if (stage !== "작업취소") {
+      return res.status(409).json({
+        success: false,
+        message: "기공소가 취소·거부한 의뢰만 기공소를 바꿔 다시 전송할 수 있습니다.",
+      });
+    }
+
+    const practiceAnchorId = req.user?.businessAnchorId || null;
+    if (!practiceAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "치과 사업자 정보가 필요합니다. 사업자 등록 후 다시 시도해주세요.",
+      });
+    }
+
+    const matchingModeRaw = String(req.body?.matchingMode || "")
+      .trim()
+      .toLowerCase();
+    const rawAnchorId = String(req.body?.targetLabAnchorId || "").trim();
+    const rawLabName = String(req.body?.targetLabName || "").trim();
+    const wantsAutoMatch =
+      matchingModeRaw === "auto" ||
+      req.body?.autoMatch === true ||
+      rawAnchorId === "__auto_match__" ||
+      rawLabName === AUTO_MATCH_LAB_DISPLAY_NAME ||
+      rawLabName === "자동매칭";
+    const matchingMode = wantsAutoMatch ? "auto" : "direct";
+
+    let targetLabAnchorId = null;
+    let targetLabName = rawLabName;
+    if (matchingMode === "auto") {
+      targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
+    } else {
+      if (!Types.ObjectId.isValid(rawAnchorId)) {
+        return res.status(400).json({
+          success: false,
+          message: "대상 기공소를 선택해주세요.",
+        });
+      }
+      targetLabAnchorId = new Types.ObjectId(rawAnchorId);
+      if (!targetLabName) {
+        const anchor = await BusinessAnchor.findById(targetLabAnchorId)
+          .select({ name: 1 })
+          .lean();
+        targetLabName = String(anchor?.name || "").trim();
+      }
+      if (!targetLabName) {
+        return res.status(400).json({
+          success: false,
+          message: "대상 기공소를 선택해주세요.",
+        });
+      }
+    }
+
+    const toothWorks = Array.isArray(doc.toothWorks) ? doc.toothWorks : [];
+    const previousLabAnchorId = String(doc.targetLabAnchorId || "").trim() || null;
+    const previousLabName = String(doc.targetLabName || "").trim();
+    const previousMatchingMode =
+      String(doc.matchingMode || "").trim() === "auto" ? "auto" : "direct";
+    const previousAutoMatch =
+      doc.autoMatch && typeof doc.autoMatch === "object"
+        ? { ...doc.autoMatch }
+        : {};
+    const previousWorkCanceledAt = doc.workCanceledAt || null;
+    const previousWorkCanceledBy = doc.workCanceledBy || null;
+    const previousLabRejectedAt = doc.labRejectedAt || null;
+    const previousLabRejectedByLabAnchorId =
+      doc.labRejectedByLabAnchorId || null;
+    const previousBilling =
+      doc.billing && typeof doc.billing === "object" ? { ...doc.billing } : {};
+    const now = new Date();
+
+    let autoMatchBudget = null;
+    let autoMatchEligibleLabAnchorIds = undefined;
+    let autoMatchPriorityLabAnchorIds = [];
+    let autoMatchCatalog = null;
+    if (matchingMode === "auto") {
+      const [practiceForBudget, catalog] = await Promise.all([
+        BusinessAnchor.findById(practiceAnchorId)
+          .select({
+            "practiceTransferSettings.autoMatchMinLabRating": 1,
+            practiceLabRatings: 1,
+          })
+          .lean(),
+        loadAutoMatchBudgetCatalog(),
+      ]);
+      autoMatchCatalog = catalog;
+      const minStars = normalizeAutoMatchMinLabRating(
+        req.body?.autoMatchMinLabRating ??
+          practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
+      );
+      autoMatchBudget = resolveAutoMatchBudgetOrDefaults(null, catalog, {
+        minStars,
+      });
+      const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
+        toothWorks,
+        budget: autoMatchBudget,
+        catalog,
+        autoMatchMinLabRating: minStars,
+        practiceLabRatings: practiceForBudget?.practiceLabRatings,
+      });
+      autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
+      autoMatchPriorityLabAnchorIds = eligibility.priorityLabAnchorIds || [];
+      if (autoMatchEligibleLabAnchorIds.length === 0) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요.",
+          reason: "auto_match_no_eligible_labs",
+        });
+      }
+    }
+
+    try {
+      await assertPracticeTransferPaidCreditSufficient({
+        practiceAnchorId,
+        labAnchorId: targetLabAnchorId,
+        toothWorks,
+        autoMatchBudget,
+        catalog: autoMatchCatalog,
+      });
+    } catch (creditErr) {
+      const status = Number(creditErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message:
+          creditErr?.message || "기공소 변경 전송 전 유료크레딧 확인에 실패했습니다.",
+        ...(creditErr?.payload || {}),
+      });
+    }
+
+    try {
+      await rollbackPracticeTransferBilling({ transferId: doc._id });
+    } catch (rollbackErr) {
+      console.warn(
+        "[practiceTransfer] retarget billing rollback failed",
+        String(doc?._id || ""),
+        rollbackErr?.message || rollbackErr,
+      );
+    }
+
+    const feeQuote = await buildPracticeTransferQuote({
+      practiceAnchorId,
+      labAnchorId: targetLabAnchorId,
+      toothWorks,
+      matchingMode,
+      autoMatchBudget,
+      catalog: autoMatchCatalog,
+    });
+    const billingPreview = toBillingPreviewFields(feeQuote);
+    const autoMatchPriorityFields =
+      matchingMode === "auto"
+        ? buildAutoMatchPriorityFields({
+            eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds || [],
+            priorityLabAnchorIds: autoMatchPriorityLabAnchorIds || [],
+          })
+        : null;
+
+    const prevAuto =
+      doc.autoMatch && typeof doc.autoMatch === "object" ? doc.autoMatch : {};
+    const nextAutoMatch =
+      matchingMode === "auto"
+        ? {
+            claimedAt: null,
+            deadlineAt: null,
+            claimHours: null,
+            completedAt: null,
+            completedBy: null,
+            releaseCount: Number(prevAuto.releaseCount || 0),
+            eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds || [],
+            declinedLabAnchorIds: Array.isArray(prevAuto.declinedLabAnchorIds)
+              ? prevAuto.declinedLabAnchorIds
+              : [],
+            priorityUntil: autoMatchPriorityFields?.priorityUntil ?? null,
+            ...(autoMatchPriorityFields?.priorityLabAnchorIds
+              ? {
+                  priorityLabAnchorIds:
+                    autoMatchPriorityFields.priorityLabAnchorIds,
+                }
+              : { priorityLabAnchorIds: [] }),
+          }
+        : {
+            claimedAt: null,
+            deadlineAt: null,
+            claimHours: null,
+            completedAt: null,
+            completedBy: null,
+            releaseCount: Number(prevAuto.releaseCount || 0),
+            eligibleLabAnchorIds: [],
+            declinedLabAnchorIds: [],
+            priorityUntil: null,
+            priorityLabAnchorIds: [],
+          };
+
+    doc.targetLabAnchorId = targetLabAnchorId;
+    doc.targetLabName = targetLabName;
+    doc.matchingMode = matchingMode;
+    doc.autoMatch = nextAutoMatch;
+    doc.workCanceledAt = null;
+    doc.workCanceledBy = null;
+    doc.labRejectedAt = null;
+    doc.labRejectedByLabAnchorId = null;
+    doc.requestorDownloadedAt = null;
+    doc.requestorDownloadedBy = null;
+    doc.requestorReadAt = null;
+    doc.requestorReadBy = null;
+    doc.billing = billingPreview;
+    doc.status = "active";
+
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      {
+        $set: {
+          targetLabAnchorId,
+          targetLabName,
+          matchingMode,
+          autoMatch: nextAutoMatch,
+          workCanceledAt: null,
+          workCanceledBy: null,
+          labRejectedAt: null,
+          labRejectedByLabAnchorId: null,
+          requestorDownloadedAt: null,
+          requestorDownloadedBy: null,
+          requestorReadAt: null,
+          requestorReadBy: null,
+          billing: billingPreview,
+          status: "active",
+        },
+      },
+    );
+
+    try {
+      const holdResult = await holdPracticeTransferCredits({
+        transfer: doc,
+        toothWorks,
+        holdAmount: Number(billingPreview?.total || feeQuote?.fees?.total || 0),
+        actorUserId: req.user?._id,
+      });
+      if (holdResult?.held || holdResult?.reason === "already_held") {
+        const heldBilling = {
+          ...(doc.billing && typeof doc.billing === "object"
+            ? doc.billing
+            : billingPreview),
+          heldAt: now,
+          heldTotal: Number(holdResult.heldTotal || billingPreview?.total || 0),
+          holdFromPaid: Number(holdResult.fromPaid || 0),
+          holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
+          holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
+        };
+        doc.billing = heldBilling;
+        await PracticeTransfer.updateOne(
+          { _id: doc._id },
+          { $set: { billing: heldBilling } },
+        );
+        if (Number(holdResult.heldTotal || 0) > 0) {
+          await emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: practiceAnchorId,
+            balanceDelta: -Number(holdResult.heldTotal || 0),
+            reason: "practice_transfer_retarget_hold",
+            refId: doc._id,
+          });
+        }
+      } else if (holdResult?.reason && holdResult.reason !== "zero_fee") {
+        throw Object.assign(
+          new Error("기공소 변경 전송 과금 보류에 실패했습니다."),
+          { statusCode: 500, reason: holdResult.reason },
+        );
+      }
+    } catch (holdErr) {
+      console.warn(
+        "[practiceTransfer] retarget hold failed",
+        String(doc?._id || ""),
+        holdErr?.message || holdErr,
+      );
+      try {
+        await PracticeTransfer.updateOne(
+          { _id: doc._id },
+          {
+            $set: {
+              targetLabAnchorId: previousLabAnchorId
+                ? new Types.ObjectId(previousLabAnchorId)
+                : null,
+              targetLabName: previousLabName,
+              matchingMode: previousMatchingMode,
+              autoMatch: previousAutoMatch,
+              workCanceledAt: previousWorkCanceledAt,
+              workCanceledBy: previousWorkCanceledBy,
+              labRejectedAt: previousLabRejectedAt,
+              labRejectedByLabAnchorId: previousLabRejectedByLabAnchorId,
+              billing: previousBilling,
+              status: "active",
+            },
+          },
+        );
+      } catch (revertErr) {
+        console.warn(
+          "[practiceTransfer] retarget hold-fail revert failed",
+          String(doc?._id || ""),
+          revertErr?.message || revertErr,
+        );
+      }
+      return res.status(500).json({
+        success: false,
+        message: holdErr?.message || "기공소 변경 전송 과금 보류에 실패했습니다.",
+      });
+    }
+
+    const transferId = String(doc.transferId || "").trim();
+    const transferMongoId = String(doc._id || "").trim();
+    const manufacturerStage = resolvePracticeTransferManufacturerStage(doc);
+    const realtimePayload = {
+      action: "lab-retargeted",
+      transferId,
+      transferMongoId,
+      targetLabAnchorId: targetLabAnchorId ? String(targetLabAnchorId) : null,
+      targetLabName,
+      previousLabAnchorId,
+      matchingMode,
+      practiceUserId: String(doc.practiceUserId || "").trim() || null,
+      status: "active",
+      manufacturerStage,
+      workCanceledAt: null,
+      labRejected: false,
+      updatedAt: now,
+      source: "practiceLabRetarget",
+      feeQuote: toFeeQuoteApi(feeQuote),
+      ...toAutoMatchApiFields(doc, null),
+    };
+
+    void (async () => {
+      try {
+        const jobs = [
+          postPracticeTransferSystemChatMessage({
+            transferMongoId: doc._id,
+            senderUserId: req.user?._id,
+            content:
+              matchingMode === "auto"
+                ? "기공소를 자동 매칭으로 바꿔 다시 전송했습니다."
+                : `기공소를「${targetLabName}」으로 바꿔 다시 전송했습니다.`,
+            systemEvent: "lab_retarget",
+          }),
+          emitPracticeTransferEventToPracticeUsers({
+            practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+            type: "practice:transfer-updated",
+            payload:
+              matchingMode === "auto"
+                ? {
+                    ...realtimePayload,
+                    ...redactAutoMatchLabIdentity("auto", {
+                      targetLabName,
+                      targetLabAnchorId: null,
+                    }),
+                  }
+                : realtimePayload,
+            extraUserIds: [doc.practiceUserId],
+          }),
+        ];
+        if (previousLabAnchorId) {
+          jobs.push(
+            emitPracticeTransferEventToRequestorUsers({
+              targetLabAnchorId: previousLabAnchorId,
+              type: "practice:transfer-updated",
+              payload: {
+                ...realtimePayload,
+                action: "lab-retargeted-away",
+                manufacturerStage: "거부",
+              },
+            }),
+          );
+        }
+        if (matchingMode === "direct" && targetLabAnchorId) {
+          jobs.push(
+            emitPracticeTransferEventToRequestorUsers({
+              targetLabAnchorId: String(targetLabAnchorId),
+              type: "practice:transfer-updated",
+              payload: realtimePayload,
+            }),
+          );
+        }
+        if (matchingMode === "auto") {
+          jobs.push(
+            notifyAutoMatchPoolCreatedWithPriority({
+              transfer: doc,
+              realtimePayload: {
+                ...realtimePayload,
+                action: "auto-match-pool-created",
+                source: "practiceLabRetarget",
+              },
+              eligibleLabAnchorIds: autoMatchEligibleLabAnchorIds,
+              emitPoolCreated: emitAutoMatchPoolCreated,
+            }),
+          );
+        }
+        await Promise.all(jobs);
+      } catch (err) {
+        console.warn(
+          "[practiceTransfer] retarget side-effects failed",
+          String(doc?._id || ""),
+          err?.message || err,
+        );
+      }
+    })();
+
+    return res.status(200).json({
+      success: true,
+      message: "기공소를 변경해 다시 전송했습니다.",
+      data: {
+        transferId,
+        transferMongoId,
+        matchingMode,
+        targetLabAnchorId: targetLabAnchorId ? String(targetLabAnchorId) : null,
+        targetLabName,
+        manufacturerStage,
+        feeQuote: toFeeQuoteApi(feeQuote),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "기공소 변경 전송 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
 export async function cancelPracticeTransfersBatch(req, res) {
   try {
     const role = String(req.user?.role || "").trim();

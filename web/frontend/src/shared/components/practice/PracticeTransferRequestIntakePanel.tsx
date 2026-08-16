@@ -587,6 +587,8 @@ export type PracticeTransferRequestIntakePanelProps = {
   showLabField?: boolean;
   showPatientField?: boolean;
   showDateFields?: boolean;
+  /** false면 기공소 옆 자동매칭 최소 별 UI 숨김 (기본 true) */
+  showAutoMatchMinLabRating?: boolean;
   /** false면 보철물 치식 섹션 숨김 (기본 true) */
   showProsthesisSection?: boolean;
   /** false면 메모 섹션 숨김 (기본 true) */
@@ -680,6 +682,7 @@ export const PracticeTransferRequestIntakePanel = ({
   showLabField: showLabFieldProp,
   showPatientField: showPatientFieldProp,
   showDateFields: showDateFieldsProp,
+  showAutoMatchMinLabRating = true,
   showProsthesisSection = true,
   showMemoSection = true,
   variant = "card",
@@ -1660,13 +1663,15 @@ export const PracticeTransferRequestIntakePanel = ({
             <Label className="text-sm">
               기공소 <span className="text-destructive">*</span>
             </Label>
-            <AutoMatchMinLabRatingStars
-              value={resolvedMinLabRating}
-              disabled={!onAutoMatchMinLabRatingChange}
-              onChange={(next) => {
-                void onAutoMatchMinLabRatingChange?.(next);
-              }}
-            />
+            {showAutoMatchMinLabRating ? (
+              <AutoMatchMinLabRatingStars
+                value={resolvedMinLabRating}
+                disabled={!onAutoMatchMinLabRatingChange}
+                onChange={(next) => {
+                  void onAutoMatchMinLabRatingChange?.(next);
+                }}
+              />
+            ) : null}
           </div>
           <Popover open={labOpen} onOpenChange={setLabOpen}>
             <PopoverTrigger asChild>

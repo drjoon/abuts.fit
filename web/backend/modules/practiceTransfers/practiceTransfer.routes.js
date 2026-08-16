@@ -33,6 +33,7 @@ import {
   confirmPracticeTransferProduction,
   remakePracticeTransfers,
   restorePracticeTransfersBatch,
+  retargetPracticeTransferLab,
   upsertPracticeTransferDraft,
   upsertPracticeTransferLabRating,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
@@ -173,6 +174,13 @@ router.post(
   authenticate,
   receiveAuth,
   markReceivedPracticeTransferReject,
+);
+
+router.post(
+  "/:transferId/retarget-lab",
+  authenticate,
+  sendAuth,
+  retargetPracticeTransferLab,
 );
 
 // 레거시 별칭 — 의뢰수락과 동일 (다운로드로 상태 전이하지 않음; FE는 mark-accepted 사용)

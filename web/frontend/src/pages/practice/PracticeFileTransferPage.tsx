@@ -195,6 +195,7 @@ import {
   canRemakePracticeTransferByStatus,
   computeGroupedStatusCounts,
   filterGroupedTransfersByStatus,
+  isPracticeTransferActionNeededStatus,
   isPracticeTransferTrashStatus,
   type PracticeRecentStatusFilter,
 } from "@/shared/practice/practiceRecentTransferList";
@@ -207,6 +208,7 @@ import {
   parsePracticeLabRatingPublic,
   type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
+import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
@@ -1212,6 +1214,9 @@ export const PracticeFileTransferPage = ({
   const [recentRequestsError, setRecentRequestsError] = useState("");
   const [recentRequestsHasMore, setRecentRequestsHasMore] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<RecentTransferItem | null>(null);
+  const [labRejectedReselectTarget, setLabRejectedReselectTarget] =
+    useState<RecentTransferItem | null>(null);
+  const [labRejectedRetargetBusy, setLabRejectedRetargetBusy] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [productionConfirmBusy, setProductionConfirmBusy] = useState(false);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
@@ -3555,6 +3560,8 @@ export const PracticeFileTransferPage = ({
     [groupedTransfers],
   );
 
+  const recentActionNeededCount = statusCounts.canceled;
+
   const filteredGroupedTransfers = useMemo(
     () => filterGroupedTransfersByStatus(groupedTransfers, recentStatusFilter),
     [groupedTransfers, recentStatusFilter],
@@ -4070,6 +4077,28 @@ export const PracticeFileTransferPage = ({
 
     if (isDraftTransfer && !fromTrash) {
       handleAdoptDraftTransfer(transfer);
+      return;
+    }
+
+    if (
+      !fromTrash &&
+      isPracticeTransferActionNeededStatus(transfer.status)
+    ) {
+      // 의뢰 상세가 남아 있으면 닫고 전용 모달만 연다
+      setTransferDialogOpen(false);
+      transferDialogOpenRef.current = false;
+      setSelectedTransfer(null);
+      selectedTransferIdRef.current = "";
+      setActiveChatRoom(null);
+      setChatMessages([]);
+      setChatError("");
+
+      const rejectedLabId = String(transfer.targetLabAnchorId || "").trim();
+      const currentLabId = String(selectedLab?._id || "").trim();
+      if (rejectedLabId && currentLabId && rejectedLabId === currentLabId) {
+        setSelectedLab(null);
+      }
+      setLabRejectedReselectTarget(transfer);
       return;
     }
 
@@ -6193,6 +6222,11 @@ export const PracticeFileTransferPage = ({
               >
                 <ClipboardList className="h-4 w-4 shrink-0" />
                 최근 의뢰
+                {recentActionNeededCount > 0 ? (
+                  <Badge variant="secondary" className="ml-0.5">
+                    {recentActionNeededCount}
+                  </Badge>
+                ) : null}
               </Button>
               <Button
                 type="button"
@@ -6462,6 +6496,11 @@ export const PracticeFileTransferPage = ({
                       <CardTitle className="flex items-center gap-2 text-sm font-semibold">
                         <ClipboardList className="h-4 w-4 text-primary-strong" />
                         최근 전송
+                        {recentActionNeededCount > 0 ? (
+                          <Badge variant="secondary" className="ml-1">
+                            {recentActionNeededCount}
+                          </Badge>
+                        ) : null}
                       </CardTitle>
                     </button>
                   </CollapsibleTrigger>
@@ -6620,13 +6659,24 @@ export const PracticeFileTransferPage = ({
                           orderDate: transfer.orderDate,
                           createdAtTs: transfer.createdAtTs,
                         });
+                      const needsAction = isPracticeTransferActionNeededStatus(
+                        transfer.status,
+                      );
 
                       return (
                         <div
                           key={`${transfer.id}:${transfer.createdAt}`}
                           role="button"
                           tabIndex={0}
-                          className="w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className={cn(
+                            "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            needsAction && "practice-transfer-attention",
+                          )}
+                          aria-label={
+                            needsAction
+                              ? `${transfer.transferId !== "-" ? transfer.transferId : transfer.id} 조치 대기`
+                              : undefined
+                          }
                           onClick={() => void handleOpenTransferDialog(transfer)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
@@ -7601,6 +7651,127 @@ export const PracticeFileTransferPage = ({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <PracticeLabRejectedReselectDialog
+          open={Boolean(labRejectedReselectTarget)}
+          onOpenChange={(open) => {
+            if (!open && !labRejectedRetargetBusy) {
+              setLabRejectedReselectTarget(null);
+            }
+          }}
+          rejectedLabName={labRejectedReselectTarget?.targetLab}
+          transferId={labRejectedReselectTarget?.transferId}
+          confirming={labRejectedRetargetBusy}
+          labIntakeProps={{
+            selectedLab,
+            setSelectedLab,
+            labSearch,
+            setLabSearch,
+            labSearchResults,
+            labSearching,
+            recentLabs,
+            recentLabsInitialized,
+            pinnedLabs,
+            onRemoveRecentLab: removeRecentLab,
+            onTogglePinLab: togglePinLab,
+            autoMatchMinLabRating,
+            onAutoMatchMinLabRatingChange: (next) => {
+              const normalized = normalizeAutoMatchMinLabRating(next);
+              setAutoMatchMinLabRating(normalized);
+              setAutoMatchBudget(
+                resolveAutoMatchBudgetOrDefaults(null, abutsLabFeeCatalog, {
+                  minStars: normalized,
+                }),
+              );
+              void savePracticeTransferSettingsToServer({
+                autoMatchMinLabRating: normalized,
+              }).catch(() => {});
+            },
+            autoMatchBudget,
+            abutsLabFeeCatalog,
+          }}
+          onConfirm={async () => {
+            const target = labRejectedReselectTarget;
+            const transferId = String(target?.transferId || "").trim();
+            if (!target || !transferId || !selectedLab) return;
+
+            const autoMatch = isAutoMatchLab(selectedLab);
+            const targetLabAnchorId = autoMatch
+              ? null
+              : toApiLabAnchorId(selectedLab._id);
+            if (!autoMatch && !targetLabAnchorId) {
+              toast({
+                title: "기공소를 선택해 주세요",
+                variant: "destructive",
+              });
+              return;
+            }
+
+            setLabRejectedRetargetBusy(true);
+            try {
+              const budgetForAuto = resolveAutoMatchBudgetOrDefaults(
+                autoMatchBudget,
+                abutsLabFeeCatalog,
+                { minStars: autoMatchMinLabRating },
+              );
+              const res = await apiFetch<{
+                success?: boolean;
+                message?: string;
+                data?: {
+                  targetLabName?: string;
+                  matchingMode?: string;
+                };
+              }>({
+                path: `/api/practice/transfers/${encodeURIComponent(transferId)}/retarget-lab`,
+                method: "POST",
+                token: authToken,
+                jsonBody: {
+                  matchingMode: autoMatch ? "auto" : "direct",
+                  targetLabAnchorId: autoMatch
+                    ? "__auto_match__"
+                    : targetLabAnchorId,
+                  targetLabName: String(selectedLab.name || "").trim(),
+                  autoMatchMinLabRating: autoMatch
+                    ? autoMatchMinLabRating
+                    : undefined,
+                  autoMatchBudget: autoMatch ? budgetForAuto : undefined,
+                },
+              });
+              if (!res.ok) {
+                const body = asApiMessagePayload(res.data);
+                throw new Error(
+                  String(body?.message || "기공소 변경 전송에 실패했습니다."),
+                );
+              }
+
+              const labName =
+                String(
+                  (res.data as { data?: { targetLabName?: string } } | null)
+                    ?.data?.targetLabName || selectedLab.name || "",
+                ).trim() || "기공소";
+              rememberLab(selectedLab);
+              setLabRejectedReselectTarget(null);
+              await loadRecentRequests({ silent: true });
+              toast({
+                title: "기공소 변경 전송 완료",
+                description: autoMatch
+                  ? "자동 매칭으로 다시 전송했습니다."
+                  : `「${labName}」으로 다시 전송했습니다.`,
+              });
+            } catch (error) {
+              toast({
+                title: "기공소 변경 전송 실패",
+                description:
+                  error instanceof Error
+                    ? error.message
+                    : "잠시 후 다시 시도해주세요.",
+                variant: "destructive",
+              });
+            } finally {
+              setLabRejectedRetargetBusy(false);
+            }
+          }}
+        />
 
         <ConfirmDialog
           open={deleteConfirmOpen}

@@ -200,6 +200,12 @@ export const isPracticeTransferTrashStatus = (status: unknown) => {
   return s === "취소" || s === "거부";
 };
 
+/** 기공소 취소·거부 후 치과 조치 대기(최근전송 「취소」 뱃지·알림) */
+export const isPracticeTransferActionNeededStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  return s === "작업취소";
+};
+
 export const toStatusLabel = (manufacturerStage: unknown) => {
   const raw = String(manufacturerStage || "").trim();
   const lowered = raw.toLowerCase();
