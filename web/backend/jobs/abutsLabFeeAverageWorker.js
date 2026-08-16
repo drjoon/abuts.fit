@@ -93,7 +93,7 @@ async function runOnce() {
       ownerId: WORKER_OWNER_ID,
       leaseMs: WORKER_LOCK_LEASE_MS,
       heartbeatMs: WORKER_LOCK_HEARTBEAT_MS,
-      fn: async () => {
+      task: async () => {
         if (await isDailyRunCompleted(ymd)) {
           lastRunYmd = ymd;
           return;
