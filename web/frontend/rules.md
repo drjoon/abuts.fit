@@ -573,7 +573,7 @@ Notes:
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(수락 시 갱신).
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서. 수락 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
-  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto` + 최소 별(1~5)·플랫폼 고정수가. **인증 기공소** 중 수가 설정·유효 별점≥선택(하한 1, 3회 이하→3)인 곳만 `eligibleLabAnchorIds` 스냅샷으로 공개 풀 수신. 선착순 수락·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 수락 후 강제 시간 만료 없음(치과 도착일·소통으로 처리). 성공 시 기공비의 `platformFeeRate`% 플랫폼 수수료. 표시명(치과·기공소)은 상대 비공개. 청구는 고정수가(할증 없음). UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「인증 기공소」)
+  - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto` + 최소 별(1~5)·플랫폼 고정수가. **인증 기공소** 중 수가 설정·유효 별점≥선택(하한 1, 3회 이하→3)인 곳만 `eligibleLabAnchorIds` 스냅샷으로 공개 풀 수신. **공개 상한 = 선택 별점+2**(예: 2점→최대 4곳; 어벗츠기공소 우선·유효별 높은 순). 선착순 수락·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 수락 후 강제 시간 만료 없음(치과 도착일·소통으로 처리). 성공 시 기공비의 `platformFeeRate`% 플랫폼 수수료. 표시명(치과·기공소)은 상대 비공개. 청구는 고정수가(할증 없음). UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「인증 기공소」)
   - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(크라운 결과파일)·`[작업취소]`. **커스텀어벗 배송선택 모달 없음.** CA면 수락 시 Request(`design_custom_abutment`) 조기 생성. **수락 기공소가 디자인**해 상단 디자인 큐에서 STL 업로드 → 제조 자동 주문·어벗디자인비 지급. **생산 후 치과 직납**(출고 목표=치과도착일−2영업일). 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
 
 

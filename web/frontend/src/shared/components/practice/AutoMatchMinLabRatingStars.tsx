@@ -7,6 +7,7 @@
 // - 2026-08-16: 매칭 조건 툴팁은 도움말 아이콘에만(별 포커스로 Dialog 오픈 시 동시 표시 방지).
 // - 2026-08-16: 선택 1~5. 기공비 1=×0.8. 우리치과 1점 제외 문구 제거.
 // - 2026-08-16: 툴팁 — 인증 통과만 참여 · 평가 3회 이하 3점 · 기공비 N배 표기.
+// - 2026-08-16: 공개 대역 하한=설정·상한=설정+2(툴팁에 현재 선택 기준 표기).
 import { CircleHelp, Star } from "lucide-react";
 import {
   Tooltip,
@@ -20,15 +21,9 @@ import {
   PRACTICE_LAB_RATING_MAX,
   feeMultiplierForStars,
   normalizeAutoMatchMinLabRating,
+  resolveAutoMatchEligibleStarBand,
 } from "@/shared/practice/practiceLabRating";
 import { cn } from "@/shared/ui/cn";
-
-const TOOLTIP_LINES = [
-  "기공소 매칭",
-  "- 어벗츠 인증 통과 기공소만 참여 가능",
-  "- 평가 횟수 3회 이하 기공소는 3점 적용",
-  "기공비: 1점=0.8배 · 2점=0.9배 · 3점=평균 · 4점=1.1배 · 5점=1.2배",
-] as const;
 
 type AutoMatchMinLabRatingStarsProps = {
   value?: number | null;
@@ -44,6 +39,14 @@ export function AutoMatchMinLabRatingStars({
   disabled = false,
 }: AutoMatchMinLabRatingStarsProps) {
   const current = normalizeAutoMatchMinLabRating(value);
+  const { minStars, maxStars } = resolveAutoMatchEligibleStarBand(current);
+  const tooltipLines = [
+    "기공소 매칭",
+    "- 어벗츠 인증 통과 기공소만 참여",
+    `- 선택 별점~+2점까지 공개 (설정 ${minStars}점 → 별점 ${minStars}~${maxStars}점 기공소 참여 가능)`,
+    "- 평가 3회 이하 기공소는 3점 적용",
+    "기공비: 1점=0.8배 · 2점=0.9배 · 3점=평균 · 4점=1.1배 · 5점=1.2배",
+  ] as const;
 
   return (
     <div className={cn("inline-flex items-center gap-1", className)}>
@@ -107,7 +110,7 @@ export function AutoMatchMinLabRatingStars({
             side="bottom"
             className="z-[210] w-max max-w-[min(100vw-2rem,28rem)] space-y-1 text-xs leading-relaxed"
           >
-            {TOOLTIP_LINES.map((line) => (
+            {tooltipLines.map((line) => (
               <p
                 key={line}
                 className={line.startsWith("기공비:") ? "whitespace-nowrap" : undefined}

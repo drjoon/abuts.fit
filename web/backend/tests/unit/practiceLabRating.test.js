@@ -2,13 +2,16 @@
 // - web/backend/utils/practiceLabRating.js
 
 import {
+  AUTO_MATCH_ELIGIBLE_STAR_CAP_EXTRA,
   AUTO_MATCH_RATING_COUNT_GRACE,
   DEFAULT_EFFECTIVE_LAB_STARS,
   effectiveLabStars,
   feeMultiplierForStars,
   isLabBlockedByOwnOneStar,
   isLabBlockedByPracticeRating,
+  maxAutoMatchEligibleLabStars,
   normalizeAutoMatchMinLabRating,
+  resolveAutoMatchEligibleStarBand,
   resolveStarDowngrade,
 } from "../../utils/practiceLabRating.js";
 
@@ -20,7 +23,7 @@ describe("practiceLabRating auto-match gate", () => {
     expect(isLabBlockedByOwnOneStar({ ratings, labAnchorId: labId })).toBe(
       false,
     );
-    // grace(≤2) → effective 3, so min 3 passes even with own 1-star
+    // grace(≤3) → effective 3, so min 3 passes even with own 1-star
     expect(
       isLabBlockedByPracticeRating({
         ratings,
@@ -169,5 +172,68 @@ describe("practiceLabRating auto-match gate", () => {
         offeredLabFee: 90000,
       })?.labFeeDeltaWon,
     ).toBe(9000);
+  });
+
+  test("eligible star band: min=설정, max=설정+2 (capped at 5)", () => {
+    expect(AUTO_MATCH_ELIGIBLE_STAR_CAP_EXTRA).toBe(2);
+    expect(resolveAutoMatchEligibleStarBand(1)).toEqual({
+      minStars: 1,
+      maxStars: 3,
+    });
+    expect(resolveAutoMatchEligibleStarBand(2)).toEqual({
+      minStars: 2,
+      maxStars: 4,
+    });
+    expect(resolveAutoMatchEligibleStarBand(3)).toEqual({
+      minStars: 3,
+      maxStars: 5,
+    });
+    expect(resolveAutoMatchEligibleStarBand(5)).toEqual({
+      minStars: 5,
+      maxStars: 5,
+    });
+    expect(maxAutoMatchEligibleLabStars(4)).toBe(5);
+  });
+
+  test("blocks when effective stars above max (설정+2)", () => {
+    expect(
+      isLabBlockedByPracticeRating({
+        ratings: [],
+        aggregated: new Map([
+          [
+            labId,
+            { stars: 5, ratingCount: AUTO_MATCH_RATING_COUNT_GRACE + 1 },
+          ],
+        ]),
+        labAnchorId: labId,
+        minStars: 2,
+      }),
+    ).toBe(true);
+    expect(
+      isLabBlockedByPracticeRating({
+        ratings: [],
+        aggregated: new Map([
+          [
+            labId,
+            { stars: 4, ratingCount: AUTO_MATCH_RATING_COUNT_GRACE + 1 },
+          ],
+        ]),
+        labAnchorId: labId,
+        minStars: 2,
+      }),
+    ).toBe(false);
+    expect(
+      isLabBlockedByPracticeRating({
+        ratings: [],
+        aggregated: new Map([
+          [
+            labId,
+            { stars: 1.5, ratingCount: AUTO_MATCH_RATING_COUNT_GRACE + 1 },
+          ],
+        ]),
+        labAnchorId: labId,
+        minStars: 2,
+      }),
+    ).toBe(true);
   });
 });

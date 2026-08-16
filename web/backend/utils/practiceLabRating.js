@@ -11,6 +11,8 @@
 // - 2026-08-16: 1점도 참여 가능(하한 1). 기공비 배수 1→×0.8. 우리치과 1점 하드 차단 제거.
 // - 2026-08-16: 평가 3회 이하→유효 3점(유예 상수 3).
 // - 2026-08-16: 별점 다운그레이드 — 유효별 수가배수 > 의뢰 별점배수일 때 표시 페이로드.
+// - 2026-08-16: 공개 상한 = 선택 별점+2점(예: 2점→유효별≤4점 기공소까지).
+// - 2026-08-16: 공개 대역 하한=설정·상한=설정+2.
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -27,6 +29,8 @@ export const AUTO_MATCH_MIN_SELECTABLE = 1;
 export const AUTO_MATCH_RATING_COUNT_GRACE = 3;
 /** 3회 이하일 때 적용하는 초기 유효 별점. */
 export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
+/** 공개 상한 = 선택 별점 + 이 값(예: 2점 → 유효별 ≤4점). 5점 초과는 클램프. */
+export const AUTO_MATCH_ELIGIBLE_STAR_CAP_EXTRA = 2;
 
 const FEE_MULTIPLIER_BY_STARS = Object.freeze({
   1: 0.8,
@@ -52,6 +56,23 @@ export function normalizeAutoMatchMinLabRating(value) {
   const stars = normalizePracticeLabStars(value);
   if (stars == null) return DEFAULT_AUTO_MATCH_MIN_LAB_RATING;
   return Math.max(AUTO_MATCH_MIN_SELECTABLE, stars);
+}
+
+/** 선택 별점 → 참여 가능 유효별 상한(선택+2, 최대 5). */
+export function maxAutoMatchEligibleLabStars(stars) {
+  return Math.min(
+    PRACTICE_LAB_RATING_MAX,
+    normalizeAutoMatchMinLabRating(stars) + AUTO_MATCH_ELIGIBLE_STAR_CAP_EXTRA,
+  );
+}
+
+/** 선택 별점 → 공개 대역. 하한=설정, 상한=설정+2(최대 5). */
+export function resolveAutoMatchEligibleStarBand(stars) {
+  const minStars = normalizeAutoMatchMinLabRating(stars);
+  return {
+    minStars,
+    maxStars: maxAutoMatchEligibleLabStars(minStars),
+  };
 }
 
 /** 선택 별점(1~5) → 기공비 배수. */
@@ -206,9 +227,9 @@ export function isLabBlockedByOwnOneStar() {
 
 /**
  * 자동매칭 차단(인증 풀은 별도):
- * 유효 별점(3회 이하→3) < 최소 별이면 true
+ * 유효 별점(3회 이하→3)이 [최소, 최소+2] 밖이면 true
  *
- * 참여 조건: 인증 AND 유효별≥설정(하한 1; 3회 이하→3)
+ * 참여 조건: 인증 AND 설정 ≤ 유효별 ≤ 설정+2(상한 5; 3회 이하→3)
  *
  * `aggregated`가 있으면 전체 치과 합산 행을 쓰고, 없으면 레거시 단일 치과 list.
  */
@@ -217,11 +238,19 @@ export function isLabBlockedByPracticeRating({
   aggregated = null,
   labAnchorId,
   minStars,
+  maxStars = null,
 } = {}) {
   const labId = String(labAnchorId || "").trim();
   if (!labId) return false;
 
   const min = normalizeAutoMatchMinLabRating(minStars);
+  const max =
+    maxStars == null
+      ? maxAutoMatchEligibleLabStars(min)
+      : Math.min(
+          PRACTICE_LAB_RATING_MAX,
+          Math.max(min, Math.round(Number(maxStars)) || min),
+        );
 
   let stars = null;
   let ratingCount = 0;
@@ -243,7 +272,7 @@ export function isLabBlockedByPracticeRating({
   }
 
   const effective = effectiveLabStars({ stars, ratingCount });
-  return effective < min;
+  return effective < min || effective > max;
 }
 
 /**
