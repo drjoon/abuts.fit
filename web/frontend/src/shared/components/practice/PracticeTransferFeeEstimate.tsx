@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-16: 치과 견적 툴팁도 기공소와 동일 — 기공소몫|어벗츠몫 헤더·가운데 정렬·소계.
 // - 2026-08-16: 크레딧 소비 총액에 배송비 합산. 배송 안내 → 총액 순.
 // - 2026-08-16: 치과 툴팁 — CA 디자인+생산을 생산/디자인(+지그)로 분해, 배송비(치과→기공소·어벗츠) 안내.
 // - 2026-08-16: 기공소몫|어벗츠몫 — slate 구분선, 수수료 수령을 기공비 총액 아래 정렬.
@@ -184,9 +185,10 @@ function FeeBreakdownTable({
   splitDesignFee?: boolean;
   designFeeLabel?: string;
 }) {
-  // 기공소 뷰: 기공소몫(보철기공비·어벗디자인비) | 어벗츠몫(어벗생산비).
-  // 치과 뷰(CA 디자인+생산): 디자인(+지그) | 어벗츠 생산으로 분해.
-  // 소계=열별 합산, 기공비 총액=기공비+어벗디자인비(기공소).
+  // 치과·기공소 공통: 기공소몫 | 어벗츠몫 2단 헤더(+ slate 구분선).
+  // 기공소: 보철기공비(+어벗디자인비) | 어벗생산비.
+  // 치과: 보철기공비·기공소어벗·디자인(+지그) | 어벗생산비. CA면 생산/디자인 분해.
+  // 소계=열별 합산, 기공비 총액=기공소몫 합(보철+기공소어벗+디자인).
   const labShareColumn = labFacing
     ? showLabColumn || showLabAbutmentColumn
     : showLabColumn;
@@ -220,7 +222,11 @@ function FeeBreakdownTable({
       sum + line.labFee + (labFacing ? line.labAbutmentFee : 0),
     0,
   );
-  const labGrandTotal = labSubtotal + designFeeTotal;
+  const labAbutmentTotal = lines.reduce((sum, line) => sum + line.labAbutmentFee, 0);
+  const labAbutmentPending = lines.some((line) => line.labAbutmentPending);
+  // 기공소몫 합: 기공소는 labSubtotal에 어벗 포함, 치과는 labAbutment 열 별도.
+  const labGrandTotal =
+    labSubtotal + (labFacing ? 0 : labAbutmentTotal) + designFeeTotal;
   const labTotalMin = lines.reduce((sum, line) => {
     const min =
       line.labFeeMin != null && Number.isFinite(line.labFeeMin)
@@ -239,8 +245,6 @@ function FeeBreakdownTable({
       : hasLabFeeRange && !labFacing
         ? formatWonRange(labTotalMin, labSubtotal)
         : formatCell(labSubtotal);
-  const labAbutmentTotal = lines.reduce((sum, line) => sum + line.labAbutmentFee, 0);
-  const labAbutmentPending = lines.some((line) => line.labAbutmentPending);
   const labGroupColSpan =
     Number(labShareColumn) + Number(designFeeColumn) + Number(labAbutmentColumn);
   const colCount =
@@ -259,14 +263,24 @@ function FeeBreakdownTable({
           : colCount === 2
             ? "grid-cols-[minmax(6.5rem,1fr)_auto]"
             : "grid-cols-1";
-  const labColumnLabel = labFacing ? "보철기공비" : "기공소 기공물";
+  const showShareGroupHeaders = labGroupColSpan > 0 && abutsColumn;
+  const labColumnLabel = showShareGroupHeaders ? "보철기공비" : "기공소 기공물";
   const abutsColumnLabel =
-    labFacing || designFeeColumn ? "어벗생산비" : "어벗츠 어벗";
-  const showShareGroupHeaders =
-    labFacing && labGroupColSpan > 0 && abutsColumn;
-  const showLabGrandTotal = labFacing && designFeeColumn && labGrandTotal > 0;
+    showShareGroupHeaders || designFeeColumn ? "어벗생산비" : "어벗츠 어벗";
+  // 치과 예산 구간(min≠max)일 때는 소계만 구간 표시, 기공비 총액 행은 생략.
+  const hasPracticeLabFeeSpread =
+    !labFacing &&
+    ((hasLabFeeRange && labTotalMin !== labSubtotal) ||
+      (labTotalMinOverride != null &&
+        labTotalMaxOverride != null &&
+        labTotalMinOverride !== labTotalMaxOverride));
+  const showLabGrandTotal =
+    showShareGroupHeaders &&
+    designFeeColumn &&
+    labGrandTotal > 0 &&
+    (labFacing || !hasPracticeLabFeeSpread);
   const showAbutsProductionSplit = designFeeColumn && !labFacing;
-  const subtotalLabel = labFacing ? "소계" : "합계";
+  const subtotalLabel = showShareGroupHeaders ? "소계" : "합계";
   const amountAlign = showShareGroupHeaders ? "text-center" : "text-right";
   const groupHeaderClass =
     "whitespace-nowrap border-b border-slate-300 pb-0.5 text-center text-[10px] font-semibold tracking-tight text-slate-600";
@@ -295,10 +309,13 @@ function FeeBreakdownTable({
       : labGroupColSpan === 2
         ? "col-span-2"
         : "col-span-1";
+  // 치과는 기공소어벗 열이 있어 기공소보다 열이 많을 수 있음.
   const shareGridClass = showShareGroupHeaders
-    ? designFeeColumn || labGroupColSpan >= 2
-      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto_0.5rem_auto]"
-      : "grid-cols-[minmax(6.5rem,1fr)_auto_0.5rem_auto]"
+    ? labGroupColSpan >= 3
+      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto_auto_0.5rem_auto]"
+      : designFeeColumn || labGroupColSpan >= 2
+        ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto_0.5rem_auto]"
+        : "grid-cols-[minmax(6.5rem,1fr)_auto_0.5rem_auto]"
     : gridClass;
 
   return (
@@ -791,7 +808,7 @@ export function PracticeTransferFeeEstimate({
           <TooltipContent
             side={isCard ? "top" : "bottom"}
             data-no-tooth-marquee=""
-            className="pointer-events-auto max-w-[26rem] select-text p-3 text-xs leading-relaxed"
+            className="pointer-events-auto w-max max-w-[min(100vw-2rem,36rem)] select-text px-3 py-3 text-xs leading-relaxed"
             onPointerDown={(event) => event.stopPropagation()}
             onPointerUp={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
@@ -857,14 +874,9 @@ export function PracticeTransferFeeEstimate({
                     </span>
                   </p>
                 ) : null}
-                {hasBudgetSpread ? (
+                {hasBudgetRange ? (
                   <p className="text-[11px] text-muted-foreground">
-                    기공소 미확정 · 하한~상한 별점에 따른 기공비 구간입니다. 수락
                     기공소 별점에 비례해 확정·청구됩니다.
-                  </p>
-                ) : hasBudgetRange ? (
-                  <p className="text-[11px] text-muted-foreground">
-                    수락한 기공소 별점에 비례해 기공비가 확정·청구됩니다.
                   </p>
                 ) : null}
               </div>
@@ -910,9 +922,7 @@ export function PracticeTransferFeeEstimate({
                   </p>
                 ) : null}
                 <p className="text-[11px] text-muted-foreground">
-                  {hasBudgetSpread
-                    ? "기공소 미확정 · 하한~상한 별점에 따른 기공비 구간입니다. 수락 기공소 별점에 비례해 확정·청구됩니다."
-                    : "수락한 기공소 별점에 비례해 기공비가 확정·청구됩니다."}
+                  기공소 별점에 비례해 확정·청구됩니다.
                 </p>
               </div>
             ) : (
