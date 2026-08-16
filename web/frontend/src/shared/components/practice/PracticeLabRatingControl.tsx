@@ -4,6 +4,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - 2026-08-14: 치과→기공소 rating·메모. 채팅 헤더.
 // - 2026-08-16: 5점제. 안내 단순화. 별점은 기공소에 공개·치과정보는 비공개.
+// - 2026-08-16: 평가 모달 기본 별점 3.
 import { useEffect, useState, type MouseEvent } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
+  DEFAULT_PRACTICE_LAB_RATING_STARS,
   PRACTICE_LAB_ONE_STAR_AUTO_MATCH_WARNING,
   PRACTICE_LAB_RATING_MAX,
   PRACTICE_LAB_RATING_MEMO_MAX,
@@ -96,7 +98,9 @@ export function PracticeLabRatingControl({
   const [saving, setSaving] = useState(false);
   const [current, setCurrent] = useState<PracticeLabRatingPublic | null>(rating);
   const [draftStars, setDraftStars] = useState(
-    () => normalizePracticeLabStars(rating?.stars) ?? PRACTICE_LAB_RATING_MAX,
+    () =>
+      normalizePracticeLabStars(rating?.stars) ??
+      DEFAULT_PRACTICE_LAB_RATING_STARS,
   );
   const [draftMemo, setDraftMemo] = useState(
     () => normalizePracticeLabRatingMemo(rating?.memo),
@@ -109,7 +113,8 @@ export function PracticeLabRatingControl({
   useEffect(() => {
     if (!open) return;
     setDraftStars(
-      normalizePracticeLabStars(current?.stars) ?? PRACTICE_LAB_RATING_MAX,
+      normalizePracticeLabStars(current?.stars) ??
+        DEFAULT_PRACTICE_LAB_RATING_STARS,
     );
     setDraftMemo(normalizePracticeLabRatingMemo(current?.memo));
   }, [open, current]);

@@ -9,6 +9,8 @@
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 5;
 export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
+/** 평가 모달 최초 작성 시 기본 별점(기존 평가 없을 때). */
+export const DEFAULT_PRACTICE_LAB_RATING_STARS = 3;
 export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 3;
 export const AUTO_MATCH_MIN_SELECTABLE = 2;
 /** 이 횟수 이하 평가면 유효 별점=3(미평가 포함). */
