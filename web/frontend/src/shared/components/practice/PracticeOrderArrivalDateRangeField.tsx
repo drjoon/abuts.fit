@@ -21,6 +21,7 @@ import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import {
   PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL,
+  formatPracticeWorkPeriodLeadLabel,
   getPracticeWorkPeriodDays,
 } from "@/shared/practice/practiceWorkPeriod";
 // related files:
@@ -29,11 +30,12 @@ import {
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
-// - 2026-08-11: 캘린더 상단 안내문 제거 → 라벨 즉시툴팁.
-// - 2026-08-13: 라벨 오른쪽에 주문→도착 소요일 표시.
+// - 2026-08-16: 도움말 간격을 UI와 같이 N+2영업일로 표기. 치과 직납 안내.
+// - 2026-08-15: 라벨 주문-치과도착 · 기간 1+2영업일.
 // - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁.
 // - 2026-08-15: 작업기간 표시를 영업일(월~금) 기준으로 통일.
-// - 2026-08-15: 라벨 주문-치과도착 · 기간 1+2영업일.
+// - 2026-08-13: 라벨 오른쪽에 주문→도착 소요일 표시.
+// - 2026-08-11: 캘린더 상단 안내문 제거 → 라벨 즉시툴팁.
 
 const addDaysToYmd = (ymd: string, days: number) => {
   const base = String(ymd || "").trim();
@@ -114,6 +116,7 @@ export function PracticeOrderArrivalDateRangeField({
   const leadFromYmd = open ? todayYmd : appliedOrderYmd;
   const leadToYmd = open ? draftArrivalYmd : appliedArrivalYmd;
   const leadDays = getPracticeWorkPeriodDays(leadFromYmd, leadToYmd);
+  const leadLabel = formatPracticeWorkPeriodLeadLabel(leadDays);
 
   const handleApply = () => {
     if (!canApply || !todayYmd || !draftArrivalYmd) return;
@@ -153,8 +156,12 @@ export function PracticeOrderArrivalDateRangeField({
               </button>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
-              주문일은 오늘 고정. 치과도착일만 선택하면 됩니다. 변경한 간격(+{arrivalDefaultDays}일)이
-              다음 기본값으로 저장됩니다.
+              주문일은 오늘 고정. 치과도착일만 선택하면 됩니다.
+              {leadLabel
+                ? ` 변경한 간격(${leadLabel})이 다음 기본값으로 저장됩니다.`
+                : " 변경한 간격이 다음 기본값으로 저장됩니다."}{" "}
+              커스텀어벗은 기공소가 아니라 치과로 직납되며, 출고 목표는
+              치과도착일 2영업일 전입니다.
             </TooltipContent>
           </Tooltip>
         </div>

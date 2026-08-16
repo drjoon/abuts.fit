@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
+// - 2026-08-16: 커스텀어벗 치과 직납·출고=도착−2영업일 안내를 작업+배송 툴팁에 포함.
 // - 2026-08-15: 작업기간(주문→도착) 5일 미만 경고 SSOT.
 // - 2026-08-15: 치과·기공소 툴팁 문구 분리. 표기 기공기간→작업기간.
 // - 2026-08-15: 작업기간을 영업일(월~금) 기준으로 계산·표시.
@@ -19,15 +20,16 @@ export const PRACTICE_WORK_PERIOD_MIN_DAYS = 5;
 
 export type PracticeWorkPeriodViewer = "practice" | "lab";
 
-/** N+2영업일: N일=기공작업시간, 2일=배송시간 */
+/** N+2영업일: N일=기공작업시간, 2일=배송(커스텀어벗 치과 직납 출고=도착−2와 동일) */
 export function formatPracticeWorkPlusShipMeaningTooltip(
   totalBusinessDays: number | null | undefined,
 ): string {
   const workDays = getPracticeWorkOnlyBusinessDays(totalBusinessDays);
+  const shipNote = `커스텀어벗은 치과로 직납되며, 출고 목표는 치과도착일 ${PRACTICE_SHIPPING_BUSINESS_DAYS}영업일 전입니다.`;
   if (workDays == null) {
-    return `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`;
+    return `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote}`;
   }
-  return `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`;
+  return `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote}`;
 }
 
 /** 치과(발신): 짧은 기간이면 수락 기공소가 없을 수 있음 */

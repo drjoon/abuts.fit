@@ -62,7 +62,7 @@ export const PRACTICE_TRANSFER_EXPRESS_STEPS: Array<{
   {
     id: "schedule",
     title: "언제 치과에 도착하면 될까요?",
-    hint: "주문일은 오늘로 고정됩니다. 도착일만 고르면 됩니다.",
+    hint: "주문일은 오늘로 고정됩니다. 도착일만 고르면 됩니다. 커스텀어벗은 치과로 직납(출고=도착 2영업일 전)입니다.",
   },
   {
     id: "prosthesis",

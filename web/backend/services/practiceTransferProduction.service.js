@@ -5,12 +5,13 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-16: PTX CA 납품=치과 직납. 출고목표=치과도착일−2영업일(기공소 경유 −3 폐기).
 // - 2026-08-16: PTX 출고모드·스케줄은 생산(custom_abutment) 리드로 판정(디자인+1일 오판으로 신속 승격 방지).
 // - 2026-08-16: PTX Request 생성 시 rnd.manufacturerHexRotation·PRC 파일명 시드(request-meta 500 방지).
 // - 2026-08-15: PTX 핸드오프 재견적 — productMode·스케줄을 custom_abutment(생산)로.
 // - 2026-08-15: 재견적 시 timeline 필드만 갱신(shipOutcome undefined Cast 방지).
 // - 2026-08-15: 작업취소(release) 시 연동 CA Request 취소·디자인 미러 정리. 재수락 시 소유 동기화.
-// - 2026-08-15: PTX CA — 치과 멤버십/일반 생산단가·출고목표=기일-3영업일·묶음 우선. 디자인비는 기공소 지급 분리.
+// - 2026-08-15: PTX CA — 치과 멤버십/일반 생산단가·출고목표·묶음 우선. 디자인비는 기공소 지급 분리.
 // - 2026-08-15: 지정 CA — 스캔 없이 수락 가능. 스캔은 수락 후 업로드 후 Request 생성.
 // - 2026-08-15: 구강스캔 — 자동매칭은 치과 필수, 지정은 수락 기공소 업로드 허용.
 // - 2026-08-15: Abuts-first — 수락 시 스캔(files)로 Request 생성, 기일 기준 스케줄, 디자인 컨펌 후 생산.
@@ -214,13 +215,18 @@ const ymdToUtcNoonMs = (ymd) => {
 };
 
 /**
- * 제조사 출고 목표 = 치과도착일 − 3영업일
- * (= 기공작업 종료일(도착−2) − 1영업일).
+ * PTX CA 치과 직납 배송 lead(영업일).
+ * 제조사 출고 목표 = 치과도착일 − 이 값 (기공소 경유 시절 −3 폐기).
+ */
+export const PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
+
+/**
+ * 제조사 출고 목표 = 치과도착일 − 2영업일 (치과 직납).
  */
 export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
   let ymd = String(arrivalYmd || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
-  for (let i = 0; i < 3; i += 1) {
+  for (let i = 0; i < PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS; i += 1) {
     ymd = await prevKoreanBusinessDayYmd({ fromYmd: ymd });
   }
   return ymd;
@@ -299,7 +305,7 @@ async function resolvePracticePricingTierForTransfer(transferDoc) {
 const PTX_SHIP_SCHEDULE_PRODUCT_MODE = "custom_abutment";
 
 /**
- * 제조사 출고 목표(기일−3영업일)에 맞추기 위한 shippingMode.
+ * 제조사 출고 목표(치과도착일−2영업일, 치과 직납)에 맞추기 위한 shippingMode.
  * 묶음(normal) 우선. 목표를 못 맞추면 신속.
  */
 export async function resolveShippingModeForPracticeTransferArrival({
@@ -1035,7 +1041,8 @@ export {
 };
 
 /**
- * 디자인 핸드오프 시 PTX CA Request 가격·출고모드·스케줄을 생산만/기일-3 기준으로 재계산.
+ * 디자인 핸드오프 시 PTX CA Request 가격·출고모드·스케줄을
+ * 생산만/치과도착일−2영업일(직납) 기준으로 재계산.
  * 제조 단계는 준비로 유지(취소·재업로드 가능).
  */
 export async function repriceAndReschedulePtxAbutmentRequest({

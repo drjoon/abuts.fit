@@ -4,17 +4,32 @@ import {
   ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
   ORAL_SCAN_REQUIRED_FROM_LAB,
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
+  PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
   assertOralScanFilesForCreate,
   canStartAbutmentProduction,
   hasCustomAbutmentToothWorks,
   isAbutmentDesignReady,
   normalizeResultFiles,
   parseArrivalYmdFromMemo,
+  resolveManufacturerTargetShipYmd,
   resolveOralScanFilesForAccept,
   shouldLockLabOralScanDownload,
 } from "../../services/practiceTransferProduction.service.js";
 
 describe("practiceTransferProduction Abuts-first helpers", () => {
+  test("PTX CA ship offset is dental-direct (arrival − 2 business days)", () => {
+    expect(PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(2);
+  });
+
+  test("resolveManufacturerTargetShipYmd subtracts 2 business days", async () => {
+    // 2026-08-21(금) → 20(목) → 19(수)
+    expect(await resolveManufacturerTargetShipYmd("2026-08-21")).toBe(
+      "2026-08-19",
+    );
+    expect(await resolveManufacturerTargetShipYmd("bad")).toBeNull();
+    expect(await resolveManufacturerTargetShipYmd("")).toBeNull();
+  });
+
   test("parseArrivalYmdFromMemo extracts KST arrival tag", () => {
     expect(
       parseArrivalYmdFromMemo("[주문일: 2026-08-10]\n[도착일: 2026-08-20]\n메모"),
