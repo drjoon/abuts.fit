@@ -23,6 +23,7 @@ import {
   releasePracticeTransferLabShare,
   releasePracticeTransferAbutmentShare,
   chargePracticeTransferLabShipping,
+  chargePracticeTransferAbutsShipping,
   rollbackPracticeTransferBilling,
   toBillingPreviewFields,
   toFeeQuoteApi,
@@ -2146,6 +2147,7 @@ export async function createPracticeTransfer(req, res) {
               billingPreview?.abutmentRetailTotal ??
               0,
           ),
+          heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
           holdFromPaid: Number(holdResult.fromPaid || 0),
           holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
           holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
@@ -3911,6 +3913,22 @@ export async function markReceivedPracticeTransferComplete(req, res) {
       });
     }
 
+    try {
+      await chargePracticeTransferAbutsShipping({
+        transfer: doc,
+        toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
+        actorUserId: req.user?._id,
+      });
+    } catch (shipErr) {
+      const status = Number(shipErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message:
+          shipErr?.message || "어벗츠 배송비 차감에 실패했습니다.",
+        ...(shipErr?.payload || {}),
+      });
+    }
+
     let confirmedAt = null;
     let manufacturerStage = "작업완료";
 
@@ -5533,6 +5551,7 @@ export async function retargetPracticeTransferLab(req, res) {
               billingPreview?.abutmentRetailTotal ??
               0,
           ),
+          heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
           holdFromPaid: Number(holdResult.fromPaid || 0),
           holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
           holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),

@@ -107,3 +107,50 @@ export function resolveAbutsAbutmentUnitPrice({
   const picked = pickAbutsAbutmentCreditPrices(normalized, pricingTier);
   return isDesign ? picked.designAndProductionPrice : picked.productionPrice;
 }
+
+/**
+ * 치과 납부 어벗액(디자인+생산)을 보류 경로별로 분해.
+ * - 어벗츠몫(치과→어벗츠) = 생산비
+ * - 기공소몫(치과→기공소)에 합산 = 디자인비(+지그)
+ */
+export function splitAbutmentRetailForRouteHolds({
+  abutmentRetailTotal = 0,
+  abutmentQty = 0,
+  pricingTier = "regular",
+  prices = null,
+  designFeePerTooth = null,
+} = {}) {
+  const retail = Math.max(0, Math.round(Number(abutmentRetailTotal || 0)));
+  const qty = Math.max(0, Math.round(Number(abutmentQty || 0)));
+  if (retail <= 0) {
+    return { productionTotal: 0, designFeeTotal: 0 };
+  }
+  if (qty <= 0) {
+    return { productionTotal: retail, designFeeTotal: 0 };
+  }
+
+  const picked = pickAbutsAbutmentCreditPrices(prices || {}, pricingTier);
+  const designUnit = Math.max(
+    0,
+    Math.round(
+      Number(
+        designFeePerTooth != null
+          ? designFeePerTooth
+          : picked.designFeePerTooth || 0,
+      ) || 0,
+    ),
+  );
+  const productionUnit = Math.max(0, Math.round(Number(picked.productionPrice || 0)));
+  const unit = Math.round(retail / qty);
+
+  // 생산가만 청구된 경우(디자인+생산 아님) — 전액 어벗츠몫
+  if (designUnit <= 0 || unit <= productionUnit) {
+    return { productionTotal: retail, designFeeTotal: 0 };
+  }
+
+  const designFeeTotal = Math.min(retail, designUnit * qty);
+  return {
+    productionTotal: Math.max(0, retail - designFeeTotal),
+    designFeeTotal,
+  };
+}

@@ -2,6 +2,7 @@
 // - 2026-08-15: 테이블 잔액 칼럼 라벨「잔액」(행 시점 총잔액=유료+무료+기공).
 // - 2026-08-15: 선입금 안내를 유료 카드 툴팁으로 이동. 현재잔액=유료+무료(+기공). 무료·기공 툴팁 추가.
 // - 2026-08-17: 기공소몫/어벗츠몫 보류·플랫폼 수수료 displayLabel 우선 표시.
+// - 2026-08-17: PRACTICE_TRANSFER 거래내역 — 배송비 displayLabel이면 배송비로 표시.
 // - 2026-08-14: 내역에 유료 크레딧=기공료 선입금(선납) 안내 표시.
 // - 2026-08-14: 내역 필터를 버킷(유료/무료/기공)·동작(충전/소비/조정) 이원으로 교체. 기공비 보류 라벨.
 // - 2026-08-14: 치과·기공소 크레딧 내역 UI — 잔액 카드·필터·테이블을 기공크레딧 탭과 동일 최신 스타일로 정리.
@@ -404,10 +405,11 @@ const renderTransactionDetail = ({
   }
 
   if (refType === "SHIPPING_PACKAGE") {
+    const label = String(item.displayLabel || "").trim();
     return (
       <>
         <span className="text-[11px] text-muted-foreground">
-          {refTypeLabel(refType)}
+          {label.includes("배송비") ? label : refTypeLabel(refType)}
         </span>
         <span className="pt-1 text-[11px] text-slate-700">
           송장번호 {formatTrackingNumbers(item.trackingNumbers)}
@@ -418,9 +420,15 @@ const renderTransactionDetail = ({
 
   if (refType === "PRACTICE_TRANSFER") {
     const transferId = String(item.refPracticeTransferId || "").trim();
+    const label = String(item.displayLabel || "").trim();
+    const detailKind = label.includes("배송비")
+      ? "배송비"
+      : label.includes("어벗츠")
+        ? "기공비(어벗츠)"
+        : "기공비";
     return (
       <>
-        <span className="text-[11px] text-muted-foreground">기공비</span>
+        <span className="text-[11px] text-muted-foreground">{detailKind}</span>
         <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
           {transferId || "참조 내역 없음"}
         </span>

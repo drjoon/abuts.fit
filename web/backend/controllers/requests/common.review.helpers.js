@@ -6,6 +6,7 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - 2026-08-17: PTX CA 포장 배송비 displayLabel=배송비(치과→어벗츠).
 import mongoose, { Types } from "mongoose";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
@@ -261,6 +262,8 @@ async function postSpendCommitGeneralLedger({
   stageTo,
   session,
   usageKind = null,
+  displayLabel = null,
+  displayKind = null,
 }) {
   const spendAmount = Math.max(0, Math.round(Number(amount || 0)));
   if (spendAmount <= 0) return { posted: false, reason: "zero_amount" };
@@ -297,12 +300,17 @@ async function postSpendCommitGeneralLedger({
   const applyManufacturerUnit =
     String(usageKind || "").trim() !== "express_surcharge";
 
-  const lines = [];
+  const label = String(displayLabel || "").trim() || null;
+  const kind = String(displayKind || "").trim() || null;
   const spendMeta = {
     spendUniqueKey,
     ...(usageKind ? { usageKind: String(usageKind) } : {}),
     ...(settlementAmount > 0 ? { settlementOffset: true } : {}),
+    ...(label ? { displayLabel: label } : {}),
+    ...(kind ? { displayKind: kind } : {}),
   };
+
+  const lines = [];
 
   if (freeRequestAmount > 0) {
     lines.push({
@@ -498,6 +506,8 @@ async function postSpendCommitGeneralLedger({
       spendAmount,
       paidAmount,
       freeAmount,
+      ...(label ? { displayLabel: label } : {}),
+      ...(kind ? { displayKind: kind } : {}),
     },
     lines,
     session,
@@ -1614,6 +1624,33 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   // - 실제 중복 방지는 spendShippingCreditAtomic의 uniqueKey/idempotency로 보장
   // - 장부 SSOT는 General Ledger로 통합되며 레거시 원장 조회에 의존하지 않음
 
+  const relatedPtxIdEarly = String(
+    request?.partnerBilling?.relatedPracticeTransferId || "",
+  ).trim();
+  if (relatedPtxIdEarly && Types.ObjectId.isValid(relatedPtxIdEarly)) {
+    try {
+      const { getJournalByIdempotencyKey } = await import(
+        "../../services/generalLedger.service.js"
+      );
+      const already = await getJournalByIdempotencyKey({
+        idempotencyKey: `gl:practice_transfer:${relatedPtxIdEarly}:abuts_shipping`,
+        session,
+      });
+      if (already?.journalId) {
+        console.log(
+          "[SHIPPING_FEE] skip PTX abuts shipping (already at mark-complete)",
+          {
+            requestId: request?.requestId,
+            relatedPtxId: relatedPtxIdEarly,
+          },
+        );
+        return;
+      }
+    } catch {
+      // fall through to charge
+    }
+  }
+
   const spendResult = await spendShippingCreditAtomic({
     businessAnchorId: payerAnchorId,
     shippingPackageId: pkg._id,
@@ -1643,6 +1680,11 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     packageBusinessAnchorId: String(businessAnchorId),
   });
 
+  const relatedPtxId = String(
+    request?.partnerBilling?.relatedPracticeTransferId || "",
+  ).trim();
+  const isPtxAbutsShipping = Boolean(relatedPtxId);
+
   const glPostResult = await postSpendCommitGeneralLedger({
     eventType: "SHIPPING_SPEND_COMMIT",
     spendUniqueKey: spendResult.uniqueKey,
@@ -1664,7 +1706,11 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     stageFrom: "세척.패킹",
     stageTo: "포장.발송",
     session,
-    usageKind: "shipping",
+    usageKind: isPtxAbutsShipping
+      ? "practice_transfer_abuts_shipping"
+      : "shipping",
+    displayLabel: isPtxAbutsShipping ? "배송비(치과→어벗츠)" : null,
+    displayKind: isPtxAbutsShipping ? "shipping" : null,
   });
 
   if (!glPostResult?.posted) {
