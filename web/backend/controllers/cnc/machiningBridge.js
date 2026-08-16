@@ -25,6 +25,7 @@ import {
   assignMailboxForCleaningPackingEnter,
   normalizeBusinessAnchorId,
 } from "../../controllers/requests/mailbox.utils.js";
+import { markPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import Machine from "../../models/machine.model.js";
 import {
   BRIDGE_BASE,
@@ -1466,6 +1467,14 @@ export async function recordMachiningStartForBridge(req, res) {
         update,
         { new: true },
       );
+
+      try {
+        if (updatedRequest) {
+          await markPracticeTransferAbutmentMachiningStarted(updatedRequest);
+        }
+      } catch {
+        // best-effort
+      }
 
       try {
         const toStage =

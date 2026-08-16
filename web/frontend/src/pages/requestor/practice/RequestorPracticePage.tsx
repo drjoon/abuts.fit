@@ -16,6 +16,8 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-16: 수락 직후 relatedRequestIds 로컬 반영(어벗 업로드 stale toast 방지).
+// - 2026-08-16: 의뢰 수락 취소 — API 성공 후에만 UI 반영. 가공중 409면 abutmentPastReady 로컬 고정.
 // - 2026-08-16: 어벗 가공 시작(준비 아님)이면 의뢰 수락·생산 취소 차단.
 // - 2026-08-16: 수신 카드에 디자인SW·아노 메타 뱃지(어벗생산의뢰와 동일 스타일).
 // - 2026-08-16: 어벗디자인 업로드 시 3D 확인 모달(기본값 채움·유지홈 필수) 후 handoff.
@@ -1011,9 +1013,22 @@ export function RequestorPracticeReceivePage({
           });
           setDialogOpen(false);
         } else {
+          const relatedFromRealtime = pickRelatedRequestIdsFromPayload(payload);
+          const productionRawFromRealtime =
+            payload.production && typeof payload.production === "object"
+              ? (payload.production as Record<string, unknown>)
+              : null;
           setTransfers((prev) =>
             prev.map((row) => {
               if (row.transferId !== transferId) return row;
+              const productionPatch =
+                relatedFromRealtime.length > 0
+                  ? mergeProductionRelatedRequestIds(
+                      row.production,
+                      relatedFromRealtime,
+                      productionRawFromRealtime,
+                    )
+                  : null;
               return {
                 ...row,
                 status: status || row.status,
@@ -1041,12 +1056,21 @@ export function RequestorPracticeReceivePage({
                   action === "downloaded" || action === "accepted"
                     ? requestorDownloadedAt || row.requestorAcceptedAt
                     : row.requestorAcceptedAt,
+                ...(productionPatch ? { production: productionPatch } : {}),
               };
             }),
           );
 
           setSelectedTransfer((prev) => {
             if (!prev || prev.transferId !== transferId) return prev;
+            const productionPatch =
+              relatedFromRealtime.length > 0
+                ? mergeProductionRelatedRequestIds(
+                    prev.production,
+                    relatedFromRealtime,
+                    productionRawFromRealtime,
+                  )
+                : null;
             return {
               ...prev,
               status: status || prev.status,
@@ -1067,6 +1091,7 @@ export function RequestorPracticeReceivePage({
                 action === "downloaded" || action === "accepted"
                   ? requestorDownloadedAt || prev.requestorAcceptedAt
                   : prev.requestorAcceptedAt,
+              ...(productionPatch ? { production: productionPatch } : {}),
             };
           });
         }
@@ -1379,6 +1404,49 @@ export function RequestorPracticeReceivePage({
     [],
   );
 
+  /** mark-accepted / realtime production 페이로드에서 CA Request id 추출 */
+  const pickRelatedRequestIdsFromPayload = useCallback(
+    (data: Record<string, unknown>): string[] => {
+      const productionRaw =
+        data.production && typeof data.production === "object"
+          ? (data.production as Record<string, unknown>)
+          : null;
+      const fromProduction = Array.isArray(productionRaw?.relatedRequestIds)
+        ? productionRaw.relatedRequestIds
+            .map((raw) => String(raw || "").trim())
+            .filter(Boolean)
+        : [];
+      if (fromProduction.length > 0) return fromProduction;
+      return Array.isArray(data.abutmentRequestIds)
+        ? data.abutmentRequestIds
+            .map((raw) => String(raw || "").trim())
+            .filter(Boolean)
+        : [];
+    },
+    [],
+  );
+
+  const mergeProductionRelatedRequestIds = useCallback(
+    (
+      prev: ReceivedPracticeTransfer["production"] | null | undefined,
+      relatedRequestIds: string[],
+      productionRaw?: Record<string, unknown> | null,
+    ): NonNullable<ReceivedPracticeTransfer["production"]> => {
+      const shippingMode =
+        productionRaw?.shippingMode === "express"
+          ? ("express" as const)
+          : productionRaw?.shippingMode === "normal"
+            ? ("normal" as const)
+            : prev?.shippingMode || null;
+      return {
+        ...(prev || {}),
+        shippingMode,
+        relatedRequestIds,
+      };
+    },
+    [],
+  );
+
   /** 수락/취소 버튼 UI 전환 최소 딜레이(API는 백그라운드, UI는 이 시간만 대기) */
   const ACTION_UI_MIN_MS = 500;
 
@@ -1597,6 +1665,20 @@ export function RequestorPracticeReceivePage({
                   .filter(Boolean) as ReceivedPracticeFile[])
               : undefined;
 
+            const relatedFromAccept = pickRelatedRequestIdsFromPayload(data);
+            const productionRawFromAccept =
+              data.production && typeof data.production === "object"
+                ? (data.production as Record<string, unknown>)
+                : null;
+            const productionPatch =
+              relatedFromAccept.length > 0
+                ? mergeProductionRelatedRequestIds(
+                    transfer.production,
+                    relatedFromAccept,
+                    productionRawFromAccept,
+                  )
+                : null;
+
             applyAcceptedLocalPatch(transfer, {
               isRead: true,
               requestorReadAt: readAt,
@@ -1618,6 +1700,7 @@ export function RequestorPracticeReceivePage({
               ...(responseFiles
                 ? { files: responseFiles, fileCount: responseFiles.length }
                 : {}),
+              ...(productionPatch ? { production: productionPatch } : {}),
             });
           })
           .catch(() => {
@@ -1644,7 +1727,9 @@ export function RequestorPracticeReceivePage({
       applyAcceptedLocalPatch,
       emitUnreadBadgeRefresh,
       loadFirstPage,
+      mergeProductionRelatedRequestIds,
       openDesignSoftwareModal,
+      pickRelatedRequestIdsFromPayload,
       settingsComplete,
       toast,
       token,
@@ -2001,16 +2086,6 @@ export function RequestorPracticeReceivePage({
 
       const isAuto = String(transfer.matchingMode || "") === "auto";
       const canceledAt = new Date().toISOString();
-      const rollbackPatch: Partial<ReceivedPracticeTransfer> = {
-        isAccepted: transfer.isAccepted,
-        isDownloaded: transfer.isDownloaded,
-        requestorDownloadedAt: transfer.requestorDownloadedAt,
-        requestorAcceptedAt: transfer.requestorAcceptedAt,
-        workCanceledAt: transfer.workCanceledAt,
-        manufacturerStage: transfer.manufacturerStage,
-        targetLabName: transfer.targetLabName,
-        autoMatch: transfer.autoMatch,
-      };
 
       const releasePatch: Partial<ReceivedPracticeTransfer> = isAuto
         ? {
@@ -2051,73 +2126,80 @@ export function RequestorPracticeReceivePage({
               : transfer.autoMatch,
           };
 
+      const markLocalMachiningStarted = () => {
+        const productionPatch: ReceivedPracticeTransfer["production"] = {
+          ...transfer.production,
+          abutmentPastReady: true,
+          abutmentProductionStartedAt:
+            transfer.production?.abutmentProductionStartedAt ||
+            new Date().toISOString(),
+        };
+        applyAcceptedLocalPatch(transfer, { production: productionPatch });
+      };
+
       try {
-        const apiPromise = apiFetch<unknown>({
-          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-release`,
-          method: "POST",
-          token,
-        });
+        const [res] = await Promise.all([
+          apiFetch<unknown>({
+            path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-release`,
+            method: "POST",
+            token,
+          }),
+          new Promise<void>((resolve) => {
+            window.setTimeout(resolve, ACTION_UI_MIN_MS);
+          }),
+        ]);
 
-        await new Promise<void>((resolve) => {
-          window.setTimeout(resolve, ACTION_UI_MIN_MS);
-        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          const code = String(body.code || "").trim();
+          if (code === "abutment_machining_started") {
+            markLocalMachiningStarted();
+          }
+          toast({
+            title: "의뢰 수락 취소 불가",
+            description: String(
+              body.message ||
+                "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다.",
+            ),
+            variant: "destructive",
+          });
+          return false;
+        }
 
-        applyAcceptedLocalPatch(transfer, releasePatch);
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const data =
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : body;
+        const autoMatchRaw =
+          data.autoMatch && typeof data.autoMatch === "object"
+            ? (data.autoMatch as Record<string, unknown>)
+            : null;
+
+        applyAcceptedLocalPatch(
+          transfer,
+          isAuto && autoMatchRaw?.releaseCount != null
+            ? {
+                ...releasePatch,
+                autoMatch: {
+                  ...(releasePatch.autoMatch || {}),
+                  releaseCount: Number(autoMatchRaw.releaseCount),
+                },
+              }
+            : releasePatch,
+        );
         toast({
           title: "작업 취소",
           description: isAuto
             ? "수락을 취소해 공개 풀로 되돌렸습니다."
             : "의뢰수락을 취소했습니다.",
         });
-
-        void apiPromise
-          .then((res) => {
-            if (!res.ok) {
-              const body =
-                res.data && typeof res.data === "object"
-                  ? (res.data as Record<string, unknown>)
-                  : {};
-              applyAcceptedLocalPatch(transfer, rollbackPatch);
-              toast({
-                title: "작업 취소 실패",
-                description: String(
-                  body.message || "작업 취소 처리 중 오류가 발생했습니다.",
-                ),
-                variant: "destructive",
-              });
-              return;
-            }
-            const body =
-              res.data && typeof res.data === "object"
-                ? (res.data as Record<string, unknown>)
-                : {};
-            const data =
-              body.data && typeof body.data === "object"
-                ? (body.data as Record<string, unknown>)
-                : body;
-            const autoMatchRaw =
-              data.autoMatch && typeof data.autoMatch === "object"
-                ? (data.autoMatch as Record<string, unknown>)
-                : null;
-            if (isAuto && autoMatchRaw?.releaseCount != null) {
-              applyAcceptedLocalPatch(transfer, {
-                ...releasePatch,
-                autoMatch: {
-                  ...(releasePatch.autoMatch || {}),
-                  releaseCount: Number(autoMatchRaw.releaseCount),
-                },
-              });
-            }
-          })
-          .catch(() => {
-            applyAcceptedLocalPatch(transfer, rollbackPatch);
-            toast({
-              title: "작업 취소 실패",
-              description: "작업 취소 요청 중 오류가 발생했습니다.",
-              variant: "destructive",
-            });
-          });
-
         return true;
       } catch {
         toast({
@@ -2449,9 +2531,48 @@ export function RequestorPracticeReceivePage({
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id || cardActionBusyId || designConfirmBusy) return;
 
-      const relatedIds = (transfer.production?.relatedRequestIds || [])
+      let relatedIds = (transfer.production?.relatedRequestIds || [])
         .map((raw) => String(raw || "").trim())
         .filter(Boolean);
+      let workingTransfer = transfer;
+
+      // 낙관적 수락 직후: API가 relatedRequestIds를 아직 로컬에 안 심었을 수 있음 → idempotent 재조회
+      if (relatedIds.length === 0) {
+        try {
+          const refreshRes = await apiFetch<unknown>({
+            path: `/api/practice/transfers/${encodeURIComponent(id)}/mark-accepted`,
+            method: "POST",
+            token,
+          });
+          if (refreshRes.ok) {
+            const body =
+              refreshRes.data && typeof refreshRes.data === "object"
+                ? (refreshRes.data as Record<string, unknown>)
+                : {};
+            const data =
+              body.data && typeof body.data === "object"
+                ? (body.data as Record<string, unknown>)
+                : body;
+            relatedIds = pickRelatedRequestIdsFromPayload(data);
+            if (relatedIds.length > 0) {
+              const productionRaw =
+                data.production && typeof data.production === "object"
+                  ? (data.production as Record<string, unknown>)
+                  : null;
+              const productionPatch = mergeProductionRelatedRequestIds(
+                transfer.production,
+                relatedIds,
+                productionRaw,
+              );
+              applyAcceptedLocalPatch(transfer, { production: productionPatch });
+              workingTransfer = { ...transfer, production: productionPatch };
+            }
+          }
+        } catch {
+          // fall through to toast
+        }
+      }
+
       if (relatedIds.length === 0) {
         toast({
           title: "디자인 의뢰 준비 중",
@@ -2490,19 +2611,22 @@ export function RequestorPracticeReceivePage({
         // fallback to transfer defaults
       }
 
-      setDesignConfirmTransfer(transfer);
+      setDesignConfirmTransfer(workingTransfer);
       setDesignConfirmRequestId(requestId);
       setDesignConfirmFile(file);
       setDesignConfirmCaseInfos(
-        buildDesignConfirmDefaults(transfer, requestCaseInfos),
+        buildDesignConfirmDefaults(workingTransfer, requestCaseInfos),
       );
       setDesignConfirmOpen(true);
     },
     [
+      applyAcceptedLocalPatch,
       buildDesignConfirmDefaults,
       cardActionBusyId,
       designConfirmBusy,
+      mergeProductionRelatedRequestIds,
       pickDesignAbutmentFile,
+      pickRelatedRequestIdsFromPayload,
       toast,
       token,
     ],
@@ -2680,6 +2804,18 @@ export function RequestorPracticeReceivePage({
             cancelRes.data && typeof cancelRes.data === "object"
               ? (cancelRes.data as Record<string, unknown>)
               : {};
+          const code = String(body.code || "").trim();
+          if (code === "manufacturer_not_ready") {
+            applyAcceptedLocalPatch(transfer, {
+              production: {
+                ...transfer.production,
+                abutmentPastReady: true,
+                abutmentProductionStartedAt:
+                  transfer.production?.abutmentProductionStartedAt ||
+                  new Date().toISOString(),
+              },
+            });
+          }
           throw new Error(
             String(
               body.message ||
@@ -2723,7 +2859,7 @@ export function RequestorPracticeReceivePage({
         setCardActionBusyId("");
       }
     },
-    [buildProductionCancelLocalPatch, cardActionBusyId, toast, token],
+    [applyAcceptedLocalPatch, buildProductionCancelLocalPatch, cardActionBusyId, toast, token],
   );
 
   const handleCardComplete = useCallback(

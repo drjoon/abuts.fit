@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-16: past-ready 판정 — partnerBilling 링크 + actualCamStart. 가공 진입 시 startedAt 기록.
 // - 2026-08-16: 어벗 가공(준비 아님) 시 release·생산취소 가드 + 목록 abutmentPastReady.
 // - 2026-08-16: PTX CA — 개인/사업체 requestSettings 중 화면 effective(개인 우선)로 designSoftware·아노·유지홈·헥스 반영. 핸드오프와 공용 loader.
 // - 2026-08-16: PTX CA 제조 주문에 기공소 requestSettings.designSoftware·아노다이징·헥스 반영.
@@ -895,6 +896,22 @@ export function isAbutmentManufacturerStagePastReady(stage) {
   return true;
 }
 
+/**
+ * 제조사 Request가 준비 단계를 벗어났거나(또는 가공 진입 트리거됨) 취소 불가인지.
+ * - manufacturerStage가 준비/취소가 아님
+ * - 준비인데 productionSchedule.actualCamStart 있음(승인 직후 stage 전환 전)
+ * - 이미 취소된 Request는 무시
+ */
+export function isAbutmentRequestPastReadyForCancel(requestDoc) {
+  const stage = String(requestDoc?.manufacturerStage || "").trim();
+  if (stage === "취소") return false;
+  if (isAbutmentManufacturerStagePastReady(stage)) return true;
+  if (stage === "준비" && requestDoc?.productionSchedule?.actualCamStart) {
+    return true;
+  }
+  return false;
+}
+
 const collectRelatedRequestObjectIds = (transferDoc) => {
   const raw = Array.isArray(transferDoc?.production?.relatedRequestIds)
     ? transferDoc.production.relatedRequestIds
@@ -906,18 +923,50 @@ const collectRelatedRequestObjectIds = (transferDoc) => {
 };
 
 /**
+ * PTX에 묶인 CA Request _id 목록.
+ * relatedRequestIds + partnerBilling.relatedPracticeTransferId(과거·재업로드 잔존 포함).
+ */
+export async function collectLinkedAbutmentRequestObjectIds(transferDoc) {
+  const byRelated = collectRelatedRequestObjectIds(transferDoc);
+  const transferMongoId = String(transferDoc?._id || "").trim();
+  if (!transferMongoId || !Types.ObjectId.isValid(transferMongoId)) {
+    return byRelated;
+  }
+
+  const partnerRows = await Request.find({
+    "partnerBilling.relatedPracticeTransferId": new Types.ObjectId(
+      transferMongoId,
+    ),
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  const merged = new Map();
+  for (const id of byRelated) merged.set(String(id), id);
+  for (const row of partnerRows) {
+    const id = String(row?._id || "").trim();
+    if (id && Types.ObjectId.isValid(id)) {
+      merged.set(id, new Types.ObjectId(id));
+    }
+  }
+  return [...merged.values()];
+}
+
+/**
  * 연동 CA Request 중 하나라도 준비 단계를 지났는지.
+ * relatedRequestIds가 비거나 stale여도 partnerBilling 링크로 판정한다.
  */
 export async function hasRelatedAbutmentPastReady(transferDoc) {
   if (transferDoc?.production?.abutmentProductionStartedAt) return true;
-  const ids = collectRelatedRequestObjectIds(transferDoc);
+  const ids = await collectLinkedAbutmentRequestObjectIds(transferDoc);
   if (ids.length === 0) return false;
   const rows = await Request.find({ _id: { $in: ids } })
-    .select({ manufacturerStage: 1 })
+    .select({
+      manufacturerStage: 1,
+      "productionSchedule.actualCamStart": 1,
+    })
     .lean();
-  return rows.some((row) =>
-    isAbutmentManufacturerStagePastReady(row?.manufacturerStage),
-  );
+  return rows.some((row) => isAbutmentRequestPastReadyForCancel(row));
 }
 
 /**
@@ -926,8 +975,8 @@ export async function hasRelatedAbutmentPastReady(transferDoc) {
 export async function mapAbutmentPastReadyByTransferDocs(docs) {
   const result = new Map();
   const list = Array.isArray(docs) ? docs : [];
-  const allIds = [];
-  const transferToReqIds = new Map();
+  const transferMongoIds = [];
+  const relatedIdsByTransfer = new Map();
 
   for (const doc of list) {
     const transferKey = String(doc?._id || "").trim();
@@ -936,39 +985,89 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
       result.set(transferKey, true);
       continue;
     }
-    const ids = collectRelatedRequestObjectIds(doc).map((id) => String(id));
-    transferToReqIds.set(transferKey, ids);
-    for (const id of ids) allIds.push(id);
-  }
-
-  if (allIds.length === 0) {
-    for (const [key] of transferToReqIds) {
-      if (!result.has(key)) result.set(key, false);
+    const relatedIds = collectRelatedRequestObjectIds(doc).map((id) =>
+      String(id),
+    );
+    relatedIdsByTransfer.set(transferKey, relatedIds);
+    if (Types.ObjectId.isValid(transferKey)) {
+      transferMongoIds.push(transferKey);
     }
-    return result;
   }
 
-  const uniqueIds = [...new Set(allIds)].filter((id) =>
+  const pendingKeys = [...relatedIdsByTransfer.keys()].filter(
+    (key) => !result.has(key),
+  );
+  if (pendingKeys.length === 0) return result;
+
+  const partnerRows =
+    transferMongoIds.length > 0
+      ? await Request.find({
+          "partnerBilling.relatedPracticeTransferId": {
+            $in: transferMongoIds.map((id) => new Types.ObjectId(id)),
+          },
+        })
+          .select({
+            _id: 1,
+            manufacturerStage: 1,
+            partnerBilling: 1,
+            "productionSchedule.actualCamStart": 1,
+          })
+          .lean()
+      : [];
+
+  const partnerIdsByTransfer = new Map();
+  const allRequestIds = new Set();
+  for (const [transferKey, relatedIds] of relatedIdsByTransfer) {
+    if (result.has(transferKey)) continue;
+    for (const id of relatedIds) allRequestIds.add(id);
+    partnerIdsByTransfer.set(transferKey, []);
+  }
+  for (const row of partnerRows) {
+    const transferKey = String(
+      row?.partnerBilling?.relatedPracticeTransferId || "",
+    ).trim();
+    if (!transferKey || result.has(transferKey)) continue;
+    const reqId = String(row?._id || "").trim();
+    if (!reqId) continue;
+    const bucket = partnerIdsByTransfer.get(transferKey) || [];
+    bucket.push(reqId);
+    partnerIdsByTransfer.set(transferKey, bucket);
+    allRequestIds.add(reqId);
+    if (isAbutmentRequestPastReadyForCancel(row)) {
+      result.set(transferKey, true);
+    }
+  }
+
+  const needStageLookup = [...allRequestIds].filter((id) =>
     Types.ObjectId.isValid(id),
   );
-  const rows = await Request.find({
-    _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) },
-  })
-    .select({ manufacturerStage: 1 })
-    .lean();
-  const stageById = new Map(
-    rows.map((row) => [
-      String(row?._id || ""),
-      String(row?.manufacturerStage || "").trim(),
-    ]),
+
+  const stageRows =
+    needStageLookup.length > 0
+      ? await Request.find({
+          _id: { $in: needStageLookup.map((id) => new Types.ObjectId(id)) },
+        })
+          .select({
+            manufacturerStage: 1,
+            "productionSchedule.actualCamStart": 1,
+          })
+          .lean()
+      : [];
+  const requestById = new Map(
+    stageRows.map((row) => [String(row?._id || ""), row]),
   );
 
-  for (const [transferKey, reqIds] of transferToReqIds) {
+  for (const transferKey of pendingKeys) {
     if (result.has(transferKey)) continue;
+    const ids = [
+      ...(relatedIdsByTransfer.get(transferKey) || []),
+      ...(partnerIdsByTransfer.get(transferKey) || []),
+    ];
+    const unique = [...new Set(ids)];
     result.set(
       transferKey,
-      reqIds.some((id) =>
-        isAbutmentManufacturerStagePastReady(stageById.get(id)),
+      unique.some((id) =>
+        isAbutmentRequestPastReadyForCancel(requestById.get(id)),
       ),
     );
   }
@@ -985,20 +1084,18 @@ export async function clearRelatedAbutmentProductionOnRelease(transferDoc) {
     return { cleared: false, canceledRequestCount: 0, blockedPastReady: false };
   }
 
-  const requestIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
-    ? transferDoc.production.relatedRequestIds
-        .map((id) => String(id || "").trim())
-        .filter((id) => Types.ObjectId.isValid(id))
-    : [];
+  const objectIds = await collectLinkedAbutmentRequestObjectIds(transferDoc);
 
   let canceledRequestCount = 0;
-  if (requestIds.length > 0) {
-    const objectIds = requestIds.map((id) => new Types.ObjectId(id));
+  if (objectIds.length > 0) {
     const stageRows = await Request.find({ _id: { $in: objectIds } })
-      .select({ manufacturerStage: 1 })
+      .select({
+        manufacturerStage: 1,
+        "productionSchedule.actualCamStart": 1,
+      })
       .lean();
     const blockedPastReady = stageRows.some((row) =>
-      isAbutmentManufacturerStagePastReady(row?.manufacturerStage),
+      isAbutmentRequestPastReadyForCancel(row),
     );
     if (
       blockedPastReady ||
@@ -1022,6 +1119,8 @@ export async function clearRelatedAbutmentProductionOnRelease(transferDoc) {
       },
     );
     canceledRequestCount = Number(cancelResult?.modifiedCount || 0);
+  } else if (transferDoc?.production?.abutmentProductionStartedAt) {
+    return { cleared: false, canceledRequestCount: 0, blockedPastReady: true };
   }
 
   const productionNext = {
@@ -1058,6 +1157,33 @@ export async function clearRelatedAbutmentProductionOnRelease(transferDoc) {
   );
 
   return { cleared: true, canceledRequestCount, blockedPastReady: false };
+}
+
+/**
+ * PTX 연동 Request가 가공 진입하면 transfer에 abutmentProductionStartedAt을 남긴다.
+ * (목록 API 배치 조회 없이도 취소 불가 플래그가 유지되도록)
+ */
+export async function markPracticeTransferAbutmentMachiningStarted(
+  requestDoc,
+  { at = new Date() } = {},
+) {
+  const transferId = String(
+    requestDoc?.partnerBilling?.relatedPracticeTransferId || "",
+  ).trim();
+  if (!transferId || !Types.ObjectId.isValid(transferId)) {
+    return { updated: false };
+  }
+  const result = await PracticeTransfer.updateOne(
+    {
+      _id: new Types.ObjectId(transferId),
+      $or: [
+        { "production.abutmentProductionStartedAt": null },
+        { "production.abutmentProductionStartedAt": { $exists: false } },
+      ],
+    },
+    { $set: { "production.abutmentProductionStartedAt": at } },
+  );
+  return { updated: Number(result?.modifiedCount || 0) > 0 };
 }
 
 /**

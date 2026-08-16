@@ -11,6 +11,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // change-log:
+// - 2026-08-16: PTX 가공 진입 시 practiceTransfer.abutmentProductionStartedAt 기록(수락 취소 가드).
 // - 2026-08-10: 디자인 파트너 준비→가공(nextUpCamRunGuard) 핸드오프 승인 허용.
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
@@ -36,6 +37,7 @@ import {
   normalizeBusinessAnchorId,
 } from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
+import { markPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
@@ -1442,10 +1444,20 @@ export async function updateReviewStatusByStage(req, res) {
               updatedBy: req.user?._id || null,
               reason: "",
             };
+            try {
+              await markPracticeTransferAbutmentMachiningStarted(request);
+            } catch {
+              // best-effort
+            }
             acceptedMessage =
               "롤백 이력이 확인되어 NC 재생성 없이 가공 단계로 이동했습니다.";
           } else {
             request.productionSchedule.actualCamStart = new Date();
+            try {
+              await markPracticeTransferAbutmentMachiningStarted(request);
+            } catch {
+              // best-effort
+            }
             pendingEspritTriggerRequest = request.toObject
               ? request.toObject()
               : JSON.parse(JSON.stringify(request));
@@ -1620,6 +1632,11 @@ export async function updateReviewStatusByStage(req, res) {
           // 실제 CNC 가공 시작은 Bridge(CNC) 쪽 상태(allowAutoMachining, 자동 트리거 등)에 의해 제어된다.
           if (isMachiningEntryApproval || effectiveStage === "cam") {
             applyStatusMapping(request, "가공");
+            try {
+              await markPracticeTransferAbutmentMachiningStarted(request);
+            } catch {
+              // best-effort
+            }
           } else if (effectiveStage === "machining") {
             // machining 단계 승인: 이미 가공이 완료된 의뢰(machiningRecord 있음)는 재가공 없이 바로 세척.패킹으로
             const hasMachiningRecord = !!request.machiningRecord;

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 생산 취소 가드 — stage뿐 아니라 actualCamStart(가공 진입 중)도 차단.
 // - 2026-08-16: PTX 핸드오프 시 기공소 designSoftware·아노다이징·헥스·유지홈을 Request에 스탬프.
 // - 2026-08-16: 어벗디자인 취소·재업로드 시 requestor 대시보드 스냅샷 갱신(준비 카운트 stale 방지).
 // - 2026-08-16: 핸드오프 시 retentionGroove·환자/임플란트 caseInfos 패치 허용(기공소 3D 확인).
@@ -33,6 +34,7 @@ import {
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { updateReviewStatusByStage } from "./common.review.controller.js";
 import {
+  isAbutmentRequestPastReadyForCancel,
   loadLabRequestMetaForProduction,
   mirrorDesignFileToPracticeTransfer,
   repriceAndReschedulePtxAbutmentRequest,
@@ -727,8 +729,7 @@ export async function cancelDesignHandoff(req, res) {
     }
     healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
 
-    const cancelStage = String(request.manufacturerStage || "").trim();
-    if (cancelStage !== "준비" && cancelStage !== "취소") {
+    if (isAbutmentRequestPastReadyForCancel(request)) {
       return res.status(409).json({
         success: false,
         message:
