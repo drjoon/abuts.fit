@@ -210,7 +210,7 @@ export function PracticeTransferLabReceiveCard({
           className="focus-visible:ring-0 focus-visible:ring-offset-0"
         >
           <UploadCloud className="h-4 w-4" />
-          어벗디자인 파일 업로드
+          어벗 업로드
         </Button>
         <Button
           type="button"
@@ -442,7 +442,7 @@ export function PracticeTransferLabReceiveCard({
                   onClick={(event) => void onDesignUpload(event)}
                 >
                   <UploadCloud className="h-4 w-4" />
-                  {cardBusy ? "처리 중..." : "어벗디자인 파일 업로드"}
+                  {cardBusy ? "처리 중..." : "어벗 업로드"}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs">
