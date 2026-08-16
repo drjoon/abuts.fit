@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
 // - 2026-08-16: 기공의뢰수신 카드 — 기공비·수령·수수료를 한 줄로 표시.
+// - 2026-08-16: 기공소 카드 기공비=툴팁 라인 합(별점 확정가)+디자인. 스냅샷 상한과 불일치 방지.
 // - 2026-08-16: 자동매칭 구간은 치과만. 기공소는 유효 별점 배수 단일 확정가.
 // - 2026-08-16: 치과 견적 툴팁도 기공소와 동일 — 기공소몫|어벗츠몫 헤더·가운데 정렬·소계.
 // - 2026-08-16: 크레딧 소비 총액에 배송비 합산. 배송 안내 → 총액 순.
@@ -663,8 +664,15 @@ export function PracticeTransferFeeEstimate({
     labFeeTotalRaw,
     budget?.minLabFee,
   );
+  // 기공소: 툴팁 보철·기공소어벗 합과 동일 기준. billed 스냅샷이 대역 상한이면
+  // labFeeTotal만 높아져 카드(15.2)↔툴팁(14) 불일치가 난다.
+  const labShareFromBreakdown = breakdownLines.reduce(
+    (sum, line) => sum + line.labFee + line.labAbutmentFee,
+    0,
+  );
   const amount = isLab
-    ? labFeeTotalForLab + labDesignFeePreview
+    ? (labShareFromBreakdown > 0 ? labShareFromBreakdown : labFeeTotalForLab) +
+      labDesignFeePreview
     : hasBudgetRange
       ? budgetLabFeeMax +
         Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))

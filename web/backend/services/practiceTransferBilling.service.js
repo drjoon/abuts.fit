@@ -25,6 +25,7 @@
 // - 2026-08-16: 자동매칭 수신 견적 — 공개풀·시청 기공소여도 v4 고정수가·autoMatchBudget 유지.
 // - 2026-08-16: 자동매칭 수락·기공소 수신 견적 — 유효 별점 배수 확정가(상한 대역 아님).
 // - 2026-08-16: billed 확정 견적 — labFeeMin/예산 구간 제거·수락 기공소 별점 단일가.
+// - 2026-08-16: 기공소 수신 billed — 스냅샷이 구 상한가여도 라인·labFeeTotal을 별점 확정가로 맞춤.
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -2601,10 +2602,48 @@ export async function buildFeeQuotesForTransferDocs({
         billed,
       });
       // 청구 완료(billed): 예산 구간(autoMatchBudget)을 다시 붙이지 않는다.
-      out.set(docId, {
-        ...storedQuote,
-        remakeFeeQuote,
-      });
+      // 기공소 본인 수신: 구 상한 스냅샷 labFeeTotal과 별점 확정 라인이 어긋나면
+      // 표시·수령 보조계산을 라인과 같은 확정 스케줄로 맞춘다(치과 뷰는 스냅샷 유지).
+      const starLabFeeTotal = Math.max(
+        0,
+        Math.round(Number(fees.labFeeTotal || 0)),
+      );
+      const snapLabFeeTotal = Math.max(
+        0,
+        Math.round(Number(billing?.labFeeTotal || 0)),
+      );
+      const alignLabViewToStarFee =
+        Boolean(viewerLabId) &&
+        quoteForViewingLab &&
+        useLabStarFeeSchedule &&
+        starLabFeeTotal > 0 &&
+        starLabFeeTotal !== snapLabFeeTotal;
+      if (alignLabViewToStarFee) {
+        const split = splitPracticeTransferSettlement({
+          labFeeTotal: starLabFeeTotal,
+          abutmentRetailTotal: Math.max(
+            0,
+            Math.round(
+              Number(
+                billing?.abutmentRetailTotal ?? fees.abutmentRetailTotal ?? 0,
+              ),
+            ),
+          ),
+          feeRateApplied,
+        });
+        out.set(docId, {
+          ...storedQuote,
+          labFeeTotal: starLabFeeTotal,
+          labSettlementAmount: split.labSettlementAmount,
+          abutsRevenueAmount: split.abutsRevenueAmount,
+          remakeFeeQuote,
+        });
+      } else {
+        out.set(docId, {
+          ...storedQuote,
+          remakeFeeQuote,
+        });
+      }
       continue;
     }
 
