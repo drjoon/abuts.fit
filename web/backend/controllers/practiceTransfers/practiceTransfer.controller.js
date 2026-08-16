@@ -21,6 +21,7 @@ import {
   holdPracticeTransferCredits,
   loadPracticeTransferQuoteContext,
   releasePracticeTransferEscrow,
+  chargePracticeTransferLabShipping,
   rollbackPracticeTransferBilling,
   toBillingPreviewFields,
   toFeeQuoteApi,
@@ -82,6 +83,7 @@ import {
 } from "../../services/practiceTransferProduction.service.js";
 import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutmentPresets.js";
 import { resolvePracticeTransferManufacturerStage } from "../../utils/practiceTransferStage.js";
+import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabShipping.js";
 // related files:
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -364,6 +366,7 @@ const toProductionApiFields = (production) => {
           : null,
     // 미설정·레거시 null은 생략(true)로 취급
     skipDesignConfirm: p.skipDesignConfirm !== false,
+    skipJig: Boolean(p.skipJig),
     designReadyAt: p.designReadyAt || null,
     designFileCount: designFiles.length,
     designFiles: designFiles.map((item, idx) => ({
@@ -411,6 +414,19 @@ const parseSkipDesignConfirmInput = (body, practiceRouting) => {
       : practiceRouting?.skipDesignConfirm;
   if (raw === false || raw === "false" || raw === 0 || raw === "0") return false;
   if (raw === true || raw === "true" || raw === 1 || raw === "1") return true;
+  return true;
+};
+
+/** body/routing에서 skipJig 파싱. 명시 false만 지그 필요, 그 외 기본 true(불필요) */
+const parseSkipJigInput = (body, practiceRouting) => {
+  const raw =
+    body?.skipJig !== undefined ? body.skipJig : practiceRouting?.skipJig;
+  if (raw === false || raw === "false" || raw === 0 || raw === "0" || raw === "N") {
+    return false;
+  }
+  if (raw === true || raw === "true" || raw === 1 || raw === "1" || raw === "Y") {
+    return true;
+  }
   return true;
 };
 
@@ -1850,6 +1866,10 @@ export async function createPracticeTransfer(req, res) {
     }
 
     const skipDesignConfirm = parseSkipDesignConfirmInput(req.body, practiceRouting);
+    const skipJig = resolvePracticeTransferSkipJig(
+      toothWorksRaw,
+      parseSkipJigInput(req.body, practiceRouting),
+    );
 
     try {
       assertAbutmentPresetsComplete(toothWorksRaw);
@@ -2011,6 +2031,7 @@ export async function createPracticeTransfer(req, res) {
       billing: billingPreview,
       production: {
         skipDesignConfirm,
+        skipJig,
         shippingMode: null,
         confirmedAt: null,
         confirmedBy: null,
@@ -2352,6 +2373,7 @@ export async function remakePracticeTransfers(req, res) {
         },
         production: {
           skipDesignConfirm: production?.skipDesignConfirm !== false,
+          skipJig: Boolean(production?.skipJig),
           shippingMode: null,
           confirmedAt: null,
           confirmedBy: null,
@@ -3752,6 +3774,22 @@ export async function markReceivedPracticeTransferComplete(req, res) {
         message:
           releaseErr?.message || "작업완료 기공크레딧 지급에 실패했습니다.",
         ...(releaseErr?.payload || {}),
+      });
+    }
+
+    try {
+      await chargePracticeTransferLabShipping({
+        transfer: doc,
+        toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
+        actorUserId: req.user?._id,
+      });
+    } catch (shipErr) {
+      const status = Number(shipErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message:
+          shipErr?.message || "기공소 배송비 차감에 실패했습니다.",
+        ...(shipErr?.payload || {}),
       });
     }
 

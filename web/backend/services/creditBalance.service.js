@@ -417,7 +417,8 @@ export async function spendRequestCreditAtomic({
 
 export async function spendShippingCreditAtomic({
   businessAnchorId,
-  shippingPackageId,
+  shippingPackageId = null,
+  spendUniqueKey = null,
   actorUserId,
   fee,
   session,
@@ -427,8 +428,12 @@ export async function spendShippingCreditAtomic({
   const packageObjectId = Types.ObjectId.isValid(packageIdRaw)
     ? new Types.ObjectId(packageIdRaw)
     : null;
+  const customKey = String(spendUniqueKey || "").trim();
 
-  if (!anchorObjectId || !packageObjectId) {
+  if (!anchorObjectId) {
+    return { didSpend: false, reason: "invalid_input" };
+  }
+  if (!packageObjectId && !customKey) {
     return { didSpend: false, reason: "invalid_input" };
   }
 
@@ -437,7 +442,9 @@ export async function spendShippingCreditAtomic({
     return { didSpend: false, reason: "invalid_fee" };
   }
 
-  const uniqueKey = `shippingPackage:${String(packageObjectId)}:shipping_fee`;
+  const uniqueKey =
+    customKey ||
+    `shippingPackage:${String(packageObjectId)}:shipping_fee`;
   const existingJournal = await findCommitJournalBySpendKey({
     spendUniqueKey: uniqueKey,
     session,
@@ -488,7 +495,8 @@ export async function spendShippingCreditAtomic({
       settlementCredit: split.settlementCredit,
       availableForShipping: split.available,
       required: amount,
-      shippingPackageId: String(packageObjectId),
+      shippingPackageId: packageObjectId ? String(packageObjectId) : null,
+      spendUniqueKey: uniqueKey,
     };
     throw err;
   }
@@ -503,7 +511,7 @@ export async function spendShippingCreditAtomic({
     fromFreeShipping: split.fromFreeShipping,
     fromSettlement: split.fromSettlement,
     uniqueKey,
-    shippingPackageId: String(packageObjectId),
+    shippingPackageId: packageObjectId ? String(packageObjectId) : null,
   };
 }
 

@@ -203,6 +203,7 @@ export function PracticeTransferLabReceiveCard({
           quote={transfer.feeQuote}
           viewer="lab"
           density="card"
+          skipJig={Boolean(transfer.production?.skipJig)}
         />
       ) : null}
 

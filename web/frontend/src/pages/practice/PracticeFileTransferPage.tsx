@@ -77,6 +77,8 @@
  * - 2026-08-16: 전체보기에서 휴지통 확인 후 최근의뢰 모달로 복귀(중첩 Confirm에 닫히지 않음).
  * - 2026-08-16: 기공소 거부·이미 취소 건이 「의뢰」로 남는 휴지통 이동 실패 수정.
  * - 2026-08-16: 기공소 취소 — 자동매칭은 재공개, 지정은 치과 「취소」로 다음 조치 유도.
+ * - 2026-08-16: 최근전송 조치대기(작업취소) 알림 뱃지·카드 깜빡임 하이라이트.
+ * - 2026-08-16: 취소 건 클릭 시 전용 모달로 거부 안내·기공소 재선택.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -249,6 +251,8 @@ import {
       normalizeAccountAbutmentProductMode,
       normalizeImplantFavorites,
       normalizeAbutmentFavorites,
+      resolveToothAbutmentProductMode,
+      resolvePracticeTransferSkipJig,
       type AbutmentProductMode,
       parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
       stripPracticeTransferMessageEnvelope,
@@ -307,6 +311,7 @@ type RecentRequestItem = {
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
   skipDesignConfirm?: boolean;
+  skipJig?: boolean;
   designReadyAt?: string | null;
   designFileCount?: number;
   practiceDesignConfirmedAt?: string | null;
@@ -432,6 +437,7 @@ type RecentTransferItem = {
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
   skipDesignConfirm?: boolean;
+  skipJig?: boolean;
   designReadyAt?: string | null;
   designFileCount?: number;
   practiceDesignConfirmedAt?: string | null;
@@ -495,6 +501,7 @@ type ParsedPracticeTransferMemoMeta = {
   patientName: string;
   memo: string;
   skipDesignConfirm: boolean;
+  skipJig: boolean;
 };
 
 type PracticeTransferFormFingerprintInput = {
@@ -551,6 +558,7 @@ type PracticeTransferSettingsPayload = {
   implantFavorites?: PracticeImplantFavorite[];
   abutmentFavorites?: PracticeAbutmentFavorite[];
   skipDesignConfirm?: boolean;
+  skipJig?: boolean;
   defaultAbutmentProductMode?: AbutmentProductMode;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   autoMatchMinLabRating?: number;
@@ -863,6 +871,7 @@ const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferM
     patientName: "",
     memo: source,
     skipDesignConfirm: true,
+    skipJig: true,
   };
   if (!source) return defaults;
 
@@ -881,6 +890,7 @@ const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferM
     memo: String(parsed.memo || ""),
     // 미설정·레거시는 생략(true). 명시 false만 미생략
     skipDesignConfirm: parsed.skipDesignConfirm !== false,
+    skipJig: parsed.skipJig !== false,
   };
 };
 
@@ -893,11 +903,13 @@ const buildPracticeTransferMemo = (params: {
   toothWorks: ToothWorkSelection[];
   patientName?: string;
   skipDesignConfirm?: boolean;
+  skipJig?: boolean;
 }) =>
   buildPracticeTransferMemoShared({
     ...params,
     prosthesisTypes: ensurePresetProsthesisTypes(params.prosthesisTypes),
     skipDesignConfirm: params.skipDesignConfirm !== false,
+    skipJig: params.skipJig !== false,
   });
 
 const normalizePatientNameKey = (value: string) => {
@@ -1182,6 +1194,7 @@ export const PracticeFileTransferPage = ({
   const requestSubmittingRef = useRef(false);
   const [skipDesignConfirm, setSkipDesignConfirm] = useState(true);
   const [skipDesignConfirmUncheckOpen, setSkipDesignConfirmUncheckOpen] = useState(false);
+  const [skipJig, setSkipJig] = useState(true);
   const [expressStepId, setExpressStepId] =
     useState<PracticeTransferExpressStepId>("lab");
   const [expressDone, setExpressDone] = useState(false);
@@ -1372,6 +1385,10 @@ export const PracticeFileTransferPage = ({
   const syncToothWorks = useMemo(
     () => normalizeToothWorksForSync(toothWorks),
     [toothWorks],
+  );
+  const effectiveSkipJig = useMemo(
+    () => resolvePracticeTransferSkipJig(normalizedToothWorks, skipJig),
+    [normalizedToothWorks, skipJig],
   );
   const normalizedPatientName = useMemo(
     () => String(patientName || "").trim().normalize("NFC"),
@@ -1647,6 +1664,7 @@ export const PracticeFileTransferPage = ({
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
     const nextSkipDesignConfirm = payload.skipDesignConfirm !== false;
+    const nextSkipJig = payload.skipJig !== false;
     const nextDefaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
       payload.defaultAbutmentProductMode,
     );
@@ -1680,6 +1698,7 @@ export const PracticeFileTransferPage = ({
     setImplantFavorites(nextImplantFavorites);
     setAbutmentFavorites(nextAbutmentFavorites);
     setSkipDesignConfirm(nextSkipDesignConfirm);
+    setSkipJig(nextSkipJig);
     setDefaultAbutmentProductMode(nextDefaultAbutmentProductMode);
     // 로컬 캐시에 키가 없으면 기본값으로 덮지 않음(서버 응답·명시 저장만 반영)
     if (nextAutoMatchBudget) {
@@ -1720,6 +1739,7 @@ export const PracticeFileTransferPage = ({
         params,
         "skipDesignConfirm",
       );
+      const hasSkipJig = Object.prototype.hasOwnProperty.call(params, "skipJig");
       const hasDefaultAbutmentProductMode = Object.prototype.hasOwnProperty.call(
         params,
         "defaultAbutmentProductMode",
@@ -1747,6 +1767,9 @@ export const PracticeFileTransferPage = ({
       }
       if (hasSkipDesignConfirm) {
         jsonBody.skipDesignConfirm = params.skipDesignConfirm !== false;
+      }
+      if (hasSkipJig) {
+        jsonBody.skipJig = params.skipJig !== false;
       }
       if (hasDefaultAbutmentProductMode) {
         jsonBody.defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
@@ -1808,6 +1831,7 @@ export const PracticeFileTransferPage = ({
                 : abutmentFavorites,
             ),
             skipDesignConfirm: payload?.skipDesignConfirm !== false,
+            skipJig: payload?.skipJig !== false,
             defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
               payload?.defaultAbutmentProductMode,
             ),
@@ -2247,9 +2271,10 @@ export const PracticeFileTransferPage = ({
       if (localFormUpdatedAtRef.current <= 0) {
         applyPracticeTransferSettings(payload);
       } else if (payload) {
-        // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
+        // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·디자인컨펌생략·지그생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         setSkipDesignConfirm(payload.skipDesignConfirm !== false);
+        setSkipJig(payload.skipJig !== false);
         setDefaultAbutmentProductMode(
           normalizeAccountAbutmentProductMode(payload.defaultAbutmentProductMode),
         );
@@ -2293,6 +2318,7 @@ export const PracticeFileTransferPage = ({
               Array.isArray(payload?.abutmentFavorites) ? payload?.abutmentFavorites : [],
             ),
             skipDesignConfirm: payload?.skipDesignConfirm !== false,
+            skipJig: payload?.skipJig !== false,
             defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
               payload?.defaultAbutmentProductMode,
             ),
@@ -2458,6 +2484,7 @@ export const PracticeFileTransferPage = ({
               ? String(productionRaw.confirmedAt)
               : null,
             skipDesignConfirm: productionRaw?.skipDesignConfirm !== false,
+            skipJig: Boolean(productionRaw?.skipJig),
             designReadyAt: productionRaw?.designReadyAt
               ? String(productionRaw.designReadyAt)
               : null,
@@ -2848,6 +2875,7 @@ export const PracticeFileTransferPage = ({
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
         skipDesignConfirm,
+        skipJig: effectiveSkipJig,
       });
       const hasLab =
         Boolean(String(selectedLab?.name || "").trim()) ||
@@ -3027,6 +3055,7 @@ export const PracticeFileTransferPage = ({
       selectedLab?._id,
       selectedLab?.name,
       skipDesignConfirm,
+      effectiveSkipJig,
     ],
   );
 
@@ -3374,6 +3403,7 @@ export const PracticeFileTransferPage = ({
           hasCustomAbutment: Boolean(req.hasCustomAbutment),
           productionConfirmedAt: req.productionConfirmedAt || null,
           skipDesignConfirm: req.skipDesignConfirm !== false,
+          skipJig: Boolean(req.skipJig),
           designReadyAt: req.designReadyAt || null,
           designFileCount: Number(req.designFileCount || 0),
           practiceDesignConfirmedAt: req.practiceDesignConfirmedAt || null,
@@ -3459,6 +3489,8 @@ export const PracticeFileTransferPage = ({
       }
       if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
       if (req.skipDesignConfirm === false) existing.skipDesignConfirm = false;
+      if (req.skipJig === false) existing.skipJig = false;
+      else if (req.skipJig) existing.skipJig = true;
       if (req.designReadyAt) existing.designReadyAt = req.designReadyAt;
       if (Number(req.designFileCount || 0) > Number(existing.designFileCount || 0)) {
         existing.designFileCount = Number(req.designFileCount || 0);
@@ -4418,6 +4450,7 @@ export const PracticeFileTransferPage = ({
       toothWorks: syncToothWorks,
       patientName: normalizedPatientName,
       skipDesignConfirm,
+      skipJig: effectiveSkipJig,
     });
 
     await apiFetch<unknown>({
@@ -5398,6 +5431,7 @@ export const PracticeFileTransferPage = ({
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
         skipDesignConfirm,
+        skipJig: effectiveSkipJig,
       });
       const autoMatch = isAutoMatchLab(selectedLab);
       const budgetForAuto = resolveAutoMatchBudgetOrDefaults(
@@ -5410,6 +5444,7 @@ export const PracticeFileTransferPage = ({
         targetLabName: String(selectedLab?.name || "").trim(),
         matchingMode: autoMatch ? "auto" : "direct",
         skipDesignConfirm,
+        skipJig: effectiveSkipJig,
         autoMatchBudget: autoMatch ? budgetForAuto : undefined,
       };
       const newSystemRequestBase = {
@@ -5477,6 +5512,7 @@ export const PracticeFileTransferPage = ({
           transferMemo,
           toothWorks: syncToothWorks,
           skipDesignConfirm,
+          skipJig: effectiveSkipJig,
           autoMatchBudget: autoMatch ? budgetForAuto : undefined,
           caseInfos: caseInfosPayload,
         },
@@ -5871,6 +5907,7 @@ export const PracticeFileTransferPage = ({
             implantFavorites,
             abutmentFavorites,
             skipDesignConfirm: next,
+            skipJig,
             savedAt: Date.now(),
           }),
         );
@@ -5890,6 +5927,52 @@ export const PracticeFileTransferPage = ({
       normalizedProsthesisTypes,
       savePracticeTransferSettingsToServer,
       skipDesignConfirm,
+      skipJig,
+    ],
+  );
+
+  const persistSkipJigSetting = useCallback(
+    (next: boolean) => {
+      if (next === skipJig) return;
+      setSkipJig(next);
+
+      try {
+        const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+        const existing =
+          existingRaw && typeof existingRaw === "string"
+            ? (JSON.parse(existingRaw) as Record<string, unknown>)
+            : {};
+        localStorage.setItem(
+          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+          JSON.stringify({
+            ...existing,
+            arrivalDefaultDays,
+            prosthesisTypes: normalizedProsthesisTypes,
+            memoSnippets,
+            implantFavorites,
+            abutmentFavorites,
+            skipDesignConfirm,
+            skipJig: next,
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+
+      void savePracticeTransferSettingsToServer({ skipJig: next }).catch(() => {
+        // UI 값은 유지하고, 서버 저장 실패는 다음 저장 기회에 재시도
+      });
+    },
+    [
+      abutmentFavorites,
+      arrivalDefaultDays,
+      implantFavorites,
+      memoSnippets,
+      normalizedProsthesisTypes,
+      savePracticeTransferSettingsToServer,
+      skipDesignConfirm,
+      skipJig,
     ],
   );
 
@@ -5915,6 +5998,7 @@ export const PracticeFileTransferPage = ({
             implantFavorites,
             abutmentFavorites,
             skipDesignConfirm,
+            skipJig,
             defaultAbutmentProductMode: normalized,
             savedAt: Date.now(),
           }),
@@ -5938,6 +6022,7 @@ export const PracticeFileTransferPage = ({
       normalizedProsthesisTypes,
       savePracticeTransferSettingsToServer,
       skipDesignConfirm,
+      skipJig,
     ],
   );
 
@@ -6183,6 +6268,8 @@ export const PracticeFileTransferPage = ({
                   },
                   prosthesisTypeSelectWidthClassName: "w-[7rem]",
                   showBridgeConnections: true,
+                  skipJig,
+                  onSkipJigChange: persistSkipJigSetting,
   };
 
   return (
@@ -7448,6 +7535,7 @@ export const PracticeFileTransferPage = ({
               : selectedTransfer?.id || "practice-transfer"
           }
           feeQuote={selectedTransfer?.feeQuote || null}
+          skipJig={Boolean(selectedTransfer?.skipJig)}
           feeViewer="practice"
           labAnchorId={selectedTransfer?.targetLabAnchorId || null}
           filesLabel="의뢰 파일"

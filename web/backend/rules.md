@@ -377,6 +377,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 어벗 디자인: 기공의뢰(PTX) CA는 **수락 기공소**가 design-claim/handoff. 업로드 시 lab confirm 자동·제조 즉시 착수 + `grantAbutmentDesignLabFee`(`abutmentDesignLabFee`×어벗수 → `LAB_SETTLEMENT_CREDIT`). 레거시 `POST .../confirm-abutment-design`은 미컨펌 건 호환용. 어벗생산의뢰(비PTX)는 기존 디자인 파트너 큐.
     - 치과=`POST .../confirm-production` — (a) 크라운 완료 전·CA·미생략: 어벗 디자인 생산 게이트 (b) 크라운 완료 후: `작업완료→생산진행` (Request 재생성 없음)
     - 「디자인 컨펌 생략」체크 UI는 계정 `practiceTransferSettings.skipDesignConfirm`(기본 **true**). 전송 시 `PracticeTransfer.production.skipDesignConfirm` 스냅샷. 해제 시 FE 안내 모달. 체크된 건은 기공소 `mark-complete` 시 생산진행 자동. 미체크면 어벗 생산에 치과 디자인 컨펌도 필요
+    - 「지그 제작 불필요」체크 UI는 계정 `practiceTransferSettings.skipJig`(기본 **true**). **커스텀어벗(디자인+생산)만** 있을 때 표시·적용. 보철이 하나라도 있으면 숨기고 `production.skipJig=false`(배송에 지그 포함). 전송 시 스냅샷. 체크 시 기공 보철 없으면 기공소→치과 배송비 면제(디자인비 금액 유지)
     - 작업 기한은 치과 도착일·채팅 소통. (레거시 3시간 `deadlineAt` 만료 재공개는 폐기)
     - 기공소 수신 카드(의뢰수락): `PracticeTransferFileDropTarget` + `[작업완료]`(크라운) / `[어벗 디자인 확인]` / `[작업취소]` (`RequestorPracticePage`). 배송선택 모달 없음
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
@@ -473,7 +474,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 설정 SSOT:
   - 저장 위치: `BusinessAnchor.practiceTransferSettings`
   - API: `GET/POST /api/practice/transfers/settings`
-  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`, `defaultAbutmentProductMode`, `implantFavorites`(환봉 요청 시 `roundBar`/`adopted`/`roundBarRequestId`)
+  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`, `skipJig`, `defaultAbutmentProductMode`, `implantFavorites`(환봉 요청 시 `roundBar`/`adopted`/`roundBarRequestId`)
   - `memoSnippets`는 의뢰 메모 문장 즐겨찾기(최대 40개, 공백/중복 제거)이며 프론트는 로컬스토리지에도 미러링합니다.
   - `defaultAbutmentProductMode`: 커스텀어벗 설정 모달 계정 기본값. 미설정·신규는 `design_custom_abutment`(디자인+생산). 모달에서 바꾸면 저장하고 다음 모달 초기값으로 씀. 치아별 스냅샷은 `toothWorks.abutmentProductMode`(레거시 미설정=생산만).
   - 관련 파일:
@@ -487,7 +488,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 생성: `POST /api/practice/transfers/round-bar-requests` — 문의(`manufacturer_add_request`) 자동 접수 + `RoundBarAbutmentRequest` + 치과 `implantFavorites`에 일단 저장(`roundBar=true`, `adopted=false`).
   - 관리자: `GET|PATCH /api/admin/round-bar-requests` — 프리셋 내용 편집. 도입 전에 `adoptedKind=cnc|round_bar` 필수. 도입 체크 시 해당 치과 프리셋 `adopted=true` + 종류 저장. 치과 단가: CNC=CNC어벗, 환봉=환봉어벗. 체크 해제=`adopted=false` + 문의 재오픈. 실시간 `practice:round-bar-request-updated`. UI는 플랫폼 설정「커스텀어벗 > 어벗 추가 요청」.
   - 요금 필드: `membership/regularRoundBarProductionPrice`, `membership/regularRoundBarDesignAndProductionPrice` (0이면 별도 고지).
-  - 기공의뢰 견적 툴팁: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. **환봉 요청중(미도입, `헥스(사이즈 미정)`)** 은 기공소 어벗 — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 그 금액. 도입되면 어벗츠 어벗.
+  - 기공의뢰 견적 툴팁: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. CA 디자인+생산은 어벗생산비 + 디자인비(+지그) 분해. **배송비(출고 시)**: 기공소 출발=`mark-complete` 시 `chargePracticeTransferLabShipping`, 어벗츠 출발=CA 포장 승인 시 `ensureShippingFeeSpendOnPackingApprove`(치과 payer). 단가=`creditSettings.shippingFee`. `production.skipJig`면 기공 보철 없을 때 기공소 배송 면제. **환봉 요청중(미도입, `헥스(사이즈 미정)`)** 은 기공소 어벗 — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 그 금액. 도입되면 어벗츠 어벗.
   - 관련 파일:
     - `models/roundBarAbutmentRequest.model.js`
     - `utils/roundBarAbutment.js`

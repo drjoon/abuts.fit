@@ -80,6 +80,7 @@ type PracticeTransferDetailChatDialogProps = {
   toothWorks?: ToothWorkSelection[];
   toothWorksKey?: string;
   feeQuote?: PracticeTransferFeeQuote | null;
+  skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
   labAnchorId?: string | null;
   filesLabel: string;
@@ -175,6 +176,7 @@ export function PracticeTransferDetailChatDialog({
   toothWorks,
   toothWorksKey,
   feeQuote = null,
+  skipJig = false,
   feeViewer = "practice",
   labAnchorId = null,
   filesLabel,
@@ -323,6 +325,7 @@ export function PracticeTransferDetailChatDialog({
                   feeQuote={feeQuote}
                   feeViewer={feeViewer}
                   labAnchorId={labAnchorId}
+                  skipJig={skipJig}
                 />
               ) : null}
 

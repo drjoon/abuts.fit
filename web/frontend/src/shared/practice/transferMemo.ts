@@ -8,6 +8,7 @@
 // - 2026-08-14: 기공소 수신(labFacing) 치식 표시 — 커스텀어벗 → 어벗츠 지급.
 // - 2026-08-14: 같은 스펙이면 환봉 도입 프리셋을 일반 프리셋보다 우선한다.
 // - 2026-08-14: implantFavorites 환봉 제조사 추가요청(roundBar/adopted/roundBarRequestId).
+// - 2026-08-16: 메모 메타 [지그제작생략] — skipJig 스냅샷(기본 true·명시 N만 false).
 // - 2026-08-13: 커스텀어벗 치아별 생산만/디자인+생산(abutmentProductMode) 저장·직렬화.
 // - 2026-08-13: 계정 기본 모드(defaultAbutmentProductMode)는 디자인+생산. 치아 미설정 레거시는 생산만.
 // - 2026-08-13: 크라운+커스텀어벗 플래그 직렬화 지원(isCustomAbutmentSupportedProsthesisType).
@@ -76,6 +77,48 @@ export const resolveToothAbutmentProductMode = (
     return ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION;
   }
   return ABUTMENT_PRODUCT_MODE.PRODUCTION;
+};
+
+/**
+ * 기공소 보철 배송이 필요한 치식(인레이·크라운·브리지 등).
+ * 커스텀어벗 단독·작업X는 제외. 크라운+CA는 보철로 본다.
+ */
+export const toothWorkHasLabProsthesis = (
+  row?: Partial<ToothWorkSelection> | null,
+) => {
+  const type = String(row?.prosthesisType || "").trim();
+  if (!type) return false;
+  if (isMissingToothProsthesisType(type)) return false;
+  if (isCustomAbutmentProsthesisType(type)) return false;
+  return true;
+};
+
+/**
+ * 「지그 제작 불필요」UI·적용 가능 여부.
+ * 디자인+생산 CA만 있고 보철이 하나도 없을 때만 true.
+ */
+export const canOfferPracticeTransferSkipJig = (
+  toothWorks?: Array<Partial<ToothWorkSelection> | null> | null,
+) => {
+  const rows = Array.isArray(toothWorks) ? toothWorks.filter(Boolean) : [];
+  const hasDesignProdCa = rows.some(
+    (row) =>
+      Boolean(row?.customAbutment) &&
+      resolveToothAbutmentProductMode(row) ===
+        ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
+  );
+  if (!hasDesignProdCa) return false;
+  if (rows.some((row) => toothWorkHasLabProsthesis(row))) return false;
+  return true;
+};
+
+/** 보철이 섞이면 지그도 배송에 포함(skipJig=false). */
+export const resolvePracticeTransferSkipJig = (
+  toothWorks: Array<Partial<ToothWorkSelection> | null> | null | undefined,
+  accountOrRequestedSkipJig: boolean | undefined,
+) => {
+  if (!canOfferPracticeTransferSkipJig(toothWorks)) return false;
+  return accountOrRequestedSkipJig !== false;
 };
 
 export const pickToothWorkAbutmentProductMode = (
@@ -420,6 +463,8 @@ export type ParsedPracticeTransferMemoMeta = {
   memo: string;
   /** 의뢰건별 「디자인 컨펌 생략」. 계정 세팅이 아님 */
   skipDesignConfirm: boolean;
+  /** 의뢰건별 「지그 제작 불필요」. 기공소→치과 배송 면제 */
+  skipJig: boolean;
 };
 
 export const DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS = 7;
@@ -1069,6 +1114,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
   let toothWorks: ToothWorkSelection[] = [];
   let patientName = "";
   let skipDesignConfirm = true;
+  let skipJig = true;
 
   for (const line of lines) {
     const trimmed = String(line || "").trim();
@@ -1140,6 +1186,20 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
       continue;
     }
 
+    const skipJigMatch = trimmed.match(/^\[\s*지그제작생략\s*:\s*(.+)\]$/);
+    if (skipJigMatch) {
+      const flag = String(skipJigMatch[1] || "").trim().toLowerCase();
+      skipJig = !(
+        flag === "n" ||
+        flag === "no" ||
+        flag === "0" ||
+        flag === "false" ||
+        flag === "필요" ||
+        flag === "미생략"
+      );
+      continue;
+    }
+
     memoLines.push(line);
   }
 
@@ -1152,6 +1212,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
     patientName,
     memo: memoLines.join("\n").replace(/^\s+|\s+$/g, ""),
     skipDesignConfirm,
+    skipJig,
   };
 };
 
@@ -1164,6 +1225,7 @@ export const buildPracticeTransferMemo = (params: {
   toothWorks: ToothWorkSelection[];
   patientName?: string;
   skipDesignConfirm?: boolean;
+  skipJig?: boolean;
 }) => {
   const lines = [
     `[주문일: ${String(params.orderDate || "").trim()}]`,
@@ -1173,6 +1235,7 @@ export const buildPracticeTransferMemo = (params: {
     `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
     `[치아보철: ${serializeToothWorksForSync(params.toothWorks)}]`,
     `[디자인컨펌생략: ${params.skipDesignConfirm !== false ? "Y" : "N"}]`,
+    `[지그제작생략: ${params.skipJig !== false ? "Y" : "N"}]`,
   ];
   const memo = String(params.memo || "").trim();
   return memo ? `${lines.join("\n")}\n${memo}` : lines.join("\n");
@@ -1190,7 +1253,7 @@ export const formatPracticeTransferMemoDetail = (
   if (!source) return "";
 
   const hasKnownMeta =
-    /\[\s*(주문일|치과도착일|도착일|도착기본일수|환자명|보철물형태목록|보철물형태|치아보철|디자인컨펌생략)\s*:/i.test(
+    /\[\s*(주문일|치과도착일|도착일|도착기본일수|환자명|보철물형태목록|보철물형태|치아보철|디자인컨펌생략|지그제작생략)\s*:/i.test(
       source,
     );
   if (!hasKnownMeta) return formatTransferMemoForDisplay(source);

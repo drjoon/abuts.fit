@@ -19,12 +19,14 @@
 // - 2026-08-14: 자동매칭 수락 예산 검증은 공개 수가(할증 제외). 할증은 청구에만.
 // - 2026-08-15: 지정·수락된 자동매칭 견적은 billing 스냅샷. 공개풀만 as-of(history).
 // - 2026-08-15: 전송 전 잔액검사 — catalog 재사용·어벗 단가 캐시·조회 병렬화.
+// - 2026-08-16: chargePracticeTransferLabShipping — 기공소 출발 배송비(지그 면제).
 // - 2026-08-15: 청구 완료 목록 견적에 autoMatchBudget 재부착 금지(확정 기공비 유지).
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
   allocateSpendFromCreditBuckets,
   computeBusinessCreditBalanceFromLedger,
+  spendShippingCreditAtomic,
 } from "./creditBalance.service.js";
 import {
   postGeneralLedgerJournal,
@@ -68,12 +70,15 @@ import {
   normalizeAutoMatchBudget,
   resolveAutoMatchBudgetOrDefaults,
 } from "../utils/practiceTransferAutoMatchBudget.js";
+import { shouldChargePracticeTransferLabShipping } from "../utils/practiceTransferLabShipping.js";
 import {
   getRequestPerfCacheValue,
   invalidateRequestPerfCacheByPrefix,
   setRequestPerfCacheValue,
   withRequestPerfInFlight,
 } from "./requestDashboardCache.service.js";
+
+export { shouldChargePracticeTransferLabShipping };
 
 const QUOTE_LOOKUP_CACHE_TTL_MS = 60 * 1000;
 
@@ -2562,6 +2567,27 @@ export async function grantAbutmentDesignLabFee({
     return { granted: false, reason: "zero_amount", unitFee, qty };
   }
 
+  const relatedTransferId = String(
+    transferId ||
+      requestDoc?.partnerBilling?.relatedPracticeTransferId ||
+      "",
+  ).trim();
+  let skipJig = false;
+  if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
+    try {
+      const PracticeTransfer = (
+        await import("../models/practiceTransfer.model.js")
+      ).default;
+      const ptx = await PracticeTransfer.findById(relatedTransferId)
+        .select({ "production.skipJig": 1 })
+        .lean();
+      skipJig = Boolean(ptx?.production?.skipJig);
+    } catch {
+      skipJig = false;
+    }
+  }
+  const designFeeLabel = skipJig ? "디자인비" : "디자인비+지그제작비";
+
   const idempotencyKey = `gl:request:${requestId}:abutment_design_fee`;
   const existing = await getJournalByIdempotencyKey({ idempotencyKey });
   if (existing) {
@@ -2580,12 +2606,6 @@ export async function grantAbutmentDesignLabFee({
     return { granted: false, reason: "missing_devops" };
   }
 
-  const relatedTransferId = String(
-    transferId ||
-      requestDoc?.partnerBilling?.relatedPracticeTransferId ||
-      "",
-  ).trim();
-
   const journal = await postGeneralLedgerJournal({
     idempotencyKey,
     eventType: "ADJUST",
@@ -2596,12 +2616,13 @@ export async function grantAbutmentDesignLabFee({
     meta: {
       source: "abutment_design_lab_fee",
       displayKind: "lab_credit",
-      displayLabel: "디자인비+지그제작비",
+      displayLabel: designFeeLabel,
       requestId,
       relatedPracticeTransferId: relatedTransferId || null,
       unitFee,
       qty,
       amount,
+      skipJig,
     },
     lines: [
       {
@@ -2616,7 +2637,7 @@ export async function grantAbutmentDesignLabFee({
         refId: requestId,
         meta: {
           source: "abutment_design_lab_fee",
-          displayLabel: "디자인비+지그제작비",
+          displayLabel: designFeeLabel,
         },
       },
       {
@@ -2632,8 +2653,8 @@ export async function grantAbutmentDesignLabFee({
         meta: {
           source: "abutment_design_lab_fee",
           displayKind: "lab_credit",
-          displayLabel: "디자인비+지그제작비",
-          itemLabel: "디자인비+지그제작비",
+          displayLabel: designFeeLabel,
+          itemLabel: designFeeLabel,
           unitFee,
           qty,
         },
@@ -2665,6 +2686,206 @@ export async function grantAbutmentDesignLabFee({
     unitFee,
     qty,
   };
+}
+
+/**
+ * 기공소 출발 배송비(치과→기공소). mark-complete 시 1회.
+ * - 기공 보철/기공소어벗이 있거나, CA 디자인+지그(!skipJig)이면 차감
+ * - skipJig 이고 기공 보철이 없으면 면제
+ */
+export async function chargePracticeTransferLabShipping({
+  transfer,
+  toothWorks = null,
+  actorUserId = null,
+  session: outerSession = null,
+}) {
+  const transferId = transfer?._id;
+  const practiceAnchorId = transfer?.practiceBusinessAnchorId;
+  if (!transferId || !practiceAnchorId) {
+    return { charged: false, reason: "missing_anchors" };
+  }
+
+  const remake = isPracticeTransferRemake(transfer);
+  const computed =
+    toothWorks || transfer?.toothWorks
+      ? computePracticeTransferRetailFees({
+          toothWorks: toothWorks || transfer?.toothWorks || [],
+          remake,
+          skipAbutmentFees: remake,
+        })
+      : null;
+  const fees = {
+    labFeeTotal: Math.max(
+      0,
+      Math.round(
+        Number(
+          transfer?.billing?.labFeeTotal ?? computed?.labFeeTotal ?? 0,
+        ) || 0,
+      ),
+    ),
+    labAbutmentTotal: Math.max(
+      0,
+      Math.round(Number(computed?.labAbutmentTotal ?? 0) || 0),
+    ),
+    abutmentQty: Math.max(
+      0,
+      Math.round(
+        Number(
+          transfer?.billing?.abutmentQty ?? computed?.abutmentQty ?? 0,
+        ) || 0,
+      ),
+    ),
+  };
+
+  if (!shouldChargePracticeTransferLabShipping({ transfer, fees })) {
+    return {
+      charged: false,
+      reason: transfer?.production?.skipJig
+        ? "skip_jig_waived"
+        : "no_lab_origin",
+    };
+  }
+
+  const creditSettings = await loadCreditSettingsDefaults();
+  const fee = Math.max(
+    0,
+    Math.round(Number(creditSettings?.shippingFee ?? 3500) || 0),
+  );
+  if (fee <= 0) {
+    return { charged: false, reason: "zero_fee" };
+  }
+
+  const spendUniqueKey = `practice_transfer:${String(transferId)}:lab_shipping`;
+  const idempotencyKey = `gl:${spendUniqueKey}`;
+  const existing = await getJournalByIdempotencyKey({
+    idempotencyKey,
+    session: outerSession,
+  });
+  if (existing?.journalId) {
+    return {
+      charged: false,
+      reason: "already_charged",
+      journalId: existing.journalId,
+      amount: fee,
+    };
+  }
+
+  const ownSession = !outerSession;
+  const session = outerSession || (await mongoose.startSession());
+  if (ownSession) session.startTransaction();
+
+  try {
+    await lockGuard(practiceAnchorId, session);
+
+    const spendResult = await spendShippingCreditAtomic({
+      businessAnchorId: practiceAnchorId,
+      spendUniqueKey,
+      actorUserId,
+      fee,
+      session,
+    });
+
+    if (!spendResult?.didSpend) {
+      if (ownSession) await session.abortTransaction();
+      return {
+        charged: false,
+        reason: spendResult?.reason || "not_spent",
+        amount: fee,
+      };
+    }
+
+    const owners = await resolveRevenueOwners({
+      practiceAnchorId,
+      session,
+    });
+    const spendMeta = {
+      spendUniqueKey,
+      usageKind: "practice_transfer_lab_shipping",
+      displayKind: "shipping",
+      displayLabel: "배송비(치과→기공소)",
+      fromPaid: spendResult.fromPaid,
+      fromFreeRequest: spendResult.fromFreeRequest,
+      fromFreeShipping: spendResult.fromFreeShipping,
+    };
+    const lines = [
+      ...buildPracticeDebitLines({
+        split: {
+          fromPaid: Number(spendResult.fromPaid || 0),
+          fromFreeRequest: Number(spendResult.fromFreeRequest || 0),
+          fromFreeShipping: Number(spendResult.fromFreeShipping || 0),
+        },
+        practiceAnchorId,
+        transferId,
+        meta: spendMeta,
+      }),
+    ];
+    pushRevenueLines({
+      lines,
+      owners,
+      spendAmount: fee,
+      freeAmount:
+        Number(spendResult.fromFreeRequest || 0) +
+        Number(spendResult.fromFreeShipping || 0),
+      fromFreeRequest: Number(spendResult.fromFreeRequest || 0),
+      fromFreeShipping: Number(spendResult.fromFreeShipping || 0),
+      refType: "PRACTICE_TRANSFER",
+      refId: transferId,
+      meta: spendMeta,
+    });
+
+    const journal = await postGeneralLedgerJournal({
+      idempotencyKey,
+      eventType: "SHIPPING_SPEND_COMMIT",
+      businessAnchorId: practiceAnchorId,
+      refType: "PRACTICE_TRANSFER",
+      refId: transferId,
+      createdBy: actorUserId || null,
+      meta: {
+        ...spendMeta,
+        amount: fee,
+        source: "practice_transfer_lab_shipping",
+      },
+      lines,
+      session,
+      skipIdempotencyLookup: true,
+    });
+
+    if (ownSession) await session.commitTransaction();
+
+    if (journal?.posted) {
+      try {
+        const { emitCreditBalanceUpdatedToBusiness } = await import(
+          "../utils/creditRealtime.js"
+        );
+        await emitCreditBalanceUpdatedToBusiness({
+          businessAnchorId: practiceAnchorId,
+          balanceDelta: -fee,
+          reason: "practice_transfer_lab_shipping",
+          refId: journal.journalId || String(transferId),
+        });
+      } catch {
+        // best-effort
+      }
+    }
+
+    return {
+      charged: Boolean(journal?.posted),
+      reason: journal?.posted ? "posted" : "not_posted",
+      journalId: journal?.journalId || null,
+      amount: fee,
+    };
+  } catch (e) {
+    if (ownSession) {
+      try {
+        await session.abortTransaction();
+      } catch {
+        // ignore
+      }
+    }
+    throw e;
+  } finally {
+    if (ownSession) session.endSession();
+  }
 }
 
 /**

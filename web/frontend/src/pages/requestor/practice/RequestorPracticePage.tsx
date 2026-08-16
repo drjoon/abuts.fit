@@ -501,6 +501,7 @@ export function RequestorPracticeReceivePage({
                     ? ("normal" as const)
                     : null,
               skipDesignConfirm: productionRaw.skipDesignConfirm !== false,
+              skipJig: Boolean(productionRaw.skipJig),
               designReadyAt: productionRaw.designReadyAt
                 ? String(productionRaw.designReadyAt)
                 : null,
@@ -1604,6 +1605,9 @@ export function RequestorPracticeReceivePage({
           skipDesignConfirm:
             productionRawFromRes?.skipDesignConfirm !== false &&
             transfer.production?.skipDesignConfirm !== false,
+          skipJig:
+            Boolean(productionRawFromRes?.skipJig) ||
+            Boolean(transfer.production?.skipJig),
           designReadyAt: productionRawFromRes?.designReadyAt
             ? String(productionRawFromRes.designReadyAt)
             : transfer.production?.designReadyAt || null,
@@ -1735,6 +1739,7 @@ export function RequestorPracticeReceivePage({
           ? {
               ...transfer.production,
               skipDesignConfirm: productionRaw.skipDesignConfirm !== false,
+              skipJig: Boolean(productionRaw.skipJig),
               labDesignConfirmedAt: productionRaw.labDesignConfirmedAt
                 ? String(productionRaw.labDesignConfirmedAt)
                 : new Date().toISOString(),
@@ -2888,6 +2893,7 @@ export function RequestorPracticeReceivePage({
         toothWorks={selectedTransferToothWorks}
         toothWorksKey={selectedTransfer?.transferId || "requestor-transfer"}
         feeQuote={selectedTransfer?.feeQuote || null}
+        skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
         filesLabel="의뢰·어벗 디자인 파일"
         files={

@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import { Label } from "@/components/ui/label";
 import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
@@ -92,6 +93,8 @@ import {
   normalizeAccountAbutmentProductMode,
   pickToothWorkCustomSpecs,
   resolveToothAbutmentProductMode,
+  canOfferPracticeTransferSkipJig,
+  resolvePracticeTransferSkipJig,
   type AbutmentProductMode,
   type PracticeAbutmentFavorite,
   type PracticeImplantFavorite,
@@ -665,6 +668,9 @@ export type PracticeTransferRequestIntakePanelProps = {
   toothChartResetNonce?: number;
   /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
   showFeeEstimate?: boolean;
+  /** 지그 제작 불필요 — 견적 툴팁 배송·라벨 반영 */
+  skipJig?: boolean;
+  onSkipJigChange?: (next: boolean) => void;
   /** 자동매칭 기공비(v4 고정수가 스냅샷) */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   /** 어벗츠 수가 카탈로그 — 평균×배수 견적 SSOT */
@@ -739,6 +745,8 @@ export const PracticeTransferRequestIntakePanel = ({
   onAlternateAbutmentModeNavigate,
   toothChartResetNonce = 0,
   showFeeEstimate = false,
+  skipJig = true,
+  onSkipJigChange,
   autoMatchBudget = null,
   abutsLabFeeCatalog = null,
   onAutoMatchBudgetChange,
@@ -756,6 +764,8 @@ export const PracticeTransferRequestIntakePanel = ({
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
   );
+  const showSkipJigCheckbox = canOfferPracticeTransferSkipJig(toothWorks);
+  const effectiveSkipJig = resolvePracticeTransferSkipJig(toothWorks, skipJig);
   const lockedMode = isAbutmentProductMode(lockedAbutmentProductMode)
     ? lockedAbutmentProductMode
     : null;
@@ -2827,11 +2837,50 @@ export const PracticeTransferRequestIntakePanel = ({
               >
                 {chartRows[0]}
                 {showFeeEstimate ? (
-                  <PracticeTransferFeeEstimate
-                    quote={feeQuote}
-                    viewer="practice"
-                    labPending={!selectedLab}
-                  />
+                  <div className="flex items-center justify-center gap-3 px-1">
+                    <PracticeTransferFeeEstimate
+                      quote={feeQuote}
+                      viewer="practice"
+                      labPending={!selectedLab}
+                      skipJig={effectiveSkipJig}
+                    />
+                    {onSkipJigChange && showSkipJigCheckbox ? (
+                      <TooltipProvider delayDuration={0}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <label
+                              htmlFor="practice-intake-skip-jig"
+                              className="flex shrink-0 cursor-pointer items-center gap-2 text-sm text-slate-700 select-none"
+                              data-no-tooth-marquee=""
+                              onPointerDown={(event) => event.stopPropagation()}
+                            >
+                              <Checkbox
+                                id="practice-intake-skip-jig"
+                                checked={skipJig}
+                                onCheckedChange={(value) => {
+                                  onSkipJigChange(value === true);
+                                }}
+                              />
+                              <span>지그 제작 불필요</span>
+                            </label>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="bottom"
+                            className="max-w-xs text-xs leading-relaxed"
+                          >
+                            <p>
+                              커스텀어벗만 의뢰할 때 지그가 필요 없으면
+                              체크하세요. 보철이 함께 있으면 배송에 지그를
+                              포함하므로 선택할 수 없습니다. 기공소 디자인비는
+                              1만원으로 유지되고, 기공소→치과 배송비는 차감하지
+                              않습니다. 어벗츠 배송비는 그대로 차감됩니다.
+                              설정은 치과 계정에 저장됩니다.
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : null}
+                  </div>
                 ) : null}
                 {chartRows[1]}
                 {toothMarquee && toothChartRef.current

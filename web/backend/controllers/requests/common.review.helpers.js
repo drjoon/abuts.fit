@@ -56,7 +56,23 @@ import {
   resolveAbutsAbutmentPricingTier,
 } from "../../utils/abutsAbutmentService.js";
 
-const SHIPPING_FEE_SUPPLY = 3500;
+const SHIPPING_FEE_SUPPLY_FALLBACK = 3500;
+
+async function resolveShippingFeePerBox() {
+  try {
+    const { loadCreditSettingsDefaults } = await import(
+      "../../utils/creditSettingsDefaults.js"
+    );
+    const creditSettings = await loadCreditSettingsDefaults();
+    const fee = Math.max(
+      0,
+      Math.round(Number(creditSettings?.shippingFee ?? SHIPPING_FEE_SUPPLY_FALLBACK) || 0),
+    );
+    return fee > 0 ? fee : SHIPPING_FEE_SUPPLY_FALLBACK;
+  } catch {
+    return SHIPPING_FEE_SUPPLY_FALLBACK;
+  }
+}
 
 function isPtxLabDesignedAbutmentRequest(request) {
   const pb =
@@ -1462,6 +1478,8 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     }
   }
 
+  const shippingFeeSupply = await resolveShippingFeePerBox();
+
   // 트랜잭션 안에서는 upsert 11000이 트랜잭션 전체를 abort 시킨다.
   // 레거시 unique(businessId+shipDate+mailbox)는 businessId가 비어 있으면
   // 서로 다른 businessAnchor도 같은 우편함/일자에서 충돌한다.
@@ -1524,7 +1542,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
                 businessAnchorId,
                 shipDateYmd,
                 mailboxAddress: resolvedMailbox,
-                shippingFeeSupply: SHIPPING_FEE_SUPPLY,
+                shippingFeeSupply,
                 shippingFeeVat: 0,
                 createdBy: actorUserId || null,
                 requestIds: [request._id],
@@ -1600,7 +1618,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     businessAnchorId: payerAnchorId,
     shippingPackageId: pkg._id,
     actorUserId,
-    fee: SHIPPING_FEE_SUPPLY,
+    fee: shippingFeeSupply,
     session,
   });
 
@@ -1618,7 +1636,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   console.log("[SHIPPING_FEE] shipping fee spend inserted", {
     requestId: request?.requestId,
     shippingPackageId: String(pkg._id),
-    amount: Number(spendResult.amount || SHIPPING_FEE_SUPPLY),
+    amount: Number(spendResult.amount || shippingFeeSupply),
     fromBonusShipping: Number(spendResult.fromBonusShipping || 0),
     fromPaid: Number(spendResult.fromPaid || 0),
     businessAnchorId: String(payerAnchorId),
@@ -1665,7 +1683,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   await emitOrQueueCreditBalanceUpdate({
     deferredCreditEvents,
     businessAnchorId: payerAnchorId,
-    balanceDelta: -Number(spendResult.amount || SHIPPING_FEE_SUPPLY),
+    balanceDelta: -Number(spendResult.amount || shippingFeeSupply),
     reason: "shipping_fee_spend",
     refId: pkg._id,
   });

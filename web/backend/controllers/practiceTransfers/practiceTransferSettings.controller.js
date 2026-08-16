@@ -193,6 +193,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
     promoNoticeDismissedAt,
     skipDesignConfirm: settings?.skipDesignConfirm !== false,
+    skipJig: settings?.skipJig !== false,
     defaultAbutmentProductMode: normalizeDefaultAbutmentProductMode(
       settings?.defaultAbutmentProductMode,
     ),
@@ -267,6 +268,7 @@ export async function upsertPracticeTransferSettings(req, res) {
     const hasAbutmentFavorites = Object.prototype.hasOwnProperty.call(body, "abutmentFavorites");
     const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(body, "promoNoticeDismissedAt");
     const hasSkipDesignConfirm = Object.prototype.hasOwnProperty.call(body, "skipDesignConfirm");
+    const hasSkipJig = Object.prototype.hasOwnProperty.call(body, "skipJig");
     const hasDefaultAbutmentProductMode = Object.prototype.hasOwnProperty.call(
       body,
       "defaultAbutmentProductMode",
@@ -315,6 +317,14 @@ export async function upsertPracticeTransferSettings(req, res) {
         body.skipDesignConfirm === "false" ||
         body.skipDesignConfirm === 0 ||
         body.skipDesignConfirm === "0"
+      );
+    }
+    if (hasSkipJig) {
+      setPatch["practiceTransferSettings.skipJig"] = !(
+        body.skipJig === false ||
+        body.skipJig === "false" ||
+        body.skipJig === 0 ||
+        body.skipJig === "0"
       );
     }
     if (hasDefaultAbutmentProductMode) {

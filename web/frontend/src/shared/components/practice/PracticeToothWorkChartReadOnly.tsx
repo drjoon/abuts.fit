@@ -112,6 +112,7 @@ type PracticeToothWorkChartReadOnlyProps = {
   feeQuote?: PracticeTransferFeeQuote | null;
   feeViewer?: PracticeTransferFeeQuoteViewer;
   labAnchorId?: string | null;
+  skipJig?: boolean;
 };
 
 export const PracticeToothWorkChartReadOnly = ({
@@ -120,6 +121,7 @@ export const PracticeToothWorkChartReadOnly = ({
   feeQuote: storedFeeQuote = null,
   feeViewer = "practice",
   labAnchorId = null,
+  skipJig = false,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const byTooth = useMemo(() => {
     const map = new Map<string, ToothWorkSelection>();
@@ -432,7 +434,11 @@ export const PracticeToothWorkChartReadOnly = ({
   const chartBody = (
     <div className="space-y-2">
       {chartRows[0]}
-      <PracticeTransferFeeEstimate quote={feeQuote} viewer={feeViewer} />
+      <PracticeTransferFeeEstimate
+        quote={feeQuote}
+        viewer={feeViewer}
+        skipJig={skipJig}
+      />
       {chartRows[1]}
     </div>
   );
