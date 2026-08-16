@@ -3590,6 +3590,7 @@ export function RequestorPracticeReceivePage({
               practiceAnchorId={selectedTransfer.practiceBusinessAnchorId}
               multiplier={selectedTransfer.labFeeMultiplier}
               size="sm"
+              buttonLabel="치과 평가"
               onChanged={(next) => {
                 // live 설정만 갱신. 해당 의뢰 feeQuote(스냅샷)는 바꾸지 않는다.
                 const practiceAnchorId =
@@ -3641,6 +3642,11 @@ export function RequestorPracticeReceivePage({
         feeQuote={selectedTransfer?.feeQuote || null}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
+        labEffectiveStars={
+          selectedTransfer?.labRatingSummary?.effectiveStars ??
+          selectedTransfer?.starDowngrade?.labEffectiveStars ??
+          null
+        }
         filesLabel="의뢰 파일 (구강 스캔)"
         files={
           (selectedTransfer?.files || []).map((file) => ({

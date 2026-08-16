@@ -4,6 +4,7 @@
 import {
   bandFromAdminBase,
   buildDefaultAutoMatchBudgetItems,
+  buildScheduleFromAutoMatchBudgetAtStars,
   isAutoMatchBudgetConfigured,
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
@@ -74,6 +75,30 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
       feeMultiplier: 1,
       items: { crown: { min: 60000, max: 66000 } },
     });
+  });
+
+  test("buildScheduleFromAutoMatchBudgetAtStars uses lab stars within band", () => {
+    const catalog = [
+      { id: "crown", name: "크라운", price: 60000, enabled: true },
+      { id: "bridge", name: "브리지", price: 60000, enabled: true },
+    ];
+    const budget = resolveAutoMatchBudgetFromStarBand(
+      { minStars: 3, maxStars: 4 },
+      catalog,
+    );
+    const at3 = buildScheduleFromAutoMatchBudgetAtStars(budget, 3, catalog);
+    expect(at3.items.find((row) => row.id === "bridge")?.price).toBe(60000);
+    const at4 = buildScheduleFromAutoMatchBudgetAtStars(budget, 4, catalog);
+    expect(at4.items.find((row) => row.id === "bridge")?.price).toBe(66000);
+    // 미지정·대역 밖 → 기본 3(대역 하한 쪽)
+    const fallback = buildScheduleFromAutoMatchBudgetAtStars(
+      budget,
+      null,
+      catalog,
+    );
+    expect(fallback.items.find((row) => row.id === "bridge")?.price).toBe(
+      60000,
+    );
   });
 
   test("resolveAutoMatchBudgetOrDefaults prefers minStars for v4", () => {

@@ -428,6 +428,11 @@ export function PracticeTransferLabReceiveCard({
                   viewer="lab"
                   density="card"
                   skipJig={Boolean(transfer.production?.skipJig)}
+                  labEffectiveStars={
+                    transfer.labRatingSummary?.effectiveStars ??
+                    starDowngrade?.labEffectiveStars ??
+                    null
+                  }
                 />
               ) : null}
               {starDowngrade ? (

@@ -13,6 +13,7 @@
 // - 2026-08-16: 별점 다운그레이드 — 유효별 수가배수 > 의뢰 별점배수일 때 표시 페이로드.
 // - 2026-08-16: 공개 대역 — 치과가 하한·상한 직접 설정(기본 3~4).
 // - 2026-08-16: 치과·기공소 쌍당 평가 1건. 재평가 시 덮어쓰기(지정·매칭 공통). 집계 ratingCount=평가 치과 수.
+// - 2026-08-16: scaleAutoMatchFeeToLabStars — 기공소 수신·수락 견적 별점 확정 단일가.
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -83,6 +84,53 @@ export function resolveAutoMatchEligibleStarBand({
 export function feeMultiplierForStars(stars) {
   const n = normalizeAutoMatchMinLabRating(stars);
   return FEE_MULTIPLIER_BY_STARS[n] ?? 1;
+}
+
+/** 기공소 유효 별점을 의뢰 공개 대역 안으로 clamp. 미지정이면 기본 3(대역 내). */
+export function clampLabStarsToAutoMatchBand(
+  labStars,
+  { minStars, maxStars } = {},
+) {
+  const band = resolveAutoMatchEligibleStarBand({ minStars, maxStars });
+  const labRaw = Number(labStars);
+  const fallback = Math.min(
+    band.maxStars,
+    Math.max(band.minStars, DEFAULT_EFFECTIVE_LAB_STARS),
+  );
+  if (!Number.isFinite(labRaw) || labRaw <= 0) return fallback;
+  return Math.min(band.maxStars, Math.max(band.minStars, labRaw));
+}
+
+/**
+ * 자동매칭 상한 수가 → 기공소 유효 별점 배수 단일가.
+ * 라인·합산 labFee(max)에 적용. 의뢰 별점 대역 안으로 clamp.
+ */
+export function scaleAutoMatchFeeToLabStars({
+  feeAtMax,
+  feeAtMin,
+  budgetStars,
+  budgetMaxStars,
+  labStars,
+} = {}) {
+  const maxFee = Math.max(0, Math.round(Number(feeAtMax) || 0));
+  if (!(maxFee > 0)) return 0;
+  const band = resolveAutoMatchEligibleStarBand({
+    minStars: budgetStars,
+    maxStars: budgetMaxStars ?? budgetStars,
+  });
+  const minM = feeMultiplierForStars(band.minStars);
+  const maxM = feeMultiplierForStars(band.maxStars);
+  const labEff = clampLabStarsToAutoMatchBand(labStars, band);
+  const labM = feeMultiplierForStars(labEff);
+  if (!(maxM > 0) || labM === maxM) return maxFee;
+  if (
+    labM === minM &&
+    feeAtMin != null &&
+    Number.isFinite(Number(feeAtMin))
+  ) {
+    return Math.max(0, Math.round(Number(feeAtMin)));
+  }
+  return Math.max(0, Math.round((maxFee * labM) / maxM));
 }
 
 /**

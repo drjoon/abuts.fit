@@ -113,6 +113,8 @@ type PracticeToothWorkChartReadOnlyProps = {
   feeViewer?: PracticeTransferFeeQuoteViewer;
   labAnchorId?: string | null;
   skipJig?: boolean;
+  /** 기공소 뷰 — 자동매칭 기공비 별점 확정가 */
+  labEffectiveStars?: number | null;
 };
 
 export const PracticeToothWorkChartReadOnly = ({
@@ -122,6 +124,7 @@ export const PracticeToothWorkChartReadOnly = ({
   feeViewer = "practice",
   labAnchorId = null,
   skipJig = false,
+  labEffectiveStars = null,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const byTooth = useMemo(() => {
     const map = new Map<string, ToothWorkSelection>();
@@ -438,6 +441,7 @@ export const PracticeToothWorkChartReadOnly = ({
         quote={feeQuote}
         viewer={feeViewer}
         skipJig={skipJig}
+        labEffectiveStars={labEffectiveStars}
       />
       {chartRows[1]}
     </div>

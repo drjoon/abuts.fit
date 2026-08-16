@@ -15,6 +15,7 @@ import {
   normalizeAutoMatchMinLabRating,
   resolveAutoMatchEligibleStarBand,
   resolveStarDowngrade,
+  scaleAutoMatchFeeToLabStars,
   toPracticeLabRatingApi,
   upsertPracticeLabRatingList,
 } from "../../utils/practiceLabRating.js";
@@ -108,6 +109,37 @@ describe("practiceLabRating auto-match gate", () => {
     expect(feeMultiplierForStars(3)).toBe(1);
     expect(feeMultiplierForStars(4)).toBe(1.1);
     expect(feeMultiplierForStars(5)).toBe(1.2);
+  });
+
+  test("scaleAutoMatchFeeToLabStars: 3★ in 3~4 band → 6만 not 6.6만", () => {
+    expect(
+      scaleAutoMatchFeeToLabStars({
+        feeAtMax: 66000,
+        feeAtMin: 60000,
+        budgetStars: 3,
+        budgetMaxStars: 4,
+        labStars: 3,
+      }),
+    ).toBe(60000);
+    expect(
+      scaleAutoMatchFeeToLabStars({
+        feeAtMax: 66000,
+        feeAtMin: 60000,
+        budgetStars: 3,
+        budgetMaxStars: 4,
+        labStars: 4,
+      }),
+    ).toBe(66000);
+    // 미지정은 상한이 아니라 기본 3점
+    expect(
+      scaleAutoMatchFeeToLabStars({
+        feeAtMax: 66000,
+        feeAtMin: 60000,
+        budgetStars: 3,
+        budgetMaxStars: 4,
+        labStars: null,
+      }),
+    ).toBe(60000);
   });
 
   test("effectiveLabStars grace includes 3 ratings", () => {

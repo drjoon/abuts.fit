@@ -3,7 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
 // - 2026-08-16: 기공의뢰수신 카드 — 기공비·수령·수수료를 한 줄로 표시.
-// - 2026-08-16: 기공소 뷰 — 자동매칭 하한~상한을 기공비·수령 요약에 구간 표기(치아 카드 단가 제거).
+// - 2026-08-16: 자동매칭 구간은 치과만. 기공소는 유효 별점 배수 단일 확정가.
 // - 2026-08-16: 치과 견적 툴팁도 기공소와 동일 — 기공소몫|어벗츠몫 헤더·가운데 정렬·소계.
 // - 2026-08-16: 크레딧 소비 총액에 배송비 합산. 배송 안내 → 총액 순.
 // - 2026-08-16: 치과 툴팁 — CA 디자인+생산을 생산/디자인(+지그)로 분해, 배송비(치과→기공소·어벗츠) 안내.
@@ -33,6 +33,7 @@
 // - 2026-08-14: 수락·청구(billed) 후 치과는 예산 구간 대신「확정 기공비」표시.
 // - 2026-08-16: 자동매칭 툴팁 — 합산 minLabFee 없어도 라인 labFeeMin으로 하한~상한 표시.
 // - 2026-08-16: v4 고정수가 — min=max면 구간(~) 없이 단일가 표시. 예산 구간 안내 제거.
+// - 2026-08-16: 수락·청구(billed) 후 치과 툴팁도 구간 제거·확정 단일가.
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import {
@@ -54,6 +55,7 @@ import {
   formatLabFeeMultiplierLabel,
   normalizeLabFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
+import { scaleAutoMatchFeeToLabStars } from "@/shared/practice/practiceLabRating";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 
 type PracticeTransferFeeEstimateProps = {
@@ -68,6 +70,8 @@ type PracticeTransferFeeEstimateProps = {
   trailingAction?: ReactNode;
   /** 지그 제작 불필요 — 기공소→치과 배송비 면제, 라벨은 디자인비 */
   skipJig?: boolean;
+  /** 기공소 뷰 — 자동매칭 기공비를 유효 별점 배수로 단일 확정 */
+  labEffectiveStars?: number | null;
 };
 
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
@@ -142,7 +146,12 @@ const formatLabShareCell = (
   labFacing: boolean,
 ) => {
   if (labFacing && labShare <= 0 && line.labAbutmentPending) return "요청중";
-  if (line.labFeeMin != null && Number.isFinite(line.labFeeMin)) {
+  // 치과만 하한~상한. 기공소는 설정 수가(단일).
+  if (
+    !labFacing &&
+    line.labFeeMin != null &&
+    Number.isFinite(line.labFeeMin)
+  ) {
     const minShare = Math.max(0, Math.round(Number(line.labFeeMin)));
     if (minShare > 0 || labShare > 0) {
       return formatWonRange(minShare, labShare);
@@ -236,9 +245,11 @@ function FeeBreakdownTable({
     (line) => line.labFeeMin != null && Number.isFinite(line.labFeeMin),
   );
   const labSubtotalDisplay =
-    labTotalMinOverride != null && labTotalMaxOverride != null
+    !labFacing &&
+    labTotalMinOverride != null &&
+    labTotalMaxOverride != null
       ? formatWonRange(labTotalMinOverride, labTotalMaxOverride)
-      : hasLabFeeRange
+      : hasLabFeeRange && !labFacing
         ? formatWonRange(labTotalMin, labSubtotal)
         : formatCell(labSubtotal);
   const labGroupColSpan =
@@ -263,17 +274,18 @@ function FeeBreakdownTable({
   const labColumnLabel = showShareGroupHeaders ? "보철기공비" : "기공소 기공물";
   const abutsColumnLabel =
     showShareGroupHeaders || designFeeColumn ? "어벗생산비" : "어벗츠 어벗";
-  // 예산 구간(min≠max)일 때는 소계만 구간 표시, 기공비 총액 행은 생략.
-  const hasLabFeeSpreadInTable =
-    (hasLabFeeRange && labTotalMin !== labSubtotal) ||
-    (labTotalMinOverride != null &&
-      labTotalMaxOverride != null &&
-      labTotalMinOverride !== labTotalMaxOverride);
+  // 치과 예산 구간(min≠max)일 때는 소계만 구간 표시, 기공비 총액 행은 생략.
+  const hasPracticeLabFeeSpread =
+    !labFacing &&
+    ((hasLabFeeRange && labTotalMin !== labSubtotal) ||
+      (labTotalMinOverride != null &&
+        labTotalMaxOverride != null &&
+        labTotalMinOverride !== labTotalMaxOverride));
   const showLabGrandTotal =
     showShareGroupHeaders &&
     designFeeColumn &&
     labGrandTotal > 0 &&
-    !hasLabFeeSpreadInTable;
+    (labFacing || !hasPracticeLabFeeSpread);
   const showAbutsProductionSplit = designFeeColumn && !labFacing;
   const subtotalLabel = showShareGroupHeaders ? "소계" : "합계";
   const amountAlign = showShareGroupHeaders ? "text-center" : "text-right";
@@ -490,6 +502,7 @@ export function PracticeTransferFeeEstimate({
   labPending = false,
   trailingAction = null,
   skipJig = true,
+  labEffectiveStars = null,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
   const isCard = density === "card";
@@ -549,32 +562,58 @@ export function PracticeTransferFeeEstimate({
   // 기공소: 설정 스케줄(labFeeTotal) + CA 어벗디자인비. 치과 예산 min~max는 수락 전 필터용.
   // 수락·청구 후(billed)에는 치과도 확정 기공비(total)를 표시.
   // 어벗디자인비도 보철기공비와 동일 — 기공비 총액에 합산 후 수수료 차감해 수령 표시.
+  // 자동매칭·기공소: 상한 수가를 유효 별점 배수로 환산한 단일가.
   const labDesignFeePreview =
     isLab && abutmentDesignQty > 0 && abutmentDesignLabFee > 0
       ? abutmentDesignLabFee * abutmentDesignQty
       : 0;
+  const scaleLabAutoMatchFee = (feeAtMax: number, feeAtMin?: number) => {
+    if (!isLab || confirmed || !budget) return Math.max(0, Math.round(feeAtMax || 0));
+    const maxFee = Math.max(0, Math.round(feeAtMax || 0));
+    const minFee =
+      feeAtMin != null && Number.isFinite(Number(feeAtMin))
+        ? Math.max(0, Math.round(Number(feeAtMin)))
+        : null;
+    // BE가 이미 별점 확정가(하한=표시가)로 내려준 경우 재환산 금지.
+    if (minFee != null && minFee === maxFee) return maxFee;
+    return scaleAutoMatchFeeToLabStars({
+      feeAtMax: maxFee,
+      feeAtMin: minFee ?? undefined,
+      budgetStars: budget.stars,
+      budgetMaxStars: budget.maxStars,
+      labStars: labEffectiveStars,
+    });
+  };
   const breakdownLines =
     quote.lines.length > 0
-      ? sortPracticeTransferFeeLines(quote.lines).map((line) => ({
-          toothNumber: line.toothNumber,
-          prosthesisType: line.prosthesisType,
-          // 기공소 뷰: 설정 수가 그대로(수수료 비례 삭감 금지 — 수령은 별도 표기).
-          labFee: Math.max(0, Math.round(Number(line.labFee || 0))),
-          labFeeMin:
-            line.labFeeMin != null
+      ? sortPracticeTransferFeeLines(quote.lines).map((line) => {
+          const labFeeMax = Math.max(0, Math.round(Number(line.labFee || 0)));
+          const labFeeMinRaw =
+            line.labFeeMin != null && Number.isFinite(Number(line.labFeeMin))
               ? Math.max(0, Math.round(Number(line.labFeeMin)))
-              : undefined,
-          labAbutmentFee: Math.max(
-            0,
-            Math.round(Number(line.labAbutmentFee || 0)),
-          ),
-          labAbutmentPending: Boolean(line.labAbutmentPending),
-          abutmentRetail: Math.max(
-            0,
-            Math.round(Number(line.abutmentRetail || 0)),
-          ),
-          abutmentRetailNote: line.abutmentRetailNote,
-        }))
+              : undefined;
+          return {
+            toothNumber: line.toothNumber,
+            prosthesisType: line.prosthesisType,
+            // 기공소 뷰: 별점 확정 단일가(수수료 비례 삭감 금지 — 수령은 별도 표기).
+            labFee: scaleLabAutoMatchFee(labFeeMax, labFeeMinRaw),
+            // 치과·수락 전만 자동매칭 하한. 확정·기공소는 단일 수가.
+            labFeeMin:
+              !isLab && !confirmed && labFeeMinRaw != null
+                ? labFeeMinRaw
+                : undefined,
+            labAbutmentFee: Math.max(
+              0,
+              Math.round(Number(line.labAbutmentFee || 0)),
+            ),
+            labAbutmentPending: Boolean(line.labAbutmentPending),
+            abutmentRetail: Math.max(
+              0,
+              Math.round(Number(line.abutmentRetail || 0)),
+            ),
+            abutmentRetailNote: line.abutmentRetailNote,
+          };
+        })
       : [];
   const linesLabFeeMax = breakdownLines.reduce(
     (sum, line) => sum + line.labFee,
@@ -616,26 +655,16 @@ export function PracticeTransferFeeEstimate({
   );
   const hasBudgetRange =
     !confirmed && Boolean(budget) && budgetLabFeeMax > 0;
-  /** v4 고정수가(min=max)는 구간 UI·안내 불필요 */
+  /** v4 고정수가(min=max)는 구간 UI·안내 불필요. 치과만 구간 표기(기공소는 단일). */
   const hasBudgetSpread =
-    hasBudgetRange && budgetLabFeeMin !== budgetLabFeeMax;
-  /** 합산·라인 하한~상한(수락 전). 기공소 요약·수령에 구간 표기 */
-  const hasLabFeeSpread =
-    !confirmed &&
-    (hasBudgetSpread ||
-      (hasLineLabFeeRange && linesLabFeeMin !== linesLabFeeMax));
-  const spreadLabFeeMin = hasBudgetSpread
-    ? budgetLabFeeMin
-    : hasLabFeeSpread
-      ? linesLabFeeMin
-      : 0;
-  const spreadLabFeeMax = hasBudgetSpread
-    ? budgetLabFeeMax
-    : hasLabFeeSpread
-      ? linesLabFeeMax
-      : 0;
+    !isLab && hasBudgetRange && budgetLabFeeMin !== budgetLabFeeMax;
+  const labFeeTotalRaw = Math.max(0, Math.round(Number(quote.labFeeTotal || 0)));
+  const labFeeTotalForLab = scaleLabAutoMatchFee(
+    labFeeTotalRaw,
+    budget?.minLabFee,
+  );
   const amount = isLab
-    ? Math.max(0, Math.round(Number(quote.labFeeTotal || 0))) + labDesignFeePreview
+    ? labFeeTotalForLab + labDesignFeePreview
     : hasBudgetRange
       ? budgetLabFeeMax +
         Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))
@@ -658,41 +687,21 @@ export function PracticeTransferFeeEstimate({
     Math.round(Number(quote.labFeeTotal || 0) - Number(quote.labAbutmentTotal || 0)),
   );
   // (보철기공비 + 어벗디자인비) × (1 − 수수료율). splitPracticeTransferSettlement와 동일.
-  const labAmountMin = hasLabFeeSpread
-    ? spreadLabFeeMin + labDesignFeePreview
-    : amount;
-  const labAmountMax = hasLabFeeSpread
-    ? spreadLabFeeMax + labDesignFeePreview
-    : amount;
-  const labSettlementFrom = (labAmount: number) =>
-    Math.max(0, labAmount - Math.round(labAmount * feeRateApplied));
   const labSettlementDisplay = isLab
-    ? labSettlementFrom(amount)
+    ? Math.max(0, amount - Math.round(amount * feeRateApplied))
     : Math.max(0, Math.round(Number(quote.labSettlementAmount || 0)));
-  const labSettlementMin = isLab
-    ? labSettlementFrom(labAmountMin)
-    : labSettlementDisplay;
-  const labSettlementMax = isLab
-    ? labSettlementFrom(labAmountMax)
-    : labSettlementDisplay;
   const labSettlementDiffers =
     isLab &&
     feeRateApplied > 0 &&
-    (hasLabFeeSpread
-      ? labSettlementMin !== labAmountMin || labSettlementMax !== labAmountMax
-      : labSettlementDisplay !== amount);
+    labSettlementDisplay !== amount;
   const labFeeLabel = hasBudgetRange
     ? `기공비 ${formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}`
     : labProsthesisTotal > 0
       ? `기공비 ${formatManWon(labProsthesisTotal)}`
       : "";
-  const labSettlementSimple =
-    hasLabFeeSpread && labSettlementMin !== labSettlementMax
-      ? `수령 ${formatWonRange(labSettlementMin, labSettlementMax)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
-      : `수령 ${formatManWon(labSettlementDisplay)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`;
   const simple = isLab
     ? labSettlementDiffers
-      ? labSettlementSimple
+      ? `수령 ${formatManWon(labSettlementDisplay)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
       : null
     : quote.isRemake
       ? `리메이크 기공비 ${formatManWon(quote.labFeeTotal)}`
@@ -722,9 +731,9 @@ export function PracticeTransferFeeEstimate({
       : null;
 
   const labTotalMinOverride =
-    hasLabFeeSpread && !hasLineLabFeeRange ? spreadLabFeeMin : null;
+    hasBudgetSpread && !hasLineLabFeeRange ? budgetLabFeeMin : null;
   const labTotalMaxOverride =
-    hasLabFeeSpread && labTotalMinOverride != null ? spreadLabFeeMax : null;
+    hasBudgetSpread && labTotalMinOverride != null ? budgetLabFeeMax : null;
 
   // 출고 출발지별 배송비 안내(치과 뷰). 박스당 shippingFee.
   // 기공소 출발: 보철기공·기공소어벗·(지그 포함 CA 디자인). 지그 불필요면 CA만으로는 기공소 배송 없음.
@@ -816,11 +825,9 @@ export function PracticeTransferFeeEstimate({
                 )}
               >
                 <span className="font-medium text-slate-600">{title} </span>
-                {isLab && hasLabFeeSpread
-                  ? formatWonRange(labAmountMin, labAmountMax)
-                  : hasBudgetRange && !isLab
-                    ? formatWonRange(creditMin, amount)
-                    : formatManWon(amount)}
+                {hasBudgetRange && !isLab
+                  ? formatWonRange(creditMin, amount)
+                  : formatManWon(amount)}
                 {surchargeLabel ? (
                   <span className="ml-1.5 text-[11px] font-medium text-amber-700">
                     {surchargeLabel}
@@ -889,10 +896,7 @@ export function PracticeTransferFeeEstimate({
                       <>
                         수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
                         <span className="font-medium text-foreground">
-                          {hasLabFeeSpread &&
-                          labSettlementMin !== labSettlementMax
-                            ? formatWonRange(labSettlementMin, labSettlementMax)
-                            : formatManWon(labSettlementDisplay)}
+                          {formatManWon(labSettlementDisplay)}
                         </span>
                       </>
                     ) : null
@@ -907,14 +911,11 @@ export function PracticeTransferFeeEstimate({
                   <p className="text-center text-[11px] text-muted-foreground">
                     수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
                     <span className="font-medium text-foreground">
-                      {hasLabFeeSpread &&
-                      labSettlementMin !== labSettlementMax
-                        ? formatWonRange(labSettlementMin, labSettlementMax)
-                        : formatManWon(labSettlementDisplay)}
+                      {formatManWon(labSettlementDisplay)}
                     </span>
                   </p>
                 ) : null}
-                {hasBudgetRange || hasLabFeeSpread ? (
+                {hasBudgetRange && !isLab ? (
                   <p className="text-[11px] text-muted-foreground">
                     기공소 별점에 비례해 확정·청구됩니다.
                   </p>

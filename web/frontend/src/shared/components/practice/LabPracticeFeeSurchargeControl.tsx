@@ -4,6 +4,7 @@
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
 // - 2026-08-14: 치과별 기공수가 할증(1x·1.1x·1.2x·1.5x·직접). Dialog + 취소/저장.
 // - 2026-08-15: 버튼 툴팁·모달 강조. 저장은 다음 의뢰부터(현재 건 소급 금지).
+// - 2026-08-16: 의뢰상세 채팅 헤더는 트리거 라벨「치과 평가」(모달 동일).
 import { useEffect, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +60,8 @@ type LabPracticeFeeSurchargeControlProps = {
   className?: string;
   size?: "sm" | "xs";
   stopPropagation?: boolean;
+  /** 트리거 버튼 라벨(비활성). 기본: 기공수가 할증 */
+  buttonLabel?: string;
 };
 
 export function LabPracticeFeeSurchargeControl({
@@ -68,6 +71,7 @@ export function LabPracticeFeeSurchargeControl({
   className,
   size = "sm",
   stopPropagation = true,
+  buttonLabel = "기공수가 할증",
 }: LabPracticeFeeSurchargeControlProps) {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -191,11 +195,11 @@ export function LabPracticeFeeSurchargeControl({
               aria-label={
                 active
                   ? `기공수가 ${formatLabFeeMultiplierLabel(current)}`
-                  : "기공수가 할증 설정"
+                  : `${buttonLabel} 설정`
               }
               onClick={() => setOpen(true)}
             >
-              {active ? formatLabFeeMultiplierLabel(current) : "기공수가 할증"}
+              {active ? formatLabFeeMultiplierLabel(current) : buttonLabel}
             </Button>
           </span>
         </TooltipTrigger>

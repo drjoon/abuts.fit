@@ -138,7 +138,7 @@ type PracticeTransferDetailChatDialogProps = {
   conversationTitle: string;
   /** S3 프록시 미리보기용 JWT */
   authToken?: string | null;
-  /** 치과 채팅 헤더 오른쪽(예: 기공수가 할증) */
+  /** 치과 채팅 헤더 오른쪽(예: 치과 평가 → 기공수가 할증) */
   chatHeaderAction?: ReactNode;
   summaryItems: PracticeTransferDialogSummaryItem[];
   memo: string;
@@ -149,6 +149,8 @@ type PracticeTransferDetailChatDialogProps = {
   skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
   labAnchorId?: string | null;
+  /** 기공소 뷰 — 자동매칭 기공비 별점 확정가 */
+  labEffectiveStars?: number | null;
   /** 예: 의뢰 파일 (구강 스캔) */
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
@@ -253,6 +255,7 @@ export function PracticeTransferDetailChatDialog({
   skipJig = false,
   feeViewer = "practice",
   labAnchorId = null,
+  labEffectiveStars = null,
   filesLabel,
   files,
   oralScanAttachMode = null,
@@ -633,6 +636,7 @@ export function PracticeTransferDetailChatDialog({
                   feeViewer={feeViewer}
                   labAnchorId={labAnchorId}
                   skipJig={skipJig}
+                  labEffectiveStars={labEffectiveStars}
                 />
               ) : null}
 

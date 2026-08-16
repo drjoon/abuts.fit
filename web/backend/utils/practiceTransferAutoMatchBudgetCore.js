@@ -10,10 +10,12 @@
 // - 2026-08-16: % 예산 normalize 시 견적 합산 minLabFee/maxLabFee 보존.
 // - 2026-08-16: v4 고정가. 1→×0.8 / 2→×0.9 / 3→×1 / 4→×1.1 / 5→×1.2. 1천원 올림.
 // - 2026-08-16: v4 별점 하한~상한 → 항목 min/max(수락 전 견적 구간).
+// - 2026-08-16: buildScheduleFromAutoMatchBudgetAtStars — 기공소 유효 별점 확정 스케줄.
 
 import {
   DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  clampLabStarsToAutoMatchBand,
   feeMultiplierForStars,
   resolveAutoMatchEligibleStarBand,
 } from "./practiceLabRating.js";
@@ -462,6 +464,56 @@ export function buildScheduleFromAutoMatchBudget(budget, side = "max", catalog) 
       : side === "min"
         ? 0
         : ADMIN_LAB_FEE_BASE[key] || 0;
+  }
+  return { ...schedule, ...itemsSchedule };
+}
+
+/**
+ * 기공소 유효 별점 배수로 확정된 가상 스케줄(수신 견적·수락 청구 SSOT).
+ * 의뢰 대역(min~max) 안으로 clamp한 뒤 카탈로그×배수(1천원 올림).
+ */
+export function buildScheduleFromAutoMatchBudgetAtStars(
+  budget,
+  labStars,
+  catalog,
+) {
+  const normalized = resolveAutoMatchBudgetOrDefaults(budget, catalog);
+  const band = resolveAutoMatchEligibleStarBand({
+    minStars: normalized.stars,
+    maxStars: normalized.maxStars ?? normalized.stars,
+  });
+  const labEff = clampLabStarsToAutoMatchBand(labStars, band);
+  const m = feeMultiplierForStars(labEff);
+  const rows = normalizeCatalogItems(catalog);
+  const itemsSchedule = {
+    active: true,
+    items: rows.map((row) => {
+      const price = Math.min(
+        MAX_UNIT_FEE,
+        Math.max(0, ceilToFeeStep(Number(row.price || 0) * m)),
+      );
+      return {
+        ...row,
+        price,
+        remake: 0,
+        enabled: true,
+        tiers:
+          row.unit === "perNTeeth"
+            ? row.tiers?.length
+              ? row.tiers.map((tier) => ({
+                  ...tier,
+                  price,
+                  remake: 0,
+                }))
+              : [{ n: 3, price, remake: 0 }]
+            : [],
+      };
+    }),
+  };
+  const schedule = {};
+  for (const key of AUTO_MATCH_BUDGET_KEYS) {
+    const item = itemsSchedule.items.find((row) => row.id === key);
+    schedule[key] = item ? item.price : ADMIN_LAB_FEE_BASE[key] || 0;
   }
   return { ...schedule, ...itemsSchedule };
 }

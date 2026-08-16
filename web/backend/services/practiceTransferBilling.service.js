@@ -23,6 +23,8 @@
 // - 2026-08-16: chargePracticeTransferLabShipping — 기공소 출발 배송비(지그 면제).
 // - 2026-08-15: 청구 완료 목록 견적에 autoMatchBudget 재부착 금지(확정 기공비 유지).
 // - 2026-08-16: 자동매칭 수신 견적 — 공개풀·시청 기공소여도 v4 고정수가·autoMatchBudget 유지.
+// - 2026-08-16: 자동매칭 수락·기공소 수신 견적 — 유효 별점 배수 확정가(상한 대역 아님).
+// - 2026-08-16: billed 확정 견적 — labFeeMin/예산 구간 제거·수락 기공소 별점 단일가.
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -68,10 +70,16 @@ import { isAutoMatchOpenPool } from "../utils/practiceTransferAutoMatch.js";
 import {
   assertLabWithinAutoMatchBudget,
   buildScheduleFromAutoMatchBudget,
+  buildScheduleFromAutoMatchBudgetAtStars,
   loadAutoMatchBudgetCatalog,
   normalizeAutoMatchBudget,
   resolveAutoMatchBudgetOrDefaults,
 } from "../utils/practiceTransferAutoMatchBudget.js";
+import {
+  DEFAULT_EFFECTIVE_LAB_STARS,
+  loadGlobalLabRatingAggregates,
+  toLabRatingSummaryApi,
+} from "../utils/practiceLabRating.js";
 import { shouldChargePracticeTransferLabShipping } from "../utils/practiceTransferLabShipping.js";
 import {
   getRequestPerfCacheValue,
@@ -83,6 +91,32 @@ import {
 export { shouldChargePracticeTransferLabShipping };
 
 const QUOTE_LOOKUP_CACHE_TTL_MS = 60 * 1000;
+
+/** 자동매칭 확정수가용 기공소 유효 별점. */
+async function resolveLabEffectiveStarsForFee(labAnchorId) {
+  const labId = String(labAnchorId || "").trim();
+  if (!labId || !Types.ObjectId.isValid(labId)) {
+    return DEFAULT_EFFECTIVE_LAB_STARS;
+  }
+  const map = await loadGlobalLabRatingAggregates({ labAnchorIds: [labId] });
+  return toLabRatingSummaryApi(map.get(labId)).effectiveStars;
+}
+
+/** 자동매칭 수락·수신 견적 — 기공소 별점 확정 스케줄(상한 대역 아님). */
+function buildAutoMatchFeeScheduleForLab({
+  budget,
+  catalog,
+  labEffectiveStars,
+}) {
+  const normalized =
+    normalizeAutoMatchBudget(budget, catalog) || budget || null;
+  if (!normalized) return null;
+  return buildScheduleFromAutoMatchBudgetAtStars(
+    normalized,
+    labEffectiveStars ?? DEFAULT_EFFECTIVE_LAB_STARS,
+    catalog,
+  );
+}
 
 async function loadCachedDevopsPayoutRates() {
   const cacheKey = "practice-transfer:devops-payout";
@@ -549,19 +583,19 @@ export async function commitPracticeTransferBilling({
 
   const remake = isPracticeTransferRemake(transfer);
   // 지정: 생성 시 스냅샷 유지(할증 소급 금지).
-  // 자동매칭 v4: 플랫폼 고정수가(스냅샷)·할증 없음.
+  // 자동매칭 v4: 수락 기공소 유효 별점 확정수가·할증 없음.
   const labFeeMultiplier = isAutoMatch
     ? 1
     : normalizeLabFeeMultiplier(transfer?.billing?.labFeeMultiplier);
+  const labEffectiveStars = isAutoMatch
+    ? await resolveLabEffectiveStarsForFee(labAnchorId)
+    : DEFAULT_EFFECTIVE_LAB_STARS;
   const autoMatchSchedule = isAutoMatch
-    ? buildScheduleFromAutoMatchBudget(
-        normalizeAutoMatchBudget(
-          transfer?.billing?.autoMatchBudget,
-          autoMatchCatalog,
-        ) || transfer?.billing?.autoMatchBudget,
-        "max",
-        autoMatchCatalog,
-      )
+    ? buildAutoMatchFeeScheduleForLab({
+        budget: transfer?.billing?.autoMatchBudget,
+        catalog: autoMatchCatalog,
+        labEffectiveStars,
+      })
     : null;
   const fees = computePracticeTransferRetailFees({
     toothWorks,
@@ -1179,15 +1213,15 @@ async function computeAcceptedPracticeTransferFees({
     ? 1
     : normalizeLabFeeMultiplier(transfer?.billing?.labFeeMultiplier);
 
+  const labEffectiveStars = isAutoMatch
+    ? await resolveLabEffectiveStarsForFee(labAnchorId)
+    : DEFAULT_EFFECTIVE_LAB_STARS;
   const autoMatchSchedule = isAutoMatch
-    ? buildScheduleFromAutoMatchBudget(
-        normalizeAutoMatchBudget(
-          transfer?.billing?.autoMatchBudget,
-          autoMatchCatalog,
-        ) || transfer?.billing?.autoMatchBudget,
-        "max",
-        autoMatchCatalog,
-      )
+    ? buildAutoMatchFeeScheduleForLab({
+        budget: transfer?.billing?.autoMatchBudget,
+        catalog: autoMatchCatalog,
+        labEffectiveStars,
+      })
     : null;
 
   const fees = computePracticeTransferRetailFees({
@@ -1916,10 +1950,12 @@ function implantFavoritesFromPractice(practice) {
 
 export function toFeeQuoteApi(quote) {
   const fees = quote?.fees || {};
+  const billed = Boolean(quote?.billed);
   const labAbutmentTotal = Math.max(
     0,
     Math.round(Number(fees.labAbutmentTotal || 0)),
   );
+  const rawLines = Array.isArray(fees.lines) ? fees.lines : [];
   return {
     labFeeTotal: Math.max(0, Math.round(Number(fees.labFeeTotal || 0))),
     labAbutmentTotal,
@@ -1932,7 +1968,7 @@ export function toFeeQuoteApi(quote) {
     abutmentQuotePending: Boolean(fees.abutmentQuotePending),
     abutmentQty: Math.max(0, Math.round(Number(fees.abutmentQty || 0))),
     total: Math.max(0, Math.round(Number(fees.total || 0))),
-    lines: Array.isArray(fees.lines) ? fees.lines : [],
+    lines: billed ? stripLabFeeMinFromFeeLines(rawLines) : rawLines,
     relationshipKind:
       quote?.relationshipKind === "active" || quote?.relationshipKind === "referred"
         ? quote.relationshipKind
@@ -1950,10 +1986,12 @@ export function toFeeQuoteApi(quote) {
       Math.round(Number(quote?.abutsRevenueAmount || 0)),
     ),
     labTradingPartnerId: quote?.labTradingPartnerId || null,
-    billed: Boolean(quote?.billed),
+    billed,
     usedDefaultSchedule: Boolean(quote?.usedDefaultSchedule),
     isRemake: Boolean(quote?.isRemake || quote?.remake),
-    autoMatchBudget: normalizeAutoMatchBudget(quote?.autoMatchBudget),
+    autoMatchBudget: billed
+      ? null
+      : normalizeAutoMatchBudget(quote?.autoMatchBudget),
   };
 }
 
@@ -1977,6 +2015,18 @@ export function toBillingPreviewFields(quote) {
   };
 }
 
+/** 청구 완료 견적 라인에서 예산 하한(labFeeMin) 제거. */
+function stripLabFeeMinFromFeeLines(lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return [];
+  return lines.map((line) => {
+    if (!line || typeof line !== "object" || line.labFeeMin == null) {
+      return line;
+    }
+    const { labFeeMin: _omit, ...rest } = line;
+    return rest;
+  });
+}
+
 export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } = {}) {
   const total = Math.max(0, Math.round(Number(billing?.total || 0)));
   const feeRateApplied = Number(billing?.feeRateApplied || 0);
@@ -1997,7 +2047,7 @@ export function feeQuoteFromBillingDoc(billing, { lines = [], billed = false } =
       abutmentQuotePending: Boolean(billing?.abutmentQuotePending),
       abutmentQty: billing?.abutmentQty || 0,
       total,
-      lines,
+      lines: billed ? stripLabFeeMinFromFeeLines(lines) : lines,
       labFeeMultiplier: billing?.labFeeMultiplier,
     },
     relationshipKind: billing?.relationshipKind || "none",
@@ -2295,7 +2345,7 @@ export async function buildFeeQuotesForTransferDocs({
 
   const labIdList = [...labIds];
   const practiceIdList = [...practiceIds];
-  const [payoutRates, abutmentPricesBase, labs, practices, partners, creditSettings] =
+  const [payoutRates, abutmentPricesBase, labs, practices, partners, creditSettings, labRatingMap] =
     await Promise.all([
       loadCachedDevopsPayoutRates(),
       loadCachedAbutmentCreditPrices(),
@@ -2324,7 +2374,22 @@ export async function buildFeeQuotesForTransferDocs({
             .lean()
         : Promise.resolve([]),
       loadCreditSettingsDefaults(),
+      // 기공소 수신·수락 확정 견적용 유효 별점
+      labIdList.length
+        ? loadGlobalLabRatingAggregates({ labAnchorIds: labIdList })
+        : Promise.resolve(new Map()),
     ]);
+
+  const labEffectiveStarsById = new Map();
+  for (const labId of labIdList) {
+    labEffectiveStarsById.set(
+      labId,
+      toLabRatingSummaryApi(labRatingMap.get(labId)).effectiveStars,
+    );
+  }
+  const viewerLabEffectiveStars = viewerLabId
+    ? labEffectiveStarsById.get(viewerLabId) ?? DEFAULT_EFFECTIVE_LAB_STARS
+    : DEFAULT_EFFECTIVE_LAB_STARS;
 
   const abutmentPricesForPractice = (practiceId) =>
     normalizeAbutsAbutmentCreditPrices(
@@ -2415,11 +2480,31 @@ export async function buildFeeQuotesForTransferDocs({
           ? snapLabFeeMultiplier
           : asOfLabFeeMultiplier;
     const remakeLabFeeMultiplier = liveLabFeeMultiplier;
+    // 기공소 본인 수신·수락 확정: 유효 별점 확정가. 그 외 미확정: 상한(에스크로·구간).
     const autoScheduleMax = storedBudget
       ? buildScheduleFromAutoMatchBudget(storedBudget, "max")
       : null;
+    const quoteForViewingLab =
+      Boolean(viewerLabId) &&
+      Boolean(quoteLabId) &&
+      String(quoteLabId) === viewerLabId;
+    const useLabStarFeeSchedule =
+      useAutoFixedFee &&
+      Boolean(quoteLabId) &&
+      (quoteForViewingLab || billed);
+    const labStarsForFee = quoteLabId
+      ? labEffectiveStarsById.get(String(quoteLabId)) ??
+        DEFAULT_EFFECTIVE_LAB_STARS
+      : viewerLabEffectiveStars;
+    const autoScheduleForFee =
+      useLabStarFeeSchedule
+        ? buildAutoMatchFeeScheduleForLab({
+            budget: storedBudget,
+            labEffectiveStars: labStarsForFee,
+          }) || autoScheduleMax
+        : autoScheduleMax;
     const feeSchedule = useAutoFixedFee
-      ? autoScheduleMax || LAB_FEE_SCHEDULE_ZEROS
+      ? autoScheduleForFee || LAB_FEE_SCHEDULE_ZEROS
       : noLab
         ? autoScheduleMax || LAB_FEE_SCHEDULE_ZEROS
         : resolveLabFeeScheduleSource(schedule);
@@ -2446,7 +2531,8 @@ export async function buildFeeQuotesForTransferDocs({
     });
 
     let autoMatchBudgetOut = null;
-    if (useAutoFixedFee || (noLab && storedBudget)) {
+    // 미확정만 하한~상한 부착. 청구 완료(billed)는 확정 단일가.
+    if (!billed && (useAutoFixedFee || (noLab && storedBudget))) {
       const minFees = computePracticeTransferRetailFees({
         toothWorks,
         implantFavorites,
@@ -2457,11 +2543,24 @@ export async function buildFeeQuotesForTransferDocs({
         skipAbutmentFees: true,
         labFeeMultiplier: 1,
       });
+      const maxFeesForBand =
+        useLabStarFeeSchedule && autoScheduleMax
+          ? computePracticeTransferRetailFees({
+              toothWorks,
+              implantFavorites,
+              labFeeSchedule: autoScheduleMax,
+              abutmentPricingTier,
+              abutmentPrices,
+              remake,
+              skipAbutmentFees: remake,
+              labFeeMultiplier: 1,
+            })
+          : fees;
       fees.lines = attachLabFeeMinToLines(fees.lines, minFees.lines);
       autoMatchBudgetOut = {
         ...storedBudget,
         minLabFee: minFees.labFeeTotal,
-        maxLabFee: fees.labFeeTotal,
+        maxLabFee: maxFeesForBand.labFeeTotal,
       };
     }
 
