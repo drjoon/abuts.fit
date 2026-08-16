@@ -3,15 +3,17 @@
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
+// - 2026-08-16: 수가 ON 상단 정렬·클릭 모달.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Banknote, Building2, Search } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
@@ -51,38 +53,46 @@ const formatItemPrice = (item: LabFeeItem) => {
   return formatWon(item.price);
 };
 
-const LabFeeTooltipBody = ({ row }: { row: LabFeeScheduleRow }) => {
+const enabledItems = (row: LabFeeScheduleRow) =>
+  row.items.filter((item) => item.enabled !== false && item.name);
+
+const LabFeeScheduleBody = ({ row }: { row: LabFeeScheduleRow }) => {
   if (!row.configured) {
     return (
-      <p className="text-muted-foreground">기공비 수가가 설정되지 않았습니다.</p>
+      <p className="text-sm text-muted-foreground">
+        기공비 수가가 설정되지 않았습니다.
+      </p>
     );
   }
-  const items = row.items.filter((item) => item.enabled !== false && item.name);
+  const items = enabledItems(row);
   if (items.length === 0) {
     return (
-      <p className="text-muted-foreground">제공 중인 수가 항목이 없습니다.</p>
+      <p className="text-sm text-muted-foreground">
+        제공 중인 수가 항목이 없습니다.
+      </p>
     );
   }
   return (
-    <div className="space-y-1.5">
-      <p className="font-medium text-foreground">기공비 수가</p>
-      <ul className="max-h-64 space-y-1 overflow-y-auto">
-        {items.map((item) => (
-          <li
-            key={item.id}
-            className="flex items-baseline justify-between gap-3 tabular-nums"
-          >
-            <span className="min-w-0 truncate">
+    <ul className="divide-y divide-slate-100">
+      {items.map((item) => (
+        <li
+          key={item.id}
+          className="flex items-baseline justify-between gap-4 py-3 first:pt-0 last:pb-0"
+        >
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-slate-900">
               {item.name}
-              <span className="ml-1 text-[10px] text-muted-foreground">
-                {unitLabel(item.unit)}
-              </span>
-            </span>
-            <span className="shrink-0 font-medium">{formatItemPrice(item)}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              {unitLabel(item.unit)}
+            </p>
+          </div>
+          <span className="shrink-0 text-sm font-semibold tabular-nums tracking-tight text-slate-900">
+            {formatItemPrice(item)}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 };
 
@@ -98,6 +108,7 @@ export const AdminLabFeeSchedulesTab = () => {
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [configuredCount, setConfiguredCount] = useState(0);
+  const [selected, setSelected] = useState<LabFeeScheduleRow | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
@@ -176,9 +187,7 @@ export const AdminLabFeeSchedulesTab = () => {
               configured: Boolean(row?.configured),
               active: Boolean(row?.active),
               items: Array.isArray(row?.items) ? row.items : [],
-              updatedAt: row?.updatedAt
-                ? String(row.updatedAt)
-                : null,
+              updatedAt: row?.updatedAt ? String(row.updatedAt) : null,
             }))
           : [];
 
@@ -246,139 +255,172 @@ export const AdminLabFeeSchedulesTab = () => {
   }, [hasMore, loading, loadingMore, page, rows.length, loadPage]);
 
   return (
-    <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-      <CardContent className="space-y-5 p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
-              <Banknote className="h-5 w-5 text-primary-strong" />
-            </span>
-            <div className="min-w-0 space-y-1">
-              <h3 className="text-base font-semibold tracking-tight text-slate-900">
-                기공소 수가
-              </h3>
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
-                기공소 목록입니다. 카드에 마우스를 올리면 기공비 수가를 볼 수
-                있습니다.
+    <>
+      <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+        <CardContent className="space-y-5 p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
+                <Banknote className="h-5 w-5 text-primary-strong" />
+              </span>
+              <div className="min-w-0 space-y-1">
+                <h3 className="text-base font-semibold tracking-tight text-slate-900">
+                  기공소 수가
+                </h3>
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  수가 ON 기공소가 위에 표시됩니다. 카드를 누르면 수가를
+                  확인합니다.
+                </p>
+              </div>
+            </div>
+            {!loading && totalCount > 0 ? (
+              <span className="inline-flex items-center rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold tabular-nums text-primary-strong ring-1 ring-primary-muted">
+                설정 {configuredCount} / {totalCount}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="relative max-w-md">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="기공소명 또는 사업자번호"
+              className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm"
+            />
+          </div>
+
+          {loading ? (
+            <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center text-sm text-muted-foreground">
+              불러오는 중…
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
+                <Building2 className="h-5 w-5 text-slate-400" />
+              </span>
+              <p className="mt-3 text-sm font-medium text-slate-700">
+                해당하는 기공소가 없습니다
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                검색어를 바꾸거나 다른 기공소를 확인해 보세요.
               </p>
             </div>
-          </div>
-          {!loading && totalCount > 0 ? (
-            <span className="inline-flex items-center rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold tabular-nums text-primary-strong ring-1 ring-primary-muted">
-              설정 {configuredCount} / {totalCount}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="기공소명 또는 사업자번호"
-            className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm"
-          />
-        </div>
-
-        {loading ? (
-          <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center text-sm text-muted-foreground">
-            불러오는 중…
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
-              <Building2 className="h-5 w-5 text-slate-400" />
-            </span>
-            <p className="mt-3 text-sm font-medium text-slate-700">
-              해당하는 기공소가 없습니다
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              검색어를 바꾸거나 다른 기공소를 확인해 보세요.
-            </p>
-          </div>
-        ) : (
-          <TooltipProvider>
-            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {rows.map((row) => (
-                <li key={row._id}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
+          ) : (
+            <>
+              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {rows.map((row) => (
+                  <li key={row._id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(row)}
+                      className={cn(
+                        "w-full overflow-hidden rounded-2xl border bg-white/80 text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-muted",
+                        row.configured
+                          ? "border-primary-muted/70"
+                          : "border-slate-200/80",
+                      )}
+                    >
                       <div
                         className={cn(
-                          "cursor-default overflow-hidden rounded-2xl border bg-white/80 shadow-sm transition-shadow hover:shadow-md",
+                          "h-1 w-full",
                           row.configured
-                            ? "border-primary-muted/70"
-                            : "border-slate-200/80",
+                            ? "bg-primary-strong"
+                            : row.verified
+                              ? "bg-slate-300"
+                              : "bg-amber-400",
                         )}
-                      >
-                        <div
-                          className={cn(
-                            "h-1 w-full",
-                            row.configured
-                              ? "bg-primary-strong"
-                              : row.verified
-                                ? "bg-slate-300"
-                                : "bg-amber-400",
-                          )}
-                        />
-                        <div className="space-y-2 px-4 py-3.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate font-semibold text-slate-900">
-                              {row.name || "이름 없음"}
-                            </p>
-                            <span
-                              className={cn(
-                                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                                row.configured
-                                  ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
-                                  : row.verified
-                                    ? "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
-                                    : "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
-                              )}
-                            >
-                              {row.configured
-                                ? "수가 ON"
+                      />
+                      <div className="space-y-2 px-4 py-3.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate font-semibold text-slate-900">
+                            {row.name || "이름 없음"}
+                          </p>
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                              row.configured
+                                ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
                                 : row.verified
-                                  ? "미설정"
-                                  : row.status || "미검증"}
-                            </span>
-                          </div>
-                          <dl className="space-y-1.5 text-[13px]">
-                            <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
-                              <dt className="text-slate-500">대표</dt>
-                              <dd className="min-w-0 truncate text-slate-700">
-                                {row.representativeName || "—"}
-                              </dd>
-                            </div>
-                            <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
-                              <dt className="text-slate-500">주소</dt>
-                              <dd className="min-w-0 break-words text-slate-700">
-                                {row.address || "—"}
-                              </dd>
-                            </div>
-                          </dl>
+                                  ? "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
+                                  : "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
+                            )}
+                          >
+                            {row.configured
+                              ? "수가 ON"
+                              : row.verified
+                                ? "미설정"
+                                : row.status || "미검증"}
+                          </span>
                         </div>
+                        <dl className="space-y-1.5 text-[13px]">
+                          <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+                            <dt className="text-slate-500">대표</dt>
+                            <dd className="min-w-0 truncate text-slate-700">
+                              {row.representativeName || "—"}
+                            </dd>
+                          </div>
+                          <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+                            <dt className="text-slate-500">주소</dt>
+                            <dd className="min-w-0 break-words text-slate-700">
+                              {row.address || "—"}
+                            </dd>
+                          </div>
+                        </dl>
                       </div>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="top"
-                      className="max-w-[20rem] p-3 text-xs leading-relaxed"
-                    >
-                      <LabFeeTooltipBody row={row} />
-                    </TooltipContent>
-                  </Tooltip>
-                </li>
-              ))}
-            </ul>
-            <div ref={sentinelRef} className="h-4 w-full" aria-hidden />
-            {loadingMore ? (
-              <div className="py-3 text-center text-xs text-muted-foreground">
-                더 불러오는 중…
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div ref={sentinelRef} className="h-4 w-full" aria-hidden />
+              {loadingMore ? (
+                <div className="py-3 text-center text-xs text-muted-foreground">
+                  더 불러오는 중…
+                </div>
+              ) : null}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={Boolean(selected)}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-md gap-0 overflow-hidden p-0 sm:rounded-2xl">
+          {selected ? (
+            <>
+              <DialogHeader className="border-b border-slate-100 px-6 pb-4 pt-6">
+                <div className="flex flex-wrap items-center gap-2 pr-8">
+                  <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900">
+                    {selected.name || "이름 없음"}
+                  </DialogTitle>
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                      selected.configured
+                        ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
+                        : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
+                    )}
+                  >
+                    {selected.configured ? "수가 ON" : "미설정"}
+                  </span>
+                </div>
+                <DialogDescription className="text-sm text-slate-500">
+                  {selected.representativeName
+                    ? `대표 ${selected.representativeName}`
+                    : "기공비 수가"}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[calc(85vh-6rem)] overflow-y-auto px-6 py-5">
+                <LabFeeScheduleBody row={selected} />
               </div>
-            ) : null}
-          </TooltipProvider>
-        )}
-      </CardContent>
-    </Card>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };

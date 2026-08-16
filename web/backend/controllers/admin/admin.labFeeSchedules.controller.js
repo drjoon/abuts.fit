@@ -4,6 +4,7 @@
 // - web/backend/utils/practiceTransferAutoMatch.js
 // - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
+// - 2026-08-16: 수가 ON 기공소 상단 정렬.
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   isLabFeeScheduleConfigured,
@@ -21,6 +22,31 @@ const formatAddress = (metadata) => {
   const base = String(metadata?.address || "").trim();
   const detail = String(metadata?.addressDetail || "").trim();
   return [base, detail].filter(Boolean).join(" ");
+};
+
+/** 수가 ON(configured) — countDocuments / $match용 쿼리 */
+const LAB_FEE_ON_MATCH = {
+  $or: [
+    { "labFeeSchedule.active": true },
+    {
+      "labFeeSchedule.active": { $exists: false },
+      "labFeeSchedule.updatedAt": { $exists: true, $ne: null },
+    },
+  ],
+};
+
+/** 수가 ON — aggregate $addFields용 표현식 (쿼리 연산자 불가) */
+const LAB_FEE_ON_EXPR = {
+  $or: [
+    { $eq: ["$labFeeSchedule.active", true] },
+    {
+      $and: [
+        { $eq: [{ $type: "$labFeeSchedule.active" }, "missing"] },
+        { $ne: [{ $type: "$labFeeSchedule.updatedAt" }, "missing"] },
+        { $ne: ["$labFeeSchedule.updatedAt", null] },
+      ],
+    },
+  ],
 };
 
 const toListRow = (row) => {
@@ -44,7 +70,7 @@ const toListRow = (row) => {
 
 /**
  * GET /api/admin/settings/lab-fee-schedules?q=&page=1&limit=15
- * 기공소 목록 + 기공비 수가(호버 툴팁용)
+ * 기공소 목록 + 기공비 수가. 수가 ON이 먼저.
  */
 export async function listLabFeeSchedules(req, res) {
   try {
@@ -84,38 +110,42 @@ export async function listLabFeeSchedules(req, res) {
       ];
     }
 
+    const configuredFilter = {
+      ...filter,
+      $and: [
+        ...(Array.isArray(filter.$and) ? filter.$and : []),
+        LAB_FEE_ON_MATCH,
+      ],
+    };
+
     const [total, configuredCount, rows] = await Promise.all([
       BusinessAnchor.countDocuments(filter),
-      BusinessAnchor.countDocuments({
-        ...filter,
-        $and: [
-          ...(Array.isArray(filter.$and) ? filter.$and : []),
-          {
-            $or: [
-              { "labFeeSchedule.active": true },
-              {
-                "labFeeSchedule.active": { $exists: false },
-                "labFeeSchedule.updatedAt": { $exists: true, $ne: null },
-              },
-            ],
+      BusinessAnchor.countDocuments(configuredFilter),
+      BusinessAnchor.aggregate([
+        { $match: filter },
+        {
+          $addFields: {
+            _feeOn: {
+              $cond: [LAB_FEE_ON_EXPR, 1, 0],
+            },
           },
-        ],
-      }),
-      BusinessAnchor.find(filter)
-        .select({
-          name: 1,
-          businessNumberNormalized: 1,
-          status: 1,
-          labFeeSchedule: 1,
-          "metadata.companyName": 1,
-          "metadata.representativeName": 1,
-          "metadata.address": 1,
-          "metadata.addressDetail": 1,
-        })
-        .sort({ status: -1, name: 1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+        },
+        { $sort: { _feeOn: -1, status: -1, name: 1 } },
+        { $skip: skip },
+        { $limit: limit },
+        {
+          $project: {
+            name: 1,
+            businessNumberNormalized: 1,
+            status: 1,
+            labFeeSchedule: 1,
+            "metadata.companyName": 1,
+            "metadata.representativeName": 1,
+            "metadata.address": 1,
+            "metadata.addressDetail": 1,
+          },
+        },
+      ]),
     ]);
 
     return res.json({
@@ -137,4 +167,4 @@ export async function listLabFeeSchedules(req, res) {
       error: error.message,
     });
   }
-}
+};
