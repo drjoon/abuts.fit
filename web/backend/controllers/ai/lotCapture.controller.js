@@ -21,6 +21,7 @@ import {
   ensureMailboxAddressForBusiness,
   normalizeBusinessAnchorId,
 } from "../requests/mailbox.utils.js";
+import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
 import sharp from "sharp";
 
 let _apiKey = null;
@@ -440,6 +441,14 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     console.error("[lot-capture] mailbox allocation failed", {
       requestId: request.requestId,
       requestMongoId: String(request._id || ""),
+      message: err?.message || String(err),
+    });
+  }
+  try {
+    await applyPracticeShippingReceiverSnapshotToRequest(request);
+  } catch (err) {
+    console.error("[lot-capture] shippingReceiver snapshot failed", {
+      requestId: request.requestId,
       message: err?.message || String(err),
     });
   }

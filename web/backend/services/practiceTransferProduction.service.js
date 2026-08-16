@@ -5,6 +5,8 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-17: shippingReceiver는 포장.발송 진입 시 스냅샷. 생성 시에는 practiceBusinessAnchorId·clinicName만.
+// - 2026-08-17: PTX CA Request에 shippingReceiver(치과 수취인) 스냅샷·practiceBusinessAnchorId 저장.
 // - 2026-08-17: 신속처리 CA는 항상 express(12시 컷오프는 당일/익일 출고 스케줄만). 일반은 묶음.
 // - 2026-08-17: 신속처리 CA — 12시 전 express, 12시 이후 묶음. 일반은 항상 묶음.
 // - 2026-08-17: 신속처리 CA는 제조사 express 고정(선택가능 강등·견적 normal 위장 제거). 일반은 묶음.
@@ -566,8 +568,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   });
   const scheduleRequestedAt = requestedAt;
 
-  const practiceAnchor = transferDoc?.practiceBusinessAnchorId
-    ? await BusinessAnchor.findById(transferDoc.practiceBusinessAnchorId)
+  const practiceAnchorId = transferDoc?.practiceBusinessAnchorId || null;
+  const practiceAnchor = practiceAnchorId
+    ? await BusinessAnchor.findById(practiceAnchorId)
         .select({ name: 1 })
         .lean()
     : null;
@@ -1588,6 +1591,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     requestDoc.partnerBilling.practiceBusinessAnchorId =
       transferDoc.practiceBusinessAnchorId;
   }
+  // shippingReceiver는 포장.발송 진입 시 live BA로 스냅샷한다.
   // timeline 통째 교체(…spread) 시 shipOutcome: undefined 가 들어가면
   // Cast to Object failed — 필드만 갱신한다.
   if (estimatedShipYmd) {

@@ -275,6 +275,13 @@ router.get(
   requestController.getShippingMailboxRequests,
 );
 
+router.put(
+  "/shipping/shipping-receiver-address",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.updateShippingReceiverAddress,
+);
+
 // 한진 운송장 출력 (메일박스 기준)
 router.post(
   "/shipping/hanjin/print-labels",

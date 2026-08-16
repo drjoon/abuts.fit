@@ -15,6 +15,7 @@ import {
   ensureMailboxAddressForBusiness,
   isManufacturerSampleRequest,
 } from "../controllers/requests/mailbox.utils.js";
+import { applyPracticeShippingReceiverSnapshotToRequest } from "../utils/shippingReceiver.utils.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
 
 /**
@@ -134,6 +135,14 @@ async function progressStages() {
         }
       } else {
         req.mailboxAddress = null;
+      }
+      try {
+        await applyPracticeShippingReceiverSnapshotToRequest(req);
+      } catch (error) {
+        console.error("[STAGE_WORKER] shippingReceiver snapshot failed", {
+          requestId: req.requestId,
+          message: error?.message || String(error),
+        });
       }
       applyStatusMapping(req, "포장.발송");
       await req.save();

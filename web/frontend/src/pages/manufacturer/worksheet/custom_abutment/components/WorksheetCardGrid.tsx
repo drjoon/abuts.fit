@@ -1149,6 +1149,21 @@ export const WorksheetCardGrid = ({
                     if (!rg) return null;
                     return rg === "deep" ? "있음" : "없음";
                   })()}
+                  shippingContact={
+                    (request as any)?.shippingReceiver?.name ||
+                    (request as any)?.shippingReceiver?.address
+                      ? {
+                          name: (request as any)?.shippingReceiver?.name,
+                          phone: (request as any)?.shippingReceiver?.phone,
+                          contactName: (request as any)?.shippingReceiver
+                            ?.contactName,
+                          address: (request as any)?.shippingReceiver?.address,
+                          addressDetail: (request as any)?.shippingReceiver
+                            ?.addressDetail,
+                          zipCode: (request as any)?.shippingReceiver?.zipCode,
+                        }
+                      : null
+                  }
                   leadingSlot={
                     <>
                       {(isNewSystemRequest || hasInsufficientShippingCredit) && (

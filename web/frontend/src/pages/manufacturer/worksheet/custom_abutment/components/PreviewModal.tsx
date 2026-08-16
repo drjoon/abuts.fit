@@ -2707,6 +2707,21 @@ export const PreviewModal = ({
             productionMetaItems={overlayPackMetaItems}
             estimatedShipYmd={estimatedShipYmd || null}
             deadlineInfo={deadlineInfo}
+            shippingContact={
+              (activeReq as any)?.shippingReceiver?.name ||
+              (activeReq as any)?.shippingReceiver?.address
+                ? {
+                    name: (activeReq as any)?.shippingReceiver?.name,
+                    phone: (activeReq as any)?.shippingReceiver?.phone,
+                    contactName: (activeReq as any)?.shippingReceiver
+                      ?.contactName,
+                    address: (activeReq as any)?.shippingReceiver?.address,
+                    addressDetail: (activeReq as any)?.shippingReceiver
+                      ?.addressDetail,
+                    zipCode: (activeReq as any)?.shippingReceiver?.zipCode,
+                  }
+                : null
+            }
           />
 
           {unmachinableEditorOpen && (

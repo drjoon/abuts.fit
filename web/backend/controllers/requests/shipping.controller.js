@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: PTX 직납 수취인(shippingReceiver) 주소 스냅샷 수정 API.
 // - 2026-08-11: mailbox-requests 성능 — exact mailboxAddress, lean+batch hydrate, 15s 캐시, requestIds 단축 경로
 // - 2026-08-04: 수동 집하 pickedUpAt/deliveredAt을 당일 16:00 고정 → 실제 처리 시각(now)으로 기록
 // - 2026-08-04: 오늘 발송 체크 해제 시 originalEstimatedShipYmd로 발송일 복원 + mailbox-summary 캐시 무효화
@@ -142,6 +143,9 @@ const MAILBOX_REQUESTS_SELECT = {
   "timeline.forceTodayShipment": 1,
   "timeline.estimatedShipYmd": 1,
   "timeline.nextEstimatedShipYmd": 1,
+  shippingReceiver: 1,
+  "partnerBilling.relatedPracticeTransferId": 1,
+  "partnerBilling.practiceBusinessAnchorId": 1,
   "timeline.originalEstimatedShipYmd": 1,
   requestor: 1,
   deliveryInfoRef: 1,
@@ -1702,6 +1706,110 @@ export async function resetMailboxShippingWorkingState(req, res) {
     return res.status(500).json({
       success: false,
       message: "포장.발송 테스트 리셋 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * PTX 직납 우편함: Request.shippingReceiver 스냅샷 주소만 갱신.
+ * (기공소 BA metadata는 건드리지 않음)
+ */
+export async function updateShippingReceiverAddress(req, res) {
+  try {
+    const actorRole = String(req.user?.role || "").trim();
+    if (!["manufacturer", "admin"].includes(actorRole)) {
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    }
+
+    const mailboxAddress = String(req.body?.mailboxAddress || "")
+      .trim()
+      .toUpperCase();
+    const requestIds = Array.isArray(req.body?.requestIds)
+      ? req.body.requestIds.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+    const address = String(req.body?.address || "").trim();
+    const addressDetail = String(req.body?.addressDetail || "").trim();
+    const zipCode = String(req.body?.zipCode || "").trim();
+    const phone = String(req.body?.phone || "").trim();
+    const contactName = String(req.body?.contactName || "").trim();
+    const name = String(req.body?.name || "").trim();
+
+    if (!address || !addressDetail || !zipCode) {
+      return res.status(400).json({
+        success: false,
+        message: "address, addressDetail, zipCode가 필요합니다.",
+      });
+    }
+    if (!mailboxAddress && requestIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "mailboxAddress 또는 requestIds가 필요합니다.",
+      });
+    }
+
+    const filter = {
+      $or: [
+        { "shippingReceiver.sourceAnchorId": { $ne: null } },
+        { "partnerBilling.relatedPracticeTransferId": { $ne: null } },
+        { "partnerBilling.practiceBusinessAnchorId": { $ne: null } },
+      ],
+    };
+    if (mailboxAddress) {
+      filter.mailboxAddress = mailboxAddress;
+    }
+    if (requestIds.length) {
+      filter.requestId = { $in: requestIds };
+    }
+
+    const docs = await Request.find(filter).select({
+      _id: 1,
+      requestId: 1,
+      shippingReceiver: 1,
+    });
+    if (!docs.length) {
+      return res.status(404).json({
+        success: false,
+        message: "갱신할 직납 수취인 스냅샷을 찾지 못했습니다.",
+      });
+    }
+
+    const updatedIds = [];
+    for (const doc of docs) {
+      if (!doc.shippingReceiver || typeof doc.shippingReceiver !== "object") {
+        doc.shippingReceiver = {};
+      }
+      doc.shippingReceiver.address = address;
+      doc.shippingReceiver.addressDetail = addressDetail;
+      doc.shippingReceiver.zipCode = zipCode;
+      if (phone) doc.shippingReceiver.phone = phone;
+      if (contactName) doc.shippingReceiver.contactName = contactName;
+      if (name) doc.shippingReceiver.name = name;
+      doc.markModified("shippingReceiver");
+      await doc.save();
+      updatedIds.push(String(doc.requestId || "").trim());
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        updatedIds,
+        address,
+        addressDetail,
+        zipCode,
+        phone: phone || null,
+        contactName: contactName || null,
+        name: name || null,
+      },
+    });
+  } catch (error) {
+    console.error("Error in updateShippingReceiverAddress:", error);
+    return res.status(500).json({
+      success: false,
+      message: "직납 수취인 주소 저장 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

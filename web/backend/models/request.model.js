@@ -1033,6 +1033,30 @@ const requestSchema = new mongoose.Schema(
         ref: "BusinessAnchor",
         default: null,
       },
+      // PTX CA: 기공소 디자인·제조 생산만. 스키마에 명시해 저장이 깨지지 않게 한다.
+      labDesignedAbutment: { type: Boolean, default: false },
+      // PTX 직납 수취 치과 BusinessAnchor
+      practiceBusinessAnchorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "BusinessAnchor",
+        default: null,
+      },
+    },
+
+    // 제조사 택배 수취인 스냅샷 (PTX 직납=치과).
+    // 포장.발송 진입 시 live practice BA로 채운다(생성~출고 사이 주소 변경 반영).
+    shippingReceiver: {
+      name: { type: String, default: "" },
+      phone: { type: String, default: "" },
+      contactName: { type: String, default: "" },
+      address: { type: String, default: "" },
+      addressDetail: { type: String, default: "" },
+      zipCode: { type: String, default: "" },
+      sourceAnchorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "BusinessAnchor",
+        default: null,
+      },
     },
 
     timeline: {

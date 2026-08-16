@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: PTX 직납 shippingContact(치과 수취인) 배송 섹션 추가(제조사 카드만).
 // - 2026-08-12: row(프리뷰)도 열 너비 초과 시 다음 줄로 넘김. nowrap 강제 제거(생산 문구 잘림 수정).
 // - 2026-08-11: row(프리뷰) MetaRow는 nowrap으로 환자·일정 줄 2줄 줄바꿈 완화.
 // - 2026-08-06: row 요약에 출고예정·마감 남은시간 인라인 표시(세로 높이 증가 없이 환자 첫 줄에 배치).
@@ -48,6 +49,15 @@ export type RequestInfoSummaryProps = {
   estimatedShipYmd?: string | null;
   /** 마감까지 남은시간. 환자 첫 줄에 인라인 뱃지 */
   deadlineInfo?: Pick<DeadlineInfo, "displayText" | "badgeClass"> | null;
+  /** PTX 직납 수취인(치과). 있으면 배송 섹션 표시 */
+  shippingContact?: {
+    name?: string | null;
+    phone?: string | null;
+    contactName?: string | null;
+    address?: string | null;
+    addressDetail?: string | null;
+    zipCode?: string | null;
+  } | null;
 };
 
 /** 기공소명·치과명이 같거나 포함 관계면 true */
@@ -153,6 +163,7 @@ export function RequestInfoSummary({
   leadingSlot,
   estimatedShipYmd,
   deadlineInfo,
+  shippingContact,
 }: RequestInfoSummaryProps) {
   const labName = String(requestorLabel || "").trim();
   const clinic = String(clinicName || "").trim();
@@ -187,6 +198,24 @@ export function RequestInfoSummary({
     }
   }
 
+  const shipName = String(shippingContact?.name || "").trim();
+  const shipPhone = String(shippingContact?.phone || "").trim();
+  const shipContactName = String(shippingContact?.contactName || "").trim();
+  const shipAddress = [
+    String(shippingContact?.address || "").trim(),
+    String(shippingContact?.addressDetail || "").trim(),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const shipZip = String(shippingContact?.zipCode || "").trim();
+  const shipAddressLine = [shipZip ? `(${shipZip})` : "", shipAddress]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const hasShippingContact = Boolean(
+    shipName || shipPhone || shipContactName || shipAddressLine,
+  );
+
   const hasScheduleMeta = Boolean(shipLabel || deadlineText);
   const hasPatient =
     !!labName ||
@@ -199,19 +228,30 @@ export function RequestInfoSummary({
     !!implantLine || geometryItems.length > 0 || !!retention;
   const hasProduction = productionItems.length > 0;
   const isRow = layout === "row";
-  const sectionCount = [hasPatient, hasImplant, hasProduction].filter(
-    Boolean,
-  ).length;
+  const sectionCount = [
+    hasPatient,
+    hasImplant,
+    hasProduction,
+    hasShippingContact,
+  ].filter(Boolean).length;
   const rowGridClass =
     sectionCount <= 1
       ? "md:grid-cols-1"
       : sectionCount === 2
         ? "md:grid-cols-2"
-        : "md:grid-cols-3";
+        : sectionCount === 3
+          ? "md:grid-cols-3"
+          : "md:grid-cols-4";
   const sectionDividerClass = "md:pr-3 md:border-r md:border-slate-200/80";
   const sectionPadStartClass = "md:pl-3";
 
-  if (!hasPatient && !hasImplant && !hasProduction && !leadingSlot) {
+  if (
+    !hasPatient &&
+    !hasImplant &&
+    !hasProduction &&
+    !hasShippingContact &&
+    !leadingSlot
+  ) {
     return null;
   }
 
@@ -219,7 +259,9 @@ export function RequestInfoSummary({
     <Section
       label="환자"
       className={
-        isRow && (hasImplant || hasProduction) ? sectionDividerClass : ""
+        isRow && (hasImplant || hasProduction || hasShippingContact)
+          ? sectionDividerClass
+          : ""
       }
     >
       {(labName || dateLabel || hasScheduleMeta) && (
@@ -266,7 +308,9 @@ export function RequestInfoSummary({
       label="임플란트"
       className={[
         isRow && hasPatient ? sectionPadStartClass : "",
-        isRow && hasProduction ? sectionDividerClass : "",
+        isRow && (hasProduction || hasShippingContact)
+          ? sectionDividerClass
+          : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -309,9 +353,12 @@ export function RequestInfoSummary({
   const productionSection = hasProduction ? (
     <Section
       label="생산"
-      className={
-        isRow && (hasPatient || hasImplant) ? sectionPadStartClass : ""
-      }
+      className={[
+        isRow && (hasPatient || hasImplant) ? sectionPadStartClass : "",
+        isRow && hasShippingContact ? sectionDividerClass : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <MetaRow>
         {productionItems.map((item, idx) => (
@@ -324,6 +371,48 @@ export function RequestInfoSummary({
           </span>
         ))}
       </MetaRow>
+    </Section>
+  ) : null;
+
+  const shippingSection = hasShippingContact ? (
+    <Section
+      label="배송(직납)"
+      className={
+        isRow && (hasPatient || hasImplant || hasProduction)
+          ? sectionPadStartClass
+          : ""
+      }
+    >
+      {(shipName || shipContactName || shipPhone) && (
+        <MetaRow>
+          {shipName ? (
+            <span className="min-w-0 break-words font-medium text-slate-800">
+              {shipName}
+            </span>
+          ) : null}
+          {shipContactName ? (
+            <InlineGroup>
+              {shipName ? <Dot /> : null}
+              <span className="min-w-0 break-words text-slate-600">
+                {shipContactName}
+              </span>
+            </InlineGroup>
+          ) : null}
+          {shipPhone ? (
+            <InlineGroup>
+              {shipName || shipContactName ? <Dot /> : null}
+              <span className="tabular-nums text-slate-600">{shipPhone}</span>
+            </InlineGroup>
+          ) : null}
+        </MetaRow>
+      )}
+      {shipAddressLine ? (
+        <MetaRow>
+          <span className="min-w-0 break-words text-slate-600">
+            {shipAddressLine}
+          </span>
+        </MetaRow>
+      ) : null}
     </Section>
   ) : null;
 
@@ -345,6 +434,7 @@ export function RequestInfoSummary({
         {patientSection}
         {implantSection}
         {productionSection}
+        {shippingSection}
       </div>
     </div>
   );

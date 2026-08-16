@@ -11,6 +11,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // change-log:
+// - 2026-08-17: 포장.발송 진입 시 PTX shippingReceiver를 live practice BA로 스냅샷.
 // - 2026-08-16: PTX 가공 진입 시 practiceTransfer.abutmentProductionStartedAt 기록(수락 취소 가드).
 // - 2026-08-17: PTX CA 포장.발송 시 어벗츠몫 에스크로 해제(releasePracticeTransferAbutmentShare).
 // - 2026-08-10: 디자인 파트너 준비→가공(nextUpCamRunGuard) 핸드오프 승인 허용.
@@ -37,6 +38,7 @@ import {
   isManufacturerSampleRequest,
   normalizeBusinessAnchorId,
 } from "./mailbox.utils.js";
+import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
 import { markPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
@@ -1716,6 +1718,17 @@ export async function updateReviewStatusByStage(req, res) {
           // 출고일은 의뢰 시점 약속 고정. 포장.발송 진입으로 날짜를 바꾸거나
           // 신속 추가비를 여기서 취소하지 않는다(자정 이후 shippingOnTimeEvalWorker).
           await updateCurrentEstimatedShipYmdOnPackingEnter(request);
+          // PTX 직납: 포장.발송 진입 시점에 치과 수취인 스냅샷(주소 변경 반영).
+          try {
+            await applyPracticeShippingReceiverSnapshotToRequest(request, {
+              session,
+            });
+          } catch (err) {
+            console.error("[SHIPPING_RECEIVER_SNAPSHOT_ERROR]", {
+              requestId: request?.requestId || null,
+              message: err?.message || String(err),
+            });
+          }
           // 포장.발송 진입: BusinessAnchor 기준 재사용 → 없으면 A1A1부터 첫 빈칸.
           request.mailboxAddress = null;
           try {

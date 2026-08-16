@@ -85,6 +85,7 @@ export const {
   setMailboxForceTodayShipment,
   getShippingMailboxSummary,
   getShippingMailboxRequests,
+  updateShippingReceiverAddress,
 } = shippingController;
 export const { resetMailboxShippingWorkingState } = shippingController;
 

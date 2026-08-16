@@ -1504,6 +1504,9 @@ export async function getAllRequests(req, res) {
       "productionSchedule.scheduledShipPickup",
       "timeline.estimatedShipYmd",
       "requestor",
+      "shippingReceiver",
+      "partnerBilling.relatedPracticeTransferId",
+      "partnerBilling.practiceBusinessAnchorId",
     ].join(" ");
 
     const worksheetTrackingSelect = [
@@ -1616,6 +1619,9 @@ export async function getAllRequests(req, res) {
       "timeline.estimatedShipYmd",
       "requestor",
       "deliveryInfoRef",
+      "shippingReceiver",
+      "partnerBilling.relatedPracticeTransferId",
+      "partnerBilling.practiceBusinessAnchorId",
     ].join(" ");
 
     // 관리자 의뢰 모니터링 전용 초경량 projection (카드 UI 사용 필드만)

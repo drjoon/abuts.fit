@@ -126,6 +126,12 @@ export const MailboxContentsModal = ({
   const stageLabel = getNormalizedStageLabelSafe({ manufacturerStage: firstStageRaw }) || String(firstStageRaw || "준비");
 
   const primaryRequest = requests[0] || null;
+  const shippingReceiver = (primaryRequest as any)?.shippingReceiver || null;
+  const hasPracticeShippingReceiver = Boolean(
+    String(shippingReceiver?.name || "").trim() ||
+      String(shippingReceiver?.address || "").trim() ||
+      shippingReceiver?.sourceAnchorId,
+  );
   const requestorBusinessAnchor =
     (primaryRequest as any)?.requestorBusinessAnchor ||
     (primaryRequest as any)?.requestorBusinessAnchorId ||
@@ -142,23 +148,37 @@ export const MailboxContentsModal = ({
       "",
   ).trim();
   const initialAddress = String(
-    requestorBusinessAnchor?.metadata?.address ||
+    (hasPracticeShippingReceiver && shippingReceiver?.address) ||
+      requestorBusinessAnchor?.metadata?.address ||
       (primaryRequest as any)?.requestor?.addressText ||
       (primaryRequest as any)?.requestor?.address?.roadAddress ||
       (primaryRequest as any)?.requestor?.address?.address1 ||
       "",
   ).trim();
   const initialAddressDetail = String(
-    requestorBusinessAnchor?.metadata?.addressDetail ||
+    (hasPracticeShippingReceiver && shippingReceiver?.addressDetail) ||
+      requestorBusinessAnchor?.metadata?.addressDetail ||
       (primaryRequest as any)?.requestor?.address?.detailAddress ||
       (primaryRequest as any)?.requestor?.address?.address2 ||
       "",
   ).trim();
   const initialZipCode = String(
-    requestorBusinessAnchor?.metadata?.zipCode ||
+    (hasPracticeShippingReceiver && shippingReceiver?.zipCode) ||
+      requestorBusinessAnchor?.metadata?.zipCode ||
       (primaryRequest as any)?.requestor?.address?.postalCode ||
       (primaryRequest as any)?.requestor?.zipCode ||
       "",
+  ).trim();
+  const receiverDisplayName = String(
+    (hasPracticeShippingReceiver && shippingReceiver?.name) ||
+      primaryOrganization ||
+      "",
+  ).trim();
+  const receiverPhone = String(
+    (hasPracticeShippingReceiver && shippingReceiver?.phone) || "",
+  ).trim();
+  const receiverContactName = String(
+    (hasPracticeShippingReceiver && shippingReceiver?.contactName) || "",
   ).trim();
   const addressDetailRef = useRef<HTMLInputElement | null>(null);
   const [addressInput, setAddressInput] = useState(initialAddress);
@@ -269,7 +289,7 @@ export const MailboxContentsModal = ({
       });
       return;
     }
-    if (!businessAnchorId) {
+    if (!hasPracticeShippingReceiver && !businessAnchorId) {
       toast({
         title: "조직 정보를 찾을 수 없습니다",
         variant: "destructive",
@@ -290,41 +310,84 @@ export const MailboxContentsModal = ({
 
     setIsSavingAddress(true);
     try {
-      const res = await request<any>({
-        path: "/api/businesses/business-shipping-address",
-        method: "PUT",
-        token,
-        jsonBody: {
+      if (hasPracticeShippingReceiver) {
+        const res = await request<any>({
+          path: "/api/requests/shipping/shipping-receiver-address",
+          method: "PUT",
+          token,
+          jsonBody: {
+            mailboxAddress: address,
+            requestIds: requests
+              .map((r) => String(r?.requestId || "").trim())
+              .filter(Boolean),
+            address: nextAddress,
+            addressDetail: nextAddressDetail,
+            zipCode: nextZipCode,
+            phone: receiverPhone || undefined,
+            contactName: receiverContactName || undefined,
+            name: receiverDisplayName || undefined,
+          },
+        });
+        if (!res.ok) {
+          throw new Error(
+            String(res.data?.message || "직납 수취인 주소 저장에 실패했습니다."),
+          );
+        }
+        onAddressSaved?.({
+          businessAnchorId:
+            String(
+              shippingReceiver?.sourceAnchorId?._id ||
+                shippingReceiver?.sourceAnchorId ||
+                businessAnchorId ||
+                "",
+            ).trim() || businessAnchorId,
+          address: String(res.data?.data?.address || nextAddress).trim(),
+          addressDetail: String(
+            res.data?.data?.addressDetail || nextAddressDetail,
+          ).trim(),
+          zipCode: String(res.data?.data?.zipCode || nextZipCode).trim(),
+        });
+        toast({
+          title: "치과 직납 주소를 저장했습니다",
+          description: "다시 접수/출력을 시도해주세요.",
+        });
+      } else {
+        const res = await request<any>({
+          path: "/api/businesses/business-shipping-address",
+          method: "PUT",
+          token,
+          jsonBody: {
+            businessAnchorId,
+            address: nextAddress,
+            addressDetail: nextAddressDetail,
+            zipCode: nextZipCode,
+          },
+        });
+        if (!res.ok) {
+          throw new Error(
+            String(res.data?.message || "의뢰인 배송지 저장에 실패했습니다."),
+          );
+        }
+        onAddressSaved?.({
           businessAnchorId,
-          address: nextAddress,
-          addressDetail: nextAddressDetail,
-          zipCode: nextZipCode,
-        },
-      });
-      if (!res.ok) {
-        throw new Error(
-          String(res.data?.message || "의뢰인 배송지 저장에 실패했습니다."),
-        );
+          address: String(res.data?.data?.address || nextAddress).trim(),
+          addressDetail: String(
+            res.data?.data?.addressDetail || nextAddressDetail,
+          ).trim(),
+          zipCode: String(res.data?.data?.zipCode || nextZipCode).trim(),
+        });
+        toast({
+          title: "의뢰인 주소를 저장했습니다",
+          description: "다시 접수/출력을 시도해주세요.",
+        });
       }
-      onAddressSaved?.({
-        businessAnchorId,
-        address: String(res.data?.data?.address || nextAddress).trim(),
-        addressDetail: String(
-          res.data?.data?.addressDetail || nextAddressDetail,
-        ).trim(),
-        zipCode: String(res.data?.data?.zipCode || nextZipCode).trim(),
-      });
-      toast({
-        title: "의뢰인 주소를 저장했습니다",
-        description: "다시 접수/출력을 시도해주세요.",
-      });
     } catch (error) {
       toast({
         title: "주소 저장 실패",
         description:
           error instanceof Error
             ? error.message
-            : "의뢰인 배송지 저장에 실패했습니다.",
+            : "배송지 저장에 실패했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -340,11 +403,13 @@ export const MailboxContentsModal = ({
             <span className="text-lg font-semibold text-slate-900">
               {address}
             </span>
-            {primaryOrganization && primaryOrganization !== "-" ? (
+            {receiverDisplayName && receiverDisplayName !== "-" ? (
               <>
                 <span className="text-slate-300">•</span>
                 <span className="text-sm text-slate-600">
-                  {primaryOrganization}
+                  {hasPracticeShippingReceiver
+                    ? `직납 ${receiverDisplayName}`
+                    : receiverDisplayName}
                 </span>
               </>
             ) : null}
@@ -401,21 +466,43 @@ export const MailboxContentsModal = ({
             </div>
           </div>
         </div>
+        {hasPracticeShippingReceiver ? (
+          <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 space-y-0.5">
+            <div className="font-semibold text-slate-800">치과 직납 수취인</div>
+            <div>
+              {[receiverDisplayName, receiverContactName, receiverPhone]
+                .filter(Boolean)
+                .join(" · ") || "-"}
+            </div>
+            <div className="text-slate-600">
+              {[
+                initialZipCode ? `(${initialZipCode})` : "",
+                initialAddress,
+                initialAddressDetail,
+              ]
+                .filter(Boolean)
+                .join(" ") || "주소 미등록"}
+            </div>
+          </div>
+        ) : null}
         {errorMessage ? (
           <div className="mt-2 rounded-lg border border-destructive-muted bg-destructive-soft px-3 py-2 text-sm text-destructive">
             {errorMessage}
           </div>
         ) : null}
-        {errorMessage && businessAnchorId ? (
+        {errorMessage && (businessAnchorId || hasPracticeShippingReceiver) ? (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-slate-900">
-                  의뢰인 배송지 수정
+                  {hasPracticeShippingReceiver
+                    ? "치과 직납 배송지 수정"
+                    : "의뢰인 배송지 수정"}
                 </div>
                 <div className="text-xs text-slate-600 mt-1">
-                  주소 오류인 경우 제조사에서 의뢰인 사업자 주소를 바로 수정할
-                  수 있습니다.
+                  {hasPracticeShippingReceiver
+                    ? "주소 오류인 경우 이번 우편함 건의 치과 수취인 스냅샷을 수정합니다."
+                    : "주소 오류인 경우 제조사에서 의뢰인 사업자 주소를 바로 수정할 수 있습니다."}
                 </div>
               </div>
               <div className="flex items-center gap-2">

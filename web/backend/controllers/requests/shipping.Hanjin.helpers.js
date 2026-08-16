@@ -5,10 +5,14 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/utils/shippingReceiver.utils.js
+// change-log:
+// - 2026-08-17: PTX 직납 shippingReceiver 스냅샷을 한진 수취인(이름·전화·주소) 우선으로 사용.
 import Request from "../../models/request.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import hanjinService from "../../services/hanjin.service.js";
 import { getTodayYmdInKst } from "./utils.js";
+import { getShippingReceiver } from "../../utils/shippingReceiver.utils.js";
 
 export const HANJIN_CLIENT_ID = String(
   process.env.HANJIN_CLIENT_ID || "",
@@ -169,6 +173,9 @@ const resolveOrganizationMeta = (business) => {
 };
 
 const resolveRequestOrganizationName = (request) => {
+  const shippingReceiver = getShippingReceiver(request);
+  if (shippingReceiver?.name) return shippingReceiver.name;
+
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
   const metadata = resolveOrganizationMeta(business);
@@ -183,6 +190,9 @@ const resolveRequestOrganizationName = (request) => {
 };
 
 const resolveReceiverZipSource = (request) => {
+  const shippingReceiver = getShippingReceiver(request);
+  if (shippingReceiver?.zipCode) return shippingReceiver.zipCode;
+
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
   const metadata = resolveOrganizationMeta(business);
@@ -197,6 +207,9 @@ const resolveReceiverZipSource = (request) => {
 };
 
 const normalizeReceiverAddressForHanjin = (request) => {
+  const shippingReceiver = getShippingReceiver(request);
+  if (shippingReceiver?.address) return shippingReceiver.address;
+
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
   const metadata = resolveOrganizationMeta(business);
@@ -216,6 +229,11 @@ const normalizeReceiverAddressForHanjin = (request) => {
 };
 
 const resolveReceiverDetailAddress = (request) => {
+  const shippingReceiver = getShippingReceiver(request);
+  if (shippingReceiver?.addressDetail) return shippingReceiver.addressDetail;
+  // 스냅샷에 본주소만 있고 상세가 비면 한진 필수 필드용 폴백
+  if (shippingReceiver?.address) return "상세주소없음";
+
   const requestor = request?.requestor || {};
   const business = resolveBusinessOrganization(request);
   const metadata = resolveOrganizationMeta(business);
@@ -238,6 +256,22 @@ const resolveReceiverDetailAddress = (request) => {
 
   return "";
 };
+
+const resolveReceiverPhone = (request) => {
+  const shippingReceiver = getShippingReceiver(request);
+  if (shippingReceiver?.phone) return shippingReceiver.phone;
+  return String(request?.requestor?.phoneNumber || "").trim();
+};
+
+/** 테스트·운송장 경로 공용: 수취인 연락처 해석 */
+export const resolveHanjinReceiverContact = (request) => ({
+  name: resolveRequestOrganizationName(request),
+  phone: resolveReceiverPhone(request),
+  zipCode: resolveReceiverZipSource(request),
+  address: normalizeReceiverAddressForHanjin(request),
+  addressDetail: resolveReceiverDetailAddress(request),
+  contactName: String(getShippingReceiver(request)?.contactName || "").trim(),
+});
 
 const logMissingReceiverAddressDiagnostics = ({ request, mailbox, reason }) => {
   try {
@@ -774,7 +808,7 @@ export const buildHanjinInsertOrderBody = async ({
   const todayYmd = getTodayYmdInKst();
   const ymd = todayYmd.replace(/-/g, "");
   const custOrdNo = `ABUTS_${ymd}_${String(mailbox || "-")}`.slice(0, 30);
-  const receiverPhone = String(first?.requestor?.phoneNumber || "").trim();
+  const receiverPhone = resolveReceiverPhone(first);
 
   const resolvedWblNo = String(wblNo || "").trim();
   console.log(
@@ -888,6 +922,7 @@ const buildHanjinDraftPayload = async (requests) => {
           extracted.companyName ||
           "",
         receiver_phone:
+          resolveReceiverPhone(first) ||
           requestor.phoneNumber ||
           extracted.phoneNumber ||
           requestor.phone ||

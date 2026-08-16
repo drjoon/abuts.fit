@@ -1,3 +1,7 @@
+import {
+  resolveShippingMailboxOrgId,
+} from "../../utils/shippingReceiver.utils.js";
+
 const UNKNOWN_ANCHOR_KEY = "__UNKNOWN_BUSINESS_ANCHOR__";
 const ACTIVE_MAILBOX_OCCUPY_STAGES = ["세척.패킹", "포장.발송"];
 const TRACKING_ACTIVE_EXCLUDED_CODES = ["picked_up", "completed", "canceled"];
@@ -7,6 +11,10 @@ const MAILBOX_ALLOC_LOCK_MAX_ATTEMPTS = 40;
 const MAILBOX_ALLOC_LOCK_RETRY_MS = 50;
 // 미커밋 동시 할당 손잡이. TTL 슬롯보다 짧게 잡아 재승인 시 첫 빈칸 정책을 지킨다.
 const MAILBOX_SLOT_HANDOFF_MAX_AGE_MS = 60_000;
+// related files:
+// - web/backend/utils/shippingReceiver.utils.js
+// change-log:
+// - 2026-08-17: PTX 직납 우편함 합류 키를 practice BA(shippingReceiver)로.
 
 // related files (request category SSOT):
 // - web/backend/models/request.model.js
@@ -73,14 +81,22 @@ export const isManufacturerSampleRequest = (requestLike) => {
  * 우편함 점유 의뢰에서 사업자 anchor를 추출한다.
  *
  * SSOT 우선순위:
- * 1) request.businessAnchorId
- * 2) request.requestor.businessAnchorId (populate 되었을 때)
+ * 1) PTX 직납: shippingReceiver.sourceAnchorId / practiceBusinessAnchorId
+ * 2) request.businessAnchorId
+ * 3) request.requestor.businessAnchorId (populate 되었을 때)
  *
  * 둘 다 없으면 UNKNOWN 키를 반환한다.
  * - UNKNOWN을 명시적으로 세트에 넣어야,
  *   "실제 점유자는 있는데 anchor만 비어있는" 우편함을 재사용하는 사고를 막을 수 있다.
  */
 const resolveOccupantAnchorKey = (requestDocLike) => {
+  const shippingOrg = normalizeBusinessAnchorId(
+    resolveShippingMailboxOrgId(requestDocLike),
+  );
+  // resolveShippingMailboxOrgId already prefers practice then lab;
+  // if it returned lab via businessAnchorId that's fine.
+  if (shippingOrg) return shippingOrg;
+
   const direct = normalizeBusinessAnchorId(requestDocLike?.businessAnchorId);
   if (direct) return direct;
 
@@ -91,6 +107,8 @@ const resolveOccupantAnchorKey = (requestDocLike) => {
 
   return UNKNOWN_ANCHOR_KEY;
 };
+
+export { resolveShippingMailboxOrgId };
 
 // related files:
 // - web/backend/controllers/cnc/machiningBridge.js
@@ -295,7 +313,8 @@ async function loadActiveMailboxOccupancy({
     .select(
       // manufacturerStage 필수: isMailboxOccupancyCandidate가 stage로 점유 여부를 판정한다.
       // select 누락 시 점유가 가짜로 제외되어 서로 다른 업체가 A1A1 등 동일 우편함에 섞인다.
-      "_id mailboxAddress businessAnchorId requestor manufacturerStage deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode",
+      // shippingReceiver/partnerBilling: PTX 직납은 practice BA로 점유 키를 잡는다.
+      "_id mailboxAddress businessAnchorId requestor manufacturerStage deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode shippingReceiver partnerBilling.practiceBusinessAnchorId partnerBilling.relatedPracticeTransferId",
     )
     .populate("requestor", "businessAnchorId")
     .populate(
@@ -541,9 +560,12 @@ export async function assignMailboxForCleaningPackingEnter({
 
   request.mailboxAddress = null;
   try {
+    const shippingOrgId =
+      normalizeBusinessAnchorId(resolveShippingMailboxOrgId(request)) ||
+      normalizeBusinessAnchorId(requestorOrgId);
     const nextMailboxAddress = await ensureMailboxAddressForBusiness({
       requestMongoId: request._id,
-      requestorOrgId,
+      requestorOrgId: shippingOrgId,
       currentMailboxAddress: null,
       session,
       scopeFilter,
@@ -578,9 +600,11 @@ export async function ensureMailboxAddressForBusiness({
     currentMailboxAddress,
   );
 
-  if (!requestorOrgIdStr && requestMongoId) {
+  if (requestMongoId) {
     let requestRowQuery = Request.findById(requestMongoId)
-      .select("businessAnchorId requestor")
+      .select(
+        "businessAnchorId requestor partnerBilling shippingReceiver",
+      )
       .populate("requestor", "businessAnchorId")
       .lean();
 
@@ -589,13 +613,20 @@ export async function ensureMailboxAddressForBusiness({
     }
 
     const requestRow = await requestRowQuery;
-
-    const directAnchorId = normalizeBusinessAnchorId(requestRow?.businessAnchorId);
-    const requestorAnchorId = normalizeBusinessAnchorId(
-      requestRow?.requestor?.businessAnchorId,
+    const fromShipping = normalizeBusinessAnchorId(
+      resolveShippingMailboxOrgId(requestRow),
     );
-
-    requestorOrgIdStr = directAnchorId || requestorAnchorId;
+    if (fromShipping) {
+      requestorOrgIdStr = fromShipping;
+    } else if (!requestorOrgIdStr) {
+      const directAnchorId = normalizeBusinessAnchorId(
+        requestRow?.businessAnchorId,
+      );
+      const requestorAnchorId = normalizeBusinessAnchorId(
+        requestRow?.requestor?.businessAnchorId,
+      );
+      requestorOrgIdStr = directAnchorId || requestorAnchorId;
+    }
   }
 
   if (!requestorOrgIdStr) {
