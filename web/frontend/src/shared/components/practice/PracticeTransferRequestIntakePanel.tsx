@@ -134,7 +134,6 @@ import {
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import {
-  normalizeConfiguredRushFeeMultiplier,
   resolveAdoptedAbutmentKind,
 } from "@/shared/practice/labFeeSchedule";
 import {
@@ -876,9 +875,6 @@ export const PracticeTransferRequestIntakePanel = ({
     : normalizedProsthesisTypes[0] || "크라운";
   const abutmentPricingTier = useAbutsAbutmentPricingTier();
   const { data: systemSettings } = useSystemSettings();
-  const configuredRushFeeMultiplier = normalizeConfiguredRushFeeMultiplier(
-    systemSettings?.creditSettings?.practiceRushFeeMultiplier,
-  );
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
     enabled: showFeeEstimate && Boolean(selectedLab),
     labAnchorId: selectedLab?._id,
@@ -886,7 +882,8 @@ export const PracticeTransferRequestIntakePanel = ({
     implantFavorites,
     abutmentPricingTier,
     autoMatchBudget: isAutoMatchLab(selectedLab) ? resolvedAutoMatchBudget : null,
-    rushFeeMultiplier: rushProcessing ? configuredRushFeeMultiplier : 1,
+    // 신속처리 할증 없음
+    rushFeeMultiplier: 1,
   });
   const labFeeByTooth = useMemo(() => {
     const map = new Map<string, { min: number; max: number }>();

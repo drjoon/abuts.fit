@@ -4,20 +4,24 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // change-log:
+// - 2026-08-17: 신속처리 할증 없음(신규 배수 1). ≤2영업일만 제조 express.
 // - 2026-08-17: 신속처리 할증 기본 1.2·(1,2] 정규화. SystemSettings 설정값 반영.
 // - 2026-08-17: 신속처리=합계≤3영업일 허용(선택 도착일 유지). 일반은 2+2 이상.
 // - 2026-08-17: 기공의뢰 신속처리(의뢰+2일·기공/어벗 할증). 일반 건은 묶음출고만.
 
 import { addKoreanBusinessDays, toKstYmd } from "../controllers/requests/utils.js";
 
-/** 신속처리 할증 기본(플랫폼 설정 없을 때). SystemSettings.creditSettings.practiceRushFeeMultiplier */
-export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.2;
+/** @deprecated 신속처리 할증 없음. 레거시 정규화 호환용. */
+export const PRACTICE_RUSH_FEE_MULTIPLIER = 1;
 
 /** 신속처리 기본 치과도착 = 주문일 + N영업일(도착일 미지정·초과 시) */
 export const PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS = 2;
 
 /** 신속처리 허용 최대 작업+배송(영업일) */
 export const PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS = 3;
+
+/** @deprecated 제조 shippingMode는 항상 묶음. 지연고지 구간은 RUSH_MAX와 동일. */
+export const PRACTICE_EXPRESS_MAX_WORK_PLUS_SHIP_DAYS = 3;
 
 /** 일반 기공의뢰 최소 작업+배송(영업일) = 2+2 */
 export const PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS = 4;
@@ -26,7 +30,7 @@ export const PRACTICE_RUSH_COURIER_DISCLAIMER =
   "택배 사정으로 도착을 보장하지 않습니다.";
 
 export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
-  "납품 기일은 작업+배송 2+2영업일 이상이어야 합니다. 3영업일 이하는 신속처리로 진행하세요.";
+  "납품 기일은 작업+배송 2+2영업일 이상이어야 합니다. 3영업일 이하는 신속처리로 진행하세요. 3+2영업일 이상 설정을 권합니다.";
 
 /** 청구/스냅샷용. 1 이하면 1, (1,2]는 소수 둘째 자리. */
 export function normalizeRushFeeMultiplier(value) {
@@ -35,26 +39,41 @@ export function normalizeRushFeeMultiplier(value) {
   return Math.min(2, Math.round(n * 100) / 100);
 }
 
-/** 플랫폼 설정값. 비정상이면 기본 배수. */
+/** 플랫폼 설정값. 할증 폐기로 항상 1(레거시 스냅샷 정규화만 >1 가능). */
 export function normalizeConfiguredRushFeeMultiplier(value) {
   const n = normalizeRushFeeMultiplier(value);
-  return n > 1 ? n : PRACTICE_RUSH_FEE_MULTIPLIER;
+  return n > 1 ? n : 1;
 }
 
+/**
+ * 신규 신속처리는 할증 없음.
+ * 레거시 billing.rushFeeMultiplier > 1 만 존중(재정산·표시).
+ */
 export function resolveRushFeeMultiplier({
   rushProcessing = false,
   rushFeeMultiplier = undefined,
   configuredMultiplier = undefined,
 } = {}) {
+  void rushProcessing;
+  void configuredMultiplier;
   const fromBilling = normalizeRushFeeMultiplier(rushFeeMultiplier);
   if (fromBilling > 1) return fromBilling;
-  if (!rushProcessing) return 1;
-  return normalizeConfiguredRushFeeMultiplier(configuredMultiplier);
+  return 1;
 }
 
 export function isPracticeTransferRushProcessing(transfer) {
   if (transfer?.production?.rushProcessing === true) return true;
   return normalizeRushFeeMultiplier(transfer?.billing?.rushFeeMultiplier) > 1;
+}
+
+/** @deprecated 제조는 항상 묶음. 지연고지 구간 판별은 RUSH_MAX 사용. */
+export function isPracticeExpressWorkPlusShipDays(days) {
+  return (
+    typeof days === "number" &&
+    Number.isFinite(days) &&
+    days >= 0 &&
+    days <= PRACTICE_EXPRESS_MAX_WORK_PLUS_SHIP_DAYS
+  );
 }
 
 /** 기공비·기공소어벗·어벗츠 어벗 합계/라인 모두 배수(신속처리). */

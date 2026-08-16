@@ -82,7 +82,7 @@ export const formatLabFeeMultiplierLabel = (multiplier: unknown): string => {
 };
 
 /** 신속처리 할증(1 | 설정값). 기본 1.2. */
-export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.2;
+export const PRACTICE_RUSH_FEE_MULTIPLIER = 1;
 
 export const normalizeRushFeeMultiplier = (value: unknown): number => {
   const n = Number(value);
@@ -90,16 +90,18 @@ export const normalizeRushFeeMultiplier = (value: unknown): number => {
   return Math.min(2, Math.round(n * 100) / 100);
 };
 
+/** 할증 폐기로 설정값 무시 → 1. 레거시 >1 스냅샷만 통과. */
 export const normalizeConfiguredRushFeeMultiplier = (
   value: unknown,
 ): number => {
   const n = normalizeRushFeeMultiplier(value);
-  return n > 1 ? n : PRACTICE_RUSH_FEE_MULTIPLIER;
+  return n > 1 ? n : 1;
 };
 
-/** UI 표기: `1.2배` */
+/** UI 표기: `1.2배` (레거시) */
 export const formatRushFeeMultiplierLabel = (value?: unknown): string => {
-  const m = normalizeConfiguredRushFeeMultiplier(value);
+  const m = normalizeRushFeeMultiplier(value);
+  if (m <= 1) return "할증 없음";
   const text = Number.isInteger(m) ? String(m) : String(m);
   return `${text}배`;
 };

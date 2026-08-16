@@ -55,7 +55,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   manufacturerShippingUnitPrice: 3500,
   affiliateVatRate: 0.1,
   expressFee: 2000,
-  practiceRushFeeMultiplier: 1.2,
+  practiceRushFeeMultiplier: 1,
   designFee:
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE -
     ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,

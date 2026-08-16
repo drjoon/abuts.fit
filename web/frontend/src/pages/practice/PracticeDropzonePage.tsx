@@ -1689,7 +1689,7 @@ export const PracticeDropzonePage = () => {
       ) {
         toast({
           title: PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
-          description: `현재 ${periodDays ?? "—"}영업일입니다. 최소 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2)이 필요합니다.`,
+          description: `현재 ${periodDays ?? "—"}영업일입니다. 최소 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2)이 필요합니다. 3+2영업일 이상 설정을 권합니다.`,
           variant: "destructive",
         });
         return false;
@@ -2599,7 +2599,7 @@ export const PracticeDropzonePage = () => {
                       if (isPracticeWorkPeriodShort(days)) {
                         toast({
                           title: PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
-                          description: `현재 ${days ?? "—"}영업일입니다. 일반은 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2) 이상, 신속처리는 3영업일 이하입니다.`,
+                          description: `현재 ${days ?? "—"}영업일입니다. 일반은 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2) 이상, 신속처리는 3영업일 이하입니다. 3+2영업일 이상 설정을 권합니다.`,
                           variant: "destructive",
                         });
                         return;

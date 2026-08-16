@@ -7,7 +7,9 @@
 // change-log:
 // - 2026-08-17: shippingReceiver는 포장.발송 진입 시 스냅샷. 생성 시에는 practiceBusinessAnchorId·clinicName만.
 // - 2026-08-17: PTX CA Request에 shippingReceiver(치과 수취인) 스냅샷·practiceBusinessAnchorId 저장.
-// - 2026-08-17: 신속처리 CA는 항상 express(12시 컷오프는 당일/익일 출고 스케줄만). 일반은 묶음.
+// - 2026-08-17: PTX CA 제조 모드는 2·3영업일 포함 항상 묶음. 타이트 납기는 지연고지·도착−1 스케줄.
+// - 2026-08-17: ≤3영업일 → 제조 express+지연고지. 출고 스케줄은 항상 묶음(도착−1 clamp).
+// - 2026-08-17: 출고 목표=치과도착−1영업일. 2영업일만 express·할증 없음. ≥3은 묶음.
 // - 2026-08-17: 신속처리 CA — 12시 전 express, 12시 이후 묶음. 일반은 항상 묶음.
 // - 2026-08-17: 신속처리 CA는 제조사 express 고정(선택가능 강등·견적 normal 위장 제거). 일반은 묶음.
 // - 2026-08-17: 일반 PTX CA는 항상 묶음(normal). 신속처리는 익영업일 16시 출고·expressFee 0(배수는 PTX 과금).
@@ -324,12 +326,12 @@ const ymdToUtcNoonMs = (ymd) => {
 
 /**
  * PTX CA 치과 직납 배송 lead(영업일).
- * 제조사 출고 목표 = 치과도착일 − 이 값 (기공소 경유 시절 −3 폐기).
+ * 제조사 출고 목표 = 치과도착일 − 이 값 (기공소 경유 시절 −3 → −2 → −1).
  */
-export const PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
+export const PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 1;
 
 /**
- * 제조사 출고 목표 = 치과도착일 − 2영업일 (치과 직납).
+ * 제조사 출고 목표 = 치과도착일 − 1영업일 (치과 직납).
  */
 export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
   let ymd = String(arrivalYmd || "").trim();
@@ -414,8 +416,8 @@ const PTX_SHIP_SCHEDULE_PRODUCT_MODE = "custom_abutment";
 
 /**
  * PTX CA 출고모드(제조사 주문 shippingMode).
- * - 신속처리: 항상 express. 12시 컷오프는 스케줄만 당일/익일 분기.
- * - 일반: 항상 묶음(normal).
+ * 2·3영업일 신속처리 포함 항상 묶음배송(normal).
+ * 출고 스케줄도 묶음 규칙(주간 묶음일·도착−1 clamp).
  */
 export async function resolveShippingModeForPracticeTransferArrival({
   transferDoc,
@@ -423,10 +425,11 @@ export async function resolveShippingModeForPracticeTransferArrival({
   requestedAt = new Date(),
   maxDiameter = 8,
 }) {
+  void transferDoc;
   void weeklyBatchDays;
   void requestedAt;
   void maxDiameter;
-  return isPracticeTransferRushProcessing(transferDoc) ? "express" : "normal";
+  return "normal";
 }
 
 function applyRushMultiplierToPtxQuote(quote, rushFeeMultiplier) {
@@ -560,7 +563,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 
   const requestedAt = new Date();
   const rush = isPracticeTransferRushProcessing(transferDoc);
-  // 신속처리 → express(12시 컷오프는 스케줄). 일반 → 묶음. caller shippingModeRaw 무시.
+  // 제조 shippingMode는 항상 묶음. caller shippingModeRaw 무시.
   const shippingMode = await resolveShippingModeForPracticeTransferArrival({
     transferDoc,
     weeklyBatchDays,
@@ -583,11 +586,10 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // express는 12시 컷오프 당일/익일 스케줄 — arrival−2 clamp 생략. 묶음만 목표 출고일 반영.
-  const targetShipYmd =
-    shippingMode === "express" || !arrivalYmd
-      ? null
-      : await resolveManufacturerTargetShipYmd(arrivalYmd);
+  // 항상 도착−1 출고 목표(묶음).
+  const targetShipYmd = arrivalYmd
+    ? await resolveManufacturerTargetShipYmd(arrivalYmd)
+    : null;
 
   const billing =
     transferDoc?.billing && typeof transferDoc.billing === "object"
@@ -691,7 +693,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     let quotedPrice = buildPtxAbutsProductionQuote({
       creditSettings: creditSettingsForQuote,
       pricingTier,
-      // 신속처리 할증은 PTX 1.5배(expressFee=0). shippingMode는 12시 컷오프 결과 그대로.
+      // 신속처리 할증 없음(expressFee=0). shippingMode는 항상 묶음.
       shippingMode,
       abutmentQty,
       expressFeePerRequest,
@@ -713,15 +715,13 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       shippingMode,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt: scheduleRequestedAt,
-      weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
+      weeklyBatchDays,
       productMode: scheduleProductMode,
     });
-    if (shippingMode === "normal") {
-      productionSchedule = await clampScheduleToTarget(
-        productionSchedule,
-        targetShipYmd,
-      );
-    }
+    productionSchedule = await clampScheduleToTarget(
+      productionSchedule,
+      targetShipYmd,
+    );
 
     const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
     const pickupYmd = productionSchedule?.scheduledShipPickup
@@ -1528,10 +1528,10 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   }
 
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  const targetShipYmd =
-    shippingMode === "express" || !arrivalYmd
-      ? null
-      : await resolveManufacturerTargetShipYmd(arrivalYmd);
+  // 항상 도착−1 출고 목표(묶음).
+  const targetShipYmd = arrivalYmd
+    ? await resolveManufacturerTargetShipYmd(arrivalYmd)
+    : null;
 
   // 핸드오프 시점 = 디자인 완료 → 생산 리드타임(custom_abutment). 디자인+1영업일 제외.
   if (!requestDoc.caseInfos || typeof requestDoc.caseInfos !== "object") {
@@ -1544,15 +1544,13 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     shippingMode,
     maxDiameter,
     requestedAt: scheduleRequestedAt,
-    weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
+    weeklyBatchDays,
     productMode: "custom_abutment",
   });
-  if (shippingMode === "normal") {
-    productionSchedule = await clampScheduleToTarget(
-      productionSchedule,
-      targetShipYmd,
-    );
-  }
+  productionSchedule = await clampScheduleToTarget(
+    productionSchedule,
+    targetShipYmd,
+  );
 
   const pickupYmd = productionSchedule?.scheduledShipPickup
     ? toKstYmd(productionSchedule.scheduledShipPickup)

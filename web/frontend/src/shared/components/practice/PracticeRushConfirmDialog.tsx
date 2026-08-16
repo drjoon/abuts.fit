@@ -2,9 +2,8 @@
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
-// - web/frontend/src/hooks/useSystemSettings.ts
+// - 2026-08-17: 할증 카드 제거. 2/3영업일·묶음/신속·3+2 권고 안내.
 // - 2026-08-17: 신속처리 확인 모달 공유·문구 단순화·카드형 스타일.
-// - 2026-08-17: 할증 배수는 플랫폼 설정(practiceRushFeeMultiplier) 반영.
 
 import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,16 +15,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
 import {
   PRACTICE_RUSH_CONFIRM_DETAILS,
-  PRACTICE_RUSH_CONFIRM_FEE_HINT,
   PRACTICE_RUSH_CONFIRM_PERIOD_LABEL,
   PRACTICE_RUSH_CONFIRM_TITLE,
   PRACTICE_RUSH_COURIER_DISCLAIMER,
-  formatPracticeRushFeeConfirmLabel,
 } from "@/shared/practice/practiceWorkPeriod";
-import { normalizeConfiguredRushFeeMultiplier } from "@/shared/practice/labFeeSchedule";
 
 export type PracticeRushConfirmDialogProps = {
   open: boolean;
@@ -40,12 +35,6 @@ export function PracticeRushConfirmDialog({
   onConfirm,
   onCancel,
 }: PracticeRushConfirmDialogProps) {
-  const { data: systemSettings } = useSystemSettings();
-  const feeMultiplier = normalizeConfiguredRushFeeMultiplier(
-    systemSettings?.creditSettings?.practiceRushFeeMultiplier,
-  );
-  const feeLabel = formatPracticeRushFeeConfirmLabel(feeMultiplier);
-
   const handleCancel = () => {
     onCancel?.();
     onOpenChange(false);
@@ -71,15 +60,6 @@ export function PracticeRushConfirmDialog({
         </DialogHeader>
 
         <div className="space-y-4 px-5 py-4 sm:px-6">
-          <div className="rounded-xl border border-primary-muted/60 bg-gradient-to-b from-primary-soft/80 via-white to-white px-4 py-3 text-center ring-1 ring-primary-muted/30">
-            <p className="text-lg font-semibold tracking-tight text-primary-strong">
-              {feeLabel}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {PRACTICE_RUSH_CONFIRM_FEE_HINT}
-            </p>
-          </div>
-
           <dl className="space-y-2.5 text-sm">
             {PRACTICE_RUSH_CONFIRM_DETAILS.map((row) => (
               <div

@@ -93,7 +93,7 @@ export const DEFAULT_QUOTE_CONTEXT: PracticeTransferQuoteContext = {
   relationshipKind: "none",
   feeRateApplied: 0,
   labFeeMultiplier: 1,
-  practiceRushFeeMultiplier: 1.2,
+  practiceRushFeeMultiplier: 1,
   usedDefaultSchedule: true,
   labFeeConfigured: true,
   autoMatchBudget: null,

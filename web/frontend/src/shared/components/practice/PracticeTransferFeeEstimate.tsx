@@ -58,7 +58,6 @@ import {
 import {
   formatLabFeeMultiplierLabel,
   formatRushFeeMultiplierLabel,
-  normalizeConfiguredRushFeeMultiplier,
   normalizeLabFeeMultiplier,
   normalizeRushFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
@@ -520,14 +519,8 @@ export function PracticeTransferFeeEstimate({
   const hasTrailing = Boolean(trailingAction);
   const { data: systemSettings } = useSystemSettings();
   const rushFeeMultiplier = (() => {
-    const fromQuote = normalizeRushFeeMultiplier(quote.rushFeeMultiplier);
-    if (fromQuote > 1) return fromQuote;
-    if (rushProcessing) {
-      return normalizeConfiguredRushFeeMultiplier(
-        systemSettings?.creditSettings?.practiceRushFeeMultiplier,
-      );
-    }
-    return 1;
+    // 신규 신속처리 할증 없음. 레거시 quote 배수만 표시.
+    return normalizeRushFeeMultiplier(quote.rushFeeMultiplier);
   })();
   const abutmentDesignLabFeeBase = Math.max(
     0,

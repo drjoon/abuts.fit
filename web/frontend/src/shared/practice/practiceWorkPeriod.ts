@@ -3,6 +3,9 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
 // - web/frontend/src/shared/components/practice/PracticeRushConfirmDialog.tsx
+// - 2026-08-17: 제조 모드 항상 묶음. 2·3영업일은 지연고지(빨간 툴팁)만. 출고=도착−1. 할증 없음.
+// - 2026-08-17: ≤3영업일 → 제조 express+지연고지. 출고 스케줄은 항상 묶음(도착−1 clamp).
+// - 2026-08-17: 출고 목표=치과도착−1영업일. 안내 툴팁 3+2 권고 문구 고정. 할증 폐기·2영업일 신속배송.
 // - 2026-08-17: 신속(≤3영업일) 배송일정 툴팁을 확인 모달(12시 컷오프)과 동일 문구로.
 // - 2026-08-17: shouldEnablePracticeRushProcessing — 새로고침 시 신속 납기면 할증 복원.
 // - 2026-08-17: 신속처리 확인 모달 문구 구조화(요금·납기·어벗/보철)·단순화.
@@ -18,11 +21,20 @@
 
 import { kstYmdDiffBusinessDays } from "@/shared/date/kst";
 
-/** 배송기간(영업일). 작업기간 = (주문→치과도착 영업일) − 이 값. */
+/** 배송기간(영업일). 작업기간 = (주문→치과도착 영업일) − 이 값. 표기 N+2. */
 export const PRACTICE_SHIPPING_BUSINESS_DAYS = 2;
+
+/**
+ * 커스텀어벗 제조 출고 목표 = 치과도착일 − 이 값(영업일).
+ * 배송 lead(2)와 별도: 출고는 도착 1영업일 전.
+ */
+export const PRACTICE_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 1;
 
 /** 일반 의뢰 최소 작업+배송 합계(영업일) = 2+2. */
 export const PRACTICE_WORK_PERIOD_MIN_DAYS = 4;
+
+/** 권고 작업+배송 합계(영업일) = 3+2. */
+export const PRACTICE_WORK_PERIOD_RECOMMENDED_DAYS = 5;
 
 /**
  * 신속처리 구간: 주문→도착 합계 ≤ 이 값(3영업일 이하).
@@ -30,98 +42,95 @@ export const PRACTICE_WORK_PERIOD_MIN_DAYS = 4;
  */
 export const PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS = 3;
 
+/**
+ * 제조 표시상 신속 구간이었던 상한(2·3영업일).
+ * 현재 제조 shippingMode는 항상 묶음 — 툴팁·확인 UI용.
+ */
+export const PRACTICE_EXPRESS_MAX_WORK_PLUS_SHIP_DAYS = 3;
+
 /** 신속처리 기본 치과도착 = 주문일 + N영업일(선택값 없을 때) */
 export const PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS = 2;
 
-/** 신속처리 기공/어벗 할증 기본(플랫폼 설정 없을 때) */
-export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.2;
+/** @deprecated 신속처리 할증 없음. 레거시 표기 호환용. */
+export const PRACTICE_RUSH_FEE_MULTIPLIER = 1;
 
 export const PRACTICE_RUSH_COURIER_DISCLAIMER =
   "택배 사정으로 도착을 보장하지 않습니다.";
 
 export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
-  "일반 의뢰는 작업+배송 2+2영업일 이상이어야 합니다. 3영업일 이하는 신속처리로 진행할 수 있습니다.";
+  "일반 의뢰는 작업+배송 2+2영업일 이상이어야 합니다. 3영업일 이하는 신속처리로 진행할 수 있습니다. 3+2영업일 이상 설정을 권합니다.";
+
+/** 안내 툴팁 권고 문구 SSOT */
+export const PRACTICE_WORK_PERIOD_RECOMMEND_NOTE =
+  "3+2영업일 이상 설정을 권합니다.";
 
 /** 신속처리 확인 모달 문구 */
 export const PRACTICE_RUSH_CONFIRM_TITLE = "신속처리로 진행할까요?";
-export const PRACTICE_RUSH_CONFIRM_PERIOD_LABEL = "3영업일 이하 납기";
-export const PRACTICE_RUSH_CONFIRM_FEE_HINT = "기공·어벗츠";
+export const PRACTICE_RUSH_CONFIRM_PERIOD_LABEL = "3영업일 이하 납기 · 할증 없음";
 export const PRACTICE_RUSH_CONFIRM_DETAILS = [
   {
     label: "어벗",
     value: [
-      "12시 전 의뢰 시 오늘 16시 출고·내일 도착 목표.",
-      "12시 이후 의뢰 시 내일 16시 출고·모레 도착 목표.",
+      "2·3영업일: 제조는 묶음배송. 출고는 도착 1영업일 전 규칙으로 진행하며 지연될 수 있습니다.",
     ],
   },
   { label: "보철", value: "선택 납기까지 도착 목표" },
+  {
+    label: "권고",
+    value: PRACTICE_WORK_PERIOD_RECOMMEND_NOTE,
+  },
 ] as const;
 
+/** @deprecated 할증 없음. */
 export function formatPracticeRushFeeConfirmLabel(
-  multiplier?: number | null,
+  _multiplier?: number | null,
 ): string {
-  const m =
-    typeof multiplier === "number" && Number.isFinite(multiplier) && multiplier > 1
-      ? Math.min(2, Math.round(multiplier * 100) / 100)
-      : PRACTICE_RUSH_FEE_MULTIPLIER;
-  const text = Number.isInteger(m) ? String(m) : String(m);
-  return `의뢰비 ${text}배`;
+  return "할증 없음";
 }
 
+/** 툴팁·도움말용. 할증 배수 표기 없음. */
 export function formatPracticeRushFeeParenLabel(
-  multiplier?: number | null,
+  _multiplier?: number | null,
 ): string {
-  const m =
-    typeof multiplier === "number" && Number.isFinite(multiplier) && multiplier > 1
-      ? Math.min(2, Math.round(multiplier * 100) / 100)
-      : PRACTICE_RUSH_FEE_MULTIPLIER;
-  const text = Number.isInteger(m) ? String(m) : String(m);
-  return `신속처리(${text}배)`;
+  return "신속처리";
 }
 
 export type PracticeWorkPeriodViewer = "practice" | "lab";
 
-/** N+2영업일: N일=기공작업시간, 2일=배송(커스텀어벗 치과 직납 출고=도착−2와 동일) */
+/** N+2영업일: N일=기공작업시간, 2일=배송. 출고=치과도착−1. */
 export function formatPracticeWorkPlusShipMeaningTooltip(
   totalBusinessDays: number | null | undefined,
 ): string {
   const workDays = getPracticeWorkOnlyBusinessDays(totalBusinessDays);
-  const shipNote = `커스텀어벗은 치과로 직납되며, 출고 목표는 치과도착일 ${PRACTICE_SHIPPING_BUSINESS_DAYS}영업일 전입니다.`;
-  const minNote = `일반은 2+2영업일 이상, 3영업일 이하는 ${formatPracticeRushFeeParenLabel()}입니다.`;
+  const shipNote = `커스텀어벗은 치과로 직납되며, 출고 목표는 치과도착일 ${PRACTICE_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS}영업일 전입니다.`;
   if (workDays == null) {
-    return `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote} ${minNote}`;
+    return `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote} ${PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}`;
   }
-  return `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote} ${minNote}`;
+  return `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote} ${PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}`;
 }
 
 /**
- * 신속처리(≤3영업일) 배송일정 툴팁.
- * 확인 모달 PRACTICE_RUSH_CONFIRM_DETAILS·택배 고지와 SSOT.
+ * 2·3영업일 납기 툴팁: 제조 묶음배송 + 지연 가능.
  */
-export function formatPracticeRushPeriodTooltip(
-  multiplier?: number | null,
-): string {
-  const fee = formatPracticeRushFeeParenLabel(multiplier);
-  const [abutRow, crownRow] = PRACTICE_RUSH_CONFIRM_DETAILS;
-  const abutLines = Array.isArray(abutRow.value)
-    ? abutRow.value.join(" ")
-    : String(abutRow.value);
-  const crownLine =
-    typeof crownRow.value === "string"
-      ? crownRow.value
-      : crownRow.value.join(" ");
+export function formatPracticeTightRushPeriodTooltip(): string {
   return [
-    `${fee} 구간입니다.`,
-    "커스텀어벗은 치과로 직납됩니다.",
-    abutLines,
-    `보철은 ${crownLine.replace(/\.$/, "")}.`,
+    "2·3영업일 납기입니다. 제조는 묶음배송으로 넘기며, 출고는 치과도착 1영업일 전 규칙으로 진행합니다.",
+    "목표 일정에 늦을 수 있습니다.",
+    PRACTICE_WORK_PERIOD_RECOMMEND_NOTE,
     PRACTICE_RUSH_COURIER_DISCLAIMER,
   ].join(" ");
 }
 
-/** 치과(발신): 일반 최소와 신속 사이 구간(현재는 비어 있음) */
+/** @deprecated formatPracticeTightRushPeriodTooltip 사용. */
+export function formatPracticeRushPeriodTooltip(
+  _multiplier?: number | null,
+): string {
+  return formatPracticeTightRushPeriodTooltip();
+}
+
+/** 치과(발신): 권고 미만(현재 4영업일) — meaning 툴팁에 권고가 이미 있으면 기공소용과 동일 보조 */
 export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE =
-  "일반 의뢰는 2+2영업일 이상, 신속처리는 3영업일 이하입니다.";
+  PRACTICE_WORK_PERIOD_RECOMMEND_NOTE;
 
 /** 기공소(수신): 짧은 기간이면 수락하지 않아도 됨 */
 export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_LAB =
@@ -135,17 +144,21 @@ export function getPracticeWorkPeriodShortTooltip(
     : PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE;
 }
 
-/** N+2 의미 + 신속 배송일정(확인 모달) / 짧은 기간 경고 */
+/**
+ * N+2 의미 / 2·3영업일 지연고지 / 짧은 기간 경고.
+ * 2·3영업일: 제조 묶음배송 + 지연 가능(빨간 표시는 PracticeWorkPeriodText).
+ */
 export function getPracticeWorkPeriodTooltip(
   viewer: PracticeWorkPeriodViewer = "practice",
   days?: number | null,
 ): string {
   if (isPracticeRushPeriod(days)) {
-    return formatPracticeRushPeriodTooltip();
+    return formatPracticeTightRushPeriodTooltip();
   }
   const meaning = formatPracticeWorkPlusShipMeaningTooltip(days);
-  if (isPracticeWorkPeriodShort(days)) {
-    return `${meaning} ${getPracticeWorkPeriodShortTooltip(viewer)}`;
+  // 치과: meaning에 권고 포함. 기공소: 짧은 기간이면 수락 거부 안내만 추가.
+  if (isPracticeWorkPeriodShort(days) && viewer === "lab") {
+    return `${meaning} ${PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_LAB}`;
   }
   return meaning;
 }
@@ -179,6 +192,13 @@ export function isPracticeRushPeriod(days: number | null | undefined): boolean {
   );
 }
 
+/** @deprecated 제조는 항상 묶음. 2·3영업일 지연고지 구간과 동일. */
+export function isPracticeExpressPeriod(
+  days: number | null | undefined,
+): boolean {
+  return isPracticeRushPeriod(days);
+}
+
 /**
  * 확인 플래그 또는 주문→도착 영업일로 신속처리 적용 여부.
  * 새로고침 복원 시 플래그가 없어도 납기가 신속 구간이면 true.
@@ -195,15 +215,15 @@ export function shouldEnablePracticeRushProcessing(args: {
 }
 
 /**
- * 일반 의뢰로 쓰기엔 짧고, 신속처리도 아닌 구간.
- * (신속≤3 · 일반≥4 이면 현재 비어 있음)
+ * 권고(5) 미만·신속(≤3) 초과 → 짧은 기간(현재 4영업일).
+ * 빨간 표시 + 기공소 거부 가능 안내.
  */
 export function isPracticeWorkPeriodShort(days: number | null | undefined): boolean {
   return (
     typeof days === "number" &&
     Number.isFinite(days) &&
     days > PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS &&
-    days < PRACTICE_WORK_PERIOD_MIN_DAYS
+    days < PRACTICE_WORK_PERIOD_RECOMMENDED_DAYS
   );
 }
 

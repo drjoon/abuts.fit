@@ -14,20 +14,18 @@ import {
 import { computePracticeTransferRetailFees } from "../../utils/labFeeSchedule.js";
 
 describe("practiceTransferRush", () => {
-  test("default rush multiplier is 1.2", () => {
-    expect(PRACTICE_RUSH_FEE_MULTIPLIER).toBe(1.2);
+  test("default rush multiplier is 1 (no surcharge)", () => {
+    expect(PRACTICE_RUSH_FEE_MULTIPLIER).toBe(1);
   });
 
-  test("resolveRushFeeMultiplier uses configured or default when rush", () => {
-    expect(resolveRushFeeMultiplier({ rushProcessing: true })).toBe(
-      PRACTICE_RUSH_FEE_MULTIPLIER,
-    );
+  test("resolveRushFeeMultiplier ignores rush flag (no surcharge)", () => {
+    expect(resolveRushFeeMultiplier({ rushProcessing: true })).toBe(1);
     expect(
       resolveRushFeeMultiplier({
         rushProcessing: true,
         configuredMultiplier: 1.3,
       }),
-    ).toBe(1.3);
+    ).toBe(1);
     expect(resolveRushFeeMultiplier({ rushProcessing: false })).toBe(1);
     expect(
       resolveRushFeeMultiplier({
@@ -43,7 +41,7 @@ describe("practiceTransferRush", () => {
     expect(normalizeRushFeeMultiplier(1.5)).toBe(1.5);
     expect(normalizeRushFeeMultiplier(2)).toBe(2);
     expect(normalizeRushFeeMultiplier(2.5)).toBe(2);
-    expect(normalizeConfiguredRushFeeMultiplier(null)).toBe(1.2);
+    expect(normalizeConfiguredRushFeeMultiplier(null)).toBe(1);
   });
 
   test("applyRushFeeMultiplierToFees scales lab and abutment", () => {

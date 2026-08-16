@@ -17,68 +17,57 @@ import {
 } from "../../services/practiceTransferProduction.service.js";
 
 describe("practiceTransferProduction Abuts-first helpers", () => {
-  test("PTX CA ship offset is dental-direct (arrival − 2 business days)", () => {
-    expect(PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(2);
+  test("PTX CA ship offset is dental-direct (arrival − 1 business day)", () => {
+    expect(PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(1);
   });
 
-  test("resolveShippingModeForPracticeTransferArrival forces normal when not rush", async () => {
+  test("resolveShippingModeForPracticeTransferArrival: always 묶음 including ≤3 rush", async () => {
     const { resolveShippingModeForPracticeTransferArrival } = await import(
       "../../services/practiceTransferProduction.service.js"
     );
-    const mode = await resolveShippingModeForPracticeTransferArrival({
+    // Mon→Thu = 3 weekdays
+    const mode3 = await resolveShippingModeForPracticeTransferArrival({
       transferDoc: {
-        production: { rushProcessing: false },
+        production: { rushProcessing: true },
+        transferMemo: "[주문일: 2026-08-17]\n[도착일: 2026-08-20]",
+      },
+      weeklyBatchDays: ["wed"],
+      requestedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    expect(mode3).toBe("normal");
+    // Mon→Wed = 2 weekdays
+    const mode2 = await resolveShippingModeForPracticeTransferArrival({
+      transferDoc: {
+        production: { rushProcessing: true },
         transferMemo: "[주문일: 2026-08-17]\n[도착일: 2026-08-19]",
       },
       weeklyBatchDays: ["wed"],
-      // 12시 이전(KST)이어도 일반 건은 묶음
       requestedAt: new Date("2026-08-17T00:00:00.000Z"),
     });
-    expect(mode).toBe("normal");
+    expect(mode2).toBe("normal");
   });
 
-  test("resolveShippingModeForPracticeTransferArrival: rush always express (noon only affects schedule)", async () => {
-    const { resolveShippingModeForPracticeTransferArrival } = await import(
-      "../../services/practiceTransferProduction.service.js"
-    );
-    // UTC 00:00 = KST 09:00
-    const modeBeforeNoon = await resolveShippingModeForPracticeTransferArrival({
-      transferDoc: { production: { rushProcessing: true } },
-      weeklyBatchDays: ["wed"],
-      requestedAt: new Date("2026-08-17T00:00:00.000Z"),
-    });
-    expect(modeBeforeNoon).toBe("express");
-    // UTC 05:00 = KST 14:00 — still express (익일 16시 스케줄)
-    const modeAfterNoon = await resolveShippingModeForPracticeTransferArrival({
-      transferDoc: {
-        production: { rushProcessing: true },
-        billing: { rushFeeMultiplier: 1.5 },
-      },
-      weeklyBatchDays: ["wed"],
-      requestedAt: new Date("2026-08-17T05:00:00.000Z"),
-    });
-    expect(modeAfterNoon).toBe("express");
-  });
-
-  test("resolveShippingModeForPracticeTransferArrival detects rush via billing multiplier", async () => {
+  test("resolveShippingModeForPracticeTransferArrival: ≥4 is 묶음", async () => {
     const { resolveShippingModeForPracticeTransferArrival } = await import(
       "../../services/practiceTransferProduction.service.js"
     );
     const mode = await resolveShippingModeForPracticeTransferArrival({
       transferDoc: {
         production: { rushProcessing: false },
-        billing: { rushFeeMultiplier: 1.5 },
+        // Mon→Fri = 4 weekdays
+        transferMemo: "[주문일: 2026-08-17]\n[도착일: 2026-08-21]",
+        billing: { rushFeeMultiplier: 1 },
       },
       weeklyBatchDays: ["fri"],
       requestedAt: new Date("2026-08-17T05:00:00.000Z"),
     });
-    expect(mode).toBe("express");
+    expect(mode).toBe("normal");
   });
 
-  test("resolveManufacturerTargetShipYmd subtracts 2 business days", async () => {
-    // 2026-08-21(금) → 20(목) → 19(수)
+  test("resolveManufacturerTargetShipYmd subtracts 1 business day", async () => {
+    // 2026-08-21(금) → 20(목)
     expect(await resolveManufacturerTargetShipYmd("2026-08-21")).toBe(
-      "2026-08-19",
+      "2026-08-20",
     );
     expect(await resolveManufacturerTargetShipYmd("bad")).toBeNull();
     expect(await resolveManufacturerTargetShipYmd("")).toBeNull();
