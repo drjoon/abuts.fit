@@ -15,6 +15,7 @@
 // - 2026-08-15: 자동매칭 예산 필터에서 practice 할증 제외(공개 수가 기준).
 // - 2026-08-16: 별점 게이트는 전체 치과 평가 합산·평균.
 // - 2026-08-16: 자동매칭 최소 별 기본값 2.
+// - 2026-08-16: 주문 치과 1점 기공소는 해당 치과 자동매칭에서 제외.
 
 import {
   isLabFeeScheduleConfigured,
@@ -221,6 +222,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   budget,
   catalog,
   autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  practiceLabRatings = null,
 } = {}) {
   const catalogItems =
     catalog != null
@@ -270,6 +272,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
 
     if (
       isLabBlockedByPracticeRating({
+        ratings: practiceLabRatings,
         aggregated: globalRatings,
         labAnchorId: lab._id,
         minStars: autoMatchMinLabRating,

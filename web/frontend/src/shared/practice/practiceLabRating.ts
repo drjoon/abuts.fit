@@ -7,6 +7,7 @@
 // - 2026-08-16: 10곳 게이트 제거. 평가 5회 이하는 별 제한 제외.
 // - 2026-08-16: 자동매칭 별점은 전체 치과 평가 합산·평균.
 // - 2026-08-16: 자동매칭 최소 별 기본값 2(사업자 세팅 저장·재사용).
+// - 2026-08-16: 우리 치과 1점 기공소는 해당 치과 자동매칭에서 제외.
 
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 3;
@@ -14,6 +15,10 @@ export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
 export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 2;
 /** 이 횟수 이하 평가면 최소 별 제한에서 제외(미평가 포함). */
 export const AUTO_MATCH_RATING_COUNT_GRACE = 5;
+
+/** 채팅·평가 모달: 1점 선택 시 자동매칭 제외 안내 */
+export const PRACTICE_LAB_ONE_STAR_AUTO_MATCH_WARNING =
+  "별 1점은 이 치과 자동매칭에서 해당 기공소가 다음부터 참여하지 않습니다. 신중히 평가해 주세요.";
 
 export type PracticeLabRatingPublic = {
   stars: number;

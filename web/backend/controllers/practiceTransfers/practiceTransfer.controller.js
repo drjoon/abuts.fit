@@ -103,6 +103,7 @@ import { resolvePracticeTransferManufacturerStage } from "../../utils/practiceTr
 // - 2026-08-14: GET /my 목록 — countDocuments 제거·레거시 $or 축소·동료/견적 조회 캐시.
 // - 2026-08-14: GET /my $or 분리 병렬 조회. drafts?trashed=all 1쿼리. GET에서 syncIndexes 제거.
 // - 2026-08-14: 치과→기공소 labRating(1~3)·메모. 자동매칭 최소 별 필터.
+// - 2026-08-16: 자동매칭 적격 — 주문 치과 1점 기공소 제외.
 // - 2026-08-14: 자동매칭도 practiceBusinessAnchorId 전달(표시명 비공개·기공수가 할증 키).
 // - 2026-08-14: 자동매칭 적격/수락 — 공개 수가가 치과 예산 min~max 안이어야 함(할증은 청구만).
 // - 2026-08-15: 적격 스냅샷에서 practice 할증 제외. 카탈로그·practice 병렬 로드.
@@ -1886,6 +1887,7 @@ export async function createPracticeTransfer(req, res) {
             "practiceTransferSettings.autoMatchBudget": 1,
             "practiceTransferSettings.autoMatchMinLabRating": 1,
             "practiceTransferSettings.implantFavorites": 1,
+            practiceLabRatings: 1,
           })
           .lean(),
         loadAutoMatchBudgetCatalog(),
@@ -1904,6 +1906,7 @@ export async function createPracticeTransfer(req, res) {
         catalog,
         autoMatchMinLabRating:
           practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
+        practiceLabRatings: practiceForBudget?.practiceLabRatings,
       });
       autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
       autoMatchPriorityLabAnchorIds = eligibility.priorityLabAnchorIds || [];
@@ -1916,7 +1919,7 @@ export async function createPracticeTransfer(req, res) {
             "인증 기공소의 기공수가가 아직 설정되지 않았습니다. 기공소에서 수가를 켜거나 지정 기공소를 선택해주세요.";
         } else if (skipped.rating > 0 && skipped.budget === 0) {
           message =
-            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요. (전체 치과 평가 합산 5회 이하·미평가 기공소는 제한되지 않습니다.)";
+            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요. (전체 치과 평가 합산 5회 이하·미평가 기공소는 제한되지 않습니다. 우리 치과에서 1점을 준 기공소는 제외됩니다.)";
         } else if (skipped.budget > 0) {
           message =
             "설정한 항목별 기공비 예산에 맞는 인증 기공소가 없습니다. 예산을 조정하거나 지정 기공소를 선택해주세요.";

@@ -4,6 +4,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - 2026-08-14: 치과→기공소 rating(1~3)·메모. 채팅 헤더.
 // - 2026-08-14: 라벨「기공소 평가」·모달 최신 스타일(할증/기공비와 동일).
+// - 2026-08-16: 1점 선택 시 자동매칭 제외 안내.
 import { useEffect, useState, type MouseEvent } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
+  PRACTICE_LAB_ONE_STAR_AUTO_MATCH_WARNING,
   PRACTICE_LAB_RATING_MAX,
   PRACTICE_LAB_RATING_MEMO_MAX,
   PRACTICE_LAB_RATING_MIN,
@@ -33,6 +35,7 @@ import { cn } from "@/shared/ui/cn";
 const DIALOG_DESCRIPTION_LINES = [
   "별 1~3점과 메모를 남길 수 있습니다.",
   "자동매칭·지정 모두 기록됩니다.",
+  "별 1점은 다음 자동매칭부터 해당 기공소가 참여하지 않습니다.",
 ] as const;
 
 type PracticeLabRatingControlProps = {
@@ -212,6 +215,8 @@ export function PracticeLabRatingControl({
                 <br />
                 {DIALOG_DESCRIPTION_LINES[1]}
                 <br />
+                {DIALOG_DESCRIPTION_LINES[2]}
+                <br />
                 이 기록은 치과와 관리자만 볼 수 있습니다.
               </DialogDescription>
             </DialogHeader>
@@ -223,6 +228,14 @@ export function PracticeLabRatingControl({
                 별점
               </Label>
               <StarRow value={draftStars} onChange={setDraftStars} />
+              {draftStars === PRACTICE_LAB_RATING_MIN ? (
+                <p
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900"
+                  role="status"
+                >
+                  {PRACTICE_LAB_ONE_STAR_AUTO_MATCH_WARNING}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label

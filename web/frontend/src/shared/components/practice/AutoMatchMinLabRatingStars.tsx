@@ -7,6 +7,8 @@
 // - 2026-08-14: 툴팁·차단 기준 — 2회 이하 평가는 참여 허용.
 // - 2026-08-16: 툴팁·차단 기준 — 인증 기공소 + 전체 치과 평가 평균/합산(5회 이하 유예).
 // - 2026-08-16: 최소 별 기본값 2.
+// - 2026-08-16: 우리 치과 1점 기공소는 자동매칭에서 제외.
+// - 2026-08-16: 툴팁 — 인증 AND (평균≥설정 OR 합산≤5) AND NOT 우리치과1점.
 import { Star } from "lucide-react";
 import {
   Tooltip,
@@ -23,9 +25,11 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 const TOOLTIP_LINES = [
-  "자동 매칭에 참여할 수 있는 기공소는 어벗츠 인증 기공소 중,",
-  "1. 전체 치과 평가 평균이 설정 점수 이상인 기공소",
-  `2. 전체 치과 평가 합산이 ${AUTO_MATCH_RATING_COUNT_GRACE}회 이하인 기공소`,
+  "기공소의 매칭 참여 조건",
+  "- 어벗츠 인증 기공소이면서",
+  "- 전체 치과 평가 평균이 설정 점수 이상인 곳",
+  `또는 전체 치과 평가 횟수가 ${AUTO_MATCH_RATING_COUNT_GRACE}회 이하인 곳`,
+  "- 우리 치과 별점 1점을 받은 곳은 제외",
 ] as const;
 
 type AutoMatchMinLabRatingStarsProps = {

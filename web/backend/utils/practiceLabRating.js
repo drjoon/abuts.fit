@@ -11,6 +11,7 @@
 // - 2026-08-16: 10곳 게이트 제거. 평가 5회 이하(6회부터 별 제한)는 매칭 참여 허용.
 // - 2026-08-16: 자동매칭 별점은 주문 치과만이 아니라 전체 치과 평가 합산·평균.
 // - 2026-08-16: 자동매칭 최소 별 기본값 2(사업자 세팅 저장·재사용).
+// - 2026-08-16: 주문 치과가 1점 준 기공소는 해당 치과 자동매칭에서 제외(유예·최소별 무관).
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -99,12 +100,26 @@ export function countRatedLabAnchors(ratings) {
 }
 
 /**
+ * 주문 치과가 해당 기공소에 현재 1점을 준 경우(유예·최소 별 설정과 무관).
+ * 다음 자동매칭 적격 스냅샷부터 제외.
+ */
+export function isLabBlockedByOwnOneStar({ ratings, labAnchorId } = {}) {
+  const labId = String(labAnchorId || "").trim();
+  if (!labId) return false;
+  const own = findPracticeLabRating(ratings, labId);
+  return own?.stars === PRACTICE_LAB_RATING_MIN;
+}
+
+/**
  * 자동매칭 차단(인증 풀은 별도):
- * - 미평가(기록 없음)면 false
- * - 전체 치과 합산 평가 5회 이하면 false
- * - 6회 이상이고 평균 별 < 최소 별이면 true
+ * - 주문 치과가 1점을 준 기공소면 true(합산 유예·최소 별과 무관)
+ * - 그 외: 전체 치과 합산 ≤5(또는 미평가)면 false(참여 허용)
+ * - 합산 ≥6이고 평균 별 < 최소 별이면 true
+ *
+ * 참여 조건(참고): 인증 AND (평균≥설정 OR 합산≤5) AND NOT 우리치과1점
  *
  * `aggregated`가 있으면 전체 치과 합산 행을 쓰고, 없으면 레거시 단일 치과 list.
+ * `ratings`는 주문 치과 `practiceLabRatings`(1점 하드 차단용).
  */
 export function isLabBlockedByPracticeRating({
   ratings,
@@ -112,10 +127,12 @@ export function isLabBlockedByPracticeRating({
   labAnchorId,
   minStars,
 } = {}) {
-  const min = normalizeAutoMatchMinLabRating(minStars);
-  if (min <= PRACTICE_LAB_RATING_MIN) return false;
   const labId = String(labAnchorId || "").trim();
   if (!labId) return false;
+  if (isLabBlockedByOwnOneStar({ ratings, labAnchorId: labId })) return true;
+
+  const min = normalizeAutoMatchMinLabRating(minStars);
+  if (min <= PRACTICE_LAB_RATING_MIN) return false;
 
   let stars = null;
   let ratingCount = 0;
