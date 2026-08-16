@@ -1,5 +1,5 @@
 {
-  "delay": 1500,
+  "delay": 5000,
   "signal": "SIGTERM",
   "ext": "js,mjs,cjs,json",
   "watch": [
