@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
 // change-log:
+// - 2026-08-16: 수신 카드 — 상태·메타·별점 / 매칭·시각 / 작업기간 / 기공비·수령 4줄로 압축.
 // - 2026-08-16: 수신 카드 — 치과 중심 계층·칩 메타·상태 색·compact 셸(간단 명료).
 // - 2026-08-16: 다치아 어벗 — 부족분 추가 업로드 CTA·보철 다중 업로드 안내.
 // - 2026-08-16: 어벗 가공 시작 시「어벗 생산 취소」는 숨기지 않고 비활성(의뢰 수락 취소와 동일).
@@ -20,7 +21,7 @@
 // - 2026-08-15: 업로드 완료 안내 박스(어벗생산 취소 문구) 제거.
 // - 2026-08-15: 기공의뢰수신 카드 SSOT — 어벗츠기공소·일반 lab 동일 색·스타일·문구.
 import type { KeyboardEvent, MouseEvent } from "react";
-import { Building2, Star, UploadCloud, X } from "lucide-react";
+import { Star, UploadCloud, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +37,6 @@ import {
 } from "@/shared/practice/practiceRecentTransferList";
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
 import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
-import { formatToothWorksForDisplay, parseToothWorks } from "@/shared/practice/transferMemo";
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import {
@@ -73,9 +73,6 @@ const formatDateTime = (value: unknown) => {
 
 const formatWonCompact = (value: number) =>
   `₩${Math.max(0, Math.round(value)).toLocaleString("ko-KR")}`;
-
-const META_CHIP_CLASS =
-  "inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-600";
 
 const statusBadgeClass = (displayStatus: string) => {
   if (
@@ -140,10 +137,6 @@ export function PracticeTransferLabReceiveCard({
   onDesignConfirm,
   onDropFiles,
 }: PracticeTransferLabReceiveCardProps) {
-  const toothWorksPreview = formatToothWorksForDisplay(
-    parseToothWorks(transfer.toothWorksSummary),
-    { labFacing: true },
-  );
   const displayStatus = getPracticeTransferLabReceiveDisplayStatus(transfer);
   const cardId = String(transfer.transferId || transfer._id || "").trim();
   const resultCount = Number(
@@ -326,11 +319,6 @@ export function PracticeTransferLabReceiveCard({
   const memoPreview = String(transfer.transferMemo || "")
     .replace(/\s+/g, " ")
     .trim();
-  const workPreview =
-    toothWorksPreview ||
-    (transfer.prosthesisTypes.length
-      ? transfer.prosthesisTypes.join(", ")
-      : "");
 
   const actionBar =
     showWorkActions || completedStageCancelActions ? (
@@ -439,37 +427,35 @@ export function PracticeTransferLabReceiveCard({
 
   const body = (
     <>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge
+          variant="outline"
+          className={cn(
+            "h-5 shrink-0 px-1.5 text-[11px] font-semibold leading-none",
+            statusBadgeClass(displayStatus),
+          )}
+        >
+          {toStatusBadgeLabel(displayStatus)}
+        </Badge>
+        {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}
+        {transfer.isRemake ? (
           <Badge
             variant="outline"
             className={cn(
-              "h-5 shrink-0 px-1.5 text-[11px] font-semibold leading-none",
-              statusBadgeClass(displayStatus),
+              "h-5 shrink-0 px-1.5 text-[11px] leading-none",
+              PRACTICE_REMAKE_BADGE_CLASS,
             )}
           >
-            {toStatusBadgeLabel(displayStatus)}
+            리메이크
           </Badge>
-          {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}
-          {transfer.isRemake ? (
-            <Badge
-              variant="outline"
-              className={cn(
-                "h-5 shrink-0 px-1.5 text-[11px] leading-none",
-                PRACTICE_REMAKE_BADGE_CLASS,
-              )}
-            >
-              리메이크
-            </Badge>
-          ) : null}
-          <RequestCaseMetaBadges
-            designSoftware={designSoftwareLabel}
-            anodizingEnabled={anodizingEnabled}
-          />
-        </div>
+        ) : null}
+        <RequestCaseMetaBadges
+          designSoftware={designSoftwareLabel}
+          anodizingEnabled={anodizingEnabled}
+        />
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-950">
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-amber-950">
               <Star
                 className="h-3 w-3 fill-amber-500 text-amber-500"
                 aria-hidden
@@ -487,88 +473,50 @@ export function PracticeTransferLabReceiveCard({
         </Tooltip>
       </div>
 
-      <div className="mt-2.5 flex items-start gap-2.5">
-        <div
-          className={cn(
-            "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-            transfer.matchingMode === "auto"
-              ? "bg-primary-soft text-primary-strong"
-              : "bg-slate-100 text-slate-600",
-          )}
-        >
-          <Building2 className="h-4 w-4" aria-hidden />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <h3 className="truncate text-[15px] font-semibold leading-tight tracking-tight text-slate-900">
-              {clinicLabel}
-            </h3>
-            {chatUnreadCount > 0 ? (
-              <Badge
-                variant="destructive"
-                className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
-              >
-                {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
-              </Badge>
-            ) : null}
-          </div>
-          {contactLabel ? (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              담당 {contactLabel}
-            </p>
+      <div className="mt-1.5 min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[13px] leading-snug">
+          <span className="truncate font-semibold tracking-tight text-slate-900">
+            {clinicLabel}
+          </span>
+          {chatUnreadCount > 0 ? (
+            <Badge
+              variant="destructive"
+              className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
+            >
+              {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+            </Badge>
           ) : null}
-          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
-            <span className="font-medium tabular-nums text-slate-600">
-              {transfer.transferId}
-            </span>
-            <span aria-hidden className="text-slate-300">
-              ·
-            </span>
-            <span className="tabular-nums">
-              {formatDateTime(transfer.createdAt)}
-            </span>
-          </p>
+          <span className="tabular-nums text-[12px] text-muted-foreground">
+            {formatDateTime(transfer.createdAt)}
+          </span>
         </div>
+        {contactLabel ? (
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            담당 {contactLabel}
+          </p>
+        ) : null}
       </div>
 
-      <div className="mt-3 space-y-1.5">
-        {transfer.orderDate && transfer.arrivalDate ? (
-          <div className="text-[12px] leading-snug">
-            <PracticeWorkPeriodText
-              orderDate={transfer.orderDate}
-              arrivalDate={transfer.arrivalDate}
-              variant="orderArrival"
-              viewer="lab"
-              className="text-[12px]"
-            />
-          </div>
-        ) : null}
-        {workPreview ? (
-          <p
-            className="truncate text-[12px] font-medium leading-snug text-slate-700"
-            title={workPreview}
-          >
-            {toothWorksPreview ? workPreview : `형태 ${workPreview}`}
-          </p>
-        ) : null}
-        <div className="flex flex-wrap items-center gap-1">
-          <span className={META_CHIP_CLASS}>파일 {transfer.fileCount}</span>
-          {designFileCount > 0 ? (
-            <span className={META_CHIP_CLASS}>어벗 {designFileCount}</span>
-          ) : null}
-          {resultCount > 0 ? (
-            <span className={META_CHIP_CLASS}>결과 {resultCount}</span>
-          ) : null}
+      {transfer.orderDate && transfer.arrivalDate ? (
+        <div className="mt-1.5 text-[12px] leading-snug">
+          <PracticeWorkPeriodText
+            orderDate={transfer.orderDate}
+            arrivalDate={transfer.arrivalDate}
+            variant="orderArrival"
+            viewer="lab"
+            className="text-[12px]"
+          />
         </div>
-        {memoPreview ? (
-          <p
-            className="truncate text-[11px] leading-snug text-muted-foreground"
-            title={memoPreview}
-          >
-            메모 {memoPreview}
-          </p>
-        ) : null}
-      </div>
+      ) : null}
+
+      {memoPreview ? (
+        <p
+          className="mt-1 truncate text-[11px] leading-snug text-muted-foreground"
+          title={memoPreview}
+        >
+          메모 {memoPreview}
+        </p>
+      ) : null}
 
       {transfer.feeQuote ? (
         <PracticeTransferFeeEstimate

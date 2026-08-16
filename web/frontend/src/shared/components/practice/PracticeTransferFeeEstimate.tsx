@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-16: 기공의뢰수신 카드 — 기공비·수령·수수료를 한 줄로 표시.
 // - 2026-08-16: 치과 견적 툴팁도 기공소와 동일 — 기공소몫|어벗츠몫 헤더·가운데 정렬·소계.
 // - 2026-08-16: 크레딧 소비 총액에 배송비 합산. 배송 안내 → 총액 순.
 // - 2026-08-16: 치과 툴팁 — CA 디자인+생산을 생산/디자인(+지그)로 분해, 배송비(치과→기공소·어벗츠) 안내.
@@ -755,7 +756,7 @@ export function PracticeTransferFeeEstimate({
           "group flex items-center gap-2 text-center",
           isCard
             ? cn(
-                "mt-2 text-left",
+                "mt-1.5 text-left",
                 hasTrailing ? "w-full justify-between" : "justify-start gap-1.5",
               )
             : "justify-center rounded-lg border border-primary-muted/50 bg-primary-soft/40 px-3 py-1.5",
@@ -772,12 +773,14 @@ export function PracticeTransferFeeEstimate({
             <div
               className={cn(
                 "min-w-0 cursor-default",
-                isCard ? "flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5" : "",
+                isCard
+                  ? "flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm"
+                  : "",
                 !isLab &&
                   "select-none blur-[8px] transition-[filter] duration-150 group-hover:select-text group-hover:blur-none group-focus-within:select-text group-focus-within:blur-none",
               )}
             >
-              <p
+              <span
                 className={cn(
                   "font-semibold tabular-nums text-slate-800",
                   isCard ? "text-sm" : "text-sm sm:text-base",
@@ -792,16 +795,16 @@ export function PracticeTransferFeeEstimate({
                     {surchargeLabel}
                   </span>
                 ) : null}
-              </p>
+              </span>
               {simple ? (
-                <p
+                <span
                   className={cn(
-                    "truncate text-[11px] text-muted-foreground",
-                    isCard ? "" : "mt-0.5",
+                    "tabular-nums text-muted-foreground",
+                    isCard ? "text-[12px]" : "mt-0.5 block truncate text-[11px]",
                   )}
                 >
                   {simple}
-                </p>
+                </span>
               ) : null}
             </div>
           </TooltipTrigger>
