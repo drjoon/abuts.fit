@@ -7,7 +7,7 @@
 // - 2026-08-16: 어벗 가공 시작(준비 아님)이면 어벗 생산·의뢰 수락 취소 숨김.
 // - 2026-08-16: 취소 라벨 — 수락중「의뢰 수락 취소」·보철완료후「작업 완료 취소」.
 // - 2026-08-16: 보철 완료(발송) 후 — 어벗·보철 CTA 비활성 + 오른쪽「취소」만(의뢰수락 재오픈).
-// - 2026-08-16: 별점 다운그레이드 배너 — 내 별점·의뢰 별점·수가 차이.
+// - 2026-08-16: 별점 다운그레이드 배너 — 우리 별점·자동매칭 별점·수가 차이(accent/danger).
 // - 2026-08-16: 상태 뱃지 오른쪽 끝 — 내 별점·평가 횟수.
 // - 2026-08-16: 어벗생산의뢰와 동일 크기·스타일의 디자인SW·아노 메타 뱃지.
 // - 2026-08-16: CTA 라벨「어벗 생산 취소」.
@@ -45,6 +45,7 @@ import {
   DEFAULT_EFFECTIVE_LAB_STARS,
   formatLabStarsLabel,
 } from "@/shared/practice/practiceLabRating";
+import { SEMANTIC_BADGE, SEMANTIC_CALLOUT } from "@/shared/ui/semanticStatus";
 import {
   countPracticeTransferDesignFiles,
   getPracticeTransferLabReceiveDisplayStatus,
@@ -370,29 +371,40 @@ export function PracticeTransferLabReceiveCard({
       {starDowngrade ? (
         <div
           role="note"
-          className="mt-2 rounded-md border border-orange-400 bg-orange-50 px-3 py-2 text-xs text-orange-950"
+          className={cn(
+            "mt-2 rounded-lg px-3 py-2 text-xs",
+            SEMANTIC_CALLOUT.attentionBorder,
+          )}
         >
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
-            <span className="inline-flex items-center gap-1 text-orange-700">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-accent-strong">
+            <span className="inline-flex items-center gap-1">
               <Star className="h-3.5 w-3.5 fill-current" aria-hidden />
               별점 다운그레이드
             </span>
-            <span className="text-orange-800/80 font-normal">
-              내 별점 수가보다 낮은 의뢰입니다. 수락 여부를 선택하세요.
+            <span className="font-normal text-accent-strong/80">
+              우리 별점보다 낮은 의뢰입니다. 수락 여부를 선택하세요.
             </span>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded bg-orange-200/80 px-2 py-0.5 font-semibold text-orange-950">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-md px-2 py-0.5 font-semibold tabular-nums",
+                SEMANTIC_BADGE.attentionSoft,
+              )}
+            >
               내 별점 {formatLabStarsLabel(starDowngrade.labEffectiveStars)}
-            </span>
-            <span className="text-orange-700" aria-hidden>
-              →
-            </span>
-            <span className="inline-flex items-center rounded bg-amber-100 px-2 py-0.5 font-semibold text-amber-950 ring-1 ring-amber-400/60">
-              자동매칭 {formatLabStarsLabel(starDowngrade.autoMatchStars)}
+              <span className="mx-1.5 font-normal text-accent-strong/70" aria-hidden>
+                →
+              </span>
+              자동매칭 별점 {formatLabStarsLabel(starDowngrade.autoMatchStars)}
             </span>
             {starDowngrade.labFeeDeltaWon > 0 ? (
-              <span className="inline-flex items-center rounded bg-rose-100 px-2 py-0.5 font-semibold text-rose-800 ring-1 ring-rose-300/70">
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-md px-2 py-0.5 font-semibold tabular-nums",
+                  SEMANTIC_BADGE.dangerSoft,
+                )}
+              >
                 수가 {formatWonCompact(starDowngrade.labFeeDeltaWon)} 낮음
               </span>
             ) : null}
@@ -519,13 +531,13 @@ export function PracticeTransferLabReceiveCard({
         className={cn(
           "w-full cursor-pointer rounded-lg border-2 border-dashed p-4 text-left transition",
           hasStarDowngrade
-            ? "border-orange-400 hover:bg-orange-50/50"
+            ? "border-accent/70 bg-accent-soft/40 hover:border-accent hover:bg-accent-soft/70"
             : "border-slate-300 hover:bg-muted/20",
           dimRejected && "opacity-40 hover:opacity-55",
         )}
         activeClassName={
           hasStarDowngrade
-            ? "border-orange-500 bg-orange-50/70"
+            ? "border-accent bg-accent-soft/80"
             : "border-primary bg-primary-soft/40"
         }
         onFiles={onDropFiles}
@@ -553,7 +565,7 @@ export function PracticeTransferLabReceiveCard({
       className={cn(
         "w-full cursor-pointer rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         hasStarDowngrade
-          ? "border-orange-400 bg-orange-50/40 hover:border-orange-500 hover:bg-orange-50/70"
+          ? "border-accent/70 bg-accent-soft/40 hover:border-accent hover:bg-accent-soft/70"
           : "hover:border-primary/40 hover:bg-muted/20",
         dimRejected && "opacity-40 hover:opacity-55",
       )}

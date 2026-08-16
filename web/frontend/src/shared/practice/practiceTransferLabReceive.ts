@@ -88,7 +88,7 @@ export type PracticeTransferLabReceiveItem = {
   resultFileCount?: number;
   resultFiles?: PracticeTransferLabReceiveFile[];
   feeQuote?: PracticeTransferFeeQuote | null;
-  /** 자동매칭 — 내 별점 수가보다 의뢰 수가가 낮을 때 */
+  /** 자동매칭 — 우리 별점(수가)보다 의뢰 별점(수가)이 낮을 때 */
   starDowngrade?: StarDowngradeInfo | null;
   /** 수신 기공소 본인 별점 요약 */
   labRatingSummary?: LabRatingSummary | null;
