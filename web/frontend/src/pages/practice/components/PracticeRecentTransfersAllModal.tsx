@@ -332,7 +332,7 @@ export function PracticeRecentTransfersAllModal({
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}
-                presets={["thisMonth", "lastMonth"]}
+                presets={[]}
               />
             </div>
             <div className="flex flex-wrap justify-center gap-2">

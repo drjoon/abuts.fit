@@ -6628,7 +6628,7 @@ export const PracticeFileTransferPage = ({
                     <PeriodFilter
                       value={period}
                       onChange={setPeriod}
-                      presets={["thisMonth", "lastMonth"]}
+                      presets={[]}
                     />
                   </div>
 
