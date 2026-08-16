@@ -2861,21 +2861,20 @@ export const PracticeTransferRequestIntakePanel = ({
                                   onSkipJigChange(value === true);
                                 }}
                               />
-                              <span>지그 제작 불필요</span>
+                              <span>지그 필요없음</span>
                             </label>
                           </TooltipTrigger>
                           <TooltipContent
                             side="bottom"
-                            className="max-w-xs text-xs leading-relaxed"
+                            className="max-w-none whitespace-nowrap text-xs leading-relaxed"
                           >
-                            <p>
-                              커스텀어벗만 의뢰할 때 지그가 필요 없으면
-                              체크하세요. 보철이 함께 있으면 배송에 지그를
-                              포함하므로 선택할 수 없습니다. 기공소 디자인비는
-                              1만원으로 유지되고, 기공소→치과 배송비는 차감하지
-                              않습니다. 어벗츠 배송비는 그대로 차감됩니다.
-                              설정은 치과 계정에 저장됩니다.
-                            </p>
+                            <div className="space-y-1">
+                              <p>
+                                커스텀어벗만 의뢰하면서 지그가 필요 없을 때
+                                체크하세요.
+                              </p>
+                              <p>체크 시 기공소→치과 배송비가 면제됩니다.</p>
+                            </div>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

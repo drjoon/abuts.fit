@@ -942,7 +942,7 @@ export function PracticeTransferFeeEstimate({
                   </p>
                 ))}
                 {skipJig && hasAbutsOriginShip && !hasLabProsthesisShip ? (
-                  <p>지그 제작 불필요로 기공소→치과 배송비는 차감하지 않습니다.</p>
+                  <p>지그 필요없음으로 기공소→치과 배송비는 차감하지 않습니다.</p>
                 ) : null}
               </div>
             ) : null}
