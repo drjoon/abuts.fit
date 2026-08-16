@@ -1,0 +1,28 @@
+{
+  "delay": 1500,
+  "signal": "SIGTERM",
+  "ext": "js,mjs,cjs,json",
+  "watch": [
+    "server.js",
+    "app.js",
+    "socket.js",
+    "bootstrap",
+    "config",
+    "controllers",
+    "jobs",
+    "middlewares",
+    "models",
+    "modules",
+    "services",
+    "utils"
+  ],
+  "ignore": [
+    "node_modules/**",
+    "coverage/**",
+    "uploads/**",
+    "backups/**",
+    "tests/**",
+    "scripts/**",
+    "docs/**"
+  ]
+}

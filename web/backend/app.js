@@ -46,7 +46,24 @@ if (!mongoUri) {
   );
 }
 
-const dbReady = connect(mongoUri)
+// 로컬 nodemon 재시작이 잦아 Atlas 연결이 쌓이지 않도록 dev 풀을 작게 유지한다.
+const isProd = process.env.NODE_ENV === "production";
+const mongoPoolSize = Number(
+  process.env.MONGO_MAX_POOL_SIZE || (isProd ? 50 : 5),
+);
+const mongoMaxIdleMs = Number(
+  process.env.MONGO_MAX_IDLE_MS || (isProd ? 60_000 : 10_000),
+);
+
+const dbReady = connect(mongoUri, {
+  maxPoolSize: Number.isFinite(mongoPoolSize) && mongoPoolSize > 0 ? mongoPoolSize : 5,
+  minPoolSize: 0,
+  maxIdleTimeMS:
+    Number.isFinite(mongoMaxIdleMs) && mongoMaxIdleMs > 0
+      ? mongoMaxIdleMs
+      : 10_000,
+  serverSelectionTimeoutMS: 15_000,
+})
   .then(async () => {
     if (process.env.NODE_ENV !== "test") {
       console.log(`MongoDB 연결 성공: ${mongoSource}`);
@@ -54,6 +71,9 @@ const dbReady = connect(mongoUri)
       // URI에서 DB 이름만 추출하여 로그 (보안상 전체 URI는 출력하지 않음)
       const dbName = mongoUri.split("/").pop()?.split("?")[0] || "unknown";
       console.log(`연결된 DB: ${dbName}`);
+      console.log(
+        `[mongoose] pool maxPoolSize=${mongoPoolSize} maxIdleTimeMS=${mongoMaxIdleMs}`,
+      );
     }
 
     const readyState = mongoose.connection.readyState;

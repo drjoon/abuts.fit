@@ -36,7 +36,7 @@
     "db:backup-requests-once": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/run-request-backup-once.js",
     "db:backup-critical-full": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/run-request-backup-once.js --full",
     "db:backup-critical-incremental": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/run-request-backup-once.js --incremental",
-    "worker:monthly-referral-snapshot": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js", 
+    "worker:monthly-referral-snapshot": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js",
     "worker:daily-admin-salesman-credits-overview-snapshot": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node jobs/dailyAdminSalesmanCreditsOverviewSnapshotWorker.js"
   },
   "keywords": [
@@ -52,6 +52,7 @@
     "@aws-sdk/client-sesv2": "^3.859.0",
     "@aws-sdk/s3-request-presigner": "^3.859.0",
     "@google/generative-ai": "^0.24.1",
+    "@napi-rs/canvas": "^0.1.58",
     "aws-sdk": "^2.1692.0",
     "axios": "^1.13.2",
     "bcryptjs": "^2.4.3",
@@ -67,16 +68,16 @@
     "multer": "^2.0.2",
     "multer-s3": "^3.0.1",
     "popbill": "^1.62.0",
+    "qrcode": "^1.5.3",
     "sftp-upload": "^1.0.4",
     "sharp": "^0.34.5",
-    "socket.io": "^4.8.1",
-    "@napi-rs/canvas": "^0.1.58",
-    "qrcode": "^1.5.3"
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.28.0",
     "cross-env": "^10.0.0",
     "jest": "^30.0.5",
+    "nodemon": "^3.1.14",
     "supertest": "^7.1.4"
   }
 }

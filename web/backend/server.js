@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/app.js
+// - web/backend/nodemon.json
 // - web/backend/services/reviewApprovalQueue.service.js
 // - web/backend/controllers/requests/shipping.TrackingPoller.js
 // - web/backend/controllers/cnc/machiningBridge.js
@@ -9,9 +10,10 @@
 // - web/backend/jobs/dummyCncWorker.js
 // - web/backend/jobs/practiceMembershipBillingWorker.js
 import { createServer } from "http";
+import mongoose from "mongoose";
 import "./bootstrap/env.js";
 import app, { dbReady } from "./app.js";
-import { initializeSocket } from "./socket.js";
+import { getIO, initializeSocket } from "./socket.js";
 import {
   warmupCache,
   startPeriodicCacheRefresh,
@@ -31,6 +33,12 @@ import { seedCoreShared } from "./scripts/db/_core.shared.js";
 
 // 포트 설정 (EB 기본 upstream 포트는 8080)
 const PORT = process.env.PORT || 8080;
+const isProd = process.env.NODE_ENV === "production";
+const enableStartupSeed =
+  isProd ||
+  String(process.env.ENABLE_STARTUP_SEED_DEV || "")
+    .trim()
+    .toLowerCase() === "true";
 
 // HTTP 서버 생성
 const server = createServer(app);
@@ -42,6 +50,43 @@ initializeSocket(server);
 server.listen(PORT, () => {
   console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
   console.log(`Socket.io가 활성화되었습니다.`);
+});
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} — closing http + mongoose`);
+  try {
+    const io = getIO();
+    if (io) io.close();
+  } catch (err) {
+    console.warn("[shutdown] socket.io close failed:", err?.message || err);
+  }
+  try {
+    await new Promise((resolve) => {
+      server.close(() => resolve());
+      // keep-alive/socket 잔여 시에도 재시작이 막히지 않게 상한
+      setTimeout(resolve, 1500);
+    });
+  } catch (err) {
+    console.warn("[shutdown] server.close failed:", err?.message || err);
+  }
+  try {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+  } catch (err) {
+    console.warn("[shutdown] mongoose.disconnect failed:", err?.message || err);
+  }
+  process.exit(0);
+}
+
+process.once("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
+process.once("SIGINT", () => {
+  void shutdown("SIGINT");
 });
 
 dbReady
@@ -66,22 +111,28 @@ dbReady
       }
     })();
 
-    // Connection 컬렉션 diameter 필드 보장 (브랜드별 원점 정렬 직경)
-    // connections.seed.js에 정의된 diameter 값이 DB에 반영되도록 idempotent 업서트 실행
-    (async () => {
-      try {
-        const result = await seedCoreShared();
-        console.log("[startup] Connection 시드 적용 완료", result.connections);
-      } catch (err) {
-        console.error("[startup] Connection 시드 적용 실패:", err?.message);
-      }
-    })();
+    // Connection 시드: prod만 기본 실행. 로컬 nodemon 재시작마다 Atlas write가 쌓이지 않게 한다.
+    // 로컬에서 시드가 필요하면 ENABLE_STARTUP_SEED_DEV=true
+    if (enableStartupSeed) {
+      (async () => {
+        try {
+          const result = await seedCoreShared();
+          console.log("[startup] Connection 시드 적용 완료", result.connections);
+        } catch (err) {
+          console.error("[startup] Connection 시드 적용 실패:", err?.message);
+        }
+      })();
+    } else {
+      console.log(
+        "[startup] Connection 시드 스킵 (dev). 필요 시 ENABLE_STARTUP_SEED_DEV=true",
+      );
+    }
 
     // 캐시 워밍 실행
     await warmupCache();
 
     // 주기적 캐시 갱신 시작 (선택적)
-    if (process.env.NODE_ENV === "production") {
+    if (isProd) {
       startPeriodicCacheRefresh();
     }
 
