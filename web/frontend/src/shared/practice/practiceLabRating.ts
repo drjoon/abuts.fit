@@ -5,6 +5,8 @@
 // - 2026-08-14: 치과→기공소 rating·자동매칭 최소 별.
 // - 2026-08-16: 자동매칭 별점은 전체 치과 평가 합산·평균. 우리 치과 1점 제외.
 // - 2026-08-16: 5점제. 자동매칭 최소 2~5. 평가 3회 미만은 유효 3점. 기공비 배수 2/3/4/5→0.9/1/1.1/1.2.
+// - 2026-08-16: 1점도 참여 가능(하한 1). 기공비 배수 1→×0.8. 우리치과 1점 하드 차단 제거.
+// - 2026-08-16: 평가 3회 이하→유효 3점(유예 상수 3).
 
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 5;
@@ -12,21 +14,18 @@ export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
 /** 평가 모달 최초 작성 시 기본 별점(기존 평가 없을 때). */
 export const DEFAULT_PRACTICE_LAB_RATING_STARS = 3;
 export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 3;
-export const AUTO_MATCH_MIN_SELECTABLE = 2;
-/** 이 횟수 이하 평가면 유효 별점=3(미평가 포함). */
-export const AUTO_MATCH_RATING_COUNT_GRACE = 2;
+export const AUTO_MATCH_MIN_SELECTABLE = 1;
+/** 이 횟수 이하 평가면 유효 별점=3(미평가 포함). 3회 이하→3, 4회부터 실평균. */
+export const AUTO_MATCH_RATING_COUNT_GRACE = 3;
 export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
 
 const FEE_MULTIPLIER_BY_STARS: Record<number, number> = {
+  1: 0.8,
   2: 0.9,
   3: 1,
   4: 1.1,
   5: 1.2,
 };
-
-/** 채팅·평가 모달: 1점 선택 시 자동매칭 제외 안내 */
-export const PRACTICE_LAB_ONE_STAR_AUTO_MATCH_WARNING =
-  "별 1점은 다음 의뢰부터 이 기공소가 매칭에 참여하지 않습니다.";
 
 export type PracticeLabRatingPublic = {
   stars: number;

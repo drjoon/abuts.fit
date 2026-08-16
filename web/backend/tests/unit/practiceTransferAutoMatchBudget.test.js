@@ -19,10 +19,16 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     expect(bandFromAdminBase(50001)).toEqual({ min: 40000, max: 60000 });
   });
 
-  test("v4 fixed fee from stars: 2=0.9x, 3=1x, 4=1.1x, 5=1.2x ceil 1000", () => {
+  test("v4 fixed fee from stars: 1=0.8x, 2=0.9x, 3=1x, 4=1.1x, 5=1.2x ceil 1000", () => {
     const catalog = [
       { id: "crown", name: "크라운", price: 60000, enabled: true },
     ];
+    expect(resolveAutoMatchBudgetFromStars(1, catalog)).toMatchObject({
+      version: 4,
+      stars: 1,
+      feeMultiplier: 0.8,
+      items: { crown: { min: 48000, max: 48000 } },
+    });
     expect(resolveAutoMatchBudgetFromStars(2, catalog)).toMatchObject({
       version: 4,
       stars: 2,

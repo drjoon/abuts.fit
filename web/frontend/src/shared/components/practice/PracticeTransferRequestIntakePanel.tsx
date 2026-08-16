@@ -679,7 +679,7 @@ export type PracticeTransferRequestIntakePanelProps = {
   onAutoMatchBudgetChange?: (
     next: PracticeTransferAutoMatchBudget | null,
   ) => void | Promise<void>;
-  /** 자동매칭 최소 별(2~5). 인증 AND 유효별≥설정(3회 미만→3) AND NOT 우리치과1점. */
+  /** 자동매칭 최소 별(1~5). 인증 AND 유효별≥설정(3회 이하→3). */
   autoMatchMinLabRating?: number;
   onAutoMatchMinLabRatingChange?: (next: number) => void | Promise<void>;
 };

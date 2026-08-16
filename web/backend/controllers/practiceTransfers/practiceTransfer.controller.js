@@ -109,6 +109,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-14: GET /my $or 분리 병렬 조회. drafts?trashed=all 1쿼리. GET에서 syncIndexes 제거.
 // - 2026-08-14: 치과→기공소 labRating(1~5)·메모. 자동매칭 최소 별 필터.
 // - 2026-08-16: 자동매칭 적격 — 주문 치과 1점 기공소 제외.
+// - 2026-08-16: 1점도 참여 가능. 기공비 ×0.8. 우리치과 1점 하드 차단 제거.
 // - 2026-08-14: 자동매칭도 practiceBusinessAnchorId 전달(표시명 비공개·기공수가 할증 키).
 // - 2026-08-16: 자동매칭 청구는 플랫폼 고정수가(할증 없음). 적격은 인증·수가·별점 게이트.
 // - 2026-08-15: 적격 스냅샷에서 practice 할증 제외. 카탈로그·practice 병렬 로드.

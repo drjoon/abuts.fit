@@ -8,6 +8,8 @@
 // - 2026-08-14: 치과→기공소 rating·메모. 기록 치과·관리자만. 자동매칭 최소 별.
 // - 2026-08-16: 자동매칭 별점은 전체 치과 평가 합산·평균. 주문 치과 1점 제외.
 // - 2026-08-16: 5점제. 자동매칭 최소 선택 2~5. 평가 3회 미만은 유효 3점. 기공비 배수 2/3/4/5→0.9/1/1.1/1.2.
+// - 2026-08-16: 1점도 참여 가능(하한 1). 기공비 배수 1→×0.8. 우리치과 1점 하드 차단 제거.
+// - 2026-08-16: 평가 3회 이하→유효 3점(유예 상수 3).
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -19,13 +21,14 @@ export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
 /** 자동매칭 최소 별 기본값. */
 export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 3;
 /** 자동매칭 최소 별 선택 하한. */
-export const AUTO_MATCH_MIN_SELECTABLE = 2;
-/** 이 횟수 이하 평가면 유효 별점=3(미평가 포함). 초과 시 합산 평균 적용. */
-export const AUTO_MATCH_RATING_COUNT_GRACE = 2;
-/** 3회 미만일 때 적용하는 초기 유효 별점. */
+export const AUTO_MATCH_MIN_SELECTABLE = 1;
+/** 이 횟수 이하 평가면 유효 별점=3(미평가 포함). 3회 이하→3, 4회부터 실평균. */
+export const AUTO_MATCH_RATING_COUNT_GRACE = 3;
+/** 3회 이하일 때 적용하는 초기 유효 별점. */
 export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
 
 const FEE_MULTIPLIER_BY_STARS = Object.freeze({
+  1: 0.8,
   2: 0.9,
   3: 1,
   4: 1.1,
@@ -43,14 +46,14 @@ export function normalizePracticeLabStars(value) {
   return stars;
 }
 
-/** 자동매칭 최소 별. 미설정·범위 밖 → 기본 3. 선택 가능은 2~5. */
+/** 자동매칭 최소 별. 미설정·범위 밖 → 기본 3. 선택 가능은 1~5. */
 export function normalizeAutoMatchMinLabRating(value) {
   const stars = normalizePracticeLabStars(value);
   if (stars == null) return DEFAULT_AUTO_MATCH_MIN_LAB_RATING;
   return Math.max(AUTO_MATCH_MIN_SELECTABLE, stars);
 }
 
-/** 선택 별점(3~5) → 기공비 배수. */
+/** 선택 별점(1~5) → 기공비 배수. */
 export function feeMultiplierForStars(stars) {
   const n = normalizeAutoMatchMinLabRating(stars);
   return FEE_MULTIPLIER_BY_STARS[n] ?? 1;
@@ -58,7 +61,7 @@ export function feeMultiplierForStars(stars) {
 
 /**
  * 매칭 참여·필터용 유효 별점.
- * - 평가 3회 미만(미평가 포함): 3
+ * - 평가 3회 이하(미평가 포함): 3
  * - 그 외: 합산 평균(소수 유지)
  */
 export function effectiveLabStars({ stars, ratingCount } = {}) {
@@ -153,25 +156,19 @@ export function countRatedLabAnchors(ratings) {
 }
 
 /**
- * 주문 치과가 해당 기공소에 현재 1점을 준 경우(유예·최소 별 설정과 무관).
- * 다음 자동매칭 적격 스냅샷부터 제외.
+ * @deprecated 1점도 매칭 참여 가능. 항상 false(레거시 호출 호환).
  */
-export function isLabBlockedByOwnOneStar({ ratings, labAnchorId } = {}) {
-  const labId = String(labAnchorId || "").trim();
-  if (!labId) return false;
-  const own = findPracticeLabRating(ratings, labId);
-  return own?.stars === PRACTICE_LAB_RATING_MIN;
+export function isLabBlockedByOwnOneStar() {
+  return false;
 }
 
 /**
  * 자동매칭 차단(인증 풀은 별도):
- * - 주문 치과가 1점을 준 기공소면 true
- * - 그 외: 유효 별점(3회 미만→3) < 최소 별이면 true
+ * 유효 별점(3회 이하→3) < 최소 별이면 true
  *
- * 참여 조건: 인증 AND 유효별≥설정(하한 2; 3회 미만→3) AND NOT 우리치과1점
+ * 참여 조건: 인증 AND 유효별≥설정(하한 1; 3회 이하→3)
  *
  * `aggregated`가 있으면 전체 치과 합산 행을 쓰고, 없으면 레거시 단일 치과 list.
- * `ratings`는 주문 치과 `practiceLabRatings`(1점 하드 차단용).
  */
 export function isLabBlockedByPracticeRating({
   ratings,
@@ -181,7 +178,6 @@ export function isLabBlockedByPracticeRating({
 } = {}) {
   const labId = String(labAnchorId || "").trim();
   if (!labId) return false;
-  if (isLabBlockedByOwnOneStar({ ratings, labAnchorId: labId })) return true;
 
   const min = normalizeAutoMatchMinLabRating(minStars);
 

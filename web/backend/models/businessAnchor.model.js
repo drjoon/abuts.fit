@@ -513,12 +513,12 @@ const businessAnchorSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.Mixed,
         default: null,
       },
-      // 자동매칭 최소 별(2~5). 전체 치과 평가 평균 기준.
-      // 평가 3회 미만·미평가는 유효 3점. 기본 3.
+      // 자동매칭 최소 별(1~5). 전체 치과 평가 평균 기준.
+      // 평가 3회 이하·미평가는 유효 3점. 기본 3. 기공비 배수 1=0.8.
       autoMatchMinLabRating: {
         type: Number,
         default: 3,
-        min: 2,
+        min: 1,
         max: 5,
       },
       updatedAt: {
