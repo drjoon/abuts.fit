@@ -16,11 +16,12 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-16: 어벗디자인 업로드 후 로컬 production.designFiles 반영 → 상세「작업 파일」표시.
 // - 2026-08-16: 디자인 없이 완료 플래그만 남은 stuck 건 — 목록 로드 시 stage reopen + CTA 복원.
 // - 2026-08-16: 생산 취소 후 로컬 패치 — 결과파일·완료·확정 클리어 → 뱃지「의뢰수락」·업로드 CTA 복원.
 // - 2026-08-16: mark-complete apiFetch body→jsonBody (결과파일 미전달 400 수정).
 // - 2026-08-16: 상세 파일 — 의뢰(구강스캔)/작업(어벗디자인·보철물). 완료 토스트 문구.
-// - 2026-08-16: 디자인 STL 업로드 후 버튼 라벨「생산 취소」(준비 단계만).
+// - 2026-08-16: 디자인 STL 업로드 후 버튼 라벨「어벗 생산 취소」(준비 단계만).
 // - 2026-08-15: 수신 카드 → PracticeTransferLabReceiveCard(어벗츠기공소·lab 공통).
 // - 2026-08-15: 디자인 STL 업로드 후 버튼 라벨「어벗생산 취소」(준비 단계만).
 // - 2026-08-15: 어벗디자인 취소·재업로드(제조사 준비 단계만). 업로드 후 준비 큐 등록.
@@ -2367,11 +2368,29 @@ export function RequestorPracticeReceivePage({
         }
 
         const nowIso = new Date().toISOString();
-        const nextCount =
-          Number(transfer.production?.designFileCount || 0) + 1;
+        const uploadedDesignFile: ReceivedPracticeFile = {
+          id: `design-local-${Date.now()}`,
+          patientName: "",
+          tooth: "",
+          originalName: String(temp?.originalName || file.name || "").trim(),
+          mimetype: String(
+            temp?.mimetype || file.type || "application/octet-stream",
+          ).trim(),
+          size: Number(temp?.size ?? file.size ?? 0),
+          s3Key,
+        };
+        const prevDesignFiles = Array.isArray(transfer.production?.designFiles)
+          ? transfer.production.designFiles
+          : [];
+        // 동일 s3Key 재업로드 시 중복 행 방지
+        const nextDesignFiles = [
+          ...prevDesignFiles.filter((row) => row.s3Key !== s3Key),
+          uploadedDesignFile,
+        ];
         const productionPatch: ReceivedPracticeTransfer["production"] = {
           ...transfer.production,
-          designFileCount: nextCount,
+          designFileCount: nextDesignFiles.length,
+          designFiles: nextDesignFiles,
           designReadyAt: transfer.production?.designReadyAt || nowIso,
           labDesignConfirmedAt:
             transfer.production?.labDesignConfirmedAt || nowIso,
@@ -2483,17 +2502,17 @@ export function RequestorPracticeReceivePage({
         );
 
         toast({
-          title: "생산 취소",
+          title: "어벗 생산 취소",
           description:
             "제조사 주문이 취소되었습니다. 어벗디자인·보철을 다시 업로드할 수 있습니다.",
         });
       } catch (error) {
         toast({
-          title: "생산 취소 실패",
+          title: "어벗 생산 취소 실패",
           description:
             error instanceof Error
               ? error.message
-              : "생산 취소 중 오류가 발생했습니다.",
+              : "어벗 생산 취소 중 오류가 발생했습니다.",
           variant: "destructive",
         });
       } finally {

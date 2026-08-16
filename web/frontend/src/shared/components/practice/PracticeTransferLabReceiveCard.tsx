@@ -3,9 +3,10 @@
 // - web/frontend/src/pages/internalLab/labWork/LabWorkPage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
-// - 2026-08-16: stuck(디자인 없음+완료 플래그)도 「생산 취소」·재오픈 후 업로드 CTA.
+// - 2026-08-16: CTA 라벨「어벗 생산 취소」.
+// - 2026-08-16: stuck(디자인 없음+완료 플래그)도 「어벗 생산 취소」·재오픈 후 업로드 CTA.
 // - 2026-08-16: 생산 취소 후 displayStatus「의뢰수락」복원 시 어벗·보철 업로드 CTA 재표시.
-// - 2026-08-16: 어벗디자인 업로드 후 CTA「생산 취소」(제조 준비 단계만).
+// - 2026-08-16: 어벗디자인 업로드 후 CTA「어벗 생산 취소」(제조 준비 단계만).
 // - 2026-08-15: 업로드 완료 안내 박스(어벗생산 취소 문구) 제거.
 // - 2026-08-15: 기공의뢰수신 카드 SSOT — 어벗츠기공소·일반 lab 동일 색·스타일·문구.
 import type { KeyboardEvent, MouseEvent } from "react";
@@ -156,7 +157,7 @@ export function PracticeTransferLabReceiveCard({
           onClick={(event) => void onAbutmentProductionCancel(event)}
         >
           <X className="h-4 w-4" />
-          {cardBusy ? "처리 중..." : "생산 취소"}
+          {cardBusy ? "처리 중..." : "어벗 생산 취소"}
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">

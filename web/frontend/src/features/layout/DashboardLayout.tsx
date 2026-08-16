@@ -18,6 +18,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 // - 2026-08-11: 개발운영사·관리자 사이드·라우트에서 소개 제거(영업자만 유지).
 // - 2026-08-11: 의뢰자 사이드·라우트에서 소개 제거(소개 할인 정책 종료).
 // - 2026-08-11: 작업영역(흰 카드)이 outlet 높이를 채우도록 — 충전 탭 수직 중앙·내역 테이블 스크롤 고정.
+// - 2026-08-16: 잔액 < 50만원이면 사이드바 크레딧에 깜빡이는 충전 뱃지·클릭 시 ?tab=charge.
 // - 2026-08-11: 잔액 < 충전단위면 사이드바 크레딧에 깜빡이는 충전 뱃지·클릭 시 ?tab=charge.
 // - 2026-08-11: 의뢰자 사이드바에 크레딧 메뉴 추가. 충전 토스트 CTA → /dashboard/credits?tab=charge.
 // - 2026-08-11: 기공/어벗 사이드 — 버튼 그라데이션 제거, 가로 연결선만 적용.
@@ -150,8 +151,8 @@ type SidebarItem = {
 const sidebarItemPath = (href: string) =>
   String(href || "").split("?")[0].replace(/\/$/, "") || "/";
 
-const CHARGE_UNIT_LAB = 500_000;
-const CHARGE_UNIT_PRACTICE = 1_000_000;
+/** 사이드바 충전 뱃지 임계(공급가). 충전 단위(기공소 50만/치과 100만)와 별개. */
+const CREDIT_LOW_BALANCE_THRESHOLD = 500_000;
 const CREDITS_HREF = "/dashboard/credits";
 const CREDITS_CHARGE_HREF = "/dashboard/credits?tab=charge";
 
@@ -1007,13 +1008,11 @@ export const DashboardLayout = () => {
     return buildRequestorSidebarItems(requestorKind);
   })();
 
-  const creditChargeUnit =
-    requestorKind === "practice" ? CHARGE_UNIT_PRACTICE : CHARGE_UNIT_LAB;
-  const isCreditBelowUnit =
+  const isCreditLow =
     user.role === "requestor" &&
     typeof creditBalance === "number" &&
     Number.isFinite(creditBalance) &&
-    creditBalance < creditChargeUnit;
+    creditBalance < CREDIT_LOW_BALANCE_THRESHOLD;
 
   const displayRole = isPracticeUser ? "practice" : user.role;
   const adminMenuSections = user.role === "admin" ? adminSidebarSections : null;
@@ -1120,7 +1119,7 @@ export const DashboardLayout = () => {
   }, [user.role]);
 
   const resolvedMenuItems = (() => {
-    if (!isCreditBelowUnit) return menuItems;
+    if (!isCreditLow) return menuItems;
     return menuItems.map((item) => {
       if (sidebarItemPath(item.href) !== CREDITS_HREF) return item;
       return { ...item, href: CREDITS_CHARGE_HREF };
@@ -1396,7 +1395,7 @@ export const DashboardLayout = () => {
                     : location.pathname === itemPath ||
                       location.pathname.startsWith(`${itemPath}/`);
                   const isCreditsLowHighlight =
-                    isCreditBelowUnit && itemPath === CREDITS_HREF && !isActive;
+                    isCreditLow && itemPath === CREDITS_HREF && !isActive;
                   const paidLocked =
                     user.role === "requestor" &&
                     isPaidRequestorSidebarLocked({
