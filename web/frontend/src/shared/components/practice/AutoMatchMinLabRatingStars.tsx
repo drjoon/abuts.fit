@@ -102,10 +102,15 @@ export function AutoMatchMinLabRatingStars({
         </TooltipTrigger>
         <TooltipContent
           side="bottom"
-          className="max-w-xs space-y-1 text-xs leading-relaxed"
+          className="w-max max-w-[min(100vw-2rem,28rem)] space-y-1 text-xs leading-relaxed"
         >
           {TOOLTIP_LINES.map((line) => (
-            <p key={line}>{line}</p>
+            <p
+              key={line}
+              className={line.startsWith("기공비:") ? "whitespace-nowrap" : undefined}
+            >
+              {line}
+            </p>
           ))}
         </TooltipContent>
       </Tooltip>
