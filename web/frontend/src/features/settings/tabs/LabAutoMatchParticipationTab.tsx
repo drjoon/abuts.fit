@@ -272,13 +272,13 @@ export const LabAutoMatchParticipationTab = () => {
                 <p className="text-[13px] font-semibold text-slate-900">
                   내 별점 {starsLabel}
                   <span className="ml-1.5 text-[12px] font-normal text-slate-500">
-                    (평가 {summary.ratingCount}회)
+                    (평가 치과 {summary.ratingCount}곳)
                   </span>
                 </p>
                 <p className="text-[12px] leading-relaxed text-muted-foreground">
                   {summary.ratingCount <= AUTO_MATCH_RATING_COUNT_GRACE
-                    ? `평가 ${AUTO_MATCH_RATING_COUNT_GRACE + 1}회부터 실제 평균이 적용됩니다. 현재는 ${DEFAULT_EFFECTIVE_LAB_STARS}점.`
-                    : "치과 정보는 비공개입니다."}
+                    ? `평가 치과 ${AUTO_MATCH_RATING_COUNT_GRACE + 1}곳부터 실제 평균이 적용됩니다. 현재는 ${DEFAULT_EFFECTIVE_LAB_STARS}점.`
+                    : "치과당 1회만 반영됩니다. 치과 정보는 비공개입니다."}
                 </p>
               </div>
             </div>

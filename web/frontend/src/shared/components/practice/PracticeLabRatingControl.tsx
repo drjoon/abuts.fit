@@ -6,6 +6,7 @@
 // - 2026-08-16: 5점제. 안내 단순화. 별점은 기공소에 공개·치과정보는 비공개.
 // - 2026-08-16: 평가 모달 기본 별점 3.
 // - 2026-08-16: 1점 매칭 제외 안내 제거(1점도 참여·×0.8).
+// - 2026-08-16: 치과·기공소 쌍당 1건·재평가 덮어쓰기 안내.
 import { useEffect, useState, type MouseEvent } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,8 +35,8 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 const DIALOG_DESCRIPTION_LINES = [
-  "1~5점으로 평가합니다. 매칭·지정 모두 기록됩니다.",
-  "별점은 기공소에 공개되고, 치과·메모는 비공개입니다.",
+  "1~5점. 매칭·지정 공통, 같은 기공소는 치과당 1회만 반영됩니다.",
+  "다시 평가하면 이전 별점은 새 평가로 바뀝니다. 별점은 기공소에 공개, 치과·메모는 비공개입니다.",
 ] as const;
 
 type PracticeLabRatingControlProps = {
@@ -132,6 +133,7 @@ export function PracticeLabRatingControl({
       });
       return;
     }
+    const wasUpdate = Boolean(current?.stars);
     setSaving(true);
     try {
       const res = await request<{
@@ -159,7 +161,7 @@ export function PracticeLabRatingControl({
         const next: PracticeLabRatingPublic = {
           stars: normalizePracticeLabStars(saved.stars) ?? stars,
           memo: normalizePracticeLabRatingMemo(saved.memo),
-          ratingCount: Math.max(1, Math.floor(Number(saved.ratingCount) || 1)),
+          ratingCount: 1,
           updatedAt: saved.updatedAt ? String(saved.updatedAt) : null,
         };
         setCurrent(next);
@@ -167,8 +169,10 @@ export function PracticeLabRatingControl({
       }
       setOpen(false);
       toast({
-        title: "기공소 평가 저장",
-        description: "별점은 기공소에 공개됩니다. 치과·메모는 비공개입니다.",
+        title: wasUpdate ? "기공소 평가 업데이트" : "기공소 평가 저장",
+        description: wasUpdate
+          ? "이전 평가를 새 별점으로 바꿨습니다. 별점은 기공소에 공개됩니다."
+          : "별점은 기공소에 공개됩니다. 치과·메모는 비공개입니다.",
         duration: 2500,
       });
     } finally {

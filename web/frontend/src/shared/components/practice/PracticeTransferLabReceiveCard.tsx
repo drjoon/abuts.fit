@@ -481,8 +481,8 @@ export function PracticeTransferLabReceiveCard({
             </span>
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-xs text-xs">
-            내 별점(전체 치과 평가 합산). 평가{" "}
-            {AUTO_MATCH_RATING_COUNT_GRACE + 1}회부터 실제 평균이 적용됩니다.
+            내 별점(평가 치과별 1건 합산). 평가 치과{" "}
+            {AUTO_MATCH_RATING_COUNT_GRACE + 1}곳부터 실제 평균이 적용됩니다.
           </TooltipContent>
         </Tooltip>
       </div>

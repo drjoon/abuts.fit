@@ -6,7 +6,11 @@ import {
   loadAutoMatchBudgetCatalog,
   resolveAutoMatchBudgetOrDefaults,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
-import { normalizeAutoMatchMinLabRating } from "../../utils/practiceLabRating.js";
+import {
+  normalizeAutoMatchMinLabRating,
+  normalizeAutoMatchMaxLabRating,
+  resolveAutoMatchEligibleStarBand,
+} from "../../utils/practiceLabRating.js";
 
 // related files:
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
@@ -20,6 +24,7 @@ import { normalizeAutoMatchMinLabRating } from "../../utils/practiceLabRating.js
 // - 2026-08-14: autoMatchMinLabRating(자동매칭 최소 별·2nd chance).
 // - 2026-08-16: autoMatchBudget version3 — minPct/maxPct.
 // - 2026-08-16: v4 고정가. GET은 최소 별점으로 budget 조립. autoMatchBudget PATCH 무시.
+// - 2026-08-16: autoMatchMaxLabRating(하한·상한 치과 설정, 기본 3~4).
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
 const ABUTMENT_PRODUCT_MODE_DESIGN_AND_PRODUCTION = "design_custom_abutment";
@@ -181,9 +186,12 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
   }
 
   const catalog = await loadAutoMatchBudgetCatalog();
-  const autoMatchMinLabRating = normalizeAutoMatchMinLabRating(
-    settings?.autoMatchMinLabRating,
-  );
+  const starBand = resolveAutoMatchEligibleStarBand({
+    minStars: settings?.autoMatchMinLabRating,
+    maxStars: settings?.autoMatchMaxLabRating,
+  });
+  const autoMatchMinLabRating = starBand.minStars;
+  const autoMatchMaxLabRating = starBand.maxStars;
 
   return {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
@@ -199,8 +207,10 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     ),
     autoMatchBudget: resolveAutoMatchBudgetOrDefaults(null, catalog, {
       minStars: autoMatchMinLabRating,
+      maxStars: autoMatchMaxLabRating,
     }),
     autoMatchMinLabRating,
+    autoMatchMaxLabRating,
     abutsLabFeeCatalog: catalog,
     updatedAt: settings?.updatedAt || null,
   };
@@ -277,6 +287,10 @@ export async function upsertPracticeTransferSettings(req, res) {
       body,
       "autoMatchMinLabRating",
     );
+    const hasAutoMatchMaxLabRating = Object.prototype.hasOwnProperty.call(
+      body,
+      "autoMatchMaxLabRating",
+    );
 
     const setPatch = {
       "practiceTransferSettings.updatedAt": new Date(),
@@ -332,9 +346,23 @@ export async function upsertPracticeTransferSettings(req, res) {
         normalizeDefaultAbutmentProductMode(body.defaultAbutmentProductMode);
     }
     // autoMatchBudget PATCH는 무시(v4: 별점만으로 고정가 조립).
-    if (hasAutoMatchMinLabRating) {
-      setPatch["practiceTransferSettings.autoMatchMinLabRating"] =
-        normalizeAutoMatchMinLabRating(body.autoMatchMinLabRating);
+    if (hasAutoMatchMinLabRating || hasAutoMatchMaxLabRating) {
+      const current = await BusinessAnchor.findById(anchorId)
+        .select({
+          "practiceTransferSettings.autoMatchMinLabRating": 1,
+          "practiceTransferSettings.autoMatchMaxLabRating": 1,
+        })
+        .lean();
+      const band = resolveAutoMatchEligibleStarBand({
+        minStars: hasAutoMatchMinLabRating
+          ? body.autoMatchMinLabRating
+          : current?.practiceTransferSettings?.autoMatchMinLabRating,
+        maxStars: hasAutoMatchMaxLabRating
+          ? body.autoMatchMaxLabRating
+          : current?.practiceTransferSettings?.autoMatchMaxLabRating,
+      });
+      setPatch["practiceTransferSettings.autoMatchMinLabRating"] = band.minStars;
+      setPatch["practiceTransferSettings.autoMatchMaxLabRating"] = band.maxStars;
     }
 
     const anchor = await BusinessAnchor.findByIdAndUpdate(

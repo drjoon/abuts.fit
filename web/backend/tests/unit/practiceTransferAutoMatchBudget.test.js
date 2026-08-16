@@ -7,6 +7,7 @@ import {
   isAutoMatchBudgetConfigured,
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
+  resolveAutoMatchBudgetFromStarBand,
   resolveAutoMatchBudgetFromStars,
   resolveAutoMatchBudgetOrDefaults,
   scaleLabUnitPricesByMultiplier,
@@ -26,6 +27,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     expect(resolveAutoMatchBudgetFromStars(1, catalog)).toMatchObject({
       version: 4,
       stars: 1,
+      maxStars: 1,
       feeMultiplier: 0.8,
       items: { crown: { min: 48000, max: 48000 } },
     });
@@ -54,6 +56,23 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     expect(resolveAutoMatchBudgetFromStars(4, odd).items.crown).toEqual({
       min: 62000,
       max: 62000,
+    });
+  });
+
+  test("v4 star band builds min/max fees from lower/upper multipliers", () => {
+    const catalog = [
+      { id: "crown", name: "크라운", price: 60000, enabled: true },
+    ];
+    const band = resolveAutoMatchBudgetFromStarBand(
+      { minStars: 3, maxStars: 4 },
+      catalog,
+    );
+    expect(band).toMatchObject({
+      version: 4,
+      stars: 3,
+      maxStars: 4,
+      feeMultiplier: 1,
+      items: { crown: { min: 60000, max: 66000 } },
     });
   });
 

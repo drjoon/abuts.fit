@@ -11,8 +11,8 @@
 // - 2026-08-16: 1점도 참여 가능(하한 1). 기공비 배수 1→×0.8. 우리치과 1점 하드 차단 제거.
 // - 2026-08-16: 평가 3회 이하→유효 3점(유예 상수 3).
 // - 2026-08-16: 별점 다운그레이드 — 유효별 수가배수 > 의뢰 별점배수일 때 표시 페이로드.
-// - 2026-08-16: 공개 상한 = 선택 별점+2점(예: 2점→유효별≤4점 기공소까지).
-// - 2026-08-16: 공개 대역 하한=설정·상한=설정+2.
+// - 2026-08-16: 공개 대역 — 치과가 하한·상한 직접 설정(기본 3~4).
+// - 2026-08-16: 치과·기공소 쌍당 평가 1건. 재평가 시 덮어쓰기(지정·매칭 공통). 집계 ratingCount=평가 치과 수.
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -21,16 +21,16 @@ import { requestorKindCapableAnchorFilter } from "./requestorCapabilities.js";
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 5;
 export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
-/** 자동매칭 최소 별 기본값. */
+/** 자동매칭 별점 하한 기본값. */
 export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 3;
-/** 자동매칭 최소 별 선택 하한. */
+/** 자동매칭 별점 상한 기본값. */
+export const DEFAULT_AUTO_MATCH_MAX_LAB_RATING = 4;
+/** 자동매칭 별 선택 하한. */
 export const AUTO_MATCH_MIN_SELECTABLE = 1;
-/** 이 횟수 이하 평가면 유효 별점=3(미평가 포함). 3회 이하→3, 4회부터 실평균. */
+/** 이 치과 수 이하 평가면 유효 별점=3(미평가 포함). 3곳 이하→3, 4곳부터 실평균. */
 export const AUTO_MATCH_RATING_COUNT_GRACE = 3;
 /** 3회 이하일 때 적용하는 초기 유효 별점. */
 export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
-/** 공개 상한 = 선택 별점 + 이 값(예: 2점 → 유효별 ≤4점). 5점 초과는 클램프. */
-export const AUTO_MATCH_ELIGIBLE_STAR_CAP_EXTRA = 2;
 
 const FEE_MULTIPLIER_BY_STARS = Object.freeze({
   1: 0.8,
@@ -51,31 +51,35 @@ export function normalizePracticeLabStars(value) {
   return stars;
 }
 
-/** 자동매칭 최소 별. 미설정·범위 밖 → 기본 3. 선택 가능은 1~5. */
+/** 자동매칭 별점 하한. 미설정·범위 밖 → 기본 3. */
 export function normalizeAutoMatchMinLabRating(value) {
   const stars = normalizePracticeLabStars(value);
   if (stars == null) return DEFAULT_AUTO_MATCH_MIN_LAB_RATING;
   return Math.max(AUTO_MATCH_MIN_SELECTABLE, stars);
 }
 
-/** 선택 별점 → 참여 가능 유효별 상한(선택+2, 최대 5). */
-export function maxAutoMatchEligibleLabStars(stars) {
-  return Math.min(
-    PRACTICE_LAB_RATING_MAX,
-    normalizeAutoMatchMinLabRating(stars) + AUTO_MATCH_ELIGIBLE_STAR_CAP_EXTRA,
-  );
+/** 자동매칭 별점 상한. 미설정·범위 밖 → 기본 4. */
+export function normalizeAutoMatchMaxLabRating(value) {
+  const stars = normalizePracticeLabStars(value);
+  if (stars == null) return DEFAULT_AUTO_MATCH_MAX_LAB_RATING;
+  return Math.max(AUTO_MATCH_MIN_SELECTABLE, stars);
 }
 
-/** 선택 별점 → 공개 대역. 하한=설정, 상한=설정+2(최대 5). */
-export function resolveAutoMatchEligibleStarBand(stars) {
-  const minStars = normalizeAutoMatchMinLabRating(stars);
-  return {
-    minStars,
-    maxStars: maxAutoMatchEligibleLabStars(minStars),
-  };
+/**
+ * 공개 대역. 하한·상한은 치과 설정.
+ * max < min이면 max를 min으로 맞춤.
+ */
+export function resolveAutoMatchEligibleStarBand({
+  minStars,
+  maxStars,
+} = {}) {
+  const min = normalizeAutoMatchMinLabRating(minStars);
+  const maxRaw = normalizeAutoMatchMaxLabRating(maxStars);
+  const max = Math.max(min, maxRaw);
+  return { minStars: min, maxStars: max };
 }
 
-/** 선택 별점(1~5) → 기공비 배수. */
+/** 선택 별점(1~5) → 기공비 배수. 자동매칭 청구는 하한 별점 기준. */
 export function feeMultiplierForStars(stars) {
   const n = normalizeAutoMatchMinLabRating(stars);
   return FEE_MULTIPLIER_BY_STARS[n] ?? 1;
@@ -83,7 +87,7 @@ export function feeMultiplierForStars(stars) {
 
 /**
  * 매칭 참여·필터용 유효 별점.
- * - 평가 3회 이하(미평가 포함): 3
+ * - 평가 치과 3곳 이하(미평가 포함): 3
  * - 그 외: 합산 평균(소수 유지)
  */
 export function effectiveLabStars({ stars, ratingCount } = {}) {
@@ -107,12 +111,12 @@ export function toPracticeLabRatingApi(row) {
   const labAnchorId = String(row.labAnchorId || "").trim();
   const stars = normalizePracticeLabStars(row.stars);
   if (!labAnchorId || stars == null) return null;
-  const ratingCount = Math.max(1, Math.floor(Number(row.ratingCount) || 1));
+  // 치과·기공소 쌍당 1건. 레거시 ratingCount>1도 1로 정규화.
   return {
     labAnchorId,
     stars,
     memo: normalizePracticeLabRatingMemo(row.memo),
-    ratingCount,
+    ratingCount: 1,
     updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
   };
 }
@@ -227,9 +231,8 @@ export function isLabBlockedByOwnOneStar() {
 
 /**
  * 자동매칭 차단(인증 풀은 별도):
- * 유효 별점(3회 이하→3)이 [최소, 최소+2] 밖이면 true
- *
- * 참여 조건: 인증 AND 설정 ≤ 유효별 ≤ 설정+2(상한 5; 3회 이하→3)
+ * 유효 별점(3회 이하→3)이 [하한, 상한] 밖이면 true.
+ * 하한·상한은 치과 설정(기본 3~4).
  *
  * `aggregated`가 있으면 전체 치과 합산 행을 쓰고, 없으면 레거시 단일 치과 list.
  */
@@ -243,14 +246,9 @@ export function isLabBlockedByPracticeRating({
   const labId = String(labAnchorId || "").trim();
   if (!labId) return false;
 
-  const min = normalizeAutoMatchMinLabRating(minStars);
-  const max =
-    maxStars == null
-      ? maxAutoMatchEligibleLabStars(min)
-      : Math.min(
-          PRACTICE_LAB_RATING_MAX,
-          Math.max(min, Math.round(Number(maxStars)) || min),
-        );
+  const band = resolveAutoMatchEligibleStarBand({ minStars, maxStars });
+  const min = band.minStars;
+  const max = band.maxStars;
 
   let stars = null;
   let ratingCount = 0;
@@ -277,8 +275,8 @@ export function isLabBlockedByPracticeRating({
 
 /**
  * 가입 치과(practice) 전체의 기공소 평가를 합산·평균.
- * - ratingCount: 각 치과 ratingCount 합
- * - stars: ratingCount 가중 평균
+ * - ratingCount: 해당 기공소를 평가한 치과 수(쌍당 1건)
+ * - stars: 치과별 최신 별점의 단순 평균
  * @returns {Map<string, { labAnchorId: string, stars: number, ratingCount: number }>}
  */
 export async function loadGlobalLabRatingAggregates({
@@ -308,24 +306,12 @@ export async function loadGlobalLabRatingAggregates({
       $match: { "practiceLabRatings.labAnchorId": { $in: labIds } },
     });
   }
+  // 치과 문서당 unwind 1행 = 그 치과의 최신 평가 1건(레거시 ratingCount 무시).
   pipeline.push({
     $group: {
       _id: "$practiceLabRatings.labAnchorId",
-      ratingCount: {
-        $sum: {
-          $max: [{ $ifNull: ["$practiceLabRatings.ratingCount", 1] }, 1],
-        },
-      },
-      weightedStars: {
-        $sum: {
-          $multiply: [
-            { $ifNull: ["$practiceLabRatings.stars", 0] },
-            {
-              $max: [{ $ifNull: ["$practiceLabRatings.ratingCount", 1] }, 1],
-            },
-          ],
-        },
-      },
+      ratingCount: { $sum: 1 },
+      starsSum: { $sum: { $ifNull: ["$practiceLabRatings.stars", 0] } },
     },
   });
 
@@ -336,8 +322,8 @@ export async function loadGlobalLabRatingAggregates({
     if (!labAnchorId) continue;
     const ratingCount = Math.max(0, Math.floor(Number(row.ratingCount) || 0));
     if (ratingCount <= 0) continue;
-    const weighted = Number(row.weightedStars) || 0;
-    const stars = weighted / ratingCount;
+    const starsSum = Number(row.starsSum) || 0;
+    const stars = starsSum / ratingCount;
     if (!Number.isFinite(stars)) continue;
     map.set(labAnchorId, {
       labAnchorId,
@@ -348,7 +334,10 @@ export async function loadGlobalLabRatingAggregates({
   return map;
 }
 
-/** upsert. 신규=1, 별점이 바뀌면 ratingCount +1 (메모만 수정은 횟수 유지). */
+/**
+ * upsert. 치과·기공소 쌍당 1건.
+ * 재평가(별점·메모) 시 이전 행을 덮어쓰고 ratingCount는 항상 1.
+ */
 export function upsertPracticeLabRatingList(existing, labAnchorId, stars, memo) {
   const labId = String(labAnchorId || "").trim();
   const nextStars = normalizePracticeLabStars(stars);
@@ -363,14 +352,11 @@ export function upsertPracticeLabRatingList(existing, labAnchorId, stars, memo) 
   const now = new Date();
   if (idx >= 0) {
     const prev = rows[idx] || {};
-    const prevStars = normalizePracticeLabStars(prev.stars);
-    const prevCount = Math.max(1, Math.floor(Number(prev.ratingCount) || 1));
-    const starsChanged = prevStars !== nextStars;
     rows[idx] = {
       labAnchorId: prev.labAnchorId || labId,
       stars: nextStars,
       memo: nextMemo,
-      ratingCount: starsChanged ? prevCount + 1 : prevCount,
+      ratingCount: 1,
       updatedAt: now,
     };
     return rows;

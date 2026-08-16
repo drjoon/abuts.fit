@@ -3,11 +3,8 @@
 // - web/frontend/src/shared/practice/practiceLabRating.ts
 // - web/backend/utils/practiceLabRating.js
 // - 2026-08-14: 자동매칭 최소 별(클릭으로 채움).
-// - 2026-08-16: 5점제. 선택 2~5. 기공비=평균×배수(2=0.9). 안내 문구 단순화.
-// - 2026-08-16: 매칭 조건 툴팁은 도움말 아이콘에만(별 포커스로 Dialog 오픈 시 동시 표시 방지).
-// - 2026-08-16: 선택 1~5. 기공비 1=×0.8. 우리치과 1점 제외 문구 제거.
-// - 2026-08-16: 툴팁 — 인증 통과만 참여 · 평가 3회 이하 3점 · 기공비 N배 표기.
-// - 2026-08-16: 공개 대역 하한=설정·상한=설정+2(툴팁에 현재 선택 기준 표기).
+// - 2026-08-16: 5점제. 선택 1~5. 기공비 N배.
+// - 2026-08-16: 하한·상한 치과 직접 설정(기본 3~4). 툴팁 간단 표기.
 import { CircleHelp, Star } from "lucide-react";
 import {
   Tooltip,
@@ -17,62 +14,44 @@ import {
 } from "@/components/ui/tooltip";
 import {
   AUTO_MATCH_MIN_SELECTABLE,
+  DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   PRACTICE_LAB_RATING_MAX,
-  feeMultiplierForStars,
-  normalizeAutoMatchMinLabRating,
   resolveAutoMatchEligibleStarBand,
 } from "@/shared/practice/practiceLabRating";
 import { cn } from "@/shared/ui/cn";
 
-type AutoMatchMinLabRatingStarsProps = {
-  value?: number | null;
-  onChange?: (next: number) => void;
-  className?: string;
+type StarRowProps = {
+  label: string;
+  value: number;
   disabled?: boolean;
+  onChange?: (next: number) => void;
+  ariaLabel: string;
 };
 
-export function AutoMatchMinLabRatingStars({
-  value = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
-  onChange,
-  className,
-  disabled = false,
-}: AutoMatchMinLabRatingStarsProps) {
-  const current = normalizeAutoMatchMinLabRating(value);
-  const { minStars, maxStars } = resolveAutoMatchEligibleStarBand(current);
-  const tooltipLines = [
-    "기공소 매칭",
-    "- 어벗츠 인증 통과 기공소만 참여",
-    `- 선택 별점~+2점까지 공개 (설정 ${minStars}점 → 별점 ${minStars}~${maxStars}점 기공소 참여 가능)`,
-    "- 평가 3회 이하 기공소는 3점 적용",
-    "기공비: 1점=0.8배 · 2점=0.9배 · 3점=평균 · 4점=1.1배 · 5점=1.2배",
-  ] as const;
-
+function StarRow({ label, value, disabled, onChange, ariaLabel }: StarRowProps) {
   return (
-    <div className={cn("inline-flex items-center gap-1", className)}>
+    <div className="inline-flex items-center gap-1.5">
+      <span className="text-[11px] font-medium text-slate-500">{label}</span>
       <div
         className={cn(
-          "inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-sm",
+          "inline-flex items-center gap-0.5 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-sm",
           disabled && "opacity-50",
         )}
         role="radiogroup"
-        aria-label="자동매칭 최소 별점"
+        aria-label={ariaLabel}
       >
         {Array.from({ length: PRACTICE_LAB_RATING_MAX }, (_, i) => {
           const stars = i + 1;
           const selectable = stars >= AUTO_MATCH_MIN_SELECTABLE;
-          const filled = stars <= current;
+          const filled = stars <= value;
           return (
             <button
               key={stars}
               type="button"
               role="radio"
-              aria-checked={current === stars}
-              aria-label={
-                selectable
-                  ? `최소 ${stars}점 (${feeMultiplierForStars(stars) === 1 ? "평균" : `×${feeMultiplierForStars(stars)}`})`
-                  : `${stars}점 (선택 불가)`
-              }
+              aria-checked={value === stars}
+              aria-label={`${label} ${stars}점`}
               disabled={disabled || !selectable}
               className={cn(
                 "rounded p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none",
@@ -86,7 +65,7 @@ export function AutoMatchMinLabRatingStars({
             >
               <Star
                 className={cn(
-                  "h-4 w-4",
+                  "h-3.5 w-3.5",
                   filled && selectable ? "fill-current" : "fill-none",
                 )}
                 strokeWidth={1.75}
@@ -95,6 +74,87 @@ export function AutoMatchMinLabRatingStars({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+type AutoMatchMinLabRatingStarsProps = {
+  minValue?: number | null;
+  maxValue?: number | null;
+  onMinChange?: (next: number) => void;
+  onMaxChange?: (next: number) => void;
+  /** @deprecated 단일 값 — minValue로 매핑 */
+  value?: number | null;
+  /** @deprecated 단일 변경 — onMinChange로 매핑 */
+  onChange?: (next: number) => void;
+  className?: string;
+  disabled?: boolean;
+};
+
+export function AutoMatchMinLabRatingStars({
+  minValue,
+  maxValue,
+  onMinChange,
+  onMaxChange,
+  value,
+  onChange,
+  className,
+  disabled = false,
+}: AutoMatchMinLabRatingStarsProps) {
+  const band = resolveAutoMatchEligibleStarBand({
+    minStars: minValue ?? value ?? DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+    maxStars: maxValue ?? DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+  });
+  const minStars = band.minStars;
+  const maxStars = band.maxStars;
+
+  const handleMin = (next: number) => {
+    const resolved = resolveAutoMatchEligibleStarBand({
+      minStars: next,
+      maxStars,
+    });
+    onMinChange?.(resolved.minStars);
+    onChange?.(resolved.minStars);
+    if (resolved.maxStars !== maxStars) onMaxChange?.(resolved.maxStars);
+  };
+
+  const handleMax = (next: number) => {
+    const resolved = resolveAutoMatchEligibleStarBand({
+      minStars,
+      maxStars: next,
+    });
+    onMaxChange?.(resolved.maxStars);
+    if (resolved.minStars !== minStars) {
+      onMinChange?.(resolved.minStars);
+      onChange?.(resolved.minStars);
+    }
+  };
+
+  const tooltipLines = [
+    "기공소 매칭",
+    "- 어벗츠 인증 통과 기공소만 참여",
+    "- 평가 치과 3곳 이하 기공소는 3점 적용",
+    "- 하한·상한 직접 설정",
+    "- 기공비는 수락한 기공소 별점에 비례해 결정",
+    "1점=0.8배 · 2점=0.9배 · 3점=기공소들 평균수가 · 4점=1.1배 · 5점=1.2배",
+  ] as const;
+
+  return (
+    <div className={cn("inline-flex flex-wrap items-center gap-x-2 gap-y-1", className)}>
+      <StarRow
+        label="하한"
+        value={minStars}
+        disabled={disabled || !onMinChange}
+        onChange={handleMin}
+        ariaLabel="자동매칭 별점 하한"
+      />
+      <StarRow
+        label="상한"
+        value={maxStars}
+        disabled={disabled || !onMaxChange}
+        onChange={handleMax}
+        ariaLabel="자동매칭 별점 상한"
+      />
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -108,12 +168,14 @@ export function AutoMatchMinLabRatingStars({
           </TooltipTrigger>
           <TooltipContent
             side="bottom"
-            className="z-[210] w-max max-w-[min(100vw-2rem,28rem)] space-y-1 text-xs leading-relaxed"
+            className="z-[210] w-max max-w-[min(100vw-2rem,40rem)] overflow-visible space-y-1 text-xs leading-relaxed"
           >
             {tooltipLines.map((line) => (
               <p
                 key={line}
-                className={line.startsWith("기공비:") ? "whitespace-nowrap" : undefined}
+                className={
+                  line.startsWith("1점=") ? "whitespace-nowrap" : undefined
+                }
               >
                 {line}
               </p>

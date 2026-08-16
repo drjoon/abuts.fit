@@ -34,8 +34,11 @@ import {
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
 import {
+  DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  normalizeAutoMatchMaxLabRating,
   normalizeAutoMatchMinLabRating,
+  resolveAutoMatchEligibleStarBand,
 } from "@/shared/practice/practiceLabRating";
 import {
   Popover,
@@ -131,6 +134,9 @@ import {
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { resolveAdoptedAbutmentKind } from "@/shared/practice/labFeeSchedule";
+import {
+  formatWonRange,
+} from "@/shared/practice/practiceTransferFeeQuote";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -679,9 +685,12 @@ export type PracticeTransferRequestIntakePanelProps = {
   onAutoMatchBudgetChange?: (
     next: PracticeTransferAutoMatchBudget | null,
   ) => void | Promise<void>;
-  /** 자동매칭 최소 별(1~5). 인증 AND 유효별≥설정(3회 이하→3). */
+  /** 자동매칭 별점 하한(1~5). 기공비 배수 기준. */
   autoMatchMinLabRating?: number;
   onAutoMatchMinLabRatingChange?: (next: number) => void | Promise<void>;
+  /** 자동매칭 별점 상한(1~5). */
+  autoMatchMaxLabRating?: number;
+  onAutoMatchMaxLabRatingChange?: (next: number) => void | Promise<void>;
 };
 
 export const PracticeTransferRequestIntakePanel = ({
@@ -753,14 +762,22 @@ export const PracticeTransferRequestIntakePanel = ({
   onAutoMatchBudgetChange,
   autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   onAutoMatchMinLabRatingChange,
+  autoMatchMaxLabRating = DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+  onAutoMatchMaxLabRatingChange,
 }: PracticeTransferRequestIntakePanelProps) => {
-  const resolvedMinLabRating = normalizeAutoMatchMinLabRating(
-    autoMatchMinLabRating,
-  );
+  const starBand = resolveAutoMatchEligibleStarBand({
+    minStars: autoMatchMinLabRating,
+    maxStars: autoMatchMaxLabRating,
+  });
+  const resolvedMinLabRating = starBand.minStars;
+  const resolvedMaxLabRating = starBand.maxStars;
   const resolvedAutoMatchBudget = resolveAutoMatchBudgetOrDefaults(
     autoMatchBudget,
     abutsLabFeeCatalog,
-    { minStars: resolvedMinLabRating },
+    {
+      minStars: resolvedMinLabRating,
+      maxStars: resolvedMaxLabRating,
+    },
   );
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
@@ -804,6 +821,24 @@ export const PracticeTransferRequestIntakePanel = ({
     abutmentPricingTier,
     autoMatchBudget: isAutoMatchLab(selectedLab) ? resolvedAutoMatchBudget : null,
   });
+  const labFeeByTooth = useMemo(() => {
+    const map = new Map<string, { min: number; max: number }>();
+    if (!isAutoMatchLab(selectedLab)) return map;
+    for (const line of feeQuote?.lines || []) {
+      const tooth = String(line.toothNumber || "").trim();
+      if (!tooth) continue;
+      const max = Math.max(0, Math.round(Number(line.labFee || 0)));
+      if (max <= 0 && !(line.labFeeMin != null && Number(line.labFeeMin) > 0)) {
+        continue;
+      }
+      const min =
+        line.labFeeMin != null && Number.isFinite(Number(line.labFeeMin))
+          ? Math.max(0, Math.round(Number(line.labFeeMin)))
+          : max;
+      map.set(tooth, { min, max: Math.max(min, max) });
+    }
+    return map;
+  }, [feeQuote?.lines, selectedLab]);
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */
   const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<number | null>(null);
   const customSpecsAdoptedKind =
@@ -1676,10 +1711,17 @@ export const PracticeTransferRequestIntakePanel = ({
             </Label>
             {showAutoMatchMinLabRating && isAutoMatchLab(selectedLab) ? (
               <AutoMatchMinLabRatingStars
-                value={resolvedMinLabRating}
-                disabled={!onAutoMatchMinLabRatingChange}
-                onChange={(next) => {
+                minValue={resolvedMinLabRating}
+                maxValue={resolvedMaxLabRating}
+                disabled={
+                  !onAutoMatchMinLabRatingChange ||
+                  !onAutoMatchMaxLabRatingChange
+                }
+                onMinChange={(next) => {
                   void onAutoMatchMinLabRatingChange?.(next);
+                }}
+                onMaxChange={(next) => {
+                  void onAutoMatchMaxLabRatingChange?.(next);
                 }}
               />
             ) : null}
@@ -2800,6 +2842,22 @@ export const PracticeTransferRequestIntakePanel = ({
                                 </TooltipProvider>
                               </div>
                             ) : null}
+
+                            {(() => {
+                              const fee = labFeeByTooth.get(
+                                String(row.toothNumber || "").trim(),
+                              );
+                              if (!fee || isMissingTooth) return null;
+                              return (
+                                <p
+                                  data-no-tooth-marquee=""
+                                  className="relative z-[1] mt-1 w-full px-0.5 text-center text-[10px] leading-tight tabular-nums text-slate-500"
+                                  title="기공소 기공비(하한~상한)"
+                                >
+                                  {formatWonRange(fee.min, fee.max)}
+                                </p>
+                              );
+                            })()}
                           </div>
                           </div>
                           {bridgeControl}

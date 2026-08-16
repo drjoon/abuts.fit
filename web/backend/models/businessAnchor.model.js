@@ -429,6 +429,7 @@ const businessAnchorSchema = new mongoose.Schema(
       default: [],
     },
     // 치과→기공소 rating(1~5)·메모. 별점은 기공소 공개, 치과·메모는 비공개.
+    // 치과·기공소 쌍당 1건(재평가 시 덮어쓰기). ratingCount는 항상 1(집계는 평가 치과 수).
     // related: web/backend/utils/practiceLabRating.js
     practiceLabRatings: {
       type: [
@@ -523,11 +524,18 @@ const businessAnchorSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.Mixed,
         default: null,
       },
-      // 자동매칭 최소 별(1~5). 전체 치과 평가 평균 기준.
-      // 평가 3회 이하·미평가는 유효 3점. 기본 3. 기공비 배수 1=0.8.
+      // 자동매칭 별점 하한(1~5). 전체 치과 평가 평균 기준.
+      // 평가 3회 이하·미평가는 유효 3점. 기본 3. 기공비 배수 하한 기준.
       autoMatchMinLabRating: {
         type: Number,
         default: 3,
+        min: 1,
+        max: 5,
+      },
+      // 자동매칭 별점 상한(1~5). 기본 4. 하한보다 낮으면 하한으로 맞춤.
+      autoMatchMaxLabRating: {
+        type: Number,
+        default: 4,
         min: 1,
         max: 5,
       },

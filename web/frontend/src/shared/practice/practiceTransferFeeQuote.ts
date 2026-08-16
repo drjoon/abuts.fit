@@ -289,8 +289,16 @@ export const buildFeeQuoteFromContext = (params: {
     ? resolveAutoMatchBudgetOrDefaults(
         budgetRaw,
         catalog,
-        budgetRaw && typeof budgetRaw === "object" && "stars" in budgetRaw
-          ? { minStars: (budgetRaw as PracticeTransferAutoMatchBudget).stars }
+        budgetRaw && typeof budgetRaw === "object"
+          ? {
+              minStars:
+                (budgetRaw as PracticeTransferAutoMatchBudget).stars ??
+                undefined,
+              maxStars:
+                (budgetRaw as PracticeTransferAutoMatchBudget).maxStars ??
+                (budgetRaw as PracticeTransferAutoMatchBudget).stars ??
+                undefined,
+            }
           : undefined,
       )
     : normalizePracticeTransferAutoMatchBudget(budgetRaw, catalog);
@@ -377,6 +385,23 @@ export const buildFeeQuoteFromContext = (params: {
 
 export const formatWon = (value: number) =>
   `${Math.max(0, Math.round(Number(value || 0))).toLocaleString("ko-KR")}원`;
+
+/** 원 → 만원 표기. 66000 → "6.6만원", 60000 → "6만원" */
+export const formatManWon = (value: number) => {
+  const won = Math.max(0, Math.round(Number(value || 0)));
+  const man = won / 10000;
+  const label = Number.isInteger(man)
+    ? String(man)
+    : String(Math.round(man * 100) / 100);
+  return `${label}만원`;
+};
+
+export const formatWonRange = (minRaw: number, maxRaw: number) => {
+  const min = Math.max(0, Math.round(Number(minRaw || 0)));
+  const max = Math.max(0, Math.round(Number(maxRaw || 0)));
+  if (min === max) return formatManWon(max);
+  return `${formatManWon(Math.min(min, max))}~${formatManWon(Math.max(min, max))}`;
+};
 
 export const formatFeeRatePct = (rate: number) => {
   const pct = Math.round(Number(rate || 0) * 1000) / 10;

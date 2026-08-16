@@ -44,6 +44,8 @@ export type PracticeLabRejectedReselectDialogProps = {
     | "onTogglePinLab"
     | "autoMatchMinLabRating"
     | "onAutoMatchMinLabRatingChange"
+    | "autoMatchMaxLabRating"
+    | "onAutoMatchMaxLabRatingChange"
     | "autoMatchBudget"
     | "abutsLabFeeCatalog"
     | "onAutoMatchBudgetChange"
@@ -157,6 +159,10 @@ export function PracticeLabRejectedReselectDialog({
             autoMatchMinLabRating={labIntakeProps.autoMatchMinLabRating}
             onAutoMatchMinLabRatingChange={
               labIntakeProps.onAutoMatchMinLabRatingChange
+            }
+            autoMatchMaxLabRating={labIntakeProps.autoMatchMaxLabRating}
+            onAutoMatchMaxLabRatingChange={
+              labIntakeProps.onAutoMatchMaxLabRatingChange
             }
             autoMatchBudget={labIntakeProps.autoMatchBudget}
             abutsLabFeeCatalog={labIntakeProps.abutsLabFeeCatalog}

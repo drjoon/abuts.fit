@@ -41,7 +41,8 @@ import {
 import { cn } from "@/shared/ui/cn";
 import {
   formatFeeRatePct,
-  formatWon,
+  formatManWon,
+  formatWonRange,
   sortPracticeTransferFeeLines,
   type PracticeTransferFeeQuote,
   type PracticeTransferFeeQuoteViewer,
@@ -66,14 +67,7 @@ type PracticeTransferFeeEstimateProps = {
   skipJig?: boolean;
 };
 
-const formatCell = (value: number) => (value > 0 ? formatWon(value) : "—");
-
-const formatWonRange = (minRaw: number, maxRaw: number) => {
-  const min = Math.max(0, Math.round(Number(minRaw || 0)));
-  const max = Math.max(0, Math.round(Number(maxRaw || 0)));
-  if (min === max) return formatWon(max);
-  return `${formatWon(Math.min(min, max))}~${formatWon(Math.max(min, max))}`;
-};
+const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
 
 type FeeBreakdownLine = {
   toothNumber: string;
@@ -90,7 +84,7 @@ const formatLabAbutmentCell = (line: {
   labAbutmentFee: number;
   labAbutmentPending?: boolean;
 }) => {
-  if (line.labAbutmentFee > 0) return formatWon(line.labAbutmentFee);
+  if (line.labAbutmentFee > 0) return formatManWon(line.labAbutmentFee);
   if (line.labAbutmentPending) return "요청중";
   return "—";
 };
@@ -99,7 +93,7 @@ const formatAbutsCell = (line: {
   abutmentRetail: number;
   abutmentRetailNote?: "quote";
 }) => {
-  if (line.abutmentRetail > 0) return formatWon(line.abutmentRetail);
+  if (line.abutmentRetail > 0) return formatManWon(line.abutmentRetail);
   if (line.abutmentRetailNote === "quote") return "별도 고지";
   return "—";
 };
@@ -121,7 +115,7 @@ const formatLabFacingAbutsProductionCell = (
     Math.round(Number(line.abutmentRetail || 0)) -
       Math.max(0, Math.round(Number(designFee || 0))),
   );
-  return formatWon(production);
+  return formatManWon(production);
 };
 
 const labFacingAbutsProductionAmount = (
@@ -359,7 +353,7 @@ function FeeBreakdownTable({
             ) : null}
             {designFeeColumn ? (
               <span className={amountCellClass}>
-                {lineDesignFee > 0 ? formatWon(lineDesignFee) : "—"}
+                {lineDesignFee > 0 ? formatManWon(lineDesignFee) : "—"}
               </span>
             ) : null}
             {labAbutmentColumn ? (
@@ -402,7 +396,7 @@ function FeeBreakdownTable({
                 amountCellClass,
               )}
             >
-              {designFeeTotal > 0 ? formatWon(designFeeTotal) : "—"}
+              {designFeeTotal > 0 ? formatManWon(designFeeTotal) : "—"}
             </span>
           ) : null}
           {labAbutmentColumn ? (
@@ -413,7 +407,7 @@ function FeeBreakdownTable({
               )}
             >
               {labAbutmentTotal > 0
-                ? formatWon(labAbutmentTotal)
+                ? formatManWon(labAbutmentTotal)
                 : labAbutmentPending
                   ? "요청중"
                   : "—"}
@@ -429,12 +423,12 @@ function FeeBreakdownTable({
             >
               {labFacing || showAbutsProductionSplit
                 ? abutsProductionTotal > 0
-                  ? formatWon(abutsProductionTotal)
+                  ? formatManWon(abutsProductionTotal)
                   : abutsQuotePending
                     ? "별도 고지"
                     : "—"
                 : lines.reduce((sum, line) => sum + line.abutmentRetail, 0) > 0
-                  ? formatWon(
+                  ? formatManWon(
                       lines.reduce((sum, line) => sum + line.abutmentRetail, 0),
                     )
                   : lines.some((line) => line.abutmentRetailNote === "quote")
@@ -457,7 +451,7 @@ function FeeBreakdownTable({
               )}
             >
               <span className="block whitespace-nowrap">
-                {formatWon(labGrandTotal)}
+                {formatManWon(labGrandTotal)}
               </span>
               {labSettlementHint ? (
                 <span className="mt-0.5 block text-[10px] font-normal leading-snug text-muted-foreground">
@@ -647,23 +641,23 @@ export function PracticeTransferFeeEstimate({
   const labFeeLabel = hasBudgetRange
     ? `기공비 ${formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}`
     : labProsthesisTotal > 0
-      ? `기공비 ${formatWon(labProsthesisTotal)}`
+      ? `기공비 ${formatManWon(labProsthesisTotal)}`
       : "";
   const simple = isLab
     ? labSettlementDiffers
-      ? `수령 ${formatWon(labSettlementDisplay)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
+      ? `수령 ${formatManWon(labSettlementDisplay)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
       : null
     : quote.isRemake
-      ? `리메이크 기공비 ${formatWon(quote.labFeeTotal)}`
+      ? `리메이크 기공비 ${formatManWon(quote.labFeeTotal)}`
       : [
           labFeeLabel,
           quote.labAbutmentTotal > 0
-            ? `기공소어벗 ${formatWon(quote.labAbutmentTotal)}`
+            ? `기공소어벗 ${formatManWon(quote.labAbutmentTotal)}`
             : quote.labAbutmentPending
               ? "기공소어벗 요청중"
               : "",
           quote.abutmentRetailTotal > 0
-            ? `어벗 ${formatWon(quote.abutmentRetailTotal)}`
+            ? `어벗 ${formatManWon(quote.abutmentRetailTotal)}`
             : quote.abutmentQuotePending
               ? "어벗 별도 고지"
               : "",
@@ -672,7 +666,7 @@ export function PracticeTransferFeeEstimate({
           .join(" · ") ||
         (hasBudgetRange
           ? `기공비 ${formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}`
-          : `기공비 ${formatWon(quote.labFeeTotal)}`);
+          : `기공비 ${formatManWon(quote.labFeeTotal)}`);
   const labFeeUnset = !isLab && quote.labFeeConfigured === false;
   /** 기공소만: 생성 스냅샷 배수. 치과 견적에는 표기하지 않음 */
   const surchargeLabel =
@@ -775,7 +769,7 @@ export function PracticeTransferFeeEstimate({
                 <span className="font-medium text-slate-600">{title} </span>
                 {hasBudgetRange && !isLab
                   ? formatWonRange(creditMin, amount)
-                  : formatWon(amount)}
+                  : formatManWon(amount)}
                 {surchargeLabel ? (
                   <span className="ml-1.5 text-[11px] font-medium text-amber-700">
                     {surchargeLabel}
@@ -844,7 +838,7 @@ export function PracticeTransferFeeEstimate({
                       <>
                         수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
                         <span className="font-medium text-foreground">
-                          {formatWon(labSettlementDisplay)}
+                          {formatManWon(labSettlementDisplay)}
                         </span>
                       </>
                     ) : null
@@ -859,17 +853,18 @@ export function PracticeTransferFeeEstimate({
                   <p className="text-center text-[11px] text-muted-foreground">
                     수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
                     <span className="font-medium text-foreground">
-                      {formatWon(labSettlementDisplay)}
+                      {formatManWon(labSettlementDisplay)}
                     </span>
                   </p>
                 ) : null}
                 {hasBudgetSpread ? (
                   <p className="text-[11px] text-muted-foreground">
-                    레거시 기공비 구간이 저장된 의뢰입니다. 수락 시 확정·청구됩니다.
+                    기공소 미확정 · 하한~상한 별점에 따른 기공비 구간입니다. 수락
+                    기공소 별점에 비례해 확정·청구됩니다.
                   </p>
                 ) : hasBudgetRange ? (
                   <p className="text-[11px] text-muted-foreground">
-                    선택 별점에 따른 평균 기공비로 견적·청구됩니다.
+                    수락한 기공소 별점에 비례해 기공비가 확정·청구됩니다.
                   </p>
                 ) : null}
               </div>
@@ -889,7 +884,7 @@ export function PracticeTransferFeeEstimate({
                         ? quote.abutmentQuotePending &&
                           quote.abutmentRetailTotal <= 0
                           ? "별도 고지"
-                          : formatWon(
+                          : formatManWon(
                               Math.max(
                                 0,
                                 Math.round(Number(quote.abutmentRetailTotal || 0)) -
@@ -902,7 +897,7 @@ export function PracticeTransferFeeEstimate({
                         : quote.abutmentQuotePending &&
                             quote.abutmentRetailTotal <= 0
                           ? "별도 고지"
-                          : formatWon(quote.abutmentRetailTotal)}
+                          : formatManWon(quote.abutmentRetailTotal)}
                     </span>
                   </p>
                 ) : null}
@@ -910,14 +905,14 @@ export function PracticeTransferFeeEstimate({
                   <p>
                     {designFeeLabel}{" "}
                     <span className="font-medium">
-                      {formatWon(abutmentDesignLabFee * abutmentDesignQty)}
+                      {formatManWon(abutmentDesignLabFee * abutmentDesignQty)}
                     </span>
                   </p>
                 ) : null}
                 <p className="text-[11px] text-muted-foreground">
                   {hasBudgetSpread
-                    ? "레거시 기공비 구간이 저장된 의뢰입니다. 수락 시 확정·청구됩니다."
-                    : "선택 별점에 따른 평균 기공비로 견적·청구됩니다."}
+                    ? "기공소 미확정 · 하한~상한 별점에 따른 기공비 구간입니다. 수락 기공소 별점에 비례해 확정·청구됩니다."
+                    : "수락한 기공소 별점에 비례해 기공비가 확정·청구됩니다."}
                 </p>
               </div>
             ) : (
@@ -937,7 +932,7 @@ export function PracticeTransferFeeEstimate({
                   <p key={row.key} className="tabular-nums">
                     {row.label}{" "}
                     <span className="font-medium text-foreground">
-                      {formatWon(row.amount)}
+                      {formatManWon(row.amount)}
                     </span>
                   </p>
                 ))}
@@ -953,7 +948,7 @@ export function PracticeTransferFeeEstimate({
                       creditMin + shippingTotal,
                       amount + shippingTotal,
                     )}`
-                  : `크레딧 소비 총액 ${formatWon(quote.total + shippingTotal)}`}
+                  : `크레딧 소비 총액 ${formatManWon(quote.total + shippingTotal)}`}
               </p>
             ) : null}
           </TooltipContent>

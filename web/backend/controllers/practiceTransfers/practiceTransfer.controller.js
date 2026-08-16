@@ -65,6 +65,7 @@ import {
   normalizePracticeLabRatingMemo,
   PRACTICE_LAB_RATING_MAX,
   PRACTICE_LAB_RATING_MIN,
+  resolveAutoMatchEligibleStarBand,
   resolveStarDowngrade,
   toLabRatingSummaryApi,
   toPracticeLabRatingPublicApi,
@@ -1944,6 +1945,7 @@ export async function createPracticeTransfer(req, res) {
           .select({
             "practiceTransferSettings.autoMatchBudget": 1,
             "practiceTransferSettings.autoMatchMinLabRating": 1,
+            "practiceTransferSettings.autoMatchMaxLabRating": 1,
             "practiceTransferSettings.implantFavorites": 1,
             practiceLabRatings: 1,
           })
@@ -1951,12 +1953,18 @@ export async function createPracticeTransfer(req, res) {
         loadAutoMatchBudgetCatalog(),
       ]);
       autoMatchCatalog = catalog;
-      const minStars = normalizeAutoMatchMinLabRating(
-        req.body?.autoMatchMinLabRating ??
+      const starBand = resolveAutoMatchEligibleStarBand({
+        minStars:
+          req.body?.autoMatchMinLabRating ??
           practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
-      );
+        maxStars:
+          req.body?.autoMatchMaxLabRating ??
+          practiceForBudget?.practiceTransferSettings?.autoMatchMaxLabRating,
+      });
+      const minStars = starBand.minStars;
       autoMatchBudget = resolveAutoMatchBudgetOrDefaults(null, catalog, {
         minStars,
+        maxStars: starBand.maxStars,
       });
 
       const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
@@ -1964,6 +1972,7 @@ export async function createPracticeTransfer(req, res) {
         budget: autoMatchBudget,
         catalog,
         autoMatchMinLabRating: minStars,
+        autoMatchMaxLabRating: starBand.maxStars,
         practiceLabRatings: practiceForBudget?.practiceLabRatings,
       });
       autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
@@ -1971,7 +1980,7 @@ export async function createPracticeTransfer(req, res) {
       if (autoMatchEligibleLabAnchorIds.length === 0) {
         const skipped = eligibility.skipped || {};
         let message =
-          "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요.";
+          "설정한 별점 범위에 맞는 인증 기공소가 없습니다. 범위를 넓히거나 지정 기공소를 선택해주세요.";
         if (
           skipped.feeUnconfigured > 0 &&
           skipped.rating === 0
@@ -1980,7 +1989,7 @@ export async function createPracticeTransfer(req, res) {
             "인증 기공소의 기공수가가 아직 설정되지 않았습니다. 기공소에서 수가를 켜거나 지정 기공소를 선택해주세요.";
         } else if (skipped.rating > 0) {
           message =
-            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요.";
+            "설정한 별점 범위에 맞는 인증 기공소가 없습니다. 범위를 넓히거나 지정 기공소를 선택해주세요.";
         }
         return res.status(409).json({
           success: false,
@@ -2639,6 +2648,7 @@ const AUTO_MATCH_LAB_SENTINEL = "__auto_match__";
  * 치과→기공소 rating 저장. 자동/지정 공통.
  * body: { stars: 1|2|3, memo?: string }
  * 기공소에는 노출하지 않음(기록 치과·관리자만).
+ * 치과·기공소 쌍당 1건(지정·매칭 공통). 재평가 시 이전 별점·메모를 덮어씀.
  */
 export async function upsertPracticeTransferLabRating(req, res) {
   try {
@@ -5102,24 +5112,32 @@ export async function retargetPracticeTransferLab(req, res) {
         BusinessAnchor.findById(practiceAnchorId)
           .select({
             "practiceTransferSettings.autoMatchMinLabRating": 1,
+            "practiceTransferSettings.autoMatchMaxLabRating": 1,
             practiceLabRatings: 1,
           })
           .lean(),
         loadAutoMatchBudgetCatalog(),
       ]);
       autoMatchCatalog = catalog;
-      const minStars = normalizeAutoMatchMinLabRating(
-        req.body?.autoMatchMinLabRating ??
+      const starBand = resolveAutoMatchEligibleStarBand({
+        minStars:
+          req.body?.autoMatchMinLabRating ??
           practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
-      );
+        maxStars:
+          req.body?.autoMatchMaxLabRating ??
+          practiceForBudget?.practiceTransferSettings?.autoMatchMaxLabRating,
+      });
+      const minStars = starBand.minStars;
       autoMatchBudget = resolveAutoMatchBudgetOrDefaults(null, catalog, {
         minStars,
+        maxStars: starBand.maxStars,
       });
       const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
         toothWorks,
         budget: autoMatchBudget,
         catalog,
         autoMatchMinLabRating: minStars,
+        autoMatchMaxLabRating: starBand.maxStars,
         practiceLabRatings: practiceForBudget?.practiceLabRatings,
       });
       autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
@@ -5128,7 +5146,7 @@ export async function retargetPracticeTransferLab(req, res) {
         return res.status(409).json({
           success: false,
           message:
-            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요.",
+            "설정한 별점 범위에 맞는 인증 기공소가 없습니다. 범위를 넓히거나 지정 기공소를 선택해주세요.",
           reason: "auto_match_no_eligible_labs",
         });
       }

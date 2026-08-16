@@ -213,8 +213,11 @@ import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practi
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import {
+  DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  normalizeAutoMatchMaxLabRating,
   normalizeAutoMatchMinLabRating,
+  resolveAutoMatchEligibleStarBand,
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
@@ -464,6 +467,7 @@ type PracticeTransferSettingsPayload = {
   defaultAbutmentProductMode?: AbutmentProductMode;
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   autoMatchMinLabRating?: number;
+  autoMatchMaxLabRating?: number;
   abutsLabFeeCatalog?: AbutsLabFeeCatalogItem[] | null;
   updatedAt?: string | null;
 };
@@ -1109,6 +1113,9 @@ export const PracticeFileTransferPage = ({
   const [autoMatchMinLabRating, setAutoMatchMinLabRating] = useState(
     DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   );
+  const [autoMatchMaxLabRating, setAutoMatchMaxLabRating] = useState(
+    DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+  );
   const [abutsLabFeeCatalog, setAbutsLabFeeCatalog] = useState<
     AbutsLabFeeCatalogItem[] | null
   >(null);
@@ -1574,9 +1581,22 @@ export const PracticeFileTransferPage = ({
       payload,
       "autoMatchMinLabRating",
     );
-    const nextMinStars = hasAutoMatchMinLabRating
-      ? normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating)
-      : null;
+    const hasAutoMatchMaxLabRating = Object.prototype.hasOwnProperty.call(
+      payload,
+      "autoMatchMaxLabRating",
+    );
+    const nextStarBand =
+      hasAutoMatchMinLabRating || hasAutoMatchMaxLabRating
+        ? resolveAutoMatchEligibleStarBand({
+            minStars: hasAutoMatchMinLabRating
+              ? payload.autoMatchMinLabRating
+              : undefined,
+            maxStars: hasAutoMatchMaxLabRating
+              ? payload.autoMatchMaxLabRating
+              : undefined,
+          })
+        : null;
+    const nextMinStars = nextStarBand?.minStars ?? null;
     const hasAutoMatchBudget = Object.prototype.hasOwnProperty.call(
       payload,
       "autoMatchBudget",
@@ -1586,7 +1606,12 @@ export const PracticeFileTransferPage = ({
         ? resolveAutoMatchBudgetOrDefaults(
             payload.autoMatchBudget,
             payload.abutsLabFeeCatalog,
-            nextMinStars != null ? { minStars: nextMinStars } : undefined,
+            nextMinStars != null
+              ? {
+                  minStars: nextMinStars,
+                  maxStars: nextStarBand?.maxStars,
+                }
+              : undefined,
           )
         : null;
     if (Array.isArray(payload.abutsLabFeeCatalog)) {
@@ -1606,10 +1631,9 @@ export const PracticeFileTransferPage = ({
     if (nextAutoMatchBudget) {
       setAutoMatchBudget(nextAutoMatchBudget);
     }
-    if (hasAutoMatchMinLabRating) {
-      setAutoMatchMinLabRating(
-        normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating),
-      );
+    if (nextStarBand) {
+      setAutoMatchMinLabRating(nextStarBand.minStars);
+      setAutoMatchMaxLabRating(nextStarBand.maxStars);
     }
     setToothWorks((prev) =>
       prev.map((row) => {
@@ -1650,6 +1674,10 @@ export const PracticeFileTransferPage = ({
         params,
         "autoMatchMinLabRating",
       );
+      const hasAutoMatchMaxLabRating = Object.prototype.hasOwnProperty.call(
+        params,
+        "autoMatchMaxLabRating",
+      );
 
       const jsonBody: Record<string, unknown> = {};
       if (hasArrivalDefaultDays) {
@@ -1679,10 +1707,17 @@ export const PracticeFileTransferPage = ({
         );
       }
       // autoMatchBudget는 서버에서 무시(v4: 별점으로 조립).
-      if (hasAutoMatchMinLabRating) {
-        jsonBody.autoMatchMinLabRating = normalizeAutoMatchMinLabRating(
-          params.autoMatchMinLabRating,
-        );
+      if (hasAutoMatchMinLabRating || hasAutoMatchMaxLabRating) {
+        const band = resolveAutoMatchEligibleStarBand({
+          minStars: hasAutoMatchMinLabRating
+            ? params.autoMatchMinLabRating
+            : autoMatchMinLabRating,
+          maxStars: hasAutoMatchMaxLabRating
+            ? params.autoMatchMaxLabRating
+            : autoMatchMaxLabRating,
+        });
+        jsonBody.autoMatchMinLabRating = band.minStars;
+        jsonBody.autoMatchMaxLabRating = band.maxStars;
       }
       if (Object.keys(jsonBody).length === 0) return true;
 
@@ -1743,6 +1778,12 @@ export const PracticeFileTransferPage = ({
                   ? params.autoMatchMinLabRating
                   : undefined),
             ),
+            autoMatchMaxLabRating: normalizeAutoMatchMaxLabRating(
+              payload?.autoMatchMaxLabRating ??
+                (hasAutoMatchMaxLabRating
+                  ? params.autoMatchMaxLabRating
+                  : undefined),
+            ),
             savedAt: Date.now(),
           }),
         );
@@ -1752,7 +1793,16 @@ export const PracticeFileTransferPage = ({
 
       return true;
     },
-    [applyPracticeTransferSettings, authToken, memoSnippets, implantFavorites, abutmentFavorites, abutsLabFeeCatalog],
+    [
+      applyPracticeTransferSettings,
+      authToken,
+      memoSnippets,
+      implantFavorites,
+      abutmentFavorites,
+      abutsLabFeeCatalog,
+      autoMatchMinLabRating,
+      autoMatchMaxLabRating,
+    ],
   );
 
   const myUserId = String(authUser?.id || (authUser as { _id?: string } | null)?._id || "").trim();
@@ -2185,6 +2235,9 @@ export const PracticeFileTransferPage = ({
         setAutoMatchMinLabRating(
           normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating),
         );
+        setAutoMatchMaxLabRating(
+          normalizeAutoMatchMaxLabRating(payload.autoMatchMaxLabRating),
+        );
         setAutoMatchBudget(
           resolveAutoMatchBudgetOrDefaults(
             payload.autoMatchBudget,
@@ -2192,6 +2245,9 @@ export const PracticeFileTransferPage = ({
             {
               minStars: normalizeAutoMatchMinLabRating(
                 payload.autoMatchMinLabRating,
+              ),
+              maxStars: normalizeAutoMatchMaxLabRating(
+                payload.autoMatchMaxLabRating,
               ),
             },
           ),
@@ -2226,6 +2282,9 @@ export const PracticeFileTransferPage = ({
             ),
             autoMatchMinLabRating: normalizeAutoMatchMinLabRating(
               payload?.autoMatchMinLabRating,
+            ),
+            autoMatchMaxLabRating: normalizeAutoMatchMaxLabRating(
+              payload?.autoMatchMaxLabRating,
             ),
             savedAt: Date.now(),
           }),
@@ -4848,7 +4907,10 @@ export const PracticeFileTransferPage = ({
       const budgetForAuto = resolveAutoMatchBudgetOrDefaults(
         autoMatchBudget,
         abutsLabFeeCatalog,
-        { minStars: autoMatchMinLabRating },
+        {
+          minStars: autoMatchMinLabRating,
+          maxStars: autoMatchMaxLabRating,
+        },
       );
       const practiceRouting = {
         targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
@@ -4925,6 +4987,8 @@ export const PracticeFileTransferPage = ({
           skipDesignConfirm,
           skipJig: effectiveSkipJig,
           autoMatchBudget: autoMatch ? budgetForAuto : undefined,
+          autoMatchMinLabRating: autoMatch ? autoMatchMinLabRating : undefined,
+          autoMatchMaxLabRating: autoMatch ? autoMatchMaxLabRating : undefined,
           caseInfos: caseInfosPayload,
         },
       });
@@ -5561,16 +5625,41 @@ export const PracticeFileTransferPage = ({
                   autoMatchBudget,
                   abutsLabFeeCatalog,
                   autoMatchMinLabRating,
+                  autoMatchMaxLabRating,
                   onAutoMatchMinLabRatingChange: (next) => {
-                    const normalized = normalizeAutoMatchMinLabRating(next);
-                    setAutoMatchMinLabRating(normalized);
+                    const band = resolveAutoMatchEligibleStarBand({
+                      minStars: next,
+                      maxStars: autoMatchMaxLabRating,
+                    });
+                    setAutoMatchMinLabRating(band.minStars);
+                    setAutoMatchMaxLabRating(band.maxStars);
                     setAutoMatchBudget(
                       resolveAutoMatchBudgetOrDefaults(null, abutsLabFeeCatalog, {
-                        minStars: normalized,
+                        minStars: band.minStars,
+                        maxStars: band.maxStars,
                       }),
                     );
                     void savePracticeTransferSettingsToServer({
-                      autoMatchMinLabRating: normalized,
+                      autoMatchMinLabRating: band.minStars,
+                      autoMatchMaxLabRating: band.maxStars,
+                    }).catch(() => {});
+                  },
+                  onAutoMatchMaxLabRatingChange: (next) => {
+                    const band = resolveAutoMatchEligibleStarBand({
+                      minStars: autoMatchMinLabRating,
+                      maxStars: next,
+                    });
+                    setAutoMatchMinLabRating(band.minStars);
+                    setAutoMatchMaxLabRating(band.maxStars);
+                    setAutoMatchBudget(
+                      resolveAutoMatchBudgetOrDefaults(null, abutsLabFeeCatalog, {
+                        minStars: band.minStars,
+                        maxStars: band.maxStars,
+                      }),
+                    );
+                    void savePracticeTransferSettingsToServer({
+                      autoMatchMinLabRating: band.minStars,
+                      autoMatchMaxLabRating: band.maxStars,
                     }).catch(() => {});
                   },
                   onMemoSnippetsChange: async (next) => {
@@ -7115,15 +7204,40 @@ export const PracticeFileTransferPage = ({
             onTogglePinLab: togglePinLab,
             autoMatchMinLabRating,
             onAutoMatchMinLabRatingChange: (next) => {
-              const normalized = normalizeAutoMatchMinLabRating(next);
-              setAutoMatchMinLabRating(normalized);
+              const band = resolveAutoMatchEligibleStarBand({
+                minStars: next,
+                maxStars: autoMatchMaxLabRating,
+              });
+              setAutoMatchMinLabRating(band.minStars);
+              setAutoMatchMaxLabRating(band.maxStars);
               setAutoMatchBudget(
                 resolveAutoMatchBudgetOrDefaults(null, abutsLabFeeCatalog, {
-                  minStars: normalized,
+                  minStars: band.minStars,
+                  maxStars: band.maxStars,
                 }),
               );
               void savePracticeTransferSettingsToServer({
-                autoMatchMinLabRating: normalized,
+                autoMatchMinLabRating: band.minStars,
+                autoMatchMaxLabRating: band.maxStars,
+              }).catch(() => {});
+            },
+            autoMatchMaxLabRating,
+            onAutoMatchMaxLabRatingChange: (next) => {
+              const band = resolveAutoMatchEligibleStarBand({
+                minStars: autoMatchMinLabRating,
+                maxStars: next,
+              });
+              setAutoMatchMinLabRating(band.minStars);
+              setAutoMatchMaxLabRating(band.maxStars);
+              setAutoMatchBudget(
+                resolveAutoMatchBudgetOrDefaults(null, abutsLabFeeCatalog, {
+                  minStars: band.minStars,
+                  maxStars: band.maxStars,
+                }),
+              );
+              void savePracticeTransferSettingsToServer({
+                autoMatchMinLabRating: band.minStars,
+                autoMatchMaxLabRating: band.maxStars,
               }).catch(() => {});
             },
             autoMatchBudget,
@@ -7151,7 +7265,10 @@ export const PracticeFileTransferPage = ({
               const budgetForAuto = resolveAutoMatchBudgetOrDefaults(
                 autoMatchBudget,
                 abutsLabFeeCatalog,
-                { minStars: autoMatchMinLabRating },
+                {
+                  minStars: autoMatchMinLabRating,
+                  maxStars: autoMatchMaxLabRating,
+                },
               );
               const res = await apiFetch<{
                 success?: boolean;
@@ -7172,6 +7289,9 @@ export const PracticeFileTransferPage = ({
                   targetLabName: String(selectedLab.name || "").trim(),
                   autoMatchMinLabRating: autoMatch
                     ? autoMatchMinLabRating
+                    : undefined,
+                  autoMatchMaxLabRating: autoMatch
+                    ? autoMatchMaxLabRating
                     : undefined,
                   autoMatchBudget: autoMatch ? budgetForAuto : undefined,
                 },

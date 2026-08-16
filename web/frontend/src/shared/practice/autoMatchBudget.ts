@@ -6,11 +6,13 @@
 // - 2026-08-16: 모달은 min%/max%만. 기본 80%~120%. 카탈로그(인증 기공소 수가 평균)×%.
 // - 2026-08-16: % 예산 normalize 시 견적 합산 minLabFee/maxLabFee 보존(툴팁 구간).
 // - 2026-08-16: v4 고정가(평균×별점배수). 기공비 범위 UI 제거.
+// - 2026-08-16: v4 하한~상한 별점 대역 → 항목 min/max 기공비(수락 전 견적 구간).
 
 import {
+  DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   feeMultiplierForStars,
-  normalizeAutoMatchMinLabRating,
+  resolveAutoMatchEligibleStarBand,
 } from "@/shared/practice/practiceLabRating";
 
 export const ADMIN_LAB_FEE_BASE = {
@@ -61,9 +63,11 @@ export type AutoMatchBudgetPct = { minPct: number; maxPct: number };
 
 export type PracticeTransferAutoMatchBudget = {
   version?: 2 | 3 | 4;
-  /** v4: 선택 최소 별점(3~5) */
+  /** v4: 별점 하한(기공비 하한 배수) */
   stars?: number;
-  /** v4: 평균 대비 배수 */
+  /** v4: 별점 상한(기공비 상한 배수). 없으면 stars와 동일 */
+  maxStars?: number;
+  /** v4: 하한 배수(레거시·표시) */
   feeMultiplier?: number;
   /** @deprecated 레거시 v3 */
   minPct?: number;
@@ -208,6 +212,30 @@ export const buildFixedAutoMatchBudgetItems = (
   return items;
 };
 
+/** 하한·상한 별점 배수 → 항목별 min/max 기공비 */
+export const buildStarBandAutoMatchBudgetItems = (
+  catalog: AbutsLabFeeCatalogItem[] | null | undefined,
+  minStars: unknown,
+  maxStars: unknown,
+): Record<string, AutoMatchBudgetBand> => {
+  const band = resolveAutoMatchEligibleStarBand({ minStars, maxStars });
+  const minM = feeMultiplierForStars(band.minStars);
+  const maxM = feeMultiplierForStars(band.maxStars);
+  const items: Record<string, AutoMatchBudgetBand> = {};
+  for (const row of normalizeAbutsLabFeeCatalog(catalog)) {
+    const lo = Math.min(
+      MAX_UNIT_FEE,
+      Math.max(0, ceilToFeeStep(row.price * minM)),
+    );
+    const hi = Math.min(
+      MAX_UNIT_FEE,
+      Math.max(0, ceilToFeeStep(row.price * maxM)),
+    );
+    items[row.id] = { min: Math.min(lo, hi), max: Math.max(lo, hi) };
+  }
+  return items;
+};
+
 export const normalizeAutoMatchBudgetBand = (
   raw: unknown,
 ): AutoMatchBudgetBand | null => {
@@ -243,13 +271,35 @@ export const resolveAutoMatchBudgetFromStars = (
   stars: unknown,
   catalog?: AbutsLabFeeCatalogItem[] | null,
 ): PracticeTransferAutoMatchBudget => {
-  const normalizedStars = normalizeAutoMatchMinLabRating(stars);
-  const feeMultiplier = feeMultiplierForStars(normalizedStars);
+  return resolveAutoMatchBudgetFromStarBand(
+    { minStars: stars, maxStars: stars },
+    catalog,
+  );
+};
+
+/** v4 SSOT — 별점 하한~상한 → 기공비 구간 */
+export const resolveAutoMatchBudgetFromStarBand = (
+  {
+    minStars,
+    maxStars,
+  }: {
+    minStars?: unknown;
+    maxStars?: unknown;
+  } = {},
+  catalog?: AbutsLabFeeCatalogItem[] | null,
+): PracticeTransferAutoMatchBudget => {
+  const band = resolveAutoMatchEligibleStarBand({ minStars, maxStars });
+  const feeMultiplier = feeMultiplierForStars(band.minStars);
   return {
     version: 4,
-    stars: normalizedStars,
+    stars: band.minStars,
+    maxStars: band.maxStars,
     feeMultiplier,
-    items: buildFixedAutoMatchBudgetItems(catalog, feeMultiplier),
+    items: buildStarBandAutoMatchBudgetItems(
+      catalog,
+      band.minStars,
+      band.maxStars,
+    ),
   };
 };
 
@@ -262,19 +312,24 @@ export const normalizePracticeTransferAutoMatchBudget = (
 
   const version = Number(r.version);
   if (version === 4 || (r.stars != null && r.feeMultiplier != null)) {
-    const stars = normalizeAutoMatchMinLabRating(
-      r.stars ?? DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
-    );
-    const feeMultiplier =
-      Number.isFinite(Number(r.feeMultiplier)) && Number(r.feeMultiplier) > 0
-        ? Number(r.feeMultiplier)
-        : feeMultiplierForStars(stars);
+    const starBand = resolveAutoMatchEligibleStarBand({
+      minStars: r.stars ?? DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+      maxStars:
+        r.maxStars != null
+          ? r.maxStars
+          : r.stars ?? DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+    });
     return attachCaseLabFeeTotals(
       {
         version: 4,
-        stars,
-        feeMultiplier,
-        items: buildFixedAutoMatchBudgetItems(catalog, feeMultiplier),
+        stars: starBand.minStars,
+        maxStars: starBand.maxStars,
+        feeMultiplier: feeMultiplierForStars(starBand.minStars),
+        items: buildStarBandAutoMatchBudgetItems(
+          catalog,
+          starBand.minStars,
+          starBand.maxStars,
+        ),
       },
       r,
     );
@@ -344,10 +399,16 @@ export const normalizePracticeTransferAutoMatchBudget = (
 export const resolveAutoMatchBudgetOrDefaults = (
   raw: unknown,
   catalog?: AbutsLabFeeCatalogItem[] | null,
-  opts?: { minStars?: unknown },
+  opts?: { minStars?: unknown; maxStars?: unknown },
 ): PracticeTransferAutoMatchBudget => {
-  if (opts?.minStars != null) {
-    return resolveAutoMatchBudgetFromStars(opts.minStars, catalog);
+  if (opts?.minStars != null || opts?.maxStars != null) {
+    return resolveAutoMatchBudgetFromStarBand(
+      {
+        minStars: opts.minStars ?? DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+        maxStars: opts.maxStars ?? DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+      },
+      catalog,
+    );
   }
 
   const normalized = normalizePracticeTransferAutoMatchBudget(raw, catalog);
@@ -356,8 +417,11 @@ export const resolveAutoMatchBudgetOrDefaults = (
     return normalized;
   }
 
-  return resolveAutoMatchBudgetFromStars(
-    DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  return resolveAutoMatchBudgetFromStarBand(
+    {
+      minStars: DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+      maxStars: DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+    },
     catalog,
   );
 };

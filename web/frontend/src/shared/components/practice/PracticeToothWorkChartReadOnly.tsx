@@ -41,6 +41,7 @@ import type {
   PracticeTransferFeeQuote,
   PracticeTransferFeeQuoteViewer,
 } from "@/shared/practice/practiceTransferFeeQuote";
+import { formatWonRange } from "@/shared/practice/practiceTransferFeeQuote";
 
 const TOOTH_CHART_VISIBLE = 6;
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
@@ -140,6 +141,24 @@ export const PracticeToothWorkChartReadOnly = ({
     toothWorks,
     storedQuote: storedFeeQuote,
   });
+  const labFeeByTooth = useMemo(() => {
+    const map = new Map<string, { min: number; max: number }>();
+    const lines = feeQuote?.lines || storedFeeQuote?.lines || [];
+    for (const line of lines) {
+      const tooth = String(line.toothNumber || "").trim();
+      if (!tooth) continue;
+      const max = Math.max(0, Math.round(Number(line.labFee || 0)));
+      if (max <= 0 && !(line.labFeeMin != null && Number(line.labFeeMin) > 0)) {
+        continue;
+      }
+      const min =
+        line.labFeeMin != null && Number.isFinite(Number(line.labFeeMin))
+          ? Math.max(0, Math.round(Number(line.labFeeMin)))
+          : max;
+      map.set(tooth, { min, max: Math.max(min, max) });
+    }
+    return map;
+  }, [feeQuote?.lines, storedFeeQuote?.lines]);
 
   const [toothChartOffsets, setToothChartOffsets] = useState<Record<string, number>>(() =>
     initialToothChartOffsets(selectedTeeth),
@@ -401,6 +420,21 @@ export const PracticeToothWorkChartReadOnly = ({
                         </TooltipProvider>
                       </div>
                     ) : null}
+
+                    {(() => {
+                      const fee = labFeeByTooth.get(
+                        String(row.toothNumber || "").trim(),
+                      );
+                      if (!fee || isMissingTooth) return null;
+                      return (
+                        <p
+                          className="relative z-[1] mt-1 w-full px-0.5 text-center text-[10px] leading-tight tabular-nums text-slate-500"
+                          title="기공소 기공비(하한~상한)"
+                        >
+                          {formatWonRange(fee.min, fee.max)}
+                        </p>
+                      );
+                    })()}
                   </div>
                 </div>
                 {bridgeSlot}

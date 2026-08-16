@@ -13,7 +13,7 @@
 // - 2026-08-15: 자동매칭 예산 필터에서 practice 할증 제외(공개 수가 기준).
 // - 2026-08-16: 별점 게이트는 전체 치과 평가 합산·평균.
 // - 2026-08-16: v4 고정가. 단가 밴드 적격 필터 제거.
-// - 2026-08-16: 공개 별점 대역 = 설정~설정+2.
+// - 2026-08-16: 공개 별점 대역 = 치과 설정 하한~상한(기본 3~4).
 
 import {
   isLabFeeScheduleConfigured,
@@ -53,6 +53,7 @@ import {
   bandFromAdminBase,
   buildDefaultAutoMatchBudgetItems,
   buildFixedAutoMatchBudgetItems,
+  buildStarBandAutoMatchBudgetItems,
   buildItemsScheduleFromAutoMatchBudget,
   buildScheduleFromAutoMatchBudget,
   ceilToFeeStep,
@@ -63,6 +64,7 @@ import {
   normalizeAutoMatchBudget,
   normalizeAutoMatchBudgetPct,
   normalizeCatalogItems,
+  resolveAutoMatchBudgetFromStarBand,
   resolveAutoMatchBudgetFromStars,
   resolveAutoMatchBudgetOrDefaults,
   scaleLabUnitPricesByMultiplier,
@@ -77,6 +79,7 @@ export {
   bandFromAdminBase,
   buildDefaultAutoMatchBudgetItems,
   buildFixedAutoMatchBudgetItems,
+  buildStarBandAutoMatchBudgetItems,
   buildItemsScheduleFromAutoMatchBudget,
   buildScheduleFromAutoMatchBudget,
   ceilToFeeStep,
@@ -87,6 +90,7 @@ export {
   normalizeAutoMatchBudget,
   normalizeAutoMatchBudgetPct,
   normalizeCatalogItems,
+  resolveAutoMatchBudgetFromStarBand,
   resolveAutoMatchBudgetFromStars,
   resolveAutoMatchBudgetOrDefaults,
   scaleLabUnitPricesByMultiplier,
@@ -226,13 +230,14 @@ export function labUnitPricesFromSchedule(labFeeSchedule) {
  * 인증 기공소 중 별점·수가설정 게이트를 통과한 앵커 ID 목록.
  * 전송 생성 시에만 호출(수신 목록 핫패스에서 호출 금지).
  * v4: 단가 밴드 필터 없음. 청구는 플랫폼 고정가.
- * 별점 대역: 설정 하한 ~ 설정+2 상한(최대 5).
+ * 별점 대역: 치과 설정 하한~상한(기본 3~4).
  */
 export async function resolveAutoMatchEligibleLabAnchorIds({
   toothWorks,
   budget,
   catalog,
   autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  autoMatchMaxLabRating = undefined,
   practiceLabRatings = null,
 } = {}) {
   const catalogItems =
@@ -242,7 +247,10 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
   const minStars = normalizeAutoMatchMinLabRating(autoMatchMinLabRating);
   const band =
     normalizeAutoMatchBudget(budget, catalogItems) ||
-    resolveAutoMatchBudgetFromStars(minStars, catalogItems);
+    resolveAutoMatchBudgetFromStarBand(
+      { minStars, maxStars: autoMatchMaxLabRating },
+      catalogItems,
+    );
 
   const labs = await loadAutoMatchEligibleLabAnchors({
     select: {
@@ -277,6 +285,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
         aggregated: globalRatings,
         labAnchorId: lab._id,
         minStars,
+        maxStars: autoMatchMaxLabRating,
       })
     ) {
       skipped.rating += 1;

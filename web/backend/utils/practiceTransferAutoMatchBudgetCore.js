@@ -4,16 +4,18 @@
 // - web/backend/utils/practiceLabRating.js
 // - web/frontend/src/shared/practice/autoMatchBudget.ts
 //
-// 자동매칭 기공비 — v4 플랫폼 고정가(평균×별점배수). min=max.
+// 자동매칭 기공비 — v4 플랫폼 고정가(평균×별점배수). 하한~상한 별점이면 min≠max.
 // 레거시 v2/v3(항목 밴드·min%/max%)는 읽기 호환만.
 // - 2026-08-16: 모달은 min%/max%만 설정. 기본 80%~120%.
 // - 2026-08-16: % 예산 normalize 시 견적 합산 minLabFee/maxLabFee 보존.
 // - 2026-08-16: v4 고정가. 1→×0.8 / 2→×0.9 / 3→×1 / 4→×1.1 / 5→×1.2. 1천원 올림.
+// - 2026-08-16: v4 별점 하한~상한 → 항목 min/max(수락 전 견적 구간).
 
 import {
+  DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   feeMultiplierForStars,
-  normalizeAutoMatchMinLabRating,
+  resolveAutoMatchEligibleStarBand,
 } from "./practiceLabRating.js";
 
 const MAX_UNIT_FEE = 50_000_000;
@@ -213,16 +215,51 @@ export function buildFixedAutoMatchBudgetItems(catalog, feeMultiplier = 1) {
   return items;
 }
 
-/** v4 SSOT — 선택 별점(3~5) + 카탈로그 평균 → 고정 예산 */
-export function resolveAutoMatchBudgetFromStars(stars, catalog) {
-  const normalizedStars = normalizeAutoMatchMinLabRating(stars);
-  const feeMultiplier = feeMultiplierForStars(normalizedStars);
+/** 하한·상한 별점 배수 → 항목별 min/max 기공비 */
+export function buildStarBandAutoMatchBudgetItems(catalog, minStars, maxStars) {
+  const band = resolveAutoMatchEligibleStarBand({ minStars, maxStars });
+  const minM = feeMultiplierForStars(band.minStars);
+  const maxM = feeMultiplierForStars(band.maxStars);
+  const items = {};
+  for (const row of normalizeCatalogItems(catalog)) {
+    const lo = Math.min(
+      MAX_UNIT_FEE,
+      Math.max(0, ceilToFeeStep(row.price * minM)),
+    );
+    const hi = Math.min(
+      MAX_UNIT_FEE,
+      Math.max(0, ceilToFeeStep(row.price * maxM)),
+    );
+    items[row.id] = { min: Math.min(lo, hi), max: Math.max(lo, hi) };
+  }
+  return items;
+}
+
+/** v4 SSOT — 별점 하한~상한 → 기공비 구간 */
+export function resolveAutoMatchBudgetFromStarBand(
+  { minStars, maxStars } = {},
+  catalog,
+) {
+  const band = resolveAutoMatchEligibleStarBand({ minStars, maxStars });
   return {
     version: 4,
-    stars: normalizedStars,
-    feeMultiplier,
-    items: buildFixedAutoMatchBudgetItems(catalog, feeMultiplier),
+    stars: band.minStars,
+    maxStars: band.maxStars,
+    feeMultiplier: feeMultiplierForStars(band.minStars),
+    items: buildStarBandAutoMatchBudgetItems(
+      catalog,
+      band.minStars,
+      band.maxStars,
+    ),
   };
+}
+
+/** @deprecated 단일 별점 — resolveAutoMatchBudgetFromStarBand 사용 */
+export function resolveAutoMatchBudgetFromStars(stars, catalog) {
+  return resolveAutoMatchBudgetFromStarBand(
+    { minStars: stars, maxStars: stars },
+    catalog,
+  );
 }
 
 export function normalizeAutoMatchBudget(raw, catalog) {
@@ -230,19 +267,24 @@ export function normalizeAutoMatchBudget(raw, catalog) {
 
   const version = Number(raw.version);
   if (version === 4 || (raw.stars != null && raw.feeMultiplier != null)) {
-    const stars = normalizeAutoMatchMinLabRating(
-      raw.stars ?? DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
-    );
-    const feeMultiplier =
-      Number.isFinite(Number(raw.feeMultiplier)) && Number(raw.feeMultiplier) > 0
-        ? Number(raw.feeMultiplier)
-        : feeMultiplierForStars(stars);
+    const starBand = resolveAutoMatchEligibleStarBand({
+      minStars: raw.stars ?? DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+      maxStars:
+        raw.maxStars != null
+          ? raw.maxStars
+          : raw.stars ?? DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+    });
     return attachCaseLabFeeTotals(
       {
         version: 4,
-        stars,
-        feeMultiplier,
-        items: buildFixedAutoMatchBudgetItems(catalog, feeMultiplier),
+        stars: starBand.minStars,
+        maxStars: starBand.maxStars,
+        feeMultiplier: feeMultiplierForStars(starBand.minStars),
+        items: buildStarBandAutoMatchBudgetItems(
+          catalog,
+          starBand.minStars,
+          starBand.maxStars,
+        ),
       },
       raw,
     );
@@ -308,14 +350,20 @@ export function isAutoMatchBudgetConfigured(budget, catalog) {
 
 /**
  * 설정/견적용.
- * - v4(stars) 또는 stars 필드 → 고정가
+ * - opts.minStars/maxStars → 별점 대역 v4
+ * - v4(stars[/maxStars]) → 고정가 구간
  * - 레거시 raw → 읽기 호환
- * - 미설정 → 기본 별점 3 고정가
- * - opts.minStars가 있으면 그 별점으로 v4 조립(설정 GET·생성 SSOT)
+ * - 미설정 → 기본 3~4점
  */
 export function resolveAutoMatchBudgetOrDefaults(raw, catalog, opts = {}) {
-  if (opts.minStars != null) {
-    return resolveAutoMatchBudgetFromStars(opts.minStars, catalog);
+  if (opts.minStars != null || opts.maxStars != null) {
+    return resolveAutoMatchBudgetFromStarBand(
+      {
+        minStars: opts.minStars ?? DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+        maxStars: opts.maxStars ?? DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+      },
+      catalog,
+    );
   }
 
   const normalized = normalizeAutoMatchBudget(raw, catalog);
@@ -325,8 +373,11 @@ export function resolveAutoMatchBudgetOrDefaults(raw, catalog, opts = {}) {
     return normalized;
   }
 
-  return resolveAutoMatchBudgetFromStars(
-    DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  return resolveAutoMatchBudgetFromStarBand(
+    {
+      minStars: DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+      maxStars: DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
+    },
     catalog,
   );
 }

@@ -8,7 +8,8 @@
 // - 2026-08-16: 1점도 참여 가능(하한 1). 기공비 배수 1→×0.8. 우리치과 1점 하드 차단 제거.
 // - 2026-08-16: 평가 3회 이하→유효 3점(유예 상수 3).
 // - 2026-08-16: 별점 다운그레이드 — 유효별 수가배수 > 의뢰 별점배수일 때 표시 페이로드.
-// - 2026-08-16: 공개 대역 하한=설정·상한=설정+2(예: 2점 → 2~4점 기공소).
+// - 2026-08-16: 공개 대역 — 치과가 하한·상한 직접 설정(기본 3~4).
+// - 2026-08-16: 치과·기공소 쌍당 평가 1건. 재평가 시 덮어쓰기. 집계 ratingCount=평가 치과 수.
 
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 5;
@@ -16,12 +17,11 @@ export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
 /** 평가 모달 최초 작성 시 기본 별점(기존 평가 없을 때). */
 export const DEFAULT_PRACTICE_LAB_RATING_STARS = 3;
 export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 3;
+export const DEFAULT_AUTO_MATCH_MAX_LAB_RATING = 4;
 export const AUTO_MATCH_MIN_SELECTABLE = 1;
-/** 이 횟수 이하 평가면 유효 별점=3(미평가 포함). 3회 이하→3, 4회부터 실평균. */
+/** 이 치과 수 이하 평가면 유효 별점=3(미평가 포함). 3곳 이하→3, 4곳부터 실평균. */
 export const AUTO_MATCH_RATING_COUNT_GRACE = 3;
 export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
-/** 공개 상한 = 선택 별점 + 이 값(예: 2점 → 상한 4점). */
-export const AUTO_MATCH_ELIGIBLE_STAR_CAP_EXTRA = 2;
 
 const FEE_MULTIPLIER_BY_STARS: Record<number, number> = {
   1: 0.8,
@@ -71,24 +71,26 @@ export function normalizeAutoMatchMinLabRating(value: unknown): number {
   return Math.max(AUTO_MATCH_MIN_SELECTABLE, stars);
 }
 
-/** 선택 별점 → 참여 가능 유효별 상한(선택+2, 최대 5). */
-export function maxAutoMatchEligibleLabStars(stars: unknown): number {
-  return Math.min(
-    PRACTICE_LAB_RATING_MAX,
-    normalizeAutoMatchMinLabRating(stars) + AUTO_MATCH_ELIGIBLE_STAR_CAP_EXTRA,
-  );
+export function normalizeAutoMatchMaxLabRating(value: unknown): number {
+  const stars = normalizePracticeLabStars(value);
+  if (stars == null) return DEFAULT_AUTO_MATCH_MAX_LAB_RATING;
+  return Math.max(AUTO_MATCH_MIN_SELECTABLE, stars);
 }
 
-/** 선택 별점 → 공개 대역. 하한=설정, 상한=설정+2(최대 5). */
-export function resolveAutoMatchEligibleStarBand(stars: unknown): {
+/** 공개 대역. 하한·상한은 치과 설정. max < min이면 max를 min으로. */
+export function resolveAutoMatchEligibleStarBand({
+  minStars,
+  maxStars,
+}: {
+  minStars?: unknown;
+  maxStars?: unknown;
+} = {}): {
   minStars: number;
   maxStars: number;
 } {
-  const minStars = normalizeAutoMatchMinLabRating(stars);
-  return {
-    minStars,
-    maxStars: maxAutoMatchEligibleLabStars(minStars),
-  };
+  const min = normalizeAutoMatchMinLabRating(minStars);
+  const maxRaw = normalizeAutoMatchMaxLabRating(maxStars);
+  return { minStars: min, maxStars: Math.max(min, maxRaw) };
 }
 
 export function feeMultiplierForStars(stars: unknown): number {
@@ -125,10 +127,11 @@ export function parsePracticeLabRatingPublic(
   const row = raw as Record<string, unknown>;
   const stars = normalizePracticeLabStars(row.stars);
   if (stars == null) return null;
+  // 치과·기공소 쌍당 1건(레거시 ratingCount>1 정규화).
   return {
     stars,
     memo: normalizePracticeLabRatingMemo(row.memo),
-    ratingCount: Math.max(1, Math.floor(Number(row.ratingCount) || 1)),
+    ratingCount: 1,
     updatedAt: row.updatedAt ? String(row.updatedAt) : null,
   };
 }
