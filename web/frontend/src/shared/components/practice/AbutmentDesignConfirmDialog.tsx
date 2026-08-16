@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/RetentionGrooveField.tsx
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-08-16: teethOptions — 남은 CA 치아를 확인 모달에서 직접 선택(지정 다이얼로그 생략).
 // - 2026-08-16: 다파일 큐 progress·확인 버튼 라벨 전달.
 // - 2026-08-16: AbutmentModelConfirmDialog(lab-handoff) 어댑터로 통합.
 // - 2026-08-16: 유지홈 공통 필드·안내 모달. 계정 기본값(없음) 적용.
@@ -40,6 +41,8 @@ type Props = {
   queueCurrent?: number;
   /** total files in multi-file queue */
   queueTotal?: number;
+  /** 남은 치아 선택지(없으면 자유 입력) */
+  teethOptions?: { id: string; label: string }[];
   onConfirm: (caseInfos: AbutmentDesignConfirmCaseInfos) => void | Promise<void>;
   onCancel?: () => void;
 };
@@ -82,6 +85,7 @@ export function AbutmentDesignConfirmDialog({
   confirming = false,
   queueCurrent,
   queueTotal,
+  teethOptions = emptyOptions,
   onConfirm,
   onCancel,
 }: Props) {
@@ -280,7 +284,7 @@ export function AbutmentDesignConfirmDialog({
       syncSelectedConnection={syncSelectedConnection}
       clinicNameOptions={emptyOptions}
       patientNameOptions={emptyOptions}
-      teethOptions={emptyOptions}
+      teethOptions={teethOptions}
       addClinicPreset={noopPreset}
       clearAllClinicPresets={clearNoop}
       addPatientPreset={noopPreset}

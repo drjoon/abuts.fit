@@ -26,6 +26,7 @@ import {
   markReceivedPracticeTransferRead,
   markReceivedPracticeTransferAccepted,
   markReceivedPracticeTransferComplete,
+  appendReceivedPracticeTransferResultFiles,
   markReceivedPracticeTransferRelease,
   markReceivedPracticeTransferReject,
   markReceivedPracticeTransferDownloaded,
@@ -146,6 +147,13 @@ router.post(
   authenticate,
   receiveAuth,
   markReceivedPracticeTransferComplete,
+);
+
+router.post(
+  "/:transferId/result-files",
+  authenticate,
+  receiveAuth,
+  appendReceivedPracticeTransferResultFiles,
 );
 
 router.post(

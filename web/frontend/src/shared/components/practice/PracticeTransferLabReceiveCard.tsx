@@ -4,6 +4,9 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-08-16: 의뢰 수락 취소·작업 완료 취소 → 카드 헤더 우측.
+// - 2026-08-16: 부분 보철「보철 추가 업로드 (n)」·기대 슬롯 툴팁.
+// - 2026-08-16: 부분 보철「보철 추가 업로드」·어벗 툴팁(치아 수동 지정).
 // - 2026-08-16: 어벗 미완이면 보철 업로드 CTA 비활성(드롭은 어벗→보철 순).
 // - 2026-08-16: 카드 메타에 치아번호(11,21) — 보철 형태는 상세 모달.
 // - 2026-08-16: 치과와 동일 최신 메타(시각·상태·주문/도착·치과/환자). 메모·기간·메타뱃지·헤더 별점 제거.
@@ -13,7 +16,7 @@
 // - 2026-08-16: 어벗 가공 시작 시「어벗 생산 취소」는 숨기지 않고 비활성(의뢰 수락 취소와 동일).
 // - 2026-08-16: 어벗 가공 시작(준비 아님)이면 의뢰 수락 취소 비활성.
 // - 2026-08-16: 취소 라벨 — 수락중「의뢰 수락 취소」·보철완료후「작업 완료 취소」.
-// - 2026-08-16: 보철 완료(발송) 후 — 어벗·보철 CTA 비활성 + 오른쪽「취소」만(의뢰수락 재오픈).
+// - 2026-08-16: 보철 완료(발송) 후 — 어벗·보철 CTA 비활성 + 헤더「작업 완료 취소」.
 // - 2026-08-16: 별점 다운그레이드 배너 — 우리 별점·자동매칭 별점·수가 차이(accent/danger).
 // - 2026-08-16: CTA 라벨「어벗 생산 취소」.
 // - 2026-08-16: stuck(디자인 없음+완료 플래그)도 「어벗 생산 취소」·재오픈 후 업로드 CTA.
@@ -51,9 +54,12 @@ import { formatLabStarsLabel } from "@/shared/practice/practiceLabRating";
 import { SEMANTIC_BADGE, SEMANTIC_CALLOUT } from "@/shared/ui/semanticStatus";
 import {
   countPracticeTransferDesignFiles,
+  countPracticeTransferPendingProstheticFiles,
+  formatPracticeTransferProstheticSlotLabels,
   getPracticeTransferLabReceiveDisplayStatus,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
+  practiceTransferHasPartialProstheticUploads,
   practiceTransferNeedsMoreAbutmentDesigns,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
@@ -123,6 +129,14 @@ export function PracticeTransferLabReceiveCard({
   const hasCa = practiceTransferHasCustomAbutment(transfer);
   const needsMoreAbutmentDesigns =
     practiceTransferNeedsMoreAbutmentDesigns(transfer);
+  const hasPartialProsthetic =
+    practiceTransferHasPartialProstheticUploads(transfer);
+  const pendingProstheticCount =
+    countPracticeTransferPendingProstheticFiles(transfer);
+  const prostheticSlotLabels = formatPracticeTransferProstheticSlotLabels(
+    transfer,
+    { pendingOnly: hasPartialProsthetic },
+  );
   const isLabAccepted =
     Boolean(transfer.isAccepted) ||
     Boolean(transfer.isDownloaded) ||
@@ -154,6 +168,9 @@ export function PracticeTransferLabReceiveCard({
     (designFileCount > 0 || needsStageReopen) &&
     Array.isArray(transfer.production?.relatedRequestIds) &&
     transfer.production.relatedRequestIds.length > 0;
+  /** 보철완료 후 헤더「작업 완료 취소」(업로드 CTA는 비활성으로 하단 유지) */
+  const showCompletedStageHeaderCancel =
+    !showWorkActions && showAbutmentProductionCancel;
   const completeInputId = `practice-complete-${cardId}`;
   const acceptOverdue = isPracticeTransferAcceptOverdue({
     status: displayStatus,
@@ -171,7 +188,54 @@ export function PracticeTransferLabReceiveCard({
   };
 
   /** 수락 중(업로드 가능): 어벗디자인 있으면「어벗 생산 취소」(가공 중이면 비활성 유지) */
-  const productionCancelButton = showAbutmentProductionCancel ? (
+  const productionCancelButton =
+    showAbutmentProductionCancel && showWorkActions ? (
+      productionStarted ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled
+                className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+              >
+                <X className="h-3.5 w-3.5" />
+                어벗 생산 취소
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs text-xs">
+            어벗 가공이 시작된 뒤에는 생산을 취소할 수 없습니다. 제조사가 준비
+            단계일 때만 가능합니다.
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={cardBusy}
+              className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+              onClick={(event) => void onAbutmentProductionCancel(event)}
+            >
+              <X className="h-3.5 w-3.5" />
+              {cardBusy ? "처리 중..." : "어벗 생산 취소"}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs text-xs">
+            제조사가 준비 단계일 때만 생산을 취소할 수 있습니다. 가공이 시작되면
+            변경할 수 없습니다.
+          </TooltipContent>
+        </Tooltip>
+      )
+    ) : null;
+
+  /** 헤더 우측 — 수락중「의뢰 수락 취소」/ 완료후「작업 완료 취소」 */
+  const headerCancelButton = showWorkActions ? (
     productionStarted ? (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -179,18 +243,50 @@ export function PracticeTransferLabReceiveCard({
             <Button
               type="button"
               size="sm"
-              variant="secondary"
+              variant="outline"
               disabled
-              className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="h-7 px-2 text-[11px]"
             >
-              <X className="h-3.5 w-3.5" />
-              어벗 생산 취소
+              의뢰 수락 취소
             </Button>
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs text-xs">
-          어벗 가공이 시작된 뒤에는 생산을 취소할 수 없습니다. 제조사가 준비
-          단계일 때만 가능합니다.
+          어벗 가공이 시작된 뒤에는 의뢰 수락을 취소할 수 없습니다. 제조사가
+          준비 단계일 때만 가능합니다.
+        </TooltipContent>
+      </Tooltip>
+    ) : (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={cardBusy}
+        className="h-7 px-2 text-[11px]"
+        onClick={(event) => void onRelease(event)}
+      >
+        {cardBusy ? "처리 중..." : "의뢰 수락 취소"}
+      </Button>
+    )
+  ) : showCompletedStageHeaderCancel ? (
+    productionStarted ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled
+              className="h-7 px-2 text-[11px]"
+            >
+              작업 완료 취소
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          어벗 가공이 시작된 뒤에는 작업 완료를 취소할 수 없습니다. 제조사가
+          준비 단계일 때만 가능합니다.
         </TooltipContent>
       </Tooltip>
     ) : (
@@ -199,92 +295,58 @@ export function PracticeTransferLabReceiveCard({
           <Button
             type="button"
             size="sm"
-            variant="secondary"
+            variant="outline"
             disabled={cardBusy}
-            className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+            className="h-7 px-2 text-[11px]"
             onClick={(event) => void onAbutmentProductionCancel(event)}
           >
-            <X className="h-3.5 w-3.5" />
-            {cardBusy ? "처리 중..." : "어벗 생산 취소"}
+            {cardBusy ? "처리 중..." : "작업 완료 취소"}
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs text-xs">
-          제조사가 준비 단계일 때만 생산을 취소할 수 있습니다. 가공이 시작되면
-          변경할 수 없습니다.
+          발송(작업완료) 단계를 의뢰수락으로 되돌립니다. 이후 어벗·보철을 다시
+          올리거나 작업 취소할 수 있습니다. 제조사 준비 단계에서만 가능합니다.
         </TooltipContent>
       </Tooltip>
     )
   ) : null;
 
-  /** 보철 완료·발송 단계: 3버튼 유지, 업로드 2개 비활성, 오른쪽 취소만(의뢰수락 재오픈) */
-  const completedStageCancelActions =
-    !showWorkActions && showAbutmentProductionCancel ? (
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Button
-          type="button"
-          size="sm"
-          disabled
-          className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-        >
-          <UploadCloud className="h-3.5 w-3.5" />
-          어벗 업로드
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled
-          className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-        >
-          <UploadCloud className="h-3.5 w-3.5" />
-          보철 업로드 & 작업완료
-        </Button>
-        {productionStarted ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex">
-                <Button type="button" size="sm" variant="outline" disabled className="h-8">
-                  작업 완료 취소
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs text-xs">
-              어벗 가공이 시작된 뒤에는 작업 완료를 취소할 수 없습니다. 제조사가
-              준비 단계일 때만 가능합니다.
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={cardBusy}
-                className="h-8"
-                onClick={(event) => void onAbutmentProductionCancel(event)}
-              >
-                {cardBusy ? "처리 중..." : "작업 완료 취소"}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs text-xs">
-              발송(작업완료) 단계를 의뢰수락으로 되돌립니다. 이후 어벗·보철을
-              다시 올리거나 작업 취소할 수 있습니다. 제조사 준비 단계에서만
-              가능합니다.
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-    ) : null;
+  /** 보철 완료·발송 단계: 업로드 2개만 비활성(취소는 헤더) */
+  const completedStageDisabledUploads = showCompletedStageHeaderCancel ? (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Button
+        type="button"
+        size="sm"
+        disabled
+        className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+      >
+        <UploadCloud className="h-3.5 w-3.5" />
+        어벗 업로드
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled
+        className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+      >
+        <UploadCloud className="h-3.5 w-3.5" />
+        보철 업로드 & 작업완료
+      </Button>
+    </div>
+  ) : null;
 
   const clinicLabel =
     transfer.matchingMode === "auto"
       ? "자동 매칭"
       : String(transfer.practice.businessName || "").trim() || "-";
   const patientName = resolvePracticeTransferListPatientName(transfer);
+  const prostheticButtonLabel = hasPartialProsthetic
+    ? `보철 추가 업로드 (${pendingProstheticCount})`
+    : "보철 업로드 & 작업완료";
 
   const actionBar =
-    showWorkActions || completedStageCancelActions ? (
+    showWorkActions || completedStageDisabledUploads ? (
       <div className="mt-3 border-t border-slate-100 pt-3">
         {showWorkActions ? (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -324,8 +386,9 @@ export function PracticeTransferLabReceiveCard({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs text-xs">
-                  완성 어벗 STL을 여러 개 올릴 수 있습니다. 치아별 파일을
-                  올리면 제조사에서 커스텀 어벗 생산을 진행합니다.
+                  완성 어벗 STL을 올립니다. 파일명에 치아가 없어도 프리뷰에서
+                  직접 지정할 수 있습니다. 치아 수만큼 올리거나, 일부만 분할
+                  업로드할 수 있습니다.
                 </TooltipContent>
               </Tooltip>
             ) : null}
@@ -342,7 +405,7 @@ export function PracticeTransferLabReceiveCard({
                       className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
                     >
                       <UploadCloud className="h-3.5 w-3.5" />
-                      보철 업로드 & 작업완료
+                      {prostheticButtonLabel}
                     </Button>
                   </span>
                 ) : (
@@ -355,53 +418,29 @@ export function PracticeTransferLabReceiveCard({
                     onClick={(event) => onComplete(event)}
                   >
                     <UploadCloud className="h-3.5 w-3.5" />
-                    {cardBusy ? "처리 중..." : "보철 업로드 & 작업완료"}
+                    {cardBusy ? "처리 중..." : prostheticButtonLabel}
                   </Button>
                 )}
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs">
                 {needsMoreAbutmentDesigns
                   ? "어벗디자인을 먼저 업로드한 뒤 보철 파일을 올릴 수 있습니다."
-                  : `크라운 등 보철 결과 파일을 여러 개 올려 작업완료합니다.${
-                      PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""
-                    }`}
+                  : hasPartialProsthetic
+                    ? `남은 보철 ${pendingProstheticCount}개${
+                        prostheticSlotLabels ? ` (${prostheticSlotLabels})` : ""
+                      }를 이어서 올립니다.`
+                    : prostheticSlotLabels
+                      ? `이 의뢰 보철 ${pendingProstheticCount}개: ${prostheticSlotLabels}. 브리지는 스팬당 1개, 크라운·인레이는 치아당 1개입니다.${
+                          PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""
+                        }`
+                      : `브리지는 스팬당 1개, 크라운·인레이는 치아당 1개로 올려 작업완료합니다.${
+                          PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""
+                        }`}
               </TooltipContent>
             </Tooltip>
-            {productionStarted ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled
-                      className="h-8"
-                    >
-                      의뢰 수락 취소
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs text-xs">
-                  어벗 가공이 시작된 뒤에는 의뢰 수락을 취소할 수 없습니다. 제조사가
-                  준비 단계일 때만 가능합니다.
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={cardBusy}
-                className="h-8"
-                onClick={(event) => void onRelease(event)}
-              >
-                {cardBusy ? "처리 중..." : "의뢰 수락 취소"}
-              </Button>
-            )}
           </div>
         ) : (
-          completedStageCancelActions
+          completedStageDisabledUploads
         )}
       </div>
     ) : null;
@@ -411,6 +450,7 @@ export function PracticeTransferLabReceiveCard({
       <PracticeTransferRequestCardMeta
         createdAt={formatDateTime(transfer.createdAt)}
         statusLabel={statusLabel}
+        headerActions={headerCancelButton}
         extraBadges={
           <>
             {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}

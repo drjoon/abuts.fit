@@ -1,6 +1,7 @@
 /**
  * 치과·기공소 의뢰 목록 카드 본문 메타 SSOT.
  * 필수만: 시각 / 상태 / 주문일·치과도착일 / 상대(기공소|치과)·환자명·치아번호.
+ * 2026-08-16: headerActions — 1행 오른쪽 끝(의뢰 수락 취소 등).
  * 2026-08-16: 전송ID·파일수·기간·메모 덤프 제거, 2열 메타·시맨틱 뱃지.
  * 2026-08-16: 기공소 수신 카드와 동일 레이아웃(counterpart 라벨로 분기).
  * 2026-08-16: 카드에 치아번호(11,21)만 — 보철 형태 등은 상세 모달.
@@ -125,6 +126,8 @@ export type PracticeTransferRequestCardMetaProps = {
   statusLabel?: string;
   statusBadgeClassName?: string;
   extraBadges?: ReactNode;
+  /** 1행 오른쪽 끝 — 의뢰 수락 취소 등 */
+  headerActions?: ReactNode;
   /** 치과 카드=기공소, 기공소 카드=치과 */
   counterpartLabel: string;
   counterpartValue: string;
@@ -143,6 +146,7 @@ export function PracticeTransferRequestCardMeta({
   statusLabel,
   statusBadgeClassName,
   extraBadges,
+  headerActions,
   counterpartLabel,
   counterpartValue,
   orderDate,
@@ -162,22 +166,33 @@ export function PracticeTransferRequestCardMeta({
 
   return (
     <div className={cn("min-w-0", comfortable ? "space-y-2.5" : "space-y-2")}>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <p className="min-w-0 truncate text-[11px] tabular-nums tracking-tight text-muted-foreground">
-          {createdAt}
-        </p>
-        {statusLabel ? (
-          <Badge
-            variant="outline"
-            className={cn(
-              "h-5 shrink-0 px-1.5 text-[11px] font-semibold leading-none",
-              statusBadgeClassName || practiceTransferStatusBadgeClass(statusLabel),
-            )}
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="min-w-0 truncate text-[11px] tabular-nums tracking-tight text-muted-foreground">
+            {createdAt}
+          </p>
+          {statusLabel ? (
+            <Badge
+              variant="outline"
+              className={cn(
+                "h-5 shrink-0 px-1.5 text-[11px] font-semibold leading-none",
+                statusBadgeClassName || practiceTransferStatusBadgeClass(statusLabel),
+              )}
+            >
+              {statusLabel}
+            </Badge>
+          ) : null}
+          {extraBadges}
+        </div>
+        {headerActions ? (
+          <div
+            className="flex shrink-0 items-center gap-1.5"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
           >
-            {statusLabel}
-          </Badge>
+            {headerActions}
+          </div>
         ) : null}
-        {extraBadges}
       </div>
 
       <div

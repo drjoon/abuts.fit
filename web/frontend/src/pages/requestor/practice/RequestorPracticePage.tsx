@@ -12,10 +12,14 @@
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/modules/files/file.routes.js
 // - web/backend/controllers/files/file.controller.js
-// - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
+// - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
+// - 2026-08-16: 보철 — 위치 확정되면 지정 다이얼로그 생략·바로 저장/완료. 초과 시 슬롯 라벨 안내.
+// - 2026-08-16: 어벗·보철 — 프리뷰 치아 지정·백그라운드 preUpload·분할 업로드.
+// - 2026-08-16: 어벗은 3D 확인 모달에서 치아 지정(중간 지정 다이얼로그 생략).
 // - 2026-08-16: 다파일 어벗 드롭 — 파일명 AI로 치아번호 확인 후 의뢰 매칭.
 // - 2026-08-16: 어벗 확인 모달 기본값 — 파일명 AI 대신 치과 메모·치식·사업체명.
 // - 2026-08-16: 카드 드롭 — 어벗 미완이면 디자인 업로드, 완료 후 보철 완료로 라우팅.
@@ -92,7 +96,24 @@ import {
   AbutmentDesignConfirmDialog,
   type AbutmentDesignConfirmCaseInfos,
 } from "@/shared/components/practice/AbutmentDesignConfirmDialog";
+import {
+  LabReceiveWorkUploadDialog,
+  toLabReceiveSlotOptionsFromProsthetic,
+  tryAutoAssignProstheticSlots,
+  type LabReceiveUploadSlotOption,
+  type LabReceiveWorkUploadAssignment,
+} from "@/shared/components/practice/LabReceiveWorkUploadDialog";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -106,13 +127,12 @@ import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
-import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
+import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import {
   toChatMessageAttachments,
   useBackgroundTempUpload,
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
-import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { Search } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -153,7 +173,9 @@ import {
   toFilenameAiCacheKey,
 } from "@/pages/requestor/new_request/utils/filenameAiCache";
 import {
+  formatPracticeTransferProstheticSlotLabels,
   getPracticeTransferLabReceiveDisplayStatus,
+  listPracticeTransferPendingProstheticSlots,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
   practiceTransferNeedsMoreAbutmentDesigns,
@@ -163,6 +185,32 @@ import {
 import { getPracticeTransferFileExtension } from "@/shared/practice/practiceTransferAccept";
 import { resolvePracticeTransferListPatientName } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import type { ReactNode } from "react";
+
+type AbutmentPendingMeta = {
+  requestId: string;
+  tooth: string;
+  caseInfos: Record<string, unknown> | null;
+  designCompletedAt: string;
+};
+
+type LabReceiveSplitAskState = {
+  mode: "abutment" | "prosthetic";
+  transfer: ReceivedPracticeTransfer;
+  files: File[];
+  pendingCount: number;
+  abutmentPending?: AbutmentPendingMeta[];
+  prostheticSlots?: LabReceiveUploadSlotOption[];
+};
+
+type LabReceiveWorkUploadState = {
+  mode: "abutment" | "prosthetic";
+  transfer: ReceivedPracticeTransfer;
+  files: File[];
+  slots: LabReceiveUploadSlotOption[];
+  initialSlotIds: Array<string | null>;
+  splitMode: boolean;
+  abutmentPending?: AbutmentPendingMeta[];
+};
 
 
 type ReceivedTransfersResponse = {
@@ -352,7 +400,11 @@ export function RequestorPracticeReceivePage({
     forceOnEntry: true,
   });
   const { rooms } = useChatRooms();
-  const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
+  const {
+    ensureFilesUploaded,
+    preUploadFiles,
+    uploadProgress,
+  } = useFilePreUpload({ token });
   const chatUploads = useBackgroundTempUpload({ token });
   const {
     downloadingKeys,
@@ -401,11 +453,32 @@ export function RequestorPracticeReceivePage({
   const [designConfirmQueueIndex, setDesignConfirmQueueIndex] = useState(0);
   const [designConfirmTransfer, setDesignConfirmTransfer] =
     useState<ReceivedPracticeTransfer | null>(null);
+  const [designConfirmPendingMetas, setDesignConfirmPendingMetas] = useState<
+    AbutmentPendingMeta[]
+  >([]);
   const designConfirmEntry =
     designConfirmQueue[designConfirmQueueIndex] || null;
   const designConfirmFile = designConfirmEntry?.file || null;
   const designConfirmRequestId = designConfirmEntry?.requestId || "";
   const designConfirmCaseInfos = designConfirmEntry?.caseInfos || null;
+  const designConfirmTeethOptions = useMemo(() => {
+    const fromPending = designConfirmPendingMetas
+      .map((meta) => String(meta.tooth || "").trim())
+      .filter(Boolean);
+    const teeth =
+      fromPending.length > 0
+        ? fromPending
+        : parseToothWorks(designConfirmTransfer?.toothWorksSummary || "")
+            .filter((row) => Boolean(row.customAbutment))
+            .map((row) => String(row.toothNumber || "").trim())
+            .filter(Boolean);
+    return [...new Set(teeth)].map((tooth) => ({ id: tooth, label: tooth }));
+  }, [designConfirmPendingMetas, designConfirmTransfer?.toothWorksSummary]);
+  const [splitAskState, setSplitAskState] =
+    useState<LabReceiveSplitAskState | null>(null);
+  const [workUploadState, setWorkUploadState] =
+    useState<LabReceiveWorkUploadState | null>(null);
+  const [workUploadBusy, setWorkUploadBusy] = useState(false);
   const { connections } = useNewRequestImplant({ token });
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
@@ -1832,42 +1905,96 @@ export function RequestorPracticeReceivePage({
     ],
   );
 
+  const mapApiResultFiles = useCallback(
+    (
+      transfer: ReceivedPracticeTransfer,
+      raw: unknown,
+      fallback: Array<{
+        patientName: string;
+        tooth: string;
+        file: {
+          originalName: string;
+          mimetype: string;
+          size: number;
+          s3Key: string;
+        };
+      }>,
+    ): ReceivedPracticeFile[] => {
+      const source = Array.isArray(raw) ? raw : fallback;
+      return source
+        .map((row, idx) => {
+          const item =
+            row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+          const fileObj =
+            item.file && typeof item.file === "object"
+              ? (item.file as Record<string, unknown>)
+              : item;
+          return {
+            id: String(item.id || `${transfer._id}:result:${idx + 1}`),
+            patientName: String(item.patientName || "").trim(),
+            tooth: String(item.tooth || "").trim(),
+            originalName: String(
+              fileObj.originalName || item.originalName || "",
+            ).trim(),
+            mimetype: String(
+              fileObj.mimetype || item.mimetype || "application/octet-stream",
+            ).trim(),
+            size: Number(fileObj.size || item.size || 0),
+            s3Key: String(fileObj.s3Key || item.s3Key || "").trim(),
+          };
+        })
+        .filter((f) => f.originalName && f.s3Key);
+    },
+    [],
+  );
+
+  const buildResultFilePayloadFromAssignments = useCallback(
+    async (assignments: LabReceiveWorkUploadAssignment[]) => {
+      const files = assignments.map((row) => row.file);
+      const uploadedFiles = await ensureFilesUploaded(files);
+      return uploadedFiles
+        .map((f, idx) => ({
+          patientName: "",
+          tooth: String(assignments[idx]?.tooth || "").trim(),
+          file: {
+            originalName: String(f.originalName || "").trim(),
+            mimetype: String(
+              f.mimetype || f.fileType || "application/octet-stream",
+            ).trim(),
+            size: Number(f.size || 0),
+            s3Key: String(f.key || "").trim(),
+          },
+        }))
+        .filter((row) => row.file.originalName && row.file.s3Key);
+    },
+    [ensureFilesUploaded],
+  );
+
   const markTransferComplete = useCallback(
     async (
       transfer: ReceivedPracticeTransfer,
       options: {
-        files: File[];
+        assignments: LabReceiveWorkUploadAssignment[];
       },
     ) => {
       if (!token) return false;
       if (transfer.autoMatch?.completed) return true;
 
-      const files = Array.isArray(options.files) ? options.files : [];
-      if (files.length === 0) {
+      const assignments = Array.isArray(options.assignments)
+        ? options.assignments
+        : [];
+      if (assignments.length === 0) {
         toast({
           title: "결과 파일 필요",
-          description: "작업 완료하려면 크라운 결과 파일을 선택해주세요.",
+          description: "작업 완료하려면 보철 결과 파일을 선택해주세요.",
           variant: "destructive",
         });
         return false;
       }
 
       try {
-        const uploadedFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
-        const resultFiles = uploadedFiles
-          .map((f) => ({
-            patientName: "",
-            tooth: "",
-            file: {
-              originalName: String(f.originalName || "").trim(),
-              mimetype: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
-              size: Number(f.size || 0),
-              s3Key: String(f.key || "").trim(),
-            },
-          }))
-          .filter((row) => row.file.originalName && row.file.s3Key);
-
-        if (resultFiles.length === 0) {
+        const incoming = await buildResultFilePayloadFromAssignments(assignments);
+        if (incoming.length === 0) {
           toast({
             title: "업로드 실패",
             description: "결과 파일 업로드에 실패했습니다.",
@@ -1875,6 +2002,26 @@ export function RequestorPracticeReceivePage({
           });
           return false;
         }
+
+        const existingPayload = (transfer.resultFiles || [])
+          .filter((row) => row.originalName && row.s3Key)
+          .map((row) => ({
+            patientName: String(row.patientName || "").trim(),
+            tooth: String(row.tooth || "").trim(),
+            file: {
+              originalName: String(row.originalName || "").trim(),
+              mimetype: String(row.mimetype || "application/octet-stream").trim(),
+              size: Number(row.size || 0),
+              s3Key: String(row.s3Key || "").trim(),
+            },
+          }));
+        const byKey = new Map(
+          existingPayload.map((row) => [row.file.s3Key, row] as const),
+        );
+        for (const row of incoming) {
+          byKey.set(row.file.s3Key, row);
+        }
+        const resultFiles = [...byKey.values()];
 
         const res = await apiFetch<unknown>({
           path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-complete`,
@@ -1920,30 +2067,11 @@ export function RequestorPracticeReceivePage({
           mine: true,
           remainingMs: null,
         };
-        const mappedResultFiles: ReceivedPracticeFile[] = (
-          Array.isArray(data.resultFiles) ? data.resultFiles : resultFiles
-        )
-          .map((row, idx) => {
-            const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-            const fileObj =
-              item.file && typeof item.file === "object"
-                ? (item.file as Record<string, unknown>)
-                : item;
-            return {
-              id: String(item.id || `${transfer._id}:result:${idx + 1}`),
-              patientName: String(item.patientName || "").trim(),
-              tooth: String(item.tooth || "").trim(),
-              originalName: String(
-                fileObj.originalName || item.originalName || "",
-              ).trim(),
-              mimetype: String(
-                fileObj.mimetype || item.mimetype || "application/octet-stream",
-              ).trim(),
-              size: Number(fileObj.size || item.size || 0),
-              s3Key: String(fileObj.s3Key || item.s3Key || "").trim(),
-            };
-          })
-          .filter((f) => f.originalName && f.s3Key);
+        const mappedResultFiles = mapApiResultFiles(
+          transfer,
+          data.resultFiles,
+          resultFiles,
+        );
         const productionRawFromRes =
           data.production && typeof data.production === "object"
             ? (data.production as Record<string, unknown>)
@@ -2041,7 +2169,182 @@ export function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [toast, token, uploadFilesWithToast],
+    [
+      buildResultFilePayloadFromAssignments,
+      mapApiResultFiles,
+      toast,
+      token,
+    ],
+  );
+
+  const appendTransferResultFiles = useCallback(
+    async (
+      transfer: ReceivedPracticeTransfer,
+      assignments: LabReceiveWorkUploadAssignment[],
+    ) => {
+      if (!token) return false;
+      if (assignments.length === 0) return false;
+      try {
+        const incoming = await buildResultFilePayloadFromAssignments(assignments);
+        if (incoming.length === 0) {
+          toast({
+            title: "업로드 실패",
+            description: "결과 파일 업로드에 실패했습니다.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/result-files`,
+          method: "POST",
+          token,
+          jsonBody: { resultFiles: incoming },
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "보철 저장 실패",
+            description: String(body.message || "보철 파일 저장 중 오류가 발생했습니다."),
+            variant: "destructive",
+          });
+          return false;
+        }
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const data =
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : body;
+        const mappedResultFiles = mapApiResultFiles(
+          transfer,
+          data.resultFiles,
+          [
+            ...(transfer.resultFiles || []).map((row) => ({
+              patientName: row.patientName,
+              tooth: row.tooth,
+              file: {
+                originalName: row.originalName,
+                mimetype: row.mimetype,
+                size: row.size,
+                s3Key: row.s3Key,
+              },
+            })),
+            ...incoming,
+          ],
+        );
+        setTransfers((prev) =>
+          prev.map((row) =>
+            row._id === transfer._id || row.transferId === transfer.transferId
+              ? {
+                  ...row,
+                  resultFiles: mappedResultFiles,
+                  resultFileCount: mappedResultFiles.length,
+                }
+              : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev &&
+          (prev._id === transfer._id || prev.transferId === transfer.transferId)
+            ? {
+                ...prev,
+                resultFiles: mappedResultFiles,
+                resultFileCount: mappedResultFiles.length,
+              }
+            : prev,
+        );
+        toast({
+          title: "보철 일부 저장",
+          description: `${incoming.length}개 파일을 저장했습니다. 나머지 작업 후 이어서 올려주세요.`,
+        });
+        return true;
+      } catch {
+        toast({
+          title: "보철 저장 실패",
+          description: "보철 파일 저장 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [buildResultFilePayloadFromAssignments, mapApiResultFiles, toast, token],
+  );
+
+  const openWorkUploadDialog = useCallback(
+    (state: LabReceiveWorkUploadState) => {
+      preUploadFiles(state.files);
+      setWorkUploadState(state);
+    },
+    [preUploadFiles],
+  );
+
+  const resolveProstheticAssignments = useCallback(
+    (
+      files: File[],
+      slotOptions: LabReceiveUploadSlotOption[],
+      pendingSlots: ReturnType<typeof listPracticeTransferPendingProstheticSlots>,
+    ): LabReceiveWorkUploadAssignment[] | null => {
+      if (files.length === 1 && slotOptions.length === 1) {
+        const slot = slotOptions[0];
+        return [
+          {
+            file: files[0],
+            slotId: slot.id,
+            tooth: slot.tooth,
+            label: slot.label,
+          },
+        ];
+      }
+      const teethBySlotId = new Map(
+        pendingSlots.map((slot) => [slot.id, slot.teeth] as const),
+      );
+      return tryAutoAssignProstheticSlots(
+        files,
+        slotOptions,
+        teethBySlotId,
+        (filename) =>
+          String(parseFilenameWithRules(filename)?.tooth || "").trim(),
+      );
+    },
+    [],
+  );
+
+  const submitProstheticAssignments = useCallback(
+    async (params: {
+      transfer: ReceivedPracticeTransfer;
+      assignments: LabReceiveWorkUploadAssignment[];
+      pendingSlotCount: number;
+      splitMode: boolean;
+    }) => {
+      const { transfer, assignments, pendingSlotCount, splitMode } = params;
+      if (!assignments.length || workUploadBusy) return false;
+      preUploadFiles(assignments.map((row) => row.file));
+      setWorkUploadBusy(true);
+      setCardActionBusyId(String(transfer.transferId || transfer._id || ""));
+      try {
+        const remainingAfter = pendingSlotCount - assignments.length;
+        const shouldComplete = !splitMode || remainingAfter <= 0;
+        const ok = shouldComplete
+          ? await markTransferComplete(transfer, { assignments })
+          : await appendTransferResultFiles(transfer, assignments);
+        if (ok) setWorkUploadState(null);
+        return ok;
+      } finally {
+        setWorkUploadBusy(false);
+        setCardActionBusyId("");
+      }
+    },
+    [
+      appendTransferResultFiles,
+      markTransferComplete,
+      preUploadFiles,
+      workUploadBusy,
+    ],
   );
 
   const beginCompleteWithFiles = useCallback(
@@ -2049,17 +2352,114 @@ export function RequestorPracticeReceivePage({
       const nextFiles = Array.from(files || []).filter(Boolean);
       if (!nextFiles.length) return;
       const id = String(transfer.transferId || transfer._id || "").trim();
-      if (!id || cardActionBusyId) return;
-      setCardActionBusyId(id);
-      void (async () => {
-        try {
-          await markTransferComplete(transfer, { files: nextFiles });
-        } finally {
-          setCardActionBusyId("");
-        }
-      })();
+      if (!id || cardActionBusyId || workUploadBusy) return;
+
+      const pendingSlots = listPracticeTransferPendingProstheticSlots(transfer);
+      const slotOptions = toLabReceiveSlotOptionsFromProsthetic(pendingSlots);
+
+      // 보철 슬롯 없음(CA만 등) — 치아 지정 없이 업로드 후 작업완료
+      if (slotOptions.length === 0) {
+        const freeSlots: LabReceiveUploadSlotOption[] = nextFiles.map(
+          (file, idx) => {
+            const tooth = String(
+              parseFilenameWithRules(file.name)?.tooth || "",
+            ).trim();
+            return {
+              id: `free:${idx}:${file.name}`,
+              label: tooth ? `${tooth} 보철` : `파일 ${idx + 1}`,
+              tooth,
+            };
+          },
+        );
+        const freeAssignments: LabReceiveWorkUploadAssignment[] = nextFiles.map(
+          (file, idx) => ({
+            file,
+            slotId: freeSlots[idx].id,
+            tooth: freeSlots[idx].tooth,
+            label: freeSlots[idx].label,
+          }),
+        );
+        void submitProstheticAssignments({
+          transfer,
+          assignments: freeAssignments,
+          pendingSlotCount: freeAssignments.length,
+          splitMode: false,
+        });
+        return;
+      }
+
+      if (nextFiles.length > slotOptions.length) {
+        const labels = formatPracticeTransferProstheticSlotLabels(transfer, {
+          pendingOnly: true,
+        });
+        toast({
+          title: "파일 수 초과",
+          description: `남은 보철은 ${slotOptions.length}개${
+            labels ? ` (${labels})` : ""
+          }입니다. ${slotOptions.length}개만 선택해주세요.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (nextFiles.length < slotOptions.length) {
+        preUploadFiles(nextFiles);
+        setSplitAskState({
+          mode: "prosthetic",
+          transfer,
+          files: nextFiles,
+          pendingCount: slotOptions.length,
+          prostheticSlots: slotOptions,
+        });
+        return;
+      }
+
+      const auto = resolveProstheticAssignments(
+        nextFiles,
+        slotOptions,
+        pendingSlots,
+      );
+      if (auto) {
+        void submitProstheticAssignments({
+          transfer,
+          assignments: auto,
+          pendingSlotCount: slotOptions.length,
+          splitMode: false,
+        });
+        return;
+      }
+
+      const suggestedIds = nextFiles.map((file) => {
+        const tooth = String(parseFilenameWithRules(file.name)?.tooth || "").trim();
+        if (!tooth) return null;
+        const matched = slotOptions.find(
+          (slot) =>
+            slot.tooth === tooth ||
+            pendingSlots.some(
+              (row) => row.id === slot.id && row.teeth.includes(tooth),
+            ),
+        );
+        return matched?.id || null;
+      });
+
+      openWorkUploadDialog({
+        mode: "prosthetic",
+        transfer,
+        files: nextFiles,
+        slots: slotOptions,
+        initialSlotIds: suggestedIds,
+        splitMode: false,
+      });
     },
-    [cardActionBusyId, markTransferComplete],
+    [
+      cardActionBusyId,
+      openWorkUploadDialog,
+      preUploadFiles,
+      resolveProstheticAssignments,
+      submitProstheticAssignments,
+      toast,
+      workUploadBusy,
+    ],
   );
 
   const confirmAbutmentDesign = useCallback(
@@ -2578,6 +2978,7 @@ export function RequestorPracticeReceivePage({
     setDesignConfirmQueue([]);
     setDesignConfirmQueueIndex(0);
     setDesignConfirmTransfer(null);
+    setDesignConfirmPendingMetas([]);
   }, []);
 
   const buildDesignConfirmDefaults = useCallback(
@@ -2777,11 +3178,79 @@ export function RequestorPracticeReceivePage({
     [token],
   );
 
+  /** 어벗: 지정 다이얼로그 없이 3D 확인 모달에서 치아·임플란트 확정 */
+  const openAbutmentDesignConfirmQueue = useCallback(
+    async (
+      transfer: ReceivedPracticeTransfer,
+      files: File[],
+      pendingMetas: AbutmentPendingMeta[],
+    ) => {
+      if (!files.length || !pendingMetas.length) return;
+      preUploadFiles(files);
+      const fileTeeth = await resolveAbutmentDesignTeethFromFiles(files);
+      const usedRequestIds = new Set<string>();
+      const queue: Array<{
+        file: File;
+        requestId: string;
+        caseInfos: AbutmentDesignConfirmCaseInfos;
+      }> = [];
+
+      for (let i = 0; i < files.length; i += 1) {
+        if (queue.length >= pendingMetas.length) break;
+        const file = files[i];
+        const parsedTooth = String(fileTeeth[i] || "").trim();
+        const byTooth = parsedTooth
+          ? pendingMetas.find(
+              (meta) =>
+                !usedRequestIds.has(meta.requestId) &&
+                meta.tooth === parsedTooth,
+            )
+          : null;
+        // 파일명 치아 없으면 남은 pending 중 첫 치아(이미 올린 치아는 beginDesign에서 제외됨)
+        const meta =
+          byTooth ||
+          pendingMetas.find((row) => !usedRequestIds.has(row.requestId));
+        if (!meta) continue;
+        usedRequestIds.add(meta.requestId);
+        queue.push({
+          file,
+          requestId: meta.requestId,
+          caseInfos: buildDesignConfirmDefaults(
+            transfer,
+            meta.caseInfos,
+            meta.tooth || parsedTooth,
+          ),
+        });
+      }
+
+      if (queue.length === 0) {
+        toast({
+          title: "업로드 대상 없음",
+          description: "연결할 어벗 의뢰를 찾지 못했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setDesignConfirmPendingMetas(pendingMetas);
+      setDesignConfirmTransfer(transfer);
+      setDesignConfirmQueue(queue);
+      setDesignConfirmQueueIndex(0);
+      setDesignConfirmOpen(true);
+    },
+    [
+      buildDesignConfirmDefaults,
+      preUploadFiles,
+      resolveAbutmentDesignTeethFromFiles,
+      toast,
+    ],
+  );
+
   const beginDesignUploadWithFiles = useCallback(
     async (transfer: ReceivedPracticeTransfer, files: File[]) => {
       if (!token) return;
       const id = String(transfer.transferId || transfer._id || "").trim();
-      if (!id || cardActionBusyId || designConfirmBusy) return;
+      if (!id || cardActionBusyId || designConfirmBusy || workUploadBusy) return;
 
       const stlFiles = Array.from(files || []).filter(
         (file) => getPracticeTransferFileExtension(file.name) === ".stl",
@@ -2852,11 +3321,21 @@ export function RequestorPracticeReceivePage({
           .map((row) => String(row.tooth || "").trim())
           .filter(Boolean),
       );
+      const designFileCount = Number(
+        workingTransfer.production?.designFileCount ||
+          workingTransfer.production?.designFiles?.length ||
+          0,
+      );
+      const caTeethOrdered = parseToothWorks(workingTransfer.toothWorksSummary || "")
+        .filter((row) => Boolean(row.customAbutment))
+        .map((row) => String(row.toothNumber || "").trim())
+        .filter(Boolean);
 
       const requestMetas = await Promise.all(
-        relatedIds.map(async (requestId) => {
+        relatedIds.map(async (requestId, idx) => {
           const meta = await fetchRequestCaseInfos(requestId);
-          const tooth = String(meta.caseInfos?.tooth || "").trim();
+          const fromRequest = String(meta.caseInfos?.tooth || "").trim();
+          const tooth = fromRequest || caTeethOrdered[idx] || "";
           return {
             requestId,
             tooth,
@@ -2866,11 +3345,32 @@ export function RequestorPracticeReceivePage({
         }),
       );
 
-      const pendingMetas = requestMetas.filter((meta) => {
+      // 치아 중복 보강: Request에 tooth가 비어 있으면 치식 CA 순서로 채움(이미 쓴 치아 제외)
+      const usedEnrichTeeth = new Set(
+        requestMetas.map((row) => String(row.tooth || "").trim()).filter(Boolean),
+      );
+      const enrichedMetas = requestMetas.map((meta, idx) => {
+        if (String(meta.tooth || "").trim()) return meta;
+        const fallback =
+          caTeethOrdered.find((tooth) => !usedEnrichTeeth.has(tooth)) ||
+          caTeethOrdered[idx] ||
+          "";
+        if (fallback) usedEnrichTeeth.add(fallback);
+        return { ...meta, tooth: fallback };
+      });
+
+      let pendingMetas = enrichedMetas.filter((meta) => {
         if (meta.designCompletedAt) return false;
         if (meta.tooth && existingTeeth.has(meta.tooth)) return false;
         return true;
       });
+
+      // designFiles에 치아가 비어 있는 경우: 개수만큼 앞에서 제외
+      const assignedDesignCount = existingTeeth.size;
+      const orphanDesignCount = Math.max(0, designFileCount - assignedDesignCount);
+      if (orphanDesignCount > 0 && pendingMetas.length > 0) {
+        pendingMetas = pendingMetas.slice(orphanDesignCount);
+      }
 
       if (pendingMetas.length === 0) {
         toast({
@@ -2880,86 +3380,45 @@ export function RequestorPracticeReceivePage({
         return;
       }
 
-      const fileTeeth = await resolveAbutmentDesignTeethFromFiles(stlFiles);
-      const multiFile = stlFiles.length > 1;
-      const usedRequestIds = new Set<string>();
-      const queue: Array<{
-        file: File;
-        requestId: string;
-        caseInfos: AbutmentDesignConfirmCaseInfos;
-      }> = [];
-      let skippedUnmatched = 0;
-
-      for (let i = 0; i < stlFiles.length; i += 1) {
-        if (queue.length >= pendingMetas.length) break;
-        const file = stlFiles[i];
-        const parsedTooth = String(fileTeeth[i] || "").trim();
-        const byTooth = parsedTooth
-          ? pendingMetas.find(
-              (meta) =>
-                !usedRequestIds.has(meta.requestId) &&
-                meta.tooth === parsedTooth,
-            )
-          : null;
-        // 다파일은 치아 매칭만 허용(순서 fallback 금지). 단파일은 남은 의뢰로 연결.
-        const meta =
-          byTooth ||
-          (!multiFile
-            ? pendingMetas.find((row) => !usedRequestIds.has(row.requestId))
-            : null);
-        if (!meta) {
-          if (multiFile) skippedUnmatched += 1;
-          continue;
-        }
-        usedRequestIds.add(meta.requestId);
-        queue.push({
-          file,
-          requestId: meta.requestId,
-          caseInfos: buildDesignConfirmDefaults(
-            workingTransfer,
-            meta.caseInfos,
-            // 표시·기본값은 치과 연결 치아(meta). 파일명 치아는 매칭에만 사용.
-            meta.tooth,
-          ),
-        });
-      }
-
-      if (queue.length === 0) {
+      if (stlFiles.length > pendingMetas.length) {
         toast({
-          title: "업로드 대상 없음",
-          description: multiFile
-            ? "파일명에서 치아번호를 확인해 의뢰와 맞추지 못했습니다. 치아번호가 포함된 파일명으로 다시 올려주세요."
-            : "연결할 어벗 의뢰를 찾지 못했습니다.",
+          title: "파일 수 초과",
+          description: `남은 어벗 ${pendingMetas.length}개보다 파일이 많습니다. ${pendingMetas.length}개만 선택해주세요.`,
           variant: "destructive",
         });
         return;
       }
 
-      if (stlFiles.length > queue.length || skippedUnmatched > 0) {
-        toast({
-          title: "일부만 등록",
-          description: multiFile
-            ? `${stlFiles.length}개 중 ${queue.length}개만 치아번호로 매칭했습니다. 나머지 파일명에 치아번호가 있는지 확인해주세요.`
-            : `${stlFiles.length}개 중 ${queue.length}개만 남은 치아에 맞춰 확인합니다.`,
+      if (stlFiles.length < pendingMetas.length) {
+        preUploadFiles(stlFiles);
+        setSplitAskState({
+          mode: "abutment",
+          transfer: workingTransfer,
+          files: stlFiles,
+          pendingCount: pendingMetas.length,
+          abutmentPending: pendingMetas,
         });
+        return;
       }
 
-      setDesignConfirmTransfer(workingTransfer);
-      setDesignConfirmQueue(queue);
-      setDesignConfirmQueueIndex(0);
-      setDesignConfirmOpen(true);
+      await openAbutmentDesignConfirmQueue(
+        workingTransfer,
+        stlFiles,
+        pendingMetas,
+      );
     },
     [
       applyAcceptedLocalPatch,
-      buildDesignConfirmDefaults,
       cardActionBusyId,
       designConfirmBusy,
       fetchRequestCaseInfos,
       mergeProductionRelatedRequestIds,
+      openAbutmentDesignConfirmQueue,
       pickRelatedRequestIdsFromPayload,
-      resolveAbutmentDesignTeethFromFiles,
+      preUploadFiles,
       toast,
       token,
+      workUploadBusy,
     ],
   );
 
@@ -2985,16 +3444,65 @@ export function RequestorPracticeReceivePage({
     async (caseInfos: AbutmentDesignConfirmCaseInfos) => {
       if (!token || !designConfirmFile || !designConfirmTransfer) return;
       const transfer = designConfirmTransfer;
-      const requestId = designConfirmRequestId;
       const file = designConfirmFile;
       const queueTotal = designConfirmQueue.length;
       const queueIndex = designConfirmQueueIndex;
+      const selectedTooth = String(caseInfos.tooth || "").trim();
+      const reservedIds = new Set(
+        designConfirmQueue
+          .map((row, idx) =>
+            idx === queueIndex ? "" : String(row.requestId || "").trim(),
+          )
+          .filter(Boolean),
+      );
+      const matchedMeta =
+        (selectedTooth
+          ? designConfirmPendingMetas.find(
+              (meta) =>
+                !reservedIds.has(meta.requestId) &&
+                String(meta.tooth || "").trim() === selectedTooth,
+            )
+          : null) ||
+        designConfirmPendingMetas.find(
+          (meta) =>
+            !reservedIds.has(meta.requestId) &&
+            meta.requestId === designConfirmRequestId,
+        ) ||
+        designConfirmPendingMetas.find(
+          (meta) => !reservedIds.has(meta.requestId),
+        );
+      const requestId = String(
+        matchedMeta?.requestId || designConfirmRequestId || "",
+      ).trim();
       if (!requestId) return;
+
+      // 사용자가 치아를 바꿨으면 큐 항목도 맞춘다
+      if (
+        matchedMeta &&
+        (designConfirmRequestId !== matchedMeta.requestId ||
+          String(designConfirmCaseInfos?.tooth || "").trim() !== selectedTooth)
+      ) {
+        setDesignConfirmQueue((prev) =>
+          prev.map((row, idx) =>
+            idx === queueIndex
+              ? {
+                  ...row,
+                  requestId: matchedMeta.requestId,
+                  caseInfos: {
+                    ...row.caseInfos,
+                    ...caseInfos,
+                    tooth: selectedTooth || matchedMeta.tooth,
+                  },
+                }
+              : row,
+          ),
+        );
+      }
 
       setDesignConfirmBusy(true);
       setCardActionBusyId(String(transfer.transferId || transfer._id || ""));
       try {
-        const uploaded = await uploadFilesWithToast([file]);
+        const uploaded = await ensureFilesUploaded([file]);
         const temp = uploaded?.[0];
         const s3Key = String(temp?.key || "").trim();
         if (!s3Key) {
@@ -3127,15 +3635,92 @@ export function RequestorPracticeReceivePage({
     },
     [
       clearDesignConfirmState,
+      designConfirmCaseInfos?.tooth,
       designConfirmFile,
-      designConfirmQueue.length,
+      designConfirmPendingMetas,
+      designConfirmQueue,
       designConfirmQueueIndex,
       designConfirmRequestId,
       designConfirmTransfer,
       toast,
       token,
-      uploadFilesWithToast,
+      ensureFilesUploaded,
     ],
+  );
+
+  const handleSplitAskConfirm = useCallback(() => {
+    const ask = splitAskState;
+    setSplitAskState(null);
+    if (!ask) return;
+
+    if (ask.mode === "abutment") {
+      void openAbutmentDesignConfirmQueue(
+        ask.transfer,
+        ask.files,
+        ask.abutmentPending || [],
+      );
+      return;
+    }
+
+    const slots = ask.prostheticSlots || [];
+    const pendingSlots = listPracticeTransferPendingProstheticSlots(ask.transfer);
+    const auto = resolveProstheticAssignments(ask.files, slots, pendingSlots);
+    if (auto) {
+      void submitProstheticAssignments({
+        transfer: ask.transfer,
+        assignments: auto,
+        pendingSlotCount: ask.pendingCount,
+        splitMode: true,
+      });
+      return;
+    }
+
+    const suggestedIds = ask.files.map((file) => {
+      const tooth = String(parseFilenameWithRules(file.name)?.tooth || "").trim();
+      if (!tooth) return null;
+      return slots.find((slot) => slot.tooth === tooth)?.id || null;
+    });
+    openWorkUploadDialog({
+      mode: "prosthetic",
+      transfer: ask.transfer,
+      files: ask.files,
+      slots,
+      initialSlotIds: suggestedIds,
+      splitMode: true,
+    });
+  }, [
+    openAbutmentDesignConfirmQueue,
+    openWorkUploadDialog,
+    resolveProstheticAssignments,
+    splitAskState,
+    submitProstheticAssignments,
+  ]);
+
+  const handleSplitAskDecline = useCallback(() => {
+    const ask = splitAskState;
+    setSplitAskState(null);
+    if (!ask) return;
+    toast({
+      title: ask.mode === "abutment" ? "어벗 전체 업로드" : "보철 전체 업로드",
+      description:
+        ask.mode === "abutment"
+          ? `남은 어벗 ${ask.pendingCount}개에 맞춰 STL을 모두 선택한 뒤 다시 올려주세요.`
+          : `남은 보철 ${ask.pendingCount}개에 맞춰 파일을 모두 선택한 뒤 다시 올려주세요.`,
+    });
+  }, [splitAskState, toast]);
+
+  const handleWorkUploadConfirm = useCallback(
+    async (assignments: LabReceiveWorkUploadAssignment[]) => {
+      const state = workUploadState;
+      if (!state || workUploadBusy || state.mode !== "prosthetic") return;
+      await submitProstheticAssignments({
+        transfer: state.transfer,
+        assignments,
+        pendingSlotCount: state.slots.length,
+        splitMode: Boolean(state.splitMode),
+      });
+    },
+    [submitProstheticAssignments, workUploadBusy, workUploadState],
   );
 
   const handleCardAbutmentProductionCancel = useCallback(
@@ -3655,6 +4240,7 @@ export function RequestorPracticeReceivePage({
         onRetentionGrooveAccountSave={saveRetentionGroove}
         connections={connections}
         confirming={designConfirmBusy}
+        teethOptions={designConfirmTeethOptions}
         queueCurrent={
           designConfirmQueue.length > 0 ? designConfirmQueueIndex + 1 : undefined
         }
@@ -3664,6 +4250,47 @@ export function RequestorPracticeReceivePage({
         onConfirm={handleDesignConfirmSubmit}
         onCancel={clearDesignConfirmState}
       />
+      <LabReceiveWorkUploadDialog
+        open={Boolean(workUploadState)}
+        onOpenChange={(open) => {
+          if (!open && !workUploadBusy) setWorkUploadState(null);
+        }}
+        mode="prosthetic"
+        files={workUploadState?.files || []}
+        slots={workUploadState?.slots || []}
+        initialSlotIds={workUploadState?.initialSlotIds}
+        uploadProgress={uploadProgress}
+        submitting={workUploadBusy}
+        splitMode={Boolean(workUploadState?.splitMode)}
+        onConfirm={handleWorkUploadConfirm}
+      />
+      <AlertDialog
+        open={Boolean(splitAskState)}
+        onOpenChange={(open) => {
+          if (!open) setSplitAskState(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>일부만 올리시나요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {splitAskState
+                ? splitAskState.mode === "abutment"
+                  ? `남은 어벗은 ${splitAskState.pendingCount}개인데 파일은 ${splitAskState.files.length}개입니다. 작업된 것만 먼저 올리고 나머지는 나중에 올릴 수 있습니다.`
+                  : `남은 보철은 ${splitAskState.pendingCount}개인데 파일은 ${splitAskState.files.length}개입니다. 작업된 것만 먼저 저장하고 나머지는 나중에 올릴 수 있습니다.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleSplitAskDecline}>
+              모두 올리기
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleSplitAskConfirm}>
+              일부만 올리기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="shrink-0">
           <LabDashboardTopBanners />

@@ -3986,6 +3986,159 @@ export async function markReceivedPracticeTransferComplete(req, res) {
 }
 
 /**
+ * 기공소 보철 결과파일 분할 저장 — 작업완료(에스크로 지급) 없이 resultFiles만 append.
+ * related: POST /api/practice/transfers/:transferId/result-files
+ */
+export async function appendReceivedPracticeTransferResultFiles(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    if (String(doc.status || "").trim() === "canceled") {
+      return res.status(409).json({
+        success: false,
+        message: "취소된 기공의뢰에는 결과 파일을 추가할 수 없습니다.",
+      });
+    }
+
+    if (isAutoMatchCompleted(doc)) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 작업완료된 의뢰입니다. 분할 저장 대신 완료 상태를 확인해주세요.",
+      });
+    }
+
+    const isAuto = isAutoMatchMode(doc);
+    const accepted = Boolean(doc.requestorDownloadedAt);
+    if (!accepted) {
+      return res.status(409).json({
+        success: false,
+        message: "의뢰수락된 건만 결과 파일을 올릴 수 있습니다.",
+      });
+    }
+
+    if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId) {
+      return res.status(403).json({
+        success: false,
+        message: "수락한 기공소만 결과 파일을 올릴 수 있습니다.",
+      });
+    }
+
+    if (isAuto && !isAutoMatchClaimActive(doc)) {
+      return res.status(409).json({
+        success: false,
+        message: "수락되지 않은 의뢰입니다.",
+        data: toAutoMatchApiFields(doc, labAnchorId),
+      });
+    }
+
+    const incoming = normalizeResultFiles(req.body?.resultFiles);
+    if (incoming.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "결과 파일을 1개 이상 업로드해주세요.",
+      });
+    }
+
+    const existing = normalizeResultFiles(doc.resultFiles);
+    const byKey = new Map(
+      existing.map((row) => [String(row.file?.s3Key || "").trim(), row]),
+    );
+    for (const row of incoming) {
+      const key = String(row.file?.s3Key || "").trim();
+      if (!key) continue;
+      byKey.set(key, row);
+    }
+    const merged = [...byKey.values()];
+    doc.resultFiles = merged;
+    await doc.save();
+
+    const hasCustomAbutment = hasCustomAbutmentToothWorks(doc.toothWorks);
+    const now = new Date();
+    const realtimePayload = {
+      action: "result-files-appended",
+      transferId: String(doc.transferId || "").trim(),
+      transferMongoId: String(doc._id || "").trim(),
+      targetLabAnchorId: labAnchorId,
+      matchingMode: isAuto ? "auto" : "direct",
+      practiceUserId: String(doc.practiceUserId || "").trim() || null,
+      status: String(doc.status || "active").trim(),
+      manufacturerStage: String(doc.manufacturerStage || "").trim() || null,
+      updatedAt: doc.updatedAt || now,
+      resultFileCount: merged.length,
+      hasCustomAbutment,
+      production: toProductionApiFields(doc.production),
+      ...toAutoMatchApiFields(doc, labAnchorId),
+    };
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    await Promise.all([
+      emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+        extraUserIds: [doc.practiceUserId],
+      }),
+      emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId: labAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        resultFileCount: merged.length,
+        resultFiles: merged.map((item, idx) => ({
+          id: `${String(doc._id)}::result::${idx + 1}`,
+          patientName: item.patientName,
+          tooth: item.tooth,
+          originalName: item.file.originalName,
+          mimetype: item.file.mimetype,
+          size: item.file.size,
+          s3Key: item.file.s3Key,
+        })),
+        production: toProductionApiFields(doc.production),
+        hasCustomAbutment,
+        ...toAutoMatchApiFields(doc, labAnchorId),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "보철 결과 파일 저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
  * 기공소 「어벗 디자인 확인」— Abuts 디자인 수락 후 생산 게이트.
  */
 export async function confirmPracticeTransferAbutmentDesign(req, res) {

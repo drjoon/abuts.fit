@@ -1,7 +1,10 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-08-16: prosthetic slots — 크라운은 연결 잔여여도 스팬 묶지 않음; 기대 라벨 헬퍼.
+// - 2026-08-16: prosthetic upload slots — 브리지 1파일·크라운/인레이 치아당 1파일·분할 업로드.
 // - 2026-08-16: expectedAbutmentDesigns / needsMoreAbutmentDesigns — 다치아 어벗 업로드 CTA.
 // - 2026-08-16: machiningStarted — abutmentPastReady 우선(준비 복귀 후 sticky startedAt 무시).
 // - 2026-08-16: abutmentPastReady — 가공 시작 시 생산/수락 취소 불가 판정.
@@ -10,7 +13,15 @@
 // - 2026-08-16: 생산 취소 시 confirmedAt·autoMatch.completed·manufacturerStage 클리어 →「의뢰수락」.
 // - 2026-08-15: 기공의뢰수신(어벗츠기공소·일반 lab) 카드 SSOT — 상태·CA 판정·타입.
 // - 2026-08-16: 자동매칭 재공개(openPool)는 workCanceledAt보다 우선 →「자동매칭」(수락 취소 후 수락 잔상 방지).
-import { parseToothWorks } from "@/shared/practice/transferMemo";
+import {
+  isBridgeLikeProsthesisType,
+  isMissingToothProsthesisType,
+  isTemporaryToothProsthesisType,
+  parseToothWorks,
+  toothWorkHasLabProsthesis,
+  toToothMemoSortNumber,
+  type ToothWorkSelection,
+} from "@/shared/practice/transferMemo";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import type {
   LabRatingSummary,
@@ -256,4 +267,223 @@ export function practiceTransferNeedsMoreAbutmentDesigns(
   const expected = countPracticeTransferExpectedAbutmentDesigns(transfer);
   if (expected <= 0) return designCount === 0;
   return designCount < expected;
+}
+
+/** 보철 업로드 슬롯 — 브리지(연결) 1파일, 크라운·인레이 등 치아당 1파일 */
+export type PracticeTransferProstheticUploadSlot = {
+  id: string;
+  label: string;
+  /** resultFiles.tooth 에 넣는 대표 치아 */
+  tooth: string;
+  teeth: string[];
+  prosthesisType: string;
+  kind: "bridge" | "single";
+};
+
+const sortTeeth = (teeth: string[]) =>
+  [...new Set(teeth.map((t) => String(t || "").trim()).filter(Boolean))].sort(
+    (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
+  );
+
+const collectProstheticBridgeLinks = (
+  rows: ToothWorkSelection[],
+  toothNumber: string,
+) => {
+  const tooth = String(toothNumber || "").trim();
+  const byTooth = new Map(
+    rows.map((row) => [String(row.toothNumber || "").trim(), row] as const),
+  );
+  const links = new Set<string>();
+  const self = byTooth.get(tooth);
+  for (const linked of Array.isArray(self?.bridgeLinkedTeeth)
+    ? self.bridgeLinkedTeeth
+    : []) {
+    const other = String(linked || "").trim();
+    if (other && byTooth.has(other)) links.add(other);
+  }
+  for (const [other, row] of byTooth) {
+    if (!other || other === tooth) continue;
+    const otherLinks = Array.isArray(row.bridgeLinkedTeeth)
+      ? row.bridgeLinkedTeeth
+      : [];
+    if (otherLinks.some((value) => String(value || "").trim() === tooth)) {
+      links.add(other);
+    }
+  }
+  return [...links];
+};
+
+/**
+ * 기공소가 올려야 할 보철 파일 슬롯 목록.
+ * - 브리지·Pontic·유지장치 연결 스팬 → 스팬당 1파일
+ * - 크라운·인레이·단독 임시치아 등 → 치아당 1파일 (연결 플래그만 있어도 묶지 않음)
+ * - 커스텀어벗 단독·작업X → 제외
+ */
+export function listPracticeTransferProstheticUploadSlots(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+): PracticeTransferProstheticUploadSlot[] {
+  if (!transfer) return [];
+  const rows = parseToothWorks(transfer.toothWorksSummary).filter((row) =>
+    toothWorkHasLabProsthesis(row),
+  );
+  if (rows.length === 0) return [];
+
+  const remaining = new Set(
+    rows.map((row) => String(row.toothNumber || "").trim()).filter(Boolean),
+  );
+  const byTooth = new Map(
+    rows.map((row) => [String(row.toothNumber || "").trim(), row] as const),
+  );
+  const slots: PracticeTransferProstheticUploadSlot[] = [];
+
+  const canGroupAsBridgeSpan = (prosthesisType: string, tooth: string) => {
+    const type = String(prosthesisType || "").trim();
+    // 크라운·인레이는 절대 스팬 묶음 금지(연결 잔여 플래그 무시)
+    if (!isBridgeLikeProsthesisType(type) && !isTemporaryToothProsthesisType(type)) {
+      return false;
+    }
+    if (isMissingToothProsthesisType(type)) return false;
+    // 임시치아는 연결이 있을 때만 1파일, 브리지 계열은 연결 필수
+    return collectProstheticBridgeLinks(rows, tooth).length > 0;
+  };
+
+  while (remaining.size > 0) {
+    const start = remaining.values().next().value as string;
+    const startRow = byTooth.get(start);
+    const startType = String(startRow?.prosthesisType || "").trim();
+    const canGroup = canGroupAsBridgeSpan(startType, start);
+
+    if (!canGroup) {
+      remaining.delete(start);
+      slots.push({
+        id: `single:${start}`,
+        label: `${start} ${startType || "보철"}`,
+        tooth: start,
+        teeth: [start],
+        prosthesisType: startType || "보철",
+        kind: "single",
+      });
+      continue;
+    }
+
+    const stack = [start];
+    const component: string[] = [];
+    remaining.delete(start);
+    while (stack.length > 0) {
+      const cur = stack.pop() as string;
+      component.push(cur);
+      for (const linked of collectProstheticBridgeLinks(rows, cur)) {
+        if (!remaining.has(linked)) continue;
+        const linkedType = String(byTooth.get(linked)?.prosthesisType || "").trim();
+        if (!canGroupAsBridgeSpan(linkedType, linked) && !isBridgeLikeProsthesisType(linkedType)) {
+          continue;
+        }
+        // 크라운이 연결만 된 경우는 스팬에 넣지 않음
+        if (
+          !isBridgeLikeProsthesisType(linkedType) &&
+          !isTemporaryToothProsthesisType(linkedType)
+        ) {
+          continue;
+        }
+        remaining.delete(linked);
+        stack.push(linked);
+      }
+    }
+
+    const teeth = sortTeeth(component);
+    const primary = teeth[0] || start;
+    const primaryType = String(
+      byTooth.get(primary)?.prosthesisType || startType || "브리지",
+    ).trim();
+    const labelType = teeth.some(
+      (t) => String(byTooth.get(t)?.prosthesisType || "").trim() === "브리지",
+    )
+      ? "브리지"
+      : primaryType || "브리지";
+    const spanLabel =
+      teeth.length > 1 ? `${teeth[0]}-${teeth[teeth.length - 1]}` : primary;
+
+    slots.push({
+      id: `bridge:${teeth.join("-")}`,
+      label: `${spanLabel} ${labelType}`,
+      tooth: primary,
+      teeth,
+      prosthesisType: labelType,
+      kind: "bridge",
+    });
+  }
+
+  return slots.sort(
+    (a, b) => toToothMemoSortNumber(a.tooth) - toToothMemoSortNumber(b.tooth),
+  );
+}
+
+export function countPracticeTransferExpectedProstheticFiles(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  return listPracticeTransferProstheticUploadSlots(transfer).length;
+}
+
+/** 치아 매칭된 결과파일·레거시(치아 없음) 개수를 반영한 남은 보철 슬롯 */
+export function listPracticeTransferPendingProstheticSlots(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+): PracticeTransferProstheticUploadSlot[] {
+  const slots = listPracticeTransferProstheticUploadSlots(transfer);
+  if (slots.length === 0) return [];
+
+  const resultFiles = Array.isArray(transfer?.resultFiles)
+    ? transfer.resultFiles
+    : [];
+  const usedSlotIds = new Set<string>();
+  let unassignedCount = 0;
+
+  for (const file of resultFiles) {
+    const tooth = String(file?.tooth || "").trim();
+    if (!tooth) {
+      unassignedCount += 1;
+      continue;
+    }
+    const matched = slots.find(
+      (slot) =>
+        !usedSlotIds.has(slot.id) &&
+        (slot.tooth === tooth || slot.teeth.includes(tooth)),
+    );
+    if (matched) usedSlotIds.add(matched.id);
+    else unassignedCount += 1;
+  }
+
+  const pending = slots.filter((slot) => !usedSlotIds.has(slot.id));
+  if (unassignedCount <= 0) return pending;
+  return pending.slice(unassignedCount);
+}
+
+export function countPracticeTransferPendingProstheticFiles(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  return listPracticeTransferPendingProstheticSlots(transfer).length;
+}
+
+/** 보철 파일이 일부만 올라왔고 아직 작업완료 전인지 (분할 업로드 CTA) */
+export function practiceTransferHasPartialProstheticUploads(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+) {
+  if (!transfer) return false;
+  if (transfer.autoMatch?.completed) return false;
+  const resultCount = Number(
+    transfer.resultFileCount || transfer.resultFiles?.length || 0,
+  );
+  if (resultCount <= 0) return false;
+  return countPracticeTransferPendingProstheticFiles(transfer) > 0;
+}
+
+/** 카드/툴팁용 — 예: "11 크라운, 21 크라운" / "11-21 브리지" */
+export function formatPracticeTransferProstheticSlotLabels(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+  opts?: { pendingOnly?: boolean },
+) {
+  const slots = opts?.pendingOnly
+    ? listPracticeTransferPendingProstheticSlots(transfer)
+    : listPracticeTransferProstheticUploadSlots(transfer);
+  if (slots.length === 0) return "";
+  return slots.map((slot) => slot.label).join(", ");
 }
