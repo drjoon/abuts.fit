@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-08-16: 어벗 미완이면 보철 업로드 CTA 비활성(드롭은 어벗→보철 순).
 // - 2026-08-16: 치과와 동일 최신 메타(시각·상태·주문/도착·치과/환자). 메모·기간·메타뱃지·헤더 별점 제거.
 // - 2026-08-16: 수신 카드 — 상태·메타·별점 / 매칭·시각 / 작업기간 / 기공비·수령 4줄로 압축.
 // - 2026-08-16: 수신 카드 — 치과 중심 계층·칩 메타·상태 색·compact 셸(간단 명료).
@@ -329,21 +330,39 @@ export function PracticeTransferLabReceiveCard({
             {productionCancelButton}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={needsMoreAbutmentDesigns ? "secondary" : "default"}
-                  disabled={cardBusy}
-                  className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
-                  onClick={(event) => onComplete(event)}
-                >
-                  <UploadCloud className="h-3.5 w-3.5" />
-                  {cardBusy ? "처리 중..." : "보철 업로드 & 작업완료"}
-                </Button>
+                {needsMoreAbutmentDesigns ? (
+                  <span className="inline-flex">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled
+                      className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    >
+                      <UploadCloud className="h-3.5 w-3.5" />
+                      보철 업로드 & 작업완료
+                    </Button>
+                  </span>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="default"
+                    disabled={cardBusy}
+                    className="h-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    onClick={(event) => onComplete(event)}
+                  >
+                    <UploadCloud className="h-3.5 w-3.5" />
+                    {cardBusy ? "처리 중..." : "보철 업로드 & 작업완료"}
+                  </Button>
+                )}
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs">
-                크라운 등 보철 결과 파일을 여러 개 올려 작업완료합니다.
-                {PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""}
+                {needsMoreAbutmentDesigns
+                  ? "어벗디자인을 먼저 업로드한 뒤 보철 파일을 올릴 수 있습니다."
+                  : `크라운 등 보철 결과 파일을 여러 개 올려 작업완료합니다.${
+                      PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""
+                    }`}
               </TooltipContent>
             </Tooltip>
             {productionStarted ? (

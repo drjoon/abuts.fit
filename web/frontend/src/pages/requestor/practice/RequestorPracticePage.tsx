@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-16: 카드 드롭 — 어벗 미완이면 디자인 업로드, 완료 후 보철 완료로 라우팅.
 // - 2026-08-16: 어벗 STL 다중 선택·치아별 handoff 큐(relatedRequestIds 매칭).
 // - 2026-08-16: internalLab도 디자인SW·아노 사업체 저장 가능(개인 requestor* 미전송).
 // - 2026-08-16: 수락 직후 relatedRequestIds 로컬 반영(어벗 업로드 stale toast 방지).
@@ -147,9 +148,11 @@ import {
   getPracticeTransferLabReceiveDisplayStatus,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
+  practiceTransferNeedsMoreAbutmentDesigns,
   type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
+import { getPracticeTransferFileExtension } from "@/shared/practice/practiceTransferAccept";
 import type { ReactNode } from "react";
 
 
@@ -2667,13 +2670,23 @@ export function RequestorPracticeReceivePage({
     [token],
   );
 
-  const handleCardDesignUpload = useCallback(
-    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
+  const beginDesignUploadWithFiles = useCallback(
+    async (transfer: ReceivedPracticeTransfer, files: File[]) => {
       if (!token) return;
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id || cardActionBusyId || designConfirmBusy) return;
+
+      const stlFiles = Array.from(files || []).filter(
+        (file) => getPracticeTransferFileExtension(file.name) === ".stl",
+      );
+      if (!stlFiles.length) {
+        toast({
+          title: "STL 필요",
+          description: "어벗디자인은 STL 파일만 업로드할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       let relatedIds = (transfer.production?.relatedRequestIds || [])
         .map((raw) => String(raw || "").trim())
@@ -2727,9 +2740,6 @@ export function RequestorPracticeReceivePage({
         return;
       }
 
-      const pickedFiles = await pickDesignAbutmentFiles();
-      if (!pickedFiles.length) return;
-
       const existingTeeth = new Set(
         (workingTransfer.production?.designFiles || [])
           .map((row) => String(row.tooth || "").trim())
@@ -2770,19 +2780,18 @@ export function RequestorPracticeReceivePage({
         caseInfos: AbutmentDesignConfirmCaseInfos;
       }> = [];
 
-      for (const file of pickedFiles) {
+      for (const file of stlFiles) {
         if (queue.length >= pendingMetas.length) break;
         const parsedTooth = String(
           parseFilename(file.name)?.tooth || "",
         ).trim();
-        const byTooth =
-          parsedTooth
-            ? pendingMetas.find(
-                (meta) =>
-                  !usedRequestIds.has(meta.requestId) &&
-                  meta.tooth === parsedTooth,
-              )
-            : null;
+        const byTooth = parsedTooth
+          ? pendingMetas.find(
+              (meta) =>
+                !usedRequestIds.has(meta.requestId) &&
+                meta.tooth === parsedTooth,
+            )
+          : null;
         const meta =
           byTooth ||
           pendingMetas.find((row) => !usedRequestIds.has(row.requestId));
@@ -2808,10 +2817,10 @@ export function RequestorPracticeReceivePage({
         return;
       }
 
-      if (pickedFiles.length > queue.length) {
+      if (stlFiles.length > queue.length) {
         toast({
           title: "일부만 등록",
-          description: `${pickedFiles.length}개 중 ${queue.length}개만 남은 치아에 맞춰 확인합니다.`,
+          description: `${stlFiles.length}개 중 ${queue.length}개만 남은 치아에 맞춰 확인합니다.`,
         });
       }
 
@@ -2827,10 +2836,27 @@ export function RequestorPracticeReceivePage({
       designConfirmBusy,
       fetchRequestCaseInfos,
       mergeProductionRelatedRequestIds,
-      pickDesignAbutmentFiles,
       pickRelatedRequestIdsFromPayload,
       toast,
       token,
+    ],
+  );
+
+  const handleCardDesignUpload = useCallback(
+    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || cardActionBusyId || designConfirmBusy) return;
+      const pickedFiles = await pickDesignAbutmentFiles();
+      if (!pickedFiles.length) return;
+      await beginDesignUploadWithFiles(transfer, pickedFiles);
+    },
+    [
+      beginDesignUploadWithFiles,
+      cardActionBusyId,
+      designConfirmBusy,
+      pickDesignAbutmentFiles,
     ],
   );
 
@@ -3098,9 +3124,13 @@ export function RequestorPracticeReceivePage({
 
   const handleCardDropFiles = useCallback(
     (transfer: ReceivedPracticeTransfer, files: File[]) => {
+      if (practiceTransferNeedsMoreAbutmentDesigns(transfer)) {
+        void beginDesignUploadWithFiles(transfer, files);
+        return;
+      }
       beginCompleteWithFiles(transfer, files);
     },
-    [beginCompleteWithFiles],
+    [beginCompleteWithFiles, beginDesignUploadWithFiles],
   );
 
   const handleCardRelease = useCallback(
