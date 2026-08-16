@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: PTX 핸드오프 시 기공소 designSoftware·아노다이징·헥스·유지홈을 Request에 스탬프.
 // - 2026-08-16: 어벗디자인 취소·재업로드 시 requestor 대시보드 스냅샷 갱신(준비 카운트 stale 방지).
 // - 2026-08-16: 핸드오프 시 retentionGroove·환자/임플란트 caseInfos 패치 허용(기공소 3D 확인).
 // - 2026-08-16: 생산 취소 시 PTX Request manufacturerStage→취소(관리자 준비 잔존 방지). 재업로드 시 준비 복원.
@@ -32,6 +33,7 @@ import {
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { updateReviewStatusByStage } from "./common.review.controller.js";
 import {
+  loadLabRequestMetaForProduction,
   mirrorDesignFileToPracticeTransfer,
   repriceAndReschedulePtxAbutmentRequest,
 } from "../../services/practiceTransferProduction.service.js";
@@ -92,18 +94,19 @@ const ensurePtxProductionRhinoReadyFields = async (request) => {
   if (!request.caseInfos) request.caseInfos = {};
   if (!request.rnd) request.rnd = {};
 
+  const designSoftware = String(request.caseInfos.designSoftware || "").trim();
+  const designSoftwareHex =
+    designSoftware === "ExoCAD" ? "헥스30도회전" : designSoftware ? DEFAULT_HEX_ROTATION : "";
+
   const hex =
+    designSoftwareHex ||
     String(request.rnd.manufacturerHexRotation || "").trim() ||
     String(request.caseInfos.finalHexRotation || "").trim() ||
     String(request.caseInfos.requestorHexRotation || "").trim() ||
     DEFAULT_HEX_ROTATION;
   request.rnd.manufacturerHexRotation = hex;
-  if (!String(request.caseInfos.finalHexRotation || "").trim()) {
-    request.caseInfos.finalHexRotation = hex;
-  }
-  if (!String(request.caseInfos.requestorHexRotation || "").trim()) {
-    request.caseInfos.requestorHexRotation = hex;
-  }
+  request.caseInfos.finalHexRotation = hex;
+  request.caseInfos.requestorHexRotation = hex;
 
   if (
     !String(request.caseInfos.faceHolePrcFileName || "").trim() ||
@@ -418,6 +421,42 @@ export async function handoffDesignToProduction(req, res) {
       request.caseInfos.implantFamily = implantFamily;
       request.caseInfos.implantType = implantType;
       request.caseInfos.retentionGroove = retentionGroove;
+    }
+
+    // PTX 수락 기공소 핸드오프: 화면의 디자인SW·아노다이징·헥스를 제조사 Request에 확정.
+    // (수락 직후 생성분이 예전 코드/동기화되지 않은 사업체 설정이어도 업로드 시점에 맞춘다.)
+    if (acceptingLabPtx) {
+      const stampLabAnchorId =
+        String(transferTargetLabAnchorId || "").trim() ||
+        String(request.businessAnchorId || "").trim();
+      try {
+        const labMeta = await loadLabRequestMetaForProduction({
+          labAnchorId: stampLabAnchorId,
+          labUserId: userId,
+        });
+        if (labMeta.designSoftware) {
+          request.caseInfos.designSoftware = labMeta.designSoftware;
+          request.caseInfos.requestorHexRotation =
+            labMeta.manufacturerHexRotation;
+          request.caseInfos.finalHexRotation = labMeta.manufacturerHexRotation;
+          if (!request.rnd) request.rnd = {};
+          request.rnd.manufacturerHexRotation = labMeta.manufacturerHexRotation;
+        }
+        if (typeof labMeta.anodizingEnabled === "boolean") {
+          request.caseInfos.anodizingEnabled = labMeta.anodizingEnabled;
+        }
+        if (
+          !normalizeRetentionGrooveOrNull(request.caseInfos.retentionGroove) &&
+          labMeta.retentionGroove
+        ) {
+          request.caseInfos.retentionGroove = labMeta.retentionGroove;
+        }
+      } catch (metaErr) {
+        console.warn(
+          "[DESIGN_HANDOFF] lab request meta stamp skipped:",
+          metaErr?.message || metaErr,
+        );
+      }
     }
 
     const prevPrimary = toStoredFileMeta(request.caseInfos.file);

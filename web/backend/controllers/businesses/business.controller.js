@@ -368,16 +368,26 @@ export async function getMyBusiness(req, res) {
 
     const meId = String(req.user._id);
     const primaryContactId = String(anchor.primaryContactUserId || "");
+    const ownerEntryId = (entry) => {
+      if (entry == null) return "";
+      if (typeof entry === "string" || typeof entry === "number") {
+        return String(entry).trim();
+      }
+      if (typeof entry === "object") {
+        return String(entry.userId || entry._id || entry.id || "").trim();
+      }
+      return "";
+    };
     const isOwner =
       Array.isArray(anchor.owners) &&
-      anchor.owners.some((c) => String(c) === meId);
+      anchor.owners.some((c) => ownerEntryId(c) === meId);
 
     let membership = "none";
     if (primaryContactId === meId || isOwner) {
       membership = "owner";
     } else if (
       Array.isArray(anchor.members) &&
-      anchor.members.some((m) => String(m) === meId)
+      anchor.members.some((m) => ownerEntryId(m) === meId)
     ) {
       membership = "member";
     } else if (
@@ -960,22 +970,34 @@ export async function clearMyBusinessLicense(req, res) {
   }
 }
 
+function membershipIdFromEntry(entry) {
+  if (entry == null) return "";
+  if (typeof entry === "string" || typeof entry === "number") {
+    return String(entry).trim();
+  }
+  // 레거시: owners/members가 ObjectId가 아니라 { userId } 객체로 저장된 경우
+  if (typeof entry === "object") {
+    return String(entry.userId || entry._id || entry.id || "").trim();
+  }
+  return "";
+}
+
 function getAnchorMembership(anchor, user) {
   if (!anchor) return "none";
 
-  const meId = String(user?._id || user || "");
+  const meId = String(user?._id || user || "").trim();
   const subRole = String(user?.subRole || "").trim();
 
-  const primaryContactId = String(anchor.primaryContactUserId || "");
+  const primaryContactId = String(anchor.primaryContactUserId || "").trim();
   const isOwner =
     Array.isArray(anchor.owners) &&
-    anchor.owners.some((ownerId) => String(ownerId) === meId);
+    anchor.owners.some((owner) => membershipIdFromEntry(owner) === meId);
 
   if (primaryContactId === meId || isOwner) return "owner";
 
   const isMember =
     Array.isArray(anchor.members) &&
-    anchor.members.some((memberId) => String(memberId) === meId);
+    anchor.members.some((member) => membershipIdFromEntry(member) === meId);
   if (isMember) return "member";
 
   // 레거시/불완전 anchor 데이터(primaryContact/owners/members 누락) 보호:

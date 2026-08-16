@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 메타 뱃지를 RequestCaseMetaBadges 공용 컴포넌트로.
 // - 2026-08-13: 첨부를 PracticeTransferFileDropTarget + useFilePreUpload 진행률바로.
 // - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(accept·드롭존 문구).
 // - 2026-08-11: 상단 버튼·드롭존 카드내 좌우상하 여백 균일(중첩 px 제거, 카드 패딩 SSOT).
@@ -38,6 +39,7 @@
 // - web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 import { Badge } from "@/components/ui/badge";
+import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -132,29 +134,16 @@ function renderUploadProgressBar(progress?: PreUploadFileProgress | null) {
 }
 
 /** 파일 용량 옆 케이스 메타 뱃지(디자인소프트웨어·아노다이징). 카드 스냅샷만 표시. */
-const CASE_META_BADGE_CLASS =
-  "text-[9px] font-medium leading-none px-1 py-0.5 shrink-0";
-
 function renderCaseMetaBadges(fileInfo?: CaseInfos | null) {
-  const designSoftware = String(fileInfo?.designSoftware || "").trim();
-  const hasCardAnodizing = typeof fileInfo?.anodizingEnabled === "boolean";
-  const cardAnodizing = hasCardAnodizing
-    ? Boolean(fileInfo?.anodizingEnabled)
-    : null;
-  if (!designSoftware && cardAnodizing === null) return null;
   return (
-    <>
-      {designSoftware ? (
-        <Badge variant="secondary" className={CASE_META_BADGE_CLASS}>
-          {designSoftware}
-        </Badge>
-      ) : null}
-      {cardAnodizing !== null ? (
-        <Badge variant="secondary" className={CASE_META_BADGE_CLASS}>
-          {cardAnodizing ? "아노 ON" : "아노 OFF"}
-        </Badge>
-      ) : null}
-    </>
+    <RequestCaseMetaBadges
+      designSoftware={fileInfo?.designSoftware}
+      anodizingEnabled={
+        typeof fileInfo?.anodizingEnabled === "boolean"
+          ? fileInfo.anodizingEnabled
+          : null
+      }
+    />
   );
 }
 

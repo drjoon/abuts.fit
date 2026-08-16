@@ -256,15 +256,28 @@ export function useRequestorRequestSettings(
         );
         setNeedsBusinessAnodizingBootstrap(!hasBusinessAno && canEditBusinessAno);
 
-        // 한쪽만 있으면 사업화(보정)
-        if ((!requestorDefault || !businessDefault) && (draftDefault || requestorDefault || businessDefault)) {
+        // 개인/사업체 어긋남 또는 한쪽 누락 시 화면 effective로 동기화
+        if (
+          (draftDefault || requestorDefault || businessDefault) &&
+          (
+            !requestorDefault ||
+            !businessDefault ||
+            (canEditBusinessDesign &&
+              Boolean(requestorDefault) &&
+              Boolean(businessDefault) &&
+              requestorDefault !== businessDefault)
+          )
+        ) {
           const bootstrapDefault =
             draftDefault || requestorDefault || businessDefault;
           const syncPayload: Record<string, string> = {};
           if (!requestorDefault) {
             syncPayload.requestorDesignSoftware = bootstrapDefault;
           }
-          if (!businessDefault && canEditBusinessDesign) {
+          if (
+            canEditBusinessDesign &&
+            (!businessDefault || businessDefault !== bootstrapDefault)
+          ) {
             syncPayload.designSoftware = bootstrapDefault;
           }
           if (Object.keys(syncPayload).length > 0) {
@@ -276,7 +289,7 @@ export function useRequestorRequestSettings(
             });
             if (syncRes.ok) {
               if (!requestorDefault) requestorDefault = bootstrapDefault;
-              if (!businessDefault && canEditBusinessDesign) {
+              if (canEditBusinessDesign) {
                 businessDefault = bootstrapDefault;
                 setNeedsBusinessDesignSoftwareBootstrap(false);
               }

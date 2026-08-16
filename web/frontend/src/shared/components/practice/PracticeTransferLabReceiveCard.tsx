@@ -2,7 +2,9 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/internalLab/labWork/LabWorkPage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
+// - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
 // change-log:
+// - 2026-08-16: 어벗생산의뢰와 동일 크기·스타일의 디자인SW·아노 메타 뱃지.
 // - 2026-08-16: CTA 라벨「어벗 생산 취소」.
 // - 2026-08-16: stuck(디자인 없음+완료 플래그)도 「어벗 생산 취소」·재오픈 후 업로드 CTA.
 // - 2026-08-16: 생산 취소 후 displayStatus「의뢰수락」복원 시 어벗·보철 업로드 CTA 재표시.
@@ -18,6 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
 import { cn } from "@/shared/ui/cn";
 import {
   PRACTICE_REMAKE_BADGE_CLASS,
@@ -59,6 +62,9 @@ export type PracticeTransferLabReceiveCardProps = {
   cardBusy?: boolean;
   designConfirmBusy?: boolean;
   dimRejected?: boolean;
+  /** 기공소 의뢰 기본값 — 어벗생산의뢰 파일카드와 동일 메타 뱃지 */
+  designSoftwareLabel?: string | null;
+  anodizingEnabled?: boolean | null;
   onOpen: () => void;
   onDesignUpload: (event: MouseEvent) => void;
   onAbutmentProductionCancel: (event: MouseEvent) => void;
@@ -77,6 +83,8 @@ export function PracticeTransferLabReceiveCard({
   cardBusy = false,
   designConfirmBusy = false,
   dimRejected = false,
+  designSoftwareLabel = null,
+  anodizingEnabled = null,
   onOpen,
   onDesignUpload,
   onAbutmentProductionCancel,
@@ -170,9 +178,9 @@ export function PracticeTransferLabReceiveCard({
   const body = (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-muted-foreground" />
-          <span className="font-semibold">{transfer.transferId}</span>
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="font-semibold truncate">{transfer.transferId}</span>
           {chatUnreadCount > 0 ? (
             <Badge
               variant="destructive"
@@ -182,7 +190,11 @@ export function PracticeTransferLabReceiveCard({
             </Badge>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <RequestCaseMetaBadges
+            designSoftware={designSoftwareLabel}
+            anodizingEnabled={anodizingEnabled}
+          />
           <span className="text-xs text-muted-foreground">
             {formatDateTime(transfer.createdAt)}
           </span>

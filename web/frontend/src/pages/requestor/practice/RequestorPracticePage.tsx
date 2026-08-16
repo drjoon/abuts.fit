@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-16: 수신 카드에 디자인SW·아노 메타 뱃지(어벗생산의뢰와 동일 스타일).
 // - 2026-08-16: 어벗디자인 업로드 시 3D 확인 모달(기본값 채움·유지홈 필수) 후 handoff.
 // - 2026-08-16: 기간필터 옆에 디자인SW·아노다이징 공통 툴바. 미설정 시 진입 강제.
 // - 2026-08-16: 어벗디자인 업로드 후 로컬 production.designFiles 반영 → 상세「작업 파일」표시.
@@ -3054,6 +3055,8 @@ export function RequestorPracticeReceivePage({
                   Boolean(designConfirmBusyId) && designConfirmBusyId === cardId
                 }
                 dimRejected={dimRejectedCard}
+                designSoftwareLabel={String(designSoftwareValue || "").trim()}
+                anodizingEnabled={anodizingEnabled}
                 onOpen={() => {
                   void openTransferDialog(transfer);
                 }}

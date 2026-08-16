@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-16: PTX CA — 개인/사업체 requestSettings 중 화면 effective(개인 우선)로 designSoftware·아노·유지홈·헥스 반영. 핸드오프와 공용 loader.
 // - 2026-08-16: PTX CA 제조 주문에 기공소 requestSettings.designSoftware·아노다이징·헥스 반영.
 // - 2026-08-16: PTX CA 납품=치과 직납. 출고목표=치과도착일−2영업일(기공소 경유 −3 폐기).
 // - 2026-08-16: PTX 출고모드·스케줄은 생산(custom_abutment) 리드로 판정(디자인+1일 오판으로 신속 승격 방지).
@@ -206,11 +207,97 @@ const resolveLabRequestorUserId = async ({ transferDoc, fallbackUserId }) => {
 };
 
 /** ExoCAD → 헥스30도회전, 그 외(3Shape/custom) → STL모델대로 */
-const resolveHexRotationByDesignSoftware = (designSoftwareRaw) => {
+export const resolveHexRotationByDesignSoftware = (designSoftwareRaw) => {
   const designSoftware = String(designSoftwareRaw || "").trim();
   if (designSoftware === "ExoCAD") return "헥스30도회전";
   return "STL모델대로";
 };
+
+const normalizeRetentionGrooveValue = (value, fallback = "none") => {
+  const rg = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (rg === "deep") return "deep";
+  if (rg === "none" || rg === "shallow") return "none";
+  return fallback;
+};
+
+/**
+ * UI effectiveDesign과 동일: 의뢰자 개인 설정 → 사업체 설정.
+ * (사업체만 오래된 값으로 남아 있어도 화면/제조 주문이 어긋나지 않게)
+ */
+export function pickLabDesignSoftware(labUser, labOrg) {
+  return (
+    String(labUser?.requestSettings?.designSoftware || "").trim() ||
+    String(labOrg?.requestSettings?.designSoftware || "").trim() ||
+    ""
+  );
+}
+
+export function pickLabAnodizingEnabled(labUser, labOrg) {
+  if (typeof labUser?.requestSettings?.anodizingEnabled === "boolean") {
+    return labUser.requestSettings.anodizingEnabled;
+  }
+  if (typeof labOrg?.requestSettings?.anodizingEnabled === "boolean") {
+    return labOrg.requestSettings.anodizingEnabled;
+  }
+  return true;
+}
+
+export function pickLabRetentionGroove(labUser, labOrg) {
+  return normalizeRetentionGrooveValue(
+    labUser?.requestSettings?.retentionGroove ||
+      labOrg?.requestSettings?.retentionGroove,
+    "none",
+  );
+}
+
+/**
+ * PTX Request 생성·디자인 핸드오프 공통: 기공소 의뢰 메타.
+ */
+export async function loadLabRequestMetaForProduction({
+  labAnchorId,
+  labUserId,
+}) {
+  const anchorId = String(labAnchorId || "").trim();
+  const userId = String(labUserId || "").trim();
+
+  const [labOrg, labUser] = await Promise.all([
+    anchorId && Types.ObjectId.isValid(anchorId)
+      ? BusinessAnchor.findById(anchorId)
+          .select({
+            "requestSettings.designSoftware": 1,
+            "requestSettings.anodizingEnabled": 1,
+            "requestSettings.retentionGroove": 1,
+          })
+          .lean()
+      : null,
+    userId && Types.ObjectId.isValid(userId)
+      ? User.findById(userId)
+          .select({
+            "requestSettings.designSoftware": 1,
+            "requestSettings.anodizingEnabled": 1,
+            "requestSettings.retentionGroove": 1,
+          })
+          .lean()
+      : null,
+  ]);
+
+  const designSoftware = pickLabDesignSoftware(labUser, labOrg);
+  const anodizingEnabled = pickLabAnodizingEnabled(labUser, labOrg);
+  const retentionGroove = pickLabRetentionGroove(labUser, labOrg);
+  const manufacturerHexRotation =
+    resolveHexRotationByDesignSoftware(designSoftware);
+
+  return {
+    designSoftware,
+    anodizingEnabled,
+    retentionGroove,
+    manufacturerHexRotation,
+    labOrg,
+    labUser,
+  };
+}
 
 const ymdToUtcNoonMs = (ymd) => {
   const m = String(ymd || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -429,21 +516,6 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
   }
 
-  const labOrg = await BusinessAnchor.findById(labAnchorId)
-    .select({
-      name: 1,
-      "shippingPolicy.weeklyBatchDays": 1,
-      "requestSettings.anodizingEnabled": 1,
-      "requestSettings.designSoftware": 1,
-    })
-    .lean();
-
-  const weeklyBatchDays = Array.isArray(labOrg?.shippingPolicy?.weeklyBatchDays)
-    ? labOrg.shippingPolicy.weeklyBatchDays
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-    : [];
-
   const labUserId = await resolveLabRequestorUserId({
     transferDoc,
     fallbackUserId: actorUserId,
@@ -452,33 +524,37 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     throw new Error("기공소 의뢰자 계정을 찾지 못해 어벗츠 의뢰를 생성할 수 없습니다.");
   }
 
-  const labUser = await User.findById(labUserId)
+  const labMeta = await loadLabRequestMetaForProduction({
+    labAnchorId,
+    labUserId,
+  });
+  const labOrgShipping = await BusinessAnchor.findById(labAnchorId)
     .select({
-      "requestSettings.designSoftware": 1,
-      "requestSettings.anodizingEnabled": 1,
+      name: 1,
+      "shippingPolicy.weeklyBatchDays": 1,
     })
     .lean();
+  const labOrg = {
+    ...(labMeta.labOrg || {}),
+    name: labOrgShipping?.name,
+    shippingPolicy: labOrgShipping?.shippingPolicy,
+  };
 
-  let designSoftware = String(
-    labOrg?.requestSettings?.designSoftware || "",
-  ).trim();
-  if (!designSoftware) {
-    designSoftware = String(labUser?.requestSettings?.designSoftware || "").trim();
-  }
+  const weeklyBatchDays = Array.isArray(labOrg?.shippingPolicy?.weeklyBatchDays)
+    ? labOrg.shippingPolicy.weeklyBatchDays
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    : [];
+
+  const designSoftware = String(labMeta.designSoftware || "").trim();
   if (!designSoftware) {
     throw new Error(
       "기공소 디자인 소프트웨어가 설정되지 않았습니다. 기공의뢰수신 또는 어벗생산의뢰에서 먼저 설정해주세요.",
     );
   }
-  const manufacturerHexRotation =
-    resolveHexRotationByDesignSoftware(designSoftware);
-
-  const anodizingEnabled =
-    typeof labOrg?.requestSettings?.anodizingEnabled === "boolean"
-      ? labOrg.requestSettings.anodizingEnabled
-      : typeof labUser?.requestSettings?.anodizingEnabled === "boolean"
-        ? labUser.requestSettings.anodizingEnabled
-        : true;
+  const manufacturerHexRotation = labMeta.manufacturerHexRotation;
+  const anodizingEnabled = labMeta.anodizingEnabled;
+  const retentionGroove = labMeta.retentionGroove;
 
   const requestedAt = new Date();
   const shippingMode =
@@ -593,6 +669,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       maxDiameter,
       designSoftware,
       anodizingEnabled,
+      retentionGroove,
       file: {
         originalName: scanFile.file.originalName,
         mimetype: scanFile.file.mimetype,
@@ -678,6 +755,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         ...normalizedCaseInfos,
         designSoftware,
         anodizingEnabled,
+        retentionGroove,
         requestorHexRotation: manufacturerHexRotation,
         finalHexRotation: manufacturerHexRotation,
         faceHolePrcFileName: resolvedPrc.faceHolePrcFileName || undefined,
