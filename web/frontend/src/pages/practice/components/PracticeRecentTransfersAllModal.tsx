@@ -5,6 +5,7 @@
  * 2026-08-14: 사이드바 1페이지를 시드로 재사용. 열 때 /my 재요청하지 않음.
  * 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지.
  * 2026-08-16: 기공소 작업취소 카드 깜빡임 하이라이트.
+ * 2026-08-16: 선택 시 사이드바와 동일 PracticeRecentTransferItem(작업 파일 포함) 전달.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Repeat, Search, Trash2 } from "lucide-react";

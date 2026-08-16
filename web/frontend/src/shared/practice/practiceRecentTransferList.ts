@@ -6,6 +6,7 @@
  * 표시명만 UI 마스킹.
  * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
  * 2026-08-14: 자동매칭 → 의뢰 집계/필터·뱃지 라벨. matchingMode=auto 기공소명 UI 마스킹.
+ * 2026-08-16: 작업 파일(designFiles·resultFiles)·생산 메타를 사이드바·전체보기 공통 매핑.
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -18,6 +19,10 @@ import {
   parsePracticeTransferFeeQuote,
   type PracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
+import {
+  parsePracticeLabRatingPublic,
+  type PracticeLabRatingPublic,
+} from "@/shared/practice/practiceLabRating";
 
 /** GET /api/practice/transfers/my 기본 페이지 크기. 사이드바·전체보기 모달 공유. */
 export const PRACTICE_MY_TRANSFERS_PAGE_SIZE = 30;
@@ -50,12 +55,21 @@ export type PracticeRecentRequestItem = {
   fileS3Key: string;
   fileSize: number;
   resultFiles?: PracticeRecentTransferFileItem[];
+  designFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
+  skipDesignConfirm?: boolean;
+  skipJig?: boolean;
+  designReadyAt?: string | null;
+  designFileCount?: number;
+  practiceDesignConfirmedAt?: string | null;
+  labDesignConfirmedAt?: string | null;
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
+  canRateLab?: boolean;
+  labRating?: PracticeLabRatingPublic | null;
 };
 
 export type PracticeRecentTransferItem = {
@@ -76,17 +90,32 @@ export type PracticeRecentTransferItem = {
   fileNames: string[];
   files: PracticeRecentTransferFileItem[];
   resultFiles?: PracticeRecentTransferFileItem[];
+  designFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
+  skipDesignConfirm?: boolean;
+  skipJig?: boolean;
+  designReadyAt?: string | null;
+  designFileCount?: number;
+  practiceDesignConfirmedAt?: string | null;
+  labDesignConfirmedAt?: string | null;
   transferMemo: string;
   rawTransferMemo?: string;
   unreadCount: number;
   searchBlob: string;
   targetLabAnchorId?: string;
+  matchingMode?: "direct" | "auto";
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
+  canRateLab?: boolean;
+  labRating?: PracticeLabRatingPublic | null;
+  /** 임시저장 카드용(사이드바·휴지통) */
+  practiceUserId?: string;
+  practiceUserLabel?: string;
+  isMineDraft?: boolean;
+  draftPatientName?: string;
 };
 
 export type PracticeRecentStatusFilter =
@@ -279,6 +308,34 @@ const toDayLabel = (value: unknown) => {
   });
 };
 
+const mapApiFileItems = (raw: unknown): PracticeRecentTransferFileItem[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row) => {
+      const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+      return {
+        fileName: String(item.originalName || item.fileName || "").trim(),
+        s3Key: String(item.s3Key || "").trim(),
+        size: Number(item.size || 0),
+      };
+    })
+    .filter((f) => f.fileName && f.s3Key);
+};
+
+const mergeFileItemsByS3Key = (
+  existing: PracticeRecentTransferFileItem[] | undefined,
+  incoming: PracticeRecentTransferFileItem[] | undefined,
+) => {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    return Array.isArray(existing) ? existing : [];
+  }
+  const byKey = new Map((existing || []).map((f) => [f.s3Key, f] as const));
+  for (const f of incoming) {
+    if (f.s3Key) byKey.set(f.s3Key, f);
+  }
+  return Array.from(byKey.values());
+};
+
 export const mapMyPracticeTransferApiRows = (
   list: unknown[],
 ): PracticeRecentRequestItem[] =>
@@ -326,21 +383,12 @@ export const mapMyPracticeTransferApiRows = (
       const patientName = String(ci.patientName || "").trim() || "-";
       const requestId = String(r.requestId || r._id || "").trim();
       const requestMongoId = String(r.practiceTransferId || r._id || "").trim();
-      const resultFilesRaw = Array.isArray(r.resultFiles) ? r.resultFiles : [];
-      const resultFiles: PracticeRecentTransferFileItem[] = resultFilesRaw
-        .map((row) => {
-          const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-          return {
-            fileName: String(item.originalName || item.fileName || "").trim(),
-            s3Key: String(item.s3Key || "").trim(),
-            size: Number(item.size || 0),
-          };
-        })
-        .filter((f) => f.fileName && f.s3Key);
+      const resultFiles = mapApiFileItems(r.resultFiles);
       const productionRaw =
         r.production && typeof r.production === "object"
           ? (r.production as Record<string, unknown>)
           : null;
+      const designFiles = mapApiFileItems(productionRaw?.designFiles);
 
       return {
         id: requestId,
@@ -364,9 +412,25 @@ export const mapMyPracticeTransferApiRows = (
         fileS3Key: String(fileObj.s3Key || "").trim(),
         fileSize: Number(fileObj.size || 0),
         resultFiles,
+        designFiles,
         hasCustomAbutment: Boolean(r.hasCustomAbutment),
         productionConfirmedAt: productionRaw?.confirmedAt
           ? String(productionRaw.confirmedAt)
+          : null,
+        skipDesignConfirm: productionRaw?.skipDesignConfirm !== false,
+        skipJig: Boolean(productionRaw?.skipJig),
+        designReadyAt: productionRaw?.designReadyAt
+          ? String(productionRaw.designReadyAt)
+          : null,
+        designFileCount: Math.max(
+          Number(productionRaw?.designFileCount || 0),
+          designFiles.length,
+        ),
+        practiceDesignConfirmedAt: productionRaw?.practiceDesignConfirmedAt
+          ? String(productionRaw.practiceDesignConfirmedAt)
+          : null,
+        labDesignConfirmedAt: productionRaw?.labDesignConfirmedAt
+          ? String(productionRaw.labDesignConfirmedAt)
           : null,
         feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
         remakeFeeQuote: parsePracticeTransferFeeQuote(
@@ -391,10 +455,71 @@ export const mapMyPracticeTransferApiRows = (
             ? (r.remake as { sourceTransferId?: unknown }).sourceTransferId
             : r.remakeSourceTransferId) || "",
         ).trim(),
+        canRateLab: Boolean(r.canRateLab),
+        labRating: parsePracticeLabRatingPublic(r.labRating),
       };
     })
     .filter((item) => Boolean(item.id))
     .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
+
+/** 열린 의뢰상세에 목록 재조회 row를 병합(작업 파일·생산 메타·견적). */
+export const mergeOpenPracticeTransferFromRequestRows = (
+  prev: PracticeRecentTransferItem,
+  openRows: PracticeRecentRequestItem[],
+): PracticeRecentTransferItem => {
+  if (openRows.length === 0) return prev;
+  const openRow = openRows[0];
+  const mergedResultFiles = openRows.reduce<PracticeRecentTransferFileItem[]>(
+    (acc, row) => mergeFileItemsByS3Key(acc, row.resultFiles),
+    [],
+  );
+  const mergedDesignFiles = openRows.reduce<PracticeRecentTransferFileItem[]>(
+    (acc, row) => mergeFileItemsByS3Key(acc, row.designFiles),
+    [],
+  );
+  const nextDesignFileCount = Math.max(
+    ...openRows.map((row) => Number(row.designFileCount || 0)),
+    mergedDesignFiles.length,
+  );
+  const nextFee = openRow.feeQuote;
+  const keepBilled = prev.feeQuote?.billed && (!nextFee || !nextFee.billed);
+  return {
+    ...prev,
+    status: openRow.status || prev.status,
+    resultFiles: mergedResultFiles,
+    designFiles: mergedDesignFiles,
+    designFileCount: nextDesignFileCount,
+    designReadyAt:
+      openRows.find((r) => r.designReadyAt)?.designReadyAt || prev.designReadyAt || null,
+    practiceDesignConfirmedAt:
+      openRows.find((r) => r.practiceDesignConfirmedAt)?.practiceDesignConfirmedAt ||
+      prev.practiceDesignConfirmedAt ||
+      null,
+    labDesignConfirmedAt:
+      openRows.find((r) => r.labDesignConfirmedAt)?.labDesignConfirmedAt ||
+      prev.labDesignConfirmedAt ||
+      null,
+    productionConfirmedAt:
+      openRows.find((r) => r.productionConfirmedAt)?.productionConfirmedAt ||
+      prev.productionConfirmedAt ||
+      null,
+    skipDesignConfirm:
+      openRows.some((r) => r.skipDesignConfirm === false)
+        ? false
+        : prev.skipDesignConfirm !== false,
+    skipJig: openRows.some((r) => r.skipJig === false)
+      ? false
+      : Boolean(prev.skipJig || openRows.some((r) => r.skipJig)),
+    hasCustomAbutment:
+      prev.hasCustomAbutment || openRows.some((r) => Boolean(r.hasCustomAbutment)),
+    canRateLab: prev.canRateLab || openRows.some((r) => Boolean(r.canRateLab)),
+    labRating:
+      openRows.find((r) => r.labRating)?.labRating || prev.labRating || null,
+    matchingMode: openRow.matchingMode || prev.matchingMode,
+    ...(keepBilled ? {} : nextFee ? { feeQuote: nextFee } : {}),
+    ...(openRow.remakeFeeQuote ? { remakeFeeQuote: openRow.remakeFeeQuote } : {}),
+  };
+};
 
 export const filterRequestsByPeriodAndSearch = (
   requests: PracticeRecentRequestItem[],
@@ -526,15 +651,28 @@ export const groupPracticeRecentRequests = (
           ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: Number(req.fileSize || 0) }]
           : [],
         resultFiles: Array.isArray(req.resultFiles) ? [...req.resultFiles] : [],
+        designFiles: Array.isArray(req.designFiles) ? [...req.designFiles] : [],
         hasCustomAbutment: Boolean(req.hasCustomAbutment),
         productionConfirmedAt: req.productionConfirmedAt || null,
+        skipDesignConfirm: req.skipDesignConfirm !== false,
+        skipJig: Boolean(req.skipJig),
+        designReadyAt: req.designReadyAt || null,
+        designFileCount: Math.max(
+          Number(req.designFileCount || 0),
+          Array.isArray(req.designFiles) ? req.designFiles.length : 0,
+        ),
+        practiceDesignConfirmedAt: req.practiceDesignConfirmedAt || null,
+        labDesignConfirmedAt: req.labDesignConfirmedAt || null,
         transferMemo: req.transferMemo,
         rawTransferMemo: req.rawTransferMemo,
         targetLabAnchorId: req.targetLabAnchorId,
+        matchingMode: req.matchingMode,
         feeQuote: req.feeQuote || null,
         remakeFeeQuote: req.remakeFeeQuote || req.feeQuote?.remakeFeeQuote || null,
         isRemake: Boolean(req.isRemake),
         remakeSourceTransferId: req.remakeSourceTransferId || "",
+        canRateLab: Boolean(req.canRateLab),
+        labRating: req.labRating || null,
         unreadCount,
         searchBlob: [
           req.id,
@@ -595,15 +733,32 @@ export const groupPracticeRecentRequests = (
       existing.arrivalDate = req.arrivalDate;
     }
     if (Array.isArray(req.resultFiles) && req.resultFiles.length > 0) {
-      const byS3Key = new Map(
-        (existing.resultFiles || []).map((f) => [f.s3Key, f] as const),
-      );
-      for (const f of req.resultFiles) {
-        if (f.s3Key) byS3Key.set(f.s3Key, f);
-      }
-      existing.resultFiles = Array.from(byS3Key.values());
+      existing.resultFiles = mergeFileItemsByS3Key(existing.resultFiles, req.resultFiles);
+    }
+    if (Array.isArray(req.designFiles) && req.designFiles.length > 0) {
+      existing.designFiles = mergeFileItemsByS3Key(existing.designFiles, req.designFiles);
     }
     if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
+    if (req.skipDesignConfirm === false) existing.skipDesignConfirm = false;
+    if (req.skipJig === false) existing.skipJig = false;
+    else if (req.skipJig) existing.skipJig = true;
+    if (req.designReadyAt) existing.designReadyAt = req.designReadyAt;
+    {
+      const nextDesignCount = Math.max(
+        Number(req.designFileCount || 0),
+        Array.isArray(req.designFiles) ? req.designFiles.length : 0,
+        Array.isArray(existing.designFiles) ? existing.designFiles.length : 0,
+      );
+      if (nextDesignCount > Number(existing.designFileCount || 0)) {
+        existing.designFileCount = nextDesignCount;
+      }
+    }
+    if (req.practiceDesignConfirmedAt) {
+      existing.practiceDesignConfirmedAt = req.practiceDesignConfirmedAt;
+    }
+    if (req.labDesignConfirmedAt) {
+      existing.labDesignConfirmedAt = req.labDesignConfirmedAt;
+    }
     // 수락·청구 후 확정 feeQuote가 오면 예산 구간 견적을 덮어쓴다.
     if (req.feeQuote) {
       if (!existing.feeQuote || req.feeQuote.billed || !existing.feeQuote.billed) {
@@ -620,6 +775,11 @@ export const groupPracticeRecentRequests = (
     if (!existing.targetLabAnchorId && req.targetLabAnchorId) {
       existing.targetLabAnchorId = req.targetLabAnchorId;
     }
+    if (!existing.matchingMode && req.matchingMode) {
+      existing.matchingMode = req.matchingMode;
+    }
+    if (req.canRateLab) existing.canRateLab = true;
+    if (req.labRating) existing.labRating = req.labRating;
     if (req.productionConfirmedAt) {
       existing.productionConfirmedAt = req.productionConfirmedAt;
     }

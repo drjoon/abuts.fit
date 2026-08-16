@@ -79,6 +79,8 @@
  * - 2026-08-16: 기공소 취소 — 자동매칭은 재공개, 지정은 치과 「취소」로 다음 조치 유도.
  * - 2026-08-16: 최근전송 조치대기(작업취소) 알림 뱃지·카드 깜빡임 하이라이트.
  * - 2026-08-16: 취소 건 클릭 시 전용 모달로 거부 안내·기공소 재선택.
+ * - 2026-08-16: 의뢰상세 작업 파일 — 어벗디자인(designFiles)·보철물(resultFiles) 기공소와 동일 표시.
+ * - 2026-08-16: 최근의뢰·전체보기 의뢰상세 SSOT — practiceRecentTransferList + sender detail model.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -170,8 +172,6 @@ import {
 } from "@/components/ui/tooltip";
 import {
   PracticeTransferDetailChatDialog,
-  type PracticeTransferDialogFileItem,
-  type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
@@ -197,18 +197,24 @@ import {
   canRemakePracticeTransferByStatus,
   computeGroupedStatusCounts,
   filterGroupedTransfersByStatus,
+  filterRequestsByPeriodAndSearch,
+  groupPracticeRecentRequests,
   isPracticeTransferActionNeededStatus,
   isPracticeTransferTrashStatus,
+  mapMyPracticeTransferApiRows,
+  mergeOpenPracticeTransferFromRequestRows,
+  type PracticeRecentRequestItem,
   type PracticeRecentStatusFilter,
+  type PracticeRecentTransferFileItem,
+  type PracticeRecentTransferItem,
 } from "@/shared/practice/practiceRecentTransferList";
+import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import { formatWon } from "@/shared/practice/practiceTransferFeeQuote";
 import {
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   normalizeAutoMatchMinLabRating,
-  parsePracticeLabRatingPublic,
-  type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
@@ -238,7 +244,6 @@ import {
 } from "@/components/ui/select";
 import {
       buildPracticeTransferMemo as buildPracticeTransferMemoShared,
-      extractTransferMemoFromMessage as extractTransferMemoFromMessageShared,
       formatPracticeTransferMemoDetail as formatPracticeTransferMemoDetailShared,
       formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
       normalizeToothWorksForSync,
@@ -255,7 +260,6 @@ import {
       resolvePracticeTransferSkipJig,
       type AbutmentProductMode,
       parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
-      stripPracticeTransferMessageEnvelope,
       type PracticeAbutmentFavorite,
       type PracticeImplantFavorite,
       type ToothWorkSelection as SharedToothWorkSelection,
@@ -275,7 +279,6 @@ import {
   invalidatePracticeTransferQuoteContextCache,
 } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { kstYmdDiffDays } from "@/shared/date/kst";
-import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import {
   ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
 } from "@/shared/practice/oralScanRequirement";
@@ -286,50 +289,9 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
-type RecentRequestItem = {
-  id: string; // 전송 내 파일 row 식별자(표시/그룹/optimistic 삭제용)
-  requestMongoId: string; // PracticeTransfer _id (삭제 API 호출용)
-  createdAt: string;
-  requestDate: string;
-  patientName: string;
-  patientKey: string;
-  toothNumbers: string[];
-  targetLab: string;
-  targetLabAnchorId: string;
-  status: string;
-  createdAtTs: number;
-  transferId: string;
-  orderDate: string;
-  arrivalDate: string;
-  transferMemo: string;
-  /** 메타 태그 포함 원본 메모 — 보철물 차트 파싱용 */
-  rawTransferMemo: string;
-  fileName: string;
-  fileS3Key: string;
-  fileSize: number;
-  resultFiles?: TransferFileItem[];
-  hasCustomAbutment?: boolean;
-  productionConfirmedAt?: string | null;
-  skipDesignConfirm?: boolean;
-  skipJig?: boolean;
-  designReadyAt?: string | null;
-  designFileCount?: number;
-  practiceDesignConfirmedAt?: string | null;
-  labDesignConfirmedAt?: string | null;
-  feeQuote?: PracticeTransferFeeQuote | null;
-  remakeFeeQuote?: PracticeTransferFeeQuote | null;
-  isRemake?: boolean;
-  remakeSourceTransferId?: string;
-  matchingMode?: "direct" | "auto";
-  canRateLab?: boolean;
-  labRating?: PracticeLabRatingPublic | null;
-};
-
-type TransferFileItem = {
-  fileName: string;
-  s3Key: string;
-  size: number;
-};
+type RecentRequestItem = PracticeRecentRequestItem;
+type TransferFileItem = PracticeRecentTransferFileItem;
+type RecentTransferItem = PracticeRecentTransferItem;
 
 type DraftTransferFileItem = {
   fileId: string;
@@ -416,69 +378,9 @@ const toDraftListSummary = (
   };
 };
 
-type RecentTransferItem = {
-  id: string;
-  transferId: string;
-  deleteTargetLabel: string;
-  createdAt: string;
-  createdAtTs: number;
-  requestDate: string;
-  targetLab: string;
-  orderDate: string;
-  arrivalDate: string;
-  status: string;
-  fileCount: number;
-  patientCount: number;
-  requestIds: string[];
-  transferMongoIds: string[];
-  fileNames: string[];
-  files: TransferFileItem[];
-  resultFiles?: TransferFileItem[];
-  hasCustomAbutment?: boolean;
-  productionConfirmedAt?: string | null;
-  skipDesignConfirm?: boolean;
-  skipJig?: boolean;
-  designReadyAt?: string | null;
-  designFileCount?: number;
-  practiceDesignConfirmedAt?: string | null;
-  labDesignConfirmedAt?: string | null;
-  transferMemo: string;
-  /** 메타 태그 포함 원본 메모 — 보철물 차트 파싱용 */
-  rawTransferMemo?: string;
-  unreadCount: number;
-  searchBlob: string;
-  practiceUserId?: string;
-  practiceUserLabel?: string;
-  isMineDraft?: boolean;
-  draftPatientName?: string;
-  targetLabAnchorId?: string;
-  feeQuote?: PracticeTransferFeeQuote | null;
-  remakeFeeQuote?: PracticeTransferFeeQuote | null;
-  isRemake?: boolean;
-  remakeSourceTransferId?: string;
-  matchingMode?: "direct" | "auto";
-  canRateLab?: boolean;
-  labRating?: PracticeLabRatingPublic | null;
-};
-
-const extractLabNameFromMessage = (message: string) => {
-  const raw = String(message || "").trim();
-  const matched = raw.match(/\[\s*기공소\s*:\s*([^\]]+)\]/);
-  return String(matched?.[1] || "").trim();
-};
-
-const extractTransferIdFromMessage = (message: string) => {
-  const raw = String(message || "").trim();
-  const matched = raw.match(/\[\s*전송ID\s*:\s*([^\]]+)\]/i);
-  return String(matched?.[1] || "").trim();
-};
-
 const formatTransferMemoForDisplay = (rawMemo: string) =>
   formatPracticeTransferMemoDetailShared(rawMemo, { includeDateSummary: false }) ||
   formatTransferMemoForDisplayShared(rawMemo);
-
-const extractTransferMemoFromMessage = (message: string) =>
-  extractTransferMemoFromMessageShared(message, { includeDateSummary: false });
 
 const makeTransferId = () => {
   const t = Date.now().toString(36).toUpperCase();
@@ -2394,139 +2296,7 @@ export const PracticeFileTransferPage = ({
           : {};
       const paginationHasMore = pagination.hasMore;
 
-      const mapped: RecentRequestItem[] = list
-        .map((raw) => {
-          const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-          const ci =
-            r.caseInfos && typeof r.caseInfos === "object"
-              ? (r.caseInfos as Record<string, unknown>)
-              : {};
-          const newSystemRequest =
-            ci.newSystemRequest && typeof ci.newSystemRequest === "object"
-              ? (ci.newSystemRequest as Record<string, unknown>)
-              : {};
-
-          const message = String(newSystemRequest.message || r.description || "").trim();
-          const practiceRouting =
-            ci.practiceRouting && typeof ci.practiceRouting === "object"
-              ? (ci.practiceRouting as Record<string, unknown>)
-              : {};
-          const targetLabAnchorId = String(
-            practiceRouting.targetLabAnchorId || r.targetLabAnchorId || "",
-          ).trim();
-          const targetLabFromRouting = String(
-            practiceRouting.targetLabName || r.targetLabName || "",
-          ).trim();
-          const matchingMode =
-            String(practiceRouting.matchingMode || r.matchingMode || "").trim() === "auto"
-              ? "auto"
-              : "direct";
-          const targetLab =
-            matchingMode === "auto"
-              ? "자동 매칭"
-              : targetLabFromRouting || extractLabNameFromMessage(message) || "-";
-          const toothRaw = String(ci.tooth || "").trim();
-          const createdAtRaw = String(r.createdAt || "");
-          const strippedTransferMemo = stripPracticeTransferMessageEnvelope(message);
-          const parsedMemo = parsePracticeTransferMemoMetaShared(strippedTransferMemo);
-          const transferMemo = extractTransferMemoFromMessage(message);
-          const orderDate = String(r.orderDate || parsedMemo.orderDate || "").trim();
-          const arrivalDate = String(r.arrivalDate || parsedMemo.arrivalDate || "").trim();
-          const fileObj =
-            ci.file && typeof ci.file === "object"
-              ? (ci.file as Record<string, unknown>)
-              : {};
-
-          const patientName = String(ci.patientName || "").trim() || "-";
-          const requestId = String(r.requestId || r._id || "").trim();
-          const requestMongoId = String(r.practiceTransferId || r._id || "").trim();
-          const resultFilesRaw = Array.isArray(r.resultFiles) ? r.resultFiles : [];
-          const resultFiles: TransferFileItem[] = resultFilesRaw
-            .map((row) => {
-              const item =
-                row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-              return {
-                fileName: String(item.originalName || item.fileName || "").trim(),
-                s3Key: String(item.s3Key || "").trim(),
-                size: Number(item.size || 0),
-              };
-            })
-            .filter((f) => f.fileName && f.s3Key);
-          const productionRaw =
-            r.production && typeof r.production === "object"
-              ? (r.production as Record<string, unknown>)
-              : null;
-
-          return {
-            id: requestId,
-            requestMongoId,
-            createdAt: toDateLabel(createdAtRaw),
-            requestDate: toDayLabel(createdAtRaw),
-            patientName,
-            patientKey: normalizePatientNameKey(patientName),
-            toothNumbers: toothRaw ? [toothRaw] : [],
-            targetLab,
-            targetLabAnchorId: matchingMode === "auto" ? "" : targetLabAnchorId,
-            matchingMode,
-            status: toStatusLabel(r.manufacturerStage),
-            createdAtTs: new Date(createdAtRaw).getTime(),
-            transferId: extractTransferIdFromMessage(message),
-            orderDate,
-            arrivalDate,
-            transferMemo,
-            rawTransferMemo: strippedTransferMemo,
-            fileName: String(fileObj.originalName || fileObj.name || "").trim(),
-            fileS3Key: String(fileObj.s3Key || "").trim(),
-            fileSize: Number(fileObj.size || 0),
-            resultFiles,
-            hasCustomAbutment: Boolean(r.hasCustomAbutment),
-            productionConfirmedAt: productionRaw?.confirmedAt
-              ? String(productionRaw.confirmedAt)
-              : null,
-            skipDesignConfirm: productionRaw?.skipDesignConfirm !== false,
-            skipJig: Boolean(productionRaw?.skipJig),
-            designReadyAt: productionRaw?.designReadyAt
-              ? String(productionRaw.designReadyAt)
-              : null,
-            designFileCount: Number(productionRaw?.designFileCount || 0),
-            practiceDesignConfirmedAt: productionRaw?.practiceDesignConfirmedAt
-              ? String(productionRaw.practiceDesignConfirmedAt)
-              : null,
-            labDesignConfirmedAt: productionRaw?.labDesignConfirmedAt
-              ? String(productionRaw.labDesignConfirmedAt)
-              : null,
-            feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
-            remakeFeeQuote: parsePracticeTransferFeeQuote(
-              (r.feeQuote && typeof r.feeQuote === "object"
-                ? (r.feeQuote as Record<string, unknown>).remakeFeeQuote
-                : null) ?? r.remakeFeeQuote,
-            ),
-            isRemake: Boolean(
-              r.isRemake ||
-                (r.remake &&
-                  typeof r.remake === "object" &&
-                  (String(
-                    (r.remake as { sourceTransferId?: unknown }).sourceTransferId || "",
-                  ).trim() ||
-                    String(
-                      (r.remake as { sourceTransferMongoId?: unknown })
-                        .sourceTransferMongoId || "",
-                    ).trim())) ||
-                (r.feeQuote &&
-                  typeof r.feeQuote === "object" &&
-                  (r.feeQuote as { isRemake?: boolean }).isRemake),
-            ),
-            remakeSourceTransferId: String(
-              (r.remake && typeof r.remake === "object"
-                ? (r.remake as { sourceTransferId?: unknown }).sourceTransferId
-                : r.remakeSourceTransferId) || "",
-            ).trim(),
-            canRateLab: Boolean(r.canRateLab),
-            labRating: parsePracticeLabRatingPublic(r.labRating),
-          };
-        })
-        .filter((item) => Boolean(item.id))
-        .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
+      const mapped = mapMyPracticeTransferApiRows(list);
 
       setRecentRequests(mapped);
       setRecentRequestsHasMore(
@@ -2535,32 +2305,18 @@ export const PracticeFileTransferPage = ({
           : mapped.length >= PRACTICE_MY_TRANSFERS_PAGE_SIZE,
       );
 
-      // 열린 상세가 있으면 목록 재조회의 확정 feeQuote·상태를 동기화
+      // 열린 상세가 있으면 목록 재조회의 확정 feeQuote·상태·작업 파일을 동기화
       const openTransferId = String(selectedTransferIdRef.current || "").trim();
       if (transferDialogOpenRef.current && openTransferId) {
-        const openRow = mapped.find(
+        const openRows = mapped.filter(
           (row) => String(row.transferId || "").trim() === openTransferId,
         );
-        if (openRow) {
+        if (openRows.length > 0) {
           setSelectedTransfer((prev) => {
             if (!prev || String(prev.transferId || "").trim() !== openTransferId) {
               return prev;
             }
-            const nextFee = openRow.feeQuote;
-            const keepBilled =
-              prev.feeQuote?.billed && (!nextFee || !nextFee.billed);
-            return {
-              ...prev,
-              status: openRow.status || prev.status,
-              ...(keepBilled
-                ? {}
-                : nextFee
-                  ? { feeQuote: nextFee }
-                  : {}),
-              ...(openRow.remakeFeeQuote
-                ? { remakeFeeQuote: openRow.remakeFeeQuote }
-                : {}),
-            };
+            return mergeOpenPracticeTransferFromRequestRows(prev, openRows);
           });
         }
       }
@@ -3261,59 +3017,10 @@ export const PracticeFileTransferPage = ({
     activeDraftSeenInListRef.current = null;
   }, [activeDraftId, localFormHydrated, practiceDraftList]);
 
-  const periodAndSearchFilteredRequests = useMemo(() => {
-    const query = requestSearchTerm.trim().toLowerCase();
-
-    const periodFiltered = recentRequests.filter((request) => {
-      if (!request.requestDate || request.requestDate === "-") return false;
-
-      const createdTs = Number(request.createdAtTs || 0);
-      if (!Number.isFinite(createdTs) || createdTs <= 0) return true;
-      const created = new Date(createdTs);
-
-      const now = new Date();
-      const dayMs = 24 * 60 * 60 * 1000;
-      const diffDays = (now.getTime() - createdTs) / dayMs;
-
-      if (period === "30d") return diffDays <= 30;
-      if (period === "90d") return diffDays <= 90;
-
-      const y = now.getFullYear();
-      const m = now.getMonth();
-      const startThisMonth = new Date(y, m, 1, 0, 0, 0, 0);
-      const startNextMonth = new Date(y, m + 1, 1, 0, 0, 0, 0);
-      const startLastMonth = new Date(y, m - 1, 1, 0, 0, 0, 0);
-
-      if (period === "thisMonth") {
-        return created >= startThisMonth && created < startNextMonth;
-      }
-
-      return created >= startLastMonth && created < startThisMonth;
-    });
-
-    if (!query) return periodFiltered;
-
-    return periodFiltered.filter((request) => {
-      const searchableText = [
-        request.id,
-        request.transferId,
-        request.createdAt,
-        request.requestDate,
-        request.patientName,
-        request.toothNumbers.join(" "),
-        request.targetLab,
-        request.orderDate,
-        request.arrivalDate,
-        request.status,
-        request.fileName,
-        request.transferMemo,
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return searchableText.includes(query);
-    });
-  }, [recentRequests, requestSearchTerm, period]);
+  const periodAndSearchFilteredRequests = useMemo(
+    () => filterRequestsByPeriodAndSearch(recentRequests, period, requestSearchTerm),
+    [recentRequests, requestSearchTerm, period],
+  );
 
   const filteredRecentRequests = useMemo(
     () =>
@@ -3331,261 +3038,10 @@ export const PracticeFileTransferPage = ({
     [periodAndSearchFilteredRequests],
   );
 
-  const groupedTransfers = useMemo(() => {
-    const unreadByTransferId = new Map<string, number>();
-    const latestChatTsByTransferId = new Map<string, number>();
-    for (const room of chatRooms) {
-      const transferId = String(room.relatedPracticeTransferId?.transferId || "").trim();
-      if (!transferId) continue;
-      unreadByTransferId.set(transferId, Number(room.unreadCount || 0));
-
-      const lastTs = new Date(String(room.lastMessageAt || "")).getTime();
-      if (Number.isFinite(lastTs) && lastTs > 0) {
-        latestChatTsByTransferId.set(transferId, lastTs);
-      }
-    }
-
-    const byKey = new Map<
-      string,
-      RecentTransferItem & {
-        _statuses: Set<string>;
-        _patients: Set<string>;
-        _requestIds: Set<string>;
-        _transferMongoIds: Set<string>;
-        _files: Map<string, TransferFileItem>;
-      }
-    >();
-
-    for (const req of filteredRecentRequests) {
-      const minuteBucket = Math.floor(Number(req.createdAtTs || 0) / (60 * 1000));
-      const fallbackKey = `${minuteBucket}|${String(req.targetLab || "-")}`;
-      const key = req.transferId || fallbackKey;
-
-      const patientKey = String(req.patientKey || "").trim();
-      const existing = byKey.get(key);
-      if (!existing) {
-        const initialPatients = new Set<string>();
-        if (patientKey) initialPatients.add(patientKey);
-
-        const requestIds = new Set<string>([req.id]);
-        const transferMongoIds = new Set<string>();
-        if (req.requestMongoId) transferMongoIds.add(req.requestMongoId);
-        const files = new Map<string, TransferFileItem>();
-        if (req.fileName && req.fileS3Key) {
-          files.set(req.fileS3Key, {
-            fileName: req.fileName,
-            s3Key: req.fileS3Key,
-            size: Number(req.fileSize || 0),
-          });
-        }
-        const unreadCount = Number(unreadByTransferId.get(req.transferId) || 0);
-        const hasFile = Boolean(req.fileName && req.fileS3Key);
-        byKey.set(key, {
-          id: req.id,
-          transferId: req.transferId || "-",
-          deleteTargetLabel: req.transferId || req.id,
-          createdAt: req.createdAt,
-          createdAtTs: req.createdAtTs,
-          requestDate: req.requestDate,
-          targetLab: req.targetLab,
-          orderDate: req.orderDate,
-          arrivalDate: req.arrivalDate,
-          status: req.status,
-          fileCount: hasFile ? 1 : 0,
-          patientCount: Math.max(1, initialPatients.size),
-          requestIds: [req.id],
-          transferMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
-          fileNames: hasFile ? [req.fileName] : [],
-          files: hasFile
-            ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: Number(req.fileSize || 0) }]
-            : [],
-          resultFiles: Array.isArray(req.resultFiles) ? [...req.resultFiles] : [],
-          hasCustomAbutment: Boolean(req.hasCustomAbutment),
-          productionConfirmedAt: req.productionConfirmedAt || null,
-          skipDesignConfirm: req.skipDesignConfirm !== false,
-          skipJig: Boolean(req.skipJig),
-          designReadyAt: req.designReadyAt || null,
-          designFileCount: Number(req.designFileCount || 0),
-          practiceDesignConfirmedAt: req.practiceDesignConfirmedAt || null,
-          labDesignConfirmedAt: req.labDesignConfirmedAt || null,
-          transferMemo: req.transferMemo,
-          rawTransferMemo: req.rawTransferMemo,
-          targetLabAnchorId: req.targetLabAnchorId,
-          matchingMode: req.matchingMode,
-          feeQuote: req.feeQuote || null,
-          remakeFeeQuote: req.remakeFeeQuote || req.feeQuote?.remakeFeeQuote || null,
-          isRemake: Boolean(req.isRemake),
-          remakeSourceTransferId: req.remakeSourceTransferId || "",
-          canRateLab: Boolean(req.canRateLab),
-          labRating: req.labRating || null,
-          unreadCount,
-          searchBlob: [
-            req.id,
-            req.createdAt,
-            req.requestDate,
-            req.patientName,
-            req.toothNumbers.join(" "),
-            req.targetLab,
-            req.orderDate,
-            req.arrivalDate,
-            req.status,
-            req.transferMemo,
-            req.transferId,
-            req.fileName,
-          ]
-            .join(" ")
-            .toLowerCase(),
-          _statuses: new Set([req.status]),
-          _patients: initialPatients,
-          _requestIds: requestIds,
-          _transferMongoIds: transferMongoIds,
-          _files: files,
-        });
-        continue;
-      }
-
-      if (req.fileName && req.fileS3Key) {
-        existing._files.set(req.fileS3Key, {
-          fileName: req.fileName,
-          s3Key: req.fileS3Key,
-          size: Number(req.fileSize || 0),
-        });
-      }
-      existing.files = Array.from(existing._files.values());
-      existing.fileNames = existing.files.map((f) => f.fileName).filter(Boolean);
-      existing.fileCount = existing.files.length;
-      if (patientKey) {
-        existing._patients.add(patientKey);
-      }
-      existing.patientCount = Math.max(1, existing._patients.size);
-      existing._statuses.add(req.status);
-      existing._requestIds.add(req.id);
-      existing.requestIds = Array.from(existing._requestIds);
-      if (req.requestMongoId) {
-        existing._transferMongoIds.add(req.requestMongoId);
-      }
-      existing.transferMongoIds = Array.from(existing._transferMongoIds);
-
-      if (!existing.transferMemo && req.transferMemo) {
-        existing.transferMemo = req.transferMemo;
-      }
-      if (!existing.rawTransferMemo && req.rawTransferMemo) {
-        existing.rawTransferMemo = req.rawTransferMemo;
-      }
-      if (!existing.orderDate && req.orderDate) {
-        existing.orderDate = req.orderDate;
-      }
-      if (!existing.arrivalDate && req.arrivalDate) {
-        existing.arrivalDate = req.arrivalDate;
-      }
-      if (Array.isArray(req.resultFiles) && req.resultFiles.length > 0) {
-        const byKey = new Map(
-          (existing.resultFiles || []).map((f) => [f.s3Key, f] as const),
-        );
-        for (const f of req.resultFiles) {
-          if (f.s3Key) byKey.set(f.s3Key, f);
-        }
-        existing.resultFiles = Array.from(byKey.values());
-      }
-      if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
-      if (req.skipDesignConfirm === false) existing.skipDesignConfirm = false;
-      if (req.skipJig === false) existing.skipJig = false;
-      else if (req.skipJig) existing.skipJig = true;
-      if (req.designReadyAt) existing.designReadyAt = req.designReadyAt;
-      if (Number(req.designFileCount || 0) > Number(existing.designFileCount || 0)) {
-        existing.designFileCount = Number(req.designFileCount || 0);
-      }
-      if (req.practiceDesignConfirmedAt) {
-        existing.practiceDesignConfirmedAt = req.practiceDesignConfirmedAt;
-      }
-      if (req.labDesignConfirmedAt) {
-        existing.labDesignConfirmedAt = req.labDesignConfirmedAt;
-      }
-      // 수락·청구 후 확정 feeQuote가 오면 예산 구간 견적을 덮어쓴다.
-      if (req.feeQuote) {
-        if (!existing.feeQuote || req.feeQuote.billed || !existing.feeQuote.billed) {
-          existing.feeQuote = req.feeQuote;
-        }
-      }
-      if (!existing.remakeFeeQuote && req.remakeFeeQuote) {
-        existing.remakeFeeQuote = req.remakeFeeQuote;
-      }
-      if (req.isRemake) existing.isRemake = true;
-      if (!existing.remakeSourceTransferId && req.remakeSourceTransferId) {
-        existing.remakeSourceTransferId = req.remakeSourceTransferId;
-      }
-      if (!existing.targetLabAnchorId && req.targetLabAnchorId) {
-        existing.targetLabAnchorId = req.targetLabAnchorId;
-      }
-      if (!existing.matchingMode && req.matchingMode) {
-        existing.matchingMode = req.matchingMode;
-      }
-      if (req.productionConfirmedAt) {
-        existing.productionConfirmedAt = req.productionConfirmedAt;
-      }
-      if (req.createdAtTs > existing.createdAtTs) {
-        existing.createdAtTs = req.createdAtTs;
-        existing.createdAt = req.createdAt;
-        existing.requestDate = req.requestDate;
-      }
-
-      existing.unreadCount = Number(unreadByTransferId.get(existing.transferId) || 0);
-
-      existing.searchBlob = `${existing.searchBlob} ${[
-        req.patientName,
-        req.toothNumbers.join(" "),
-        req.id,
-        req.orderDate,
-        req.arrivalDate,
-        req.transferMemo,
-        req.fileName,
-      ].join(" ")}`.toLowerCase();
-      if (!existing.transferId || existing.transferId === "-") {
-        existing.deleteTargetLabel = req.id;
-      }
-
-      const statusSet = existing._statuses;
-      if (statusSet.size === 1) {
-        existing.status = [...statusSet][0] || existing.status;
-      } else if (statusSet.has("생산진행")) {
-        existing.status = "생산진행";
-      } else if (statusSet.has("작업완료")) {
-        existing.status = "작업완료";
-      } else if (statusSet.has("발송완료")) {
-        existing.status = "발송완료";
-      } else if (statusSet.has("수신완료")) {
-        existing.status = "수신완료";
-      } else if (statusSet.has("의뢰수락") || statusSet.has("다운로드완료")) {
-        existing.status = "의뢰수락";
-      } else if (statusSet.has("작업취소")) {
-        existing.status = "작업취소";
-      } else if (statusSet.has("거부")) {
-        existing.status = "거부";
-      } else if (statusSet.has("취소")) {
-        existing.status = "취소";
-      } else {
-        existing.status = "발송완료";
-      }
-    }
-
-    return [...byKey.values()]
-      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, _transferMongoIds: _tm, _files: _f, ...row }) => ({
-        ...row,
-        files: Array.isArray(row.files) ? row.files : [],
-        fileNames: Array.isArray(row.fileNames) ? row.fileNames : [],
-        deleteTargetLabel:
-          row.transferId && row.transferId !== "-"
-            ? row.transferId
-            : row.id,
-      }))
-      .sort((a, b) => {
-        const aChatTs = Number(latestChatTsByTransferId.get(a.transferId) || 0);
-        const bChatTs = Number(latestChatTsByTransferId.get(b.transferId) || 0);
-        const aSortTs = aChatTs > 0 ? aChatTs : Number(a.createdAtTs || 0);
-        const bSortTs = bChatTs > 0 ? bChatTs : Number(b.createdAtTs || 0);
-        return bSortTs - aSortTs;
-      });
-  }, [filteredRecentRequests, chatRooms]);
+  const groupedTransfers = useMemo(
+    () => groupPracticeRecentRequests(filteredRecentRequests, chatRooms),
+    [filteredRecentRequests, chatRooms],
+  );
 
   const statusCounts = useMemo(
     () => computeGroupedStatusCounts(groupedTransfers),
@@ -3867,39 +3323,9 @@ export const PracticeFileTransferPage = ({
     return new Set(ids);
   }, [authUser]);
 
-  const selectedTransferRawMemo = useMemo(
-    () =>
-      String(selectedTransfer?.rawTransferMemo || selectedTransfer?.transferMemo || "").trim(),
-    [selectedTransfer?.rawTransferMemo, selectedTransfer?.transferMemo],
-  );
-
-  // 상세 의 메모: 메타 태그 원본에서 자유 입력 메모만 (환자명·보철물 요약 제외)
-  const selectedTransferDisplayMemo = useMemo(() => {
-    const raw = String(selectedTransfer?.rawTransferMemo || "").trim();
-    if (!raw) return "";
-    return String(parsePracticeTransferMemoMetaShared(raw).memo || "").trim();
-  }, [selectedTransfer?.rawTransferMemo]);
-
-  const selectedTransferPatientName = useMemo(() => {
-    const fromMemo = String(
-      parsePracticeTransferMemoMetaShared(selectedTransferRawMemo).patientName || "",
-    ).trim();
-    if (fromMemo) return fromMemo;
-    return String(selectedTransfer?.draftPatientName || "").trim();
-  }, [selectedTransfer?.draftPatientName, selectedTransferRawMemo]);
-
-  const selectedTransferWorkPeriodSummary = useMemo(
-    () =>
-      buildPracticeWorkPeriodSummaryItem(
-        selectedTransfer?.orderDate,
-        selectedTransfer?.arrivalDate,
-      ),
-    [selectedTransfer?.arrivalDate, selectedTransfer?.orderDate],
-  );
-
-  const selectedTransferToothWorks = useMemo(
-    () => parsePracticeTransferMemoMetaShared(selectedTransferRawMemo).toothWorks,
-    [selectedTransferRawMemo],
+  const selectedTransferDetailModel = useMemo(
+    () => buildPracticeSenderTransferDetailModel(selectedTransfer),
+    [selectedTransfer],
   );
 
   const applyDraftSummaryToForm = useCallback(
@@ -4295,12 +3721,7 @@ export const PracticeFileTransferPage = ({
   );
 
   const handleDownloadAllTransferFiles = useCallback(async () => {
-    const files = [
-      ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
-      ...(Array.isArray(selectedTransfer?.resultFiles)
-        ? selectedTransfer.resultFiles
-        : []),
-    ];
+    const files = selectedTransferDetailModel?.downloadAllFiles || [];
     await downloadAll(
       files.map((file) => ({
         s3Key: String(file.s3Key || "").trim(),
@@ -4308,7 +3729,7 @@ export const PracticeFileTransferPage = ({
         busyKey: String(file.s3Key || "").trim(),
       })),
     );
-  }, [downloadAll, selectedTransfer]);
+  }, [downloadAll, selectedTransferDetailModel]);
 
   const handleConfirmProduction = useCallback(async () => {
     if (!authToken || !selectedTransfer || productionConfirmBusy) return;
@@ -7456,16 +6877,16 @@ export const PracticeFileTransferPage = ({
           initialLoading={recentRequestsLoading}
           initialError={recentRequestsError}
           onSelectTransfer={(transfer) => {
-            void handleOpenTransferDialog(transfer as RecentTransferItem, {
+            void handleOpenTransferDialog(transfer, {
               returnToAllModal: true,
             });
           }}
           onDeleteTransfer={(transfer) => {
-            handleAskDeleteTransfer(transfer as RecentTransferItem);
+            handleAskDeleteTransfer(transfer);
           }}
           remakeSelectedIds={remakeSelectedIds}
           onToggleRemakeSelect={(transfer) =>
-            toggleRemakeSelect(transfer as RecentTransferItem)
+            toggleRemakeSelect(transfer)
           }
           onAskRemake={() => setRemakeConfirmOpen(true)}
         />
@@ -7505,87 +6926,31 @@ export const PracticeFileTransferPage = ({
               />
             ) : null
           }
-          summaryItems={[
-            {
-              label: "전송ID",
-              value:
-                selectedTransfer?.transferId && selectedTransfer.transferId !== "-"
-                  ? selectedTransfer.transferId
-                  : selectedTransfer?.id || "-",
-            },
-            { label: "전송시각", value: selectedTransfer?.createdAt || "-" },
-            { label: "기공소", value: selectedTransfer?.targetLab || "-" },
-            { label: "환자명", value: selectedTransferPatientName || "-" },
-            { label: "주문일", value: selectedTransfer?.orderDate || "-" },
-            { label: "치과도착일", value: selectedTransfer?.arrivalDate || "-" },
-            ...(selectedTransferWorkPeriodSummary
-              ? [selectedTransferWorkPeriodSummary]
-              : []),
-            { label: "파일 수", value: `${selectedTransfer?.fileCount || 0}개` },
-            {
-              label: "보철물",
-              value: `${Number(selectedTransfer?.resultFiles?.length || 0)}개`,
-            },
-          ] satisfies PracticeTransferDialogSummaryItem[]}
-          memo={selectedTransferDisplayMemo}
-          toothWorks={selectedTransferToothWorks}
+          summaryItems={selectedTransferDetailModel?.summaryItems || []}
+          memo={selectedTransferDetailModel?.memo || "-"}
+          toothWorks={selectedTransferDetailModel?.toothWorks || []}
           toothWorksKey={
-            selectedTransfer?.transferId && selectedTransfer.transferId !== "-"
-              ? selectedTransfer.transferId
-              : selectedTransfer?.id || "practice-transfer"
+            selectedTransferDetailModel?.toothWorksKey || "practice-transfer"
           }
           feeQuote={selectedTransfer?.feeQuote || null}
-          skipJig={Boolean(selectedTransfer?.skipJig)}
+          skipJig={Boolean(selectedTransferDetailModel?.skipJig)}
           feeViewer="practice"
-          labAnchorId={selectedTransfer?.targetLabAnchorId || null}
+          labAnchorId={selectedTransferDetailModel?.labAnchorId || null}
           filesLabel="의뢰 파일 (구강 스캔)"
-          files={
-            (selectedTransfer?.files || []).map((file, idx) => ({
-              id: `${file.s3Key}:${idx}`,
-              fileName: file.fileName,
-              size: Number(file.size || 0),
-              s3Key: String(file.s3Key || "").trim(),
-            })) satisfies PracticeTransferDialogFileItem[]
-          }
+          files={selectedTransferDetailModel?.files || []}
+          designFilesLabel="어벗 디자인"
+          designFiles={selectedTransferDetailModel?.designFiles || []}
           resultFilesLabel="보철물"
-          resultFiles={
-            (selectedTransfer?.resultFiles || []).map((file, idx) => ({
-              id: `${file.s3Key}:result:${idx}`,
-              fileName: file.fileName,
-              size: Number(file.size || 0),
-              s3Key: String(file.s3Key || "").trim(),
-            })) satisfies PracticeTransferDialogFileItem[]
-          }
-          showProductionConfirm={
-            (String(selectedTransfer?.status || "").trim() === "작업완료" &&
-              !selectedTransfer?.productionConfirmedAt &&
-              Number(selectedTransfer?.resultFiles?.length || 0) > 0) ||
-            Boolean(
-              selectedTransfer?.hasCustomAbutment &&
-                selectedTransfer?.skipDesignConfirm === false &&
-                (selectedTransfer?.designReadyAt ||
-                  Number(selectedTransfer?.designFileCount || 0) > 0) &&
-                !selectedTransfer?.practiceDesignConfirmedAt &&
-                String(selectedTransfer?.status || "").trim() !== "작업완료" &&
-                String(selectedTransfer?.status || "").trim() !== "생산진행" &&
-                String(selectedTransfer?.status || "").trim() !== "포장.발송",
-            )
-          }
+          resultFiles={selectedTransferDetailModel?.resultFiles || []}
+          showProductionConfirm={Boolean(
+            selectedTransferDetailModel?.showProductionConfirm,
+          )}
           productionConfirmTitle={
-            selectedTransfer?.hasCustomAbutment &&
-            selectedTransfer?.skipDesignConfirm === false &&
-            !selectedTransfer?.practiceDesignConfirmedAt &&
-            String(selectedTransfer?.status || "").trim() !== "작업완료"
-              ? "어벗츠 디자인을 확인한 뒤 컨펌하세요. 기공소 확인과 함께 생산이 시작됩니다."
-              : "작업 결과를 확인한 뒤 생산을 진행하세요."
+            selectedTransferDetailModel?.productionConfirmTitle ||
+            "작업 결과를 확인한 뒤 생산을 진행하세요."
           }
           productionConfirmButtonLabel={
-            selectedTransfer?.hasCustomAbutment &&
-            selectedTransfer?.skipDesignConfirm === false &&
-            !selectedTransfer?.practiceDesignConfirmedAt &&
-            String(selectedTransfer?.status || "").trim() !== "작업완료"
-              ? "어벗 디자인 컨펌"
-              : "생산 진행"
+            selectedTransferDetailModel?.productionConfirmButtonLabel || "생산 진행"
           }
           productionConfirmBusy={productionConfirmBusy}
           onConfirmProduction={() => void handleConfirmProduction()}
