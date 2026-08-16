@@ -2,8 +2,9 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/internalLab/labWork/LabWorkPage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
-// - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
+// - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-08-16: 치과와 동일 최신 메타(시각·상태·주문/도착·치과/환자). 메모·기간·메타뱃지·헤더 별점 제거.
 // - 2026-08-16: 수신 카드 — 상태·메타·별점 / 매칭·시각 / 작업기간 / 기공비·수령 4줄로 압축.
 // - 2026-08-16: 수신 카드 — 치과 중심 계층·칩 메타·상태 색·compact 셸(간단 명료).
 // - 2026-08-16: 다치아 어벗 — 부족분 추가 업로드 CTA·보철 다중 업로드 안내.
@@ -12,8 +13,6 @@
 // - 2026-08-16: 취소 라벨 — 수락중「의뢰 수락 취소」·보철완료후「작업 완료 취소」.
 // - 2026-08-16: 보철 완료(발송) 후 — 어벗·보철 CTA 비활성 + 오른쪽「취소」만(의뢰수락 재오픈).
 // - 2026-08-16: 별점 다운그레이드 배너 — 우리 별점·자동매칭 별점·수가 차이(accent/danger).
-// - 2026-08-16: 상태 뱃지 오른쪽 끝 — 내 별점·평가 횟수.
-// - 2026-08-16: 어벗생산의뢰와 동일 크기·스타일의 디자인SW·아노 메타 뱃지.
 // - 2026-08-16: CTA 라벨「어벗 생산 취소」.
 // - 2026-08-16: stuck(디자인 없음+완료 플래그)도 「어벗 생산 취소」·재오픈 후 업로드 CTA.
 // - 2026-08-16: 생산 취소 후 displayStatus「의뢰수락」복원 시 어벗·보철 업로드 CTA 재표시.
@@ -29,7 +28,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
 import { cn } from "@/shared/ui/cn";
 import {
   PRACTICE_REMAKE_BADGE_CLASS,
@@ -42,12 +40,11 @@ import { PracticeTransferFeeEstimate } from "@/shared/components/practice/Practi
 import {
   PracticeTransferFileDropTarget,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
-import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import {
-  AUTO_MATCH_RATING_COUNT_GRACE,
-  DEFAULT_EFFECTIVE_LAB_STARS,
-  formatLabStarsLabel,
-} from "@/shared/practice/practiceLabRating";
+  PracticeTransferRequestCardMeta,
+  resolvePracticeTransferListPatientName,
+} from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
+import { formatLabStarsLabel } from "@/shared/practice/practiceLabRating";
 import { SEMANTIC_BADGE, SEMANTIC_CALLOUT } from "@/shared/ui/semanticStatus";
 import {
   countPracticeTransferDesignFiles,
@@ -62,6 +59,7 @@ const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
   if (Number.isNaN(d.getTime())) return "-";
   return d.toLocaleString("ko-KR", {
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -74,31 +72,8 @@ const formatDateTime = (value: unknown) => {
 const formatWonCompact = (value: number) =>
   `₩${Math.max(0, Math.round(value)).toLocaleString("ko-KR")}`;
 
-const statusBadgeClass = (displayStatus: string) => {
-  if (
-    displayStatus === "취소" ||
-    displayStatus === "거부" ||
-    displayStatus === "작업취소"
-  ) {
-    return SEMANTIC_BADGE.dangerSoft;
-  }
-  if (
-    displayStatus === "의뢰수락" ||
-    displayStatus === "작업완료" ||
-    displayStatus === "생산진행" ||
-    displayStatus === "포장.발송"
-  ) {
-    return SEMANTIC_BADGE.primarySoft;
-  }
-  if (displayStatus === "발송완료" || displayStatus === "자동매칭") {
-    return SEMANTIC_BADGE.neutral;
-  }
-  return SEMANTIC_BADGE.neutral;
-};
-
 const CARD_SHELL =
   "w-full cursor-pointer rounded-xl border bg-white p-3.5 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
 
 export type PracticeTransferLabReceiveCardProps = {
   transfer: PracticeTransferLabReceiveItem;
@@ -106,7 +81,7 @@ export type PracticeTransferLabReceiveCardProps = {
   cardBusy?: boolean;
   designConfirmBusy?: boolean;
   dimRejected?: boolean;
-  /** 기공소 의뢰 기본값 — 어벗생산의뢰 파일카드와 동일 메타 뱃지 */
+  /** 기공소 의뢰 기본값 — 상세에서 사용(목록 카드에는 미표시) */
   designSoftwareLabel?: string | null;
   anodizingEnabled?: boolean | null;
   onOpen: () => void;
@@ -127,8 +102,6 @@ export function PracticeTransferLabReceiveCard({
   cardBusy = false,
   designConfirmBusy = false,
   dimRejected = false,
-  designSoftwareLabel = null,
-  anodizingEnabled = null,
   onOpen,
   onDesignUpload,
   onAbutmentProductionCancel,
@@ -138,6 +111,7 @@ export function PracticeTransferLabReceiveCard({
   onDropFiles,
 }: PracticeTransferLabReceiveCardProps) {
   const displayStatus = getPracticeTransferLabReceiveDisplayStatus(transfer);
+  const statusLabel = toStatusBadgeLabel(displayStatus);
   const cardId = String(transfer.transferId || transfer._id || "").trim();
   const resultCount = Number(
     transfer.resultFileCount || transfer.resultFiles?.length || 0,
@@ -185,14 +159,6 @@ export function PracticeTransferLabReceiveCard({
   });
   const starDowngrade = transfer.starDowngrade || null;
   const hasStarDowngrade = Boolean(starDowngrade);
-  const labRatingSummary = transfer.labRatingSummary || null;
-  const myStarsDisplay =
-    labRatingSummary &&
-    labRatingSummary.ratingCount > AUTO_MATCH_RATING_COUNT_GRACE &&
-    labRatingSummary.stars != null
-      ? labRatingSummary.stars
-      : labRatingSummary?.effectiveStars ?? DEFAULT_EFFECTIVE_LAB_STARS;
-  const myRatingCount = labRatingSummary?.ratingCount ?? 0;
 
   const onCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -312,13 +278,7 @@ export function PracticeTransferLabReceiveCard({
     transfer.matchingMode === "auto"
       ? "자동 매칭"
       : String(transfer.practice.businessName || "").trim() || "-";
-  const contactLabel =
-    transfer.matchingMode === "auto"
-      ? ""
-      : String(transfer.practice.userName || "").trim();
-  const memoPreview = String(transfer.transferMemo || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const patientName = resolvePracticeTransferListPatientName(transfer);
 
   const actionBar =
     showWorkActions || completedStageCancelActions ? (
@@ -427,161 +387,96 @@ export function PracticeTransferLabReceiveCard({
 
   const body = (
     <>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge
-          variant="outline"
-          className={cn(
-            "h-5 shrink-0 px-1.5 text-[11px] font-semibold leading-none",
-            statusBadgeClass(displayStatus),
-          )}
-        >
-          {toStatusBadgeLabel(displayStatus)}
-        </Badge>
-        {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}
-        {transfer.isRemake ? (
-          <Badge
-            variant="outline"
-            className={cn(
-              "h-5 shrink-0 px-1.5 text-[11px] leading-none",
-              PRACTICE_REMAKE_BADGE_CLASS,
-            )}
-          >
-            리메이크
-          </Badge>
-        ) : null}
-        <RequestCaseMetaBadges
-          designSoftware={designSoftwareLabel}
-          anodizingEnabled={anodizingEnabled}
-        />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-amber-950">
-              <Star
-                className="h-3 w-3 fill-amber-500 text-amber-500"
-                aria-hidden
-              />
-              <span className="font-semibold tabular-nums">
-                {formatLabStarsLabel(myStarsDisplay)}
-              </span>
-              <span className="text-amber-800/70">·{myRatingCount}</span>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-xs">
-            내 별점(평가 치과별 1건 합산). 평가 치과{" "}
-            {AUTO_MATCH_RATING_COUNT_GRACE + 1}곳부터 실제 평균이 적용됩니다.
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
-      <div className="mt-1.5 min-w-0">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[13px] leading-snug">
-          <span className="truncate font-semibold tracking-tight text-slate-900">
-            {clinicLabel}
-          </span>
-          {chatUnreadCount > 0 ? (
-            <Badge
-              variant="destructive"
-              className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
-            >
-              {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
-            </Badge>
-          ) : null}
-          <span className="tabular-nums text-[12px] text-muted-foreground">
-            {formatDateTime(transfer.createdAt)}
-          </span>
-        </div>
-        {contactLabel ? (
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            담당 {contactLabel}
-          </p>
-        ) : null}
-      </div>
-
-      {transfer.orderDate && transfer.arrivalDate ? (
-        <div className="mt-1.5 text-[12px] leading-snug">
-          <PracticeWorkPeriodText
-            orderDate={transfer.orderDate}
-            arrivalDate={transfer.arrivalDate}
-            variant="orderArrival"
-            viewer="lab"
-            className="text-[12px]"
-          />
-        </div>
-      ) : null}
-
-      {memoPreview ? (
-        <p
-          className="mt-1 truncate text-[11px] leading-snug text-muted-foreground"
-          title={memoPreview}
-        >
-          메모 {memoPreview}
-        </p>
-      ) : null}
-
-      {transfer.feeQuote ? (
-        <PracticeTransferFeeEstimate
-          quote={transfer.feeQuote}
-          viewer="lab"
-          density="card"
-          skipJig={Boolean(transfer.production?.skipJig)}
-        />
-      ) : null}
-
-      {starDowngrade ? (
-        <div
-          role="note"
-          className={cn(
-            "mt-2.5 rounded-lg px-2.5 py-2 text-[11px]",
-            SEMANTIC_CALLOUT.attentionBorder,
-          )}
-        >
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-accent-strong">
-            <span className="inline-flex items-center gap-1">
-              <Star className="h-3 w-3 fill-current" aria-hidden />
-              별점 다운그레이드
-            </span>
-            <span className="font-normal text-accent-strong/80">
-              낮은 별점 의뢰 · 수락 전 확인
-            </span>
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <span
-              className={cn(
-                "inline-flex items-center rounded-md px-1.5 py-0.5 font-semibold tabular-nums",
-                SEMANTIC_BADGE.attentionSoft,
-              )}
-            >
-              {formatLabStarsLabel(starDowngrade.labEffectiveStars)}
-              <span className="mx-1 font-normal text-accent-strong/70" aria-hidden>
-                →
-              </span>
-              {formatLabStarsLabel(starDowngrade.autoMatchStars)}
-            </span>
-            {starDowngrade.labFeeDeltaWon > 0 ? (
-              <span
+      <PracticeTransferRequestCardMeta
+        createdAt={formatDateTime(transfer.createdAt)}
+        statusLabel={statusLabel}
+        extraBadges={
+          <>
+            {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}
+            {transfer.isRemake ? (
+              <Badge
+                variant="outline"
                 className={cn(
-                  "inline-flex items-center rounded-md px-1.5 py-0.5 font-semibold tabular-nums",
-                  SEMANTIC_BADGE.dangerSoft,
+                  "h-5 shrink-0 px-1.5 text-[11px] leading-none",
+                  PRACTICE_REMAKE_BADGE_CLASS,
                 )}
               >
-                수가 {formatWonCompact(starDowngrade.labFeeDeltaWon)}↓
-              </span>
+                리메이크
+              </Badge>
             ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {showWorkActions &&
-      hasCa &&
-      designFileCount > 0 &&
-      !transfer.production?.labDesignConfirmedAt ? (
-        <div className="mt-2.5 rounded-lg border border-dashed border-primary/35 bg-primary-soft/50 px-2.5 py-1.5 text-[11px] leading-snug text-primary-strong">
-          어벗 디자인 도착
-          {!transfer.production?.abutmentProductionStartedAt
-            ? " · 신규 건은 업로드 시 자동 주문"
-            : " · 레거시는 「어벗 디자인 확인」"}
-        </div>
-      ) : null}
+            {chatUnreadCount > 0 ? (
+              <Badge
+                variant="destructive"
+                className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
+              >
+                {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+              </Badge>
+            ) : null}
+          </>
+        }
+        counterpartLabel="치과"
+        counterpartValue={clinicLabel}
+        orderDate={transfer.orderDate}
+        arrivalDate={transfer.arrivalDate}
+        patientName={patientName}
+        afterMeta={
+          transfer.feeQuote || starDowngrade ? (
+            <div className="space-y-2">
+              {transfer.feeQuote ? (
+                <PracticeTransferFeeEstimate
+                  quote={transfer.feeQuote}
+                  viewer="lab"
+                  density="card"
+                  skipJig={Boolean(transfer.production?.skipJig)}
+                />
+              ) : null}
+              {starDowngrade ? (
+                <div
+                  role="note"
+                  className={cn(
+                    "rounded-lg px-2.5 py-2 text-[11px]",
+                    SEMANTIC_CALLOUT.attentionBorder,
+                  )}
+                >
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-accent-strong">
+                    <span className="inline-flex items-center gap-1">
+                      <Star className="h-3 w-3 fill-current" aria-hidden />
+                      별점 다운그레이드
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-md px-1.5 py-0.5 font-semibold tabular-nums",
+                        SEMANTIC_BADGE.attentionSoft,
+                      )}
+                    >
+                      {formatLabStarsLabel(starDowngrade.labEffectiveStars)}
+                      <span
+                        className="mx-1 font-normal text-accent-strong/70"
+                        aria-hidden
+                      >
+                        →
+                      </span>
+                      {formatLabStarsLabel(starDowngrade.autoMatchStars)}
+                    </span>
+                    {starDowngrade.labFeeDeltaWon > 0 ? (
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-md px-1.5 py-0.5 font-semibold tabular-nums",
+                          SEMANTIC_BADGE.dangerSoft,
+                        )}
+                      >
+                        수가 {formatWonCompact(starDowngrade.labFeeDeltaWon)}↓
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null
+        }
+      />
 
       {actionBar}
     </>

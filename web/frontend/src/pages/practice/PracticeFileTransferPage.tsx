@@ -82,6 +82,7 @@
  * - 2026-08-16: 의뢰상세 작업 파일 — 어벗디자인(designFiles)·보철물(resultFiles) 기공소와 동일 표시.
  * - 2026-08-16: 최근의뢰·전체보기 의뢰상세 SSOT — practiceRecentTransferList + sender detail model.
  * - 2026-08-16: 리메이크 버튼을 목록 검색 옆으로 이동. 컨펌은 리메이크비 무료·배송비 차감 안내.
+ * - 2026-08-16: 최근의뢰 카드=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·기간·메모 덤프 제거).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -285,7 +286,10 @@ import { kstYmdDiffDays } from "@/shared/date/kst";
 import {
   ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
 } from "@/shared/practice/oralScanRequirement";
-import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
+import {
+  PracticeTransferRequestCardMeta,
+  resolvePracticeTransferListPatientName,
+} from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import {
   Collapsible,
   CollapsibleContent,
@@ -904,106 +908,6 @@ const toStatusBadgeLabel = (status: unknown) => {
   if (s === "거부") return "거부";
   if (s === "생산진행" || s === "포장.발송") return "발송";
   return s;
-};
-
-/** 최근의뢰 카드와 동일한 메타(시각·뱃지·기공소·파일·일정·메모) */
-const PracticeListCardDetail = ({
-  createdAt,
-  statusLabel,
-  statusBadgeClassName,
-  extraBadges,
-  targetLabText,
-  fileCount,
-  orderDate,
-  arrivalDate,
-  transferMemo,
-  layout = "compact",
-}: {
-  createdAt: string;
-  statusLabel?: string;
-  statusBadgeClassName?: string;
-  extraBadges?: ReactNode;
-  targetLabText: string;
-  fileCount: number;
-  orderDate?: string;
-  arrivalDate?: string;
-  transferMemo?: string;
-  layout?: "compact" | "comfortable";
-}) => {
-  const memo = String(transferMemo || "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const hasPeriod = Boolean(String(orderDate || "").trim() && String(arrivalDate || "").trim());
-  const periodNode = hasPeriod ? (
-    <PracticeWorkPeriodText
-      orderDate={String(orderDate)}
-      arrivalDate={String(arrivalDate)}
-      variant="orderArrival"
-      className="text-xs"
-    />
-  ) : null;
-
-  if (layout === "comfortable") {
-    return (
-      <div className="mt-2 space-y-1.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-xs text-muted-foreground">{createdAt}</p>
-          {statusLabel ? (
-            <Badge
-              variant="outline"
-              className={cn("h-5 whitespace-nowrap px-1.5 text-[10px]", statusBadgeClassName)}
-            >
-              {statusLabel}
-            </Badge>
-          ) : null}
-          {extraBadges}
-        </div>
-        <p className="truncate text-sm text-slate-700">{targetLabText}</p>
-        <p className="text-xs text-muted-foreground">
-          파일 {fileCount}개
-          {periodNode ? (
-            <>
-              {" · "}
-              {periodNode}
-            </>
-          ) : null}
-        </p>
-        {memo ? (
-          <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-            메모: {memo}
-          </p>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="mt-0.5 flex flex-wrap items-center gap-2">
-        <p className="truncate text-xs text-muted-foreground">{createdAt}</p>
-        {statusLabel ? (
-          <Badge
-            variant="outline"
-            className={cn("whitespace-nowrap", statusBadgeClassName)}
-          >
-            {statusLabel}
-          </Badge>
-        ) : null}
-        {extraBadges}
-      </div>
-      <p className="truncate text-xs text-muted-foreground">{targetLabText}</p>
-      <p className="truncate text-xs text-muted-foreground">
-        파일 {fileCount}개
-        {periodNode ? (
-          <>
-            {" · "}
-            {periodNode}
-          </>
-        ) : null}
-        {memo ? ` · 메모: ${memo}` : ""}
-      </p>
-    </>
-  );
 };
 
 /** 기공소 의뢰수락 이전만 치과에서 휴지통 이동 가능 */
@@ -6258,7 +6162,7 @@ export const PracticeFileTransferPage = ({
                           role="button"
                           tabIndex={0}
                           className={cn(
-                            "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "w-full cursor-pointer rounded-xl border border-slate-200/90 bg-white px-3 py-2.5 text-left text-sm shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             needsAction && "practice-transfer-attention",
                           )}
                           aria-label={
@@ -6276,50 +6180,37 @@ export const PracticeFileTransferPage = ({
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <p className="truncate font-medium">
-                                {isDraftTransfer
-                                  ? "임시저장"
-                                  : transfer.transferId !== "-"
-                                    ? transfer.transferId
-                                    : transfer.id}
-                              </p>
-                              <div className="mt-0.5 flex items-center gap-2">
-                                <p className="truncate text-xs text-muted-foreground">{transfer.createdAt}</p>
-                                <Badge variant="outline" className="whitespace-nowrap">
-                                  {toStatusBadgeLabel(transfer.status)}
-                                </Badge>
-                                {acceptOverdue ? (
-                                  <PracticeAcceptOverdueBadge viewer="practice" />
-                                ) : null}
-                                {transfer.isRemake ? (
-                                  <Badge
-                                    variant="outline"
-                                    className={cn("whitespace-nowrap", PRACTICE_REMAKE_BADGE_CLASS)}
-                                  >
-                                    리메이크
-                                  </Badge>
-                                ) : null}
-                              </div>
-                              <p className="truncate text-xs text-muted-foreground">{targetLabText}</p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                파일 {transfer.fileCount}개
-                                {transfer.orderDate && transfer.arrivalDate ? (
+                              <PracticeTransferRequestCardMeta
+                                createdAt={transfer.createdAt}
+                                statusLabel={
+                                  isDraftTransfer
+                                    ? "임시저장"
+                                    : toStatusBadgeLabel(transfer.status)
+                                }
+                                extraBadges={
                                   <>
-                                    {" · "}
-                                    <PracticeWorkPeriodText
-                                      orderDate={transfer.orderDate}
-                                      arrivalDate={transfer.arrivalDate}
-                                      variant="orderArrival"
-                                      className="text-xs"
-                                    />
+                                    {acceptOverdue ? (
+                                      <PracticeAcceptOverdueBadge viewer="practice" />
+                                    ) : null}
+                                    {transfer.isRemake ? (
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          "whitespace-nowrap",
+                                          PRACTICE_REMAKE_BADGE_CLASS,
+                                        )}
+                                      >
+                                        리메이크
+                                      </Badge>
+                                    ) : null}
                                   </>
-                                ) : null}
-                                {String(transfer.transferMemo || "").trim()
-                                  ? ` · 메모: ${String(transfer.transferMemo || "")
-                                      .replace(/\s+/g, " ")
-                                      .trim()}`
-                                  : ""}
-                              </p>
+                                }
+                                counterpartLabel="기공소"
+                                counterpartValue={targetLabText}
+                                orderDate={transfer.orderDate}
+                                arrivalDate={transfer.arrivalDate}
+                                patientName={resolvePracticeTransferListPatientName(transfer)}
+                              />
                             </div>
 
                             <div className="flex shrink-0 items-center gap-1.5">
@@ -6459,8 +6350,6 @@ export const PracticeFileTransferPage = ({
                       const ownerLabel = transfer.isMineDraft
                         ? "나"
                         : transfer.practiceUserLabel || "동료";
-                      const patientLabel =
-                        String(transfer.draftPatientName || "").trim() || "환자명 미입력";
                       const isActive = transfer.id === activeDraftId;
 
                       return (
@@ -6469,12 +6358,12 @@ export const PracticeFileTransferPage = ({
                           role="button"
                           tabIndex={0}
                           className={cn(
-                            "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "w-full cursor-pointer rounded-xl border px-3 py-2.5 text-left text-sm shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             isActive
                               ? "border-primary/70 bg-primary-soft ring-1 ring-primary-muted"
                               : transfer.isMineDraft
                                 ? "border-primary-muted bg-primary-soft/50"
-                                : "border-slate-200 bg-slate-50/70",
+                                : "border-slate-200/90 bg-white",
                           )}
                           onClick={() => handleAdoptDraftTransfer(transfer)}
                           onKeyDown={(e) => {
@@ -6486,27 +6375,26 @@ export const PracticeFileTransferPage = ({
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <p className="truncate font-medium">
-                                {patientLabel}
-                                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                                  · {ownerLabel}
-                                </span>
-                              </p>
-                              <PracticeListCardDetail
+                              <PracticeTransferRequestCardMeta
                                 createdAt={transfer.createdAt}
                                 statusLabel="임시저장"
                                 extraBadges={
-                                  isActive ? (
-                                    <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
-                                      작성 중
+                                  <>
+                                    <Badge variant="outline" className="whitespace-nowrap">
+                                      {ownerLabel}
                                     </Badge>
-                                  ) : null
+                                    {isActive ? (
+                                      <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
+                                        작성 중
+                                      </Badge>
+                                    ) : null}
+                                  </>
                                 }
-                                targetLabText={targetLabText}
-                                fileCount={transfer.fileCount}
+                                counterpartLabel="기공소"
+                                counterpartValue={targetLabText}
                                 orderDate={transfer.orderDate}
                                 arrivalDate={transfer.arrivalDate}
-                                transferMemo={transfer.transferMemo}
+                                patientName={resolvePracticeTransferListPatientName(transfer)}
                               />
                             </div>
                             <TooltipProvider>
@@ -6599,20 +6487,13 @@ export const PracticeFileTransferPage = ({
                       const isDraftTrash =
                         transfer.status === "임시저장" ||
                         transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
-                      const titleLabel = isDraftTrash
-                        ? transfer.draftPatientName ||
-                          transfer.deleteTargetLabel ||
-                          "임시저장"
-                        : transfer.transferId !== "-"
-                          ? transfer.transferId
-                          : transfer.id;
 
                       return (
                         <div
                           key={`trash:${transfer.id}:${transfer.createdAt}`}
                           role="button"
                           tabIndex={0}
-                          className="w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="w-full cursor-pointer rounded-xl border border-slate-200/90 bg-white px-3 py-2.5 text-left text-sm shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={() => void handleOpenTransferDialog(transfer, { fromTrash: true })}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
@@ -6623,22 +6504,21 @@ export const PracticeFileTransferPage = ({
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <p className="truncate font-medium">
-                                {titleLabel}
-                                {isDraftTrash && transfer.practiceUserLabel ? (
-                                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                                    · {transfer.practiceUserLabel}
-                                  </span>
-                                ) : null}
-                              </p>
-                              <PracticeListCardDetail
+                              <PracticeTransferRequestCardMeta
                                 createdAt={transfer.createdAt}
                                 statusLabel={isDraftTrash ? "임시저장" : toStatusBadgeLabel(transfer.status)}
-                                targetLabText={targetLabText}
-                                fileCount={transfer.fileCount}
+                                extraBadges={
+                                  isDraftTrash && transfer.practiceUserLabel ? (
+                                    <Badge variant="outline" className="whitespace-nowrap">
+                                      {transfer.practiceUserLabel}
+                                    </Badge>
+                                  ) : null
+                                }
+                                counterpartLabel="기공소"
+                                counterpartValue={targetLabText}
                                 orderDate={transfer.orderDate}
                                 arrivalDate={transfer.arrivalDate}
-                                transferMemo={transfer.transferMemo}
+                                patientName={resolvePracticeTransferListPatientName(transfer)}
                               />
                             </div>
 
@@ -6732,8 +6612,6 @@ export const PracticeFileTransferPage = ({
                     const ownerLabel = transfer.isMineDraft
                       ? "나"
                       : transfer.practiceUserLabel || "동료";
-                    const patientLabel =
-                      String(transfer.draftPatientName || "").trim() || "환자명 미입력";
                     const isActive = transfer.id === activeDraftId;
 
                     return (
@@ -6756,28 +6634,27 @@ export const PracticeFileTransferPage = ({
                         }}
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-base font-semibold text-slate-900">
-                            {patientLabel}
-                            <span className="ml-1.5 text-sm font-normal text-muted-foreground">
-                              · {ownerLabel}
-                            </span>
-                          </p>
-                          <PracticeListCardDetail
+                          <PracticeTransferRequestCardMeta
                             layout="comfortable"
                             createdAt={transfer.createdAt}
                             statusLabel="임시저장"
                             extraBadges={
-                              isActive ? (
-                                <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
-                                  작성 중
+                              <>
+                                <Badge variant="outline" className="whitespace-nowrap">
+                                  {ownerLabel}
                                 </Badge>
-                              ) : null
+                                {isActive ? (
+                                  <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
+                                    작성 중
+                                  </Badge>
+                                ) : null}
+                              </>
                             }
-                            targetLabText={targetLabText}
-                            fileCount={transfer.fileCount}
+                            counterpartLabel="기공소"
+                            counterpartValue={targetLabText}
                             orderDate={transfer.orderDate}
                             arrivalDate={transfer.arrivalDate}
-                            transferMemo={transfer.transferMemo}
+                            patientName={resolvePracticeTransferListPatientName(transfer)}
                           />
                         </div>
                         <TooltipProvider>
@@ -6861,13 +6738,6 @@ export const PracticeFileTransferPage = ({
                     const isDraftTrash =
                       transfer.status === "임시저장" ||
                       transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
-                    const titleLabel = isDraftTrash
-                      ? transfer.draftPatientName ||
-                        transfer.deleteTargetLabel ||
-                        "임시저장"
-                      : transfer.transferId !== "-"
-                        ? transfer.transferId
-                        : transfer.id;
 
                     return (
                       <div
@@ -6884,25 +6754,24 @@ export const PracticeFileTransferPage = ({
                         }}
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-base font-semibold text-slate-900">
-                            {titleLabel}
-                            {isDraftTrash && transfer.practiceUserLabel ? (
-                              <span className="ml-1.5 text-sm font-normal text-muted-foreground">
-                                · {transfer.practiceUserLabel}
-                              </span>
-                            ) : null}
-                          </p>
-                          <PracticeListCardDetail
+                          <PracticeTransferRequestCardMeta
                             layout="comfortable"
                             createdAt={transfer.createdAt}
                             statusLabel={
                               isDraftTrash ? "임시저장" : toStatusBadgeLabel(transfer.status)
                             }
-                            targetLabText={targetLabText}
-                            fileCount={transfer.fileCount}
+                            extraBadges={
+                              isDraftTrash && transfer.practiceUserLabel ? (
+                                <Badge variant="outline" className="whitespace-nowrap">
+                                  {transfer.practiceUserLabel}
+                                </Badge>
+                              ) : null
+                            }
+                            counterpartLabel="기공소"
+                            counterpartValue={targetLabText}
                             orderDate={transfer.orderDate}
                             arrivalDate={transfer.arrivalDate}
-                            transferMemo={transfer.transferMemo}
+                            patientName={resolvePracticeTransferListPatientName(transfer)}
                           />
                         </div>
 

@@ -7,6 +7,7 @@
  * 2026-08-16: 기공소 작업취소 카드 깜빡임 하이라이트.
  * 2026-08-16: 선택 시 사이드바와 동일 PracticeRecentTransferItem(작업 파일 포함) 전달.
  * 2026-08-16: 리메이크 버튼을 검색창 옆으로 이동(선택 목록 액션).
+ * 2026-08-16: 카드 본문=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·메모 덤프 제거).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Repeat, Search, Trash2 } from "lucide-react";
@@ -53,7 +54,10 @@ import {
 } from "@/shared/practice/practiceRecentTransferList";
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
-import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
+import {
+  PracticeTransferRequestCardMeta,
+  resolvePracticeTransferListPatientName,
+} from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 
 const PAGE_SIZE = PRACTICE_MY_TRANSFERS_PAGE_SIZE;
 
@@ -412,7 +416,7 @@ export function PracticeRecentTransfersAllModal({
                     role="button"
                     tabIndex={0}
                     className={cn(
-                      "flex min-h-[8.5rem] cursor-pointer flex-col rounded-lg border px-3 py-3 text-left text-sm transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      "flex min-h-[7.5rem] cursor-pointer flex-col rounded-xl border border-slate-200/90 bg-white px-3.5 py-3 text-left text-sm shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       needsAction && "practice-transfer-attention",
                     )}
                     aria-label={
@@ -430,28 +434,33 @@ export function PracticeRecentTransfersAllModal({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">
-                          {transfer.transferId !== "-"
-                            ? transfer.transferId
-                            : transfer.id}
-                        </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <p className="text-xs text-muted-foreground">{transfer.createdAt}</p>
-                          <Badge variant="outline" className="whitespace-nowrap">
-                            {toStatusBadgeLabel(transfer.status)}
-                          </Badge>
-                          {acceptOverdue ? (
-                            <PracticeAcceptOverdueBadge viewer="practice" />
-                          ) : null}
-                          {transfer.isRemake ? (
-                            <Badge
-                              variant="outline"
-                              className={cn("whitespace-nowrap", PRACTICE_REMAKE_BADGE_CLASS)}
-                            >
-                              리메이크
-                            </Badge>
-                          ) : null}
-                        </div>
+                        <PracticeTransferRequestCardMeta
+                          createdAt={transfer.createdAt}
+                          statusLabel={toStatusBadgeLabel(transfer.status)}
+                          extraBadges={
+                            <>
+                              {acceptOverdue ? (
+                                <PracticeAcceptOverdueBadge viewer="practice" />
+                              ) : null}
+                              {transfer.isRemake ? (
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "whitespace-nowrap",
+                                    PRACTICE_REMAKE_BADGE_CLASS,
+                                  )}
+                                >
+                                  리메이크
+                                </Badge>
+                              ) : null}
+                            </>
+                          }
+                          counterpartLabel="기공소"
+                          counterpartValue={targetLabText}
+                          orderDate={transfer.orderDate}
+                          arrivalDate={transfer.arrivalDate}
+                          patientName={resolvePracticeTransferListPatientName(transfer)}
+                        />
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         {canRemake && onToggleRemakeSelect ? (
@@ -508,26 +517,6 @@ export function PracticeRecentTransfersAllModal({
                         </TooltipProvider>
                       </div>
                     </div>
-                    <p className="mt-2 truncate text-xs text-muted-foreground">{targetLabText}</p>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                      파일 {transfer.fileCount}개
-                      {transfer.orderDate && transfer.arrivalDate ? (
-                        <>
-                          {" · "}
-                          <PracticeWorkPeriodText
-                            orderDate={transfer.orderDate}
-                            arrivalDate={transfer.arrivalDate}
-                            variant="orderArrival"
-                            className="text-xs"
-                          />
-                        </>
-                      ) : null}
-                      {String(transfer.transferMemo || "").trim()
-                        ? ` · 메모: ${String(transfer.transferMemo || "")
-                            .replace(/\s+/g, " ")
-                            .trim()}`
-                        : ""}
-                    </p>
                   </div>
                 );
               })}
