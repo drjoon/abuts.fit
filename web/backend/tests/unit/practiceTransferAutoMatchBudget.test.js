@@ -12,33 +12,34 @@ import {
 } from "../../utils/practiceTransferAutoMatchBudgetCore.js";
 
 describe("practiceTransferAutoMatchBudgetCore", () => {
-  test("admin ±40% floors to 1000원", () => {
-    expect(bandFromAdminBase(60000)).toEqual({ min: 36000, max: 84000 });
-    // 50000*1.4 부동소수점 → 1000원 절사로 70000
-    expect(bandFromAdminBase(50000)).toEqual({ min: 30000, max: 70000 });
-    expect(bandFromAdminBase(50001)).toEqual({ min: 30000, max: 70000 });
+  test("admin 80%~120% floors to 1000원", () => {
+    expect(bandFromAdminBase(60000)).toEqual({ min: 48000, max: 72000 });
+    expect(bandFromAdminBase(50000)).toEqual({ min: 40000, max: 60000 });
+    expect(bandFromAdminBase(50001)).toEqual({ min: 40000, max: 60000 });
   });
 
-  test("defaults cover all prosthetic keys", () => {
+  test("defaults cover all prosthetic keys at 80%~120%", () => {
     const items = buildDefaultAutoMatchBudgetItems();
-    expect(items.crown).toEqual({ min: 36000, max: 84000 });
-    expect(items.bridge).toEqual({ min: 36000, max: 84000 });
+    expect(items.crown).toEqual({ min: 48000, max: 72000 });
+    expect(items.bridge).toEqual({ min: 48000, max: 72000 });
     expect(isAutoMatchBudgetConfigured({ version: 2, items })).toBe(true);
   });
 
-  test("new catalog items appear in resolved budget", () => {
+  test("pct budget expands new catalog items", () => {
     const catalog = [
       { id: "crown", name: "크라운", price: 60000, enabled: true },
       { id: "custom-veneer", name: "비니어", price: 80000, enabled: true },
     ];
     const budget = resolveAutoMatchBudgetOrDefaults(
-      { version: 2, items: { crown: { min: 36000, max: 84000 } } },
+      { version: 3, minPct: 80, maxPct: 120 },
       catalog,
     );
-    expect(budget.items.crown).toEqual({ min: 36000, max: 84000 });
+    expect(budget.minPct).toBe(80);
+    expect(budget.maxPct).toBe(120);
+    expect(budget.items.crown).toEqual({ min: 48000, max: 72000 });
     expect(budget.items["custom-veneer"]).toEqual({
-      min: 48000,
-      max: 112000,
+      min: 64000,
+      max: 96000,
     });
   });
 
@@ -46,14 +47,14 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     const budget = resolveAutoMatchBudgetOrDefaults(null);
     expect(
       isLabUnitPricesWithinAutoMatchBudget(
-        { crown: 36000, bridge: 84000 },
+        { crown: 48000, bridge: 72000 },
         budget,
         ["crown", "bridge"],
       ),
     ).toBe(true);
     expect(
       isLabUnitPricesWithinAutoMatchBudget(
-        { crown: 35999, bridge: 84000 },
+        { crown: 47999, bridge: 72000 },
         budget,
         ["crown"],
       ),
@@ -81,7 +82,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
   test("unit price helper scales surcharge (eligibility uses base; billing may scale)", () => {
     const budget = {
       version: 2,
-      items: { crown: { min: 36000, max: 84000 } },
+      items: { crown: { min: 48000, max: 72000 } },
     };
     const base = { crown: 60000 };
     expect(

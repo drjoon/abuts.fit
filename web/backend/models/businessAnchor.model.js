@@ -503,7 +503,8 @@ const businessAnchorSchema = new mongoose.Schema(
         enum: ["custom_abutment", "design_custom_abutment"],
         default: "design_custom_abutment",
       },
-      // 자동매칭 기공비 예산 — 항목별 min/max (Mixed). 어벗츠 어벗 제외.
+      // 자동매칭 기공비 예산 — v3: minPct/maxPct(+전개 items). 어벗츠 어벗 제외.
+      // 인증 기공소 수가 평균(어벗츠 카탈로그) 대비 %.
       autoMatchBudget: {
         type: mongoose.Schema.Types.Mixed,
         default: null,

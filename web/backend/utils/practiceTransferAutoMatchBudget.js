@@ -11,11 +11,13 @@
 // 수신 목록은 Mongo multikey로만 필터. 수락 시 항목별 단가 재검증.
 // 적격·수락 예산 게이트: 공개 수가(할증 제외). 치과별 할증은 청구에만 반영.
 // 의뢰 이후 올린 할증은 as-of로 해당 건 미적용(상세 채팅 소급 금지).
-// 항목 목록은 어벗츠 수가(시스템 카탈로그)에서 동적으로 온다.
+// 항목 목록은 어벗츠 수가(시스템 카탈로그=인증 기공소 평균)에서 동적으로 온다.
+// 치과 설정은 min%/max%(기본 80~120). 항목 원 구간은 카탈로그×%로 전개.
 // - 2026-08-15: 자동매칭 예산 필터에서 practice 할증 제외(공개 수가 기준).
 // - 2026-08-16: 별점 게이트는 전체 치과 평가 합산·평균.
 // - 2026-08-16: 자동매칭 최소 별 기본값 2.
 // - 2026-08-16: 주문 치과 1점 기공소는 해당 치과 자동매칭에서 제외.
+// - 2026-08-16: 예산 UI/저장을 minPct·maxPct로 단순화(기본 80%~120%).
 
 import {
   isLabFeeScheduleConfigured,
@@ -49,6 +51,8 @@ import {
   ADMIN_LAB_FEE_BASE,
   AUTO_MATCH_BUDGET_KEYS,
   AUTO_MATCH_BUDGET_KEY_LABELS,
+  DEFAULT_MAX_PCT,
+  DEFAULT_MIN_PCT,
   bandFromAdminBase,
   buildDefaultAutoMatchBudgetItems,
   buildItemsScheduleFromAutoMatchBudget,
@@ -58,6 +62,7 @@ import {
   isLabFeeWithinAutoMatchBudget,
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
+  normalizeAutoMatchBudgetPct,
   normalizeCatalogItems,
   resolveAutoMatchBudgetOrDefaults,
   scaleLabUnitPricesByMultiplier,
@@ -67,6 +72,8 @@ export {
   ADMIN_LAB_FEE_BASE,
   AUTO_MATCH_BUDGET_KEYS,
   AUTO_MATCH_BUDGET_KEY_LABELS,
+  DEFAULT_MAX_PCT,
+  DEFAULT_MIN_PCT,
   bandFromAdminBase,
   buildDefaultAutoMatchBudgetItems,
   buildItemsScheduleFromAutoMatchBudget,
@@ -76,6 +83,7 @@ export {
   isLabFeeWithinAutoMatchBudget,
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
+  normalizeAutoMatchBudgetPct,
   normalizeCatalogItems,
   resolveAutoMatchBudgetOrDefaults,
   scaleLabUnitPricesByMultiplier,

@@ -22,6 +22,7 @@ import { normalizeAutoMatchMinLabRating } from "../../utils/practiceLabRating.js
 // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산) 저장.
 // - 2026-08-14: autoMatchBudget(자동매칭 기공비 min/max).
 // - 2026-08-14: autoMatchMinLabRating(자동매칭 최소 별·2nd chance).
+// - 2026-08-16: autoMatchBudget version3 — minPct/maxPct(인증 기공소 수가 평균 대비).
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
 const ABUTMENT_PRODUCT_MODE_DESIGN_AND_PRODUCTION = "design_custom_abutment";
@@ -330,10 +331,18 @@ export async function upsertPracticeTransferSettings(req, res) {
     if (hasAutoMatchBudget) {
       const catalog = await loadAutoMatchBudgetCatalog();
       const band = resolveAutoMatchBudgetOrDefaults(body.autoMatchBudget, catalog);
-      setPatch["practiceTransferSettings.autoMatchBudget"] = {
-        version: 2,
-        items: band.items,
-      };
+      setPatch["practiceTransferSettings.autoMatchBudget"] =
+        band.minPct != null && band.maxPct != null
+          ? {
+              version: 3,
+              minPct: band.minPct,
+              maxPct: band.maxPct,
+              items: band.items,
+            }
+          : {
+              version: 2,
+              items: band.items,
+            };
     }
     if (hasAutoMatchMinLabRating) {
       setPatch["practiceTransferSettings.autoMatchMinLabRating"] =

@@ -3,12 +3,16 @@
 // - web/backend/utils/abutsLabFeeSchedule.js
 // - web/frontend/src/shared/practice/autoMatchBudget.ts
 //
-// 자동매칭 기공비 예산 — 항목별 min/max (순수).
-// 카탈로그(어벗츠 수가) 기준 ±40%, 1000원 단위 절사.
+// 자동매칭 기공비 예산 — 인증 기공소 수가 평균 대비 min%/max% (순수).
+// 항목별 원 구간은 카탈로그(어벗츠 수가=평균) × % 로 전개. 1000원 단위 절사.
+// - 2026-08-16: 모달은 min%/max%만 설정. 기본 80%~120%.
 
 const MAX_UNIT_FEE = 50_000_000;
-const DEFAULT_SPREAD = 0.4;
+/** 인증 기공소 수가 평균 대비 기본 하한/상한 (%) */
+export const DEFAULT_MIN_PCT = 80;
+export const DEFAULT_MAX_PCT = 120;
 const FEE_STEP = 1000;
+const MAX_PCT = 500;
 
 /** 1000원 단위 절사 (미만 버림) */
 export function floorToFeeStep(value) {
@@ -75,11 +79,35 @@ export function fallbackAbutsLabFeeCatalog() {
   ];
 }
 
-export function bandFromAdminBase(basePrice, spread = DEFAULT_SPREAD) {
+/**
+ * @returns {{ minPct: number, maxPct: number } | null}
+ */
+export function normalizeAutoMatchBudgetPct(raw) {
+  if (raw == null || typeof raw !== "object") return null;
+  const minRaw = Number(raw.minPct ?? raw.minPercent);
+  const maxRaw = Number(raw.maxPct ?? raw.maxPercent);
+  if (!Number.isFinite(minRaw) || !Number.isFinite(maxRaw)) return null;
+  const minPct = Math.min(MAX_PCT, Math.max(0, Math.round(minRaw)));
+  const maxPct = Math.min(MAX_PCT, Math.max(minPct, Math.round(maxRaw)));
+  if (maxPct <= 0) return null;
+  return { minPct, maxPct };
+}
+
+/** 평균 수가(원) × min%/max% → 항목 밴드 (1000원 절사) */
+export function bandFromAdminBase(
+  basePrice,
+  minPct = DEFAULT_MIN_PCT,
+  maxPct = DEFAULT_MAX_PCT,
+) {
   const base = Math.max(0, Math.round(Number(basePrice) || 0));
-  const s = Number.isFinite(Number(spread)) ? Math.max(0, Number(spread)) : DEFAULT_SPREAD;
-  const min = floorToFeeStep(base * (1 - s));
-  const max = floorToFeeStep(base * (1 + s));
+  const minP = Number.isFinite(Number(minPct))
+    ? Math.max(0, Number(minPct))
+    : DEFAULT_MIN_PCT;
+  const maxP = Number.isFinite(Number(maxPct))
+    ? Math.max(minP, Number(maxPct))
+    : DEFAULT_MAX_PCT;
+  const min = floorToFeeStep(base * (minP / 100));
+  const max = floorToFeeStep(base * (maxP / 100));
   return {
     min: Math.min(MAX_UNIT_FEE, Math.max(0, min)),
     max: Math.min(MAX_UNIT_FEE, Math.max(min, max)),
@@ -102,10 +130,14 @@ export function normalizeCatalogItems(catalog) {
     }));
 }
 
-export function buildDefaultAutoMatchBudgetItems(catalog) {
+export function buildDefaultAutoMatchBudgetItems(
+  catalog,
+  minPct = DEFAULT_MIN_PCT,
+  maxPct = DEFAULT_MAX_PCT,
+) {
   const items = {};
   for (const row of normalizeCatalogItems(catalog)) {
-    items[row.id] = bandFromAdminBase(row.price);
+    items[row.id] = bandFromAdminBase(row.price, minPct, maxPct);
   }
   return items;
 }
@@ -125,7 +157,9 @@ export function normalizeAutoMatchBudgetBand(raw) {
 
 /**
  * @returns {{
- *   version: 2,
+ *   version: 2 | 3,
+ *   minPct?: number,
+ *   maxPct?: number,
  *   items: Record<string, { min: number, max: number }>,
  *   minLabFee?: number,
  *   maxLabFee?: number,
@@ -133,6 +167,16 @@ export function normalizeAutoMatchBudgetBand(raw) {
  */
 export function normalizeAutoMatchBudget(raw, catalog) {
   if (raw == null || typeof raw !== "object") return null;
+
+  const pct = normalizeAutoMatchBudgetPct(raw);
+  if (pct) {
+    return {
+      version: 3,
+      minPct: pct.minPct,
+      maxPct: pct.maxPct,
+      items: buildDefaultAutoMatchBudgetItems(catalog, pct.minPct, pct.maxPct),
+    };
+  }
 
   const hasLegacyTotalOnly =
     (raw.minLabFee != null || raw.maxLabFee != null) &&
@@ -149,6 +193,9 @@ export function normalizeAutoMatchBudget(raw, catalog) {
 
   for (const [key, value] of Object.entries(srcItems || {})) {
     if (key === "version" || key === "minLabFee" || key === "maxLabFee" || key === "items") {
+      continue;
+    }
+    if (key === "minPct" || key === "maxPct" || key === "minPercent" || key === "maxPercent") {
       continue;
     }
     if (catalogIds.size && !catalogIds.has(key) && !AUTO_MATCH_BUDGET_KEYS.includes(key)) {
@@ -185,14 +232,39 @@ export function isAutoMatchBudgetConfigured(budget, catalog) {
   });
 }
 
-/** 설정/모달용 — 카탈로그 항목마다 저장값 또는 ±40% */
+/** 설정/모달용 — % 저장값이면 카탈로그×%, 아니면 항목 저장값 또는 기본 80~120% */
 export function resolveAutoMatchBudgetOrDefaults(raw, catalog) {
   const rows = normalizeCatalogItems(catalog);
+  const pctFromRaw = normalizeAutoMatchBudgetPct(raw);
+  if (pctFromRaw) {
+    return {
+      version: 3,
+      minPct: pctFromRaw.minPct,
+      maxPct: pctFromRaw.maxPct,
+      items: buildDefaultAutoMatchBudgetItems(
+        catalog,
+        pctFromRaw.minPct,
+        pctFromRaw.maxPct,
+      ),
+    };
+  }
+
   const normalized = normalizeAutoMatchBudget(raw, catalog);
+  if (!normalized) {
+    return {
+      version: 3,
+      minPct: DEFAULT_MIN_PCT,
+      maxPct: DEFAULT_MAX_PCT,
+      items: buildDefaultAutoMatchBudgetItems(catalog),
+    };
+  }
+
+  // 레거시 항목별 원 구간 유지
   const items = {};
   for (const row of rows) {
-    const saved = normalized?.items?.[row.id];
-    items[row.id] = saved && saved.max > 0 ? saved : bandFromAdminBase(row.price);
+    const saved = normalized.items?.[row.id];
+    items[row.id] =
+      saved && saved.max > 0 ? saved : bandFromAdminBase(row.price);
   }
   return { version: 2, items };
 }

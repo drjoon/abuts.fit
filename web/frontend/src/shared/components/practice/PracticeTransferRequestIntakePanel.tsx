@@ -1677,7 +1677,7 @@ export const PracticeTransferRequestIntakePanel = ({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                  <p>기공비 범위에 맞는 인증 기공소만 자동매칭에 참여합니다.</p>
+                  <p>평균 수가 대비 기공비 범위. 범위 안 기공소만 매칭됩니다.</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

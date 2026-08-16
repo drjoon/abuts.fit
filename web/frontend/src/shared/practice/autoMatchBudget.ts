@@ -2,6 +2,8 @@
 // - web/backend/utils/practiceTransferAutoMatchBudgetCore.js
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/AutoMatchLabFeeBudgetDialog.tsx
+// change-log:
+// - 2026-08-16: 모달은 min%/max%만. 기본 80%~120%. 카탈로그(인증 기공소 수가 평균)×%.
 
 export const ADMIN_LAB_FEE_BASE = {
   crown: 60000,
@@ -47,17 +49,25 @@ export type AbutsLabFeeCatalogItem = {
 
 export type AutoMatchBudgetBand = { min: number; max: number };
 
+export type AutoMatchBudgetPct = { minPct: number; maxPct: number };
+
 export type PracticeTransferAutoMatchBudget = {
-  version?: 2;
+  version?: 2 | 3;
+  /** 인증 기공소 수가 평균 대비 하한 (%) */
+  minPct?: number;
+  /** 인증 기공소 수가 평균 대비 상한 (%) */
+  maxPct?: number;
   items: Record<string, AutoMatchBudgetBand>;
   minLabFee?: number;
   maxLabFee?: number;
 };
 
 const MAX_UNIT_FEE = 50_000_000;
-/** 어벗츠 수가 기준 기본 허용 폭 (±40%) */
-const DEFAULT_SPREAD = 0.4;
+/** 인증 기공소 수가 평균 대비 기본 하한/상한 (%) */
+export const DEFAULT_MIN_PCT = 80;
+export const DEFAULT_MAX_PCT = 120;
 const FEE_STEP = 1000;
+const MAX_PCT = 500;
 
 /** 1000원 단위 절사 (미만 버림) */
 export const floorToFeeStep = (value: number): number => {
@@ -66,14 +76,33 @@ export const floorToFeeStep = (value: number): number => {
   return Math.floor(n / FEE_STEP) * FEE_STEP;
 };
 
+export const normalizeAutoMatchBudgetPct = (
+  raw: unknown,
+): AutoMatchBudgetPct | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const minRaw = Number(r.minPct ?? r.minPercent);
+  const maxRaw = Number(r.maxPct ?? r.maxPercent);
+  if (!Number.isFinite(minRaw) || !Number.isFinite(maxRaw)) return null;
+  const minPct = Math.min(MAX_PCT, Math.max(0, Math.round(minRaw)));
+  const maxPct = Math.min(MAX_PCT, Math.max(minPct, Math.round(maxRaw)));
+  if (maxPct <= 0) return null;
+  return { minPct, maxPct };
+};
+
+/** 평균 수가(원) × min%/max% → 항목 밴드 */
 export const bandFromAdminBase = (
   basePrice: number,
-  spread = DEFAULT_SPREAD,
+  minPct: number = DEFAULT_MIN_PCT,
+  maxPct: number = DEFAULT_MAX_PCT,
 ): AutoMatchBudgetBand => {
   const base = Math.max(0, Math.round(Number(basePrice) || 0));
-  const s = Number.isFinite(spread) ? Math.max(0, spread) : DEFAULT_SPREAD;
-  const min = floorToFeeStep(base * (1 - s));
-  const max = floorToFeeStep(base * (1 + s));
+  const minP = Number.isFinite(minPct) ? Math.max(0, minPct) : DEFAULT_MIN_PCT;
+  const maxP = Number.isFinite(maxPct)
+    ? Math.max(minP, maxPct)
+    : DEFAULT_MAX_PCT;
+  const min = floorToFeeStep(base * (minP / 100));
+  const max = floorToFeeStep(base * (maxP / 100));
   return {
     min: Math.min(MAX_UNIT_FEE, Math.max(0, min)),
     max: Math.min(MAX_UNIT_FEE, Math.max(min, max)),
@@ -132,10 +161,12 @@ export const catalogItemLabel = (item: AbutsLabFeeCatalogItem): string => {
 
 export const buildDefaultAutoMatchBudgetItems = (
   catalog?: AbutsLabFeeCatalogItem[] | null,
+  minPct: number = DEFAULT_MIN_PCT,
+  maxPct: number = DEFAULT_MAX_PCT,
 ): Record<string, AutoMatchBudgetBand> => {
   const items: Record<string, AutoMatchBudgetBand> = {};
   for (const row of normalizeAbutsLabFeeCatalog(catalog)) {
-    items[row.id] = bandFromAdminBase(row.price);
+    items[row.id] = bandFromAdminBase(row.price, minPct, maxPct);
   }
   return items;
 };
@@ -162,6 +193,17 @@ export const normalizePracticeTransferAutoMatchBudget = (
 ): PracticeTransferAutoMatchBudget | null => {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
+
+  const pct = normalizeAutoMatchBudgetPct(raw);
+  if (pct) {
+    return {
+      version: 3,
+      minPct: pct.minPct,
+      maxPct: pct.maxPct,
+      items: buildDefaultAutoMatchBudgetItems(catalog, pct.minPct, pct.maxPct),
+    };
+  }
+
   const hasLegacyTotalOnly =
     (r.minLabFee != null || r.maxLabFee != null) &&
     r.items == null &&
@@ -183,7 +225,11 @@ export const normalizePracticeTransferAutoMatchBudget = (
       key === "version" ||
       key === "minLabFee" ||
       key === "maxLabFee" ||
-      key === "items"
+      key === "items" ||
+      key === "minPct" ||
+      key === "maxPct" ||
+      key === "minPercent" ||
+      key === "maxPercent"
     ) {
       continue;
     }
@@ -218,12 +264,47 @@ export const resolveAutoMatchBudgetOrDefaults = (
   catalog?: AbutsLabFeeCatalogItem[] | null,
 ): PracticeTransferAutoMatchBudget => {
   const rows = normalizeAbutsLabFeeCatalog(catalog);
+  const pctFromRaw = normalizeAutoMatchBudgetPct(raw);
+  if (pctFromRaw) {
+    return {
+      version: 3,
+      minPct: pctFromRaw.minPct,
+      maxPct: pctFromRaw.maxPct,
+      items: buildDefaultAutoMatchBudgetItems(
+        catalog,
+        pctFromRaw.minPct,
+        pctFromRaw.maxPct,
+      ),
+    };
+  }
+
   const normalized = normalizePracticeTransferAutoMatchBudget(raw, catalog);
+  if (!normalized) {
+    return {
+      version: 3,
+      minPct: DEFAULT_MIN_PCT,
+      maxPct: DEFAULT_MAX_PCT,
+      items: buildDefaultAutoMatchBudgetItems(catalog),
+    };
+  }
+
   const items: Record<string, AutoMatchBudgetBand> = {};
   for (const row of rows) {
-    const saved = normalized?.items?.[row.id];
+    const saved = normalized.items?.[row.id];
     items[row.id] =
       saved && saved.max > 0 ? saved : bandFromAdminBase(row.price);
   }
   return { version: 2, items };
+};
+
+/** 모달 초안용 — 저장 % 또는 기본 80/120 */
+export const resolveAutoMatchBudgetPctOrDefaults = (
+  raw: unknown,
+): AutoMatchBudgetPct => {
+  return (
+    normalizeAutoMatchBudgetPct(raw) || {
+      minPct: DEFAULT_MIN_PCT,
+      maxPct: DEFAULT_MAX_PCT,
+    }
+  );
 };
