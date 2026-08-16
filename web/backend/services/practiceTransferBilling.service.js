@@ -2575,7 +2575,7 @@ export async function grantAbutmentDesignLabFee({
     meta: {
       source: "abutment_design_lab_fee",
       displayKind: "lab_credit",
-      displayLabel: "어벗디자인비",
+      displayLabel: "디자인비+지그제작비",
       requestId,
       relatedPracticeTransferId: relatedTransferId || null,
       unitFee,
@@ -2595,7 +2595,7 @@ export async function grantAbutmentDesignLabFee({
         refId: requestId,
         meta: {
           source: "abutment_design_lab_fee",
-          displayLabel: "어벗디자인비",
+          displayLabel: "디자인비+지그제작비",
         },
       },
       {
@@ -2611,8 +2611,8 @@ export async function grantAbutmentDesignLabFee({
         meta: {
           source: "abutment_design_lab_fee",
           displayKind: "lab_credit",
-          displayLabel: "어벗디자인비",
-          itemLabel: "어벗디자인비",
+          displayLabel: "디자인비+지그제작비",
+          itemLabel: "디자인비+지그제작비",
           unitFee,
           qty,
         },

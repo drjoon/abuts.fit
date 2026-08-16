@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-16: 기공소 CA 지급 라벨 어벗디자인비 → 디자인비+지그제작비.
 // - 2026-08-15: 기공소 뷰 어벗생산비 = 치과 납부(abutmentRetail) − 어벗디자인비.
 // - 2026-08-15: 기공소 뷰 — 기공소몫(보철기공비·어벗디자인비) / 어벗츠몫(어벗생산비) 2단 헤더.
 // - 2026-08-15: 기공소 수령 — 어벗디자인비를 기공비 총액에 합산 후 수수료 차감(연기 안내 제거).
@@ -282,7 +283,7 @@ function FeeBreakdownTable({
         <span className={columnHeaderClass}>{labColumnLabel}</span>
       ) : null}
       {designFeeColumn ? (
-        <span className={columnHeaderClass}>어벗디자인비</span>
+        <span className={columnHeaderClass}>디자인비+지그제작비</span>
       ) : null}
       {labAbutmentColumn ? (
         <span className={columnHeaderClass}>기공소 어벗</span>

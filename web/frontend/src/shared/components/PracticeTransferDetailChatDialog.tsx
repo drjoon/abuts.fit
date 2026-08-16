@@ -509,7 +509,7 @@ export function PracticeTransferDetailChatDialog({
                               경우 치과와 미리 상의하시기 바랍니다.
                               <br />
                               커스텀어벗·크라운 디자인은 수락한 기공소가 진행합니다.
-                              완성 어벗 STL을 올리면 제조사에 자동 주문되며, 어벗디자인비가
+                              완성 어벗 STL을 올리면 제조사에 자동 주문되며, 디자인비+지그제작비가
                               지급됩니다.
                             </TooltipContent>
                           </Tooltip>

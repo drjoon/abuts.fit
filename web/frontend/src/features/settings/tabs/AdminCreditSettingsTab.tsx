@@ -952,7 +952,7 @@ export const AdminCreditSettingsTab = ({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <AmountField
                       id="abutmentDesignLabFee"
-                      label="어벗디자인비"
+                      label="디자인비+지그제작비"
                       icon={HandCoins}
                       value={settings.abutmentDesignLabFee}
                       onChange={(next) =>
