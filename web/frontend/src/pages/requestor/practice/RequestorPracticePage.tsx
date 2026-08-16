@@ -16,6 +16,8 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-16: 다파일 어벗 드롭 — 파일명 AI로 치아번호 확인 후 의뢰 매칭.
+// - 2026-08-16: 어벗 확인 모달 기본값 — 파일명 AI 대신 치과 메모·치식·사업체명.
 // - 2026-08-16: 카드 드롭 — 어벗 미완이면 디자인 업로드, 완료 후 보철 완료로 라우팅.
 // - 2026-08-16: 어벗 STL 다중 선택·치아별 handoff 큐(relatedRequestIds 매칭).
 // - 2026-08-16: internalLab도 디자인SW·아노 사업체 저장 가능(개인 requestor* 미전송).
@@ -142,8 +144,14 @@ import {
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
   parseToothWorks,
   serializeToothWorks,
+  type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
-import { parseFilename } from "@/shared/filename/parseFilename";
+import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
+import {
+  getFilenameAiCache,
+  setFilenameAiCache,
+  toFilenameAiCacheKey,
+} from "@/pages/requestor/new_request/utils/filenameAiCache";
 import {
   getPracticeTransferLabReceiveDisplayStatus,
   practiceTransferAbutmentMachiningStarted,
@@ -153,6 +161,7 @@ import {
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
 import { getPracticeTransferFileExtension } from "@/shared/practice/practiceTransferAccept";
+import { resolvePracticeTransferListPatientName } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import type { ReactNode } from "react";
 
 
@@ -617,7 +626,9 @@ export function RequestorPracticeReceivePage({
                 : [],
             }
           : null;
-        const toothWorksFromApi = Array.isArray(r.toothWorks) ? r.toothWorks : null;
+        const toothWorksFromApi = Array.isArray(r.toothWorks)
+          ? (r.toothWorks as ToothWorkSelection[])
+          : null;
         const hasCustomAbutment =
           typeof r.hasCustomAbutment === "boolean"
             ? r.hasCustomAbutment
@@ -642,7 +653,9 @@ export function RequestorPracticeReceivePage({
           orderDate: String(r.orderDate || parsedMemo.orderDate || "").trim(),
           arrivalDate: String(r.arrivalDate || parsedMemo.arrivalDate || "").trim(),
           prosthesisTypes: parsedMemo.prosthesisTypes,
-          toothWorksSummary: parsedMemo.toothWorksSummary,
+          toothWorksSummary: toothWorksFromApi?.length
+            ? serializeToothWorks(toothWorksFromApi)
+            : parsedMemo.toothWorksSummary,
           status: String(r.status || "active").trim(),
           manufacturerStage: String(r.manufacturerStage || "").trim() || undefined,
           createdAt: String(r.createdAt || "").trim(),
@@ -2583,40 +2596,36 @@ export function RequestorPracticeReceivePage({
           : null) ||
         toothRows.find((row) => Boolean(row.customAbutment)) ||
         toothRows[0];
-      const scanPatient =
-        transfer.files?.find((f) => String(f.patientName || "").trim())
-          ?.patientName ||
-        transfer.files?.[0]?.patientName ||
-        "";
-      const scanTooth =
-        transfer.files?.find((f) => String(f.tooth || "").trim())?.tooth ||
-        transfer.files?.[0]?.tooth ||
-        "";
+
+      // 환자/치과/임플란트: 치과 전송 정보 우선. 구강스캔·어벗 파일명 AI 추정은 쓰지 않는다.
+      const practicePatient = resolvePracticeTransferListPatientName({
+        rawTransferMemo: transfer.rawTransferMemo,
+        transferMemo: transfer.transferMemo,
+        files: [],
+      });
+      const practiceClinic = String(transfer.practice?.businessName || "").trim();
+      const requestClinic = String(requestCaseInfos?.clinicName || "").trim();
 
       return {
-        clinicName:
-          String(requestCaseInfos?.clinicName || "").trim() ||
-          String(transfer.practice?.businessName || "").trim(),
-        patientName:
-          String(requestCaseInfos?.patientName || "").trim() ||
-          String(scanPatient || "").trim(),
+        // Request.clinicName = 치과 BusinessAnchor (파일명 AI 아님)
+        clinicName: requestClinic || practiceClinic,
+        patientName: practicePatient,
         tooth:
           overrideTooth ||
-          String(requestCaseInfos?.tooth || "").trim() ||
           String(matchedToothRow?.toothNumber || "").trim() ||
-          String(scanTooth || "").trim(),
+          String(requestCaseInfos?.tooth || "").trim(),
         implantManufacturer:
-          String(requestCaseInfos?.implantManufacturer || "").trim() ||
-          String(matchedToothRow?.implantManufacturer || "").trim(),
+          String(matchedToothRow?.implantManufacturer || "").trim() ||
+          String(requestCaseInfos?.implantManufacturer || "").trim(),
         implantBrand:
-          String(requestCaseInfos?.implantBrand || "").trim() ||
-          String(matchedToothRow?.implantBrand || "").trim(),
+          String(matchedToothRow?.implantBrand || "").trim() ||
+          String(requestCaseInfos?.implantBrand || "").trim(),
         implantFamily:
-          String(requestCaseInfos?.implantFamily || "").trim() ||
-          String(matchedToothRow?.implantFamily || "").trim(),
+          String(matchedToothRow?.implantFamily || "").trim() ||
+          String(requestCaseInfos?.implantFamily || "").trim(),
         implantType:
-          String(requestCaseInfos?.implantType || "").trim() ||
-          String(matchedToothRow?.implantType || "").trim(),
+          String(matchedToothRow?.implantType || "").trim() ||
+          String(requestCaseInfos?.implantType || "").trim(),
         retentionGroove: "",
       };
     },
@@ -2666,6 +2675,104 @@ export function RequestorPracticeReceivePage({
       } catch {
         return { caseInfos: null, designCompletedAt: "" };
       }
+    },
+    [token],
+  );
+
+  const resolveAbutmentDesignTeethFromFiles = useCallback(
+    async (files: File[]): Promise<string[]> => {
+      const ruleTeeth = files.map((file) =>
+        String(parseFilenameWithRules(file.name)?.tooth || "").trim(),
+      );
+      if (files.length <= 1) return ruleTeeth;
+
+      // 다파일: 순서 fallback은 치아 꼬임 가능 → 파일명 AI로 치아번호 확인
+      const teeth = [...ruleTeeth];
+      const filenamesForAi: string[] = [];
+      const indicesForAi: number[] = [];
+
+      files.forEach((file, idx) => {
+        const cacheKey = toFilenameAiCacheKey(file.name, file.size);
+        const cachedTooth = String(getFilenameAiCache(cacheKey)?.tooth || "").trim();
+        if (cachedTooth) {
+          teeth[idx] = cachedTooth;
+          return;
+        }
+        filenamesForAi.push(file.name);
+        indicesForAi.push(idx);
+      });
+
+      if (!filenamesForAi.length || !token) return teeth;
+
+      try {
+        const res = await apiFetch<{
+          success?: boolean;
+          data?: Array<{
+            filename?: string | null;
+            tooth?: string | null;
+            clinicName?: string | null;
+            patientName?: string | null;
+          }>;
+          provider?: string;
+        }>({
+          path: "/api/ai/parse-filenames",
+          method: "POST",
+          token,
+          jsonBody: { filenames: filenamesForAi },
+        });
+        if (!res.ok) return teeth;
+
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        if (String(body.provider || "") === "fallback-quota-exceeded") {
+          return teeth;
+        }
+
+        const items = Array.isArray(body.data)
+          ? body.data
+          : Array.isArray(res.data)
+            ? res.data
+            : [];
+        if (!items.length) return teeth;
+
+        const queueByFilename = new Map<string, number[]>();
+        filenamesForAi.forEach((name, idx) => {
+          const q = queueByFilename.get(name) || [];
+          q.push(idx);
+          queueByFilename.set(name, q);
+        });
+
+        items.forEach((item) => {
+          if (!item || typeof item !== "object") return;
+          const row = item as {
+            filename?: string | null;
+            tooth?: string | null;
+            clinicName?: string | null;
+            patientName?: string | null;
+          };
+          const queue = queueByFilename.get(String(row.filename || ""));
+          if (!queue?.length) return;
+          const aiIdx = queue.shift() as number;
+          const fileIdx = indicesForAi[aiIdx];
+          if (fileIdx == null) return;
+          const aiTooth = String(row.tooth || "").trim();
+          if (aiTooth) teeth[fileIdx] = aiTooth;
+
+          const file = files[fileIdx];
+          if (!file) return;
+          setFilenameAiCache(toFilenameAiCacheKey(file.name, file.size), {
+            clinicName: String(row.clinicName || "").trim(),
+            patientName: String(row.patientName || "").trim(),
+            tooth: aiTooth || teeth[fileIdx] || "",
+          });
+        });
+      } catch {
+        // 룰 파싱 결과 유지
+      }
+
+      return teeth;
     },
     [token],
   );
@@ -2773,18 +2880,20 @@ export function RequestorPracticeReceivePage({
         return;
       }
 
+      const fileTeeth = await resolveAbutmentDesignTeethFromFiles(stlFiles);
+      const multiFile = stlFiles.length > 1;
       const usedRequestIds = new Set<string>();
       const queue: Array<{
         file: File;
         requestId: string;
         caseInfos: AbutmentDesignConfirmCaseInfos;
       }> = [];
+      let skippedUnmatched = 0;
 
-      for (const file of stlFiles) {
+      for (let i = 0; i < stlFiles.length; i += 1) {
         if (queue.length >= pendingMetas.length) break;
-        const parsedTooth = String(
-          parseFilename(file.name)?.tooth || "",
-        ).trim();
+        const file = stlFiles[i];
+        const parsedTooth = String(fileTeeth[i] || "").trim();
         const byTooth = parsedTooth
           ? pendingMetas.find(
               (meta) =>
@@ -2792,10 +2901,16 @@ export function RequestorPracticeReceivePage({
                 meta.tooth === parsedTooth,
             )
           : null;
+        // 다파일은 치아 매칭만 허용(순서 fallback 금지). 단파일은 남은 의뢰로 연결.
         const meta =
           byTooth ||
-          pendingMetas.find((row) => !usedRequestIds.has(row.requestId));
-        if (!meta) break;
+          (!multiFile
+            ? pendingMetas.find((row) => !usedRequestIds.has(row.requestId))
+            : null);
+        if (!meta) {
+          if (multiFile) skippedUnmatched += 1;
+          continue;
+        }
         usedRequestIds.add(meta.requestId);
         queue.push({
           file,
@@ -2803,7 +2918,8 @@ export function RequestorPracticeReceivePage({
           caseInfos: buildDesignConfirmDefaults(
             workingTransfer,
             meta.caseInfos,
-            parsedTooth || meta.tooth,
+            // 표시·기본값은 치과 연결 치아(meta). 파일명 치아는 매칭에만 사용.
+            meta.tooth,
           ),
         });
       }
@@ -2811,16 +2927,20 @@ export function RequestorPracticeReceivePage({
       if (queue.length === 0) {
         toast({
           title: "업로드 대상 없음",
-          description: "연결할 어벗 의뢰를 찾지 못했습니다.",
+          description: multiFile
+            ? "파일명에서 치아번호를 확인해 의뢰와 맞추지 못했습니다. 치아번호가 포함된 파일명으로 다시 올려주세요."
+            : "연결할 어벗 의뢰를 찾지 못했습니다.",
           variant: "destructive",
         });
         return;
       }
 
-      if (stlFiles.length > queue.length) {
+      if (stlFiles.length > queue.length || skippedUnmatched > 0) {
         toast({
           title: "일부만 등록",
-          description: `${stlFiles.length}개 중 ${queue.length}개만 남은 치아에 맞춰 확인합니다.`,
+          description: multiFile
+            ? `${stlFiles.length}개 중 ${queue.length}개만 치아번호로 매칭했습니다. 나머지 파일명에 치아번호가 있는지 확인해주세요.`
+            : `${stlFiles.length}개 중 ${queue.length}개만 남은 치아에 맞춰 확인합니다.`,
         });
       }
 
@@ -2837,6 +2957,7 @@ export function RequestorPracticeReceivePage({
       fetchRequestCaseInfos,
       mergeProductionRelatedRequestIds,
       pickRelatedRequestIdsFromPayload,
+      resolveAbutmentDesignTeethFromFiles,
       toast,
       token,
     ],
