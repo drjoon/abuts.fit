@@ -669,7 +669,7 @@ export type PracticeTransferRequestIntakePanelProps = {
   onAutoMatchBudgetChange?: (
     next: PracticeTransferAutoMatchBudget | null,
   ) => void | Promise<void>;
-  /** 자동매칭 최소 별(1~3). 이 치과 rating 기준. 미평가·2회 이하는 차단 안 함. */
+  /** 자동매칭 최소 별(1~3). 전체 치과 평가 평균 기준. 합산 5회 이하·미평가는 차단 안 함. */
   autoMatchMinLabRating?: number;
   onAutoMatchMinLabRatingChange?: (next: number) => void | Promise<void>;
 };

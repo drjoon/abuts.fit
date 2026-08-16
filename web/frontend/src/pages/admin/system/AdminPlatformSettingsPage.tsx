@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 「기공소 매칭」→「인증 기공소」탭 라벨.
 // - 2026-08-14: 기공소 신규 기공비 → 어벗츠 수가 검토 배지·탭 하이라이트.
 // - 2026-08-14: 기공소 매칭 탭을 단일 카드(수수료+인증 목록)로 합침.
 // - 2026-08-14: 기공소 수가 탭 추가(목록·호버 툴팁).
@@ -111,7 +112,7 @@ export const AdminPlatformSettingsPage = () => {
       },
       {
         key: "autoMatch",
-        label: "기공소 매칭",
+        label: "인증 기공소",
         icon: FlaskConical,
         content: <PracticeTransferAutoMatchTab />,
       },

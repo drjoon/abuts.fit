@@ -217,7 +217,7 @@ export const RequestorSettingsPage = () => {
         },
         {
           key: "auto-match",
-          label: "자동 매칭 참여",
+          label: "어벗츠 인증",
           icon: FlaskConical,
           content: <LabAutoMatchParticipationTab />,
         },

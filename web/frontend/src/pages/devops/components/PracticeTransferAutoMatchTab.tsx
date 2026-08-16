@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 「인증 기공소」라벨·테스트 여부·메모·인증 상태 편집.
 // - 2026-08-14: 수수료 스트립을 같은 카드에 합치고 안내 문구 중복 제거.
 // - 2026-08-14: 카드 제목「인증 기공소」·식별 비공개·자동매칭 참여 카피로 정리.
 // - 2026-08-13: 목록·검색·카드 UI를 최신 파트너 설정 스타일로 정리.
@@ -6,20 +7,34 @@
 // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
+// - web/frontend/src/shared/practice/abutsLabCertification.ts
 // - web/backend/utils/practiceTransferAutoMatch.js
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Building2, FlaskConical, Search } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import { DevopsPlatformFeeTab } from "@/pages/devops/components/DevopsPlatformFeeTab";
+import {
+  ABUTS_LAB_CERT_STATUS_LABEL,
+  ABUTS_LAB_TEST_STATUS_LABEL,
+  ABUTS_LAB_TEST_STATUSES,
+  type AbutsLabCertificationPublic,
+  type AbutsLabTestStatus,
+  parseAbutsLabCertification,
+} from "@/shared/practice/abutsLabCertification";
 
 const PAGE_LIMIT = 15;
 
@@ -31,9 +46,29 @@ type AutoMatchRow = {
   representativeName: string;
   address: string;
   practiceTransferAutoMatchEnabled: boolean;
+  abutsLabCertification: AbutsLabCertificationPublic;
   verified: boolean;
   canReceivePracticeTransfer: boolean;
 };
+
+function mapRow(row: Partial<AutoMatchRow> & { _id?: string }): AutoMatchRow {
+  const enabled = Boolean(row?.practiceTransferAutoMatchEnabled);
+  return {
+    _id: String(row?._id || ""),
+    name: String(row?.name || ""),
+    businessNumberNormalized: String(row?.businessNumberNormalized || ""),
+    status: String(row?.status || ""),
+    representativeName: String(row?.representativeName || "").trim(),
+    address: String(row?.address || "").trim(),
+    practiceTransferAutoMatchEnabled: enabled,
+    abutsLabCertification: parseAbutsLabCertification(
+      row?.abutsLabCertification,
+      { enabled },
+    ),
+    verified: Boolean(row?.verified),
+    canReceivePracticeTransfer: Boolean(row?.canReceivePracticeTransfer),
+  };
+}
 
 export const PracticeTransferAutoMatchTab = () => {
   const { token } = useAuthStore();
@@ -48,6 +83,7 @@ export const PracticeTransferAutoMatchTab = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [enabledCount, setEnabledCount] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [memoDrafts, setMemoDrafts] = useState<Record<string, string>>({});
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
@@ -66,6 +102,17 @@ export const PracticeTransferAutoMatchTab = () => {
   useEffect(() => {
     pageRef.current = page;
   }, [page]);
+
+  const mergeRows = useCallback((list: AutoMatchRow[], append: boolean) => {
+    setRows((prev) => (append ? [...prev, ...list] : list));
+    setMemoDrafts((prev) => {
+      const next = append ? { ...prev } : {};
+      for (const row of list) {
+        next[row._id] = row.abutsLabCertification.memo || "";
+      }
+      return next;
+    });
+  }, []);
 
   const loadPage = useCallback(
     async (targetPage: number, append: boolean) => {
@@ -113,26 +160,10 @@ export const PracticeTransferAutoMatchTab = () => {
           enabledCount?: number;
         };
         const list: AutoMatchRow[] = Array.isArray(body.data)
-          ? body.data.map((row) => ({
-              _id: String(row?._id || ""),
-              name: String(row?.name || ""),
-              businessNumberNormalized: String(
-                row?.businessNumberNormalized || "",
-              ),
-              status: String(row?.status || ""),
-              representativeName: String(row?.representativeName || "").trim(),
-              address: String(row?.address || "").trim(),
-              practiceTransferAutoMatchEnabled: Boolean(
-                row?.practiceTransferAutoMatchEnabled,
-              ),
-              verified: Boolean(row?.verified),
-              canReceivePracticeTransfer: Boolean(
-                row?.canReceivePracticeTransfer,
-              ),
-            }))
+          ? body.data.map((row) => mapRow(row))
           : [];
 
-        setRows((prev) => (append ? [...prev, ...list] : list));
+        mergeRows(list, append);
         const nextPage = Number(body?.pagination?.page || targetPage);
         const nextHasMore = Boolean(body?.pagination?.hasMore);
         setPage(nextPage);
@@ -164,7 +195,7 @@ export const PracticeTransferAutoMatchTab = () => {
         }
       }
     },
-    [debouncedQ, toast, token],
+    [debouncedQ, mergeRows, toast, token],
   );
 
   useEffect(() => {
@@ -195,9 +226,16 @@ export const PracticeTransferAutoMatchTab = () => {
     return () => io.disconnect();
   }, [hasMore, loading, loadingMore, page, rows.length, loadPage]);
 
-  const onToggle = async (row: AutoMatchRow, enabled: boolean) => {
+  const patchRow = async (
+    row: AutoMatchRow,
+    patch: {
+      enabled?: boolean;
+      testStatus?: AbutsLabTestStatus;
+      memo?: string;
+    },
+  ) => {
     if (!token || savingId) return;
-    if (enabled && !row.verified) {
+    if (patch.enabled === true && !row.verified) {
       toast({
         title: "검증 기공소만 가능",
         description: "검증된 기공소만 인증(ON)할 수 있습니다.",
@@ -205,7 +243,7 @@ export const PracticeTransferAutoMatchTab = () => {
       });
       return;
     }
-    if (enabled && !row.canReceivePracticeTransfer) {
+    if (patch.enabled === true && !row.canReceivePracticeTransfer) {
       toast({
         title: "인증 불가",
         description:
@@ -217,14 +255,19 @@ export const PracticeTransferAutoMatchTab = () => {
     setSavingId(row._id);
     const prev = rows;
     const prevEnabled = enabledCount;
-    setRows((cur) =>
-      cur.map((r) =>
-        r._id === row._id
-          ? { ...r, practiceTransferAutoMatchEnabled: enabled }
-          : r,
-      ),
-    );
-    setEnabledCount((c) => Math.max(0, c + (enabled ? 1 : -1)));
+    const wasEnabled = Boolean(row.practiceTransferAutoMatchEnabled);
+    if (typeof patch.enabled === "boolean") {
+      setRows((cur) =>
+        cur.map((r) =>
+          r._id === row._id
+            ? { ...r, practiceTransferAutoMatchEnabled: patch.enabled === true }
+            : r,
+        ),
+      );
+      setEnabledCount((c) =>
+        Math.max(0, c + (patch.enabled ? 1 : patch.enabled === false ? -1 : 0)),
+      );
+    }
     try {
       const res = await request<{
         success?: boolean;
@@ -233,7 +276,7 @@ export const PracticeTransferAutoMatchTab = () => {
         path: `/api/devops/practice-transfer-auto-match/${encodeURIComponent(row._id)}`,
         method: "PATCH",
         token,
-        jsonBody: { enabled },
+        jsonBody: patch,
       });
       if (!res.ok) {
         throw new Error("저장 실패");
@@ -242,24 +285,34 @@ export const PracticeTransferAutoMatchTab = () => {
         data?: Partial<AutoMatchRow> & { _id?: string };
       };
       if (body?.data?._id) {
+        const mapped = mapRow({ ...row, ...body.data });
         setRows((cur) =>
-          cur.map((r) =>
-            r._id === body.data?._id
-              ? {
-                  ...r,
-                  ...body.data,
-                  representativeName: String(
-                    body.data.representativeName || r.representativeName || "",
-                  ).trim(),
-                  address: String(body.data.address || r.address || "").trim(),
-                  practiceTransferAutoMatchEnabled: Boolean(
-                    body.data.practiceTransferAutoMatchEnabled,
-                  ),
-                  verified: Boolean(body.data.verified),
-                }
-              : r,
-          ),
+          cur.map((r) => (r._id === mapped._id ? mapped : r)),
         );
+        setMemoDrafts((cur) => ({
+          ...cur,
+          [mapped._id]: mapped.abutsLabCertification.memo || "",
+        }));
+        if (mapped.practiceTransferAutoMatchEnabled !== wasEnabled) {
+          // 낙관적 카운트 보정(테스트 통과 등으로 enabled가 바뀐 경우)
+          if (typeof patch.enabled !== "boolean") {
+            setEnabledCount((c) =>
+              Math.max(
+                0,
+                c + (mapped.practiceTransferAutoMatchEnabled ? 1 : -1),
+              ),
+            );
+          } else {
+            setEnabledCount(
+              Math.max(
+                0,
+                prevEnabled +
+                  (mapped.practiceTransferAutoMatchEnabled ? 1 : 0) -
+                  (wasEnabled ? 1 : 0),
+              ),
+            );
+          }
+        }
       }
     } catch (error) {
       console.error("[PracticeTransferAutoMatchTab] patch failed", error);
@@ -285,11 +338,11 @@ export const PracticeTransferAutoMatchTab = () => {
             </span>
             <div className="min-w-0 space-y-1">
               <h3 className="text-base font-semibold tracking-tight text-slate-900">
-                기공소 매칭
+                인증 기공소
               </h3>
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                자동 매칭에 참여한 기공소만 목록에 표시됩니다. 치과·기공소
-                식별 정보는 비공개입니다.
+                기공소 신청 → 기공 테스트 → 통과 시 인증. 인증 기공소만 자동
+                매칭 풀에 참여합니다. 치과·기공소 식별 정보는 비공개입니다.
               </p>
             </div>
           </div>
@@ -330,11 +383,15 @@ export const PracticeTransferAutoMatchTab = () => {
           </div>
         ) : (
           <>
-            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               {rows.map((row) => {
                 const canEnable =
                   row.verified && row.canReceivePracticeTransfer;
                 const enabled = Boolean(row.practiceTransferAutoMatchEnabled);
+                const cert = row.abutsLabCertification;
+                const statusLabel =
+                  ABUTS_LAB_CERT_STATUS_LABEL[cert.status] || cert.status;
+                const busy = savingId === row._id;
                 return (
                   <li
                     key={row._id}
@@ -351,65 +408,119 @@ export const PracticeTransferAutoMatchTab = () => {
                         "h-1 w-full",
                         enabled
                           ? "bg-primary-strong"
-                          : row.verified
-                            ? "bg-slate-300"
-                            : "bg-amber-400",
+                          : cert.status === "applied" ||
+                              cert.status === "testing"
+                            ? "bg-amber-400"
+                            : row.verified
+                              ? "bg-slate-300"
+                              : "bg-amber-400",
                       )}
                     />
-                    <div className="flex items-start gap-3 px-4 py-3.5">
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate font-semibold text-slate-900">
-                            {row.name || "이름 없음"}
-                          </p>
-                          <span
-                            className={cn(
-                              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                              enabled
-                                ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
-                                : row.verified
-                                  ? "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
-                                  : "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
-                            )}
-                          >
-                            {enabled
-                              ? "인증 ON"
-                              : row.verified
-                                ? "검증"
-                                : row.status || "미검증"}
-                          </span>
-                        </div>
-                        <dl className="space-y-1.5 text-[13px]">
-                          <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
-                            <dt className="text-slate-500">대표</dt>
-                            <dd className="min-w-0 truncate text-slate-700">
-                              {row.representativeName || "—"}
-                            </dd>
-                          </div>
-                          <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
-                            <dt className="text-slate-500">주소</dt>
-                            <dd className="min-w-0 break-words text-slate-700">
-                              {row.address || "—"}
-                            </dd>
-                          </div>
-                          {!row.canReceivePracticeTransfer ? (
-                            <p className="text-[11px] text-amber-700">
-                              기공의뢰 수신 불가
+                    <div className="space-y-3 px-4 py-3.5">
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate font-semibold text-slate-900">
+                              {row.name || "이름 없음"}
                             </p>
-                          ) : null}
-                        </dl>
+                            <span
+                              className={cn(
+                                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                enabled
+                                  ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
+                                  : cert.status === "applied" ||
+                                      cert.status === "testing"
+                                    ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
+                                    : cert.status === "rejected"
+                                      ? "bg-rose-50 text-rose-800 ring-1 ring-rose-200"
+                                      : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
+                              )}
+                            >
+                              {enabled ? "인증 ON" : statusLabel}
+                            </span>
+                          </div>
+                          <dl className="space-y-1.5 text-[13px]">
+                            <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+                              <dt className="text-slate-500">대표</dt>
+                              <dd className="min-w-0 truncate text-slate-700">
+                                {row.representativeName || "—"}
+                              </dd>
+                            </div>
+                            <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+                              <dt className="text-slate-500">주소</dt>
+                              <dd className="min-w-0 break-words text-slate-700">
+                                {row.address || "—"}
+                              </dd>
+                            </div>
+                            {!row.canReceivePracticeTransfer ? (
+                              <p className="text-[11px] text-amber-700">
+                                기공의뢰 수신 불가
+                              </p>
+                            ) : null}
+                          </dl>
+                        </div>
+                        <Switch
+                          checked={enabled}
+                          disabled={busy || (!canEnable && !enabled)}
+                          onCheckedChange={(checked) =>
+                            void patchRow(row, { enabled: checked })
+                          }
+                          aria-label={`${row.name} 인증 기공소`}
+                          className="mt-1 shrink-0"
+                        />
                       </div>
-                      <Switch
-                        checked={enabled}
-                        disabled={
-                          savingId === row._id || (!canEnable && !enabled)
-                        }
-                        onCheckedChange={(checked) =>
-                          void onToggle(row, checked)
-                        }
-                        aria-label={`${row.name} 인증 기공소`}
-                        className="mt-1 shrink-0"
-                      />
+
+                      <div className="grid gap-2 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:items-center">
+                        <label className="text-[12px] font-medium text-slate-600">
+                          기공 테스트
+                        </label>
+                        <Select
+                          value={cert.testStatus}
+                          disabled={busy}
+                          onValueChange={(value) =>
+                            void patchRow(row, {
+                              testStatus: value as AbutsLabTestStatus,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-9 rounded-xl border-slate-200 bg-white text-sm">
+                            <SelectValue placeholder="테스트 상태" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ABUTS_LAB_TEST_STATUSES.map((value) => (
+                              <SelectItem key={value} value={value}>
+                                {ABUTS_LAB_TEST_STATUS_LABEL[value]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[12px] font-medium text-slate-600">
+                          인증 메모
+                        </label>
+                        <Textarea
+                          value={memoDrafts[row._id] ?? cert.memo}
+                          disabled={busy}
+                          rows={2}
+                          placeholder="테스트 일정·결과·특이사항 등"
+                          className="min-h-[64px] resize-y rounded-xl border-slate-200 bg-white text-sm"
+                          onChange={(e) =>
+                            setMemoDrafts((cur) => ({
+                              ...cur,
+                              [row._id]: e.target.value,
+                            }))
+                          }
+                          onBlur={() => {
+                            const next = String(
+                              memoDrafts[row._id] ?? cert.memo,
+                            ).trim();
+                            if (next === String(cert.memo || "").trim()) return;
+                            void patchRow(row, { memo: next });
+                          }}
+                        />
+                      </div>
                     </div>
                   </li>
                 );

@@ -1,13 +1,18 @@
 // related files:
 // - web/backend/utils/practiceTransferAutoMatch.js
+// - web/backend/utils/abutsLabCertification.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
+// - web/backend/services/labAutoMatchParticipation.service.js
+// change-log:
+// - 2026-08-16: 인증 신청·테스트·메모 필드 + 관리자 패치.
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   isPracticeTransferAutoMatchEnabled,
   verifiedLabCapableAnchorFilter,
 } from "../../utils/practiceTransferAutoMatch.js";
+import { toAbutsLabCertificationApi } from "../../utils/abutsLabCertification.js";
 import {
   canReceivePracticeTransfer,
   legacyCapabilitiesFromProfile,
@@ -15,10 +20,7 @@ import {
   resolveRequestorProfile,
 } from "../../utils/requestorCapabilities.js";
 import { invalidateMyBusinessCache } from "../businesses/business.controller.js";
-import {
-  applyAutoMatchParticipationForceOff,
-  applyAutoMatchParticipationForceOn,
-} from "../../services/labAutoMatchParticipation.service.js";
+import { applyAdminAbutsLabCertificationPatch } from "../../services/labAutoMatchParticipation.service.js";
 
 const PAGE_LIMIT_DEFAULT = 15;
 const PAGE_LIMIT_MAX = 50;
@@ -49,6 +51,7 @@ const toListRow = (row) => {
     representativeName: String(row?.metadata?.representativeName || "").trim(),
     address: formatAddress(row?.metadata),
     practiceTransferAutoMatchEnabled: isPracticeTransferAutoMatchEnabled(row),
+    abutsLabCertification: toAbutsLabCertificationApi(row),
     canReceivePracticeTransfer:
       String(row.businessType || "").trim() === "internalLab" ||
       canReceivePracticeTransfer(profile),
@@ -58,7 +61,7 @@ const toListRow = (row) => {
 
 /**
  * GET /api/devops/practice-transfer-auto-match?q=&page=1&limit=15
- * 기공소(requestor lab) 목록 + practiceTransferAutoMatchEnabled
+ * 기공소 목록 + 어벗츠 인증/테스트 상태
  */
 export async function listPracticeTransferAutoMatch(req, res) {
   try {
@@ -71,7 +74,6 @@ export async function listPracticeTransferAutoMatch(req, res) {
     );
     const skip = (page - 1) * limit;
 
-    // 공개 풀 자격과 동일: 검증 기공소만 목록·지정 대상 (kind 또는 레거시 caps)
     const filter = {
       ...verifiedLabCapableAnchorFilter(),
     };
@@ -107,13 +109,19 @@ export async function listPracticeTransferAutoMatch(req, res) {
           requestorServices: 1,
           requestorCapabilities: 1,
           practiceTransferAutoMatchEnabled: 1,
+          abutsLabCertification: 1,
           businessType: 1,
           "metadata.companyName": 1,
           "metadata.representativeName": 1,
           "metadata.address": 1,
           "metadata.addressDetail": 1,
         })
-        .sort({ practiceTransferAutoMatchEnabled: -1, status: -1, name: 1 })
+        .sort({
+          "abutsLabCertification.status": -1,
+          practiceTransferAutoMatchEnabled: -1,
+          status: -1,
+          name: 1,
+        })
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -134,7 +142,7 @@ export async function listPracticeTransferAutoMatch(req, res) {
     console.error("[practiceTransferAutoMatch] list failed", error);
     return res.status(500).json({
       success: false,
-      message: "기공의뢰 자동매칭 목록 조회 중 오류가 발생했습니다.",
+      message: "인증 기공소 목록 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -142,7 +150,7 @@ export async function listPracticeTransferAutoMatch(req, res) {
 
 /**
  * PATCH /api/devops/practice-transfer-auto-match/:anchorId
- * body: { enabled: boolean }
+ * body: { enabled?: boolean, status?: string, testStatus?: string, memo?: string }
  */
 export async function patchPracticeTransferAutoMatch(req, res) {
   try {
@@ -154,14 +162,18 @@ export async function patchPracticeTransferAutoMatch(req, res) {
       });
     }
 
-    if (typeof req.body?.enabled !== "boolean") {
+    const body = req.body || {};
+    const hasEnabled = typeof body.enabled === "boolean";
+    const hasStatus = body.status != null && String(body.status).trim() !== "";
+    const hasTest =
+      body.testStatus != null && String(body.testStatus).trim() !== "";
+    const hasMemo = body.memo !== undefined;
+    if (!hasEnabled && !hasStatus && !hasTest && !hasMemo) {
       return res.status(400).json({
         success: false,
-        message: "enabled(boolean)가 필요합니다.",
+        message: "enabled, status, testStatus, memo 중 하나 이상이 필요합니다.",
       });
     }
-
-    const enabled = Boolean(req.body.enabled);
 
     const existing = await BusinessAnchor.findOne({
       _id: anchorId,
@@ -174,6 +186,7 @@ export async function patchPracticeTransferAutoMatch(req, res) {
         requestorServices: 1,
         requestorCapabilities: 1,
         practiceTransferAutoMatchEnabled: 1,
+        abutsLabCertification: 1,
         autoMatchParticipationCancelAtPeriodEnd: 1,
         autoMatchParticipationNextBillingAt: 1,
         autoMatchParticipationStartedAt: 1,
@@ -187,10 +200,15 @@ export async function patchPracticeTransferAutoMatch(req, res) {
       });
     }
 
-    if (enabled && String(existing.status || "").trim() !== "verified") {
+    const enabling =
+      (hasEnabled && body.enabled === true) ||
+      String(body.status || "").trim() === "certified" ||
+      String(body.testStatus || "").trim() === "passed";
+
+    if (enabling && String(existing.status || "").trim() !== "verified") {
       return res.status(400).json({
         success: false,
-        message: "검증된 기공소만 자동매칭을 ON할 수 있습니다.",
+        message: "검증된 기공소만 인증할 수 있습니다.",
       });
     }
 
@@ -201,34 +219,34 @@ export async function patchPracticeTransferAutoMatch(req, res) {
       businessVerified: true,
     });
 
-    if (enabled) {
+    if (enabling) {
       const isInternalLab =
         String(existing.businessType || "").trim() === "internalLab";
       if (!isInternalLab && !canReceivePracticeTransfer(profile)) {
         return res.status(400).json({
           success: false,
-          message:
-            "기공의뢰를 수신할 수 있는 기공소만 자동매칭을 ON할 수 있습니다.",
+          message: "기공의뢰를 수신할 수 있는 기공소만 인증할 수 있습니다.",
         });
       }
     }
 
-    if (enabled) {
-      await applyAutoMatchParticipationForceOn(existing);
-      // kind 미백필 레거시 앵커는 ON 시 SSOT 필드를 채운다
-      if (!String(existing.requestorKind || "").trim()) {
-        await BusinessAnchor.updateOne(
-          { _id: anchorId },
-          {
-            $set: {
-              ...requestorProfilePersistFields(profile),
-              requestorCapabilities: legacyCapabilitiesFromProfile(profile),
-            },
+    await applyAdminAbutsLabCertificationPatch(existing, {
+      enabled: hasEnabled ? Boolean(body.enabled) : undefined,
+      status: hasStatus ? body.status : undefined,
+      testStatus: hasTest ? body.testStatus : undefined,
+      memo: hasMemo ? body.memo : undefined,
+    });
+
+    if (enabling && !String(existing.requestorKind || "").trim()) {
+      await BusinessAnchor.updateOne(
+        { _id: anchorId },
+        {
+          $set: {
+            ...requestorProfilePersistFields(profile),
+            requestorCapabilities: legacyCapabilitiesFromProfile(profile),
           },
-        );
-      }
-    } else {
-      await applyAutoMatchParticipationForceOff(existing);
+        },
+      );
     }
 
     const updated = await BusinessAnchor.findOne({
@@ -243,6 +261,8 @@ export async function patchPracticeTransferAutoMatch(req, res) {
         requestorServices: 1,
         requestorCapabilities: 1,
         practiceTransferAutoMatchEnabled: 1,
+        abutsLabCertification: 1,
+        businessType: 1,
         "metadata.companyName": 1,
         "metadata.representativeName": 1,
         "metadata.address": 1,
@@ -267,7 +287,7 @@ export async function patchPracticeTransferAutoMatch(req, res) {
     console.error("[practiceTransferAutoMatch] patch failed", error);
     return res.status(500).json({
       success: false,
-      message: "기공의뢰 자동매칭 설정 저장 중 오류가 발생했습니다.",
+      message: "인증 기공소 설정 저장 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

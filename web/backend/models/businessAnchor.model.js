@@ -109,6 +109,7 @@ const businessAnchorSchema = new mongoose.Schema(
     // 어벗츠 인증 기공소(ON): 치과의 자동 매칭 의뢰 공개 풀에 참여
     // related files:
     // - web/backend/utils/practiceTransferAutoMatch.js
+    // - web/backend/utils/abutsLabCertification.js
     // - web/backend/modules/devops/practiceTransferAutoMatch.routes.js
     // - web/backend/services/labAutoMatchParticipation.service.js
     // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
@@ -116,6 +117,29 @@ const businessAnchorSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
       index: true,
+    },
+    // 기공소 어벗츠 인증 신청·기공 테스트·메모 (가입 시 미신청)
+    abutsLabCertification: {
+      status: {
+        type: String,
+        enum: ["none", "applied", "testing", "certified", "rejected"],
+        default: "none",
+        index: true,
+      },
+      testStatus: {
+        type: String,
+        enum: ["none", "pending", "passed", "failed"],
+        default: "none",
+      },
+      memo: {
+        type: String,
+        default: "",
+        maxlength: 2000,
+      },
+      appliedAt: { type: Date, default: null },
+      testedAt: { type: Date, default: null },
+      certifiedAt: { type: Date, default: null },
+      rejectedAt: { type: Date, default: null },
     },
     // 월 참여 구독(해지 예약·다음 결제일). 활성 여부는 practiceTransferAutoMatchEnabled.
     autoMatchParticipationCancelAtPeriodEnd: {
@@ -479,8 +503,8 @@ const businessAnchorSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.Mixed,
         default: null,
       },
-      // 자동매칭 참여 최소 별(1~3). 해당 치과 rating 기준.
-      // 미평가·동일 기공소 평가 2회 이하는 차단하지 않음.
+      // 자동매칭 참여 최소 별(1~3). 전체 치과 평가 평균 기준.
+      // 미평가·합산 평가 5회 이하는 차단하지 않음.
       autoMatchMinLabRating: {
         type: Number,
         default: 1,

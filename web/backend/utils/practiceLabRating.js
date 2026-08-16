@@ -8,13 +8,19 @@
 // - 2026-08-14: 치과→기공소 rating(1~3)·메모. 기록 치과·관리자만. 자동매칭 최소 별(1회는 2nd chance).
 // - 2026-08-14: rating 기공소 10곳 이상일 때만 자동매칭 별 제한 적용.
 // - 2026-08-14: 동일 기공소 평가 2회 이하(3회부터 차단)는 매칭 참여 허용.
+// - 2026-08-16: 10곳 게이트 제거. 평가 5회 이하(6회부터 별 제한)는 매칭 참여 허용.
+// - 2026-08-16: 자동매칭 별점은 주문 치과만이 아니라 전체 치과 평가 합산·평균.
+
+import { Types } from "mongoose";
+import BusinessAnchor from "../models/businessAnchor.model.js";
+import { requestorKindCapableAnchorFilter } from "./requestorCapabilities.js";
 
 export const PRACTICE_LAB_RATING_MIN = 1;
 export const PRACTICE_LAB_RATING_MAX = 3;
 export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
 export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 1;
-/** 자동매칭 별 제한을 켜려면 이 치과가 rating한 서로 다른 기공소 수 */
-export const AUTO_MATCH_RATING_FILTER_MIN_LABS = 10;
+/** 이 횟수 이하 평가면 최소 별 제한에서 제외(미평가 포함). 초과 시 별점 게이트 적용. */
+export const AUTO_MATCH_RATING_COUNT_GRACE = 5;
 
 /** 별점 1~3. 범위 밖·비숫자면 null. */
 export function normalizePracticeLabStars(value) {
@@ -92,26 +98,116 @@ export function countRatedLabAnchors(ratings) {
 }
 
 /**
- * 자동매칭 차단:
- * - rating한 기공소가 10곳 미만이면 제한 없음
+ * 자동매칭 차단(인증 풀은 별도):
  * - 미평가(기록 없음)면 false
- * - 해당 기공소를 3회 이상 rating했고 현재 별 < 최소 별이면 true
- * - 2회 이하·이상이면 false (2nd chance)
+ * - 전체 치과 합산 평가 5회 이하면 false
+ * - 6회 이상이고 평균 별 < 최소 별이면 true
+ *
+ * `aggregated`가 있으면 전체 치과 합산 행을 쓰고, 없으면 레거시 단일 치과 list.
  */
 export function isLabBlockedByPracticeRating({
   ratings,
+  aggregated = null,
   labAnchorId,
   minStars,
 } = {}) {
   const min = normalizeAutoMatchMinLabRating(minStars);
   if (min <= PRACTICE_LAB_RATING_MIN) return false;
-  if (countRatedLabAnchors(ratings) < AUTO_MATCH_RATING_FILTER_MIN_LABS) {
-    return false;
+  const labId = String(labAnchorId || "").trim();
+  if (!labId) return false;
+
+  let stars = null;
+  let ratingCount = 0;
+  if (aggregated && typeof aggregated === "object") {
+    const row =
+      aggregated instanceof Map
+        ? aggregated.get(labId)
+        : aggregated[labId] || null;
+    if (!row) return false;
+    stars = Number(row.stars);
+    ratingCount = Math.max(0, Math.floor(Number(row.ratingCount) || 0));
+  } else {
+    const row = findPracticeLabRating(ratings, labId);
+    if (!row) return false;
+    stars = row.stars;
+    ratingCount = row.ratingCount;
   }
-  const row = findPracticeLabRating(ratings, labAnchorId);
-  if (!row) return false;
-  if (row.ratingCount <= 2) return false;
-  return row.stars < min;
+  if (!Number.isFinite(stars) || ratingCount <= 0) return false;
+  if (ratingCount <= AUTO_MATCH_RATING_COUNT_GRACE) return false;
+  return stars < min;
+}
+
+/**
+ * 가입 치과(practice) 전체의 기공소 평가를 합산·평균.
+ * - ratingCount: 각 치과 ratingCount 합
+ * - stars: ratingCount 가중 평균
+ * @returns {Map<string, { labAnchorId: string, stars: number, ratingCount: number }>}
+ */
+export async function loadGlobalLabRatingAggregates({
+  labAnchorIds = null,
+} = {}) {
+  const practiceFilter = requestorKindCapableAnchorFilter("practice");
+  const match = {
+    businessType: "requestor",
+    ...(practiceFilter || {}),
+    "practiceLabRatings.0": { $exists: true },
+  };
+
+  const labIds = Array.isArray(labAnchorIds)
+    ? labAnchorIds
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id))
+    : null;
+
+  const pipeline = [
+    { $match: match },
+    { $project: { practiceLabRatings: 1 } },
+    { $unwind: "$practiceLabRatings" },
+  ];
+  if (labIds && labIds.length > 0) {
+    pipeline.push({
+      $match: { "practiceLabRatings.labAnchorId": { $in: labIds } },
+    });
+  }
+  pipeline.push({
+    $group: {
+      _id: "$practiceLabRatings.labAnchorId",
+      ratingCount: {
+        $sum: {
+          $max: [{ $ifNull: ["$practiceLabRatings.ratingCount", 1] }, 1],
+        },
+      },
+      weightedStars: {
+        $sum: {
+          $multiply: [
+            { $ifNull: ["$practiceLabRatings.stars", 0] },
+            {
+              $max: [{ $ifNull: ["$practiceLabRatings.ratingCount", 1] }, 1],
+            },
+          ],
+        },
+      },
+    },
+  });
+
+  const rows = await BusinessAnchor.aggregate(pipeline);
+  const map = new Map();
+  for (const row of rows) {
+    const labAnchorId = String(row?._id || "").trim();
+    if (!labAnchorId) continue;
+    const ratingCount = Math.max(0, Math.floor(Number(row.ratingCount) || 0));
+    if (ratingCount <= 0) continue;
+    const weighted = Number(row.weightedStars) || 0;
+    const stars = weighted / ratingCount;
+    if (!Number.isFinite(stars)) continue;
+    map.set(labAnchorId, {
+      labAnchorId,
+      stars,
+      ratingCount,
+    });
+  }
+  return map;
 }
 
 /** upsert. 신규=1, 별점이 바뀌면 ratingCount +1 (메모만 수정은 횟수 유지). */

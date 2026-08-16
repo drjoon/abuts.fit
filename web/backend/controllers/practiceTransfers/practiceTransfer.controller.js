@@ -1886,7 +1886,6 @@ export async function createPracticeTransfer(req, res) {
             "practiceTransferSettings.autoMatchBudget": 1,
             "practiceTransferSettings.autoMatchMinLabRating": 1,
             "practiceTransferSettings.implantFavorites": 1,
-            practiceLabRatings: 1,
           })
           .lean(),
         loadAutoMatchBudgetCatalog(),
@@ -1903,7 +1902,6 @@ export async function createPracticeTransfer(req, res) {
         toothWorks: toothWorksRaw,
         budget: autoMatchBudget,
         catalog,
-        practiceLabRatings: practiceForBudget?.practiceLabRatings,
         autoMatchMinLabRating:
           practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
       });
@@ -1918,7 +1916,7 @@ export async function createPracticeTransfer(req, res) {
             "인증 기공소의 기공수가가 아직 설정되지 않았습니다. 기공소에서 수가를 켜거나 지정 기공소를 선택해주세요.";
         } else if (skipped.rating > 0 && skipped.budget === 0) {
           message =
-            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요. (평가 2회 이하·미평가 기공소는 제한되지 않습니다.)";
+            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요. (전체 치과 평가 합산 5회 이하·미평가 기공소는 제한되지 않습니다.)";
         } else if (skipped.budget > 0) {
           message =
             "설정한 항목별 기공비 예산에 맞는 인증 기공소가 없습니다. 예산을 조정하거나 지정 기공소를 선택해주세요.";

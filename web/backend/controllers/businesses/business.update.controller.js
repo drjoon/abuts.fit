@@ -49,10 +49,16 @@ import {
   practiceMembershipResponseFields,
 } from "../../services/practiceMembership.service.js";
 import {
+  applyAbutsLabCertification,
   applyAutoMatchParticipationCancel,
   applyAutoMatchParticipationJoin,
   autoMatchParticipationResponseFields,
 } from "../../services/labAutoMatchParticipation.service.js";
+import {
+  canLabApplyAbutsCertification,
+  isAbutsLabCertificationCertified,
+  toAbutsLabCertificationApi,
+} from "../../utils/abutsLabCertification.js";
 import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
 
 function resolveLabPartnerInviteToken(req) {
@@ -1455,7 +1461,7 @@ export async function setMyAutoMatchParticipation(req, res) {
     if (String(anchor.status || "").trim() !== "verified") {
       return res.status(400).json({
         success: false,
-        message: "사업자 검증 후 참여할 수 있습니다.",
+        message: "사업자 검증 후 신청할 수 있습니다.",
       });
     }
     if (
@@ -1467,7 +1473,7 @@ export async function setMyAutoMatchParticipation(req, res) {
     ) {
       return res.status(400).json({
         success: false,
-        message: "기공의뢰를 수신할 수 있는 기공소만 참여할 수 있습니다.",
+        message: "기공의뢰를 수신할 수 있는 기공소만 신청할 수 있습니다.",
       });
     }
 
@@ -1480,6 +1486,34 @@ export async function setMyAutoMatchParticipation(req, res) {
         message: "이미 자동 매칭에 참여 중입니다.",
         data: {
           ...autoMatchParticipationResponseFields(anchor),
+          ...(await loadDevopsAutoMatchFees()),
+        },
+      });
+    }
+
+    // 인증 전이면 신청만 (풀 ON은 관리자 테스트 통과 후)
+    if (!isAbutsLabCertificationCertified(anchor)) {
+      const cert = toAbutsLabCertificationApi(anchor);
+      if (!canLabApplyAbutsCertification(anchor)) {
+        return res.json({
+          success: true,
+          message:
+            cert.status === "testing"
+              ? "기공 테스트가 진행 중입니다. 통과 후 인증됩니다."
+              : "인증 신청이 접수되어 있습니다. 기공 테스트 후 인증됩니다.",
+          data: {
+            ...autoMatchParticipationResponseFields(anchor),
+            ...(await loadDevopsAutoMatchFees()),
+          },
+        });
+      }
+      const { anchor: next } = await applyAbutsLabCertification(anchor);
+      return res.json({
+        success: true,
+        message:
+          "어벗츠 인증을 신청했습니다. 기공 테스트 통과 후 인증 기공소로 등록됩니다.",
+        data: {
+          ...autoMatchParticipationResponseFields(next),
           ...(await loadDevopsAutoMatchFees()),
         },
       });

@@ -3,10 +3,18 @@
 // - web/frontend/src/features/settings/tabs/LabAutoMatchParticipationTab.tsx
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
 // change-log:
+// - 2026-08-16: 미신청·심사 중 안내. 인증 완료 시 배너 숨김.
 // - 2026-08-14: 거래 치과 소개 → 자동 매칭 참여 CTA로 교체.
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, FlaskConical } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
+import { request } from "@/shared/api/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
+import {
+  parseAbutsLabCertification,
+  type AbutsLabCertStatus,
+} from "@/shared/practice/abutsLabCertification";
 
 type Props = {
   className?: string;
@@ -14,10 +22,63 @@ type Props = {
 
 export const LabAutoMatchParticipationBanner = ({ className }: Props) => {
   const navigate = useNavigate();
+  const { token } = useAuthStore();
+  const [certStatus, setCertStatus] = useState<AbutsLabCertStatus | null>(null);
+  const [active, setActive] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await request<{
+        data?: {
+          practiceTransferAutoMatchEnabled?: boolean;
+          autoMatchParticipationActive?: boolean;
+          abutsLabCertification?: unknown;
+        };
+      }>({
+        path: "/api/businesses/me/auto-match-participation",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) return;
+      const enabled = Boolean(
+        res.data?.data?.autoMatchParticipationActive ??
+          res.data?.data?.practiceTransferAutoMatchEnabled,
+      );
+      setActive(enabled);
+      setCertStatus(
+        parseAbutsLabCertification(res.data?.data?.abutsLabCertification, {
+          enabled,
+        }).status,
+      );
+    } catch {
+      // silent
+    } finally {
+      setReady(true);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!ready || active || certStatus === "certified") {
+    return null;
+  }
 
   const goSettings = () => {
     navigate("/dashboard/settings?tab=auto-match");
   };
+
+  const pending =
+    certStatus === "applied" || certStatus === "testing";
+  const title = pending
+    ? "어벗츠 인증 심사 중"
+    : "어벗츠 인증을 신청하세요";
+  const subtitle = pending
+    ? "기공 테스트 통과 후 인증 기공소로 등록됩니다"
+    : "신청 후 기공 테스트를 거쳐 자동 매칭에 참여할 수 있습니다";
 
   return (
     <div
@@ -40,10 +101,10 @@ export const LabAutoMatchParticipationBanner = ({ className }: Props) => {
       </span>
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-base font-semibold leading-snug tracking-tight sm:text-[17px]">
-          자동 매칭에 참여하세요
+          {title}
         </p>
         <p className="text-sm leading-relaxed text-primary-strong/85 sm:text-[15px]">
-          클릭해서 자세히 보기
+          {subtitle}
         </p>
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />

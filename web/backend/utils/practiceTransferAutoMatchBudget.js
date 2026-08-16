@@ -13,6 +13,7 @@
 // 의뢰 이후 올린 할증은 as-of로 해당 건 미적용(상세 채팅 소급 금지).
 // 항목 목록은 어벗츠 수가(시스템 카탈로그)에서 동적으로 온다.
 // - 2026-08-15: 자동매칭 예산 필터에서 practice 할증 제외(공개 수가 기준).
+// - 2026-08-16: 별점 게이트는 전체 치과 평가 합산·평균.
 
 import {
   isLabFeeScheduleConfigured,
@@ -37,7 +38,7 @@ import {
   isAutoMatchEligibleLabAnchor,
   loadAutoMatchEligibleLabAnchors,
 } from "./practiceTransferAutoMatch.js";
-import { isLabBlockedByPracticeRating } from "./practiceLabRating.js";
+import { isLabBlockedByPracticeRating, loadGlobalLabRatingAggregates } from "./practiceLabRating.js";
 import {
   ADMIN_LAB_FEE_BASE,
   AUTO_MATCH_BUDGET_KEYS,
@@ -208,12 +209,12 @@ export function labUnitPricesFromSchedule(labFeeSchedule) {
  * 인증 기공소 중 이 치식·항목 예산에 맞는 앵커 ID 목록.
  * 전송 생성 시에만 호출(수신 목록 핫패스에서 호출 금지).
  * 예산 비교는 공개 수가만(치과별 할증 제외).
+ * 별점 게이트는 주문 치과만이 아니라 전체 치과 평가 합산·평균.
  */
 export async function resolveAutoMatchEligibleLabAnchorIds({
   toothWorks,
   budget,
   catalog,
-  practiceLabRatings = null,
   autoMatchMinLabRating = 1,
 } = {}) {
   const catalogItems =
@@ -248,6 +249,10 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
     },
   });
 
+  const globalRatings = await loadGlobalLabRatingAggregates({
+    labAnchorIds: labs.map((lab) => lab._id),
+  });
+
   const eligibleLabAnchorIds = [];
   const priorityLabAnchorIds = [];
   const skipped = { feeUnconfigured: 0, rating: 0, budget: 0 };
@@ -260,7 +265,7 @@ export async function resolveAutoMatchEligibleLabAnchorIds({
 
     if (
       isLabBlockedByPracticeRating({
-        ratings: practiceLabRatings,
+        aggregated: globalRatings,
         labAnchorId: lab._id,
         minStars: autoMatchMinLabRating,
       })
