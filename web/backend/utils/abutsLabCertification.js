@@ -4,6 +4,7 @@
 // - web/backend/controllers/devops/practiceTransferAutoMatch.controller.js
 // - web/frontend/src/shared/practice/abutsLabCertification.ts
 // change-log:
+// - 2026-08-16: 상태 라벨 — 미신청/신청중/테스트중/인증/인증보류.
 // - 2026-08-16: 기공소 어벗츠 인증 신청·기공 테스트·인증 SSOT.
 // - 2026-08-16: API status는 DB 그대로(레거시 풀 ON → virtual certified 승격 제거).
 
@@ -36,10 +37,10 @@ export const ABUTS_LAB_CERT_MEMO_MAX = 2000;
 
 export const ABUTS_LAB_CERT_STATUS_LABEL = {
   none: "미신청",
-  applied: "신청됨",
-  testing: "테스트 중",
+  applied: "신청중",
+  testing: "테스트중",
   certified: "인증",
-  rejected: "반려",
+  rejected: "인증보류",
 };
 
 export const ABUTS_LAB_TEST_STATUS_LABEL = {

@@ -59,7 +59,7 @@ import {
   isAbutsLabCertificationCertified,
   toAbutsLabCertificationApi,
 } from "../../utils/abutsLabCertification.js";
-import { resolvePlatformFeeRate, resolveDirectPlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
+import { resolvePlatformFeeRate, resolveDirectPlatformFeeRateConfigured } from "../../services/creditRevenuePolicy.service.js";
 
 function resolveLabPartnerInviteToken(req) {
   return String(
@@ -1300,10 +1300,15 @@ async function loadDevopsAutoMatchFees() {
     .lean();
   const rates = devops?.payoutRates || {};
   const platformFeeRate = resolvePlatformFeeRate(rates);
-  const directPlatformFeeRate = resolveDirectPlatformFeeRate(rates);
+  const directPlatformFeeEnabled =
+    rates?.directPlatformFeeEnabled === true;
+  // 기공소 UI: 설정 요율(취소선·0% 표시용). 실효 요율은 enabled일 때만 청구.
+  const directPlatformFeeRate =
+    resolveDirectPlatformFeeRateConfigured(rates);
   const monthlyFee = Math.max(0, Number(rates.autoMatchMonthlyFee) || 0);
   return {
     platformFeeRate,
+    directPlatformFeeEnabled,
     directPlatformFeeRate,
     autoMatchMonthlyFee: monthlyFee,
   };

@@ -3,6 +3,7 @@
 // - web/frontend/src/features/settings/tabs/LabAutoMatchParticipationTab.tsx
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // change-log:
+// - 2026-08-16: 상태 라벨 — 미신청/신청중/테스트중/인증/인증보류.
 // - 2026-08-16: 기공소 어벗츠 인증 신청·테스트·상태 라벨 SSOT(FE).
 // - 2026-08-16: parse 시 풀 ON → certified 승격 제거(미신청 배너용).
 
@@ -29,10 +30,10 @@ export const ABUTS_LAB_CERT_MEMO_MAX = 2000;
 
 export const ABUTS_LAB_CERT_STATUS_LABEL: Record<AbutsLabCertStatus, string> = {
   none: "미신청",
-  applied: "신청됨",
-  testing: "테스트 중",
+  applied: "신청중",
+  testing: "테스트중",
   certified: "인증",
-  rejected: "반려",
+  rejected: "인증보류",
 };
 
 export const ABUTS_LAB_TEST_STATUS_LABEL: Record<AbutsLabTestStatus, string> = {

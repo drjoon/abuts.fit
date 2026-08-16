@@ -7,6 +7,7 @@
 // - 2026-08-11: 「치과에 전달하기」중첩 카드 제거, 안내 문구 단순화.
 // - 2026-08-11: 목록 뱃지 — 가입 진행중(pending) / 등록 완료(active).
 // - 2026-08-11: 초대링크·안내문구 복사만으로는 목록 카드 미생성(가입 시작 시 표시).
+// - 2026-08-16: 지정 거래 수수료 — 별도 공지 시까지 무료 안내.
 // - 2026-08-12: 상단 수수료 안내 — 예시 매출·수수료 다이어그램(프로그레스바)으로 교체.
 // - 2026-08-12: 200만 구간 확대 연결선 + 확대 영역 내부 배분 바로 조정.
 // - 2026-08-12: 치과등록 안내 반복 제거, 한시 적용 문구 단일화.
@@ -249,16 +250,17 @@ export const LabTradingPartnersTab = () => {
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
             인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다. 매칭 거래
-            성공 수수료 {platformFeePct}% · 지정 거래는 별도 요율입니다.
-            치과명·담당자명·기공소명 등 식별 정보는 비공개입니다.
+            성공 수수료 {platformFeePct}% · 지정 거래 수수료는 별도 공지가 있을
+            때까지 무료입니다. 치과명·담당자명·기공소명 등 식별 정보는
+            비공개입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              지정 기공소 의뢰에도 성공 수수료가 적용됩니다. 거래 치과 소개는
-              아래에서 계속할 수 있습니다.
+              지정 기공소 의뢰의 플랫폼 수수료는 별도 공지가 있을 때까지
+              무료입니다. 거래 치과 소개는 아래에서 계속할 수 있습니다.
             </p>
           </div>
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">

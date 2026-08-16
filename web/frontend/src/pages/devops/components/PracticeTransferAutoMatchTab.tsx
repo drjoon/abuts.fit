@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-16: 인증 상태 단일 선택 · 뱃지 소형 rounded-md · 색감 정리.
+// - 2026-08-16: 인증 상태 5단 — 미신청/신청중/테스트중/인증/인증보류.
 // - 2026-08-16: 필터 상단 구분선·상태 뱃지 필터. 카드 테스트 드롭다운→상태 뱃지.
 // - 2026-08-16: 「인증 기공소」라벨·테스트 여부·메모·인증 상태 편집.
 // - 2026-08-14: 수수료 스트립을 같은 카드에 합치고 안내 문구 중복 제거.
@@ -22,6 +24,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import { DevopsPlatformFeeTab } from "@/pages/devops/components/DevopsPlatformFeeTab";
 import {
+  ABUTS_LAB_CERT_STATUS_LABEL,
   type AbutsLabCertificationPublic,
   type AbutsLabCertStatus,
   parseAbutsLabCertification,
@@ -29,18 +32,36 @@ import {
 
 const PAGE_LIMIT = 15;
 
-/** 관리자 목록·카드 공통 상태 뱃지 (미신청 / 테스트중 / 인증) */
-const CERT_BADGE_FILTERS = [
-  { id: "none", label: "미신청", status: "none" as AbutsLabCertStatus },
-  { id: "testing", label: "테스트중", status: "testing" as AbutsLabCertStatus },
+/** 관리자 목록·카드 공통 상태 뱃지 */
+const CERT_BADGE_FILTERS: Array<{
+  id: AbutsLabCertStatus;
+  label: string;
+  status: AbutsLabCertStatus;
+}> = [
+  { id: "none", label: ABUTS_LAB_CERT_STATUS_LABEL.none, status: "none" },
+  {
+    id: "applied",
+    label: ABUTS_LAB_CERT_STATUS_LABEL.applied,
+    status: "applied",
+  },
+  {
+    id: "testing",
+    label: ABUTS_LAB_CERT_STATUS_LABEL.testing,
+    status: "testing",
+  },
   {
     id: "certified",
-    label: "인증",
-    status: "certified" as AbutsLabCertStatus,
+    label: ABUTS_LAB_CERT_STATUS_LABEL.certified,
+    status: "certified",
   },
-] as const;
+  {
+    id: "rejected",
+    label: ABUTS_LAB_CERT_STATUS_LABEL.rejected,
+    status: "rejected",
+  },
+];
 
-type CertBadgeFilterId = (typeof CERT_BADGE_FILTERS)[number]["id"] | "all";
+type CertBadgeFilterId = AbutsLabCertStatus | "all";
 
 type AutoMatchRow = {
   _id: string;
@@ -55,24 +76,21 @@ type AutoMatchRow = {
   canReceivePracticeTransfer: boolean;
 };
 
-function resolveCertBadgeId(row: AutoMatchRow): CertBadgeFilterId {
-  if (
-    row.practiceTransferAutoMatchEnabled ||
-    row.abutsLabCertification.status === "certified"
-  ) {
-    return "certified";
-  }
-  if (
-    row.abutsLabCertification.status === "applied" ||
-    row.abutsLabCertification.status === "testing"
-  ) {
-    return "testing";
-  }
-  return "none";
+function resolveCertBadgeId(row: AutoMatchRow): AbutsLabCertStatus {
+  // 인증 상태는 status 1개만. 풀 ON은 certified와 동기.
+  return row.abutsLabCertification.status;
 }
 
 function mapRow(row: Partial<AutoMatchRow> & { _id?: string }): AutoMatchRow {
   const enabled = Boolean(row?.practiceTransferAutoMatchEnabled);
+  const abutsLabCertification = parseAbutsLabCertification(
+    row?.abutsLabCertification,
+    { enabled },
+  );
+  // 레거시: 풀 ON인데 status 미승격이면 표시는 인증으로 통일.
+  if (enabled && abutsLabCertification.status !== "certified") {
+    abutsLabCertification.status = "certified";
+  }
   return {
     _id: String(row?._id || ""),
     name: String(row?.name || ""),
@@ -81,30 +99,34 @@ function mapRow(row: Partial<AutoMatchRow> & { _id?: string }): AutoMatchRow {
     representativeName: String(row?.representativeName || "").trim(),
     address: String(row?.address || "").trim(),
     practiceTransferAutoMatchEnabled: enabled,
-    abutsLabCertification: parseAbutsLabCertification(
-      row?.abutsLabCertification,
-      { enabled },
-    ),
+    abutsLabCertification,
     verified: Boolean(row?.verified),
     canReceivePracticeTransfer: Boolean(row?.canReceivePracticeTransfer),
   };
 }
 
+/** 비활성: 중립 / 활성: 상태색. 작은 rounded-md 뱃지. */
 function certBadgeClass(id: CertBadgeFilterId, active: boolean) {
+  if (!active) {
+    return "border-slate-200/90 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700";
+  }
   if (id === "certified") {
-    return active
-      ? "bg-primary-strong text-white ring-primary-strong"
-      : "bg-primary-soft/50 text-primary-strong ring-primary-muted/70 hover:bg-primary-soft";
+    return "border-primary-muted bg-primary-soft text-primary-strong";
   }
   if (id === "testing") {
-    return active
-      ? "bg-amber-500 text-white ring-amber-500"
-      : "bg-amber-50 text-amber-800 ring-amber-200 hover:bg-amber-100";
+    return "border-amber-200 bg-amber-50 text-amber-800";
   }
-  return active
-    ? "bg-slate-700 text-white ring-slate-700"
-    : "bg-slate-100 text-slate-700 ring-slate-200 hover:bg-slate-200/80";
+  if (id === "applied") {
+    return "border-sky-200 bg-sky-50 text-sky-800";
+  }
+  if (id === "rejected") {
+    return "border-rose-200 bg-rose-50 text-rose-800";
+  }
+  return "border-slate-300 bg-slate-100 text-slate-700";
 }
+
+const CERT_BADGE_BTN =
+  "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-none transition-colors disabled:opacity-60";
 
 export const PracticeTransferAutoMatchTab = () => {
   const { token } = useAuthStore();
@@ -304,7 +326,16 @@ export const PracticeTransferAutoMatchTab = () => {
       setRows((cur) =>
         cur.map((r) =>
           r._id === row._id
-            ? { ...r, practiceTransferAutoMatchEnabled: patch.enabled === true }
+            ? {
+                ...r,
+                practiceTransferAutoMatchEnabled: patch.enabled === true,
+                abutsLabCertification: {
+                  ...r.abutsLabCertification,
+                  status: (patch.enabled
+                    ? "certified"
+                    : "rejected") as AbutsLabCertStatus,
+                },
+              }
             : r,
         ),
       );
@@ -313,11 +344,13 @@ export const PracticeTransferAutoMatchTab = () => {
       );
     }
     if (patch.status) {
+      const nextEnabled = patch.status === "certified";
       setRows((cur) =>
         cur.map((r) =>
           r._id === row._id
             ? {
                 ...r,
+                practiceTransferAutoMatchEnabled: nextEnabled,
                 abutsLabCertification: {
                   ...r.abutsLabCertification,
                   status: patch.status as AbutsLabCertStatus,
@@ -326,6 +359,9 @@ export const PracticeTransferAutoMatchTab = () => {
             : r,
         ),
       );
+      if (wasEnabled !== nextEnabled) {
+        setEnabledCount((c) => Math.max(0, c + (nextEnabled ? 1 : -1)));
+      }
     }
     try {
       const res = await request<{
@@ -353,23 +389,14 @@ export const PracticeTransferAutoMatchTab = () => {
           [mapped._id]: mapped.abutsLabCertification.memo || "",
         }));
         if (mapped.practiceTransferAutoMatchEnabled !== wasEnabled) {
-          if (typeof patch.enabled !== "boolean") {
-            setEnabledCount((c) =>
-              Math.max(
-                0,
-                c + (mapped.practiceTransferAutoMatchEnabled ? 1 : -1),
-              ),
-            );
-          } else {
-            setEnabledCount(
-              Math.max(
-                0,
-                prevEnabled +
-                  (mapped.practiceTransferAutoMatchEnabled ? 1 : 0) -
-                  (wasEnabled ? 1 : 0),
-              ),
-            );
-          }
+          setEnabledCount(
+            Math.max(
+              0,
+              prevEnabled +
+                (mapped.practiceTransferAutoMatchEnabled ? 1 : 0) -
+                (wasEnabled ? 1 : 0),
+            ),
+          );
         }
       }
     } catch (error) {
@@ -424,7 +451,7 @@ export const PracticeTransferAutoMatchTab = () => {
                 className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
               {CERT_BADGE_FILTERS.map((badge) => {
                 const active = certFilter === badge.id;
                 return (
@@ -436,10 +463,7 @@ export const PracticeTransferAutoMatchTab = () => {
                         prev === badge.id ? "all" : badge.id,
                       )
                     }
-                    className={cn(
-                      "inline-flex items-center rounded-full px-3 py-1.5 text-[12px] font-semibold ring-1 transition-colors",
-                      certBadgeClass(badge.id, active),
-                    )}
+                    className={cn(CERT_BADGE_BTN, certBadgeClass(badge.id, active))}
                   >
                     {badge.label}
                   </button>
@@ -490,11 +514,13 @@ export const PracticeTransferAutoMatchTab = () => {
                           "h-1 w-full",
                           enabled
                             ? "bg-primary-strong"
-                            : badgeId === "testing"
+                            : badgeId === "testing" || badgeId === "applied"
                               ? "bg-amber-400"
-                              : row.verified
-                                ? "bg-slate-300"
-                                : "bg-amber-400",
+                              : badgeId === "rejected"
+                                ? "bg-rose-400"
+                                : row.verified
+                                  ? "bg-slate-300"
+                                  : "bg-amber-400",
                         )}
                       />
                       <div className="space-y-3 px-4 py-3.5">
@@ -506,7 +532,7 @@ export const PracticeTransferAutoMatchTab = () => {
                               </p>
                               <span
                                 className={cn(
-                                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1",
+                                  CERT_BADGE_BTN,
                                   certBadgeClass(badgeId, true),
                                 )}
                               >
@@ -549,15 +575,21 @@ export const PracticeTransferAutoMatchTab = () => {
 
                         <div className="space-y-1.5">
                           <p className="text-[12px] font-medium text-slate-600">
-                            기공 테스트
+                            인증 상태
                           </p>
-                          <div className="flex flex-wrap gap-2">
+                          <div
+                            role="radiogroup"
+                            aria-label="인증 상태"
+                            className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200/80 bg-slate-50/60 p-1"
+                          >
                             {CERT_BADGE_FILTERS.map((badge) => {
                               const active = badgeId === badge.id;
                               return (
                                 <button
                                   key={badge.id}
                                   type="button"
+                                  role="radio"
+                                  aria-checked={active}
                                   disabled={busy}
                                   onClick={() => {
                                     if (active) return;
@@ -566,7 +598,7 @@ export const PracticeTransferAutoMatchTab = () => {
                                     });
                                   }}
                                   className={cn(
-                                    "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 transition-colors disabled:opacity-60",
+                                    CERT_BADGE_BTN,
                                     certBadgeClass(badge.id, active),
                                   )}
                                 >

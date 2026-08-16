@@ -5,6 +5,8 @@
 // - web/frontend/src/shared/practice/abutsLabCertification.ts
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // change-log:
+// - 2026-08-16: 수수료 문구·지정 ~~요율~~ 0% · 인증 상태 라벨 SSOT.
+// - 2026-08-16: 지정 거래 수수료 — 적용 off면 무료(별도 공지 시까지) 안내.
 // - 2026-08-16: 매칭 10% / 지정 5% 성공 수수료 표시.
 // - 2026-08-16: 문구 정리 · 3단계 진행 · 인증 테스트 신청 · 인증 뱃지.
 // - 2026-08-16: 인증 신청 → 기공 테스트 → 통과 후 참여. 미신청 안내.
@@ -41,6 +43,7 @@ import { cn } from "@/shared/ui/cn";
 import {
   type AbutsLabCertificationPublic,
   type AbutsLabCertStatus,
+  ABUTS_LAB_CERT_STATUS_LABEL,
   parseAbutsLabCertification,
 } from "@/shared/practice/abutsLabCertification";
 
@@ -50,6 +53,7 @@ type ParticipationData = {
   autoMatchParticipationCancelAtPeriodEnd?: boolean;
   autoMatchParticipationNextBillingAt?: string | null;
   platformFeeRate?: number;
+  directPlatformFeeEnabled?: boolean;
   directPlatformFeeRate?: number;
   autoMatchMonthlyFee?: number;
   verified?: boolean;
@@ -58,8 +62,8 @@ type ParticipationData = {
 };
 
 const CERT_STEPS = [
-  { id: "apply", label: "신청" },
-  { id: "test", label: "테스트" },
+  { id: "apply", label: "신청중" },
+  { id: "test", label: "테스트중" },
   { id: "cert", label: "인증" },
 ] as const;
 
@@ -122,7 +126,10 @@ export const LabAutoMatchParticipationTab = () => {
     active && Boolean(data?.autoMatchParticipationCancelAtPeriodEnd);
   const monthlyFee = Math.max(0, Number(data?.autoMatchMonthlyFee) || 0);
   const matchPct = Math.round(Number(data?.platformFeeRate ?? 0.1) * 100);
-  const directPct = Math.round(Number(data?.directPlatformFeeRate ?? 0.05) * 100);
+  const directFeeEnabled = data?.directPlatformFeeEnabled === true;
+  const directPct = Math.round(
+    Number(data?.directPlatformFeeRate ?? 0.05) * 100,
+  );
   const nextBillingLabel = data?.autoMatchParticipationNextBillingAt
     ? formatKstYmdToKo(toKstYmd(data.autoMatchParticipationNextBillingAt) || "")
     : null;
@@ -217,7 +224,19 @@ export const LabAutoMatchParticipationTab = () => {
               참여합니다.
             </p>
             <p className="text-[12px] leading-relaxed text-muted-foreground/90">
-              매칭 거래 {matchPct}% · 지정 거래 {directPct}% · 식별 정보 비공개
+              매칭 거래 {matchPct}%
+              <span className="text-muted-foreground/80">
+                (식별 정보 비공개)
+              </span>
+              {" · 지정 거래 "}
+              {directFeeEnabled ? (
+                `${directPct}%`
+              ) : (
+                <>
+                  <span className="line-through opacity-60">{directPct}%</span>{" "}
+                  0%
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -277,17 +296,17 @@ export const LabAutoMatchParticipationTab = () => {
                     {step.label}
                     {current && certStatus === "applied" ? (
                       <span className="mt-0.5 block text-[10px] font-normal text-amber-700">
-                        대기
+                        신청중
                       </span>
                     ) : null}
                     {current && certStatus === "testing" ? (
                       <span className="mt-0.5 block text-[10px] font-normal text-amber-700">
-                        진행 중
+                        테스트중
                       </span>
                     ) : null}
                     {rejectedHere ? (
-                      <span className="mt-0.5 block text-[10px] font-normal text-amber-700">
-                        재신청
+                      <span className="mt-0.5 block text-[10px] font-normal text-rose-700">
+                        인증보류
                       </span>
                     ) : null}
                   </span>
@@ -323,12 +342,23 @@ export const LabAutoMatchParticipationTab = () => {
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-900">지정 거래</p>
                 <p className="text-[12px] leading-snug text-muted-foreground">
-                  성공 수수료
+                  {directFeeEnabled
+                    ? "성공 수수료"
+                    : "별도 공지가 있을 때까지 무료"}
                 </p>
               </div>
             </div>
-            <span className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
-              {directPct}%
+            <span className="flex items-baseline gap-1.5 text-xl font-semibold tabular-nums tracking-tight text-slate-900">
+              {directFeeEnabled ? (
+                `${directPct}%`
+              ) : (
+                <>
+                  <span className="text-base line-through opacity-50">
+                    {directPct}%
+                  </span>
+                  0%
+                </>
+              )}
             </span>
           </div>
         </div>
@@ -363,14 +393,8 @@ export const LabAutoMatchParticipationTab = () => {
                     {isCertified
                       ? cancelScheduled
                         ? "인증 · 해지 예약"
-                        : "인증 기공소"
-                      : isPendingReview
-                        ? certStatus === "testing"
-                          ? "기공 테스트 중"
-                          : "신청 접수"
-                        : certStatus === "rejected"
-                          ? "테스트 미통과"
-                          : "미신청"}
+                        : ABUTS_LAB_CERT_STATUS_LABEL.certified
+                      : ABUTS_LAB_CERT_STATUS_LABEL[certStatus]}
                   </p>
                   {isCertified ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary-strong ring-1 ring-primary-muted">
@@ -383,16 +407,12 @@ export const LabAutoMatchParticipationTab = () => {
                         "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
                         isPendingReview
                           ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
-                          : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
+                          : certStatus === "rejected"
+                            ? "bg-rose-50 text-rose-800 ring-1 ring-rose-200"
+                            : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
                       )}
                     >
-                      {isPendingReview
-                        ? certStatus === "testing"
-                          ? "테스트"
-                          : "접수"
-                        : certStatus === "rejected"
-                          ? "재신청"
-                          : "대기"}
+                      {ABUTS_LAB_CERT_STATUS_LABEL[certStatus]}
                     </span>
                   )}
                 </div>
@@ -410,7 +430,7 @@ export const LabAutoMatchParticipationTab = () => {
                         ? "어벗츠에서 기공 테스트를 진행합니다."
                         : "접수 완료. 곧 테스트 일정을 안내합니다."
                       : certStatus === "rejected"
-                        ? "다시 신청해 테스트를 진행할 수 있습니다."
+                        ? "인증이 보류되었습니다. 다시 신청할 수 있습니다."
                         : "인증 테스트를 신청해 주세요."}
                 </p>
               </div>

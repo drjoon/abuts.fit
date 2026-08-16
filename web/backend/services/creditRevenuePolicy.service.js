@@ -8,6 +8,7 @@
 // - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송)+VAT. 잔여는 salesman/devops/admin 재분배.
 // - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
 // - 2026-08-16: 지정 거래 directPlatformFeeRate 기본 5%(매칭 10%와 분리).
+// - 2026-08-16: 지정 거래 수수료 적용 on/off(기본 off=별도 공지 시까지 무료).
 
 export const WITH_SALESMAN_DEFAULT_RATES = {
   manufacturerRate: 0.6,
@@ -66,8 +67,13 @@ export function resolveResidualRatesWithoutSalesman(configuredRates) {
 export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_DEFAULT_RATES);
 
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
-/** 지정 기공소(direct) 성공 수수료 기본 5%. */
+/** 지정 기공소(direct) 성공 수수료 기본 5%(적용 on일 때만). */
 export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
+/**
+ * 지정 거래 수수료 적용 기본값.
+ * false = 별도 공지가 있을 때까지 무료(실효 요율 0).
+ */
+export const DEFAULT_DIRECT_PLATFORM_FEE_ENABLED = false;
 /** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
 export const DEFAULT_PARTNER_FEE_RATE = 0;
 export const DEFAULT_NON_PARTNER_FEE_RATE = DEFAULT_PLATFORM_FEE_RATE;
@@ -85,8 +91,13 @@ export function resolvePlatformFeeRate(payoutRates) {
     : DEFAULT_PLATFORM_FEE_RATE;
 }
 
-/** 지정 거래(direct) 성공 수수료율. */
-export function resolveDirectPlatformFeeRate(payoutRates) {
+/** 지정 거래 수수료 적용 여부. 명시적 true만 on(미설정·false = 무료). */
+export function isDirectPlatformFeeEnabled(payoutRates) {
+  return payoutRates?.directPlatformFeeEnabled === true;
+}
+
+/** 지정 거래 설정 요율(적용 off여도 저장값 유지). */
+export function resolveDirectPlatformFeeRateConfigured(payoutRates) {
   const raw = payoutRates?.directPlatformFeeRate;
   if (raw != null && Number.isFinite(Number(raw))) {
     return Math.min(1, Math.max(0, Number(raw)));
@@ -94,10 +105,16 @@ export function resolveDirectPlatformFeeRate(payoutRates) {
   return DEFAULT_DIRECT_PLATFORM_FEE_RATE;
 }
 
+/** 지정 거래(direct) 실효 수수료율. 적용 off면 0. */
+export function resolveDirectPlatformFeeRate(payoutRates) {
+  if (!isDirectPlatformFeeEnabled(payoutRates)) return 0;
+  return resolveDirectPlatformFeeRateConfigured(payoutRates);
+}
+
 /**
  * 기공의뢰 플랫폼 수수료율.
  * - 매칭(auto): platformFeeRate (기본 10%)
- * - 지정(direct): directPlatformFeeRate (기본 5%)
+ * - 지정(direct): 적용 on이면 directPlatformFeeRate(기본 5%), off면 0(무료)
  */
 export function resolvePracticeTransferFeeRate({
   matchingMode,

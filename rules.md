@@ -155,11 +155,11 @@
   - 관리자 정산 UI: `AdminPaymentsPage` 상단 4사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`.
 - **매칭·멤버십 과금 SSOT(강제):**
   - 한 줄: **기공소 월 참여 수수료 0원 + 치과 멤버십만 월 과금(면세·부가세 없음, 유료 크레딧 차감).**
-  - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 0%.
+  - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 `directPlatformFeeEnabled` **기본 off=무료**(별도 공지 시까지); on 시 `directPlatformFeeRate%`.
   - 치과(`practice`): **멤버십 월 구독료** `practiceMembershipMonthlyFee` **기본 50,000원(공급가, VAT 0)**. 혜택=커스텀어벗 멤버십 단가. 해지=기간말 예약(`practiceMembershipCancelAtPeriodEnd`), 다음 결제일까지 유지.
   - 치과 멤버십 청구: 결제일 도래 시 `PRACTICE_MEMBERSHIP_SPEND`로 **유료 크레딧(`REQ_PAID_CREDIT`)에서 공급가 차감**(무료·기공크레딧 미사용). 워커 `practiceMembershipBillingWorker` / `processDuePracticeMembership`. 잔액 부족 시 갱신 실패 → 멤버십 OFF·일반 단가. `vatAmount = 0`. 가입 시점 선과금 없음(첫 결제는 `nextBillingAt`).
   - 유료 크레딧 사용처(확장): 기공물·어벗 주문 대금 **및 치과 멤버십 월 구독료**. 기공소 매칭 월정·기타 플랫폼 SaaS 과금에는 쓰지 않는다.
-  - 설정: 멤버십=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 매칭 성공율·월정(0)=`DevopsPlatformFeeTab` / `PATCH /api/admin/settings/platform-fees`.
+  - 설정: 멤버십=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 매칭 성공율·지정 수수료 on/off·월정(0)=`DevopsPlatformFeeTab` / `PATCH /api/admin/settings/platform-fees`.
 - 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
 - 기존 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
   **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
@@ -289,7 +289,7 @@
 - 묶음 배송 식별은 박스/패키지 기준으로 유지
 - 배송비 과금 시점: 세척.패킹 승인
 - 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1,000원), **가공 진입(CAM 승인) 시 별도 `express_surcharge` 저널로 차감**
-  - 설정 UI: 관리자 플랫폼 설정「커스텀어벗 요금 · 크레딧」— `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
+  - 설정 UI: 관리자 플랫폼 설정「크레딧」(멤버십·배송) / 「커스텀어벗」(단가) — `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 약속 출고일 자정까지 당일 집하 실패(또는 신속→묶음 전환) 시 신속 추가비만 물리 삭제 취소
     (`shippingOnTimeEvalWorker` / `cancelExpressSurchargeIfShipDelayed`). 16시 이후 당일 수동 집하는 정시.
   - 의뢰자 대시보드: `PATCH /api/requests/my/shipping-mode` (준비 단계만)

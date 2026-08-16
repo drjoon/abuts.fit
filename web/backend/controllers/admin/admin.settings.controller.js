@@ -22,7 +22,8 @@ import { normalizeLoadedCreditSettings } from "../../utils/creditSettingsDefault
 import { normalizeAbutsAbutmentCreditPrices } from "../../utils/abutsAbutmentService.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
 import {
-  resolveDirectPlatformFeeRate,
+  isDirectPlatformFeeEnabled,
+  resolveDirectPlatformFeeRateConfigured,
   resolvePlatformFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
 
@@ -654,13 +655,16 @@ async function findDevopsPayoutAnchor() {
 
 function normalizePlatformFeeRates(payoutRates = {}) {
   const platformFeeRate = resolvePlatformFeeRate(payoutRates);
-  const directPlatformFeeRate = resolveDirectPlatformFeeRate(payoutRates);
+  const directPlatformFeeEnabled = isDirectPlatformFeeEnabled(payoutRates);
+  const directPlatformFeeRate =
+    resolveDirectPlatformFeeRateConfigured(payoutRates);
   const autoMatchMonthlyFee = Math.max(
     0,
     Number(payoutRates?.autoMatchMonthlyFee) || 0,
   );
   return {
     platformFeeRate,
+    directPlatformFeeEnabled,
     directPlatformFeeRate,
     autoMatchMonthlyFee,
     partnerFeeRate: platformFeeRate,
@@ -720,6 +724,11 @@ export async function updatePlatformFeeSettings(req, res) {
       }
     }
 
+    let directPlatformFeeEnabled;
+    if (payload.directPlatformFeeEnabled != null) {
+      directPlatformFeeEnabled = Boolean(payload.directPlatformFeeEnabled);
+    }
+
     let autoMatchMonthlyFee;
     if (payload.autoMatchMonthlyFee != null) {
       autoMatchMonthlyFee = Number(payload.autoMatchMonthlyFee);
@@ -751,6 +760,9 @@ export async function updatePlatformFeeSettings(req, res) {
     };
     if (directPlatformFeeRate != null) {
       $set["payoutRates.directPlatformFeeRate"] = directPlatformFeeRate;
+    }
+    if (directPlatformFeeEnabled != null) {
+      $set["payoutRates.directPlatformFeeEnabled"] = directPlatformFeeEnabled;
     }
     if (autoMatchMonthlyFee != null) {
       $set["payoutRates.autoMatchMonthlyFee"] = autoMatchMonthlyFee;
