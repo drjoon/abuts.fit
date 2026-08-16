@@ -158,6 +158,7 @@ import {
   getPracticeWorkPeriodDays,
   isPracticeRushPeriod,
   isPracticeWorkPeriodShort,
+  shouldEnablePracticeRushProcessing,
 } from "@/shared/practice/practiceWorkPeriod";
 import {
   PRACTICE_DROPZONE_DRAFT_KEY,
@@ -260,6 +261,7 @@ type PracticeDropzoneDraft = {
   email: string;
   phone: string;
   fileKeys: string[];
+  rushProcessing?: boolean;
 };
 
 type PracticeFileCacheMeta = {
@@ -1045,11 +1047,17 @@ export const PracticeDropzonePage = () => {
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
-    setRushProcessing(false);
     setRushConfirmOpen(false);
     setPendingRushArrivalYmd("");
     setOrderDate(todayDate);
-    setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
+    const nextArrivalDate = addDaysToDateInput(todayDate, arrivalDefaultDays);
+    setArrivalDate(nextArrivalDate);
+    setRushProcessing(
+      shouldEnablePracticeRushProcessing({
+        orderYmd: todayDate,
+        arrivalYmd: nextArrivalDate,
+      }),
+    );
     setToothWorks([
       {
         toothNumber: "",
@@ -1157,10 +1165,19 @@ export const PracticeDropzonePage = () => {
         setArrivalDefaultDays(restoredArrivalDefaultDays);
         {
           const restoredArrival = String(intake?.arrivalDate || parsed?.arrivalDate || "").trim();
-          setArrivalDate(
+          const nextArrival =
             restoredArrival && restoredArrival >= todayDate
               ? restoredArrival
-              : addDaysToDateInput(restoredOrderDate, restoredArrivalDefaultDays),
+              : addDaysToDateInput(restoredOrderDate, restoredArrivalDefaultDays);
+          setArrivalDate(nextArrival);
+          setRushProcessing(
+            shouldEnablePracticeRushProcessing({
+              rushProcessing:
+                intake?.rushProcessing === true ||
+                parsed?.rushProcessing === true,
+              orderYmd: restoredOrderDate,
+              arrivalYmd: nextArrival,
+            }),
           );
         }
         const restoredProsthesisTypes = normalizeProsthesisTypes([
@@ -1470,6 +1487,7 @@ export const PracticeDropzonePage = () => {
       email,
       phone,
       fileKeys: files.map((file) => toPracticeFileKey(file)),
+      rushProcessing,
     };
     try {
       localStorage.setItem(PRACTICE_DRAFT_STORAGE_KEY, JSON.stringify(payload));
@@ -1496,6 +1514,7 @@ export const PracticeDropzonePage = () => {
           }
         : null,
       toothWorks,
+      rushProcessing,
     });
   }, [
     draftHydrated,
@@ -1514,6 +1533,7 @@ export const PracticeDropzonePage = () => {
     selectedLab,
     step,
     files,
+    rushProcessing,
   ]);
 
   useEffect(() => {

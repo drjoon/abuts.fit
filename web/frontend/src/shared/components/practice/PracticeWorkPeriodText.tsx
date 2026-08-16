@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-17: 신속 구간 lead도 경고색·배송일정 툴팁(확인 모달 SSOT).
 // - 2026-08-15: 기공기간 5일 미만 시 빨간 표시·거부 가능 툴팁.
 // - 2026-08-15: 치과·기공소 툴팁 문구 분리.
 // - 2026-08-15: 작업기간 영업일 표기(+N영업일 / N영업일).
@@ -21,6 +22,7 @@ import {
   formatPracticeWorkPeriodLeadLabel,
   getPracticeWorkPeriodDays,
   getPracticeWorkPeriodTooltip,
+  isPracticeRushPeriod,
   isPracticeWorkPeriodShort,
   type PracticeWorkPeriodViewer,
 } from "@/shared/practice/practiceWorkPeriod";
@@ -49,6 +51,7 @@ export function PracticeWorkPeriodText({
 }: PracticeWorkPeriodTextProps) {
   const days = getPracticeWorkPeriodDays(orderDate, arrivalDate);
   const short = isPracticeWorkPeriodShort(days);
+  const rush = isPracticeRushPeriod(days);
   const daysLabel =
     variant === "lead"
       ? formatPracticeWorkPeriodLeadLabel(days)
@@ -65,7 +68,9 @@ export function PracticeWorkPeriodText({
     <span
       className={cn(
         "tabular-nums",
-        short ? "font-medium text-destructive" : "text-muted-foreground",
+        short || rush
+          ? "font-medium text-destructive"
+          : "text-muted-foreground",
         className,
       )}
     >

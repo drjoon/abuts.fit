@@ -291,6 +291,7 @@ import {
   getPracticeWorkPeriodDays,
   isPracticeRushPeriod,
   isPracticeWorkPeriodShort,
+  shouldEnablePracticeRushProcessing,
 } from "@/shared/practice/practiceWorkPeriod";
 import {
   ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
@@ -1926,10 +1927,21 @@ export const PracticeFileTransferPage = ({
         setOrderDate(todayDate);
         {
           const restoredArrival = String(parsed.arrivalDate || "").trim();
-          setArrivalDate(
+          const nextArrival =
             restoredArrival && restoredArrival >= todayDate
               ? restoredArrival
-              : addDaysToDateInput(todayDate, normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays ?? arrivalDefaultDays))),
+              : addDaysToDateInput(
+                  todayDate,
+                  normalizeArrivalDefaultDays(
+                    Number(parsed.arrivalDefaultDays ?? arrivalDefaultDays),
+                  ),
+                );
+          setArrivalDate(nextArrival);
+          setRushProcessing(
+            shouldEnablePracticeRushProcessing({
+              orderYmd: todayDate,
+              arrivalYmd: nextArrival,
+            }),
           );
         }
         if (Number.isFinite(Number(parsed.arrivalDefaultDays))) {
@@ -2440,12 +2452,19 @@ export const PracticeFileTransferPage = ({
         skipNextArrivalAutoSyncRef.current = true;
       }
       setOrderDate(todayDate);
-      if (restoredArrivalDate && restoredArrivalDate >= todayDate) {
-        setArrivalDate(restoredArrivalDate);
-      } else {
-        setArrivalDate(addDaysToDateInput(todayDate, restoredArrivalDefaultDays));
-      }
+      const nextArrivalDate =
+        restoredArrivalDate && restoredArrivalDate >= todayDate
+          ? restoredArrivalDate
+          : addDaysToDateInput(todayDate, restoredArrivalDefaultDays);
+      setArrivalDate(nextArrivalDate);
       setArrivalDefaultDays(restoredArrivalDefaultDays);
+      setRushProcessing(
+        shouldEnablePracticeRushProcessing({
+          rushProcessing: parsed.rushProcessing,
+          orderYmd: todayDate,
+          arrivalYmd: nextArrivalDate,
+        }),
+      );
       setProsthesisTypeCatalog(restoredProsthesisTypes);
       setProsthesisTypeCatalogDraft(restoredProsthesisTypes);
       setRequestMemo(restoredMemo);
@@ -2541,6 +2560,7 @@ export const PracticeFileTransferPage = ({
         : null,
       toothWorks,
       expressStepId,
+      rushProcessing,
       activeDraftId: String(activeDraftId || "").trim() || null,
       updatedAt,
     };
@@ -2586,6 +2606,7 @@ export const PracticeFileTransferPage = ({
     orderDate,
     requestMemo,
     patientName,
+    rushProcessing,
     selectedLab,
     toothWorks,
   ]);
@@ -2891,9 +2912,14 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
-    setRushProcessing(false);
     setOrderDate(todayDate);
-    setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
+    const nextArrivalDate = addDaysToDateInput(todayDate, arrivalDefaultDays);
+    setArrivalDate(nextArrivalDate);
+    const nextRush = shouldEnablePracticeRushProcessing({
+      orderYmd: todayDate,
+      arrivalYmd: nextArrivalDate,
+    });
+    setRushProcessing(nextRush);
     setToothWorks([]);
     setDraftFiles([]);
     setDraftSummary(null);
@@ -2913,13 +2939,14 @@ export const PracticeFileTransferPage = ({
         PRACTICE_TRANSFER_FORM_LOCAL_KEY,
         JSON.stringify({
           orderDate: todayDate,
-          arrivalDate: addDaysToDateInput(todayDate, arrivalDefaultDays),
+          arrivalDate: nextArrivalDate,
           arrivalDefaultDays,
           prosthesisTypes: [],
           requestMemo: "",
           patientName: "",
           selectedLab: null,
           toothWorks: [],
+          rushProcessing: nextRush,
           activeDraftId: null,
           updatedAt: Date.now(),
         } satisfies PracticeTransferLocalFormDraft),
@@ -2938,13 +2965,14 @@ export const PracticeFileTransferPage = ({
         PRACTICE_TRANSFER_FORM_LOCAL_KEY,
         JSON.stringify({
           orderDate: todayDate,
-          arrivalDate: addDaysToDateInput(todayDate, arrivalDefaultDays),
+          arrivalDate: nextArrivalDate,
           arrivalDefaultDays,
           prosthesisTypes: [],
           requestMemo: "",
           patientName: "",
           selectedLab: null,
           toothWorks: [],
+          rushProcessing: nextRush,
           activeDraftId: null,
           updatedAt: Date.now(),
         } satisfies PracticeTransferLocalFormDraft),
@@ -3347,13 +3375,21 @@ export const PracticeFileTransferPage = ({
       setOrderDate(todayDate);
       {
         const restoredArrival = String(parsed.arrivalDate || "").trim();
-        setArrivalDate(
+        const nextArrival =
           restoredArrival && restoredArrival >= todayDate
             ? restoredArrival
             : addDaysToDateInput(
                 todayDate,
-                normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays ?? arrivalDefaultDays)),
-              ),
+                normalizeArrivalDefaultDays(
+                  Number(parsed.arrivalDefaultDays ?? arrivalDefaultDays),
+                ),
+              );
+        setArrivalDate(nextArrival);
+        setRushProcessing(
+          shouldEnablePracticeRushProcessing({
+            orderYmd: todayDate,
+            arrivalYmd: nextArrival,
+          }),
         );
       }
       if (Number.isFinite(Number(parsed.arrivalDefaultDays))) {
@@ -3437,6 +3473,10 @@ export const PracticeFileTransferPage = ({
                 }
               : null,
             toothWorks: nextToothWorks,
+            rushProcessing: shouldEnablePracticeRushProcessing({
+              orderYmd: parsed.orderDate || todayDate,
+              arrivalYmd: parsed.arrivalDate,
+            }),
             activeDraftId: draft.id,
             updatedAt: Number.isFinite(ts) && ts > 0 ? ts : Date.now(),
           } satisfies PracticeTransferLocalFormDraft),
@@ -3450,7 +3490,7 @@ export const PracticeFileTransferPage = ({
         skipFormAutosaveRef.current = false;
       });
     },
-    [findCachedLab, setLabOpen, setLabSearch, setRequestMemo, setSelectedLab],
+    [findCachedLab, setLabOpen, setLabSearch, setRequestMemo, setSelectedLab, todayDate, arrivalDefaultDays],
   );
 
   const handleAdoptDraftTransfer = useCallback(
@@ -5204,11 +5244,16 @@ export const PracticeFileTransferPage = ({
     setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
-    setRushProcessing(false);
     const nextOrderDate = todayDate;
     const nextArrivalDate = addDaysToDateInput(todayDate, arrivalDefaultDays);
     setOrderDate(nextOrderDate);
     setArrivalDate(nextArrivalDate);
+    setRushProcessing(
+      shouldEnablePracticeRushProcessing({
+        orderYmd: nextOrderDate,
+        arrivalYmd: nextArrivalDate,
+      }),
+    );
     const nextToothWorks: ToothWorkSelection[] = [
       {
         toothNumber: "",

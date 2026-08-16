@@ -3,6 +3,8 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
 // - web/frontend/src/shared/components/practice/PracticeRushConfirmDialog.tsx
+// - 2026-08-17: 신속(≤3영업일) 배송일정 툴팁을 확인 모달(12시 컷오프)과 동일 문구로.
+// - 2026-08-17: shouldEnablePracticeRushProcessing — 새로고침 시 신속 납기면 할증 복원.
 // - 2026-08-17: 신속처리 확인 모달 문구 구조화(요금·납기·어벗/보철)·단순화.
 // - 2026-08-17: 신속처리=합계≤3영업일 시 모달 확인(체크박스 폐기). 안내 문구 간결화.
 // - 2026-08-17: 최소 작업+배송 2+2(4영업일)·신속처리 상수/고지.
@@ -92,6 +94,31 @@ export function formatPracticeWorkPlusShipMeaningTooltip(
   return `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote} ${minNote}`;
 }
 
+/**
+ * 신속처리(≤3영업일) 배송일정 툴팁.
+ * 확인 모달 PRACTICE_RUSH_CONFIRM_DETAILS·택배 고지와 SSOT.
+ */
+export function formatPracticeRushPeriodTooltip(
+  multiplier?: number | null,
+): string {
+  const fee = formatPracticeRushFeeParenLabel(multiplier);
+  const [abutRow, crownRow] = PRACTICE_RUSH_CONFIRM_DETAILS;
+  const abutLines = Array.isArray(abutRow.value)
+    ? abutRow.value.join(" ")
+    : String(abutRow.value);
+  const crownLine =
+    typeof crownRow.value === "string"
+      ? crownRow.value
+      : crownRow.value.join(" ");
+  return [
+    `${fee} 구간입니다.`,
+    "커스텀어벗은 치과로 직납됩니다.",
+    abutLines,
+    `보철은 ${crownLine.replace(/\.$/, "")}.`,
+    PRACTICE_RUSH_COURIER_DISCLAIMER,
+  ].join(" ");
+}
+
 /** 치과(발신): 일반 최소와 신속 사이 구간(현재는 비어 있음) */
 export const PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE =
   "일반 의뢰는 2+2영업일 이상, 신속처리는 3영업일 이하입니다.";
@@ -108,15 +135,15 @@ export function getPracticeWorkPeriodShortTooltip(
     : PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_PRACTICE;
 }
 
-/** N+2 의미 + (짧은 기간이면) 경고 문구 */
+/** N+2 의미 + 신속 배송일정(확인 모달) / 짧은 기간 경고 */
 export function getPracticeWorkPeriodTooltip(
   viewer: PracticeWorkPeriodViewer = "practice",
   days?: number | null,
 ): string {
-  const meaning = formatPracticeWorkPlusShipMeaningTooltip(days);
   if (isPracticeRushPeriod(days)) {
-    return `${meaning} ${formatPracticeRushFeeParenLabel()} 구간입니다.`;
+    return formatPracticeRushPeriodTooltip();
   }
+  const meaning = formatPracticeWorkPlusShipMeaningTooltip(days);
   if (isPracticeWorkPeriodShort(days)) {
     return `${meaning} ${getPracticeWorkPeriodShortTooltip(viewer)}`;
   }
@@ -149,6 +176,21 @@ export function isPracticeRushPeriod(days: number | null | undefined): boolean {
     Number.isFinite(days) &&
     days >= 0 &&
     days <= PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS
+  );
+}
+
+/**
+ * 확인 플래그 또는 주문→도착 영업일로 신속처리 적용 여부.
+ * 새로고침 복원 시 플래그가 없어도 납기가 신속 구간이면 true.
+ */
+export function shouldEnablePracticeRushProcessing(args: {
+  rushProcessing?: boolean | null;
+  orderYmd?: string | null;
+  arrivalYmd?: string | null;
+}): boolean {
+  if (args.rushProcessing === true) return true;
+  return isPracticeRushPeriod(
+    getPracticeWorkPeriodDays(args.orderYmd, args.arrivalYmd),
   );
 }
 

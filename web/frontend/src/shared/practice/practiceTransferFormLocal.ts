@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/rules.md
+// - 2026-08-17: rushProcessing — 신속처리 확인 플래그 새로고침 복원.
 // - 2026-08-15: expressStepId — 익스프레스 위저드 단계 새로고침 복원.
 /**
  * practice 의뢰 폼 localStorage SSOT.
@@ -38,6 +39,8 @@ export type PracticeTransferFormLocalDraft = {
   skipDesignConfirm?: boolean;
   /** 익스프레스 위저드 최근 단계(새로고침 복원) */
   expressStepId?: string;
+  /** 신속처리 확인(새로고침 복원). 납기가 신속 구간이면 hydrate 시 재유도 */
+  rushProcessing?: boolean;
   /** 전송/삭제된 draft가 localStorage로 다시 복원되지 않도록 추적 */
   activeDraftId?: string | null;
   updatedAt?: number;
@@ -52,6 +55,7 @@ type DropzoneDraftLike = {
   prosthesisTypes?: string[];
   toothWorks?: ToothWorkSelection[];
   patientName?: string;
+  rushProcessing?: boolean;
 };
 
 const hasMeaningfulFormContent = (draft: PracticeTransferFormLocalDraft | null) => {
@@ -128,6 +132,7 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
   selectedLab: PracticeTransferFormLocalLab | null;
   toothWorks: ToothWorkSelection[];
   skipDesignConfirm?: boolean;
+  rushProcessing?: boolean;
   activeDraftId?: string | null;
 }): number => {
   const existing = readPracticeTransferFormLocal();
@@ -145,6 +150,10 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
         ? fields.skipDesignConfirm !== false
         : existing?.skipDesignConfirm !== false,
     expressStepId: existing?.expressStepId,
+    rushProcessing:
+      fields.rushProcessing !== undefined
+        ? Boolean(fields.rushProcessing)
+        : existing?.rushProcessing === true,
     activeDraftId:
       fields.activeDraftId !== undefined
         ? fields.activeDraftId
@@ -180,6 +189,8 @@ export const adoptDropzoneDraftIntoTransferFormIfNeeded =
         toothWorks: Array.isArray(parsed.toothWorks) ? parsed.toothWorks : [],
         skipDesignConfirm: existing?.skipDesignConfirm !== false,
         expressStepId: existing?.expressStepId,
+        rushProcessing:
+          parsed.rushProcessing === true || existing?.rushProcessing === true,
         activeDraftId: existing?.activeDraftId ?? null,
         updatedAt: Date.now(),
       };
@@ -217,5 +228,7 @@ export const readPreferredIntakeFormForDropzone = (
     selectedLab: dropzoneDraft.selectedLab || null,
     toothWorks: dropzoneDraft.toothWorks,
     skipDesignConfirm: transfer?.skipDesignConfirm !== false,
+    rushProcessing:
+      dropzoneDraft.rushProcessing === true || transfer?.rushProcessing === true,
   };
 };
