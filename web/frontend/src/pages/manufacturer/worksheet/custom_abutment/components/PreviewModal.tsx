@@ -65,6 +65,7 @@ import {
   type ReviewStageKey,
   getDeadlineInfo,
   getReviewStageKeyByTab,
+  resolvePracticeDirectShippingContact,
 } from "../utils/request";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -2707,21 +2708,9 @@ export const PreviewModal = ({
             productionMetaItems={overlayPackMetaItems}
             estimatedShipYmd={estimatedShipYmd || null}
             deadlineInfo={deadlineInfo}
-            shippingContact={
-              (activeReq as any)?.shippingReceiver?.name ||
-              (activeReq as any)?.shippingReceiver?.address
-                ? {
-                    name: (activeReq as any)?.shippingReceiver?.name,
-                    phone: (activeReq as any)?.shippingReceiver?.phone,
-                    contactName: (activeReq as any)?.shippingReceiver
-                      ?.contactName,
-                    address: (activeReq as any)?.shippingReceiver?.address,
-                    addressDetail: (activeReq as any)?.shippingReceiver
-                      ?.addressDetail,
-                    zipCode: (activeReq as any)?.shippingReceiver?.zipCode,
-                  }
-                : null
-            }
+            shippingContact={resolvePracticeDirectShippingContact(
+              activeReq as ManufacturerRequest | null,
+            )}
           />
 
           {unmachinableEditorOpen && (

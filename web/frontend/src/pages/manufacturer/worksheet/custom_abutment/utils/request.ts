@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: PTX 직납 치과 연락처 resolve (스냅샷 우선, 없으면 practice BA live).
 // - 2026-08-13: 준비 탭 라이노 완료 SSOT — `caseInfos.camFile.s3Key`(2-filled). 없으면 카드 블러·클릭 차단.
 // - 2026-08-03: 준비 탭 카드 미표시 버그 수정 - `deriveStageForFilter`의 request 단계 정규화를 `준비` 단일값으로 통일.
 // - 2026-08-03: manufacturerStage request 단계 레거시 값(`의뢰`, `request`) 의존을 제거하고 `준비` 기준으로 정리.
@@ -82,7 +83,99 @@ export type ManufacturerRequest = RequestBase & {
   designClaimMine?: boolean;
   designClaimRemainingMs?: number | null;
   designClaimWarn?: boolean;
+  shippingReceiver?: PracticeDirectShippingContact | null;
+  partnerBilling?: {
+    relatedPracticeTransferId?: string | { _id?: string } | null;
+    practiceBusinessAnchorId?:
+      | string
+      | {
+          _id?: string;
+          name?: string;
+          metadata?: {
+            companyName?: string;
+            phoneNumber?: string;
+            representativeName?: string;
+            address?: string;
+            addressDetail?: string;
+            zipCode?: string;
+          } | null;
+        }
+      | null;
+  } | null;
 };
+
+export type PracticeDirectShippingContact = {
+  name?: string | null;
+  phone?: string | null;
+  contactName?: string | null;
+  address?: string | null;
+  addressDetail?: string | null;
+  zipCode?: string | null;
+  /** 포장.발송 진입 스냅샷이면 true (카드 배송 섹션 표시용) */
+  fromSnapshot?: boolean;
+};
+
+/**
+ * PTX 직납 치과 연락처.
+ * 포장.발송 스냅샷(shippingReceiver) 우선, 없으면 practice BA live metadata.
+ */
+export function resolvePracticeDirectShippingContact(
+  req?: ManufacturerRequest | null,
+): PracticeDirectShippingContact | null {
+  if (!req) return null;
+  const snap = req.shippingReceiver;
+  const snapName = String(snap?.name || "").trim();
+  const snapAddress = String(snap?.address || "").trim();
+  if (snapName || snapAddress || String(snap?.phone || "").trim()) {
+    return {
+      name: snapName || null,
+      phone: String(snap?.phone || "").trim() || null,
+      contactName: String(snap?.contactName || "").trim() || null,
+      address: snapAddress || null,
+      addressDetail: String(snap?.addressDetail || "").trim() || null,
+      zipCode: String(snap?.zipCode || "").trim() || null,
+      fromSnapshot: true,
+    };
+  }
+
+  const pb = req.partnerBilling;
+  const relatedId = String(
+    (pb?.relatedPracticeTransferId as { _id?: string })?._id ||
+      pb?.relatedPracticeTransferId ||
+      "",
+  ).trim();
+  const practiceRaw = pb?.practiceBusinessAnchorId;
+  const practiceObj =
+    practiceRaw && typeof practiceRaw === "object" ? practiceRaw : null;
+  const practiceId = String(
+    practiceObj?._id || (typeof practiceRaw === "string" ? practiceRaw : ""),
+  ).trim();
+  if (!relatedId && !practiceId && !practiceObj) return null;
+
+  const meta =
+    practiceObj?.metadata && typeof practiceObj.metadata === "object"
+      ? practiceObj.metadata
+      : {};
+  const name =
+    String(practiceObj?.name || "").trim() ||
+    String(meta.companyName || "").trim() ||
+    String(req.caseInfos?.clinicName || "").trim();
+  const phone = String(meta.phoneNumber || "").trim();
+  const contactName = String(meta.representativeName || "").trim();
+  const address = String(meta.address || "").trim();
+  const addressDetail = String(meta.addressDetail || "").trim();
+  const zipCode = String(meta.zipCode || "").trim();
+  if (!name && !phone && !address) return null;
+  return {
+    name: name || null,
+    phone: phone || null,
+    contactName: contactName || null,
+    address: address || null,
+    addressDetail: addressDetail || null,
+    zipCode: zipCode || null,
+    fromSnapshot: false,
+  };
+}
 
 export type ReviewStageKey =
   "request" | "cam" | "machining" | "packing" | "shipping" | "tracking";

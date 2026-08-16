@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 환자 호버 직납 치과 툴팁 — resolvePracticeDirectShippingContact 사용.
 // - 2026-08-13: 준비 탭 라이노 미완료 카드 블러 + 「라이노 작업중」 오버레이, 클릭 차단. 완료 SSOT=camFile.s3Key.
 // - 2026-08-12: 세척.패킹 카드 오른쪽 스크류 뱃지 위에 각인코드 3글자 뱃지 표시.
 // - 2026-08-04: 신속/묶음배송 뱃지를 하단(마감시간 옆)으로 이동. API shippingMode projection 누락 수정과 맞춤.
@@ -44,6 +45,7 @@ import {
   isAnySampleRequest,
   isRndSampleRequest,
   isRhinoWorkPending,
+  resolvePracticeDirectShippingContact,
 } from "../utils/request";
 import { RequestInfoSummary } from "./RequestInfoSummary";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
@@ -1149,21 +1151,9 @@ export const WorksheetCardGrid = ({
                     if (!rg) return null;
                     return rg === "deep" ? "있음" : "없음";
                   })()}
-                  shippingContact={
-                    (request as any)?.shippingReceiver?.name ||
-                    (request as any)?.shippingReceiver?.address
-                      ? {
-                          name: (request as any)?.shippingReceiver?.name,
-                          phone: (request as any)?.shippingReceiver?.phone,
-                          contactName: (request as any)?.shippingReceiver
-                            ?.contactName,
-                          address: (request as any)?.shippingReceiver?.address,
-                          addressDetail: (request as any)?.shippingReceiver
-                            ?.addressDetail,
-                          zipCode: (request as any)?.shippingReceiver?.zipCode,
-                        }
-                      : null
-                  }
+                  shippingContact={resolvePracticeDirectShippingContact(
+                    request as ManufacturerRequest,
+                  )}
                   leadingSlot={
                     <>
                       {(isNewSystemRequest || hasInsufficientShippingCredit) && (

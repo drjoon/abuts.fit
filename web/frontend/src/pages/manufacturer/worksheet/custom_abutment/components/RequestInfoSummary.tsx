@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 환자 섹션 호버 시 직납 치과 연락처 툴팁. 배송 섹션은 스냅샷(포장.발송)일 때만.
 // - 2026-08-17: PTX 직납 shippingContact(치과 수취인) 배송 섹션 추가(제조사 카드만).
 // - 2026-08-12: row(프리뷰)도 열 너비 초과 시 다음 줄로 넘김. nowrap 강제 제거(생산 문구 잘림 수정).
 // - 2026-08-11: row(프리뷰) MetaRow는 nowrap으로 환자·일정 줄 2줄 줄바꿈 완화.
@@ -15,6 +16,13 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 import { type ReactNode } from "react";
 import type { DeadlineInfo } from "../utils/request";
+import type { PracticeDirectShippingContact } from "../utils/request";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /** lovable-tagger가 Fragment에 data-lov-id를 붙여 경고가 나므로 DOM 노드로 감싼다. */
 function InlineGroup({
@@ -49,15 +57,8 @@ export type RequestInfoSummaryProps = {
   estimatedShipYmd?: string | null;
   /** 마감까지 남은시간. 환자 첫 줄에 인라인 뱃지 */
   deadlineInfo?: Pick<DeadlineInfo, "displayText" | "badgeClass"> | null;
-  /** PTX 직납 수취인(치과). 있으면 배송 섹션 표시 */
-  shippingContact?: {
-    name?: string | null;
-    phone?: string | null;
-    contactName?: string | null;
-    address?: string | null;
-    addressDetail?: string | null;
-    zipCode?: string | null;
-  } | null;
+  /** PTX 직납 수취인(치과). 환자 호버 툴팁(+스냅샷이면 배송 섹션) */
+  shippingContact?: PracticeDirectShippingContact | null;
 };
 
 /** 기공소명·치과명이 같거나 포함 관계면 true */
@@ -212,8 +213,12 @@ export function RequestInfoSummary({
     .filter(Boolean)
     .join(" ")
     .trim();
-  const hasShippingContact = Boolean(
+  const hasShippingHover = Boolean(
     shipName || shipPhone || shipContactName || shipAddressLine,
+  );
+  // 포장.발송 스냅샷이 있을 때만 배송 섹션을 본문에 표시(준비~세척은 호버만)
+  const hasShippingSection = Boolean(
+    shippingContact?.fromSnapshot && hasShippingHover,
   );
 
   const hasScheduleMeta = Boolean(shipLabel || deadlineText);
@@ -232,7 +237,7 @@ export function RequestInfoSummary({
     hasPatient,
     hasImplant,
     hasProduction,
-    hasShippingContact,
+    hasShippingSection,
   ].filter(Boolean).length;
   const rowGridClass =
     sectionCount <= 1
@@ -249,21 +254,14 @@ export function RequestInfoSummary({
     !hasPatient &&
     !hasImplant &&
     !hasProduction &&
-    !hasShippingContact &&
+    !hasShippingSection &&
     !leadingSlot
   ) {
     return null;
   }
 
-  const patientSection = hasPatient ? (
-    <Section
-      label="환자"
-      className={
-        isRow && (hasImplant || hasProduction || hasShippingContact)
-          ? sectionDividerClass
-          : ""
-      }
-    >
+  const patientBody = (
+    <>
       {(labName || dateLabel || hasScheduleMeta) && (
         <MetaRow>
           {labName && (
@@ -300,6 +298,52 @@ export function RequestInfoSummary({
       <MetaRow>
         <span className="min-w-0 break-words">{patientIdentityLine}</span>
       </MetaRow>
+    </>
+  );
+
+  const patientSection = hasPatient ? (
+    <Section
+      label="환자"
+      className={
+        isRow && (hasImplant || hasProduction || hasShippingSection)
+          ? sectionDividerClass
+          : ""
+      }
+    >
+      {hasShippingHover ? (
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="min-w-0 cursor-help rounded-md outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
+                {patientBody}
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="start" className="space-y-1 py-2">
+              <div className="text-[10px] font-semibold tracking-wide text-muted-foreground">
+                직납 치과
+              </div>
+              {(shipName || shipContactName || shipPhone) && (
+                <div className="text-[12px] font-medium">
+                  {[shipName, shipContactName, shipPhone]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              )}
+              {shipAddressLine ? (
+                <div className="text-[12px] text-muted-foreground">
+                  {shipAddressLine}
+                </div>
+              ) : (
+                <div className="text-[12px] text-muted-foreground">
+                  주소 미등록
+                </div>
+              )}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        patientBody
+      )}
     </Section>
   ) : null;
 
@@ -308,7 +352,7 @@ export function RequestInfoSummary({
       label="임플란트"
       className={[
         isRow && hasPatient ? sectionPadStartClass : "",
-        isRow && (hasProduction || hasShippingContact)
+        isRow && (hasProduction || hasShippingSection)
           ? sectionDividerClass
           : "",
       ]
@@ -355,7 +399,7 @@ export function RequestInfoSummary({
       label="생산"
       className={[
         isRow && (hasPatient || hasImplant) ? sectionPadStartClass : "",
-        isRow && hasShippingContact ? sectionDividerClass : "",
+        isRow && hasShippingSection ? sectionDividerClass : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -374,7 +418,7 @@ export function RequestInfoSummary({
     </Section>
   ) : null;
 
-  const shippingSection = hasShippingContact ? (
+  const shippingSection = hasShippingSection ? (
     <Section
       label="배송(직납)"
       className={

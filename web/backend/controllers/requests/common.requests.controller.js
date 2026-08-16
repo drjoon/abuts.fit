@@ -1684,7 +1684,13 @@ export async function getAllRequests(req, res) {
           worksheetProfile === "shipping"
             ? "name metadata shippingPolicy requestSettings"
             : "name metadata requestSettings";
-        query = query.populate("businessAnchorId", businessAnchorPopulateSelect);
+        query = query
+          .populate("businessAnchorId", businessAnchorPopulateSelect)
+          // PTX 직납: 준비~전 단계 카드 호버용 live 치과 연락처
+          .populate(
+            "partnerBilling.practiceBusinessAnchorId",
+            "name metadata",
+          );
       }
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
