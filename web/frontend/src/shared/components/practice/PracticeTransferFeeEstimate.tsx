@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-17: 견적 한줄 요약 — CA 디자인비(+지그)는 기공비, 어벗은 생산비만(툴팁 기공비 총액·어벗생산비와 일치).
 // - 2026-08-17: 신속처리 시 디자인비(+지그)·어벗생산비 분해에도 rush 배수 적용.
 // - 2026-08-16: 기공의뢰수신 카드 — 기공비·수령·수수료를 한 줄로 표시.
 // - 2026-08-16: 기공소 카드 기공비=툴팁 라인 합(별점 확정가)+디자인. 스냅샷 상한과 불일치 방지.
@@ -719,6 +720,14 @@ export function PracticeTransferFeeEstimate({
     0,
     Math.round(Number(quote.labFeeTotal || 0) - Number(quote.labAbutmentTotal || 0)),
   );
+  // CA 디자인비(+지그)는 기공소몫(기공비). abutmentRetail(디자인+생산)에서 생산비만 어벗으로 표기.
+  const designFeeTotalForSummary =
+    !isLab && splitDesignFee ? abutmentDesignLabFee * abutmentDesignQty : 0;
+  const labFeeWithDesignTotal = labProsthesisTotal + designFeeTotalForSummary;
+  const abutmentProductionTotalForSummary = Math.max(
+    0,
+    Math.round(Number(quote.abutmentRetailTotal || 0)) - designFeeTotalForSummary,
+  );
   // (보철기공비 + 어벗디자인비) × (1 − 수수료율). splitPracticeTransferSettlement와 동일.
   const labSettlementDisplay = isLab
     ? Math.max(0, amount - Math.round(amount * feeRateApplied))
@@ -728,9 +737,12 @@ export function PracticeTransferFeeEstimate({
     feeRateApplied > 0 &&
     labSettlementDisplay !== amount;
   const labFeeLabel = hasBudgetRange
-    ? `기공비 ${formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}`
-    : labProsthesisTotal > 0
-      ? `기공비 ${formatManWon(labProsthesisTotal)}`
+    ? `기공비 ${formatWonRange(
+        budgetLabFeeMin + designFeeTotalForSummary,
+        budgetLabFeeMax + designFeeTotalForSummary,
+      )}`
+    : labFeeWithDesignTotal > 0
+      ? `기공비 ${formatManWon(labFeeWithDesignTotal)}`
       : "";
   const simple = isLab
     ? labSettlementDiffers
@@ -746,7 +758,11 @@ export function PracticeTransferFeeEstimate({
               ? "기공소어벗 요청중"
               : "",
           quote.abutmentRetailTotal > 0
-            ? `어벗 ${formatManWon(quote.abutmentRetailTotal)}`
+            ? `어벗 ${formatManWon(
+                designFeeTotalForSummary > 0
+                  ? abutmentProductionTotalForSummary
+                  : quote.abutmentRetailTotal,
+              )}`
             : quote.abutmentQuotePending
               ? "어벗 별도 고지"
               : "",
@@ -754,8 +770,11 @@ export function PracticeTransferFeeEstimate({
           .filter(Boolean)
           .join(" · ") ||
         (hasBudgetRange
-          ? `기공비 ${formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}`
-          : `기공비 ${formatManWon(quote.labFeeTotal)}`);
+          ? `기공비 ${formatWonRange(
+              budgetLabFeeMin + designFeeTotalForSummary,
+              budgetLabFeeMax + designFeeTotalForSummary,
+            )}`
+          : `기공비 ${formatManWon(labFeeWithDesignTotal || quote.labFeeTotal)}`);
   const labFeeUnset = !isLab && quote.labFeeConfigured === false;
   /** 기공소만: 생성 스냅샷 배수. 치과 견적에는 표기하지 않음 */
   const surchargeLabel =

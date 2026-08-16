@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 디자인비+지그제작비(수락 기공소 지급) 행 추가. 견적 요약의 기공비(보철+디자인) 분류와 맞춤.
 // - 2026-08-16: 기공소는 멤버십 없이 CNC 1만/2만·환봉 2만/3만(지그 제외) 고정 단가. 치과는 기존 멤버십 안내 유지.
 // - 2026-08-14: 환봉어벗 단가를 creditSettings에서 읽어 표시(0원이면 별도 고지).
 // - 2026-08-14: CNC어벗 디자인+생산 의뢰 멤버십/일반가 복구.
@@ -281,6 +282,13 @@ export const PricingPolicyDialog = ({
       systemSettings?.creditSettings?.membershipRoundBarDesignAndProductionPrice
     ) || 0
   );
+  const abutmentDesignLabFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.abutmentDesignLabFee ??
+        CREDIT_SETTINGS_DEFAULTS.abutmentDesignLabFee
+    ) || CREDIT_SETTINGS_DEFAULTS.abutmentDesignLabFee
+  );
 
   const roundBarProductionRow = resolveRoundBarPriceRow(
     roundBarProductionRegular,
@@ -545,6 +553,12 @@ export const PricingPolicyDialog = ({
                   )}
                   <div className='h-px bg-slate-100' />
                   <PriceRow
+                    label='디자인비+지그제작비'
+                    value={formatAbutsAbutmentServiceWon(abutmentDesignLabFee)}
+                    unitLabel='1개당 · 기공의뢰 CA 시 수락 기공소 지급(기공비)'
+                  />
+                  <div className='h-px bg-slate-100' />
+                  <PriceRow
                     label='커스텀 어벗 신속 출고'
                     value='+2,000원'
                     unitLabel='1개당'
@@ -557,6 +571,11 @@ export const PricingPolicyDialog = ({
                   />
                 </div>
                 <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>
+                  <span className='font-medium text-slate-800'>
+                    기공의뢰 견적
+                  </span>
+                  : 기공비 = 보철기공비 + 디자인비(+지그) · 어벗 = 어벗생산비.
+                  <br />
                   <span className='font-medium text-slate-800'>
                     리메이크 무료
                   </span>
