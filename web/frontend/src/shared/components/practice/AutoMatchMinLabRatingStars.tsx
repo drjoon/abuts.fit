@@ -26,7 +26,7 @@ import { cn } from "@/shared/ui/cn";
 
 const TOOLTIP_LINES = [
   "기공소의 매칭 참여 조건",
-  "- 어벗츠 인증 기공소이면서",
+  "- 어벗츠 인증 테스트를 통과한 기공소이면서,",
   "- 전체 치과 평가 평균이 설정 점수 이상인 곳",
   `또는 전체 치과 평가 횟수가 ${AUTO_MATCH_RATING_COUNT_GRACE}회 이하인 곳`,
   "- 우리 치과 별점 1점을 받은 곳은 제외",
