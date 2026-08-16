@@ -418,7 +418,7 @@ const businessAnchorSchema = new mongoose.Schema(
       ],
       default: [],
     },
-    // 치과→기공소 rating(1~3)·메모. 기록한 치과·관리자만 조회.
+    // 치과→기공소 rating(1~5)·메모. 별점은 기공소 공개, 치과·메모는 비공개.
     // related: web/backend/utils/practiceLabRating.js
     practiceLabRatings: {
       type: [
@@ -429,7 +429,7 @@ const businessAnchorSchema = new mongoose.Schema(
             ref: "BusinessAnchor",
             required: true,
           },
-          stars: { type: Number, default: 3, min: 1, max: 3 },
+          stars: { type: Number, default: 5, min: 1, max: 5 },
           memo: { type: String, default: "" },
           ratingCount: { type: Number, default: 1, min: 1 },
           updatedAt: { type: Date, default: null },
@@ -503,19 +503,18 @@ const businessAnchorSchema = new mongoose.Schema(
         enum: ["custom_abutment", "design_custom_abutment"],
         default: "design_custom_abutment",
       },
-      // 자동매칭 기공비 예산 — v3: minPct/maxPct(+전개 items). 어벗츠 어벗 제외.
-      // 인증 기공소 수가 평균(어벗츠 카탈로그) 대비 %.
+      // 자동매칭 기공비 — v4 고정수가(평균×별점배수). 레거시 v2/v3 스냅샷 호환.
       autoMatchBudget: {
         type: mongoose.Schema.Types.Mixed,
         default: null,
       },
-      // 자동매칭 참여 최소 별(1~3). 전체 치과 평가 평균 기준.
-      // 미평가·합산 평가 5회 이하는 차단하지 않음. 기본 2.
+      // 자동매칭 최소 별(2~5). 전체 치과 평가 평균 기준.
+      // 평가 3회 미만·미평가는 유효 3점. 기본 3.
       autoMatchMinLabRating: {
         type: Number,
-        default: 2,
-        min: 1,
-        max: 3,
+        default: 3,
+        min: 2,
+        max: 5,
       },
       updatedAt: {
         type: Date,

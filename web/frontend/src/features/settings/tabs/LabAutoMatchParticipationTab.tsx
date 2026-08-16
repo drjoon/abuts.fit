@@ -231,7 +231,7 @@ export const LabAutoMatchParticipationTab = () => {
               ) : null}
             </div>
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              신청 → 기공 테스트 → 통과 시 인증. 인증·별점 3점 이상만 매칭에
+              신청 → 기공 테스트 → 통과 시 인증. 인증·별점 2점 이상만 매칭에
               참여합니다.
             </p>
             <p className="text-[12px] leading-relaxed text-muted-foreground/90">

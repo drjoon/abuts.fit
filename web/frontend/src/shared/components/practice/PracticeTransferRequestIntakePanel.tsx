@@ -663,14 +663,14 @@ export type PracticeTransferRequestIntakePanelProps = {
   toothChartResetNonce?: number;
   /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
   showFeeEstimate?: boolean;
-  /** 자동매칭 기공비 예산(항목별 min/max) */
+  /** 자동매칭 기공비(v4 고정수가 스냅샷) */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
-  /** 어벗츠 수가 카탈로그 — 예산 모달 항목 SSOT */
+  /** 어벗츠 수가 카탈로그 — 평균×배수 견적 SSOT */
   abutsLabFeeCatalog?: AbutsLabFeeCatalogItem[] | null;
   onAutoMatchBudgetChange?: (
     next: PracticeTransferAutoMatchBudget | null,
   ) => void | Promise<void>;
-  /** 자동매칭 최소 별(1~3). 인증 AND (평균≥설정 OR 합산≤5) AND NOT 우리치과1점. */
+  /** 자동매칭 최소 별(2~5). 인증 AND 유효별≥설정(3회 미만→3) AND NOT 우리치과1점. */
   autoMatchMinLabRating?: number;
   onAutoMatchMinLabRatingChange?: (next: number) => void | Promise<void>;
 };

@@ -27,6 +27,7 @@
 // - 2026-08-14: 합산 라벨은「기공비」, 단위(툴팁 컬럼)는「기공수가」.
 // - 2026-08-14: 수락·청구(billed) 후 치과는 예산 구간 대신「확정 기공비」표시.
 // - 2026-08-16: 자동매칭 툴팁 — 합산 minLabFee 없어도 라인 labFeeMin으로 하한~상한 표시.
+// - 2026-08-16: v4 고정수가 — min=max면 구간(~) 없이 단일가 표시. 예산 구간 안내 제거.
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import {
@@ -581,6 +582,9 @@ export function PracticeTransferFeeEstimate({
   );
   const hasBudgetRange =
     !confirmed && Boolean(budget) && budgetLabFeeMax > 0;
+  /** v4 고정수가(min=max)는 구간 UI·안내 불필요 */
+  const hasBudgetSpread =
+    hasBudgetRange && budgetLabFeeMin !== budgetLabFeeMax;
   const amount = isLab
     ? Math.max(0, Math.round(Number(quote.labFeeTotal || 0))) + labDesignFeePreview
     : hasBudgetRange
@@ -599,9 +603,7 @@ export function PracticeTransferFeeEstimate({
       ? "기공비"
       : confirmed
         ? "확정 기공비"
-        : hasBudgetRange
-          ? "예상 견적"
-          : "견적";
+        : "견적";
   const labProsthesisTotal = Math.max(
     0,
     Math.round(Number(quote.labFeeTotal || 0) - Number(quote.labAbutmentTotal || 0)),
@@ -614,6 +616,11 @@ export function PracticeTransferFeeEstimate({
     isLab &&
     feeRateApplied > 0 &&
     labSettlementDisplay !== amount;
+  const labFeeLabel = hasBudgetRange
+    ? `기공비 ${formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}`
+    : labProsthesisTotal > 0
+      ? `기공비 ${formatWon(labProsthesisTotal)}`
+      : "";
   const simple = isLab
     ? labSettlementDiffers
       ? `수령 ${formatWon(labSettlementDisplay)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
@@ -621,11 +628,7 @@ export function PracticeTransferFeeEstimate({
     : quote.isRemake
       ? `리메이크 기공비 ${formatWon(quote.labFeeTotal)}`
       : [
-          hasBudgetRange
-            ? `기공비 ${formatWon(budgetLabFeeMin)}~${formatWon(budgetLabFeeMax)}`
-            : labProsthesisTotal > 0
-              ? `기공비 ${formatWon(labProsthesisTotal)}`
-              : "",
+          labFeeLabel,
           quote.labAbutmentTotal > 0
             ? `기공소어벗 ${formatWon(quote.labAbutmentTotal)}`
             : quote.labAbutmentPending
@@ -640,7 +643,7 @@ export function PracticeTransferFeeEstimate({
           .filter(Boolean)
           .join(" · ") ||
         (hasBudgetRange
-          ? `기공비 ${formatWon(budgetLabFeeMin)}~${formatWon(budgetLabFeeMax)}`
+          ? `기공비 ${formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}`
           : `기공비 ${formatWon(quote.labFeeTotal)}`);
   const labFeeUnset = !isLab && quote.labFeeConfigured === false;
   /** 기공소만: 생성 스냅샷 배수. 치과 견적에는 표기하지 않음 */
@@ -650,9 +653,9 @@ export function PracticeTransferFeeEstimate({
       : null;
 
   const labTotalMinOverride =
-    hasBudgetRange && !hasLineLabFeeRange ? budgetLabFeeMin : null;
+    hasBudgetSpread && !hasLineLabFeeRange ? budgetLabFeeMin : null;
   const labTotalMaxOverride =
-    hasBudgetRange && labTotalMinOverride != null ? budgetLabFeeMax : null;
+    hasBudgetSpread && labTotalMinOverride != null ? budgetLabFeeMax : null;
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -779,17 +782,20 @@ export function PracticeTransferFeeEstimate({
                     </span>
                   </p>
                 ) : null}
-                {hasBudgetRange ? (
+                {hasBudgetSpread ? (
                   <p className="text-[11px] text-muted-foreground">
-                    항목별 예산 구간의 인증 기공소만 자동매칭에 참여합니다. 수락
-                    시 해당 기공소 수가로 확정·청구됩니다.
+                    레거시 기공비 구간이 저장된 의뢰입니다. 수락 시 확정·청구됩니다.
+                  </p>
+                ) : hasBudgetRange ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    선택 별점에 따른 평균 기공비로 견적·청구됩니다.
                   </p>
                 ) : null}
               </div>
             ) : hasBudgetRange ? (
               <div className="space-y-1.5 tabular-nums">
                 <p>
-                  기공비 예산{" "}
+                  기공비{" "}
                   <span className="font-medium">
                     {formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}
                   </span>
@@ -820,8 +826,9 @@ export function PracticeTransferFeeEstimate({
                   </p>
                 ) : null}
                 <p className="text-[11px] text-muted-foreground">
-                  항목별 예산 구간의 인증 기공소만 자동매칭에 참여합니다. 수락 시
-                  해당 기공소 수가로 확정·청구됩니다.
+                  {hasBudgetSpread
+                    ? "레거시 기공비 구간이 저장된 의뢰입니다. 수락 시 확정·청구됩니다."
+                    : "선택 별점에 따른 평균 기공비로 견적·청구됩니다."}
                 </p>
               </div>
             ) : (

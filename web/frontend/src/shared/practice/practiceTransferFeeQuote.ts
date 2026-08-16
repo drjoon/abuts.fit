@@ -56,7 +56,7 @@ export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   labFeeConfigured?: boolean;
   isRemake?: boolean;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
-  /** 자동매칭 기공비 예산(항목별). 합산 minLabFee/maxLabFee가 있으면 구간 표시 */
+  /** 자동매칭 기공비(v4 고정수가). min≈max면 단일가 표시 */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
 };
 

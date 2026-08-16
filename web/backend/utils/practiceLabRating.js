@@ -168,7 +168,7 @@ export function isLabBlockedByOwnOneStar({ ratings, labAnchorId } = {}) {
  * - 주문 치과가 1점을 준 기공소면 true
  * - 그 외: 유효 별점(3회 미만→3) < 최소 별이면 true
  *
- * 참여 조건: 인증 AND 유효별≥설정 AND NOT 우리치과1점
+ * 참여 조건: 인증 AND 유효별≥설정(하한 2; 3회 미만→3) AND NOT 우리치과1점
  *
  * `aggregated`가 있으면 전체 치과 합산 행을 쓰고, 없으면 레거시 단일 치과 list.
  * `ratings`는 주문 치과 `practiceLabRatings`(1점 하드 차단용).

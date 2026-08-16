@@ -206,7 +206,7 @@ const practiceTransferSchema = new mongoose.Schema(
       billedAt: { type: Date, default: null },
       settledAt: { type: Date, default: null },
       isRemake: { type: Boolean, default: false },
-      // 자동매칭 기공비 예산 스냅샷 — 항목별 min/max (+ 선택적 합산 minLabFee/maxLabFee)
+      // 자동매칭 기공비 스냅샷 — v4 고정수가(stars/feeMultiplier/items min=max) 또는 레거시 밴드
       autoMatchBudget: {
         type: mongoose.Schema.Types.Mixed,
         default: undefined,

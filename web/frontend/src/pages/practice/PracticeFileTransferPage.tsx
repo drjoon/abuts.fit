@@ -26,7 +26,7 @@
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
- * - 2026-08-14: 의뢰 상세 · 기공소 채팅 rating(1~3)·메모. 자동매칭 최소 별.
+ * - 2026-08-14: 의뢰 상세 · 기공소 채팅 rating(1~5)·메모. 자동매칭 최소 별.
  * - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁(목록·상세).
  * - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
