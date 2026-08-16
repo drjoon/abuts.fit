@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 「커스텀어벗 요금 · 크레딧」→「크레딧」+「커스텀어벗」탭 분리.
 // - 2026-08-16: 「기공소 매칭」→「인증 기공소」탭 라벨.
 // - 2026-08-14: 기공소 신규 기공비 → 어벗츠 수가 검토 배지·탭 하이라이트.
 // - 2026-08-14: 기공소 매칭 탭을 단일 카드(수수료+인증 목록)로 합침.
@@ -24,18 +25,24 @@ import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSett
 import { AdminLabFeeSchedulesTab } from "@/features/settings/tabs/AdminLabFeeSchedulesTab";
 import { AdminAbutsLabFeeScheduleTab } from "@/features/settings/tabs/AdminAbutsLabFeeScheduleTab";
 import { PracticeTransferAutoMatchTab } from "@/pages/devops/components/PracticeTransferAutoMatchTab";
-import { BadgeJapaneseYen, Banknote, CreditCard, FlaskConical } from "lucide-react";
+import {
+  BadgeJapaneseYen,
+  Banknote,
+  CreditCard,
+  FlaskConical,
+  Package,
+} from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 
-type TabKey = "credits" | "autoMatch" | "abutsFees" | "labFees";
+type TabKey = "credits" | "customAbut" | "autoMatch" | "abutsFees" | "labFees";
 
 const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
   design: "autoMatch",
   deadline: "autoMatch",
   payment: "autoMatch",
-  roundBar: "credits",
+  roundBar: "customAbut",
 };
 
 export const AdminPlatformSettingsPage = () => {
@@ -106,9 +113,15 @@ export const AdminPlatformSettingsPage = () => {
     () => [
       {
         key: "credits",
-        label: "커스텀어벗 요금 · 크레딧",
+        label: "크레딧",
         icon: CreditCard,
-        content: <AdminCreditSettingsTab />,
+        content: <AdminCreditSettingsTab variant="credits" />,
+      },
+      {
+        key: "customAbut",
+        label: "커스텀어벗",
+        icon: Package,
+        content: <AdminCreditSettingsTab variant="customAbut" />,
       },
       {
         key: "autoMatch",

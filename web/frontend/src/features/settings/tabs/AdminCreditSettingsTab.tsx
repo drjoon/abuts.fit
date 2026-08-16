@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: variant로 크레딧(환영·멤버십·배송) / 커스텀어벗(단가·추가요청·특별공급가) 분리.
 // - 2026-08-15: 특별 공급가 치과카드 4항목을 4열 1행 배치.
 // - 2026-08-15: 특별 공급가 CNC/환봉 × 생산만·디자인+생산 입력. 배송 500원·그 외 1000원 step.
 // - 2026-08-15: 섹션명 커스텀어벗, 환영 무료 크레딧 입력 1/2열.
@@ -558,7 +559,18 @@ function SubSectionHeader({
   );
 }
 
-export const AdminCreditSettingsTab = () => {
+export type AdminCreditSettingsVariant = "credits" | "customAbut";
+
+type AdminCreditSettingsTabProps = {
+  /** credits: 환영 무료 크레딧·멤버십·배송. customAbut: 단가·추가요청·특별 공급가. */
+  variant?: AdminCreditSettingsVariant;
+};
+
+export const AdminCreditSettingsTab = ({
+  variant = "credits",
+}: AdminCreditSettingsTabProps) => {
+  const showCredits = variant === "credits";
+  const showCustomAbut = variant === "customAbut";
   const { token } = useAuthStore();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -688,7 +700,7 @@ export const AdminCreditSettingsTab = () => {
   }, [fetchSettings]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !showCustomAbut) return;
     void (async () => {
       const res = await apiFetch<CreditPriceRequestorsApiResponse>({
         path: "/api/admin/settings/credits/requestors",
@@ -699,7 +711,7 @@ export const AdminCreditSettingsTab = () => {
         setRequestors(res.data?.data?.items || []);
       }
     })();
-  }, [token]);
+  }, [token, showCustomAbut]);
 
   useEffect(() => {
     if (!hydratedRef.current || !token || loading) return;
@@ -757,457 +769,481 @@ export const AdminCreditSettingsTab = () => {
   return (
     <TooltipProvider delayDuration={0}>
       <div className="space-y-5">
-        <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-          <CardContent className="space-y-5 p-5 sm:p-6">
-            <SectionHeader
-              icon={Gift}
-              title="환영 무료 크레딧"
-              description="기공소(의뢰 수신자) 신규 가입 시 무료크레딧으로 1회 지급합니다. 치과에는 지급하지 않습니다."
-            />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <AmountField
-                id="defaultRequestFreeCredit"
-                label="무료 크레딧"
-                icon={Gift}
-                value={settings.defaultRequestFreeCredit}
-                onChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    defaultRequestFreeCredit: next,
-                    defaultShippingFreeCredit: 0,
-                  })
-                }
-                disabled={loading}
-                help="가입 시 무료크레딧 잔액으로 1회 충전됩니다. 기공의뢰·어벗 생산·배송 등에 사용됩니다."
-              />
-            </div>
-          </CardContent>
-        </Card>
+        {showCredits ? (
+          <>
+            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+              <CardContent className="space-y-5 p-5 sm:p-6">
+                <SectionHeader
+                  icon={Gift}
+                  title="환영 무료 크레딧"
+                  description="기공소(의뢰 수신자) 신규 가입 시 무료크레딧으로 1회 지급합니다. 치과에는 지급하지 않습니다."
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <AmountField
+                    id="defaultRequestFreeCredit"
+                    label="무료 크레딧"
+                    icon={Gift}
+                    value={settings.defaultRequestFreeCredit}
+                    onChange={(next) =>
+                      setSettings({
+                        ...settings,
+                        defaultRequestFreeCredit: next,
+                        defaultShippingFreeCredit: 0,
+                      })
+                    }
+                    disabled={loading}
+                    help="가입 시 무료크레딧 잔액으로 1회 충전됩니다. 기공의뢰·어벗 생산·배송 등에 사용됩니다."
+                  />
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-          <CardContent className="space-y-5 p-5 sm:p-6">
-            <SectionHeader
-              icon={Package}
-              title="커스텀어벗"
-              description="특별 공급가가 없으면 이 금액이 적용됩니다."
-            />
+            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+              <CardContent className="space-y-5 p-5 sm:p-6">
+                <SectionHeader
+                  icon={Crown}
+                  title="멤버십 · 배송"
+                  description="치과 멤버십 구독료와 배송 요금입니다."
+                />
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <AmountField
+                    id="practiceMembershipMonthlyFee"
+                    label="치과 멤버십 구독료"
+                    icon={Crown}
+                    value={settings.practiceMembershipMonthlyFee}
+                    onChange={(next) =>
+                      setSettings({
+                        ...settings,
+                        practiceMembershipMonthlyFee: next,
+                      })
+                    }
+                    disabled={loading}
+                    help={membershipHelp}
+                  />
+                  <AmountField
+                    id="shippingFee"
+                    label="배송비"
+                    icon={Truck}
+                    value={settings.shippingFee}
+                    onChange={(next) =>
+                      setSettings({ ...settings, shippingFee: next })
+                    }
+                    disabled={loading}
+                    help="박스단위 별도(의뢰자 청구)"
+                    step={SHIPPING_AMOUNT_STEP}
+                  />
+                  <AmountField
+                    id="manufacturerRequestUnitPrice"
+                    label="제조사 하청 의뢰 공급가"
+                    icon={HandCoins}
+                    value={settings.manufacturerRequestUnitPrice}
+                    onChange={(next) =>
+                      setSettings({
+                        ...settings,
+                        manufacturerRequestUnitPrice: next,
+                      })
+                    }
+                    disabled={loading}
+                    help={`부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerRequestUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
+                    step={SHIPPING_AMOUNT_STEP}
+                  />
+                  <AmountField
+                    id="manufacturerShippingUnitPrice"
+                    label="제조사 하청 배송 공급가"
+                    icon={Truck}
+                    value={settings.manufacturerShippingUnitPrice}
+                    onChange={(next) =>
+                      setSettings({
+                        ...settings,
+                        manufacturerShippingUnitPrice: next,
+                      })
+                    }
+                    disabled={loading}
+                    help={`부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerShippingUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
+                    step={SHIPPING_AMOUNT_STEP}
+                  />
+                  <AmountField
+                    id="expressFee"
+                    label="신속 배송비"
+                    icon={Zap}
+                    value={settings.expressFee}
+                    onChange={(next) =>
+                      setSettings({ ...settings, expressFee: next })
+                    }
+                    disabled={loading}
+                    help={expressHelp}
+                    step={SHIPPING_AMOUNT_STEP}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : null}
 
-            <div className="space-y-3">
-              <SubSectionHeader title="CNC어벗" />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <DualTierAmountField
-                  label="생산만"
+        {showCustomAbut ? (
+          <>
+            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+              <CardContent className="space-y-5 p-5 sm:p-6">
+                <SectionHeader
                   icon={Package}
-                  membershipId="membershipProductionPrice"
-                  regularId="regularProductionPrice"
-                  membershipValue={settings.membershipProductionPrice}
-                  regularValue={settings.regularProductionPrice}
-                  onMembershipChange={(next) =>
-                    setSettings({
-                      ...settings,
-                      membershipProductionPrice: next,
-                      minCreditForRequest: next,
-                      designFee: Math.max(
-                        0,
-                        settings.membershipDesignAndProductionPrice - next,
-                      ),
-                    })
-                  }
-                  onRegularChange={(next) =>
-                    setSettings({ ...settings, regularProductionPrice: next })
-                  }
-                  disabled={loading}
-                  help={productionHelp}
+                  title="커스텀어벗"
+                  description="특별 공급가가 없으면 이 금액이 적용됩니다."
                 />
-                <DualTierAmountField
-                  label="디자인+생산"
-                  icon={PenLine}
-                  membershipId="membershipDesignAndProductionPrice"
-                  regularId="regularDesignAndProductionPrice"
-                  membershipValue={settings.membershipDesignAndProductionPrice}
-                  regularValue={settings.regularDesignAndProductionPrice}
-                  onMembershipChange={(next) =>
-                    setSettings({
-                      ...settings,
-                      membershipDesignAndProductionPrice: next,
-                      designFee: Math.max(
-                        0,
-                        next - settings.membershipProductionPrice,
-                      ),
-                    })
-                  }
-                  onRegularChange={(next) =>
-                    setSettings({
-                      ...settings,
-                      regularDesignAndProductionPrice: next,
-                    })
-                  }
-                  disabled={loading}
-                  help={designAndProductionHelp}
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <AmountField
-                  id="abutmentDesignLabFee"
-                  label="어벗디자인비"
-                  icon={HandCoins}
-                  value={settings.abutmentDesignLabFee}
-                  onChange={(next) =>
-                    setSettings({ ...settings, abutmentDesignLabFee: next })
-                  }
-                  disabled={loading}
-                  help="기공의뢰에 커스텀어벗이 포함되면 수락 기공소가 디자인한 뒤 지급합니다. 1어벗당. 기본 10,000원."
-                />
-              </div>
-            </div>
 
-            <div className="space-y-3">
-              <SubSectionHeader
-                title="환봉어벗"
-                description="1어벗당. 0원이면 가격 별도 고지."
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <DualTierAmountField
-                  label="생산만"
-                  icon={Hexagon}
-                  membershipId="membershipRoundBarProductionPrice"
-                  regularId="regularRoundBarProductionPrice"
-                  membershipValue={settings.membershipRoundBarProductionPrice}
-                  regularValue={settings.regularRoundBarProductionPrice}
-                  onMembershipChange={(next) =>
-                    setSettings({
-                      ...settings,
-                      membershipRoundBarProductionPrice: next,
-                    })
-                  }
-                  onRegularChange={(next) =>
-                    setSettings({
-                      ...settings,
-                      regularRoundBarProductionPrice: next,
-                    })
-                  }
-                  disabled={loading}
-                />
-                <DualTierAmountField
-                  label="디자인+생산"
-                  icon={Hexagon}
-                  membershipId="membershipRoundBarDesignAndProductionPrice"
-                  regularId="regularRoundBarDesignAndProductionPrice"
-                  membershipValue={
-                    settings.membershipRoundBarDesignAndProductionPrice
-                  }
-                  regularValue={settings.regularRoundBarDesignAndProductionPrice}
-                  onMembershipChange={(next) =>
-                    setSettings({
-                      ...settings,
-                      membershipRoundBarDesignAndProductionPrice: next,
-                    })
-                  }
-                  onRegularChange={(next) =>
-                    setSettings({
-                      ...settings,
-                      regularRoundBarDesignAndProductionPrice: next,
-                    })
-                  }
-                  disabled={loading}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <AdminRoundBarAbutmentTab />
-
-        <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-          <CardContent className="space-y-5 p-5 sm:p-6">
-            <SectionHeader
-              icon={Crown}
-              title="멤버십 · 배송"
-              description="치과 멤버십 구독료와 배송 요금입니다."
-            />
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <AmountField
-                id="practiceMembershipMonthlyFee"
-                label="치과 멤버십 구독료"
-                icon={Crown}
-                value={settings.practiceMembershipMonthlyFee}
-                onChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    practiceMembershipMonthlyFee: next,
-                  })
-                }
-                disabled={loading}
-                help={membershipHelp}
-              />
-              <AmountField
-                id="shippingFee"
-                label="배송비"
-                icon={Truck}
-                value={settings.shippingFee}
-                onChange={(next) =>
-                  setSettings({ ...settings, shippingFee: next })
-                }
-                disabled={loading}
-                help="박스단위 별도(의뢰자 청구)"
-                step={SHIPPING_AMOUNT_STEP}
-              />
-              <AmountField
-                id="manufacturerRequestUnitPrice"
-                label="제조사 하청 의뢰 공급가"
-                icon={HandCoins}
-                value={settings.manufacturerRequestUnitPrice}
-                onChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    manufacturerRequestUnitPrice: next,
-                  })
-                }
-                disabled={loading}
-                help={`부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerRequestUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
-                step={SHIPPING_AMOUNT_STEP}
-              />
-              <AmountField
-                id="manufacturerShippingUnitPrice"
-                label="제조사 하청 배송 공급가"
-                icon={Truck}
-                value={settings.manufacturerShippingUnitPrice}
-                onChange={(next) =>
-                  setSettings({
-                    ...settings,
-                    manufacturerShippingUnitPrice: next,
-                  })
-                }
-                disabled={loading}
-                help={`부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerShippingUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
-                step={SHIPPING_AMOUNT_STEP}
-              />
-              <AmountField
-                id="expressFee"
-                label="신속 배송비"
-                icon={Zap}
-                value={settings.expressFee}
-                onChange={(next) =>
-                  setSettings({ ...settings, expressFee: next })
-                }
-                disabled={loading}
-                help={expressHelp}
-                step={SHIPPING_AMOUNT_STEP}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-          <CardContent className="space-y-5 p-5 sm:p-6">
-            <SectionHeader
-              icon={Search}
-              title="특별 공급가"
-              description="의뢰자를 검색해 추가한 뒤 CNC어벗·환봉어벗 가격을 입력하세요."
-              trailing={
-                <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
-                  {settings.specialRequestorPrices.length}곳
-                </span>
-              }
-            />
-
-              <div className="space-y-3">
-                {settings.specialRequestorPrices.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-8 text-center">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 ring-1 ring-slate-200/80">
-                      <Search className="h-4 w-4 text-slate-400" />
-                    </span>
-                    <p className="mt-3 text-sm font-medium text-slate-700">
-                      지정된 의뢰자가 없습니다
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      아래에서 검색해 특별 가격을 추가하세요.
-                    </p>
+                <div className="space-y-3">
+                  <SubSectionHeader title="CNC어벗" />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <DualTierAmountField
+                      label="생산만"
+                      icon={Package}
+                      membershipId="membershipProductionPrice"
+                      regularId="regularProductionPrice"
+                      membershipValue={settings.membershipProductionPrice}
+                      regularValue={settings.regularProductionPrice}
+                      onMembershipChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          membershipProductionPrice: next,
+                          minCreditForRequest: next,
+                          designFee: Math.max(
+                            0,
+                            settings.membershipDesignAndProductionPrice - next,
+                          ),
+                        })
+                      }
+                      onRegularChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          regularProductionPrice: next,
+                        })
+                      }
+                      disabled={loading}
+                      help={productionHelp}
+                    />
+                    <DualTierAmountField
+                      label="디자인+생산"
+                      icon={PenLine}
+                      membershipId="membershipDesignAndProductionPrice"
+                      regularId="regularDesignAndProductionPrice"
+                      membershipValue={
+                        settings.membershipDesignAndProductionPrice
+                      }
+                      regularValue={settings.regularDesignAndProductionPrice}
+                      onMembershipChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          membershipDesignAndProductionPrice: next,
+                          designFee: Math.max(
+                            0,
+                            next - settings.membershipProductionPrice,
+                          ),
+                        })
+                      }
+                      onRegularChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          regularDesignAndProductionPrice: next,
+                        })
+                      }
+                      disabled={loading}
+                      help={designAndProductionHelp}
+                    />
                   </div>
-                ) : (
-                  settings.specialRequestorPrices.map((item) => {
-                    const requestor = requestorById.get(item.requestorAnchorId);
-                    const kindLabel =
-                      requestor?.requestorKind === "practice" ||
-                      requestor?.requestorKind === "lab"
-                        ? REQUESTOR_CAPABILITY_LABEL[requestor.requestorKind]
-                        : null;
-                    return (
-                      <div
-                        key={item.requestorAnchorId}
-                        className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-semibold text-slate-900">
-                              {requestor?.name || "삭제된 의뢰자"}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <AmountField
+                      id="abutmentDesignLabFee"
+                      label="어벗디자인비"
+                      icon={HandCoins}
+                      value={settings.abutmentDesignLabFee}
+                      onChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          abutmentDesignLabFee: next,
+                        })
+                      }
+                      disabled={loading}
+                      help="기공의뢰에 커스텀어벗이 포함되면 수락 기공소가 디자인한 뒤 지급합니다. 1어벗당. 기본 10,000원."
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <SubSectionHeader
+                    title="환봉어벗"
+                    description="1어벗당. 0원이면 가격 별도 고지."
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <DualTierAmountField
+                      label="생산만"
+                      icon={Hexagon}
+                      membershipId="membershipRoundBarProductionPrice"
+                      regularId="regularRoundBarProductionPrice"
+                      membershipValue={
+                        settings.membershipRoundBarProductionPrice
+                      }
+                      regularValue={settings.regularRoundBarProductionPrice}
+                      onMembershipChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          membershipRoundBarProductionPrice: next,
+                        })
+                      }
+                      onRegularChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          regularRoundBarProductionPrice: next,
+                        })
+                      }
+                      disabled={loading}
+                    />
+                    <DualTierAmountField
+                      label="디자인+생산"
+                      icon={Hexagon}
+                      membershipId="membershipRoundBarDesignAndProductionPrice"
+                      regularId="regularRoundBarDesignAndProductionPrice"
+                      membershipValue={
+                        settings.membershipRoundBarDesignAndProductionPrice
+                      }
+                      regularValue={
+                        settings.regularRoundBarDesignAndProductionPrice
+                      }
+                      onMembershipChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          membershipRoundBarDesignAndProductionPrice: next,
+                        })
+                      }
+                      onRegularChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          regularRoundBarDesignAndProductionPrice: next,
+                        })
+                      }
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <AdminRoundBarAbutmentTab />
+
+            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+              <CardContent className="space-y-5 p-5 sm:p-6">
+                <SectionHeader
+                  icon={Search}
+                  title="특별 공급가"
+                  description="의뢰자를 검색해 추가한 뒤 CNC어벗·환봉어벗 가격을 입력하세요."
+                  trailing={
+                    <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
+                      {settings.specialRequestorPrices.length}곳
+                    </span>
+                  }
+                />
+
+                <div className="space-y-3">
+                  {settings.specialRequestorPrices.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-8 text-center">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 ring-1 ring-slate-200/80">
+                        <Search className="h-4 w-4 text-slate-400" />
+                      </span>
+                      <p className="mt-3 text-sm font-medium text-slate-700">
+                        지정된 의뢰자가 없습니다
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        아래에서 검색해 특별 가격을 추가하세요.
+                      </p>
+                    </div>
+                  ) : (
+                    settings.specialRequestorPrices.map((item) => {
+                      const requestor = requestorById.get(
+                        item.requestorAnchorId,
+                      );
+                      const kindLabel =
+                        requestor?.requestorKind === "practice" ||
+                        requestor?.requestorKind === "lab"
+                          ? REQUESTOR_CAPABILITY_LABEL[requestor.requestorKind]
+                          : null;
+                      return (
+                        <div
+                          key={item.requestorAnchorId}
+                          className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-semibold text-slate-900">
+                                {requestor?.name || "삭제된 의뢰자"}
+                              </div>
+                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {[
+                                  kindLabel,
+                                  requestor?.representativeName
+                                    ? `대표 ${requestor.representativeName}`
+                                    : "",
+                                  requestor?.businessNumber || "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ") || "—"}
+                              </div>
                             </div>
-                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                              {[
-                                kindLabel,
-                                requestor?.representativeName
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              disabled={loading}
+                              aria-label={`${requestor?.name || "의뢰자"} 특별 공급가 삭제`}
+                              onClick={() =>
+                                setSettings({
+                                  ...settings,
+                                  specialRequestorPrices:
+                                    settings.specialRequestorPrices.filter(
+                                      (price) =>
+                                        price.requestorAnchorId !==
+                                        item.requestorAnchorId,
+                                    ),
+                                })
+                              }
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-2">
+                            <CompactAmountInput
+                              id={`special-cnc-production-${item.requestorAnchorId}`}
+                              label="CNC 생산만"
+                              value={item.productionPrice}
+                              disabled={loading}
+                              onChange={(productionPrice) =>
+                                updateSpecialPrice(item.requestorAnchorId, {
+                                  productionPrice,
+                                })
+                              }
+                            />
+                            <CompactAmountInput
+                              id={`special-cnc-design-${item.requestorAnchorId}`}
+                              label="CNC 디자인+생산"
+                              value={item.designAndProductionPrice}
+                              disabled={loading}
+                              onChange={(designAndProductionPrice) =>
+                                updateSpecialPrice(item.requestorAnchorId, {
+                                  designAndProductionPrice,
+                                })
+                              }
+                            />
+                            <CompactAmountInput
+                              id={`special-round-production-${item.requestorAnchorId}`}
+                              label="환봉 생산만"
+                              value={item.roundBarProductionPrice}
+                              disabled={loading}
+                              onChange={(roundBarProductionPrice) =>
+                                updateSpecialPrice(item.requestorAnchorId, {
+                                  roundBarProductionPrice,
+                                })
+                              }
+                            />
+                            <CompactAmountInput
+                              id={`special-round-design-${item.requestorAnchorId}`}
+                              label="환봉 디자인+생산"
+                              value={item.roundBarDesignAndProductionPrice}
+                              disabled={loading}
+                              onChange={(roundBarDesignAndProductionPrice) =>
+                                updateSpecialPrice(item.requestorAnchorId, {
+                                  roundBarDesignAndProductionPrice,
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+
+                  <Popover
+                    open={requestorPickerOpen}
+                    onOpenChange={setRequestorPickerOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={requestorPickerOpen}
+                        disabled={loading}
+                        className="h-11 w-full justify-between rounded-xl border-slate-200 bg-white hover:bg-slate-50 sm:max-w-md"
+                      >
+                        <span className="inline-flex items-center gap-2 text-muted-foreground">
+                          <Plus className="h-4 w-4" />
+                          의뢰자 검색 후 추가…
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      className="w-[min(28rem,calc(100vw-2rem))] p-0"
+                      align="start"
+                    >
+                      <Command>
+                        <CommandInput placeholder="사업자명·대표자·사업자번호 검색" />
+                        <CommandList>
+                          <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
+                          <CommandGroup>
+                            {availableRequestors.map((requestor) => {
+                              const meta = [
+                                requestor.requestorKind === "practice" ||
+                                requestor.requestorKind === "lab"
+                                  ? REQUESTOR_CAPABILITY_LABEL[
+                                      requestor.requestorKind
+                                    ]
+                                  : "",
+                                requestor.representativeName
                                   ? `대표 ${requestor.representativeName}`
                                   : "",
-                                requestor?.businessNumber || "",
+                                requestor.businessNumber || "",
                               ]
                                 .filter(Boolean)
-                                .join(" · ") || "—"}
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                            disabled={loading}
-                            aria-label={`${requestor?.name || "의뢰자"} 특별 공급가 삭제`}
-                            onClick={() =>
-                              setSettings({
-                                ...settings,
-                                specialRequestorPrices:
-                                  settings.specialRequestorPrices.filter(
-                                    (price) =>
-                                      price.requestorAnchorId !==
-                                      item.requestorAnchorId,
-                                  ),
-                              })
-                            }
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-2">
-                          <CompactAmountInput
-                            id={`special-cnc-production-${item.requestorAnchorId}`}
-                            label="CNC 생산만"
-                            value={item.productionPrice}
-                            disabled={loading}
-                            onChange={(productionPrice) =>
-                              updateSpecialPrice(item.requestorAnchorId, {
-                                productionPrice,
-                              })
-                            }
-                          />
-                          <CompactAmountInput
-                            id={`special-cnc-design-${item.requestorAnchorId}`}
-                            label="CNC 디자인+생산"
-                            value={item.designAndProductionPrice}
-                            disabled={loading}
-                            onChange={(designAndProductionPrice) =>
-                              updateSpecialPrice(item.requestorAnchorId, {
-                                designAndProductionPrice,
-                              })
-                            }
-                          />
-                          <CompactAmountInput
-                            id={`special-round-production-${item.requestorAnchorId}`}
-                            label="환봉 생산만"
-                            value={item.roundBarProductionPrice}
-                            disabled={loading}
-                            onChange={(roundBarProductionPrice) =>
-                              updateSpecialPrice(item.requestorAnchorId, {
-                                roundBarProductionPrice,
-                              })
-                            }
-                          />
-                          <CompactAmountInput
-                            id={`special-round-design-${item.requestorAnchorId}`}
-                            label="환봉 디자인+생산"
-                            value={item.roundBarDesignAndProductionPrice}
-                            disabled={loading}
-                            onChange={(roundBarDesignAndProductionPrice) =>
-                              updateSpecialPrice(item.requestorAnchorId, {
-                                roundBarDesignAndProductionPrice,
-                              })
-                            }
-                          />
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-
-                <Popover
-                  open={requestorPickerOpen}
-                  onOpenChange={setRequestorPickerOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={requestorPickerOpen}
-                      disabled={loading}
-                      className="h-11 w-full justify-between rounded-xl border-slate-200 bg-white hover:bg-slate-50 sm:max-w-md"
-                    >
-                      <span className="inline-flex items-center gap-2 text-muted-foreground">
-                        <Plus className="h-4 w-4" />
-                        의뢰자 검색 후 추가…
-                      </span>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="w-[min(28rem,calc(100vw-2rem))] p-0"
-                    align="start"
-                  >
-                    <Command>
-                      <CommandInput placeholder="사업자명·대표자·사업자번호 검색" />
-                      <CommandList>
-                        <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
-                        <CommandGroup>
-                          {availableRequestors.map((requestor) => {
-                            const meta = [
-                              requestor.requestorKind === "practice" ||
-                              requestor.requestorKind === "lab"
-                                ? REQUESTOR_CAPABILITY_LABEL[
-                                    requestor.requestorKind
-                                  ]
-                                : "",
-                              requestor.representativeName
-                                ? `대표 ${requestor.representativeName}`
-                                : "",
-                              requestor.businessNumber || "",
-                            ]
-                              .filter(Boolean)
-                              .join(" · ");
-                            const searchValue = [
-                              requestor.name,
-                              requestor.representativeName,
-                              requestor.businessNumber,
-                              requestor.address,
-                              requestor.id,
-                            ]
-                              .filter(Boolean)
-                              .join(" ");
-                            return (
-                              <CommandItem
-                                key={requestor.id}
-                                value={searchValue}
-                                onSelect={() => addSpecialRequestor(requestor)}
-                              >
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm">
-                                    {getRequestorLabel(requestor)}
-                                  </div>
-                                  {meta ? (
-                                    <div className="truncate text-xs text-muted-foreground">
-                                      {meta}
+                                .join(" · ");
+                              const searchValue = [
+                                requestor.name,
+                                requestor.representativeName,
+                                requestor.businessNumber,
+                                requestor.address,
+                                requestor.id,
+                              ]
+                                .filter(Boolean)
+                                .join(" ");
+                              return (
+                                <CommandItem
+                                  key={requestor.id}
+                                  value={searchValue}
+                                  onSelect={() =>
+                                    addSpecialRequestor(requestor)
+                                  }
+                                >
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm">
+                                      {getRequestorLabel(requestor)}
                                     </div>
-                                  ) : null}
-                                </div>
-                              </CommandItem>
-                            );
-                          })}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-          </CardContent>
-        </Card>
+                                    {meta ? (
+                                      <div className="truncate text-xs text-muted-foreground">
+                                        {meta}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : null}
       </div>
     </TooltipProvider>
   );

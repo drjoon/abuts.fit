@@ -485,7 +485,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 환봉방식 커스텀어벗(제조사 추가 요청) SSOT:
   - 치과 프리셋 편집에서 카탈로그에 없는 제조사를 요청. 타입은 `헥스(사이즈 미정)` 고정.
   - 생성: `POST /api/practice/transfers/round-bar-requests` — 문의(`manufacturer_add_request`) 자동 접수 + `RoundBarAbutmentRequest` + 치과 `implantFavorites`에 일단 저장(`roundBar=true`, `adopted=false`).
-  - 관리자: `GET|PATCH /api/admin/round-bar-requests` — 프리셋 내용 편집. 도입 전에 `adoptedKind=cnc|round_bar` 필수. 도입 체크 시 해당 치과 프리셋 `adopted=true` + 종류 저장. 치과 단가: CNC=CNC어벗, 환봉=환봉어벗. 체크 해제=`adopted=false` + 문의 재오픈. 실시간 `practice:round-bar-request-updated`. UI는 플랫폼 설정「커스텀어벗 요금 · 크레딧 > 어벗 추가 요청」.
+  - 관리자: `GET|PATCH /api/admin/round-bar-requests` — 프리셋 내용 편집. 도입 전에 `adoptedKind=cnc|round_bar` 필수. 도입 체크 시 해당 치과 프리셋 `adopted=true` + 종류 저장. 치과 단가: CNC=CNC어벗, 환봉=환봉어벗. 체크 해제=`adopted=false` + 문의 재오픈. 실시간 `practice:round-bar-request-updated`. UI는 플랫폼 설정「커스텀어벗 > 어벗 추가 요청」.
   - 요금 필드: `membership/regularRoundBarProductionPrice`, `membership/regularRoundBarDesignAndProductionPrice` (0이면 별도 고지).
   - 기공의뢰 견적 툴팁: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. **환봉 요청중(미도입, `헥스(사이즈 미정)`)** 은 기공소 어벗 — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 그 금액. 도입되면 어벗츠 어벗.
   - 관련 파일:

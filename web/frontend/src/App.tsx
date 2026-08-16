@@ -280,7 +280,7 @@ const SettingsRoute = () => {
     return <Navigate to="/practice/settings" replace />;
   }
   const tab = new URLSearchParams(location.search).get("tab");
-  // 구 북마크: 관리자 설정 결제 → 플랫폼 설정(커스텀어벗 요금·크레딧)
+  // 구 북마크: 관리자 설정 결제 → 플랫폼 설정(크레딧)
   if (user.role === "admin" && tab === "payment") {
     return <Navigate to="/dashboard/platform-settings?tab=credits" replace />;
   }

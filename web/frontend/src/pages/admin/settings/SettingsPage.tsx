@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-13: 결제 탭 제거 — 내용은 플랫폼 설정(커스텀어벗 요금·크레딧)에 유지.
+// - 2026-08-13: 결제 탭 제거 — 내용은 플랫폼 설정(크레딧·커스텀어벗)에 유지.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
