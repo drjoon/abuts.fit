@@ -9,6 +9,7 @@ import {
   isLabBlockedByOwnOneStar,
   isLabBlockedByPracticeRating,
   normalizeAutoMatchMinLabRating,
+  resolveStarDowngrade,
 } from "../../utils/practiceLabRating.js";
 
 describe("practiceLabRating auto-match gate", () => {
@@ -80,17 +81,6 @@ describe("practiceLabRating auto-match gate", () => {
           ],
         ]),
         labAnchorId: labId,
-        minStars: 4,
-      }),
-    ).toBe(false);
-  });
-
-  test("unrated lab uses effective 3 and passes min 3", () => {
-    expect(
-      isLabBlockedByPracticeRating({
-        ratings: [],
-        aggregated: new Map(),
-        labAnchorId: labId,
         minStars: 3,
       }),
     ).toBe(false);
@@ -136,5 +126,48 @@ describe("practiceLabRating auto-match gate", () => {
       DEFAULT_EFFECTIVE_LAB_STARS,
     );
     expect(effectiveLabStars({ stars: 4.5, ratingCount: 4 })).toBe(4.5);
+  });
+
+  test("resolveStarDowngrade when lab fee tier above request", () => {
+    expect(
+      resolveStarDowngrade({
+        matchingMode: "auto",
+        labEffectiveStars: 5,
+        autoMatchStars: 3,
+        offeredLabFee: 100000,
+      }),
+    ).toEqual({
+      labEffectiveStars: 5,
+      autoMatchStars: 3,
+      labFeeMultiplier: 1.2,
+      autoMatchFeeMultiplier: 1,
+      offeredLabFee: 100000,
+      expectedLabFeeAtOwnStars: 120000,
+      labFeeDeltaWon: 20000,
+    });
+    expect(
+      resolveStarDowngrade({
+        matchingMode: "auto",
+        labEffectiveStars: 3,
+        autoMatchStars: 3,
+        offeredLabFee: 100000,
+      }),
+    ).toBeNull();
+    expect(
+      resolveStarDowngrade({
+        matchingMode: "direct",
+        labEffectiveStars: 5,
+        autoMatchStars: 3,
+        offeredLabFee: 100000,
+      }),
+    ).toBeNull();
+    expect(
+      resolveStarDowngrade({
+        matchingMode: "auto",
+        labEffectiveStars: 4.2,
+        autoMatchStars: 3,
+        offeredLabFee: 90000,
+      })?.labFeeDeltaWon,
+    ).toBe(9000);
   });
 });

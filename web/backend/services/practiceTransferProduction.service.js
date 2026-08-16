@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-16: 어벗 가공(준비 아님) 시 release·생산취소 가드 + 목록 abutmentPastReady.
 // - 2026-08-16: PTX CA — 개인/사업체 requestSettings 중 화면 effective(개인 우선)로 designSoftware·아노·유지홈·헥스 반영. 핸드오프와 공용 loader.
 // - 2026-08-16: PTX CA 제조 주문에 기공소 requestSettings.designSoftware·아노다이징·헥스 반영.
 // - 2026-08-16: PTX CA 납품=치과 직납. 출고목표=치과도착일−2영업일(기공소 경유 −3 폐기).
@@ -885,12 +886,103 @@ export async function ensureAbutmentRequestsOnAccept({
 }
 
 /**
+ * 제조사 Request 단계가 준비(또는 취소)가 아니면 가공 시작으로 본다.
+ * 빈 값·준비·취소만 취소 가능.
+ */
+export function isAbutmentManufacturerStagePastReady(stage) {
+  const s = String(stage || "").trim();
+  if (!s || s === "준비" || s === "취소") return false;
+  return true;
+}
+
+const collectRelatedRequestObjectIds = (transferDoc) => {
+  const raw = Array.isArray(transferDoc?.production?.relatedRequestIds)
+    ? transferDoc.production.relatedRequestIds
+    : [];
+  return raw
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+};
+
+/**
+ * 연동 CA Request 중 하나라도 준비 단계를 지났는지.
+ */
+export async function hasRelatedAbutmentPastReady(transferDoc) {
+  if (transferDoc?.production?.abutmentProductionStartedAt) return true;
+  const ids = collectRelatedRequestObjectIds(transferDoc);
+  if (ids.length === 0) return false;
+  const rows = await Request.find({ _id: { $in: ids } })
+    .select({ manufacturerStage: 1 })
+    .lean();
+  return rows.some((row) =>
+    isAbutmentManufacturerStagePastReady(row?.manufacturerStage),
+  );
+}
+
+/**
+ * 수신 목록용 — transfer Mongo _id → 연동 어벗이 준비 단계를 지났는지.
+ */
+export async function mapAbutmentPastReadyByTransferDocs(docs) {
+  const result = new Map();
+  const list = Array.isArray(docs) ? docs : [];
+  const allIds = [];
+  const transferToReqIds = new Map();
+
+  for (const doc of list) {
+    const transferKey = String(doc?._id || "").trim();
+    if (!transferKey) continue;
+    if (doc?.production?.abutmentProductionStartedAt) {
+      result.set(transferKey, true);
+      continue;
+    }
+    const ids = collectRelatedRequestObjectIds(doc).map((id) => String(id));
+    transferToReqIds.set(transferKey, ids);
+    for (const id of ids) allIds.push(id);
+  }
+
+  if (allIds.length === 0) {
+    for (const [key] of transferToReqIds) {
+      if (!result.has(key)) result.set(key, false);
+    }
+    return result;
+  }
+
+  const uniqueIds = [...new Set(allIds)].filter((id) =>
+    Types.ObjectId.isValid(id),
+  );
+  const rows = await Request.find({
+    _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) },
+  })
+    .select({ manufacturerStage: 1 })
+    .lean();
+  const stageById = new Map(
+    rows.map((row) => [
+      String(row?._id || ""),
+      String(row?.manufacturerStage || "").trim(),
+    ]),
+  );
+
+  for (const [transferKey, reqIds] of transferToReqIds) {
+    if (result.has(transferKey)) continue;
+    result.set(
+      transferKey,
+      reqIds.some((id) =>
+        isAbutmentManufacturerStagePastReady(stageById.get(id)),
+      ),
+    );
+  }
+  return result;
+}
+
+/**
  * 작업취소·자동매칭 재공개 시: 이전 기공소가 만든 CA Request/디자인 미러를 정리.
  * 다음 수락 기공소가 소유·디자인 권한을 깨끗이 받도록 한다.
+ * 준비 단계가 아닌 Request는 취소하지 않는다(가공 중 강제 취소 방지).
  */
 export async function clearRelatedAbutmentProductionOnRelease(transferDoc) {
   if (!transferDoc?._id) {
-    return { cleared: false, canceledRequestCount: 0 };
+    return { cleared: false, canceledRequestCount: 0, blockedPastReady: false };
   }
 
   const requestIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
@@ -901,10 +993,24 @@ export async function clearRelatedAbutmentProductionOnRelease(transferDoc) {
 
   let canceledRequestCount = 0;
   if (requestIds.length > 0) {
+    const objectIds = requestIds.map((id) => new Types.ObjectId(id));
+    const stageRows = await Request.find({ _id: { $in: objectIds } })
+      .select({ manufacturerStage: 1 })
+      .lean();
+    const blockedPastReady = stageRows.some((row) =>
+      isAbutmentManufacturerStagePastReady(row?.manufacturerStage),
+    );
+    if (
+      blockedPastReady ||
+      Boolean(transferDoc?.production?.abutmentProductionStartedAt)
+    ) {
+      return { cleared: false, canceledRequestCount: 0, blockedPastReady: true };
+    }
+
     const cancelResult = await Request.updateMany(
       {
-        _id: { $in: requestIds.map((id) => new Types.ObjectId(id)) },
-        manufacturerStage: { $ne: "취소" },
+        _id: { $in: objectIds },
+        manufacturerStage: { $in: ["준비", "취소"] },
       },
       {
         $set: { manufacturerStage: "취소" },
@@ -951,7 +1057,7 @@ export async function clearRelatedAbutmentProductionOnRelease(transferDoc) {
     },
   );
 
-  return { cleared: true, canceledRequestCount };
+  return { cleared: true, canceledRequestCount, blockedPastReady: false };
 }
 
 /**

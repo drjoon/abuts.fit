@@ -59,11 +59,14 @@ import {
 import { resolveLabPracticeFeeMultiplier } from "../../utils/labFeeSchedule.js";
 import {
   findPracticeLabRating,
+  loadGlobalLabRatingAggregates,
   normalizeAutoMatchMinLabRating,
   normalizePracticeLabStars,
   normalizePracticeLabRatingMemo,
   PRACTICE_LAB_RATING_MAX,
   PRACTICE_LAB_RATING_MIN,
+  resolveStarDowngrade,
+  toLabRatingSummaryApi,
   toPracticeLabRatingPublicApi,
   upsertPracticeLabRatingList,
 } from "../../utils/practiceLabRating.js";
@@ -75,7 +78,9 @@ import {
   clearRelatedAbutmentProductionOnRelease,
   ensureAbutmentRequestsOnAccept,
   hasCustomAbutmentToothWorks,
+  hasRelatedAbutmentPastReady,
   isAbutmentDesignReady,
+  mapAbutmentPastReadyByTransferDocs,
   normalizeResultFiles,
   resolveOralScanFilesForAccept,
   shouldLockLabOralScanDownload,
@@ -101,6 +106,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
 // - 2026-08-15: 자동매칭 어벗츠(internalLab) 5분 우선창 — 목록·클레임 게이트, 거부 시 조기 공개.
 // - 2026-08-15: practiceTransferManufacturerStage SSOT를 utils/practiceTransferStage로 분리.
@@ -123,6 +129,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김.
 // - 2026-08-14: mark-accepted — 치과 practice:transfer-updated에 확정 feeQuote 포함.
 // - 2026-08-16: mark-reject 지정=작업취소(치과 취소·휴지통 아님). mark-release auto=자동매칭 재공개.
+// - 2026-08-16: 수신 목록 — 별점 다운그레이드(유효별>의뢰별 수가) 페이로드.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -356,9 +363,11 @@ const extractTransferMemoFromMessage = (message) => {
     .trim();
 };
 
-const toProductionApiFields = (production) => {
+const toProductionApiFields = (production, { abutmentPastReady = false } = {}) => {
   const p = production && typeof production === "object" ? production : {};
   const designFiles = normalizeResultFiles(p.designFiles);
+  const pastReady =
+    Boolean(abutmentPastReady) || Boolean(p.abutmentProductionStartedAt);
   return {
     shippingMode:
       p.shippingMode === "express"
@@ -383,6 +392,8 @@ const toProductionApiFields = (production) => {
     labDesignConfirmedAt: p.labDesignConfirmedAt || null,
     practiceDesignConfirmedAt: p.practiceDesignConfirmedAt || null,
     abutmentProductionStartedAt: p.abutmentProductionStartedAt || null,
+    /** 연동 CA Request가 준비 단계를 지남 → 생산/수락 취소 불가 */
+    abutmentPastReady: pastReady,
     confirmedAt: p.confirmedAt || null,
     relatedRequestIds: Array.isArray(p.relatedRequestIds)
       ? p.relatedRequestIds.map((id) => String(id))
@@ -2840,12 +2851,21 @@ export async function getReceivedPracticeTransfers(req, res) {
       viewingLabAnchorId: labAnchorId,
     });
 
-    const labMultiplierDoc =
+    const [labMultiplierDoc, labRatingAggMap, abutmentPastReadyById] =
+      await Promise.all([
       labAnchorId && Types.ObjectId.isValid(labAnchorId)
-        ? await BusinessAnchor.findById(labAnchorId)
+        ? BusinessAnchor.findById(labAnchorId)
             .select({ labPracticeFeeMultipliers: 1 })
             .lean()
-        : null;
+        : null,
+      labAnchorId && Types.ObjectId.isValid(labAnchorId)
+        ? loadGlobalLabRatingAggregates({ labAnchorIds: [labAnchorId] })
+        : Promise.resolve(new Map()),
+      mapAbutmentPastReadyByTransferDocs(docs),
+    ]);
+    const labRatingSummary = toLabRatingSummaryApi(
+      labAnchorId ? labRatingAggMap.get(String(labAnchorId)) : null,
+    );
 
     const transfers = docs.map((doc) => {
       const practiceBusiness =
@@ -2912,6 +2932,23 @@ export async function getReceivedPracticeTransfers(req, res) {
                   ? "자동매칭"
                   : "발송완료";
       const oralScanDownloadLocked = shouldLockLabOralScanDownload(doc);
+      const feeQuote = quotesById.get(String(doc?._id || "")) || null;
+      // 공개풀 수신 시에도 billing.autoMatchBudget.stars 를 본다(견적에 budget 누락 대비).
+      const budgetStars =
+        feeQuote?.autoMatchBudget?.stars ??
+        doc?.billing?.autoMatchBudget?.stars;
+      const offeredLabFee =
+        feeQuote?.autoMatchBudget?.maxLabFee ??
+        feeQuote?.autoMatchBudget?.minLabFee ??
+        doc?.billing?.autoMatchBudget?.maxLabFee ??
+        doc?.billing?.autoMatchBudget?.minLabFee ??
+        feeQuote?.labFeeTotal;
+      const starDowngrade = resolveStarDowngrade({
+        matchingMode,
+        labEffectiveStars: labRatingSummary.effectiveStars,
+        autoMatchStars: budgetStars,
+        offeredLabFee,
+      });
 
       return {
         _id: String(doc?._id || ""),
@@ -2936,7 +2973,11 @@ export async function getReceivedPracticeTransfers(req, res) {
         autoMatch: autoFields.autoMatch,
         toothWorks,
         hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
-        production: toProductionApiFields(production),
+        production: toProductionApiFields(production, {
+          abutmentPastReady: Boolean(
+            abutmentPastReadyById.get(String(doc?._id || "")),
+          ),
+        }),
         practice: practiceIdentity,
         practiceBusinessAnchorId: practiceAnchorIdForSurcharge,
         labFeeMultiplier: practiceAnchorIdForSurcharge
@@ -2966,7 +3007,9 @@ export async function getReceivedPracticeTransfers(req, res) {
           size: Number(item?.file?.size || 0),
           s3Key: String(item?.file?.s3Key || "").trim(),
         })),
-        feeQuote: quotesById.get(String(doc?._id || "")) || null,
+        feeQuote,
+        starDowngrade,
+        labRatingSummary,
         ...toRemakeApiFields(doc),
       };
     });
@@ -4349,6 +4392,15 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       });
     }
 
+    if (await hasRelatedAbutmentPastReady(doc)) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다.",
+        code: "abutment_machining_started",
+      });
+    }
+
     const isAuto = isAutoMatchMode(doc);
     const previousLabAnchorId = String(doc.targetLabAnchorId || "").trim() || null;
     const previousLabName = String(doc.targetLabName || "").trim();
@@ -4369,7 +4421,15 @@ export async function markReceivedPracticeTransferRelease(req, res) {
     }
 
     try {
-      await clearRelatedAbutmentProductionOnRelease(doc);
+      const clearResult = await clearRelatedAbutmentProductionOnRelease(doc);
+      if (clearResult?.blockedPastReady) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다.",
+          code: "abutment_machining_started",
+        });
+      }
     } catch (clearErr) {
       console.warn(
         "[practiceTransfer] work-cancel abutment production clear failed",

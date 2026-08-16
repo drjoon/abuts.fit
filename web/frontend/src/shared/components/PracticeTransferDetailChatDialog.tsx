@@ -6,6 +6,7 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - 2026-08-16: 어벗 가공 시작 시 상세 모달 작업취소(수락 취소) 비활성 안내.
 // - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔) / 작업 파일(어벗 디자인·보철물).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 왼쪽 구강스캔 업로드 UI 제거(스캔 없이 수락).
 // - 2026-08-15: 수락 바 — 구강스캔 나중에 올리기 안내 문구 제거.
@@ -127,6 +128,8 @@ type PracticeTransferDetailChatDialogProps = {
   workCanceled?: boolean;
   /** 작업완료된 건 — 작업취소 CTA 숨김 */
   workCompleted?: boolean;
+  /** 어벗 가공 시작(준비 아님) — 의뢰 수락 취소 불가 */
+  abutmentMachiningStarted?: boolean;
   /** 레거시: 자동매칭 남은시간 라벨(강제 클레임 만료 폐기 후 미사용) */
   remainingLabel?: string | null;
   onAccept?: () => void | Promise<void>;
@@ -209,6 +212,7 @@ export function PracticeTransferDetailChatDialog({
   accepted = false,
   workCanceled = false,
   workCompleted = false,
+  abutmentMachiningStarted = false,
   onAccept,
   rejectBusy = false,
   onReject,
@@ -251,9 +255,19 @@ export function PracticeTransferDetailChatDialog({
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
   const showReacceptBar =
     Boolean(onAccept) && !accepted && workCanceled;
-  /** 수락 직후: 수락 버튼 자리에 작업취소 */
+  /** 수락 직후: 수락 버튼 자리에 작업취소(가공 시작 전만) */
   const showReleaseBar =
-    Boolean(onRelease) && accepted && !workCanceled && !workCompleted;
+    Boolean(onRelease) &&
+    accepted &&
+    !workCanceled &&
+    !workCompleted &&
+    !abutmentMachiningStarted;
+  const showReleaseBlockedBar =
+    Boolean(onRelease) &&
+    accepted &&
+    !workCanceled &&
+    !workCompleted &&
+    abutmentMachiningStarted;
   /** 지정 기공소: 스캔 없이도 수락 가능. 자동매칭(practice_required)만 차단 */
   const oralScanBlocksAccept = oralScanAttachMode === "practice_required";
   const rawChatError = String(chatError || "").trim();
@@ -595,6 +609,15 @@ export function PracticeTransferDetailChatDialog({
                       {releaseButtonLabel}
                     </Button>
                   </div>
+                </div>
+              ) : null}
+
+              {showReleaseBlockedBar ? (
+                <div className="shrink-0 border-b bg-muted/40 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">
+                    어벗 가공이 시작되어 의뢰 수락을 취소할 수 없습니다. 제조사가
+                    준비 단계일 때만 취소할 수 있습니다.
+                  </p>
                 </div>
               ) : null}
 

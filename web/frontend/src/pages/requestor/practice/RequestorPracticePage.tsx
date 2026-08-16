@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-16: 어벗 가공 시작(준비 아님)이면 의뢰 수락·생산 취소 차단.
 // - 2026-08-16: 수신 카드에 디자인SW·아노 메타 뱃지(어벗생산의뢰와 동일 스타일).
 // - 2026-08-16: 어벗디자인 업로드 시 3D 확인 모달(기본값 채움·유지홈 필수) 후 handoff.
 // - 2026-08-16: 기간필터 옆에 디자인SW·아노다이징 공통 툴바. 미설정 시 진입 강제.
@@ -24,6 +25,7 @@
 // - 2026-08-16: 생산 취소 후 로컬 패치 — 결과파일·완료·확정 클리어 → 뱃지「의뢰수락」·업로드 CTA 복원.
 // - 2026-08-16: mark-complete apiFetch body→jsonBody (결과파일 미전달 400 수정).
 // - 2026-08-16: 상세 파일 — 의뢰(구강스캔)/작업(어벗디자인·보철물). 완료 토스트 문구.
+// - 2026-08-16: 보철 완료 후 카드 — 업로드 2개 비활성·오른쪽 취소로 의뢰수락 재오픈.
 // - 2026-08-16: 디자인 STL 업로드 후 버튼 라벨「어벗 생산 취소」(준비 단계만).
 // - 2026-08-15: 수신 카드 → PracticeTransferLabReceiveCard(어벗츠기공소·lab 공통).
 // - 2026-08-15: 디자인 STL 업로드 후 버튼 라벨「어벗생산 취소」(준비 단계만).
@@ -115,6 +117,7 @@ import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/Lab
 import { PracticeTransferLabReceiveCard } from "@/shared/components/practice/PracticeTransferLabReceiveCard";
 import { parsePracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
+import { parseStarDowngrade, parseLabRatingSummary } from "@/shared/practice/practiceLabRating";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import {
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
@@ -136,6 +139,7 @@ import {
 } from "@/shared/practice/transferMemo";
 import {
   getPracticeTransferLabReceiveDisplayStatus,
+  practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
   type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
@@ -585,6 +589,7 @@ export function RequestorPracticeReceivePage({
               abutmentProductionStartedAt: productionRaw.abutmentProductionStartedAt
                 ? String(productionRaw.abutmentProductionStartedAt)
                 : null,
+              abutmentPastReady: Boolean(productionRaw.abutmentPastReady),
               confirmedAt: productionRaw.confirmedAt
                 ? String(productionRaw.confirmedAt)
                 : null,
@@ -672,6 +677,8 @@ export function RequestorPracticeReceivePage({
           resultFileCount: Number(r.resultFileCount || resultFiles.length || 0),
           resultFiles,
           feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
+          starDowngrade: parseStarDowngrade(r.starDowngrade),
+          labRatingSummary: parseLabRatingSummary(r.labRatingSummary),
           isRemake: Boolean(
             r.isRemake ||
               (r.remake &&
@@ -709,6 +716,7 @@ export function RequestorPracticeReceivePage({
         designReadyAt: null,
         labDesignConfirmedAt: null,
         abutmentProductionStartedAt: null,
+        abutmentPastReady: false,
         confirmedAt: null,
       };
       const clearedAutoMatch = transfer.autoMatch
@@ -744,7 +752,7 @@ export function RequestorPracticeReceivePage({
         Boolean(transfer.isAccepted) ||
         Boolean(transfer.isDownloaded) ||
         Boolean(String(transfer.requestorDownloadedAt || "").trim());
-      const started = Boolean(transfer.production?.abutmentProductionStartedAt);
+      const started = practiceTransferAbutmentMachiningStarted(transfer);
       const relatedIds = transfer.production?.relatedRequestIds || [];
       if (!accepted || started || designCount > 0 || relatedIds.length === 0) {
         return false;
@@ -1799,6 +1807,10 @@ export function RequestorPracticeReceivePage({
           abutmentProductionStartedAt: productionRawFromRes?.abutmentProductionStartedAt
             ? String(productionRawFromRes.abutmentProductionStartedAt)
             : transfer.production?.abutmentProductionStartedAt || null,
+          abutmentPastReady:
+            productionRawFromRes?.abutmentPastReady != null
+              ? Boolean(productionRawFromRes.abutmentPastReady)
+              : Boolean(transfer.production?.abutmentPastReady),
           confirmedAt: autoConfirmedAt,
           relatedRequestIds: Array.isArray(productionRawFromRes?.relatedRequestIds)
             ? productionRawFromRes.relatedRequestIds.map((id) => String(id))
@@ -1919,6 +1931,10 @@ export function RequestorPracticeReceivePage({
               abutmentProductionStartedAt: productionRaw.abutmentProductionStartedAt
                 ? String(productionRaw.abutmentProductionStartedAt)
                 : transfer.production?.abutmentProductionStartedAt || null,
+              abutmentPastReady:
+                productionRaw.abutmentPastReady != null
+                  ? Boolean(productionRaw.abutmentPastReady)
+                  : Boolean(transfer.production?.abutmentPastReady),
               designReadyAt: productionRaw.designReadyAt
                 ? String(productionRaw.designReadyAt)
                 : transfer.production?.designReadyAt || null,
@@ -1973,6 +1989,15 @@ export function RequestorPracticeReceivePage({
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
       if (transfer.autoMatch?.completed) return false;
+      if (practiceTransferAbutmentMachiningStarted(transfer)) {
+        toast({
+          title: "의뢰 수락 취소 불가",
+          description:
+            "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
 
       const isAuto = String(transfer.matchingMode || "") === "auto";
       const canceledAt = new Date().toISOString();
@@ -2571,6 +2596,7 @@ export function RequestorPracticeReceivePage({
             transfer.production?.labDesignConfirmedAt || nowIso,
           skipDesignConfirm: true,
           abutmentProductionStartedAt: null,
+          abutmentPastReady: false,
         };
 
         setTransfers((prev) =>
@@ -2680,17 +2706,17 @@ export function RequestorPracticeReceivePage({
         );
 
         toast({
-          title: "어벗 생산 취소",
+          title: "작업 단계 되돌림",
           description:
-            "제조사 주문이 취소되었습니다. 어벗디자인·보철을 다시 업로드할 수 있습니다.",
+            "발송(작업완료)을 의뢰수락으로 되돌렸습니다. 어벗·보철을 다시 올리거나 작업 취소할 수 있습니다.",
         });
       } catch (error) {
         toast({
-          title: "어벗 생산 취소 실패",
+          title: "작업 단계 되돌림 실패",
           description:
             error instanceof Error
               ? error.message
-              : "어벗 생산 취소 중 오류가 발생했습니다.",
+              : "작업 단계를 되돌리는 중 오류가 발생했습니다.",
           variant: "destructive",
         });
       } finally {
@@ -3328,6 +3354,9 @@ export function RequestorPracticeReceivePage({
           selectedTransfer?.autoMatch?.completed ||
             selectedTransfer?.production?.confirmedAt ||
             selectedTransfer?.manufacturerStage === "작업완료",
+        )}
+        abutmentMachiningStarted={practiceTransferAbutmentMachiningStarted(
+          selectedTransfer,
         )}
         remainingLabel={null}
         onAccept={

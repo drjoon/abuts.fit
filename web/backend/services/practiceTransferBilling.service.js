@@ -22,6 +22,7 @@
 // - 2026-08-16: mark-complete 경로 — release 저널/수수료 parallel, resolveRevenueOwners parallel.
 // - 2026-08-16: chargePracticeTransferLabShipping — 기공소 출발 배송비(지그 면제).
 // - 2026-08-15: 청구 완료 목록 견적에 autoMatchBudget 재부착 금지(확정 기공비 유지).
+// - 2026-08-16: 자동매칭 수신 견적 — 공개풀·시청 기공소여도 v4 고정수가·autoMatchBudget 유지.
 import mongoose, { Types } from "mongoose";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import {
@@ -2403,24 +2404,30 @@ export async function buildFeeQuotesForTransferDocs({
     );
     const matchingMode =
       String(doc?.matchingMode || "").trim() === "auto" ? "auto" : "direct";
-    const feeLabFeeMultiplier = openPool
-      ? asOfLabFeeMultiplier
-      : snapLabFeeMultiplier > 1 || matchingMode === "direct"
-        ? snapLabFeeMultiplier
-        : asOfLabFeeMultiplier;
-    const remakeLabFeeMultiplier = liveLabFeeMultiplier;
     const storedBudget = normalizeAutoMatchBudget(billing?.autoMatchBudget);
-    const autoScheduleMax =
-      noLab && storedBudget
-        ? buildScheduleFromAutoMatchBudget(storedBudget, "max")
-        : null;
+    // v4 자동매칭: 수신 기공소가 있어도 플랫폼 고정수가(별점배수) — 기공소 스케줄/할증 금지.
+    const useAutoFixedFee = matchingMode === "auto" && Boolean(storedBudget);
+    const feeLabFeeMultiplier = useAutoFixedFee
+      ? 1
+      : openPool
+        ? asOfLabFeeMultiplier
+        : snapLabFeeMultiplier > 1 || matchingMode === "direct"
+          ? snapLabFeeMultiplier
+          : asOfLabFeeMultiplier;
+    const remakeLabFeeMultiplier = liveLabFeeMultiplier;
+    const autoScheduleMax = storedBudget
+      ? buildScheduleFromAutoMatchBudget(storedBudget, "max")
+      : null;
+    const feeSchedule = useAutoFixedFee
+      ? autoScheduleMax || LAB_FEE_SCHEDULE_ZEROS
+      : noLab
+        ? autoScheduleMax || LAB_FEE_SCHEDULE_ZEROS
+        : resolveLabFeeScheduleSource(schedule);
     const abutmentPrices = abutmentPricesForPractice(practiceId);
     const remakeFees = computePracticeTransferRetailFees({
       toothWorks,
       implantFavorites,
-      labFeeSchedule: noLab
-        ? autoScheduleMax || LAB_FEE_SCHEDULE_ZEROS
-        : resolveLabFeeScheduleSource(schedule),
+      labFeeSchedule: feeSchedule,
       abutmentPricingTier,
       abutmentPrices,
       remake: true,
@@ -2430,9 +2437,7 @@ export async function buildFeeQuotesForTransferDocs({
     const fees = computePracticeTransferRetailFees({
       toothWorks,
       implantFavorites,
-      labFeeSchedule: noLab
-        ? autoScheduleMax || LAB_FEE_SCHEDULE_ZEROS
-        : resolveLabFeeScheduleSource(schedule),
+      labFeeSchedule: feeSchedule,
       abutmentPricingTier,
       abutmentPrices,
       remake,
@@ -2441,7 +2446,7 @@ export async function buildFeeQuotesForTransferDocs({
     });
 
     let autoMatchBudgetOut = null;
-    if (noLab && storedBudget) {
+    if (useAutoFixedFee || (noLab && storedBudget)) {
       const minFees = computePracticeTransferRetailFees({
         toothWorks,
         implantFavorites,
@@ -2486,7 +2491,7 @@ export async function buildFeeQuotesForTransferDocs({
       abutsRevenueAmount: remakeSplit.abutsRevenueAmount,
       labTradingPartnerId: partner?._id ? String(partner._id) : null,
       billed: false,
-      usedDefaultSchedule: !quoteLabId,
+      usedDefaultSchedule: useAutoFixedFee || !quoteLabId,
       isRemake: true,
       autoMatchBudget: autoMatchBudgetOut,
     });
@@ -2522,7 +2527,7 @@ export async function buildFeeQuotesForTransferDocs({
           abutsRevenueAmount,
           labTradingPartnerId: partner?._id ? String(partner._id) : null,
           billed: false,
-          usedDefaultSchedule: !quoteLabId,
+          usedDefaultSchedule: useAutoFixedFee || !quoteLabId,
           isRemake: remake,
           autoMatchBudget: autoMatchBudgetOut,
         }),

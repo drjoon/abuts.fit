@@ -2,10 +2,17 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-08-16: abutmentPastReady — 가공 시작 시 생산/수락 취소 불가 판정.
+// - 2026-08-16: 별점 다운그레이드(starDowngrade) 수신 타입.
+// - 2026-08-16: labRatingSummary(내 별점·평가 횟수) 수신 타입.
 // - 2026-08-16: 생산 취소 시 confirmedAt·autoMatch.completed·manufacturerStage 클리어 →「의뢰수락」.
 // - 2026-08-15: 기공의뢰수신(어벗츠기공소·일반 lab) 카드 SSOT — 상태·CA 판정·타입.
 import { parseToothWorks } from "@/shared/practice/transferMemo";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
+import type {
+  LabRatingSummary,
+  StarDowngradeInfo,
+} from "@/shared/practice/practiceLabRating";
 
 export type PracticeTransferLabReceiveFile = {
   id: string;
@@ -65,6 +72,8 @@ export type PracticeTransferLabReceiveItem = {
     labDesignConfirmedAt?: string | null;
     practiceDesignConfirmedAt?: string | null;
     abutmentProductionStartedAt?: string | null;
+    /** 연동 CA가 준비 단계를 지남(가공 등) — 생산/수락 취소 불가 */
+    abutmentPastReady?: boolean;
     confirmedAt?: string | null;
     relatedRequestIds?: string[];
   } | null;
@@ -79,6 +88,10 @@ export type PracticeTransferLabReceiveItem = {
   resultFileCount?: number;
   resultFiles?: PracticeTransferLabReceiveFile[];
   feeQuote?: PracticeTransferFeeQuote | null;
+  /** 자동매칭 — 내 별점 수가보다 의뢰 수가가 낮을 때 */
+  starDowngrade?: StarDowngradeInfo | null;
+  /** 수신 기공소 본인 별점 요약 */
+  labRatingSummary?: LabRatingSummary | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
 };
@@ -179,6 +192,23 @@ export function practiceTransferHasCustomAbutment(
   }
   return parseToothWorks(transfer.toothWorksSummary).some((row) =>
     Boolean(row.customAbutment),
+  );
+}
+
+export function practiceTransferAbutmentMachiningStarted(
+  transfer:
+    | {
+        production?: {
+          abutmentProductionStartedAt?: string | null;
+          abutmentPastReady?: boolean | null;
+        } | null;
+      }
+    | null
+    | undefined,
+) {
+  return Boolean(
+    transfer?.production?.abutmentProductionStartedAt ||
+      transfer?.production?.abutmentPastReady,
   );
 }
 

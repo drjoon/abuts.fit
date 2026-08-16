@@ -10,6 +10,7 @@
 // - 2026-08-16: 5점제. 자동매칭 최소 선택 2~5. 평가 3회 미만은 유효 3점. 기공비 배수 2/3/4/5→0.9/1/1.1/1.2.
 // - 2026-08-16: 1점도 참여 가능(하한 1). 기공비 배수 1→×0.8. 우리치과 1점 하드 차단 제거.
 // - 2026-08-16: 평가 3회 이하→유효 3점(유예 상수 3).
+// - 2026-08-16: 별점 다운그레이드 — 유효별 수가배수 > 의뢰 별점배수일 때 표시 페이로드.
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -127,6 +128,47 @@ export function toLabRatingSummaryApi(aggregatedRow) {
     stars,
     ratingCount,
     effectiveStars: effectiveLabStars({ stars: starsRaw, ratingCount }),
+  };
+}
+
+/**
+ * 자동매칭 별점 다운그레이드.
+ * 기공소 유효 별점의 수가배수 > 의뢰(자동매칭) 별점 배수이면 표시용 페이로드.
+ * 가격 차이는 제시 기공비 × (내배수/의뢰배수) 추정.
+ */
+export function resolveStarDowngrade({
+  matchingMode,
+  labEffectiveStars,
+  autoMatchStars,
+  offeredLabFee = 0,
+} = {}) {
+  if (String(matchingMode || "").trim() !== "auto") return null;
+  const requestStars = normalizePracticeLabStars(autoMatchStars);
+  if (requestStars == null) return null;
+
+  const labEffRaw = Number(labEffectiveStars);
+  const labEff = Number.isFinite(labEffRaw) && labEffRaw > 0
+    ? labEffRaw
+    : DEFAULT_EFFECTIVE_LAB_STARS;
+  const labMult = feeMultiplierForStars(labEff);
+  const requestMult = feeMultiplierForStars(requestStars);
+  if (!(labMult > requestMult)) return null;
+
+  const offered = Math.max(0, Math.round(Number(offeredLabFee) || 0));
+  const expected =
+    offered > 0 && requestMult > 0
+      ? Math.max(0, Math.round((offered * labMult) / requestMult))
+      : 0;
+  const delta = Math.max(0, expected - offered);
+
+  return {
+    labEffectiveStars: labEff,
+    autoMatchStars: requestStars,
+    labFeeMultiplier: labMult,
+    autoMatchFeeMultiplier: requestMult,
+    offeredLabFee: offered,
+    expectedLabFeeAtOwnStars: expected,
+    labFeeDeltaWon: delta,
   };
 }
 

@@ -4,6 +4,11 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
 // change-log:
+// - 2026-08-16: 어벗 가공 시작(준비 아님)이면 어벗 생산·의뢰 수락 취소 숨김.
+// - 2026-08-16: 취소 라벨 — 수락중「의뢰 수락 취소」·보철완료후「작업 완료 취소」.
+// - 2026-08-16: 보철 완료(발송) 후 — 어벗·보철 CTA 비활성 + 오른쪽「취소」만(의뢰수락 재오픈).
+// - 2026-08-16: 별점 다운그레이드 배너 — 내 별점·의뢰 별점·수가 차이.
+// - 2026-08-16: 상태 뱃지 오른쪽 끝 — 내 별점·평가 횟수.
 // - 2026-08-16: 어벗생산의뢰와 동일 크기·스타일의 디자인SW·아노 메타 뱃지.
 // - 2026-08-16: CTA 라벨「어벗 생산 취소」.
 // - 2026-08-16: stuck(디자인 없음+완료 플래그)도 「어벗 생산 취소」·재오픈 후 업로드 CTA.
@@ -12,7 +17,7 @@
 // - 2026-08-15: 업로드 완료 안내 박스(어벗생산 취소 문구) 제거.
 // - 2026-08-15: 기공의뢰수신 카드 SSOT — 어벗츠기공소·일반 lab 동일 색·스타일·문구.
 import type { KeyboardEvent, MouseEvent } from "react";
-import { Building2, UploadCloud, X } from "lucide-react";
+import { Building2, Star, UploadCloud, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,8 +41,14 @@ import {
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import {
+  AUTO_MATCH_RATING_COUNT_GRACE,
+  DEFAULT_EFFECTIVE_LAB_STARS,
+  formatLabStarsLabel,
+} from "@/shared/practice/practiceLabRating";
+import {
   countPracticeTransferDesignFiles,
   getPracticeTransferLabReceiveDisplayStatus,
+  practiceTransferAbutmentMachiningStarted,
   practiceTransferHasCustomAbutment,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
@@ -55,6 +66,10 @@ const formatDateTime = (value: unknown) => {
     hour12: false,
   });
 };
+
+const formatWonCompact = (value: number) =>
+  `₩${Math.max(0, Math.round(value)).toLocaleString("ko-KR")}`;
+
 
 export type PracticeTransferLabReceiveCardProps = {
   transfer: PracticeTransferLabReceiveItem;
@@ -109,9 +124,7 @@ export function PracticeTransferLabReceiveCard({
     Boolean(transfer.isDownloaded) ||
     Boolean(String(transfer.requestorDownloadedAt || "").trim()) ||
     Boolean(String(transfer.requestorAcceptedAt || "").trim());
-  const productionStarted = Boolean(
-    transfer.production?.abutmentProductionStartedAt,
-  );
+  const productionStarted = practiceTransferAbutmentMachiningStarted(transfer);
   /** 디자인만 지워지고 작업완료/생산진행 플래그가 남은 재작업 가능 상태 */
   const needsStageReopen =
     hasCa &&
@@ -145,6 +158,16 @@ export function PracticeTransferLabReceiveCard({
     orderDate: transfer.orderDate,
     createdAt: transfer.createdAt,
   });
+  const starDowngrade = transfer.starDowngrade || null;
+  const hasStarDowngrade = Boolean(starDowngrade);
+  const labRatingSummary = transfer.labRatingSummary || null;
+  const myStarsDisplay =
+    labRatingSummary &&
+    labRatingSummary.ratingCount > AUTO_MATCH_RATING_COUNT_GRACE &&
+    labRatingSummary.stars != null
+      ? labRatingSummary.stars
+      : labRatingSummary?.effectiveStars ?? DEFAULT_EFFECTIVE_LAB_STARS;
+  const myRatingCount = labRatingSummary?.ratingCount ?? 0;
 
   const onCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -153,6 +176,7 @@ export function PracticeTransferLabReceiveCard({
     }
   };
 
+  /** 수락 중(업로드 가능): 어벗디자인 있으면「어벗 생산 취소」 */
   const productionCancelButton = canCancelAbutmentProduction ? (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -174,6 +198,50 @@ export function PracticeTransferLabReceiveCard({
       </TooltipContent>
     </Tooltip>
   ) : null;
+
+  /** 보철 완료·발송 단계: 3버튼 유지, 업로드 2개 비활성, 오른쪽 취소만(의뢰수락 재오픈) */
+  const completedStageCancelActions =
+    !showWorkActions && canCancelAbutmentProduction ? (
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled
+          className="focus-visible:ring-0 focus-visible:ring-offset-0"
+        >
+          <UploadCloud className="h-4 w-4" />
+          어벗디자인 파일 업로드
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled
+          className="focus-visible:ring-0 focus-visible:ring-offset-0"
+        >
+          <UploadCloud className="h-4 w-4" />
+          보철 업로드 & 작업완료
+        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={cardBusy}
+              onClick={(event) => void onAbutmentProductionCancel(event)}
+            >
+              {cardBusy ? "처리 중..." : "작업 완료 취소"}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs text-xs">
+            발송(작업완료) 단계를 의뢰수락으로 되돌립니다. 이후 어벗·보철을
+            다시 올리거나 작업 취소할 수 있습니다. 제조사 준비 단계에서만
+            가능합니다.
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    ) : null;
 
   const body = (
     <>
@@ -230,6 +298,26 @@ export function PracticeTransferLabReceiveCard({
               리메이크
             </Badge>
           ) : null}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                className="shrink-0 gap-1 whitespace-nowrap border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-50"
+              >
+                <Star className="h-3 w-3 fill-amber-500 text-amber-500" aria-hidden />
+                <span className="font-semibold">
+                  {formatLabStarsLabel(myStarsDisplay)}
+                </span>
+                <span className="font-normal text-amber-800/80">
+                  · 평가 {myRatingCount}회
+                </span>
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-xs">
+              내 별점(전체 치과 평가 합산). 평가{" "}
+              {AUTO_MATCH_RATING_COUNT_GRACE + 1}회부터 실제 평균이 적용됩니다.
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -277,6 +365,39 @@ export function PracticeTransferLabReceiveCard({
           density="card"
           skipJig={Boolean(transfer.production?.skipJig)}
         />
+      ) : null}
+
+      {starDowngrade ? (
+        <div
+          role="note"
+          className="mt-2 rounded-md border border-orange-400 bg-orange-50 px-3 py-2 text-xs text-orange-950"
+        >
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
+            <span className="inline-flex items-center gap-1 text-orange-700">
+              <Star className="h-3.5 w-3.5 fill-current" aria-hidden />
+              별점 다운그레이드
+            </span>
+            <span className="text-orange-800/80 font-normal">
+              내 별점 수가보다 낮은 의뢰입니다. 수락 여부를 선택하세요.
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded bg-orange-200/80 px-2 py-0.5 font-semibold text-orange-950">
+              내 별점 {formatLabStarsLabel(starDowngrade.labEffectiveStars)}
+            </span>
+            <span className="text-orange-700" aria-hidden>
+              →
+            </span>
+            <span className="inline-flex items-center rounded bg-amber-100 px-2 py-0.5 font-semibold text-amber-950 ring-1 ring-amber-400/60">
+              자동매칭 {formatLabStarsLabel(starDowngrade.autoMatchStars)}
+            </span>
+            {starDowngrade.labFeeDeltaWon > 0 ? (
+              <span className="inline-flex items-center rounded bg-rose-100 px-2 py-0.5 font-semibold text-rose-800 ring-1 ring-rose-300/70">
+                수가 {formatWonCompact(starDowngrade.labFeeDeltaWon)} 낮음
+              </span>
+            ) : null}
+          </div>
+        </div>
       ) : null}
 
       {showWorkActions &&
@@ -351,21 +472,40 @@ export function PracticeTransferLabReceiveCard({
               {PRACTICE_ACCEPTED_HINT ? ` ${PRACTICE_ACCEPTED_HINT}` : ""}
             </TooltipContent>
           </Tooltip>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={cardBusy}
-            onClick={(event) => void onRelease(event)}
-          >
-            취소
-          </Button>
+          {productionStarted ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled
+                  >
+                    의뢰 수락 취소
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">
+                어벗 가공이 시작된 뒤에는 의뢰 수락을 취소할 수 없습니다. 제조사가
+                준비 단계일 때만 가능합니다.
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={cardBusy}
+              onClick={(event) => void onRelease(event)}
+            >
+              {cardBusy ? "처리 중..." : "의뢰 수락 취소"}
+            </Button>
+          )}
         </div>
-      ) : productionCancelButton ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {productionCancelButton}
-        </div>
-      ) : null}
+      ) : (
+        completedStageCancelActions
+      )}
     </>
   );
 
@@ -377,11 +517,17 @@ export function PracticeTransferLabReceiveCard({
         acceptedHint={PRACTICE_ACCEPTED_HINT}
         showDefaultUi={false}
         className={cn(
-          "w-full cursor-pointer rounded-lg border-2 border-dashed border-slate-300 p-4 text-left transition",
-          "hover:bg-muted/20",
+          "w-full cursor-pointer rounded-lg border-2 border-dashed p-4 text-left transition",
+          hasStarDowngrade
+            ? "border-orange-400 hover:bg-orange-50/50"
+            : "border-slate-300 hover:bg-muted/20",
           dimRejected && "opacity-40 hover:opacity-55",
         )}
-        activeClassName="border-primary bg-primary-soft/40"
+        activeClassName={
+          hasStarDowngrade
+            ? "border-orange-500 bg-orange-50/70"
+            : "border-primary bg-primary-soft/40"
+        }
         onFiles={onDropFiles}
       >
         <div
@@ -405,7 +551,10 @@ export function PracticeTransferLabReceiveCard({
       onClick={onOpen}
       onKeyDown={onCardKeyDown}
       className={cn(
-        "w-full cursor-pointer rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "w-full cursor-pointer rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        hasStarDowngrade
+          ? "border-orange-400 bg-orange-50/40 hover:border-orange-500 hover:bg-orange-50/70"
+          : "hover:border-primary/40 hover:bg-muted/20",
         dimRejected && "opacity-40 hover:opacity-55",
       )}
       data-transfer-card="true"
