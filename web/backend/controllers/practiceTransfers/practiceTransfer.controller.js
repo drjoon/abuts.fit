@@ -118,6 +118,7 @@ import { resolvePracticeTransferManufacturerStage } from "../../utils/practiceTr
 // - 2026-08-14: mark-release — updateOne + 사이드이펙트 비동기(채팅/emit은 응답 후).
 // - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김.
 // - 2026-08-14: mark-accepted — 치과 practice:transfer-updated에 확정 feeQuote 포함.
+// - 2026-08-16: mark-reject 지정=작업취소(치과 취소·휴지통 아님). mark-release auto=자동매칭 재공개.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -4406,8 +4407,8 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         ? previousLabName
         : "기공소";
     const systemChatContent = isAuto
-      ? "작업을 취소했습니다. 자동 매칭으로 다시 공개됩니다."
-      : `기공소「${labLabel}」이(가) 작업을 취소했습니다. 다시 의뢰하거나 기공소에 안내할 수 있습니다.`;
+      ? "작업을 취소했습니다. 자동 매칭으로 다른 기공소에 다시 공개됩니다."
+      : `기공소「${labLabel}」이(가) 작업을 취소했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다.`;
 
     const realtimePayload = {
       action: isAuto ? "auto-match-released" : "accept-released",
@@ -4423,7 +4424,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       requestorDownloadedAt: doc.requestorDownloadedAt,
       requestorAcceptedAt: doc.requestorDownloadedAt,
       status: String(doc.status || "active").trim(),
-      manufacturerStage: "작업취소",
+      manufacturerStage: isAuto ? "자동매칭" : "작업취소",
       workCanceledAt: doc.workCanceledAt || now,
       updatedAt: now,
       source: "workCancelRelease",
@@ -4535,8 +4536,8 @@ export async function markReceivedPracticeTransferRelease(req, res) {
 
 /**
  * 기공소 수락 전 「거부」.
- * - 자동매칭 공개 풀: 이 기공소만 declinedLabAnchorIds에 넣고 수신함에서 제외(의뢰는 유지).
- * - 지정 기공소: 의뢰를 canceled 처리(치과 취소와 동일 상태, 에스크로 롤백).
+ * - 자동매칭 공개 풀: 이 기공소만 declinedLabAnchorIds에 넣고 목록에서 제외(의뢰는 타 기공소에 유지).
+ * - 지정 기공소: canceled(휴지통)로 보내지 않고 작업취소로 둔다. 치과 「취소」·기공소 「거부」.
  */
 export async function markReceivedPracticeTransferReject(req, res) {
   try {
@@ -4692,7 +4693,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
       });
     }
 
-    // 지정 기공소(또는 이미 배정된 자동매칭): 의뢰 취소
+    // 지정 기공소: 활성 유지 + 작업취소(치과 「취소」). 기공소 뷰는 labRejected로 「거부」.
     const targetId = String(doc.targetLabAnchorId || "").trim();
     if (targetId && targetId !== labAnchorId && role !== "admin") {
       return res.status(403).json({
@@ -4711,43 +4712,81 @@ export async function markReceivedPracticeTransferReject(req, res) {
       );
     }
 
-    doc.status = "canceled";
-    doc.canceledAt = now;
-    doc.canceledBy = req.user?._id || null;
+    const prevBilling =
+      doc.billing && typeof doc.billing === "object" ? doc.billing : {};
+    const billingReset = {
+      labFeeTotal: 0,
+      abutmentRetailTotal: 0,
+      abutmentQty: 0,
+      total: 0,
+      isTradingPartner: false,
+      relationshipKind: "none",
+      feeRateApplied: 0,
+      labFeeMultiplier: Number(prevBilling.labFeeMultiplier || 1),
+      labTradingPartnerId: null,
+      labSettlementAmount: 0,
+      abutsRevenueAmount: 0,
+      billedAt: null,
+      heldAt: null,
+      heldTotal: 0,
+      holdFromPaid: 0,
+      holdFromFreeRequest: 0,
+      holdFromFreeShipping: 0,
+      settledAt: null,
+    };
+
+    doc.requestorDownloadedAt = null;
+    doc.requestorDownloadedBy = null;
+    doc.workCanceledAt = now;
+    doc.workCanceledBy = req.user?._id || null;
     doc.labRejectedAt = now;
     doc.labRejectedByLabAnchorId = labOid;
+    doc.billing = billingReset;
+
     await PracticeTransfer.updateOne(
       { _id: doc._id },
       {
         $set: {
-          status: "canceled",
-          canceledAt: now,
-          canceledBy: req.user?._id || null,
+          requestorDownloadedAt: null,
+          requestorDownloadedBy: null,
+          workCanceledAt: now,
+          workCanceledBy: req.user?._id || null,
           labRejectedAt: now,
           labRejectedByLabAnchorId: labOid,
+          billing: billingReset,
         },
       },
     );
 
     const transferId = String(doc.transferId || "").trim();
     const transferMongoId = String(doc._id || "").trim();
+    const labLabel =
+      String(doc.targetLabName || "").trim() &&
+      String(doc.targetLabName || "").trim() !== AUTO_MATCH_LAB_DISPLAY_NAME
+        ? String(doc.targetLabName || "").trim()
+        : "기공소";
     const realtimePayload = {
-      action: "rejected",
+      action: "lab-rejected",
       transferId,
       transferMongoId,
       targetLabAnchorId: labAnchorId,
+      targetLabName: String(doc.targetLabName || "").trim(),
       matchingMode: isAuto ? "auto" : "direct",
       practiceUserId: String(doc.practiceUserId || "").trim() || null,
       unreadCount: null,
-      status: "canceled",
-      manufacturerStage: "거부",
+      status: String(doc.status || "active").trim(),
+      manufacturerStage: "작업취소",
       labRejected: true,
       labRejectedAt: now,
+      workCanceledAt: now,
       updatedAt: now,
       source: "labReject",
     };
 
-    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", {
+      ...realtimePayload,
+      manufacturerStage: "거부",
+    });
 
     void (async () => {
       try {
@@ -4755,24 +4794,22 @@ export async function markReceivedPracticeTransferReject(req, res) {
           postPracticeTransferSystemChatMessage({
             transferMongoId: doc._id,
             senderUserId: req.user?._id,
-            content: "기공소가 의뢰를 거부했습니다.",
+            content: `기공소「${labLabel}」이(가) 의뢰를 거부했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다.`,
             systemEvent: "work_reject",
           }),
           emitPracticeTransferEventToPracticeUsers({
             practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
             type: "practice:transfer-updated",
+            payload: realtimePayload,
+            extraUserIds: [doc.practiceUserId],
+          }),
+          emitPracticeTransferEventToRequestorUsers({
+            targetLabAnchorId: labAnchorId,
+            type: "practice:transfer-updated",
             payload: {
               ...realtimePayload,
-              action: "canceled",
-              manufacturerStage: "취소",
-              ...(isAuto
-                ? redactAutoMatchLabIdentity("auto", {
-                    targetLabName: String(doc.targetLabName || "").trim(),
-                    targetLabAnchorId: labAnchorId,
-                  })
-                : {}),
+              manufacturerStage: "거부",
             },
-            extraUserIds: [doc.practiceUserId],
           }),
         ]);
       } catch (err) {
@@ -4791,9 +4828,10 @@ export async function markReceivedPracticeTransferReject(req, res) {
         transferId,
         rejected: true,
         matchingMode: isAuto ? "auto" : "direct",
-        canceled: true,
+        canceled: false,
         labRejected: true,
         labRejectedAt: now,
+        workCanceledAt: now,
         manufacturerStage: "거부",
       },
     });

@@ -76,6 +76,7 @@
  * - 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지(최근의뢰·전체보기).
  * - 2026-08-16: 전체보기에서 휴지통 확인 후 최근의뢰 모달로 복귀(중첩 Confirm에 닫히지 않음).
  * - 2026-08-16: 기공소 거부·이미 취소 건이 「의뢰」로 남는 휴지통 이동 실패 수정.
+ * - 2026-08-16: 기공소 취소 — 자동매칭은 재공개, 지정은 치과 「취소」로 다음 조치 유도.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -5169,11 +5170,12 @@ export const PracticeFileTransferPage = ({
         void loadPracticeTransferDraftList();
       }
 
-      // 기공소 작업취소(수락 해제): 토스트 + 열린 상세 모달 상태 갱신
+      // 기공소 작업취소·지정 거부: 토스트 + 열린 상세 모달 상태 갱신
       // (자동매칭 데드라인 만료 auto-match-released는 제외)
       const releaseSource = String(payload.source || "").trim();
       const isWorkCancelRelease =
         action === "accept-released" ||
+        action === "lab-rejected" ||
         (action === "auto-match-released" && releaseSource === "workCancelRelease");
       if (isWorkCancelRelease) {
         const isAutoRelease = String(payload.matchingMode || "").trim() === "auto";
@@ -5181,14 +5183,23 @@ export const PracticeFileTransferPage = ({
           ? ""
           : String(payload.previousLabName || "").trim() ||
             String(payload.targetLabName || "").trim();
+        const isLabReject = action === "lab-rejected" || releaseSource === "labReject";
         toast({
-          title: "작업 취소",
-          description: releaseLabName
-            ? `기공소「${releaseLabName}」이(가) 작업을 취소했습니다. 다시 의뢰할 수 있습니다.`
-            : "작업을 취소했습니다. 다시 의뢰할 수 있습니다.",
+          title: isLabReject ? "기공소 거부" : "작업 취소",
+          description: isAutoRelease
+            ? "기공소가 작업을 취소했습니다. 다른 기공소에 다시 공개됩니다."
+            : releaseLabName
+              ? `기공소「${releaseLabName}」이(가) ${
+                  isLabReject ? "의뢰를 거부" : "작업을 취소"
+                }했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다.`
+              : isLabReject
+                ? "기공소가 의뢰를 거부했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다."
+                : "작업을 취소했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다.",
         });
         const releaseTransferId = String(payload.transferId || "").trim();
-        const stageRaw = String(payload.manufacturerStage || "작업취소").trim() || "작업취소";
+        const stageRaw =
+          String(payload.manufacturerStage || "").trim() ||
+          (isAutoRelease ? "자동매칭" : "작업취소");
         const stage = toStatusLabel(stageRaw);
         if (releaseTransferId) {
           setRecentRequests((prev) =>
@@ -5217,7 +5228,7 @@ export const PracticeFileTransferPage = ({
               ...prev,
               status: stage,
               ...(labName ? { targetLab: labName } : {}),
-              targetLabAnchorId: labAnchorId,
+              targetLabAnchorId: isAutoRelease ? "" : labAnchorId,
             };
           });
         }

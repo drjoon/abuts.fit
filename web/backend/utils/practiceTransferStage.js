@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/practice/practiceRecentTransferList.ts
 // - 2026-08-15: 대시보드 버킷에 거부 추가. 수락/거부·완료/취소 병기.
 // - 2026-08-16: 공개풀 decline의 labRejectedAt은 미배정 취소 시 「취소」(거부 아님).
+// - 2026-08-16: 자동매칭 재공개(openPool)는 작업취소보다 우선 → 「자동매칭」.
 import {
   isAutoMatchMode,
   toAutoMatchApiFields,
@@ -52,14 +53,15 @@ export const resolvePracticeTransferManufacturerStage = (
   }
   if (production?.confirmedAt) return "생산진행";
   if (autoFields.autoMatch?.completed) return "작업완료";
-  // 기공소 작업취소(수락 해제) — 치과 휴지통 취소와 구분(작업취소)
+  // 자동매칭 공개 풀(작업취소 재공개 포함) — 치과·타 기공소에는 「자동매칭」
+  if (openPool) return "자동매칭";
+  // 지정 기공소 작업취소·수락전 거부(활성 유지) — 치과 「취소」 뱃지
   if (transferDoc?.workCanceledAt && !transferDoc?.requestorDownloadedAt) {
     return "작업취소";
   }
   // requestorDownloadedAt = 의뢰수락 시각(레거시 필드명). 파일 다운로드와 무관.
-  if (transferDoc?.requestorDownloadedAt && !openPool) return "의뢰수락";
-  if (transferDoc?.requestorReadAt && !openPool) return "수신완료";
-  if (openPool) return "자동매칭";
+  if (transferDoc?.requestorDownloadedAt) return "의뢰수락";
+  if (transferDoc?.requestorReadAt) return "수신완료";
   return "발송완료";
 };
 

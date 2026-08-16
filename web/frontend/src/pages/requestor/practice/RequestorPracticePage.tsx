@@ -56,6 +56,7 @@
 // - 2026-08-13: 채팅/의뢰 파일 다운로드 프로그레스바.
 // - 2026-08-15: 기공기간 5일 미만 빨간 표시·거부 가능 툴팁(목록·상세).
 // - 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지(목록).
+// - 2026-08-16: 지정 거부=치과 취소 상태 전달(휴지통 아님). 자동매칭 거부는 타 기공소 공개.
 import {
   useCallback,
   useEffect,
@@ -1985,10 +1986,17 @@ export function RequestorPracticeReceivePage({
           data.labRejectedAt != null
             ? String(data.labRejectedAt)
             : new Date().toISOString();
+        const workCanceledAt =
+          data.workCanceledAt != null
+            ? String(data.workCanceledAt)
+            : !isOpenPool
+              ? rejectedAt
+              : transfer.workCanceledAt || null;
 
         applyAcceptedLocalPatch(transfer, {
           labRejected: true,
           labRejectedAt: rejectedAt,
+          workCanceledAt,
           manufacturerStage: "거부",
           status: canceled ? "canceled" : transfer.status,
           autoMatch: transfer.autoMatch
@@ -2026,9 +2034,9 @@ export function RequestorPracticeReceivePage({
 
         toast({
           title: "의뢰 거부",
-          description: canceled
-            ? "의뢰를 거부해 취소 처리했습니다."
-            : "의뢰를 거부했습니다. 다른 기공소에 계속 공개됩니다.",
+          description: isOpenPool
+            ? "의뢰를 거부했습니다. 다른 기공소에 계속 공개됩니다."
+            : "의뢰를 거부했습니다. 치과에 취소 상태로 전달됩니다.",
         });
         return true;
       } catch {

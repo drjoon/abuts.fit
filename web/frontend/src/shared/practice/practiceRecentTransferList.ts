@@ -139,7 +139,7 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
     filter: "취소",
     label: "취소",
     countKey: "canceled",
-    tooltip: "기공소에서 기공작업을 취소한 후",
+    tooltip: "기공소에서 작업을 취소·거부한 후(치과가 다음 조치를 선택)",
   },
   {
     filter: "포장.발송",
