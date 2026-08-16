@@ -171,7 +171,7 @@ Notes:
   - `src/pages/admin/support/AdminSmsPage.tsx` (로컬 SMS 템플릿 CRUD·사업자/사용자 휴대폰 수신자 선택)
 - 제조사 정산
   - `src/pages/manufacturer/payments/PaymentsPage.tsx` — 하청 고정단가(의뢰/배송·VAT 포함 지급)
-  - `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 3사업 축(커스텀어벗 생산·자동매칭 수수료·기공소 직접운영) + 제조사 탭
+  - `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 4사업 축(선택형) + `settlement-business-overview` 와이어링 + 관계사 잔여 분배
 
 ## 1. 구조
 
@@ -502,8 +502,15 @@ Notes:
   - 상단 합계 카드는 `DashboardShell.statsGridClassName`을 명시해 카드가 과도하게 좁아지지 않도록 유지합니다.
 
 - 관리자 정산(`AdminPaymentsPage`) 표시 정책:
-  - 상단 3사업 축: (1) 커스텀 어벗 생산·공급(제조사 하청) (2) 자동매칭 수수료 (3) 기공소 직접 운영.
-  - 제조사 탭: 고정단가·의뢰/배송·VAT. 영업자·개발운영사·관리자 탭은 기존 유지(후속 세션).
+  - 상단 4사업 축(선택형 카드): (1) 커스텀 어벗 생산·공급 — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산) (2) 자동매칭 수수료 (3) 기공소 직접 운영 (4) 치과 월 구독료.
+  - 집계 API: `GET /api/admin/credits/settlement-business-overview` (기간=`period`/`startDate`/`endDate`).
+    - (1) 의뢰자 유료 소비(`REQUEST_SPEND_COMMIT`/`SHIPPING_SPEND_COMMIT`) + 제조사 하청 보조지표
+    - (2) `PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`
+    - (3) `internalLab` `LAB_SETTLEMENT_CREDIT` 적립
+    - (4) `PRACTICE_MEMBERSHIP_SPEND` + 활성 멤버 수
+  - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 영업자·개발운영사·관리자.
+  - `PricingPolicyDialog`는 가격·출고 안내만(사업 축 UI 아님).
+  - UI: `creditPageUi` 패널/스탯 타일 + 선택형 사업 카드.
 
 - 어벗츠기공소(`internalLab`) UI SSOT:
   - Role: top-level `User.role=internalLab`(제조사와 대칭). 공개 가입 없음·관리자 생성. UI 라벨 「어벗츠기공소」.
@@ -565,7 +572,7 @@ Notes:
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(수락 시 갱신).
   - 기공소 의뢰수락: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 중앙에 안내 문구+「수락」→ `POST .../mark-accepted`(과금). 파일 다운로드는 뱃지/과금과 무관. 작업완료/취소는 모달이 아니라 메인 카드에서. 수락 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
   - **자동매칭**: 치과에서 「자동 매칭」선택 → `matchingMode=auto` + 기공비 예산(min/max) 필수. **인증 기공소** 중 예산 구간·기공비 설정 완료 기공소만 `eligibleLabAnchorIds` 스냅샷으로 공개 풀 수신. 선착순 수락·「작업완료」(`mark-complete`)·「작업취소」(`mark-release`). 수락 후 강제 시간 만료 없음(치과 도착일·소통으로 처리). 성공 시 기공비의 `platformFeeRate`% 플랫폼 수수료. 표시명(치과·기공소)은 상대 비공개. **자동매칭도 치과별 할증 사용** — 다만 할증 적용 시각이 의뢰 생성 이후면 해당 건 미적용(다음 건부터). 기공소 채팅 헤더「기공수가 할증」(`practiceBusinessAnchorId` 내부 키). UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「기공소 매칭」)
-  - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(크라운 결과파일)·`[작업취소]`. **커스텀어벗 배송선택 모달 없음.** CA면 수락 시 Request(`design_custom_abutment`) 조기 생성. **수락 기공소가 디자인**해 상단 디자인 큐에서 STL 업로드 → 제조 자동 주문·어벗디자인비 지급. 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
+  - 기공소 수신 카드(상태=의뢰수락): 카드 점선 외곽 + 카드 스코프 `PracticeTransferFileDropTarget`(로컬드롭) · `[UploadCloud 작업완료]`(크라운 결과파일)·`[작업취소]`. **커스텀어벗 배송선택 모달 없음.** CA면 수락 시 Request(`design_custom_abutment`) 조기 생성. **수락 기공소가 디자인**해 상단 디자인 큐에서 STL 업로드 → 제조 자동 주문·어벗디자인비 지급. **생산 후 치과 직납**(출고 목표=치과도착일−2영업일). 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
 
 
 - 드롭존 가입(치과 전용, requestor+practice)

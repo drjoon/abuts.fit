@@ -147,9 +147,12 @@
   - 제조사 `REV_MANUFACTURER`: `amountExcludingVat`=공급가, `vatAmount`=공급가×`affiliateVatRate`(기본 0.1), `amount`=공급가+VAT. 월 지급은 **부가세 포함액**.
   - 보존식·의뢰자 잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 제조사 VAT는 어벗츠 추가 지급분(의뢰자 크레딧에서 차감하지 않음).
 - **어벗츠 사업 다각화 SSOT:**
-  1. **커스텀 어벗 생산·공급** — 어벗츠 내 기공사 디자인 → 애크로덴트(하청) 생산 → 기공소 납품.
+  1. **커스텀 어벗 생산·공급** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산).
   2. **자동매칭 수수료** — 기공비의 `platformFeeRate`(기본 10%). 관리자 플랫폼 설정.
   3. **기공소 직접 운영** — 치과 의뢰를 어벗츠가 직접 처리·기공료 수취. Role SSOT: `internalLab`(어벗츠기공소).
+  4. **치과 월 구독료** — `practiceMembershipMonthlyFee`(기본 50,000원, 면세·유료 크레딧 차감). 상세는 아래 매칭·멤버십 과금 SSOT.
+  - 가격 안내 UI(`PricingPolicyDialog`)는 커스텀 어벗 단가·출고 정책 안내용이며, 사업 축 정의와 혼용하지 않는다.
+  - 관리자 정산 UI: `AdminPaymentsPage` 상단 4사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`.
 - **매칭·멤버십 과금 SSOT(강제):**
   - 한 줄: **기공소 월 참여 수수료 0원 + 치과 멤버십만 월 과금(면세·부가세 없음, 유료 크레딧 차감).**
   - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 0%.
@@ -259,7 +262,7 @@
   - 조회(발신): `GET /api/practice/transfers/my`
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
-  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수 + `abutmentDesignLabFee`(기본 10,000원×어벗수)를 기공정산 크레딧 지급. 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
+  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수 + `abutmentDesignLabFee`(기본 10,000원×어벗수)를 기공정산 크레딧 지급. **생산 후 치과 직납**(기공소 경유 납품 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
 - 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐

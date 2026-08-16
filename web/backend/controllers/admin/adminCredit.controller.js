@@ -2503,6 +2503,356 @@ export async function adminGetManufacturerSummary(req, res) {
   }
 }
 
+function resolveAdminCreditPeriodRange(req) {
+  const periodKey = String(req.query.period || "30d").trim() || "30d";
+  const startDateRaw = String(req.query.startDate || "").trim();
+  const endDateRaw = String(req.query.endDate || "").trim();
+  const periodRange = getPeriodRangeUtcFromPeriodKey(periodKey);
+  const dateRangeOverride = {};
+  if (startDateRaw) {
+    const start = new Date(startDateRaw);
+    if (!Number.isNaN(start.getTime())) dateRangeOverride.start = start;
+  }
+  if (endDateRaw) {
+    const end = new Date(endDateRaw);
+    if (!Number.isNaN(end.getTime())) dateRangeOverride.end = end;
+  }
+  if (dateRangeOverride.start || dateRangeOverride.end) {
+    return {
+      start: dateRangeOverride.start || new Date(0),
+      end: dateRangeOverride.end || new Date(),
+    };
+  }
+  return periodRange;
+}
+
+/**
+ * 어벗츠 4사업 축 기간 집계 (관리자 정산 상단 SSOT).
+ * 1) 커스텀 어벗: 의뢰자 유료 소비 + 제조사 하청
+ * 2) 자동매칭 수수료: PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount
+ * 3) 기공소 직접 운영: internalLab LAB_SETTLEMENT_CREDIT 적립
+ * 4) 치과 월 구독료: PRACTICE_MEMBERSHIP_SPEND
+ */
+export async function adminGetSettlementBusinessOverview(req, res) {
+  try {
+    const range = resolveAdminCreditPeriodRange(req);
+    if (!range?.start || !range?.end) {
+      return res.status(400).json({
+        success: false,
+        message: "조회 기간이 올바르지 않습니다.",
+      });
+    }
+
+    const occurredMatch = { occurredAt: { $gte: range.start, $lte: range.end } };
+    const amountBaseExpr = { $ifNull: ["$amountExcludingVat", "$amount"] };
+
+    const [
+      customAbutSpendRows,
+      manufacturerPaidRows,
+      autoMatchFeeRows,
+      internalLabAnchors,
+      membershipSpendRows,
+      activeMembershipCount,
+      devopsAnchor,
+      creditSettings,
+    ] = await Promise.all([
+      LedgerLine.aggregate([
+        {
+          $match: {
+            accountCode: "REQ_PAID_CREDIT",
+            ...occurredMatch,
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: false } },
+        {
+          $match: {
+            "journalDoc.eventType": {
+              $in: ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+            },
+          },
+        },
+        {
+          $addFields: {
+            amountBase: amountBaseExpr,
+            eventType: "$journalDoc.eventType",
+          },
+        },
+        { $match: { amountBase: { $lt: 0 } } },
+        {
+          $group: {
+            _id: "$eventType",
+            amount: { $sum: { $abs: "$amountBase" } },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      LedgerLine.aggregate([
+        {
+          $match: {
+            ownerRole: "manufacturer",
+            accountCode: "REV_MANUFACTURER",
+            creditKind: { $in: ["PAID", null] },
+            ...occurredMatch,
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: true } },
+        {
+          $match: {
+            "journalDoc.eventType": {
+              $in: ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$journalDoc.eventType",
+            amount: {
+              $sum: {
+                $ifNull: [
+                  "$amount",
+                  { $ifNull: ["$amountIncludingVat", "$amountExcludingVat"] },
+                ],
+              },
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      LedgerJournal.aggregate([
+        {
+          $match: {
+            eventType: "PRACTICE_TRANSFER_ESCROW_RELEASE",
+            ...occurredMatch,
+          },
+        },
+        {
+          $addFields: {
+            feeAmount: {
+              $max: [
+                0,
+                {
+                  $toDouble: {
+                    $ifNull: ["$meta.abutsRevenueAmount", 0],
+                  },
+                },
+              ],
+            },
+            feeRateApplied: {
+              $toDouble: { $ifNull: ["$meta.feeRateApplied", 0] },
+            },
+          },
+        },
+        {
+          $match: {
+            $or: [{ feeAmount: { $gt: 0 } }, { feeRateApplied: { $gt: 0 } }],
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            feeAmount: { $sum: "$feeAmount" },
+            releaseCount: { $sum: 1 },
+          },
+        },
+      ]),
+      BusinessAnchor.find({
+        businessType: "internalLab",
+        status: { $ne: "merged" },
+      })
+        .select({ _id: 1 })
+        .lean(),
+      LedgerLine.aggregate([
+        {
+          $match: {
+            accountCode: "REQ_PAID_CREDIT",
+            ...occurredMatch,
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: false } },
+        { $match: { "journalDoc.eventType": "PRACTICE_MEMBERSHIP_SPEND" } },
+        {
+          $addFields: {
+            amountBase: amountBaseExpr,
+          },
+        },
+        { $match: { amountBase: { $lt: 0 } } },
+        {
+          $group: {
+            _id: null,
+            feeAmount: { $sum: { $abs: "$amountBase" } },
+            chargeCount: { $sum: 1 },
+          },
+        },
+      ]),
+      BusinessAnchor.countDocuments({
+        practiceMembershipActive: true,
+        status: { $ne: "merged" },
+      }),
+      BusinessAnchor.findOne({ businessType: "devops" })
+        .select({ payoutRates: 1 })
+        .sort({ createdAt: 1 })
+        .lean(),
+      (async () => {
+        const { loadCreditSettingsDefaults } = await import(
+          "../../utils/creditSettingsDefaults.js"
+        );
+        return loadCreditSettingsDefaults();
+      })(),
+    ]);
+
+    const internalLabIds = (internalLabAnchors || [])
+      .map((a) => String(a?._id || ""))
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const internalLabEarnRows =
+      internalLabIds.length > 0
+        ? await LedgerLine.aggregate([
+            {
+              $match: {
+                accountCode: "LAB_SETTLEMENT_CREDIT",
+                ownerRole: "requestor",
+                ownerId: { $in: internalLabIds },
+                ...occurredMatch,
+              },
+            },
+            {
+              $addFields: {
+                amountBase: amountBaseExpr,
+              },
+            },
+            { $match: { amountBase: { $gt: 0 } } },
+            {
+              $group: {
+                _id: null,
+                settlementAmount: { $sum: "$amountBase" },
+                lineCount: { $sum: 1 },
+              },
+            },
+          ])
+        : [];
+
+    const spendByType = new Map(
+      (customAbutSpendRows || []).map((r) => [String(r._id), r]),
+    );
+    const mfgByType = new Map(
+      (manufacturerPaidRows || []).map((r) => [String(r._id), r]),
+    );
+
+    const paidSpendRequest = normalizeNumber(
+      Number(spendByType.get("REQUEST_SPEND_COMMIT")?.amount || 0),
+    );
+    const paidSpendShipping = normalizeNumber(
+      Number(spendByType.get("SHIPPING_SPEND_COMMIT")?.amount || 0),
+    );
+    const paidSpendRequestCount = normalizeNumber(
+      Number(spendByType.get("REQUEST_SPEND_COMMIT")?.count || 0),
+    );
+    const paidSpendShippingCount = normalizeNumber(
+      Number(spendByType.get("SHIPPING_SPEND_COMMIT")?.count || 0),
+    );
+
+    const mfgPaidRequest = normalizeNumber(
+      Number(mfgByType.get("REQUEST_SPEND_COMMIT")?.amount || 0),
+    );
+    const mfgPaidShipping = normalizeNumber(
+      Number(mfgByType.get("SHIPPING_SPEND_COMMIT")?.amount || 0),
+    );
+
+    const { resolvePlatformFeeRate } = await import(
+      "../../services/creditRevenuePolicy.service.js"
+    );
+    const platformFeeRate = resolvePlatformFeeRate(devopsAnchor?.payoutRates);
+
+    return res.json({
+      success: true,
+      data: {
+        range: {
+          start: range.start.toISOString(),
+          end: range.end.toISOString(),
+        },
+        customAbut: {
+          periodPaidSpend: normalizeNumber(paidSpendRequest + paidSpendShipping),
+          periodPaidSpendRequest: paidSpendRequest,
+          periodPaidSpendShipping: paidSpendShipping,
+          periodPaidSpendRequestCount: paidSpendRequestCount,
+          periodPaidSpendShippingCount: paidSpendShippingCount,
+          manufacturerPaidEarn: normalizeNumber(mfgPaidRequest + mfgPaidShipping),
+          manufacturerPaidRequest: mfgPaidRequest,
+          manufacturerPaidShipping: mfgPaidShipping,
+          manufacturerRequestUnitPrice: Number(
+            creditSettings.manufacturerRequestUnitPrice || 9000,
+          ),
+          manufacturerShippingUnitPrice: Number(
+            creditSettings.manufacturerShippingUnitPrice || 3500,
+          ),
+          affiliateVatRate: Number(creditSettings.affiliateVatRate ?? 0.1),
+        },
+        autoMatchFee: {
+          periodFeeAmount: normalizeNumber(
+            Number(autoMatchFeeRows?.[0]?.feeAmount || 0),
+          ),
+          periodReleaseCount: normalizeNumber(
+            Number(autoMatchFeeRows?.[0]?.releaseCount || 0),
+          ),
+          platformFeeRate,
+        },
+        internalLab: {
+          periodSettlementEarn: normalizeNumber(
+            Number(internalLabEarnRows?.[0]?.settlementAmount || 0),
+          ),
+          periodLineCount: normalizeNumber(
+            Number(internalLabEarnRows?.[0]?.lineCount || 0),
+          ),
+          anchorCount: internalLabIds.length,
+        },
+        practiceMembership: {
+          periodFeeAmount: normalizeNumber(
+            Number(membershipSpendRows?.[0]?.feeAmount || 0),
+          ),
+          periodChargeCount: normalizeNumber(
+            Number(membershipSpendRows?.[0]?.chargeCount || 0),
+          ),
+          activeMemberCount: normalizeNumber(Number(activeMembershipCount || 0)),
+          monthlyFee: Number(
+            creditSettings.practiceMembershipMonthlyFee || 50000,
+          ),
+        },
+      },
+    });
+  } catch (error) {
+    console.error("adminGetSettlementBusinessOverview error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "사업 축 정산 집계 조회에 실패했습니다.",
+    });
+  }
+}
+
 function parsePeriod(period) {
   const p = String(period || "").trim();
   if (!p || p === "all") return null;

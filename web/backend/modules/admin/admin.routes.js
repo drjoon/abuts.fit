@@ -164,6 +164,7 @@ import {
   adminGetSalesmanCredits,
   adminGetSalesmanLedger,
   adminGetManufacturerSummary,
+  adminGetSettlementBusinessOverview,
   adminGetAdminCredits,
   adminGetAdminLedger,
 } from "../../controllers/admin/adminCredit.controller.js";
@@ -333,6 +334,10 @@ router.get("/credits/businesses", adminGetBusinessCredits);
 router.get("/credits/businesses/:id", adminGetBusinessCreditDetail);
 router.get("/credits/businesses/:id/ledger", adminGetBusinessLedger);
 router.get("/credits/manufacturer/summary", adminGetManufacturerSummary);
+router.get(
+  "/credits/settlement-business-overview",
+  adminGetSettlementBusinessOverview,
+);
 router.get("/credits/salesmen/overview", adminGetSalesmanCreditsOverview);
 router.get("/credits/salesmen", adminGetSalesmanCredits);
 router.get("/credits/salesmen/:id/ledger", adminGetSalesmanLedger);

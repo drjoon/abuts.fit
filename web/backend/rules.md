@@ -262,7 +262,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - **자동 매칭 성공**(`matchingMode=auto`): 수수료 `BusinessAnchor.payoutRates.platformFeeRate`(기본 **10%**, 레거시 `nonPartnerFeeRate` fallback). 등록/미등록 치과를 나누지 않는다.
     - **지정 기공소**(`matchingMode=direct`): 플랫폼 수수료 0%.
     - 걷힌 수수료 금액의 잔여 분배: 제조사는 하청 고정단가 경로와 분리. 수수료 잔액은 영업자·개발운영사·관리자 상대비율로 재분배(루트 `rules.md` §2.3).
-    - 자동 매칭 식별 정보: 치과명·담당자명·기공소명·담당자명은 상대방에게 비공개(`AUTO_MATCH_LAB_DISPLAY_NAME` 유지, 수신 목록 치과 식별 마스킹). **`practiceBusinessAnchorId`는 기공수가 할증 키로 기공소 API에 전달**(표시명과 별개). 지정 기공소는 생성 시 `billing.labFeeMultiplier` 스냅샷, **자동매칭은 치과별 할증을 청구에 사용**하되 `labPracticeFeeMultipliers.updatedAt`이 의뢰 `createdAt`보다 이후면 해당 건에 미적용(상세·채팅에서 올린 할증은 다음 건부터). **적격 스냅샷·수락 예산 게이트는 공개 수가(할증 제외)**가 `autoMatchBudget` 항목별 min~max 안이어야 함. 미평가·동일 기공소 평가 2회 이하는 최소 별 제한에서 제외.
+    - 자동 매칭 식별 정보: 치과명·담당자명·기공소명·담당자명은 상대방에게 비공개(`AUTO_MATCH_LAB_DISPLAY_NAME` 유지, 수신 목록 치과 식별 마스킹). **`practiceBusinessAnchorId`는 기공수가 할증 키로 기공소 API에 전달**(표시명과 별개). 지정 기공소는 생성 시 `billing.labFeeMultiplier` 스냅샷, **자동매칭은 치과별 할증을 청구에 사용**하되 `labPracticeFeeMultipliers.updatedAt`이 의뢰 `createdAt`보다 이후면 해당 건에 미적용(상세·채팅에서 올린 할증은 다음 건부터). **적격 스냅샷·수락 예산 게이트는 공개 수가(할증 제외)**가 `autoMatchBudget` 항목별 min~max 안이어야 함. 미평가·동일 기공소 평가 5회 이하는 최소 별 제한에서 제외(어벗츠 인증 기공소 풀 안에서 적용).
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
   - eventType: `PRACTICE_TRANSFER_SPEND_HOLD` / `PRACTICE_TRANSFER_HOLD_ADJUST` / `PRACTICE_TRANSFER_ESCROW_RELEASE`(레거시 `PRACTICE_TRANSFER_SPEND_COMMIT` 유지); accountCode: `PLATFORM_ESCROW`, `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부: `기공비 보류` / 기공소: `기공크레딧` 적립(완료 시).
   - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공정산크레딧 → 계좌 이체. 크레딧 페이지 탭은 내역·충전만(기공크레딧 정산 탭 없음; 내역 필터로 기공 버킷 조회).
@@ -373,7 +373,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - **어벗츠 우선창**: 생성 시 적격 스냅샷에 `internalLab`이 있으면 `autoMatch.priorityLabAnchorIds` + `priorityUntil=createdAt+5분`. 그 동안 타 기공소 수신 목록·클레임 미노출. 만료 또는 **어벗츠 거부 시 `priorityUntil` 조기 종료** 후 타 기공소 노출·소켓. 적격에 어벗츠가 없으면 전원 즉시 공개(2B: 예산·참여 동일 게이트)
     - 참여 ON: 기공소/`internalLab` `POST /api/businesses/me/auto-match-participation` `{ active }` (**월정 0원 정책**, `autoMatchMonthlyFee`) 또는 관리자 `PATCH /api/devops/practice-transfer-auto-match/:anchorId` `{ enabled }`. 성공 시 `platformFeeRate`. 표시명(치과·기공소)은 API에서 마스킹(`redactAutoMatch*`), 실명은 앵커/클레임 후 `targetLab*`에 보존.
     - 수신 목록: 내 지정 건 ∪ (eligible이면) 공개 풀(미배정, **우선창이면 priority lab만**). 타인 활성 claim은 숨김
-    - 수락=`mark-accepted` 원자 FCFS claim(강제 시간 만료 없음; **우선창 클레임 게이트 동일**) + 보류액 확정. 치과에 `practice:transfer-updated`(action=`accepted`, 확정 `feeQuote`) emit. **CA 포함 시 수락 직후** 구강스캔(`files`) 기반 어벗츠 Request 조기 생성(`design_custom_abutment`, 스케줄=치과 도착일/기일). 작업완료=`POST .../mark-complete`(크라운 결과파일 필수, **shippingMode 불필요**, 에스크로 해제·기공크레딧 지급). 작업취소=`POST .../mark-release`(auto는 풀 재공개·우선창 종료, direct는 수락 해제+과금 롤백)
+    - 수락=`mark-accepted` 원자 FCFS claim(강제 시간 만료 없음; **우선창 클레임 게이트 동일**) + 보류액 확정. 치과에 `practice:transfer-updated`(action=`accepted`, 확정 `feeQuote`) emit. **CA 포함 시 수락 직후** 구강스캔(`files`) 기반 어벗츠 Request 조기 생성(`design_custom_abutment`, **치과 직납·출고목표=치과도착일−2영업일**). 작업완료=`POST .../mark-complete`(크라운 결과파일 필수, **shippingMode 불필요**, 에스크로 해제·기공크레딧 지급). 작업취소=`POST .../mark-release`(auto는 풀 재공개·우선창 종료, direct는 수락 해제+과금 롤백)
     - 어벗 디자인: 기공의뢰(PTX) CA는 **수락 기공소**가 design-claim/handoff. 업로드 시 lab confirm 자동·제조 즉시 착수 + `grantAbutmentDesignLabFee`(`abutmentDesignLabFee`×어벗수 → `LAB_SETTLEMENT_CREDIT`). 레거시 `POST .../confirm-abutment-design`은 미컨펌 건 호환용. 어벗생산의뢰(비PTX)는 기존 디자인 파트너 큐.
     - 치과=`POST .../confirm-production` — (a) 크라운 완료 전·CA·미생략: 어벗 디자인 생산 게이트 (b) 크라운 완료 후: `작업완료→생산진행` (Request 재생성 없음)
     - 「디자인 컨펌 생략」체크 UI는 계정 `practiceTransferSettings.skipDesignConfirm`(기본 **true**). 전송 시 `PracticeTransfer.production.skipDesignConfirm` 스냅샷. 해제 시 FE 안내 모달. 체크된 건은 기공소 `mark-complete` 시 생산진행 자동. 미체크면 어벗 생산에 치과 디자인 컨펌도 필요
@@ -763,6 +763,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 구현: `utils/popbill.util.js`(`buildTaxinvoiceObject`의 `issuanceMode`/`seller`/`taxType`), `models/taxInvoiceDraft.model.js`.
 
 - 정산/지급 정책:
+  - 관리자 4사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
   - **제조사(하청)**: 고정단가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT. 유료·무료 모두 적립(확인용). **정산 지급은 유료만**(무료 지급 0). 지급액=`amount`(VAT 포함).
   - **그 외 관계사**: 정산 지급(PAYOUT)은 유료 수익만. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
