@@ -81,6 +81,7 @@
  * - 2026-08-16: 취소 건 클릭 시 전용 모달로 거부 안내·기공소 재선택.
  * - 2026-08-16: 의뢰상세 작업 파일 — 어벗디자인(designFiles)·보철물(resultFiles) 기공소와 동일 표시.
  * - 2026-08-16: 최근의뢰·전체보기 의뢰상세 SSOT — practiceRecentTransferList + sender detail model.
+ * - 2026-08-16: 리메이크 버튼을 목록 검색 옆으로 이동. 컨펌은 리메이크비 무료·배송비 차감 안내.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -211,7 +212,6 @@ import {
 import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
 import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
-import { formatWon } from "@/shared/practice/practiceTransferFeeQuote";
 import {
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   normalizeAutoMatchMinLabRating,
@@ -3239,15 +3239,6 @@ export const PracticeFileTransferPage = ({
     });
   }, [groupedTransfers, remakeSelectedIds]);
 
-  const remakeSelectedTotal = useMemo(
-    () =>
-      remakeSelectedTransfers.reduce((sum, transfer) => {
-        const quote = transfer.remakeFeeQuote || transfer.feeQuote?.remakeFeeQuote;
-        return sum + Math.max(0, Math.round(Number(quote?.total || 0)));
-      }, 0),
-    [remakeSelectedTransfers],
-  );
-
   const toggleRemakeSelect = useCallback((transfer: RecentTransferItem) => {
     const key = String(transfer.transferMongoIds?.[0] || transfer.id || "").trim();
     if (!key || !canRemakePracticeTransferByStatus(transfer.status)) return;
@@ -6023,17 +6014,6 @@ export const PracticeFileTransferPage = ({
                       <LayoutGrid className="h-3.5 w-3.5" />
                       전체 보기
                     </Button>
-                    {remakeSelectedTransfers.length > 0 ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-8 gap-1 px-2 bg-amber-600 text-white hover:bg-amber-700"
-                        onClick={() => setRemakeConfirmOpen(true)}
-                      >
-                        <Repeat className="h-3.5 w-3.5" />
-                        리메이크 {remakeSelectedTransfers.length}
-                      </Button>
-                    ) : null}
                     <CollapsibleTrigger asChild>
                       <button type="button" className="shrink-0 text-muted-foreground">
                         <ChevronDown
@@ -6091,14 +6071,27 @@ export const PracticeFileTransferPage = ({
                     ))}
                   </div>
 
-                  <div className="relative w-full md:max-w-md">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={requestSearchTerm}
-                      onChange={(e) => setRequestSearchTerm(e.target.value)}
-                      className="pl-9"
-                      placeholder="전송ID, 환자명 검색"
-                    />
+                  <div className="flex w-full items-center gap-2 md:max-w-md">
+                    <div className="relative min-w-0 flex-1">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={requestSearchTerm}
+                        onChange={(e) => setRequestSearchTerm(e.target.value)}
+                        className="pl-9"
+                        placeholder="전송ID, 환자명 검색"
+                      />
+                    </div>
+                    {remakeSelectedTransfers.length > 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-9 shrink-0 gap-1 bg-amber-600 px-2 text-white hover:bg-amber-700"
+                        onClick={() => setRemakeConfirmOpen(true)}
+                      >
+                        <Repeat className="h-3.5 w-3.5" />
+                        리메이크 {remakeSelectedTransfers.length}
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
                 </CollapsibleContent>
@@ -7290,12 +7283,11 @@ export const PracticeFileTransferPage = ({
           description={
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">
-                {remakeSelectedTransfers.length}건 · 리메이크 비용{" "}
-                {formatWon(remakeSelectedTotal)}
+                {remakeSelectedTransfers.length}건 · 리메이크비 무료 · 배송비는
+                차감됩니다
               </div>
               <div className="text-sm text-muted-foreground">
-                기공소 설정 기공료의 리메이크 수가로 청구되며, 의뢰부터 발송까지
-                다시 진행됩니다.
+                의뢰부터 발송까지 다시 진행됩니다.
               </div>
             </div>
           }

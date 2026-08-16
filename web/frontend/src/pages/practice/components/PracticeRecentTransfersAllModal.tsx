@@ -6,6 +6,7 @@
  * 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지.
  * 2026-08-16: 기공소 작업취소 카드 깜빡임 하이라이트.
  * 2026-08-16: 선택 시 사이드바와 동일 PracticeRecentTransferItem(작업 파일 포함) 전달.
+ * 2026-08-16: 리메이크 버튼을 검색창 옆으로 이동(선택 목록 액션).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Repeat, Search, Trash2 } from "lucide-react";
@@ -314,19 +315,8 @@ export function PracticeRecentTransfersAllModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[min(88vh,920px)] w-[min(96vw,1280px)] max-w-none flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 space-y-3 border-b px-5 py-4 sm:px-6">
-          <DialogTitle className="flex items-center justify-between gap-3 text-lg font-semibold">
-            <span>전송 내역 전체 보기</span>
-            {remakeSelectedIds.length > 0 && onAskRemake ? (
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 gap-1 bg-amber-600 px-2 text-white hover:bg-amber-700"
-                onClick={onAskRemake}
-              >
-                <Repeat className="h-3.5 w-3.5" />
-                리메이크 {remakeSelectedIds.length}
-              </Button>
-            ) : null}
+          <DialogTitle className="text-lg font-semibold">
+            전송 내역 전체 보기
           </DialogTitle>
           <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2">
             <div className="flex min-w-0 justify-start">
@@ -346,8 +336,8 @@ export function PracticeRecentTransfersAllModal({
                 ),
               )}
             </div>
-            <div className="flex min-w-0 justify-end">
-              <div className="relative w-full max-w-xs">
+            <div className="flex min-w-0 items-center justify-end gap-2">
+              <div className="relative min-w-0 w-full max-w-xs">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
@@ -356,6 +346,17 @@ export function PracticeRecentTransfersAllModal({
                   placeholder="전송ID, 환자명 검색"
                 />
               </div>
+              {remakeSelectedIds.length > 0 && onAskRemake ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9 shrink-0 gap-1 bg-amber-600 px-2 text-white hover:bg-amber-700"
+                  onClick={onAskRemake}
+                >
+                  <Repeat className="h-3.5 w-3.5" />
+                  리메이크 {remakeSelectedIds.length}
+                </Button>
+              ) : null}
             </div>
           </div>
         </DialogHeader>
