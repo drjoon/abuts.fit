@@ -37,7 +37,7 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
     expect(mode).toBe("normal");
   });
 
-  test("resolveShippingModeForPracticeTransferArrival: rush express before noon, normal after", async () => {
+  test("resolveShippingModeForPracticeTransferArrival: rush always express (noon only affects schedule)", async () => {
     const { resolveShippingModeForPracticeTransferArrival } = await import(
       "../../services/practiceTransferProduction.service.js"
     );
@@ -48,7 +48,7 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
       requestedAt: new Date("2026-08-17T00:00:00.000Z"),
     });
     expect(modeBeforeNoon).toBe("express");
-    // UTC 05:00 = KST 14:00 → 묶음
+    // UTC 05:00 = KST 14:00 — still express (익일 16시 스케줄)
     const modeAfterNoon = await resolveShippingModeForPracticeTransferArrival({
       transferDoc: {
         production: { rushProcessing: true },
@@ -57,10 +57,10 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
       weeklyBatchDays: ["wed"],
       requestedAt: new Date("2026-08-17T05:00:00.000Z"),
     });
-    expect(modeAfterNoon).toBe("normal");
+    expect(modeAfterNoon).toBe("express");
   });
 
-  test("resolveShippingModeForPracticeTransferArrival detects rush via billing multiplier before noon", async () => {
+  test("resolveShippingModeForPracticeTransferArrival detects rush via billing multiplier", async () => {
     const { resolveShippingModeForPracticeTransferArrival } = await import(
       "../../services/practiceTransferProduction.service.js"
     );
@@ -70,7 +70,7 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
         billing: { rushFeeMultiplier: 1.5 },
       },
       weeklyBatchDays: ["fri"],
-      requestedAt: new Date("2026-08-17T00:00:00.000Z"),
+      requestedAt: new Date("2026-08-17T05:00:00.000Z"),
     });
     expect(mode).toBe("express");
   });

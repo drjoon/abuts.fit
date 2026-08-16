@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-17: 신속처리 CA는 항상 express(12시 컷오프는 당일/익일 출고 스케줄만). 일반은 묶음.
 // - 2026-08-17: 신속처리 CA — 12시 전 express, 12시 이후 묶음. 일반은 항상 묶음.
 // - 2026-08-17: 신속처리 CA는 제조사 express 고정(선택가능 강등·견적 normal 위장 제거). 일반은 묶음.
 // - 2026-08-17: 일반 PTX CA는 항상 묶음(normal). 신속처리는 익영업일 16시 출고·expressFee 0(배수는 PTX 과금).
@@ -411,22 +412,9 @@ const PTX_SHIP_SCHEDULE_PRODUCT_MODE = "custom_abutment";
 
 /**
  * PTX CA 출고모드(제조사 주문 shippingMode).
- * - 신속처리·KST 12시 전: express(제조사 신속배송)
- * - 신속처리·12시 이후 / 일반: 묶음(normal)
+ * - 신속처리: 항상 express. 12시 컷오프는 스케줄만 당일/익일 분기.
+ * - 일반: 항상 묶음(normal).
  */
-const PTX_RUSH_EXPRESS_CUTOFF_HOUR_KST = 12;
-
-function getKstHourForShipping(date = new Date()) {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "Asia/Seoul",
-      hour: "numeric",
-      hour12: false,
-    }).format(date instanceof Date ? date : new Date(date)),
-  );
-  return Number.isFinite(hour) ? hour : 0;
-}
-
 export async function resolveShippingModeForPracticeTransferArrival({
   transferDoc,
   weeklyBatchDays = [],
@@ -434,16 +422,9 @@ export async function resolveShippingModeForPracticeTransferArrival({
   maxDiameter = 8,
 }) {
   void weeklyBatchDays;
+  void requestedAt;
   void maxDiameter;
-  const rush = isPracticeTransferRushProcessing(transferDoc);
-  if (!rush) return "normal";
-  const at =
-    requestedAt instanceof Date ? requestedAt : new Date(requestedAt || Date.now());
-  // 12시 이전만 제조사 신속배송. 이후는 묶음.
-  if (getKstHourForShipping(at) < PTX_RUSH_EXPRESS_CUTOFF_HOUR_KST) {
-    return "express";
-  }
-  return "normal";
+  return isPracticeTransferRushProcessing(transferDoc) ? "express" : "normal";
 }
 
 function applyRushMultiplierToPtxQuote(quote, rushFeeMultiplier) {
@@ -577,7 +558,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 
   const requestedAt = new Date();
   const rush = isPracticeTransferRushProcessing(transferDoc);
-  // 신속처리·12시 전 → express, 그 외 → 묶음. caller shippingModeRaw 무시.
+  // 신속처리 → express(12시 컷오프는 스케줄). 일반 → 묶음. caller shippingModeRaw 무시.
   const shippingMode = await resolveShippingModeForPracticeTransferArrival({
     transferDoc,
     weeklyBatchDays,
@@ -599,7 +580,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // express(12시 전 신속)는 당일 출고 스케줄 — arrival−2 clamp 생략. 묶음은 목표 출고일 반영.
+  // express는 12시 컷오프 당일/익일 스케줄 — arrival−2 clamp 생략. 묶음만 목표 출고일 반영.
   const targetShipYmd =
     shippingMode === "express" || !arrivalYmd
       ? null

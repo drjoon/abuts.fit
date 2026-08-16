@@ -53,7 +53,7 @@ export function PracticeRushConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[22rem] sm:rounded-2xl">
+      <DialogContent className="gap-0 overflow-hidden p-0 w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-max sm:max-w-[min(100vw-2rem,36rem)] sm:rounded-2xl">
         <DialogHeader className="space-y-3 px-5 pb-1 pt-5 text-left sm:px-6 sm:pt-6">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-soft text-primary-strong ring-1 ring-primary-muted/70">
@@ -71,7 +71,7 @@ export function PracticeRushConfirmDialog({
         </DialogHeader>
 
         <div className="space-y-4 px-5 py-4 sm:px-6">
-          <div className="rounded-xl border border-primary-muted/60 bg-gradient-to-b from-primary-soft/80 via-white to-white px-4 py-3 ring-1 ring-primary-muted/30">
+          <div className="rounded-xl border border-primary-muted/60 bg-gradient-to-b from-primary-soft/80 via-white to-white px-4 py-3 text-center ring-1 ring-primary-muted/30">
             <p className="text-lg font-semibold tracking-tight text-primary-strong">
               {feeLabel}
             </p>
@@ -87,7 +87,17 @@ export function PracticeRushConfirmDialog({
                 className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-baseline gap-x-3"
               >
                 <dt className="font-medium text-slate-500">{row.label}</dt>
-                <dd className="min-w-0 leading-snug text-slate-800">{row.value}</dd>
+                <dd className="min-w-0 space-y-1 leading-snug text-slate-800">
+                  {typeof row.value === "string" ? (
+                    <p className="sm:whitespace-nowrap">{row.value}</p>
+                  ) : (
+                    row.value.map((line) => (
+                      <p key={line} className="sm:whitespace-nowrap">
+                        {line}
+                      </p>
+                    ))
+                  )}
+                </dd>
               </div>
             ))}
           </dl>

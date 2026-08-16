@@ -1212,6 +1212,7 @@ async function resolveHoldShareAmounts({
     pricingTier,
     prices: abutmentPrices,
     designFeePerTooth,
+    rushFeeMultiplier: rushFeeMultiplierFromTransfer(transfer),
   });
   lab = Math.max(0, Math.round(Number(lab || 0))) + routeSplit.designFeeTotal;
   abut = routeSplit.productionTotal;
@@ -2491,6 +2492,7 @@ export async function releasePracticeTransferAbutmentShare({
         Number(creditSettingsForAbut?.abutmentDesignLabFee ?? 10000) || 0,
       ),
     ),
+    rushFeeMultiplier: rushFeeMultiplierFromTransfer(transfer),
   });
   const heldAbutmentOnly = Math.max(
     0,
@@ -3683,7 +3685,7 @@ export async function grantAbutmentDesignLabFee({
   }
 
   const creditSettings = await loadCreditSettingsDefaults();
-  const unitFee = Math.max(
+  const unitFeeBase = Math.max(
     0,
     Math.round(Number(creditSettings?.abutmentDesignLabFee ?? 10000) || 0),
   );
@@ -3691,10 +3693,6 @@ export async function grantAbutmentDesignLabFee({
     "../controllers/requests/designPrice.utils.js"
   );
   const qty = Math.max(1, countDesignAbutmentQty(requestDoc?.caseInfos) || 1);
-  const amount = unitFee * qty;
-  if (amount <= 0) {
-    return { granted: false, reason: "zero_amount", unitFee, qty };
-  }
 
   const relatedTransferId = String(
     transferId ||
@@ -3703,6 +3701,8 @@ export async function grantAbutmentDesignLabFee({
   ).trim();
   let skipJig = false;
   let useEscrow = false;
+  let unitFee = unitFeeBase;
+  let amount = unitFeeBase * qty;
   if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
     try {
       const PracticeTransfer = (
@@ -3711,9 +3711,12 @@ export async function grantAbutmentDesignLabFee({
       const ptx = await PracticeTransfer.findById(relatedTransferId)
         .select({
           "production.skipJig": 1,
+          "production.rushProcessing": 1,
           "billing.heldDesignFeeTotal": 1,
           "billing.heldLabTotal": 1,
           "billing.labFeeTotal": 1,
+          "billing.rushFeeMultiplier": 1,
+          "billing.abutmentQty": 1,
         })
         .lean();
       skipJig = Boolean(ptx?.production?.skipJig);
@@ -3730,9 +3733,30 @@ export async function grantAbutmentDesignLabFee({
         Math.round(Number(ptx?.billing?.labFeeTotal || 0)),
       );
       useEscrow = heldDesign > 0 || heldLab > labFee;
+      // 보류에 잡힌 디자인비를 우선(신속처리 배수 반영). 없으면 rush 배수로 재계산.
+      if (heldDesign > 0) {
+        amount = heldDesign;
+        const heldQty = Math.max(
+          1,
+          Math.round(Number(ptx?.billing?.abutmentQty || qty) || qty),
+        );
+        unitFee = Math.max(0, Math.round(amount / heldQty));
+      } else {
+        const rush = resolveRushFeeMultiplier({
+          rushProcessing: Boolean(ptx?.production?.rushProcessing),
+          rushFeeMultiplier: ptx?.billing?.rushFeeMultiplier,
+        });
+        if (rush > 1) {
+          unitFee = Math.max(0, Math.round(unitFeeBase * rush));
+          amount = unitFee * qty;
+        }
+      }
     } catch {
       skipJig = false;
     }
+  }
+  if (amount <= 0) {
+    return { granted: false, reason: "zero_amount", unitFee, qty };
   }
   const designFeeLabel = skipJig ? "디자인비" : "디자인비+지그제작비";
 

@@ -45,7 +45,13 @@ export const PRACTICE_RUSH_CONFIRM_TITLE = "신속처리로 진행할까요?";
 export const PRACTICE_RUSH_CONFIRM_PERIOD_LABEL = "3영업일 이하 납기";
 export const PRACTICE_RUSH_CONFIRM_FEE_HINT = "기공·어벗츠";
 export const PRACTICE_RUSH_CONFIRM_DETAILS = [
-  { label: "어벗", value: "12시 전 의뢰 시 당일 16시 출고·익일 도착 목표 / 이후 묶음" },
+  {
+    label: "어벗",
+    value: [
+      "12시 전 의뢰 시 오늘 16시 출고·내일 도착 목표.",
+      "12시 이후 의뢰 시 내일 16시 출고·모레 도착 목표.",
+    ],
+  },
   { label: "보철", value: "선택 납기까지 도착 목표" },
 ] as const;
 

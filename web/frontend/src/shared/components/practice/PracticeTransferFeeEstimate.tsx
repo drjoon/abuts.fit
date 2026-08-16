@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-17: 신속처리 시 디자인비(+지그)·어벗생산비 분해에도 rush 배수 적용.
 // - 2026-08-16: 기공의뢰수신 카드 — 기공비·수령·수수료를 한 줄로 표시.
 // - 2026-08-16: 기공소 카드 기공비=툴팁 라인 합(별점 확정가)+디자인. 스냅샷 상한과 불일치 방지.
 // - 2026-08-16: 자동매칭 구간은 치과만. 기공소는 유효 별점 배수 단일 확정가.
@@ -56,6 +57,7 @@ import {
 import {
   formatLabFeeMultiplierLabel,
   formatRushFeeMultiplierLabel,
+  normalizeConfiguredRushFeeMultiplier,
   normalizeLabFeeMultiplier,
   normalizeRushFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
@@ -516,10 +518,27 @@ export function PracticeTransferFeeEstimate({
   const showLabPendingHint = Boolean(labPending) && !isLab;
   const hasTrailing = Boolean(trailingAction);
   const { data: systemSettings } = useSystemSettings();
-  const abutmentDesignLabFee = Math.max(
+  const rushFeeMultiplier = (() => {
+    const fromQuote = normalizeRushFeeMultiplier(quote.rushFeeMultiplier);
+    if (fromQuote > 1) return fromQuote;
+    if (rushProcessing) {
+      return normalizeConfiguredRushFeeMultiplier(
+        systemSettings?.creditSettings?.practiceRushFeeMultiplier,
+      );
+    }
+    return 1;
+  })();
+  const abutmentDesignLabFeeBase = Math.max(
     0,
-    Math.round(Number(systemSettings?.creditSettings?.abutmentDesignLabFee ?? 10000) || 0),
+    Math.round(
+      Number(systemSettings?.creditSettings?.abutmentDesignLabFee ?? 10000) || 0,
+    ),
   );
+  // 어벗 소매(디자인+생산)는 quote에 rush가 이미 반영됨. 분해용 디자인비도 동일 배수.
+  const abutmentDesignLabFee =
+    rushFeeMultiplier > 1
+      ? Math.max(0, Math.round(abutmentDesignLabFeeBase * rushFeeMultiplier))
+      : abutmentDesignLabFeeBase;
   const abutmentDesignQty = Math.max(
     0,
     Math.round(Number(quote.abutmentQty || 0)),
@@ -744,8 +763,8 @@ export function PracticeTransferFeeEstimate({
       ? formatLabFeeMultiplierLabel(quote.labFeeMultiplier)
       : null;
   const rushLabel =
-    rushProcessing || normalizeRushFeeMultiplier(quote.rushFeeMultiplier) > 1
-      ? `신속처리 ${formatRushFeeMultiplierLabel(quote.rushFeeMultiplier)}`
+    rushFeeMultiplier > 1
+      ? `신속처리 ${formatRushFeeMultiplierLabel(rushFeeMultiplier)}`
       : null;
 
   const labTotalMinOverride =
