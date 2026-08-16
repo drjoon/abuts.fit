@@ -4,6 +4,10 @@
 // - web/backend/controllers/businesses/business.controller.js
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// change-log:
+// - 2026-08-16: 미설정 게이트 모달 — 당장은 X/취소로 닫기 가능. 재진입·새로고침 시 재노출.
+// - 2026-08-16: internalLab(어벗츠기공소)도 사업체 기본값으로 로드·저장. 개인(requestor*) 필드 미전송.
+// - 2026-08-16: 의뢰자·internalLab 미설정 시 기공의뢰수신/어벗생산의뢰 진입 모달 강제.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -32,6 +36,10 @@ type UseRequestorRequestSettingsOptions = {
   /** 외부 Draft 기본값(유지홈) */
   draftRetentionGroove?: "none" | "deep" | null;
 };
+
+/** 의뢰 설정 훅을 쓰는 역할 — 개인 필드 vs 사업체 필드 분기 */
+const isRequestSettingsRole = (role: string | undefined | null) =>
+  role === "requestor" || role === "internalLab";
 
 type RequestSettingsApiData = {
   canEdit?: boolean;
@@ -87,6 +95,8 @@ export function useRequestorRequestSettings(
   const { toast } = useToast();
   const token = useAuthStore((s) => s.token);
   const userRole = useAuthStore((s) => s.user?.role);
+  const isPersonalRequestor = userRole === "requestor";
+  const canUseRequestSettings = isRequestSettingsRole(userRole);
 
   const [designSoftwareValue, setDesignSoftwareValue] = useState("");
   const [anodizingEnabled, setAnodizingEnabled] = useState(true);
@@ -147,6 +157,11 @@ export function useRequestorRequestSettings(
     [anodizingEnabled],
   );
 
+  const openModalForValueRef = useRef(openModalForValue);
+  useEffect(() => {
+    openModalForValueRef.current = openModalForValue;
+  }, [openModalForValue]);
+
   const clearGatePending = useCallback(() => {
     gatePendingRef.current = [];
     setGatePendingFiles([]);
@@ -186,7 +201,7 @@ export function useRequestorRequestSettings(
 
   // 서버 설정 로드 + 미설정 시 진입 강제
   useEffect(() => {
-    if (!enabled || !token || userRole !== "requestor") return;
+    if (!enabled || !token || !canUseRequestSettings) return;
 
     let cancelled = false;
 
@@ -222,7 +237,10 @@ export function useRequestorRequestSettings(
 
         const hasRequestorAno = Boolean(data?.hasRequestorAnodizingSetting);
         const hasBusinessAno = Boolean(data?.hasBusinessAnodizingSetting);
-        let anodizingConfigured = hasRequestorAno || hasBusinessAno;
+        // 의뢰자: 개인/사업체 중 하나. 기공소(internalLab): 사업체만.
+        const anodizingConfigured = isPersonalRequestor
+          ? hasRequestorAno || hasBusinessAno
+          : hasBusinessAno;
 
         const requestorAnodizing =
           typeof data?.requestorAnodizingEnabled === "boolean"
@@ -236,7 +254,7 @@ export function useRequestorRequestSettings(
         const resolvedAnodizing =
           typeof draftAnodizingEnabled === "boolean"
             ? draftAnodizingEnabled
-            : typeof requestorAnodizing === "boolean"
+            : isPersonalRequestor && typeof requestorAnodizing === "boolean"
               ? requestorAnodizing
               : businessAnodizing;
 
@@ -245,7 +263,7 @@ export function useRequestorRequestSettings(
 
         const resolvedRetention = normalizeRetentionGrooveChoice(
           draftRetentionGroove ||
-            data?.requestorRetentionGroove ||
+            (isPersonalRequestor ? data?.requestorRetentionGroove : null) ||
             data?.retentionGroove ||
             "none",
         );
@@ -256,8 +274,9 @@ export function useRequestorRequestSettings(
         );
         setNeedsBusinessAnodizingBootstrap(!hasBusinessAno && canEditBusinessAno);
 
-        // 개인/사업체 어긋남 또는 한쪽 누락 시 화면 effective로 동기화
+        // 의뢰자만 개인↔사업체 어긋남 동기화 (internalLab은 사업체 SSOT)
         if (
+          isPersonalRequestor &&
           (draftDefault || requestorDefault || businessDefault) &&
           (
             !requestorDefault ||
@@ -297,8 +316,11 @@ export function useRequestorRequestSettings(
           }
         }
 
-        const effectiveDesign =
-          draftDefault || requestorDefault || businessDefault;
+        if (cancelled) return;
+
+        const effectiveDesign = isPersonalRequestor
+          ? draftDefault || requestorDefault || businessDefault
+          : draftDefault || businessDefault;
 
         if (effectiveDesign) {
           setDesignSoftwareValue(effectiveDesign);
@@ -322,7 +344,7 @@ export function useRequestorRequestSettings(
           isIncomplete(effectiveDesign)
         ) {
           entryForcedRef.current = true;
-          openModalForValue(effectiveDesign, {
+          openModalForValueRef.current(effectiveDesign, {
             force: true,
             showCurrentAnodizing: resolvedAnodizing,
           });
@@ -337,8 +359,16 @@ export function useRequestorRequestSettings(
       cancelled = true;
     };
     // draft* 는 초기 시드용 — 매번 리로드하지 않음
+    // openModalForValue 는 ref로 호출(의존성 변경으로 로드 취소·재진입 방지)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, forceOnEntry, isIncomplete, openModalForValue, token, userRole]);
+  }, [
+    canUseRequestSettings,
+    enabled,
+    forceOnEntry,
+    isIncomplete,
+    isPersonalRequestor,
+    token,
+  ]);
 
   // Draft가 늦게 들어오면 표시값 동기화
   useEffect(() => {
@@ -364,14 +394,16 @@ export function useRequestorRequestSettings(
     async (next: "none" | "deep") => {
       setRetentionGrooveDefault(next);
       onDefaultsChangeRef.current?.({ retentionGroove: next });
-      if (!token || userRole !== "requestor") return;
+      if (!token || !canUseRequestSettings) return;
 
-      const jsonBody: Record<string, string> = {
-        requestorRetentionGroove: next,
-      };
+      const jsonBody: Record<string, string> = {};
+      if (isPersonalRequestor) {
+        jsonBody.requestorRetentionGroove = next;
+      }
       if (canEditBusinessAnodizing) {
         jsonBody.retentionGroove = next;
       }
+      if (Object.keys(jsonBody).length === 0) return;
 
       try {
         await apiFetch({
@@ -384,7 +416,7 @@ export function useRequestorRequestSettings(
         // best-effort — UI 값은 유지
       }
     },
-    [canEditBusinessAnodizing, token, userRole],
+    [canEditBusinessAnodizing, canUseRequestSettings, isPersonalRequestor, token],
   );
 
   const handleSaveDesignSoftware = useCallback(async () => {
@@ -413,20 +445,26 @@ export function useRequestorRequestSettings(
 
     setDesignSoftwareSaving(true);
     try {
-      const savePayload: Record<string, string | boolean> = {
-        requestorDesignSoftware: designSoftware,
-        requestorAnodizingEnabled: modalAnodizingEnabled,
-      };
-      if (
-        (needsBusinessDesignSoftwareBootstrap || !designSoftwareValue) &&
-        canEditBusinessDesignSoftware
-      ) {
+      const savePayload: Record<string, string | boolean> = {};
+
+      if (isPersonalRequestor) {
+        // 의뢰자: 개인 기본값 + (가능하면) 사업체 기본값
+        savePayload.requestorDesignSoftware = designSoftware;
+        savePayload.requestorAnodizingEnabled = modalAnodizingEnabled;
+        if (
+          (needsBusinessDesignSoftwareBootstrap || !designSoftwareValue) &&
+          canEditBusinessDesignSoftware
+        ) {
+          savePayload.designSoftware = designSoftware;
+        } else if (canEditBusinessDesignSoftware) {
+          savePayload.designSoftware = designSoftware;
+        }
+        if (canEditBusinessAnodizing || needsBusinessAnodizingBootstrap) {
+          savePayload.anodizingEnabled = modalAnodizingEnabled;
+        }
+      } else {
+        // internalLab 등: 사업체 기본값만 (개인 requestor* 필드는 403)
         savePayload.designSoftware = designSoftware;
-      } else if (canEditBusinessDesignSoftware) {
-        // 기공소 사업자 계정값 SSOT — 멤버도 사업체 값을 함께 갱신
-        savePayload.designSoftware = designSoftware;
-      }
-      if (canEditBusinessAnodizing || needsBusinessAnodizingBootstrap) {
         savePayload.anodizingEnabled = modalAnodizingEnabled;
       }
 
@@ -472,7 +510,9 @@ export function useRequestorRequestSettings(
 
       toast({
         title: "저장 완료",
-        description: "의뢰 기본 디자인 소프트웨어·아노다이징이 저장되었습니다.",
+        description: isPersonalRequestor
+          ? "의뢰 기본 디자인 소프트웨어·아노다이징이 저장되었습니다."
+          : "기공소 기본 디자인 소프트웨어·아노다이징이 저장되었습니다.",
       });
     } finally {
       setDesignSoftwareSaving(false);
@@ -484,6 +524,7 @@ export function useRequestorRequestSettings(
     customDesignSoftware,
     designSoftwareMode,
     designSoftwareValue,
+    isPersonalRequestor,
     modalAnodizingEnabled,
     needsBusinessAnodizingBootstrap,
     needsBusinessDesignSoftwareBootstrap,
@@ -516,10 +557,13 @@ export function useRequestorRequestSettings(
     setAnodizingSaving(true);
     void (async () => {
       try {
-        const jsonBody: Record<string, boolean> = {
-          requestorAnodizingEnabled: next,
-        };
-        if (canEditBusinessAnodizing) {
+        const jsonBody: Record<string, boolean> = {};
+        if (isPersonalRequestor) {
+          jsonBody.requestorAnodizingEnabled = next;
+          if (canEditBusinessAnodizing) {
+            jsonBody.anodizingEnabled = next;
+          }
+        } else {
           jsonBody.anodizingEnabled = next;
         }
 
@@ -549,10 +593,18 @@ export function useRequestorRequestSettings(
 
         const body = (res.data || {}) as { data?: RequestSettingsApiData };
         const data = body.data || (body as RequestSettingsApiData);
-        if (typeof data?.requestorAnodizingEnabled === "boolean") {
+        if (
+          isPersonalRequestor &&
+          typeof data?.requestorAnodizingEnabled === "boolean"
+        ) {
           setAnodizingEnabled(data.requestorAnodizingEnabled);
           onDefaultsChangeRef.current?.({
             anodizingEnabled: data.requestorAnodizingEnabled,
+          });
+        } else if (typeof data?.anodizingEnabled === "boolean") {
+          setAnodizingEnabled(data.anodizingEnabled);
+          onDefaultsChangeRef.current?.({
+            anodizingEnabled: data.anodizingEnabled,
           });
         }
         setHasAnodizingSetting(true);
@@ -573,6 +625,7 @@ export function useRequestorRequestSettings(
     anodizingSaving,
     canEditBusinessAnodizing,
     designSoftwareValue,
+    isPersonalRequestor,
     openDesignSoftwareModal,
     toast,
     token,
@@ -580,27 +633,14 @@ export function useRequestorRequestSettings(
 
   const handleModalOpenChange = useCallback(
     (next: boolean) => {
-      const incomplete = isIncomplete(designSoftwareValue);
-      const hasPending = gatePendingFiles.length > 0;
-
-      // 미설정 + 첨부 대기 없음 → 강제 유지
-      if (incomplete && !hasPending && forceRequired) {
-        if (next) setModalOpen(true);
-        return;
-      }
+      // 미설정이어도 당장 닫기 허용. entryForcedRef는 유지 → 재진입/새로고침 시에만 재노출.
       if (!next) {
         clearGatePending();
         setForceRequired(false);
       }
       setModalOpen(next);
     },
-    [
-      clearGatePending,
-      designSoftwareValue,
-      forceRequired,
-      gatePendingFiles.length,
-      isIncomplete,
-    ],
+    [clearGatePending],
   );
 
   const settingsComplete = Boolean(String(designSoftwareValue || "").trim());
@@ -610,7 +650,9 @@ export function useRequestorRequestSettings(
       ? "파일 첨부 전에 디자인 소프트웨어와 아노다이징을 먼저 설정해주세요."
       : forceRequired
         ? "진행 전에 사용 중인 디자인 소프트웨어와 아노다이징을 먼저 설정해주세요."
-        : "기공소 기본 디자인 소프트웨어를 설정합니다.";
+        : isPersonalRequestor
+          ? "의뢰 기본 디자인 소프트웨어를 설정합니다."
+          : "기공소 기본 디자인 소프트웨어를 설정합니다.";
 
   return {
     loaded,

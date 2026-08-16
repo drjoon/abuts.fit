@@ -1,6 +1,8 @@
 // related files:
 // - web/frontend/src/features/requestSettings/useRequestorRequestSettings.ts
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
+// change-log:
+// - 2026-08-16: 미설정 게이트도 X/취소로 닫기 허용(재진입·새로고침 시 다시 노출).
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +28,7 @@ type DesignSoftwareSettingsDialogProps = {
   onCustomValueChange: (value: string) => void;
   saving?: boolean;
   onSave: () => void;
-  /** 미설정 강제 노출 시 취소 숨김·바깥 클릭/Esc 차단 */
+  /** @deprecated 닫기 차단에 쓰지 않음. 호출부 호환용으로 유지. */
   forceRequired?: boolean;
   description?: string;
   /** 게이트/첫 설정 시 아노다이징도 함께 선택 */
@@ -45,7 +47,6 @@ export function DesignSoftwareSettingsDialog({
   onCustomValueChange,
   saving = false,
   onSave,
-  forceRequired = false,
   description = "사용 중인 디자인 소프트웨어를 설정해주세요.",
   showAnodizing = false,
   anodizingEnabled = true,
@@ -53,26 +54,8 @@ export function DesignSoftwareSettingsDialog({
   contentClassName,
 }: DesignSoftwareSettingsDialogProps) {
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (forceRequired) {
-          if (next) onOpenChange(true);
-          return;
-        }
-        onOpenChange(next);
-      }}
-    >
-      <DialogContent
-        hideClose={forceRequired}
-        className={contentClassName || "sm:max-w-md"}
-        onInteractOutside={(e) => {
-          if (forceRequired) e.preventDefault();
-        }}
-        onEscapeKeyDown={(e) => {
-          if (forceRequired) e.preventDefault();
-        }}
-      >
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className={contentClassName || "sm:max-w-md"}>
         <DialogHeader>
           <DialogTitle>디자인 소프트웨어 설정</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -135,16 +118,14 @@ export function DesignSoftwareSettingsDialog({
         </div>
 
         <DialogFooter>
-          {!forceRequired ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={saving}
-            >
-              취소
-            </Button>
-          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+          >
+            취소
+          </Button>
           <Button type="button" onClick={onSave} disabled={saving}>
             {saving ? "저장 중..." : "저장"}
           </Button>

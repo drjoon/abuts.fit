@@ -17,6 +17,7 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-16: 어벗 STL 다중 선택·치아별 handoff 큐(relatedRequestIds 매칭).
+// - 2026-08-16: internalLab도 디자인SW·아노 사업체 저장 가능(개인 requestor* 미전송).
 // - 2026-08-16: 수락 직후 relatedRequestIds 로컬 반영(어벗 업로드 stale toast 방지).
 // - 2026-08-16: 의뢰 수락 취소 — API 성공 후에만 UI 반영. 가공중 409면 abutmentPastReady 로컬 고정.
 // - 2026-08-16: 수락 취소 성공·accept-released 실시간 — 로컬 해제 패치 + 목록 재동기화(수락 잔상/409 방지).
