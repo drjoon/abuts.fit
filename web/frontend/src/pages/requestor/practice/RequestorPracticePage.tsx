@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - 2026-08-16: 수락 직후 relatedRequestIds 로컬 반영(어벗 업로드 stale toast 방지).
 // - 2026-08-16: 의뢰 수락 취소 — API 성공 후에만 UI 반영. 가공중 409면 abutmentPastReady 로컬 고정.
+// - 2026-08-16: 수락 취소 성공·accept-released 실시간 — 로컬 해제 패치 + 목록 재동기화(수락 잔상/409 방지).
 // - 2026-08-16: 어벗 가공 시작(준비 아님)이면 의뢰 수락·생산 취소 차단.
 // - 2026-08-16: 수신 카드에 디자인SW·아노 메타 뱃지(어벗생산의뢰와 동일 스타일).
 // - 2026-08-16: 어벗디자인 업로드 시 3D 확인 모달(기본값 채움·유지홈 필수) 후 handoff.
@@ -371,6 +372,7 @@ export function RequestorPracticeReceivePage({
   const [rejectBusy, setRejectBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
+  const cardActionBusyIdRef = useRef<string>("");
   const [designConfirmBusyId, setDesignConfirmBusyId] = useState<string>("");
   const [designConfirmOpen, setDesignConfirmOpen] = useState(false);
   const [designConfirmBusy, setDesignConfirmBusy] = useState(false);
@@ -948,9 +950,75 @@ export function RequestorPracticeReceivePage({
       if (type === "practice:transfer-updated" && transferId) {
         if (
           action === "auto-match-released" ||
+          action === "accept-released" ||
           action === "auto-match-claimed" ||
           action === "completed"
         ) {
+          if (action === "auto-match-released" || action === "accept-released") {
+            const isAutoRelease = action === "auto-match-released";
+            const workCanceledAt =
+              payload.workCanceledAt != null
+                ? String(payload.workCanceledAt)
+                : new Date().toISOString();
+            const autoMatchRaw =
+              payload.autoMatch && typeof payload.autoMatch === "object"
+                ? (payload.autoMatch as Record<string, unknown>)
+                : null;
+            const releaseLocalPatch = (
+              row: ReceivedPracticeTransfer,
+            ): ReceivedPracticeTransfer => ({
+              ...row,
+              isAccepted: false,
+              isDownloaded: false,
+              requestorDownloadedAt: null,
+              requestorAcceptedAt: null,
+              workCanceledAt,
+              manufacturerStage: isAutoRelease
+                ? "자동매칭"
+                : String(payload.manufacturerStage || "작업취소").trim() ||
+                  "작업취소",
+              targetLabName: isAutoRelease
+                ? "자동 매칭"
+                : row.targetLabName,
+              autoMatch: isAutoRelease
+                ? {
+                    ...(row.autoMatch || {}),
+                    claimedAt: null,
+                    deadlineAt: null,
+                    completedAt: null,
+                    openPool:
+                      autoMatchRaw?.openPool != null
+                        ? Boolean(autoMatchRaw.openPool)
+                        : true,
+                    claimActive: false,
+                    completed: false,
+                    mine: false,
+                    remainingMs: null,
+                    releaseCount:
+                      autoMatchRaw?.releaseCount != null
+                        ? Number(autoMatchRaw.releaseCount)
+                        : Number(row.autoMatch?.releaseCount || 0) + 1,
+                  }
+                : row.autoMatch
+                  ? {
+                      ...row.autoMatch,
+                      completedAt: null,
+                      completed: false,
+                      claimActive: false,
+                    }
+                  : row.autoMatch,
+            });
+            setTransfers((prev) =>
+              prev.map((row) =>
+                row.transferId === transferId ? releaseLocalPatch(row) : row,
+              ),
+            );
+            setSelectedTransfer((prev) =>
+              prev && prev.transferId === transferId
+                ? releaseLocalPatch(prev)
+                : prev,
+            );
+          }
           void loadFirstPage({ silent: true });
           if (hasUnreadCount) {
             emitUnreadBadgeRefresh(unreadCount);
@@ -2094,7 +2162,7 @@ export function RequestorPracticeReceivePage({
             requestorDownloadedAt: null,
             requestorAcceptedAt: null,
             workCanceledAt: canceledAt,
-            manufacturerStage: "작업취소",
+            manufacturerStage: "자동매칭",
             targetLabName: "자동 매칭",
             autoMatch: {
               ...(transfer.autoMatch || {}),
@@ -2190,10 +2258,18 @@ export function RequestorPracticeReceivePage({
                 autoMatch: {
                   ...(releasePatch.autoMatch || {}),
                   releaseCount: Number(autoMatchRaw.releaseCount),
+                  openPool:
+                    autoMatchRaw.openPool != null
+                      ? Boolean(autoMatchRaw.openPool)
+                      : true,
                 },
+                manufacturerStage:
+                  String(data.manufacturerStage || "").trim() ||
+                  releasePatch.manufacturerStage,
               }
             : releasePatch,
         );
+        void loadFirstPage({ silent: true });
         toast({
           title: "작업 취소",
           description: isAuto
@@ -2210,7 +2286,7 @@ export function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, toast, token],
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadFirstPage, toast, token],
   );
 
   const markTransferReject = useCallback(
@@ -2885,15 +2961,17 @@ export function RequestorPracticeReceivePage({
       event.preventDefault();
       event.stopPropagation();
       const id = String(transfer.transferId || transfer._id || "").trim();
-      if (!id || cardActionBusyId) return;
+      if (!id || cardActionBusyIdRef.current) return;
+      cardActionBusyIdRef.current = id;
       setCardActionBusyId(id);
       try {
         await markTransferRelease(transfer);
       } finally {
+        cardActionBusyIdRef.current = "";
         setCardActionBusyId("");
       }
     },
-    [cardActionBusyId, markTransferRelease],
+    [markTransferRelease],
   );
 
   const openTransferDialog = useCallback(

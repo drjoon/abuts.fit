@@ -8,6 +8,7 @@
 // - 2026-08-16: labRatingSummary(내 별점·평가 횟수) 수신 타입.
 // - 2026-08-16: 생산 취소 시 confirmedAt·autoMatch.completed·manufacturerStage 클리어 →「의뢰수락」.
 // - 2026-08-15: 기공의뢰수신(어벗츠기공소·일반 lab) 카드 SSOT — 상태·CA 판정·타입.
+// - 2026-08-16: 자동매칭 재공개(openPool)는 workCanceledAt보다 우선 →「자동매칭」(수락 취소 후 수락 잔상 방지).
 import { parseToothWorks } from "@/shared/practice/transferMemo";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import type {
@@ -151,6 +152,14 @@ export function getPracticeTransferLabReceiveDisplayStatus(
     return "작업완료";
   }
 
+  // 자동매칭 재공개(수락 취소 포함) — workCanceledAt이 남아 있어도 공개 풀이면 「자동매칭」
+  if (
+    String(transfer.matchingMode || "") === "auto" &&
+    (transfer.autoMatch?.openPool || transfer.manufacturerStage === "자동매칭")
+  ) {
+    return "자동매칭";
+  }
+
   const stage = String(transfer.manufacturerStage || "").trim();
   if (
     stage === "작업취소" ||
@@ -158,13 +167,6 @@ export function getPracticeTransferLabReceiveDisplayStatus(
     Boolean(String(transfer.workCanceledAt || "").trim())
   ) {
     return "취소";
-  }
-
-  if (
-    String(transfer.matchingMode || "") === "auto" &&
-    transfer.autoMatch?.openPool
-  ) {
-    return "자동매칭";
   }
 
   const rawStatus = String(transfer.status || "").trim().toLowerCase();

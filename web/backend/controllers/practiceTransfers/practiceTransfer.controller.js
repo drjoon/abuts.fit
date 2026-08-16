@@ -132,6 +132,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-16: mark-reject 지정=작업취소(치과 취소·휴지통 아님). mark-release auto=자동매칭 재공개.
 // - 2026-08-16: 수신 목록 — 별점 다운그레이드(유효별>의뢰별 수가) 페이로드.
 // - 2026-08-16: mark-release clearAutoMatchClaim — autoMatchBudget(선택 별점) 유지. 누락 시 평균가(3점) 폴백·다운그레이드 소실.
+// - 2026-08-16: mark-release 이미 해제면 200 멱등. 수신 목록 manufacturerStage는 stage SSOT.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -2936,21 +2937,10 @@ export async function getReceivedPracticeTransfers(req, res) {
       const labRejected =
         declinedByMe ||
         (labRejectedByAnchor && Boolean(doc?.labRejectedAt));
-      const manufacturerStage = labRejected
-        ? "거부"
-        : production?.confirmedAt
-        ? "생산진행"
-        : autoFields.autoMatch?.completed
-          ? "작업완료"
-          : isAccepted
-            ? "의뢰수락"
-            : Boolean(doc?.workCanceledAt) && !isAccepted
-              ? "작업취소"
-              : Boolean(doc?.requestorReadAt) && !openPool
-                ? "수신완료"
-                : openPool
-                  ? "자동매칭"
-                  : "발송완료";
+      // openPool 재공개는 작업취소보다 우선(자동매칭). 인라인 workCanceledAt 우선은 수락 취소 후 뱃지 어긋남.
+      const manufacturerStage = resolvePracticeTransferManufacturerStage(doc, {
+        viewerLabAnchorId: labAnchorId,
+      });
       const oralScanDownloadLocked = shouldLockLabOralScanDownload(doc);
       const feeQuote = quotesById.get(String(doc?._id || "")) || null;
       // 공개풀 수신 시에도 billing.autoMatchBudget.stars 를 본다(견적에 budget 누락 대비).
@@ -4398,7 +4388,27 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       });
     }
 
+    const isAutoEarly = isAutoMatchMode(doc);
+    // 이미 수락 해제된 재요청(더블클릭·지연 응답) — 409 대신 멱등 성공으로 UI를 맞춘다.
     if (!doc.requestorDownloadedAt) {
+      const alreadyOpenPool = isAutoEarly && isAutoMatchOpenPool(doc);
+      const alreadyWorkCanceled = Boolean(doc.workCanceledAt);
+      if (alreadyOpenPool || alreadyWorkCanceled) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            transferId: String(doc.transferId || "").trim(),
+            released: true,
+            alreadyReleased: true,
+            matchingMode: isAutoEarly ? "auto" : "direct",
+            workCanceledAt: doc.workCanceledAt || null,
+            manufacturerStage: resolvePracticeTransferManufacturerStage(doc, {
+              viewerLabAnchorId: labAnchorId,
+            }),
+            ...toAutoMatchApiFields(doc, labAnchorId),
+          },
+        });
+      }
       return res.status(409).json({
         success: false,
         message: "의뢰수락된 건만 작업 취소할 수 있습니다.",
@@ -4647,6 +4657,8 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         transferId: String(doc.transferId || "").trim(),
         released: true,
         matchingMode: isAuto ? "auto" : "direct",
+        workCanceledAt: doc.workCanceledAt || now,
+        manufacturerStage: isAuto ? "자동매칭" : "작업취소",
         ...toAutoMatchApiFields(doc, labAnchorId),
       },
     });
