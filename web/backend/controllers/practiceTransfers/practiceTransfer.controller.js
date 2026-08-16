@@ -130,6 +130,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-14: mark-accepted — 치과 practice:transfer-updated에 확정 feeQuote 포함.
 // - 2026-08-16: mark-reject 지정=작업취소(치과 취소·휴지통 아님). mark-release auto=자동매칭 재공개.
 // - 2026-08-16: 수신 목록 — 별점 다운그레이드(유효별>의뢰별 수가) 페이로드.
+// - 2026-08-16: mark-release clearAutoMatchClaim — autoMatchBudget(선택 별점) 유지. 누락 시 평균가(3점) 폴백·다운그레이드 소실.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
@@ -231,6 +232,12 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
   const prevBilling =
     doc.billing && typeof doc.billing === "object" ? doc.billing : {};
   const releaseCount = Number(prev.releaseCount || 0);
+  // 생성 시 스냅샷 — 클레임 해제·재공개 후에도 선택 별점/고정수가 유지(미보존 시 3점 평균가 폴백).
+  const preservedAutoMatchBudget =
+    prevBilling.autoMatchBudget != null &&
+    typeof prevBilling.autoMatchBudget === "object"
+      ? prevBilling.autoMatchBudget
+      : undefined;
   doc.targetLabAnchorId = null;
   doc.targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
   doc.requestorReadAt = null;
@@ -251,6 +258,15 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
     labSettlementAmount: 0,
     abutsRevenueAmount: 0,
     billedAt: null,
+    heldAt: null,
+    heldTotal: 0,
+    holdFromPaid: 0,
+    holdFromFreeRequest: 0,
+    holdFromFreeShipping: 0,
+    settledAt: null,
+    ...(preservedAutoMatchBudget
+      ? { autoMatchBudget: preservedAutoMatchBudget }
+      : {}),
   };
   doc.autoMatch = {
     claimedAt: null,
