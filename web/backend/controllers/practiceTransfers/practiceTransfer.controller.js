@@ -106,6 +106,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-16: pastReady — 라이브 stage 우선(sticky startedAt OR 제거 시 목록 인자 우선).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
 // - 2026-08-15: 자동매칭 어벗츠(internalLab) 5분 우선창 — 목록·클레임 게이트, 거부 시 조기 공개.
@@ -379,11 +380,14 @@ const extractTransferMemoFromMessage = (message) => {
     .trim();
 };
 
-const toProductionApiFields = (production, { abutmentPastReady = false } = {}) => {
+const toProductionApiFields = (production, { abutmentPastReady } = {}) => {
   const p = production && typeof production === "object" ? production : {};
   const designFiles = normalizeResultFiles(p.designFiles);
+  // 목록 등에서 라이브 pastReady를 넘기면 sticky startedAt보다 우선(가공→준비 복귀).
   const pastReady =
-    Boolean(abutmentPastReady) || Boolean(p.abutmentProductionStartedAt);
+    abutmentPastReady !== undefined
+      ? Boolean(abutmentPastReady)
+      : Boolean(p.abutmentProductionStartedAt);
   return {
     shippingMode:
       p.shippingMode === "express"

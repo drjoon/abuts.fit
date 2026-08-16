@@ -8,6 +8,7 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // change-log:
+// - 2026-08-16: 가공→준비 롤백 시 PTX abutmentProductionStartedAt 클리어.
 // - 2026-08-07: 생산 큐/완료맵용 의뢰자명(BusinessAnchor) 배치 조회 헬퍼 추가.
 import mongoose from "mongoose";
 import CncMachine from "../../models/cncMachine.model.js";
@@ -15,6 +16,7 @@ import Machine from "../../models/machine.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "../requests/common.review.helpers.js";
+import { clearPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import {
   getPresignedGetUrl,
   getPresignedPutUrl,
@@ -513,6 +515,12 @@ export async function rollbackRequestToCamByRequestId(requestId) {
       await request.save({ session });
       updatedRequest = request;
     });
+
+    try {
+      await clearPracticeTransferAbutmentMachiningStarted(updatedRequest);
+    } catch {
+      // best-effort
+    }
 
     return updatedRequest;
   } catch (e) {

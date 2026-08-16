@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: CAM 롤백(준비) 시 PTX abutmentProductionStartedAt 클리어.
 // - 2026-08-11: original/cam signed URL 응답에 fileName을 포함해 프론트 프리뷰가 STL/PLY/OBJ 확장자를 유지.
 // - 2026-08-10: 디자인 파트너(designAccessEnabled) 원본 파일 URL 접근 허용.
 // related files:
@@ -24,6 +25,7 @@ import s3Utils, {
 } from "../../utils/s3.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import { clearPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
 
 export async function getStlFileUrl(req, res) {
@@ -309,6 +311,12 @@ export async function deleteCamFileAndRollback(req, res) {
       request.manufacturerStage = "준비";
       await request.save();
 
+      try {
+        await clearPracticeTransferAbutmentMachiningStarted(request);
+      } catch {
+        // best-effort
+      }
+
       const normalized = await normalizeRequestForResponse(request);
       const businessAnchorId = String(request?.businessAnchorId || "").trim() || null;
       emitAppEventToRoles(["requestor", "manufacturer", "admin"], "request:stage-changed", {
@@ -364,6 +372,12 @@ export async function deleteCamFileAndRollback(req, res) {
     request.manufacturerStage = "준비";
 
     await request.save();
+
+    try {
+      await clearPracticeTransferAbutmentMachiningStarted(request);
+    } catch {
+      // best-effort
+    }
 
     const normalized = await normalizeRequestForResponse(request);
     const businessAnchorId = String(request?.businessAnchorId || "").trim() || null;

@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-08-16: machiningStarted — abutmentPastReady 우선(준비 복귀 후 sticky startedAt 무시).
 // - 2026-08-16: abutmentPastReady — 가공 시작 시 생산/수락 취소 불가 판정.
 // - 2026-08-16: 별점 다운그레이드(starDowngrade) 수신 타입.
 // - 2026-08-16: labRatingSummary(내 별점·평가 횟수) 수신 타입.
@@ -206,10 +207,14 @@ export function practiceTransferAbutmentMachiningStarted(
     | null
     | undefined,
 ) {
-  return Boolean(
-    transfer?.production?.abutmentProductionStartedAt ||
-      transfer?.production?.abutmentPastReady,
-  );
+  // 라이브 pastReady가 있으면 그것만 본다(가공→준비 복귀 후 sticky startedAt 무시).
+  if (
+    transfer?.production &&
+    Object.prototype.hasOwnProperty.call(transfer.production, "abutmentPastReady")
+  ) {
+    return Boolean(transfer.production.abutmentPastReady);
+  }
+  return Boolean(transfer?.production?.abutmentProductionStartedAt);
 }
 
 export function countPracticeTransferDesignFiles(

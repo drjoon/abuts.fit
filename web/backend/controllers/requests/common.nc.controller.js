@@ -8,6 +8,8 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/services/requestSnapshotTriggers.service.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
+// change-log:
+// - 2026-08-16: NC 롤백(준비) 시 PTX abutmentProductionStartedAt 클리어.
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -23,6 +25,7 @@ import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import { clearPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 
 async function assertAndClaimManufacturerRequestAccess({ req, request }) {
   if (req?.user?.role !== "manufacturer") return;
@@ -823,13 +826,14 @@ export async function deleteNcFileAndRollbackCam(req, res) {
     let businessAnchorId = null;
     let s3Key = "";
     let bridgePath = "";
+    let relatedPracticeTransferId = "";
 
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
         const requestInTx = await Request.findById(id)
           .select(
-            "_id requestId businessAnchorId manufacturerStage requestCategory caseInfos.ncFile",
+            "_id requestId businessAnchorId manufacturerStage requestCategory caseInfos.ncFile partnerBilling.relatedPracticeTransferId",
           )
           .session(session);
 
@@ -845,6 +849,9 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         businessAnchorId = String(requestInTx.businessAnchorId || "").trim() || null;
         s3Key = String(requestInTx?.caseInfos?.ncFile?.s3Key || "").trim();
         bridgePath = String(requestInTx?.caseInfos?.ncFile?.filePath || "").trim();
+        relatedPracticeTransferId = String(
+          requestInTx?.partnerBilling?.relatedPracticeTransferId || "",
+        ).trim();
 
         console.log("[NC_ROLLBACK] request received", {
           requestMongoId,
@@ -918,6 +925,16 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       });
     } finally {
       await session.endSession().catch(() => null);
+    }
+
+    try {
+      await clearPracticeTransferAbutmentMachiningStarted({
+        partnerBilling: {
+          relatedPracticeTransferId: relatedPracticeTransferId || undefined,
+        },
+      });
+    } catch {
+      // best-effort
     }
 
     if (!rollbackOnly) {

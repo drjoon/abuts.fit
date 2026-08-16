@@ -4,7 +4,8 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
 // change-log:
-// - 2026-08-16: 어벗 가공 시작(준비 아님)이면 어벗 생산·의뢰 수락 취소 숨김.
+// - 2026-08-16: 어벗 가공 시작 시「어벗 생산 취소」는 숨기지 않고 비활성(의뢰 수락 취소와 동일).
+// - 2026-08-16: 어벗 가공 시작(준비 아님)이면 의뢰 수락 취소 비활성.
 // - 2026-08-16: 취소 라벨 — 수락중「의뢰 수락 취소」·보철완료후「작업 완료 취소」.
 // - 2026-08-16: 보철 완료(발송) 후 — 어벗·보철 CTA 비활성 + 오른쪽「취소」만(의뢰수락 재오픈).
 // - 2026-08-16: 별점 다운그레이드 배너 — 우리 별점·자동매칭 별점·수가 차이(accent/danger).
@@ -130,7 +131,6 @@ export function PracticeTransferLabReceiveCard({
   const needsStageReopen =
     hasCa &&
     isLabAccepted &&
-    !productionStarted &&
     designFileCount === 0 &&
     (resultCount > 0 ||
       Boolean(transfer.production?.confirmedAt) ||
@@ -146,10 +146,9 @@ export function PracticeTransferLabReceiveCard({
       resultCount === 0 &&
       !transfer.production?.confirmedAt &&
       !transfer.autoMatch?.completed);
-  /** 제조 준비 + (디자인 있음 | 스테이지 재오픈 필요) */
-  const canCancelAbutmentProduction =
+  /** 연동 CA가 있고(디자인 있음 | 스테이지 재오픈) — 가공 중이어도 CTA는 노출 */
+  const showAbutmentProductionCancel =
     hasCa &&
-    !productionStarted &&
     (designFileCount > 0 || needsStageReopen) &&
     Array.isArray(transfer.production?.relatedRequestIds) &&
     transfer.production.relatedRequestIds.length > 0;
@@ -177,32 +176,55 @@ export function PracticeTransferLabReceiveCard({
     }
   };
 
-  /** 수락 중(업로드 가능): 어벗디자인 있으면「어벗 생산 취소」 */
-  const productionCancelButton = canCancelAbutmentProduction ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={cardBusy}
-          className="focus-visible:ring-0 focus-visible:ring-offset-0"
-          onClick={(event) => void onAbutmentProductionCancel(event)}
-        >
-          <X className="h-4 w-4" />
-          {cardBusy ? "처리 중..." : "어벗 생산 취소"}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-xs text-xs">
-        제조사가 준비 단계일 때만 생산을 취소할 수 있습니다. 가공이 시작되면
-        변경할 수 없습니다.
-      </TooltipContent>
-    </Tooltip>
+  /** 수락 중(업로드 가능): 어벗디자인 있으면「어벗 생산 취소」(가공 중이면 비활성 유지) */
+  const productionCancelButton = showAbutmentProductionCancel ? (
+    productionStarted ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled
+              className="focus-visible:ring-0 focus-visible:ring-offset-0"
+            >
+              <X className="h-4 w-4" />
+              어벗 생산 취소
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          어벗 가공이 시작된 뒤에는 생산을 취소할 수 없습니다. 제조사가 준비
+          단계일 때만 가능합니다.
+        </TooltipContent>
+      </Tooltip>
+    ) : (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={cardBusy}
+            className="focus-visible:ring-0 focus-visible:ring-offset-0"
+            onClick={(event) => void onAbutmentProductionCancel(event)}
+          >
+            <X className="h-4 w-4" />
+            {cardBusy ? "처리 중..." : "어벗 생산 취소"}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          제조사가 준비 단계일 때만 생산을 취소할 수 있습니다. 가공이 시작되면
+          변경할 수 없습니다.
+        </TooltipContent>
+      </Tooltip>
+    )
   ) : null;
 
   /** 보철 완료·발송 단계: 3버튼 유지, 업로드 2개 비활성, 오른쪽 취소만(의뢰수락 재오픈) */
   const completedStageCancelActions =
-    !showWorkActions && canCancelAbutmentProduction ? (
+    !showWorkActions && showAbutmentProductionCancel ? (
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
           type="button"
@@ -223,24 +245,40 @@ export function PracticeTransferLabReceiveCard({
           <UploadCloud className="h-4 w-4" />
           보철 업로드 & 작업완료
         </Button>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={cardBusy}
-              onClick={(event) => void onAbutmentProductionCancel(event)}
-            >
-              {cardBusy ? "처리 중..." : "작업 완료 취소"}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-xs">
-            발송(작업완료) 단계를 의뢰수락으로 되돌립니다. 이후 어벗·보철을
-            다시 올리거나 작업 취소할 수 있습니다. 제조사 준비 단계에서만
-            가능합니다.
-          </TooltipContent>
-        </Tooltip>
+        {productionStarted ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Button type="button" size="sm" variant="outline" disabled>
+                  작업 완료 취소
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-xs">
+              어벗 가공이 시작된 뒤에는 작업 완료를 취소할 수 없습니다. 제조사가
+              준비 단계일 때만 가능합니다.
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={cardBusy}
+                onClick={(event) => void onAbutmentProductionCancel(event)}
+              >
+                {cardBusy ? "처리 중..." : "작업 완료 취소"}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-xs">
+              발송(작업완료) 단계를 의뢰수락으로 되돌립니다. 이후 어벗·보철을
+              다시 올리거나 작업 취소할 수 있습니다. 제조사 준비 단계에서만
+              가능합니다.
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
     ) : null;
 
