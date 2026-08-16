@@ -6895,6 +6895,7 @@ export const PracticeFileTransferPage = ({
           }}
           title="의뢰 상세 · 기공소 채팅"
           conversationTitle="기공소와의 소통"
+          authToken={authToken}
           chatHeaderAction={
             selectedTransfer &&
             selectedTransfer.canRateLab &&

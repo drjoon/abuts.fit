@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 리사이즈 시 카메라 FOV 재맞춤 — 모달 등에서 모델이 위로 치우치지 않게.
 // - 2026-08-11: 모델 확장자 판별을 shared/files/modelPreviewFile로 통일.
 // - 2026-08-11: forceFilled prop — cam 파일명에 filled 없어도 가이드/프론트포인트/경사축 표시.
 // - 2026-08-11: FP 픽 시 frontPoint 메타 변경으로 씬 전체 재생성(카메라 초기화)되지 않게 deps에서 제외.
@@ -1864,53 +1865,77 @@ export function StlPreviewViewer({
           1,
         );
 
-        // FOV/aspect 기준으로 바운딩 스피어가 뷰포트에 맞게 들어오도록 카메라 거리 계산.
-        // (기존 radius*2.5 고정 배율은 구강 스캔처럼 큰 모델에서 과도하게 줌아웃됨)
-        const fovRad = THREE.MathUtils.degToRad(camera.fov);
-        const aspect = Math.max(camera.aspect, 0.01);
-        const halfVFov = fovRad / 2;
-        const halfHFov = Math.atan(Math.tan(halfVFov) * aspect);
-        const fitDistance = Math.max(
-          radius / Math.sin(halfVFov),
-          radius / Math.sin(halfHFov),
-        );
-        // 오버레이는 absolute라 카메라 여백을 따로 두지 않는다. 모델 전체가 보이게만 맞춤.
-        const distance = fitDistance * 1.08;
-
         // filled는 메시를 원점 재정렬하지 않으므로 bbox 중심을 바라본다.
         // (원점 lookAt이면 +Z 치우친 어버트먼트가 위로 밀려 상단이 잘림)
         const viewTarget = isFilled
           ? bbox.getCenter(new THREE.Vector3())
           : new THREE.Vector3(0, 0, 0);
         const viewDir = new THREE.Vector3(1, -1, 0.9).normalize();
-        camera.position.copy(viewTarget.clone().add(viewDir.multiplyScalar(distance)));
-        camera.near = Math.max(distance / 200, 0.01);
-        camera.far = Math.max(distance * 40, 2000);
-        camera.updateProjectionMatrix();
-        camera.lookAt(viewTarget);
-        controls.target.copy(viewTarget);
-        controls.update();
+
+        applyCameraFit = () => {
+          // FOV/aspect 기준으로 바운딩 스피어가 뷰포트에 맞게 들어오도록 카메라 거리 계산.
+          const fovRad = THREE.MathUtils.degToRad(camera.fov);
+          const aspect = Math.max(camera.aspect, 0.01);
+          const halfVFov = fovRad / 2;
+          const halfHFov = Math.atan(Math.tan(halfVFov) * aspect);
+          const fitDistance = Math.max(
+            radius / Math.sin(halfVFov),
+            radius / Math.sin(halfHFov),
+          );
+          // 오버레이는 absolute라 카메라 여백을 따로 두지 않는다. 모델 전체가 보이게만 맞춤.
+          const distance = fitDistance * 1.08;
+          camera.position.copy(
+            viewTarget.clone().add(viewDir.clone().multiplyScalar(distance)),
+          );
+          camera.near = Math.max(distance / 200, 0.01);
+          camera.far = Math.max(distance * 40, 2000);
+          camera.updateProjectionMatrix();
+          camera.lookAt(viewTarget);
+          controls.target.copy(viewTarget);
+          controls.update();
+        };
+
+        updateSize();
+        applyCameraFit();
+        // 모달 오픈 직후 컨테이너 크기 확장을 반영하기 위해 한 프레임 뒤 재맞춤
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          updateSize();
+          applyCameraFit?.();
+        });
       } catch (e) {
         console.error("[StlPreviewViewer] failed to load 3D model", e);
         setError("3D 모델 파일을 불러오지 못했습니다");
       }
     })();
+
+    let applyCameraFit: (() => void) | null = null;
+    let userHasOrbited = false;
+    controls.addEventListener("start", () => {
+      userHasOrbited = true;
+    });
+
     const updateSize = () => {
       if (!containerRef.current) return;
       const newWidth = containerRef.current.clientWidth || width;
       const newHeight = containerRef.current.clientHeight || height;
       width = newWidth;
-      camera.aspect = newWidth / newHeight;
+      camera.aspect = newWidth / Math.max(newHeight, 1);
       camera.updateProjectionMatrix();
-      renderer.setSize(newWidth, newHeight);
+      renderer.setSize(newWidth, newHeight, false);
+      renderer.domElement.style.width = "100%";
+      renderer.domElement.style.height = "100%";
+      renderer.domElement.style.display = "block";
       lineMaterials.forEach((mat) => mat.resolution.set(newWidth, newHeight));
     };
 
-    // 컨테이너의 폭 변화에 반응
+    // 컨테이너의 폭·높이 변화에 반응 (모달 애니메이션 후 포함)
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => {
         updateSize();
+        // 사용자가 궤도를 조작하기 전(모달 레이아웃 확정 전)에만 재맞춤
+        if (!userHasOrbited) applyCameraFit?.();
       });
       resizeObserver.observe(containerRef.current);
     } else {
@@ -2133,7 +2158,7 @@ export function StlPreviewViewer({
         className,
       )}
     >
-      <div ref={containerRef} className="w-full h-full" />
+      <div ref={containerRef} className="absolute inset-0 h-full w-full" />
       {shouldBlockSceneForMetadata && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-slate-500">
           <div className="flex flex-col items-center gap-2">

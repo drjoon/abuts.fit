@@ -3352,6 +3352,7 @@ export function RequestorPracticeReceivePage({
         }}
         title="의뢰 상세 · 치과 채팅"
         conversationTitle="치과와의 소통"
+        authToken={token}
         chatHeaderAction={
           selectedTransfer?.practiceBusinessAnchorId ? (
             <LabPracticeFeeSurchargeControl

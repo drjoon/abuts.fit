@@ -1,5 +1,9 @@
+// change-log:
+// - 2026-08-16: IndexedDB(s3:key) 캐시 — 다운로드·프리뷰 공통.
+// - 2026-08-16: fetchS3Blob — 프리뷰용 blob fetch(저장 없음).
 // related files:
 // - web/frontend/src/shared/files/downloadWithProgress.ts
+// - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -7,7 +11,8 @@
 // - web/frontend/src/pages/requestor/design/DesignRequestTransferView.tsx
 import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
-import { downloadWithProgress } from "@/shared/files/downloadWithProgress";
+import { saveBlobAsDownload } from "@/shared/files/downloadWithProgress";
+import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 
 export type S3DownloadTarget = {
   s3Key?: string;
@@ -37,6 +42,50 @@ export function useS3FileDownload(token?: string | null) {
   const [downloadAllBusy, setDownloadAllBusy] = useState(false);
   const downloadingKeysRef = useRef<Set<string>>(new Set());
 
+  const beginBusy = useCallback((busyKey: string) => {
+    if (!busyKey) return;
+    downloadingKeysRef.current.add(busyKey);
+    setDownloadingKeys(Array.from(downloadingKeysRef.current));
+    setDownloadProgressByKey((prev) => ({ ...prev, [busyKey]: 0 }));
+  }, []);
+
+  const endBusy = useCallback((busyKey: string) => {
+    if (!busyKey) return;
+    downloadingKeysRef.current.delete(busyKey);
+    setDownloadingKeys(Array.from(downloadingKeysRef.current));
+    setDownloadProgressByKey((prev) => {
+      const next = { ...prev };
+      delete next[busyKey];
+      return next;
+    });
+  }, []);
+
+  const loadCachedBlob = useCallback(
+    async (file: S3DownloadTarget & { signal?: AbortSignal }) => {
+      const s3Key = String(file.s3Key || "").trim();
+      const fileName = String(file.fileName || "download").trim() || "download";
+      if (!token) throw new Error("로그인이 필요합니다.");
+      if (!s3Key) throw new Error("파일 키가 없어 불러올 수 없습니다.");
+
+      return fetchS3BlobCached({
+        s3Key,
+        fileName,
+        token,
+        buildUrl: buildS3ProxyDownloadUrl,
+        signal: file.signal,
+        onProgress: (percent) => {
+          const busyKey = String(file.busyKey || s3Key).trim();
+          if (!busyKey) return;
+          setDownloadProgressByKey((prev) => ({
+            ...prev,
+            [busyKey]: percent,
+          }));
+        },
+      });
+    },
+    [token],
+  );
+
   const downloadS3File = useCallback(
     async (file: S3DownloadTarget) => {
       const s3Key = String(file.s3Key || "").trim();
@@ -54,25 +103,11 @@ export function useS3FileDownload(token?: string | null) {
       }
       if (busyKey && downloadingKeysRef.current.has(busyKey)) return;
 
-      if (busyKey) {
-        downloadingKeysRef.current.add(busyKey);
-        setDownloadingKeys(Array.from(downloadingKeysRef.current));
-        setDownloadProgressByKey((prev) => ({ ...prev, [busyKey]: 0 }));
-      }
+      beginBusy(busyKey);
 
       try {
-        await downloadWithProgress({
-          url: buildS3ProxyDownloadUrl(s3Key, fileName),
-          token,
-          fileName,
-          onProgress: (percent) => {
-            if (!busyKey) return;
-            setDownloadProgressByKey((prev) => ({
-              ...prev,
-              [busyKey]: percent,
-            }));
-          },
-        });
+        const blob = await loadCachedBlob(file);
+        saveBlobAsDownload(blob, fileName);
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         toast({
@@ -84,18 +119,50 @@ export function useS3FileDownload(token?: string | null) {
           variant: "destructive",
         });
       } finally {
-        if (busyKey) {
-          downloadingKeysRef.current.delete(busyKey);
-          setDownloadingKeys(Array.from(downloadingKeysRef.current));
-          setDownloadProgressByKey((prev) => {
-            const next = { ...prev };
-            delete next[busyKey];
-            return next;
-          });
-        }
+        endBusy(busyKey);
       }
     },
-    [toast, token],
+    [beginBusy, endBusy, loadCachedBlob, toast, token],
+  );
+
+  const fetchS3Blob = useCallback(
+    async (
+      file: S3DownloadTarget & { signal?: AbortSignal },
+    ): Promise<Blob | null> => {
+      const s3Key = String(file.s3Key || "").trim();
+      const busyKey = String(file.busyKey || s3Key).trim();
+
+      if (!token) return null;
+      if (!s3Key) {
+        toast({
+          title: "미리보기 실패",
+          description: "파일 키가 없어 불러올 수 없습니다.",
+          variant: "destructive",
+        });
+        return null;
+      }
+      if (busyKey && downloadingKeysRef.current.has(busyKey)) return null;
+
+      beginBusy(busyKey);
+
+      try {
+        return await loadCachedBlob(file);
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return null;
+        toast({
+          title: "미리보기 실패",
+          description:
+            err instanceof Error
+              ? err.message
+              : "파일을 불러오는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return null;
+      } finally {
+        endBusy(busyKey);
+      }
+    },
+    [beginBusy, endBusy, loadCachedBlob, toast, token],
   );
 
   const downloadAll = useCallback(
@@ -124,6 +191,7 @@ export function useS3FileDownload(token?: string | null) {
     downloadProgressByKey,
     downloadAllBusy,
     downloadS3File,
+    fetchS3Blob,
     downloadAll,
     resetDownloads,
   };

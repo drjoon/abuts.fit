@@ -6,6 +6,12 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - web/frontend/src/shared/components/ModelPreviewDialog.tsx
+// - web/frontend/src/shared/files/modelPreviewFile.ts
+// - web/frontend/src/shared/files/downloadWithProgress.ts
+// - web/frontend/src/shared/files/s3BlobCache.ts
+// - 2026-08-16: 이미지 미리보기(다운로드 오버레이) + IndexedDB 캐시.
+// - 2026-08-16: STL/PLY/OBJ 클릭 시 3D 미리보기(다운로드는 모달).
 // - 2026-08-16: 어벗 가공 시작 시 상세 모달 작업취소(수락 취소) 비활성 안내.
 // - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔) / 작업 파일(어벗 디자인·보철물).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 왼쪽 구강스캔 업로드 UI 제거(스캔 없이 수락).
@@ -18,7 +24,14 @@
 // - 2026-08-14: 기공소 기공수가 할증은 치과 채팅 헤더에 배치(자동매칭 포함).
 // - 2026-08-14: 수락 후 같은 자리(채팅 상단 바)에 작업취소 버튼.
 // - 2026-08-15: 요약 작업기간 — 5일 미만 빨간 표시·툴팁. 수락 바 거부·짧은 작업기간.
-import type { ReactNode, RefObject } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { CircleHelp, Paperclip, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -54,6 +67,47 @@ import {
   ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
 } from "@/shared/practice/oralScanRequirement";
+import { ModelPreviewDialog, type ModelPreviewKind } from "@/shared/components/ModelPreviewDialog";
+import {
+  fileFromModelBlob,
+  getModelExtLower,
+  isModelPreviewExt,
+} from "@/shared/files/modelPreviewFile";
+import {
+  buildS3ProxyDownloadUrl,
+  s3DownloadBusyKey,
+} from "@/shared/files/useS3FileDownload";
+import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { useToast } from "@/shared/hooks/use-toast";
+import {
+  getPracticeTransferFileExtension,
+  PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
+} from "@/shared/practice/practiceTransferAccept";
+
+function isImagePreviewExt(ext: string): boolean {
+  return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(String(ext || "").toLowerCase());
+}
+
+function mimeTypeForImageFileName(name: string): string {
+  const ext = getPracticeTransferFileExtension(name);
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".bmp") return "image/bmp";
+  return "application/octet-stream";
+}
+
+function fileFromPreviewBlob(blob: Blob, fileName: string, kind: ModelPreviewKind): File {
+  if (kind === "model") return fileFromModelBlob(blob, fileName);
+  const name = String(fileName || "image").trim() || "image";
+  const blobType = String(blob?.type || "").trim().toLowerCase();
+  const type =
+    blobType && blobType !== "application/octet-stream"
+      ? blob.type
+      : mimeTypeForImageFileName(name);
+  return new File([blob], name, { type });
+}
 
 export type PracticeTransferDialogSummaryItem = {
   label: string;
@@ -74,6 +128,8 @@ type PracticeTransferDetailChatDialogProps = {
   onOpenChange: (open: boolean) => void;
   title: string;
   conversationTitle: string;
+  /** S3 프록시 미리보기용 JWT */
+  authToken?: string | null;
   /** 치과 채팅 헤더 오른쪽(예: 기공수가 할증) */
   chatHeaderAction?: ReactNode;
   summaryItems: PracticeTransferDialogSummaryItem[];
@@ -179,6 +235,7 @@ export function PracticeTransferDetailChatDialog({
   onOpenChange,
   title,
   conversationTitle,
+  authToken = null,
   chatHeaderAction = null,
   summaryItems,
   memo,
@@ -246,6 +303,124 @@ export function PracticeTransferDetailChatDialog({
   inputDisabled,
   sendDisabled,
 }: PracticeTransferDetailChatDialogProps) {
+  const { toast } = useToast();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewKind, setPreviewKind] = useState<ModelPreviewKind>("model");
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [previewMeta, setPreviewMeta] =
+    useState<PracticeTransferDialogFileItem | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState(0);
+  const previewAbortRef = useRef<AbortController | null>(null);
+
+  const resetPreview = useCallback(() => {
+    previewAbortRef.current?.abort();
+    previewAbortRef.current = null;
+    setPreviewOpen(false);
+    setPreviewKind("model");
+    setPreviewFile(null);
+    setPreviewMeta(null);
+    setPreviewLoading(false);
+    setPreviewProgress(0);
+  }, []);
+
+  useEffect(() => {
+    if (!open) resetPreview();
+  }, [open, resetPreview]);
+
+  const openFilePreview = useCallback(
+    async (file: PracticeTransferDialogFileItem, kind: ModelPreviewKind) => {
+      const s3Key = String(file.s3Key || "").trim();
+      const fileName =
+        String(file.fileName || (kind === "image" ? "image" : "model.stl")).trim() ||
+        (kind === "image" ? "image" : "model.stl");
+      if (!authToken || !s3Key) {
+        toast({
+          title: "미리보기 실패",
+          description: !authToken
+            ? "로그인이 필요합니다."
+            : "파일 키가 없어 불러올 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      previewAbortRef.current?.abort();
+      const ac = new AbortController();
+      previewAbortRef.current = ac;
+
+      setPreviewKind(kind);
+      setPreviewMeta(file);
+      setPreviewFile(null);
+      setPreviewLoading(true);
+      setPreviewProgress(0);
+      setPreviewOpen(true);
+
+      try {
+        const blob = await fetchS3BlobCached({
+          s3Key,
+          fileName,
+          token: authToken,
+          buildUrl: buildS3ProxyDownloadUrl,
+          signal: ac.signal,
+          onProgress: setPreviewProgress,
+        });
+        if (ac.signal.aborted) return;
+        setPreviewFile(fileFromPreviewBlob(blob, fileName, kind));
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return;
+        toast({
+          title: "미리보기 실패",
+          description:
+            err instanceof Error
+              ? err.message
+              : "파일을 불러오는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        resetPreview();
+      } finally {
+        if (previewAbortRef.current === ac) {
+          previewAbortRef.current = null;
+          setPreviewLoading(false);
+        }
+      }
+    },
+    [authToken, resetPreview, toast],
+  );
+
+  const handleFileRowClick = useCallback(
+    (file: PracticeTransferDialogFileItem, locked: boolean) => {
+      if (locked) return;
+      const busyKey = s3DownloadBusyKey(file);
+      const isBusy =
+        downloadAllBusy ||
+        (busyKey ? downloadingFileKeys.includes(busyKey) : false);
+      if (isBusy) return;
+
+      const ext = getModelExtLower(file.fileName) || getPracticeTransferFileExtension(file.fileName);
+      if (isModelPreviewExt(ext)) {
+        void openFilePreview(file, "model");
+        return;
+      }
+      if (isImagePreviewExt(ext)) {
+        void openFilePreview(file, "image");
+        return;
+      }
+      void onDownloadTransferFile(file);
+    },
+    [
+      downloadAllBusy,
+      downloadingFileKeys,
+      onDownloadTransferFile,
+      openFilePreview,
+    ],
+  );
+
+  const previewBusyKey = previewMeta ? s3DownloadBusyKey(previewMeta) : "";
+  const previewDownloadBusy =
+    Boolean(previewBusyKey) &&
+    (downloadAllBusy || downloadingFileKeys.includes(previewBusyKey));
+
   const hasToothWorks = Array.isArray(toothWorks) && toothWorks.length > 0;
   const hasCustomAbutment = Boolean(
     toothWorks?.some((work) => Boolean(work.customAbutment)),
@@ -308,6 +483,11 @@ export function PracticeTransferDetailChatDialog({
       downloadAllBusy ||
       (busyKey ? downloadingFileKeys.includes(busyKey) : false);
     const progress = busyKey ? Number(downloadProgressByKey[busyKey] ?? 0) : 0;
+    const isMesh = isModelPreviewExt(getModelExtLower(file.fileName));
+    const isImage = isImagePreviewExt(
+      getPracticeTransferFileExtension(file.fileName),
+    );
+    const canPreview = isMesh || isImage;
     return (
       <div
         key={`${keyPrefix}:${file.id}:${idx}`}
@@ -315,19 +495,26 @@ export function PracticeTransferDetailChatDialog({
       >
         <button
           type="button"
-          onClick={() => {
-            if (isBusy || locked) return;
-            void onDownloadTransferFile(file);
-          }}
+          onClick={() => handleFileRowClick(file, locked)}
           disabled={isBusy || locked}
-          title={locked ? requestFilesDownloadLockedReason : undefined}
+          title={
+            locked
+              ? requestFilesDownloadLockedReason
+              : isMesh
+                ? "클릭하여 3D 미리보기"
+                : isImage
+                  ? "클릭하여 이미지 미리보기"
+                  : "클릭하여 다운로드"
+          }
           className="block w-full text-left text-sm hover:underline disabled:opacity-60 disabled:pointer-events-none disabled:no-underline"
         >
           {isBusy
             ? `다운로드 중 ${Math.round(progress)}% · `
             : locked
               ? "다운로드 대기 · "
-              : ""}
+              : canPreview
+                ? "미리보기 · "
+                : ""}
           {file.fileName} · {formatFileSize(Number(file.size || 0))}
         </button>
         {isBusy ? <Progress value={progress} className="h-1.5" /> : null}
@@ -336,6 +523,7 @@ export function PracticeTransferDetailChatDialog({
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-[90rem] h-[86vh] p-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
@@ -748,5 +936,27 @@ export function PracticeTransferDetailChatDialog({
         </div>
       </DialogContent>
     </Dialog>
+    <ModelPreviewDialog
+      open={previewOpen}
+      onOpenChange={(next) => {
+        if (!next) {
+          resetPreview();
+          return;
+        }
+        setPreviewOpen(true);
+      }}
+      kind={previewKind}
+      fileName={previewMeta?.fileName || ""}
+      file={previewFile}
+      loading={previewLoading}
+      progress={previewProgress}
+      downloadBusy={previewDownloadBusy}
+      onDownload={
+        previewMeta
+          ? () => void onDownloadTransferFile(previewMeta)
+          : undefined
+      }
+    />
+    </>
   );
 }

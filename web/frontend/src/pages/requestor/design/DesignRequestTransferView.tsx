@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 상세 모달 3D 미리보기용 authToken 전달.
 // - 2026-08-10: 의뢰 메모는 자유 메모만(치아/임플란트 폴백 제거). 파일 목록 s3Key 중복 제거.
 // - 2026-08-10: 개별/전체 다운로드 중 재클릭 방지. 채팅 라벨·상대를 치과(발신 의뢰자)로 정렬.
 // - 2026-08-10: 디자인 큐 기공의뢰서형 카드 + 상세/채팅 모달 호스트.
@@ -461,6 +462,7 @@ export function DesignRequestTransferView({
         }}
         title="의뢰 상세 · 치과 채팅"
         conversationTitle="치과와의 소통"
+        authToken={token}
         summaryItems={summaryItems}
         memo={displayMemo || "-"}
         toothWorks={toothWorks}

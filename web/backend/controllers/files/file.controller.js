@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: PracticeTransfer ACL — designFiles/resultFiles s3Key도 허용(구강스캔 lock은 files만).
 // - 2026-08-15: 기공소 CA — 어벗츠 디자인 전 PracticeTransfer 구강스캔 S3 다운로드 차단.
 // - 2026-08-10: 디자인 파트너가 Request caseInfos 파일 S3 키 다운로드 가능.
 // - 2026-08-11: temp multipart + gzip ContentEncoding 지원, 다운로드 시 gunzip.
@@ -784,9 +785,13 @@ const canUserAccessS3Key = async (req, key) => {
 
   // PracticeTransfer 파일 접근 허용
   // - practice 전송자(작성자)
-  // - 전송 대상 기공소(동일 businessAnchor) — CA면 어벗츠 디자인 도착 후만 구강스캔
+  // - 전송 대상 기공소(동일 businessAnchor) — CA면 어벗츠 디자인 도착 후만 구강스캔(files만)
   const practiceTransfer = await PracticeTransfer.findOne({
-    "files.file.s3Key": key,
+    $or: [
+      { "files.file.s3Key": key },
+      { "production.designFiles.file.s3Key": key },
+      { "resultFiles.file.s3Key": key },
+    ],
   })
     .select({
       practiceUserId: 1,
@@ -794,6 +799,7 @@ const canUserAccessS3Key = async (req, key) => {
       targetLabAnchorId: 1,
       toothWorks: 1,
       production: 1,
+      files: 1,
     })
     .lean();
 
@@ -817,7 +823,11 @@ const canUserAccessS3Key = async (req, key) => {
       return true;
     }
     if (isTargetLabMember) {
-      if (shouldLockLabOralScanDownload(practiceTransfer)) {
+      const isOralScanKey = (Array.isArray(practiceTransfer?.files)
+        ? practiceTransfer.files
+        : []
+      ).some((entry) => String(entry?.file?.s3Key || "").trim() === key);
+      if (isOralScanKey && shouldLockLabOralScanDownload(practiceTransfer)) {
         return false;
       }
       return true;

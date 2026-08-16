@@ -1,3 +1,6 @@
+// change-log:
+// - 2026-08-16: fetchBlobWithProgress — 저장 없이 blob만 반환(3D 프리뷰용).
+// - 2026-08-16: saveBlobAsDownload 분리(IndexedDB 캐시 히트 후 저장 재사용).
 // related files:
 // - web/frontend/src/shared/files/useS3FileDownload.ts
 // - web/frontend/src/pages/requestor/design/DesignRequestTransferView.tsx
@@ -12,14 +15,20 @@ export type DownloadWithProgressOptions = {
   signal?: AbortSignal;
 };
 
-/**
- * 동일 오리진 프록시 다운로드 + XHR progress (0~100).
- * Content-Length가 없으면 indeterminate처럼 0으로 두고 완료 시 100.
- */
-export function downloadWithProgress(
-  options: DownloadWithProgressOptions,
-): Promise<void> {
-  const { url, token, fileName, onProgress, signal } = options;
+type FetchBlobWithProgressOptions = {
+  url: string;
+  token: string;
+  onProgress?: (percent: number) => void;
+  signal?: AbortSignal;
+};
+
+function xhrGetBlob(options: {
+  url: string;
+  token: string;
+  onProgress?: (percent: number) => void;
+  signal?: AbortSignal;
+}): Promise<Blob> {
+  const { url, token, onProgress, signal } = options;
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -57,16 +66,7 @@ export function downloadWithProgress(
         return;
       }
       onProgress?.(100);
-      const blob = xhr.response as Blob;
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = String(fileName || "download").trim() || "download";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objectUrl);
-      resolve();
+      resolve(xhr.response as Blob);
     };
 
     xhr.onerror = () => {
@@ -82,4 +82,37 @@ export function downloadWithProgress(
     onProgress?.(0);
     xhr.send();
   });
+}
+
+/**
+ * 동일 오리진 프록시 다운로드 + XHR progress (0~100).
+ * Content-Length가 없으면 indeterminate처럼 0으로 두고 완료 시 100.
+ */
+export function downloadWithProgress(
+  options: DownloadWithProgressOptions,
+): Promise<void> {
+  const { url, token, fileName, onProgress, signal } = options;
+
+  return xhrGetBlob({ url, token, onProgress, signal }).then((blob) => {
+    saveBlobAsDownload(blob, fileName);
+  });
+}
+
+/** Blob을 브라우저 다운로드로 저장한다. */
+export function saveBlobAsDownload(blob: Blob, fileName: string): void {
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = String(fileName || "download").trim() || "download";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+/** S3 프록시에서 blob만 가져온다(파일 저장 다이얼로그 없음). */
+export function fetchBlobWithProgress(
+  options: FetchBlobWithProgressOptions,
+): Promise<Blob> {
+  return xhrGetBlob(options);
 }
