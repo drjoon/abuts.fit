@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-16: 어벗디자인 취소·재업로드 시 requestor 대시보드 스냅샷 갱신(준비 카운트 stale 방지).
+// - 2026-08-16: 핸드오프 시 retentionGroove·환자/임플란트 caseInfos 패치 허용(기공소 3D 확인).
 // - 2026-08-16: 생산 취소 시 PTX Request manufacturerStage→취소(관리자 준비 잔존 방지). 재업로드 시 준비 복원.
 // - 2026-08-16: 디자인 없이 완료 플래그만 남은 건도 cancel로 스테이지 재오픈.
 // - 2026-08-16: 생산 취소 시 PTX 작업완료/결과파일도 열어 의뢰수락 UI 복원(에스크로·정산은 유지).
@@ -57,6 +58,21 @@ const refreshLabDashboardAfterPtxDesignChange = (anchorId, reason) => {
       err,
     );
   });
+};
+
+const normalizeRetentionGrooveOrNull = (value) => {
+  const rg = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (rg === "deep") return "deep";
+  if (rg === "none" || rg === "shallow") return "none";
+  return null;
+};
+
+const pickTrimmed = (value, maxLen = 120) => {
+  const v = String(value || "").trim();
+  if (!v) return "";
+  return v.slice(0, maxLen);
 };
 
 const buildRhinoInputFileName = (request) => {
@@ -265,6 +281,15 @@ export async function handoffDesignToProduction(req, res) {
       });
     }
 
+    const caseInfosPatchRaw =
+      req.body?.caseInfos && typeof req.body.caseInfos === "object"
+        ? req.body.caseInfos
+        : null;
+    const hasCaseInfosPatch = Boolean(caseInfosPatchRaw);
+    const retentionGrooveFromBody = normalizeRetentionGrooveOrNull(
+      req.body?.retentionGroove ?? caseInfosPatchRaw?.retentionGroove,
+    );
+
     const request = await Request.findById(id);
     if (!request) {
       return res
@@ -332,6 +357,68 @@ export async function handoffDesignToProduction(req, res) {
     }
 
     if (!request.caseInfos) request.caseInfos = {};
+
+    // 기공소 3D 확인 모달에서 caseInfos/유지홈을 넘긴 경우만 갱신·검증.
+    // 디자인 파트너 등 기존 파일-only 핸드오프는 의뢰에 저장된 값을 유지한다.
+    if (hasCaseInfosPatch || retentionGrooveFromBody) {
+      const clinicName = pickTrimmed(
+        caseInfosPatchRaw?.clinicName ?? request.caseInfos.clinicName,
+      );
+      const patientName = pickTrimmed(
+        caseInfosPatchRaw?.patientName ?? request.caseInfos.patientName,
+      );
+      const tooth = pickTrimmed(
+        caseInfosPatchRaw?.tooth ?? request.caseInfos.tooth,
+        16,
+      );
+      const implantManufacturer = pickTrimmed(
+        caseInfosPatchRaw?.implantManufacturer ??
+          request.caseInfos.implantManufacturer,
+      );
+      const implantBrand = pickTrimmed(
+        caseInfosPatchRaw?.implantBrand ?? request.caseInfos.implantBrand,
+      );
+      const implantFamily = pickTrimmed(
+        caseInfosPatchRaw?.implantFamily ?? request.caseInfos.implantFamily,
+      );
+      const implantType = pickTrimmed(
+        caseInfosPatchRaw?.implantType ?? request.caseInfos.implantType,
+      );
+      const retentionGroove =
+        retentionGrooveFromBody ||
+        normalizeRetentionGrooveOrNull(request.caseInfos.retentionGroove);
+
+      if (
+        !clinicName ||
+        !patientName ||
+        !tooth ||
+        !implantManufacturer ||
+        !implantBrand ||
+        !implantFamily ||
+        !implantType
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "치과명·환자명·치아번호·임플란트(Manufacturer/Brand/Family/Type)가 필요합니다.",
+        });
+      }
+      if (!retentionGroove) {
+        return res.status(400).json({
+          success: false,
+          message: "유지홈(없음/있음)을 선택해주세요.",
+        });
+      }
+
+      request.caseInfos.clinicName = clinicName;
+      request.caseInfos.patientName = patientName;
+      request.caseInfos.tooth = tooth;
+      request.caseInfos.implantManufacturer = implantManufacturer;
+      request.caseInfos.implantBrand = implantBrand;
+      request.caseInfos.implantFamily = implantFamily;
+      request.caseInfos.implantType = implantType;
+      request.caseInfos.retentionGroove = retentionGroove;
+    }
 
     const prevPrimary = toStoredFileMeta(request.caseInfos.file);
     const prevExtras = Array.isArray(request.caseInfos.files)

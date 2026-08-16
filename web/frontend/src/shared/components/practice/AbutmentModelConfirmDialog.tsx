@@ -1,0 +1,605 @@
+// change-log:
+// - 2026-08-16: 어벗생산의뢰·기공의뢰수신 공통 3D 확인 다이얼로그로 통합.
+// - 2026-08-16: 유지홈 미선택 허용(강제 선택). 기본 none 자동주입 제거.
+// related files:
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailDialog.tsx
+// - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestPatientImplantFields.tsx
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/shared/ui/cn";
+import type {
+  CaseInfos,
+  Connection,
+  NewRequestProductMode,
+} from "@/pages/requestor/new_request/hooks/newRequestTypes";
+import { NewRequestDesignAbutmentFields } from "@/pages/requestor/new_request/components/NewRequestDesignAbutmentFields";
+import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
+import { RetentionGrooveField } from "@/shared/components/practice/RetentionGrooveField";
+
+export type AbutmentModelConfirmVariant = "new-request" | "lab-handoff";
+
+type ToastFn = (props: {
+  title?: React.ReactNode;
+  description?: React.ReactNode;
+  variant?: string;
+  duration?: number;
+}) => void;
+
+type Option = { id: string; label: string };
+
+export type AbutmentModelConfirmDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** new-request: 삭제/확인&다음/건너뛰기. lab-handoff: 취소/확인&업로드 */
+  variant?: AbutmentModelConfirmVariant;
+  detailIndex: number | null;
+  selectedPreviewIndex: number | null;
+  files: File[];
+  detailFile: File | null;
+  detailCaseInfos?: CaseInfos;
+  setDetailCaseInfos: (updates: Partial<CaseInfos>) => void;
+  handleDiameterComputed: (
+    filename: string,
+    maxDiameter: number,
+    connectionDiameter: number,
+    totalLength: number,
+    taperAngle: number,
+    tiltAxisVector?: { x: number; y: number; z: number } | null,
+    frontPoint?: { x: number; y: number; z: number } | null,
+  ) => void;
+  connections: Connection[];
+  familyOptions: string[];
+  typeOptions: string[];
+  implantManufacturer: string;
+  setImplantManufacturer: (v: string) => void;
+  implantBrand: string;
+  setImplantBrand: (v: string) => void;
+  implantFamily: string;
+  setImplantFamily: (v: string) => void;
+  implantType: string;
+  setImplantType: (v: string) => void;
+  syncSelectedConnection: (
+    manufacturer: string,
+    brand: string,
+    family: string,
+    type: string,
+  ) => void;
+  clinicNameOptions: Option[];
+  patientNameOptions: Option[];
+  teethOptions: Option[];
+  addClinicPreset: (label: string) => void;
+  clearAllClinicPresets: () => void;
+  addPatientPreset: (label: string) => void;
+  clearAllPatientPresets: () => void;
+  addTeethPreset: (label: string) => void;
+  clearAllTeethPresets: () => void;
+  handleAddOrSelectClinic: (label: string) => void;
+  highlightUnverifiedArrows: boolean;
+  handleRemoveFile: (index: number) => void;
+  onVerifyAndNext: (index: number) => Promise<void>;
+  onSkip: () => void;
+  toast: ToastFn;
+  /** 구강스캔(묶음·단일): 커스텀어벗 디자인+생산 고정 */
+  lockDesignProductMode?: boolean;
+  /** 어벗디자인 STL(<3MB): 커스텀어벗 생산 고정 */
+  lockProductionProductMode?: boolean;
+  /** 계정 유지홈 기본값 변경 시 저장 */
+  onRetentionGrooveAccountSave?: (value: "none" | "deep") => void;
+  /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
+  previewFileIndices?: number[];
+  onSelectPreviewIndex?: (index: number) => void;
+  /** lab-handoff 업로드 중 닫기 방지 */
+  confirming?: boolean;
+};
+
+export function AbutmentModelConfirmDialog({
+  open,
+  onOpenChange,
+  variant = "new-request",
+  detailIndex,
+  selectedPreviewIndex,
+  files,
+  detailFile,
+  detailCaseInfos,
+  setDetailCaseInfos,
+  handleDiameterComputed,
+  connections,
+  familyOptions,
+  typeOptions,
+  implantManufacturer,
+  setImplantManufacturer,
+  implantBrand,
+  setImplantBrand,
+  implantFamily,
+  setImplantFamily,
+  implantType,
+  setImplantType,
+  syncSelectedConnection,
+  clinicNameOptions,
+  patientNameOptions,
+  teethOptions,
+  addClinicPreset,
+  clearAllClinicPresets,
+  addPatientPreset,
+  clearAllPatientPresets,
+  addTeethPreset,
+  clearAllTeethPresets,
+  handleAddOrSelectClinic,
+  highlightUnverifiedArrows,
+  handleRemoveFile,
+  onVerifyAndNext,
+  onSkip,
+  toast,
+  onRetentionGrooveAccountSave,
+  lockDesignProductMode = false,
+  lockProductionProductMode = false,
+  previewFileIndices,
+  onSelectPreviewIndex,
+  confirming = false,
+}: AbutmentModelConfirmDialogProps) {
+  const isLabHandoff = variant === "lab-handoff";
+  const [showNewSystemForm, setShowNewSystemForm] = useState(false);
+  const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
+  const [newSystemBrand, setNewSystemBrand] = useState("");
+  const [newSystemFamily, setNewSystemFamily] = useState("");
+  const [confirmNewSystemOpen, setConfirmNewSystemOpen] = useState(false);
+
+  const [pendingNewSystem, setPendingNewSystem] = useState<{
+    manufacturer: string;
+    brand: string;
+    family: string;
+  } | null>(null);
+
+  const newSystemInfoCopy = useMemo(
+    () =>
+      "개발을 위해 랩 아날로그와 기성 어벗먼트 샘플을 보내주세요. 무료 크레딧을 충전해드립니다.",
+    [],
+  );
+
+  const resetNewSystemForm = useCallback(() => {
+    setShowNewSystemForm(false);
+    setNewSystemManufacturer("");
+    setNewSystemBrand("");
+    setNewSystemFamily("");
+    setDetailCaseInfos({ newSystemRequest: undefined });
+  }, [setDetailCaseInfos]);
+
+  const handleNewSystemRequestClick = useCallback(() => {
+    const manufacturer = newSystemManufacturer.trim();
+    const brand = newSystemBrand.trim();
+    const family = newSystemFamily.trim();
+
+    if (!manufacturer || !brand || !family) {
+      toast({
+        title: "신규 임플란트 입력 필요",
+        description: "Manufacturer, Brand, Family를 모두 입력해주세요.",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+
+    setPendingNewSystem({ manufacturer, brand, family });
+    setConfirmNewSystemOpen(true);
+  }, [newSystemBrand, newSystemFamily, newSystemManufacturer, toast]);
+
+  const persistedNewSystemRequest = detailCaseInfos?.newSystemRequest;
+
+  useEffect(() => {
+    if (persistedNewSystemRequest?.requested) {
+      setShowNewSystemForm(true);
+      setNewSystemManufacturer(persistedNewSystemRequest.manufacturer || "");
+      setNewSystemBrand(persistedNewSystemRequest.brand || "");
+      setNewSystemFamily(persistedNewSystemRequest.family || "");
+    }
+  }, [persistedNewSystemRequest]);
+
+  const showImplantSelect = true;
+  const productMode: NewRequestProductMode = lockProductionProductMode
+    ? "custom_abutment"
+    : lockDesignProductMode
+      ? "design_custom_abutment"
+      : detailCaseInfos?.productMode === "design_custom_abutment"
+        ? "design_custom_abutment"
+        : "custom_abutment";
+  const isDesignCustomMode = productMode === "design_custom_abutment";
+
+  const selectablePreviewIndices = useMemo(() => {
+    if (Array.isArray(previewFileIndices) && previewFileIndices.length > 0) {
+      return previewFileIndices.filter(
+        (index) => Number.isInteger(index) && index >= 0 && index < files.length,
+      );
+    }
+    if (detailIndex != null && detailIndex >= 0 && detailIndex < files.length) {
+      return [detailIndex];
+    }
+    return [];
+  }, [previewFileIndices, detailIndex, files.length]);
+
+  const activePreviewIndex =
+    detailIndex != null && selectablePreviewIndices.includes(detailIndex)
+      ? detailIndex
+      : (selectablePreviewIndices[0] ?? null);
+
+  const retentionIdPrefix = isLabHandoff ? "lab-handoff-rg" : "new-req-rg";
+
+  return (
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (confirming) return;
+          onOpenChange(next);
+        }}
+      >
+        <DialogContent className="new-request-page flex w-[calc(100vw-1rem)] max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[1180px] sm:p-5 lg:w-[980px]">
+          <DialogHeader className="relative shrink-0 space-y-0 pr-8">
+            <DialogTitle className="text-lg font-semibold">
+              3D 모델 확인 및 정보 입력
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              {isLabHandoff
+                ? "3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 업로드합니다."
+                : "3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 다음 케이스로 이동합니다."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%]">
+            <div className="app-glass-card app-glass-card--lg flex h-full min-h-[240px] flex-col !p-2 gap-2">
+              <div className="app-glass-card-content min-h-0 flex-1">
+                {detailFile ? (
+                  <StlPreviewViewer
+                    file={detailFile}
+                    showOverlay={false}
+                    showGrid={false}
+                    className="h-full min-h-[240px]"
+                    onDiameterComputed={handleDiameterComputed}
+                  />
+                ) : (
+                  <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
+                    3D Preview
+                  </div>
+                )}
+              </div>
+              {selectablePreviewIndices.length > 1 ? (
+                <div className="shrink-0 rounded-lg border border-slate-200 bg-white/80">
+                  <ul className="max-h-[7.5rem] overflow-y-auto py-1">
+                    {selectablePreviewIndices.map((fileIndex) => {
+                      const file = files[fileIndex];
+                      if (!file) return null;
+                      const selected = activePreviewIndex === fileIndex;
+                      return (
+                        <li key={`${file.name}:${file.size}:${fileIndex}`}>
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors",
+                              selected
+                                ? "bg-primary/10 font-medium text-primary"
+                                : "text-slate-600 hover:bg-slate-50",
+                            )}
+                            onClick={() => onSelectPreviewIndex?.(fileIndex)}
+                            aria-current={selected ? "true" : undefined}
+                          >
+                            <span
+                              className={cn(
+                                "h-1.5 w-1.5 shrink-0 rounded-full",
+                                selected ? "bg-primary" : "bg-slate-300",
+                              )}
+                            />
+                            <span className="truncate">{file.name}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="app-glass-card app-glass-card--lg flex h-full min-h-0 flex-col !p-2">
+                <div className="app-glass-card-content flex min-h-0 flex-1 flex-col gap-2 pb-0 text-sm">
+                  {isDesignCustomMode ? (
+                    <div className="flex min-h-0 flex-1 flex-col">
+                      <NewRequestDesignAbutmentFields
+                        caseInfos={detailCaseInfos}
+                        setCaseInfos={setDetailCaseInfos}
+                        readOnly={!detailFile}
+                        clinicNameOptions={clinicNameOptions}
+                        patientNameOptions={patientNameOptions}
+                        addClinicPreset={addClinicPreset}
+                        clearAllClinicPresets={clearAllClinicPresets}
+                        addPatientPreset={addPatientPreset}
+                        clearAllPatientPresets={clearAllPatientPresets}
+                        handleAddOrSelectClinic={handleAddOrSelectClinic}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex min-h-0 flex-1 flex-col gap-2">
+                      <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                        임플란트/환자 정보
+                      </div>
+
+                      <NewRequestPatientImplantFields
+                        caseInfos={detailCaseInfos}
+                        setCaseInfos={setDetailCaseInfos}
+                        showImplantSelect={showImplantSelect}
+                        readOnly={!detailFile || confirming}
+                        implantSelectSource="caseInfos"
+                        connections={connections}
+                        familyOptions={familyOptions}
+                        typeOptions={typeOptions}
+                        implantManufacturer={implantManufacturer}
+                        setImplantManufacturer={setImplantManufacturer}
+                        implantBrand={implantBrand}
+                        setImplantBrand={setImplantBrand}
+                        implantFamily={implantFamily}
+                        setImplantFamily={setImplantFamily}
+                        implantType={implantType}
+                        setImplantType={setImplantType}
+                        syncSelectedConnection={syncSelectedConnection}
+                        clinicNameOptions={clinicNameOptions}
+                        patientNameOptions={patientNameOptions}
+                        teethOptions={teethOptions}
+                        addClinicPreset={addClinicPreset}
+                        clearAllClinicPresets={clearAllClinicPresets}
+                        addPatientPreset={addPatientPreset}
+                        clearAllPatientPresets={clearAllPatientPresets}
+                        addTeethPreset={addTeethPreset}
+                        clearAllTeethPresets={clearAllTeethPresets}
+                        handleAddOrSelectClinic={handleAddOrSelectClinic}
+                      />
+
+                      <RetentionGrooveField
+                        value={
+                          detailCaseInfos?.retentionGroove === "deep"
+                            ? "deep"
+                            : "none"
+                        }
+                        onChange={(next) => {
+                          setDetailCaseInfos({ retentionGroove: next });
+                          onRetentionGrooveAccountSave?.(next);
+                        }}
+                        disabled={!detailFile || confirming}
+                        idPrefix={retentionIdPrefix}
+                        guideContentClassName="new-request-page w-[calc(100vw-1rem)] sm:w-[1120px] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6"
+                      />
+
+                      <div className="flex flex-col gap-2 rounded-lg border border-primary-soft bg-primary-soft/60 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-slate-700">
+                            찾으시는 임플란트가 없나요?
+                          </span>
+                          {!showNewSystemForm ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="bg-white text-primary-strong border-primary-muted hover:bg-primary-soft"
+                              onClick={() => setShowNewSystemForm(true)}
+                              disabled={confirming}
+                            >
+                              신규 임플란트 요청
+                            </Button>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={handleNewSystemRequestClick}
+                                disabled={confirming}
+                              >
+                                요청
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={resetNewSystemForm}
+                                disabled={confirming}
+                              >
+                                취소
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+
+                        {showNewSystemForm && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <Input
+                              placeholder="Manufacturer"
+                              value={newSystemManufacturer}
+                              onChange={(e) => setNewSystemManufacturer(e.target.value)}
+                              disabled={confirming}
+                            />
+                            <Input
+                              placeholder="Brand"
+                              value={newSystemBrand}
+                              onChange={(e) => setNewSystemBrand(e.target.value)}
+                              disabled={confirming}
+                            />
+                            <Input
+                              placeholder="Family"
+                              value={newSystemFamily}
+                              onChange={(e) => setNewSystemFamily(e.target.value)}
+                              disabled={confirming}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <DialogFooter className="mt-auto flex shrink-0 flex-col gap-2 !space-x-0 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                    {isLabHandoff ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => onOpenChange(false)}
+                          disabled={confirming}
+                        >
+                          취소
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            if (detailIndex !== null) {
+                              void onVerifyAndNext(detailIndex);
+                            }
+                          }}
+                          disabled={!detailFile || confirming}
+                        >
+                          {confirming ? "업로드 중…" : "확인 & 업로드"}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={() => {
+                              if (detailIndex !== null) {
+                                handleRemoveFile(detailIndex);
+                              }
+                              onOpenChange(false);
+                            }}
+                          >
+                            삭제
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => onOpenChange(false)}
+                          >
+                            취소
+                          </Button>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            className={
+                              highlightUnverifiedArrows
+                                ? "animate-bounce bg-primary text-white"
+                                : undefined
+                            }
+                            onClick={() => {
+                              if (detailIndex !== null) {
+                                void onVerifyAndNext(detailIndex);
+                              }
+                            }}
+                          >
+                            확인 & 다음
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="text-slate-500"
+                            onClick={onSkip}
+                            disabled={!files.length}
+                          >
+                            건너뛰기
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </DialogFooter>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={confirmNewSystemOpen}
+        onOpenChange={(next) => {
+          if (!next) {
+            setConfirmNewSystemOpen(false);
+            setPendingNewSystem(null);
+          }
+        }}
+      >
+        <AlertDialogContent className="new-request-page">
+          <AlertDialogHeader>
+            <AlertDialogTitle>신규 임플란트 의뢰로 접수할까요?</AlertDialogTitle>
+            <AlertDialogDescription>{newSystemInfoCopy}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setConfirmNewSystemOpen(false);
+                setPendingNewSystem(null);
+              }}
+            >
+              취소
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!pendingNewSystem) return;
+                const { manufacturer, brand, family } = pendingNewSystem;
+                const message = "랩 아날로그 샘플 한 개를 요청드립니다";
+
+                setDetailCaseInfos({
+                  implantManufacturer: manufacturer,
+                  implantBrand: brand,
+                  implantFamily: family,
+                  newSystemRequest: {
+                    requested: true,
+                    manufacturer,
+                    brand,
+                    family,
+                    message,
+                    free: true,
+                    tag: "신규 임플란트 의뢰",
+                  },
+                });
+
+                toast({
+                  title: "신규 임플란트로 접수",
+                  description: "무상 처리 및 랩 아날로그 샘플 요청으로 전달됩니다.",
+                  duration: 3500,
+                });
+
+                setShowNewSystemForm(false);
+                setConfirmNewSystemOpen(false);
+                setPendingNewSystem(null);
+
+                const nextIndex = detailIndex ?? selectedPreviewIndex;
+                if (nextIndex !== null && nextIndex >= 0) {
+                  await onVerifyAndNext(nextIndex);
+                }
+              }}
+            >
+              확인
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}

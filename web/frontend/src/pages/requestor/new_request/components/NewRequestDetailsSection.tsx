@@ -14,6 +14,8 @@ import {
   isLikelyOralScanSize,
 } from "../utils/patientGroups";
 
+// change-log:
+// - 2026-08-16: 신규 첨부 시 3D 확인 모달 자동 오픈. 생산모드 유지홈 필수.
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
@@ -92,6 +94,7 @@ type Props = {
   anodizingEnabled?: boolean;
   anodizingSaving?: boolean;
   onToggleAnodizing?: () => void;
+  onRetentionGrooveAccountSave?: (value: "none" | "deep") => void;
   onShippingModeChange?: (
     fileKeys: string[],
     mode: "normal" | "express",
@@ -163,6 +166,7 @@ export function NewRequestDetailsSection({
   anodizingEnabled,
   anodizingSaving,
   onToggleAnodizing,
+  onRetentionGrooveAccountSave,
   onShippingModeChange,
   defaultShippingMode = "normal",
   expressSelectableGlobal = true,
@@ -434,6 +438,51 @@ export function NewRequestDetailsSection({
     ],
   );
 
+  // 첨부 직후 3D 확인 모달 자동 오픈(기존 드래프트 복원은 건너뜀)
+  const knownFileKeysRef = useRef<Set<string>>(new Set());
+  const fileKeysBootstrappedRef = useRef(false);
+  useEffect(() => {
+    const currentKeys = files.map((file) => toNormalizedFileKey(file));
+    const currentKeySet = new Set(currentKeys);
+
+    if (!fileKeysBootstrappedRef.current) {
+      knownFileKeysRef.current = currentKeySet;
+      fileKeysBootstrappedRef.current = true;
+      return;
+    }
+
+    for (const key of [...knownFileKeysRef.current]) {
+      if (!currentKeySet.has(key)) knownFileKeysRef.current.delete(key);
+    }
+
+    const newIndices: number[] = [];
+    currentKeys.forEach((key, index) => {
+      if (!knownFileKeysRef.current.has(key)) {
+        knownFileKeysRef.current.add(key);
+        newIndices.push(index);
+      }
+    });
+
+    if (!newIndices.length || isDetailOpen || duplicatePromptOpen) return;
+
+    const openIndex =
+      newIndices.find((index) => {
+        const key = currentKeys[index];
+        return key ? !fileVerificationStatus[key] : false;
+      }) ?? newIndices[0];
+
+    if (openIndex != null) {
+      openDetailModal(openIndex);
+    }
+  }, [
+    duplicatePromptOpen,
+    fileVerificationStatus,
+    files,
+    isDetailOpen,
+    openDetailModal,
+    toNormalizedFileKey,
+  ]);
+
   const focusSelectedCard = useCallback((index: number) => {
     const container = listContainerRef.current;
     if (!container) return;
@@ -524,6 +573,10 @@ export function NewRequestDetailsSection({
         if (!fileCaseInfos?.implantBrand) missingFields.push("임플란트 브랜드");
         if (!fileCaseInfos?.implantFamily) missingFields.push("Family");
         if (!fileCaseInfos?.implantType) missingFields.push("Type");
+        const rg = String(fileCaseInfos?.retentionGroove || "").trim();
+        if (rg !== "none" && rg !== "shallow" && rg !== "deep") {
+          missingFields.push("유지홈");
+        }
       }
       if (missingFields.length > 0) {
         toast({
@@ -705,6 +758,7 @@ export function NewRequestDetailsSection({
           moveToNextDetail();
         }}
         toast={toast}
+        onRetentionGrooveAccountSave={onRetentionGrooveAccountSave}
         lockDesignProductMode={lockDesignProductMode}
         lockProductionProductMode={lockProductionProductMode}
         previewFileIndices={previewFileIndices}

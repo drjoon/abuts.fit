@@ -729,13 +729,9 @@ export const useNewRequestPage = (
       const clinicName = selectedClinic?.name || "";
 
       // 현재 선택된 파일의 clinicName 업데이트
-      // 유지홈은 항상 "none(없음)"을 기본으로 시작하고,
-      // 필요할 때마다 의뢰자가 직접 "있음"을 선택하도록 한다.
+      // 유지홈은 의뢰자가 3D 확인 화면에서 직접 선택한다.
       if (currentFileKey && updateCaseInfos) {
         const updates: any = { clinicName };
-        if (!currentCaseInfos?.retentionGroove) {
-          updates.retentionGroove = "none";
-        }
         updateCaseInfos(currentFileKey, updates);
       }
     },
@@ -744,7 +740,6 @@ export const useNewRequestPage = (
       rawClinicPresets,
       currentFileKey,
       updateCaseInfos,
-      currentCaseInfos?.retentionGroove,
     ],
   );
 
@@ -770,11 +765,7 @@ export const useNewRequestPage = (
           updates.implantFamily = favorite.family;
           updates.implantType = favorite.type;
         }
-        // 유지홈은 항상 "none(없음)"을 기본으로 시작하고,
-        // 필요할 때마다 의뢰자가 직접 "있음"을 선택하도록 한다.
-        if (!currentCaseInfos?.retentionGroove) {
-          updates.retentionGroove = "none";
-        }
+        // 유지홈은 의뢰자가 3D 확인 화면에서 직접 선택한다.
 
         // updateCaseInfos 호출 (로컬 상태 + 디바운스된 PATCH)
         updateCaseInfos(currentFileKey, updates);
@@ -785,7 +776,6 @@ export const useNewRequestPage = (
       rawClinicPresets,
       currentFileKey,
       updateCaseInfos,
-      currentCaseInfos?.retentionGroove,
     ],
   );
 

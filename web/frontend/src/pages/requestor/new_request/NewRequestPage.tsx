@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 디자인SW·아노다이징을 공통 requestSettings 훅/다이얼로그로. 진입 시 미설정 강제.
 // - 2026-08-12: 치과 첫 진입 안내 모달 — 닫기/다시 보지 않기, CNC 생산 의뢰 문구.
 // - 2026-08-12: 디자인SW 미설정 시 진입 에러 토스트 제거. 파일 첨부 시 설정 모달만 노출(저장 전 첨부 보류).
 // - 2026-08-11: 첨부 직후 S3 사전 업로드(useFilePreUpload) — 기공의뢰와 동일 가속 경로.
@@ -38,6 +39,8 @@ import { MultiActionDialog } from "@/features/support/components/MultiActionDial
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
+import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
 import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkeleton";
@@ -50,9 +53,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
@@ -72,6 +72,8 @@ import {
 // related files:
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - web/frontend/src/features/requestSettings/useRequestorRequestSettings.ts
+// - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/frontend/src/features/support/components/ConfirmDialog.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
@@ -111,28 +113,10 @@ const NewRequestPageContent = () => {
   const isLabRequestor = requestorKind === "lab";
   const isPracticeRequestor = requestorKind === "practice";
 
-  const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
-  const [designSoftwareMode, setDesignSoftwareMode] = useState<
-    "3Shape" | "ExoCAD" | "custom"
-  >("3Shape");
-  const [customDesignSoftware, setCustomDesignSoftware] = useState("");
-  const designSoftwareCanEdit = true;
-  const [canEditBusinessDesignSoftware, setCanEditBusinessDesignSoftware] =
-    useState(false);
-  const [designSoftwareSaving, setDesignSoftwareSaving] = useState(false);
-  const [designSoftwareValue, setDesignSoftwareValue] = useState("");
-  const [needsBusinessDesignSoftwareBootstrap, setNeedsBusinessDesignSoftwareBootstrap] =
-    useState(false);
-  const [anodizingEnabled, setAnodizingEnabled] = useState(true);
-  const [anodizingSaving, setAnodizingSaving] = useState(false);
   const [practiceIntroOpen, setPracticeIntroOpen] = useState(false);
   /** 3MB 초과(구강스캔 후보) — ConfirmDialog 확인 후 첨부 */
   const [oversizedPendingFiles, setOversizedPendingFiles] = useState<File[]>([]);
   const [oversizedPreviewIndex, setOversizedPreviewIndex] = useState(0);
-  /** 디자인소프트웨어 미설정 상태에서 첨부 시도한 파일 — 저장 후 이어서 첨부 */
-  const [designSoftwareGatePendingFiles, setDesignSoftwareGatePendingFiles] =
-    useState<File[]>([]);
-  const designSoftwareGatePendingRef = useRef<File[]>([]);
   const handleIncomingFilesRef = useRef<(files: File[]) => void>(() => {});
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
@@ -234,333 +218,74 @@ const NewRequestPageContent = () => {
     countableFileKeys,
   });
 
-
-
-  // Requestor(계정) 디자인소프트웨어를 신규 의뢰 기본값으로 사용한다.
-  // 단, 사업체/계정 requestSettings가 하나라도 비어 있으면 신규의뢰 진입 시 자동 생성(보정)한다.
-  // 우선순위: Draft 기본값(__default__.designSoftware) > requestor > business
-  useEffect(() => {
-    if (!token) return;
-    if (user?.role !== "requestor") return;
-
-    let cancelled = false;
-
-    const loadRequestorDesignSoftware = async () => {
-      try {
-        const res = await apiFetch<any>({
-          path: "/api/businesses/me/request-settings",
-          method: "GET",
-          token,
-        });
-        if (!res.ok || cancelled) return;
-
-        const body: any = res.data || {};
-        const data = body?.data || body;
-
-        // 아노다이징 기본값: Draft __default__ > 의뢰자 계정 > 사업체 > ON
-        const draftAnodizing = caseInfosMap?.__default__?.anodizingEnabled;
-        const requestorAnodizing =
-          typeof data?.requestorAnodizingEnabled === "boolean"
-            ? data.requestorAnodizingEnabled
-            : null;
-        const businessAnodizing =
-          typeof data?.anodizingEnabled === "boolean"
-            ? data.anodizingEnabled
-            : true;
-        const resolvedAnodizing =
-          typeof draftAnodizing === "boolean"
-            ? draftAnodizing
-            : typeof requestorAnodizing === "boolean"
-              ? requestorAnodizing
-              : businessAnodizing;
-        setAnodizingEnabled(resolvedAnodizing);
-        if (typeof draftAnodizing !== "boolean") {
-          updateCaseInfos("__default__", { anodizingEnabled: resolvedAnodizing });
-        }
-
-        let requestorDefault = String(data?.requestorDesignSoftware || "").trim();
-        let businessDefault = String(data?.designSoftware || "").trim();
-        const draftDefault = String(
-          caseInfosMap?.__default__?.designSoftware || "",
-        ).trim();
-
-        const canEditBusinessDesign =
-          typeof data?.canEditDesignSoftware === "boolean"
-            ? data.canEditDesignSoftware
-            : false;
-        setCanEditBusinessDesignSoftware(canEditBusinessDesign);
-
-        const missingRequestorSettings = !requestorDefault;
-        const missingBusinessSettings = !businessDefault;
-        setNeedsBusinessDesignSoftwareBootstrap(
-          missingBusinessSettings && canEditBusinessDesign,
-        );
-
-        // 사업체/계정 requestSettings 중 하나라도 비어 있으면 자동 생성(보정)
-        if (missingRequestorSettings || missingBusinessSettings) {
-          const bootstrapDefault =
-            draftDefault || requestorDefault || businessDefault;
-
-          if (bootstrapDefault) {
-            const syncPayload: Record<string, string> = {};
-            if (missingRequestorSettings) {
-              syncPayload.requestorDesignSoftware = bootstrapDefault;
-            }
-            if (missingBusinessSettings && canEditBusinessDesign) {
-              syncPayload.designSoftware = bootstrapDefault;
-            }
-
-            if (Object.keys(syncPayload).length > 0) {
-              const syncRes = await apiFetch<any>({
-                path: "/api/businesses/me/request-settings",
-                method: "PUT",
-                token,
-                jsonBody: syncPayload,
-              });
-
-              if (syncRes.ok) {
-                if (missingRequestorSettings) {
-                  requestorDefault = bootstrapDefault;
-                }
-                if (missingBusinessSettings) {
-                  businessDefault = bootstrapDefault;
-                  setNeedsBusinessDesignSoftwareBootstrap(false);
-                }
-              } else {
-                const syncBody: any = syncRes.data || {};
-                const syncMessage = String(
-                  syncBody?.message ||
-                    "사업체/의뢰자 기본 소프트웨어 자동 주입에 실패했습니다.",
-                );
-                toast({
-                  title: "설정 동기화 실패",
-                  description: syncMessage,
-                  variant: "destructive",
-                });
-                return;
-              }
-            }
-          }
-        }
-
-        // 미설정이면 진입 토스트 없이 두고, 파일 첨부 시 설정 모달로 유도한다.
-        if (!requestorDefault) {
-          return;
-        }
-
-        // Draft 기본값이 있으면 서버 기본값으로 덮어쓰지 않는다.
-        if (draftDefault) {
-          setDesignSoftwareValue(draftDefault);
-          return;
-        }
-
-        setDesignSoftwareValue(requestorDefault);
-        updateCaseInfos("__default__", { designSoftware: requestorDefault });
-      } catch {
-        // ignore
+  const handleRequestSettingsDefaultsChange = useCallback(
+    (next: {
+      designSoftware?: string;
+      anodizingEnabled?: boolean;
+      retentionGroove?: "none" | "deep";
+    }) => {
+      const patch: Partial<CaseInfos> = {};
+      if (typeof next.designSoftware === "string" && next.designSoftware.trim()) {
+        patch.designSoftware = next.designSoftware.trim();
       }
-    };
-
-    void loadRequestorDesignSoftware();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [caseInfosMap, token, toast, updateCaseInfos, user?.role]);
-
-  // Draft/로컬 복원으로 __default__.designSoftware가 늦게 들어오면
-  // UI 표시값(designSoftwareValue)을 해당 값으로 동기화한다.
-  useEffect(() => {
-    const draftDefault = String(
-      caseInfosMap?.__default__?.designSoftware || "",
-    ).trim();
-    if (!draftDefault) return;
-    if (draftDefault === String(designSoftwareValue || "").trim()) return;
-    setDesignSoftwareValue(draftDefault);
-  }, [caseInfosMap, designSoftwareValue]);
-
-  const handleSaveDesignSoftware = useCallback(async () => {
-    const designSoftware =
-      designSoftwareMode === "custom"
-        ? String(customDesignSoftware || "").trim()
-        : designSoftwareMode;
-
-    if (!designSoftware) {
-      toast({
-        title: "입력값이 필요합니다",
-        description: "직접 입력을 선택한 경우 소프트웨어 이름을 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!token) {
-      toast({
-        title: "로그인이 필요합니다",
-        description: "디자인 소프트웨어 설정을 저장하려면 로그인해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setDesignSoftwareSaving(true);
-    try {
-      const savePayload: Record<string, string> = {
-        requestorDesignSoftware: designSoftware,
-      };
-      if (
-        needsBusinessDesignSoftwareBootstrap &&
-        canEditBusinessDesignSoftware
-      ) {
-        savePayload.designSoftware = designSoftware;
+      if (typeof next.anodizingEnabled === "boolean") {
+        patch.anodizingEnabled = next.anodizingEnabled;
       }
-
-      const res = await apiFetch<any>({
-        path: "/api/businesses/me/request-settings",
-        method: "PUT",
-        token,
-        jsonBody: savePayload,
-      });
-
-      if (!res.ok) {
-        const body: any = res.data || {};
-        const message = String(
-          body?.message || "디자인 소프트웨어 설정 저장에 실패했습니다.",
-        );
-        toast({
-          title: "저장 실패",
-          description: message,
-          variant: "destructive",
-        });
-        return;
+      if (next.retentionGroove === "none" || next.retentionGroove === "deep") {
+        patch.retentionGroove = next.retentionGroove;
       }
-
-      // 신규 업로드에 사용할 기본값만 저장한다.
-      // 이미 존재하는 의뢰 카드(caseInfos)는 덮어쓰지 않는다.
-      setDesignSoftwareValue(designSoftware);
-      updateCaseInfos("__default__", { designSoftware });
-      setDesignSoftwareModalOpen(false);
-      if (needsBusinessDesignSoftwareBootstrap) {
-        setNeedsBusinessDesignSoftwareBootstrap(false);
+      if (Object.keys(patch).length > 0) {
+        updateCaseInfos("__default__", patch);
       }
+    },
+    [updateCaseInfos],
+  );
 
-      const pending = designSoftwareGatePendingRef.current;
-      designSoftwareGatePendingRef.current = [];
-      setDesignSoftwareGatePendingFiles([]);
-      if (pending.length > 0) {
-        handleIncomingFilesRef.current(pending);
-      }
-
-      toast({
-        title: "저장 완료",
-        description: "의뢰 기본 디자인 소프트웨어가 저장되었습니다.",
-      });
-    } finally {
-      setDesignSoftwareSaving(false);
-    }
-  }, [
-    canEditBusinessDesignSoftware,
-    customDesignSoftware,
-    designSoftwareMode,
-    needsBusinessDesignSoftwareBootstrap,
-    toast,
-    token,
-    updateCaseInfos,
-  ]);
-
-
-
-  const handleOpenDesignSoftwareModal = useCallback(() => {
-    const current = String(
-      designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
-    ).trim();
-
-    if (current === "3Shape" || current === "ExoCAD") {
-      setDesignSoftwareMode(current);
-      setCustomDesignSoftware("");
-    } else if (current) {
-      setDesignSoftwareMode("custom");
-      setCustomDesignSoftware(current);
-    } else {
-      setDesignSoftwareMode("3Shape");
-      setCustomDesignSoftware("");
-    }
-
-    setDesignSoftwareModalOpen(true);
-  }, [caseInfosMap, designSoftwareValue]);
-
-  const handleToggleAnodizing = useCallback(() => {
-    if (!token) {
-      toast({
-        title: "로그인이 필요합니다",
-        description: "아노다이징 설정을 저장하려면 로그인해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (anodizingSaving) return;
-
-    const next = !anodizingEnabled;
-    const prev = anodizingEnabled;
-    setAnodizingEnabled(next);
-    // 디자인소프트웨어와 동일: 이미 첨부된 카드는 유지하고,
-    // 신규 업로드 시드(__default__)·계정 기본값만 갱신한다.
-    updateCaseInfos("__default__", { anodizingEnabled: next });
-
-    setAnodizingSaving(true);
-    void (async () => {
-      try {
-        const res = await apiFetch<any>({
-          path: "/api/businesses/me/request-settings",
-          method: "PUT",
-          token,
-          jsonBody: { requestorAnodizingEnabled: next },
-        });
-
-        if (!res.ok) {
-          setAnodizingEnabled(prev);
-          updateCaseInfos("__default__", { anodizingEnabled: prev });
-          const body: any = res.data || {};
-          toast({
-            title: "저장에 실패했습니다",
-            description:
-              String(
-                body?.message ||
-                  "아노다이징 기본값 저장 중 오류가 발생했습니다.",
-              ),
-            variant: "destructive",
-          });
-          return;
-        }
-
-        const body: any = res.data || {};
-        const data = body?.data || body;
-        if (typeof data?.requestorAnodizingEnabled === "boolean") {
-          setAnodizingEnabled(data.requestorAnodizingEnabled);
-          updateCaseInfos("__default__", {
-            anodizingEnabled: data.requestorAnodizingEnabled,
-          });
-        }
-      } catch {
-        setAnodizingEnabled(prev);
-        updateCaseInfos("__default__", { anodizingEnabled: prev });
-        toast({
-          title: "저장에 실패했습니다",
-          description: "아노다이징 기본값 저장 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setAnodizingSaving(false);
-      }
-    })();
-  }, [
+  const {
+    designSoftwareValue,
+    setDesignSoftwareValue,
     anodizingEnabled,
+    setAnodizingEnabled,
+    retentionGrooveDefault,
+    saveRetentionGroove,
     anodizingSaving,
-    toast,
-    token,
-    updateCaseInfos,
-  ]);
+    designSoftwareSaving,
+    settingsComplete,
+    modalOpen: designSoftwareModalOpen,
+    designSoftwareMode,
+    setDesignSoftwareMode,
+    customDesignSoftware,
+    setCustomDesignSoftware,
+    modalAnodizingEnabled,
+    setModalAnodizingEnabled,
+    forceRequired: designSoftwareForceRequired,
+    gatePendingFiles: designSoftwareGatePendingFiles,
+    dialogDescription: designSoftwareDialogDescription,
+    openDesignSoftwareModal: handleOpenDesignSoftwareModal,
+    openGateModal: openDesignSoftwareGateModal,
+    handleSaveDesignSoftware,
+    handleToggleAnodizing,
+    handleModalOpenChange: handleDesignSoftwareModalOpenChange,
+  } = useRequestorRequestSettings({
+    enabled: user?.role === "requestor",
+    forceOnEntry: true,
+    draftDesignSoftware: String(caseInfosMap?.__default__?.designSoftware || ""),
+    draftAnodizingEnabled:
+      typeof caseInfosMap?.__default__?.anodizingEnabled === "boolean"
+        ? caseInfosMap.__default__.anodizingEnabled
+        : null,
+    draftRetentionGroove:
+      caseInfosMap?.__default__?.retentionGroove === "deep"
+        ? "deep"
+        : caseInfosMap?.__default__?.retentionGroove === "none" ||
+            caseInfosMap?.__default__?.retentionGroove === "shallow"
+          ? "none"
+          : null,
+    onDefaultsChange: handleRequestSettingsDefaultsChange,
+    onGateComplete: (files) => {
+      handleIncomingFilesRef.current(files);
+    },
+  });
 
   // 파일 삭제는 rawHandleRemoveFile이 처리하고,
   // fileVerificationStatus cleanup은 useFileVerification의 effect가 자동으로 처리
@@ -1554,6 +1279,23 @@ const NewRequestPageContent = () => {
         }
       }
 
+      const currentRetention =
+        caseInfosMap?.__default__?.retentionGroove === "deep"
+          ? "deep"
+          : caseInfosMap?.__default__?.retentionGroove === "none" ||
+              caseInfosMap?.__default__?.retentionGroove === "shallow"
+            ? "none"
+            : retentionGrooveDefault;
+      for (const file of stlFiles) {
+        const fileKey = toNormalizedFileKey(file);
+        const existingRg = String(
+          caseInfosMap?.[fileKey]?.retentionGroove || "",
+        ).trim();
+        if (!existingRg) {
+          updateCaseInfos(fileKey, { retentionGroove: currentRetention });
+        }
+      }
+
       void onUpload(stlFiles);
     }
 
@@ -1635,35 +1377,13 @@ const NewRequestPageContent = () => {
 
   handleIncomingFilesRef.current = handleIncomingFiles;
 
-  const openDesignSoftwareGateModal = useCallback(() => {
-    setDesignSoftwareMode("3Shape");
-    setCustomDesignSoftware("");
-    setDesignSoftwareModalOpen(true);
-  }, []);
-
-  const clearDesignSoftwareGatePending = useCallback(() => {
-    designSoftwareGatePendingRef.current = [];
-    setDesignSoftwareGatePendingFiles([]);
-  }, []);
-
   const handleIncomingDroppedFiles = (selectedFiles: File[]) => {
     const normalized = dedupeFiles(selectedFiles || []);
     if (!normalized.length) return;
 
-    if (user?.role === "requestor" && designSoftwareCanEdit) {
-      const current = String(
-        designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
-      ).trim();
-      if (!current) {
-        const nextPending = dedupeFiles([
-          ...designSoftwareGatePendingRef.current,
-          ...normalized,
-        ]);
-        designSoftwareGatePendingRef.current = nextPending;
-        setDesignSoftwareGatePendingFiles(nextPending);
-        openDesignSoftwareGateModal();
-        return;
-      }
+    if (user?.role === "requestor" && !settingsComplete) {
+      openDesignSoftwareGateModal(normalized);
+      return;
     }
 
     handleIncomingFiles(normalized);
@@ -2005,134 +1725,27 @@ const NewRequestPageContent = () => {
 
 
 
-        <Dialog
+        <DesignSoftwareSettingsDialog
           open={designSoftwareModalOpen}
-          onOpenChange={(next) => {
-            const hasPendingAttach = designSoftwareGatePendingFiles.length > 0;
-            const isUnset = !String(
-              designSoftwareValue ||
-                caseInfosMap?.__default__?.designSoftware ||
-                "",
-            ).trim();
-
-            // 미설정인데 첨부 대기 없이 연 경우(뱃지)만 저장 전까지 강제 노출.
-            // 첨부 게이트는 취소로 대기 파일을 버리고 닫을 수 있다.
-            if (isUnset && !hasPendingAttach && designSoftwareCanEdit) {
-              if (next) setDesignSoftwareModalOpen(true);
-              return;
-            }
-            if (!next) {
-              clearDesignSoftwareGatePending();
-            }
-            setDesignSoftwareModalOpen(next);
+          onOpenChange={handleDesignSoftwareModalOpenChange}
+          mode={designSoftwareMode}
+          onModeChange={setDesignSoftwareMode}
+          customValue={customDesignSoftware}
+          onCustomValueChange={setCustomDesignSoftware}
+          saving={designSoftwareSaving}
+          onSave={() => {
+            void handleSaveDesignSoftware();
           }}
-        >
-          <DialogContent
-            hideClose
-            className="new-request-page sm:max-w-md"
-            onInteractOutside={(e) => {
-              const hasPendingAttach = designSoftwareGatePendingFiles.length > 0;
-              const isUnset = !String(
-                designSoftwareValue ||
-                  caseInfosMap?.__default__?.designSoftware ||
-                  "",
-              ).trim();
-              if (isUnset && !hasPendingAttach && designSoftwareCanEdit) {
-                e.preventDefault();
-              }
-            }}
-            onEscapeKeyDown={(e) => {
-              const hasPendingAttach = designSoftwareGatePendingFiles.length > 0;
-              const isUnset = !String(
-                designSoftwareValue ||
-                  caseInfosMap?.__default__?.designSoftware ||
-                  "",
-              ).trim();
-              if (isUnset && !hasPendingAttach && designSoftwareCanEdit) {
-                e.preventDefault();
-              }
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>디자인 소프트웨어 설정</DialogTitle>
-              <DialogDescription>
-                {designSoftwareGatePendingFiles.length > 0
-                  ? "파일 첨부 전에 사용 중인 디자인 소프트웨어를 먼저 설정해주세요."
-                  : "신규 의뢰 진행 전에 사용 중인 디자인 소프트웨어를 먼저 설정해주세요."}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              <RadioGroup
-                value={designSoftwareMode}
-                onValueChange={(value) => {
-                  if (
-                    value === "3Shape" ||
-                    value === "ExoCAD" ||
-                    value === "custom"
-                  ) {
-                    setDesignSoftwareMode(value);
-                  }
-                }}
-                className="space-y-2"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="3Shape" id="gate-design-3shape" />
-                  <Label htmlFor="gate-design-3shape">3Shape</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="ExoCAD" id="gate-design-exocad" />
-                  <Label htmlFor="gate-design-exocad">ExoCAD</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="custom" id="gate-design-custom" />
-                  <Label htmlFor="gate-design-custom">직접 입력</Label>
-                </div>
-              </RadioGroup>
-
-              {designSoftwareMode === "custom" && (
-                <Input
-                  value={customDesignSoftware}
-                  onChange={(e) => setCustomDesignSoftware(e.target.value)}
-                  placeholder="사용 중인 디자인 소프트웨어를 입력해주세요"
-                  maxLength={120}
-                  autoFocus
-                />
-              )}
-            </div>
-
-            <DialogFooter>
-              {!(
-                !String(
-                  designSoftwareValue ||
-                    caseInfosMap?.__default__?.designSoftware ||
-                    "",
-                ).trim() && designSoftwareGatePendingFiles.length === 0
-              ) ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    clearDesignSoftwareGatePending();
-                    setDesignSoftwareModalOpen(false);
-                  }}
-                  disabled={designSoftwareSaving}
-                >
-                  취소
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                onClick={() => {
-                  void handleSaveDesignSoftware();
-                }}
-                disabled={designSoftwareSaving}
-              >
-                {designSoftwareSaving ? "저장 중..." : "저장"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          forceRequired={
+            designSoftwareForceRequired &&
+            designSoftwareGatePendingFiles.length === 0
+          }
+          description={designSoftwareDialogDescription}
+          showAnodizing
+          anodizingEnabled={modalAnodizingEnabled}
+          onAnodizingChange={setModalAnodizingEnabled}
+          contentClassName="new-request-page sm:max-w-md"
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
@@ -2201,6 +1814,7 @@ const NewRequestPageContent = () => {
               anodizingEnabled={anodizingEnabled}
               anodizingSaving={anodizingSaving}
               onToggleAnodizing={handleToggleAnodizing}
+              onRetentionGrooveAccountSave={saveRetentionGroove}
               onShippingModeChange={handleShippingModeChange}
               defaultShippingMode={defaultShippingMode}
               expressSelectableGlobal={expressSelectableGlobal}

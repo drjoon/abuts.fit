@@ -1006,6 +1006,15 @@ function normalizeRequestorAnodizingEnabled(value) {
   return null;
 }
 
+function normalizeRetentionGroove(value) {
+  const rg = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (rg === "deep") return "deep";
+  if (rg === "none" || rg === "shallow") return "none";
+  return null;
+}
+
 /**
  * 기공소(사업체) 의뢰 기본 설정 조회
  * @route GET /api/businesses/me/request-settings
@@ -1022,6 +1031,7 @@ export async function getMyRequestSettings(req, res) {
         subRole: 1,
         "requestSettings.designSoftware": 1,
         "requestSettings.anodizingEnabled": 1,
+        "requestSettings.retentionGroove": 1,
       })
       .lean();
     const businessAnchorId =
@@ -1033,6 +1043,9 @@ export async function getMyRequestSettings(req, res) {
     const requestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
       freshUser?.requestSettings?.anodizingEnabled,
     );
+    const requestorRetentionGroove = normalizeRetentionGroove(
+      freshUser?.requestSettings?.retentionGroove,
+    );
 
     if (!businessAnchorId) {
       return res.status(200).json({
@@ -1042,13 +1055,19 @@ export async function getMyRequestSettings(req, res) {
           membership: "none",
           canEdit: false,
           canEditDesignSoftware: false,
+          canEditAnodizing: false,
           anodizingEnabled: true,
           requestorAnodizingEnabled:
             typeof requestorAnodizingEnabled === "boolean"
               ? requestorAnodizingEnabled
               : true,
+          hasBusinessAnodizingSetting: false,
+          hasRequestorAnodizingSetting:
+            typeof requestorAnodizingEnabled === "boolean",
           designSoftware: null,
           requestorDesignSoftware,
+          retentionGroove: "none",
+          requestorRetentionGroove: requestorRetentionGroove || "none",
           defaultRequestorHexRotation: "STL모델대로",
           updatedAt: null,
         },
@@ -1074,6 +1093,15 @@ export async function getMyRequestSettings(req, res) {
     const businessDesignSoftware = normalizeDesignSoftware(
       anchor?.requestSettings?.designSoftware,
     );
+    const businessRetentionGroove = normalizeRetentionGroove(
+      anchor?.requestSettings?.retentionGroove,
+    );
+    const canEditBusinessSettings =
+      membership === "owner" || membership === "member";
+    const hasBusinessAnodizingSetting =
+      typeof anchor?.requestSettings?.anodizingEnabled === "boolean";
+    const hasRequestorAnodizingSetting =
+      typeof requestorAnodizingEnabled === "boolean";
 
     return res.status(200).json({
       success: true,
@@ -1081,20 +1109,25 @@ export async function getMyRequestSettings(req, res) {
         scope: "business",
         membership,
         canEdit: membership === "owner",
-        canEditDesignSoftware: membership === "owner" || membership === "member",
-        anodizingEnabled:
-          typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
+        canEditDesignSoftware: canEditBusinessSettings,
+        // 디자인 SW와 동일: 대표/직원이 기공소 아노다이징 기본값을 설정할 수 있다.
+        canEditAnodizing: canEditBusinessSettings,
+        anodizingEnabled: hasBusinessAnodizingSetting
+          ? anchor.requestSettings.anodizingEnabled
+          : true,
+        requestorAnodizingEnabled: hasRequestorAnodizingSetting
+          ? requestorAnodizingEnabled
+          : hasBusinessAnodizingSetting
             ? anchor.requestSettings.anodizingEnabled
             : true,
-        requestorAnodizingEnabled:
-          typeof requestorAnodizingEnabled === "boolean"
-            ? requestorAnodizingEnabled
-            : typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
-              ? anchor.requestSettings.anodizingEnabled
-              : true,
+        hasBusinessAnodizingSetting,
+        hasRequestorAnodizingSetting,
         // 하위 호환: designSoftware는 사업체 공통 기본값을 유지한다.
         designSoftware: businessDesignSoftware,
         requestorDesignSoftware,
+        retentionGroove: businessRetentionGroove || "none",
+        requestorRetentionGroove:
+          requestorRetentionGroove || businessRetentionGroove || "none",
         defaultRequestorHexRotation: normalizeRequestorHexRotation(
           anchor?.requestSettings?.defaultRequestorHexRotation,
         ),
@@ -1140,18 +1173,28 @@ export async function updateMyRequestSettings(req, res) {
       req.body || {},
       "requestorDesignSoftware",
     );
+    const hasRetentionGroove = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "retentionGroove",
+    );
+    const hasRequestorRetentionGroove = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "requestorRetentionGroove",
+    );
 
     if (
       !hasAnodizingEnabled &&
       !hasRequestorAnodizingEnabled &&
       !hasDefaultRequestorHexRotation &&
       !hasDesignSoftware &&
-      !hasRequestorDesignSoftware
+      !hasRequestorDesignSoftware &&
+      !hasRetentionGroove &&
+      !hasRequestorRetentionGroove
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "유효하지 않은 의뢰 설정입니다. anodizingEnabled, requestorAnodizingEnabled, defaultRequestorHexRotation, designSoftware 또는 requestorDesignSoftware가 필요합니다.",
+          "유효하지 않은 의뢰 설정입니다. anodizingEnabled, requestorAnodizingEnabled, defaultRequestorHexRotation, designSoftware, requestorDesignSoftware, retentionGroove 또는 requestorRetentionGroove가 필요합니다.",
       });
     }
 
@@ -1242,20 +1285,54 @@ export async function updateMyRequestSettings(req, res) {
       requestorDesignSoftware = raw;
     }
 
+    let retentionGroove;
+    if (hasRetentionGroove) {
+      retentionGroove = normalizeRetentionGroove(req.body?.retentionGroove);
+      if (!retentionGroove) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "유효하지 않은 의뢰 설정입니다. retentionGroove는 'none' 또는 'deep'이어야 합니다.",
+        });
+      }
+    }
+
+    let requestorRetentionGroove;
+    if (hasRequestorRetentionGroove) {
+      if (String(req.user?.role || "") !== "requestor") {
+        return res.status(403).json({
+          success: false,
+          message: "의뢰자 계정만 개인 유지홈 기본값을 저장할 수 있습니다.",
+        });
+      }
+      requestorRetentionGroove = normalizeRetentionGroove(
+        req.body?.requestorRetentionGroove,
+      );
+      if (!requestorRetentionGroove) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "유효하지 않은 의뢰 설정입니다. requestorRetentionGroove는 'none' 또는 'deep'이어야 합니다.",
+        });
+      }
+    }
+
     const freshUser = await User.findById(req.user._id)
       .select({
         businessAnchorId: 1,
         subRole: 1,
         "requestSettings.designSoftware": 1,
         "requestSettings.anodizingEnabled": 1,
+        "requestSettings.retentionGroove": 1,
       })
       .lean();
     const businessAnchorId =
       freshUser?.businessAnchorId || req.user.businessAnchorId || null;
 
-    const needsOwnerPermission =
-      hasAnodizingEnabled || hasDefaultRequestorHexRotation;
-    const needsBusinessDesignSoftwarePermission = hasDesignSoftware;
+    // 헥스 기본값만 대표자 전용. 디자인SW·아노다이징·유지홈은 대표/직원 공통.
+    const needsOwnerPermission = hasDefaultRequestorHexRotation;
+    const needsBusinessSettingsPermission =
+      hasAnodizingEnabled || hasDesignSoftware || hasRetentionGroove;
 
     let anchor = null;
     let membership = "none";
@@ -1279,7 +1356,7 @@ export async function updateMyRequestSettings(req, res) {
       });
     }
 
-    if ((needsOwnerPermission || needsBusinessDesignSoftwarePermission) && !businessAnchorId) {
+    if ((needsOwnerPermission || needsBusinessSettingsPermission) && !businessAnchorId) {
       return res.status(404).json({
         success: false,
         message: "소속된 기공소를 찾을 수 없습니다.",
@@ -1294,21 +1371,21 @@ export async function updateMyRequestSettings(req, res) {
     }
 
     if (
-      needsBusinessDesignSoftwarePermission &&
+      needsBusinessSettingsPermission &&
       membership !== "owner" &&
       membership !== "member"
     ) {
       return res.status(403).json({
         success: false,
         message:
-          "사업자 구성원(대표/직원)만 기공소 디자인 소프트웨어를 변경할 수 있습니다.",
+          "사업자 구성원(대표/직원)만 기공소 디자인 소프트웨어·아노다이징·유지홈을 변경할 수 있습니다.",
       });
     }
 
     const now = new Date();
     let updatedAnchor = null;
     let propagatedRequestorDesignSoftwareCount = 0;
-    if (needsOwnerPermission || needsBusinessDesignSoftwarePermission) {
+    if (needsOwnerPermission || needsBusinessSettingsPermission) {
       const setPayload = {
         "requestSettings.updatedAt": now,
       };
@@ -1322,6 +1399,9 @@ export async function updateMyRequestSettings(req, res) {
       }
       if (hasDesignSoftware) {
         setPayload["requestSettings.designSoftware"] = designSoftware;
+      }
+      if (hasRetentionGroove) {
+        setPayload["requestSettings.retentionGroove"] = retentionGroove;
       }
 
       updatedAnchor = await BusinessAnchor.findByIdAndUpdate(
@@ -1368,8 +1448,15 @@ export async function updateMyRequestSettings(req, res) {
     let updatedRequestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
       freshUser?.requestSettings?.anodizingEnabled,
     );
+    let updatedRequestorRetentionGroove = normalizeRetentionGroove(
+      freshUser?.requestSettings?.retentionGroove,
+    );
 
-    if (hasRequestorDesignSoftware || hasRequestorAnodizingEnabled) {
+    if (
+      hasRequestorDesignSoftware ||
+      hasRequestorAnodizingEnabled ||
+      hasRequestorRetentionGroove
+    ) {
       const userSetPayload = {
         "requestSettings.updatedAt": now,
       };
@@ -1380,6 +1467,10 @@ export async function updateMyRequestSettings(req, res) {
       if (hasRequestorAnodizingEnabled) {
         userSetPayload["requestSettings.anodizingEnabled"] =
           requestorAnodizingEnabled;
+      }
+      if (hasRequestorRetentionGroove) {
+        userSetPayload["requestSettings.retentionGroove"] =
+          requestorRetentionGroove;
       }
 
       const updatedUser = await User.findByIdAndUpdate(
@@ -1406,12 +1497,24 @@ export async function updateMyRequestSettings(req, res) {
       updatedRequestorAnodizingEnabled = normalizeRequestorAnodizingEnabled(
         updatedUser?.requestSettings?.anodizingEnabled,
       );
+      updatedRequestorRetentionGroove = normalizeRetentionGroove(
+        updatedUser?.requestSettings?.retentionGroove,
+      );
     }
 
     const requestSettingsSource = updatedAnchor?.requestSettings || anchor?.requestSettings;
     const businessDesignSoftware = normalizeDesignSoftware(
       requestSettingsSource?.designSoftware,
     );
+    const businessRetentionGroove = normalizeRetentionGroove(
+      requestSettingsSource?.retentionGroove,
+    );
+    const canEditBusinessSettings =
+      membership === "owner" || membership === "member";
+    const hasBusinessAnodizingSetting =
+      typeof requestSettingsSource?.anodizingEnabled === "boolean";
+    const hasRequestorAnodizingSetting =
+      typeof updatedRequestorAnodizingEnabled === "boolean";
 
     return res.status(200).json({
       success: true,
@@ -1420,20 +1523,26 @@ export async function updateMyRequestSettings(req, res) {
         scope: "business",
         membership,
         canEdit: membership === "owner",
-        canEditDesignSoftware: membership === "owner" || membership === "member",
-        anodizingEnabled:
-          typeof requestSettingsSource?.anodizingEnabled === "boolean"
+        canEditDesignSoftware: canEditBusinessSettings,
+        canEditAnodizing: canEditBusinessSettings,
+        anodizingEnabled: hasBusinessAnodizingSetting
+          ? requestSettingsSource.anodizingEnabled
+          : true,
+        requestorAnodizingEnabled: hasRequestorAnodizingSetting
+          ? updatedRequestorAnodizingEnabled
+          : hasBusinessAnodizingSetting
             ? requestSettingsSource.anodizingEnabled
             : true,
-        requestorAnodizingEnabled:
-          typeof updatedRequestorAnodizingEnabled === "boolean"
-            ? updatedRequestorAnodizingEnabled
-            : typeof requestSettingsSource?.anodizingEnabled === "boolean"
-              ? requestSettingsSource.anodizingEnabled
-              : true,
+        hasBusinessAnodizingSetting,
+        hasRequestorAnodizingSetting,
         // 하위 호환: designSoftware는 사업체 공통 기본값을 유지한다.
         designSoftware: businessDesignSoftware,
         requestorDesignSoftware: updatedRequestorDesignSoftware,
+        retentionGroove: businessRetentionGroove || "none",
+        requestorRetentionGroove:
+          updatedRequestorRetentionGroove ||
+          businessRetentionGroove ||
+          "none",
         defaultRequestorHexRotation: normalizeRequestorHexRotation(
           requestSettingsSource?.defaultRequestorHexRotation,
         ),

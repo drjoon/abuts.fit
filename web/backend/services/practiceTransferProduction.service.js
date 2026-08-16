@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-16: PTX CA 제조 주문에 기공소 requestSettings.designSoftware·아노다이징·헥스 반영.
 // - 2026-08-16: PTX CA 납품=치과 직납. 출고목표=치과도착일−2영업일(기공소 경유 −3 폐기).
 // - 2026-08-16: PTX 출고모드·스케줄은 생산(custom_abutment) 리드로 판정(디자인+1일 오판으로 신속 승격 방지).
 // - 2026-08-16: PTX Request 생성 시 rnd.manufacturerHexRotation·PRC 파일명 시드(request-meta 500 방지).
@@ -202,6 +203,13 @@ const resolveLabRequestorUserId = async ({ transferDoc, fallbackUserId }) => {
   const fallback = String(fallbackUserId || "").trim();
   if (fallback && Types.ObjectId.isValid(fallback)) return fallback;
   return null;
+};
+
+/** ExoCAD → 헥스30도회전, 그 외(3Shape/custom) → STL모델대로 */
+const resolveHexRotationByDesignSoftware = (designSoftwareRaw) => {
+  const designSoftware = String(designSoftwareRaw || "").trim();
+  if (designSoftware === "ExoCAD") return "헥스30도회전";
+  return "STL모델대로";
 };
 
 const ymdToUtcNoonMs = (ymd) => {
@@ -426,6 +434,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       name: 1,
       "shippingPolicy.weeklyBatchDays": 1,
       "requestSettings.anodizingEnabled": 1,
+      "requestSettings.designSoftware": 1,
     })
     .lean();
 
@@ -434,10 +443,42 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         .map((value) => String(value || "").trim())
         .filter(Boolean)
     : [];
+
+  const labUserId = await resolveLabRequestorUserId({
+    transferDoc,
+    fallbackUserId: actorUserId,
+  });
+  if (!labUserId) {
+    throw new Error("기공소 의뢰자 계정을 찾지 못해 어벗츠 의뢰를 생성할 수 없습니다.");
+  }
+
+  const labUser = await User.findById(labUserId)
+    .select({
+      "requestSettings.designSoftware": 1,
+      "requestSettings.anodizingEnabled": 1,
+    })
+    .lean();
+
+  let designSoftware = String(
+    labOrg?.requestSettings?.designSoftware || "",
+  ).trim();
+  if (!designSoftware) {
+    designSoftware = String(labUser?.requestSettings?.designSoftware || "").trim();
+  }
+  if (!designSoftware) {
+    throw new Error(
+      "기공소 디자인 소프트웨어가 설정되지 않았습니다. 기공의뢰수신 또는 어벗생산의뢰에서 먼저 설정해주세요.",
+    );
+  }
+  const manufacturerHexRotation =
+    resolveHexRotationByDesignSoftware(designSoftware);
+
   const anodizingEnabled =
     typeof labOrg?.requestSettings?.anodizingEnabled === "boolean"
       ? labOrg.requestSettings.anodizingEnabled
-      : true;
+      : typeof labUser?.requestSettings?.anodizingEnabled === "boolean"
+        ? labUser.requestSettings.anodizingEnabled
+        : true;
 
   const requestedAt = new Date();
   const shippingMode =
@@ -453,14 +494,6 @@ export async function createAbutmentRequestsFromPracticeTransfer({
           weeklyBatchDays,
           requestedAt,
         });
-
-  const labUserId = await resolveLabRequestorUserId({
-    transferDoc,
-    fallbackUserId: actorUserId,
-  });
-  if (!labUserId) {
-    throw new Error("기공소 의뢰자 계정을 찾지 못해 어벗츠 의뢰를 생성할 수 없습니다.");
-  }
 
   const practiceAnchor = transferDoc?.practiceBusinessAnchorId
     ? await BusinessAnchor.findById(transferDoc.practiceBusinessAnchorId)
@@ -558,6 +591,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       abutmentDiameter: diameterRaw || undefined,
       abutmentHeight: String(row.abutmentHeight || "").trim() || undefined,
       maxDiameter,
+      designSoftware,
       anodizingEnabled,
       file: {
         originalName: scanFile.file.originalName,
@@ -639,11 +673,11 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       // best-effort — request-meta에서도 동적 계산
     }
 
-    const manufacturerHexRotation = "STL모델대로";
-
     const newRequest = new Request({
       caseInfos: {
         ...normalizedCaseInfos,
+        designSoftware,
+        anodizingEnabled,
         requestorHexRotation: manufacturerHexRotation,
         finalHexRotation: manufacturerHexRotation,
         faceHolePrcFileName: resolvedPrc.faceHolePrcFileName || undefined,

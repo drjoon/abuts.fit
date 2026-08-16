@@ -286,9 +286,19 @@ const businessAnchorSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // 기공소 유지홈 기본값(신규의뢰/디자인 확인 시드). 의뢰건 SSOT는 caseInfos.retentionGroove.
+      retentionGroove: {
+        type: String,
+        enum: ["none", "deep", "shallow"],
+        default: "none",
+        trim: true,
+      },
       // 의뢰자(사업체) 단위 CAD 디자인 소프트웨어 설정
-      // - null: 미설정 (신규의뢰 진입 시 선택 모달 노출)
+      // - null: 미설정 (어벗생산의뢰/기공의뢰수신 진입 시 선택 모달 강제)
       // - "3Shape" | "ExoCAD" | 직접입력 문자열
+      // related files:
+      // - web/frontend/src/features/requestSettings/useRequestorRequestSettings.ts
+      // - web/backend/services/practiceTransferProduction.service.js
       designSoftware: {
         type: String,
         default: null,

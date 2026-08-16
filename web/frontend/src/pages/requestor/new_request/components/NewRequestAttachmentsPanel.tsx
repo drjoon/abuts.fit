@@ -47,6 +47,7 @@ import {
 import { Check, Calendar, Link2, Link2Off, X } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import { PracticeTransferFileDropTarget } from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
 import {
   toTempUploadFileKey,
   type PreUploadFileProgress,
@@ -1133,28 +1134,14 @@ export function NewRequestAttachmentsPanel({
     <>
       <div className="flex flex-col flex-1 min-h-0 gap-3 h-full">
         <div className="flex shrink-0 items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenDesignSoftwareModal?.()}
-            >
-              {designSoftwareLabel
-                ? `${designSoftwareLabel}`
-                : "디자인 소프트웨어 설정"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={anodizingSaving}
-              onClick={() => onToggleAnodizing?.()}
-              title="의뢰자 기본값으로 저장되며, 새로 올리는 파일에만 적용됩니다"
-            >
-              {anodizingEnabled ? "아노다이징 ON" : "아노다이징 OFF"}
-            </Button>
-          </div>
+          <RequestSettingsToolbar
+            designSoftwareLabel={designSoftwareLabel}
+            onOpenDesignSoftwareModal={onOpenDesignSoftwareModal}
+            anodizingEnabled={anodizingEnabled}
+            anodizingSaving={anodizingSaving}
+            onToggleAnodizing={onToggleAnodizing}
+            anodizingTitle="의뢰자 기본값으로 저장되며, 새로 올리는 파일에만 적용됩니다"
+          />
 
           <Button
             type="button"

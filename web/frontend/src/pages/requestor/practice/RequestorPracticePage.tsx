@@ -16,6 +16,8 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-16: 어벗디자인 업로드 시 3D 확인 모달(기본값 채움·유지홈 필수) 후 handoff.
+// - 2026-08-16: 기간필터 옆에 디자인SW·아노다이징 공통 툴바. 미설정 시 진입 강제.
 // - 2026-08-16: 어벗디자인 업로드 후 로컬 production.designFiles 반영 → 상세「작업 파일」표시.
 // - 2026-08-16: 디자인 없이 완료 플래그만 남은 stuck 건 — 목록 로드 시 stage reopen + CTA 복원.
 // - 2026-08-16: 생산 취소 후 로컬 패치 — 결과파일·완료·확정 클리어 → 뱃지「의뢰수락」·업로드 CTA 복원.
@@ -72,6 +74,14 @@ import {
   type MouseEvent,
 } from "react";
 import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
+import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
+import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
+import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
+import {
+  AbutmentDesignConfirmDialog,
+  type AbutmentDesignConfirmCaseInfos,
+} from "@/shared/components/practice/AbutmentDesignConfirmDialog";
+import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -293,6 +303,31 @@ export function RequestorPracticeReceivePage({
   const user = useAuthStore((s) => s.user);
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
+  const {
+    designSoftwareValue,
+    anodizingEnabled,
+    anodizingSaving,
+    designSoftwareSaving,
+    settingsComplete,
+    retentionGrooveDefault,
+    saveRetentionGroove,
+    modalOpen: requestSettingsModalOpen,
+    designSoftwareMode,
+    setDesignSoftwareMode,
+    customDesignSoftware,
+    setCustomDesignSoftware,
+    modalAnodizingEnabled,
+    setModalAnodizingEnabled,
+    forceRequired: requestSettingsForceRequired,
+    dialogDescription: requestSettingsDialogDescription,
+    openDesignSoftwareModal,
+    handleSaveDesignSoftware,
+    handleToggleAnodizing,
+    handleModalOpenChange: handleRequestSettingsModalOpenChange,
+  } = useRequestorRequestSettings({
+    enabled: true,
+    forceOnEntry: true,
+  });
   const { rooms } = useChatRooms();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const chatUploads = useBackgroundTempUpload({ token });
@@ -330,6 +365,15 @@ export function RequestorPracticeReceivePage({
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
   const [designConfirmBusyId, setDesignConfirmBusyId] = useState<string>("");
+  const [designConfirmOpen, setDesignConfirmOpen] = useState(false);
+  const [designConfirmBusy, setDesignConfirmBusy] = useState(false);
+  const [designConfirmFile, setDesignConfirmFile] = useState<File | null>(null);
+  const [designConfirmTransfer, setDesignConfirmTransfer] =
+    useState<ReceivedPracticeTransfer | null>(null);
+  const [designConfirmRequestId, setDesignConfirmRequestId] = useState("");
+  const [designConfirmCaseInfos, setDesignConfirmCaseInfos] =
+    useState<AbutmentDesignConfirmCaseInfos | null>(null);
+  const { connections } = useNewRequestImplant({ token });
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
@@ -1332,6 +1376,18 @@ export function RequestorPracticeReceivePage({
   const markTransferAccepted = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
+
+      if (!settingsComplete) {
+        openDesignSoftwareModal();
+        toast({
+          title: "설정이 필요합니다",
+          description:
+            "기공소 디자인 소프트웨어와 아노다이징을 먼저 설정한 뒤 수락해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
       const isOpenPool =
         transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
       const fileCount = transfer.files?.length || transfer.fileCount || 0;
@@ -1579,6 +1635,8 @@ export function RequestorPracticeReceivePage({
       applyAcceptedLocalPatch,
       emitUnreadBadgeRefresh,
       loadFirstPage,
+      openDesignSoftwareModal,
+      settingsComplete,
       toast,
       token,
     ],
@@ -2302,13 +2360,68 @@ export function RequestorPracticeReceivePage({
     });
   }, []);
 
+  const clearDesignConfirmState = useCallback(() => {
+    setDesignConfirmOpen(false);
+    setDesignConfirmBusy(false);
+    setDesignConfirmFile(null);
+    setDesignConfirmTransfer(null);
+    setDesignConfirmRequestId("");
+    setDesignConfirmCaseInfos(null);
+  }, []);
+
+  const buildDesignConfirmDefaults = useCallback(
+    (
+      transfer: ReceivedPracticeTransfer,
+      requestCaseInfos?: Record<string, unknown> | null,
+    ): AbutmentDesignConfirmCaseInfos => {
+      const toothRows = parseToothWorks(transfer.toothWorksSummary || "");
+      const firstTooth = toothRows[0];
+      const scanPatient =
+        transfer.files?.find((f) => String(f.patientName || "").trim())
+          ?.patientName ||
+        transfer.files?.[0]?.patientName ||
+        "";
+      const scanTooth =
+        transfer.files?.find((f) => String(f.tooth || "").trim())?.tooth ||
+        transfer.files?.[0]?.tooth ||
+        "";
+
+      return {
+        clinicName:
+          String(requestCaseInfos?.clinicName || "").trim() ||
+          String(transfer.practice?.businessName || "").trim(),
+        patientName:
+          String(requestCaseInfos?.patientName || "").trim() ||
+          String(scanPatient || "").trim(),
+        tooth:
+          String(requestCaseInfos?.tooth || "").trim() ||
+          String(firstTooth?.toothNumber || "").trim() ||
+          String(scanTooth || "").trim(),
+        implantManufacturer:
+          String(requestCaseInfos?.implantManufacturer || "").trim() ||
+          String(firstTooth?.implantManufacturer || "").trim(),
+        implantBrand:
+          String(requestCaseInfos?.implantBrand || "").trim() ||
+          String(firstTooth?.implantBrand || "").trim(),
+        implantFamily:
+          String(requestCaseInfos?.implantFamily || "").trim() ||
+          String(firstTooth?.implantFamily || "").trim(),
+        implantType:
+          String(requestCaseInfos?.implantType || "").trim() ||
+          String(firstTooth?.implantType || "").trim(),
+        retentionGroove: "",
+      };
+    },
+    [],
+  );
+
   const handleCardDesignUpload = useCallback(
     async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
       if (!token) return;
       const id = String(transfer.transferId || transfer._id || "").trim();
-      if (!id || cardActionBusyId) return;
+      if (!id || cardActionBusyId || designConfirmBusy) return;
 
       const relatedIds = (transfer.production?.relatedRequestIds || [])
         .map((raw) => String(raw || "").trim())
@@ -2326,7 +2439,59 @@ export function RequestorPracticeReceivePage({
       const file = await pickDesignAbutmentFile();
       if (!file) return;
 
-      setCardActionBusyId(id);
+      const requestId = relatedIds[0];
+      let requestCaseInfos: Record<string, unknown> | null = null;
+      try {
+        const res = await apiFetch<{
+          data?: { caseInfos?: Record<string, unknown> };
+          caseInfos?: Record<string, unknown>;
+        }>({
+          path: `/api/requests/${encodeURIComponent(requestId)}`,
+          method: "GET",
+          token,
+        });
+        if (res.ok) {
+          const body = (res.data || {}) as {
+            data?: { caseInfos?: Record<string, unknown> };
+            caseInfos?: Record<string, unknown>;
+          };
+          const data = body.data || body;
+          if (data?.caseInfos && typeof data.caseInfos === "object") {
+            requestCaseInfos = data.caseInfos;
+          }
+        }
+      } catch {
+        // fallback to transfer defaults
+      }
+
+      setDesignConfirmTransfer(transfer);
+      setDesignConfirmRequestId(requestId);
+      setDesignConfirmFile(file);
+      setDesignConfirmCaseInfos(
+        buildDesignConfirmDefaults(transfer, requestCaseInfos),
+      );
+      setDesignConfirmOpen(true);
+    },
+    [
+      buildDesignConfirmDefaults,
+      cardActionBusyId,
+      designConfirmBusy,
+      pickDesignAbutmentFile,
+      toast,
+      token,
+    ],
+  );
+
+  const handleDesignConfirmSubmit = useCallback(
+    async (caseInfos: AbutmentDesignConfirmCaseInfos) => {
+      if (!token || !designConfirmFile || !designConfirmTransfer) return;
+      const transfer = designConfirmTransfer;
+      const requestId = designConfirmRequestId;
+      const file = designConfirmFile;
+      if (!requestId) return;
+
+      setDesignConfirmBusy(true);
+      setCardActionBusyId(String(transfer.transferId || transfer._id || ""));
       try {
         const uploaded = await uploadFilesWithToast([file]);
         const temp = uploaded?.[0];
@@ -2335,7 +2500,6 @@ export function RequestorPracticeReceivePage({
           throw new Error("파일 업로드에 실패했습니다.");
         }
 
-        const requestId = relatedIds[0];
         const res = await apiFetch<{
           success?: boolean;
           message?: string;
@@ -2355,6 +2519,17 @@ export function RequestorPracticeReceivePage({
               s3Key,
               s3Url: temp?.location || "",
             },
+            retentionGroove: caseInfos.retentionGroove,
+            caseInfos: {
+              clinicName: caseInfos.clinicName,
+              patientName: caseInfos.patientName,
+              tooth: caseInfos.tooth,
+              implantManufacturer: caseInfos.implantManufacturer,
+              implantBrand: caseInfos.implantBrand,
+              implantFamily: caseInfos.implantFamily,
+              implantType: caseInfos.implantType,
+              retentionGroove: caseInfos.retentionGroove,
+            },
           },
         });
         if (!res.ok) {
@@ -2370,8 +2545,8 @@ export function RequestorPracticeReceivePage({
         const nowIso = new Date().toISOString();
         const uploadedDesignFile: ReceivedPracticeFile = {
           id: `design-local-${Date.now()}`,
-          patientName: "",
-          tooth: "",
+          patientName: String(caseInfos.patientName || "").trim(),
+          tooth: String(caseInfos.tooth || "").trim(),
           originalName: String(temp?.originalName || file.name || "").trim(),
           mimetype: String(
             temp?.mimetype || file.type || "application/octet-stream",
@@ -2382,7 +2557,6 @@ export function RequestorPracticeReceivePage({
         const prevDesignFiles = Array.isArray(transfer.production?.designFiles)
           ? transfer.production.designFiles
           : [];
-        // 동일 s3Key 재업로드 시 중복 행 방지
         const nextDesignFiles = [
           ...prevDesignFiles.filter((row) => row.s3Key !== s3Key),
           uploadedDesignFile,
@@ -2395,7 +2569,6 @@ export function RequestorPracticeReceivePage({
           labDesignConfirmedAt:
             transfer.production?.labDesignConfirmedAt || nowIso,
           skipDesignConfirm: true,
-          // 업로드 후 제조사 준비 유지 — 취소·재업로드 가능
           abutmentProductionStartedAt: null,
         };
 
@@ -2413,6 +2586,7 @@ export function RequestorPracticeReceivePage({
             : prev,
         );
 
+        clearDesignConfirmState();
         toast({
           title: "어벗디자인 업로드",
           description:
@@ -2428,12 +2602,15 @@ export function RequestorPracticeReceivePage({
           variant: "destructive",
         });
       } finally {
+        setDesignConfirmBusy(false);
         setCardActionBusyId("");
       }
     },
     [
-      cardActionBusyId,
-      pickDesignAbutmentFile,
+      clearDesignConfirmState,
+      designConfirmFile,
+      designConfirmRequestId,
+      designConfirmTransfer,
       toast,
       token,
       uploadFilesWithToast,
@@ -2678,12 +2855,21 @@ export function RequestorPracticeReceivePage({
   const transferSearchAndBadges = (
     <div className="space-y-3">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <PeriodFilter
-          value={period}
-          onChange={setPeriod}
-          presets={["thisMonth", "lastMonth"]}
-          className="shrink-0"
-        />
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <PeriodFilter
+            value={period}
+            onChange={setPeriod}
+            presets={["thisMonth", "lastMonth"]}
+            className="shrink-0"
+          />
+          <RequestSettingsToolbar
+            designSoftwareLabel={String(designSoftwareValue || "").trim()}
+            onOpenDesignSoftwareModal={openDesignSoftwareModal}
+            anodizingEnabled={anodizingEnabled}
+            anodizingSaving={anodizingSaving}
+            onToggleAnodizing={handleToggleAnodizing}
+          />
+        </div>
         <div className="relative w-full md:max-w-md md:ml-auto">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -2899,6 +3085,38 @@ export function RequestorPracticeReceivePage({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden p-4">
+      <DesignSoftwareSettingsDialog
+        open={requestSettingsModalOpen}
+        onOpenChange={handleRequestSettingsModalOpenChange}
+        mode={designSoftwareMode}
+        onModeChange={setDesignSoftwareMode}
+        customValue={customDesignSoftware}
+        onCustomValueChange={setCustomDesignSoftware}
+        saving={designSoftwareSaving}
+        onSave={() => {
+          void handleSaveDesignSoftware();
+        }}
+        forceRequired={requestSettingsForceRequired}
+        description={requestSettingsDialogDescription}
+        showAnodizing
+        anodizingEnabled={modalAnodizingEnabled}
+        onAnodizingChange={setModalAnodizingEnabled}
+      />
+      <AbutmentDesignConfirmDialog
+        open={designConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !designConfirmBusy) clearDesignConfirmState();
+          else setDesignConfirmOpen(open);
+        }}
+        file={designConfirmFile}
+        initialCaseInfos={designConfirmCaseInfos}
+        defaultRetentionGroove={retentionGrooveDefault}
+        onRetentionGrooveAccountSave={saveRetentionGroove}
+        connections={connections}
+        confirming={designConfirmBusy}
+        onConfirm={handleDesignConfirmSubmit}
+        onCancel={clearDesignConfirmState}
+      />
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="shrink-0">
           <LabDashboardTopBanners />
@@ -2911,6 +3129,13 @@ export function RequestorPracticeReceivePage({
                 onChange={setPeriod}
                 presets={["thisMonth", "lastMonth"]}
                 className="shrink-0"
+              />
+              <RequestSettingsToolbar
+                designSoftwareLabel={String(designSoftwareValue || "").trim()}
+                onOpenDesignSoftwareModal={openDesignSoftwareModal}
+                anodizingEnabled={anodizingEnabled}
+                anodizingSaving={anodizingSaving}
+                onToggleAnodizing={handleToggleAnodizing}
               />
             </div>
             <DesignQueueSection listMode={designQueueListMode} />

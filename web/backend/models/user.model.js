@@ -204,6 +204,14 @@ const userSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // 의뢰자(계정) 단위 유지홈 기본값. 신규 업로드/디자인 확인 시드 → caseInfos.retentionGroove
+      // - "none" | "deep" (shallow는 none으로 정규화)
+      retentionGroove: {
+        type: String,
+        enum: ["none", "deep", "shallow"],
+        default: "none",
+        trim: true,
+      },
       updatedAt: {
         type: Date,
         default: null,
