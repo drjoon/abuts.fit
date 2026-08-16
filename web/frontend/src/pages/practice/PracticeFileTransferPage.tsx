@@ -7523,7 +7523,7 @@ export const PracticeFileTransferPage = ({
               : []),
             { label: "파일 수", value: `${selectedTransfer?.fileCount || 0}개` },
             {
-              label: "결과파일",
+              label: "보철물",
               value: `${Number(selectedTransfer?.resultFiles?.length || 0)}개`,
             },
           ] satisfies PracticeTransferDialogSummaryItem[]}
@@ -7538,7 +7538,7 @@ export const PracticeFileTransferPage = ({
           skipJig={Boolean(selectedTransfer?.skipJig)}
           feeViewer="practice"
           labAnchorId={selectedTransfer?.targetLabAnchorId || null}
-          filesLabel="의뢰 파일"
+          filesLabel="의뢰 파일 (구강 스캔)"
           files={
             (selectedTransfer?.files || []).map((file, idx) => ({
               id: `${file.s3Key}:${idx}`,
@@ -7547,7 +7547,7 @@ export const PracticeFileTransferPage = ({
               s3Key: String(file.s3Key || "").trim(),
             })) satisfies PracticeTransferDialogFileItem[]
           }
-          resultFilesLabel="작업 결과 파일"
+          resultFilesLabel="보철물"
           resultFiles={
             (selectedTransfer?.resultFiles || []).map((file, idx) => ({
               id: `${file.s3Key}:result:${idx}`,

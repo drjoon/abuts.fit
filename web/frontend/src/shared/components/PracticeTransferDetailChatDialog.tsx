@@ -6,6 +6,7 @@
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
+// - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔) / 작업 파일(어벗 디자인·보철물).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 왼쪽 구강스캔 업로드 UI 제거(스캔 없이 수락).
 // - 2026-08-15: 수락 바 — 구강스캔 나중에 올리기 안내 문구 제거.
 // - 2026-08-15: 수락 기공소 CA 디자인 — 스캔 없이도 수락. 어벗디자인비 안내.
@@ -83,6 +84,7 @@ type PracticeTransferDetailChatDialogProps = {
   skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
   labAnchorId?: string | null;
+  /** 예: 의뢰 파일 (구강 스캔) */
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
   /** 수락 전 구강스캔 미첨부(CA). 자동매칭만 치과 필수 안내 */
@@ -93,7 +95,11 @@ type PracticeTransferDetailChatDialogProps = {
    */
   requestFilesDownloadLocked?: boolean;
   requestFilesDownloadLockedReason?: string;
-  /** 기공소 작업완료 결과 파일 (있을 때만 표시) */
+  /** 어벗 디자인·보철물을 묶는 섹션 제목 */
+  workFilesLabel?: string;
+  designFilesLabel?: string;
+  designFiles?: PracticeTransferDialogFileItem[];
+  /** 보철물(작업완료 결과). 있을 때만 표시 */
   resultFilesLabel?: string;
   resultFiles?: PracticeTransferDialogFileItem[];
   /** 치과 「생산 진행」/디자인 컨펌 */
@@ -184,7 +190,10 @@ export function PracticeTransferDetailChatDialog({
   oralScanAttachMode = null,
   requestFilesDownloadLocked = false,
   requestFilesDownloadLockedReason = ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
-  resultFilesLabel = "작업 결과 파일",
+  workFilesLabel = "작업 파일",
+  designFilesLabel = "어벗 디자인",
+  designFiles = [],
+  resultFilesLabel = "보철물",
   resultFiles = [],
   productionConfirmBusy = false,
   showProductionConfirm = false,
@@ -269,6 +278,49 @@ export function PracticeTransferDetailChatDialog({
   const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
   const showShortWorkPeriod = isPracticeWorkPeriodShort(workPeriodDays);
   const acceptDisabled = acceptBusy || rejectBusy || oralScanBlocksAccept;
+  const designFileList = Array.isArray(designFiles) ? designFiles : [];
+  const resultFileList = Array.isArray(resultFiles) ? resultFiles : [];
+  const showWorkFilesSection =
+    designFileList.length > 0 || resultFileList.length > 0;
+
+  const renderFileRow = (
+    file: PracticeTransferDialogFileItem,
+    idx: number,
+    keyPrefix: string,
+    locked = false,
+  ) => {
+    const busyKey = String(file.s3Key || file.id || "").trim();
+    const isBusy =
+      downloadAllBusy ||
+      (busyKey ? downloadingFileKeys.includes(busyKey) : false);
+    const progress = busyKey ? Number(downloadProgressByKey[busyKey] ?? 0) : 0;
+    return (
+      <div
+        key={`${keyPrefix}:${file.id}:${idx}`}
+        className="rounded border px-2 py-1 space-y-1"
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (isBusy || locked) return;
+            void onDownloadTransferFile(file);
+          }}
+          disabled={isBusy || locked}
+          title={locked ? requestFilesDownloadLockedReason : undefined}
+          className="block w-full text-left text-sm hover:underline disabled:opacity-60 disabled:pointer-events-none disabled:no-underline"
+        >
+          {isBusy
+            ? `다운로드 중 ${Math.round(progress)}% · `
+            : locked
+              ? "다운로드 대기 · "
+              : ""}
+          {file.fileName} · {formatFileSize(Number(file.size || 0))}
+        </button>
+        {isBusy ? <Progress value={progress} className="h-1.5" /> : null}
+      </div>
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-[90rem] h-[86vh] p-0 overflow-hidden flex flex-col">
@@ -338,7 +390,9 @@ export function PracticeTransferDetailChatDialog({
 
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-muted-foreground">{filesLabel} ({files.length}개)</p>
+                  <p className="text-muted-foreground">
+                    {filesLabel} ({files.length}개)
+                  </p>
                   <Button
                     type="button"
                     variant="outline"
@@ -360,50 +414,14 @@ export function PracticeTransferDetailChatDialog({
                 ) : null}
                 {files.length ? (
                   <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">
-                    {files.map((file, idx) => {
-                      const busyKey = String(file.s3Key || file.id || "").trim();
-                      const isBusy =
-                        downloadAllBusy ||
-                        (busyKey
-                          ? downloadingFileKeys.includes(busyKey)
-                          : false);
-                      const isLocked = requestFilesDownloadLocked;
-                      const progress = busyKey
-                        ? Number(downloadProgressByKey[busyKey] ?? 0)
-                        : 0;
-                      return (
-                        <div
-                          key={`${file.id}:${idx}`}
-                          className="rounded border px-2 py-1 space-y-1"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (isBusy || isLocked) return;
-                              void onDownloadTransferFile(file);
-                            }}
-                            disabled={isBusy || isLocked}
-                            title={
-                              isLocked
-                                ? requestFilesDownloadLockedReason
-                                : undefined
-                            }
-                            className="block w-full text-left text-sm hover:underline disabled:opacity-60 disabled:pointer-events-none disabled:no-underline"
-                          >
-                            {isBusy
-                              ? `다운로드 중 ${Math.round(progress)}% · `
-                              : isLocked
-                                ? "다운로드 대기 · "
-                                : ""}
-                            {file.fileName} ·{" "}
-                            {formatFileSize(Number(file.size || 0))}
-                          </button>
-                          {isBusy ? (
-                            <Progress value={progress} className="h-1.5" />
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                    {files.map((file, idx) =>
+                      renderFileRow(
+                        file,
+                        idx,
+                        "request",
+                        requestFilesDownloadLocked,
+                      ),
+                    )}
                   </div>
                 ) : oralScanAttachMode === "practice_required" ? (
                   <p className="mt-2 text-sm text-destructive leading-relaxed">
@@ -414,49 +432,33 @@ export function PracticeTransferDetailChatDialog({
                 )}
               </div>
 
-              {Array.isArray(resultFiles) && resultFiles.length > 0 ? (
-                <div>
-                  <p className="text-muted-foreground">
-                    {resultFilesLabel} ({resultFiles.length}개)
-                  </p>
-                  <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">
-                    {resultFiles.map((file, idx) => {
-                      const busyKey = String(file.s3Key || file.id || "").trim();
-                      const isBusy =
-                        downloadAllBusy ||
-                        (busyKey
-                          ? downloadingFileKeys.includes(busyKey)
-                          : false);
-                      const progress = busyKey
-                        ? Number(downloadProgressByKey[busyKey] ?? 0)
-                        : 0;
-                      return (
-                        <div
-                          key={`${file.id}:result:${idx}`}
-                          className="rounded border px-2 py-1 space-y-1"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (isBusy) return;
-                              void onDownloadTransferFile(file);
-                            }}
-                            disabled={isBusy}
-                            className="block w-full text-left text-sm hover:underline disabled:opacity-60 disabled:pointer-events-none disabled:no-underline"
-                          >
-                            {isBusy
-                              ? `다운로드 중 ${Math.round(progress)}% · `
-                              : ""}
-                            {file.fileName} ·{" "}
-                            {formatFileSize(Number(file.size || 0))}
-                          </button>
-                          {isBusy ? (
-                            <Progress value={progress} className="h-1.5" />
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
+              {showWorkFilesSection ? (
+                <div className="space-y-3">
+                  <p className="text-muted-foreground">{workFilesLabel}</p>
+                  {designFileList.length > 0 ? (
+                    <div className="pl-1">
+                      <p className="text-xs font-medium text-slate-600">
+                        {designFilesLabel} ({designFileList.length}개)
+                      </p>
+                      <div className="mt-1.5 max-h-40 overflow-y-auto pr-1 space-y-1">
+                        {designFileList.map((file, idx) =>
+                          renderFileRow(file, idx, "design"),
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                  {resultFileList.length > 0 ? (
+                    <div className="pl-1">
+                      <p className="text-xs font-medium text-slate-600">
+                        {resultFilesLabel} ({resultFileList.length}개)
+                      </p>
+                      <div className="mt-1.5 max-h-40 overflow-y-auto pr-1 space-y-1">
+                        {resultFileList.map((file, idx) =>
+                          renderFileRow(file, idx, "result"),
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 

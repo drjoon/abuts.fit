@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-16: 생산 취소 시 PTX Request manufacturerStage→취소(관리자 준비 잔존 방지). 재업로드 시 준비 복원.
+// - 2026-08-16: 디자인 없이 완료 플래그만 남은 건도 cancel로 스테이지 재오픈.
+// - 2026-08-16: 생산 취소 시 PTX 작업완료/결과파일도 열어 의뢰수락 UI 복원(에스크로·정산은 유지).
 // - 2026-08-16: PTX 핸드오프 — hex/PRC 시드 + Rhino filled STL 트리거(request-meta 파라미터 누락 보완).
 // - 2026-08-15: PTX 핸드오프 — productMode를 custom_abutment로 승격(제조사 CNC 준비 큐 노출). 취소 시 복원.
 // - 2026-08-15: PTX 핸드오프 — Request 저장 후 Transfer 미러. 취소는 orphan designFiles도 정리.
@@ -140,7 +143,12 @@ const toStoredFileMeta = (raw) => {
   };
 };
 
-/** PTX production 미러(디자인 파일·컨펌 플래그)만 비운다. */
+/**
+ * PTX 디자인 미러 + (제조 준비 중이면) 작업완료 스테이지를 다시 연다.
+ * - 디자인 파일·컨펌·생산시작 플래그 비움
+ * - resultFiles / autoMatch.completed* / production.confirmed* 비움 → UI 뱃지「의뢰수락」
+ * - billing.settledAt·에스크로 원장은 건드리지 않음(이미 지급된 기공비는 유지; 재완료 시 별도 경로)
+ */
 const clearPtxDesignMirror = async (transferId) => {
   if (!transferId || !Types.ObjectId.isValid(String(transferId))) return;
   await PracticeTransfer.updateOne(
@@ -148,15 +156,59 @@ const clearPtxDesignMirror = async (transferId) => {
     {
       $set: {
         "production.designFiles": [],
+        resultFiles: [],
       },
       $unset: {
         "production.designReadyAt": "",
         "production.labDesignConfirmedAt": "",
         "production.labDesignConfirmedBy": "",
         "production.abutmentProductionStartedAt": "",
+        "production.confirmedAt": "",
+        "production.confirmedBy": "",
+        "autoMatch.completedAt": "",
+        "autoMatch.completedBy": "",
       },
     },
   );
+};
+
+/**
+ * PTX 생산 취소: 연동 CA Request들을 관리자·제조사 큐에서 「취소」로 내린다.
+ * (productMode를 design으로 두면 제조사 준비 큐에선 빠지지만 관리자「준비」에는 남음)
+ */
+const markPtxRelatedRequestsCancelled = async (transferId) => {
+  if (!transferId || !Types.ObjectId.isValid(String(transferId))) {
+    return { modifiedCount: 0 };
+  }
+  const transferDoc = await PracticeTransfer.findById(transferId)
+    .select({ "production.relatedRequestIds": 1 })
+    .lean();
+  const ids = (Array.isArray(transferDoc?.production?.relatedRequestIds)
+    ? transferDoc.production.relatedRequestIds
+    : []
+  )
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  if (!ids.length) return { modifiedCount: 0 };
+
+  const result = await Request.updateMany(
+    {
+      _id: { $in: ids },
+      manufacturerStage: { $ne: "취소" },
+    },
+    {
+      $set: {
+        manufacturerStage: "취소",
+        "caseInfos.productMode": PRODUCT_MODE_DESIGN,
+      },
+      $unset: {
+        designCompletedAt: "",
+        designCompletedBy: "",
+      },
+    },
+  );
+  return { modifiedCount: Number(result?.modifiedCount || 0) };
 };
 
 /**
@@ -227,11 +279,16 @@ export async function handoffDesignToProduction(req, res) {
       });
     }
 
-    if (String(request.manufacturerStage || "").trim() !== "준비") {
+    const handoffStage = String(request.manufacturerStage || "").trim();
+    // 생산 취소(취소) 후 재업로드 허용 — 핸드오프 시 준비로 복원
+    if (handoffStage !== "준비" && handoffStage !== "취소") {
       return res.status(400).json({
         success: false,
         message: "준비 단계 의뢰만 핸드오프할 수 있습니다.",
       });
+    }
+    if (handoffStage === "취소") {
+      request.manufacturerStage = "준비";
     }
 
     // 수락 기공소(PTX)는 카드에서 바로 업로드 — 디자인 파트너 클레임 불필요.
@@ -463,6 +520,8 @@ export async function handoffDesignToProduction(req, res) {
 /**
  * POST /api/requests/:id/design-handoff/cancel
  * PTX: 준비 단계에서만 디자인 업로드 취소(구강스캔 복원) + 어벗디자인비 회수.
+ * Transfer 작업완료/생산진행(resultFiles·completed·confirmedAt)도 열어 의뢰수락 UI 복원.
+ * billing.settledAt·에스크로 원장은 유지(정산 되돌림 없음).
  */
 export async function cancelDesignHandoff(req, res) {
   try {
@@ -520,7 +579,8 @@ export async function cancelDesignHandoff(req, res) {
     }
     healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
 
-    if (String(request.manufacturerStage || "").trim() !== "준비") {
+    const cancelStage = String(request.manufacturerStage || "").trim();
+    if (cancelStage !== "준비" && cancelStage !== "취소") {
       return res.status(409).json({
         success: false,
         message:
@@ -530,7 +590,13 @@ export async function cancelDesignHandoff(req, res) {
     }
 
     const transferDoc = await PracticeTransfer.findById(relatedTransferId)
-      .select({ "production.designFiles": 1, "production.designReadyAt": 1 })
+      .select({
+        "production.designFiles": 1,
+        "production.designReadyAt": 1,
+        "production.confirmedAt": 1,
+        "autoMatch.completedAt": 1,
+        resultFiles: 1,
+      })
       .lean();
     const mirroredDesignCount = Array.isArray(transferDoc?.production?.designFiles)
       ? transferDoc.production.designFiles.length
@@ -538,20 +604,58 @@ export async function cancelDesignHandoff(req, res) {
     const hasMirroredDesign =
       mirroredDesignCount > 0 || Boolean(transferDoc?.production?.designReadyAt);
     const hasRequestDesign = Boolean(request.designCompletedAt);
-
-    if (!hasRequestDesign && !hasMirroredDesign) {
-      return res.status(400).json({
-        success: false,
-        message: "업로드된 어벗디자인이 없습니다.",
-      });
-    }
+    const transferNeedsReopen =
+      Boolean(transferDoc?.production?.confirmedAt) ||
+      Boolean(transferDoc?.autoMatch?.completedAt) ||
+      (Array.isArray(transferDoc?.resultFiles) && transferDoc.resultFiles.length > 0);
 
     const now = new Date();
+
+    // 디자인 이미 비었는데 작업완료/생산진행 플래그만 남은 경우 → 스테이지만 재오픈
+    if (!hasRequestDesign && !hasMirroredDesign) {
+      if (!transferNeedsReopen) {
+        return res.status(400).json({
+          success: false,
+          message: "업로드된 어벗디자인이 없습니다.",
+        });
+      }
+      await clearPtxDesignMirror(relatedTransferId);
+      await markPtxRelatedRequestsCancelled(relatedTransferId);
+      try {
+        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+          reason: "ptx-design-handoff-cancel-reopen",
+          requestId: String(request._id),
+        });
+      } catch {
+        // best-effort
+      }
+      return res.status(200).json({
+        success: true,
+        message: "생산 단계를 다시 열었습니다. 어벗디자인·보철을 다시 업로드할 수 있습니다.",
+        data: {
+          requestId: String(request._id),
+          relatedPracticeTransferId: relatedTransferId,
+          manufacturerStage: "취소",
+          abutmentDesignFeeRevoked: false,
+          stageReopened: true,
+          revokedAt: now.toISOString(),
+        },
+      });
+    }
 
     // Request에 designCompletedAt이 없고 Transfer에만 미러가 남은 orphan:
     // 구강스캔은 이미 primary — 미러만 비우면 재업로드 가능.
     if (!hasRequestDesign && hasMirroredDesign) {
       await clearPtxDesignMirror(relatedTransferId);
+      await markPtxRelatedRequestsCancelled(relatedTransferId);
+      try {
+        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+          reason: "ptx-design-handoff-cancel-orphan",
+          requestId: String(request._id),
+        });
+      } catch {
+        // best-effort
+      }
       return res.status(200).json({
         success: true,
         message:
@@ -559,7 +663,7 @@ export async function cancelDesignHandoff(req, res) {
         data: {
           requestId: String(request._id),
           relatedPracticeTransferId: relatedTransferId,
-          manufacturerStage: "준비",
+          manufacturerStage: "취소",
           abutmentDesignFeeRevoked: false,
           orphanMirrorCleared: true,
           revokedAt: now.toISOString(),
@@ -584,13 +688,15 @@ export async function cancelDesignHandoff(req, res) {
     request.caseInfos.designSourceFiles = [];
     request.caseInfos.camFile = undefined;
     request.caseInfos.ncFile = undefined;
-    // 재업로드(핸드오프) 가능하도록 디자인+생산 모드로 복원
+    // 재업로드(핸드오프) 가능하도록 디자인+생산 모드로 복원 후, 제조 큐에서는 취소 처리
     request.caseInfos.productMode = PRODUCT_MODE_DESIGN;
     request.designCompletedAt = undefined;
     request.designCompletedBy = undefined;
+    request.manufacturerStage = "취소";
 
     await request.save();
     await clearPtxDesignMirror(relatedTransferId);
+    await markPtxRelatedRequestsCancelled(relatedTransferId);
 
     try {
       emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
@@ -621,7 +727,7 @@ export async function cancelDesignHandoff(req, res) {
       data: {
         requestId: String(request._id),
         relatedPracticeTransferId: relatedTransferId,
-        manufacturerStage: "준비",
+        manufacturerStage: "취소",
         abutmentDesignFeeRevoked: Boolean(feeRevoke?.revoked),
         revokedAt: now.toISOString(),
       },

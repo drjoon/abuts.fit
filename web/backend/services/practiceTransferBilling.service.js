@@ -19,6 +19,7 @@
 // - 2026-08-14: 자동매칭 수락 예산 검증은 공개 수가(할증 제외). 할증은 청구에만.
 // - 2026-08-15: 지정·수락된 자동매칭 견적은 billing 스냅샷. 공개풀만 as-of(history).
 // - 2026-08-15: 전송 전 잔액검사 — catalog 재사용·어벗 단가 캐시·조회 병렬화.
+// - 2026-08-16: mark-complete 경로 — release 저널/수수료 parallel, resolveRevenueOwners parallel.
 // - 2026-08-16: chargePracticeTransferLabShipping — 기공소 출발 배송비(지그 면제).
 // - 2026-08-15: 청구 완료 목록 견적에 autoMatchBudget 재부착 금지(확정 기공비 유지).
 import mongoose, { Types } from "mongoose";
@@ -199,30 +200,30 @@ async function resolvePracticeAbutmentPricingTier(
 }
 
 async function resolveRevenueOwners({ practiceAnchorId, session }) {
-  const practice = await BusinessAnchor.findById(practiceAnchorId)
-    .select({ referredByAnchorId: 1 })
-    .session(session || null)
-    .lean();
-
-  const devops = await BusinessAnchor.findOne({ businessType: "devops" })
-    .select({ _id: 1, payoutRates: 1 })
-    .sort({ createdAt: 1 })
-    .session(session || null)
-    .lean();
-
-  const manufacturer = await BusinessAnchor.findOne({
-    businessType: "manufacturer",
-  })
-    .select({ _id: 1 })
-    .sort({ createdAt: 1 })
-    .session(session || null)
-    .lean();
-
-  const admin = await BusinessAnchor.findOne({ businessType: "admin" })
-    .select({ _id: 1 })
-    .sort({ createdAt: 1 })
-    .session(session || null)
-    .lean();
+  // Atlas RTT: BA 조회 4건을 한 파도로 묶는다.
+  const [practice, devops, manufacturer, admin] = await Promise.all([
+    BusinessAnchor.findById(practiceAnchorId)
+      .select({ referredByAnchorId: 1 })
+      .session(session || null)
+      .lean(),
+    BusinessAnchor.findOne({ businessType: "devops" })
+      .select({ _id: 1, payoutRates: 1 })
+      .sort({ createdAt: 1 })
+      .session(session || null)
+      .lean(),
+    BusinessAnchor.findOne({
+      businessType: "manufacturer",
+    })
+      .select({ _id: 1 })
+      .sort({ createdAt: 1 })
+      .session(session || null)
+      .lean(),
+    BusinessAnchor.findOne({ businessType: "admin" })
+      .select({ _id: 1 })
+      .sort({ createdAt: 1 })
+      .session(session || null)
+      .lean(),
+  ]);
 
   let salesmanAnchorId = null;
   let hasSalesmanReferrer = false;
@@ -1619,11 +1620,29 @@ export async function releasePracticeTransferEscrow({
     return { released: false, reason: "missing_anchors" };
   }
 
+  // Atlas RTT: legacy/hold/release 저널 + 수수료 조회를 한 파도로 묶는다.
   const releaseKey = practiceTransferEscrowReleaseKey(transferId);
-  const existingRelease = await getJournalByIdempotencyKey({
-    idempotencyKey: releaseKey,
-    session: outerSession,
-  });
+  const works = toothWorks || transfer?.toothWorks || [];
+  const [existingRelease, legacySpend, holdJournal, computed] =
+    await Promise.all([
+      getJournalByIdempotencyKey({
+        idempotencyKey: releaseKey,
+        session: outerSession,
+      }),
+      getJournalByIdempotencyKey({
+        idempotencyKey: practiceTransferLegacySpendKey(transferId),
+        session: outerSession,
+      }),
+      getJournalByIdempotencyKey({
+        idempotencyKey: practiceTransferHoldKey(transferId),
+        session: outerSession,
+      }),
+      computeAcceptedPracticeTransferFees({
+        transfer,
+        toothWorks: works,
+        session: outerSession,
+      }),
+    ]);
   if (existingRelease?.journalId) {
     return {
       released: false,
@@ -1632,10 +1651,6 @@ export async function releasePracticeTransferEscrow({
     };
   }
 
-  const legacySpend = await getJournalByIdempotencyKey({
-    idempotencyKey: practiceTransferLegacySpendKey(transferId),
-    session: outerSession,
-  });
   if (legacySpend?.journalId) {
     return {
       released: false,
@@ -1644,20 +1659,10 @@ export async function releasePracticeTransferEscrow({
     };
   }
 
-  const holdJournal = await getJournalByIdempotencyKey({
-    idempotencyKey: practiceTransferHoldKey(transferId),
-    session: outerSession,
-  });
   if (!holdJournal?.journalId) {
     return { released: false, reason: "no_hold" };
   }
 
-  const works = toothWorks || transfer?.toothWorks || [];
-  const computed = await computeAcceptedPracticeTransferFees({
-    transfer,
-    toothWorks: works,
-    session: outerSession,
-  });
   const { fees, labSettlementAmount, abutsRevenueAmount } = computed;
   const releaseTotal = Math.max(
     0,
@@ -1702,10 +1707,11 @@ export async function releasePracticeTransferEscrow({
 
   try {
     await lockGuard(practiceAnchorId, session);
-    const [devopsAnchorId, revenueOwners] = await Promise.all([
-      resolveDevopsEscrowOwnerId(session),
-      resolveRevenueOwners({ practiceAnchorId, session }),
-    ]);
+    const revenueOwners = await resolveRevenueOwners({
+      practiceAnchorId,
+      session,
+    });
+    const devopsAnchorId = revenueOwners?.devopsAnchorId || null;
     if (!devopsAnchorId) {
       const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
       err.statusCode = 500;
@@ -2746,7 +2752,16 @@ export async function chargePracticeTransferLabShipping({
     };
   }
 
-  const creditSettings = await loadCreditSettingsDefaults();
+  const creditSettingsPromise = loadCreditSettingsDefaults();
+  const spendUniqueKey = `practice_transfer:${String(transferId)}:lab_shipping`;
+  const idempotencyKey = `gl:${spendUniqueKey}`;
+  const [creditSettings, existing] = await Promise.all([
+    creditSettingsPromise,
+    getJournalByIdempotencyKey({
+      idempotencyKey,
+      session: outerSession,
+    }),
+  ]);
   const fee = Math.max(
     0,
     Math.round(Number(creditSettings?.shippingFee ?? 3500) || 0),
@@ -2755,12 +2770,6 @@ export async function chargePracticeTransferLabShipping({
     return { charged: false, reason: "zero_fee" };
   }
 
-  const spendUniqueKey = `practice_transfer:${String(transferId)}:lab_shipping`;
-  const idempotencyKey = `gl:${spendUniqueKey}`;
-  const existing = await getJournalByIdempotencyKey({
-    idempotencyKey,
-    session: outerSession,
-  });
   if (existing?.journalId) {
     return {
       charged: false,

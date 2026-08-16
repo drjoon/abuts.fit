@@ -108,6 +108,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-14: GET /my 목록 — countDocuments 제거·레거시 $or 축소·동료/견적 조회 캐시.
 // - 2026-08-14: GET /my $or 분리 병렬 조회. drafts?trashed=all 1쿼리. GET에서 syncIndexes 제거.
 // - 2026-08-14: 치과→기공소 labRating(1~5)·메모. 자동매칭 최소 별 필터.
+// - 2026-08-16: mark-complete — ensure skip·persist 1회·emit parallel (4~5s 완화).
 // - 2026-08-16: 자동매칭 적격 — 주문 치과 1점 기공소 제외.
 // - 2026-08-16: 1점도 참여 가능. 기공비 ×0.8. 우리치과 1점 하드 차단 제거.
 // - 2026-08-14: 자동매칭도 practiceBusinessAnchorId 전달(표시명 비공개·기공수가 할증 키).
@@ -3730,8 +3731,11 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     }
 
     const hasCustomAbutment = hasCustomAbutmentToothWorks(doc.toothWorks);
-    // 레거시: 수락 시 Request 미생성 건은 스캔 기반으로 1회 보정
-    if (hasCustomAbutment) {
+    const existingRelated = Array.isArray(doc.production?.relatedRequestIds)
+      ? doc.production.relatedRequestIds
+      : [];
+    // 레거시: 수락 시 Request 미생성 건만 보정(이미 있으면 skip)
+    if (hasCustomAbutment && existingRelated.length === 0) {
       try {
         await ensureAbutmentRequestsOnAccept({
           transferDoc: doc,
@@ -3794,9 +3798,22 @@ export async function markReceivedPracticeTransferComplete(req, res) {
       });
     }
 
+    let confirmedAt = null;
+    let manufacturerStage = "작업완료";
+
+    // skipDesignConfirm: 크라운 완료 후 치과 컨펌 없이 생산진행
+    if (skipDesignConfirm) {
+      confirmedAt = now;
+      manufacturerStage = "생산진행";
+    }
+
+    const relatedAfterEnsure = Array.isArray(doc.production?.relatedRequestIds)
+      ? doc.production.relatedRequestIds
+      : existingRelated;
+
     if (releaseResult?.released || releaseResult?.reason === "already_released") {
       const settledAt = new Date();
-      const billing = {
+      doc.billing = {
         ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
         labFeeTotal:
           releaseResult.fees?.labFeeTotal ?? Number(doc.billing?.labFeeTotal || 0),
@@ -3814,22 +3831,7 @@ export async function markReceivedPracticeTransferComplete(req, res) {
           Number(doc.billing?.abutsRevenueAmount || 0),
         settledAt,
       };
-      doc.billing = billing;
-      await PracticeTransfer.updateOne({ _id: doc._id }, { $set: { billing } });
     }
-
-    let confirmedAt = null;
-    let manufacturerStage = "작업완료";
-
-    // skipDesignConfirm: 크라운 완료 후 치과 컨펌 없이 생산진행
-    if (skipDesignConfirm) {
-      confirmedAt = now;
-      manufacturerStage = "생산진행";
-    }
-
-    const existingRelated = Array.isArray(doc.production?.relatedRequestIds)
-      ? doc.production.relatedRequestIds
-      : [];
 
     doc.resultFiles = resultFiles;
     doc.autoMatch = {
@@ -3842,21 +3844,9 @@ export async function markReceivedPracticeTransferComplete(req, res) {
       skipDesignConfirm,
       confirmedAt,
       confirmedBy: confirmedAt ? doc.practiceUserId || null : null,
-      relatedRequestIds: existingRelated,
+      relatedRequestIds: relatedAfterEnsure,
     };
     await doc.save();
-
-    if (releaseResult?.released) {
-      const settlement = Number(releaseResult.labSettlementAmount || 0);
-      if (settlement > 0 && doc.targetLabAnchorId) {
-        await emitCreditBalanceUpdatedToBusiness({
-          businessAnchorId: doc.targetLabAnchorId,
-          balanceDelta: settlement,
-          reason: "practice_transfer_lab_settlement",
-          refId: doc._id,
-        });
-      }
-    }
 
     const realtimePayload = {
       action: confirmedAt ? "production-confirmed" : "completed",
@@ -3875,17 +3865,33 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-    await emitPracticeTransferEventToPracticeUsers({
-      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
-      type: "practice:transfer-updated",
-      payload: realtimePayload,
-      extraUserIds: [doc.practiceUserId],
-    });
-    await emitPracticeTransferEventToRequestorUsers({
-      targetLabAnchorId: labAnchorId,
-      type: "practice:transfer-updated",
-      payload: realtimePayload,
-    });
+    const emitJobs = [
+      emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+        extraUserIds: [doc.practiceUserId],
+      }),
+      emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId: labAnchorId,
+        type: "practice:transfer-updated",
+        payload: realtimePayload,
+      }),
+    ];
+    if (releaseResult?.released) {
+      const settlement = Number(releaseResult.labSettlementAmount || 0);
+      if (settlement > 0 && doc.targetLabAnchorId) {
+        emitJobs.push(
+          emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: doc.targetLabAnchorId,
+            balanceDelta: settlement,
+            reason: "practice_transfer_lab_settlement",
+            refId: doc._id,
+          }),
+        );
+      }
+    }
+    await Promise.all(emitJobs);
 
     return res.status(200).json({
       success: true,

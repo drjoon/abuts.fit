@@ -16,6 +16,11 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-08-16: 디자인 없이 완료 플래그만 남은 stuck 건 — 목록 로드 시 stage reopen + CTA 복원.
+// - 2026-08-16: 생산 취소 후 로컬 패치 — 결과파일·완료·확정 클리어 → 뱃지「의뢰수락」·업로드 CTA 복원.
+// - 2026-08-16: mark-complete apiFetch body→jsonBody (결과파일 미전달 400 수정).
+// - 2026-08-16: 상세 파일 — 의뢰(구강스캔)/작업(어벗디자인·보철물). 완료 토스트 문구.
+// - 2026-08-16: 디자인 STL 업로드 후 버튼 라벨「생산 취소」(준비 단계만).
 // - 2026-08-15: 수신 카드 → PracticeTransferLabReceiveCard(어벗츠기공소·lab 공통).
 // - 2026-08-15: 디자인 STL 업로드 후 버튼 라벨「어벗생산 취소」(준비 단계만).
 // - 2026-08-15: 어벗디자인 취소·재업로드(제조사 준비 단계만). 업로드 후 준비 큐 등록.
@@ -649,6 +654,105 @@ export function RequestorPracticeReceivePage({
     return mapped;
   }, []);
 
+  const buildProductionCancelLocalPatch = useCallback(
+    (transfer: ReceivedPracticeTransfer): ReceivedPracticeTransfer => {
+      const clearedProduction: ReceivedPracticeTransfer["production"] = {
+        ...transfer.production,
+        designFileCount: 0,
+        designFiles: [],
+        designReadyAt: null,
+        labDesignConfirmedAt: null,
+        abutmentProductionStartedAt: null,
+        confirmedAt: null,
+      };
+      const clearedAutoMatch = transfer.autoMatch
+        ? {
+            ...transfer.autoMatch,
+            completed: false,
+            completedAt: null,
+          }
+        : transfer.autoMatch;
+      return {
+        ...transfer,
+        manufacturerStage: "의뢰수락",
+        resultFiles: [],
+        resultFileCount: 0,
+        production: clearedProduction,
+        autoMatch: clearedAutoMatch,
+      };
+    },
+    [],
+  );
+
+  const isStuckNeedsStageReopen = useCallback(
+    (transfer: ReceivedPracticeTransfer) => {
+      const designCount = Number(
+        transfer.production?.designFileCount ||
+          transfer.production?.designFiles?.length ||
+          0,
+      );
+      const resultCount = Number(
+        transfer.resultFileCount || transfer.resultFiles?.length || 0,
+      );
+      const accepted =
+        Boolean(transfer.isAccepted) ||
+        Boolean(transfer.isDownloaded) ||
+        Boolean(String(transfer.requestorDownloadedAt || "").trim());
+      const started = Boolean(transfer.production?.abutmentProductionStartedAt);
+      const relatedIds = transfer.production?.relatedRequestIds || [];
+      if (!accepted || started || designCount > 0 || relatedIds.length === 0) {
+        return false;
+      }
+      return (
+        resultCount > 0 ||
+        Boolean(transfer.production?.confirmedAt) ||
+        Boolean(transfer.autoMatch?.completed) ||
+        transfer.manufacturerStage === "생산진행" ||
+        transfer.manufacturerStage === "작업완료"
+      );
+    },
+    [],
+  );
+
+  const reopenStuckTransfers = useCallback(
+    async (rows: ReceivedPracticeTransfer[]) => {
+      if (!token) return;
+      const stuck = rows.filter(isStuckNeedsStageReopen);
+      if (!stuck.length) return;
+
+      const results = await Promise.all(
+        stuck.map(async (transfer) => {
+          const requestId = String(
+            transfer.production?.relatedRequestIds?.[0] || "",
+          ).trim();
+          if (!requestId) return null;
+          const cancelRes = await apiFetch<{ success?: boolean }>({
+            path: `/api/requests/${encodeURIComponent(requestId)}/design-handoff/cancel`,
+            method: "POST",
+            token,
+          });
+          if (!cancelRes.ok) return null;
+          return transfer.transferId || transfer._id;
+        }),
+      );
+      const reopened = new Set(results.filter(Boolean).map((id) => String(id)));
+      if (!reopened.size) return;
+
+      setTransfers((prev) =>
+        prev.map((row) => {
+          const key = row.transferId || row._id;
+          return reopened.has(key) ? buildProductionCancelLocalPatch(row) : row;
+        }),
+      );
+      setSelectedTransfer((prev) => {
+        if (!prev) return prev;
+        const key = prev.transferId || prev._id;
+        return reopened.has(key) ? buildProductionCancelLocalPatch(prev) : prev;
+      });
+    },
+    [buildProductionCancelLocalPatch, isStuckNeedsStageReopen, token],
+  );
+
   const fetchTransferPage = useCallback(
     async (nextPage: number, append: boolean, options?: { silent?: boolean }) => {
       if (!token) return;
@@ -706,6 +810,7 @@ export function RequestorPracticeReceivePage({
         }
 
         emitUnreadBadgeRefresh(parsed.unreadCount);
+        void reopenStuckTransfers(mapped);
       } catch {
         if (!append && !silent) {
           setTransfers([]);
@@ -718,7 +823,13 @@ export function RequestorPracticeReceivePage({
         else if (!silent) setLoading(false);
       }
     },
-    [emitUnreadBadgeRefresh, mapTransferRows, parseTransfersBody, token],
+    [
+      emitUnreadBadgeRefresh,
+      mapTransferRows,
+      parseTransfersBody,
+      reopenStuckTransfers,
+      token,
+    ],
   );
 
   const loadFirstPage = useCallback(
@@ -1520,7 +1631,7 @@ export function RequestorPracticeReceivePage({
           path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-complete`,
           method: "POST",
           token,
-          body: {
+          jsonBody: {
             resultFiles,
           },
         });
@@ -1663,10 +1774,9 @@ export function RequestorPracticeReceivePage({
         );
 
         toast({
-          title: "작업 완료",
-          description: autoConfirmedAt
-            ? "크라운 결과 파일을 올렸습니다. 생산이 자동 진행되었습니다."
-            : "크라운 결과 파일을 올렸습니다. 치과에서 생산 진행을 컨펌하면 됩니다.",
+          title: autoConfirmedAt
+            ? "기공 디자인 완료 처리합니다. 생산 후 배송해주세요"
+            : "기공 디자인 완료. 치과의 컨펌을 기다리겠습니다.",
         });
         return true;
       } catch {
@@ -2350,52 +2460,47 @@ export function RequestorPracticeReceivePage({
           throw new Error(
             String(
               body.message ||
-                "제조사가 준비 단계일 때만 어벗생산을 취소할 수 있습니다.",
+                "제조사가 준비 단계일 때만 생산을 취소할 수 있습니다.",
             ),
           );
         }
 
-        const clearedProduction: ReceivedPracticeTransfer["production"] = {
-          ...transfer.production,
-          designFileCount: 0,
-          designFiles: [],
-          designReadyAt: null,
-          labDesignConfirmedAt: null,
-          abutmentProductionStartedAt: null,
-        };
+        // 디자인 미러 + 작업완료/생산진행 스테이지 클리어 → 뱃지「의뢰수락」, 업로드 CTA 재표시.
+        // billing/escrow는 서버도 유지(이미 정산된 건은 원장 되돌리지 않음).
+        const patched = buildProductionCancelLocalPatch(transfer);
         setTransfers((prev) =>
           prev.map((row) =>
             row._id === transfer._id || row.transferId === transfer.transferId
-              ? { ...row, production: clearedProduction }
+              ? patched
               : row,
           ),
         );
         setSelectedTransfer((prev) =>
           prev &&
           (prev._id === transfer._id || prev.transferId === transfer.transferId)
-            ? { ...prev, production: clearedProduction }
+            ? patched
             : prev,
         );
 
         toast({
-          title: "어벗생산 취소",
+          title: "생산 취소",
           description:
-            "제조사 주문이 취소되었습니다. 필요하면 어벗디자인을 다시 업로드하세요.",
+            "제조사 주문이 취소되었습니다. 어벗디자인·보철을 다시 업로드할 수 있습니다.",
         });
       } catch (error) {
         toast({
-          title: "어벗생산 취소 실패",
+          title: "생산 취소 실패",
           description:
             error instanceof Error
               ? error.message
-              : "어벗생산 취소 중 오류가 발생했습니다.",
+              : "생산 취소 중 오류가 발생했습니다.",
           variant: "destructive",
         });
       } finally {
         setCardActionBusyId("");
       }
     },
-    [cardActionBusyId, toast, token],
+    [buildProductionCancelLocalPatch, cardActionBusyId, toast, token],
   );
 
   const handleCardComplete = useCallback(
@@ -2885,7 +2990,7 @@ export function RequestorPracticeReceivePage({
             value: `${Number(selectedTransfer?.production?.designFileCount || selectedTransfer?.production?.designFiles?.length || 0)}개`,
           },
           {
-            label: "결과파일",
+            label: "보철물",
             value: `${Number(selectedTransfer?.resultFileCount || selectedTransfer?.resultFiles?.length || 0)}개`,
           },
         ] satisfies PracticeTransferDialogSummaryItem[]}
@@ -2895,22 +3000,14 @@ export function RequestorPracticeReceivePage({
         feeQuote={selectedTransfer?.feeQuote || null}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
-        filesLabel="의뢰·어벗 디자인 파일"
+        filesLabel="의뢰 파일 (구강 스캔)"
         files={
-          [
-            ...(selectedTransfer?.files || []).map((file) => ({
-              id: file.id,
-              fileName: file.originalName,
-              size: Number(file.size || 0),
-              s3Key: String(file.s3Key || "").trim(),
-            })),
-            ...(selectedTransfer?.production?.designFiles || []).map((file) => ({
-              id: file.id,
-              fileName: `[어벗디자인] ${file.originalName}`,
-              size: Number(file.size || 0),
-              s3Key: String(file.s3Key || "").trim(),
-            })),
-          ] satisfies PracticeTransferDialogFileItem[]
+          (selectedTransfer?.files || []).map((file) => ({
+            id: file.id,
+            fileName: file.originalName,
+            size: Number(file.size || 0),
+            s3Key: String(file.s3Key || "").trim(),
+          })) satisfies PracticeTransferDialogFileItem[]
         }
         oralScanAttachMode={(() => {
           if (!selectedTransfer) return null;
@@ -2929,7 +3026,15 @@ export function RequestorPracticeReceivePage({
           return accepted ? null : "practice_required";
         })()}
         requestFilesDownloadLocked={false}
-        resultFilesLabel="작업 결과 파일"
+        designFiles={
+          (selectedTransfer?.production?.designFiles || []).map((file) => ({
+            id: file.id,
+            fileName: file.originalName,
+            size: Number(file.size || 0),
+            s3Key: String(file.s3Key || "").trim(),
+          })) satisfies PracticeTransferDialogFileItem[]
+        }
+        resultFilesLabel="보철물"
         resultFiles={
           (selectedTransfer?.resultFiles || []).map((file) => ({
             id: file.id,

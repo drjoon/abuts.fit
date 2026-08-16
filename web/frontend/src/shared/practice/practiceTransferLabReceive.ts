@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-08-16: 생산 취소 시 confirmedAt·autoMatch.completed·manufacturerStage 클리어 →「의뢰수락」.
 // - 2026-08-15: 기공의뢰수신(어벗츠기공소·일반 lab) 카드 SSOT — 상태·CA 판정·타입.
 import { parseToothWorks } from "@/shared/practice/transferMemo";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
