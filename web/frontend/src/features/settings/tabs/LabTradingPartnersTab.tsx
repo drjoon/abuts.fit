@@ -248,17 +248,17 @@ export const LabTradingPartnersTab = () => {
             자동 매칭
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
-            인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다. 자동 매칭
-            성공 시 기공비의 {platformFeePct}%를 플랫폼 수수료로 지급합니다.
-            치과명·담당자명·기공소명·담당자명 등 식별 정보는 비공개입니다.
+            인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다. 매칭 거래
+            성공 수수료 {platformFeePct}% · 지정 거래는 별도 요율입니다.
+            치과명·담당자명·기공소명 등 식별 정보는 비공개입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              지정 기공소로 보내는 의뢰에는 플랫폼 수수료가 적용되지 않습니다.
-              거래 치과 소개는 아래에서 계속할 수 있습니다.
+              지정 기공소 의뢰에도 성공 수수료가 적용됩니다. 거래 치과 소개는
+              아래에서 계속할 수 있습니다.
             </p>
           </div>
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">

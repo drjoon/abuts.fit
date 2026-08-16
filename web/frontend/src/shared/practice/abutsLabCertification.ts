@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // change-log:
 // - 2026-08-16: 기공소 어벗츠 인증 신청·테스트·상태 라벨 SSOT(FE).
+// - 2026-08-16: parse 시 풀 ON → certified 승격 제거(미신청 배너용).
 
 export const ABUTS_LAB_CERT_STATUSES = [
   "none",
@@ -83,17 +84,14 @@ export function normalizeAbutsLabCertMemo(value: unknown): string {
 
 export function parseAbutsLabCertification(
   raw: unknown,
-  { enabled = false }: { enabled?: boolean } = {},
+  // enabled는 호환용(무시). 풀 ON만으로 certified 승격하지 않음.
+  _opts: { enabled?: boolean } = {},
 ): AbutsLabCertificationPublic {
   const row =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  let status = normalizeAbutsLabCertStatus(row.status);
-  let testStatus = normalizeAbutsLabTestStatus(row.testStatus);
-  if (enabled && status === "none") status = "certified";
-  if (enabled && testStatus === "none") testStatus = "passed";
   return {
-    status,
-    testStatus,
+    status: normalizeAbutsLabCertStatus(row.status),
+    testStatus: normalizeAbutsLabTestStatus(row.testStatus),
     memo: normalizeAbutsLabCertMemo(row.memo),
     appliedAt: row.appliedAt ? String(row.appliedAt) : null,
     testedAt: row.testedAt ? String(row.testedAt) : null,

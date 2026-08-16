@@ -998,7 +998,7 @@ export default function AdminPaymentsPage() {
                   <CreditStatTile
                     label="적용 요율"
                     value={`${feeRatePct}%`}
-                    hint="지정 의뢰는 0%"
+                    hint="지정 거래는 directPlatformFeeRate"
                   />
                 </div>
               </div>

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-16: 필터 상단 구분선·상태 뱃지 필터. 카드 테스트 드롭다운→상태 뱃지.
 // - 2026-08-16: 「인증 기공소」라벨·테스트 여부·메모·인증 상태 편집.
 // - 2026-08-14: 수수료 스트립을 같은 카드에 합치고 안내 문구 중복 제거.
 // - 2026-08-14: 카드 제목「인증 기공소」·식별 비공개·자동매칭 참여 카피로 정리.
@@ -14,13 +15,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Building2, FlaskConical, Search } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
@@ -28,15 +22,25 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import { DevopsPlatformFeeTab } from "@/pages/devops/components/DevopsPlatformFeeTab";
 import {
-  ABUTS_LAB_CERT_STATUS_LABEL,
-  ABUTS_LAB_TEST_STATUS_LABEL,
-  ABUTS_LAB_TEST_STATUSES,
   type AbutsLabCertificationPublic,
-  type AbutsLabTestStatus,
+  type AbutsLabCertStatus,
   parseAbutsLabCertification,
 } from "@/shared/practice/abutsLabCertification";
 
 const PAGE_LIMIT = 15;
+
+/** 관리자 목록·카드 공통 상태 뱃지 (미신청 / 테스트중 / 인증) */
+const CERT_BADGE_FILTERS = [
+  { id: "none", label: "미신청", status: "none" as AbutsLabCertStatus },
+  { id: "testing", label: "테스트중", status: "testing" as AbutsLabCertStatus },
+  {
+    id: "certified",
+    label: "인증",
+    status: "certified" as AbutsLabCertStatus,
+  },
+] as const;
+
+type CertBadgeFilterId = (typeof CERT_BADGE_FILTERS)[number]["id"] | "all";
 
 type AutoMatchRow = {
   _id: string;
@@ -50,6 +54,22 @@ type AutoMatchRow = {
   verified: boolean;
   canReceivePracticeTransfer: boolean;
 };
+
+function resolveCertBadgeId(row: AutoMatchRow): CertBadgeFilterId {
+  if (
+    row.practiceTransferAutoMatchEnabled ||
+    row.abutsLabCertification.status === "certified"
+  ) {
+    return "certified";
+  }
+  if (
+    row.abutsLabCertification.status === "applied" ||
+    row.abutsLabCertification.status === "testing"
+  ) {
+    return "testing";
+  }
+  return "none";
+}
 
 function mapRow(row: Partial<AutoMatchRow> & { _id?: string }): AutoMatchRow {
   const enabled = Boolean(row?.practiceTransferAutoMatchEnabled);
@@ -70,11 +90,28 @@ function mapRow(row: Partial<AutoMatchRow> & { _id?: string }): AutoMatchRow {
   };
 }
 
+function certBadgeClass(id: CertBadgeFilterId, active: boolean) {
+  if (id === "certified") {
+    return active
+      ? "bg-primary-strong text-white ring-primary-strong"
+      : "bg-primary-soft/50 text-primary-strong ring-primary-muted/70 hover:bg-primary-soft";
+  }
+  if (id === "testing") {
+    return active
+      ? "bg-amber-500 text-white ring-amber-500"
+      : "bg-amber-50 text-amber-800 ring-amber-200 hover:bg-amber-100";
+  }
+  return active
+    ? "bg-slate-700 text-white ring-slate-700"
+    : "bg-slate-100 text-slate-700 ring-slate-200 hover:bg-slate-200/80";
+}
+
 export const PracticeTransferAutoMatchTab = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
+  const [certFilter, setCertFilter] = useState<CertBadgeFilterId>("all");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [rows, setRows] = useState<AutoMatchRow[]>([]);
@@ -130,6 +167,7 @@ export const PracticeTransferAutoMatchTab = () => {
           limit: String(PAGE_LIMIT),
         });
         if (debouncedQ) qs.set("q", debouncedQ);
+        if (certFilter !== "all") qs.set("certFilter", certFilter);
 
         const res = await request<{
           success?: boolean;
@@ -195,7 +233,7 @@ export const PracticeTransferAutoMatchTab = () => {
         }
       }
     },
-    [debouncedQ, mergeRows, toast, token],
+    [certFilter, debouncedQ, mergeRows, toast, token],
   );
 
   useEffect(() => {
@@ -230,12 +268,15 @@ export const PracticeTransferAutoMatchTab = () => {
     row: AutoMatchRow,
     patch: {
       enabled?: boolean;
-      testStatus?: AbutsLabTestStatus;
+      status?: AbutsLabCertStatus;
       memo?: string;
     },
   ) => {
     if (!token || savingId) return;
-    if (patch.enabled === true && !row.verified) {
+    if (
+      (patch.enabled === true || patch.status === "certified") &&
+      !row.verified
+    ) {
       toast({
         title: "검증 기공소만 가능",
         description: "검증된 기공소만 인증(ON)할 수 있습니다.",
@@ -243,7 +284,10 @@ export const PracticeTransferAutoMatchTab = () => {
       });
       return;
     }
-    if (patch.enabled === true && !row.canReceivePracticeTransfer) {
+    if (
+      (patch.enabled === true || patch.status === "certified") &&
+      !row.canReceivePracticeTransfer
+    ) {
       toast({
         title: "인증 불가",
         description:
@@ -266,6 +310,21 @@ export const PracticeTransferAutoMatchTab = () => {
       );
       setEnabledCount((c) =>
         Math.max(0, c + (patch.enabled ? 1 : patch.enabled === false ? -1 : 0)),
+      );
+    }
+    if (patch.status) {
+      setRows((cur) =>
+        cur.map((r) =>
+          r._id === row._id
+            ? {
+                ...r,
+                abutsLabCertification: {
+                  ...r.abutsLabCertification,
+                  status: patch.status as AbutsLabCertStatus,
+                },
+              }
+            : r,
+        ),
       );
     }
     try {
@@ -294,7 +353,6 @@ export const PracticeTransferAutoMatchTab = () => {
           [mapped._id]: mapped.abutsLabCertification.memo || "",
         }));
         if (mapped.practiceTransferAutoMatchEnabled !== wasEnabled) {
-          // 낙관적 카운트 보정(테스트 통과 등으로 enabled가 바뀐 경우)
           if (typeof patch.enabled !== "boolean") {
             setEnabledCount((c) =>
               Math.max(
@@ -355,185 +413,210 @@ export const PracticeTransferAutoMatchTab = () => {
 
         <DevopsPlatformFeeTab />
 
-        <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="기공소명 또는 사업자번호"
-            className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm"
-          />
-        </div>
-
-        {loading ? (
-          <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center text-sm text-muted-foreground">
-            불러오는 중…
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
-              <Building2 className="h-5 w-5 text-slate-400" />
-            </span>
-            <p className="mt-3 text-sm font-medium text-slate-700">
-              해당하는 기공소가 없습니다
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              검색어를 바꾸거나 다른 기공소를 확인해 보세요.
-            </p>
-          </div>
-        ) : (
-          <>
-            <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              {rows.map((row) => {
-                const canEnable =
-                  row.verified && row.canReceivePracticeTransfer;
-                const enabled = Boolean(row.practiceTransferAutoMatchEnabled);
-                const cert = row.abutsLabCertification;
-                const statusLabel =
-                  ABUTS_LAB_CERT_STATUS_LABEL[cert.status] || cert.status;
-                const busy = savingId === row._id;
+        <div className="space-y-4 border-t border-slate-200/80 pt-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full max-w-md">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="기공소명 또는 사업자번호"
+                className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              {CERT_BADGE_FILTERS.map((badge) => {
+                const active = certFilter === badge.id;
                 return (
-                  <li
-                    key={row._id}
+                  <button
+                    key={badge.id}
+                    type="button"
+                    onClick={() =>
+                      setCertFilter((prev) =>
+                        prev === badge.id ? "all" : badge.id,
+                      )
+                    }
                     className={cn(
-                      "overflow-hidden rounded-2xl border bg-white/80 shadow-sm transition-shadow hover:shadow-md",
-                      enabled
-                        ? "border-primary-muted/70"
-                        : "border-slate-200/80",
-                      !canEnable && !enabled && "opacity-70",
+                      "inline-flex items-center rounded-full px-3 py-1.5 text-[12px] font-semibold ring-1 transition-colors",
+                      certBadgeClass(badge.id, active),
                     )}
                   >
-                    <div
-                      className={cn(
-                        "h-1 w-full",
-                        enabled
-                          ? "bg-primary-strong"
-                          : cert.status === "applied" ||
-                              cert.status === "testing"
-                            ? "bg-amber-400"
-                            : row.verified
-                              ? "bg-slate-300"
-                              : "bg-amber-400",
-                      )}
-                    />
-                    <div className="space-y-3 px-4 py-3.5">
-                      <div className="flex items-start gap-3">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate font-semibold text-slate-900">
-                              {row.name || "이름 없음"}
-                            </p>
-                            <span
-                              className={cn(
-                                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                                enabled
-                                  ? "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
-                                  : cert.status === "applied" ||
-                                      cert.status === "testing"
-                                    ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
-                                    : cert.status === "rejected"
-                                      ? "bg-rose-50 text-rose-800 ring-1 ring-rose-200"
-                                      : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
-                              )}
-                            >
-                              {enabled ? "인증 ON" : statusLabel}
-                            </span>
-                          </div>
-                          <dl className="space-y-1.5 text-[13px]">
-                            <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
-                              <dt className="text-slate-500">대표</dt>
-                              <dd className="min-w-0 truncate text-slate-700">
-                                {row.representativeName || "—"}
-                              </dd>
-                            </div>
-                            <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
-                              <dt className="text-slate-500">주소</dt>
-                              <dd className="min-w-0 break-words text-slate-700">
-                                {row.address || "—"}
-                              </dd>
-                            </div>
-                            {!row.canReceivePracticeTransfer ? (
-                              <p className="text-[11px] text-amber-700">
-                                기공의뢰 수신 불가
-                              </p>
-                            ) : null}
-                          </dl>
-                        </div>
-                        <Switch
-                          checked={enabled}
-                          disabled={busy || (!canEnable && !enabled)}
-                          onCheckedChange={(checked) =>
-                            void patchRow(row, { enabled: checked })
-                          }
-                          aria-label={`${row.name} 인증 기공소`}
-                          className="mt-1 shrink-0"
-                        />
-                      </div>
-
-                      <div className="grid gap-2 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:items-center">
-                        <label className="text-[12px] font-medium text-slate-600">
-                          기공 테스트
-                        </label>
-                        <Select
-                          value={cert.testStatus}
-                          disabled={busy}
-                          onValueChange={(value) =>
-                            void patchRow(row, {
-                              testStatus: value as AbutsLabTestStatus,
-                            })
-                          }
-                        >
-                          <SelectTrigger className="h-9 rounded-xl border-slate-200 bg-white text-sm">
-                            <SelectValue placeholder="테스트 상태" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ABUTS_LAB_TEST_STATUSES.map((value) => (
-                              <SelectItem key={value} value={value}>
-                                {ABUTS_LAB_TEST_STATUS_LABEL[value]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[12px] font-medium text-slate-600">
-                          인증 메모
-                        </label>
-                        <Textarea
-                          value={memoDrafts[row._id] ?? cert.memo}
-                          disabled={busy}
-                          rows={2}
-                          placeholder="테스트 일정·결과·특이사항 등"
-                          className="min-h-[64px] resize-y rounded-xl border-slate-200 bg-white text-sm"
-                          onChange={(e) =>
-                            setMemoDrafts((cur) => ({
-                              ...cur,
-                              [row._id]: e.target.value,
-                            }))
-                          }
-                          onBlur={() => {
-                            const next = String(
-                              memoDrafts[row._id] ?? cert.memo,
-                            ).trim();
-                            if (next === String(cert.memo || "").trim()) return;
-                            void patchRow(row, { memo: next });
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </li>
+                    {badge.label}
+                  </button>
                 );
               })}
-            </ul>
-            <div ref={sentinelRef} className="h-4 w-full" aria-hidden />
-            {loadingMore ? (
-              <div className="py-3 text-center text-xs text-muted-foreground">
-                더 불러오는 중…
-              </div>
-            ) : null}
-          </>
-        )}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center text-sm text-muted-foreground">
+              불러오는 중…
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/40 px-6 py-12 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
+                <Building2 className="h-5 w-5 text-slate-400" />
+              </span>
+              <p className="mt-3 text-sm font-medium text-slate-700">
+                해당하는 기공소가 없습니다
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                검색어·상태 필터를 바꾸거나 다른 기공소를 확인해 보세요.
+              </p>
+            </div>
+          ) : (
+            <>
+              <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {rows.map((row) => {
+                  const canEnable =
+                    row.verified && row.canReceivePracticeTransfer;
+                  const enabled = Boolean(row.practiceTransferAutoMatchEnabled);
+                  const cert = row.abutsLabCertification;
+                  const badgeId = resolveCertBadgeId(row);
+                  const busy = savingId === row._id;
+                  return (
+                    <li
+                      key={row._id}
+                      className={cn(
+                        "overflow-hidden rounded-2xl border bg-white/80 shadow-sm transition-shadow hover:shadow-md",
+                        enabled
+                          ? "border-primary-muted/70"
+                          : "border-slate-200/80",
+                        !canEnable && !enabled && "opacity-70",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "h-1 w-full",
+                          enabled
+                            ? "bg-primary-strong"
+                            : badgeId === "testing"
+                              ? "bg-amber-400"
+                              : row.verified
+                                ? "bg-slate-300"
+                                : "bg-amber-400",
+                        )}
+                      />
+                      <div className="space-y-3 px-4 py-3.5">
+                        <div className="flex items-start gap-3">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate font-semibold text-slate-900">
+                                {row.name || "이름 없음"}
+                              </p>
+                              <span
+                                className={cn(
+                                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1",
+                                  certBadgeClass(badgeId, true),
+                                )}
+                              >
+                                {
+                                  CERT_BADGE_FILTERS.find((b) => b.id === badgeId)
+                                    ?.label
+                                }
+                              </span>
+                            </div>
+                            <dl className="space-y-1.5 text-[13px]">
+                              <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+                                <dt className="text-slate-500">대표</dt>
+                                <dd className="min-w-0 truncate text-slate-700">
+                                  {row.representativeName || "—"}
+                                </dd>
+                              </div>
+                              <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
+                                <dt className="text-slate-500">주소</dt>
+                                <dd className="min-w-0 break-words text-slate-700">
+                                  {row.address || "—"}
+                                </dd>
+                              </div>
+                              {!row.canReceivePracticeTransfer ? (
+                                <p className="text-[11px] text-amber-700">
+                                  기공의뢰 수신 불가
+                                </p>
+                              ) : null}
+                            </dl>
+                          </div>
+                          <Switch
+                            checked={enabled}
+                            disabled={busy || (!canEnable && !enabled)}
+                            onCheckedChange={(checked) =>
+                              void patchRow(row, { enabled: checked })
+                            }
+                            aria-label={`${row.name} 인증 기공소`}
+                            className="mt-1 shrink-0"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-[12px] font-medium text-slate-600">
+                            기공 테스트
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {CERT_BADGE_FILTERS.map((badge) => {
+                              const active = badgeId === badge.id;
+                              return (
+                                <button
+                                  key={badge.id}
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    if (active) return;
+                                    void patchRow(row, {
+                                      status: badge.status,
+                                    });
+                                  }}
+                                  className={cn(
+                                    "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 transition-colors disabled:opacity-60",
+                                    certBadgeClass(badge.id, active),
+                                  )}
+                                >
+                                  {badge.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[12px] font-medium text-slate-600">
+                            인증 메모
+                          </label>
+                          <Textarea
+                            value={memoDrafts[row._id] ?? cert.memo}
+                            disabled={busy}
+                            rows={2}
+                            placeholder="테스트 일정·결과·특이사항 등"
+                            className="min-h-[64px] resize-y rounded-xl border-slate-200 bg-white text-sm"
+                            onChange={(e) =>
+                              setMemoDrafts((cur) => ({
+                                ...cur,
+                                [row._id]: e.target.value,
+                              }))
+                            }
+                            onBlur={() => {
+                              const next = String(
+                                memoDrafts[row._id] ?? cert.memo,
+                              ).trim();
+                              if (next === String(cert.memo || "").trim())
+                                return;
+                              void patchRow(row, { memo: next });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div ref={sentinelRef} className="h-4 w-full" aria-hidden />
+              {loadingMore ? (
+                <div className="py-3 text-center text-xs text-muted-foreground">
+                  더 불러오는 중…
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

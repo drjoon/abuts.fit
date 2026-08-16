@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/practice/abutsLabCertification.ts
 // change-log:
 // - 2026-08-16: 기공소 어벗츠 인증 신청·기공 테스트·인증 SSOT.
+// - 2026-08-16: API status는 DB 그대로(레거시 풀 ON → virtual certified 승격 제거).
 
 export const ABUTS_LAB_CERT_STATUSES = [
   "none",
@@ -72,7 +73,8 @@ export function normalizeAbutsLabCertMemo(value) {
 
 /**
  * API/UI용 정규화.
- * 레거시: 풀 참여 ON인데 인증 서브독 없으면 certified/passed로 취급.
+ * DB status를 그대로 노출(미신청 안내 배너가 레거시 풀 ON에 가려지지 않게).
+ * 풀 자격은 practiceTransferAutoMatchEnabled / isAbutsLabCertificationCertified.
  */
 export function toAbutsLabCertificationApi(anchor) {
   const raw =
@@ -80,18 +82,9 @@ export function toAbutsLabCertificationApi(anchor) {
     typeof anchor.abutsLabCertification === "object"
       ? anchor.abutsLabCertification
       : {};
-  const enabled = Boolean(anchor?.practiceTransferAutoMatchEnabled);
-  let status = normalizeAbutsLabCertStatus(raw.status);
-  let testStatus = normalizeAbutsLabTestStatus(raw.testStatus);
-  if (enabled && status === ABUTS_LAB_CERT_STATUS.NONE) {
-    status = ABUTS_LAB_CERT_STATUS.CERTIFIED;
-  }
-  if (enabled && testStatus === ABUTS_LAB_TEST_STATUS.NONE) {
-    testStatus = ABUTS_LAB_TEST_STATUS.PASSED;
-  }
   return {
-    status,
-    testStatus,
+    status: normalizeAbutsLabCertStatus(raw.status),
+    testStatus: normalizeAbutsLabTestStatus(raw.testStatus),
     memo: normalizeAbutsLabCertMemo(raw.memo),
     appliedAt: raw.appliedAt ? new Date(raw.appliedAt).toISOString() : null,
     testedAt: raw.testedAt ? new Date(raw.testedAt).toISOString() : null,

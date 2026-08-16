@@ -7,6 +7,7 @@
 // - 2026-08-15: 제조사 의뢰 공급가 기본 8,000 → 9,000 (VAT 포함 지급 9,900).
 // - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송)+VAT. 잔여는 salesman/devops/admin 재분배.
 // - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
+// - 2026-08-16: 지정 거래 directPlatformFeeRate 기본 5%(매칭 10%와 분리).
 
 export const WITH_SALESMAN_DEFAULT_RATES = {
   manufacturerRate: 0.6,
@@ -65,6 +66,8 @@ export function resolveResidualRatesWithoutSalesman(configuredRates) {
 export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_DEFAULT_RATES);
 
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
+/** 지정 기공소(direct) 성공 수수료 기본 5%. */
+export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
 /** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
 export const DEFAULT_PARTNER_FEE_RATE = 0;
 export const DEFAULT_NON_PARTNER_FEE_RATE = DEFAULT_PLATFORM_FEE_RATE;
@@ -82,16 +85,28 @@ export function resolvePlatformFeeRate(payoutRates) {
     : DEFAULT_PLATFORM_FEE_RATE;
 }
 
+/** 지정 거래(direct) 성공 수수료율. */
+export function resolveDirectPlatformFeeRate(payoutRates) {
+  const raw = payoutRates?.directPlatformFeeRate;
+  if (raw != null && Number.isFinite(Number(raw))) {
+    return Math.min(1, Math.max(0, Number(raw)));
+  }
+  return DEFAULT_DIRECT_PLATFORM_FEE_RATE;
+}
+
 /**
  * 기공의뢰 플랫폼 수수료율.
- * 자동 매칭 성공(수락) 시에만 기공비에 적용. 지정 기공소 의뢰는 0%.
+ * - 매칭(auto): platformFeeRate (기본 10%)
+ * - 지정(direct): directPlatformFeeRate (기본 5%)
  */
 export function resolvePracticeTransferFeeRate({
   matchingMode,
   payoutRates,
 } = {}) {
-  if (String(matchingMode || "").trim() !== "auto") return 0;
-  return resolvePlatformFeeRate(payoutRates);
+  if (String(matchingMode || "").trim() === "auto") {
+    return resolvePlatformFeeRate(payoutRates);
+  }
+  return resolveDirectPlatformFeeRate(payoutRates);
 }
 
 export function isShippingSpendRevenueContext({ refType, freeAccountCode }) {

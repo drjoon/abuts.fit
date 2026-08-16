@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-16: 월 참여(정책 0원) 카드 제거. 매칭·지정 %만 표시.
+// - 2026-08-16: 매칭 10% / 지정 5% 성공 수수료 분리 입력.
 // - 2026-08-15: 기공소 월 참여 기본 0(정책). 성공 수수료율과 함께 저장.
 // - 2026-08-14: 기본 성공 수수료율 10%. 월 참여 수수료 기본 0.
 // - 2026-08-14: 월 참여 수수료(원) 입력 추가. 성공 수수료율(%)과 함께 저장.
@@ -11,7 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CalendarDays, Percent } from "lucide-react";
+import { Percent } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -19,8 +21,8 @@ import { cn } from "@/shared/ui/cn";
 
 type PlatformFeeSettings = {
   platformFeeRate?: number;
+  directPlatformFeeRate?: number;
   nonPartnerFeeRate?: number;
-  autoMatchMonthlyFee?: number;
   updatedAt?: string | null;
 };
 
@@ -37,9 +39,6 @@ const AUTO_SAVE_DELAY_MS = 700;
 const toPctString = (rate: number, fallback: number) =>
   String(Math.round((Number.isFinite(rate) ? rate : fallback) * 100));
 
-const toWonString = (won: number) =>
-  String(Math.max(0, Math.round(Number.isFinite(won) ? won : 0)));
-
 type Props = {
   className?: string;
 };
@@ -50,14 +49,14 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
   const { token } = useAuthStore();
   const [loading, setLoading] = useState(Boolean(token));
   const [platformFeeRate, setPlatformFeeRate] = useState("10");
-  const [monthlyFee, setMonthlyFee] = useState("0");
+  const [directFeeRate, setDirectFeeRate] = useState("5");
   const hydratedRef = useRef(false);
-  const savedRateRef = useRef("10");
-  const savedMonthlyRef = useRef("0");
-  const rateRef = useRef("10");
-  const monthlyRef = useRef("0");
-  rateRef.current = platformFeeRate;
-  monthlyRef.current = monthlyFee;
+  const savedMatchRef = useRef("10");
+  const savedDirectRef = useRef("5");
+  const matchRef = useRef("10");
+  const directRef = useRef("5");
+  matchRef.current = platformFeeRate;
+  directRef.current = directFeeRate;
 
   useEffect(() => {
     let mounted = true;
@@ -77,15 +76,18 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         if (!res.ok || !mounted) return;
 
         const settings = res.data?.data?.platformFeeSettings || {};
-        const pct = toPctString(
+        const matchPct = toPctString(
           Number(settings.platformFeeRate ?? settings.nonPartnerFeeRate),
           0.1,
         );
-        const won = toWonString(Number(settings.autoMatchMonthlyFee));
-        savedRateRef.current = pct;
-        savedMonthlyRef.current = won;
-        setPlatformFeeRate(pct);
-        setMonthlyFee(won);
+        const directPct = toPctString(
+          Number(settings.directPlatformFeeRate),
+          0.05,
+        );
+        savedMatchRef.current = matchPct;
+        savedDirectRef.current = directPct;
+        setPlatformFeeRate(matchPct);
+        setDirectFeeRate(directPct);
         hydratedRef.current = true;
       } finally {
         if (mounted) setLoading(false);
@@ -101,18 +103,18 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
   useEffect(() => {
     if (!hydratedRef.current || !token || loading) return;
     if (
-      rateRef.current === savedRateRef.current &&
-      monthlyRef.current === savedMonthlyRef.current
+      matchRef.current === savedMatchRef.current &&
+      directRef.current === savedDirectRef.current
     ) {
       return;
     }
 
     const timer = window.setTimeout(async () => {
-      const nextRate = rateRef.current;
-      const nextMonthly = monthlyRef.current;
-      const rate = Number(nextRate);
-      const monthly = Number(nextMonthly);
-      if (!Number.isFinite(rate)) {
+      const nextMatch = matchRef.current;
+      const nextDirect = directRef.current;
+      const match = Number(nextMatch);
+      const direct = Number(nextDirect);
+      if (!Number.isFinite(match) || !Number.isFinite(direct)) {
         toast({
           title: "플랫폼 수수료율 오류",
           description: "수수료율은 숫자여야 합니다.",
@@ -120,18 +122,10 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         });
         return;
       }
-      if (rate < 0 || rate > 100) {
+      if (match < 0 || match > 100 || direct < 0 || direct > 100) {
         toast({
           title: "플랫폼 수수료율 오류",
           description: "수수료율은 0~100% 범위여야 합니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      if (!Number.isFinite(monthly) || monthly < 0) {
-        toast({
-          title: "월 참여 수수료 오류",
-          description: "월 수수료는 0원 이상이어야 합니다.",
           variant: "destructive",
         });
         return;
@@ -143,8 +137,8 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
           method: "PATCH",
           token,
           jsonBody: {
-            platformFeeRate: rate / 100,
-            autoMatchMonthlyFee: Math.round(monthly),
+            platformFeeRate: match / 100,
+            directPlatformFeeRate: direct / 100,
           },
         });
         if (!res.ok) {
@@ -157,15 +151,15 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         }
 
         const saved = res.data?.data?.platformFeeSettings;
-        savedRateRef.current = saved
+        savedMatchRef.current = saved
           ? toPctString(
               Number(saved.platformFeeRate ?? saved.nonPartnerFeeRate),
-              rate / 100,
+              match / 100,
             )
-          : String(rate);
-        savedMonthlyRef.current = saved
-          ? toWonString(Number(saved.autoMatchMonthlyFee))
-          : String(Math.round(monthly));
+          : String(match);
+        savedDirectRef.current = saved
+          ? toPctString(Number(saved.directPlatformFeeRate), direct / 100)
+          : String(direct);
       } catch {
         toast({
           title: "저장 실패",
@@ -176,24 +170,24 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [platformFeeRate, monthlyFee, token, loading, toast]);
+  }, [platformFeeRate, directFeeRate, token, loading, toast]);
 
   return (
     <div className={cn("grid gap-3 sm:grid-cols-2", className)}>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
-            <CalendarDays className="h-4 w-4 text-primary-strong" />
+            <Percent className="h-4 w-4 text-primary-strong" />
           </span>
           <div className="min-w-0">
             <Label
-              htmlFor="fee-monthly"
+              htmlFor="rate-match"
               className="text-sm font-semibold text-slate-900"
             >
-              월 참여 수수료
+              매칭 거래
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              정책 0원 · 성공 시에만 과금
+              성공 수수료
             </p>
           </div>
         </div>
@@ -202,15 +196,16 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         ) : (
           <div className="flex items-center gap-2">
             <Input
-              id="fee-monthly"
+              id="rate-match"
               type="number"
               min={0}
-              step={1000}
-              value={monthlyFee}
-              onChange={(event) => setMonthlyFee(event.target.value)}
-              className="h-11 w-[6.5rem] rounded-xl border-primary-muted/40 bg-white text-right text-base font-semibold tabular-nums shadow-sm"
+              max={100}
+              step={1}
+              value={platformFeeRate}
+              onChange={(event) => setPlatformFeeRate(event.target.value)}
+              className="h-11 w-[4.5rem] rounded-xl border-primary-muted/40 bg-white text-center text-base font-semibold tabular-nums shadow-sm"
             />
-            <span className="text-sm font-semibold text-slate-500">원</span>
+            <span className="text-sm font-semibold text-slate-500">%</span>
           </div>
         )}
       </div>
@@ -222,13 +217,13 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
           </span>
           <div className="min-w-0">
             <Label
-              htmlFor="rate-platform"
+              htmlFor="rate-direct"
               className="text-sm font-semibold text-slate-900"
             >
-              성공 수수료
+              지정 거래
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              자동 매칭 성공 시 · 지정 0%
+              성공 수수료
             </p>
           </div>
         </div>
@@ -237,13 +232,13 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         ) : (
           <div className="flex items-center gap-2">
             <Input
-              id="rate-platform"
+              id="rate-direct"
               type="number"
               min={0}
               max={100}
-              step={5}
-              value={platformFeeRate}
-              onChange={(event) => setPlatformFeeRate(event.target.value)}
+              step={1}
+              value={directFeeRate}
+              onChange={(event) => setDirectFeeRate(event.target.value)}
               className="h-11 w-[4.5rem] rounded-xl border-primary-muted/40 bg-white text-center text-base font-semibold tabular-nums shadow-sm"
             />
             <span className="text-sm font-semibold text-slate-500">%</span>

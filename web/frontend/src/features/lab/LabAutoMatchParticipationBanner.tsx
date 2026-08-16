@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
 // change-log:
 // - 2026-08-16: 미신청·심사 중 안내. 인증 완료 시 배너 숨김.
+// - 2026-08-16: 레거시 풀 ON만으로 certified 취급해 배너가 사라지지 않게 — raw status 기준.
 // - 2026-08-14: 거래 치과 소개 → 자동 매칭 참여 CTA로 교체.
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -12,7 +13,7 @@ import { cn } from "@/shared/ui/cn";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
-  parseAbutsLabCertification,
+  normalizeAbutsLabCertStatus,
   type AbutsLabCertStatus,
 } from "@/shared/practice/abutsLabCertification";
 
@@ -24,7 +25,6 @@ export const LabAutoMatchParticipationBanner = ({ className }: Props) => {
   const navigate = useNavigate();
   const { token } = useAuthStore();
   const [certStatus, setCertStatus] = useState<AbutsLabCertStatus | null>(null);
-  const [active, setActive] = useState(false);
   const [ready, setReady] = useState(false);
 
   const load = useCallback(async () => {
@@ -32,9 +32,7 @@ export const LabAutoMatchParticipationBanner = ({ className }: Props) => {
     try {
       const res = await request<{
         data?: {
-          practiceTransferAutoMatchEnabled?: boolean;
-          autoMatchParticipationActive?: boolean;
-          abutsLabCertification?: unknown;
+          abutsLabCertification?: { status?: unknown } | null;
         };
       }>({
         path: "/api/businesses/me/auto-match-participation",
@@ -42,15 +40,9 @@ export const LabAutoMatchParticipationBanner = ({ className }: Props) => {
         token,
       });
       if (!res.ok) return;
-      const enabled = Boolean(
-        res.data?.data?.autoMatchParticipationActive ??
-          res.data?.data?.practiceTransferAutoMatchEnabled,
-      );
-      setActive(enabled);
+      // 레거시 풀 ON → virtual certified 승격은 배너 숨김에 쓰지 않음(미신청 안내 유지).
       setCertStatus(
-        parseAbutsLabCertification(res.data?.data?.abutsLabCertification, {
-          enabled,
-        }).status,
+        normalizeAbutsLabCertStatus(res.data?.data?.abutsLabCertification?.status),
       );
     } catch {
       // silent
@@ -63,7 +55,7 @@ export const LabAutoMatchParticipationBanner = ({ className }: Props) => {
     void load();
   }, [load]);
 
-  if (!ready || active || certStatus === "certified") {
+  if (!ready || certStatus === "certified") {
     return null;
   }
 
@@ -75,10 +67,10 @@ export const LabAutoMatchParticipationBanner = ({ className }: Props) => {
     certStatus === "applied" || certStatus === "testing";
   const title = pending
     ? "어벗츠 인증 심사 중"
-    : "어벗츠 인증을 신청하세요";
+    : "인증 테스트를 신청하세요";
   const subtitle = pending
-    ? "기공 테스트 통과 후 인증 기공소로 등록됩니다"
-    : "신청 후 기공 테스트를 거쳐 자동 매칭에 참여할 수 있습니다";
+    ? "기공 테스트 통과 후 인증 기공소 뱃지가 부여됩니다"
+    : "신청 → 테스트 → 통과 시 자동 매칭에 참여할 수 있습니다";
 
   return (
     <div

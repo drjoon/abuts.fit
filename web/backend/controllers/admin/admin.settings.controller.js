@@ -21,7 +21,10 @@ import {
 import { normalizeLoadedCreditSettings } from "../../utils/creditSettingsDefaults.js";
 import { normalizeAbutsAbutmentCreditPrices } from "../../utils/abutsAbutmentService.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
-import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
+import {
+  resolveDirectPlatformFeeRate,
+  resolvePlatformFeeRate,
+} from "../../services/creditRevenuePolicy.service.js";
 
 const normalizeCreditSettings = (raw = {}) =>
   normalizeLoadedCreditSettings(raw);
@@ -651,12 +654,14 @@ async function findDevopsPayoutAnchor() {
 
 function normalizePlatformFeeRates(payoutRates = {}) {
   const platformFeeRate = resolvePlatformFeeRate(payoutRates);
+  const directPlatformFeeRate = resolveDirectPlatformFeeRate(payoutRates);
   const autoMatchMonthlyFee = Math.max(
     0,
     Number(payoutRates?.autoMatchMonthlyFee) || 0,
   );
   return {
     platformFeeRate,
+    directPlatformFeeRate,
     autoMatchMonthlyFee,
     partnerFeeRate: platformFeeRate,
     nonPartnerFeeRate: platformFeeRate,
@@ -691,8 +696,28 @@ export async function updatePlatformFeeSettings(req, res) {
     if (!Number.isFinite(platformFeeRate) || platformFeeRate < 0 || platformFeeRate > 1) {
       return res.status(400).json({
         success: false,
-        message: "플랫폼 수수료율은 0~100% 범위여야 합니다.",
+        message: "매칭 거래 수수료율은 0~100% 범위여야 합니다.",
       });
+    }
+
+    let directPlatformFeeRate;
+    if (
+      payload.directPlatformFeeRate != null ||
+      payload.directFeeRate != null
+    ) {
+      directPlatformFeeRate = Number(
+        payload.directPlatformFeeRate ?? payload.directFeeRate,
+      );
+      if (
+        !Number.isFinite(directPlatformFeeRate) ||
+        directPlatformFeeRate < 0 ||
+        directPlatformFeeRate > 1
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "지정 거래 수수료율은 0~100% 범위여야 합니다.",
+        });
+      }
     }
 
     let autoMatchMonthlyFee;
@@ -724,6 +749,9 @@ export async function updatePlatformFeeSettings(req, res) {
       "payoutRates.nonPartnerFeeRate": platformFeeRate,
       "payoutRates.updatedAt": new Date(),
     };
+    if (directPlatformFeeRate != null) {
+      $set["payoutRates.directPlatformFeeRate"] = directPlatformFeeRate;
+    }
     if (autoMatchMonthlyFee != null) {
       $set["payoutRates.autoMatchMonthlyFee"] = autoMatchMonthlyFee;
     }

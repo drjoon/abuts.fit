@@ -141,7 +141,7 @@ Notes:
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (5카드: 환영 무료 크레딧(단일·1/2열) · 커스텀어벗(CNC/환봉·어벗디자인비) · 어벗 추가 요청 · 멤버십·배송(배송 500원 step) · 특별 공급가(CNC/환봉 × 생산만·디자인+생산))
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
-  - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (자동 매칭 단일 플랫폼 수수료율 인라인 입력. `PracticeTransferAutoMatchTab` 카드 안에 포함. 개발운영사 앵커 `payoutRates.platformFeeRate` SSOT)
+  - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (매칭·지정 성공 수수료% + 월 참여. `PracticeTransferAutoMatchTab` 카드 안. SSOT `payoutRates.platformFeeRate` / `directPlatformFeeRate`)
 - 개발·운영사 설정
   - `src/pages/devops/DevopsSettingsPage.tsx` (계정/사업자/임직원/**결제(입금 계좌)**/알림/보안)
   - `src/pages/devops/DevopsPartnerPage.tsx` 탭: **입금**(분배율) · 요금·크레딧 · **기공의뢰 자동매칭**
@@ -152,7 +152,7 @@ Notes:
     - `src/features/settings/tabs/LabAutoMatchParticipationTab.tsx` — 월 참여 수수료·성공 수수료 안내 + 참여/해지. 구 `?tab=trading-partners` → `auto-match`
     - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·원가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산. **카탈로그에 없는 신규 항목 저장 시 어벗츠 수가에 Off로 동기화·관리자 알림.**
     - 상단 배너: `LabDashboardTopBanners` — 기공의뢰수신·어벗생산의뢰 상단.
-      - 왼쪽: 어벗츠 인증 신청 안내 (`LabAutoMatchParticipationBanner`) → `?tab=auto-match` (인증 완료 시 숨김)
+      - 왼쪽: 인증 기공소 가입 안내 (`LabAutoMatchParticipationBanner`) → `?tab=auto-match` (`abutsLabCertification.status=certified`일 때만 숨김)
       - 오른쪽: 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
       - 대시보드 `[정책 안내]` 옆 `[가입 이유]`로도 동일 모달 열기(기공소·치과)
       - `src/features/platform/PlatformBenefitsDialog.tsx` (`variant`: lab | practice)
@@ -162,7 +162,7 @@ Notes:
     - `src/features/settings/tabs/PracticeSubscriptionTab.tsx` — 월 구독료·멤버십 단가 혜택 + 구독/해지. 대시보드 헤더 `[구독]`(미구독 시 빨간 하이라이트) → 이 탭
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
-  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립 + 기공소별 인증 ON·기공 테스트·메모. 기공소는 설정「어벗츠 인증」에서 신청(`POST /api/businesses/me/auto-match-participation`, 미인증 시 신청만·월정 0). 관리자 테스트 통과/`enabled` 시 풀 참여. 성공 시 `platformFeeRate`%. 관리자 플랫폼 설정「인증 기공소」탭
+  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소는 설정「어벗츠 인증」에서 신청(`POST /api/businesses/me/auto-match-participation`, 미인증 시 신청만·월정 0). 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정 성공 `directPlatformFeeRate%`. 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
   - 검증된 디자이너 지정: `DesignerAssignmentTab` / `BusinessAnchor.designAccessEnabled`(디자인 큐). API·게이트 유지, 파트너 탭 UI에서는 제거
   - 영업자 없을 때 분배: 설정된 영업자 분배비의 절반→제조사, 나머지 절반→관리자 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
@@ -270,7 +270,7 @@ Notes:
 
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
   - 가입 승인일 기준 `90일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
-  - 기공소 어벗츠 인증: 설정「어벗츠 인증」에서 신청·상태 확인. **월 참여 수수료 0원**(정책). 성공 시 `platformFeeRate`%. 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지).
+  - 기공소 어벗츠 인증: 설정「어벗츠 인증」에서 신청·상태 확인. **월 참여 수수료 0원**(정책). 매칭 성공 `platformFeeRate%` · 지정 성공 `directPlatformFeeRate%`. 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지).
   - 기공소 화면(기공의뢰수신·어벗생산의뢰) 상단: 등록 잔여일 alert + 가입 이유 alert(기간 중만, 2열). 기간 종료 후 대시보드 `[가입 이유]`(기공소·치과 각 variant).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
     - 잔액 요약은 기공크레딧 탭과 동일하게 rounded-2xl 카드 그리드(현재/유료/무료/[기공]).

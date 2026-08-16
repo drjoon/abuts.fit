@@ -6,6 +6,7 @@
 // - web/backend/services/labAutoMatchParticipation.service.js
 // change-log:
 // - 2026-08-16: 인증 신청·테스트·메모 필드 + 관리자 패치.
+// - 2026-08-16: certFilter(미신청/테스트중/인증) 목록 필터.
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
@@ -60,12 +61,15 @@ const toListRow = (row) => {
 };
 
 /**
- * GET /api/devops/practice-transfer-auto-match?q=&page=1&limit=15
+ * GET /api/devops/practice-transfer-auto-match?q=&certFilter=none|testing|certified&page=1&limit=15
  * 기공소 목록 + 어벗츠 인증/테스트 상태
  */
 export async function listPracticeTransferAutoMatch(req, res) {
   try {
     const q = String(req.query?.q || "").trim();
+    const certFilter = String(req.query?.certFilter || req.query?.status || "")
+      .trim()
+      .toLowerCase();
     const page = Math.max(1, Number.parseInt(String(req.query?.page || "1"), 10) || 1);
     const rawLimit = Number.parseInt(String(req.query?.limit || PAGE_LIMIT_DEFAULT), 10);
     const limit = Math.min(
@@ -89,6 +93,39 @@ export async function listPracticeTransferAutoMatch(req, res) {
             { "metadata.companyName": re },
             { "metadata.representativeName": re },
             { "metadata.address": re },
+          ],
+        },
+      ];
+    }
+
+    // 미신청 | 테스트중 | 인증
+    if (certFilter === "none" || certFilter === "미신청") {
+      filter.$and = [
+        ...(Array.isArray(filter.$and) ? filter.$and : []),
+        {
+          $or: [
+            { "abutsLabCertification.status": { $in: ["none", "rejected"] } },
+            { "abutsLabCertification.status": { $exists: false } },
+            { "abutsLabCertification.status": null },
+            { "abutsLabCertification.status": "" },
+          ],
+        },
+        {
+          $or: [
+            { practiceTransferAutoMatchEnabled: { $ne: true } },
+            { practiceTransferAutoMatchEnabled: { $exists: false } },
+          ],
+        },
+      ];
+    } else if (certFilter === "testing" || certFilter === "테스트중") {
+      filter["abutsLabCertification.status"] = { $in: ["applied", "testing"] };
+    } else if (certFilter === "certified" || certFilter === "인증") {
+      filter.$and = [
+        ...(Array.isArray(filter.$and) ? filter.$and : []),
+        {
+          $or: [
+            { "abutsLabCertification.status": "certified" },
+            { practiceTransferAutoMatchEnabled: true },
           ],
         },
       ];

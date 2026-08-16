@@ -59,7 +59,7 @@ import {
   isAbutsLabCertificationCertified,
   toAbutsLabCertificationApi,
 } from "../../utils/abutsLabCertification.js";
-import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
+import { resolvePlatformFeeRate, resolveDirectPlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
 
 function resolveLabPartnerInviteToken(req) {
   return String(
@@ -1300,8 +1300,13 @@ async function loadDevopsAutoMatchFees() {
     .lean();
   const rates = devops?.payoutRates || {};
   const platformFeeRate = resolvePlatformFeeRate(rates);
+  const directPlatformFeeRate = resolveDirectPlatformFeeRate(rates);
   const monthlyFee = Math.max(0, Number(rates.autoMatchMonthlyFee) || 0);
-  return { platformFeeRate, autoMatchMonthlyFee: monthlyFee };
+  return {
+    platformFeeRate,
+    directPlatformFeeRate,
+    autoMatchMonthlyFee: monthlyFee,
+  };
 }
 
 export async function getMyAutoMatchParticipation(req, res) {

@@ -5,6 +5,8 @@
 // - web/frontend/src/shared/practice/abutsLabCertification.ts
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // change-log:
+// - 2026-08-16: 매칭 10% / 지정 5% 성공 수수료 표시.
+// - 2026-08-16: 문구 정리 · 3단계 진행 · 인증 테스트 신청 · 인증 뱃지.
 // - 2026-08-16: 인증 신청 → 기공 테스트 → 통과 후 참여. 미신청 안내.
 // - 2026-08-15: 구독료 0원이면 결제일 대신 참여 안내 문구.
 // - 2026-08-15: 참여 상태 카드 1/2열·가운데 정렬·버튼 우측·상단 여백.
@@ -23,7 +25,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  CalendarDays,
+  BadgeCheck,
+  Check,
   FlaskConical,
   Info,
   Loader2,
@@ -36,8 +39,8 @@ import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
 import { cn } from "@/shared/ui/cn";
 import {
-  ABUTS_LAB_CERT_STATUS_LABEL,
   type AbutsLabCertificationPublic,
+  type AbutsLabCertStatus,
   parseAbutsLabCertification,
 } from "@/shared/practice/abutsLabCertification";
 
@@ -47,14 +50,26 @@ type ParticipationData = {
   autoMatchParticipationCancelAtPeriodEnd?: boolean;
   autoMatchParticipationNextBillingAt?: string | null;
   platformFeeRate?: number;
+  directPlatformFeeRate?: number;
   autoMatchMonthlyFee?: number;
   verified?: boolean;
   canReceivePracticeTransfer?: boolean;
   abutsLabCertification?: AbutsLabCertificationPublic;
 };
 
-const formatWon = (value: number) =>
-  `${Math.max(0, Math.round(value || 0)).toLocaleString("ko-KR")}원`;
+const CERT_STEPS = [
+  { id: "apply", label: "신청" },
+  { id: "test", label: "테스트" },
+  { id: "cert", label: "인증" },
+] as const;
+
+function resolveCertStepIndex(status: AbutsLabCertStatus): number {
+  if (status === "certified") return 2;
+  if (status === "testing") return 1;
+  if (status === "applied") return 1;
+  if (status === "rejected") return 0;
+  return 0;
+}
 
 export const LabAutoMatchParticipationTab = () => {
   const { toast } = useToast();
@@ -88,12 +103,6 @@ export const LabAutoMatchParticipationTab = () => {
       if (payload) {
         payload.abutsLabCertification = parseAbutsLabCertification(
           payload.abutsLabCertification,
-          {
-            enabled: Boolean(
-              payload.autoMatchParticipationActive ??
-                payload.practiceTransferAutoMatchEnabled,
-            ),
-          },
         );
       }
       setData(payload);
@@ -112,32 +121,24 @@ export const LabAutoMatchParticipationTab = () => {
   const cancelScheduled =
     active && Boolean(data?.autoMatchParticipationCancelAtPeriodEnd);
   const monthlyFee = Math.max(0, Number(data?.autoMatchMonthlyFee) || 0);
-  const successPct = Math.round(Number(data?.platformFeeRate ?? 0.1) * 100);
+  const matchPct = Math.round(Number(data?.platformFeeRate ?? 0.1) * 100);
+  const directPct = Math.round(Number(data?.directPlatformFeeRate ?? 0.05) * 100);
   const nextBillingLabel = data?.autoMatchParticipationNextBillingAt
     ? formatKstYmdToKo(toKstYmd(data.autoMatchParticipationNextBillingAt) || "")
     : null;
   const canAct =
     Boolean(data?.verified) && Boolean(data?.canReceivePracticeTransfer);
-  const cert = parseAbutsLabCertification(data?.abutsLabCertification, {
-    enabled: active,
-  });
+  const cert = parseAbutsLabCertification(data?.abutsLabCertification);
   const certStatus = cert.status;
+  // 레거시 풀 ON만 있고 status 없으면 인증 완료로 표시(참여 UI 유지).
   const isCertified = certStatus === "certified" || active;
-  const canApply = certStatus === "none" || certStatus === "rejected";
+  const canApply =
+    !active && (certStatus === "none" || certStatus === "rejected");
   const isPendingReview =
     certStatus === "applied" || certStatus === "testing";
-
-  const statusLabel = active
-    ? cancelScheduled
-      ? "인증 · 해지 예약"
-      : "인증 기공소"
-    : isPendingReview
-      ? ABUTS_LAB_CERT_STATUS_LABEL[certStatus]
-      : certStatus === "rejected"
-        ? "반려 · 재신청 가능"
-        : isCertified
-          ? "인증됨 · 미참여"
-          : "미신청";
+  const stepIndex = isCertified
+    ? 2
+    : resolveCertStepIndex(certStatus);
 
   const submit = async (nextActive: boolean) => {
     if (!token || submitting) return;
@@ -171,12 +172,6 @@ export const LabAutoMatchParticipationTab = () => {
         ...next,
         abutsLabCertification: parseAbutsLabCertification(
           next.abutsLabCertification ?? prev?.abutsLabCertification,
-          {
-            enabled: Boolean(
-              next.autoMatchParticipationActive ??
-                next.practiceTransferAutoMatchEnabled,
-            ),
-          },
         ),
       }));
       toast({
@@ -185,7 +180,7 @@ export const LabAutoMatchParticipationTab = () => {
           (nextActive
             ? isCertified
               ? "참여했습니다."
-              : "인증을 신청했습니다."
+              : "인증 테스트를 신청했습니다."
             : "해지했습니다."),
         duration: 2500,
       });
@@ -205,48 +200,119 @@ export const LabAutoMatchParticipationTab = () => {
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
             <FlaskConical className="h-5 w-5 text-primary-strong" />
           </span>
-          <div className="min-w-0 space-y-1">
-            <h3 className="text-base font-semibold tracking-tight text-slate-900">
-              어벗츠 인증
-            </h3>
-            <div className="space-y-1 text-[13px] leading-relaxed text-muted-foreground">
-              <p>
-                가입 직후에는 미신청 상태입니다. 인증을 신청하면 어벗츠에서 기공
-                테스트를 진행하고, 통과 시 인증 기공소로 등록됩니다.
-              </p>
-              <p>
-                인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다. 계약
-                체결 시 기공비의 {successPct}%는 플랫폼 수수료입니다.
-              </p>
-              <p>
-                단, 자동 매칭이 아닌 지정 의뢰(치과에서 기공소를 직접 입력)는
-                플랫폼 수수료 면제입니다.
-              </p>
-              <p>치과·기공소 식별 정보는 비공개입니다.</p>
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base font-semibold tracking-tight text-slate-900">
+                어벗츠 인증
+              </h3>
+              {isCertified ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2.5 py-0.5 text-[11px] font-semibold text-primary-strong ring-1 ring-primary-muted">
+                  <BadgeCheck className="h-3.5 w-3.5" />
+                  인증 기공소
+                </span>
+              ) : null}
             </div>
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              신청 → 기공 테스트 → 통과 시 인증. 인증 기공소만 자동 매칭에
+              참여합니다.
+            </p>
+            <p className="text-[12px] leading-relaxed text-muted-foreground/90">
+              매칭 거래 {matchPct}% · 지정 거래 {directPct}% · 식별 정보 비공개
+            </p>
           </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-4 sm:px-5">
+          <p className="mb-3 text-[12px] font-semibold tracking-wide text-slate-500">
+            인증 진행
+          </p>
+          <ol className="flex items-start justify-between gap-1">
+            {CERT_STEPS.map((step, index) => {
+              const done = index < stepIndex || (isCertified && index <= stepIndex);
+              const current = !isCertified && index === stepIndex;
+              const rejectedHere =
+                certStatus === "rejected" && index === 0 && !isCertified;
+              return (
+                <li
+                  key={step.id}
+                  className="relative flex min-w-0 flex-1 flex-col items-center gap-2"
+                >
+                  {index < CERT_STEPS.length - 1 ? (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "absolute left-[calc(50%+14px)] right-[calc(-50%+14px)] top-[15px] h-0.5",
+                        index < stepIndex || isCertified
+                          ? "bg-primary-strong"
+                          : "bg-slate-200",
+                      )}
+                    />
+                  ) : null}
+                  <span
+                    className={cn(
+                      "relative z-[1] flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-semibold ring-2",
+                      done || isCertified
+                        ? "bg-primary-strong text-white ring-primary-strong"
+                        : current
+                          ? rejectedHere
+                            ? "bg-amber-50 text-amber-800 ring-amber-300"
+                            : "bg-primary-soft text-primary-strong ring-primary-muted"
+                          : "bg-slate-50 text-slate-400 ring-slate-200",
+                    )}
+                  >
+                    {done || isCertified ? (
+                      <Check className="h-4 w-4" strokeWidth={2.5} />
+                    ) : (
+                      index + 1
+                    )}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-center text-[12px] font-medium",
+                      done || isCertified || current
+                        ? "text-slate-900"
+                        : "text-slate-400",
+                    )}
+                  >
+                    {step.label}
+                    {current && certStatus === "applied" ? (
+                      <span className="mt-0.5 block text-[10px] font-normal text-amber-700">
+                        대기
+                      </span>
+                    ) : null}
+                    {current && certStatus === "testing" ? (
+                      <span className="mt-0.5 block text-[10px] font-normal text-amber-700">
+                        진행 중
+                      </span>
+                    ) : null}
+                    {rejectedHere ? (
+                      <span className="mt-0.5 block text-[10px] font-normal text-amber-700">
+                        재신청
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
             <div className="flex min-w-0 items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
-                <CalendarDays className="h-4 w-4 text-primary-strong" />
+                <Percent className="h-4 w-4 text-primary-strong" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-900">
-                  월 구독료
-                </p>
+                <p className="text-sm font-semibold text-slate-900">매칭 거래</p>
                 <p className="text-[12px] leading-snug text-muted-foreground">
-                  구독료 없음
+                  성공 수수료
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5">
-              <span className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
-                {formatWon(monthlyFee)}
-              </span>
-            </div>
+            <span className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
+              {matchPct}%
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
@@ -255,23 +321,23 @@ export const LabAutoMatchParticipationTab = () => {
                 <Percent className="h-4 w-4 text-primary-strong" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-900">성공 수수료</p>
+                <p className="text-sm font-semibold text-slate-900">지정 거래</p>
                 <p className="text-[12px] leading-snug text-muted-foreground">
-                  자동 매칭 작업 완료시 발생 (지정 치과는 0%)
+                  성공 수수료
                 </p>
               </div>
             </div>
             <span className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
-              {successPct}%
+              {directPct}%
             </span>
           </div>
         </div>
 
-        <div className="flex justify-center pt-4">
+        <div className="flex justify-center pt-1">
           <div
             className={cn(
               "w-full overflow-hidden rounded-2xl border bg-white/80 shadow-sm sm:w-1/2",
-              active
+              isCertified
                 ? "border-primary-muted/70"
                 : isPendingReview
                   ? "border-amber-200/90"
@@ -281,7 +347,7 @@ export const LabAutoMatchParticipationTab = () => {
             <div
               className={cn(
                 "h-1 w-full",
-                active
+                isCertified
                   ? cancelScheduled
                     ? "bg-amber-400"
                     : "bg-primary-strong"
@@ -294,52 +360,59 @@ export const LabAutoMatchParticipationTab = () => {
               <div className="min-w-0 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold text-slate-900">
-                    {statusLabel}
+                    {isCertified
+                      ? cancelScheduled
+                        ? "인증 · 해지 예약"
+                        : "인증 기공소"
+                      : isPendingReview
+                        ? certStatus === "testing"
+                          ? "기공 테스트 중"
+                          : "신청 접수"
+                        : certStatus === "rejected"
+                          ? "테스트 미통과"
+                          : "미신청"}
                   </p>
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                      active
-                        ? cancelScheduled
-                          ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
-                          : "bg-primary-soft text-primary-strong ring-1 ring-primary-muted"
-                        : isPendingReview
+                  {isCertified ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary-strong ring-1 ring-primary-muted">
+                      <BadgeCheck className="h-3 w-3" />
+                      {cancelScheduled ? "해지 예약" : "인증"}
+                    </span>
+                  ) : (
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                        isPendingReview
                           ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
                           : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
-                    )}
-                  >
-                    {active
-                      ? cancelScheduled
-                        ? "해지 예약"
-                        : "ON"
-                      : ABUTS_LAB_CERT_STATUS_LABEL[certStatus]}
-                  </span>
+                      )}
+                    >
+                      {isPendingReview
+                        ? certStatus === "testing"
+                          ? "테스트"
+                          : "접수"
+                        : certStatus === "rejected"
+                          ? "재신청"
+                          : "대기"}
+                    </span>
+                  )}
                 </div>
-                {active ? (
-                  <p className="text-[12px] text-muted-foreground">
-                    {cancelScheduled
+                <p className="text-[12px] text-muted-foreground">
+                  {isCertified
+                    ? cancelScheduled
                       ? nextBillingLabel
-                        ? `${nextBillingLabel}까지 유지 · 이후 종료`
-                        : "해지 예약됨 · 기간 말 이후 종료"
+                        ? `${nextBillingLabel}까지 유지 후 종료`
+                        : "기간 말 이후 종료"
                       : monthlyFee > 0 && nextBillingLabel
                         ? `다음 결제일 ${nextBillingLabel}`
-                        : "구독료 없음 · 성공 수수료만 적용"}
-                  </p>
-                ) : isPendingReview ? (
-                  <p className="text-[12px] text-muted-foreground">
-                    {certStatus === "testing"
-                      ? "어벗츠에서 기공 테스트를 진행 중입니다."
-                      : "신청이 접수되었습니다. 기공 테스트 후 인증됩니다."}
-                  </p>
-                ) : isCertified ? (
-                  <p className="text-[12px] text-muted-foreground">
-                    인증이 완료되었습니다. 자동 매칭에 다시 참여할 수 있습니다.
-                  </p>
-                ) : (
-                  <p className="text-[12px] text-muted-foreground">
-                    인증을 신청하면 기공 테스트 안내를 드립니다.
-                  </p>
-                )}
+                        : "자동 매칭 참여 중"
+                    : isPendingReview
+                      ? certStatus === "testing"
+                        ? "어벗츠에서 기공 테스트를 진행합니다."
+                        : "접수 완료. 곧 테스트 일정을 안내합니다."
+                      : certStatus === "rejected"
+                        ? "다시 신청해 테스트를 진행할 수 있습니다."
+                        : "인증 테스트를 신청해 주세요."}
+                </p>
               </div>
 
               {!active && canApply ? (
@@ -352,7 +425,7 @@ export const LabAutoMatchParticipationTab = () => {
                   {submitting ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : null}
-                  인증 신청
+                  인증 테스트 신청
                 </Button>
               ) : !active && isCertified ? (
                 <Button
@@ -373,7 +446,7 @@ export const LabAutoMatchParticipationTab = () => {
                   disabled
                   className="h-10 shrink-0 rounded-xl px-4"
                 >
-                  심사 중
+                  진행 중
                 </Button>
               ) : cancelScheduled ? (
                 <Tooltip>
@@ -413,8 +486,8 @@ export const LabAutoMatchParticipationTab = () => {
                   </TooltipTrigger>
                   <TooltipContent>
                     {monthlyFee > 0
-                      ? "다음 결제일까지 유지되고, 이후 자동으로 종료됩니다."
-                      : "예약된 종료일까지 유지되고, 이후 자동으로 종료됩니다."}
+                      ? "다음 결제일까지 유지된 뒤 종료됩니다."
+                      : "예약일까지 유지된 뒤 종료됩니다."}
                   </TooltipContent>
                 </Tooltip>
               ) : null}
@@ -427,17 +500,20 @@ export const LabAutoMatchParticipationTab = () => {
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <p className="text-[13px] leading-relaxed text-amber-900/80">
               {!data?.verified
-                ? "사업자 검증이 완료되면 인증을 신청할 수 있습니다."
-                : "기공의뢰 수신이 가능한 기공소만 인증을 신청할 수 있습니다."}
+                ? "사업자 검증 후 인증 테스트를 신청할 수 있습니다."
+                : "기공의뢰 수신이 가능한 기공소만 신청할 수 있습니다."}
             </p>
           </div>
         ) : canApply ? (
           <div className="flex gap-3 rounded-2xl border border-dashed border-primary-muted/70 bg-primary-soft/25 px-4 py-3.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary-strong" />
-            <p className="text-[13px] leading-relaxed text-slate-700">
-              아직 어벗츠 인증을 신청하지 않았습니다. 「인증 신청」을 누르면
-              기공 테스트 일정 안내를 드립니다.
-            </p>
+            <div className="min-w-0 space-y-1 text-[13px] leading-relaxed text-slate-700">
+              <p className="font-semibold text-slate-900">인증 테스트 신청</p>
+              <p>
+                신청하면 어벗츠에서 기공 테스트를 진행합니다. 통과 시 인증
+                기공소 뱃지가 부여되고 자동 매칭에 참여할 수 있습니다.
+              </p>
+            </div>
           </div>
         ) : null}
       </CardContent>
