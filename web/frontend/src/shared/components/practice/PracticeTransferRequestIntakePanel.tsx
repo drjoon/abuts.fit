@@ -141,6 +141,7 @@ import { resolveAdoptedAbutmentKind } from "@/shared/practice/labFeeSchedule";
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-08-16: 자동매칭 최소 별점 UI는「자동 매칭」선택 시에만(지정 기공소는 기공소 수가).
 // - 2026-08-13: 기공의뢰 모달=디자인+생산 고정(생산만→어벗생산의뢰). 어벗생산의뢰=생산만 고정(디자인+생산→기공의뢰).
 // - 2026-08-13: 생산·디자인+생산 단가를 creditSettings 멤버십/일반값으로 표시.
 // - 2026-08-11: 기공소 선택에 "자동 매칭" 옵션(+빠른툴팁) 추가.
@@ -590,7 +591,7 @@ export type PracticeTransferRequestIntakePanelProps = {
   showLabField?: boolean;
   showPatientField?: boolean;
   showDateFields?: boolean;
-  /** false면 기공소 옆 자동매칭 최소 별 UI 숨김 (기본 true) */
+  /** false면 기공소 옆 자동매칭 최소 별 UI 숨김. true여도「자동 매칭」선택 시에만 표시 (기본 true) */
   showAutoMatchMinLabRating?: boolean;
   /** false면 보철물 치식 섹션 숨김 (기본 true) */
   showProsthesisSection?: boolean;
@@ -1673,7 +1674,7 @@ export const PracticeTransferRequestIntakePanel = ({
             <Label className="text-sm">
               기공소 <span className="text-destructive">*</span>
             </Label>
-            {showAutoMatchMinLabRating ? (
+            {showAutoMatchMinLabRating && isAutoMatchLab(selectedLab) ? (
               <AutoMatchMinLabRatingStars
                 value={resolvedMinLabRating}
                 disabled={!onAutoMatchMinLabRatingChange}
