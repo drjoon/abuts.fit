@@ -11,6 +11,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - 2026-08-16: 이미지 미리보기(다운로드 오버레이) + IndexedDB 캐시.
+// - 2026-08-16: 프리뷰 파일 여러 개일 때 이전/다음 이동.
 // - 2026-08-16: STL/PLY/OBJ 클릭 시 3D 미리보기(다운로드는 모달).
 // - 2026-08-16: 어벗 가공 시작 시 상세 모달 작업취소(수락 취소) 비활성 안내.
 // - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔) / 작업 파일(어벗 디자인·보철물).
@@ -29,6 +30,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -96,6 +98,14 @@ function mimeTypeForImageFileName(name: string): string {
   if (ext === ".gif") return "image/gif";
   if (ext === ".bmp") return "image/bmp";
   return "application/octet-stream";
+}
+
+function resolvePreviewKind(fileName: string): ModelPreviewKind | null {
+  const ext =
+    getModelExtLower(fileName) || getPracticeTransferFileExtension(fileName);
+  if (isModelPreviewExt(ext)) return "model";
+  if (isImagePreviewExt(ext)) return "image";
+  return null;
 }
 
 function fileFromPreviewBlob(blob: Blob, fileName: string, kind: ModelPreviewKind): File {
@@ -313,6 +323,37 @@ export function PracticeTransferDetailChatDialog({
   const [previewProgress, setPreviewProgress] = useState(0);
   const previewAbortRef = useRef<AbortController | null>(null);
 
+  const previewableFiles = useMemo(() => {
+    const out: Array<{
+      file: PracticeTransferDialogFileItem;
+      kind: ModelPreviewKind;
+    }> = [];
+    const append = (
+      list: PracticeTransferDialogFileItem[],
+      locked: boolean,
+    ) => {
+      if (locked) return;
+      for (const file of list) {
+        const kind = resolvePreviewKind(file.fileName);
+        if (!kind) continue;
+        if (!String(file.s3Key || "").trim()) continue;
+        out.push({ file, kind });
+      }
+    };
+    append(Array.isArray(files) ? files : [], requestFilesDownloadLocked);
+    append(Array.isArray(designFiles) ? designFiles : [], false);
+    append(Array.isArray(resultFiles) ? resultFiles : [], false);
+    return out;
+  }, [designFiles, files, requestFilesDownloadLocked, resultFiles]);
+
+  const previewIndex = useMemo(() => {
+    if (!previewMeta) return -1;
+    const key = s3DownloadBusyKey(previewMeta);
+    return previewableFiles.findIndex(
+      (item) => s3DownloadBusyKey(item.file) === key,
+    );
+  }, [previewMeta, previewableFiles]);
+
   const resetPreview = useCallback(() => {
     previewAbortRef.current?.abort();
     previewAbortRef.current = null;
@@ -377,7 +418,11 @@ export function PracticeTransferDetailChatDialog({
               : "파일을 불러오는 중 오류가 발생했습니다.",
           variant: "destructive",
         });
-        resetPreview();
+        // 다음/이전 이동 중 실패해도 모달은 유지(빈 상태)
+        setPreviewFile(null);
+        setPreviewLoading(false);
+        if (previewAbortRef.current === ac) previewAbortRef.current = null;
+        return;
       } finally {
         if (previewAbortRef.current === ac) {
           previewAbortRef.current = null;
@@ -385,7 +430,7 @@ export function PracticeTransferDetailChatDialog({
         }
       }
     },
-    [authToken, resetPreview, toast],
+    [authToken, toast],
   );
 
   const handleFileRowClick = useCallback(
@@ -397,13 +442,9 @@ export function PracticeTransferDetailChatDialog({
         (busyKey ? downloadingFileKeys.includes(busyKey) : false);
       if (isBusy) return;
 
-      const ext = getModelExtLower(file.fileName) || getPracticeTransferFileExtension(file.fileName);
-      if (isModelPreviewExt(ext)) {
-        void openFilePreview(file, "model");
-        return;
-      }
-      if (isImagePreviewExt(ext)) {
-        void openFilePreview(file, "image");
+      const kind = resolvePreviewKind(file.fileName);
+      if (kind) {
+        void openFilePreview(file, kind);
         return;
       }
       void onDownloadTransferFile(file);
@@ -416,10 +457,25 @@ export function PracticeTransferDetailChatDialog({
     ],
   );
 
+  const goPreviewRelative = useCallback(
+    (delta: number) => {
+      if (previewLoading) return;
+      if (previewIndex < 0) return;
+      const next = previewableFiles[previewIndex + delta];
+      if (!next) return;
+      void openFilePreview(next.file, next.kind);
+    },
+    [openFilePreview, previewIndex, previewLoading, previewableFiles],
+  );
+
   const previewBusyKey = previewMeta ? s3DownloadBusyKey(previewMeta) : "";
   const previewDownloadBusy =
     Boolean(previewBusyKey) &&
     (downloadAllBusy || downloadingFileKeys.includes(previewBusyKey));
+  const previewCount = previewableFiles.length;
+  const canPreviewPrev = previewIndex > 0;
+  const canPreviewNext =
+    previewIndex >= 0 && previewIndex < previewCount - 1;
 
   const hasToothWorks = Array.isArray(toothWorks) && toothWorks.length > 0;
   const hasCustomAbutment = Boolean(
@@ -955,6 +1011,14 @@ export function PracticeTransferDetailChatDialog({
         previewMeta
           ? () => void onDownloadTransferFile(previewMeta)
           : undefined
+      }
+      previewIndex={previewIndex}
+      previewCount={previewCount}
+      onPrev={
+        canPreviewPrev ? () => goPreviewRelative(-1) : undefined
+      }
+      onNext={
+        canPreviewNext ? () => goPreviewRelative(1) : undefined
       }
     />
     </>
