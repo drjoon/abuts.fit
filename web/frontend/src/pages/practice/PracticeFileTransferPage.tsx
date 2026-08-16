@@ -286,8 +286,11 @@ import { kstAddBusinessDays, kstYmdDiffDays } from "@/shared/date/kst";
 import {
   PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
   PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
+  PRACTICE_RUSH_CONFIRM_BODY_LINES,
+  PRACTICE_RUSH_CONFIRM_TITLE,
   PRACTICE_WORK_PERIOD_MIN_DAYS,
   getPracticeWorkPeriodDays,
+  isPracticeRushPeriod,
   isPracticeWorkPeriodShort,
 } from "@/shared/practice/practiceWorkPeriod";
 import {
@@ -1014,6 +1017,8 @@ export const PracticeFileTransferPage = ({
   const [skipDesignConfirmUncheckOpen, setSkipDesignConfirmUncheckOpen] = useState(false);
   const [skipJig, setSkipJig] = useState(true);
   const [rushProcessing, setRushProcessing] = useState(false);
+  const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
+  const [pendingRushArrivalYmd, setPendingRushArrivalYmd] = useState("");
   const [expressStepId, setExpressStepId] =
     useState<PracticeTransferExpressStepId>("lab");
   const [expressDone, setExpressDone] = useState(false);
@@ -4764,15 +4769,22 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    if (rushProcessing) {
-      const lockedArrival =
-        kstAddBusinessDays(orderDate, PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS) || "";
-      if (lockedArrival && arrivalDate !== lockedArrival) {
-        setArrivalDate(lockedArrival);
+    if (rushProcessing || isPracticeRushPeriod(getPracticeWorkPeriodDays(orderDate, arrivalDate))) {
+      if (!rushProcessing) {
+        setRushConfirmOpen(true);
+        setPendingRushArrivalYmd(arrivalDate);
+        toast({
+          title: "신속처리 확인이 필요합니다",
+          description: "3영업일 이하 납기는 신속처리입니다. 안내를 확인한 뒤 진행해주세요.",
+        });
+        return;
       }
     } else {
       const periodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
-      if (isPracticeWorkPeriodShort(periodDays)) {
+      if (
+        isPracticeWorkPeriodShort(periodDays) ||
+        (typeof periodDays === "number" && periodDays < PRACTICE_WORK_PERIOD_MIN_DAYS)
+      ) {
         toast({
           title: PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
           description: `현재 ${periodDays ?? "—"}영업일입니다. 최소 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2)이 필요합니다.`,
@@ -4824,10 +4836,7 @@ export const PracticeFileTransferPage = ({
       const transferFiles = [...draftFiles, ...localTempFiles];
       const clinicName = autoClinicName;
       const transferId = makeTransferId();
-      const submitArrivalDate = rushProcessing
-        ? kstAddBusinessDays(orderDate, PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS) ||
-          arrivalDate
-        : arrivalDate;
+      const submitArrivalDate = arrivalDate;
       const transferMemo = buildPracticeTransferMemo({
         memo: requestMemo,
         orderDate,
@@ -5547,6 +5556,26 @@ export const PracticeFileTransferPage = ({
                       String(nextArrival || "").trim() >= todayDate
                         ? String(nextArrival || "").trim()
                         : addDaysToDateInput(todayDate, arrivalDefaultDays);
+                    const days = getPracticeWorkPeriodDays(todayDate, arrival);
+                    if (isPracticeRushPeriod(days)) {
+                      if (rushProcessing) {
+                        setArrivalDate(arrival);
+                        persistArrivalDefaultDaysFromRange(todayDate, arrival);
+                        return;
+                      }
+                      setPendingRushArrivalYmd(arrival);
+                      setRushConfirmOpen(true);
+                      return;
+                    }
+                    if (isPracticeWorkPeriodShort(days)) {
+                      toast({
+                        title: PRACTICE_NORMAL_MIN_PERIOD_MESSAGE,
+                        description: `현재 ${days ?? "—"}영업일입니다. 일반은 ${PRACTICE_WORK_PERIOD_MIN_DAYS}영업일(2+2) 이상, 신속처리는 3영업일 이하입니다.`,
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    setRushProcessing(false);
                     setArrivalDate(arrival);
                     persistArrivalDefaultDaysFromRange(todayDate, arrival);
                   },
@@ -5711,19 +5740,6 @@ export const PracticeFileTransferPage = ({
                   skipJig,
                   onSkipJigChange: persistSkipJigSetting,
                   rushProcessing,
-                  onRushProcessingChange: (next) => {
-                    setRushProcessing(next);
-                    if (!next) return;
-                    const locked =
-                      kstAddBusinessDays(
-                        todayDate,
-                        PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
-                      ) || "";
-                    if (!locked) return;
-                    skipNextArrivalAutoSyncRef.current = true;
-                    setOrderDate(todayDate);
-                    setArrivalDate(locked);
-                  },
   };
 
   return (
@@ -6020,6 +6036,62 @@ export const PracticeFileTransferPage = ({
                   }}
                 >
                   컨펌 받기로 설정
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={rushConfirmOpen}
+            onOpenChange={(open) => {
+              setRushConfirmOpen(open);
+              if (!open) setPendingRushArrivalYmd("");
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{PRACTICE_RUSH_CONFIRM_TITLE}</DialogTitle>
+                <DialogDescription asChild>
+                  <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
+                    {PRACTICE_RUSH_CONFIRM_BODY_LINES.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setRushConfirmOpen(false);
+                    setPendingRushArrivalYmd("");
+                  }}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const nextArrival =
+                      pendingRushArrivalYmd ||
+                      kstAddBusinessDays(
+                        todayDate,
+                        PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS,
+                      ) ||
+                      "";
+                    skipNextArrivalAutoSyncRef.current = true;
+                    setOrderDate(todayDate);
+                    if (nextArrival) {
+                      setArrivalDate(nextArrival);
+                      persistArrivalDefaultDaysFromRange(todayDate, nextArrival);
+                    }
+                    setRushProcessing(true);
+                    setRushConfirmOpen(false);
+                    setPendingRushArrivalYmd("");
+                  }}
+                >
+                  신속처리로 진행
                 </Button>
               </DialogFooter>
             </DialogContent>

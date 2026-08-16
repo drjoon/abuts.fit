@@ -4,6 +4,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // change-log:
+// - 2026-08-17: 신속처리=합계≤3영업일 허용(선택 도착일 유지). 일반은 2+2 이상.
 // - 2026-08-17: 기공의뢰 신속처리(의뢰+2일·기공/어벗 1.5배). 일반 건은 묶음출고만.
 
 import { addKoreanBusinessDays, toKstYmd } from "../controllers/requests/utils.js";
@@ -11,8 +12,11 @@ import { addKoreanBusinessDays, toKstYmd } from "../controllers/requests/utils.j
 /** 신속처리 시 기공비·어벗츠 의뢰비 할증 배수 */
 export const PRACTICE_RUSH_FEE_MULTIPLIER = 1.5;
 
-/** 신속처리 치과도착 = 주문일 + N영업일 */
+/** 신속처리 기본 치과도착 = 주문일 + N영업일(도착일 미지정·초과 시) */
 export const PRACTICE_RUSH_ARRIVAL_BUSINESS_DAYS = 2;
+
+/** 신속처리 허용 최대 작업+배송(영업일) */
+export const PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS = 3;
 
 /** 일반 기공의뢰 최소 작업+배송(영업일) = 2+2 */
 export const PRACTICE_NORMAL_MIN_WORK_PLUS_SHIP_DAYS = 4;
@@ -21,7 +25,7 @@ export const PRACTICE_RUSH_COURIER_DISCLAIMER =
   "택배 사정에 따라 도착이 늦어질 수 있으며 도착을 보장하지 않습니다.";
 
 export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
-  "납품 기일은 작업+배송 2+2영업일 이상이어야 합니다.";
+  "납품 기일은 작업+배송 2+2영업일 이상이어야 합니다. 3영업일 이하는 신속처리로 진행하세요.";
 
 export function normalizeRushFeeMultiplier(value) {
   const n = Number(value);
@@ -157,7 +161,7 @@ export function upsertMemoArrivalYmd(memo, arrivalYmd) {
   return `[도착일: ${ymd}]\n${raw}`.trim();
 }
 
-/** 신속처리: 주문일+2영업일(공휴일 반영). */
+/** 신속처리: 주문일+기본 N영업일(공휴일 반영). */
 export async function resolveRushArrivalYmd(orderYmd, now = new Date()) {
   const start = String(orderYmd || "").trim() || toKstYmd(now) || null;
   if (!start) return null;
@@ -168,7 +172,7 @@ export async function resolveRushArrivalYmd(orderYmd, now = new Date()) {
 }
 
 /**
- * 생성 시 납품기일 검증·신속처리 도착일 강제.
+ * 생성 시 납품기일 검증·신속처리 도착일 허용(≤3영업일).
  * @returns {{ ok: true, transferMemo, rushFeeMultiplier } | { ok: false, statusCode, message, reason }}
  */
 export async function resolvePracticeTransferArrivalPolicy({
@@ -183,17 +187,24 @@ export async function resolvePracticeTransferArrivalPolicy({
   const rushFeeMultiplier = resolveRushFeeMultiplier({ rushProcessing: rush });
 
   if (rush) {
-    const locked = await resolveRushArrivalYmd(orderYmd, now);
-    if (!locked) {
-      return {
-        ok: false,
-        statusCode: 400,
-        message: "신속처리 도착일을 계산할 수 없습니다.",
-        reason: "rush_arrival_unresolved",
-      };
+    const days = countWeekdayBusinessDays(orderYmd, arrivalYmd);
+    const withinRush =
+      days != null &&
+      days >= 0 &&
+      days <= PRACTICE_RUSH_MAX_WORK_PLUS_SHIP_DAYS;
+    if (!withinRush) {
+      const locked = await resolveRushArrivalYmd(orderYmd, now);
+      if (!locked) {
+        return {
+          ok: false,
+          statusCode: 400,
+          message: "신속처리 도착일을 계산할 수 없습니다.",
+          reason: "rush_arrival_unresolved",
+        };
+      }
+      arrivalYmd = locked;
+      memo = upsertMemoArrivalYmd(memo, locked);
     }
-    arrivalYmd = locked;
-    memo = upsertMemoArrivalYmd(memo, locked);
     return {
       ok: true,
       transferMemo: memo,
