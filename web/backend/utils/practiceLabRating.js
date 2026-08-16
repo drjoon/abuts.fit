@@ -5,26 +5,34 @@
 // - web/backend/utils/practiceTransferAutoMatchBudget.js
 // - web/frontend/src/shared/practice/practiceLabRating.ts
 // - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
-// - 2026-08-14: 치과→기공소 rating(1~3)·메모. 기록 치과·관리자만. 자동매칭 최소 별(1회는 2nd chance).
-// - 2026-08-14: rating 기공소 10곳 이상일 때만 자동매칭 별 제한 적용.
-// - 2026-08-14: 동일 기공소 평가 2회 이하(3회부터 차단)는 매칭 참여 허용.
-// - 2026-08-16: 10곳 게이트 제거. 평가 5회 이하(6회부터 별 제한)는 매칭 참여 허용.
-// - 2026-08-16: 자동매칭 별점은 주문 치과만이 아니라 전체 치과 평가 합산·평균.
-// - 2026-08-16: 자동매칭 최소 별 기본값 2(사업자 세팅 저장·재사용).
-// - 2026-08-16: 주문 치과가 1점 준 기공소는 해당 치과 자동매칭에서 제외(유예·최소별 무관).
+// - 2026-08-14: 치과→기공소 rating·메모. 기록 치과·관리자만. 자동매칭 최소 별.
+// - 2026-08-16: 자동매칭 별점은 전체 치과 평가 합산·평균. 주문 치과 1점 제외.
+// - 2026-08-16: 5점제. 자동매칭 최소 선택 2~5. 평가 3회 미만은 유효 3점. 기공비 배수 2/3/4/5→0.9/1/1.1/1.2.
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { requestorKindCapableAnchorFilter } from "./requestorCapabilities.js";
 
 export const PRACTICE_LAB_RATING_MIN = 1;
-export const PRACTICE_LAB_RATING_MAX = 3;
+export const PRACTICE_LAB_RATING_MAX = 5;
 export const PRACTICE_LAB_RATING_MEMO_MAX = 500;
-export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 2;
-/** 이 횟수 이하 평가면 최소 별 제한에서 제외(미평가 포함). 초과 시 별점 게이트 적용. */
-export const AUTO_MATCH_RATING_COUNT_GRACE = 5;
+/** 자동매칭 최소 별 기본값. */
+export const DEFAULT_AUTO_MATCH_MIN_LAB_RATING = 3;
+/** 자동매칭 최소 별 선택 하한. */
+export const AUTO_MATCH_MIN_SELECTABLE = 2;
+/** 이 횟수 이하 평가면 유효 별점=3(미평가 포함). 초과 시 합산 평균 적용. */
+export const AUTO_MATCH_RATING_COUNT_GRACE = 2;
+/** 3회 미만일 때 적용하는 초기 유효 별점. */
+export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
 
-/** 별점 1~3. 범위 밖·비숫자면 null. */
+const FEE_MULTIPLIER_BY_STARS = Object.freeze({
+  2: 0.9,
+  3: 1,
+  4: 1.1,
+  5: 1.2,
+});
+
+/** 별점 1~5. 범위 밖·비숫자면 null. */
 export function normalizePracticeLabStars(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
@@ -35,10 +43,32 @@ export function normalizePracticeLabStars(value) {
   return stars;
 }
 
-/** 자동매칭 최소 별. 미설정·범위 밖 → 기본 2. */
+/** 자동매칭 최소 별. 미설정·범위 밖 → 기본 3. 선택 가능은 2~5. */
 export function normalizeAutoMatchMinLabRating(value) {
   const stars = normalizePracticeLabStars(value);
-  return stars == null ? DEFAULT_AUTO_MATCH_MIN_LAB_RATING : stars;
+  if (stars == null) return DEFAULT_AUTO_MATCH_MIN_LAB_RATING;
+  return Math.max(AUTO_MATCH_MIN_SELECTABLE, stars);
+}
+
+/** 선택 별점(3~5) → 기공비 배수. */
+export function feeMultiplierForStars(stars) {
+  const n = normalizeAutoMatchMinLabRating(stars);
+  return FEE_MULTIPLIER_BY_STARS[n] ?? 1;
+}
+
+/**
+ * 매칭 참여·필터용 유효 별점.
+ * - 평가 3회 미만(미평가 포함): 3
+ * - 그 외: 합산 평균(소수 유지)
+ */
+export function effectiveLabStars({ stars, ratingCount } = {}) {
+  const count = Math.max(0, Math.floor(Number(ratingCount) || 0));
+  if (count <= AUTO_MATCH_RATING_COUNT_GRACE) {
+    return DEFAULT_EFFECTIVE_LAB_STARS;
+  }
+  const n = Number(stars);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_EFFECTIVE_LAB_STARS;
+  return n;
 }
 
 export function normalizePracticeLabRatingMemo(value) {
@@ -71,6 +101,29 @@ export function toPracticeLabRatingPublicApi(row) {
     memo: full.memo,
     ratingCount: full.ratingCount,
     updatedAt: full.updatedAt,
+  };
+}
+
+/** 기공소 본인에게 공개: 수치·횟수·유효별만(치과 정보 없음). */
+export function toLabRatingSummaryApi(aggregatedRow) {
+  if (!aggregatedRow || typeof aggregatedRow !== "object") {
+    return {
+      stars: null,
+      ratingCount: 0,
+      effectiveStars: DEFAULT_EFFECTIVE_LAB_STARS,
+    };
+  }
+  const ratingCount = Math.max(
+    0,
+    Math.floor(Number(aggregatedRow.ratingCount) || 0),
+  );
+  const starsRaw = Number(aggregatedRow.stars);
+  const stars =
+    ratingCount > 0 && Number.isFinite(starsRaw) ? starsRaw : null;
+  return {
+    stars,
+    ratingCount,
+    effectiveStars: effectiveLabStars({ stars: starsRaw, ratingCount }),
   };
 }
 
@@ -112,11 +165,10 @@ export function isLabBlockedByOwnOneStar({ ratings, labAnchorId } = {}) {
 
 /**
  * 자동매칭 차단(인증 풀은 별도):
- * - 주문 치과가 1점을 준 기공소면 true(합산 유예·최소 별과 무관)
- * - 그 외: 전체 치과 합산 ≤5(또는 미평가)면 false(참여 허용)
- * - 합산 ≥6이고 평균 별 < 최소 별이면 true
+ * - 주문 치과가 1점을 준 기공소면 true
+ * - 그 외: 유효 별점(3회 미만→3) < 최소 별이면 true
  *
- * 참여 조건(참고): 인증 AND (평균≥설정 OR 합산≤5) AND NOT 우리치과1점
+ * 참여 조건: 인증 AND 유효별≥설정 AND NOT 우리치과1점
  *
  * `aggregated`가 있으면 전체 치과 합산 행을 쓰고, 없으면 레거시 단일 치과 list.
  * `ratings`는 주문 치과 `practiceLabRatings`(1점 하드 차단용).
@@ -132,7 +184,6 @@ export function isLabBlockedByPracticeRating({
   if (isLabBlockedByOwnOneStar({ ratings, labAnchorId: labId })) return true;
 
   const min = normalizeAutoMatchMinLabRating(minStars);
-  if (min <= PRACTICE_LAB_RATING_MIN) return false;
 
   let stars = null;
   let ratingCount = 0;
@@ -141,18 +192,20 @@ export function isLabBlockedByPracticeRating({
       aggregated instanceof Map
         ? aggregated.get(labId)
         : aggregated[labId] || null;
-    if (!row) return false;
-    stars = Number(row.stars);
-    ratingCount = Math.max(0, Math.floor(Number(row.ratingCount) || 0));
+    if (row) {
+      stars = Number(row.stars);
+      ratingCount = Math.max(0, Math.floor(Number(row.ratingCount) || 0));
+    }
   } else {
     const row = findPracticeLabRating(ratings, labId);
-    if (!row) return false;
-    stars = row.stars;
-    ratingCount = row.ratingCount;
+    if (row) {
+      stars = row.stars;
+      ratingCount = row.ratingCount;
+    }
   }
-  if (!Number.isFinite(stars) || ratingCount <= 0) return false;
-  if (ratingCount <= AUTO_MATCH_RATING_COUNT_GRACE) return false;
-  return stars < min;
+
+  const effective = effectiveLabStars({ stars, ratingCount });
+  return effective < min;
 }
 
 /**

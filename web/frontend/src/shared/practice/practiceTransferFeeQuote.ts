@@ -277,13 +277,22 @@ export const buildFeeQuoteFromContext = (params: {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
   const catalog = normalizeAbutsLabFeeCatalog(context.abutsLabFeeCatalog);
-  const labFeeMultiplier = normalizeLabFeeMultiplier(context.labFeeMultiplier);
+  // 자동매칭(v4 고정수가): 할증 없음
+  const labFeeMultiplier = zeroed
+    ? 1
+    : normalizeLabFeeMultiplier(context.labFeeMultiplier);
   const budgetRaw =
     params.autoMatchBudget !== undefined
       ? params.autoMatchBudget
       : context.autoMatchBudget || null;
   const budget = zeroed
-    ? resolveAutoMatchBudgetOrDefaults(budgetRaw, catalog)
+    ? resolveAutoMatchBudgetOrDefaults(
+        budgetRaw,
+        catalog,
+        budgetRaw && typeof budgetRaw === "object" && "stars" in budgetRaw
+          ? { minStars: (budgetRaw as PracticeTransferAutoMatchBudget).stars }
+          : undefined,
+      )
     : normalizePracticeTransferAutoMatchBudget(budgetRaw, catalog);
 
   const scheduleFromBudget = (side: "min" | "max") => {

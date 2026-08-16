@@ -1640,20 +1640,25 @@ export const PracticeFileTransferPage = ({
     const nextDefaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
       payload.defaultAbutmentProductMode,
     );
-    const hasAutoMatchBudget = Object.prototype.hasOwnProperty.call(
-      payload,
-      "autoMatchBudget",
-    );
     const hasAutoMatchMinLabRating = Object.prototype.hasOwnProperty.call(
       payload,
       "autoMatchMinLabRating",
     );
-    const nextAutoMatchBudget = hasAutoMatchBudget
-      ? resolveAutoMatchBudgetOrDefaults(
-          payload.autoMatchBudget,
-          payload.abutsLabFeeCatalog,
-        )
+    const nextMinStars = hasAutoMatchMinLabRating
+      ? normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating)
       : null;
+    const hasAutoMatchBudget = Object.prototype.hasOwnProperty.call(
+      payload,
+      "autoMatchBudget",
+    );
+    const nextAutoMatchBudget =
+      hasAutoMatchBudget || nextMinStars != null
+        ? resolveAutoMatchBudgetOrDefaults(
+            payload.autoMatchBudget,
+            payload.abutsLabFeeCatalog,
+            nextMinStars != null ? { minStars: nextMinStars } : undefined,
+          )
+        : null;
     if (Array.isArray(payload.abutsLabFeeCatalog)) {
       setAbutsLabFeeCatalog(payload.abutsLabFeeCatalog);
     }
@@ -1709,10 +1714,6 @@ export const PracticeFileTransferPage = ({
         params,
         "defaultAbutmentProductMode",
       );
-      const hasAutoMatchBudget = Object.prototype.hasOwnProperty.call(
-        params,
-        "autoMatchBudget",
-      );
       const hasAutoMatchMinLabRating = Object.prototype.hasOwnProperty.call(
         params,
         "autoMatchMinLabRating",
@@ -1742,12 +1743,7 @@ export const PracticeFileTransferPage = ({
           params.defaultAbutmentProductMode,
         );
       }
-      if (hasAutoMatchBudget) {
-        jsonBody.autoMatchBudget = resolveAutoMatchBudgetOrDefaults(
-          params.autoMatchBudget,
-          abutsLabFeeCatalog,
-        );
-      }
+      // autoMatchBudget는 서버에서 무시(v4: 별점으로 조립).
       if (hasAutoMatchMinLabRating) {
         jsonBody.autoMatchMinLabRating = normalizeAutoMatchMinLabRating(
           params.autoMatchMinLabRating,
@@ -2249,14 +2245,19 @@ export const PracticeFileTransferPage = ({
         );
         setImplantFavorites(normalizeImplantFavorites(payload.implantFavorites));
         setAbutmentFavorites(normalizeAbutmentFavorites(payload.abutmentFavorites));
+        setAutoMatchMinLabRating(
+          normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating),
+        );
         setAutoMatchBudget(
           resolveAutoMatchBudgetOrDefaults(
             payload.autoMatchBudget,
             payload.abutsLabFeeCatalog ?? abutsLabFeeCatalog,
+            {
+              minStars: normalizeAutoMatchMinLabRating(
+                payload.autoMatchMinLabRating,
+              ),
+            },
           ),
-        );
-        setAutoMatchMinLabRating(
-          normalizeAutoMatchMinLabRating(payload.autoMatchMinLabRating),
         );
         if (Array.isArray(payload.abutsLabFeeCatalog)) {
           setAbutsLabFeeCatalog(payload.abutsLabFeeCatalog);
@@ -5356,6 +5357,7 @@ export const PracticeFileTransferPage = ({
       const budgetForAuto = resolveAutoMatchBudgetOrDefaults(
         autoMatchBudget,
         abutsLabFeeCatalog,
+        { minStars: autoMatchMinLabRating },
       );
       const practiceRouting = {
         targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
@@ -6016,16 +6018,15 @@ export const PracticeFileTransferPage = ({
                   memoSnippets,
                   autoMatchBudget,
                   abutsLabFeeCatalog,
-                  onAutoMatchBudgetChange: (next) => {
-                    setAutoMatchBudget(next);
-                    void savePracticeTransferSettingsToServer({
-                      autoMatchBudget: next,
-                    }).catch(() => {});
-                  },
                   autoMatchMinLabRating,
                   onAutoMatchMinLabRatingChange: (next) => {
                     const normalized = normalizeAutoMatchMinLabRating(next);
                     setAutoMatchMinLabRating(normalized);
+                    setAutoMatchBudget(
+                      resolveAutoMatchBudgetOrDefaults(null, abutsLabFeeCatalog, {
+                        minStars: normalized,
+                      }),
+                    );
                     void savePracticeTransferSettingsToServer({
                       autoMatchMinLabRating: normalized,
                     }).catch(() => {});

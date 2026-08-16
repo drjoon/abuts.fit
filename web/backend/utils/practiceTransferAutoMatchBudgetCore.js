@@ -1,25 +1,41 @@
 // related files:
 // - web/backend/utils/practiceTransferAutoMatchBudget.js
 // - web/backend/utils/abutsLabFeeSchedule.js
+// - web/backend/utils/practiceLabRating.js
 // - web/frontend/src/shared/practice/autoMatchBudget.ts
 //
-// 자동매칭 기공비 예산 — 인증 기공소 수가 평균 대비 min%/max% (순수).
-// 항목별 원 구간은 카탈로그(어벗츠 수가=평균) × % 로 전개. 1000원 단위 절사.
+// 자동매칭 기공비 — v4 플랫폼 고정가(평균×별점배수). min=max.
+// 레거시 v2/v3(항목 밴드·min%/max%)는 읽기 호환만.
 // - 2026-08-16: 모달은 min%/max%만 설정. 기본 80%~120%.
 // - 2026-08-16: % 예산 normalize 시 견적 합산 minLabFee/maxLabFee 보존.
+// - 2026-08-16: v4 고정가. 2→×0.9 / 3→×1 / 4→×1.1 / 5→×1.2. 1천원 올림.
+
+import {
+  DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+  feeMultiplierForStars,
+  normalizeAutoMatchMinLabRating,
+} from "./practiceLabRating.js";
 
 const MAX_UNIT_FEE = 50_000_000;
-/** 인증 기공소 수가 평균 대비 기본 하한/상한 (%) */
+/** @deprecated 레거시 v3 */
 export const DEFAULT_MIN_PCT = 80;
+/** @deprecated 레거시 v3 */
 export const DEFAULT_MAX_PCT = 120;
 const FEE_STEP = 1000;
 const MAX_PCT = 500;
 
-/** 1000원 단위 절사 (미만 버림) */
+/** 1000원 단위 절사 (미만 버림) — 레거시 */
 export function floorToFeeStep(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.floor(n / FEE_STEP) * FEE_STEP;
+}
+
+/** 1000원 단위 올림 — v4 고정가 */
+export function ceilToFeeStep(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.ceil(n / FEE_STEP) * FEE_STEP;
 }
 
 /** 카탈로그 없을 때 fallback (어벗츠 기본 수가와 동기화) */
@@ -158,7 +174,9 @@ export function normalizeAutoMatchBudgetBand(raw) {
 
 /**
  * @returns {{
- *   version: 2 | 3,
+ *   version: 2 | 3 | 4,
+ *   stars?: number,
+ *   feeMultiplier?: number,
  *   minPct?: number,
  *   maxPct?: number,
  *   items: Record<string, { min: number, max: number }>,
@@ -178,8 +196,57 @@ function attachCaseLabFeeTotals(out, raw) {
   return out;
 }
 
+/** 카탈로그 평균 × 별점 배수 → 항목별 고정가(min=max, 1천원 올림) */
+export function buildFixedAutoMatchBudgetItems(catalog, feeMultiplier = 1) {
+  const m =
+    Number.isFinite(Number(feeMultiplier)) && Number(feeMultiplier) > 0
+      ? Number(feeMultiplier)
+      : 1;
+  const items = {};
+  for (const row of normalizeCatalogItems(catalog)) {
+    const fee = Math.min(
+      MAX_UNIT_FEE,
+      Math.max(0, ceilToFeeStep(row.price * m)),
+    );
+    items[row.id] = { min: fee, max: fee };
+  }
+  return items;
+}
+
+/** v4 SSOT — 선택 별점(3~5) + 카탈로그 평균 → 고정 예산 */
+export function resolveAutoMatchBudgetFromStars(stars, catalog) {
+  const normalizedStars = normalizeAutoMatchMinLabRating(stars);
+  const feeMultiplier = feeMultiplierForStars(normalizedStars);
+  return {
+    version: 4,
+    stars: normalizedStars,
+    feeMultiplier,
+    items: buildFixedAutoMatchBudgetItems(catalog, feeMultiplier),
+  };
+}
+
 export function normalizeAutoMatchBudget(raw, catalog) {
   if (raw == null || typeof raw !== "object") return null;
+
+  const version = Number(raw.version);
+  if (version === 4 || (raw.stars != null && raw.feeMultiplier != null)) {
+    const stars = normalizeAutoMatchMinLabRating(
+      raw.stars ?? DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+    );
+    const feeMultiplier =
+      Number.isFinite(Number(raw.feeMultiplier)) && Number(raw.feeMultiplier) > 0
+        ? Number(raw.feeMultiplier)
+        : feeMultiplierForStars(stars);
+    return attachCaseLabFeeTotals(
+      {
+        version: 4,
+        stars,
+        feeMultiplier,
+        items: buildFixedAutoMatchBudgetItems(catalog, feeMultiplier),
+      },
+      raw,
+    );
+  }
 
   const pct = normalizeAutoMatchBudgetPct(raw);
   if (pct) {
@@ -239,41 +306,29 @@ export function isAutoMatchBudgetConfigured(budget, catalog) {
   });
 }
 
-/** 설정/모달용 — % 저장값이면 카탈로그×%, 아니면 항목 저장값 또는 기본 80~120% */
-export function resolveAutoMatchBudgetOrDefaults(raw, catalog) {
-  const rows = normalizeCatalogItems(catalog);
-  const pctFromRaw = normalizeAutoMatchBudgetPct(raw);
-  if (pctFromRaw) {
-    return {
-      version: 3,
-      minPct: pctFromRaw.minPct,
-      maxPct: pctFromRaw.maxPct,
-      items: buildDefaultAutoMatchBudgetItems(
-        catalog,
-        pctFromRaw.minPct,
-        pctFromRaw.maxPct,
-      ),
-    };
+/**
+ * 설정/견적용.
+ * - v4(stars) 또는 stars 필드 → 고정가
+ * - 레거시 raw → 읽기 호환
+ * - 미설정 → 기본 별점 3 고정가
+ * - opts.minStars가 있으면 그 별점으로 v4 조립(설정 GET·생성 SSOT)
+ */
+export function resolveAutoMatchBudgetOrDefaults(raw, catalog, opts = {}) {
+  if (opts.minStars != null) {
+    return resolveAutoMatchBudgetFromStars(opts.minStars, catalog);
   }
 
   const normalized = normalizeAutoMatchBudget(raw, catalog);
-  if (!normalized) {
-    return {
-      version: 3,
-      minPct: DEFAULT_MIN_PCT,
-      maxPct: DEFAULT_MAX_PCT,
-      items: buildDefaultAutoMatchBudgetItems(catalog),
-    };
+  if (normalized?.version === 4) return normalized;
+
+  if (normalized?.version === 3 || normalized?.version === 2) {
+    return normalized;
   }
 
-  // 레거시 항목별 원 구간 유지
-  const items = {};
-  for (const row of rows) {
-    const saved = normalized.items?.[row.id];
-    items[row.id] =
-      saved && saved.max > 0 ? saved : bandFromAdminBase(row.price);
-  }
-  return { version: 2, items };
+  return resolveAutoMatchBudgetFromStars(
+    DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
+    catalog,
+  );
 }
 
 export function isLabUnitPricesWithinAutoMatchBudget(

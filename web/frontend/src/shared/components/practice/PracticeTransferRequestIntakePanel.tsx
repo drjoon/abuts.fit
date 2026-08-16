@@ -20,14 +20,12 @@ import {
   Plus,
   CircleHelp,
   Settings,
-  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import { Label } from "@/components/ui/label";
-import { AutoMatchLabFeeBudgetDialog } from "@/shared/components/practice/AutoMatchLabFeeBudgetDialog";
 import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
 import {
   resolveAutoMatchBudgetOrDefaults,
@@ -744,13 +742,13 @@ export const PracticeTransferRequestIntakePanel = ({
   autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
   onAutoMatchMinLabRatingChange,
 }: PracticeTransferRequestIntakePanelProps) => {
-  const [autoMatchBudgetOpen, setAutoMatchBudgetOpen] = useState(false);
+  const resolvedMinLabRating = normalizeAutoMatchMinLabRating(
+    autoMatchMinLabRating,
+  );
   const resolvedAutoMatchBudget = resolveAutoMatchBudgetOrDefaults(
     autoMatchBudget,
     abutsLabFeeCatalog,
-  );
-  const resolvedMinLabRating = normalizeAutoMatchMinLabRating(
-    autoMatchMinLabRating,
+    { minStars: resolvedMinLabRating },
   );
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
     defaultAbutmentProductModeProp ?? DEFAULT_ACCOUNT_ABUTMENT_PRODUCT_MODE,
@@ -1662,25 +1660,6 @@ export const PracticeTransferRequestIntakePanel = ({
             <Label className="text-sm">
               기공소 <span className="text-destructive">*</span>
             </Label>
-            <TooltipProvider delayDuration={0}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground [&_svg]:size-5"
-                    aria-label="자동매칭 기공비 범위 설정"
-                    onClick={() => setAutoMatchBudgetOpen(true)}
-                  >
-                    <SlidersHorizontal />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                  <p>평균 수가 대비 기공비 범위. 범위 안 기공소만 매칭됩니다.</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
             <AutoMatchMinLabRatingStars
               value={resolvedMinLabRating}
               disabled={!onAutoMatchMinLabRatingChange}
@@ -2016,15 +1995,6 @@ export const PracticeTransferRequestIntakePanel = ({
               </Command>
             </PopoverContent>
           </Popover>
-          <AutoMatchLabFeeBudgetDialog
-            open={autoMatchBudgetOpen}
-            onOpenChange={setAutoMatchBudgetOpen}
-            value={resolvedAutoMatchBudget}
-            catalog={abutsLabFeeCatalog}
-            onSave={async (next) => {
-              await onAutoMatchBudgetChange?.(next);
-            }}
-          />
         </div>
         ) : null}
 

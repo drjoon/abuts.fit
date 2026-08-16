@@ -59,6 +59,10 @@ import {
   isAbutsLabCertificationCertified,
   toAbutsLabCertificationApi,
 } from "../../utils/abutsLabCertification.js";
+import {
+  loadGlobalLabRatingAggregates,
+  toLabRatingSummaryApi,
+} from "../../utils/practiceLabRating.js";
 import { resolvePlatformFeeRate, resolveDirectPlatformFeeRateConfigured } from "../../services/creditRevenuePolicy.service.js";
 
 function resolveLabPartnerInviteToken(req) {
@@ -1369,11 +1373,18 @@ export async function getMyAutoMatchParticipation(req, res) {
     }
 
     const fees = await loadDevopsAutoMatchFees();
+    const ratingMap = await loadGlobalLabRatingAggregates({
+      labAnchorIds: [businessAnchorId],
+    });
+    const labRatingSummary = toLabRatingSummaryApi(
+      ratingMap.get(String(businessAnchorId)) || null,
+    );
     return res.json({
       success: true,
       data: {
         ...autoMatchParticipationResponseFields(anchor),
         ...fees,
+        labRatingSummary,
         verified: String(anchor.status || "").trim() === "verified",
         canReceivePracticeTransfer: canJoinAutoMatchParticipation({
           profile,

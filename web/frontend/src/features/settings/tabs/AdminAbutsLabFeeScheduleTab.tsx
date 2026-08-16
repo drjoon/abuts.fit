@@ -2,10 +2,9 @@
 // - web/backend/controllers/admin/admin.abutsLabFeeSchedule.controller.js
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
-// - web/frontend/src/shared/components/practice/AutoMatchLabFeeBudgetDialog.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 //
-// 어벗츠 기공수가(플랫폼 카탈로그). 자동매칭 기공비 범위 모달 항목 SSOT.
+// 어벗츠 기공수가(플랫폼 카탈로그). 매일 자정 평균 재계산 항목 SSOT.
 // 기공소 신규 항목은 Off·검토 대기로 들어오며, On하면 적용·대기 해제.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -296,8 +295,9 @@ export const AdminAbutsLabFeeScheduleTab = ({
           ) : null}
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          항목을 추가하면 자동매칭 기공비 범위 설정에도 바로 반영됩니다. 기공소에서
-          새로 올린 항목은 Off로 들어오니 검증 후 On으로 적용하세요.
+          단가는 매일 자정(KST)에 기공소 수가 평균(1σ 이상치 제외·1천원 올림)으로
+          자동 재계산됩니다. 항목 On/Off·이름 관리용입니다. 기공소 신규 항목은 Off로
+          들어오니 검증 후 On으로 적용하세요.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">

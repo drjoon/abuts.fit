@@ -58,8 +58,11 @@ import {
 import { resolveLabPracticeFeeMultiplier } from "../../utils/labFeeSchedule.js";
 import {
   findPracticeLabRating,
+  normalizeAutoMatchMinLabRating,
   normalizePracticeLabStars,
   normalizePracticeLabRatingMemo,
+  PRACTICE_LAB_RATING_MAX,
+  PRACTICE_LAB_RATING_MIN,
   toPracticeLabRatingPublicApi,
   upsertPracticeLabRatingList,
 } from "../../utils/practiceLabRating.js";
@@ -1893,19 +1896,19 @@ export async function createPracticeTransfer(req, res) {
         loadAutoMatchBudgetCatalog(),
       ]);
       autoMatchCatalog = catalog;
-      autoMatchBudget = resolveAutoMatchBudgetOrDefaults(
-        req.body?.autoMatchBudget ??
-          practiceRouting?.autoMatchBudget ??
-          practiceForBudget?.practiceTransferSettings?.autoMatchBudget,
-        catalog,
+      const minStars = normalizeAutoMatchMinLabRating(
+        req.body?.autoMatchMinLabRating ??
+          practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
       );
+      autoMatchBudget = resolveAutoMatchBudgetOrDefaults(null, catalog, {
+        minStars,
+      });
 
       const eligibility = await resolveAutoMatchEligibleLabAnchorIds({
         toothWorks: toothWorksRaw,
         budget: autoMatchBudget,
         catalog,
-        autoMatchMinLabRating:
-          practiceForBudget?.practiceTransferSettings?.autoMatchMinLabRating,
+        autoMatchMinLabRating: minStars,
         practiceLabRatings: practiceForBudget?.practiceLabRatings,
       });
       autoMatchEligibleLabAnchorIds = eligibility.eligibleLabAnchorIds;
@@ -1913,16 +1916,16 @@ export async function createPracticeTransfer(req, res) {
       if (autoMatchEligibleLabAnchorIds.length === 0) {
         const skipped = eligibility.skipped || {};
         let message =
-          "설정한 항목별 기공비 예산·최소 별점에 맞는 인증 기공소가 없습니다. 예산·별점을 조정하거나 지정 기공소를 선택해주세요.";
-        if (skipped.feeUnconfigured > 0 && skipped.budget === 0 && skipped.rating === 0) {
+          "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요.";
+        if (
+          skipped.feeUnconfigured > 0 &&
+          skipped.rating === 0
+        ) {
           message =
             "인증 기공소의 기공수가가 아직 설정되지 않았습니다. 기공소에서 수가를 켜거나 지정 기공소를 선택해주세요.";
-        } else if (skipped.rating > 0 && skipped.budget === 0) {
+        } else if (skipped.rating > 0) {
           message =
-            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요. (전체 치과 평가 합산 5회 이하·미평가 기공소는 제한되지 않습니다. 우리 치과에서 1점을 준 기공소는 제외됩니다.)";
-        } else if (skipped.budget > 0) {
-          message =
-            "설정한 항목별 기공비 예산에 맞는 인증 기공소가 없습니다. 예산을 조정하거나 지정 기공소를 선택해주세요.";
+            "설정한 최소 별점에 맞는 인증 기공소가 없습니다. 별점을 낮추거나 지정 기공소를 선택해주세요.";
         }
         return res.status(409).json({
           success: false,
@@ -2599,7 +2602,7 @@ export async function upsertPracticeTransferLabRating(req, res) {
     if (stars == null) {
       return res.status(400).json({
         success: false,
-        message: "별점은 1~3 사이여야 합니다.",
+        message: `별점은 ${PRACTICE_LAB_RATING_MIN}~${PRACTICE_LAB_RATING_MAX} 사이여야 합니다.`,
       });
     }
     const memo = normalizePracticeLabRatingMemo(req.body?.memo);

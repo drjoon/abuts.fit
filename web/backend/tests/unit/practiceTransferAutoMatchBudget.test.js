@@ -7,30 +7,74 @@ import {
   isAutoMatchBudgetConfigured,
   isLabUnitPricesWithinAutoMatchBudget,
   normalizeAutoMatchBudget,
+  resolveAutoMatchBudgetFromStars,
   resolveAutoMatchBudgetOrDefaults,
   scaleLabUnitPricesByMultiplier,
 } from "../../utils/practiceTransferAutoMatchBudgetCore.js";
 
 describe("practiceTransferAutoMatchBudgetCore", () => {
-  test("admin 80%~120% floors to 1000원", () => {
+  test("admin 80%~120% floors to 1000원 (legacy)", () => {
     expect(bandFromAdminBase(60000)).toEqual({ min: 48000, max: 72000 });
     expect(bandFromAdminBase(50000)).toEqual({ min: 40000, max: 60000 });
     expect(bandFromAdminBase(50001)).toEqual({ min: 40000, max: 60000 });
   });
 
-  test("defaults cover all prosthetic keys at 80%~120%", () => {
+  test("v4 fixed fee from stars: 2=0.9x, 3=1x, 4=1.1x, 5=1.2x ceil 1000", () => {
+    const catalog = [
+      { id: "crown", name: "크라운", price: 60000, enabled: true },
+    ];
+    expect(resolveAutoMatchBudgetFromStars(2, catalog)).toMatchObject({
+      version: 4,
+      stars: 2,
+      feeMultiplier: 0.9,
+      items: { crown: { min: 54000, max: 54000 } },
+    });
+    expect(resolveAutoMatchBudgetFromStars(3, catalog)).toMatchObject({
+      version: 4,
+      stars: 3,
+      feeMultiplier: 1,
+      items: { crown: { min: 60000, max: 60000 } },
+    });
+    expect(resolveAutoMatchBudgetFromStars(4, catalog).items.crown).toEqual({
+      min: 66000,
+      max: 66000,
+    });
+    expect(resolveAutoMatchBudgetFromStars(5, catalog).items.crown).toEqual({
+      min: 72000,
+      max: 72000,
+    });
+    // 55555 * 1.1 = 61110.5 → ceil 62000
+    const odd = [{ id: "crown", name: "크라운", price: 55555, enabled: true }];
+    expect(resolveAutoMatchBudgetFromStars(4, odd).items.crown).toEqual({
+      min: 62000,
+      max: 62000,
+    });
+  });
+
+  test("resolveAutoMatchBudgetOrDefaults prefers minStars for v4", () => {
+    const budget = resolveAutoMatchBudgetOrDefaults(
+      { version: 3, minPct: 80, maxPct: 120 },
+      null,
+      { minStars: 4 },
+    );
+    expect(budget.version).toBe(4);
+    expect(budget.stars).toBe(4);
+    expect(budget.feeMultiplier).toBe(1.1);
+  });
+
+  test("defaults cover prosthetic keys at 80%~120% (legacy builder)", () => {
     const items = buildDefaultAutoMatchBudgetItems();
     expect(items.crown).toEqual({ min: 48000, max: 72000 });
     expect(items.bridge).toEqual({ min: 48000, max: 72000 });
     expect(isAutoMatchBudgetConfigured({ version: 2, items })).toBe(true);
   });
 
-  test("pct budget expands new catalog items", () => {
+  test("pct budget expands new catalog items (legacy)", () => {
     const catalog = [
       { id: "crown", name: "크라운", price: 60000, enabled: true },
       { id: "custom-veneer", name: "비니어", price: 80000, enabled: true },
     ];
-    const budget = resolveAutoMatchBudgetOrDefaults(
+    const budget = normalizeAutoMatchBudget(
       { version: 3, minPct: 80, maxPct: 120 },
       catalog,
     );
@@ -61,8 +105,13 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     expect(normalized.items.crown).toEqual({ min: 48000, max: 72000 });
   });
 
-  test("unit price eligibility is inclusive per required key", () => {
-    const budget = resolveAutoMatchBudgetOrDefaults(null);
+  test("unit price eligibility is inclusive per required key (legacy)", () => {
+    const budget = {
+      version: 3,
+      minPct: 80,
+      maxPct: 120,
+      items: buildDefaultAutoMatchBudgetItems(),
+    };
     expect(
       isLabUnitPricesWithinAutoMatchBudget(
         { crown: 48000, bridge: 72000 },
@@ -97,7 +146,7 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     ).toBeNull();
   });
 
-  test("unit price helper scales surcharge (eligibility uses base; billing may scale)", () => {
+  test("unit price helper scales surcharge", () => {
     const budget = {
       version: 2,
       items: { crown: { min: 48000, max: 72000 } },
@@ -106,13 +155,6 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     expect(
       isLabUnitPricesWithinAutoMatchBudget(
         scaleLabUnitPricesByMultiplier(base, 1),
-        budget,
-        ["crown"],
-      ),
-    ).toBe(true);
-    expect(
-      isLabUnitPricesWithinAutoMatchBudget(
-        scaleLabUnitPricesByMultiplier(base, 1.1),
         budget,
         ["crown"],
       ),

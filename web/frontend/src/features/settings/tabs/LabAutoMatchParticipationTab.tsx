@@ -33,6 +33,7 @@ import {
   Info,
   Loader2,
   Percent,
+  Star,
 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
@@ -46,6 +47,12 @@ import {
   ABUTS_LAB_CERT_STATUS_LABEL,
   parseAbutsLabCertification,
 } from "@/shared/practice/abutsLabCertification";
+import {
+  AUTO_MATCH_RATING_COUNT_GRACE,
+  DEFAULT_EFFECTIVE_LAB_STARS,
+  parseLabRatingSummary,
+  type LabRatingSummary,
+} from "@/shared/practice/practiceLabRating";
 
 type ParticipationData = {
   practiceTransferAutoMatchEnabled?: boolean;
@@ -59,6 +66,7 @@ type ParticipationData = {
   verified?: boolean;
   canReceivePracticeTransfer?: boolean;
   abutsLabCertification?: AbutsLabCertificationPublic;
+  labRatingSummary?: LabRatingSummary | null;
 };
 
 const CERT_STEPS = [
@@ -107,6 +115,9 @@ export const LabAutoMatchParticipationTab = () => {
       if (payload) {
         payload.abutsLabCertification = parseAbutsLabCertification(
           payload.abutsLabCertification,
+        );
+        payload.labRatingSummary = parseLabRatingSummary(
+          payload.labRatingSummary,
         );
       }
       setData(payload);
@@ -220,7 +231,7 @@ export const LabAutoMatchParticipationTab = () => {
               ) : null}
             </div>
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              신청 → 기공 테스트 → 통과 시 인증. 인증 기공소만 자동 매칭에
+              신청 → 기공 테스트 → 통과 시 인증. 인증·별점 3점 이상만 매칭에
               참여합니다.
             </p>
             <p className="text-[12px] leading-relaxed text-muted-foreground/90">
@@ -240,6 +251,39 @@ export const LabAutoMatchParticipationTab = () => {
             </p>
           </div>
         </div>
+
+        {(() => {
+          const summary = parseLabRatingSummary(data?.labRatingSummary);
+          const displayStars =
+            summary.ratingCount > AUTO_MATCH_RATING_COUNT_GRACE &&
+            summary.stars != null
+              ? summary.stars
+              : DEFAULT_EFFECTIVE_LAB_STARS;
+          const starsLabel =
+            Number.isFinite(displayStars) && displayStars % 1 !== 0
+              ? displayStars.toFixed(1)
+              : String(Math.round(displayStars * 10) / 10);
+          return (
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-amber-50/80 to-white px-4 py-3.5 sm:px-5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-100/80 text-amber-600 ring-1 ring-amber-200/80">
+                <Star className="h-5 w-5 fill-current" />
+              </span>
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-[13px] font-semibold text-slate-900">
+                  내 별점 {starsLabel}
+                  <span className="ml-1.5 text-[12px] font-normal text-slate-500">
+                    (평가 {summary.ratingCount}회)
+                  </span>
+                </p>
+                <p className="text-[12px] leading-relaxed text-muted-foreground">
+                  {summary.ratingCount <= AUTO_MATCH_RATING_COUNT_GRACE
+                    ? `평가 ${AUTO_MATCH_RATING_COUNT_GRACE + 1}회부터 실제 평균이 적용됩니다. 현재는 ${DEFAULT_EFFECTIVE_LAB_STARS}점.`
+                    : "치과 정보는 비공개입니다."}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-4 sm:px-5">
           <p className="mb-3 text-[12px] font-semibold tracking-wide text-slate-500">
