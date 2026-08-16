@@ -2746,7 +2746,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                   showAbutmentCheckbox ? "mt-0.5" : "mt-2",
                                 )}
                               >
-                                <TooltipProvider delayDuration={0}>
+                                <TooltipProvider>
                                   <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
                                     <Tooltip>
                                       <TooltipTrigger asChild>
@@ -2846,7 +2846,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       skipJig={effectiveSkipJig}
                     />
                     {onSkipJigChange && showSkipJigCheckbox ? (
-                      <TooltipProvider delayDuration={0}>
+                      <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <label

@@ -6236,7 +6236,7 @@ export const PracticeFileTransferPage = ({
 
                             <div className="flex shrink-0 items-center gap-1.5">
                               {canRemake ? (
-                                <TooltipProvider delayDuration={0}>
+                                <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
                                       <span
@@ -6269,7 +6269,7 @@ export const PracticeFileTransferPage = ({
                                 const deleteLocked =
                                   !canDeletePracticeTransferByStatus(transfer.status);
                                 return (
-                                  <TooltipProvider delayDuration={0}>
+                                  <TooltipProvider>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <span className="inline-flex">
@@ -6421,7 +6421,7 @@ export const PracticeFileTransferPage = ({
                                 transferMemo={transfer.transferMemo}
                               />
                             </div>
-                            <TooltipProvider delayDuration={0}>
+                            <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button
@@ -6554,7 +6554,7 @@ export const PracticeFileTransferPage = ({
                               />
                             </div>
 
-                            <TooltipProvider delayDuration={0}>
+                            <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button
@@ -6692,7 +6692,7 @@ export const PracticeFileTransferPage = ({
                             transferMemo={transfer.transferMemo}
                           />
                         </div>
-                        <TooltipProvider delayDuration={0}>
+                        <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -6818,7 +6818,7 @@ export const PracticeFileTransferPage = ({
                           />
                         </div>
 
-                        <TooltipProvider delayDuration={0}>
+                        <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button

@@ -116,7 +116,7 @@ export const SettingsScaffold = ({
           : "min-h-screen bg-gradient-subtle p-4",
       )}
     >
-      <TooltipProvider delayDuration={0}>
+      <TooltipProvider>
         <Tabs
           value={activeTab}
           onValueChange={(next) => {

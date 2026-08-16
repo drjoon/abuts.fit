@@ -737,7 +737,7 @@ export function PracticeTransferFeeEstimate({
   );
 
   return (
-    <TooltipProvider delayDuration={0}>
+    <TooltipProvider>
       <div
         data-no-tooth-marquee=""
         className={cn(

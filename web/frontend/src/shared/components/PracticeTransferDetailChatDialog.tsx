@@ -496,7 +496,7 @@ export function PracticeTransferDetailChatDialog({
                       치과 메시지를 확인한 뒤 수락하면 작업을 진행할 수 있습니다.
                     </p>
                     {hasCustomAbutment ? (
-                      <TooltipProvider delayDuration={0}>
+                      <TooltipProvider>
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span>커스텀 어벗 디자인은 수락 기공소가 진행</span>
                           <Tooltip>

@@ -51,7 +51,7 @@ export const DesignQueueSection = ({
 
   return (
     <div className="w-full min-h-0 flex flex-col items-stretch">
-      <TooltipProvider delayDuration={0}>
+      <TooltipProvider>
         <div className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground">
           <span>커스텀 어벗 디자인은 1영업일 내 기공소 전달</span>
           <Tooltip>

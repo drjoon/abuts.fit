@@ -58,7 +58,7 @@ export const WorkspaceModeSwitch = ({
   };
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

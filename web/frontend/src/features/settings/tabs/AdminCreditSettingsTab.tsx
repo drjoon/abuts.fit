@@ -767,7 +767,7 @@ export const AdminCreditSettingsTab = ({
     "치과(의뢰 발신자)만 적용합니다. 기공소에는 적용하지 않으며, 매달 유료 청구됩니다.";
 
   return (
-    <TooltipProvider delayDuration={0}>
+    <TooltipProvider>
       <div className="space-y-5">
         {showCredits ? (
           <>

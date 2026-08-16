@@ -27,7 +27,7 @@ export function PracticeAcceptOverdueBadge({
   className,
 }: PracticeAcceptOverdueBadgeProps) {
   return (
-    <TooltipProvider delayDuration={0}>
+    <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge

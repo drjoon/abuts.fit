@@ -375,7 +375,7 @@ export const PracticeToothWorkChartReadOnly = ({
                             ]
                           }
                         </span>
-                        <TooltipProvider delayDuration={0}>
+                        <TooltipProvider>
                           <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
                             <Tooltip>
                               <TooltipTrigger asChild>

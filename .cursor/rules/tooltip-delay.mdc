@@ -1,0 +1,30 @@
+---
+description: App-wide tooltip hover delay is 600ms (SSOT).
+globs: web/frontend/**/*.{tsx,ts}
+alwaysApply: false
+---
+
+# Tooltip delay (강제)
+
+## Policy
+
+- Mouse-hover tooltips open after **600ms** (`delayDuration={600}`).
+- Do not force instant tooltips (`delayDuration={0}`) or other custom delays.
+
+## SSOT
+
+- `web/frontend/src/components/ui/tooltip.tsx` — `TooltipProvider` default `delayDuration = 600`
+- `web/frontend/src/App.tsx` — root provider
+- `web/frontend/rules.md` — Tooltip section
+
+## Do / Don't
+
+```tsx
+// ❌ BAD — instant or one-off delay
+<TooltipProvider delayDuration={0}>
+<Tooltip delayDuration={200}>
+
+// ✅ GOOD — inherit app default (600ms)
+<TooltipProvider>
+<Tooltip>
+```

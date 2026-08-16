@@ -1,14 +1,14 @@
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
-// - .cursor/rules/tooltip-instant.mdc
+// - .cursor/rules/tooltip-delay.mdc
 import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
 import { cn } from "@/shared/ui/cn";
 
 const TooltipProvider = ({
-  delayDuration = 0,
+  delayDuration = 600,
   skipDelayDuration = 0,
   ...props
 }: React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Provider>) => (

@@ -175,7 +175,7 @@ function ImmediateTooltip({
   children: ReactElement;
 }) {
   return (
-    <Tooltip delayDuration={0}>
+    <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side="top" className="px-2 py-1 text-xs">
         {label}

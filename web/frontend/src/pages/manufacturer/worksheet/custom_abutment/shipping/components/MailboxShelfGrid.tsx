@@ -101,7 +101,7 @@ export const MailboxShelfGrid = ({
   };
 
   return (
-    <TooltipProvider delayDuration={0}>
+    <TooltipProvider>
       <div
         ref={scrollContainerRef}
         className="flex-1 flex gap-3 sm:gap-4 overflow-x-auto overflow-y-auto pb-4 w-full justify-start px-2 scroll-smooth p-1 sm:p-2"

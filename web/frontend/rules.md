@@ -31,10 +31,10 @@ Notes:
   - SSOT: `src/index.css`, `tailwind.config.ts`, `src/shared/ui/semanticStatus.ts`,
     `src/shared/ui/gigongAbutAccent.ts`, `src/shared/shipping/shippingMode.ts`
 - Tooltip (강제, 앱 전체):
-  - 마우스 호버 툴팁은 **즉시** 표시 (`delayDuration={0}`).
-  - SSOT: `src/components/ui/tooltip.tsx` (`TooltipProvider` 기본값 0),
-    루트 `src/App.tsx`, `.cursor/rules/tooltip-instant.mdc`.
-  - 중첩 `TooltipProvider`/`Tooltip`에 `delayDuration={200}` 등 지연을 두지 말 것.
+  - 마우스 호버 툴팁은 **0.6초 지연** 후 표시 (`delayDuration={600}`).
+  - SSOT: `src/components/ui/tooltip.tsx` (`TooltipProvider` 기본값 600),
+    루트 `src/App.tsx`, `.cursor/rules/tooltip-delay.mdc`.
+  - 중첩 `TooltipProvider`/`Tooltip`에 `delayDuration={0}`/`{200}` 등 다른 지연을 두지 말 것.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절

@@ -2914,7 +2914,7 @@ export const PreviewModal = ({
                   </button>
                   {isCamStage && (
                     <div className="flex items-center gap-2">
-                      <TooltipProvider delayDuration={0}>
+                      <TooltipProvider>
                         {canGuideFinishLine && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -2986,7 +2986,7 @@ export const PreviewModal = ({
                       </TooltipProvider>
                       {canRegenerateFilledStl && (
                         <>
-                          <TooltipProvider delayDuration={0}>
+                          <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
@@ -3136,7 +3136,7 @@ export const PreviewModal = ({
                   </button>
                   <div className="flex items-center gap-2">
                     {!isCamStage && (
-                      <TooltipProvider delayDuration={0}>
+                      <TooltipProvider>
                         {canGuideFinishLine && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3235,7 +3235,7 @@ export const PreviewModal = ({
 
                     {isCamStage ? (
                       <>
-                        <TooltipProvider delayDuration={0}>
+                        <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <button
@@ -3305,7 +3305,7 @@ export const PreviewModal = ({
                     ) : (
                       canRegenerateFilledStl && (
                         <>
-                          <TooltipProvider delayDuration={0}>
+                          <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button

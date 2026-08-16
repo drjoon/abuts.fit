@@ -475,7 +475,7 @@ export function PracticeRecentTransfersAllModal({
                             {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
                           </span>
                         ) : null}
-                        <TooltipProvider delayDuration={0}>
+                        <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span className="inline-flex">

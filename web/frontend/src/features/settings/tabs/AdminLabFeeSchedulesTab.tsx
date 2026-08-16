@@ -297,7 +297,7 @@ export const AdminLabFeeSchedulesTab = () => {
             </p>
           </div>
         ) : (
-          <TooltipProvider delayDuration={200}>
+          <TooltipProvider>
             <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {rows.map((row) => (
                 <li key={row._id}>

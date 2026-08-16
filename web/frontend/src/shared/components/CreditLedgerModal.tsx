@@ -103,7 +103,7 @@ function BalanceStatCard({
 }) {
   const hintNode =
     hint && hintTooltip ? (
-      <TooltipProvider delayDuration={200}>
+      <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
