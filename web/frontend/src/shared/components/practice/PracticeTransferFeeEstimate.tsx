@@ -2,6 +2,8 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-16: 기공소몫|어벗츠몫 — slate 구분선, 수수료 수령을 기공비 총액 아래 정렬.
+// - 2026-08-16: 기공소 몫 표 — 열·총액 가운데 정렬, 기공소몫|어벗츠몫 구분선.
 // - 2026-08-16: 기공소 CA 지급 라벨 어벗디자인비 → 디자인비+지그제작비.
 // - 2026-08-15: 기공소 뷰 어벗생산비 = 치과 납부(abutmentRetail) − 어벗디자인비.
 // - 2026-08-15: 기공소 뷰 — 기공소몫(보철기공비·어벗디자인비) / 어벗츠몫(어벗생산비) 2단 헤더.
@@ -162,6 +164,7 @@ function FeeBreakdownTable({
   labTotalMaxOverride = null,
   abutmentDesignLabFee = 0,
   abutmentDesignQty = 0,
+  labSettlementHint = null,
 }: {
   lines: FeeBreakdownLine[];
   showLabColumn: boolean;
@@ -174,6 +177,8 @@ function FeeBreakdownTable({
   /** 기공소 뷰: 어벗디자인비(1어벗당) — 보철기공비와 동일하게 기공소 몫 */
   abutmentDesignLabFee?: number;
   abutmentDesignQty?: number;
+  /** 기공비 총액 아래(기공소몫 가운데) 수수료 수령 안내 */
+  labSettlementHint?: ReactNode;
 }) {
   // 기공소 뷰: 기공소몫(보철기공비·어벗디자인비) | 어벗츠몫(어벗생산비).
   // 소계=열별 합산, 기공비 총액=기공비+어벗디자인비.
@@ -255,25 +260,55 @@ function FeeBreakdownTable({
     labFacing && labGroupColSpan > 0 && abutsColumn;
   const showLabGrandTotal = designFeeColumn && labGrandTotal > 0;
   const subtotalLabel = labFacing ? "소계" : "합계";
+  const amountAlign = showShareGroupHeaders ? "text-center" : "text-right";
   const groupHeaderClass =
-    "whitespace-nowrap border-b border-foreground/10 pb-0.5 text-center text-[10px] font-semibold tracking-tight text-muted-foreground";
-  const columnHeaderClass =
-    "whitespace-nowrap pb-0.5 text-right text-[10px] font-medium text-muted-foreground";
+    "whitespace-nowrap border-b border-slate-300 pb-0.5 text-center text-[10px] font-semibold tracking-tight text-slate-600";
+  const columnHeaderClass = cn(
+    "whitespace-nowrap pb-0.5 text-[10px] font-medium text-muted-foreground",
+    amountAlign,
+  );
+  const amountCellClass = cn("whitespace-nowrap", amountAlign);
+  // CNC/환봉 SelectSeparator와 동일: slate-300 · 2px 라운드 바
+  const renderShareDivider = (key: string, withTopRule = false) =>
+    showShareGroupHeaders ? (
+      <span
+        key={key}
+        aria-hidden
+        className={cn(
+          "relative w-0.5 justify-self-center self-stretch",
+          withTopRule && "mt-0.5 border-t border-transparent pt-1.5",
+        )}
+      >
+        <span className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-slate-300" />
+      </span>
+    ) : null;
   const labGroupSpanClass =
     labGroupColSpan >= 3
       ? "col-span-3"
       : labGroupColSpan === 2
         ? "col-span-2"
         : "col-span-1";
+  const shareGridClass = showShareGroupHeaders
+    ? designFeeColumn || labGroupColSpan >= 2
+      ? "grid-cols-[minmax(6.5rem,1fr)_auto_auto_0.5rem_auto]"
+      : "grid-cols-[minmax(6.5rem,1fr)_auto_0.5rem_auto]"
+    : gridClass;
 
   return (
-    <div className={cn("grid gap-x-3 gap-y-0.5 tabular-nums", gridClass)}>
+    <div
+      className={cn(
+        "grid gap-y-0.5 tabular-nums",
+        showShareGroupHeaders ? "gap-x-2" : "gap-x-3",
+        shareGridClass,
+      )}
+    >
       {showShareGroupHeaders ? (
         <>
           <span aria-hidden className="pb-0.5" />
           <span className={cn(groupHeaderClass, labGroupSpanClass)}>
             기공소몫
           </span>
+          {renderShareDivider("hdr-div")}
           <span className={groupHeaderClass}>어벗츠몫</span>
         </>
       ) : null}
@@ -289,6 +324,7 @@ function FeeBreakdownTable({
       {labAbutmentColumn ? (
         <span className={columnHeaderClass}>기공소 어벗</span>
       ) : null}
+      {renderShareDivider("col-div")}
       {abutsColumn ? (
         <span className={columnHeaderClass}>{abutsColumnLabel}</span>
       ) : null}
@@ -304,22 +340,23 @@ function FeeBreakdownTable({
               {line.prosthesisType || "보철"}
             </span>
             {labShareColumn ? (
-              <span className="whitespace-nowrap text-right">
+              <span className={amountCellClass}>
                 {formatLabShareCell(line, labShare, labFacing)}
               </span>
             ) : null}
             {designFeeColumn ? (
-              <span className="whitespace-nowrap text-right">
+              <span className={amountCellClass}>
                 {lineDesignFee > 0 ? formatWon(lineDesignFee) : "—"}
               </span>
             ) : null}
             {labAbutmentColumn ? (
-              <span className="whitespace-nowrap text-right">
+              <span className={amountCellClass}>
                 {formatLabAbutmentCell(line)}
               </span>
             ) : null}
+            {renderShareDivider(`line-div-${idx}`)}
             {abutsColumn ? (
-              <span className="whitespace-nowrap text-right">
+              <span className={amountCellClass}>
                 {labFacing
                   ? formatLabFacingAbutsProductionCell(line, lineDesignFee)
                   : formatAbutsCell(line)}
@@ -334,19 +371,34 @@ function FeeBreakdownTable({
             {subtotalLabel}
           </span>
           {labShareColumn ? (
-            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
+            <span
+              className={cn(
+                "mt-0.5 border-t border-foreground/15 pt-1.5 font-medium",
+                amountCellClass,
+              )}
+            >
               {labFacing && labSubtotal <= 0 && labAbutmentPending
                 ? "요청중"
                 : labSubtotalDisplay}
             </span>
           ) : null}
           {designFeeColumn ? (
-            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
+            <span
+              className={cn(
+                "mt-0.5 border-t border-foreground/15 pt-1.5 font-medium",
+                amountCellClass,
+              )}
+            >
               {designFeeTotal > 0 ? formatWon(designFeeTotal) : "—"}
             </span>
           ) : null}
           {labAbutmentColumn ? (
-            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
+            <span
+              className={cn(
+                "mt-0.5 border-t border-foreground/15 pt-1.5 font-medium",
+                amountCellClass,
+              )}
+            >
               {labAbutmentTotal > 0
                 ? formatWon(labAbutmentTotal)
                 : labAbutmentPending
@@ -354,8 +406,14 @@ function FeeBreakdownTable({
                   : "—"}
             </span>
           ) : null}
+          {renderShareDivider("sub-div", true)}
           {abutsColumn ? (
-            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-medium">
+            <span
+              className={cn(
+                "mt-0.5 border-t border-foreground/15 pt-1.5 font-medium",
+                amountCellClass,
+              )}
+            >
               {labFacing
                 ? abutsProductionTotal > 0
                   ? formatWon(abutsProductionTotal)
@@ -378,17 +436,24 @@ function FeeBreakdownTable({
           <span className="mt-0.5 border-t border-foreground/15 pt-1.5 font-semibold">
             기공비 총액
           </span>
-          {labShareColumn ? (
-            <span className="mt-0.5 whitespace-nowrap border-t border-foreground/15 pt-1.5 text-right font-semibold">
-              {formatWon(labGrandTotal)}
+          {labGroupColSpan > 0 ? (
+            <span
+              className={cn(
+                "mt-0.5 border-t border-foreground/15 pt-1.5 text-center font-semibold",
+                labGroupSpanClass,
+              )}
+            >
+              <span className="block whitespace-nowrap">
+                {formatWon(labGrandTotal)}
+              </span>
+              {labSettlementHint ? (
+                <span className="mt-0.5 block text-[10px] font-normal leading-snug text-muted-foreground">
+                  {labSettlementHint}
+                </span>
+              ) : null}
             </span>
           ) : null}
-          {designFeeColumn ? (
-            <span className="mt-0.5 border-t border-foreground/15 pt-1.5" />
-          ) : null}
-          {labAbutmentColumn ? (
-            <span className="mt-0.5 border-t border-foreground/15 pt-1.5" />
-          ) : null}
+          {renderShareDivider("grand-div", true)}
           {abutsColumn ? (
             <span className="mt-0.5 border-t border-foreground/15 pt-1.5" />
           ) : null}
@@ -690,9 +755,24 @@ export function PracticeTransferFeeEstimate({
                   labTotalMaxOverride={labTotalMaxOverride}
                   abutmentDesignLabFee={abutmentDesignLabFee}
                   abutmentDesignQty={abutmentDesignQty}
+                  labSettlementHint={
+                    labSettlementDiffers ? (
+                      <>
+                        수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
+                        <span className="font-medium text-foreground">
+                          {formatWon(labSettlementDisplay)}
+                        </span>
+                      </>
+                    ) : null
+                  }
                 />
-                {labSettlementDiffers ? (
-                  <p className="text-[11px] text-muted-foreground">
+                {labSettlementDiffers &&
+                !(
+                  isLab &&
+                  abutmentDesignQty > 0 &&
+                  abutmentDesignLabFee > 0
+                ) ? (
+                  <p className="text-center text-[11px] text-muted-foreground">
                     수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
                     <span className="font-medium text-foreground">
                       {formatWon(labSettlementDisplay)}
