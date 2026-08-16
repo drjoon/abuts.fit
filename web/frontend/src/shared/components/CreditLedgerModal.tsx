@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-17: 동일 PTX 기공의뢰 크레딧 행을 한 건으로 묶어 표시(세부 라벨·합계).
+// - 2026-08-17: PTX 묶음 행 — 치과→기공소/어벗츠 트리(기공비·디자인·어벗제작·배송).
+// - 2026-08-17: PTX 트리 — ASCII 이중선 제거, 인덴트·접기/펼치기.
 // - 2026-08-15: 테이블 잔액 칼럼 라벨「잔액」(행 시점 총잔액=유료+무료+기공).
 // - 2026-08-15: 선입금 안내를 유료 카드 툴팁으로 이동. 현재잔액=유료+무료(+기공). 무료·기공 툴팁 추가.
 // - 2026-08-17: 기공소몫/어벗츠몫 보류·플랫폼 수수료 displayLabel 우선 표시.
@@ -50,7 +53,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDown, ArrowUp, ArrowUpDown, CreditCard } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, CreditCard } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -272,6 +275,344 @@ const typeLabel = (t: CreditLedgerType) => {
   return "조정";
 };
 
+type LedgerDisplayPart = {
+  label: string;
+  amount: number;
+  spentPaidAmount: number;
+  spentFreeAmount: number;
+};
+
+type LedgerDisplayRow = {
+  key: string;
+  createdAt: string;
+  amount: number;
+  balanceAfter?: number;
+  spentPaidAmount: number;
+  spentFreeAmount: number;
+  type: CreditLedgerType;
+  displayLabel: string;
+  parts: LedgerDisplayPart[] | null;
+  item: CreditLedgerItem;
+};
+
+type PracticeTransferRoute = "lab" | "abuts" | "other";
+type PracticeTransferFeeKind =
+  | "labFee"
+  | "design"
+  | "abutProduction"
+  | "shipping"
+  | "other";
+
+type PracticeTransferTreeLeaf = {
+  kind: PracticeTransferFeeKind;
+  label: string;
+  amount: number;
+};
+
+type PracticeTransferTreeBranch = {
+  route: PracticeTransferRoute;
+  title: string;
+  amount: number;
+  leaves: PracticeTransferTreeLeaf[];
+};
+
+const FEE_KIND_ORDER: PracticeTransferFeeKind[] = [
+  "labFee",
+  "design",
+  "abutProduction",
+  "shipping",
+  "other",
+];
+
+const FEE_KIND_LABEL: Record<PracticeTransferFeeKind, string> = {
+  labFee: "기공비",
+  design: "디자인비+지그",
+  abutProduction: "어벗제작비",
+  shipping: "배송비",
+  other: "기타",
+};
+
+const classifyPracticeTransferPart = (
+  part: LedgerDisplayPart,
+): { route: PracticeTransferRoute; kind: PracticeTransferFeeKind } => {
+  const label = String(part.label || "");
+  const toAbuts = label.includes("어벗츠");
+  const toLab = label.includes("기공소");
+  const route: PracticeTransferRoute = toAbuts
+    ? "abuts"
+    : toLab
+      ? "lab"
+      : "other";
+
+  if (label.includes("배송")) return { route, kind: "shipping" };
+  if (label.includes("디자인") || label.includes("지그")) {
+    return { route: route === "other" ? "lab" : route, kind: "design" };
+  }
+  if (toAbuts || label.includes("어벗제작") || label.includes("어벗생산")) {
+    return { route: "abuts", kind: "abutProduction" };
+  }
+  if (label.includes("기공비") || label.includes("보류")) {
+    return { route: route === "other" ? "lab" : route, kind: "labFee" };
+  }
+  return { route, kind: "other" };
+};
+
+const buildPracticeTransferFeeTree = (
+  parts: LedgerDisplayPart[],
+): PracticeTransferTreeBranch[] => {
+  const buckets = new Map<
+    PracticeTransferRoute,
+    Map<PracticeTransferFeeKind, number>
+  >();
+
+  for (const part of parts) {
+    const { route, kind } = classifyPracticeTransferPart(part);
+    if (!buckets.has(route)) buckets.set(route, new Map());
+    const byKind = buckets.get(route)!;
+    byKind.set(kind, (byKind.get(kind) || 0) + Number(part.amount || 0));
+  }
+
+  const routeOrder: PracticeTransferRoute[] = ["lab", "abuts", "other"];
+  const routeTitle: Record<PracticeTransferRoute, string> = {
+    lab: "치과 → 기공소",
+    abuts: "치과 → 어벗츠",
+    other: "기타",
+  };
+
+  return routeOrder
+    .filter((route) => buckets.has(route))
+    .map((route) => {
+      const byKind = buckets.get(route)!;
+      const leaves = FEE_KIND_ORDER.filter((kind) => byKind.has(kind)).map(
+        (kind) => ({
+          kind,
+          label: FEE_KIND_LABEL[kind],
+          amount: byKind.get(kind) || 0,
+        }),
+      );
+      return {
+        route,
+        title: routeTitle[route],
+        amount: leaves.reduce((sum, leaf) => sum + leaf.amount, 0),
+        leaves,
+      };
+    });
+};
+
+const formatSignedWon = (amount: number) => {
+  const n = Math.round(Number(amount || 0));
+  const abs = Math.abs(n).toLocaleString();
+  if (n < 0) return `-${abs}원`;
+  if (n > 0) return `+${abs}원`;
+  return `0원`;
+};
+
+function PracticeTransferLedgerTree({
+  totalAmount,
+  parts,
+}: {
+  totalAmount: number;
+  parts: LedgerDisplayPart[];
+}) {
+  const branches = useMemo(
+    () => buildPracticeTransferFeeTree(parts),
+    [parts],
+  );
+  const [rootOpen, setRootOpen] = useState(true);
+  const [openRoutes, setOpenRoutes] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(branches.map((b) => [b.route, true])),
+  );
+
+  const toggleRoute = (route: string) => {
+    setOpenRoutes((prev) => ({ ...prev, [route]: !prev[route] }));
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-[24rem] overflow-hidden rounded-xl border border-slate-200/80 bg-white text-left shadow-sm">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-slate-50/80"
+        onClick={() => setRootOpen((v) => !v)}
+        aria-expanded={rootOpen}
+      >
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform",
+            rootOpen ? "rotate-0" : "-rotate-90",
+          )}
+        />
+        <span className="min-w-0 flex-1 text-xs font-semibold text-slate-800">
+          기공의뢰
+        </span>
+        <span
+          className={cn(
+            "shrink-0 text-xs font-semibold tabular-nums",
+            totalAmount < 0 ? "text-destructive" : "text-primary-strong",
+          )}
+        >
+          {formatSignedWon(totalAmount)}
+        </span>
+      </button>
+
+      {rootOpen ? (
+        <div className="space-y-1.5 border-t border-slate-100 bg-slate-50/40 px-2.5 py-2">
+          {branches.map((branch) => {
+            const routeOpen = openRoutes[branch.route] !== false;
+            return (
+              <div
+                key={branch.route}
+                className="overflow-hidden rounded-lg border border-slate-200/70 bg-white"
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-slate-50/90"
+                  onClick={() => toggleRoute(branch.route)}
+                  aria-expanded={routeOpen}
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-3 w-3 shrink-0 text-slate-400 transition-transform",
+                      routeOpen ? "rotate-0" : "-rotate-90",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-700">
+                    {branch.title}
+                  </span>
+                  <span className="shrink-0 text-[11px] font-medium tabular-nums text-slate-600">
+                    {formatSignedWon(branch.amount)}
+                  </span>
+                </button>
+
+                {routeOpen && branch.leaves.length > 0 ? (
+                  <ul className="border-t border-slate-100 px-2.5 py-1.5">
+                    {branch.leaves.map((leaf) => (
+                      <li
+                        key={`${branch.route}-${leaf.kind}`}
+                        className="flex items-center justify-between gap-2 py-1 pl-5"
+                      >
+                        <span className="min-w-0 truncate text-[11px] text-slate-500">
+                          {leaf.label}
+                        </span>
+                        <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+                          {formatSignedWon(leaf.amount)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const practiceTransferGroupKey = (item: CreditLedgerItem) => {
+  if (String(item.refType || "") !== "PRACTICE_TRANSFER") return "";
+  const ptx = String(item.refPracticeTransferId || "").trim();
+  if (ptx) return `ptx:${ptx}`;
+  const refId = String(item.refId || "").trim();
+  return refId ? `ptx-ref:${refId}` : "";
+};
+
+const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
+  label: String(item.displayLabel || "").trim() || typeLabel(item.type),
+  amount: Number(item.amount || 0),
+  spentPaidAmount: Number(item.spentPaidAmount || 0),
+  spentFreeAmount: Number(item.spentFreeAmount || 0),
+});
+
+/** 동일 기공의뢰(PTX) 원장 행을 한 건으로 묶는다. */
+const groupLedgerItemsForDisplay = (
+  items: CreditLedgerItem[],
+): LedgerDisplayRow[] => {
+  const groupMap = new Map<string, CreditLedgerItem[]>();
+  for (const item of items) {
+    const gKey = practiceTransferGroupKey(item);
+    if (!gKey) continue;
+    const list = groupMap.get(gKey);
+    if (list) list.push(item);
+    else groupMap.set(gKey, [item]);
+  }
+
+  const seenGroups = new Set<string>();
+  const out: LedgerDisplayRow[] = [];
+
+  for (const item of items) {
+    const gKey = practiceTransferGroupKey(item);
+    if (!gKey) {
+      out.push({
+        key: String(item._id || item.uniqueKey),
+        createdAt: String(item.createdAt || ""),
+        amount: Number(item.amount || 0),
+        balanceAfter: item.balanceAfter,
+        spentPaidAmount: Number(item.spentPaidAmount || 0),
+        spentFreeAmount: Number(item.spentFreeAmount || 0),
+        type: item.type,
+        displayLabel:
+          String(item.displayLabel || "").trim() || typeLabel(item.type),
+        parts: null,
+        item,
+      });
+      continue;
+    }
+    if (seenGroups.has(gKey)) continue;
+    seenGroups.add(gKey);
+
+    const members = [...(groupMap.get(gKey) || [])].sort(
+      (a, b) =>
+        new Date(a.createdAt || 0).getTime() -
+        new Date(b.createdAt || 0).getTime(),
+    );
+    if (members.length === 0) continue;
+
+    if (members.length === 1) {
+      const only = members[0];
+      out.push({
+        key: String(only._id || only.uniqueKey),
+        createdAt: String(only.createdAt || ""),
+        amount: Number(only.amount || 0),
+        balanceAfter: only.balanceAfter,
+        spentPaidAmount: Number(only.spentPaidAmount || 0),
+        spentFreeAmount: Number(only.spentFreeAmount || 0),
+        type: only.type,
+        displayLabel:
+          String(only.displayLabel || "").trim() || typeLabel(only.type),
+        parts: null,
+        item: only,
+      });
+      continue;
+    }
+
+    const latest = members[members.length - 1];
+    const amount = members.reduce((sum, m) => sum + Number(m.amount || 0), 0);
+    const spentPaidAmount = members.reduce(
+      (sum, m) => sum + Number(m.spentPaidAmount || 0),
+      0,
+    );
+    const spentFreeAmount = members.reduce(
+      (sum, m) => sum + Number(m.spentFreeAmount || 0),
+      0,
+    );
+    out.push({
+      key: gKey,
+      createdAt: String(latest.createdAt || ""),
+      amount,
+      balanceAfter: latest.balanceAfter,
+      spentPaidAmount,
+      spentFreeAmount,
+      type: latest.type,
+      displayLabel: "기공의뢰",
+      parts: members.map(toDisplayPart),
+      item: latest,
+    });
+  }
+
+  return out;
+};
+
 const formatDate = (iso: string) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -420,15 +761,9 @@ const renderTransactionDetail = ({
 
   if (refType === "PRACTICE_TRANSFER") {
     const transferId = String(item.refPracticeTransferId || "").trim();
-    const label = String(item.displayLabel || "").trim();
-    const detailKind = label.includes("배송비")
-      ? "배송비"
-      : label.includes("어벗츠")
-        ? "기공비(어벗츠)"
-        : "기공비";
     return (
       <>
-        <span className="text-[11px] text-muted-foreground">{detailKind}</span>
+        <span className="text-[11px] text-muted-foreground">기공의뢰</span>
         <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
           {transferId || "참조 내역 없음"}
         </span>
@@ -663,7 +998,10 @@ export const CreditLedgerModal = ({
     },
   });
 
-  const rows = useMemo(() => (Array.isArray(items) ? items : []), [items]);
+  const rows = useMemo(
+    () => groupLedgerItemsForDisplay(Array.isArray(items) ? items : []),
+    [items],
+  );
 
   const toggleSort = (key: LedgerSortKey) => {
     setSort((prev) =>
@@ -690,8 +1028,8 @@ export const CreditLedgerModal = ({
         return sort.direction === "asc" ? av - bv : bv - av;
       }
       if (sort.key === "type") {
-        const av = typeLabel(a.type);
-        const bv = typeLabel(b.type);
+        const av = a.displayLabel || typeLabel(a.type);
+        const bv = b.displayLabel || typeLabel(b.type);
         return sort.direction === "asc"
           ? av.localeCompare(bv, "ko")
           : bv.localeCompare(av, "ko");
@@ -706,8 +1044,12 @@ export const CreditLedgerModal = ({
         const bv = Number(b.balanceAfter ?? Number.NEGATIVE_INFINITY);
         return sort.direction === "asc" ? av - bv : bv - av;
       }
-      const av = `${String(a.refType || "")} ${String(a.refRequestId || a.refId || "")}`;
-      const bv = `${String(b.refType || "")} ${String(b.refRequestId || b.refId || "")}`;
+      const av = `${String(a.item.refType || "")} ${String(
+        a.item.refRequestId || a.item.refPracticeTransferId || a.item.refId || "",
+      )}`;
+      const bv = `${String(b.item.refType || "")} ${String(
+        b.item.refRequestId || b.item.refPracticeTransferId || b.item.refId || "",
+      )}`;
       return sort.direction === "asc"
         ? av.localeCompare(bv, "ko")
         : bv.localeCompare(av, "ko");
@@ -972,68 +1314,86 @@ export const CreditLedgerModal = ({
                   const isMinus = amount < 0;
                   const spentPaid = Number(r.spentPaidAmount || 0);
                   const spentFree = Number(r.spentFreeAmount ?? 0);
+                  const hasParts = Array.isArray(r.parts) && r.parts.length > 1;
                   const showSplit =
+                    !hasParts &&
                     (String(r.type) === "SPEND_PAID" ||
                       String(r.type) === "SPEND_FREE_REQUEST" ||
                       String(r.type) === "SPEND_FREE_SHIPPING") &&
                     (spentPaid > 0 || spentFree > 0);
-                  const safeRef = r.refRequestId
+                  const safeRef = r.item.refRequestId
                     ? formatRequestIdSafe(
-                        r.refRequestId,
-                        `${String(r.refId || "")}::${String(r.uniqueKey || "")}`,
+                        r.item.refRequestId,
+                        `${String(r.item.refId || "")}::${String(r.item.uniqueKey || "")}`,
                       )
                     : "";
                   const freeSpendLabel = (() => {
                     if (r.type === "SPEND_FREE_REQUEST") return "무료(의뢰)";
                     if (r.type === "SPEND_FREE_SHIPPING") return "무료(배송)";
-                    const refType = String(r.refType || "");
+                    const refType = String(r.item.refType || "");
                     if (refType === "REQUEST") return "무료(의뢰)";
                     if (refType === "SHIPPING_PACKAGE") return "무료(배송)";
                     return "무료";
                   })();
                   return (
-                    <TableRow key={r._id}>
-                      <TableCell className="whitespace-nowrap text-center text-xs">
+                    <TableRow key={r.key}>
+                      <TableCell className="whitespace-nowrap text-center align-top text-xs">
                         {formatDate(String(r.createdAt || ""))}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-center text-xs font-medium">
-                        {String(r.displayLabel || "").trim() || typeLabel(r.type)}
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-center font-medium tabular-nums",
-                          isMinus ? "text-destructive" : "text-primary-strong",
-                        )}
-                      >
-                        {showSplit ? (
-                          <div className="flex flex-col items-center leading-4">
-                            {spentPaid > 0 && (
-                              <div className="text-xs tabular-nums">
-                                유료 -{spentPaid.toLocaleString()}원
-                              </div>
+                      {hasParts ? (
+                        <TableCell colSpan={2} className="px-2 py-2.5 align-top">
+                          <PracticeTransferLedgerTree
+                            totalAmount={amount}
+                            parts={r.parts!}
+                          />
+                        </TableCell>
+                      ) : (
+                        <>
+                          <TableCell className="text-center text-xs font-medium align-top">
+                            <span className="whitespace-nowrap">
+                              {r.displayLabel || typeLabel(r.type)}
+                            </span>
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-center font-medium tabular-nums align-top",
+                              isMinus
+                                ? "text-destructive"
+                                : "text-primary-strong",
                             )}
-                            {spentFree > 0 && (
-                              <div className="text-xs tabular-nums">
-                                {freeSpendLabel} -{spentFree.toLocaleString()}원
+                          >
+                            {showSplit ? (
+                              <div className="flex flex-col items-center leading-4">
+                                {spentPaid > 0 && (
+                                  <div className="text-xs tabular-nums">
+                                    유료 -{spentPaid.toLocaleString()}원
+                                  </div>
+                                )}
+                                {spentFree > 0 && (
+                                  <div className="text-xs tabular-nums">
+                                    {freeSpendLabel} -
+                                    {spentFree.toLocaleString()}원
+                                  </div>
+                                )}
                               </div>
+                            ) : (
+                              `${amount.toLocaleString()}원`
                             )}
-                          </div>
-                        ) : (
-                          `${amount.toLocaleString()}원`
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-center text-xs tabular-nums text-muted-foreground">
+                          </TableCell>
+                        </>
+                      )}
+                      <TableCell className="whitespace-nowrap text-center align-top text-xs tabular-nums text-muted-foreground">
                         {r.balanceAfter !== undefined
                           ? `${Number(r.balanceAfter).toLocaleString()}원`
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-center text-xs">
+                      <TableCell className="text-center align-top text-xs">
                         <div className="flex flex-col items-center leading-4">
                           {renderTransactionDetail({
-                            item: r,
+                            item: r.item,
                             safeRef,
                             onOpenRequestDetail: () =>
-                              setSelectedDetail(toRequestDetail(r)),
+                              setSelectedDetail(toRequestDetail(r.item)),
                           })}
                         </div>
                       </TableCell>
