@@ -6,6 +6,7 @@
 // - 2026-08-16: 5점제. 선택 2~5. 기공비=평균×배수(2=0.9). 안내 문구 단순화.
 // - 2026-08-16: 매칭 조건 툴팁은 도움말 아이콘에만(별 포커스로 Dialog 오픈 시 동시 표시 방지).
 // - 2026-08-16: 선택 1~5. 기공비 1=×0.8. 우리치과 1점 제외 문구 제거.
+// - 2026-08-16: 툴팁 — 인증 통과만 참여 · 평가 3회 이하 3점 · 기공비 N배 표기.
 import { CircleHelp, Star } from "lucide-react";
 import {
   Tooltip,
@@ -23,10 +24,10 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 const TOOLTIP_LINES = [
-  "기공소 매칭 참여 조건",
-  "- 어벗츠 인증 통과",
-  "- 별점 1점 이상 (평가 3회 이하는 3점 적용)",
-  "기공비: 1점=×0.8 · 2점=×0.9 · 3점=평균 · 4점=×1.1 · 5점=×1.2",
+  "기공소 매칭",
+  "- 어벗츠 인증 통과 기공소만 참여 가능",
+  "- 평가 횟수 3회 이하 기공소는 3점 적용",
+  "기공비: 1점=0.8배 · 2점=0.9배 · 3점=평균 · 4점=1.1배 · 5점=1.2배",
 ] as const;
 
 type AutoMatchMinLabRatingStarsProps = {
@@ -97,7 +98,7 @@ export function AutoMatchMinLabRatingStars({
             <button
               type="button"
               className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="기공소 매칭 참여 조건 안내"
+              aria-label="기공소 매칭 안내"
             >
               <CircleHelp className="h-3.5 w-3.5" />
             </button>
