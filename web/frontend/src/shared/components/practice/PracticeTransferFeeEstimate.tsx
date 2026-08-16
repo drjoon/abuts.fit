@@ -24,6 +24,7 @@
 // - 2026-08-14: 기공소 뷰는 설정 수가(labFeeTotal)를 제시. 수수료 차감 수령은 보조 표기.
 // - 2026-08-14: 합산 라벨은「기공비」, 단위(툴팁 컬럼)는「기공수가」.
 // - 2026-08-14: 수락·청구(billed) 후 치과는 예산 구간 대신「확정 기공비」표시.
+// - 2026-08-16: 자동매칭 툴팁 — 합산 minLabFee 없어도 라인 labFeeMin으로 하한~상한 표시.
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import {
@@ -452,77 +453,6 @@ export function PracticeTransferFeeEstimate({
     isLab && abutmentDesignQty > 0 && abutmentDesignLabFee > 0
       ? abutmentDesignLabFee * abutmentDesignQty
       : 0;
-  const amount = isLab
-    ? Math.max(0, Math.round(Number(quote.labFeeTotal || 0))) + labDesignFeePreview
-    : !confirmed && budget && Number(budget.maxLabFee) > 0
-      ? Math.max(0, Number(budget.maxLabFee)) +
-        Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))
-      : quote.total;
-  const creditMin =
-    !confirmed && budget && Number(budget.maxLabFee) > 0
-      ? Math.max(0, Number(budget.minLabFee || 0)) +
-        Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))
-      : quote.total;
-  const title = quote.isRemake
-    ? isLab
-      ? "리메이크 기공비"
-      : "리메이크 견적"
-    : isLab
-      ? "기공비"
-      : confirmed
-        ? "확정 기공비"
-        : budget && Number(budget.maxLabFee) > 0
-          ? "예상 견적"
-          : "견적";
-  const labProsthesisTotal = Math.max(
-    0,
-    Math.round(Number(quote.labFeeTotal || 0) - Number(quote.labAbutmentTotal || 0)),
-  );
-  const hasBudgetRange =
-    !confirmed && Boolean(budget) && Number(budget?.maxLabFee) > 0;
-  // (보철기공비 + 어벗디자인비) × (1 − 수수료율). splitPracticeTransferSettlement와 동일.
-  const labSettlementDisplay = isLab
-    ? Math.max(0, amount - Math.round(amount * feeRateApplied))
-    : Math.max(0, Math.round(Number(quote.labSettlementAmount || 0)));
-  const labSettlementDiffers =
-    isLab &&
-    feeRateApplied > 0 &&
-    labSettlementDisplay !== amount;
-  const simple = isLab
-    ? labSettlementDiffers
-      ? `수령 ${formatWon(labSettlementDisplay)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
-      : null
-    : quote.isRemake
-      ? `리메이크 기공비 ${formatWon(quote.labFeeTotal)}`
-      : [
-          hasBudgetRange
-            ? `기공비 ${formatWon(Number(budget?.minLabFee || 0))}~${formatWon(Number(budget?.maxLabFee || 0))}`
-            : labProsthesisTotal > 0
-              ? `기공비 ${formatWon(labProsthesisTotal)}`
-              : "",
-          quote.labAbutmentTotal > 0
-            ? `기공소어벗 ${formatWon(quote.labAbutmentTotal)}`
-            : quote.labAbutmentPending
-              ? "기공소어벗 요청중"
-              : "",
-          quote.abutmentRetailTotal > 0
-            ? `어벗 ${formatWon(quote.abutmentRetailTotal)}`
-            : quote.abutmentQuotePending
-              ? "어벗 별도 고지"
-              : "",
-        ]
-          .filter(Boolean)
-          .join(" · ") ||
-        (hasBudgetRange
-          ? `기공비 ${formatWon(Number(budget?.minLabFee || 0))}~${formatWon(Number(budget?.maxLabFee || 0))}`
-          : `기공비 ${formatWon(quote.labFeeTotal)}`);
-  const labFeeUnset = !isLab && quote.labFeeConfigured === false;
-  /** 기공소만: 생성 스냅샷 배수. 치과 견적에는 표기하지 않음 */
-  const surchargeLabel =
-    isLab && normalizeLabFeeMultiplier(quote.labFeeMultiplier) > 1
-      ? formatLabFeeMultiplierLabel(quote.labFeeMultiplier)
-      : null;
-
   const breakdownLines =
     quote.lines.length > 0
       ? sortPracticeTransferFeeLines(quote.lines).map((line) => ({
@@ -546,14 +476,118 @@ export function PracticeTransferFeeEstimate({
           abutmentRetailNote: line.abutmentRetailNote,
         }))
       : [];
+  const linesLabFeeMax = breakdownLines.reduce(
+    (sum, line) => sum + line.labFee,
+    0,
+  );
+  const linesLabFeeMin = breakdownLines.reduce((sum, line) => {
+    const min =
+      line.labFeeMin != null && Number.isFinite(line.labFeeMin)
+        ? Math.max(0, Math.round(Number(line.labFeeMin)))
+        : line.labFee;
+    return sum + min;
+  }, 0);
+  const hasLineLabFeeRange = breakdownLines.some(
+    (line) => line.labFeeMin != null && Number.isFinite(line.labFeeMin),
+  );
+  const budgetLabFeeMax = Math.max(
+    0,
+    Math.round(
+      Number(
+        budget?.maxLabFee != null && Number(budget.maxLabFee) > 0
+          ? budget.maxLabFee
+          : hasLineLabFeeRange
+            ? linesLabFeeMax
+            : 0,
+      ),
+    ),
+  );
+  const budgetLabFeeMin = Math.max(
+    0,
+    Math.round(
+      Number(
+        budget?.minLabFee != null && Number.isFinite(Number(budget.minLabFee))
+          ? budget.minLabFee
+          : hasLineLabFeeRange
+            ? linesLabFeeMin
+            : 0,
+      ),
+    ),
+  );
+  const hasBudgetRange =
+    !confirmed && Boolean(budget) && budgetLabFeeMax > 0;
+  const amount = isLab
+    ? Math.max(0, Math.round(Number(quote.labFeeTotal || 0))) + labDesignFeePreview
+    : hasBudgetRange
+      ? budgetLabFeeMax +
+        Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))
+      : quote.total;
+  const creditMin = hasBudgetRange
+    ? budgetLabFeeMin +
+      Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)))
+    : quote.total;
+  const title = quote.isRemake
+    ? isLab
+      ? "리메이크 기공비"
+      : "리메이크 견적"
+    : isLab
+      ? "기공비"
+      : confirmed
+        ? "확정 기공비"
+        : hasBudgetRange
+          ? "예상 견적"
+          : "견적";
+  const labProsthesisTotal = Math.max(
+    0,
+    Math.round(Number(quote.labFeeTotal || 0) - Number(quote.labAbutmentTotal || 0)),
+  );
+  // (보철기공비 + 어벗디자인비) × (1 − 수수료율). splitPracticeTransferSettlement와 동일.
+  const labSettlementDisplay = isLab
+    ? Math.max(0, amount - Math.round(amount * feeRateApplied))
+    : Math.max(0, Math.round(Number(quote.labSettlementAmount || 0)));
+  const labSettlementDiffers =
+    isLab &&
+    feeRateApplied > 0 &&
+    labSettlementDisplay !== amount;
+  const simple = isLab
+    ? labSettlementDiffers
+      ? `수령 ${formatWon(labSettlementDisplay)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
+      : null
+    : quote.isRemake
+      ? `리메이크 기공비 ${formatWon(quote.labFeeTotal)}`
+      : [
+          hasBudgetRange
+            ? `기공비 ${formatWon(budgetLabFeeMin)}~${formatWon(budgetLabFeeMax)}`
+            : labProsthesisTotal > 0
+              ? `기공비 ${formatWon(labProsthesisTotal)}`
+              : "",
+          quote.labAbutmentTotal > 0
+            ? `기공소어벗 ${formatWon(quote.labAbutmentTotal)}`
+            : quote.labAbutmentPending
+              ? "기공소어벗 요청중"
+              : "",
+          quote.abutmentRetailTotal > 0
+            ? `어벗 ${formatWon(quote.abutmentRetailTotal)}`
+            : quote.abutmentQuotePending
+              ? "어벗 별도 고지"
+              : "",
+        ]
+          .filter(Boolean)
+          .join(" · ") ||
+        (hasBudgetRange
+          ? `기공비 ${formatWon(budgetLabFeeMin)}~${formatWon(budgetLabFeeMax)}`
+          : `기공비 ${formatWon(quote.labFeeTotal)}`);
+  const labFeeUnset = !isLab && quote.labFeeConfigured === false;
+  /** 기공소만: 생성 스냅샷 배수. 치과 견적에는 표기하지 않음 */
+  const surchargeLabel =
+    isLab && normalizeLabFeeMultiplier(quote.labFeeMultiplier) > 1
+      ? formatLabFeeMultiplierLabel(quote.labFeeMultiplier)
+      : null;
+
   const labTotalMinOverride =
-    hasBudgetRange && !breakdownLines.some((line) => line.labFeeMin != null)
-      ? Math.max(0, Math.round(Number(budget?.minLabFee || 0)))
-      : null;
+    hasBudgetRange && !hasLineLabFeeRange ? budgetLabFeeMin : null;
   const labTotalMaxOverride =
-    hasBudgetRange && labTotalMinOverride != null
-      ? Math.max(0, Math.round(Number(budget?.maxLabFee || 0)))
-      : null;
+    hasBudgetRange && labTotalMinOverride != null ? budgetLabFeeMax : null;
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -677,10 +711,7 @@ export function PracticeTransferFeeEstimate({
                 <p>
                   기공비 예산{" "}
                   <span className="font-medium">
-                    {formatWonRange(
-                      Number(budget?.minLabFee || 0),
-                      Number(budget?.maxLabFee || 0),
-                    )}
+                    {formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}
                   </span>
                 </p>
                 {quote.abutmentRetailTotal > 0 || quote.abutmentQuotePending ? (

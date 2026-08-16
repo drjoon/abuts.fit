@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/AutoMatchLabFeeBudgetDialog.tsx
 // change-log:
 // - 2026-08-16: 모달은 min%/max%만. 기본 80%~120%. 카탈로그(인증 기공소 수가 평균)×%.
+// - 2026-08-16: % 예산 normalize 시 견적 합산 minLabFee/maxLabFee 보존(툴팁 구간).
 
 export const ADMIN_LAB_FEE_BASE = {
   crown: 60000,
@@ -187,6 +188,21 @@ export const normalizeAutoMatchBudgetBand = (
   return { min, max };
 };
 
+/** 견적 합산 하한·상한(케이스별). % 예산에도 보존해야 툴팁 구간 표시가 유지된다. */
+const attachCaseLabFeeTotals = (
+  out: PracticeTransferAutoMatchBudget,
+  raw: Record<string, unknown>,
+): PracticeTransferAutoMatchBudget => {
+  const caseMax = Number(raw.maxLabFee);
+  const caseMin = Number(raw.minLabFee);
+  if (!Number.isFinite(caseMax) || caseMax <= 0) return out;
+  out.maxLabFee = Math.max(0, Math.round(caseMax));
+  out.minLabFee = Number.isFinite(caseMin)
+    ? Math.min(out.maxLabFee, Math.max(0, Math.round(caseMin)))
+    : 0;
+  return out;
+};
+
 export const normalizePracticeTransferAutoMatchBudget = (
   raw: unknown,
   catalog?: AbutsLabFeeCatalogItem[] | null,
@@ -196,12 +212,15 @@ export const normalizePracticeTransferAutoMatchBudget = (
 
   const pct = normalizeAutoMatchBudgetPct(raw);
   if (pct) {
-    return {
-      version: 3,
-      minPct: pct.minPct,
-      maxPct: pct.maxPct,
-      items: buildDefaultAutoMatchBudgetItems(catalog, pct.minPct, pct.maxPct),
-    };
+    return attachCaseLabFeeTotals(
+      {
+        version: 3,
+        minPct: pct.minPct,
+        maxPct: pct.maxPct,
+        items: buildDefaultAutoMatchBudgetItems(catalog, pct.minPct, pct.maxPct),
+      },
+      r,
+    );
   }
 
   const hasLegacyTotalOnly =
@@ -247,16 +266,7 @@ export const normalizePracticeTransferAutoMatchBudget = (
   }
   if (!any) return null;
 
-  const out: PracticeTransferAutoMatchBudget = { version: 2, items };
-  const caseMax = Number(r.maxLabFee);
-  const caseMin = Number(r.minLabFee);
-  if (Number.isFinite(caseMax) && caseMax > 0) {
-    out.maxLabFee = Math.max(0, Math.round(caseMax));
-    out.minLabFee = Number.isFinite(caseMin)
-      ? Math.min(out.maxLabFee, Math.max(0, Math.round(caseMin)))
-      : 0;
-  }
-  return out;
+  return attachCaseLabFeeTotals({ version: 2, items }, r);
 };
 
 export const resolveAutoMatchBudgetOrDefaults = (

@@ -43,6 +43,24 @@ describe("practiceTransferAutoMatchBudgetCore", () => {
     });
   });
 
+  test("pct normalize keeps case minLabFee/maxLabFee for quote tooltip", () => {
+    const normalized = normalizeAutoMatchBudget({
+      version: 3,
+      minPct: 80,
+      maxPct: 120,
+      minLabFee: 96000,
+      maxLabFee: 144000,
+    });
+    expect(normalized).toMatchObject({
+      version: 3,
+      minPct: 80,
+      maxPct: 120,
+      minLabFee: 96000,
+      maxLabFee: 144000,
+    });
+    expect(normalized.items.crown).toEqual({ min: 48000, max: 72000 });
+  });
+
   test("unit price eligibility is inclusive per required key", () => {
     const budget = resolveAutoMatchBudgetOrDefaults(null);
     expect(

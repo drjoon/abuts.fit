@@ -6,6 +6,7 @@
 // 자동매칭 기공비 예산 — 인증 기공소 수가 평균 대비 min%/max% (순수).
 // 항목별 원 구간은 카탈로그(어벗츠 수가=평균) × % 로 전개. 1000원 단위 절사.
 // - 2026-08-16: 모달은 min%/max%만 설정. 기본 80%~120%.
+// - 2026-08-16: % 예산 normalize 시 견적 합산 minLabFee/maxLabFee 보존.
 
 const MAX_UNIT_FEE = 50_000_000;
 /** 인증 기공소 수가 평균 대비 기본 하한/상한 (%) */
@@ -165,17 +166,32 @@ export function normalizeAutoMatchBudgetBand(raw) {
  *   maxLabFee?: number,
  * } | null}
  */
+/** 견적 합산 하한·상한(케이스별). % 예산에도 보존해야 툴팁 구간 표시가 유지된다. */
+function attachCaseLabFeeTotals(out, raw) {
+  const caseMax = Number(raw?.maxLabFee);
+  const caseMin = Number(raw?.minLabFee);
+  if (!Number.isFinite(caseMax) || caseMax <= 0) return out;
+  out.maxLabFee = Math.max(0, Math.round(caseMax));
+  out.minLabFee = Number.isFinite(caseMin)
+    ? Math.min(out.maxLabFee, Math.max(0, Math.round(caseMin)))
+    : 0;
+  return out;
+}
+
 export function normalizeAutoMatchBudget(raw, catalog) {
   if (raw == null || typeof raw !== "object") return null;
 
   const pct = normalizeAutoMatchBudgetPct(raw);
   if (pct) {
-    return {
-      version: 3,
-      minPct: pct.minPct,
-      maxPct: pct.maxPct,
-      items: buildDefaultAutoMatchBudgetItems(catalog, pct.minPct, pct.maxPct),
-    };
+    return attachCaseLabFeeTotals(
+      {
+        version: 3,
+        minPct: pct.minPct,
+        maxPct: pct.maxPct,
+        items: buildDefaultAutoMatchBudgetItems(catalog, pct.minPct, pct.maxPct),
+      },
+      raw,
+    );
   }
 
   const hasLegacyTotalOnly =
@@ -209,16 +225,7 @@ export function normalizeAutoMatchBudget(raw, catalog) {
 
   if (!any) return null;
 
-  const out = { version: 2, items };
-  const caseMin = Number(raw.minLabFee);
-  const caseMax = Number(raw.maxLabFee);
-  if (Number.isFinite(caseMax) && caseMax > 0) {
-    out.maxLabFee = Math.max(0, Math.round(caseMax));
-    out.minLabFee = Number.isFinite(caseMin)
-      ? Math.min(out.maxLabFee, Math.max(0, Math.round(caseMin)))
-      : 0;
-  }
-  return out;
+  return attachCaseLabFeeTotals({ version: 2, items }, raw);
 }
 
 export function isAutoMatchBudgetConfigured(budget, catalog) {
