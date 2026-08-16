@@ -1,7 +1,7 @@
 /**
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
  * 상단 6뱃지 취소=기공소 작업취소. 리메이크는 발송 건 재의뢰 플래그(파이프라인과 병행).
- * 치과 휴지통(status 취소)은 집계·필터에서 제외.
+ * 치과 휴지통(status 취소·거부)은 집계·필터에서 제외.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함. 카드 뱃지 문구도「의뢰」(수락 후「수락」).
  * 표시명만 UI 마스킹.
  * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
@@ -194,12 +194,19 @@ const normalizePatientNameKey = (value: string) => {
   return (stripped || normalized).toLowerCase();
 };
 
+/** 치과 휴지통(기공소 지정 거부·치과 취소). 작업취소는 제외 */
+export const isPracticeTransferTrashStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  return s === "취소" || s === "거부";
+};
+
 export const toStatusLabel = (manufacturerStage: unknown) => {
   const raw = String(manufacturerStage || "").trim();
   const lowered = raw.toLowerCase();
   if (!raw) return "발송완료";
 
   if (raw === "취소") return "취소";
+  if (raw === "거부") return "거부";
   if (raw === "작업취소") return "작업취소";
   if (raw === "발송완료") return "발송완료";
   if (raw === "수신완료") return "수신완료";
@@ -646,6 +653,8 @@ export const groupPracticeRecentRequests = (
       existing.status = "의뢰수락";
     } else if (statusSet.has("작업취소")) {
       existing.status = "작업취소";
+    } else if (statusSet.has("거부")) {
+      existing.status = "거부";
     } else if (statusSet.has("취소")) {
       existing.status = "취소";
     } else {
@@ -686,8 +695,8 @@ export const computeGroupedStatusCounts = (
         acc.accepted += 1;
       } else if (status === "작업취소") {
         acc.canceled += 1;
-      } else if (status === "취소") {
-        // 치과 휴지통(취소)은 최근전송 뱃지 집계에서 제외
+      } else if (isPracticeTransferTrashStatus(status)) {
+        // 치과 휴지통(취소·거부)은 최근전송 뱃지 집계에서 제외
       } else {
         // 발송완료·수신완료·자동매칭(공개 풀) → 의뢰
         acc.sent += 1;
@@ -715,6 +724,7 @@ export const filterGroupedTransfersByStatus = (
           status !== "작업완료" &&
           status !== "생산진행" &&
           status !== "취소" &&
+          status !== "거부" &&
           status !== "작업취소" &&
           status !== "포장.발송")
       );

@@ -4,6 +4,7 @@
 // - web/backend/services/practiceTransferDashboardStats.service.js
 // - web/frontend/src/shared/practice/practiceRecentTransferList.ts
 // - 2026-08-15: 대시보드 버킷에 거부 추가. 수락/거부·완료/취소 병기.
+// - 2026-08-16: 공개풀 decline의 labRejectedAt은 미배정 취소 시 「취소」(거부 아님).
 import {
   isAutoMatchMode,
   toAutoMatchApiFields,
@@ -38,9 +39,15 @@ export const resolvePracticeTransferManufacturerStage = (
   if (declinedByViewer || rejectedByViewer) return "거부";
 
   const status = String(transferDoc?.status || "").trim();
-  // 지정 기공소 거부 → canceled + labRejectedAt (발신 치과 대시보드에서도 거부로 집계)
+  // 지정/배정 거부 → canceled + labRejectedAt (발신 치과에서도 거부로 집계).
+  // 공개 풀 decline도 labRejectedAt을 남기므로, 미배정 자동매칭 취소는 휴지통「취소」로 본다.
   if (status === "canceled") {
-    if (transferDoc?.labRejectedAt) return "거부";
+    if (transferDoc?.labRejectedAt) {
+      const hasAssignee = Boolean(
+        String(transferDoc?.targetLabAnchorId || "").trim(),
+      );
+      if (hasAssignee || matchingMode !== "auto") return "거부";
+    }
     return "취소";
   }
   if (production?.confirmedAt) return "생산진행";

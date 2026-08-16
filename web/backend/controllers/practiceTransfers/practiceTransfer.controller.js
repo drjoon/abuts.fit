@@ -4846,15 +4846,16 @@ export async function cancelPracticeTransfersBatch(req, res) {
 
     const { scope: baseScope } = await buildPracticeOwnedScope(req);
 
+    // canceled 포함 조회 — 이미 휴지통인 건은 idempotent 성공 처리
     const docs = await PracticeTransfer.find({
-      $and: [baseScope, { $or: filterOr }, { status: { $ne: "canceled" } }],
+      $and: [baseScope, { $or: filterOr }],
     });
 
     let successCount = 0;
     const failedIds = [];
     const affectedByAnchor = new Map();
 
-    // 요청했지만 scope/status 조건에서 찾지 못한 ID는 실패 목록에 반환한다.
+    // 요청했지만 scope에서 찾지 못한 ID는 실패 목록에 반환한다.
     const foundTransferIdSet = new Set(
       docs.map((doc) => String(doc?.transferId || "").trim()).filter(Boolean),
     );
@@ -4878,6 +4879,10 @@ export async function cancelPracticeTransfersBatch(req, res) {
 
     for (const doc of docs) {
       try {
+        if (String(doc?.status || "").trim() === "canceled") {
+          successCount += 1;
+          continue;
+        }
         // UI와 동일: 의뢰수락 이후 공정은 치과 cancel-batch 불가
         const manufacturerStage = resolvePracticeTransferManufacturerStage(doc);
         if (!canCancelPracticeTransferByManufacturerStage(manufacturerStage)) {

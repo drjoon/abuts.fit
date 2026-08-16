@@ -75,6 +75,7 @@
  * - 2026-08-15: 익스프레스 스텝·진행률을 기공의뢰 제목과 같은 헤더 행(좌·우)에 둔다.
  * - 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지(최근의뢰·전체보기).
  * - 2026-08-16: 전체보기에서 휴지통 확인 후 최근의뢰 모달로 복귀(중첩 Confirm에 닫히지 않음).
+ * - 2026-08-16: 기공소 거부·이미 취소 건이 「의뢰」로 남는 휴지통 이동 실패 수정.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -193,6 +194,7 @@ import {
   canRemakePracticeTransferByStatus,
   computeGroupedStatusCounts,
   filterGroupedTransfersByStatus,
+  isPracticeTransferTrashStatus,
   type PracticeRecentStatusFilter,
 } from "@/shared/practice/practiceRecentTransferList";
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
@@ -948,6 +950,7 @@ const toStatusLabel = (manufacturerStage: unknown) => {
 
   // 정확값 우선
   if (raw === "취소") return "취소";
+  if (raw === "거부") return "거부";
   // 기공소 작업취소 — 휴지통(취소)과 구분. 뱃지 표시는 toStatusBadgeLabel에서 「취소」
   if (raw === "작업취소") return "작업취소";
   if (raw === "발송완료") return "발송완료";
@@ -977,6 +980,7 @@ const toStatusBadgeLabel = (status: unknown) => {
   if (s === "의뢰수락" || s === "다운로드완료") return "수락";
   if (s === "작업완료") return "완료";
   if (s === "작업취소" || s === "취소") return "취소";
+  if (s === "거부") return "거부";
   if (s === "생산진행" || s === "포장.발송") return "발송";
   return s;
 };
@@ -3279,15 +3283,15 @@ export const PracticeFileTransferPage = ({
   const filteredRecentRequests = useMemo(
     () =>
       periodAndSearchFilteredRequests.filter(
-        (request) => String(request.status || "").trim() !== "취소",
+        (request) => !isPracticeTransferTrashStatus(request.status),
       ),
     [periodAndSearchFilteredRequests],
   );
 
   const trashRecentRequests = useMemo(
     () =>
-      periodAndSearchFilteredRequests.filter(
-        (request) => String(request.status || "").trim() === "취소",
+      periodAndSearchFilteredRequests.filter((request) =>
+        isPracticeTransferTrashStatus(request.status),
       ),
     [periodAndSearchFilteredRequests],
   );
@@ -3517,6 +3521,8 @@ export const PracticeFileTransferPage = ({
         existing.status = "의뢰수락";
       } else if (statusSet.has("작업취소")) {
         existing.status = "작업취소";
+      } else if (statusSet.has("거부")) {
+        existing.status = "거부";
       } else if (statusSet.has("취소")) {
         existing.status = "취소";
       } else {
@@ -4975,13 +4981,13 @@ export const PracticeFileTransferPage = ({
 
       setTrashedDraftList([]);
       setRecentRequests((prev) =>
-        prev.filter((row) => String(row.status || "").trim() !== "취소"),
+        prev.filter((row) => !isPracticeTransferTrashStatus(row.status)),
       );
       setEmptyTrashConfirmOpen(false);
 
       if (
         selectedTransfer &&
-        (selectedTransfer.status === "취소" ||
+        (isPracticeTransferTrashStatus(selectedTransfer.status) ||
           selectedTransfer.status === "임시저장" ||
           selectedTransfer.transferId === PRACTICE_DRAFT_TRANSFER_ID)
       ) {
@@ -5080,7 +5086,7 @@ export const PracticeFileTransferPage = ({
       if (action === "trash-emptied") {
         setTrashedDraftList([]);
         setRecentRequests((prev) =>
-          prev.filter((row) => String(row.status || "").trim() !== "취소"),
+          prev.filter((row) => !isPracticeTransferTrashStatus(row.status)),
         );
         void loadPracticeTransferDraftList();
         void loadRecentRequests({ silent: true });
