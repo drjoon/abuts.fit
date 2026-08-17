@@ -15,6 +15,7 @@
 // - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비에서만 해제.
 // - 2026-08-17: 포장.발송 진입 시 기존 우편함을 유지(다른 박스 합류로 주소를 바꾸지 않음).
 // - 2026-08-17: 배송비 고객 라벨(치과/기공소→어벗츠)과 제조사 라벨(어벗츠→제조사+VAT) 분리.
+// - 2026-08-17: 제조사 적립은 어벗 1개당 고정단가. 분배비 미사용.
 import mongoose, { Types } from "mongoose";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
@@ -52,7 +53,10 @@ import {
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import {
   isShippingSpendRevenueContext,
+  MANUFACTURER_PRODUCTION_LEDGER_LABEL,
   resolveConfiguredRevenueRates,
+  resolveManufacturerUnitApply,
+  resolveManufacturerUnitQty,
   resolveRevenueOwnerBaseAllocation,
   splitRevenueByCreditKindProRata,
 } from "../../services/creditRevenuePolicy.service.js";
@@ -324,12 +328,20 @@ async function postSpendCommitGeneralLedger({
     "../../utils/creditSettingsDefaults.js"
   );
   const creditSettings = await loadCreditSettingsDefaults();
-  const applyManufacturerUnit =
-    String(usageKind || "").trim() !== "express_surcharge";
   const isShippingCommit =
     String(eventType || "") === "SHIPPING_SPEND_COMMIT" ||
     String(usageKind || "") === "shipping" ||
     String(usageKind || "") === "practice_transfer_abuts_shipping";
+  const abutmentQty = countDesignAbutmentQty(request?.caseInfos);
+  const applyManufacturerUnit = resolveManufacturerUnitApply({
+    usageKind,
+    isShippingSpend: isShippingCommit,
+    abutmentQty,
+  });
+  const manufacturerQty = resolveManufacturerUnitQty({
+    abutmentQty,
+    isShippingSpend: isShippingCommit,
+  });
   const customerShippingLabel = isShippingCommit
     ? resolveCustomerShippingLabel({
         isPracticeTransferAbuts:
@@ -347,6 +359,9 @@ async function postSpendCommitGeneralLedger({
     ...(settlementAmount > 0 ? { settlementOffset: true } : {}),
     ...(label ? { displayLabel: label } : {}),
     ...(kind ? { displayKind: kind } : {}),
+    ...(!isShippingCommit && manufacturerQty > 0
+      ? { abutmentQty: manufacturerQty }
+      : {}),
   };
   const manufacturerMeta = isShippingCommit
     ? {
@@ -354,7 +369,11 @@ async function postSpendCommitGeneralLedger({
         displayLabel: SHIPPING_LEDGER_LABELS.abutsToManufacturer,
         displayKind: "shipping",
       }
-    : spendMeta;
+    : {
+        ...spendMeta,
+        displayLabel: MANUFACTURER_PRODUCTION_LEDGER_LABEL,
+        displayKind: "abutment_production",
+      };
 
   const lines = [];
 
@@ -452,6 +471,7 @@ async function postSpendCommitGeneralLedger({
     }),
     creditSettings,
     applyManufacturerUnit,
+    qty: manufacturerQty,
   });
 
   const assignManufacturer = revenueBaseByOwner.manufacturer;

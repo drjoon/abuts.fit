@@ -35,6 +35,7 @@
 // - 2026-08-17: 보류/해제 기공소몫·어벗츠몫 분리. 기공소 발송=lab share, 제조사 발송=abutment. 기공소 수수료 차감.
 // - 2026-08-17: 장부 displayLabel을 치과→기공소 / 치과→어벗츠 경로로 통일(기공비 보류·배송비·해제).
 // - 2026-08-17: 어벗 보류=생산비만. 디자인비(+지그)는 기공소 경로 보류. PTX 어벗츠 배송=mark-complete.
+// - 2026-08-17: 제조사 적립은 어벗 1개당 고정단가(+VAT). 플랫폼수수료·기공소 배송은 제외.
 import mongoose, { Types } from "mongoose";
 
 /** 치과 크레딧 내역 유형 라벨 SSOT */
@@ -69,6 +70,9 @@ import {
   splitRevenueByCreditKindProRata,
   resolveConfiguredRevenueRates,
   resolvePracticeTransferFeeRate,
+  resolveManufacturerUnitApply,
+  resolveManufacturerUnitQty,
+  MANUFACTURER_PRODUCTION_LEDGER_LABEL,
 } from "./creditRevenuePolicy.service.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
@@ -340,8 +344,30 @@ function pushRevenueLines({
   const freeShip = Math.max(0, Math.round(Number(fromFreeShipping || 0)));
   const freeSourceTotal = freeReq + freeShip;
   const usageKind = String(meta?.usageKind || "");
+  const source = String(meta?.source || "");
+  const displayKind = String(meta?.displayKind || "");
+  const abutmentQty = Math.max(
+    0,
+    Math.round(Number(meta?.abutmentQty || 0) || 0),
+  );
+  const abutmentRetailTotal = Math.max(
+    0,
+    Math.round(Number(meta?.abutmentRetail || meta?.abutmentRetailTotal || 0) || 0),
+  );
   const isPtxLabShipping = usageKind === "practice_transfer_lab_shipping";
   const isPtxAbutsShipping = usageKind === "practice_transfer_abuts_shipping";
+  const applyManufacturerUnit = resolveManufacturerUnitApply({
+    usageKind,
+    source,
+    displayKind,
+    abutmentQty,
+    abutmentRetailTotal,
+    isShippingSpend: isPtxAbutsShipping,
+  });
+  const manufacturerQty = resolveManufacturerUnitQty({
+    abutmentQty,
+    isShippingSpend: isPtxAbutsShipping,
+  });
 
   // 치과→기공소 배송비: 면세. 기공소가 기공크레딧으로 수취. 제조사 장부 없음.
   if (isPtxLabShipping) {
@@ -373,15 +399,16 @@ function pushRevenueLines({
     configuredRates: owners.configuredRates,
     owners,
     isShippingSpend: isPtxAbutsShipping,
-    applyManufacturerUnit: isPtxAbutsShipping,
+    applyManufacturerUnit,
     creditSettings,
+    qty: manufacturerQty,
   });
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: revenueBaseByOwner,
     freeAmount: freeTotal,
   });
 
-  const manufacturerVatRate = isPtxAbutsShipping
+  const manufacturerVatRate = applyManufacturerUnit
     ? Number(revenueBaseByOwner.manufacturerVatRate || 0)
     : 0;
   const manufacturerMeta = isPtxAbutsShipping
@@ -390,7 +417,14 @@ function pushRevenueLines({
         displayLabel: SHIPPING_LEDGER_LABELS.abutsToManufacturer,
         displayKind: "shipping",
       }
-    : meta;
+    : applyManufacturerUnit
+      ? {
+          ...meta,
+          displayLabel: MANUFACTURER_PRODUCTION_LEDGER_LABEL,
+          displayKind: "abutment_production",
+          abutmentQty: manufacturerQty,
+        }
+      : meta;
 
   const push = (
     accountCode,
@@ -948,6 +982,7 @@ export async function commitPracticeTransferBilling({
         0,
         freeShareOfPlatformFee - freeReqShareOfPlatformFee,
       );
+      const creditSettings = await loadCreditSettingsDefaults();
       pushRevenueLines({
         lines,
         owners,
@@ -957,6 +992,7 @@ export async function commitPracticeTransferBilling({
         fromFreeShipping: freeShipShareOfPlatformFee,
         refType: "PRACTICE_TRANSFER",
         refId: transferId,
+        creditSettings,
         meta: {
           source:
             relationshipKind === "active" || relationshipKind === "referred"
@@ -965,6 +1001,8 @@ export async function commitPracticeTransferBilling({
           relationshipKind,
           feeRateApplied,
           feeTotal: fees.total,
+          abutmentQty: fees.abutmentQty,
+          abutmentRetail: fees.abutmentRetailTotal,
         },
       });
     }
@@ -2858,12 +2896,22 @@ export async function releasePracticeTransferAbutmentShare({
       fromFreeShipping: freeShipShare,
       refType: "PRACTICE_TRANSFER",
       refId: transferId,
+      creditSettings: creditSettingsForAbut,
       meta: {
         source: "abutment_retail",
         displayKind: "abuts_share",
         displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.releaseAbutment,
         relationshipKind: computed.relationshipKind,
         feeRateApplied: computed.feeRateApplied,
+        abutmentQty: Math.max(
+          0,
+          Math.round(
+            Number(
+              transfer?.billing?.abutmentQty ?? computed.fees?.abutmentQty ?? 0,
+            ) || 0,
+          ),
+        ),
+        abutmentRetail: abutmentRetailTotal,
       },
     });
 

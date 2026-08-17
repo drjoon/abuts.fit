@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-08-17: 어벗 1개당 9,000+VAT. 무료 크레딧은 지급 0. 기공의뢰 생산도 같은 라벨.
 // - 2026-08-17: 정산 내역을 의뢰자 크레딧과 같은 거래 원장으로 표시. VAT는 지급 안내 한 줄.
 // - 2026-08-11: 기공소 기공크레딧 정산과 동일 UX — 요약 카드 축소·(N건), 일자 제거, 액션 세로열, 초기화 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -134,8 +135,9 @@ const manufacturerTypeLabel = (row: LedgerItem) => {
   if (event === "SHIPPING_SPEND_COMMIT") {
     return String(row.displayLabel || "").trim() || "배송";
   }
-  if (event === "REQUEST_SPEND_COMMIT") return "의뢰";
-  if (event === "PRACTICE_TRANSFER_SPEND_COMMIT") return "기공의뢰";
+  if (event === "REQUEST_SPEND_COMMIT") return "커스텀어벗 생산";
+  if (event === "PRACTICE_TRANSFER_SPEND_COMMIT") return "커스텀어벗 생산";
+  if (event === "PRACTICE_TRANSFER_ESCROW_RELEASE") return "커스텀어벗 생산";
   return "적립";
 };
 
@@ -916,8 +918,8 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      의뢰 1건당 공급가 9,000원 + 부가세 10%(합 9,900원).
-                      유료·무료 모두 적립하되, 지급은 유료만(무료 지급 0).
+                      어벗 1개당 공급가 9,000원 + 부가세 10%(합 9,900원).
+                      유료·무료 모두 적립하되, 지급은 유료만(무료 크레딧 지급 0).
                     </p>
                   </div>
                 </SettlementPolicySection>

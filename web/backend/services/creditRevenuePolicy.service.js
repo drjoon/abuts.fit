@@ -3,7 +3,9 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/scripts/db/migrate-request-spend-to-gl.js
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
+// - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-08-17: 제조사 하청은 어벗 1개당 고정단가(기본 9,000+VAT). %분배·타 역할 재분배는 별도.
 // - 2026-08-15: 제조사 의뢰 공급가 기본 8,000 → 9,000 (VAT 포함 지급 9,900).
 // - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송)+VAT. 잔여는 salesman/devops/admin 재분배.
 // - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
@@ -21,6 +23,15 @@ export const WITH_SALESMAN_DEFAULT_RATES = {
 export const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 9000;
 export const DEFAULT_MANUFACTURER_SHIPPING_UNIT_PRICE = 3500;
 export const DEFAULT_AFFILIATE_VAT_RATE = 0.1;
+export const MANUFACTURER_PRODUCTION_LEDGER_LABEL = "커스텀어벗 생산";
+
+/** 제조사 정산 카드·일별 집계에서 의뢰(생산)로 보는 이벤트. */
+export const MANUFACTURER_REQUEST_EARN_EVENT_TYPES = [
+  "REQUEST_SPEND_COMMIT",
+  "PRACTICE_TRANSFER_SPEND_COMMIT",
+  "PRACTICE_TRANSFER_ESCROW_RELEASE",
+];
+export const MANUFACTURER_SHIPPING_EARN_EVENT_TYPES = ["SHIPPING_SPEND_COMMIT"];
 
 export function resolveConfiguredRevenueRates(devopsPayoutRates) {
   return {
@@ -162,23 +173,70 @@ export function resolveManufacturerUnitSettings(creditSettings = {}) {
   return { requestSupply, shippingSupply, vatRate };
 }
 
+export function resolveManufacturerUnitQty({
+  abutmentQty,
+  isShippingSpend = false,
+} = {}) {
+  if (isShippingSpend) return 1;
+  const qty = Math.floor(Number(abutmentQty) || 0);
+  return Math.max(1, qty);
+}
+
+/**
+ * 제조사 하청 단가를 적립할지.
+ * 플랫폼 수수료·기공소 배송·신속추가는 제외. 생산(어벗 개당)·어벗츠→제조사 배송만.
+ */
+export function resolveManufacturerUnitApply({
+  usageKind = "",
+  source = "",
+  displayKind = "",
+  abutmentQty = 0,
+  abutmentRetailTotal = 0,
+  isShippingSpend = false,
+} = {}) {
+  const usage = String(usageKind || "").trim();
+  const src = String(source || "").trim();
+  const kind = String(displayKind || "").trim();
+  if (usage === "express_surcharge") return false;
+  if (usage === "practice_transfer_lab_shipping") return false;
+  if (kind === "platform_fee" || src === "lab_platform_fee") return false;
+  if (isShippingSpend || usage === "practice_transfer_abuts_shipping") {
+    return true;
+  }
+  if (src === "abutment_retail" || kind === "abuts_share") return true;
+  if (
+    (src === "non_partner_platform_fee" || src === "partner_platform_fee") &&
+    !(Number(abutmentQty) > 0 || Number(abutmentRetailTotal) > 0)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * 제조사 하청 단가(공급가·VAT·합계).
  * applyManufacturerUnit=false(express_surcharge 등)이면 0.
+ * 의뢰는 어벗 `qty`개당, 배송은 박스 1건.
  */
 export function resolveManufacturerUnitEarn({
   isShippingSpend,
   creditSettings,
   applyManufacturerUnit = true,
+  qty = 1,
 } = {}) {
   if (!applyManufacturerUnit) {
-    return { supply: 0, vat: 0, total: 0, vatRate: 0 };
+    return { supply: 0, vat: 0, total: 0, vatRate: 0, qty: 0 };
   }
+  const units = resolveManufacturerUnitQty({
+    abutmentQty: qty,
+    isShippingSpend,
+  });
   const { requestSupply, shippingSupply, vatRate } =
     resolveManufacturerUnitSettings(creditSettings);
-  const supply = isShippingSpend ? shippingSupply : requestSupply;
+  const unitSupply = isShippingSpend ? shippingSupply : requestSupply;
+  const supply = unitSupply * units;
   const vat = Math.round(supply * vatRate);
-  return { supply, vat, total: supply + vat, vatRate };
+  return { supply, vat, total: supply + vat, vatRate, qty: units };
 }
 
 /**
@@ -263,12 +321,14 @@ export function resolveRevenueOwnerBaseAllocation({
   isShippingSpend,
   creditSettings,
   applyManufacturerUnit = true,
+  qty = 1,
 }) {
   const spend = Math.max(0, Math.round(Number(spendAmount || 0)));
   const unitEarn = resolveManufacturerUnitEarn({
     isShippingSpend,
     creditSettings,
     applyManufacturerUnit,
+    qty,
   });
 
   // 저널 균형(의뢰자 소비 공급가 = REV 공급가 합): 단가는 소비액으로 캡.

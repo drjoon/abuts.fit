@@ -267,7 +267,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - eventType: `PRACTICE_TRANSFER_SPEND_HOLD` / `PRACTICE_TRANSFER_HOLD_ADJUST` / `PRACTICE_TRANSFER_ESCROW_RELEASE`(레거시 `PRACTICE_TRANSFER_SPEND_COMMIT` 유지); accountCode: `PLATFORM_ESCROW`, `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부: `기공비 보류` / 기공소: `기공크레딧` 적립(완료 시).
   - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공정산크레딧 → 계좌 이체. 크레딧 페이지 탭은 내역·충전만(기공크레딧 정산 탭 없음; 내역 필터로 기공 버킷 조회).
   - 장부「잔액」(`balanceAfter`): 유료+무료+기공 합산 러닝(현재 잔액과 동일 기준). 버킷별 분리 표시 금지(기공 적립 시 잔액이 리셋되어 보임).
-  - 어벗의뢰(직접 커스텀 어벗 생산 의뢰, `practicePrepaid=false`)는 위 관계 규칙과 무관하게 기존처럼 의뢰자(치과/기공소)가 설정된 비용을 전액 부담하고 4자 분배율로 나뉜다(`controllers/requests/common.review.helpers.js`).
+  - 어벗의뢰(직접 커스텀 어벗 생산 의뢰, `practicePrepaid=false`)는 의뢰자가 설정된 비용을 전액 부담한다. 제조사 하청은 어벗 1개당 고정단가이며, 잔여 분배(영업자·개발운영사·관리자)는 별도 확정 전까지 기존 잔여 비율을 유지한다(`controllers/requests/common.review.helpers.js`).
 
 - 스커리씁 로트 추적(세척.패킹)은 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
 - 한진 배송조회 자동동기화 장애 우회 정책:
@@ -773,7 +773,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 정산/지급 정책:
   - 관리자 4사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - **제조사(하청)**: 고정단가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT. 유료·무료 모두 적립(확인용). **정산 지급은 유료만**(무료 지급 0). 지급액=`amount`(VAT 포함)·세금계산서.
+  - **제조사(하청)**: 고정단가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000, **어벗 1개당**)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당) + VAT. 유료·무료 모두 적립(확인용). **정산 지급은 유료만**(무료 크레딧 지급 0). 지급액=`amount`(VAT 포함)·세금계산서.
   - **영업자·개발운영사**: 장부 적립은 공급가. 지급 시 부가세 10%를 더해 **입금·세금계산서**. 구현: `services/settlement.service.js`(`resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금합계, `supplyAmount`/`vatAmount` 분해.
   - **어벗츠(관리자)·기공소**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
   - 배송: 제조사 고정 배송 공급가(+VAT). 고객 배송비−제조사 공급가 잔여 → 관리자(`vatAmount=0`).
@@ -782,7 +782,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
-    - 제조사 = 고정 공급가(의뢰/배송). 잔여 = 소비 공급가 − 제조사 공급가 → 영업자·개발운영사·관리자 상대비율(`BusinessAnchor.payoutRates`의 salesman/devops/admin). 영업자 없으면 salesman 몫을 admin에 가산.
+    - 제조사 = 고정 공급가(어벗 1개당 / 배송 박스당). 잔여 = 소비 공급가 − 제조사 공급가 → 영업자·개발운영사·관리자 상대비율(`BusinessAnchor.payoutRates`의 salesman/devops/admin). 영업자 없으면 salesman 몫을 admin에 가산. 잔여 분배율은 추후 별도 확정.
     - 기공의뢰 성공 수수료: 매칭 `platformFeeRate`(기본 10%) · 지정 `directPlatformFeeEnabled`(기본 **off=무료**) / on 시 `directPlatformFeeRate`(기본 5%) · 월 참여 `autoMatchMonthlyFee`(**정책 0원**) — 관리자 플랫폼 설정「인증 기공소」. 치과 멤버십 월정은 `practiceMembershipMonthlyFee`(기본 50,000·면세) — 루트 `rules.md` §2.3.
     - `machining_spend`+`express_surcharge`: 제조사 단가 1회만(`manufacturerUnitApplied` / 기존 의뢰 유니크와 정합).
 
@@ -800,6 +800,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - legacy 이관에서 `amount=0` 소비행, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍은 `resolvedIgnored`로 분류해 미적재 처리합니다(오류 unresolved로 취급하지 않음).
   - 기존 GL 배송 수익 분배 보정은 `scripts/db/rebalance-shipping-revenue-to-manufacturer.js`로 수행합니다.
   - 기존 GL 혼합 소비(paid/free) 분해를 최신 무편향 분해 정책(의뢰자 무료우선 소비 + 수익라인 비례배분)으로 정렬하는 보정은 `scripts/db/rebalance-mixed-spend-free-first.js`로 수행합니다.
+  - 제조사 하청 고정단가(어벗 1개당 9,000+VAT) 보정은 `scripts/db/rebalance-manufacturer-unit-price.js`로 수행합니다(타 역할 REV 미변경).
 
 - 관리자 크레딧 응답 필드 정책:
   - `adminCredit`/잔액 응답에서 무료 크레딧 SSOT 키는 `freeCredit`(합), 하위호환으로 `freeRequestCredit`/`freeShippingCredit`/`freeBalance`입니다.

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 제조사 하청 의뢰 공급가 도움말 — 어벗 1개당.
 // - 2026-08-16: variant로 크레딧(환영·멤버십·배송) / 커스텀어벗(단가·추가요청·특별공급가) 분리.
 // - 2026-08-15: 특별 공급가 치과카드 4항목을 4열 1행 배치.
 // - 2026-08-15: 특별 공급가 CNC/환봉 × 생산만·디자인+생산 입력. 배송 500원·그 외 1000원 step.
@@ -844,7 +845,7 @@ export const AdminCreditSettingsTab = ({
                       })
                     }
                     disabled={loading}
-                    help={`부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerRequestUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
+                    help={`어벗 1개당. 부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerRequestUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
                     step={SHIPPING_AMOUNT_STEP}
                   />
                   <AmountField

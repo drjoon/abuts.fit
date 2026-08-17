@@ -1,6 +1,9 @@
 // related files:
 // - web/backend/services/creditRevenuePolicy.service.js
+// change-log:
+// - 2026-08-17: 어벗 qty·플랫폼수수료/기공소배송 제외 테스트.
 import {
+  resolveManufacturerUnitApply,
   resolveManufacturerUnitEarn,
   resolveRevenueOwnerBaseAllocation,
 } from "../../services/creditRevenuePolicy.service.js";
@@ -29,6 +32,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
       vat: 900,
       total: 9900,
       vatRate: 0.1,
+      qty: 1,
     });
 
     const shipping = resolveManufacturerUnitEarn({
@@ -40,6 +44,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
       vat: 350,
       total: 3850,
       vatRate: 0.1,
+      qty: 1,
     });
   });
 
@@ -51,6 +56,51 @@ describe("manufacturer fixed unit + residual allocation", () => {
     });
     expect(earn.supply).toBe(0);
     expect(earn.vat).toBe(0);
+    expect(earn.qty).toBe(0);
+  });
+
+  test("qty 2 abutments: manufacturer supply 18000 + VAT 1800", () => {
+    const earn = resolveManufacturerUnitEarn({
+      isShippingSpend: false,
+      creditSettings,
+      qty: 2,
+    });
+    expect(earn).toEqual({
+      supply: 18000,
+      vat: 1800,
+      total: 19800,
+      vatRate: 0.1,
+      qty: 2,
+    });
+  });
+
+  test("resolveManufacturerUnitApply: skip lab shipping and platform fee", () => {
+    expect(
+      resolveManufacturerUnitApply({
+        usageKind: "practice_transfer_lab_shipping",
+        isShippingSpend: true,
+      }),
+    ).toBe(false);
+    expect(
+      resolveManufacturerUnitApply({
+        source: "lab_platform_fee",
+        displayKind: "platform_fee",
+      }),
+    ).toBe(false);
+    expect(
+      resolveManufacturerUnitApply({
+        source: "non_partner_platform_fee",
+        abutmentQty: 1,
+        abutmentRetailTotal: 40000,
+      }),
+    ).toBe(true);
+    expect(
+      resolveManufacturerUnitApply({
+        source: "abutment_retail",
+        displayKind: "abuts_share",
+        abutmentQty: 1,
+      }),
+    ).toBe(true);
   });
 
   test("request spend: manufacturer fixed supply, residual to affiliates", () => {

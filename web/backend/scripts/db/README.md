@@ -13,6 +13,17 @@
 - **레거시 수락즉시 기공크레딧 → 에스크로 보류**:
   `migrate-legacy-practice-transfer-spend-to-escrow-hold.js --transfer PTX-...` (dry-run) / `--apply`.
 
+- **제조사 하청 고정단가 보정(REV_MANUFACTURER만, 어벗 1개당 9,000+VAT)**
+
+```bash
+cd web/backend && \
+ ENV_FILE=local.env NODE_ENV=test ABUTS_DB_FORCE=true \
+ node scripts/db/rebalance-manufacturer-unit-price.js
+# 적용
+ENV_FILE=local.env NODE_ENV=test ABUTS_DB_FORCE=true \
+ node scripts/db/rebalance-manufacturer-unit-price.js --yes
+```
+
 - **DB 전체 초기화(컬렉션 deleteMany, 더미 데이터 없음)**
 
 ```bash

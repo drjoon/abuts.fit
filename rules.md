@@ -172,9 +172,9 @@
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
-  - **제조사(하청)**: % 분배 금지. 건당 고정 공급가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT(`affiliateVatRate` 기본 0.1 → 지급합 9,900 / 3,850). 유료·무료 모두 **적립(확인용)** 하되, **정산 지급은 유료만**(무료 지급 0).
+  - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 공급가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당) + VAT(`affiliateVatRate` 기본 0.1 → 지급합 9,900 / 3,850). 유료·무료 모두 **적립(확인용)** 하되, **정산 지급은 유료만**(무료 크레딧 지급 0).
   - **잔여 분배**: 의뢰자 소비 공급가 − 제조사 공급가 → 영업자·개발운영사·관리자 상대비율로 재분배(`vatAmount = 0`). 배송 잔여(고객 배송비 − 제조사 배송 공급가) → 관리자.
-  - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **의뢰 1건 1회**만. express는 잔여 분배에만 포함.
+  - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **어벗 개수×1회**만. express는 잔여 분배에만 포함.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능
@@ -189,7 +189,7 @@
   - 합계 비교는 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`). 제조사 `vatAmount`는 보존식에 포함하지 않음
 - 제조사/역할 정산 건수 SSOT(강제):
   - 일별·기간 정산의 의뢰/배송 **건수**는 `LedgerLine` 개수가 아니라 `(eventType, creditKind, refId)` 유니크다.
-  - 동일 의뢰의 `machining_spend` + `express_surcharge`(각각 `REQUEST_SPEND_COMMIT`)는 제조사 단가 1회·건수 의뢰 1건.
+  - 동일 의뢰의 `machining_spend` + `express_surcharge`(각각 `REQUEST_SPEND_COMMIT`)는 제조사 단가=어벗 개수·건수 의뢰 1건.
   - paid/free 혼합으로 `REV_*` 라인이 쪼개져도 같은 `creditKind`·`refId`는 1건이다.
   - 구현: `controllers/manufacturers/manufacturer.controller.js` (`buildManufacturerEarnCollapseAndGroupStages`)
 - 정산 지급 가능 잔액 집계 원칙:

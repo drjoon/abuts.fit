@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 기공의뢰 생산(PTX)도 의뢰 집계에 포함. 제조사 고정단가 1개당.
 // - 2026-08-07: 일별 정산 건수를 저널/라인 수가 아닌 의뢰·패키지 refId 유니크로 집계
 //   (machining_spend+express_surcharge, paid/free 분해 라인으로 건수 부풀림 방지)
 // - 2026-08-07: 일별 빈 행은 KST 오늘 이후(미도래 일자)를 채우지 않음
@@ -7,7 +8,7 @@
 // - web/backend/modules/manufacturer/manufacturer.routes.js
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
-// - web/backend/services/creditBalance.service.js
+// - web/backend/services/creditRevenuePolicy.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 import { Types } from "mongoose";
 import ManufacturerPayment from "../../models/manufacturerPayment.model.js";
@@ -21,6 +22,10 @@ import {
   getTodayYmdInKst,
   getYesterdayYmdInKst,
 } from "../../utils/krBusinessDays.js";
+import {
+  MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
+  MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
+} from "../../services/creditRevenuePolicy.service.js";
 
 function parseLedgerOccurredAt(raw, endOfDay) {
   const s = String(raw || "").trim();
@@ -49,12 +54,12 @@ function kstYmdToUtcRange(ymd) {
  *   기공의뢰 배송 lab/abuts 2구간은 같은 refId라도 구간별로 1건.
  */
 function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
-  const amountCond = (eventType, creditKind) => ({
+  const amountCond = (eventTypes, creditKind) => ({
     $sum: {
       $cond: [
         {
           $and: [
-            { $eq: ["$_id.eventType", eventType] },
+            { $in: ["$_id.eventType", eventTypes] },
             { $eq: ["$_id.creditKind", creditKind] },
           ],
         },
@@ -64,12 +69,12 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
     },
   });
 
-  const vatCond = (eventType, creditKind) => ({
+  const vatCond = (eventTypes, creditKind) => ({
     $sum: {
       $cond: [
         {
           $and: [
-            { $eq: ["$_id.eventType", eventType] },
+            { $in: ["$_id.eventType", eventTypes] },
             { $eq: ["$_id.creditKind", creditKind] },
           ],
         },
@@ -79,12 +84,12 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
     },
   });
 
-  const totalCond = (eventType, creditKind) => ({
+  const totalCond = (eventTypes, creditKind) => ({
     $sum: {
       $cond: [
         {
           $and: [
-            { $eq: ["$_id.eventType", eventType] },
+            { $in: ["$_id.eventType", eventTypes] },
             { $eq: ["$_id.creditKind", creditKind] },
           ],
         },
@@ -94,12 +99,12 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
     },
   });
 
-  const countCond = (eventType, creditKind) => ({
+  const countCond = (eventTypes, creditKind) => ({
     $sum: {
       $cond: [
         {
           $and: [
-            { $eq: ["$_id.eventType", eventType] },
+            { $in: ["$_id.eventType", eventTypes] },
             { $eq: ["$_id.creditKind", creditKind] },
           ],
         },
@@ -157,29 +162,68 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
     {
       $group: {
         _id: groupByYmd ? "$_id.ymd" : null,
-        earnRequestPaidAmount: amountCond("REQUEST_SPEND_COMMIT", "PAID"),
-        earnRequestPaidVat: vatCond("REQUEST_SPEND_COMMIT", "PAID"),
-        earnRequestPaidTotal: totalCond("REQUEST_SPEND_COMMIT", "PAID"),
-        earnRequestPaidCount: countCond("REQUEST_SPEND_COMMIT", "PAID"),
-        earnRequestFreeAmount: amountCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
-        earnRequestFreeVat: vatCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
-        earnRequestFreeTotal: totalCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
-        earnRequestFreeCount: countCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
-        earnShippingPaidAmount: amountCond("SHIPPING_SPEND_COMMIT", "PAID"),
-        earnShippingPaidVat: vatCond("SHIPPING_SPEND_COMMIT", "PAID"),
-        earnShippingPaidTotal: totalCond("SHIPPING_SPEND_COMMIT", "PAID"),
-        earnShippingPaidCount: countCond("SHIPPING_SPEND_COMMIT", "PAID"),
+        earnRequestPaidAmount: amountCond(
+          MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
+          "PAID",
+        ),
+        earnRequestPaidVat: vatCond(
+          MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
+          "PAID",
+        ),
+        earnRequestPaidTotal: totalCond(
+          MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
+          "PAID",
+        ),
+        earnRequestPaidCount: countCond(
+          MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
+          "PAID",
+        ),
+        earnRequestFreeAmount: amountCond(
+          MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
+          "FREE_REQUEST",
+        ),
+        earnRequestFreeVat: vatCond(
+          MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
+          "FREE_REQUEST",
+        ),
+        earnRequestFreeTotal: totalCond(
+          MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
+          "FREE_REQUEST",
+        ),
+        earnRequestFreeCount: countCond(
+          MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
+          "FREE_REQUEST",
+        ),
+        earnShippingPaidAmount: amountCond(
+          MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
+          "PAID",
+        ),
+        earnShippingPaidVat: vatCond(
+          MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
+          "PAID",
+        ),
+        earnShippingPaidTotal: totalCond(
+          MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
+          "PAID",
+        ),
+        earnShippingPaidCount: countCond(
+          MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
+          "PAID",
+        ),
         earnShippingFreeAmount: amountCond(
-          "SHIPPING_SPEND_COMMIT",
+          MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
           "FREE_SHIPPING",
         ),
-        earnShippingFreeVat: vatCond("SHIPPING_SPEND_COMMIT", "FREE_SHIPPING"),
+        earnShippingFreeVat: vatCond(
+          MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
+          "FREE_SHIPPING",
+        ),
         earnShippingFreeTotal: totalCond(
-          "SHIPPING_SPEND_COMMIT",
+          MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
           "FREE_SHIPPING",
         ),
         earnShippingFreeCount: countCond(
-          "SHIPPING_SPEND_COMMIT",
+          MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
           "FREE_SHIPPING",
         ),
         payoutAmount: {
