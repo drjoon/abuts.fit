@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 기공소 지급 상태는 기공비만. 어벗츠 생산비와 무관.
 // - 2026-08-17: 기공소 기공의뢰 행 — 치과와 동일(기공비에 디자인 합침·일부 지급·상세 모달).
 // - 2026-08-17: 기공소 보철기공비+디자인비(+지그)를 한 기공의뢰 행으로 묶음.
 // - 2026-08-17: 잔액 카드를 정산 공통 SettlementStatCard로 교체.
@@ -351,10 +352,12 @@ const resolvePracticeTransferPending = (
   return String(item.type || "") === "SPEND_HOLD";
 };
 
-/** 기공소/어벗츠 몫 존재 여부에 따라 지급 보류·일부 지급·지급 완료 */
+/** 기공소/어벗츠 몫 존재 여부에 따라 지급 보류·일부 지급·지급 완료.
+ * labShareOnly: 기공소 장부 — 기공비(보철+디자인)만. 어벗츠 생산비는 무시. */
 const resolvePracticeTransferPayoutStatus = (
   item: CreditLedgerItem,
   members?: CreditLedgerItem[],
+  labShareOnly = false,
 ): PracticeTransferPayoutStatus | null => {
   const list =
     Array.isArray(members) && members.length > 0 ? members : [item];
@@ -366,6 +369,12 @@ const resolvePracticeTransferPayoutStatus = (
     return String(row.uniqueKey || "").includes("abutment_design_fee");
   });
   if (!looksLikePtx) return null;
+
+  if (labShareOnly) {
+    return resolvePracticeTransferPending(item, "lab", list)
+      ? "hold"
+      : "settled";
+  }
 
   let hasLab = false;
   let hasAbuts = false;
@@ -610,6 +619,7 @@ const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
 /** 동일 기공의뢰(PTX) 원장을 한 행으로 묶는다. */
 const groupLedgerItemsForDisplay = (
   items: CreditLedgerItem[],
+  labShareOnly = false,
 ): LedgerDisplayRow[] => {
   const groupMap = new Map<string, CreditLedgerItem[]>();
   for (const item of items) {
@@ -640,7 +650,11 @@ const groupLedgerItemsForDisplay = (
           item,
           resolvePracticeTransferRoute(item),
         ),
-        practiceTransferPayoutStatus: resolvePracticeTransferPayoutStatus(item),
+        practiceTransferPayoutStatus: resolvePracticeTransferPayoutStatus(
+          item,
+          undefined,
+          labShareOnly,
+        ),
         isPracticeTransfer: String(item.refType || "") === "PRACTICE_TRANSFER",
         item,
       });
@@ -672,6 +686,7 @@ const groupLedgerItemsForDisplay = (
     const payoutStatus = resolvePracticeTransferPayoutStatus(
       representative,
       members,
+      labShareOnly,
     );
     out.push({
       key: gKey,
@@ -1103,8 +1118,12 @@ export const CreditLedgerModal = ({
   });
 
   const rows = useMemo(
-    () => groupLedgerItemsForDisplay(Array.isArray(items) ? items : []),
-    [items],
+    () =>
+      groupLedgerItemsForDisplay(
+        Array.isArray(items) ? items : [],
+        showSettlementCredit,
+      ),
+    [items, showSettlementCredit],
   );
 
   const toggleSort = (key: LedgerSortKey) => {
@@ -1705,7 +1724,9 @@ export const CreditLedgerModal = ({
                 rushProcessing={feeQuoteDetail.rushProcessing}
                 creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
                 creditAbutmentHoldPending={
-                  feeQuoteDetail.creditAbutmentHoldPending
+                  showSettlementCredit
+                    ? null
+                    : feeQuoteDetail.creditAbutmentHoldPending
                 }
               />
             </div>
