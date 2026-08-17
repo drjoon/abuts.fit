@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 제조사 장부는 의뢰 1건=어벗 1개라 KST 하루로 묶고, 상세는 우편함(수취자)별.
 // - 2026-08-17: 기공의뢰 생산(PTX)도 의뢰 집계에 포함. 제조사 고정단가 1개당.
 // - 2026-08-07: 일별 정산 건수를 저널/라인 수가 아닌 의뢰·패키지 refId 유니크로 집계
 //   (machining_spend+express_surcharge, paid/free 분해 라인으로 건수 부풀림 방지)
@@ -8,6 +9,7 @@
 // - web/backend/modules/manufacturer/manufacturer.routes.js
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
+// - web/backend/utils/manufacturerLedgerDisplay.js
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 import { Types } from "mongoose";
@@ -15,8 +17,17 @@ import ManufacturerPayment from "../../models/manufacturerPayment.model.js";
 import ManufacturerDailySettlementSnapshot from "../../models/manufacturerDailySettlementSnapshot.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
+import Request from "../../models/request.model.js";
+import ShippingPackage from "../../models/shippingPackage.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { sendNotificationViaQueue } from "../../utils/notificationQueue.js";
 import User from "../../models/user.model.js";
+import {
+  collectManufacturerLedgerLookupIds,
+  groupManufacturerLedgerForDisplay,
+  summarizeManufacturerLedgerPackage,
+  summarizeManufacturerLedgerRequest,
+} from "../../utils/manufacturerLedgerDisplay.js";
 import {
   getTodayMidnightUtcInKst,
   getTodayYmdInKst,
@@ -26,6 +37,97 @@ import {
   MANUFACTURER_REQUEST_EARN_EVENT_TYPES,
   MANUFACTURER_SHIPPING_EARN_EVENT_TYPES,
 } from "../../services/creditRevenuePolicy.service.js";
+
+function toObjectIds(ids) {
+  return (Array.isArray(ids) ? ids : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+}
+
+async function loadManufacturerLedgerDisplayContext(rows) {
+  const { requestIds, packageIds, ptxIds } =
+    collectManufacturerLedgerLookupIds(rows);
+  const requestObjectIds = toObjectIds(requestIds);
+  const packageObjectIds = toObjectIds(packageIds);
+  const ptxObjectIds = toObjectIds(ptxIds);
+
+  const packages = packageObjectIds.length
+    ? await ShippingPackage.find({ _id: { $in: packageObjectIds } })
+        .select({ mailboxAddress: 1, requestIds: 1 })
+        .lean()
+    : [];
+
+  const packageRequestIds = packages.flatMap((pkg) =>
+    Array.isArray(pkg?.requestIds) ? pkg.requestIds : [],
+  );
+  const ptxRequestFilter = ptxObjectIds.length
+    ? [{ "partnerBilling.relatedPracticeTransferId": { $in: ptxObjectIds } }]
+    : [];
+  const requestFilterIds = toObjectIds([
+    ...requestObjectIds,
+    ...packageRequestIds,
+  ]);
+
+  const requests =
+    requestFilterIds.length || ptxRequestFilter.length
+      ? await Request.find({
+          $or: [
+            ...(requestFilterIds.length ? [{ _id: { $in: requestFilterIds } }] : []),
+            ...ptxRequestFilter,
+          ],
+        })
+          .select({
+            requestId: 1,
+            mailboxAddress: 1,
+            caseInfos: 1,
+            shippingReceiver: 1,
+            partnerBilling: 1,
+            businessAnchorId: 1,
+          })
+          .lean()
+      : [];
+
+  const anchorIds = [
+    ...new Set(
+      requests
+        .map((doc) => String(doc?.businessAnchorId || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id)),
+    ),
+  ];
+  const anchors = anchorIds.length
+    ? await BusinessAnchor.find({ _id: { $in: toObjectIds(anchorIds) } })
+        .select({ name: 1 })
+        .lean()
+    : [];
+  const anchorNameById = new Map(
+    anchors.map((doc) => [String(doc._id), String(doc.name || "").trim()]),
+  );
+
+  const requestsById = new Map();
+  const requestsByPtxId = new Map();
+  for (const doc of requests) {
+    const summary = summarizeManufacturerLedgerRequest({
+      ...doc,
+      anchorName: anchorNameById.get(String(doc.businessAnchorId || "")) || "",
+    });
+    if (summary.id) requestsById.set(summary.id, summary);
+    if (summary.relatedPracticeTransferId) {
+      const list = requestsByPtxId.get(summary.relatedPracticeTransferId) || [];
+      list.push(summary);
+      requestsByPtxId.set(summary.relatedPracticeTransferId, list);
+    }
+  }
+
+  const packagesById = new Map(
+    packages.map((doc) => {
+      const summary = summarizeManufacturerLedgerPackage(doc, requestsById);
+      return [summary.id, summary];
+    }),
+  );
+
+  return { requestsById, packagesById, requestsByPtxId };
+}
 
 function parseLedgerOccurredAt(raw, endOfDay) {
   const s = String(raw || "").trim();
@@ -440,25 +542,28 @@ export async function getManufacturerCreditLedger(req, res) {
     );
 
     const allRows = await LedgerLine.aggregate(pipeline);
+    const displayCtx = await loadManufacturerLedgerDisplayContext(allRows);
+    const groupedRows = groupManufacturerLedgerForDisplay(allRows, displayCtx);
+
     let totalBalance = 0;
-    for (const r of allRows) {
+    for (const r of groupedRows) {
       const t = String(r?.type || "");
       const v = Number(r?.amount || 0);
       if (t === "EARN" || t === "ADJUST") totalBalance += v;
       else if (t === "PAYOUT") totalBalance -= v;
     }
-    const total = allRows.length;
+    const total = groupedRows.length;
     const startIdx = skip;
     const endIdx = skip + l;
     let skippedSum = 0;
-    for (const r of allRows.slice(0, startIdx)) {
+    for (const r of groupedRows.slice(0, startIdx)) {
       const t = String(r?.type || "");
       const v = Number(r?.amount || 0);
       if (t === "EARN" || t === "ADJUST") skippedSum += v;
       else if (t === "PAYOUT") skippedSum -= v;
     }
     let runningBalance = totalBalance - skippedSum;
-    const rows = allRows.slice(startIdx, endIdx).map((r) => {
+    const rows = groupedRows.slice(startIdx, endIdx).map((r) => {
       const v = Number(r?.amount || 0);
       const t = String(r?.type || "");
       const balanceAfter = runningBalance;

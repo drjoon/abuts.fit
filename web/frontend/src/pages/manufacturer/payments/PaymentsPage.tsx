@@ -2,9 +2,11 @@
 // - web/frontend/rules.md
 // - web/backend/controllers/manufacturers/manufacturer.controller.js
 // - web/backend/modules/manufacturers/manufacturer.routes.js
+// - web/frontend/src/pages/manufacturer/payments/ManufacturerDailyLedgerDetailDialog.tsx
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-08-17: 생산·배송 원장을 KST 하루로 묶고, 클릭 시 수취자(우편함)별 상세.
 // - 2026-08-17: 어벗 1개당 9,000+VAT. 무료 크레딧은 지급 0. 기공의뢰 생산도 같은 라벨.
 // - 2026-08-17: 정산 내역을 의뢰자 크레딧과 같은 거래 원장으로 표시. VAT는 지급 안내 한 줄.
 // - 2026-08-11: 기공소 기공크레딧 정산과 동일 UX — 요약 카드 축소·(N건), 일자 제거, 액션 세로열, 초기화 제거.
@@ -48,6 +50,11 @@ import {
   SettlementTableFrame,
   SettlementVatNotice,
 } from "@/shared/settlement/settlementUi";
+import {
+  ManufacturerDailyLedgerDetailDialog,
+  type ManufacturerDailyLedgerDetail,
+  type ManufacturerLedgerMailboxGroup,
+} from "./ManufacturerDailyLedgerDetailDialog";
 
 type LedgerItem = {
   _id: string;
@@ -62,6 +69,15 @@ type LedgerItem = {
   createdAt?: string;
   occurredAt?: string;
   balanceAfter?: number;
+  groupKind?: "daily" | "single";
+  ymd?: string;
+  requestAmount?: number;
+  requestCount?: number;
+  shippingAmount?: number;
+  shippingCount?: number;
+  paidAmount?: number;
+  freeAmount?: number;
+  mailboxGroups?: ManufacturerLedgerMailboxGroup[] | null;
 };
 
 type PaymentItem = {
@@ -148,6 +164,28 @@ const manufacturerPayoutBadge = (row: LedgerItem) => {
       className: "border-emerald-200 bg-emerald-50 text-emerald-800",
     };
   }
+  if (row.groupKind === "daily") {
+    const paid = Number(row.paidAmount || 0);
+    const free = Number(row.freeAmount || 0);
+    if (paid > 0 && free > 0) {
+      return {
+        label: "일부 지급 0",
+        className: "border-sky-200 bg-sky-50 text-sky-800",
+      };
+    }
+    if (free > 0 && paid <= 0) {
+      return {
+        label: "지급 0",
+        className: "border-slate-200 bg-slate-50 text-slate-600",
+      };
+    }
+    if (paid > 0 || row.type === "EARN") {
+      return {
+        label: "미지급",
+        className: "border-sky-200 bg-sky-50 text-sky-800",
+      };
+    }
+  }
   const kind = String(row.creditKind || "");
   if (kind === "FREE_REQUEST" || kind === "FREE_SHIPPING") {
     return {
@@ -175,6 +213,26 @@ const formatDate = (iso: string) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const formatDay = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+};
+
+const dailyDetailLabel = (row: LedgerItem) => {
+  const requestCount = Number(row.requestCount || 0);
+  const shippingCount = Number(row.shippingCount || 0);
+  const parts: string[] = [];
+  if (requestCount > 0) parts.push(`의뢰 ${requestCount}건`);
+  if (shippingCount > 0) parts.push(`발송 ${shippingCount}건`);
+  return parts.join(" · ") || "상세";
 };
 
 const statusLabel = (s: string) => {
@@ -369,6 +427,8 @@ export const ManufacturerPaymentPage = () => {
   const [ledgerItems, setLedgerItems] = useState<LedgerItem[]>([]);
   const [ledgerPage, setLedgerPage] = useState(1);
   const [ledgerHasMore, setLedgerHasMore] = useState(true);
+  const [dailyDetail, setDailyDetail] =
+    useState<ManufacturerDailyLedgerDetail | null>(null);
   const [ledgerSort, setLedgerSort] = useState<{
     key: "createdAt" | "type" | "amount" | "balanceAfter" | "detail";
     direction: SortDirection;
@@ -811,6 +871,7 @@ export const ManufacturerPaymentPage = () => {
   if (!isManufacturer) return null;
 
   return (
+    <>
     <DashboardShell
       title="정산 내역"
       subtitle=""
@@ -1042,10 +1103,35 @@ export const ManufacturerPaymentPage = () => {
                       const isMinus = amount < 0 || r.type === "PAYOUT";
                       const badge = manufacturerPayoutBadge(r);
                       const signed = r.type === "PAYOUT" ? -Math.abs(amount) : amount;
+                      const isDaily = r.groupKind === "daily";
+                      const canOpenDaily =
+                        isDaily && Array.isArray(r.mailboxGroups);
                       return (
-                        <TableRow key={r._id}>
+                        <TableRow
+                          key={r._id}
+                          className={
+                            canOpenDaily
+                              ? "cursor-pointer hover:bg-slate-50/80"
+                              : undefined
+                          }
+                          onClick={() => {
+                            if (!canOpenDaily) return;
+                            setDailyDetail({
+                              ymd: String(r.ymd || ""),
+                              displayLabel: manufacturerTypeLabel(r),
+                              amount,
+                              requestAmount: Number(r.requestAmount || 0),
+                              requestCount: Number(r.requestCount || 0),
+                              shippingAmount: Number(r.shippingAmount || 0),
+                              shippingCount: Number(r.shippingCount || 0),
+                              mailboxGroups: r.mailboxGroups || [],
+                            });
+                          }}
+                        >
                           <TableCell className="whitespace-nowrap text-center text-xs">
-                            {formatDate(String(r.createdAt || r.occurredAt || ""))}
+                            {isDaily
+                              ? formatDay(String(r.createdAt || r.occurredAt || ""))
+                              : formatDate(String(r.createdAt || r.occurredAt || ""))}
                           </TableCell>
                           <TableCell className="text-center text-xs font-medium">
                             {manufacturerTypeLabel(r)}
@@ -1079,9 +1165,11 @@ export const ManufacturerPaymentPage = () => {
                               : "-"}
                           </TableCell>
                           <TableCell className="text-center text-xs text-muted-foreground">
-                            {String(r.uniqueKey || "").replace(/^gl:/, "") ||
-                              r.refType ||
-                              "—"}
+                            {isDaily
+                              ? dailyDetailLabel(r)
+                              : String(r.uniqueKey || "").replace(/^gl:/, "") ||
+                                r.refType ||
+                                "—"}
                           </TableCell>
                         </TableRow>
                       );
@@ -1212,6 +1300,13 @@ export const ManufacturerPaymentPage = () => {
         </div>
       }
     />
+    <ManufacturerDailyLedgerDetailDialog
+      detail={dailyDetail}
+      onOpenChange={(open) => {
+        if (!open) setDailyDetail(null);
+      }}
+    />
+    </>
   );
 };
 

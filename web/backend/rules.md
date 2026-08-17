@@ -580,6 +580,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 단일 SSOT 장부(General Ledger) 정책:
   - 장부는 논리적으로 1개만 사용하며, 물리 구조는 `LedgerJournal`(헤더) + `LedgerLine`(라인) 2컬렉션으로 구성합니다.
   - 제조사 정산 조회(`/api/manufacturer/credits/ledger`, `/api/manufacturer/credits/daily-summary`, `/api/manufacturer/credits/daily-snapshots/recalc`)는 `LedgerLine` 집계를 SSOT로 사용합니다.
+  - 제조사 원장 **표시**는 의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶고, KST 하루 단위로 생산·배송을 묶는다. 클릭 상세는 우편함(수취자)별. 구현: `utils/manufacturerLedgerDisplay.js`.
   - 일별/스냅샷 정산 **건수**는 라인·저널 수가 아니라 `(eventType, creditKind, refId)` 유니크다.
     - 동일 의뢰의 `machining_spend` + `express_surcharge`는 금액 합산, 건수 1.
     - paid/free 분해로 `REV_MANUFACTURER` 라인이 복수여도 같은 creditKind·refId는 1건.
