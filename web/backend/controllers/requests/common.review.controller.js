@@ -614,6 +614,20 @@ export async function deleteStageFile(req, res) {
       request.productionSchedule = request.productionSchedule || {};
       if (stage === "machining") {
         request.mailboxAddress = null;
+        try {
+          const { ensureRequestShippingHoldAfterMailboxRelease } = await import(
+            "../../services/requestCreditHold.service.js"
+          );
+          await ensureRequestShippingHoldAfterMailboxRelease({
+            request,
+            actorUserId: req.user?._id || null,
+          });
+        } catch (holdErr) {
+          console.warn("[ROLLBACK] shipping hold restore failed", {
+            requestId: request?.requestId || null,
+            message: holdErr?.message || String(holdErr),
+          });
+        }
         request.productionSchedule.actualMachiningStart = null;
         request.productionSchedule.actualMachiningComplete = null;
         request.productionSchedule.assignedMachine = null;
@@ -842,6 +856,23 @@ export async function deleteStageFile(req, res) {
 
     // stageFiles의 stage는 reviewByStage 키와 동일한 문자열을 사용
     revertManufacturerStageByReviewStage(request, stage);
+
+    if (stage === "machining") {
+      try {
+        const { ensureRequestShippingHoldAfterMailboxRelease } = await import(
+          "../../services/requestCreditHold.service.js"
+        );
+        await ensureRequestShippingHoldAfterMailboxRelease({
+          request,
+          actorUserId: req.user?._id || null,
+        });
+      } catch (holdErr) {
+        console.warn("[STAGE_FILE_DELETE] shipping hold restore failed", {
+          requestId: request?.requestId || null,
+          message: holdErr?.message || String(holdErr),
+        });
+      }
+    }
 
     await request.save();
 

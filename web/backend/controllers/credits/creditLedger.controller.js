@@ -284,7 +284,9 @@ export async function listMyCreditLedger(req, res) {
                       "$eventType",
                       [
                         "REQUEST_SPEND_COMMIT",
+                        "REQUEST_SPEND_HOLD",
                         "SHIPPING_SPEND_COMMIT",
+                        "SHIPPING_SPEND_HOLD",
                         "PRACTICE_TRANSFER_SPEND_COMMIT",
                         "PRACTICE_TRANSFER_SPEND_HOLD",
                         "PRACTICE_TRANSFER_HOLD_ADJUST",
@@ -311,7 +313,9 @@ export async function listMyCreditLedger(req, res) {
                       "$eventType",
                       [
                         "REQUEST_SPEND_COMMIT",
+                        "REQUEST_SPEND_HOLD",
                         "SHIPPING_SPEND_COMMIT",
+                        "SHIPPING_SPEND_HOLD",
                         "PRACTICE_TRANSFER_SPEND_COMMIT",
                         "PRACTICE_TRANSFER_SPEND_HOLD",
                         "PRACTICE_TRANSFER_HOLD_ADJUST",
@@ -340,7 +344,7 @@ export async function listMyCreditLedger(req, res) {
                   {
                     $in: [
                       "$eventType",
-                      ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                      ["REQUEST_SPEND_COMMIT", "REQUEST_SPEND_HOLD", "SHIPPING_SPEND_COMMIT", "SHIPPING_SPEND_HOLD"],
                     ],
                   },
                   { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
@@ -376,6 +380,8 @@ export async function listMyCreditLedger(req, res) {
                     [
                       "PRACTICE_TRANSFER_SPEND_HOLD",
                       "PRACTICE_TRANSFER_HOLD_ADJUST",
+                      "REQUEST_SPEND_HOLD",
+                      "SHIPPING_SPEND_HOLD",
                     ],
                   ],
                 },
@@ -406,7 +412,7 @@ export async function listMyCreditLedger(req, res) {
                     {
                       $in: [
                         "$eventType",
-                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                        ["REQUEST_SPEND_COMMIT", "REQUEST_SPEND_HOLD", "SHIPPING_SPEND_COMMIT", "SHIPPING_SPEND_HOLD"],
                       ],
                     },
                     { $gt: ["$spentSettlementAmount", 0] },

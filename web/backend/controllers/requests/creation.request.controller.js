@@ -311,6 +311,28 @@ export async function createRequest(req, res) {
     // [변경] 생산 시작(CAM 승인) 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 SPEND 로직을 제거합니다.
     await newRequest.save();
 
+    try {
+      const { holdRequestCreditsOnSubmit } = await import(
+        "../../services/requestCreditHold.service.js"
+      );
+      await holdRequestCreditsOnSubmit({
+        requests: [newRequest],
+        actorUserId: req.user?._id || null,
+      });
+    } catch (holdErr) {
+      if (Number(holdErr?.statusCode) === 402) {
+        await Request.deleteOne({ _id: newRequest._id });
+        return res.status(402).json({
+          success: false,
+          message:
+            holdErr.message ||
+            "크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해주세요.",
+          data: holdErr.payload || null,
+        });
+      }
+      throw holdErr;
+    }
+
     // [추가] Rhino 서버 업로드 시도 (병렬 처리)
     // S3 업로드 여부와 상관없이 Rhino 서버로 파일을 보내 즉시 처리를 시작하게 함
     if (newRequest.caseInfos?.file?.originalName && req.file?.buffer) {
@@ -1221,6 +1243,33 @@ export async function createRequestsBulk(req, res) {
 
     const workers = Array.from({ length: CONCURRENCY }, () => worker());
     await Promise.all(workers);
+
+    if (created.length > 0) {
+      try {
+        const { holdRequestCreditsOnSubmit } = await import(
+          "../../services/requestCreditHold.service.js"
+        );
+        await holdRequestCreditsOnSubmit({
+          requests: created,
+          actorUserId: req.user?._id || null,
+        });
+      } catch (holdErr) {
+        console.error("[createRequestsBulk] credit hold failed", {
+          message: holdErr?.message || String(holdErr),
+          createdCount: created.length,
+        });
+        if (Number(holdErr?.statusCode) === 402) {
+          return res.status(402).json({
+            success: false,
+            message:
+              holdErr.message ||
+              "크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해주세요.",
+            data: holdErr.payload || null,
+          });
+        }
+        throw holdErr;
+      }
+    }
 
     // [트리거] rhino-server에 fill hole 처리 시작을 알린다 (fire-and-forget).
     // 의뢰별로 STL이 있으면 각각 트리거. 실패해도 의뢰 생성은 그대로 성공 응답된다.

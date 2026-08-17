@@ -1619,6 +1619,17 @@ export async function createRequestsFromDraft(req, res) {
           session,
         });
         insertedRequests.forEach((doc) => createdRequests.push(doc));
+
+        if (!isPracticeRoutingSubmission && insertedRequests.length > 0) {
+          const { holdRequestCreditsOnSubmit } = await import(
+            "../../services/requestCreditHold.service.js"
+          );
+          await holdRequestCreditsOnSubmit({
+            requests: insertedRequests,
+            actorUserId: req.user?._id || null,
+            session,
+          });
+        }
       });
       console.log("[createRequestsFromDraft] transaction done", {
         t: Date.now() - startTime,
@@ -1657,6 +1668,22 @@ export async function createRequestsFromDraft(req, res) {
           createdCount: createdRequests.length,
           requestIds: createdRequests.map((r) => r.requestId),
         });
+        if (!isPracticeRoutingSubmission && createdRequests.length > 0) {
+          try {
+            const { emitCreditBalanceUpdatedToBusiness } = await import(
+              "../../utils/creditRealtime.js"
+            );
+            await emitCreditBalanceUpdatedToBusiness({
+              businessAnchorId: createdAnchorId,
+              balanceDelta: 0,
+              reason: "request_submit_hold",
+              refId: createdRequests[0]?._id || null,
+              forceEmit: true,
+            });
+          } catch {
+            // best-effort
+          }
+        }
         triggerDashboardSummaryRefreshForAnchorId(
           createdAnchorId,
           "request-created",

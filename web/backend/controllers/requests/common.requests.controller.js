@@ -540,6 +540,24 @@ async function ensureRequestCancelRollbackDelete({
     deferredCreditEvents,
   });
 
+  try {
+    const { releaseRequestCreditHoldsOnCancel } = await import(
+      "../../services/requestCreditHold.service.js"
+    );
+    await releaseRequestCreditHoldsOnCancel({
+      request,
+      actorUserId,
+      session: session || null,
+      deferredCreditEvents,
+    });
+  } catch (holdErr) {
+    console.warn(
+      "[ensureRequestCancelRollbackDelete] hold release failed",
+      String(request?._id || ""),
+      holdErr?.message || holdErr,
+    );
+  }
+
   // PTX 연동 CA: 어벗 디자인비(ADJUST)도 함께 회수(관리자/의뢰자 삭제·취소).
   const relatedTransferId = String(
     request?.partnerBilling?.relatedPracticeTransferId || "",

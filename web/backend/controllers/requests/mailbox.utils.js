@@ -721,6 +721,39 @@ export async function assignMailboxForCleaningPackingEnter({
     if (nextMailboxAddress) {
       request.mailboxAddress = nextMailboxAddress;
     }
+
+    if (nextMailboxAddress) {
+      const committedActive = await loadActiveMailboxOccupancy({
+        Request: (await import("../../models/request.model.js")).default,
+        scopeFilter,
+        excludeRequestMongoId: String(request._id || ""),
+        session: null,
+      });
+      const joinOccupants = committedActive.filter(
+        (row) =>
+          isMailboxJoinOccupant(row) &&
+          normalizeMailboxAddress(row?.mailboxAddress) ===
+            normalizeMailboxAddress(nextMailboxAddress) &&
+          String(row?._id || "") !== String(request?._id || ""),
+      );
+      const joinedExistingSlot = joinOccupants.length > 0;
+      try {
+        const { reconcileShippingHoldOnMailboxAssign } = await import(
+          "../../services/requestCreditHold.service.js"
+        );
+        await reconcileShippingHoldOnMailboxAssign({
+          request,
+          assignedMailboxAddress: nextMailboxAddress,
+          joinedExistingSlot,
+          session,
+        });
+      } catch (holdErr) {
+        console.error("[MAILBOX_ALLOCATION_ERROR] shipping hold reconcile", {
+          requestId: request?.requestId || null,
+          message: holdErr?.message || String(holdErr),
+        });
+      }
+    }
     return nextMailboxAddress || null;
   } catch (err) {
     console.error("[MAILBOX_ALLOCATION_ERROR] cleaning-packing-enter", {

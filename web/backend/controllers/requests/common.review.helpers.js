@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-08-17: 의뢰·배송 크레딧 보류(제출)→에스크로→CAM/집하 매출 전환.
 // - 2026-08-17: 배송비 차감 SSOT를 집하(우편함 비우기)로 옮김. 포장.발송 진입은 우편함만 확인.
 // - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비에서만 해제.
 // - 2026-08-17: 포장.발송 진입 시 기존 우편함을 유지(다른 박스 합류로 주소를 바꾸지 않음).
@@ -59,8 +60,16 @@ import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.j
 import {
   isManufacturerSampleRequest,
   normalizeBusinessAnchorId,
+  normalizeMailboxReceiverFingerprint,
   resolveShippingMailboxOrgId,
 } from "./mailbox.utils.js";
+import {
+  findMailboxSlotShippingHold,
+  readRequestHoldMeta,
+  requestExpressHoldKey,
+  requestMachiningHoldKey,
+  requestShippingHoldKey,
+} from "../../services/requestCreditHold.service.js";
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
@@ -275,6 +284,8 @@ async function postSpendCommitGeneralLedger({
   usageKind = null,
   displayLabel = null,
   displayKind = null,
+  fromEscrowHold = false,
+  escrowDevopsAnchorId = null,
 }) {
   const spendAmount = Math.max(0, Math.round(Number(amount || 0)));
   if (spendAmount <= 0) return { posted: false, reason: "zero_amount" };
@@ -323,6 +334,28 @@ async function postSpendCommitGeneralLedger({
 
   const lines = [];
 
+  const useEscrowHold =
+    Boolean(fromEscrowHold) &&
+    String(escrowDevopsAnchorId || "").trim() &&
+    Types.ObjectId.isValid(String(escrowDevopsAnchorId));
+
+  if (useEscrowHold) {
+    lines.push({
+      accountCode: "PLATFORM_ESCROW",
+      ownerRole: "devops",
+      ownerId: new Types.ObjectId(String(escrowDevopsAnchorId)),
+      amount: -spendAmount,
+      amountExcludingVat: -spendAmount,
+      vatAmount: 0,
+      creditKind: null,
+      refType,
+      refId,
+      meta: {
+        ...spendMeta,
+        source: `${String(usageKind || "spend")}_from_hold`,
+      },
+    });
+  } else {
   if (freeRequestAmount > 0) {
     lines.push({
       accountCode: "REQ_FREE_REQUEST_CREDIT",
@@ -373,6 +406,7 @@ async function postSpendCommitGeneralLedger({
       refId,
       meta: spendMeta,
     });
+  }
   }
 
   // 수익 라인: 무료만 free, 기공상계·유료는 paid 비중(상계분도 실대금).
@@ -869,6 +903,44 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     }),
   };
 
+  const machiningHoldMeta = await readRequestHoldMeta({
+    idempotencyKey: requestMachiningHoldKey(request._id),
+    session,
+  });
+
+  if (machiningHoldMeta?.journalId) {
+    const spentAmount = Number(
+      machiningHoldMeta.heldTotal || machiningAmount || 0,
+    );
+    const glPostResult = await postSpendCommitGeneralLedger({
+      eventType: "REQUEST_SPEND_COMMIT",
+      spendUniqueKey: `request:${String(request._id)}:machining_spend`,
+      request,
+      businessAnchorId: spendAnchorId,
+      actorUserId,
+      amount: spentAmount,
+      fromPaid: machiningHoldMeta.fromPaid,
+      fromFreeRequest: machiningHoldMeta.fromFreeRequest,
+      fromFreeShipping: machiningHoldMeta.fromFreeShipping,
+      fromSettlement: machiningHoldMeta.fromSettlement,
+      freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
+      refType: "REQUEST",
+      refId: request._id,
+      stageFrom: "CAM",
+      stageTo: "가공",
+      session,
+      usageKind: "abutment_production",
+      fromEscrowHold: true,
+      escrowDevopsAnchorId: machiningHoldMeta.devopsAnchorId,
+    });
+    if (!glPostResult?.posted && !glPostResult?.idempotent) {
+      throw new Error("REQUEST_SPEND_COMMIT machining hold convert failed");
+    }
+    console.log("[CREDIT_SPEND] machining hold converted", {
+      requestId: request?.requestId,
+      amount: spentAmount,
+    });
+  } else {
   const spendResult = await spendRequestCreditAtomic({
     request,
     businessAnchorId: spendAnchorId,
@@ -946,6 +1018,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       existingUniqueKey: spendResult?.existingUniqueKey || null,
       currentUniqueKey: spendResult?.uniqueKey || null,
     });
+  }
   }
 
   if (expressFee <= 0) return;
@@ -1037,6 +1110,50 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       );
       return;
     }
+  }
+
+  const expressHoldMeta = await readRequestHoldMeta({
+    idempotencyKey: requestExpressHoldKey(request._id),
+    session,
+  });
+
+  if (expressHoldMeta?.journalId) {
+    const expressGl = await postSpendCommitGeneralLedger({
+      eventType: "REQUEST_SPEND_COMMIT",
+      spendUniqueKey: `request:${String(request._id)}:express_surcharge`,
+      request,
+      businessAnchorId: spendAnchorId,
+      actorUserId,
+      amount: Number(expressHoldMeta.heldTotal || expressFee || 0),
+      fromPaid: expressHoldMeta.fromPaid,
+      fromFreeRequest: expressHoldMeta.fromFreeRequest,
+      fromFreeShipping: expressHoldMeta.fromFreeShipping,
+      fromSettlement: expressHoldMeta.fromSettlement,
+      freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
+      refType: "REQUEST",
+      refId: request._id,
+      stageFrom: "CAM",
+      stageTo: "가공",
+      session,
+      usageKind: "express_surcharge",
+      fromEscrowHold: true,
+      escrowDevopsAnchorId: expressHoldMeta.devopsAnchorId,
+    });
+    if (!expressGl?.posted && !expressGl?.idempotent) {
+      throw new Error(
+        "REQUEST_SPEND_COMMIT express surcharge hold convert failed",
+      );
+    }
+    if (request.price) {
+      request.price.expressFeeStatus = "charged";
+    } else {
+      request.price = { expressFeeStatus: "charged" };
+    }
+    console.log("[CREDIT_SPEND] express hold converted", {
+      requestId: request?.requestId,
+      amount: expressFee,
+    });
+    return;
   }
 
   const expressSpendResult = await spendRequestCreditAtomic({
@@ -1627,6 +1744,78 @@ export async function ensureShippingFeeSpendOnMailboxPickup({
     row.shippingPackageId = pkg._id;
   }
 
+  const spendUniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
+  const representative = chargeable[0];
+  const relatedPtxId = String(
+    representative?.partnerBilling?.relatedPracticeTransferId || "",
+  ).trim();
+  const isPtxAbutsShipping = Boolean(relatedPtxId);
+
+  const slotHold = await findMailboxSlotShippingHold({
+    mailboxAddress: mailbox,
+    payerAnchorId,
+    receiverFingerprint: normalizeMailboxReceiverFingerprint(representative),
+    session,
+    requestIds: requestObjectIds,
+  });
+
+  if (slotHold?.journal) {
+    const holdMeta = await readRequestHoldMeta({
+      idempotencyKey: slotHold.idempotencyKey,
+      session,
+    });
+    const convertAmount = Math.max(
+      0,
+      Math.round(Number(holdMeta?.heldTotal || shippingFeeSupply) || 0),
+    );
+    if (convertAmount > 0 && holdMeta?.devopsAnchorId) {
+      const glPostResult = await postSpendCommitGeneralLedger({
+        eventType: "SHIPPING_SPEND_COMMIT",
+        spendUniqueKey,
+        request: representative,
+        businessAnchorId: payerAnchorId,
+        actorUserId,
+        amount: convertAmount,
+        fromPaid: holdMeta.fromPaid,
+        fromFreeRequest: holdMeta.fromFreeRequest,
+        fromFreeShipping: holdMeta.fromFreeShipping,
+        fromSettlement: holdMeta.fromSettlement,
+        freeAccountCode: "REQ_FREE_SHIPPING_CREDIT",
+        refType: "SHIPPING_PACKAGE",
+        refId: pkg._id,
+        stageFrom: "포장.발송",
+        stageTo: "추적관리",
+        session,
+        usageKind: isPtxAbutsShipping
+          ? "practice_transfer_abuts_shipping"
+          : "shipping",
+        displayLabel: isPtxAbutsShipping ? "배송비(치과→어벗츠)" : null,
+        displayKind: isPtxAbutsShipping ? "shipping" : null,
+        fromEscrowHold: true,
+        escrowDevopsAnchorId: holdMeta.devopsAnchorId,
+      });
+
+      if (!glPostResult?.posted && !glPostResult?.idempotent) {
+        throw new Error("SHIPPING_SPEND_COMMIT hold convert failed");
+      }
+
+      console.log("[SHIPPING_FEE] shipping hold converted at pickup", {
+        mailboxAddress: mailbox,
+        shippingPackageId: String(pkg._id),
+        holdRequestId: slotHold.requestId || null,
+        amount: convertAmount,
+      });
+
+      return {
+        didSpend: true,
+        reason: "from_hold",
+        amount: convertAmount,
+        uniqueKey: spendUniqueKey,
+        shippingPackageId: String(pkg._id),
+      };
+    }
+  }
+
   let spendResult;
   try {
     spendResult = await spendShippingCreditAtomic({
@@ -1661,12 +1850,6 @@ export async function ensureShippingFeeSpendOnMailboxPickup({
     }
     return spendResult;
   }
-
-  const relatedPtxId = String(
-    chargeable[0]?.partnerBilling?.relatedPracticeTransferId || "",
-  ).trim();
-  const isPtxAbutsShipping = Boolean(relatedPtxId);
-  const representative = chargeable[0];
 
   const glPostResult = await postSpendCommitGeneralLedger({
     eventType: "SHIPPING_SPEND_COMMIT",

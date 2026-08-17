@@ -121,10 +121,12 @@
 - 공정 SSOT: `Request.manufacturerStage`
   - `준비 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
 - 크레딧 이벤트 발생 시점 SSOT:
-  - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 기록
-  - `SHIPPING_SPEND_COMMIT`: **세척.패킹 승인(포장.발송 진입)** 시 기록
-  - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**
+  - `REQUEST_SPEND_HOLD` / `SHIPPING_SPEND_HOLD`: **의뢰 제출** 시 에스크로 보류(기공비·신속·배송비). 동일 제출·동일 수신자 배송비는 1회.
+  - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 보류→매출 전환(레거시 무보류만 실차감)
+  - `SHIPPING_SPEND_COMMIT`: **집하(우편함 비우기)** 시 배송 보류→매출 전환(레거시·PTX abuts는 기존 SSOT)
+  - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**(HOLD는 유지)
   - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**
+  - 준비 단계 **취소**: 미전환 HOLD 전부 해제(물리 삭제)
   - BG 콜백은 파일 처리 결과 동기화 이벤트이며 승인/롤백 트랜지션이 아니므로,
     BG 콜백에서 크레딧/정산 장부 갱신을 수행하지 않음
 - 샘플 정책(강제): `requestCategory in (rnd_sample, copied_sample)`는 크레딧/정산 무관 작업
@@ -164,7 +166,7 @@
 - 기존 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
   **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
 - 필수 이벤트 타입 SSOT(저장형):
-  - `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_COMMIT`
+  - `REQUEST_SPEND_HOLD`, `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_HOLD`, `SHIPPING_SPEND_COMMIT`
   - `PRACTICE_MEMBERSHIP_SPEND`(치과 멤버십 월 구독·유료 크레딧만)
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
 - 수익 계정 SSOT:
