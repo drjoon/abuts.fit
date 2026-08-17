@@ -177,7 +177,7 @@ Notes:
 - 역할별 정산
   - 공통 UI: `src/shared/settlement/settlementUi.tsx` · VAT 카피 `src/shared/settlement/affiliateVat.ts` (의뢰자 크레딧/기공크레딧 최신 스타일)
   - 기공소/어벗츠기공소: `src/features/settings/tabs/LabSettlementPayoutTab.tsx` — 면세 계산서
-  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·유형·지급상태·금액·잔액·거래내역). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 시 수취자(우편함)별 생산·발송·배송비. 장부는 공급가(어벗 1개당 9,000), 부가세 10%는 지급 시 합산. 무료 크레딧은 지급 0.
+  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별. 장부는 공급가(어벗 1개당 9,000), 부가세 10%는 지급 시 합산. 무료 크레딧은 지급 0.
   - 영업자: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 공급가 장부, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 잔여 분배 공급가, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 4사업 축 + 관계사 잔여 분배(관리자=어벗츠 면세)
@@ -508,7 +508,7 @@ Notes:
 
 - 제조사 정산(일별) 표시 정책:
   - 하청 고정단가: **어벗 1개당** 9,000+VAT / 배송 박스당 3,500+VAT. 상단 카드·상세는 의뢰/배송을 **분리** 표시(공급가·VAT·합계·건수). 유료/무료는 보조 필터(`유료`/`무료`).
-  - 원장 목록은 생산·배송 EARN을 **KST 하루 1행**으로 묶고, 클릭 시 수취자(우편함)별 생산·발송·배송비를 보여준다. 지급/조정은 별행.
+  - 원장 목록은 생산·배송 EARN을 **KST 하루 1행**으로 묶고, 유형 열은 생략한다. 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별 생산·발송·배송비를 보여준다. 지급/조정은 별행.
   - 일별 카드 컬럼(daily-summary): `의뢰/배송/환불·지급·조정/지급 순액(VAT 포함)·참고(유료·무료 분해)`.
   - 의뢰/배송 **건수**는 백엔드 유니크 건수 SSOT. (`machining_spend`+`express_surcharge`를 프론트에서 각각 세지 않음.)
   - 일별 목록은 KST **오늘 이후(미도래 일자)를 표시하지 않는다**. `이번달` 프리셋 종료일도 오늘이다.
@@ -786,7 +786,7 @@ Notes:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`
 - 제조사 정산(`src/pages/manufacturer/payments/PaymentsPage.tsx`) 표시 정책:
-  - 원장 `GET /api/manufacturer/credits/ledger`는 생산·배송 EARN을 **KST 하루 1행**으로 묶어 반환한다. 상세(`mailboxGroups`)는 수취자(우편함)별 생산·발송·배송비. 지급/조정은 별행.
+  - 원장 `GET /api/manufacturer/credits/ledger`는 생산·배송 EARN을 **KST 하루 1행**으로 묶어 반환한다. 목록에서 유형은 생략. 상세(`mailboxGroups`)는 의뢰/배송 섹션으로 나누고, 그 안에서 수취자(우편함)별 생산·발송·배송비. 지급/조정은 별행.
   - 백엔드 `GET /api/manufacturer/credits/daily-summary`는 `LedgerLine` 집계 결과를 반환하며, 프론트는 해당 응답을 SSOT로 사용합니다.
   - 건수 필드(`earnRequest*Count`, `earnShipping*Count`)는 의뢰/패키지 `refId` 유니크이며, 라인·저널 수가 아니다.
   - 의뢰/배송 금액은 공급가·VAT·합계 필드를 우선 표시. paid/free 분해는 `earnRequestPaid*` 등 SSOT.

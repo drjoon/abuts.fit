@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-08-17: 유형 열 생략(모두 커스텀어벗 생산+배송비). 상세 모달은 의뢰/배송 분리.
 // - 2026-08-17: 생산·배송 원장을 KST 하루로 묶고, 클릭 시 수취자(우편함)별 상세.
 // - 2026-08-17: 어벗 1개당 9,000+VAT. 무료 크레딧은 지급 0. 기공의뢰 생산도 같은 라벨.
 // - 2026-08-17: 정산 내역을 의뢰자 크레딧과 같은 거래 원장으로 표시. VAT는 지급 안내 한 줄.
@@ -141,21 +142,7 @@ const PAGE_SIZE = 50;
 
 type SortDirection = "asc" | "desc";
 type PaymentSortKey = "occurredAt" | "status" | "amount" | "note";
-
-const manufacturerTypeLabel = (row: LedgerItem) => {
-  const label = String(row.displayLabel || "").trim();
-  if (label) return label;
-  if (row.type === "PAYOUT") return "지급";
-  if (row.type === "ADJUST") return "조정";
-  const event = String(row.eventType || "");
-  if (event === "SHIPPING_SPEND_COMMIT") {
-    return String(row.displayLabel || "").trim() || "배송";
-  }
-  if (event === "REQUEST_SPEND_COMMIT") return "커스텀어벗 생산";
-  if (event === "PRACTICE_TRANSFER_SPEND_COMMIT") return "커스텀어벗 생산";
-  if (event === "PRACTICE_TRANSFER_ESCROW_RELEASE") return "커스텀어벗 생산";
-  return "적립";
-};
+type LedgerSortKey = "createdAt" | "amount" | "balanceAfter" | "detail";
 
 const manufacturerPayoutBadge = (row: LedgerItem) => {
   if (row.type === "PAYOUT") {
@@ -233,6 +220,15 @@ const dailyDetailLabel = (row: LedgerItem) => {
   if (requestCount > 0) parts.push(`의뢰 ${requestCount}건`);
   if (shippingCount > 0) parts.push(`발송 ${shippingCount}건`);
   return parts.join(" · ") || "상세";
+};
+
+const ledgerDetailLabel = (row: LedgerItem) => {
+  if (row.groupKind === "daily") return dailyDetailLabel(row);
+  if (row.type === "PAYOUT") return "지급";
+  if (row.type === "ADJUST") return "조정";
+  return (
+    String(row.uniqueKey || "").replace(/^gl:/, "") || row.refType || "—"
+  );
 };
 
 const statusLabel = (s: string) => {
@@ -430,7 +426,7 @@ export const ManufacturerPaymentPage = () => {
   const [dailyDetail, setDailyDetail] =
     useState<ManufacturerDailyLedgerDetail | null>(null);
   const [ledgerSort, setLedgerSort] = useState<{
-    key: "createdAt" | "type" | "amount" | "balanceAfter" | "detail";
+    key: LedgerSortKey;
     direction: SortDirection;
   }>({ key: "createdAt", direction: "desc" });
 
@@ -822,9 +818,7 @@ export const ManufacturerPaymentPage = () => {
     });
   }, [items, paymentSort]);
 
-  const toggleLedgerSort = (
-    key: "createdAt" | "type" | "amount" | "balanceAfter" | "detail",
-  ) => {
+  const toggleLedgerSort = (key: LedgerSortKey) => {
     setLedgerSort((prev) =>
       prev.key === key
         ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
@@ -839,13 +833,6 @@ export const ManufacturerPaymentPage = () => {
         const bv = new Date(b.createdAt || b.occurredAt || 0).getTime();
         return ledgerSort.direction === "asc" ? av - bv : bv - av;
       }
-      if (ledgerSort.key === "type") {
-        const av = manufacturerTypeLabel(a);
-        const bv = manufacturerTypeLabel(b);
-        return ledgerSort.direction === "asc"
-          ? av.localeCompare(bv, "ko")
-          : bv.localeCompare(av, "ko");
-      }
       if (ledgerSort.key === "amount") {
         const av = Number(a.amount || 0);
         const bv = Number(b.amount || 0);
@@ -856,8 +843,8 @@ export const ManufacturerPaymentPage = () => {
         const bv = Number(b.balanceAfter ?? Number.NEGATIVE_INFINITY);
         return ledgerSort.direction === "asc" ? av - bv : bv - av;
       }
-      const av = String(a.uniqueKey || a.refType || "");
-      const bv = String(b.uniqueKey || b.refType || "");
+      const av = ledgerDetailLabel(a);
+      const bv = ledgerDetailLabel(b);
       return ledgerSort.direction === "asc"
         ? av.localeCompare(bv, "ko")
         : bv.localeCompare(av, "ko");
@@ -1047,16 +1034,6 @@ export const ManufacturerPaymentPage = () => {
                           {renderSortIcon(ledgerSort.key === "createdAt", ledgerSort.direction)}
                         </button>
                       </TableHead>
-                      <TableHead className="w-[140px] text-center">
-                        <button
-                          type="button"
-                          className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleLedgerSort("type")}
-                        >
-                          유형
-                          {renderSortIcon(ledgerSort.key === "type", ledgerSort.direction)}
-                        </button>
-                      </TableHead>
                       <TableHead className="w-[110px] text-center">
                         <span className="whitespace-nowrap text-xs sm:text-sm">
                           지급 상태
@@ -1118,7 +1095,6 @@ export const ManufacturerPaymentPage = () => {
                             if (!canOpenDaily) return;
                             setDailyDetail({
                               ymd: String(r.ymd || ""),
-                              displayLabel: manufacturerTypeLabel(r),
                               amount,
                               requestAmount: Number(r.requestAmount || 0),
                               requestCount: Number(r.requestCount || 0),
@@ -1132,9 +1108,6 @@ export const ManufacturerPaymentPage = () => {
                             {isDaily
                               ? formatDay(String(r.createdAt || r.occurredAt || ""))
                               : formatDate(String(r.createdAt || r.occurredAt || ""))}
-                          </TableCell>
-                          <TableCell className="text-center text-xs font-medium">
-                            {manufacturerTypeLabel(r)}
                           </TableCell>
                           <TableCell className="text-center">
                             {badge ? (
@@ -1165,11 +1138,7 @@ export const ManufacturerPaymentPage = () => {
                               : "-"}
                           </TableCell>
                           <TableCell className="text-center text-xs text-muted-foreground">
-                            {isDaily
-                              ? dailyDetailLabel(r)
-                              : String(r.uniqueKey || "").replace(/^gl:/, "") ||
-                                r.refType ||
-                                "—"}
+                            {ledgerDetailLabel(r)}
                           </TableCell>
                         </TableRow>
                       );
@@ -1177,7 +1146,7 @@ export const ManufacturerPaymentPage = () => {
                     {ledgerLoading && (
                       <TableRow>
                         <TableCell
-                          colSpan={6}
+                          colSpan={5}
                           className="py-4 text-center text-sm text-muted-foreground"
                         >
                           불러오는 중...
@@ -1187,7 +1156,7 @@ export const ManufacturerPaymentPage = () => {
                     {!ledgerLoading && ledgerItems.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={6}
+                          colSpan={5}
                           className="py-8 text-center text-sm text-muted-foreground"
                         >
                           조회 결과가 없습니다.
