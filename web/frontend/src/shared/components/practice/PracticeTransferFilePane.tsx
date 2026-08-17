@@ -23,6 +23,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-11: 첨부 목록 3열 그리드.
 // - 2026-08-12: 클릭/요소드롭은 PracticeTransferFileDropTarget 공통 재사용.
 // - 2026-08-13: 파일카드 하단 프로그레스바(사전 업로드 전송률).
+// - 2026-08-17: 확장자 안내는 DropTarget 라벨 하단 상시 표기(클릭 경로 Tooltip 제거).
 
 export type PracticeTransferFileDisplayItem = {
   key: string;

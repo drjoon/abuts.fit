@@ -5,6 +5,7 @@
 // - web/frontend/src/features/requests/components/PageFileDropZone.tsx
 // - web/frontend/src/shared/files/extractDroppedFiles.ts
 // - web/frontend/src/shared/practice/practiceTransferAccept.ts
+// - 2026-08-17: 파일창 오픈 — button+Tooltip+input.click 제거, label/htmlFor + sr-only input.
 import {
   useRef,
   useState,
@@ -12,11 +13,6 @@ import {
   type ReactNode,
 } from "react";
 import { UploadCloud } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
   dataTransferHasFiles,
@@ -57,6 +53,7 @@ export type PracticeTransferFileDropTargetProps = {
  * 기공의뢰 첨부 공통: 클릭 파일오픈 + 요소 스코프 드롭.
  * - FilePane(치과 intake) / 기공소 수락 카드 결과파일에 재사용
  * - 페이지 전역 드롭은 PageFileDropZone 유지
+ * - 기본 UI는 label→input(htmlFor)로 OS 파일창을 연다(JS click/Tooltip 경유 금지)
  */
 export function PracticeTransferFileDropTarget({
   fileInputId,
@@ -145,6 +142,10 @@ export function PracticeTransferFileDropTarget({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
+      {/*
+        display:none 대신 sr-only — 일부 브라우저에서 hidden input의
+        programmatic click / label 활성화가 느리거나 무시되는 경우 방지.
+      */}
       <input
         ref={inputRef}
         id={fileInputId}
@@ -152,7 +153,8 @@ export function PracticeTransferFileDropTarget({
         accept={accept}
         multiple={multiple}
         disabled={disabled}
-        className="hidden"
+        className="sr-only"
+        tabIndex={-1}
         onChange={(e) => {
           const nextFiles = Array.from(e.target.files || []);
           if (nextFiles.length) emitFiles(nextFiles);
@@ -161,42 +163,41 @@ export function PracticeTransferFileDropTarget({
       />
 
       {showDefaultUi ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                openPicker();
-              }}
+        <label
+          htmlFor={disabled ? undefined : fileInputId}
+          aria-disabled={disabled || undefined}
+          className={cn(
+            "block w-full rounded-2xl border-2 border-dashed text-center transition-colors",
+            compact ? "min-h-[4.75rem] px-3 py-3" : "min-h-[7rem] px-4 py-5",
+            "border-slate-300 bg-white hover:border-primary/50",
+            isDragActive ? "border-primary bg-primary-soft/30" : "",
+            disabled
+              ? "cursor-not-allowed opacity-60"
+              : "cursor-pointer",
+          )}
+        >
+          <div
+            className={cn(
+              "mx-auto flex w-fit items-center justify-center rounded-full bg-primary-soft text-primary-strong",
+              compact ? "mb-1 p-1.5" : "mb-1.5 p-2",
+            )}
+          >
+            <UploadCloud className={compact ? "h-4 w-4" : "h-5 w-5"} />
+          </div>
+          <p className="whitespace-nowrap text-sm text-muted-foreground">
+            {label}
+          </p>
+          {acceptedHint ? (
+            <p
               className={cn(
-                "w-full rounded-2xl border-2 border-dashed text-center transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                compact
-                  ? "min-h-[4.75rem] px-3 py-3"
-                  : "min-h-[7rem] px-4 py-5",
-                "border-slate-300 bg-white hover:border-primary/50",
-                isDragActive ? "border-primary bg-primary-soft/30" : "",
+                "text-muted-foreground/80",
+                compact ? "mt-0.5 text-[11px]" : "mt-1 text-xs",
               )}
             >
-              <div
-                className={cn(
-                  "mx-auto flex w-fit items-center justify-center rounded-full bg-primary-soft text-primary-strong",
-                  compact ? "mb-1 p-1.5" : "mb-1.5 p-2",
-                )}
-              >
-                <UploadCloud className={compact ? "h-4 w-4" : "h-5 w-5"} />
-              </div>
-              <p className="whitespace-nowrap text-sm text-muted-foreground">
-                {label}
-              </p>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs text-xs">
-            {acceptedHint}
-          </TooltipContent>
-        </Tooltip>
+              {acceptedHint}
+            </p>
+          ) : null}
+        </label>
       ) : null}
 
       {content}
