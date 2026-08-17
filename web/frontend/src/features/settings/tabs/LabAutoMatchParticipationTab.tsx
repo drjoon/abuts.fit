@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/practice/abutsLabCertification.ts
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // change-log:
+// - 2026-08-17: 매칭 참여 — 「별점 2점 이상」제거. 유예·공개·할증·할인 배수 안내.
 // - 2026-08-16: 수수료 문구·지정 ~~요율~~ 0% · 인증 상태 라벨 SSOT.
 // - 2026-08-16: 지정 거래 수수료 — 적용 off면 무료(별도 공지 시까지) 안내.
 // - 2026-08-16: 매칭 10% / 지정 5% 성공 수수료 표시.
@@ -231,8 +232,8 @@ export const LabAutoMatchParticipationTab = () => {
               ) : null}
             </div>
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              신청 → 기공 테스트 → 통과 시 인증. 인증·별점 2점 이상만 매칭에
-              참여합니다.
+              신청 → 기공 테스트 → 통과 시 인증. 어벗츠 인증 통과 기공소만
+              매칭에 참여합니다.
             </p>
             <p className="text-[12px] leading-relaxed text-muted-foreground/90">
               매칭 거래 {matchPct}%
@@ -277,8 +278,16 @@ export const LabAutoMatchParticipationTab = () => {
                 </p>
                 <p className="text-[12px] leading-relaxed text-muted-foreground">
                   {summary.ratingCount <= AUTO_MATCH_RATING_COUNT_GRACE
-                    ? `평가 치과 ${AUTO_MATCH_RATING_COUNT_GRACE + 1}곳부터 실제 평균이 적용됩니다. 현재는 ${DEFAULT_EFFECTIVE_LAB_STARS}점.`
+                    ? `평가 치과 ${AUTO_MATCH_RATING_COUNT_GRACE}곳 이하면 ${DEFAULT_EFFECTIVE_LAB_STARS}점으로 적용됩니다. ${AUTO_MATCH_RATING_COUNT_GRACE + 1}곳부터 실제 평균.`
                     : "치과당 1회만 반영됩니다. 치과 정보는 비공개입니다."}
+                </p>
+                <p className="text-[11px] leading-relaxed text-muted-foreground/90">
+                  치과의 별점 하한·상한에 맞으면 공개됩니다.
+                  <br />
+                  매칭의 경우 기공비는 별점에 비례하여 할증·할인됩니다.
+                  <br />
+                  1점=0.8배 · 2점=0.9배 · 3점=기공소들 평균 · 4점=1.1배 ·
+                  5점=1.2배
                 </p>
               </div>
             </div>
