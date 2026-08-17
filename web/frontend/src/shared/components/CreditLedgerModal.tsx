@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-17: PTX 비용 툴팁 — 경로(치과→기공소/어벗츠) 중간행 제거, 항목만 표시.
+// - 2026-08-17: 기공의뢰 크레딧 행을 기공소 비용 / 어벗츠 비용으로 분리(몫별 보류 라벨).
 // - 2026-08-17: 기공의뢰 행 유형/금액 colSpan 해제 — 유형 열 가운데 정렬.
 // - 2026-08-17: 기공의뢰 pending → 「기공의뢰 보류」표시. 장부 셀·PTX 트리 가운데 정렬.
 // - 2026-08-17: 동일 PTX 기공의뢰 크레딧 행을 한 건으로 묶어 표시(세부 라벨·합계).
@@ -200,6 +202,12 @@ type CreditLedgerItem = {
   labName?: string;
   /** 기공의뢰 에스크로 보류 중(heldAt && !settledAt) */
   practiceTransferPending?: boolean;
+  /** 기공소몫 미정산(heldAt && !labSettledAt && !settledAt) */
+  practiceTransferLabPending?: boolean;
+  /** 어벗츠몫 미정산(heldAt && !abutmentSettledAt && !settledAt) */
+  practiceTransferAbutmentPending?: boolean;
+  /** 보류/배송 몫: lab | abutment | lab_shipping | abuts_shipping */
+  holdShare?: string | null;
   tooth?: string;
   clinicName?: string;
   manufacturerStage?: string;
@@ -288,6 +296,8 @@ type LedgerDisplayPart = {
   spentFreeAmount: number;
 };
 
+type PracticeTransferRoute = "lab" | "abuts" | "other";
+
 type LedgerDisplayRow = {
   key: string;
   createdAt: string;
@@ -299,16 +309,63 @@ type LedgerDisplayRow = {
   displayLabel: string;
   parts: LedgerDisplayPart[] | null;
   practiceTransferPending: boolean;
+  practiceTransferRoute?: PracticeTransferRoute | null;
   item: CreditLedgerItem;
 };
 
-const practiceTransferTypeLabel = (pending: boolean) =>
-  pending ? "기공의뢰 보류" : "기공의뢰";
+const practiceTransferRouteLabel = (
+  route: PracticeTransferRoute,
+  pending: boolean,
+) => {
+  if (route === "abuts") return pending ? "어벗츠 비용 보류" : "어벗츠 비용";
+  if (route === "lab") return pending ? "기공소 비용 보류" : "기공소 비용";
+  return pending ? "기공의뢰 보류" : "기공의뢰";
+};
+
+const resolvePracticeTransferRoute = (
+  item: CreditLedgerItem,
+): PracticeTransferRoute => {
+  const share = String(item.holdShare || "").trim();
+  if (share === "lab" || share === "lab_shipping") return "lab";
+  if (share === "abutment" || share === "abuts_shipping") return "abuts";
+
+  const label = String(item.displayLabel || "");
+  if (label.includes("어벗츠") || label.includes("어벗제작") || label.includes("어벗생산")) {
+    return "abuts";
+  }
+  if (label.includes("기공소")) return "lab";
+  // 디자인비(+지그)는 기공소 경로
+  if (label.includes("디자인") || label.includes("지그")) return "lab";
+  return "other";
+};
 
 const resolvePracticeTransferPending = (
   item: CreditLedgerItem,
+  route: PracticeTransferRoute = "other",
   members?: CreditLedgerItem[],
 ) => {
+  if (route === "lab") {
+    if (item.practiceTransferLabPending === true) return true;
+    if (item.practiceTransferLabPending === false) return false;
+    if (Array.isArray(members)) {
+      if (members.some((m) => m.practiceTransferLabPending === true)) return true;
+      if (members.some((m) => m.practiceTransferLabPending === false)) {
+        return false;
+      }
+    }
+  }
+  if (route === "abuts") {
+    if (item.practiceTransferAbutmentPending === true) return true;
+    if (item.practiceTransferAbutmentPending === false) return false;
+    if (Array.isArray(members)) {
+      if (members.some((m) => m.practiceTransferAbutmentPending === true)) {
+        return true;
+      }
+      if (members.some((m) => m.practiceTransferAbutmentPending === false)) {
+        return false;
+      }
+    }
+  }
   if (item.practiceTransferPending === true) return true;
   if (item.practiceTransferPending === false) return false;
   if (Array.isArray(members)) {
@@ -322,14 +379,13 @@ const resolvePracticeTransferDisplayLabel = (
   item: CreditLedgerItem,
   members?: CreditLedgerItem[],
 ) => {
-  const pending = resolvePracticeTransferPending(item, members);
+  const route = resolvePracticeTransferRoute(item);
+  const pending = resolvePracticeTransferPending(item, route, members);
   if (String(item.refType || "") === "PRACTICE_TRANSFER") {
-    return practiceTransferTypeLabel(pending);
+    return practiceTransferRouteLabel(route, pending);
   }
   return String(item.displayLabel || "").trim() || typeLabel(item.type);
 };
-
-type PracticeTransferRoute = "lab" | "abuts" | "other";
 type PracticeTransferFeeKind =
   | "labFee"
   | "design"
@@ -341,13 +397,6 @@ type PracticeTransferTreeLeaf = {
   kind: PracticeTransferFeeKind;
   label: string;
   amount: number;
-};
-
-type PracticeTransferTreeBranch = {
-  route: PracticeTransferRoute;
-  title: string;
-  amount: number;
-  leaves: PracticeTransferTreeLeaf[];
 };
 
 const FEE_KIND_ORDER: PracticeTransferFeeKind[] = [
@@ -391,46 +440,20 @@ const classifyPracticeTransferPart = (
   return { route, kind: "other" };
 };
 
-const buildPracticeTransferFeeTree = (
+/** 경로 행 없이 기공비·배송 등 항목만 합산 */
+const buildPracticeTransferFeeLeaves = (
   parts: LedgerDisplayPart[],
-): PracticeTransferTreeBranch[] => {
-  const buckets = new Map<
-    PracticeTransferRoute,
-    Map<PracticeTransferFeeKind, number>
-  >();
-
+): PracticeTransferTreeLeaf[] => {
+  const byKind = new Map<PracticeTransferFeeKind, number>();
   for (const part of parts) {
-    const { route, kind } = classifyPracticeTransferPart(part);
-    if (!buckets.has(route)) buckets.set(route, new Map());
-    const byKind = buckets.get(route)!;
+    const { kind } = classifyPracticeTransferPart(part);
     byKind.set(kind, (byKind.get(kind) || 0) + Number(part.amount || 0));
   }
-
-  const routeOrder: PracticeTransferRoute[] = ["lab", "abuts", "other"];
-  const routeTitle: Record<PracticeTransferRoute, string> = {
-    lab: "치과 → 기공소",
-    abuts: "치과 → 어벗츠",
-    other: "기타",
-  };
-
-  return routeOrder
-    .filter((route) => buckets.has(route))
-    .map((route) => {
-      const byKind = buckets.get(route)!;
-      const leaves = FEE_KIND_ORDER.filter((kind) => byKind.has(kind)).map(
-        (kind) => ({
-          kind,
-          label: FEE_KIND_LABEL[kind],
-          amount: byKind.get(kind) || 0,
-        }),
-      );
-      return {
-        route,
-        title: routeTitle[route],
-        amount: leaves.reduce((sum, leaf) => sum + leaf.amount, 0),
-        leaves,
-      };
-    });
+  return FEE_KIND_ORDER.filter((kind) => byKind.has(kind)).map((kind) => ({
+    kind,
+    label: FEE_KIND_LABEL[kind],
+    amount: byKind.get(kind) || 0,
+  }));
 };
 
 const formatSignedWon = (amount: number) => {
@@ -445,69 +468,39 @@ function PracticeTransferLedgerTree({
   totalAmount,
   parts,
   pending = false,
+  route = "lab",
   compact = false,
 }: {
   totalAmount: number;
   parts: LedgerDisplayPart[];
   pending?: boolean;
+  route?: PracticeTransferRoute;
   /** true면 유형 칸용(라벨+?)만, 금액은 별도 셀 */
   compact?: boolean;
 }) {
-  const branches = useMemo(
-    () => buildPracticeTransferFeeTree(parts),
+  const leaves = useMemo(
+    () => buildPracticeTransferFeeLeaves(parts),
     [parts],
   );
-  const title = practiceTransferTypeLabel(pending);
+  const title = practiceTransferRouteLabel(route, pending);
 
   const treeBody = (
-    <div className="w-[min(100vw-2rem,22rem)] overflow-hidden rounded-xl border border-slate-200/80 bg-white text-left shadow-md">
-      <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-        <span className="min-w-0 text-xs font-semibold text-slate-800">
-          {title}
-        </span>
-        <span
-          className={cn(
-            "shrink-0 text-xs font-semibold tabular-nums",
-            totalAmount < 0 ? "text-destructive" : "text-primary-strong",
-          )}
-        >
-          {formatSignedWon(totalAmount)}
-        </span>
-      </div>
-      <div className="space-y-1.5 border-t border-slate-100 bg-slate-50/40 px-2.5 py-2">
-        {branches.map((branch) => (
-          <div
-            key={branch.route}
-            className="overflow-hidden rounded-lg border border-slate-200/70 bg-white"
+    <div className="w-[min(100vw-2rem,16rem)] overflow-hidden rounded-xl border border-slate-200/80 bg-white text-left shadow-md">
+      <ul className="px-3 py-2">
+        {leaves.map((leaf) => (
+          <li
+            key={leaf.kind}
+            className="flex items-center justify-between gap-3 py-1"
           >
-            <div className="flex items-center justify-between gap-2 px-2.5 py-2">
-              <span className="min-w-0 truncate text-[11px] font-medium text-slate-700">
-                {branch.title}
-              </span>
-              <span className="shrink-0 text-[11px] font-medium tabular-nums text-slate-600">
-                {formatSignedWon(branch.amount)}
-              </span>
-            </div>
-            {branch.leaves.length > 0 ? (
-              <ul className="border-t border-slate-100 px-2.5 py-1.5">
-                {branch.leaves.map((leaf) => (
-                  <li
-                    key={`${branch.route}-${leaf.kind}`}
-                    className="flex items-center justify-between gap-2 py-1 pl-5"
-                  >
-                    <span className="min-w-0 truncate text-[11px] text-slate-500">
-                      {leaf.label}
-                    </span>
-                    <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
-                      {formatSignedWon(leaf.amount)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
+            <span className="min-w-0 truncate text-[11px] text-slate-600">
+              {leaf.label}
+            </span>
+            <span className="shrink-0 text-[11px] tabular-nums text-slate-700">
+              {formatSignedWon(leaf.amount)}
+            </span>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 
@@ -556,9 +549,11 @@ function PracticeTransferLedgerTree({
 const practiceTransferGroupKey = (item: CreditLedgerItem) => {
   if (String(item.refType || "") !== "PRACTICE_TRANSFER") return "";
   const ptx = String(item.refPracticeTransferId || "").trim();
-  if (ptx) return `ptx:${ptx}`;
   const refId = String(item.refId || "").trim();
-  return refId ? `ptx-ref:${refId}` : "";
+  const base = ptx ? `ptx:${ptx}` : refId ? `ptx-ref:${refId}` : "";
+  if (!base) return "";
+  const route = resolvePracticeTransferRoute(item);
+  return `${base}:${route}`;
 };
 
 const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
@@ -568,7 +563,7 @@ const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
   spentFreeAmount: Number(item.spentFreeAmount || 0),
 });
 
-/** 동일 기공의뢰(PTX) 원장 행을 한 건으로 묶는다. */
+/** 동일 기공의뢰(PTX) 원장을 기공소/어벗츠 비용 행으로 나눠 묶는다. */
 const groupLedgerItemsForDisplay = (
   items: CreditLedgerItem[],
 ): LedgerDisplayRow[] => {
@@ -597,7 +592,11 @@ const groupLedgerItemsForDisplay = (
         type: item.type,
         displayLabel: resolvePracticeTransferDisplayLabel(item),
         parts: null,
-        practiceTransferPending: resolvePracticeTransferPending(item),
+        practiceTransferPending: resolvePracticeTransferPending(
+          item,
+          resolvePracticeTransferRoute(item),
+        ),
+        practiceTransferRoute: null,
         item,
       });
       continue;
@@ -612,8 +611,10 @@ const groupLedgerItemsForDisplay = (
     );
     if (members.length === 0) continue;
 
+    const route = resolvePracticeTransferRoute(members[0]);
     if (members.length === 1) {
       const only = members[0];
+      const pending = resolvePracticeTransferPending(only, route);
       out.push({
         key: String(only._id || only.uniqueKey),
         createdAt: String(only.createdAt || ""),
@@ -622,9 +623,10 @@ const groupLedgerItemsForDisplay = (
         spentPaidAmount: Number(only.spentPaidAmount || 0),
         spentFreeAmount: Number(only.spentFreeAmount || 0),
         type: only.type,
-        displayLabel: resolvePracticeTransferDisplayLabel(only),
+        displayLabel: practiceTransferRouteLabel(route, pending),
         parts: null,
-        practiceTransferPending: resolvePracticeTransferPending(only),
+        practiceTransferPending: pending,
+        practiceTransferRoute: route,
         item: only,
       });
       continue;
@@ -640,7 +642,7 @@ const groupLedgerItemsForDisplay = (
       (sum, m) => sum + Number(m.spentFreeAmount || 0),
       0,
     );
-    const pending = resolvePracticeTransferPending(latest, members);
+    const pending = resolvePracticeTransferPending(latest, route, members);
     out.push({
       key: gKey,
       createdAt: String(latest.createdAt || ""),
@@ -649,9 +651,10 @@ const groupLedgerItemsForDisplay = (
       spentPaidAmount,
       spentFreeAmount,
       type: latest.type,
-      displayLabel: practiceTransferTypeLabel(pending),
+      displayLabel: practiceTransferRouteLabel(route, pending),
       parts: members.map(toDisplayPart),
       practiceTransferPending: pending,
+      practiceTransferRoute: route,
       item: latest,
     });
   }
@@ -808,11 +811,12 @@ const renderTransactionDetail = ({
   if (refType === "PRACTICE_TRANSFER") {
     const labName = String(item.labName || "").trim() || "-";
     const patientName = String(item.patientName || "").trim() || "-";
-    const pending = resolvePracticeTransferPending(item);
+    const route = resolvePracticeTransferRoute(item);
+    const pending = resolvePracticeTransferPending(item, route);
     return (
       <>
         <span className="text-[11px] text-muted-foreground">
-          {practiceTransferTypeLabel(pending)}
+          {practiceTransferRouteLabel(route, pending)}
         </span>
         <span className="pt-1 text-[11px] text-slate-700">
           {labName} / {patientName}
@@ -1397,6 +1401,7 @@ export const CreditLedgerModal = ({
                               totalAmount={amount}
                               parts={r.parts!}
                               pending={r.practiceTransferPending}
+                              route={r.practiceTransferRoute || "lab"}
                               compact
                             />
                           </TableCell>

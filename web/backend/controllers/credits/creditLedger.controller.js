@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: PRACTICE_TRANSFER enrich — lab/abutment pending·holdShare(기공소/어벗츠 행 분리).
 // - 2026-08-17: PRACTICE_TRANSFER enrich에 practiceTransferPending(heldAt·!settledAt).
 // - 2026-08-12: currentBalanceSnapshot에 settlementCredit·requestorKind 포함(기공소 기공크레딧 UI).
 // related files:
@@ -250,6 +251,12 @@ export async function listMyCreditLedger(req, res) {
             { $ifNull: ["$journalDoc.meta.displayLabel", ""] },
           ],
         },
+        holdShare: {
+          $ifNull: [
+            "$meta.holdShare",
+            { $ifNull: ["$journalDoc.meta.holdShare", ""] },
+          ],
+        },
       },
     },
     {
@@ -262,6 +269,7 @@ export async function listMyCreditLedger(req, res) {
         refId: { $first: "$refId" },
         uniqueKey: { $first: "$uniqueKey" },
         displayLabel: { $first: "$displayLabel" },
+        holdShare: { $first: "$holdShare" },
         amount: { $sum: "$amountBase" },
         spentPaidAmount: {
           $sum: {
@@ -516,6 +524,7 @@ export async function listMyCreditLedger(req, res) {
         ...base,
         uniqueKey,
         displayLabel: String(row?.displayLabel || "").trim() || null,
+        holdShare: String(row?.holdShare || "").trim() || null,
         spendKind:
           row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
         includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
@@ -652,6 +661,8 @@ export async function listMyCreditLedger(req, res) {
         files: 1,
         "billing.heldAt": 1,
         "billing.settledAt": 1,
+        "billing.labSettledAt": 1,
+        "billing.abutmentSettledAt": 1,
       })
       .lean();
 
@@ -669,11 +680,18 @@ export async function listMyCreditLedger(req, res) {
       ).trim();
       const heldAt = doc?.billing?.heldAt || null;
       const settledAt = doc?.billing?.settledAt || null;
+      const labSettledAt = doc?.billing?.labSettledAt || null;
+      const abutmentSettledAt = doc?.billing?.abutmentSettledAt || null;
+      const fullySettled = Boolean(settledAt);
       practiceTransferIdById.set(id, String(doc.transferId || ""));
       practiceTransferMetaById.set(id, {
         patientName: memoPatient || filePatient,
         labName: String(doc.targetLabName || "").trim(),
-        practiceTransferPending: Boolean(heldAt) && !settledAt,
+        practiceTransferPending: Boolean(heldAt) && !fullySettled,
+        practiceTransferLabPending:
+          Boolean(heldAt) && !fullySettled && !labSettledAt,
+        practiceTransferAbutmentPending:
+          Boolean(heldAt) && !fullySettled && !abutmentSettledAt,
       });
     }
   }
@@ -738,6 +756,10 @@ export async function listMyCreditLedger(req, res) {
         patientName: meta?.patientName || "",
         labName: meta?.labName || "",
         practiceTransferPending: Boolean(meta?.practiceTransferPending),
+        practiceTransferLabPending: Boolean(meta?.practiceTransferLabPending),
+        practiceTransferAbutmentPending: Boolean(
+          meta?.practiceTransferAbutmentPending,
+        ),
       };
     }
 

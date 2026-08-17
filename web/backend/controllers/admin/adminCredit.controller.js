@@ -1,7 +1,7 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
-
+// - 2026-08-17: 사업 장부 PRACTICE_TRANSFER — displayLabel·holdShare·lab/abutment pending.
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/controllers/salesman/salesman.controller.js
@@ -640,6 +640,18 @@ export async function adminGetBusinessLedger(req, res) {
           eventType: { $ifNull: ["$journalDoc.eventType", ""] },
           amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
           mergedUniqueKey: buildLedgerUniqueKeyExpr(),
+          displayLabel: {
+            $ifNull: [
+              "$meta.displayLabel",
+              { $ifNull: ["$journalDoc.meta.displayLabel", ""] },
+            ],
+          },
+          holdShare: {
+            $ifNull: [
+              "$meta.holdShare",
+              { $ifNull: ["$journalDoc.meta.holdShare", ""] },
+            ],
+          },
         },
       },
       {
@@ -651,6 +663,8 @@ export async function adminGetBusinessLedger(req, res) {
           refType: { $first: "$refType" },
           refId: { $first: "$refId" },
           uniqueKey: { $first: "$mergedUniqueKey" },
+          displayLabel: { $first: "$displayLabel" },
+          holdShare: { $first: "$holdShare" },
           amount: { $sum: "$amountBase" },
           spentPaidAmount: {
             $sum: {
@@ -872,6 +886,8 @@ export async function adminGetBusinessLedger(req, res) {
           ...base,
           refId: r?.refId ? String(r.refId) : null,
           uniqueKey,
+          displayLabel: String(r?.displayLabel || "").trim() || null,
+          holdShare: String(r?.holdShare || "").trim() || null,
           spendKind:
             r?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
           includesExpressSurcharge: Boolean(r?.includesExpressSurcharge),
@@ -1009,6 +1025,10 @@ export async function adminGetBusinessLedger(req, res) {
           targetLabName: 1,
           transferMemo: 1,
           files: 1,
+          "billing.heldAt": 1,
+          "billing.settledAt": 1,
+          "billing.labSettledAt": 1,
+          "billing.abutmentSettledAt": 1,
         })
         .lean();
 
@@ -1024,10 +1044,20 @@ export async function adminGetBusinessLedger(req, res) {
             .map((f) => String(f?.patientName || "").trim())
             .find(Boolean) || "",
         ).trim();
+        const heldAt = doc?.billing?.heldAt || null;
+        const settledAt = doc?.billing?.settledAt || null;
+        const labSettledAt = doc?.billing?.labSettledAt || null;
+        const abutmentSettledAt = doc?.billing?.abutmentSettledAt || null;
+        const fullySettled = Boolean(settledAt);
         practiceTransferIdById.set(id, String(doc.transferId || ""));
         practiceTransferMetaById.set(id, {
           patientName: memoPatient || filePatient,
           labName: String(doc.targetLabName || "").trim(),
+          practiceTransferPending: Boolean(heldAt) && !fullySettled,
+          practiceTransferLabPending:
+            Boolean(heldAt) && !fullySettled && !labSettledAt,
+          practiceTransferAbutmentPending:
+            Boolean(heldAt) && !fullySettled && !abutmentSettledAt,
         });
       }
     }
@@ -1090,6 +1120,11 @@ export async function adminGetBusinessLedger(req, res) {
             : "",
           patientName: meta?.patientName || "",
           labName: meta?.labName || "",
+          practiceTransferPending: Boolean(meta?.practiceTransferPending),
+          practiceTransferLabPending: Boolean(meta?.practiceTransferLabPending),
+          practiceTransferAbutmentPending: Boolean(
+            meta?.practiceTransferAbutmentPending,
+          ),
         };
       }
 
