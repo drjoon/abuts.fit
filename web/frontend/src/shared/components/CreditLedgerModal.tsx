@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 기공의뢰 행 재통합 + 유형 옆 지급 상태(보류/일부/완료).
 // - 2026-08-17: 견적 상세 모달 — 환자·기공소·주문일·치과도착일·메모 표시.
 // - 2026-08-17: 견적 상세 모달 — 기공소몫/어벗츠몫 보류·실지급을 각각 전달.
 // - 2026-08-17: 금액 호버 툴팁 + 행 클릭 시 견적 상세 모달(첨1).
@@ -316,6 +317,9 @@ type LedgerDisplayPart = {
 
 type PracticeTransferRoute = "lab" | "abuts" | "other";
 
+/** 기공의뢰 크레딧 지급 진행 상태(몫별 정산) */
+type PracticeTransferPayoutStatus = "hold" | "partial" | "settled";
+
 type LedgerDisplayRow = {
   key: string;
   createdAt: string;
@@ -327,17 +331,31 @@ type LedgerDisplayRow = {
   displayLabel: string;
   parts: LedgerDisplayPart[] | null;
   practiceTransferPending: boolean;
-  practiceTransferRoute?: PracticeTransferRoute | null;
+  practiceTransferPayoutStatus: PracticeTransferPayoutStatus | null;
+  isPracticeTransfer: boolean;
   item: CreditLedgerItem;
 };
 
-const practiceTransferRouteLabel = (
-  route: PracticeTransferRoute,
-  pending: boolean,
+const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰";
+
+const practiceTransferPayoutStatusLabel = (
+  status: PracticeTransferPayoutStatus,
 ) => {
-  if (route === "abuts") return pending ? "어벗츠 비용 보류" : "어벗츠 비용";
-  if (route === "lab") return pending ? "기공소 비용 보류" : "기공소 비용";
-  return pending ? "기공의뢰 보류" : "기공의뢰";
+  if (status === "settled") return "지급 완료";
+  if (status === "partial") return "일부 지급";
+  return "지급 보류";
+};
+
+const practiceTransferPayoutStatusClass = (
+  status: PracticeTransferPayoutStatus,
+) => {
+  if (status === "settled") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+  if (status === "partial") {
+    return "border-sky-200 bg-sky-50 text-sky-800";
+  }
+  return "border-amber-200 bg-amber-50 text-amber-900";
 };
 
 const resolvePracticeTransferRoute = (
@@ -393,14 +411,45 @@ const resolvePracticeTransferPending = (
   return String(item.type || "") === "SPEND_HOLD";
 };
 
-const resolvePracticeTransferDisplayLabel = (
+/** 기공소/어벗츠 몫 존재 여부에 따라 지급 보류·일부 지급·지급 완료 */
+const resolvePracticeTransferPayoutStatus = (
   item: CreditLedgerItem,
   members?: CreditLedgerItem[],
-) => {
-  const route = resolvePracticeTransferRoute(item);
-  const pending = resolvePracticeTransferPending(item, route, members);
+): PracticeTransferPayoutStatus | null => {
+  if (String(item.refType || "") !== "PRACTICE_TRANSFER") return null;
+
+  const list =
+    Array.isArray(members) && members.length > 0 ? members : [item];
+  let hasLab = false;
+  let hasAbuts = false;
+  for (const row of list) {
+    const route = resolvePracticeTransferRoute(row);
+    if (route === "abuts") hasAbuts = true;
+    else if (route === "lab") hasLab = true;
+  }
+
+  const pendingFlags: boolean[] = [];
+  if (hasLab) {
+    pendingFlags.push(resolvePracticeTransferPending(item, "lab", list));
+  }
+  if (hasAbuts) {
+    pendingFlags.push(resolvePracticeTransferPending(item, "abuts", list));
+  }
+  if (pendingFlags.length === 0) {
+    return resolvePracticeTransferPending(item, "other", list)
+      ? "hold"
+      : "settled";
+  }
+
+  const pendingCount = pendingFlags.filter(Boolean).length;
+  if (pendingCount === 0) return "settled";
+  if (pendingCount === pendingFlags.length) return "hold";
+  return "partial";
+};
+
+const resolvePracticeTransferDisplayLabel = (item: CreditLedgerItem) => {
   if (String(item.refType || "") === "PRACTICE_TRANSFER") {
-    return practiceTransferRouteLabel(route, pending);
+    return PRACTICE_TRANSFER_TYPE_LABEL;
   }
   return String(item.displayLabel || "").trim() || typeLabel(item.type);
 };
@@ -485,26 +534,21 @@ const formatSignedWon = (amount: number) => {
 function PracticeTransferAmountHover({
   totalAmount,
   parts,
-  pending = false,
-  route = "lab",
 }: {
   totalAmount: number;
   parts: LedgerDisplayPart[];
-  pending?: boolean;
-  route?: PracticeTransferRoute;
 }) {
   const leaves = useMemo(
     () => buildPracticeTransferFeeLeaves(parts),
     [parts],
   );
-  const title = practiceTransferRouteLabel(route, pending);
   const detailLines =
     leaves.length > 0
       ? leaves
       : [
           {
             kind: "other" as const,
-            label: title,
+            label: PRACTICE_TRANSFER_TYPE_LABEL,
             amount: totalAmount,
           },
         ];
@@ -564,10 +608,9 @@ const practiceTransferGroupKey = (item: CreditLedgerItem) => {
   if (String(item.refType || "") !== "PRACTICE_TRANSFER") return "";
   const ptx = String(item.refPracticeTransferId || "").trim();
   const refId = String(item.refId || "").trim();
-  const base = ptx ? `ptx:${ptx}` : refId ? `ptx-ref:${refId}` : "";
-  if (!base) return "";
-  const route = resolvePracticeTransferRoute(item);
-  return `${base}:${route}`;
+  if (ptx) return `ptx:${ptx}`;
+  if (refId) return `ptx-ref:${refId}`;
+  return "";
 };
 
 const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
@@ -577,7 +620,7 @@ const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
   spentFreeAmount: Number(item.spentFreeAmount || 0),
 });
 
-/** 동일 기공의뢰(PTX) 원장을 기공소/어벗츠 비용 행으로 나눠 묶는다. */
+/** 동일 기공의뢰(PTX) 원장을 한 행으로 묶는다. */
 const groupLedgerItemsForDisplay = (
   items: CreditLedgerItem[],
 ): LedgerDisplayRow[] => {
@@ -610,7 +653,8 @@ const groupLedgerItemsForDisplay = (
           item,
           resolvePracticeTransferRoute(item),
         ),
-        practiceTransferRoute: null,
+        practiceTransferPayoutStatus: resolvePracticeTransferPayoutStatus(item),
+        isPracticeTransfer: String(item.refType || "") === "PRACTICE_TRANSFER",
         item,
       });
       continue;
@@ -625,27 +669,6 @@ const groupLedgerItemsForDisplay = (
     );
     if (members.length === 0) continue;
 
-    const route = resolvePracticeTransferRoute(members[0]);
-    if (members.length === 1) {
-      const only = members[0];
-      const pending = resolvePracticeTransferPending(only, route);
-      out.push({
-        key: String(only._id || only.uniqueKey),
-        createdAt: String(only.createdAt || ""),
-        amount: Number(only.amount || 0),
-        balanceAfter: only.balanceAfter,
-        spentPaidAmount: Number(only.spentPaidAmount || 0),
-        spentFreeAmount: Number(only.spentFreeAmount || 0),
-        type: only.type,
-        displayLabel: practiceTransferRouteLabel(route, pending),
-        parts: [toDisplayPart(only)],
-        practiceTransferPending: pending,
-        practiceTransferRoute: route,
-        item: only,
-      });
-      continue;
-    }
-
     const latest = members[members.length - 1];
     const amount = members.reduce((sum, m) => sum + Number(m.amount || 0), 0);
     const spentPaidAmount = members.reduce(
@@ -656,7 +679,8 @@ const groupLedgerItemsForDisplay = (
       (sum, m) => sum + Number(m.spentFreeAmount || 0),
       0,
     );
-    const pending = resolvePracticeTransferPending(latest, route, members);
+    const pending = resolvePracticeTransferPending(latest, "other", members);
+    const payoutStatus = resolvePracticeTransferPayoutStatus(latest, members);
     out.push({
       key: gKey,
       createdAt: String(latest.createdAt || ""),
@@ -665,10 +689,11 @@ const groupLedgerItemsForDisplay = (
       spentPaidAmount,
       spentFreeAmount,
       type: latest.type,
-      displayLabel: practiceTransferRouteLabel(route, pending),
+      displayLabel: PRACTICE_TRANSFER_TYPE_LABEL,
       parts: members.map(toDisplayPart),
       practiceTransferPending: pending,
-      practiceTransferRoute: route,
+      practiceTransferPayoutStatus: payoutStatus,
+      isPracticeTransfer: true,
       item: latest,
     });
   }
@@ -828,12 +853,10 @@ const renderTransactionDetail = ({
   if (refType === "PRACTICE_TRANSFER") {
     const labName = String(item.labName || "").trim() || "-";
     const patientName = String(item.patientName || "").trim() || "-";
-    const route = resolvePracticeTransferRoute(item);
-    const pending = resolvePracticeTransferPending(item, route);
     return (
       <>
         <span className="text-[11px] text-muted-foreground">
-          {practiceTransferRouteLabel(route, pending)}
+          {PRACTICE_TRANSFER_TYPE_LABEL}
         </span>
         <span className="pt-1 text-[11px] text-slate-700">
           {labName} / {patientName}
@@ -1362,6 +1385,11 @@ export const CreditLedgerModal = ({
                       {renderSortIcon(sort.key === "type", sort.direction)}
                     </button>
                   </TableHead>
+                  <TableHead className="w-[110px] text-center">
+                    <span className="whitespace-nowrap text-xs sm:text-sm">
+                      지급 상태
+                    </span>
+                  </TableHead>
                   <TableHead className="min-w-[160px] text-center">
                     <button
                       type="button"
@@ -1404,7 +1432,7 @@ export const CreditLedgerModal = ({
                   const spentPaid = Number(r.spentPaidAmount || 0);
                   const spentFree = Number(r.spentFreeAmount ?? 0);
                   const hasParts =
-                    Boolean(r.practiceTransferRoute) &&
+                    Boolean(r.isPracticeTransfer) &&
                     Array.isArray(r.parts) &&
                     r.parts.length > 0;
                   const showSplit =
@@ -1428,9 +1456,10 @@ export const CreditLedgerModal = ({
                     return "무료";
                   })();
                   const canOpenFeeQuote = Boolean(
-                    r.practiceTransferRoute &&
+                    r.isPracticeTransfer &&
                       parsePracticeTransferFeeQuote(r.item.feeQuote),
                   );
+                  const payoutStatus = r.practiceTransferPayoutStatus;
                   return (
                     <TableRow
                       key={r.key}
@@ -1453,11 +1482,7 @@ export const CreditLedgerModal = ({
                           skipJig: r.item.skipJig !== false,
                           rushProcessing: Boolean(r.item.rushProcessing),
                           title:
-                            r.displayLabel ||
-                            practiceTransferRouteLabel(
-                              r.practiceTransferRoute || "lab",
-                              r.practiceTransferPending,
-                            ),
+                            r.displayLabel || PRACTICE_TRANSFER_TYPE_LABEL,
                           creditLabHoldPending: resolvePracticeTransferPending(
                             r.item,
                             "lab",
@@ -1477,57 +1502,58 @@ export const CreditLedgerModal = ({
                       <TableCell className="whitespace-nowrap text-center align-middle text-xs">
                         {formatDate(String(r.createdAt || ""))}
                       </TableCell>
-                      {hasParts ? (
-                        <>
-                          <TableCell className="text-center text-xs font-medium align-middle">
-                            <span className="inline-block whitespace-nowrap text-center">
-                              {r.displayLabel || typeLabel(r.type)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-center align-middle">
-                            <PracticeTransferAmountHover
-                              totalAmount={amount}
-                              parts={r.parts!}
-                              pending={r.practiceTransferPending}
-                              route={r.practiceTransferRoute || "lab"}
-                            />
-                          </TableCell>
-                        </>
-                      ) : (
-                        <>
-                          <TableCell className="text-center text-xs font-medium align-middle">
-                            <span className="inline-block whitespace-nowrap text-center">
-                              {r.displayLabel || typeLabel(r.type)}
-                            </span>
-                          </TableCell>
-                          <TableCell
+                      <TableCell className="text-center text-xs font-medium align-middle">
+                        <span className="inline-block whitespace-nowrap text-center">
+                          {r.displayLabel || typeLabel(r.type)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center align-middle">
+                        {payoutStatus ? (
+                          <span
                             className={cn(
-                              "text-center font-medium tabular-nums align-middle",
-                              isMinus
-                                ? "text-destructive"
-                                : "text-primary-strong",
+                              "inline-flex whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-none",
+                              practiceTransferPayoutStatusClass(payoutStatus),
                             )}
                           >
-                            {showSplit ? (
-                              <div className="flex flex-col items-center leading-4">
-                                {spentPaid > 0 && (
-                                  <div className="text-xs tabular-nums">
-                                    유료 -{spentPaid.toLocaleString()}원
-                                  </div>
-                                )}
-                                {spentFree > 0 && (
-                                  <div className="text-xs tabular-nums">
-                                    {freeSpendLabel} -
-                                    {spentFree.toLocaleString()}원
-                                  </div>
-                                )}
+                            {practiceTransferPayoutStatusLabel(payoutStatus)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          "text-center font-medium tabular-nums align-middle",
+                          hasParts
+                            ? undefined
+                            : isMinus
+                              ? "text-destructive"
+                              : "text-primary-strong",
+                        )}
+                      >
+                        {hasParts ? (
+                          <PracticeTransferAmountHover
+                            totalAmount={amount}
+                            parts={r.parts!}
+                          />
+                        ) : showSplit ? (
+                          <div className="flex flex-col items-center leading-4">
+                            {spentPaid > 0 && (
+                              <div className="text-xs tabular-nums">
+                                유료 -{spentPaid.toLocaleString()}원
                               </div>
-                            ) : (
-                              `${amount.toLocaleString()}원`
                             )}
-                          </TableCell>
-                        </>
-                      )}
+                            {spentFree > 0 && (
+                              <div className="text-xs tabular-nums">
+                                {freeSpendLabel} -
+                                {spentFree.toLocaleString()}원
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          `${amount.toLocaleString()}원`
+                        )}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap text-center align-middle text-xs tabular-nums text-muted-foreground">
                         {r.balanceAfter !== undefined
                           ? `${Number(r.balanceAfter).toLocaleString()}원`
@@ -1556,7 +1582,7 @@ export const CreditLedgerModal = ({
                 {loading && rows.length > 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="py-4 text-center text-sm text-muted-foreground"
                     >
                       불러오는 중…
@@ -1567,7 +1593,7 @@ export const CreditLedgerModal = ({
                 {!loading && rows.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="py-10 text-center text-sm text-muted-foreground"
                     >
                       조회 결과가 없습니다.
