@@ -4,6 +4,8 @@ import {
   buildManufacturerMailboxGroups,
   collectManufacturerLedgerLookupIds,
   groupManufacturerLedgerForDisplay,
+  isManufacturerLabOriginShippingRow,
+  isManufacturerShippingEarnRow,
   summarizeManufacturerLedgerRequest,
 } from "../../utils/manufacturerLedgerDisplay.js";
 
@@ -182,6 +184,23 @@ describe("manufacturerLedgerDisplay", () => {
     expect(
       grouped[0].mailboxGroups[0].items.some((item) => item.kind === "shipping"),
     ).toBe(true);
+  });
+
+  test("lab-origin PTX shipping is not manufacturer shipping", () => {
+    const labRow = {
+      type: "EARN",
+      eventType: "SHIPPING_SPEND_COMMIT",
+      amount: 3500,
+      creditKind: "PAID",
+      refType: "PRACTICE_TRANSFER",
+      refId: "555555555555555555555555",
+      usageKind: "practice_transfer_lab_shipping",
+      uniqueKey: "gl:practice_transfer:555555555555555555555555:lab_shipping",
+      occurredAt: "2026-08-17T05:26:00.000Z",
+    };
+    expect(isManufacturerLabOriginShippingRow(labRow)).toBe(true);
+    expect(isManufacturerShippingEarnRow(labRow)).toBe(false);
+    expect(groupManufacturerLedgerForDisplay([labRow])).toEqual([]);
   });
 
   test("payout stays a standalone row", () => {
