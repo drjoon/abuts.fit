@@ -3,6 +3,8 @@
 // - web/backend/controllers/admin/adminCredit.controller.js
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/backend/controllers/requests/common.review.helpers.js
+// - web/backend/services/practiceTransferBilling.service.js
+// - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
 // - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
 
 const SETTLEMENT_LEDGER_TYPES = new Set([
@@ -322,6 +324,68 @@ export function buildCreditLedgerRequestSummary(doc) {
           ? null
           : Number(caseInfos.connectionDiameter),
     },
+  };
+}
+
+export const ABUTMENT_DESIGN_LAB_FEE_SOURCE = "abutment_design_lab_fee";
+
+/** 저널 meta.relatedPracticeTransferId — 없으면 디자인비 저널의 PTX refId */
+export const CREDIT_LEDGER_RELATED_PTX_ID_EXPR = {
+  $ifNull: [
+    "$journalDoc.meta.relatedPracticeTransferId",
+    {
+      $cond: [
+        {
+          $and: [
+            {
+              $eq: ["$journalDoc.meta.source", ABUTMENT_DESIGN_LAB_FEE_SOURCE],
+            },
+            { $eq: ["$journalDoc.refType", "PRACTICE_TRANSFER"] },
+          ],
+        },
+        { $ifNull: ["$journalDoc.refId", null] },
+        null,
+      ],
+    },
+  ],
+};
+
+export const CREDIT_LEDGER_SOURCE_EXPR = {
+  $ifNull: ["$journalDoc.meta.source", { $ifNull: ["$meta.source", ""] }],
+};
+
+export const CREDIT_LEDGER_DESIGN_FEE_AS_SETTLEMENT_CASE = {
+  case: { $eq: ["$ledgerSource", ABUTMENT_DESIGN_LAB_FEE_SOURCE] },
+  then: "LAB_SETTLEMENT_CHARGE",
+};
+
+export function isAbutmentDesignLabFeeLedgerRow(row) {
+  const source = String(row?.ledgerSource || "").trim();
+  if (source === ABUTMENT_DESIGN_LAB_FEE_SOURCE) return true;
+  return String(row?.uniqueKey || "").includes("abutment_design_fee");
+}
+
+export function collectPracticeTransferLookupIds(items) {
+  const ids = new Set();
+  for (const it of items || []) {
+    if (String(it?.refType || "") === "PRACTICE_TRANSFER" && it?.refId) {
+      ids.add(String(it.refId));
+    }
+    const related = String(it?.relatedPracticeTransferId || "").trim();
+    if (related) ids.add(related);
+  }
+  return Array.from(ids);
+}
+
+/** 기공의뢰 CA 디자인비를 보철기공비와 같은 PRACTICE_TRANSFER 의뢰건으로 승격 */
+export function promoteAbutmentDesignFeeToPracticeTransfer(item, relatedId) {
+  if (!item || !relatedId) return item;
+  if (!isAbutmentDesignLabFeeLedgerRow(item)) return item;
+  return {
+    ...item,
+    refType: "PRACTICE_TRANSFER",
+    refId: String(relatedId),
+    relatedPracticeTransferId: String(relatedId),
   };
 }
 

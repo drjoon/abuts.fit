@@ -2,7 +2,10 @@
 // - web/backend/controllers/credits/creditLedger.utils.js
 import {
   buildLedgerItemsWithBucketBalanceAfter,
+  collectPracticeTransferLookupIds,
+  isAbutmentDesignLabFeeLedgerRow,
   isSettlementLedgerType,
+  promoteAbutmentDesignFeeToPracticeTransfer,
   resolveLedgerTypesForFilters,
 } from "../../controllers/credits/creditLedger.utils.js";
 
@@ -98,5 +101,64 @@ describe("resolveLedgerTypesForFilters", () => {
     expect(resolveLedgerTypesForFilters({ action: "SPEND" })).toEqual(
       expect.arrayContaining(["SPEND_HOLD", "SPEND_PAID", "LAB_SETTLEMENT_PAYOUT"]),
     );
+  });
+});
+
+describe("abutment design fee → practice transfer", () => {
+  test("source·uniqueKey로 디자인비 행을 식별한다", () => {
+    expect(
+      isAbutmentDesignLabFeeLedgerRow({
+        ledgerSource: "abutment_design_lab_fee",
+      }),
+    ).toBe(true);
+    expect(
+      isAbutmentDesignLabFeeLedgerRow({
+        uniqueKey: "gl:request:abc:abutment_design_fee",
+      }),
+    ).toBe(true);
+    expect(
+      isAbutmentDesignLabFeeLedgerRow({ ledgerSource: "other", uniqueKey: "x" }),
+    ).toBe(false);
+  });
+
+  test("PTX 조회 id에 relatedPracticeTransferId를 포함한다", () => {
+    expect(
+      collectPracticeTransferLookupIds([
+        { refType: "PRACTICE_TRANSFER", refId: "aaaaaaaaaaaaaaaaaaaaaaaa" },
+        {
+          refType: "REQUEST",
+          refId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+          relatedPracticeTransferId: "aaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+      ]),
+    ).toEqual(["aaaaaaaaaaaaaaaaaaaaaaaa"]);
+  });
+
+  test("디자인비를 PRACTICE_TRANSFER 의뢰건으로 승격한다", () => {
+    const promoted = promoteAbutmentDesignFeeToPracticeTransfer(
+      {
+        refType: "REQUEST",
+        refId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+        ledgerSource: "abutment_design_lab_fee",
+        relatedPracticeTransferId: "aaaaaaaaaaaaaaaaaaaaaaaa",
+      },
+      "aaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    expect(promoted.refType).toBe("PRACTICE_TRANSFER");
+    expect(promoted.refId).toBe("aaaaaaaaaaaaaaaaaaaaaaaa");
+  });
+
+  test("생산의뢰 차감은 승격하지 않는다", () => {
+    const row = {
+      refType: "REQUEST",
+      refId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+      uniqueKey: "gl:request:xyz:machining_spend",
+    };
+    expect(
+      promoteAbutmentDesignFeeToPracticeTransfer(
+        row,
+        "aaaaaaaaaaaaaaaaaaaaaaaa",
+      ),
+    ).toEqual(row);
   });
 });

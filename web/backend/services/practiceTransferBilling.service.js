@@ -31,6 +31,7 @@
 // - 2026-08-16: 자동매칭 수락·기공소 수신 견적 — 유효 별점 배수 확정가(상한 대역 아님).
 // - 2026-08-16: billed 확정 견적 — labFeeMin/예산 구간 제거·수락 기공소 별점 단일가.
 // - 2026-08-16: 기공소 수신 billed — 스냅샷이 구 상한가여도 라인·labFeeTotal을 별점 확정가로 맞춤.
+// - 2026-08-17: PTX 디자인비 기공소 라인 refType=PRACTICE_TRANSFER(보철기공비와 동일 의뢰건).
 // - 2026-08-17: rollbackPracticeTransferBilling — 배송·디자인비 ADJUST·refId 스윕 포함. 잔액 emit.
 // - 2026-08-17: 보류/해제 기공소몫·어벗츠몫 분리. 기공소 발송=lab share, 제조사 발송=abutment. 기공소 수수료 차감.
 // - 2026-08-17: 장부 displayLabel을 치과→기공소 / 치과→어벗츠 경로로 통일(기공비 보류·배송비·해제).
@@ -3979,7 +3980,8 @@ export async function buildFeeQuotesForTransferDocs({
  *   치과 →(디자인+생산가, 멤버 2.5만/일반 4만)→ 어벗츠
  *   어벗츠 →(abutmentDesignLabFee, 기본 1만)→ 기공소
  *   어벗츠 생산 몫(멤버 1.5만/일반 2만)은 제조 의뢰비로 표시·제조사 정산(9,900) 재원.
- * REV_DEVOPS → LAB_SETTLEMENT_CREDIT (idempotent per Request).
+ * REV_DEVOPS/PLATFORM_ESCROW → LAB_SETTLEMENT_CREDIT (idempotent per Request).
+ * 기공소 장부 라인은 PRACTICE_TRANSFER — 보철기공비와 같은 의뢰건으로 묶음.
  */
 export async function grantAbutmentDesignLabFee({
   requestDoc,
@@ -4138,13 +4140,16 @@ export async function grantAbutmentDesignLabFee({
         amountExcludingVat: amount,
         vatAmount: 0,
         creditKind: "SETTLEMENT",
-        refType: "REQUEST",
-        refId: requestId,
+        refType: relatedTransferId ? "PRACTICE_TRANSFER" : "REQUEST",
+        refId: relatedTransferId || requestId,
         meta: {
           source: "abutment_design_lab_fee",
           displayKind: "lab_credit",
           displayLabel: designFeeLabel,
           itemLabel: designFeeLabel,
+          holdShare: "lab",
+          relatedPracticeTransferId: relatedTransferId || null,
+          requestId,
           unitFee,
           qty,
         },

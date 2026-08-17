@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
+// - 2026-08-17: PTX 디자인비(+지그)를 기공의뢰 행으로 승격(보철기공비와 동일 의뢰건).
 // - 2026-08-17: 사업 장부 PRACTICE_TRANSFER — displayLabel·holdShare·lab/abutment pending.
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
@@ -32,9 +33,15 @@ import {
   buildCreditLedgerRequestSummary,
   buildFreeCreditGrantReason,
   buildLedgerItemsWithBucketBalanceAfter,
+  collectPracticeTransferLookupIds,
+  CREDIT_LEDGER_DESIGN_FEE_AS_SETTLEMENT_CASE,
+  CREDIT_LEDGER_RELATED_PTX_ID_EXPR,
   CREDIT_LEDGER_REQUEST_SELECT,
+  CREDIT_LEDGER_SOURCE_EXPR,
+  isAbutmentDesignLabFeeLedgerRow,
   mergeRequestExpressSurchargeIntoMachiningSpend,
   parseSpendKindFromUniqueKey,
+  promoteAbutmentDesignFeeToPracticeTransfer,
   resolveFreeCreditGrantIdFromLedgerItem,
 } from "../credits/creditLedger.utils.js";
 import { healMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
@@ -656,6 +663,8 @@ export async function adminGetBusinessLedger(req, res) {
               { $ifNull: ["$journalDoc.meta.holdShare", ""] },
             ],
           },
+          relatedPracticeTransferId: CREDIT_LEDGER_RELATED_PTX_ID_EXPR,
+          ledgerSource: CREDIT_LEDGER_SOURCE_EXPR,
         },
       },
       {
@@ -669,6 +678,8 @@ export async function adminGetBusinessLedger(req, res) {
           uniqueKey: { $first: "$mergedUniqueKey" },
           displayLabel: { $first: "$displayLabel" },
           holdShare: { $first: "$holdShare" },
+          relatedPracticeTransferId: { $first: "$relatedPracticeTransferId" },
+          ledgerSource: { $first: "$ledgerSource" },
           amount: { $sum: "$amountBase" },
           spentPaidAmount: {
             $sum: {
@@ -824,6 +835,7 @@ export async function adminGetBusinessLedger(req, res) {
                   },
                   then: "LAB_SETTLEMENT_CHARGE",
                 },
+                CREDIT_LEDGER_DESIGN_FEE_AS_SETTLEMENT_CASE,
                 {
                   case: { $eq: ["$eventType", "ADJUST"] },
                   then: "ADJUST",
@@ -892,6 +904,10 @@ export async function adminGetBusinessLedger(req, res) {
           uniqueKey,
           displayLabel: String(r?.displayLabel || "").trim() || null,
           holdShare: String(r?.holdShare || "").trim() || null,
+          relatedPracticeTransferId: r?.relatedPracticeTransferId
+            ? String(r.relatedPracticeTransferId)
+            : null,
+          ledgerSource: String(r?.ledgerSource || "").trim() || null,
           spendKind:
             r?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
           includesExpressSurcharge: Boolean(r?.includesExpressSurcharge),
@@ -907,6 +923,7 @@ export async function adminGetBusinessLedger(req, res) {
           .filter(
             (it) =>
               String(it?.refType || "") === "REQUEST" &&
+              !isAbutmentDesignLabFeeLedgerRow(it) &&
               it?.refId &&
               Types.ObjectId.isValid(String(it.refId)),
           )
@@ -927,18 +944,9 @@ export async function adminGetBusinessLedger(req, res) {
       ),
     );
 
-    const practiceTransferRefIds = Array.from(
-      new Set(
-        (items || [])
-          .filter(
-            (it) =>
-              String(it?.refType || "") === "PRACTICE_TRANSFER" &&
-              it?.refId &&
-              Types.ObjectId.isValid(String(it.refId)),
-          )
-          .map((it) => String(it.refId)),
-      ),
-    );
+    const practiceTransferRefIds = collectPracticeTransferLookupIds(
+      items || [],
+    ).filter((id) => Types.ObjectId.isValid(id));
 
     const freeCreditGrantIds = Array.from(
       new Set(
@@ -1084,7 +1092,40 @@ export async function adminGetBusinessLedger(req, res) {
     }
 
     const enrichedItems = (items || []).map((it) => {
+      const relatedPtxId = String(it?.relatedPracticeTransferId || "").trim();
+      const asPtxDesignFee =
+        isAbutmentDesignLabFeeLedgerRow(it) &&
+        relatedPtxId &&
+        Types.ObjectId.isValid(relatedPtxId);
       const refType = String(it?.refType || "");
+      const ptxLookupId = asPtxDesignFee
+        ? relatedPtxId
+        : refType === "PRACTICE_TRANSFER"
+          ? String(it?.refId || "")
+          : "";
+
+      if (ptxLookupId && Types.ObjectId.isValid(ptxLookupId)) {
+        const meta = practiceTransferMetaById.get(ptxLookupId) || null;
+        const base = asPtxDesignFee
+          ? promoteAbutmentDesignFeeToPracticeTransfer(it, ptxLookupId)
+          : it;
+        return {
+          ...base,
+          refPracticeTransferId: ptxLookupId
+            ? practiceTransferIdById.get(ptxLookupId) || ""
+            : "",
+          patientName: meta?.patientName || "",
+          labName: meta?.labName || "",
+          practiceTransferPending: Boolean(meta?.practiceTransferPending),
+          practiceTransferLabPending: Boolean(
+            meta?.practiceTransferLabPending,
+          ),
+          practiceTransferAbutmentPending: Boolean(
+            meta?.practiceTransferAbutmentPending,
+          ),
+        };
+      }
+
       if (refType === "REQUEST") {
         const refId = it?.refId ? String(it.refId) : "";
         const refRequestId = refId ? refRequestIdById.get(refId) || "" : "";
@@ -1111,24 +1152,6 @@ export async function adminGetBusinessLedger(req, res) {
           trackingNumbers: refId
             ? shippingTrackingNumbersByPackageId.get(refId) || []
             : [],
-        };
-      }
-
-      if (refType === "PRACTICE_TRANSFER") {
-        const refId = it?.refId ? String(it.refId) : "";
-        const meta = refId ? practiceTransferMetaById.get(refId) || null : null;
-        return {
-          ...it,
-          refPracticeTransferId: refId
-            ? practiceTransferIdById.get(refId) || ""
-            : "",
-          patientName: meta?.patientName || "",
-          labName: meta?.labName || "",
-          practiceTransferPending: Boolean(meta?.practiceTransferPending),
-          practiceTransferLabPending: Boolean(meta?.practiceTransferLabPending),
-          practiceTransferAbutmentPending: Boolean(
-            meta?.practiceTransferAbutmentPending,
-          ),
         };
       }
 

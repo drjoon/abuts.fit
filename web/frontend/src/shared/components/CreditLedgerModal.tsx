@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-17: 기공소 기공의뢰 행 — 치과와 동일(기공비에 디자인 합침·일부 지급·상세 모달).
+// - 2026-08-17: 기공소 보철기공비+디자인비(+지그)를 한 기공의뢰 행으로 묶음.
 // - 2026-08-17: 잔액 카드를 정산 공통 SettlementStatCard로 교체.
 // - 2026-08-17: 견적 상세 모달 — 환자·기공소·주문일·치과도착일·메모 표시.
 // - 2026-08-17: 견적 상세 모달 — 기공소몫/어벗츠몫 보류·실지급을 각각 전달.
@@ -43,6 +45,8 @@
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 // - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
+// - web/backend/controllers/credits/creditLedger.controller.js
+// - web/backend/controllers/credits/creditLedger.utils.js
 // - web/backend/controllers/admin/adminCredit.controller.js
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
@@ -148,6 +152,9 @@ type CreditLedgerItem = {
   labName?: string;
   /** 기공의뢰 원본 메모(메타 포함) — 상세 모달 주문일·도착일·메모 파싱용 */
   transferMemo?: string | null;
+  /** 기공의뢰 CA 디자인비 저널이 가리키는 PTX */
+  relatedPracticeTransferId?: string | null;
+  ledgerSource?: string | null;
   /** 기공의뢰 에스크로 보류 중(heldAt && !settledAt) */
   practiceTransferPending?: boolean;
   /** 기공소몫 미정산(heldAt && !labSettledAt && !settledAt) */
@@ -349,10 +356,17 @@ const resolvePracticeTransferPayoutStatus = (
   item: CreditLedgerItem,
   members?: CreditLedgerItem[],
 ): PracticeTransferPayoutStatus | null => {
-  if (String(item.refType || "") !== "PRACTICE_TRANSFER") return null;
-
   const list =
     Array.isArray(members) && members.length > 0 ? members : [item];
+  const looksLikePtx = list.some((row) => {
+    if (String(row.refType || "") === "PRACTICE_TRANSFER") return true;
+    if (String(row.ledgerSource || "").trim() === "abutment_design_lab_fee") {
+      return true;
+    }
+    return String(row.uniqueKey || "").includes("abutment_design_fee");
+  });
+  if (!looksLikePtx) return null;
+
   let hasLab = false;
   let hasAbuts = false;
   for (const row of list) {
@@ -360,6 +374,29 @@ const resolvePracticeTransferPayoutStatus = (
     if (route === "abuts") hasAbuts = true;
     else if (route === "lab") hasLab = true;
   }
+
+  // 기공소 장부에는 어벗츠몫 라인이 없어도, 의뢰 스냅샷이 있으면 치과와 같이 일부 지급을 표시한다.
+  const quote =
+    parsePracticeTransferFeeQuote(item.feeQuote) ||
+    list
+      .map((row) => parsePracticeTransferFeeQuote(row.feeQuote))
+      .find(Boolean) ||
+    null;
+  const quoteHasAbuts =
+    Math.max(0, Number(quote?.abutmentRetailTotal || 0)) > 0 ||
+    Math.max(0, Number(quote?.abutmentQty || 0)) > 0;
+  const hasLabFlag = list.some(
+    (row) =>
+      row.practiceTransferLabPending === true ||
+      row.practiceTransferLabPending === false,
+  );
+  const hasAbutsFlag = list.some(
+    (row) =>
+      row.practiceTransferAbutmentPending === true ||
+      row.practiceTransferAbutmentPending === false,
+  );
+  if (hasLabFlag) hasLab = true;
+  if (hasAbutsFlag && (quoteHasAbuts || hasAbuts)) hasAbuts = true;
 
   const pendingFlags: boolean[] = [];
   if (hasLab) {
@@ -434,20 +471,26 @@ const classifyPracticeTransferPart = (
   if (toAbuts || label.includes("어벗제작") || label.includes("어벗생산")) {
     return { route: "abuts", kind: "abutProduction" };
   }
-  if (label.includes("기공비") || label.includes("보류")) {
+  if (
+    label.includes("기공비") ||
+    label.includes("보류") ||
+    label.includes("기공크레딧")
+  ) {
     return { route: route === "other" ? "lab" : route, kind: "labFee" };
   }
   return { route, kind: "other" };
 };
 
-/** 경로 행 없이 기공비·배송 등 항목만 합산 */
+/** 경로 행 없이 기공비·배송 등 항목만 합산. 디자인비(+지그)는 기공비에 합친다(치과 장부와 동일). */
 const buildPracticeTransferFeeLeaves = (
   parts: LedgerDisplayPart[],
 ): PracticeTransferTreeLeaf[] => {
   const byKind = new Map<PracticeTransferFeeKind, number>();
   for (const part of parts) {
     const { kind } = classifyPracticeTransferPart(part);
-    byKind.set(kind, (byKind.get(kind) || 0) + Number(part.amount || 0));
+    const mapped: PracticeTransferFeeKind =
+      kind === "design" ? "labFee" : kind;
+    byKind.set(mapped, (byKind.get(mapped) || 0) + Number(part.amount || 0));
   }
   return FEE_KIND_ORDER.filter((kind) => byKind.has(kind)).map((kind) => ({
     kind,
@@ -537,12 +580,23 @@ function PracticeTransferAmountHover({
   );
 }
 
+const isPtxDesignFeeLedgerItem = (item: CreditLedgerItem) => {
+  const source = String(item.ledgerSource || "").trim();
+  if (source === "abutment_design_lab_fee") return true;
+  return String(item.uniqueKey || "").includes("abutment_design_fee");
+};
+
 const practiceTransferGroupKey = (item: CreditLedgerItem) => {
-  if (String(item.refType || "") !== "PRACTICE_TRANSFER") return "";
-  const ptx = String(item.refPracticeTransferId || "").trim();
+  const refType = String(item.refType || "");
+  const isDesignFee = isPtxDesignFeeLedgerItem(item);
+  if (refType !== "PRACTICE_TRANSFER" && !isDesignFee) return "";
+  const related = String(item.relatedPracticeTransferId || "").trim();
   const refId = String(item.refId || "").trim();
-  if (ptx) return `ptx:${ptx}`;
-  if (refId) return `ptx-ref:${refId}`;
+  const ptx = String(item.refPracticeTransferId || "").trim();
+  // mongo id 우선 — 보철기공비(refId)와 디자인비(relatedPracticeTransferId)를 같은 키로
+  if (refType === "PRACTICE_TRANSFER" && refId) return `ptx:${refId}`;
+  if (related) return `ptx:${related}`;
+  if (ptx) return `ptx-human:${ptx}`;
   return "";
 };
 
@@ -603,6 +657,8 @@ const groupLedgerItemsForDisplay = (
     if (members.length === 0) continue;
 
     const latest = members[members.length - 1];
+    const representative =
+      [...members].reverse().find((m) => m.feeQuote) || latest;
     const amount = members.reduce((sum, m) => sum + Number(m.amount || 0), 0);
     const spentPaidAmount = members.reduce(
       (sum, m) => sum + Number(m.spentPaidAmount || 0),
@@ -613,7 +669,10 @@ const groupLedgerItemsForDisplay = (
       0,
     );
     const pending = resolvePracticeTransferPending(latest, "other", members);
-    const payoutStatus = resolvePracticeTransferPayoutStatus(latest, members);
+    const payoutStatus = resolvePracticeTransferPayoutStatus(
+      representative,
+      members,
+    );
     out.push({
       key: gKey,
       createdAt: String(latest.createdAt || ""),
@@ -627,7 +686,7 @@ const groupLedgerItemsForDisplay = (
       practiceTransferPending: pending,
       practiceTransferPayoutStatus: payoutStatus,
       isPracticeTransfer: true,
-      item: latest,
+      item: representative,
     });
   }
 
@@ -1640,7 +1699,7 @@ export const CreditLedgerModal = ({
               </div>
               <PracticeTransferFeeEstimate
                 quote={feeQuoteDetail.quote}
-                viewer="practice"
+                viewer={showSettlementCredit ? "lab" : "practice"}
                 density="detail"
                 skipJig={feeQuoteDetail.skipJig}
                 rushProcessing={feeQuoteDetail.rushProcessing}

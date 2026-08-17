@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: PTX 디자인비(+지그)를 기공의뢰 행으로 승격(보철기공비와 동일 의뢰건).
 // - 2026-08-17: PRACTICE_TRANSFER enrich — transferMemo(크레딧 상세 주문일·도착일·메모).
 // - 2026-08-17: PRACTICE_TRANSFER enrich — feeQuote·skipJig(크레딧 행 클릭 상세 모달).
 // - 2026-08-17: PRACTICE_TRANSFER enrich — lab/abutment pending·holdShare(기공소/어벗츠 행 분리).
@@ -30,9 +31,15 @@ import {
   buildCreditLedgerRequestSummary,
   buildFreeCreditGrantReason,
   buildLedgerItemsWithBucketBalanceAfter,
+  collectPracticeTransferLookupIds,
+  CREDIT_LEDGER_DESIGN_FEE_AS_SETTLEMENT_CASE,
+  CREDIT_LEDGER_RELATED_PTX_ID_EXPR,
   CREDIT_LEDGER_REQUEST_SELECT,
+  CREDIT_LEDGER_SOURCE_EXPR,
+  isAbutmentDesignLabFeeLedgerRow,
   mergeRequestExpressSurchargeIntoMachiningSpend,
   parseSpendKindFromUniqueKey,
+  promoteAbutmentDesignFeeToPracticeTransfer,
   resolveFreeCreditGrantIdFromLedgerItem,
   resolveLedgerTypesForFilters,
 } from "./creditLedger.utils.js";
@@ -260,6 +267,8 @@ export async function listMyCreditLedger(req, res) {
             { $ifNull: ["$journalDoc.meta.holdShare", ""] },
           ],
         },
+        relatedPracticeTransferId: CREDIT_LEDGER_RELATED_PTX_ID_EXPR,
+        ledgerSource: CREDIT_LEDGER_SOURCE_EXPR,
       },
     },
     {
@@ -273,6 +282,8 @@ export async function listMyCreditLedger(req, res) {
         uniqueKey: { $first: "$uniqueKey" },
         displayLabel: { $first: "$displayLabel" },
         holdShare: { $first: "$holdShare" },
+        relatedPracticeTransferId: { $first: "$relatedPracticeTransferId" },
+        ledgerSource: { $first: "$ledgerSource" },
         amount: { $sum: "$amountBase" },
         spentPaidAmount: {
           $sum: {
@@ -476,6 +487,7 @@ export async function listMyCreditLedger(req, res) {
                 },
                 then: "LAB_SETTLEMENT_CHARGE",
               },
+              CREDIT_LEDGER_DESIGN_FEE_AS_SETTLEMENT_CASE,
               { case: { $eq: ["$eventType", "ADJUST"] }, then: "ADJUST" },
             ],
             default: "ADJUST",
@@ -534,6 +546,10 @@ export async function listMyCreditLedger(req, res) {
         uniqueKey,
         displayLabel: String(row?.displayLabel || "").trim() || null,
         holdShare: String(row?.holdShare || "").trim() || null,
+        relatedPracticeTransferId: row?.relatedPracticeTransferId
+          ? String(row.relatedPracticeTransferId)
+          : null,
+        ledgerSource: String(row?.ledgerSource || "").trim() || null,
         spendKind:
           row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
         includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
@@ -547,6 +563,7 @@ export async function listMyCreditLedger(req, res) {
         .filter(
           (it) =>
             String(it?.refType || "") === "REQUEST" &&
+            !isAbutmentDesignLabFeeLedgerRow(it) &&
             it?.refId &&
             mongoose.Types.ObjectId.isValid(String(it.refId)),
         )
@@ -567,17 +584,8 @@ export async function listMyCreditLedger(req, res) {
     ),
   );
 
-  const practiceTransferRefIds = Array.from(
-    new Set(
-      items
-        .filter(
-          (it) =>
-            String(it?.refType || "") === "PRACTICE_TRANSFER" &&
-            it?.refId &&
-            mongoose.Types.ObjectId.isValid(String(it.refId)),
-        )
-        .map((it) => String(it.refId)),
-    ),
+  const practiceTransferRefIds = collectPracticeTransferLookupIds(items).filter(
+    (id) => mongoose.Types.ObjectId.isValid(id),
   );
 
   const freeCreditGrantIds = Array.from(
@@ -743,7 +751,42 @@ export async function listMyCreditLedger(req, res) {
   }
 
   const enrichedItems = items.map((it) => {
+    const relatedPtxId = String(it?.relatedPracticeTransferId || "").trim();
+    const asPtxDesignFee =
+      isAbutmentDesignLabFeeLedgerRow(it) &&
+      relatedPtxId &&
+      mongoose.Types.ObjectId.isValid(relatedPtxId);
     const refType = String(it?.refType || "");
+    const ptxLookupId = asPtxDesignFee
+      ? relatedPtxId
+      : refType === "PRACTICE_TRANSFER"
+        ? String(it?.refId || "")
+        : "";
+
+    if (ptxLookupId && mongoose.Types.ObjectId.isValid(ptxLookupId)) {
+      const meta = practiceTransferMetaById.get(ptxLookupId) || null;
+      const base = asPtxDesignFee
+        ? promoteAbutmentDesignFeeToPracticeTransfer(it, ptxLookupId)
+        : it;
+      return {
+        ...base,
+        refPracticeTransferId: ptxLookupId
+          ? practiceTransferIdById.get(ptxLookupId) || ""
+          : "",
+        patientName: meta?.patientName || "",
+        labName: meta?.labName || "",
+        transferMemo: meta?.transferMemo || "",
+        practiceTransferPending: Boolean(meta?.practiceTransferPending),
+        practiceTransferLabPending: Boolean(meta?.practiceTransferLabPending),
+        practiceTransferAbutmentPending: Boolean(
+          meta?.practiceTransferAbutmentPending,
+        ),
+        feeQuote: meta?.feeQuote || null,
+        skipJig: meta?.skipJig !== false,
+        rushProcessing: Boolean(meta?.rushProcessing),
+      };
+    }
+
     if (refType === "REQUEST") {
       const refId = it?.refId ? String(it.refId) : "";
       const refRequestId = refId ? refRequestIdById.get(refId) || "" : "";
@@ -769,28 +812,6 @@ export async function listMyCreditLedger(req, res) {
         trackingNumbers: refId
           ? shippingTrackingNumbersByPackageId.get(refId) || []
           : [],
-      };
-    }
-
-    if (refType === "PRACTICE_TRANSFER") {
-      const refId = it?.refId ? String(it.refId) : "";
-      const meta = refId ? practiceTransferMetaById.get(refId) || null : null;
-      return {
-        ...it,
-        refPracticeTransferId: refId
-          ? practiceTransferIdById.get(refId) || ""
-          : "",
-        patientName: meta?.patientName || "",
-        labName: meta?.labName || "",
-        transferMemo: meta?.transferMemo || "",
-        practiceTransferPending: Boolean(meta?.practiceTransferPending),
-        practiceTransferLabPending: Boolean(meta?.practiceTransferLabPending),
-        practiceTransferAbutmentPending: Boolean(
-          meta?.practiceTransferAbutmentPending,
-        ),
-        feeQuote: meta?.feeQuote || null,
-        skipJig: meta?.skipJig !== false,
-        rushProcessing: Boolean(meta?.rushProcessing),
       };
     }
 

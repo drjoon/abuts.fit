@@ -270,7 +270,7 @@
   - 조회(발신): `GET /api/practice/transfers/my`
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
-  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수 + `abutmentDesignLabFee`(기본 10,000원×어벗수)를 기공정산 크레딧 지급. **생산 후 치과 직납**(기공소 경유 납품 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
+  - **커스텀어벗 Abuts-first**: 수락 시 스캔 기반 Request 생성 → **수락 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수 + `abutmentDesignLabFee`(기본 10,000원×어벗수)를 기공정산 크레딧 지급(보철기공비와 **한 기공의뢰 장부 행**, 지급 시점은 기공소몫). **생산 후 치과 직납**(기공소 경유 납품 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
 - 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐
