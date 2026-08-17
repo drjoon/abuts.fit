@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: PRACTICE_TRANSFER enrich — transferMemo(크레딧 상세 주문일·도착일·메모).
 // - 2026-08-17: PRACTICE_TRANSFER enrich — feeQuote·skipJig(크레딧 행 클릭 상세 모달).
 // - 2026-08-17: PRACTICE_TRANSFER enrich — lab/abutment pending·holdShare(기공소/어벗츠 행 분리).
 // - 2026-08-17: PRACTICE_TRANSFER enrich에 practiceTransferPending(heldAt·!settledAt).
@@ -698,6 +699,7 @@ export async function listMyCreditLedger(req, res) {
       practiceTransferMetaById.set(id, {
         patientName: memoPatient || filePatient,
         labName: String(doc.targetLabName || "").trim(),
+        transferMemo: memo,
         practiceTransferPending: Boolean(heldAt) && !fullySettled,
         practiceTransferLabPending:
           Boolean(heldAt) && !fullySettled && !labSettledAt,
@@ -774,6 +776,7 @@ export async function listMyCreditLedger(req, res) {
           : "",
         patientName: meta?.patientName || "",
         labName: meta?.labName || "",
+        transferMemo: meta?.transferMemo || "",
         practiceTransferPending: Boolean(meta?.practiceTransferPending),
         practiceTransferLabPending: Boolean(meta?.practiceTransferLabPending),
         practiceTransferAbutmentPending: Boolean(

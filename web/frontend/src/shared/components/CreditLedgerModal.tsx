@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 견적 상세 모달 — 환자·기공소·주문일·치과도착일·메모 표시.
 // - 2026-08-17: 견적 상세 모달 — 기공소몫/어벗츠몫 보류·실지급을 각각 전달.
 // - 2026-08-17: 금액 호버 툴팁 + 행 클릭 시 견적 상세 모달(첨1).
 // - 2026-08-17: 기공소/어벗츠 비용 상세 Popover를 금액 열에 배치.
@@ -98,6 +99,8 @@ import {
   parsePracticeTransferFeeQuote,
   type PracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
+import { parsePracticeTransferMemoMeta } from "@/shared/practice/transferMemo";
+import { formatKstYmdToKo } from "@/shared/date/kst";
 import {
   CREDIT_FREE_BUCKET_HINT,
   CREDIT_LEDGER_FREE_NOTICE_BODY,
@@ -209,6 +212,8 @@ type CreditLedgerItem = {
   balanceAfter?: number;
   patientName?: string;
   labName?: string;
+  /** 기공의뢰 원본 메모(메타 포함) — 상세 모달 주문일·도착일·메모 파싱용 */
+  transferMemo?: string | null;
   /** 기공의뢰 에스크로 보류 중(heldAt && !settledAt) */
   practiceTransferPending?: boolean;
   /** 기공소몫 미정산(heldAt && !labSettledAt && !settledAt) */
@@ -903,6 +908,11 @@ export const CreditLedgerModal = ({
     title: string;
     creditLabHoldPending: boolean;
     creditAbutmentHoldPending: boolean;
+    patientName: string;
+    labName: string;
+    orderDate: string;
+    arrivalDate: string;
+    memo: string;
   } | null>(null);
   const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
     useState<CreditBalanceSnapshot | null>(null);
@@ -1435,6 +1445,9 @@ export const CreditLedgerModal = ({
                           r.item.feeQuote,
                         );
                         if (!quote) return;
+                        const memoMeta = parsePracticeTransferMemoMeta(
+                          String(r.item.transferMemo || ""),
+                        );
                         setFeeQuoteDetail({
                           quote,
                           skipJig: r.item.skipJig !== false,
@@ -1451,6 +1464,13 @@ export const CreditLedgerModal = ({
                           ),
                           creditAbutmentHoldPending:
                             resolvePracticeTransferPending(r.item, "abuts"),
+                          patientName:
+                            String(r.item.patientName || "").trim() ||
+                            String(memoMeta.patientName || "").trim(),
+                          labName: String(r.item.labName || "").trim(),
+                          orderDate: String(memoMeta.orderDate || "").trim(),
+                          arrivalDate: String(memoMeta.arrivalDate || "").trim(),
+                          memo: String(memoMeta.memo || "").trim(),
                         });
                       }}
                     >
@@ -1622,17 +1642,55 @@ export const CreditLedgerModal = ({
             </DialogTitle>
           </DialogHeader>
           {feeQuoteDetail ? (
-            <PracticeTransferFeeEstimate
-              quote={feeQuoteDetail.quote}
-              viewer="practice"
-              density="detail"
-              skipJig={feeQuoteDetail.skipJig}
-              rushProcessing={feeQuoteDetail.rushProcessing}
-              creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
-              creditAbutmentHoldPending={
-                feeQuoteDetail.creditAbutmentHoldPending
-              }
-            />
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-xs leading-snug">
+                <p className="min-w-0">
+                  <span className="text-muted-foreground">환자명</span>{" "}
+                  <span className="font-medium text-slate-900">
+                    {feeQuoteDetail.patientName || "—"}
+                  </span>
+                </p>
+                <p className="min-w-0">
+                  <span className="text-muted-foreground">기공소</span>{" "}
+                  <span className="font-medium text-slate-900">
+                    {feeQuoteDetail.labName || "—"}
+                  </span>
+                </p>
+                <p className="min-w-0">
+                  <span className="text-muted-foreground">주문일</span>{" "}
+                  <span className="font-medium tabular-nums text-slate-900">
+                    {feeQuoteDetail.orderDate
+                      ? formatKstYmdToKo(feeQuoteDetail.orderDate)
+                      : "—"}
+                  </span>
+                </p>
+                <p className="min-w-0">
+                  <span className="text-muted-foreground">치과도착일</span>{" "}
+                  <span className="font-medium tabular-nums text-slate-900">
+                    {feeQuoteDetail.arrivalDate
+                      ? formatKstYmdToKo(feeQuoteDetail.arrivalDate)
+                      : "—"}
+                  </span>
+                </p>
+                <p className="col-span-2 min-w-0 whitespace-pre-wrap break-words">
+                  <span className="text-muted-foreground">메모</span>{" "}
+                  <span className="font-medium text-slate-900">
+                    {feeQuoteDetail.memo || "—"}
+                  </span>
+                </p>
+              </div>
+              <PracticeTransferFeeEstimate
+                quote={feeQuoteDetail.quote}
+                viewer="practice"
+                density="detail"
+                skipJig={feeQuoteDetail.skipJig}
+                rushProcessing={feeQuoteDetail.rushProcessing}
+                creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
+                creditAbutmentHoldPending={
+                  feeQuoteDetail.creditAbutmentHoldPending
+                }
+              />
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
