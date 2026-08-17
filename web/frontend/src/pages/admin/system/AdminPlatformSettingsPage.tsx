@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 수익분배·사업부·파트너는 별도「파트너」메뉴(`/dashboard/partners`).
 // - 2026-08-16: 「커스텀어벗 요금 · 크레딧」→「크레딧」+「커스텀어벗」탭 분리.
 // - 2026-08-16: 「기공소 매칭」→「인증 기공소」탭 라벨.
 // - 2026-08-14: 기공소 신규 기공비 → 어벗츠 수가 검토 배지·탭 하이라이트.
@@ -15,6 +16,7 @@
 // - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
+// - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {

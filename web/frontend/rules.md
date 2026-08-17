@@ -140,6 +140,7 @@ Notes:
   - `src/shared/components/CreditLedgerModal.tsx` (내역: 잔액 카드 + rounded-2xl 테이블)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (크레딧 · 커스텀어벗 · 인증 기공소 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
+  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「파트너」. 탭: 수익분배 · 기공사업부 · 영업부 · 기공파트너 · 영업파트너. 재원=어벗츠 매출−제조사 생산비(배송비 포함). 기본 분배비 20/10/30/20. 사업부 `max(최소지급, 배분액)`, 파트너는 배분액. 세금 설정은 이후 추가)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 환영 무료 크레딧·멤버십·배송 / `variant=customAbut`: 커스텀어벗(CNC/환봉·어벗디자인비)·어벗 추가 요청·특별 공급가)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)

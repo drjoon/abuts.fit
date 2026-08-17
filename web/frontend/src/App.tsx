@@ -27,6 +27,7 @@ import { useSocket } from "@/shared/hooks/useSocket";
 // - web/frontend/src/pages/devops/DevopsPaymentsPage.tsx
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
+// - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
 
 const Index = lazy(() => import("./pages/public/Index"));
 const ManualPage = lazy(() => import("./pages/public/ManualPage"));
@@ -73,6 +74,11 @@ const InternalLabLabWorkPage = lazy(
 const AdminPlatformSettingsPage = lazy(() =>
   import("./pages/admin/system/AdminPlatformSettingsPage").then((m) => ({
     default: m.AdminPlatformSettingsPage,
+  })),
+);
+const AdminPartnersPage = lazy(() =>
+  import("./pages/admin/partners/AdminPartnersPage").then((m) => ({
+    default: m.AdminPartnersPage,
   })),
 );
 const SettingsPage = lazy(() =>
@@ -569,6 +575,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
                         <AdminPlatformSettingsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="partners"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminPartnersPage />
                       </RoleProtectedRoute>
                     }
                   />
