@@ -33,8 +33,8 @@ export const useRequestFiltering = (
   }, [currentStageOrder, filterRequests, requests, showCompleted, tabStage]);
 
   const filteredAndSorted = useMemo(() => {
-    return filterAndSortRequests(filteredBase, searchLower);
-  }, [filteredBase, searchLower]);
+    return filterAndSortRequests(filteredBase, searchLower, { tabStage });
+  }, [filteredBase, searchLower, tabStage]);
 
   const getFilteredAndSortedRequests = useCallback(
     (sourceRequests: ManufacturerRequest[]) => {
@@ -45,7 +45,7 @@ export const useRequestFiltering = (
         currentStageOrder,
         filterRequests,
       );
-      return filterAndSortRequests(base, searchLower);
+      return filterAndSortRequests(base, searchLower, { tabStage });
     },
     [currentStageOrder, filterRequests, searchLower, showCompleted, tabStage],
   );

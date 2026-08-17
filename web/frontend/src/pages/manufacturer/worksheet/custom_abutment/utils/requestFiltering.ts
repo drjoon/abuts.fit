@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 준비 탭 의뢰카드 정렬 — 출고일(마감) 긴박한 순(위) → 여유 있는 순(아래).
 // - 2026-08-03: 준비 탭 필터 SSOT를 `준비`로 통일해 상단 카운트와 카드 목록 불일치(카운트>0, 카드 0건) 문제를 수정.
 // - 2026-08-03: 실시간 CAM 생성중 복원 조건의 request 단계 판정을 `준비` 단일값으로 정리.
 // related files:
@@ -11,9 +12,41 @@
 import {
   type ManufacturerRequest,
   deriveStageForFilter,
+  getDeadlineInfo,
   stageOrder,
   isRndSampleRequest,
 } from "./request";
+
+function compareRequestsByShipUrgency(
+  a: ManufacturerRequest,
+  b: ManufacturerRequest,
+): number {
+  const aScore = Number(a.shippingPriority?.score);
+  const bScore = Number(b.shippingPriority?.score);
+  const aHasScore = Number.isFinite(aScore);
+  const bHasScore = Number.isFinite(bScore);
+
+  if (aHasScore && bHasScore && aScore !== bScore) {
+    return bScore - aScore;
+  }
+  if (aHasScore !== bHasScore) {
+    return aHasScore ? -1 : 1;
+  }
+
+  const aRemaining =
+    getDeadlineInfo(a.createdAt, a.timeline?.estimatedShipYmd)?.remainingMs ??
+    Number.POSITIVE_INFINITY;
+  const bRemaining =
+    getDeadlineInfo(b.createdAt, b.timeline?.estimatedShipYmd)?.remainingMs ??
+    Number.POSITIVE_INFINITY;
+  if (aRemaining !== bRemaining) {
+    return aRemaining - bRemaining;
+  }
+
+  const aTime = new Date(a.createdAt || 0).getTime();
+  const bTime = new Date(b.createdAt || 0).getTime();
+  return aTime - bTime;
+}
 
 function getKstTodayYmd(): string {
   const now = new Date();
@@ -181,7 +214,11 @@ export function filterRequestsByStage(
 export function filterAndSortRequests(
   requests: ManufacturerRequest[],
   searchLower: string,
+  options?: { tabStage?: string },
 ): ManufacturerRequest[] {
+  const tabStage = String(options?.tabStage || "").trim();
+  const sortByShipUrgency = tabStage === "request";
+
   return requests
     .filter((request) => {
       const caseInfos = request.caseInfos || {};
@@ -202,6 +239,11 @@ export function filterAndSortRequests(
       return text.includes(searchLower);
     })
     .sort((a, b) => {
+      if (sortByShipUrgency) {
+        const byShip = compareRequestsByShipUrgency(a, b);
+        if (byShip !== 0) return byShip;
+      }
+
       const aTime = new Date(a.createdAt || 0).getTime();
       const bTime = new Date(b.createdAt || 0).getTime();
       return bTime - aTime;
