@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 견적 상세 모달 — 기공소몫/어벗츠몫 보류·실지급을 각각 전달.
 // - 2026-08-17: 금액 호버 툴팁 + 행 클릭 시 견적 상세 모달(첨1).
 // - 2026-08-17: 기공소/어벗츠 비용 상세 Popover를 금액 열에 배치.
 // - 2026-08-17: 기공소/어벗츠 비용 행 — 클릭 시 견적 툴팁 스타일 상세(Popover).
@@ -900,6 +901,8 @@ export const CreditLedgerModal = ({
     skipJig: boolean;
     rushProcessing: boolean;
     title: string;
+    creditLabHoldPending: boolean;
+    creditAbutmentHoldPending: boolean;
   } | null>(null);
   const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
     useState<CreditBalanceSnapshot | null>(null);
@@ -1442,6 +1445,12 @@ export const CreditLedgerModal = ({
                               r.practiceTransferRoute || "lab",
                               r.practiceTransferPending,
                             ),
+                          creditLabHoldPending: resolvePracticeTransferPending(
+                            r.item,
+                            "lab",
+                          ),
+                          creditAbutmentHoldPending:
+                            resolvePracticeTransferPending(r.item, "abuts"),
                         });
                       }}
                     >
@@ -1619,6 +1628,10 @@ export const CreditLedgerModal = ({
               density="detail"
               skipJig={feeQuoteDetail.skipJig}
               rushProcessing={feeQuoteDetail.rushProcessing}
+              creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
+              creditAbutmentHoldPending={
+                feeQuoteDetail.creditAbutmentHoldPending
+              }
             />
           ) : null}
         </DialogContent>

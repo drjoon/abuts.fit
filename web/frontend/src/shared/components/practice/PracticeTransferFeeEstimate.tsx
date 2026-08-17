@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-17: 크레딧 상세 — 기공소몫/어벗츠몫 각각 실지급·보류 표시.
 // - 2026-08-17: mode=detail — 호버 없이 견적 상세 표(크레딧 장부 모달용).
 // - 2026-08-17: 배송비 안내 — 출고 시 차감 → 주문 시 보류.
 // - 2026-08-17: 견적 한줄 요약 — CA 디자인비(+지그)는 기공비, 어벗은 생산비만(툴팁 기공비 총액·어벗생산비와 일치).
@@ -82,9 +83,23 @@ type PracticeTransferFeeEstimateProps = {
   rushProcessing?: boolean;
   /** 기공소 뷰 — 자동매칭 기공비를 유효 별점 배수로 단일 확정 */
   labEffectiveStars?: number | null;
+  /**
+   * 크레딧 장부 상세 전용. 기공소몫·어벗츠몫 각각 true=보류 중, false=실지급 완료.
+   * 미전달 시(의뢰 작성 등) 배송비는 주문 시 보류 안내 유지.
+   */
+  creditLabHoldPending?: boolean | null;
+  creditAbutmentHoldPending?: boolean | null;
 };
 
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
+
+const creditShareSettlementLabel = (pending: boolean) =>
+  pending ? "보류 중" : "실지급 완료";
+
+const creditShareSettlementClass = (pending: boolean) =>
+  pending
+    ? "border-amber-200 bg-amber-50 text-amber-900"
+    : "border-emerald-200 bg-emerald-50 text-emerald-800";
 
 type FeeBreakdownLine = {
   toothNumber: string;
@@ -514,12 +529,25 @@ export function PracticeTransferFeeEstimate({
   skipJig = true,
   rushProcessing = false,
   labEffectiveStars = null,
+  creditLabHoldPending = null,
+  creditAbutmentHoldPending = null,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
   const isDetail = density === "detail";
   const isCard = density === "card";
   const showLabPendingHint = Boolean(labPending) && !isLab;
   const hasTrailing = Boolean(trailingAction);
+  const showCreditShareSettlement =
+    isDetail &&
+    (creditLabHoldPending !== null || creditAbutmentHoldPending !== null);
+  const labCreditSettled =
+    creditLabHoldPending !== null &&
+    creditLabHoldPending !== undefined &&
+    !creditLabHoldPending;
+  const abutmentCreditSettled =
+    creditAbutmentHoldPending !== null &&
+    creditAbutmentHoldPending !== undefined &&
+    !creditAbutmentHoldPending;
   const { data: systemSettings } = useSystemSettings();
   const rushFeeMultiplier = (() => {
     // 신규 신속처리 할증 없음. 레거시 quote 배수만 표시.
@@ -819,6 +847,9 @@ export function PracticeTransferFeeEstimate({
                   key: "lab",
                   label: "치과→기공소",
                   amount: shippingFeePerBox,
+                  holdPending: showCreditShareSettlement
+                    ? creditLabHoldPending
+                    : null,
                 },
               ]
             : []),
@@ -828,6 +859,9 @@ export function PracticeTransferFeeEstimate({
                   key: "abuts",
                   label: "치과→어벗츠",
                   amount: shippingFeePerBox,
+                  holdPending: showCreditShareSettlement
+                    ? creditAbutmentHoldPending
+                    : null,
                 },
               ]
             : []),
@@ -837,6 +871,13 @@ export function PracticeTransferFeeEstimate({
     (sum, row) => sum + row.amount,
     0,
   );
+  const shippingHeaderLabel = showCreditShareSettlement
+    ? labCreditSettled && abutmentCreditSettled
+      ? "배송비(차감 완료 · 박스당)"
+      : labCreditSettled || abutmentCreditSettled
+        ? "배송비(박스당)"
+        : "배송비(주문 시 보류 · 박스당)"
+    : "배송비(주문 시 보류 · 박스당)";
 
   const breakdownPanel = (
     <>
@@ -956,15 +997,23 @@ export function PracticeTransferFeeEstimate({
       ) : null}
       {shippingHintLines.length > 0 ? (
         <div className="mt-1.5 space-y-0.5 border-t border-foreground/15 pt-1.5 text-[11px] leading-snug text-muted-foreground">
-          <p className="font-medium text-foreground/80">
-            배송비(주문 시 보류 · 박스당)
-          </p>
+          <p className="font-medium text-foreground/80">{shippingHeaderLabel}</p>
           {shippingHintLines.map((row) => (
             <p key={row.key} className="tabular-nums">
               {row.label}{" "}
               <span className="font-medium text-foreground">
                 {formatManWon(row.amount)}
               </span>
+              {row.holdPending !== null && row.holdPending !== undefined ? (
+                <span
+                  className={cn(
+                    "ml-1.5 inline-flex rounded border px-1 py-px text-[10px] font-medium leading-tight",
+                    creditShareSettlementClass(row.holdPending),
+                  )}
+                >
+                  {creditShareSettlementLabel(row.holdPending)}
+                </span>
+              ) : null}
             </p>
           ))}
           {skipJig && hasAbutsOriginShip && !hasLabProsthesisShip ? (
@@ -996,6 +1045,34 @@ export function PracticeTransferFeeEstimate({
         role="region"
         aria-label="기공의뢰 견적 상세"
       >
+        {showCreditShareSettlement ? (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {creditLabHoldPending !== null &&
+            creditLabHoldPending !== undefined ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium",
+                  creditShareSettlementClass(creditLabHoldPending),
+                )}
+              >
+                <span className="opacity-80">기공소몫</span>
+                {creditShareSettlementLabel(creditLabHoldPending)}
+              </span>
+            ) : null}
+            {creditAbutmentHoldPending !== null &&
+            creditAbutmentHoldPending !== undefined ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium",
+                  creditShareSettlementClass(creditAbutmentHoldPending),
+                )}
+              >
+                <span className="opacity-80">어벗츠몫</span>
+                {creditShareSettlementLabel(creditAbutmentHoldPending)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         {breakdownPanel}
       </div>
     );
