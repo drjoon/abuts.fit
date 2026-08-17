@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-08-17: 기간 필터 + 제조사·영업자·개발운영사 과세(세금계산서) / 어벗츠(관리자)·고객 경로 면세(계산서).
+// - 2026-08-18: 제조사는 기공소(면세) — 과세 대상에서 제외.
+// - 2026-08-17: 기간 필터 + 영업자·개발운영사 과세(세금계산서) / 제조사·어벗츠·고객 경로 면세(계산서).
 // - 2026-08-16: 어벗츠 4사업 축 API 와이어링 + 선택형 상세·모던 UI 리팩터.
 // related files:
 // - web/frontend/rules.md
@@ -878,7 +879,7 @@ export default function AdminPaymentsPage() {
                 <CreditSectionHeader
                   icon={Factory}
                   title="커스텀 어벗 · 제조사 하청"
-                  description="원청(어벗츠)–하청(애크로덴트) 고정단가. 유료·무료 모두 적립하되 지급은 유료만(부가세 포함 · 세금계산서)."
+                  description="원청(어벗츠)–하청(애크로덴트) 고정단가. 유료·무료 모두 적립하되 지급은 유료만(면세 · 계산서)."
                 />
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <CreditStatTile
@@ -915,13 +916,7 @@ export default function AdminPaymentsPage() {
                         manufacturerSummary?.manufacturerShippingUnitPrice ??
                         3500,
                     )}`}
-                    hint={`+VAT ${Math.round(
-                      Number(
-                        customAbut?.affiliateVatRate ??
-                          manufacturerSummary?.affiliateVatRate ??
-                          0.1,
-                      ) * 100,
-                    )}%`}
+                    hint="면세 · 어벗 1개 / 박스당"
                   />
                   <CreditStatTile
                     label="하청 유료 미지급"
@@ -963,27 +958,18 @@ export default function AdminPaymentsPage() {
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <CreditStatTile
-                    label="의뢰 하청(공급+VAT)"
-                    value={formatWon(
-                      Number(manufacturerSummary?.periodRequestSupply || 0) +
-                        Number(manufacturerSummary?.periodRequestVat || 0),
-                    )}
-                    hint={`공급 ${formatWon(
-                      manufacturerSummary?.periodRequestSupply,
-                    )} + VAT ${formatWon(
-                      manufacturerSummary?.periodRequestVat,
-                    )}`}
+                    label="의뢰 하청(면세)"
+                    value={formatWon(manufacturerSummary?.periodRequestSupply)}
+                    hint={`${Number(
+                      manufacturerSummary?.periodPaidRequestCount || 0,
+                    ).toLocaleString()}건 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
                   />
                   <CreditStatTile
-                    label="배송 하청(공급+VAT)"
-                    value={formatWon(
-                      manufacturerSummary?.periodShippingAmount,
-                    )}
-                    hint={`공급 ${formatWon(
-                      manufacturerSummary?.periodShippingSupply,
-                    )} + VAT ${formatWon(
-                      manufacturerSummary?.periodShippingVat,
-                    )}`}
+                    label="배송 하청(면세)"
+                    value={formatWon(manufacturerSummary?.periodShippingSupply)}
+                    hint={`${Number(
+                      manufacturerSummary?.periodPaidShippingCount || 0,
+                    ).toLocaleString()}건 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
                   />
                 </div>
                 <MonthlyHistorySection
@@ -1097,7 +1083,7 @@ export default function AdminPaymentsPage() {
               <CreditSectionHeader
                 icon={HandCoins}
                 title="관계사 잔여 분배"
-                description="커스텀 어벗 잔여·매칭 수수료 재분배. 영업자·개발운영사 지급은 과세(세금계산서), 어벗츠(관리자)는 면세(계산서)."
+                description="커스텀 어벗 잔여·매칭 수수료 재분배. 영업자·개발운영사 지급은 과세(세금계산서), 제조사·어벗츠(관리자)는 면세(계산서)."
                 trailing={
                   <div className="relative w-full sm:w-[260px]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

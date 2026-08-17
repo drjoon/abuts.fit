@@ -38,8 +38,8 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/shared/ui/cn";
 import {
-  SETTLEMENT_TAXABLE_INVOICE_LABEL,
-  SETTLEMENT_VAT_PAYOUT_NOTICE,
+  SETTLEMENT_EXEMPT_INVOICE_LABEL,
+  SETTLEMENT_EXEMPT_PAYOUT_NOTICE,
   SETTLEMENT_VAT_POLICY,
   formatWon,
 } from "@/shared/settlement/affiliateVat";
@@ -50,7 +50,6 @@ import {
   SettlementSortIcon,
   SettlementStatCard,
   SettlementTableFrame,
-  SettlementVatNotice,
 } from "@/shared/settlement/settlementUi";
 import {
   ManufacturerDailyLedgerDetailDialog,
@@ -371,7 +370,7 @@ const validateSnapshotRow = (
     payoutAmount +
     adjustAmount;
   if (expectedPayoutNet !== netAmount) {
-    return { valid: false, reason: "지급 순액(유료·VAT 포함) 계산값 불일치" };
+    return { valid: false, reason: "지급 순액(유료) 계산값 불일치" };
   }
 
   if (
@@ -877,8 +876,8 @@ export const ManufacturerPaymentPage = () => {
               setRequestSettlementFilter("paid");
               setTab("ledger");
             }}
-            hint="공급가"
-            hintTooltip={SETTLEMENT_VAT_PAYOUT_NOTICE}
+            hint="면세 · 공급가"
+            hintTooltip={SETTLEMENT_EXEMPT_PAYOUT_NOTICE}
             footer={
               <div className="space-y-0.5 text-[11px] tabular-nums text-slate-600 sm:text-xs">
                 <div>
@@ -921,7 +920,7 @@ export const ManufacturerPaymentPage = () => {
             onClick={() => setTab("payments")}
             footer={
               <div className="text-xs text-muted-foreground">
-                {snapshotTotals.payoutCount}건 · {SETTLEMENT_TAXABLE_INVOICE_LABEL}
+                {snapshotTotals.payoutCount}건 · 면세 {SETTLEMENT_EXEMPT_INVOICE_LABEL}
               </div>
             }
           />
@@ -967,14 +966,14 @@ export const ManufacturerPaymentPage = () => {
               />
               <SettlementPolicyDialog
                 title="제조사 정산 규칙"
-                description="하청 고정단가 · 부가세 · 세금계산서"
+                description="하청 고정단가 · 면세 · 계산서"
               >
                 <SettlementPolicySection title="가공 승인 적립 (하청)">
                   <div className="flex gap-2.5">
                     <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      어벗 1개당 공급가 9,000원 + 부가세 10%(합 9,900원).
-                      유료·무료 모두 적립하되, 지급은 유료만(무료 크레딧 지급 0).
+                      어벗 1개당 9,000원(면세). 유료·무료 모두 적립하되, 지급은
+                      유료만(무료 크레딧 지급 0).
                     </p>
                   </div>
                 </SettlementPolicySection>
@@ -982,16 +981,16 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      발송 패키지 1박스당 공급가 3,500원. 고객(치과·기공소)→어벗츠
+                      발송 패키지 1박스당 3,500원(면세). 고객(치과·기공소)→어벗츠
                       배송비는 면세 수취 후, 제조사에는 배송비(어벗츠→제조사)로
-                      부가세 10%를 붙여 지급합니다.
+                      지급합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>
-                <SettlementPolicySection title="부가세 · 세금계산서">
+                <SettlementPolicySection title="면세 · 계산서">
                   <div className="flex gap-2.5">
                     <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>{SETTLEMENT_VAT_POLICY.taxable}</p>
+                    <p>{SETTLEMENT_VAT_POLICY.manufacturerEarn}</p>
                   </div>
                 </SettlementPolicySection>
                 <SettlementPolicySection title="롤백">
@@ -1007,17 +1006,12 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      원장 기준 KST 일자별 실시간 집계. 월 지급은 부가세
-                      포함액이며 {SETTLEMENT_TAXABLE_INVOICE_LABEL}를
-                      수취합니다.
+                      원장 기준 KST 일자별 실시간 집계. 월 지급은 면세 공급가이며{" "}
+                      {SETTLEMENT_EXEMPT_INVOICE_LABEL}를 발행합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>
               </SettlementPolicyDialog>
-            </div>
-
-            <div className="shrink-0">
-              <SettlementVatNotice />
             </div>
 
             <TabsContent

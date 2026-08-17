@@ -2234,10 +2234,7 @@ export async function adminGetManufacturerSummary(req, res) {
           },
           ownerIdStr: { $toString: "$ownerId" },
           amountBase: {
-            $ifNull: [
-              "$amount",
-              { $ifNull: ["$amountIncludingVat", "$amountExcludingVat"] },
-            ],
+            $ifNull: ["$amountExcludingVat", "$amount"],
           },
           amountSupply: { $ifNull: ["$amountExcludingVat", "$amount"] },
           amountVat: { $ifNull: ["$vatAmount", 0] },
@@ -2311,14 +2308,9 @@ export async function adminGetManufacturerSummary(req, res) {
             {
               $addFields: {
                 eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-                // 제조사 하청: 표시·합계는 VAT 포함액
+                // 제조사 하청: 면세(기공소). 공급가 기준.
                 baseAmount: {
-                  $ifNull: [
-                    "$amount",
-                    {
-                      $ifNull: ["$amountIncludingVat", "$amountExcludingVat"],
-                    },
-                  ],
+                  $ifNull: ["$amountExcludingVat", "$amount"],
                 },
                 supplyAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
                 vatAmountField: { $ifNull: ["$vatAmount", 0] },

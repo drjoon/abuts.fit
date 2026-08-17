@@ -53,7 +53,7 @@ const systemSettingsSchema = new mongoose.Schema(
         default: [],
       },
       shippingFee: { type: Number, default: 3500 },
-      // 제조사(애크로덴트) 하청 공급가 — 어벗츠 지급 시 affiliateVatRate 부가세 가산
+      // 제조사(기공소·면세) 하청 공급가
       manufacturerRequestUnitPrice: { type: Number, default: 9000 },
       manufacturerShippingUnitPrice: { type: Number, default: 3500 },
       affiliateVatRate: { type: Number, default: 0.1 },

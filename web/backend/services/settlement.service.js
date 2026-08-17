@@ -5,7 +5,8 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
-// - 2026-08-17: 영업자·개발운영사 지급 시 VAT 합산(입금·세금계산서·GL). 제조사 세금계산서 이중 VAT 방지.
+// - 2026-08-18: 제조사는 기공소(면세) — TAXABLE_SETTLEMENT_ROLES에서 제외.
+// - 2026-08-17: 영업자·개발운영사 지급 시 VAT 합산(입금·세금계산서·GL).
 import LedgerJournal from "../models/ledgerJournal.model.js";
 import LedgerLine from "../models/ledgerLine.model.js";
 import { postGeneralLedgerJournal } from "./generalLedger.service.js";
@@ -19,12 +20,8 @@ export const AFFILIATE_SETTLEMENT_ACCOUNTS = {
   devops: "REV_DEVOPS",
 };
 
-/** 지급 시 과세(세금계산서) 대상. 기공소·어벗츠(관리자)는 면세. */
-export const TAXABLE_SETTLEMENT_ROLES = new Set([
-  "manufacturer",
-  "salesman",
-  "devops",
-]);
+/** 지급 시 과세(세금계산서) 대상. 기공소·제조사·어벗츠(관리자)는 면세. */
+export const TAXABLE_SETTLEMENT_ROLES = new Set(["salesman", "devops"]);
 
 export function normalizeAffiliateVatRate(raw) {
   const n = Number(raw);
@@ -39,8 +36,7 @@ export async function resolveAffiliateVatRate() {
 
 /**
  * 원장 미지급 잔액 → 지급(입금) 분해.
- * - lab: 면세. balance=입금액.
- * - manufacturer: balance=이미 VAT 포함 미지급. 공급가·부가세 분해만.
+ * - lab/manufacturer: 면세. balance=입금액.
  * - salesman/devops: balance=공급가 미지급. 지급 시 VAT 가산.
  */
 export function resolveSettlementPayoutAmounts({
@@ -51,21 +47,10 @@ export function resolveSettlementPayoutAmounts({
   const balance = Math.max(0, Math.round(Number(balanceAmount || 0)));
   const rate = normalizeAffiliateVatRate(vatRate);
 
-  if (role === "lab" || !TAXABLE_SETTLEMENT_ROLES.has(role)) {
+  if (role === "lab" || role === "manufacturer" || !TAXABLE_SETTLEMENT_ROLES.has(role)) {
     return {
       supplyAmount: balance,
       vatAmount: 0,
-      amount: balance,
-      vatRate: rate,
-    };
-  }
-
-  if (role === "manufacturer") {
-    const supplyAmount = rate > 0 ? Math.round(balance / (1 + rate)) : balance;
-    const vatAmount = Math.max(0, balance - supplyAmount);
-    return {
-      supplyAmount,
-      vatAmount,
       amount: balance,
       vatRate: rate,
     };
@@ -88,8 +73,7 @@ export async function computeAffiliateSettlementBalance({
   accountCode = AFFILIATE_SETTLEMENT_ACCOUNTS[ownerRole],
 }) {
   if (!accountCode) throw new Error("Unsupported affiliate ownerRole.");
-  const isManufacturer = ownerRole === "manufacturer";
-  // 제조사 하청도 지급은 유료만. 금액만 VAT 포함(amount). 그 외는 유료·공급가.
+  // 제조사·영업자·개발운영사 하청/수수료: 지급은 유료만, 잔액은 공급가(amountExcludingVat).
   const rows = await LedgerLine.aggregate([
     { $match: { ownerRole, ownerId: ownerAnchorId, accountCode } },
     {
@@ -118,14 +102,7 @@ export async function computeAffiliateSettlementBalance({
             default: "EARN",
           },
         },
-        base: isManufacturer
-          ? {
-              $ifNull: [
-                "$amount",
-                { $ifNull: ["$amountIncludingVat", "$amountExcludingVat"] },
-              ],
-            }
-          : { $ifNull: ["$amountExcludingVat", "$amount"] },
+        base: { $ifNull: ["$amountExcludingVat", "$amount"] },
       },
     },
     {
@@ -199,11 +176,11 @@ export function hasPayoutAccount(account) {
  * 실송금이 끝난 뒤에만 GL에 지급을 포스팅한다. 배치 item ID가 idempotency key라
  * 관리자 재클릭/네트워크 재시도에도 이중 지급 원장을 만들지 않는다.
  *
- * 과세 관계사(제조사·영업자·개발운영사):
+ * 과세 관계사(영업자·개발운영사):
  * - amount = 입금 합계(VAT 포함)
  * - amountExcludingVat = 공급가(원장 잔액 차감)
  * - vatAmount = 부가세
- * 기공소: 면세. amount = 공급가 = 입금액.
+ * 기공소·제조사: 면세. amount = 공급가 = 입금액.
  */
 export async function postSettlementPayoutJournal({
   item,
@@ -228,7 +205,6 @@ export async function postSettlementPayoutJournal({
       }
     : resolveSettlementPayoutAmounts({
         role: item.role,
-        // legacy: manufacturer amount=VAT포함, salesman/devops/lab amount=공급가
         balanceAmount: depositTotal,
       });
 
@@ -236,13 +212,12 @@ export async function postSettlementPayoutJournal({
   const vatAmount = split.vatAmount;
   const accountCode = item.accountCode;
   const ownerRole = isLab ? "requestor" : item.role;
-  // 잔액 차감: 제조사=입금합계(amount), 영업자·개발운영사·기공소=공급가
-  const ledgerClearAmount =
-    item.role === "manufacturer" ? depositTotal : supplyAmount;
-  const lineClear = isLab ? -ledgerClearAmount : ledgerClearAmount;
-  const lineSupply = isLab ? -supplyAmount : supplyAmount;
-  const lineVat = isLab ? 0 : vatAmount;
-  const lineTotal = isLab ? -depositTotal : depositTotal;
+  const isExempt = isLab || item.role === "manufacturer";
+  const ledgerClearAmount = supplyAmount;
+  const lineClear = isExempt ? -ledgerClearAmount : ledgerClearAmount;
+  const lineSupply = isExempt ? -supplyAmount : supplyAmount;
+  const lineVat = isExempt ? 0 : vatAmount;
+  const lineTotal = isExempt ? -depositTotal : depositTotal;
 
   return postGeneralLedgerJournal({
     idempotencyKey: `gl:settlement-batch-item:${String(item._id)}:paid`,
@@ -265,7 +240,7 @@ export async function postSettlementPayoutJournal({
         accountCode,
         ownerRole,
         ownerId: item.businessAnchorId,
-        amount: item.role === "manufacturer" ? lineTotal : lineClear,
+        amount: isExempt ? lineTotal : lineClear,
         amountExcludingVat: lineSupply,
         vatAmount: lineVat,
         amountIncludingVat: lineTotal,

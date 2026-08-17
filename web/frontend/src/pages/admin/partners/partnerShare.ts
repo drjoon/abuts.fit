@@ -135,7 +135,7 @@ export function defaultAbutmentDepartments(): Department[] {
       role: "manufacturer",
       shareKind: "perCase",
       perCaseAmount: DEFAULT_ABUTMENT_UNITS.manufacturer,
-      taxable: true,
+      taxable: false,
     }),
     createDepartment({
       id: "abut-devops",

@@ -36,17 +36,17 @@ describe("resolveSettlementPayoutAmounts", () => {
     });
   });
 
-  test("manufacturer: balance already VAT-inclusive — split only", () => {
+  test("manufacturer: exempt — no VAT", () => {
     expect(
       resolveSettlementPayoutAmounts({
         role: "manufacturer",
-        balanceAmount: 9900,
+        balanceAmount: 9000,
         vatRate: 0.1,
       }),
     ).toEqual({
       supplyAmount: 9000,
-      vatAmount: 900,
-      amount: 9900,
+      vatAmount: 0,
+      amount: 9000,
       vatRate: 0.1,
     });
   });
@@ -67,7 +67,7 @@ describe("resolveSettlementPayoutAmounts", () => {
   });
 
   test("taxable roles set", () => {
-    expect(TAXABLE_SETTLEMENT_ROLES.has("manufacturer")).toBe(true);
+    expect(TAXABLE_SETTLEMENT_ROLES.has("manufacturer")).toBe(false);
     expect(TAXABLE_SETTLEMENT_ROLES.has("salesman")).toBe(true);
     expect(TAXABLE_SETTLEMENT_ROLES.has("devops")).toBe(true);
     expect(TAXABLE_SETTLEMENT_ROLES.has("lab")).toBe(false);

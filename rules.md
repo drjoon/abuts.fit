@@ -142,14 +142,13 @@
 ### 2.3 크레딧/정산
 
 - **부가세(VAT) / 면세 정책(강제) — 이중 체계:**
-  - **면세(치과–기공소–어벗츠[=관리자])**: 크레딧 충전·소비·기공정산·치과↔기공소 기공의뢰·치과 멤버십·관리자 잔여. `vatAmount = 0`. 증빙은 **계산서**(세금계산서 아님). 고객/약관 가격 안내에 "VAT 별도·부가세 포함·VAT 10%" 금지(배송비 별도 안내는 유지).
-  - **과세(어벗츠↔제조사, 어벗츠↔영업자, 어벗츠↔개발운영사)**: 지급 시 부가세 **10%**. 어벗츠가 제조사·영업자·개발운영사에게 지급할 때 부가세를 붙이고 **세금계산서**를 수취한다.
+  - **면세(치과–기공소–제조사–어벗츠[=관리자])**: 크레딧 충전·소비·기공정산·치과↔기공소 기공의뢰·치과 멤버십·관리자 잔여·제조사 하청. `vatAmount = 0`. 증빙은 **계산서**(세금계산서 아님). 고객/약관 가격 안내에 "VAT 별도·부가세 포함·VAT 10%" 금지(배송비 별도 안내는 유지).
+  - **과세(어벗츠↔영업자, 어벗츠↔개발운영사)**: 지급 시 부가세 **10%**. 어벗츠가 영업자·개발운영사에게 지급할 때 부가세를 붙이고 **세금계산서**를 수취한다.
   - 크레딧은 선불전자지급수단(선불페이)이 아니라 **기공물 구매용 기공료 선입금(선납 대금)**이다. 충전 화면·FAQ·약관·입금 확인 메시지에 `크레딧(기공료 선입금)`을 명시한다.
   - 크레딧 충전: `vatAmount = 0`, `amountTotal = supplyAmount`(공급가 = 입금/결제 금액).
-  - 의뢰자 소비·비제조사 `REV_*` 라인: 공급가 기준, `vatAmount = 0`.
-  - 제조사 `REV_MANUFACTURER`: `amountExcludingVat`=공급가, `vatAmount`=공급가×`affiliateVatRate`(기본 0.1), `amount`=공급가+VAT. 월 지급은 **부가세 포함액**·세금계산서.
+  - 의뢰자 소비·비제조사 `REV_*` 라인·제조사 `REV_MANUFACTURER`: 공급가 기준, `vatAmount = 0`.
   - 영업자·개발운영사 수수료/잔여 장부는 공급가(`vatAmount = 0`). **지급 시** 부가세 10%를 더해 **입금·세금계산서**에 반영한다(`SETTLEMENT_PAYOUT`: `amountExcludingVat`=공급가 잔액 차감, `vatAmount`=부가세, `amountIncludingVat`=실입금).
-  - 보존식·의뢰자 잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 제조사·영업자·개발운영사 지급 VAT는 어벗츠 추가 지급분(의뢰자 크레딧에서 차감하지 않음).
+  - 보존식·의뢰자 잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 영업자·개발운영사 지급 VAT는 어벗츠 추가 지급분(의뢰자 크레딧에서 차감하지 않음).
 - **어벗츠 사업 다각화 SSOT:**
   1. **커스텀 어벗 생산·공급** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산).
   2. **자동매칭 수수료** — 기공비의 `platformFeeRate`(기본 10%). 관리자 플랫폼 설정.
@@ -173,9 +172,9 @@
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
-  - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 공급가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당) + VAT(`affiliateVatRate` 기본 0.1 → 지급합 9,900 / 3,850). 유료·무료 모두 **적립(확인용)** 하되, **정산 지급은 유료만**(무료 크레딧 지급 0).
-  - **어벗 생산 분배**: 판매가(배송비 제외)에서 건당 제조사 9,000 · 개발운영사 1,000 · 영업자(영업자BA) 3,000을 공급가로 떼고 지급 시 부가세 10%. 잔여 → 어벗츠(면세). 영업자 없으면 영업자 몫은 어벗츠. 특별주문가는 주체별 배분액. 설정 UI: 관리자「사업영역」어벗사업. 제조사 박스당 배송 지급은 장부 출고 룰이며 사업영역 분배 UI에는 기재하지 않음.
-  - **배송 분배**: 사업영역 분배 재원에서 제외. 매출에서 배송비를 먼저 차감한 나머지만 분배. 제조사 배송 공급가+VAT·고객 배송비 잔여는 출고 장부 흐름.
+  - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 공급가(면세) — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 유료·무료 모두 **적립(확인용)** 하되, **정산 지급은 유료만**(무료 크레딧 지급 0).
+  - **어벗 생산 분배**: 판매가(배송비 제외)에서 건당 제조사 9,000(면세) · 개발운영사 1,000 · 영업자(영업자BA) 3,000을 공급가로 떼고, 개발운영사·영업자 지급 시 부가세 10%. 잔여 → 어벗츠(면세). 영업자 없으면 영업자 몫은 어벗츠. 특별주문가는 주체별 배분액. 설정 UI: 관리자「사업영역」어벗사업. 제조사 박스당 배송 지급은 장부 출고 룰이며 사업영역 분배 UI에는 기재하지 않음.
+  - **배송 분배**: 사업영역 분배 재원에서 제외. 매출에서 배송비를 먼저 차감한 나머지만 분배. 제조사 배송 공급가(면세)·고객 배송비 잔여는 출고 장부 흐름.
   - **플랫폼 분배**: 치과 멤버십·기공소 자동매칭 수수료·지정 수수료(현재 무료)를 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 지급 시 부가세.
   - **기공(어벗츠기공소) 분배**: 내부기공소(기공사업부)에 배당된 건만, 배송비를 공통 지출로 먼저 차감한 뒤 나머지를 주체(role) 비율 → 주체 내 팀원 비율로 배분. 초기 주체 기공팀·영업팀·개발운영사. 설정 UI: 관리자「사업영역」기공사업.
   - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **어벗 개수×1회**만. express는 잔여 분배에만 포함.
@@ -190,7 +189,7 @@
   - 소비는 `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`으로 분리 표기 (`SPEND` 단일표시 금지)
 - 정산 보존식 SSOT(의뢰 단위):
   - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `어벗츠/제조사/개발운영사/영업자` **공급가** 합(`amountExcludingVat`)
-  - 합계 비교는 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`). 제조사 `vatAmount`는 보존식에 포함하지 않음
+  - 합계 비교는 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`)
 - 제조사/역할 정산 건수 SSOT(강제):
   - 일별·기간 정산의 의뢰/배송 **건수**는 `LedgerLine` 개수가 아니라 `(eventType, creditKind, refId)` 유니크다.
   - 동일 의뢰의 `machining_spend` + `express_surcharge`(각각 `REQUEST_SPEND_COMMIT`)는 제조사 단가=어벗 개수·건수 의뢰 1건.
@@ -198,9 +197,8 @@
   - 구현: `controllers/manufacturers/manufacturer.controller.js` (`buildManufacturerEarnCollapseAndGroupStages`)
 - 정산 지급 가능 잔액 집계 원칙:
   - `SETTLEMENT_PAYOUT`은 포함
-  - **제조사**: `EARN/ADJUST`는 `creditKind=PAID|null`만, 지급액은 `amount`(VAT 포함)·세금계산서
+  - **제조사·어벗츠(관리자)·기공소**: 공급가(`amountExcludingVat`) 기준, 면세 계산서. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 제외)
   - **영업자·개발운영사**: 장부 적립은 공급가. 지급 시 부가세 10%를 더해 **입금·세금계산서** 수취
-  - **어벗츠(관리자)·기공소**: 공급가(`amountExcludingVat`) 기준, 면세 계산서. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 제외)
   - 무료(`FREE_REQUEST|FREE_SHIPPING`) 수익은 지급 대상에서 제외(표시·확인용만)
 - CreditLedger → GL 이관 보정 원칙:
   - 레거시 `CreditLedger`를 원본으로 이관하되, 정책 위반/무효 행(예: 0원 SPEND, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍)은 장부 반영 대신 무시 처리

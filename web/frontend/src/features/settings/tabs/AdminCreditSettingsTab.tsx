@@ -845,7 +845,7 @@ export const AdminCreditSettingsTab = ({
                       })
                     }
                     disabled={loading}
-                    help={`어벗 1개당. 부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerRequestUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
+                    help="어벗 1개당 · 면세 지급"
                     step={SHIPPING_AMOUNT_STEP}
                   />
                   <AmountField
@@ -860,7 +860,7 @@ export const AdminCreditSettingsTab = ({
                       })
                     }
                     disabled={loading}
-                    help={`부가세 ${(settings.affiliateVatRate * 100).toFixed(0)}% 별도 → 지급 ${Math.round(settings.manufacturerShippingUnitPrice * (1 + settings.affiliateVatRate)).toLocaleString("ko-KR")}원`}
+                    help="박스당 · 면세 지급"
                     step={SHIPPING_AMOUNT_STEP}
                   />
                   <AmountField

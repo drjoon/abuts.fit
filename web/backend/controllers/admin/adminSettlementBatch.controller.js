@@ -176,7 +176,7 @@ export async function adminConfirmSettlementBatch(req, res) {
       item.status = "CONFIRMED";
       totalAmount += breakdown.amount;
 
-      // 관계사(제조사·영업자·개발운영사) → 어벗츠 과세 세금계산서(위수탁).
+      // 관계사(영업자·개발운영사) → 어벗츠 과세 세금계산서(위수탁).
       if (TAXABLE_SETTLEMENT_ROLES.has(item.role)) {
         const seller = buildPartySnapshotFromAnchor(anchor);
         const buyer = abuts ? buildPartySnapshotFromAnchor(abuts) : {};

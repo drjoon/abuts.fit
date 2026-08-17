@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
+// - 2026-08-18: 제조사는 기공소(면세) — VAT 0.
 // - 2026-08-17: 어벗 qty·플랫폼수수료/기공소배송 제외 테스트.
 import {
   resolveManufacturerUnitApply,
@@ -22,16 +23,16 @@ describe("manufacturer fixed unit + residual allocation", () => {
     affiliateVatRate: 0.1,
   };
 
-  test("resolveManufacturerUnitEarn: request and shipping with VAT", () => {
+  test("resolveManufacturerUnitEarn: request and shipping exempt (no VAT)", () => {
     const request = resolveManufacturerUnitEarn({
       isShippingSpend: false,
       creditSettings,
     });
     expect(request).toEqual({
       supply: 9000,
-      vat: 900,
-      total: 9900,
-      vatRate: 0.1,
+      vat: 0,
+      total: 9000,
+      vatRate: 0,
       qty: 1,
     });
 
@@ -41,9 +42,9 @@ describe("manufacturer fixed unit + residual allocation", () => {
     });
     expect(shipping).toEqual({
       supply: 3500,
-      vat: 350,
-      total: 3850,
-      vatRate: 0.1,
+      vat: 0,
+      total: 3500,
+      vatRate: 0,
       qty: 1,
     });
   });
@@ -59,7 +60,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
     expect(earn.qty).toBe(0);
   });
 
-  test("qty 2 abutments: manufacturer supply 18000 + VAT 1800", () => {
+  test("qty 2 abutments: manufacturer supply 18000, no VAT", () => {
     const earn = resolveManufacturerUnitEarn({
       isShippingSpend: false,
       creditSettings,
@@ -67,9 +68,9 @@ describe("manufacturer fixed unit + residual allocation", () => {
     });
     expect(earn).toEqual({
       supply: 18000,
-      vat: 1800,
-      total: 19800,
-      vatRate: 0.1,
+      vat: 0,
+      total: 18000,
+      vatRate: 0,
       qty: 2,
     });
   });
@@ -119,7 +120,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
     });
 
     expect(alloc.manufacturer).toBe(9000);
-    expect(alloc.manufacturerVat).toBe(900);
+    expect(alloc.manufacturerVat).toBe(0);
     // residual 11000 · weights devops:salesman:admin = 1:1:2
     expect(alloc.devops).toBe(2750);
     expect(alloc.salesman).toBe(2750);
@@ -178,7 +179,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
     });
 
     expect(alloc.manufacturer).toBe(3500);
-    expect(alloc.manufacturerVat).toBe(350);
+    expect(alloc.manufacturerVat).toBe(0);
     expect(alloc.devops).toBe(0);
     expect(alloc.salesman).toBe(0);
     expect(alloc.admin).toBe(0);
@@ -195,7 +196,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
     });
 
     expect(alloc.manufacturer).toBe(6500);
-    expect(alloc.manufacturerVat).toBe(650);
+    expect(alloc.manufacturerVat).toBe(0);
     expect(alloc.devops + alloc.salesman + alloc.admin).toBe(0);
   });
 });

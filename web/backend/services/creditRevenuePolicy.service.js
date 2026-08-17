@@ -163,14 +163,8 @@ export function resolveManufacturerUnitSettings(creditSettings = {}) {
       ) || 0,
     ),
   );
-  const vatRateRaw = Number(
-    creditSettings?.affiliateVatRate ?? DEFAULT_AFFILIATE_VAT_RATE,
-  );
-  const vatRate =
-    Number.isFinite(vatRateRaw) && vatRateRaw >= 0
-      ? Math.min(1, vatRateRaw)
-      : DEFAULT_AFFILIATE_VAT_RATE;
-  return { requestSupply, shippingSupply, vatRate };
+  // 제조사는 기공소(면세)로 등록 — 하청 적립·지급에 부가세 없음.
+  return { requestSupply, shippingSupply, vatRate: 0 };
 }
 
 export function resolveManufacturerUnitQty({
