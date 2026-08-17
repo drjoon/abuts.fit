@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-17: adjustPracticeTransferHold — 배송비 보류는 조정 대상에서 제외(fees.total과만 비교).
 // - 2026-08-17: 생성 시 배송비도 SPEND_HOLD. 출고 시 에스크로→매출 전환(재차감 없음).
 // - 2026-08-17: 신속처리 rushFeeMultiplier — 기공/어벗 배수 스택(기본 1.2·플랫폼 설정).
 // - 2026-08-14: 목록 견적 조회(devops/단가/기공소/거래처) parallel + 60s 캐시.
@@ -1941,6 +1942,8 @@ export async function adjustPracticeTransferHold({
       heldLabTotal: holdResult.heldLabTotal ?? fees.labFeeTotal,
       heldAbutmentTotal:
         holdResult.heldAbutmentTotal ?? fees.abutmentRetailTotal,
+      heldShippingLabTotal: holdResult.heldShippingLabTotal ?? 0,
+      heldShippingAbutsTotal: holdResult.heldShippingAbutsTotal ?? 0,
       fromPaid: holdResult.fromPaid,
       fromFreeRequest: holdResult.fromFreeRequest,
       fromFreeShipping: holdResult.fromFreeShipping,
@@ -1967,19 +1970,43 @@ export async function adjustPracticeTransferHold({
       ),
     ),
   );
-  const heldTotal = Math.max(
+  const heldShippingLabTotal = Math.max(
+    0,
+    Math.round(Number(transfer?.billing?.heldShippingLabTotal || 0)),
+  );
+  const heldShippingAbutsTotal = Math.max(
+    0,
+    Math.round(Number(transfer?.billing?.heldShippingAbutsTotal || 0)),
+  );
+  const heldShippingTotal = heldShippingLabTotal + heldShippingAbutsTotal;
+  // heldTotal(생성 보류)에는 배송비가 포함됨. 수락 조정은 기공·어벗 수수료만 맞춤.
+  const heldFeeTotal = Math.max(
     0,
     Math.round(
       Number(
-        transfer?.billing?.heldTotal ||
-          heldLabTotal + heldAbutmentTotal ||
-          holdJournal?.meta?.heldTotal ||
+        heldLabTotal + heldAbutmentTotal ||
+          Math.max(
+            0,
+            Number(transfer?.billing?.heldTotal || 0) - heldShippingTotal,
+          ) ||
+          Number(holdJournal?.meta?.heldTotal || 0) ||
           0,
       ),
     ),
   );
-  const target = fees.total;
-  const delta = target - heldTotal;
+  const previousHeldTotal = Math.max(
+    0,
+    Math.round(
+      Number(
+        transfer?.billing?.heldTotal ||
+          heldFeeTotal + heldShippingTotal ||
+          0,
+      ),
+    ),
+  );
+  const targetFeeTotal = fees.total;
+  const targetHeldTotal = targetFeeTotal + heldShippingTotal;
+  const delta = targetFeeTotal - heldFeeTotal;
 
   let fromPaid = Math.max(
     0,
@@ -2025,9 +2052,11 @@ export async function adjustPracticeTransferHold({
       labTradingPartnerId: computed.partner?._id
         ? String(computed.partner._id)
         : null,
-      heldTotal,
-      heldLabTotal: fees.labFeeTotal,
-      heldAbutmentTotal: fees.abutmentRetailTotal,
+      heldTotal: targetHeldTotal,
+      heldLabTotal,
+      heldAbutmentTotal,
+      heldShippingLabTotal,
+      heldShippingAbutsTotal,
       fromPaid,
       fromFreeRequest,
       fromFreeShipping,
@@ -2053,27 +2082,40 @@ export async function adjustPracticeTransferHold({
         : null,
       heldTotal: Math.max(
         0,
-        Math.round(Number(transfer?.billing?.heldTotal || target)),
+        Math.round(Number(transfer?.billing?.heldTotal || targetHeldTotal)),
       ),
       heldLabTotal: Math.max(
         0,
         Math.round(
-          Number(transfer?.billing?.heldLabTotal ?? fees.labFeeTotal),
+          Number(transfer?.billing?.heldLabTotal ?? heldLabTotal),
         ),
       ),
       heldAbutmentTotal: Math.max(
         0,
         Math.round(
           Number(
-            transfer?.billing?.heldAbutmentTotal ?? fees.abutmentRetailTotal,
+            transfer?.billing?.heldAbutmentTotal ?? heldAbutmentTotal,
           ),
         ),
       ),
+      heldShippingLabTotal,
+      heldShippingAbutsTotal,
       fromPaid,
       fromFreeRequest,
       fromFreeShipping,
     };
   }
+
+  // 확정 수수료를 경로 분할(기공소=기공+디자인, 어벗츠=생산)으로 맞춤
+  const nextShares = await resolveHoldShareAmounts({
+    transfer,
+    toothWorks,
+    holdAmount: fees.total,
+    holdLabAmount: fees.labFeeTotal,
+    holdAbutmentAmount: fees.abutmentRetailTotal,
+  });
+  const nextHeldLabTotal = nextShares.lab;
+  const nextHeldAbutmentTotal = nextShares.abut;
 
   const ownSession = !outerSession;
   const session = outerSession || (await mongoose.startSession());
@@ -2196,10 +2238,13 @@ export async function adjustPracticeTransferHold({
       refId: transferId,
       createdBy: actorUserId,
       meta: {
-        previousHeldTotal: heldTotal,
-        heldTotal: target,
-        heldLabTotal: fees.labFeeTotal,
-        heldAbutmentTotal: fees.abutmentRetailTotal,
+        previousHeldTotal,
+        heldTotal: targetHeldTotal,
+        heldLabTotal: nextHeldLabTotal,
+        heldAbutmentTotal: nextHeldAbutmentTotal,
+        heldShippingLabTotal,
+        heldShippingAbutsTotal,
+        heldFeeTotal: targetFeeTotal,
         delta,
         fromPaid,
         fromFreeRequest,
@@ -2226,9 +2271,11 @@ export async function adjustPracticeTransferHold({
       labTradingPartnerId: computed.partner?._id
         ? String(computed.partner._id)
         : null,
-      heldTotal: target,
-      heldLabTotal: fees.labFeeTotal,
-      heldAbutmentTotal: fees.abutmentRetailTotal,
+      heldTotal: targetHeldTotal,
+      heldLabTotal: nextHeldLabTotal,
+      heldAbutmentTotal: nextHeldAbutmentTotal,
+      heldShippingLabTotal,
+      heldShippingAbutsTotal,
       fromPaid,
       fromFreeRequest,
       fromFreeShipping,

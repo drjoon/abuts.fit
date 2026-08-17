@@ -666,6 +666,14 @@ const buildAcceptedBillingFields = (doc, billingResult) => {
               doc.billing?.heldAbutmentTotal ||
               0,
           ),
+    heldShippingLabTotal:
+      billingResult.heldShippingLabTotal != null
+        ? Number(billingResult.heldShippingLabTotal)
+        : Number(doc.billing?.heldShippingLabTotal || 0),
+    heldShippingAbutsTotal:
+      billingResult.heldShippingAbutsTotal != null
+        ? Number(billingResult.heldShippingAbutsTotal)
+        : Number(doc.billing?.heldShippingAbutsTotal || 0),
     holdFromPaid:
       billingResult.fromPaid != null
         ? Number(billingResult.fromPaid)
