@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 커스텀어벗 CNC·특별공급가 6열(외주 제조사·개발운영사). 특별공급가 카드를 커스텀어벗 바로 아래로.
 // - 2026-08-18: 멤버십·배송 — 구독료·배송비·신속 의뢰비만 표시. 제조사 하청은 커스텀어벗 탭으로 이전 예정.
 // - 2026-08-17: 제조사 하청 의뢰 공급가 도움말 — 어벗 1개당.
 // - 2026-08-16: variant로 크레딧(환영·멤버십·배송) / 커스텀어벗(단가·추가요청·특별공급가) 분리.
@@ -35,10 +36,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { CREDIT_SETTINGS_DEFAULTS } from "@/hooks/useSystemSettings";
 import {
-  ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
   normalizeAbutsAbutmentCreditPrices,
 } from "@/shared/pricing/abutsAbutmentService";
 import {
@@ -75,7 +72,6 @@ import {
   HandCoins,
   Hexagon,
   Package,
-  PenLine,
   Plus,
   Search,
   Truck,
@@ -90,6 +86,7 @@ interface CreditSettings {
   specialRequestorPrices: SpecialRequestorPrice[];
   shippingFee: number;
   manufacturerRequestUnitPrice: number;
+  devopsRequestUnitPrice: number;
   manufacturerShippingUnitPrice: number;
   affiliateVatRate: number;
   expressFee: number;
@@ -116,6 +113,8 @@ type SpecialRequestorPrice = {
   designAndProductionPrice: number;
   roundBarProductionPrice: number;
   roundBarDesignAndProductionPrice: number;
+  manufacturerRequestUnitPrice: number;
+  devopsRequestUnitPrice: number;
 };
 
 type RequestorItem = {
@@ -143,6 +142,7 @@ type CreditPriceRequestorsApiResponse = {
 const AUTO_SAVE_DELAY_MS = 700;
 const AMOUNT_STEP = 1000;
 const SHIPPING_AMOUNT_STEP = 500;
+const SIX_COL_GRID = "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6";
 
 function normalizeSpecialRequestorPrice(
   item: Partial<SpecialRequestorPrice> & { amount?: number },
@@ -185,6 +185,22 @@ function normalizeSpecialRequestorPrice(
           fallback.membershipRoundBarDesignAndProductionPrice,
       ) || 0,
     ),
+    manufacturerRequestUnitPrice: Math.max(
+      0,
+      Number(
+        item.manufacturerRequestUnitPrice ??
+          fallback.manufacturerRequestUnitPrice ??
+          CREDIT_SETTINGS_DEFAULTS.manufacturerRequestUnitPrice,
+      ) || 0,
+    ),
+    devopsRequestUnitPrice: Math.max(
+      0,
+      Number(
+        item.devopsRequestUnitPrice ??
+          fallback.devopsRequestUnitPrice ??
+          CREDIT_SETTINGS_DEFAULTS.devopsRequestUnitPrice,
+      ) || 0,
+    ),
   };
 }
 
@@ -204,6 +220,11 @@ function normalizeCreditSettings(
       (raw as CreditSettings).manufacturerRequestUnitPrice ??
         (fallback as CreditSettings).manufacturerRequestUnitPrice ??
         9000,
+    ),
+    devopsRequestUnitPrice: Number(
+      (raw as CreditSettings).devopsRequestUnitPrice ??
+        (fallback as CreditSettings).devopsRequestUnitPrice ??
+        1000,
     ),
     manufacturerShippingUnitPrice: Number(
       (raw as CreditSettings).manufacturerShippingUnitPrice ??
@@ -656,6 +677,8 @@ export const AdminCreditSettingsTab = ({
           roundBarProductionPrice: settings.membershipRoundBarProductionPrice,
           roundBarDesignAndProductionPrice:
             settings.membershipRoundBarDesignAndProductionPrice,
+          manufacturerRequestUnitPrice: settings.manufacturerRequestUnitPrice,
+          devopsRequestUnitPrice: settings.devopsRequestUnitPrice,
         },
       ],
     });
@@ -763,8 +786,6 @@ export const AdminCreditSettingsTab = ({
   }, [settings, token, loading, toast, queryClient]);
 
   const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
-  const productionHelp = `1어벗당. 멤버십 ${ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE.toLocaleString("ko-KR")}원, 일반 ${ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE.toLocaleString("ko-KR")}원.`;
-  const designAndProductionHelp = `1어벗당. 멤버십 ${ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE.toLocaleString("ko-KR")}원, 일반 ${ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE.toLocaleString("ko-KR")}원.`;
   const membershipHelp =
     "치과(의뢰 발신자)만 적용합니다. 기공소에는 적용하지 않으며, 매달 유료 청구됩니다.";
 
@@ -864,15 +885,13 @@ export const AdminCreditSettingsTab = ({
 
                 <div className="space-y-3">
                   <SubSectionHeader title="CNC어벗" />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <DualTierAmountField
-                      label="생산만"
-                      icon={Package}
-                      membershipId="membershipProductionPrice"
-                      regularId="regularProductionPrice"
-                      membershipValue={settings.membershipProductionPrice}
-                      regularValue={settings.regularProductionPrice}
-                      onMembershipChange={(next) =>
+                  <div className={SIX_COL_GRID}>
+                    <CompactAmountInput
+                      id="membershipProductionPrice"
+                      label="CNC 생산(멤버)"
+                      value={settings.membershipProductionPrice}
+                      disabled={loading}
+                      onChange={(next) =>
                         setSettings({
                           ...settings,
                           membershipProductionPrice: next,
@@ -883,25 +902,25 @@ export const AdminCreditSettingsTab = ({
                           ),
                         })
                       }
-                      onRegularChange={(next) =>
+                    />
+                    <CompactAmountInput
+                      id="regularProductionPrice"
+                      label="CNC 생산(일반)"
+                      value={settings.regularProductionPrice}
+                      disabled={loading}
+                      onChange={(next) =>
                         setSettings({
                           ...settings,
                           regularProductionPrice: next,
                         })
                       }
-                      disabled={loading}
-                      help={productionHelp}
                     />
-                    <DualTierAmountField
-                      label="디자인+생산"
-                      icon={PenLine}
-                      membershipId="membershipDesignAndProductionPrice"
-                      regularId="regularDesignAndProductionPrice"
-                      membershipValue={
-                        settings.membershipDesignAndProductionPrice
-                      }
-                      regularValue={settings.regularDesignAndProductionPrice}
-                      onMembershipChange={(next) =>
+                    <CompactAmountInput
+                      id="membershipDesignAndProductionPrice"
+                      label="CNC D+P(멤버)"
+                      value={settings.membershipDesignAndProductionPrice}
+                      disabled={loading}
+                      onChange={(next) =>
                         setSettings({
                           ...settings,
                           membershipDesignAndProductionPrice: next,
@@ -911,17 +930,47 @@ export const AdminCreditSettingsTab = ({
                           ),
                         })
                       }
-                      onRegularChange={(next) =>
+                    />
+                    <CompactAmountInput
+                      id="regularDesignAndProductionPrice"
+                      label="CNC D+P(일반)"
+                      value={settings.regularDesignAndProductionPrice}
+                      disabled={loading}
+                      onChange={(next) =>
                         setSettings({
                           ...settings,
                           regularDesignAndProductionPrice: next,
                         })
                       }
+                    />
+                    <CompactAmountInput
+                      id="manufacturerRequestUnitPrice"
+                      label="제조사 외주"
+                      value={settings.manufacturerRequestUnitPrice}
                       disabled={loading}
-                      help={designAndProductionHelp}
+                      step={SHIPPING_AMOUNT_STEP}
+                      onChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          manufacturerRequestUnitPrice: next,
+                        })
+                      }
+                    />
+                    <CompactAmountInput
+                      id="devopsRequestUnitPrice"
+                      label="개발운영사 외주"
+                      value={settings.devopsRequestUnitPrice}
+                      disabled={loading}
+                      step={SHIPPING_AMOUNT_STEP}
+                      onChange={(next) =>
+                        setSettings({
+                          ...settings,
+                          devopsRequestUnitPrice: next,
+                        })
+                      }
                     />
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:max-w-xs">
                     <AmountField
                       id="abutmentDesignLabFee"
                       label="디자인비+지그제작비"
@@ -998,14 +1047,12 @@ export const AdminCreditSettingsTab = ({
               </CardContent>
             </Card>
 
-            <AdminRoundBarAbutmentTab />
-
             <Card className="app-glass-card app-glass-card--lg overflow-hidden">
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
                   icon={Search}
                   title="특별 공급가"
-                  description="의뢰자를 검색해 추가한 뒤 CNC어벗·환봉어벗 가격을 입력하세요."
+                  description="의뢰자를 검색해 추가한 뒤 CNC·환봉·외주 가격을 입력하세요."
                   trailing={
                     <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
                       {settings.specialRequestorPrices.length}곳
@@ -1081,7 +1128,7 @@ export const AdminCreditSettingsTab = ({
                             </Button>
                           </div>
 
-                          <div className="grid grid-cols-4 gap-2">
+                          <div className={SIX_COL_GRID}>
                             <CompactAmountInput
                               id={`special-cnc-production-${item.requestorAnchorId}`}
                               label="CNC 생산만"
@@ -1095,7 +1142,7 @@ export const AdminCreditSettingsTab = ({
                             />
                             <CompactAmountInput
                               id={`special-cnc-design-${item.requestorAnchorId}`}
-                              label="CNC 디자인+생산"
+                              label="CNC D+P"
                               value={item.designAndProductionPrice}
                               disabled={loading}
                               onChange={(designAndProductionPrice) =>
@@ -1117,12 +1164,36 @@ export const AdminCreditSettingsTab = ({
                             />
                             <CompactAmountInput
                               id={`special-round-design-${item.requestorAnchorId}`}
-                              label="환봉 디자인+생산"
+                              label="환봉 D+P"
                               value={item.roundBarDesignAndProductionPrice}
                               disabled={loading}
                               onChange={(roundBarDesignAndProductionPrice) =>
                                 updateSpecialPrice(item.requestorAnchorId, {
                                   roundBarDesignAndProductionPrice,
+                                })
+                              }
+                            />
+                            <CompactAmountInput
+                              id={`special-manufacturer-${item.requestorAnchorId}`}
+                              label="제조사 외주"
+                              value={item.manufacturerRequestUnitPrice}
+                              disabled={loading}
+                              step={SHIPPING_AMOUNT_STEP}
+                              onChange={(manufacturerRequestUnitPrice) =>
+                                updateSpecialPrice(item.requestorAnchorId, {
+                                  manufacturerRequestUnitPrice,
+                                })
+                              }
+                            />
+                            <CompactAmountInput
+                              id={`special-devops-${item.requestorAnchorId}`}
+                              label="개발운영사 외주"
+                              value={item.devopsRequestUnitPrice}
+                              disabled={loading}
+                              step={SHIPPING_AMOUNT_STEP}
+                              onChange={(devopsRequestUnitPrice) =>
+                                updateSpecialPrice(item.requestorAnchorId, {
+                                  devopsRequestUnitPrice,
                                 })
                               }
                             />
@@ -1214,6 +1285,8 @@ export const AdminCreditSettingsTab = ({
                 </div>
               </CardContent>
             </Card>
+
+            <AdminRoundBarAbutmentTab />
           </>
         ) : null}
       </div>

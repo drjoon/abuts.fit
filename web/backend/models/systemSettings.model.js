@@ -48,6 +48,8 @@ const systemSettingsSchema = new mongoose.Schema(
             designAndProductionPrice: { type: Number, min: 0 },
             roundBarProductionPrice: { type: Number, min: 0 },
             roundBarDesignAndProductionPrice: { type: Number, min: 0 },
+            manufacturerRequestUnitPrice: { type: Number, min: 0 },
+            devopsRequestUnitPrice: { type: Number, min: 0 },
           },
         ],
         default: [],
@@ -55,6 +57,8 @@ const systemSettingsSchema = new mongoose.Schema(
       shippingFee: { type: Number, default: 3500 },
       // 제조사(기공소·면세) 하청 공급가
       manufacturerRequestUnitPrice: { type: Number, default: 9000 },
+      // 개발운영사 어벗 생산 외주 공급가(1어벗당). 지급 시 +VAT.
+      devopsRequestUnitPrice: { type: Number, default: 1000 },
       manufacturerShippingUnitPrice: { type: Number, default: 3500 },
       affiliateVatRate: { type: Number, default: 0.1 },
       // 신속 배송 추가 의뢰크레딧 (생산=건당, 디자인+생산=1어벗당, 가공 진입 시 차감)

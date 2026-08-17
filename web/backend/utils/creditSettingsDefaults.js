@@ -34,6 +34,7 @@ const SCHEMA_DEFAULTS = (() => {
     manufacturerRequestUnitPrice: pickDefault(
       "creditSettings.manufacturerRequestUnitPrice",
     ),
+    devopsRequestUnitPrice: pickDefault("creditSettings.devopsRequestUnitPrice"),
     manufacturerShippingUnitPrice: pickDefault(
       "creditSettings.manufacturerShippingUnitPrice",
     ),
@@ -123,6 +124,22 @@ export function normalizeSpecialRequestorPrice(item = {}, fallback = {}) {
         : (fallback.membershipRoundBarDesignAndProductionPrice ?? 0),
     ) || 0,
   );
+  const manufacturerRequestUnitPrice = Math.max(
+    0,
+    Number(
+      item?.manufacturerRequestUnitPrice ??
+        fallback.manufacturerRequestUnitPrice ??
+        SCHEMA_DEFAULTS.manufacturerRequestUnitPrice,
+    ) || 0,
+  );
+  const devopsRequestUnitPrice = Math.max(
+    0,
+    Number(
+      item?.devopsRequestUnitPrice ??
+        fallback.devopsRequestUnitPrice ??
+        SCHEMA_DEFAULTS.devopsRequestUnitPrice,
+    ) || 0,
+  );
   return {
     requestorAnchorId,
     amount: productionPrice,
@@ -130,6 +147,8 @@ export function normalizeSpecialRequestorPrice(item = {}, fallback = {}) {
     designAndProductionPrice,
     roundBarProductionPrice,
     roundBarDesignAndProductionPrice,
+    manufacturerRequestUnitPrice,
+    devopsRequestUnitPrice,
   };
 }
 
@@ -217,6 +236,10 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     manufacturerRequestUnitPrice: Number(
       creditSettings.manufacturerRequestUnitPrice ??
         SCHEMA_DEFAULTS.manufacturerRequestUnitPrice,
+    ),
+    devopsRequestUnitPrice: Number(
+      creditSettings.devopsRequestUnitPrice ??
+        SCHEMA_DEFAULTS.devopsRequestUnitPrice,
     ),
     manufacturerShippingUnitPrice: Number(
       creditSettings.manufacturerShippingUnitPrice ??

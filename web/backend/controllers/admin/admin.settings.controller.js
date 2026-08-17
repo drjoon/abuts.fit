@@ -296,6 +296,7 @@ export async function updateCreditSettings(req, res) {
     const manufacturerRequestUnitPrice = Number(
       payload.manufacturerRequestUnitPrice,
     );
+    const devopsRequestUnitPrice = Number(payload.devopsRequestUnitPrice);
     const manufacturerShippingUnitPrice = Number(
       payload.manufacturerShippingUnitPrice,
     );
@@ -347,6 +348,12 @@ export async function updateCreditSettings(req, res) {
             const roundBarDesignAndProductionPrice = Number(
               item?.roundBarDesignAndProductionPrice,
             );
+            const specialManufacturerRequestUnitPrice = Number(
+              item?.manufacturerRequestUnitPrice,
+            );
+            const specialDevopsRequestUnitPrice = Number(
+              item?.devopsRequestUnitPrice,
+            );
             if (
               !Types.ObjectId.isValid(requestorAnchorId) ||
               !Number.isFinite(productionPrice) ||
@@ -371,6 +378,24 @@ export async function updateCreditSettings(req, res) {
               )
                 ? Math.max(0, roundBarDesignAndProductionPrice)
                 : 0,
+              ...(Number.isFinite(specialManufacturerRequestUnitPrice) &&
+              specialManufacturerRequestUnitPrice >= 0
+                ? {
+                    manufacturerRequestUnitPrice: Math.max(
+                      0,
+                      specialManufacturerRequestUnitPrice,
+                    ),
+                  }
+                : {}),
+              ...(Number.isFinite(specialDevopsRequestUnitPrice) &&
+              specialDevopsRequestUnitPrice >= 0
+                ? {
+                    devopsRequestUnitPrice: Math.max(
+                      0,
+                      specialDevopsRequestUnitPrice,
+                    ),
+                  }
+                : {}),
             };
           })
           .filter(Boolean)
@@ -388,6 +413,9 @@ export async function updateCreditSettings(req, res) {
       manufacturerRequestUnitPrice >= 0
     ) {
       sanitized.manufacturerRequestUnitPrice = manufacturerRequestUnitPrice;
+    }
+    if (!Number.isNaN(devopsRequestUnitPrice) && devopsRequestUnitPrice >= 0) {
+      sanitized.devopsRequestUnitPrice = devopsRequestUnitPrice;
     }
     if (
       !Number.isNaN(manufacturerShippingUnitPrice) &&

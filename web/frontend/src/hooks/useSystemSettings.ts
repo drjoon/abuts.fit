@@ -27,6 +27,7 @@ export interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
   manufacturerRequestUnitPrice: number;
+  devopsRequestUnitPrice: number;
   manufacturerShippingUnitPrice: number;
   affiliateVatRate: number;
   expressFee: number;
@@ -52,6 +53,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   minCreditForRequest: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   shippingFee: 3500,
   manufacturerRequestUnitPrice: 9000,
+  devopsRequestUnitPrice: 1000,
   manufacturerShippingUnitPrice: 3500,
   affiliateVatRate: 0.1,
   expressFee: 2000,
@@ -100,6 +102,10 @@ export const useSystemSettings = () => {
         manufacturerRequestUnitPrice: Number(
           raw.manufacturerRequestUnitPrice ??
             CREDIT_SETTINGS_DEFAULTS.manufacturerRequestUnitPrice,
+        ),
+        devopsRequestUnitPrice: Number(
+          raw.devopsRequestUnitPrice ??
+            CREDIT_SETTINGS_DEFAULTS.devopsRequestUnitPrice,
         ),
         manufacturerShippingUnitPrice: Number(
           raw.manufacturerShippingUnitPrice ??
