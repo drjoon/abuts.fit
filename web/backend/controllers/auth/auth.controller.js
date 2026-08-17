@@ -696,7 +696,9 @@ async function register(req, res) {
       normalizedRole !== "admin" &&
       normalizedRole !== "salesman" &&
       normalizedRole !== "devops" &&
-      normalizedRole !== "practice"
+      normalizedRole !== "practice" &&
+      normalizedRole !== "labTeam" &&
+      normalizedRole !== "salesTeam"
     ) {
       return res.status(400).json({
         success: false,

@@ -49,7 +49,7 @@ export function LabBusinessTab() {
             departmentPoolAmount(previewPool, dept.sharePercent)
           }
           noteFor={(dept) =>
-            dept.id === "lab-gigong"
+            dept.role === "labTeam" || dept.id === "lab-gigong"
               ? "기공소 배송비는 출고 시 기공팀이 받습니다."
               : null
           }

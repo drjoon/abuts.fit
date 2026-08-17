@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 계정 검색을 role로 제한할 수 있게.
 // - 2026-08-17: 사업영역 계정·사업자 검색 피커.
 // related files:
 // - web/frontend/src/pages/admin/partners/DepartmentRoster.tsx
@@ -41,17 +42,23 @@ export function AccountPicker({
   onPick,
   label = "계정 검색 후 추가…",
   compact = false,
+  roles,
 }: {
   excludedIds: Set<string>;
   onPick: (user: UserPickItem) => void;
   label?: string;
   compact?: boolean;
+  roles?: readonly string[];
 }) {
   const { token } = useAuthStore();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<UserPickItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const roleKey = (roles || [])
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+    .join(",");
 
   useEffect(() => {
     if (!open || !token) return;
@@ -66,6 +73,7 @@ export function AccountPicker({
         });
         const q = search.trim();
         if (q) params.set("search", q);
+        if (roleKey) params.set("role", roleKey);
         const res = await request<{
           success?: boolean;
           data?: {
@@ -102,7 +110,7 @@ export function AccountPicker({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, search, token]);
+  }, [open, search, token, roleKey]);
 
   const available = users.filter((user) => !excludedIds.has(user.id));
 

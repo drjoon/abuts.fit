@@ -10,6 +10,8 @@ export const BUSINESS_ALLOWED_ROLES = [
   "admin",
   "devops",
   "practice",
+  "labTeam",
+  "salesTeam",
 ];
 
 export const BUSINESS_ALLOWED_ROLE_SET = new Set(BUSINESS_ALLOWED_ROLES);

@@ -147,7 +147,7 @@ export function AbutmentBusinessTab() {
           allowedShareKinds={["perCase", "remainder"]}
           departmentAmount={(dept) => amountById.get(dept.id) || 0}
           noteFor={(dept) => {
-            if (dept.id === "abut-manufacturer") {
+            if (dept.role === "manufacturer" || dept.id === "abut-manufacturer") {
               return `박스당 배송 ${formatWon(shippingMfr)}+VAT ${formatWon(shippingVat)}는 제조사 지급.`;
             }
             if (dept.salesmanFallback) {

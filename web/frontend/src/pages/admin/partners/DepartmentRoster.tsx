@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 주체를 role Select로 바꾸고, 팀원 검색은 해당 role만.
 // - 2026-08-17: 사업영역 구성원 명단을 한 카드 안 컴팩트 행으로 정리.
 // related files:
 // - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
@@ -7,6 +8,12 @@ import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Plus, X } from "lucide-react";
+import { RoleSelect } from "@/shared/components/RoleSelect";
+import {
+  AREA_SHARE_ROLES,
+  isExternalShareRole,
+  sharePartyLabel,
+} from "@/shared/types/role";
 import { useBusinessAreaShare } from "./PartnerShareContext";
 import {
   createDepartment,
@@ -21,7 +28,7 @@ import {
   type Department,
   type ShareKind,
 } from "./partnerShare";
-import { AccountPicker, BusinessPicker } from "./AccountPicker";
+import { AccountPicker } from "./AccountPicker";
 
 export function ShareRoster({
   area,
@@ -48,15 +55,17 @@ export function ShareRoster({
   const showPercent = allowedShareKinds.includes("percent");
   const overflow = usedPercent > 100;
   const defaultShareKind = allowedShareKinds[0] || "percent";
-  const linkedIds = useMemo(
+  const areaRoles = AREA_SHARE_ROLES[area];
+  const usedRoles = useMemo(
     () =>
       new Set(
         departments
-          .map((item) => item.businessAnchorId)
-          .filter((id): id is string => Boolean(id)),
+          .map((item) => String(item.role || "").trim())
+          .filter(Boolean),
       ),
     [departments],
   );
+  const nextRole = areaRoles.find((role) => !usedRoles.has(role));
 
   return (
     <div className="space-y-2">
@@ -73,40 +82,28 @@ export function ShareRoster({
           ) : null}
         </div>
         <div className="flex items-center gap-1.5">
-          <BusinessPicker
-            excludedIds={linkedIds}
-            compact
-            onPick={(business) =>
-              addDepartment(
-                area,
-                createDepartment({
-                  name: business.name,
-                  businessAnchorId: business.id,
-                  businessNumber: business.businessNumber,
-                  shareKind: defaultShareKind,
-                  taxable:
-                    business.businessType === "devops" ||
-                    business.businessType === "manufacturer" ||
-                    business.businessType === "salesman",
-                }),
-              )
-            }
-          />
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="h-8 rounded-lg border-slate-200 px-2.5 text-[12px]"
-            onClick={() =>
+            disabled={!nextRole}
+            onClick={() => {
+              if (!nextRole) return;
               addDepartment(
                 area,
                 createDepartment({
-                  name: "새 구성원",
-                  shareKind: defaultShareKind,
-                  taxable: area === "abutment",
+                  name: sharePartyLabel(nextRole),
+                  role: nextRole,
+                  shareKind:
+                    nextRole === "admin" && allowedShareKinds.includes("remainder")
+                      ? "remainder"
+                      : defaultShareKind,
+                  taxable: isExternalShareRole(nextRole),
+                  salesmanFallback: nextRole === "salesman",
                 }),
-              )
-            }
+              );
+            }}
           >
             <Plus className="mr-1 h-3.5 w-3.5" />
             추가
@@ -129,13 +126,20 @@ export function ShareRoster({
             return (
               <div key={dept.id} className="px-3 py-2.5 sm:px-3.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    value={dept.name}
-                    onChange={(event) =>
-                      updateDepartment(area, dept.id, { name: event.target.value })
+                  <RoleSelect
+                    value={dept.role}
+                    roles={areaRoles}
+                    exclude={[...usedRoles]}
+                    getLabel={sharePartyLabel}
+                    triggerClassName="h-8 min-w-[7rem] flex-1 sm:max-w-[10rem]"
+                    onValueChange={(role) =>
+                      updateDepartment(area, dept.id, {
+                        role,
+                        name: sharePartyLabel(role),
+                        taxable: isExternalShareRole(role),
+                        salesmanFallback: role === "salesman",
+                      })
                     }
-                    className="h-8 min-w-[7rem] flex-1 rounded-lg border-slate-200 bg-slate-50/70 px-2 text-[13px] font-semibold sm:max-w-[10rem]"
-                    aria-label="구성원 이름"
                   />
                   <span
                     className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
@@ -277,6 +281,7 @@ export function ShareRoster({
                         excludedIds={selectedIds}
                         compact
                         label="팀원 추가"
+                        roles={dept.role ? [dept.role] : areaRoles}
                         onPick={(user) =>
                           addMember(area, dept.id, {
                             userId: user.id,

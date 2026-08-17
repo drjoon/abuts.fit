@@ -92,6 +92,12 @@ const normalizeRole = (rawRole?: string) => {
   }
   if (normalized.startsWith("salesman")) return "salesman";
   if (normalized.startsWith("devops")) return "devops";
+  if (normalized === "labteam" || normalized.startsWith("lab_team")) {
+    return "labTeam";
+  }
+  if (normalized === "salesteam" || normalized.startsWith("sales_team")) {
+    return "salesTeam";
+  }
   if (normalized.startsWith("admin")) return "admin";
   return normalized;
 };
@@ -110,6 +116,10 @@ const getRoleLabel = (role: string) => {
       return "영업자";
     case "devops":
       return "개발운영사";
+    case "labTeam":
+      return "기공팀";
+    case "salesTeam":
+      return "영업팀";
     default:
       return "사용자";
   }
@@ -151,6 +161,10 @@ const getRoleBadgeVariant = (role: string) => {
     case "manufacturer":
       return "secondary";
     case "internalLab":
+      return "secondary";
+    case "labTeam":
+      return "secondary";
+    case "salesTeam":
       return "secondary";
     case "admin":
       return "destructive";
@@ -971,6 +985,8 @@ export const AdminUserManagement = () => {
     ["manufacturer", "제조사"],
     ["internalLab", "어벗츠기공소"],
     ["admin", "관리자"],
+    ["labTeam", "기공팀"],
+    ["salesTeam", "영업팀"],
   ] as const;
 
   const statusFilters = [
@@ -1652,6 +1668,8 @@ export const AdminUserManagement = () => {
                           <SelectItem value="manufacturer">제조사</SelectItem>
                           <SelectItem value="internalLab">어벗츠기공소</SelectItem>
                           <SelectItem value="admin">관리자</SelectItem>
+                          <SelectItem value="labTeam">기공팀</SelectItem>
+                          <SelectItem value="salesTeam">영업팀</SelectItem>
                         </SelectContent>
                       </Select>
 

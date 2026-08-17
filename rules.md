@@ -109,9 +109,10 @@
 - 사업자 SSOT: `BusinessAnchor`
 - 사용자-사업자 연결 키: `User.businessAnchorId`
 - `subRole`만 사용 (`owner|staff|null`), 레거시 role 필드 금지
-- 사업자 타입 허용: `requestor | manufacturer | internalLab | admin | salesman | devops`
+- 사업자 타입 허용: `requestor | manufacturer | internalLab | admin | salesman | devops | labTeam | salesTeam`
   - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 메뉴=기공의뢰수신·설정. 관리자 생성만(공개 가입 없음).
     - 동일 법인 BN을 `businessType`별로 공유 가능(`businessNumberNormalized`+`businessType` 복합 unique). 하위조직은 `parentBusinessAnchorId` → 예: admin「어벗츠 주식회사」←「기공사업부」.
+  - `labTeam`(기공팀)·`salesTeam`(영업팀): 내부 직원. `/signup/staff`에서 가입. 사업영역 수익 분배 주체.
   - `practice` role은 제거. 기존 계정은 `requestor`+`requestorCapabilities.practice` 마이그레이션 대상(신규 생성 금지). 백필: `scripts/db/backfill-requestor-capabilities.js --apply`.
 
 
@@ -176,7 +177,7 @@
   - **어벗 생산 분배**: 판매가에서 건당 제조사 9,000 · 개발운영사 1,000 · 영업자(영업자BA) 3,000을 공급가로 떼고 지급 시 부가세 10%. 잔여 → 어벗츠(면세). 영업자 없으면 영업자 몫은 어벗츠. 특별주문가는 주체별 배분액. 설정 UI: 관리자「사업영역」어벗사업.
   - **배송 분배**: 제조사 배송 공급가+VAT. 고객 배송비 − 제조사 공급가 잔여 → 어벗츠. 생산 분배 재원에서 제외.
   - **플랫폼 분배**: 치과 멤버십·기공소 자동매칭 수수료·지정 수수료(현재 무료)를 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 지급 시 부가세.
-  - **기공(어벗츠기공소) 분배**: 어벗츠기공소 주문 매출을 부서(사업자) 비율 → 부서 내 팀원(개인 계정) 비율로 배분. 초기 부서 기공팀·영업팀·개발운영사. 배송비는 출고 룰 흐름으로 지급하며 이 재원에 넣지 않음.
+  - **기공(어벗츠기공소) 분배**: 어벗츠기공소 주문 매출을 주체(role) 비율 → 주체 내 팀원(해당 role 개인 계정) 비율로 배분. 초기 주체 기공팀·영업팀·개발운영사. 배송비는 출고 룰 흐름으로 지급하며 이 재원에 넣지 않음.
   - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **어벗 개수×1회**만. express는 잔여 분배에만 포함.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록

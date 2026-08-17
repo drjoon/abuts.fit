@@ -303,6 +303,8 @@ const sidebarItems = {
     { icon: Layers, label: "사업영역", href: "/dashboard/partners" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
+  labTeam: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
+  salesTeam: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
 } as const;
 
 const accountMenuItemsByRole: Record<string, SidebarItem[]> = {
@@ -429,6 +431,10 @@ const getRoleLabel = (
       return getRequestorRoleBadgeLabel(requestorKind ?? "practice");
     case "admin":
       return "어벗츠.핏";
+    case "labTeam":
+      return "기공팀";
+    case "salesTeam":
+      return "영업팀";
     default:
       return "사용자";
   }
@@ -445,6 +451,10 @@ const getRoleBadgeVariant = (role: string) => {
     case "manufacturer":
       return "secondary";
     case "internalLab":
+      return "secondary";
+    case "labTeam":
+      return "secondary";
+    case "salesTeam":
       return "secondary";
     case "practice":
       return "default";

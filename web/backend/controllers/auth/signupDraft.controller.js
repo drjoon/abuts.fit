@@ -14,6 +14,8 @@ const ALLOWED_ROLES = new Set([
   "manufacturer",
   "admin",
   "devops",
+  "labTeam",
+  "salesTeam",
 ]);
 
 const toSafeDraft = (doc) => {

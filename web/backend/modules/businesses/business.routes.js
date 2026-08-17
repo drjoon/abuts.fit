@@ -7,6 +7,18 @@ import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import * as businessController from "../../controllers/businesses/business.api.controller.js";
 import * as leadTimeController from "../../controllers/businesses/leadTime.controller.js";
 
+const BUSINESS_ACCOUNT_ROLES = [
+  "requestor",
+  "salesman",
+  "manufacturer",
+  "internalLab",
+  "admin",
+  "devops",
+  "labTeam",
+  "salesTeam",
+];
+const BUSINESS_ORG_ROLES = [...BUSINESS_ACCOUNT_ROLES, "practice"];
+
 const router = Router();
 
 // 공개 검색(치과 드롭존 등 비로그인 화면에서 사용)
@@ -27,13 +39,13 @@ router.get("/me/request-settings", businessController.getMyRequestSettings);
 // 사업자 정보 수정
 router.put(
   "/me",
-  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
+  authorize(BUSINESS_ACCOUNT_ROLES),
   businessController.updateMyBusiness,
 );
 
 router.patch(
   "/me",
-  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
+  authorize(BUSINESS_ACCOUNT_ROLES),
   businessController.updateMyBusiness,
 );
 
@@ -57,19 +69,19 @@ router.post(
 
 router.put(
   "/me/request-settings",
-  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
+  authorize(BUSINESS_ACCOUNT_ROLES),
   businessController.updateMyRequestSettings,
 );
 
 router.post(
   "/postal-code-lookup",
-  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
+  authorize(BUSINESS_ACCOUNT_ROLES),
   businessController.lookupPostalCode,
 );
 
 router.post(
   "/check-business-number",
-  authorize(["requestor", "salesman", "manufacturer", "internalLab", "admin", "devops"]),
+  authorize(BUSINESS_ACCOUNT_ROLES),
   businessController.checkBusinessNumberDuplicate,
 );
 
@@ -87,41 +99,17 @@ router.delete(
 // 대표(owners) 관리
 router.get(
   "/owners",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.getRepresentatives,
 );
 router.post(
   "/owners",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.addOwner,
 );
 router.delete(
   "/owners/:userId",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.removeOwner,
 );
 
@@ -129,28 +117,12 @@ router.delete(
 router.post("/join-requests", businessController.requestJoinBusiness);
 router.post(
   "/join-requests/:businessId/cancel",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.cancelJoinRequest,
 );
 router.post(
   "/join-requests/:businessId/leave",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.leaveBusiness,
 );
 router.get("/join-requests/me", businessController.getMyJoinRequests);
@@ -158,67 +130,27 @@ router.get("/join-requests/me", businessController.getMyJoinRequests);
 // 직원 관리 (가입 승인/거절/목록/삭제)
 router.get(
   "/join-requests/pending",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.getPendingJoinRequestsForOwner,
 );
 router.get(
   "/staff",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.getMyStaffMembers,
 );
 router.delete(
   "/staff/:userId",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.removeMember,
 );
 router.post(
   "/join-requests/:userId/approve",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.approveJoinRequest,
 );
 router.post(
   "/join-requests/:userId/reject",
-  authorize([
-    "requestor",
-    "salesman",
-    "manufacturer",
-    "internalLab",
-    "practice",
-    "admin",
-    "devops",
-  ]),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.rejectJoinRequest,
 );
 

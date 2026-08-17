@@ -46,6 +46,9 @@ export function getRoleDefaultDashboardPath(role: string | null | undefined): st
       return "/practice/dashboard";
     case "devops":
       return "/dashboard/settings";
+    case "labTeam":
+    case "salesTeam":
+      return "/dashboard/settings";
     default:
       return "/dashboard";
   }
@@ -64,12 +67,14 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/practice/devops는 `/dashboard`에 콘텐츠가 없음.
+  // manufacturer/practice/devops/기공팀/영업팀은 `/dashboard`에 콘텐츠가 없음.
   // internalLab은 `/dashboard` = 대기보드(RequestorDashboardPage).
   if (
     (role === "manufacturer" ||
       role === "practice" ||
-      role === "devops") &&
+      role === "devops" ||
+      role === "labTeam" ||
+      role === "salesTeam") &&
     (last === "/dashboard" || last === "/dashboard/")
   ) {
     return roleDefault;

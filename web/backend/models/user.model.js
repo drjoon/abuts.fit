@@ -39,6 +39,8 @@ const userSchema = new mongoose.Schema(
         "salesman",
         "devops",
         "practice",
+        "labTeam",
+        "salesTeam",
       ],
       default: "requestor",
     },

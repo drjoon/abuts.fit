@@ -20,7 +20,14 @@ export async function getAllUsers(req, res) {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
     const filter = {};
-    if (req.query.role) filter.role = req.query.role;
+    if (req.query.role) {
+      const roles = String(req.query.role)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (roles.length === 1) filter.role = roles[0];
+      else if (roles.length > 1) filter.role = { $in: roles };
+    }
     if (req.query.active === "true") filter.active = true;
     if (req.query.active === "false") filter.active = false;
     if (req.query.search) {
@@ -153,6 +160,8 @@ export async function createUser(req, res) {
       "admin",
       "salesman",
       "devops",
+      "labTeam",
+      "salesTeam",
     ];
     if (!validRoles.includes(role)) {
       return res
@@ -464,6 +473,8 @@ export async function changeUserRole(req, res) {
       "admin",
       "salesman",
       "devops",
+      "labTeam",
+      "salesTeam",
     ];
     // 레거시: admin UI/클라이언트가 practice role을 보내면 requestor+practice(발신·무료)로 승격
     const normalizedRole = role === "practice" ? "requestor" : role;

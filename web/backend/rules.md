@@ -395,13 +395,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 관리자 사용자 role 변경/생성 API는 `practice`를 **신규로 허용하지 않는다**(제거).
   - 적용 파일: `controllers/admin/admin.users.controller.js`
-  - `validRoles` 기준은 루트 규칙(사업자 타입 허용값)과 동기화합니다. (`internalLab` 포함)
+  - `validRoles` 기준은 루트 규칙(사업자 타입 허용값)과 동기화합니다. (`internalLab`·`labTeam`·`salesTeam` 포함)
   - 기존 `practice` 계정은 `requestor`+`practice` 마이그레이션 대상입니다.
   - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 디자인 파트너·기공의뢰 수신·사업자/크레딧 API 허용. 공개 가입 없음.
   - 동일 법인 BN 공유: `BusinessAnchor` unique는 `{ businessNumberNormalized, businessType }`. 하위조직 `parentBusinessAnchorId`(예: admin「어벗츠 주식회사」← internalLab「기공사업부」). `ensureBusinessAnchor`도 type 스코프.
 
 - 의뢰자 역할·서비스 · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
-  - 가입 role SSOT: `requestor` | `salesman`만. `practice` role **제거**(신규 생성 금지).
+  - 가입 role SSOT: 공개 `/signup`은 `requestor` | `salesman`. `/signup/staff`는 `manufacturer` | `devops` | `admin` | `labTeam` | `salesTeam`. `practice` role **제거**(신규 생성 금지). `internalLab`은 관리자 생성만.
   - 필드 SSOT: `BusinessAnchor.requestorKind` (`practice|lab`) + `requestorServices` (paid-only). User 미러 동일.
   - 레거시 `requestorCapabilities`는 resolve/백필 폴백만. 신규 쓰기 금지.
   - `requestorServices.free` 폐기: 읽기 시 paid 승격, 쓰기는 `{free:false,paid:true}`.

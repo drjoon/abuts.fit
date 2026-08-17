@@ -34,6 +34,8 @@ const businessAnchorSchema = new mongoose.Schema(
         "devops",
         "admin",
         "practice",
+        "labTeam",
+        "salesTeam",
       ],
       default: "requestor",
       index: true,
