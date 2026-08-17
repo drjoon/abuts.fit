@@ -373,8 +373,12 @@ function pushRevenueLines({
 
   // 치과→기공소 배송비: 면세. 기공소가 기공크레딧으로 수취. 제조사 장부 없음.
   if (isPtxLabShipping) {
-    const labId = String(labAnchorId || owners?.labAnchorId || "").trim();
-    if (!labId) return;
+    const labId = String(
+      labAnchorId?._id || labAnchorId || owners?.labAnchorId || "",
+    ).trim();
+    if (!labId) {
+      throw new Error("기공소 배송비 정산 대상 기공소가 없습니다.");
+    }
     lines.push({
       accountCode: "LAB_SETTLEMENT_CREDIT",
       ownerRole: "requestor",
