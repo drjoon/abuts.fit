@@ -21,9 +21,7 @@ import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import {
   PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL,
-  PRACTICE_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
   PRACTICE_WORK_PERIOD_RECOMMEND_NOTE,
-  formatPracticeWorkPeriodLeadLabel,
   getPracticeWorkPeriodDays,
 } from "@/shared/practice/practiceWorkPeriod";
 // related files:
@@ -32,6 +30,9 @@ import {
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
+// - 2026-08-17: 도움말 툴팁 가로폭 확대(문장 한 줄 유지).
+// - 2026-08-17: 도움말 — 3영업일 이하 지연 가능·4영업일 이상 안내로 단순화.
+// - 2026-08-17: 주문-치과도착 도움말 줄바꿈·간결화.
 // - 2026-08-17: 출고=도착−1·3+2 권고. 할증 문구 제거.
 // - 2026-08-16: 도움말 간격을 UI와 같이 N+2영업일로 표기. 치과 직납 안내.
 // - 2026-08-15: 라벨 주문-치과도착 · 기간 1+2영업일.
@@ -124,7 +125,6 @@ export function PracticeOrderArrivalDateRangeField({
   const leadFromYmd = open ? todayYmd : appliedOrderYmd;
   const leadToYmd = open ? draftArrivalYmd : appliedArrivalYmd;
   const leadDays = getPracticeWorkPeriodDays(leadFromYmd, leadToYmd);
-  const leadLabel = formatPracticeWorkPeriodLeadLabel(leadDays);
 
   const handleApply = () => {
     if (!canApply || !todayYmd || !draftArrivalYmd) return;
@@ -163,15 +163,16 @@ export function PracticeOrderArrivalDateRangeField({
                 <CircleHelp className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs text-left text-xs leading-relaxed">
-              주문일은 오늘 고정. 치과도착일만 선택하면 됩니다.
-              3영업일 이하는 신속처리(할증 없음)입니다.{" "}
-              {PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}
-              {leadLabel
-                ? ` 변경한 간격(${leadLabel})이 다음 기본값으로 저장됩니다.`
-                : " 변경한 간격이 다음 기본값으로 저장됩니다."}{" "}
-              커스텀어벗은 기공소가 아니라 치과로 직납되며, 출고 목표는
-              치과도착일 {PRACTICE_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS}영업일 전입니다.
+            <TooltipContent
+              side="top"
+              className="max-w-[min(100vw-2rem,36rem)] space-y-1.5 text-left text-xs leading-relaxed"
+            >
+              <p>주문일은 오늘 고정.</p>
+              <p>치과도착일만 선택하면 됩니다.</p>
+              <p>
+                3영업일 이하는 늦게 도착할 수 있으니, 4영업일 이상 설정해주세요.
+              </p>
+              <p>{PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}</p>
             </TooltipContent>
           </Tooltip>
         </div>

@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
 // - web/frontend/src/shared/components/practice/PracticeRushConfirmDialog.tsx
+// - 2026-08-17: N+2 의미 툴팁 — 치과 배송·출고=치과도착일, 줄바꿈.
 // - 2026-08-17: 제조 모드 항상 묶음. 2·3영업일은 지연고지(빨간 툴팁)만. 출고=도착−1. 할증 없음.
 // - 2026-08-17: ≤3영업일 → 제조 express+지연고지. 출고 스케줄은 항상 묶음(도착−1 clamp).
 // - 2026-08-17: 출고 목표=치과도착−1영업일. 안내 툴팁 3+2 권고 문구 고정. 할증 폐기·2영업일 신속배송.
@@ -97,16 +98,18 @@ export function formatPracticeRushFeeParenLabel(
 
 export type PracticeWorkPeriodViewer = "practice" | "lab";
 
-/** N+2영업일: N일=기공작업시간, 2일=배송. 출고=치과도착−1. */
+/** N+2영업일: N일=기공작업시간, 2일=배송. 안내 줄바꿈(`whitespace-pre-line`). */
 export function formatPracticeWorkPlusShipMeaningTooltip(
   totalBusinessDays: number | null | undefined,
 ): string {
   const workDays = getPracticeWorkOnlyBusinessDays(totalBusinessDays);
-  const shipNote = `커스텀어벗은 치과로 직납되며, 출고 목표는 치과도착일 ${PRACTICE_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS}영업일 전입니다.`;
-  if (workDays == null) {
-    return `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote} ${PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}`;
-  }
-  return `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다. ${shipNote} ${PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}`;
+  const shipNote =
+    "커스텀어벗은 치과로 배송되며, 출고 목표는 치과도착일입니다.";
+  const lead =
+    workDays == null
+      ? `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`
+      : `${workDays}일은 기공작업시간, ${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`;
+  return [lead, shipNote, PRACTICE_WORK_PERIOD_RECOMMEND_NOTE].join("\n");
 }
 
 /**
@@ -118,7 +121,7 @@ export function formatPracticeTightRushPeriodTooltip(): string {
     "목표 일정에 늦을 수 있습니다.",
     PRACTICE_WORK_PERIOD_RECOMMEND_NOTE,
     PRACTICE_RUSH_COURIER_DISCLAIMER,
-  ].join(" ");
+  ].join("\n");
 }
 
 /** @deprecated formatPracticeTightRushPeriodTooltip 사용. */
@@ -158,7 +161,7 @@ export function getPracticeWorkPeriodTooltip(
   const meaning = formatPracticeWorkPlusShipMeaningTooltip(days);
   // 치과: meaning에 권고 포함. 기공소: 짧은 기간이면 수락 거부 안내만 추가.
   if (isPracticeWorkPeriodShort(days) && viewer === "lab") {
-    return `${meaning} ${PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_LAB}`;
+    return `${meaning}\n${PRACTICE_WORK_PERIOD_SHORT_TOOLTIP_LAB}`;
   }
   return meaning;
 }
