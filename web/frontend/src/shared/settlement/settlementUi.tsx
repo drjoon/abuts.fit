@@ -22,10 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
-import {
-  formatWon,
-  SETTLEMENT_VAT_PAYOUT_NOTICE,
-} from "@/shared/settlement/affiliateVat";
+import { formatWon } from "@/shared/settlement/affiliateVat";
 
 export type SettlementStatTone = "default" | "primary";
 export type SettlementSortDirection = "asc" | "desc";
@@ -55,12 +52,14 @@ export function SettlementStatCard({
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="mx-auto cursor-help border-b border-dotted border-slate-400 text-[11px] text-slate-500 sm:text-xs"
+            <span
+              role="note"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+              className="mx-auto inline-block cursor-help border-b border-dotted border-slate-400 text-[11px] text-slate-500 sm:text-xs"
             >
               {hint}
-            </button>
+            </span>
           </TooltipTrigger>
           <TooltipContent
             side="bottom"
@@ -236,7 +235,8 @@ export function SettlementVatNotice({
 }) {
   return (
     <p className="text-xs leading-relaxed text-slate-500">
-      {children || SETTLEMENT_VAT_PAYOUT_NOTICE}
+      {children ||
+        "장부 금액은 공급가입니다. 부가세 10%는 지급 시 합산하며 세금계산서를 수취합니다."}
     </p>
   );
 }

@@ -48,6 +48,7 @@ export const PRACTICE_TRANSFER_LEDGER_LABELS = {
   releaseAbutment: "기공비(치과→어벗츠)",
   shippingLab: "배송비(치과→기공소)",
   shippingAbutment: "배송비(치과→어벗츠)",
+  shippingAbutsToManufacturer: "배송비(어벗츠→제조사)",
 };
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import LedgerJournal from "../models/ledgerJournal.model.js";
@@ -115,6 +116,7 @@ import {
   toLabRatingSummaryApi,
 } from "../utils/practiceLabRating.js";
 import { shouldChargePracticeTransferLabShipping } from "../utils/practiceTransferLabShipping.js";
+import { SHIPPING_LEDGER_LABELS } from "../utils/shippingLedgerLabels.js";
 import {
   getRequestPerfCacheValue,
   invalidateRequestPerfCacheByPrefix,
@@ -329,32 +331,75 @@ function pushRevenueLines({
   refType,
   refId,
   meta,
+  creditSettings = null,
+  labAnchorId = null,
 }) {
   if (spendAmount <= 0) return;
   const freeTotal = Math.max(0, Math.round(Number(freeAmount || 0)));
   const freeReq = Math.max(0, Math.round(Number(fromFreeRequest || 0)));
   const freeShip = Math.max(0, Math.round(Number(fromFreeShipping || 0)));
   const freeSourceTotal = freeReq + freeShip;
-
   const usageKind = String(meta?.usageKind || "");
-  const isPtxShipping =
-    usageKind === "practice_transfer_lab_shipping" ||
-    usageKind === "practice_transfer_abuts_shipping";
+  const isPtxLabShipping = usageKind === "practice_transfer_lab_shipping";
+  const isPtxAbutsShipping = usageKind === "practice_transfer_abuts_shipping";
+
+  // 치과→기공소 배송비: 면세. 기공소가 기공크레딧으로 수취. 제조사 장부 없음.
+  if (isPtxLabShipping) {
+    const labId = String(labAnchorId || owners?.labAnchorId || "").trim();
+    if (!labId) return;
+    lines.push({
+      accountCode: "LAB_SETTLEMENT_CREDIT",
+      ownerRole: "requestor",
+      ownerId: labId,
+      amount: spendAmount,
+      amountExcludingVat: spendAmount,
+      vatAmount: 0,
+      amountIncludingVat: spendAmount,
+      creditKind: "SETTLEMENT",
+      refType,
+      refId,
+      meta: {
+        ...meta,
+        displayLabel: SHIPPING_LEDGER_LABELS.practiceToLab,
+        displayKind: "shipping",
+      },
+    });
+    return;
+  }
+
   const revenueBaseByOwner = resolveRevenueOwnerBaseAllocation({
     spendAmount,
     hasSalesmanReferrer: owners.hasSalesmanReferrer,
     configuredRates: owners.configuredRates,
     owners,
-    isShippingSpend: isPtxShipping || String(meta?.displayKind || "") === "shipping",
-    // 치과 출발 배송비는 제조사 하청 박스 단가가 아님. 잔여(전액)는 관리자.
-    applyManufacturerUnit: !isPtxShipping,
+    isShippingSpend: isPtxAbutsShipping,
+    applyManufacturerUnit: isPtxAbutsShipping,
+    creditSettings,
   });
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: revenueBaseByOwner,
     freeAmount: freeTotal,
   });
 
-  const push = (accountCode, ownerRole, ownerId, paidBase, freeBase) => {
+  const manufacturerVatRate = isPtxAbutsShipping
+    ? Number(revenueBaseByOwner.manufacturerVatRate || 0)
+    : 0;
+  const manufacturerMeta = isPtxAbutsShipping
+    ? {
+        ...meta,
+        displayLabel: SHIPPING_LEDGER_LABELS.abutsToManufacturer,
+        displayKind: "shipping",
+      }
+    : meta;
+
+  const push = (
+    accountCode,
+    ownerRole,
+    ownerId,
+    paidBase,
+    freeBase,
+    { vatRate = 0, lineMeta = meta } = {},
+  ) => {
     if (!ownerId) return;
     const paid = Math.max(0, Math.round(Number(paidBase || 0)));
     const free = Math.max(0, Math.round(Number(freeBase || 0)));
@@ -372,51 +417,32 @@ function pushRevenueLines({
       }
     }
 
-    if (freeRequestPart > 0) {
+    const pushOne = (supplyAmount, creditKind) => {
+      const supply = Math.max(0, Math.round(Number(supplyAmount || 0)));
+      if (supply <= 0) return;
+      const vat =
+        Number(vatRate || 0) > 0
+          ? Math.round(supply * Number(vatRate || 0))
+          : 0;
+      const total = supply + vat;
       lines.push({
         accountCode,
         ownerRole,
         ownerId,
-        amount: freeRequestPart,
-        amountExcludingVat: freeRequestPart,
-        vatAmount: 0,
-        amountIncludingVat: freeRequestPart,
-        creditKind: "FREE_REQUEST",
+        amount: total,
+        amountExcludingVat: supply,
+        vatAmount: vat,
+        amountIncludingVat: total,
+        creditKind,
         refType,
         refId,
-        meta,
+        meta: lineMeta,
       });
-    }
-    if (freeShippingPart > 0) {
-      lines.push({
-        accountCode,
-        ownerRole,
-        ownerId,
-        amount: freeShippingPart,
-        amountExcludingVat: freeShippingPart,
-        vatAmount: 0,
-        amountIncludingVat: freeShippingPart,
-        creditKind: "FREE_SHIPPING",
-        refType,
-        refId,
-        meta,
-      });
-    }
-    if (paid > 0) {
-      lines.push({
-        accountCode,
-        ownerRole,
-        ownerId,
-        amount: paid,
-        amountExcludingVat: paid,
-        vatAmount: 0,
-        amountIncludingVat: paid,
-        creditKind: "PAID",
-        refType,
-        refId,
-        meta,
-      });
-    }
+    };
+
+    pushOne(freeRequestPart, "FREE_REQUEST");
+    pushOne(freeShippingPart, "FREE_SHIPPING");
+    pushOne(paid, "PAID");
   };
 
   push(
@@ -425,6 +451,7 @@ function pushRevenueLines({
     owners.manufacturerAnchorId,
     revenueKindSplit.manufacturer?.paid,
     revenueKindSplit.manufacturer?.free,
+    { vatRate: manufacturerVatRate, lineMeta: manufacturerMeta },
   );
   push(
     "REV_DEVOPS",
@@ -4405,6 +4432,8 @@ async function commitPracticeTransferShippingSpend({
       refType: "PRACTICE_TRANSFER",
       refId: transferId,
       meta: spendMeta,
+      creditSettings,
+      labAnchorId: transfer?.targetLabAnchorId,
     });
 
     const journal = await postGeneralLedgerJournal({
@@ -4437,6 +4466,14 @@ async function commitPracticeTransferShippingSpend({
           reason: source,
           refId: journal.journalId || String(transferId),
         });
+        if (isLab && transfer?.targetLabAnchorId) {
+          await emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: transfer.targetLabAnchorId,
+            balanceDelta: fee,
+            reason: source,
+            refId: journal.journalId || String(transferId),
+          });
+        }
       } catch {
         // best-effort
       }

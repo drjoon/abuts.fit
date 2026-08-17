@@ -14,7 +14,7 @@
 // - 2026-08-17: 배송비 차감 SSOT를 집하(우편함 비우기)로 옮김. 포장.발송 진입은 우편함만 확인.
 // - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비에서만 해제.
 // - 2026-08-17: 포장.발송 진입 시 기존 우편함을 유지(다른 박스 합류로 주소를 바꾸지 않음).
-// - 2026-08-17: PTX CA 포장 배송비 displayLabel=배송비(치과→어벗츠).
+// - 2026-08-17: 배송비 고객 라벨(치과/기공소→어벗츠)과 제조사 라벨(어벗츠→제조사+VAT) 분리.
 import mongoose, { Types } from "mongoose";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
@@ -76,6 +76,10 @@ import {
   pickAbutsAbutmentCreditPrices,
   resolveAbutsAbutmentPricingTier,
 } from "../../utils/abutsAbutmentService.js";
+import {
+  SHIPPING_LEDGER_LABELS,
+  resolveCustomerShippingLabel,
+} from "../../utils/shippingLedgerLabels.js";
 
 const SHIPPING_FEE_SUPPLY_FALLBACK = 3500;
 
@@ -211,7 +215,7 @@ async function emitOrQueueCreditBalanceUpdate({
 
 async function resolveRoleOwnerAnchors({ request, businessAnchorId, session }) {
   const requestorAnchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({ _id: 1, businessType: 1, referredByAnchorId: 1 })
+    .select({ _id: 1, businessType: 1, referredByAnchorId: 1, requestorKind: 1 })
     .session(session || null)
     .lean();
 
@@ -258,6 +262,7 @@ async function resolveRoleOwnerAnchors({ request, businessAnchorId, session }) {
     adminAnchorId: adminAnchor?._id || null,
     hasSalesmanReferrer,
     configuredRates: resolveConfiguredRevenueRates(devopsAnchor?.payoutRates),
+    requestorKind: String(requestorAnchor?.requestorKind || ""),
   };
 }
 
@@ -321,9 +326,21 @@ async function postSpendCommitGeneralLedger({
   const creditSettings = await loadCreditSettingsDefaults();
   const applyManufacturerUnit =
     String(usageKind || "").trim() !== "express_surcharge";
-
-  const label = String(displayLabel || "").trim() || null;
-  const kind = String(displayKind || "").trim() || null;
+  const isShippingCommit =
+    String(eventType || "") === "SHIPPING_SPEND_COMMIT" ||
+    String(usageKind || "") === "shipping" ||
+    String(usageKind || "") === "practice_transfer_abuts_shipping";
+  const customerShippingLabel = isShippingCommit
+    ? resolveCustomerShippingLabel({
+        isPracticeTransferAbuts:
+          String(usageKind || "") === "practice_transfer_abuts_shipping",
+        requestorKind: owners.requestorKind,
+      })
+    : "";
+  const label =
+    String(displayLabel || "").trim() || customerShippingLabel || null;
+  const kind =
+    String(displayKind || "").trim() || (isShippingCommit ? "shipping" : null);
   const spendMeta = {
     spendUniqueKey,
     ...(usageKind ? { usageKind: String(usageKind) } : {}),
@@ -331,6 +348,13 @@ async function postSpendCommitGeneralLedger({
     ...(label ? { displayLabel: label } : {}),
     ...(kind ? { displayKind: kind } : {}),
   };
+  const manufacturerMeta = isShippingCommit
+    ? {
+        ...spendMeta,
+        displayLabel: SHIPPING_LEDGER_LABELS.abutsToManufacturer,
+        displayKind: "shipping",
+      }
+    : spendMeta;
 
   const lines = [];
 
@@ -467,6 +491,7 @@ async function postSpendCommitGeneralLedger({
     paidBase,
     freeBase,
     vatRate = 0,
+    lineMeta = spendMeta,
   }) => {
     if (!ownerId) return;
 
@@ -490,7 +515,7 @@ async function postSpendCommitGeneralLedger({
         creditKind,
         refType,
         refId,
-        meta: spendMeta,
+        meta: lineMeta,
       });
     };
 
@@ -506,6 +531,7 @@ async function postSpendCommitGeneralLedger({
     paidBase: revenueKindSplit.manufacturer.paid,
     freeBase: revenueKindSplit.manufacturer.free,
     vatRate: manufacturerVatRate,
+    lineMeta: manufacturerMeta,
   });
 
   pushRevenueLinesBySplit({

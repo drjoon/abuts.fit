@@ -131,7 +131,9 @@ const manufacturerTypeLabel = (row: LedgerItem) => {
   if (row.type === "PAYOUT") return "지급";
   if (row.type === "ADJUST") return "조정";
   const event = String(row.eventType || "");
-  if (event === "SHIPPING_SPEND_COMMIT") return "배송";
+  if (event === "SHIPPING_SPEND_COMMIT") {
+    return String(row.displayLabel || "").trim() || "배송";
+  }
   if (event === "REQUEST_SPEND_COMMIT") return "의뢰";
   if (event === "PRACTICE_TRANSFER_SPEND_COMMIT") return "기공의뢰";
   return "적립";
@@ -923,8 +925,9 @@ export const ManufacturerPaymentPage = () => {
                   <div className="flex gap-2.5">
                     <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      발송 패키지 1박스당 공급가 3,500원 + 부가세 10%(합
-                      3,850원).
+                      발송 패키지 1박스당 공급가 3,500원. 고객(치과·기공소)→어벗츠
+                      배송비는 면세 수취 후, 제조사에는 배송비(어벗츠→제조사)로
+                      부가세 10%를 붙여 지급합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>
