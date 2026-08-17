@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 멤버십·배송 — 구독료·배송비·신속 의뢰비만 표시. 제조사 하청은 커스텀어벗 탭으로 이전 예정.
 // - 2026-08-17: 제조사 하청 의뢰 공급가 도움말 — 어벗 1개당.
 // - 2026-08-16: variant로 크레딧(환영·멤버십·배송) / 커스텀어벗(단가·추가요청·특별공급가) 분리.
 // - 2026-08-15: 특별 공급가 치과카드 4항목을 4열 1행 배치.
@@ -834,38 +835,8 @@ export const AdminCreditSettingsTab = ({
                     step={SHIPPING_AMOUNT_STEP}
                   />
                   <AmountField
-                    id="manufacturerRequestUnitPrice"
-                    label="제조사 하청 의뢰 공급가"
-                    icon={HandCoins}
-                    value={settings.manufacturerRequestUnitPrice}
-                    onChange={(next) =>
-                      setSettings({
-                        ...settings,
-                        manufacturerRequestUnitPrice: next,
-                      })
-                    }
-                    disabled={loading}
-                    help="어벗 1개당 · 면세 지급"
-                    step={SHIPPING_AMOUNT_STEP}
-                  />
-                  <AmountField
-                    id="manufacturerShippingUnitPrice"
-                    label="제조사 하청 배송 공급가"
-                    icon={Truck}
-                    value={settings.manufacturerShippingUnitPrice}
-                    onChange={(next) =>
-                      setSettings({
-                        ...settings,
-                        manufacturerShippingUnitPrice: next,
-                      })
-                    }
-                    disabled={loading}
-                    help="박스당 · 면세 지급"
-                    step={SHIPPING_AMOUNT_STEP}
-                  />
-                  <AmountField
                     id="expressFee"
-                    label="신속 배송비"
+                    label="신속 의뢰비"
                     icon={Zap}
                     value={settings.expressFee}
                     onChange={(next) =>
