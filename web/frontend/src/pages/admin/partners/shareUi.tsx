@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-17: 사업영역 공통 섹션 헤더·도움말.
+// - 2026-08-17: 사업영역 공통 섹션 헤더·도움말. 헤더를 더 작게.
 // related files:
 // - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
 import type { ComponentType, ReactNode } from "react";
@@ -16,10 +16,10 @@ export function FieldHelp({ text }: { text: string }) {
       <TooltipTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 hover:text-slate-600"
+          className="inline-flex text-slate-400 transition-colors hover:text-slate-700"
           aria-label="도움말"
         >
-          <CircleHelp className="h-4 w-4" />
+          <CircleHelp className="h-3.5 w-3.5" />
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-left leading-relaxed">
@@ -41,17 +41,17 @@ export function SectionHeader({
   trailing?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
-          <Icon className="h-5 w-5 text-primary-strong" />
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-soft/60 ring-1 ring-primary-muted/70">
+          <Icon className="h-4 w-4 text-primary-strong" />
         </span>
-        <div className="min-w-0 space-y-1">
-          <h3 className="text-base font-semibold tracking-tight text-slate-900">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold tracking-tight text-slate-900">
             {title}
           </h3>
           {description ? (
-            <p className="text-[13px] leading-relaxed text-muted-foreground">
+            <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
               {description}
             </p>
           ) : null}
@@ -60,10 +60,4 @@ export function SectionHeader({
       {trailing}
     </div>
   );
-}
-
-export function initials(name: string) {
-  const trimmed = String(name || "").trim();
-  if (!trimmed) return "?";
-  return trimmed.slice(0, 1);
 }

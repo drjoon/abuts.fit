@@ -67,7 +67,6 @@ export const AdminPartnersPage = () => {
       <SettingsScaffold
         tabs={tabs}
         activeTab={activeTab}
-        contentMaxClassName="max-w-5xl"
         onTabChange={(next) => {
           const nextParams = new URLSearchParams(searchParams);
           nextParams.set("tab", next);

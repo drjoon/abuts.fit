@@ -40,10 +40,12 @@ export function AccountPicker({
   excludedIds,
   onPick,
   label = "계정 검색 후 추가…",
+  compact = false,
 }: {
   excludedIds: Set<string>;
   onPick: (user: UserPickItem) => void;
   label?: string;
+  compact?: boolean;
 }) {
   const { token } = useAuthStore();
   const [open, setOpen] = useState(false);
@@ -118,13 +120,17 @@ export function AccountPicker({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="h-10 w-full justify-between rounded-xl border-slate-200 bg-white hover:bg-slate-50"
+          className={
+            compact
+              ? "h-7 w-full justify-between rounded-lg border-slate-200 bg-white px-2 text-[12px] hover:bg-slate-50"
+              : "h-10 w-full justify-between rounded-xl border-slate-200 bg-white hover:bg-slate-50"
+          }
         >
-          <span className="inline-flex items-center gap-2 text-muted-foreground">
-            <Plus className="h-4 w-4" />
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <Plus className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
             {label}
           </span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -170,9 +176,11 @@ export function AccountPicker({
 export function BusinessPicker({
   excludedIds,
   onPick,
+  compact = false,
 }: {
   excludedIds: Set<string>;
   onPick: (business: BusinessPickItem) => void;
+  compact?: boolean;
 }) {
   const { token } = useAuthStore();
   const [open, setOpen] = useState(false);
@@ -240,10 +248,15 @@ export function BusinessPicker({
         <Button
           type="button"
           variant="outline"
-          className="h-10 rounded-xl border-slate-200 bg-white hover:bg-slate-50"
+          size="sm"
+          className={
+            compact
+              ? "h-8 rounded-lg border-slate-200 px-2.5 text-[12px]"
+              : "h-10 rounded-xl border-slate-200 bg-white hover:bg-slate-50"
+          }
         >
-          <Plus className="mr-1.5 h-4 w-4" />
-          사업자에서 추가
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          사업자
         </Button>
       </PopoverTrigger>
       <PopoverContent
