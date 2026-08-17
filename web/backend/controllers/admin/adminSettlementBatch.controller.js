@@ -10,14 +10,15 @@ import SettlementBatchItem from "../../models/settlementBatchItem.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import {
   AFFILIATE_SETTLEMENT_ACCOUNTS,
-  TAXABLE_SETTLEMENT_ROLES,
   computeSettlementPayoutBreakdown,
   hasPayoutAccount,
   postSettlementPayoutJournal,
+  resolveSettlementInvoiceDraftSpec,
 } from "../../services/settlement.service.js";
 import { buildPartySnapshotFromAnchor } from "../../utils/taxInvoiceParty.util.js";
 
 // change-log:
+// - 2026-08-18: 정산 배치 확정 시 제조사·기공소 면세 계산서 Draft 자동 생성.
 // - 2026-08-17: 영업자·개발운영사 지급액=공급가+VAT. 세금계산서는 분해 필드 SSOT(제조사 이중 VAT 방지).
 
 const ROLE_FILTERS = [
@@ -176,23 +177,26 @@ export async function adminConfirmSettlementBatch(req, res) {
       item.status = "CONFIRMED";
       totalAmount += breakdown.amount;
 
-      // 관계사(영업자·개발운영사) → 어벗츠 과세 세금계산서(위수탁).
-      if (TAXABLE_SETTLEMENT_ROLES.has(item.role)) {
+      const invoiceSpec = resolveSettlementInvoiceDraftSpec({
+        role: item.role,
+        breakdown,
+      });
+      if (invoiceSpec) {
         const seller = buildPartySnapshotFromAnchor(anchor);
         const buyer = abuts ? buildPartySnapshotFromAnchor(abuts) : {};
         const draft = await TaxInvoiceDraft.create({
           businessAnchorId: abuts?._id || null,
-          direction: "AFFILIATE_TO_ABUTS",
-          issuanceMode: "TRUSTEE",
-          taxType: "과세",
+          direction: invoiceSpec.direction,
+          issuanceMode: invoiceSpec.issuanceMode,
+          taxType: invoiceSpec.taxType,
           sellerAnchorId: anchor._id,
           seller,
           buyer,
-          itemName: "플랫폼 운영 수수료 정산",
+          itemName: invoiceSpec.itemName,
           status: "PENDING_APPROVAL",
-          supplyAmount: breakdown.supplyAmount,
-          vatAmount: breakdown.vatAmount,
-          totalAmount: breakdown.amount,
+          supplyAmount: invoiceSpec.supplyAmount,
+          vatAmount: invoiceSpec.vatAmount,
+          totalAmount: invoiceSpec.totalAmount,
           periodStart: batch.periodStart,
           periodEnd: batch.periodEnd,
           sourceRefType: "SETTLEMENT_BATCH_ITEM",

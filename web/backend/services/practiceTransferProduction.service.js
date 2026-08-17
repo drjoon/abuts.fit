@@ -345,7 +345,7 @@ export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
 /**
  * PTX CA 어벗츠 생산 몫 견적(관리자·제조 의뢰비 표시).
  * 치과 청구(디자인+생산)와 분리: 멤버십 치과 2.5만 → 어벗츠 생산 1.5만 + 기공소 디자인 1만.
- * 배송 3,500은 치과→어벗츠. 제조사 정산 장부: 의뢰 9,900 + 배송 3,850(VAT 포함).
+ * 배송 3,500은 치과→어벗츠. 제조사 정산 장부(면세): 의뢰 9,000 + 배송 3,500.
  */
 export function buildPtxAbutsProductionQuote({
   creditSettings,

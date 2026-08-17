@@ -5,7 +5,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
-// - 2026-08-18: 제조사는 기공소(면세) — TAXABLE_SETTLEMENT_ROLES에서 제외.
+// - 2026-08-18: 제조사는 기공소(면세) — TAXABLE_SETTLEMENT_ROLES에서 제외. 배치 확정 Draft SSOT 추가.
 // - 2026-08-17: 영업자·개발운영사 지급 시 VAT 합산(입금·세금계산서·GL).
 import LedgerJournal from "../models/ledgerJournal.model.js";
 import LedgerLine from "../models/ledgerLine.model.js";
@@ -22,6 +22,53 @@ export const AFFILIATE_SETTLEMENT_ACCOUNTS = {
 
 /** 지급 시 과세(세금계산서) 대상. 기공소·제조사·어벗츠(관리자)는 면세. */
 export const TAXABLE_SETTLEMENT_ROLES = new Set(["salesman", "devops"]);
+
+/** 정산 배치 확정 시 계산서/세금계산서 Draft 자동 생성 대상(면세 포함). */
+export const SETTLEMENT_INVOICE_DRAFT_ROLES = new Set([
+  "lab",
+  "manufacturer",
+  ...TAXABLE_SETTLEMENT_ROLES,
+]);
+
+const SETTLEMENT_INVOICE_ITEM_NAMES = {
+  lab: "기공 정산",
+  manufacturer: "커스텀어벗 생산 하청 정산",
+  salesman: "플랫폼 운영 수수료 정산",
+  devops: "플랫폼 개발운영 정산",
+};
+
+/**
+ * 정산 배치 항목 → TaxInvoiceDraft 필드 SSOT.
+ * - lab/manufacturer: AFFILIATE_TO_ABUTS · 면세 · 위수탁
+ * - salesman/devops: AFFILIATE_TO_ABUTS · 과세 · 위수탁
+ * admin 등 Draft 미생성 role은 null.
+ */
+export function resolveSettlementInvoiceDraftSpec({ role, breakdown }) {
+  const normalizedRole = String(role || "").trim();
+  if (!SETTLEMENT_INVOICE_DRAFT_ROLES.has(normalizedRole)) return null;
+
+  const supplyAmount = Math.max(0, Math.round(Number(breakdown?.supplyAmount || 0)));
+  const taxable = TAXABLE_SETTLEMENT_ROLES.has(normalizedRole);
+  const vatAmount = taxable
+    ? Math.max(0, Math.round(Number(breakdown?.vatAmount || 0)))
+    : 0;
+  const totalAmount = taxable
+    ? Math.max(0, Math.round(Number(breakdown?.amount || 0)))
+    : supplyAmount;
+
+  if (supplyAmount <= 0 || totalAmount <= 0) return null;
+
+  return {
+    direction: "AFFILIATE_TO_ABUTS",
+    issuanceMode: "TRUSTEE",
+    taxType: taxable ? "과세" : "면세",
+    itemName:
+      SETTLEMENT_INVOICE_ITEM_NAMES[normalizedRole] || "플랫폼 정산",
+    supplyAmount,
+    vatAmount,
+    totalAmount,
+  };
+}
 
 export function normalizeAffiliateVatRate(raw) {
   const n = Number(raw);

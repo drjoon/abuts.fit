@@ -37,7 +37,7 @@
 // - 2026-08-17: 보류/해제 기공소몫·어벗츠몫 분리. 기공소 발송=lab share, 제조사 발송=abutment. 기공소 수수료 차감.
 // - 2026-08-17: 장부 displayLabel을 치과→기공소 / 치과→어벗츠 경로로 통일(기공비 보류·배송비·해제).
 // - 2026-08-17: 어벗 보류=생산비만. 디자인비(+지그)는 기공소 경로 보류. PTX 어벗츠 배송=mark-complete.
-// - 2026-08-17: 제조사 적립은 어벗 1개당 고정단가(+VAT). 플랫폼수수료·기공소 배송은 제외.
+// - 2026-08-18: 제조사 적립은 어벗 1개당 고정단가(면세). 플랫폼수수료·기공소 배송은 제외.
 import mongoose, { Types } from "mongoose";
 
 /** 치과 크레딧 내역 유형 라벨 SSOT */
@@ -3984,7 +3984,7 @@ export async function buildFeeQuotesForTransferDocs({
  * 크레딧 흐름 SSOT:
  *   치과 →(디자인+생산가, 멤버 2.5만/일반 4만)→ 어벗츠
  *   어벗츠 →(abutmentDesignLabFee, 기본 1만)→ 기공소
- *   어벗츠 생산 몫(멤버 1.5만/일반 2만)은 제조 의뢰비로 표시·제조사 정산(9,900) 재원.
+ *   어벗츠 생산 몫(멤버 1.5만/일반 2만)은 제조 의뢰비로 표시·제조사 정산(9,000, 면세) 재원.
  * REV_DEVOPS/PLATFORM_ESCROW → LAB_SETTLEMENT_CREDIT (idempotent per Request).
  * 기공소 장부 라인은 PRACTICE_TRANSFER — 보철기공비와 같은 의뢰건으로 묶음.
  */
@@ -4265,7 +4265,7 @@ export async function chargePracticeTransferLabShipping({
 }
 
 /**
- * 어벗츠 출발 배송비(치과→어벗츠, 제조사는 어벗츠→제조사+VAT).
+ * 어벗츠 출발 배송비(치과→어벗츠, 제조사는 어벗츠→제조사 면세).
  * CA 집하(우편함 비우기) 시 1회. 작업완료(mark-complete)에서는 호출하지 않는다.
  * 생성 시 보류가 있으면 에스크로→매출만 전환(재차감 없음).
  */

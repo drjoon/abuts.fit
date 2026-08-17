@@ -208,7 +208,7 @@ describe("manufacturerLedgerDisplay", () => {
       {
         _id: "payout",
         type: "PAYOUT",
-        amount: 9900,
+        amount: 9000,
         occurredAt: "2026-08-14T01:00:00.000Z",
       },
       {

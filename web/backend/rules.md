@@ -759,13 +759,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `REV_*`(제조사 포함): `amount = amountExcludingVat = base`, `vatAmount = 0`.
     구현: `controllers/requests/common.review.helpers.js`, `services/creditRevenuePolicy.service.js`
   - 의뢰자 잔액·보존식 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 영업자·개발운영사 지급 VAT는 어벗츠 추가 지급.
-  - 고객향 세금계산서 드래프트 세액 기본값 0(면세). 영업자·개발운영사 `AFFILIATE_TO_ABUTS`만 과세 10%.
+  - 고객향 계산서 직접발행 세액 기본 0(면세). 정산 배치 Draft: 제조사·기공소=면세, 영업자·개발운영사=과세 10%.
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
   - `ABUTS_TO_CUSTOMER`(기존 크레딧 충전 계산서, 치과·기공소→어벗츠 결제의 반대방향): `taxType="면세"`, `issuanceMode="SELF"`(어벗츠가 실제 공급자).
   - `LAB_TO_PRACTICE`(①치과→기공소 기공의뢰비의 반대방향, 월합계): `taxType="면세"`, `issuanceMode="TRUSTEE"`. 실제 공급자는 기공소이지만 기공소는 팝빌 회원가입/인증서가 불필요하고, 어벗츠가 수탁자로 위수탁발행한다(치과·기공소·어벗츠 3자 모두 부가세 면세 원칙 — 어벗츠 공동대표가 기공사라 기공소로 간주).
-  - `AFFILIATE_TO_ABUTS`(어벗츠→영업자·개발운영사 정산의 반대방향): `taxType="과세"`(부가세 10%), `issuanceMode="TRUSTEE"`. 영업자·개발운영사가 실제 공급자이지만 소규모/1인 사업자가 많아 어벗츠가 수탁자로 위수탁발행한다.
-  - 제조사·어벗츠(관리자) 잔여 지급의 반대방향은 면세 계산서.
+  - `AFFILIATE_TO_ABUTS`(어벗츠→영업자·개발운영사·제조사·기공소 정산의 반대방향): 영업자·개발운영사는 `taxType="과세"`(부가세 10%), 제조사·기공소는 `taxType="면세"`. 모두 `issuanceMode="TRUSTEE"`. 실제 공급자(기공소·제조사·영업자·개발운영사)는 팝빌 회원 불필요, 어벗츠가 수탁자로 위수탁발행.
+  - 정산 배치 확정(`adminConfirmSettlementBatch`) 시 위 역할별 Draft 자동 생성. SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.
   - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.
   - 구현: `utils/popbill.util.js`(`buildTaxinvoiceObject`의 `issuanceMode`/`seller`/`taxType`), `models/taxInvoiceDraft.model.js`.
 
@@ -799,7 +799,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - legacy 이관에서 `amount=0` 소비행, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍은 `resolvedIgnored`로 분류해 미적재 처리합니다(오류 unresolved로 취급하지 않음).
   - 기존 GL 배송 수익 분배 보정은 `scripts/db/rebalance-shipping-revenue-to-manufacturer.js`로 수행합니다.
   - 기존 GL 혼합 소비(paid/free) 분해를 최신 무편향 분해 정책(의뢰자 무료우선 소비 + 수익라인 비례배분)으로 정렬하는 보정은 `scripts/db/rebalance-mixed-spend-free-first.js`로 수행합니다.
-  - 제조사 하청 고정단가(어벗 1개당 9,000+VAT) 보정은 `scripts/db/rebalance-manufacturer-unit-price.js`로 수행합니다(타 역할 REV 미변경).
+  - 제조사 하청 고정단가(어벗 1개당 9,000, 면세) 보정은 `scripts/db/rebalance-manufacturer-unit-price.js`로 수행합니다(타 역할 REV 미변경).
 
 - 관리자 크레딧 응답 필드 정책:
   - `adminCredit`/잔액 응답에서 무료 크레딧 SSOT 키는 `freeCredit`(합), 하위호환으로 `freeRequestCredit`/`freeShippingCredit`/`freeBalance`입니다.

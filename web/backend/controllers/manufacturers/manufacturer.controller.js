@@ -1204,7 +1204,7 @@ export async function getManufacturerCreditDailySummary(req, res) {
       const freeRequestNet = Number(targetRow.earnRequestFreeAmount || 0);
       const freeShippingNet = Number(targetRow.earnShippingFreeAmount || 0);
 
-      // 지급 순액: 유료만(VAT 포함). 무료는 표시·확인용.
+      // 지급 순액: 유료만(면세 공급가). 무료는 표시·확인용.
       targetRow.netPayoutAmount = payoutEligibleTotal;
       targetRow.netPaidAmount = payoutEligibleTotal;
       targetRow.netFreeRequestAmount = freeRequestNet;

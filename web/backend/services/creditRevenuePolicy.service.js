@@ -5,9 +5,10 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
-// - 2026-08-17: 제조사 하청은 어벗 1개당 고정단가(기본 9,000+VAT). %분배·타 역할 재분배는 별도.
-// - 2026-08-15: 제조사 의뢰 공급가 기본 8,000 → 9,000 (VAT 포함 지급 9,900).
-// - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송)+VAT. 잔여는 salesman/devops/admin 재분배.
+// - 2026-08-18: 제조사 하청 면세(기공소 등록) — vatRate 0, 공급가=지급액.
+// - 2026-08-17: 제조사 하청은 어벗 1개당 고정단가(기본 9,000). %분배·타 역할 재분배는 별도.
+// - 2026-08-15: 제조사 의뢰 공급가 기본 8,000 → 9,000.
+// - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송). 잔여는 salesman/devops/admin 재분배.
 // - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
 // - 2026-08-16: 지정 거래 directPlatformFeeRate 기본 5%(매칭 10%와 분리).
 // - 2026-08-16: 지정 거래 수수료 적용 on/off(기본 off=별도 공지 시까지 무료).

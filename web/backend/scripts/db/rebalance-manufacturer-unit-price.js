@@ -5,7 +5,7 @@
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // change-log:
-// - 2026-08-17: 제조사 REV만 어벗 1개당 고정단가(+VAT)로 재기록. 타 역할 REV는 유지.
+// - 2026-08-18: 제조사 REV만 어벗 1개당 고정단가(면세)로 재기록. 타 역할 REV는 유지.
 //
 // 제조사 장부만 하청 고정단가로 맞춘다. 영업자·개발운영사·관리자 분배는 건드리지 않는다.
 // 무료 라인은 확인용으로 남기되 금액만 단가에 맞춘다(지급 0 정책은 creditKind 유지).
