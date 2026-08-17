@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-17: 금액 호버 툴팁 + 행 클릭 시 견적 상세 모달(첨1).
+// - 2026-08-17: 기공소/어벗츠 비용 상세 Popover를 금액 열에 배치.
+// - 2026-08-17: 기공소/어벗츠 비용 행 — 클릭 시 견적 툴팁 스타일 상세(Popover).
 // - 2026-08-17: PTX 비용 툴팁 — 경로(치과→기공소/어벗츠) 중간행 제거, 항목만 표시.
 // - 2026-08-17: 기공의뢰 크레딧 행을 기공소 비용 / 어벗츠 비용으로 분리(몫별 보류 라벨).
 // - 2026-08-17: 기공의뢰 행 유형/금액 colSpan 해제 — 유형 열 가운데 정렬.
@@ -89,6 +92,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import {
+  parsePracticeTransferFeeQuote,
+  type PracticeTransferFeeQuote,
+} from "@/shared/practice/practiceTransferFeeQuote";
 import {
   CREDIT_FREE_BUCKET_HINT,
   CREDIT_LEDGER_FREE_NOTICE_BODY,
@@ -208,6 +216,10 @@ type CreditLedgerItem = {
   practiceTransferAbutmentPending?: boolean;
   /** 보류/배송 몫: lab | abutment | lab_shipping | abuts_shipping */
   holdShare?: string | null;
+  /** 기공의뢰 견적(행 클릭 상세 모달) */
+  feeQuote?: PracticeTransferFeeQuote | null;
+  skipJig?: boolean;
+  rushProcessing?: boolean;
   tooth?: string;
   clinicName?: string;
   manufacturerStage?: string;
@@ -464,45 +476,32 @@ const formatSignedWon = (amount: number) => {
   return `0원`;
 };
 
-function PracticeTransferLedgerTree({
+function PracticeTransferAmountHover({
   totalAmount,
   parts,
   pending = false,
   route = "lab",
-  compact = false,
 }: {
   totalAmount: number;
   parts: LedgerDisplayPart[];
   pending?: boolean;
   route?: PracticeTransferRoute;
-  /** true면 유형 칸용(라벨+?)만, 금액은 별도 셀 */
-  compact?: boolean;
 }) {
   const leaves = useMemo(
     () => buildPracticeTransferFeeLeaves(parts),
     [parts],
   );
   const title = practiceTransferRouteLabel(route, pending);
-
-  const treeBody = (
-    <div className="w-[min(100vw-2rem,16rem)] overflow-hidden rounded-xl border border-slate-200/80 bg-white text-left shadow-md">
-      <ul className="px-3 py-2">
-        {leaves.map((leaf) => (
-          <li
-            key={leaf.kind}
-            className="flex items-center justify-between gap-3 py-1"
-          >
-            <span className="min-w-0 truncate text-[11px] text-slate-600">
-              {leaf.label}
-            </span>
-            <span className="shrink-0 text-[11px] tabular-nums text-slate-700">
-              {formatSignedWon(leaf.amount)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+  const detailLines =
+    leaves.length > 0
+      ? leaves
+      : [
+          {
+            kind: "other" as const,
+            label: title,
+            amount: totalAmount,
+          },
+        ];
 
   return (
     <TooltipProvider delayDuration={120}>
@@ -510,24 +509,14 @@ function PracticeTransferLedgerTree({
         <TooltipTrigger asChild>
           <button
             type="button"
+            title="마우스를 올리면 금액이 보입니다"
             className={cn(
-              "mx-auto inline-flex max-w-full items-center justify-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-slate-50/80",
-              compact ? "text-center" : "gap-1.5 px-2.5 py-2",
+              "mx-auto inline-flex items-center justify-center gap-1 rounded-lg px-1.5 py-1 font-medium tabular-nums transition-colors hover:bg-slate-50/80",
+              totalAmount < 0 ? "text-destructive" : "text-primary-strong",
             )}
+            onClick={(event) => event.stopPropagation()}
           >
-            <span className="truncate text-xs font-semibold text-slate-800">
-              {title}
-            </span>
-            {compact ? null : (
-              <span
-                className={cn(
-                  "shrink-0 text-xs font-semibold tabular-nums",
-                  totalAmount < 0 ? "text-destructive" : "text-primary-strong",
-                )}
-              >
-                {formatSignedWon(totalAmount)}
-              </span>
-            )}
+            <span>{formatSignedWon(totalAmount)}</span>
             <CircleHelp
               className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
               aria-hidden
@@ -537,9 +526,28 @@ function PracticeTransferLedgerTree({
         <TooltipContent
           side="bottom"
           align="center"
-          className="max-w-none border-0 bg-transparent p-0 shadow-none"
+          className="pointer-events-auto w-max max-w-[min(100vw-2rem,20rem)] select-text px-3 py-3 text-xs leading-relaxed"
+          onClick={(event) => event.stopPropagation()}
         >
-          {treeBody}
+          <div className="space-y-1.5 tabular-nums">
+            {detailLines.map((leaf) => (
+              <p
+                key={leaf.kind}
+                className="flex items-center justify-between gap-4"
+              >
+                <span className="text-muted-foreground">{leaf.label}</span>
+                <span className="font-medium text-foreground">
+                  {formatSignedWon(leaf.amount)}
+                </span>
+              </p>
+            ))}
+            {detailLines.length > 1 ? (
+              <p className="flex items-center justify-between gap-4 border-t border-foreground/15 pt-1.5 font-medium text-foreground">
+                <span>합계</span>
+                <span>{formatSignedWon(totalAmount)}</span>
+              </p>
+            ) : null}
+          </div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -624,7 +632,7 @@ const groupLedgerItemsForDisplay = (
         spentFreeAmount: Number(only.spentFreeAmount || 0),
         type: only.type,
         displayLabel: practiceTransferRouteLabel(route, pending),
-        parts: null,
+        parts: [toDisplayPart(only)],
         practiceTransferPending: pending,
         practiceTransferRoute: route,
         item: only,
@@ -785,7 +793,10 @@ const renderTransactionDetail = ({
             variant="outline"
             size="sm"
             className="h-6 px-1.5 text-[10px] leading-none"
-            onClick={onOpenRequestDetail}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenRequestDetail();
+            }}
           >
             자세히 보기
           </Button>
@@ -884,6 +895,12 @@ export const CreditLedgerModal = ({
   });
   const [selectedDetail, setSelectedDetail] =
     useState<RequestDetailDialogRequest | null>(null);
+  const [feeQuoteDetail, setFeeQuoteDetail] = useState<{
+    quote: PracticeTransferFeeQuote;
+    skipJig: boolean;
+    rushProcessing: boolean;
+    title: string;
+  } | null>(null);
   const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
     useState<CreditBalanceSnapshot | null>(null);
 
@@ -970,7 +987,12 @@ export const CreditLedgerModal = ({
       }
 
       const data = res.data.data;
-      const fetched = Array.isArray(data?.items) ? data.items : [];
+      const fetched = Array.isArray(data?.items)
+        ? data.items.map((it) => {
+            const quote = parsePracticeTransferFeeQuote(it.feeQuote);
+            return quote ? { ...it, feeQuote: quote } : { ...it, feeQuote: null };
+          })
+        : [];
       const total = Number(data?.total ?? 0);
       if (reset) {
         setCurrentBalanceSnapshot(data?.currentBalanceSnapshot || null);
@@ -1368,7 +1390,10 @@ export const CreditLedgerModal = ({
                   const isMinus = amount < 0;
                   const spentPaid = Number(r.spentPaidAmount || 0);
                   const spentFree = Number(r.spentFreeAmount ?? 0);
-                  const hasParts = Array.isArray(r.parts) && r.parts.length > 1;
+                  const hasParts =
+                    Boolean(r.practiceTransferRoute) &&
+                    Array.isArray(r.parts) &&
+                    r.parts.length > 0;
                   const showSplit =
                     !hasParts &&
                     (String(r.type) === "SPEND_PAID" ||
@@ -1389,31 +1414,54 @@ export const CreditLedgerModal = ({
                     if (refType === "SHIPPING_PACKAGE") return "무료(배송)";
                     return "무료";
                   })();
+                  const canOpenFeeQuote = Boolean(
+                    r.practiceTransferRoute &&
+                      parsePracticeTransferFeeQuote(r.item.feeQuote),
+                  );
                   return (
-                    <TableRow key={r.key}>
+                    <TableRow
+                      key={r.key}
+                      className={cn(
+                        canOpenFeeQuote
+                          ? "cursor-pointer hover:bg-slate-50/80"
+                          : undefined,
+                      )}
+                      onClick={() => {
+                        if (!canOpenFeeQuote) return;
+                        const quote = parsePracticeTransferFeeQuote(
+                          r.item.feeQuote,
+                        );
+                        if (!quote) return;
+                        setFeeQuoteDetail({
+                          quote,
+                          skipJig: r.item.skipJig !== false,
+                          rushProcessing: Boolean(r.item.rushProcessing),
+                          title:
+                            r.displayLabel ||
+                            practiceTransferRouteLabel(
+                              r.practiceTransferRoute || "lab",
+                              r.practiceTransferPending,
+                            ),
+                        });
+                      }}
+                    >
                       <TableCell className="whitespace-nowrap text-center align-middle text-xs">
                         {formatDate(String(r.createdAt || ""))}
                       </TableCell>
                       {hasParts ? (
                         <>
                           <TableCell className="text-center text-xs font-medium align-middle">
-                            <PracticeTransferLedgerTree
+                            <span className="inline-block whitespace-nowrap text-center">
+                              {r.displayLabel || typeLabel(r.type)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center align-middle">
+                            <PracticeTransferAmountHover
                               totalAmount={amount}
                               parts={r.parts!}
                               pending={r.practiceTransferPending}
                               route={r.practiceTransferRoute || "lab"}
-                              compact
                             />
-                          </TableCell>
-                          <TableCell
-                            className={cn(
-                              "text-center font-medium tabular-nums align-middle",
-                              isMinus
-                                ? "text-destructive"
-                                : "text-primary-strong",
-                            )}
-                          >
-                            {formatSignedWon(amount)}
                           </TableCell>
                         </>
                       ) : (
@@ -1456,7 +1504,13 @@ export const CreditLedgerModal = ({
                           ? `${Number(r.balanceAfter).toLocaleString()}원`
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-center align-middle text-xs">
+                      <TableCell
+                        className="text-center align-middle text-xs"
+                        onClick={(event) => {
+                          if (canOpenFeeQuote) return;
+                          event.stopPropagation();
+                        }}
+                      >
                         <div className="flex flex-col items-center leading-4">
                           {renderTransactionDetail({
                             item: r.item,
@@ -1545,6 +1599,30 @@ export const CreditLedgerModal = ({
         request={selectedDetail}
         rows={rows}
       />
+
+      <Dialog
+        open={Boolean(feeQuoteDetail)}
+        onOpenChange={(next) => {
+          if (!next) setFeeQuoteDetail(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] w-[min(92vw,40rem)] overflow-y-auto rounded-2xl sm:rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold tracking-tight text-slate-900">
+              {feeQuoteDetail?.title || "기공의뢰 상세 내역"}
+            </DialogTitle>
+          </DialogHeader>
+          {feeQuoteDetail ? (
+            <PracticeTransferFeeEstimate
+              quote={feeQuoteDetail.quote}
+              viewer="practice"
+              density="detail"
+              skipJig={feeQuoteDetail.skipJig}
+              rushProcessing={feeQuoteDetail.rushProcessing}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

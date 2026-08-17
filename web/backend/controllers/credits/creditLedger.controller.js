@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: PRACTICE_TRANSFER enrich — feeQuote·skipJig(크레딧 행 클릭 상세 모달).
 // - 2026-08-17: PRACTICE_TRANSFER enrich — lab/abutment pending·holdShare(기공소/어벗츠 행 분리).
 // - 2026-08-17: PRACTICE_TRANSFER enrich에 practiceTransferPending(heldAt·!settledAt).
 // - 2026-08-12: currentBalanceSnapshot에 settlementCredit·requestorKind 포함(기공소 기공크레딧 UI).
@@ -21,6 +22,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
+import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
 import { healMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
@@ -657,14 +659,22 @@ export async function listMyCreditLedger(req, res) {
         _id: 1,
         transferId: 1,
         targetLabName: 1,
+        targetLabAnchorId: 1,
+        practiceBusinessAnchorId: 1,
+        matchingMode: 1,
         transferMemo: 1,
         files: 1,
-        "billing.heldAt": 1,
-        "billing.settledAt": 1,
-        "billing.labSettledAt": 1,
-        "billing.abutmentSettledAt": 1,
+        toothWorks: 1,
+        billing: 1,
+        "production.skipJig": 1,
+        "production.rushProcessing": 1,
+        autoMatch: 1,
       })
       .lean();
+
+    const quotesById = await buildFeeQuotesForTransferDocs({
+      docs: transferDocs,
+    });
 
     for (const doc of transferDocs || []) {
       if (!doc?._id) continue;
@@ -683,6 +693,7 @@ export async function listMyCreditLedger(req, res) {
       const labSettledAt = doc?.billing?.labSettledAt || null;
       const abutmentSettledAt = doc?.billing?.abutmentSettledAt || null;
       const fullySettled = Boolean(settledAt);
+      const skipJigRaw = doc?.production?.skipJig;
       practiceTransferIdById.set(id, String(doc.transferId || ""));
       practiceTransferMetaById.set(id, {
         patientName: memoPatient || filePatient,
@@ -692,6 +703,14 @@ export async function listMyCreditLedger(req, res) {
           Boolean(heldAt) && !fullySettled && !labSettledAt,
         practiceTransferAbutmentPending:
           Boolean(heldAt) && !fullySettled && !abutmentSettledAt,
+        feeQuote: quotesById.get(id) || null,
+        skipJig: !(
+          skipJigRaw === false ||
+          skipJigRaw === "false" ||
+          skipJigRaw === 0 ||
+          skipJigRaw === "0"
+        ),
+        rushProcessing: Boolean(doc?.production?.rushProcessing),
       });
     }
   }
@@ -760,6 +779,9 @@ export async function listMyCreditLedger(req, res) {
         practiceTransferAbutmentPending: Boolean(
           meta?.practiceTransferAbutmentPending,
         ),
+        feeQuote: meta?.feeQuote || null,
+        skipJig: meta?.skipJig !== false,
+        rushProcessing: Boolean(meta?.rushProcessing),
       };
     }
 

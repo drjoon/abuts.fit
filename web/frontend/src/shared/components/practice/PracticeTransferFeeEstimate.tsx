@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-17: mode=detail — 호버 없이 견적 상세 표(크레딧 장부 모달용).
 // - 2026-08-17: 배송비 안내 — 출고 시 차감 → 주문 시 보류.
 // - 2026-08-17: 견적 한줄 요약 — CA 디자인비(+지그)는 기공비, 어벗은 생산비만(툴팁 기공비 총액·어벗생산비와 일치).
 // - 2026-08-17: 신속처리 시 디자인비(+지그)·어벗생산비 분해에도 rush 배수 적용.
@@ -69,8 +70,8 @@ type PracticeTransferFeeEstimateProps = {
   quote: PracticeTransferFeeQuote;
   viewer: PracticeTransferFeeQuoteViewer;
   className?: string;
-  /** compact: 상·하악 사이 / card: 의뢰카드 */
-  density?: "chart" | "card";
+  /** compact: 상·하악 사이 / card: 의뢰카드 / detail: 상세 표만(모달) */
+  density?: "chart" | "card" | "detail";
   /** 기공소 미선택 — 기공비 미산출 안내 */
   labPending?: boolean;
   /** 카드 총액 오른쪽(선택) */
@@ -515,6 +516,7 @@ export function PracticeTransferFeeEstimate({
   labEffectiveStars = null,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
+  const isDetail = density === "detail";
   const isCard = density === "card";
   const showLabPendingHint = Boolean(labPending) && !isLab;
   const hasTrailing = Boolean(trailingAction);
@@ -836,6 +838,169 @@ export function PracticeTransferFeeEstimate({
     0,
   );
 
+  const breakdownPanel = (
+    <>
+      {labFeeUnset ? (
+        <p className="text-muted-foreground">
+          기공소에서 아직 기공료를 설정하지 않았습니다. 기공소에
+          문의해주세요.
+        </p>
+      ) : breakdownLines.length > 0 ? (
+        <div className="space-y-1.5">
+          <FeeBreakdownTable
+            lines={breakdownLines}
+            showLabColumn={
+              breakdownLines.some(
+                (line) =>
+                  line.labFee > 0 ||
+                  (line.labFeeMin != null && line.labFeeMin > 0),
+              ) ||
+              (isLab && abutmentDesignQty > 0 && abutmentDesignLabFee > 0)
+            }
+            showLabAbutmentColumn={breakdownLines.some(
+              (line) =>
+                Number(line.labAbutmentFee || 0) > 0 ||
+                Boolean(line.labAbutmentPending),
+            )}
+            showAbutmentColumn={breakdownLines.some(
+              (line) =>
+                line.abutmentRetail > 0 || line.abutmentRetailNote === "quote",
+            )}
+            labFacing={isLab}
+            labTotalMinOverride={labTotalMinOverride}
+            labTotalMaxOverride={labTotalMaxOverride}
+            abutmentDesignLabFee={abutmentDesignLabFee}
+            abutmentDesignQty={abutmentDesignQty}
+            splitDesignFee={splitDesignFee}
+            designFeeLabel={designFeeLabel}
+            labSettlementHint={
+              labSettlementDiffers ? (
+                <>
+                  수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
+                  <span className="font-medium text-foreground">
+                    {formatManWon(labSettlementDisplay)}
+                  </span>
+                </>
+              ) : null
+            }
+          />
+          {labSettlementDiffers &&
+          !(isLab && abutmentDesignQty > 0 && abutmentDesignLabFee > 0) ? (
+            <p className="text-center text-[11px] text-muted-foreground">
+              수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
+              <span className="font-medium text-foreground">
+                {formatManWon(labSettlementDisplay)}
+              </span>
+            </p>
+          ) : null}
+          {hasBudgetRange && !isLab ? (
+            <p className="text-[11px] text-muted-foreground">
+              기공소 별점에 비례해 확정·청구됩니다.
+            </p>
+          ) : null}
+        </div>
+      ) : hasBudgetRange ? (
+        <div className="space-y-1.5 tabular-nums">
+          <p>
+            기공비{" "}
+            <span className="font-medium">
+              {formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}
+            </span>
+          </p>
+          {quote.abutmentRetailTotal > 0 || quote.abutmentQuotePending ? (
+            <p>
+              {isLab || splitDesignFee ? "어벗생산비" : "어벗츠 어벗"}{" "}
+              <span className="font-medium">
+                {isLab || splitDesignFee
+                  ? quote.abutmentQuotePending && quote.abutmentRetailTotal <= 0
+                    ? "별도 고지"
+                    : formatManWon(
+                        Math.max(
+                          0,
+                          Math.round(Number(quote.abutmentRetailTotal || 0)) -
+                            (abutmentDesignQty > 0 && abutmentDesignLabFee > 0
+                              ? abutmentDesignLabFee * abutmentDesignQty
+                              : 0),
+                        ),
+                      )
+                  : quote.abutmentQuotePending && quote.abutmentRetailTotal <= 0
+                    ? "별도 고지"
+                    : formatManWon(quote.abutmentRetailTotal)}
+              </span>
+            </p>
+          ) : null}
+          {splitDesignFee && !isLab ? (
+            <p>
+              {designFeeLabel}{" "}
+              <span className="font-medium">
+                {formatManWon(abutmentDesignLabFee * abutmentDesignQty)}
+              </span>
+            </p>
+          ) : null}
+          <p className="text-[11px] text-muted-foreground">
+            기공소 별점에 비례해 확정·청구됩니다.
+          </p>
+        </div>
+      ) : (
+        <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
+      )}
+      {surchargeLabel ? (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
+          {surchargeLabel} 적용
+        </p>
+      ) : null}
+      {rushLabel ? (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
+          {rushLabel} 적용
+        </p>
+      ) : null}
+      {shippingHintLines.length > 0 ? (
+        <div className="mt-1.5 space-y-0.5 border-t border-foreground/15 pt-1.5 text-[11px] leading-snug text-muted-foreground">
+          <p className="font-medium text-foreground/80">
+            배송비(주문 시 보류 · 박스당)
+          </p>
+          {shippingHintLines.map((row) => (
+            <p key={row.key} className="tabular-nums">
+              {row.label}{" "}
+              <span className="font-medium text-foreground">
+                {formatManWon(row.amount)}
+              </span>
+            </p>
+          ))}
+          {skipJig && hasAbutsOriginShip && !hasLabProsthesisShip ? (
+            <p>지그 필요없음으로 기공소→치과 배송비는 차감하지 않습니다.</p>
+          ) : null}
+        </div>
+      ) : null}
+      {!isLab && !(labFeeUnset && quote.total <= 0) ? (
+        <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
+          {hasBudgetRange
+            ? `크레딧 소비 ${formatWonRange(
+                creditMin + shippingTotal,
+                amount + shippingTotal,
+              )}`
+            : `크레딧 소비 총액 ${formatManWon(quote.total + shippingTotal)}`}
+        </p>
+      ) : null}
+    </>
+  );
+
+  if (isDetail) {
+    return (
+      <div
+        data-no-tooth-marquee=""
+        className={cn(
+          "w-full max-w-full select-text px-1 py-1 text-xs leading-relaxed",
+          className,
+        )}
+        role="region"
+        aria-label="기공의뢰 견적 상세"
+      >
+        {breakdownPanel}
+      </div>
+    );
+  }
+
   return (
     <TooltipProvider>
       <div
@@ -856,218 +1021,69 @@ export function PracticeTransferFeeEstimate({
         onKeyDown={isCard ? (event) => event.stopPropagation() : undefined}
       >
         <div className="flex min-w-0 items-center gap-1.5">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div
-              className={cn(
-                "min-w-0 cursor-default",
-                isCard
-                  ? "flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm"
-                  : "",
-                !isLab &&
-                  "select-none blur-[8px] transition-[filter] duration-150 group-hover:select-text group-hover:blur-none group-focus-within:select-text group-focus-within:blur-none",
-              )}
-            >
-              <span
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
                 className={cn(
-                  "font-semibold tabular-nums text-slate-800",
-                  isCard ? "text-sm" : "text-sm sm:text-base",
+                  "min-w-0 cursor-default",
+                  isCard
+                    ? "flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm"
+                    : "",
+                  !isLab &&
+                    "select-none blur-[8px] transition-[filter] duration-150 group-hover:select-text group-hover:blur-none group-focus-within:select-text group-focus-within:blur-none",
                 )}
               >
-                <span className="font-medium text-slate-600">{title} </span>
-                {hasBudgetRange && !isLab
-                  ? formatWonRange(creditMin, amount)
-                  : formatManWon(amount)}
-                {surchargeLabel ? (
-                  <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                    {surchargeLabel}
-                  </span>
-                ) : null}
-                {rushLabel ? (
-                  <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                    {rushLabel}
-                  </span>
-                ) : null}
-              </span>
-              {simple ? (
                 <span
                   className={cn(
-                    "tabular-nums text-muted-foreground",
-                    isCard ? "text-[12px]" : "mt-0.5 block truncate text-[11px]",
+                    "font-semibold tabular-nums text-slate-800",
+                    isCard ? "text-sm" : "text-sm sm:text-base",
                   )}
                 >
-                  {simple}
+                  <span className="font-medium text-slate-600">{title} </span>
+                  {hasBudgetRange && !isLab
+                    ? formatWonRange(creditMin, amount)
+                    : formatManWon(amount)}
+                  {surchargeLabel ? (
+                    <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                      {surchargeLabel}
+                    </span>
+                  ) : null}
+                  {rushLabel ? (
+                    <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                      {rushLabel}
+                    </span>
+                  ) : null}
                 </span>
-              ) : null}
-            </div>
-          </TooltipTrigger>
-          <TooltipContent
-            side={isCard ? "top" : "bottom"}
-            data-no-tooth-marquee=""
-            className="pointer-events-auto w-max max-w-[min(100vw-2rem,36rem)] select-text px-3 py-3 text-xs leading-relaxed"
-            onPointerDown={(event) => event.stopPropagation()}
-            onPointerUp={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-          >
-            {labFeeUnset ? (
-              <p className="text-muted-foreground">
-                기공소에서 아직 기공료를 설정하지 않았습니다. 기공소에
-                문의해주세요.
-              </p>
-            ) : breakdownLines.length > 0 ? (
-              <div className="space-y-1.5">
-                <FeeBreakdownTable
-                  lines={breakdownLines}
-                  showLabColumn={
-                    breakdownLines.some(
-                      (line) =>
-                        line.labFee > 0 ||
-                        (line.labFeeMin != null && line.labFeeMin > 0),
-                    ) ||
-                    (isLab &&
-                      abutmentDesignQty > 0 &&
-                      abutmentDesignLabFee > 0)
-                  }
-                  showLabAbutmentColumn={breakdownLines.some(
-                    (line) =>
-                      Number(line.labAbutmentFee || 0) > 0 ||
-                      Boolean(line.labAbutmentPending),
-                  )}
-                  showAbutmentColumn={breakdownLines.some(
-                    (line) =>
-                      line.abutmentRetail > 0 ||
-                      line.abutmentRetailNote === "quote",
-                  )}
-                  labFacing={isLab}
-                  labTotalMinOverride={labTotalMinOverride}
-                  labTotalMaxOverride={labTotalMaxOverride}
-                  abutmentDesignLabFee={abutmentDesignLabFee}
-                  abutmentDesignQty={abutmentDesignQty}
-                  splitDesignFee={splitDesignFee}
-                  designFeeLabel={designFeeLabel}
-                  labSettlementHint={
-                    labSettlementDiffers ? (
-                      <>
-                        수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
-                        <span className="font-medium text-foreground">
-                          {formatManWon(labSettlementDisplay)}
-                        </span>
-                      </>
-                    ) : null
-                  }
-                />
-                {labSettlementDiffers &&
-                !(
-                  isLab &&
-                  abutmentDesignQty > 0 &&
-                  abutmentDesignLabFee > 0
-                ) ? (
-                  <p className="text-center text-[11px] text-muted-foreground">
-                    수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
-                    <span className="font-medium text-foreground">
-                      {formatManWon(labSettlementDisplay)}
-                    </span>
-                  </p>
-                ) : null}
-                {hasBudgetRange && !isLab ? (
-                  <p className="text-[11px] text-muted-foreground">
-                    기공소 별점에 비례해 확정·청구됩니다.
-                  </p>
-                ) : null}
-              </div>
-            ) : hasBudgetRange ? (
-              <div className="space-y-1.5 tabular-nums">
-                <p>
-                  기공비{" "}
-                  <span className="font-medium">
-                    {formatWonRange(budgetLabFeeMin, budgetLabFeeMax)}
+                {simple ? (
+                  <span
+                    className={cn(
+                      "tabular-nums text-muted-foreground",
+                      isCard
+                        ? "text-[12px]"
+                        : "mt-0.5 block truncate text-[11px]",
+                    )}
+                  >
+                    {simple}
                   </span>
-                </p>
-                {quote.abutmentRetailTotal > 0 || quote.abutmentQuotePending ? (
-                  <p>
-                    {isLab || splitDesignFee ? "어벗생산비" : "어벗츠 어벗"}{" "}
-                    <span className="font-medium">
-                      {isLab || splitDesignFee
-                        ? quote.abutmentQuotePending &&
-                          quote.abutmentRetailTotal <= 0
-                          ? "별도 고지"
-                          : formatManWon(
-                              Math.max(
-                                0,
-                                Math.round(Number(quote.abutmentRetailTotal || 0)) -
-                                  (abutmentDesignQty > 0 &&
-                                  abutmentDesignLabFee > 0
-                                    ? abutmentDesignLabFee * abutmentDesignQty
-                                    : 0),
-                              ),
-                            )
-                        : quote.abutmentQuotePending &&
-                            quote.abutmentRetailTotal <= 0
-                          ? "별도 고지"
-                          : formatManWon(quote.abutmentRetailTotal)}
-                    </span>
-                  </p>
-                ) : null}
-                {splitDesignFee && !isLab ? (
-                  <p>
-                    {designFeeLabel}{" "}
-                    <span className="font-medium">
-                      {formatManWon(abutmentDesignLabFee * abutmentDesignQty)}
-                    </span>
-                  </p>
-                ) : null}
-                <p className="text-[11px] text-muted-foreground">
-                  기공소 별점에 비례해 확정·청구됩니다.
-                </p>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
-            )}
-            {surchargeLabel ? (
-              <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
-                {surchargeLabel} 적용
-              </p>
-            ) : null}
-            {rushLabel ? (
-              <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
-                {rushLabel} 적용
-              </p>
-            ) : null}
-            {shippingHintLines.length > 0 ? (
-              <div className="mt-1.5 space-y-0.5 border-t border-foreground/15 pt-1.5 text-[11px] leading-snug text-muted-foreground">
-                <p className="font-medium text-foreground/80">
-                  배송비(주문 시 보류 · 박스당)
-                </p>
-                {shippingHintLines.map((row) => (
-                  <p key={row.key} className="tabular-nums">
-                    {row.label}{" "}
-                    <span className="font-medium text-foreground">
-                      {formatManWon(row.amount)}
-                    </span>
-                  </p>
-                ))}
-                {skipJig && hasAbutsOriginShip && !hasLabProsthesisShip ? (
-                  <p>지그 필요없음으로 기공소→치과 배송비는 차감하지 않습니다.</p>
                 ) : null}
               </div>
-            ) : null}
-            {!isLab && !(labFeeUnset && quote.total <= 0) ? (
-              <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
-                {hasBudgetRange
-                  ? `크레딧 소비 ${formatWonRange(
-                      creditMin + shippingTotal,
-                      amount + shippingTotal,
-                    )}`
-                  : `크레딧 소비 총액 ${formatManWon(quote.total + shippingTotal)}`}
-              </p>
-            ) : null}
-          </TooltipContent>
-        </Tooltip>
-        <CircleHelp
-          className="pointer-events-none h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
-          aria-hidden
-        />
+            </TooltipTrigger>
+            <TooltipContent
+              side={isCard ? "top" : "bottom"}
+              data-no-tooth-marquee=""
+              className="pointer-events-auto w-max max-w-[min(100vw-2rem,36rem)] select-text px-3 py-3 text-xs leading-relaxed"
+              onPointerDown={(event) => event.stopPropagation()}
+              onPointerUp={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {breakdownPanel}
+            </TooltipContent>
+          </Tooltip>
+          <CircleHelp
+            className="pointer-events-none h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
+            aria-hidden
+          />
         </div>
         {hasTrailing ? (
           <div
