@@ -1632,10 +1632,16 @@ export async function ensureShippingFeeSpendOnPackingApprove({
       const { getJournalByIdempotencyKey } = await import(
         "../../services/generalLedger.service.js"
       );
-      const already = await getJournalByIdempotencyKey({
-        idempotencyKey: `gl:practice_transfer:${relatedPtxIdEarly}:abuts_shipping`,
-        session,
-      });
+      const [already, hold] = await Promise.all([
+        getJournalByIdempotencyKey({
+          idempotencyKey: `gl:practice_transfer:${relatedPtxIdEarly}:abuts_shipping`,
+          session,
+        }),
+        getJournalByIdempotencyKey({
+          idempotencyKey: `practice_transfer:${relatedPtxIdEarly}:hold:abuts_shipping`,
+          session,
+        }),
+      ]);
       if (already?.journalId) {
         console.log(
           "[SHIPPING_FEE] skip PTX abuts shipping (already at mark-complete)",
@@ -1645,6 +1651,36 @@ export async function ensureShippingFeeSpendOnPackingApprove({
           },
         );
         return;
+      }
+      if (hold?.journalId) {
+        // 주문 시 보류된 PTX 어벗츠 배송비 — 패키지 키로 재차감하지 않고 에스크로 전환
+        const PracticeTransfer = (
+          await import("../../models/practiceTransfer.model.js")
+        ).default;
+        const { chargePracticeTransferAbutsShipping } = await import(
+          "../../services/practiceTransferBilling.service.js"
+        );
+        const transfer = await PracticeTransfer.findById(relatedPtxIdEarly)
+          .session(session || null)
+          .lean();
+        if (transfer?._id) {
+          await chargePracticeTransferAbutsShipping({
+            transfer,
+            toothWorks: Array.isArray(transfer.toothWorks)
+              ? transfer.toothWorks
+              : [],
+            actorUserId,
+            session,
+          });
+          console.log(
+            "[SHIPPING_FEE] PTX abuts shipping converted from hold on packing",
+            {
+              requestId: request?.requestId,
+              relatedPtxId: relatedPtxIdEarly,
+            },
+          );
+          return;
+        }
       }
     } catch {
       // fall through to charge

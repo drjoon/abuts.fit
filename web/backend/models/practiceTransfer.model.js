@@ -185,6 +185,8 @@ const practiceTransferSchema = new mongoose.Schema(
     },
     billing: {
       labFeeTotal: { type: Number, default: 0 },
+      labAbutmentTotal: { type: Number, default: 0 },
+      labAbutmentPending: { type: Boolean, default: false },
       abutmentRetailTotal: { type: Number, default: 0 },
       abutmentQty: { type: Number, default: 0 },
       total: { type: Number, default: 0 },
@@ -213,6 +215,8 @@ const practiceTransferSchema = new mongoose.Schema(
       heldTotal: { type: Number, default: 0 },
       heldLabTotal: { type: Number, default: 0 },
       heldAbutmentTotal: { type: Number, default: 0 },
+      heldShippingLabTotal: { type: Number, default: 0 },
+      heldShippingAbutsTotal: { type: Number, default: 0 },
       billedAt: { type: Date, default: null },
       settledAt: { type: Date, default: null },
       labSettledAt: { type: Date, default: null },

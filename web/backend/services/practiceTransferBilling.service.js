@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-17: 생성 시 배송비도 SPEND_HOLD. 출고 시 에스크로→매출 전환(재차감 없음).
 // - 2026-08-17: 신속처리 rushFeeMultiplier — 기공/어벗 배수 스택(기본 1.2·플랫폼 설정).
 // - 2026-08-14: 목록 견적 조회(devops/단가/기공소/거래처) parallel + 60s 캐시.
 // - 2026-08-14: quote-context에 abutmentPrices 포함. 환봉 단가가 치과 견적에 전달.
@@ -40,6 +41,8 @@ export const PRACTICE_TRANSFER_LEDGER_LABELS = {
   holdLab: "기공비 보류(치과→기공소)",
   holdAbutment: "기공비 보류(치과→어벗츠)",
   holdAdjust: "기공비 보류 조정",
+  holdShippingLab: "배송비 보류(치과→기공소)",
+  holdShippingAbutment: "배송비 보류(치과→어벗츠)",
   releaseLab: "기공비(치과→기공소)",
   releaseAbutment: "기공비(치과→어벗츠)",
   shippingLab: "배송비(치과→기공소)",
@@ -443,6 +446,55 @@ function pushRevenueLines({
  * 기공의뢰 전송 전 치과 유료크레딧 잔액 검사(차감 없음).
  * 자동매칭: 기공비는 별점 고정수가(평균×배수)+어벗츠 어벗으로 검사. 청구도 동일 고정가.
  */
+/**
+ * 기공의뢰 생성 시 예상 배송비(박스당). 기공소·어벗츠 출발 각각 1회.
+ */
+export async function resolveExpectedPracticeTransferShippingFees({
+  transfer = null,
+  toothWorks = null,
+  fees = null,
+}) {
+  const creditSettings = await loadCreditSettingsDefaults();
+  const unitFee = Math.max(
+    0,
+    Math.round(Number(creditSettings?.shippingFee ?? 3500) || 0),
+  );
+  if (unitFee <= 0) {
+    return { lab: 0, abuts: 0, total: 0, unitFee: 0 };
+  }
+
+  const works = toothWorks || transfer?.toothWorks || [];
+  const feeSnapshot = {
+    labFeeTotal: Math.max(
+      0,
+      Math.round(
+        Number(fees?.labFeeTotal ?? transfer?.billing?.labFeeTotal ?? 0) || 0,
+      ),
+    ),
+    labAbutmentTotal: Math.max(
+      0,
+      Math.round(Number(fees?.labAbutmentTotal ?? 0) || 0),
+    ),
+    abutmentQty: Math.max(
+      0,
+      Math.round(
+        Number(fees?.abutmentQty ?? transfer?.billing?.abutmentQty ?? 0) || 0,
+      ),
+    ),
+  };
+  const lab = shouldChargePracticeTransferLabShipping({
+    transfer,
+    fees: feeSnapshot,
+  })
+    ? unitFee
+    : 0;
+  const hasCa = (Array.isArray(works) ? works : []).some((row) =>
+    Boolean(row?.customAbutment),
+  );
+  const abuts = hasCa || feeSnapshot.abutmentQty > 0 ? unitFee : 0;
+  return { lab, abuts, total: lab + abuts, unitFee };
+}
+
 export async function assertPracticeTransferPaidCreditSufficient({
   practiceAnchorId,
   labAnchorId = null,
@@ -451,6 +503,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
   autoMatchBudget = null,
   catalog: catalogInput = null,
   rushFeeMultiplier = 1,
+  skipJig = null,
 }) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
@@ -501,12 +554,36 @@ export async function assertPracticeTransferPaidCreditSufficient({
     rushFeeMultiplier: normalizeRushFeeMultiplier(rushFeeMultiplier),
   });
 
-  const required = fees.total;
+  const shipping = await resolveExpectedPracticeTransferShippingFees({
+    transfer: {
+      toothWorks,
+      production: {
+        skipJig:
+          skipJig === false ||
+          skipJig === "false" ||
+          skipJig === 0 ||
+          skipJig === "0" ||
+          skipJig === "N"
+            ? false
+            : skipJig == null
+              ? true
+              : Boolean(skipJig),
+      },
+      billing: {
+        labFeeTotal: fees.labFeeTotal,
+        abutmentQty: fees.abutmentQty,
+      },
+    },
+    toothWorks,
+    fees,
+  });
+  const required = Math.max(0, Math.round(Number(fees.total || 0))) + shipping.total;
 
   if (required <= 0) {
     return {
       ok: true,
       fees,
+      shipping,
       paidCredit: null,
       freeCredit: null,
       required: 0,
@@ -539,6 +616,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
       available: split.available,
       required,
       fees,
+      shipping,
       autoMatchBudget: budget,
     };
     throw err;
@@ -547,6 +625,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
   return {
     ok: true,
     fees,
+    shipping,
     paidCredit: split.paidCredit,
     freeCredit: split.freeCredit,
     required,
@@ -1055,6 +1134,12 @@ function practiceTransferHoldLabKey(transferId) {
 function practiceTransferHoldAbutmentKey(transferId) {
   return `practice_transfer:${String(transferId)}:hold_abutment`;
 }
+function practiceTransferHoldLabShippingKey(transferId) {
+  return `practice_transfer:${String(transferId)}:hold:lab_shipping`;
+}
+function practiceTransferHoldAbutsShippingKey(transferId) {
+  return `practice_transfer:${String(transferId)}:hold:abuts_shipping`;
+}
 function practiceTransferHoldAdjustKey(transferId) {
   return `practice_transfer:${String(transferId)}:hold_adjust`;
 }
@@ -1075,6 +1160,9 @@ function practiceTransferLegacySpendKey(transferId) {
 }
 function practiceTransferLabShippingKey(transferId) {
   return `gl:practice_transfer:${String(transferId)}:lab_shipping`;
+}
+function practiceTransferAbutsShippingKey(transferId) {
+  return `gl:practice_transfer:${String(transferId)}:abuts_shipping`;
 }
 
 /** 취소·삭제 시 물리 삭제 대상 PTX GL eventType */
@@ -1248,6 +1336,7 @@ async function postOneHoldSlice({
   split,
   actorUserId,
   session,
+  freeOrder = ["freeRequest", "freeShipping"],
 }) {
   const amt = Math.max(0, Math.round(Number(amount) || 0));
   if (amt <= 0) {
@@ -1263,7 +1352,7 @@ async function postOneHoldSlice({
     freeShippingCredit: Number(
       split.remainingFreeShipping ?? split.freeShippingCredit ?? 0,
     ),
-    freeOrder: ["freeRequest", "freeShipping"],
+    freeOrder,
   });
   if (!sliceSplit.ok) {
     const err = new Error("치과 크레딧이 부족합니다.");
@@ -1277,10 +1366,16 @@ async function postOneHoldSlice({
     throw err;
   }
 
+  const isShippingHold =
+    shareKind === "lab_shipping" || shareKind === "abuts_shipping";
   const spendMetaBase = {
-    displayKind: "lab_fee_hold",
+    displayKind: isShippingHold ? "shipping_hold" : "lab_fee_hold",
     displayLabel,
-    usageKind: "practice_transfer",
+    usageKind: isShippingHold
+      ? shareKind === "lab_shipping"
+        ? "practice_transfer_lab_shipping"
+        : "practice_transfer_abuts_shipping"
+      : "practice_transfer",
     escrow: true,
     holdShare: shareKind,
     fromPaid: sliceSplit.fromPaid,
@@ -1291,7 +1386,11 @@ async function postOneHoldSlice({
   const idempotencyKey =
     shareKind === "abutment"
       ? practiceTransferHoldAbutmentKey(transferId)
-      : practiceTransferHoldLabKey(transferId);
+      : shareKind === "lab_shipping"
+        ? practiceTransferHoldLabShippingKey(transferId)
+        : shareKind === "abuts_shipping"
+          ? practiceTransferHoldAbutsShippingKey(transferId)
+          : practiceTransferHoldLabKey(transferId);
 
   const journal = await postGeneralLedgerJournal({
     idempotencyKey,
@@ -1432,7 +1531,29 @@ export async function holdPracticeTransferCredits({
     holdLabAmount,
     holdAbutmentAmount,
   });
-  const required = shares.total;
+  // 배송 판별은 billing 스냅샷 우선(shares.lab에 디자인비가 합쳐질 수 있음)
+  const shippingFeesForGate = {
+    labFeeTotal: Math.max(
+      0,
+      Math.round(Number(transfer?.billing?.labFeeTotal ?? shares.lab ?? 0) || 0),
+    ),
+    labAbutmentTotal: Math.max(
+      0,
+      Math.round(Number(transfer?.billing?.labAbutmentTotal ?? 0) || 0),
+    ),
+    abutmentQty: Math.max(
+      0,
+      Math.round(Number(transfer?.billing?.abutmentQty ?? 0) || 0),
+    ),
+  };
+  const shippingResolved = await resolveExpectedPracticeTransferShippingFees({
+    transfer,
+    toothWorks,
+    fees: shippingFeesForGate,
+  });
+  const heldShippingLab = shippingResolved.lab;
+  const heldShippingAbuts = shippingResolved.abuts;
+  const required = shares.total + heldShippingLab + heldShippingAbuts;
   if (required <= 0) {
     return {
       held: false,
@@ -1440,6 +1561,8 @@ export async function holdPracticeTransferCredits({
       heldTotal: 0,
       heldLabTotal: 0,
       heldAbutmentTotal: 0,
+      heldShippingLabTotal: 0,
+      heldShippingAbutsTotal: 0,
     };
   }
 
@@ -1534,6 +1657,54 @@ export async function holdPracticeTransferCredits({
       fromPaid += abutPost.fromPaid;
       fromFreeRequest += abutPost.fromFreeRequest;
       fromFreeShipping += abutPost.fromFreeShipping;
+      bucket = {
+        remainingPaid: abutPost.remainingPaid,
+        remainingFreeRequest: abutPost.remainingFreeRequest,
+        remainingFreeShipping: abutPost.remainingFreeShipping,
+      };
+    }
+
+    const labShipPost = await postOneHoldSlice({
+      transferId,
+      practiceAnchorId,
+      devopsAnchorId,
+      amount: heldShippingLab,
+      shareKind: "lab_shipping",
+      displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdShippingLab,
+      split: bucket,
+      actorUserId,
+      session,
+      freeOrder: ["freeShipping", "freeRequest"],
+    });
+    if (labShipPost.posted) {
+      journalIds.push(labShipPost.journalId);
+      fromPaid += labShipPost.fromPaid;
+      fromFreeRequest += labShipPost.fromFreeRequest;
+      fromFreeShipping += labShipPost.fromFreeShipping;
+      bucket = {
+        remainingPaid: labShipPost.remainingPaid,
+        remainingFreeRequest: labShipPost.remainingFreeRequest,
+        remainingFreeShipping: labShipPost.remainingFreeShipping,
+      };
+    }
+
+    const abutsShipPost = await postOneHoldSlice({
+      transferId,
+      practiceAnchorId,
+      devopsAnchorId,
+      amount: heldShippingAbuts,
+      shareKind: "abuts_shipping",
+      displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdShippingAbutment,
+      split: bucket,
+      actorUserId,
+      session,
+      freeOrder: ["freeShipping", "freeRequest"],
+    });
+    if (abutsShipPost.posted) {
+      journalIds.push(abutsShipPost.journalId);
+      fromPaid += abutsShipPost.fromPaid;
+      fromFreeRequest += abutsShipPost.fromFreeRequest;
+      fromFreeShipping += abutsShipPost.fromFreeShipping;
     }
 
     if (ownSession) await session.commitTransaction();
@@ -1546,6 +1717,8 @@ export async function holdPracticeTransferCredits({
       heldLabTotal: shares.lab,
       heldAbutmentTotal: shares.abut,
       heldDesignFeeTotal: shares.designFeeTotal || 0,
+      heldShippingLabTotal: heldShippingLab,
+      heldShippingAbutsTotal: heldShippingAbuts,
       fromPaid,
       fromFreeRequest,
       fromFreeShipping,
@@ -2756,6 +2929,14 @@ export async function rollbackPracticeTransferBilling({
       events: ["PRACTICE_TRANSFER_SPEND_HOLD"],
     },
     {
+      key: practiceTransferHoldLabShippingKey(id),
+      events: ["PRACTICE_TRANSFER_SPEND_HOLD"],
+    },
+    {
+      key: practiceTransferHoldAbutsShippingKey(id),
+      events: ["PRACTICE_TRANSFER_SPEND_HOLD"],
+    },
+    {
       key: practiceTransferHoldKey(id),
       events: ["PRACTICE_TRANSFER_SPEND_HOLD"],
     },
@@ -2765,6 +2946,10 @@ export async function rollbackPracticeTransferBilling({
     },
     {
       key: practiceTransferLabShippingKey(id),
+      events: ["SHIPPING_SPEND_COMMIT"],
+    },
+    {
+      key: practiceTransferAbutsShippingKey(id),
       events: ["SHIPPING_SPEND_COMMIT"],
     },
   ];
@@ -2964,6 +3149,8 @@ export function toBillingPreviewFields(quote) {
   const api = toFeeQuoteApi(quote);
   return {
     labFeeTotal: api.labFeeTotal,
+    labAbutmentTotal: api.labAbutmentTotal,
+    labAbutmentPending: api.labAbutmentPending,
     abutmentRetailTotal: api.abutmentRetailTotal,
     abutmentQty: api.abutmentQty,
     total: api.total,
@@ -3865,6 +4052,8 @@ export async function grantAbutmentDesignLabFee({
 
 /**
  * 기공소 출발 배송비(치과→기공소). mark-complete 시 1회.
+ * - 생성 시 보류가 있으면 에스크로→매출만 전환(재차감 없음)
+ * - 없으면 레거시 실차감
  * - 기공 보철/기공소어벗이 있거나, CA 디자인+지그(!skipJig)이면 차감
  * - skipJig 이고 기공 보철이 없으면 면제
  */
@@ -3900,7 +4089,13 @@ export async function chargePracticeTransferLabShipping({
     ),
     labAbutmentTotal: Math.max(
       0,
-      Math.round(Number(computed?.labAbutmentTotal ?? 0) || 0),
+      Math.round(
+        Number(
+          transfer?.billing?.labAbutmentTotal ??
+            computed?.labAbutmentTotal ??
+            0,
+        ) || 0,
+      ),
     ),
     abutmentQty: Math.max(
       0,
@@ -3921,154 +4116,20 @@ export async function chargePracticeTransferLabShipping({
     };
   }
 
-  const creditSettingsPromise = loadCreditSettingsDefaults();
-  const spendUniqueKey = `practice_transfer:${String(transferId)}:lab_shipping`;
-  const idempotencyKey = `gl:${spendUniqueKey}`;
-  const [creditSettings, existing] = await Promise.all([
-    creditSettingsPromise,
-    getJournalByIdempotencyKey({
-      idempotencyKey,
-      session: outerSession,
-    }),
-  ]);
-  const fee = Math.max(
-    0,
-    Math.round(Number(creditSettings?.shippingFee ?? 3500) || 0),
-  );
-  if (fee <= 0) {
-    return { charged: false, reason: "zero_fee" };
-  }
-
-  if (existing?.journalId) {
-    return {
-      charged: false,
-      reason: "already_charged",
-      journalId: existing.journalId,
-      amount: fee,
-    };
-  }
-
-  const ownSession = !outerSession;
-  const session = outerSession || (await mongoose.startSession());
-  if (ownSession) session.startTransaction();
-
-  try {
-    await lockGuard(practiceAnchorId, session);
-
-    const spendResult = await spendShippingCreditAtomic({
-      businessAnchorId: practiceAnchorId,
-      spendUniqueKey,
-      actorUserId,
-      fee,
-      session,
-    });
-
-    if (!spendResult?.didSpend) {
-      if (ownSession) await session.abortTransaction();
-      return {
-        charged: false,
-        reason: spendResult?.reason || "not_spent",
-        amount: fee,
-      };
-    }
-
-    const owners = await resolveRevenueOwners({
-      practiceAnchorId,
-      session,
-    });
-    const spendMeta = {
-      spendUniqueKey,
-      usageKind: "practice_transfer_lab_shipping",
-      displayKind: "shipping",
-      displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.shippingLab,
-      fromPaid: spendResult.fromPaid,
-      fromFreeRequest: spendResult.fromFreeRequest,
-      fromFreeShipping: spendResult.fromFreeShipping,
-    };
-    const lines = [
-      ...buildPracticeDebitLines({
-        split: {
-          fromPaid: Number(spendResult.fromPaid || 0),
-          fromFreeRequest: Number(spendResult.fromFreeRequest || 0),
-          fromFreeShipping: Number(spendResult.fromFreeShipping || 0),
-        },
-        practiceAnchorId,
-        transferId,
-        meta: spendMeta,
-      }),
-    ];
-    pushRevenueLines({
-      lines,
-      owners,
-      spendAmount: fee,
-      freeAmount:
-        Number(spendResult.fromFreeRequest || 0) +
-        Number(spendResult.fromFreeShipping || 0),
-      fromFreeRequest: Number(spendResult.fromFreeRequest || 0),
-      fromFreeShipping: Number(spendResult.fromFreeShipping || 0),
-      refType: "PRACTICE_TRANSFER",
-      refId: transferId,
-      meta: spendMeta,
-    });
-
-    const journal = await postGeneralLedgerJournal({
-      idempotencyKey,
-      eventType: "SHIPPING_SPEND_COMMIT",
-      businessAnchorId: practiceAnchorId,
-      refType: "PRACTICE_TRANSFER",
-      refId: transferId,
-      createdBy: actorUserId || null,
-      meta: {
-        ...spendMeta,
-        amount: fee,
-        source: "practice_transfer_lab_shipping",
-      },
-      lines,
-      session,
-      skipIdempotencyLookup: true,
-    });
-
-    if (ownSession) await session.commitTransaction();
-
-    if (journal?.posted) {
-      try {
-        const { emitCreditBalanceUpdatedToBusiness } = await import(
-          "../utils/creditRealtime.js"
-        );
-        await emitCreditBalanceUpdatedToBusiness({
-          businessAnchorId: practiceAnchorId,
-          balanceDelta: -fee,
-          reason: "practice_transfer_lab_shipping",
-          refId: journal.journalId || String(transferId),
-        });
-      } catch {
-        // best-effort
-      }
-    }
-
-    return {
-      charged: Boolean(journal?.posted),
-      reason: journal?.posted ? "posted" : "not_posted",
-      journalId: journal?.journalId || null,
-      amount: fee,
-    };
-  } catch (e) {
-    if (ownSession) {
-      try {
-        await session.abortTransaction();
-      } catch {
-        // ignore
-      }
-    }
-    throw e;
-  } finally {
-    if (ownSession) session.endSession();
-  }
+  return commitPracticeTransferShippingSpend({
+    transfer,
+    transferId,
+    practiceAnchorId,
+    actorUserId,
+    outerSession,
+    route: "lab",
+  });
 }
 
 /**
  * 어벗츠 출발 배송비(치과→어벗츠). mark-complete 시 1회(CA 있을 때).
  * 포장.발송에서도 동일 idempotency로 중복 차감 방지.
+ * 생성 시 보류가 있으면 에스크로→매출만 전환.
  */
 export async function chargePracticeTransferAbutsShipping({
   transfer,
@@ -4083,8 +4144,8 @@ export async function chargePracticeTransferAbutsShipping({
   }
 
   const works = toothWorks || transfer?.toothWorks || [];
-  const hasCa = (Array.isArray(works) ? works : []).some(
-    (row) => Boolean(row?.customAbutment),
+  const hasCa = (Array.isArray(works) ? works : []).some((row) =>
+    Boolean(row?.customAbutment),
   );
   const abutmentQty = Math.max(
     0,
@@ -4094,19 +4155,69 @@ export async function chargePracticeTransferAbutsShipping({
     return { charged: false, reason: "no_abuts_origin" };
   }
 
-  const spendUniqueKey = `practice_transfer:${String(transferId)}:abuts_shipping`;
+  return commitPracticeTransferShippingSpend({
+    transfer,
+    transferId,
+    practiceAnchorId,
+    actorUserId,
+    outerSession,
+    route: "abuts",
+  });
+}
+
+async function commitPracticeTransferShippingSpend({
+  transfer,
+  transferId,
+  practiceAnchorId,
+  actorUserId,
+  outerSession,
+  route,
+}) {
+  const isLab = route === "lab";
+  const spendUniqueKey = isLab
+    ? `practice_transfer:${String(transferId)}:lab_shipping`
+    : `practice_transfer:${String(transferId)}:abuts_shipping`;
   const idempotencyKey = `gl:${spendUniqueKey}`;
-  const [creditSettings, existing] = await Promise.all([
+  const holdKey = isLab
+    ? practiceTransferHoldLabShippingKey(transferId)
+    : practiceTransferHoldAbutsShippingKey(transferId);
+  const displayLabel = isLab
+    ? PRACTICE_TRANSFER_LEDGER_LABELS.shippingLab
+    : PRACTICE_TRANSFER_LEDGER_LABELS.shippingAbutment;
+  const usageKind = isLab
+    ? "practice_transfer_lab_shipping"
+    : "practice_transfer_abuts_shipping";
+  const source = usageKind;
+
+  const [creditSettings, existing, holdJournal] = await Promise.all([
     loadCreditSettingsDefaults(),
     getJournalByIdempotencyKey({
       idempotencyKey,
       session: outerSession,
     }),
+    getJournalByIdempotencyKey({
+      idempotencyKey: holdKey,
+      session: outerSession,
+    }),
   ]);
-  const fee = Math.max(
+  const feeFromSettings = Math.max(
     0,
     Math.round(Number(creditSettings?.shippingFee ?? 3500) || 0),
   );
+  const heldAmount = Math.max(
+    0,
+    Math.round(
+      Number(
+        holdJournal?.meta?.heldTotal ??
+          (isLab
+            ? transfer?.billing?.heldShippingLabTotal
+            : transfer?.billing?.heldShippingAbutsTotal) ??
+          0,
+      ) || 0,
+    ),
+  );
+  const fee =
+    holdJournal?.journalId && heldAmount > 0 ? heldAmount : feeFromSettings;
   if (fee <= 0) {
     return { charged: false, reason: "zero_fee" };
   }
@@ -4126,57 +4237,118 @@ export async function chargePracticeTransferAbutsShipping({
   try {
     await lockGuard(practiceAnchorId, session);
 
-    const spendResult = await spendShippingCreditAtomic({
-      businessAnchorId: practiceAnchorId,
-      spendUniqueKey,
-      actorUserId,
-      fee,
-      session,
-    });
-
-    if (!spendResult?.didSpend) {
-      if (ownSession) await session.abortTransaction();
-      return {
-        charged: false,
-        reason: spendResult?.reason || "not_spent",
-        amount: fee,
-      };
-    }
-
     const owners = await resolveRevenueOwners({
       practiceAnchorId,
       session,
     });
+    const devopsAnchorId =
+      owners?.devopsAnchorId ||
+      String(holdJournal?.meta?.devopsAnchorId || "") ||
+      (await resolveDevopsEscrowOwnerId(session));
+
+    let fromPaid = 0;
+    let fromFreeRequest = 0;
+    let fromFreeShipping = 0;
+    let lines = [];
+    let fromHold = false;
+
+    if (holdJournal?.journalId && devopsAnchorId) {
+      fromHold = true;
+      fromPaid = Math.max(0, Math.round(Number(holdJournal.meta?.fromPaid || 0)));
+      fromFreeRequest = Math.max(
+        0,
+        Math.round(Number(holdJournal.meta?.fromFreeRequest || 0)),
+      );
+      fromFreeShipping = Math.max(
+        0,
+        Math.round(Number(holdJournal.meta?.fromFreeShipping || 0)),
+      );
+      const splitSum = fromPaid + fromFreeRequest + fromFreeShipping;
+      if (splitSum !== fee && splitSum > 0) {
+        // 메타 합이 fee와 어긋나면 유료로 맞춤
+        fromPaid = fee;
+        fromFreeRequest = 0;
+        fromFreeShipping = 0;
+      } else if (splitSum <= 0) {
+        fromPaid = fee;
+      }
+      lines.push({
+        accountCode: "PLATFORM_ESCROW",
+        ownerRole: "devops",
+        ownerId: devopsAnchorId,
+        amount: -fee,
+        amountExcludingVat: -fee,
+        vatAmount: 0,
+        creditKind: null,
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: {
+          source: `${source}_from_hold`,
+          displayKind: "shipping",
+          displayLabel,
+          holdShare: isLab ? "lab_shipping" : "abuts_shipping",
+        },
+      });
+    } else {
+      const spendResult = await spendShippingCreditAtomic({
+        businessAnchorId: practiceAnchorId,
+        spendUniqueKey,
+        actorUserId,
+        fee,
+        session,
+      });
+
+      if (!spendResult?.didSpend) {
+        if (ownSession) await session.abortTransaction();
+        return {
+          charged: false,
+          reason: spendResult?.reason || "not_spent",
+          amount: fee,
+        };
+      }
+      fromPaid = Number(spendResult.fromPaid || 0);
+      fromFreeRequest = Number(spendResult.fromFreeRequest || 0);
+      fromFreeShipping = Number(spendResult.fromFreeShipping || 0);
+      const spendMetaDraft = {
+        spendUniqueKey,
+        usageKind,
+        displayKind: "shipping",
+        displayLabel,
+        fromPaid,
+        fromFreeRequest,
+        fromFreeShipping,
+      };
+      lines.push(
+        ...buildPracticeDebitLines({
+          split: {
+            fromPaid,
+            fromFreeRequest,
+            fromFreeShipping,
+          },
+          practiceAnchorId,
+          transferId,
+          meta: spendMetaDraft,
+        }),
+      );
+    }
+
     const spendMeta = {
       spendUniqueKey,
-      usageKind: "practice_transfer_abuts_shipping",
+      usageKind,
       displayKind: "shipping",
-      displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.shippingAbutment,
-      fromPaid: spendResult.fromPaid,
-      fromFreeRequest: spendResult.fromFreeRequest,
-      fromFreeShipping: spendResult.fromFreeShipping,
+      displayLabel,
+      fromPaid,
+      fromFreeRequest,
+      fromFreeShipping,
+      fromHold,
     };
-    const lines = [
-      ...buildPracticeDebitLines({
-        split: {
-          fromPaid: Number(spendResult.fromPaid || 0),
-          fromFreeRequest: Number(spendResult.fromFreeRequest || 0),
-          fromFreeShipping: Number(spendResult.fromFreeShipping || 0),
-        },
-        practiceAnchorId,
-        transferId,
-        meta: spendMeta,
-      }),
-    ];
     pushRevenueLines({
       lines,
       owners,
       spendAmount: fee,
-      freeAmount:
-        Number(spendResult.fromFreeRequest || 0) +
-        Number(spendResult.fromFreeShipping || 0),
-      fromFreeRequest: Number(spendResult.fromFreeRequest || 0),
-      fromFreeShipping: Number(spendResult.fromFreeShipping || 0),
+      freeAmount: fromFreeRequest + fromFreeShipping,
+      fromFreeRequest,
+      fromFreeShipping,
       refType: "PRACTICE_TRANSFER",
       refId: transferId,
       meta: spendMeta,
@@ -4192,7 +4364,7 @@ export async function chargePracticeTransferAbutsShipping({
       meta: {
         ...spendMeta,
         amount: fee,
-        source: "practice_transfer_abuts_shipping",
+        source,
       },
       lines,
       session,
@@ -4201,7 +4373,7 @@ export async function chargePracticeTransferAbutsShipping({
 
     if (ownSession) await session.commitTransaction();
 
-    if (journal?.posted) {
+    if (journal?.posted && !fromHold) {
       try {
         const { emitCreditBalanceUpdatedToBusiness } = await import(
           "../utils/creditRealtime.js"
@@ -4209,7 +4381,7 @@ export async function chargePracticeTransferAbutsShipping({
         await emitCreditBalanceUpdatedToBusiness({
           businessAnchorId: practiceAnchorId,
           balanceDelta: -fee,
-          reason: "practice_transfer_abuts_shipping",
+          reason: source,
           refId: journal.journalId || String(transferId),
         });
       } catch {
@@ -4219,9 +4391,14 @@ export async function chargePracticeTransferAbutsShipping({
 
     return {
       charged: Boolean(journal?.posted),
-      reason: journal?.posted ? "posted" : "not_posted",
+      reason: journal?.posted
+        ? fromHold
+          ? "from_hold"
+          : "posted"
+        : "not_posted",
       journalId: journal?.journalId || null,
       amount: fee,
+      fromHold,
     };
   } catch (e) {
     if (ownSession) {

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: PRACTICE_TRANSFER enrich에 practiceTransferPending(heldAt·!settledAt).
 // - 2026-08-12: currentBalanceSnapshot에 settlementCredit·requestorKind 포함(기공소 기공크레딧 UI).
 // related files:
 // - web/backend/rules.md
@@ -649,6 +650,8 @@ export async function listMyCreditLedger(req, res) {
         targetLabName: 1,
         transferMemo: 1,
         files: 1,
+        "billing.heldAt": 1,
+        "billing.settledAt": 1,
       })
       .lean();
 
@@ -664,10 +667,13 @@ export async function listMyCreditLedger(req, res) {
           .map((f) => String(f?.patientName || "").trim())
           .find(Boolean) || "",
       ).trim();
+      const heldAt = doc?.billing?.heldAt || null;
+      const settledAt = doc?.billing?.settledAt || null;
       practiceTransferIdById.set(id, String(doc.transferId || ""));
       practiceTransferMetaById.set(id, {
         patientName: memoPatient || filePatient,
         labName: String(doc.targetLabName || "").trim(),
+        practiceTransferPending: Boolean(heldAt) && !settledAt,
       });
     }
   }
@@ -731,6 +737,7 @@ export async function listMyCreditLedger(req, res) {
           : "",
         patientName: meta?.patientName || "",
         labName: meta?.labName || "",
+        practiceTransferPending: Boolean(meta?.practiceTransferPending),
       };
     }
 

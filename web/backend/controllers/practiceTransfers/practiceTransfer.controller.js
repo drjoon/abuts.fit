@@ -114,6 +114,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
 // - 2026-08-16: pastReady — 라이브 stage 우선(sticky startedAt OR 제거 시 목록 인자 우선).
+// - 2026-08-17: trash/empty — 하드삭제 의뢰 채팅방 archive(치과 사이드바 유령 unread 방지).
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
@@ -535,6 +536,7 @@ const toVirtualRequestRows = (transferDoc) => {
   return sourceRows.map((item, idx) => ({
     _id: `${String(transferDoc._id)}:${idx + 1}`,
     requestId: `${transferId}-${idx + 1}`,
+    transferId,
     manufacturerStage,
     ...remakeFields,
     createdAt: transferDoc?.createdAt,
@@ -1748,13 +1750,26 @@ export async function emptyPracticeTransferTrash(req, res) {
           );
         }
       }
+      const deletedOids = transferMongoIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
       await PracticeTransfer.deleteMany({
-        _id: {
-          $in: transferMongoIds
-            .filter((id) => Types.ObjectId.isValid(id))
-            .map((id) => new Types.ObjectId(id)),
-        },
+        _id: { $in: deletedOids },
       });
+      // 하드삭제된 의뢰 채팅방은 archive — 치과 사이드바 유령 unread 방지.
+      if (deletedOids.length > 0) {
+        try {
+          await ChatRoom.updateMany(
+            { relatedPracticeTransferId: { $in: deletedOids } },
+            { $set: { isArchived: true } },
+          );
+        } catch (archiveErr) {
+          console.warn(
+            "[practiceTransfer] trash-empty chat room archive failed",
+            archiveErr?.message || archiveErr,
+          );
+        }
+      }
     }
 
     const affectedByAnchor = new Map();
@@ -2082,6 +2097,7 @@ export async function createPracticeTransfer(req, res) {
         autoMatchBudget,
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
+        skipJig,
       });
     } catch (creditErr) {
       const status = Number(creditErr?.statusCode || 500);
@@ -2191,6 +2207,10 @@ export async function createPracticeTransfer(req, res) {
               0,
           ),
           heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
+          heldShippingLabTotal: Number(holdResult.heldShippingLabTotal || 0),
+          heldShippingAbutsTotal: Number(
+            holdResult.heldShippingAbutsTotal || 0,
+          ),
           holdFromPaid: Number(holdResult.fromPaid || 0),
           holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
           holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),
@@ -5460,6 +5480,7 @@ export async function retargetPracticeTransferLab(req, res) {
         toothWorks,
         autoMatchBudget,
         catalog: autoMatchCatalog,
+        skipJig: Boolean(doc?.production?.skipJig),
       });
     } catch (creditErr) {
       const status = Number(creditErr?.statusCode || 500);
@@ -5596,6 +5617,10 @@ export async function retargetPracticeTransferLab(req, res) {
               0,
           ),
           heldDesignFeeTotal: Number(holdResult.heldDesignFeeTotal || 0),
+          heldShippingLabTotal: Number(holdResult.heldShippingLabTotal || 0),
+          heldShippingAbutsTotal: Number(
+            holdResult.heldShippingAbutsTotal || 0,
+          ),
           holdFromPaid: Number(holdResult.fromPaid || 0),
           holdFromFreeRequest: Number(holdResult.fromFreeRequest || 0),
           holdFromFreeShipping: Number(holdResult.fromFreeShipping || 0),

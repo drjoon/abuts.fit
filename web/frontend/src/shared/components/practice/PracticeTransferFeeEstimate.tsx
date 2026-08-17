@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-08-17: 배송비 안내 — 출고 시 차감 → 주문 시 보류.
 // - 2026-08-17: 견적 한줄 요약 — CA 디자인비(+지그)는 기공비, 어벗은 생산비만(툴팁 기공비 총액·어벗생산비와 일치).
 // - 2026-08-17: 신속처리 시 디자인비(+지그)·어벗생산비 분해에도 rush 배수 적용.
 // - 2026-08-16: 기공의뢰수신 카드 — 기공비·수령·수수료를 한 줄로 표시.
@@ -1036,7 +1037,7 @@ export function PracticeTransferFeeEstimate({
             {shippingHintLines.length > 0 ? (
               <div className="mt-1.5 space-y-0.5 border-t border-foreground/15 pt-1.5 text-[11px] leading-snug text-muted-foreground">
                 <p className="font-medium text-foreground/80">
-                  배송비(출고 시 차감 · 박스당)
+                  배송비(주문 시 보류 · 박스당)
                 </p>
                 {shippingHintLines.map((row) => (
                   <p key={row.key} className="tabular-nums">

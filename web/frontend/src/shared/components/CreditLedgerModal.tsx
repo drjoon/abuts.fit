@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-17: 기공의뢰 행 유형/금액 colSpan 해제 — 유형 열 가운데 정렬.
+// - 2026-08-17: 기공의뢰 pending → 「기공의뢰 보류」표시. 장부 셀·PTX 트리 가운데 정렬.
 // - 2026-08-17: 동일 PTX 기공의뢰 크레딧 행을 한 건으로 묶어 표시(세부 라벨·합계).
 // - 2026-08-17: PTX 묶음 행 — 치과→기공소/어벗츠 트리(기공비·디자인·어벗제작·배송).
 // - 2026-08-17: PTX 트리 — ASCII 이중선 제거, 인덴트·접기/펼치기.
@@ -196,6 +198,8 @@ type CreditLedgerItem = {
   balanceAfter?: number;
   patientName?: string;
   labName?: string;
+  /** 기공의뢰 에스크로 보류 중(heldAt && !settledAt) */
+  practiceTransferPending?: boolean;
   tooth?: string;
   clinicName?: string;
   manufacturerStage?: string;
@@ -294,7 +298,35 @@ type LedgerDisplayRow = {
   type: CreditLedgerType;
   displayLabel: string;
   parts: LedgerDisplayPart[] | null;
+  practiceTransferPending: boolean;
   item: CreditLedgerItem;
+};
+
+const practiceTransferTypeLabel = (pending: boolean) =>
+  pending ? "기공의뢰 보류" : "기공의뢰";
+
+const resolvePracticeTransferPending = (
+  item: CreditLedgerItem,
+  members?: CreditLedgerItem[],
+) => {
+  if (item.practiceTransferPending === true) return true;
+  if (item.practiceTransferPending === false) return false;
+  if (Array.isArray(members)) {
+    if (members.some((m) => m.practiceTransferPending === true)) return true;
+    if (members.some((m) => m.practiceTransferPending === false)) return false;
+  }
+  return String(item.type || "") === "SPEND_HOLD";
+};
+
+const resolvePracticeTransferDisplayLabel = (
+  item: CreditLedgerItem,
+  members?: CreditLedgerItem[],
+) => {
+  const pending = resolvePracticeTransferPending(item, members);
+  if (String(item.refType || "") === "PRACTICE_TRANSFER") {
+    return practiceTransferTypeLabel(pending);
+  }
+  return String(item.displayLabel || "").trim() || typeLabel(item.type);
 };
 
 type PracticeTransferRoute = "lab" | "abuts" | "other";
@@ -412,20 +444,26 @@ const formatSignedWon = (amount: number) => {
 function PracticeTransferLedgerTree({
   totalAmount,
   parts,
+  pending = false,
+  compact = false,
 }: {
   totalAmount: number;
   parts: LedgerDisplayPart[];
+  pending?: boolean;
+  /** true면 유형 칸용(라벨+?)만, 금액은 별도 셀 */
+  compact?: boolean;
 }) {
   const branches = useMemo(
     () => buildPracticeTransferFeeTree(parts),
     [parts],
   );
+  const title = practiceTransferTypeLabel(pending);
 
   const treeBody = (
     <div className="w-[min(100vw-2rem,22rem)] overflow-hidden rounded-xl border border-slate-200/80 bg-white text-left shadow-md">
       <div className="flex items-center justify-between gap-2 px-3 py-2.5">
         <span className="min-w-0 text-xs font-semibold text-slate-800">
-          기공의뢰
+          {title}
         </span>
         <span
           className={cn(
@@ -479,19 +517,24 @@ function PracticeTransferLedgerTree({
         <TooltipTrigger asChild>
           <button
             type="button"
-            className="mx-auto flex w-full max-w-[14rem] items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-slate-50/80"
+            className={cn(
+              "mx-auto inline-flex max-w-full items-center justify-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-slate-50/80",
+              compact ? "text-center" : "gap-1.5 px-2.5 py-2",
+            )}
           >
-            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">
-              기공의뢰
+            <span className="truncate text-xs font-semibold text-slate-800">
+              {title}
             </span>
-            <span
-              className={cn(
-                "shrink-0 text-xs font-semibold tabular-nums",
-                totalAmount < 0 ? "text-destructive" : "text-primary-strong",
-              )}
-            >
-              {formatSignedWon(totalAmount)}
-            </span>
+            {compact ? null : (
+              <span
+                className={cn(
+                  "shrink-0 text-xs font-semibold tabular-nums",
+                  totalAmount < 0 ? "text-destructive" : "text-primary-strong",
+                )}
+              >
+                {formatSignedWon(totalAmount)}
+              </span>
+            )}
             <CircleHelp
               className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
               aria-hidden
@@ -552,9 +595,9 @@ const groupLedgerItemsForDisplay = (
         spentPaidAmount: Number(item.spentPaidAmount || 0),
         spentFreeAmount: Number(item.spentFreeAmount || 0),
         type: item.type,
-        displayLabel:
-          String(item.displayLabel || "").trim() || typeLabel(item.type),
+        displayLabel: resolvePracticeTransferDisplayLabel(item),
         parts: null,
+        practiceTransferPending: resolvePracticeTransferPending(item),
         item,
       });
       continue;
@@ -579,9 +622,9 @@ const groupLedgerItemsForDisplay = (
         spentPaidAmount: Number(only.spentPaidAmount || 0),
         spentFreeAmount: Number(only.spentFreeAmount || 0),
         type: only.type,
-        displayLabel:
-          String(only.displayLabel || "").trim() || typeLabel(only.type),
+        displayLabel: resolvePracticeTransferDisplayLabel(only),
         parts: null,
+        practiceTransferPending: resolvePracticeTransferPending(only),
         item: only,
       });
       continue;
@@ -597,6 +640,7 @@ const groupLedgerItemsForDisplay = (
       (sum, m) => sum + Number(m.spentFreeAmount || 0),
       0,
     );
+    const pending = resolvePracticeTransferPending(latest, members);
     out.push({
       key: gKey,
       createdAt: String(latest.createdAt || ""),
@@ -605,8 +649,9 @@ const groupLedgerItemsForDisplay = (
       spentPaidAmount,
       spentFreeAmount,
       type: latest.type,
-      displayLabel: "기공의뢰",
+      displayLabel: practiceTransferTypeLabel(pending),
       parts: members.map(toDisplayPart),
+      practiceTransferPending: pending,
       item: latest,
     });
   }
@@ -763,9 +808,12 @@ const renderTransactionDetail = ({
   if (refType === "PRACTICE_TRANSFER") {
     const labName = String(item.labName || "").trim() || "-";
     const patientName = String(item.patientName || "").trim() || "-";
+    const pending = resolvePracticeTransferPending(item);
     return (
       <>
-        <span className="text-[11px] text-muted-foreground">기공의뢰</span>
+        <span className="text-[11px] text-muted-foreground">
+          {practiceTransferTypeLabel(pending)}
+        </span>
         <span className="pt-1 text-[11px] text-slate-700">
           {labName} / {patientName}
         </span>
@@ -1265,7 +1313,7 @@ export const CreditLedgerModal = ({
                       {renderSortIcon(sort.key === "createdAt", sort.direction)}
                     </button>
                   </TableHead>
-                  <TableHead className="w-[110px] text-center">
+                  <TableHead className="w-[140px] text-center">
                     <button
                       type="button"
                       className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
@@ -1343,16 +1391,30 @@ export const CreditLedgerModal = ({
                         {formatDate(String(r.createdAt || ""))}
                       </TableCell>
                       {hasParts ? (
-                        <TableCell colSpan={2} className="px-2 py-2.5 align-middle">
-                          <PracticeTransferLedgerTree
-                            totalAmount={amount}
-                            parts={r.parts!}
-                          />
-                        </TableCell>
+                        <>
+                          <TableCell className="text-center text-xs font-medium align-middle">
+                            <PracticeTransferLedgerTree
+                              totalAmount={amount}
+                              parts={r.parts!}
+                              pending={r.practiceTransferPending}
+                              compact
+                            />
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-center font-medium tabular-nums align-middle",
+                              isMinus
+                                ? "text-destructive"
+                                : "text-primary-strong",
+                            )}
+                          >
+                            {formatSignedWon(amount)}
+                          </TableCell>
+                        </>
                       ) : (
                         <>
                           <TableCell className="text-center text-xs font-medium align-middle">
-                            <span className="whitespace-nowrap">
+                            <span className="inline-block whitespace-nowrap text-center">
                               {r.displayLabel || typeLabel(r.type)}
                             </span>
                           </TableCell>
