@@ -7,12 +7,11 @@
  * 2026-08-16: 기공소 작업취소 카드 깜빡임 하이라이트.
  * 2026-08-16: 선택 시 사이드바와 동일 PracticeRecentTransferItem(작업 파일 포함) 전달.
  * 2026-08-17: 채팅 미확인 배지를 카드 헤더(상태 옆)에 표시 — 사이드바·수신 카드와 정합.
- * 2026-08-16: 리메이크 버튼을 검색창 옆으로 이동(선택 목록 액션).
+ * 2026-08-17: 리메이크=카드 아이콘(툴팁)·단건 확인. 검색창 옆 선택 일괄 버튼 제거.
  * 2026-08-16: 카드 본문=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·메모 덤프 제거).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Repeat, Search, Trash2 } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
 
 import {
   Dialog,
@@ -78,9 +77,7 @@ type PracticeRecentTransfersAllModalProps = {
   initialError?: string;
   onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
-  remakeSelectedIds?: string[];
-  onToggleRemakeSelect?: (transfer: PracticeRecentTransferItem) => void;
-  onAskRemake?: () => void;
+  onAskRemake?: (transfer: PracticeRecentTransferItem) => void;
 };
 
 export function PracticeRecentTransfersAllModal({
@@ -97,8 +94,6 @@ export function PracticeRecentTransfersAllModal({
   initialError = "",
   onSelectTransfer,
   onDeleteTransfer,
-  remakeSelectedIds = [],
-  onToggleRemakeSelect,
   onAskRemake,
 }: PracticeRecentTransfersAllModalProps) {
   const [period, setPeriod] = useState(initialPeriod);
@@ -352,17 +347,6 @@ export function PracticeRecentTransfersAllModal({
                   placeholder="전송ID, 환자명 검색"
                 />
               </div>
-              {remakeSelectedIds.length > 0 && onAskRemake ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-9 shrink-0 gap-1 bg-amber-600 px-2 text-white hover:bg-amber-700"
-                  onClick={onAskRemake}
-                >
-                  <Repeat className="h-3.5 w-3.5" />
-                  리메이크 {remakeSelectedIds.length}
-                </Button>
-              ) : null}
             </div>
           </div>
         </DialogHeader>
@@ -398,11 +382,7 @@ export function PracticeRecentTransfersAllModal({
                     .replace(/\s*→.*$/g, "")
                     .trim() || "-";
                 const deleteLocked = !canDeletePracticeTransferByStatus(transfer.status);
-                const remakeKey = String(
-                  transfer.transferMongoIds?.[0] || transfer.id || "",
-                ).trim();
                 const canRemake = canRemakePracticeTransferByStatus(transfer.status);
-                const remakeChecked = remakeSelectedIds.includes(remakeKey);
                 const acceptOverdue = isPracticeTransferAcceptOverdue({
                   status: transfer.status,
                   orderDate: transfer.orderDate,
@@ -477,18 +457,31 @@ export function PracticeRecentTransfersAllModal({
                         />
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
-                        {canRemake && onToggleRemakeSelect ? (
-                          <span
-                            className="inline-flex"
-                            onClick={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => e.stopPropagation()}
-                          >
-                            <Checkbox
-                              checked={remakeChecked}
-                              onCheckedChange={() => onToggleRemakeSelect(transfer)}
-                              aria-label="리메이크 대상 선택"
-                            />
-                          </span>
+                        {canRemake && onAskRemake ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-amber-600 hover:text-amber-700"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onAskRemake(transfer);
+                                    }}
+                                    aria-label="리메이크"
+                                  >
+                                    <Repeat className="h-4 w-4" />
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="left" className="max-w-xs text-xs">
+                                리메이크
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         ) : null}
                         <TooltipProvider>
                           <Tooltip>

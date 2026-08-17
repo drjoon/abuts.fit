@@ -82,6 +82,7 @@
  * - 2026-08-16: 의뢰상세 작업 파일 — 어벗디자인(designFiles)·보철물(resultFiles) 기공소와 동일 표시.
  * - 2026-08-16: 최근의뢰·전체보기 의뢰상세 SSOT — practiceRecentTransferList + sender detail model.
  * - 2026-08-16: 리메이크 버튼을 목록 검색 옆으로 이동. 컨펌은 리메이크비 무료·배송비 차감 안내.
+ * - 2026-08-17: 리메이크=카드 Repeat 아이콘(툴팁)·단건 확인. 검색창 옆 선택 일괄 버튼 제거.
  * - 2026-08-16: 최근의뢰 카드=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·기간·메모 덤프 제거).
  */
 
@@ -3255,12 +3256,11 @@ export const PracticeFileTransferPage = ({
     });
   }, [groupedTransfers, remakeSelectedIds]);
 
-  const toggleRemakeSelect = useCallback((transfer: RecentTransferItem) => {
+  const askRemakeForTransfer = useCallback((transfer: RecentTransferItem) => {
     const key = String(transfer.transferMongoIds?.[0] || transfer.id || "").trim();
     if (!key || !canRemakePracticeTransferByStatus(transfer.status)) return;
-    setRemakeSelectedIds((prev) =>
-      prev.includes(key) ? prev.filter((id) => id !== key) : [...prev, key],
-    );
+    setRemakeSelectedIds([key]);
+    setRemakeConfirmOpen(true);
   }, []);
 
   const handleConfirmRemake = useCallback(async () => {
@@ -6221,17 +6221,6 @@ export const PracticeFileTransferPage = ({
                         placeholder="전송ID, 환자명 검색"
                       />
                     </div>
-                    {remakeSelectedTransfers.length > 0 ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-9 shrink-0 gap-1 bg-amber-600 px-2 text-white hover:bg-amber-700"
-                        onClick={() => setRemakeConfirmOpen(true)}
-                      >
-                        <Repeat className="h-3.5 w-3.5" />
-                        리메이크 {remakeSelectedTransfers.length}
-                      </Button>
-                    ) : null}
                   </div>
                 </div>
                 </CollapsibleContent>
@@ -6288,11 +6277,7 @@ export const PracticeFileTransferPage = ({
                       const isDraftTransfer =
                         transfer.status === "임시저장" ||
                         transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
-                      const remakeKey = String(
-                        transfer.transferMongoIds?.[0] || transfer.id || "",
-                      ).trim();
                       const canRemake = canRemakePracticeTransferByStatus(transfer.status);
-                      const remakeChecked = remakeSelectedIds.includes(remakeKey);
                       const acceptOverdue =
                         !isDraftTransfer &&
                         isPracticeTransferAcceptOverdue({
@@ -6378,20 +6363,24 @@ export const PracticeFileTransferPage = ({
                                 <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <span
-                                        className="inline-flex"
-                                        onClick={(e) => e.stopPropagation()}
-                                        onKeyDown={(e) => e.stopPropagation()}
-                                      >
-                                        <Checkbox
-                                          checked={remakeChecked}
-                                          onCheckedChange={() => toggleRemakeSelect(transfer)}
-                                          aria-label="리메이크 대상 선택"
-                                        />
+                                      <span className="inline-flex">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 text-amber-600 hover:text-amber-700"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            askRemakeForTransfer(transfer);
+                                          }}
+                                          aria-label="리메이크"
+                                        >
+                                          <Repeat className="h-4 w-4" />
+                                        </Button>
                                       </span>
                                     </TooltipTrigger>
                                     <TooltipContent side="left" className="max-w-xs text-xs">
-                                      발송 건 리메이크 의뢰
+                                      리메이크
                                     </TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
@@ -6990,11 +6979,7 @@ export const PracticeFileTransferPage = ({
           onDeleteTransfer={(transfer) => {
             handleAskDeleteTransfer(transfer);
           }}
-          remakeSelectedIds={remakeSelectedIds}
-          onToggleRemakeSelect={(transfer) =>
-            toggleRemakeSelect(transfer)
-          }
-          onAskRemake={() => setRemakeConfirmOpen(true)}
+          onAskRemake={(transfer) => askRemakeForTransfer(transfer)}
         />
 
         <PracticeTransferDetailChatDialog
@@ -7417,12 +7402,11 @@ export const PracticeFileTransferPage = ({
 
         <ConfirmDialog
           open={remakeConfirmOpen}
-          title="선택한 발송 건을 리메이크 의뢰할까요?"
+          title="발송 건을 리메이크 의뢰할까요?"
           description={
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">
-                {remakeSelectedTransfers.length}건 · 리메이크비 무료 · 배송비는
-                차감됩니다
+                리메이크비 무료 · 배송비는 차감됩니다
               </div>
               <div className="text-sm text-muted-foreground">
                 의뢰부터 발송까지 다시 진행됩니다.
@@ -7435,6 +7419,7 @@ export const PracticeFileTransferPage = ({
           onCancel={() => {
             if (remakeBusy) return;
             setRemakeConfirmOpen(false);
+            setRemakeSelectedIds([]);
           }}
         />
 
