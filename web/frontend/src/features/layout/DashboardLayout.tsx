@@ -10,6 +10,10 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-17: unread-updated 이벤트는 lab 수신 배지 조회 가능할 때만 반영(치과 유령 배지 방지).
+// - 2026-08-17: 접힌 사이드바에도 practice-transfers/lab-work 미확인 배지 표시.
+// - 2026-08-17: 어벗츠기공소「기공의뢰수신」(/lab-work)에도 수신 미확인·채팅 사이드 배지.
+// - 2026-08-17: 치과「기공의뢰」배지 — 수신 미확인(received-unread) 제외, lab「기공의뢰수신」만 합산.
 // - 2026-08-17: 어벗츠기공소 사이드 — 대기보드·기공의뢰수신·어벗생산의뢰·크레딧·설정.
 // - 2026-08-15: 어벗츠기공소 사이드 — 기공의뢰수신·설정 2메뉴(대시보드·어벗디자인·정산 제거).
 // - 2026-08-15: 모드 전환은 치과 기공의뢰 카드로 이전(사이드바 제거).
@@ -678,11 +682,14 @@ export const DashboardLayout = () => {
     };
   }, [refreshSidebarProfile]);
 
+  // 수신 미확인: lab requestor「기공의뢰수신」+ internalLab「기공의뢰수신」(/lab-work).
+  // 치과「기공의뢰」에는 합산하지 않는다(최근 전송과 배지 불일치 방지).
   const canFetchRequestorPracticeUnread =
     Boolean(token) &&
     Boolean(user) &&
     !isPracticeUser &&
-    user?.role === "requestor";
+    (user?.role === "internalLab" ||
+      (user?.role === "requestor" && requestorKind === "lab"));
 
   const fetchRequestorPracticeUnreadCount = useCallback(async () => {
     if (!canFetchRequestorPracticeUnread || !token) {
@@ -802,8 +809,13 @@ export const DashboardLayout = () => {
   }, [fetchCreditBalance]);
 
   // StrictMode remount에도 토큰당 초기 조회 1회만 (세션 시드용). 이후는 소켓·커스텀 이벤트.
+  // kind가 lab↔practice로 바뀌면 시드를 지워 재조회·치과 전환 시 카운트 0 처리.
   useEffect(() => {
-    if (!canFetchRequestorPracticeUnread || !token) return;
+    if (!canFetchRequestorPracticeUnread || !token) {
+      setRequestorPracticeUnreadCount(0);
+      if (token) practiceUnreadSeededTokens.delete(token);
+      return;
+    }
     if (practiceUnreadSeededTokens.has(token)) return;
     practiceUnreadSeededTokens.add(token);
     void fetchRequestorPracticeUnreadCount();
@@ -830,6 +842,7 @@ export const DashboardLayout = () => {
 
   useEffect(() => {
     const onUnreadUpdated = (evt: Event) => {
+      if (!canFetchRequestorPracticeUnread) return;
       const custom = evt as CustomEvent<{ unreadCount?: unknown }>;
       const maybeCount = Number(custom.detail?.unreadCount);
       if (Number.isFinite(maybeCount) && maybeCount >= 0) {
@@ -848,7 +861,7 @@ export const DashboardLayout = () => {
         onUnreadUpdated,
       );
     };
-  }, []);
+  }, [canFetchRequestorPracticeUnread]);
 
 
 
@@ -1142,7 +1155,7 @@ export const DashboardLayout = () => {
   })();
 
   const requestorPracticeChatUnreadCount = useMemo(() => {
-    if (user.role !== "requestor") return 0;
+    if (user.role !== "requestor" && user.role !== "internalLab") return 0;
     return chatRooms.reduce((sum, room) => {
       const transferId = String(room.relatedPracticeTransferId?.transferId || "").trim();
       if (!transferId) return sum;
@@ -1154,13 +1167,18 @@ export const DashboardLayout = () => {
     (href: string) => {
       const path = sidebarItemPath(href);
       const adminCommBadge = Number(getBadgeForHref(path) || 0);
+      const transferUnread = Math.max(0, Number(requestorPracticeUnreadCount || 0));
+      const chatUnread = Math.max(0, Number(requestorPracticeChatUnreadCount || 0));
+      if (path === "/dashboard/lab-work" && user.role === "internalLab") {
+        return adminCommBadge + transferUnread + chatUnread;
+      }
       if (
         path === "/dashboard/practice-transfers" &&
         user.role === "requestor"
       ) {
-        const transferUnread = Math.max(0, Number(requestorPracticeUnreadCount || 0));
-        const chatUnread = Math.max(0, Number(requestorPracticeChatUnreadCount || 0));
-        return adminCommBadge + transferUnread + chatUnread;
+        // lab: 수신 미확인 + 채팅. practice(치과 발신): 채팅만.
+        const labTransferUnread = requestorKind === "lab" ? transferUnread : 0;
+        return adminCommBadge + labTransferUnread + chatUnread;
       }
       if (path === "/dashboard/platform-settings" && user.role === "admin") {
         return adminCommBadge + Math.max(0, abutsFeePendingCount);
@@ -1170,6 +1188,7 @@ export const DashboardLayout = () => {
     [
       abutsFeePendingCount,
       getBadgeForHref,
+      requestorKind,
       requestorPracticeChatUnreadCount,
       requestorPracticeUnreadCount,
       user.role,
@@ -1454,8 +1473,9 @@ export const DashboardLayout = () => {
                       {!isCollapsed && (
                         <span className="truncate flex-1">{item.label}</span>
                       )}
-                      {!isCollapsed &&
-                        (() => {
+                      {(() => {
+                        const badgeCount = getSidebarBadgeCount(item.href);
+                        if (!isCollapsed) {
                           if (isCreditsLowHighlight) {
                             return (
                               <Badge
@@ -1466,7 +1486,6 @@ export const DashboardLayout = () => {
                               </Badge>
                             );
                           }
-                          const badgeCount = getSidebarBadgeCount(item.href);
                           return badgeCount > 0 ? (
                             <Badge
                               variant="destructive"
@@ -1475,13 +1494,24 @@ export const DashboardLayout = () => {
                               {badgeCount > 99 ? "99+" : badgeCount}
                             </Badge>
                           ) : null;
-                        })()}
-                      {isCollapsed && isCreditsLowHighlight ? (
-                        <span
-                          aria-hidden
-                          className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
-                        />
-                      ) : null}
+                        }
+                        if (isCreditsLowHighlight) {
+                          return (
+                            <span
+                              aria-hidden
+                              className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+                            />
+                          );
+                        }
+                        return badgeCount > 0 ? (
+                          <span
+                            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-semibold leading-none text-white"
+                            aria-label={`미확인 ${badgeCount}건`}
+                          >
+                            {badgeCount > 99 ? "99+" : badgeCount}
+                          </span>
+                        ) : null;
+                      })()}
                     </Button>
                   );
 

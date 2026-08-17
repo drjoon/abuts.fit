@@ -6,6 +6,7 @@
  * 2026-08-15: 주문 후 1영업일 미수락 「수락대기」뱃지.
  * 2026-08-16: 기공소 작업취소 카드 깜빡임 하이라이트.
  * 2026-08-16: 선택 시 사이드바와 동일 PracticeRecentTransferItem(작업 파일 포함) 전달.
+ * 2026-08-17: 채팅 미확인 배지를 카드 헤더(상태 옆)에 표시 — 사이드바·수신 카드와 정합.
  * 2026-08-16: 리메이크 버튼을 검색창 옆으로 이동(선택 목록 액션).
  * 2026-08-16: 카드 본문=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·메모 덤프 제거).
  */
@@ -454,6 +455,17 @@ export function PracticeRecentTransfersAllModal({
                                   리메이크
                                 </Badge>
                               ) : null}
+                              {transfer.unreadCount > 0 ? (
+                                <Badge
+                                  variant="destructive"
+                                  className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
+                                  aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
+                                >
+                                  {transfer.unreadCount > 99
+                                    ? "99+"
+                                    : transfer.unreadCount}
+                                </Badge>
+                              ) : null}
                             </>
                           }
                           counterpartLabel="기공소"
@@ -476,14 +488,6 @@ export function PracticeRecentTransfersAllModal({
                               onCheckedChange={() => onToggleRemakeSelect(transfer)}
                               aria-label="리메이크 대상 선택"
                             />
-                          </span>
-                        ) : null}
-                        {transfer.unreadCount > 0 ? (
-                          <span
-                            className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold leading-none text-white"
-                            aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
-                          >
-                            {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
                           </span>
                         ) : null}
                         <TooltipProvider>

@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-08-17: 미확인 의뢰(!isRead)도 채팅 unread와 합산해 헤더 빨간 배지 표시(사이드바 배지와 정합).
 // - 2026-08-16: 의뢰 수락 취소·작업 완료 취소 → 카드 헤더 우측.
 // - 2026-08-16: 부분 보철「보철 추가 업로드 (n)」·기대 슬롯 툴팁.
 // - 2026-08-16: 부분 보철「보철 추가 업로드」·어벗 툴팁(치아 수동 지정).
@@ -122,6 +123,9 @@ export function PracticeTransferLabReceiveCard({
   const displayStatus = getPracticeTransferLabReceiveDisplayStatus(transfer);
   const statusLabel = toStatusBadgeLabel(displayStatus);
   const cardId = String(transfer.transferId || transfer._id || "").trim();
+  // 사이드바「기공의뢰수신」배지와 동일: 미확인 의뢰(1) + 채팅 unread.
+  const unreadBadgeCount =
+    (transfer.isRead ? 0 : 1) + Math.max(0, Number(chatUnreadCount) || 0);
   const resultCount = Number(
     transfer.resultFileCount || transfer.resultFiles?.length || 0,
   );
@@ -473,12 +477,12 @@ export function PracticeTransferLabReceiveCard({
                 신속처리
               </Badge>
             ) : null}
-            {chatUnreadCount > 0 ? (
+            {unreadBadgeCount > 0 ? (
               <Badge
                 variant="destructive"
                 className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
               >
-                {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                {unreadBadgeCount > 99 ? "99+" : unreadBadgeCount}
               </Badge>
             ) : null}
           </>

@@ -4,6 +4,7 @@
  * 치과 휴지통(status 취소·거부)은 집계·필터에서 제외.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함. 카드 뱃지 문구도「의뢰」(수락 후「수락」).
  * 표시명만 UI 마스킹.
+ * 2026-08-17: transferId API 필드 우선 매핑(메시지 파싱 폴백) — 채팅 unread 카드 배지 정합.
  * 2026-08-14: 전체보기 모달은 사이드바와 같은 GET /my 1페이지를 재사용(중복 요청 제거).
  * 2026-08-14: 자동매칭 → 의뢰 집계/필터·뱃지 라벨. matchingMode=auto 기공소명 UI 마스킹.
  * 2026-08-16: 작업 파일(designFiles·resultFiles)·생산 메타를 사이드바·전체보기 공통 매핑.
@@ -403,7 +404,9 @@ export const mapMyPracticeTransferApiRows = (
         matchingMode,
         status: toStatusLabel(r.manufacturerStage),
         createdAtTs: new Date(createdAtRaw).getTime(),
-        transferId: extractTransferIdFromMessage(message),
+        transferId:
+          String(r.transferId || "").trim() ||
+          extractTransferIdFromMessage(message),
         orderDate,
         arrivalDate,
         transferMemo,

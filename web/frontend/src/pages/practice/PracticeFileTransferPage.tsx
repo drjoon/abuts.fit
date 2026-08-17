@@ -1403,7 +1403,18 @@ export const PracticeFileTransferPage = ({
     clearPreUploadCache,
     uploadProgress,
   } = useFilePreUpload({ token: authToken });
-  const { rooms: chatRooms } = useChatRooms();
+  const { rooms: chatRooms, fetchRooms } = useChatRooms();
+
+  // 삭제된 의뢰 채팅 잔상(유령 unread) 정리 — 목록 진입·전체보기 시 rooms 재조회.
+  useEffect(() => {
+    if (!authToken) return;
+    void fetchRooms();
+  }, [authToken, fetchRooms]);
+
+  useEffect(() => {
+    if (!authToken || !recentTransfersAllOpen) return;
+    void fetchRooms();
+  }, [authToken, fetchRooms, recentTransfersAllOpen]);
 
   const resolveUploadedTempFiles = useCallback(
     async (targetFiles: File[]) => {
@@ -6340,6 +6351,17 @@ export const PracticeFileTransferPage = ({
                                         리메이크
                                       </Badge>
                                     ) : null}
+                                    {transfer.unreadCount > 0 ? (
+                                      <Badge
+                                        variant="destructive"
+                                        className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
+                                        aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
+                                      >
+                                        {transfer.unreadCount > 99
+                                          ? "99+"
+                                          : transfer.unreadCount}
+                                      </Badge>
+                                    ) : null}
                                   </>
                                 }
                                 counterpartLabel="기공소"
@@ -6373,14 +6395,6 @@ export const PracticeFileTransferPage = ({
                                     </TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
-                              ) : null}
-                              {transfer.unreadCount > 0 ? (
-                                <span
-                                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold leading-none text-white"
-                                  aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
-                                >
-                                  {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
-                                </span>
                               ) : null}
                               {(() => {
                                 const deleteLocked =
