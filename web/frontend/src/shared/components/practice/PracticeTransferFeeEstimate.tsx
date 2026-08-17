@@ -2,7 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
-// - 2026-08-17: 크레딧 상세 — 기공소몫/어벗츠몫 각각 실지급·보류 표시.
+// - 2026-08-17: 크레딧 상세 — 지급완료/지급보류를 기공소몫·어벗츠몫 헤더 옆에 표시.
 // - 2026-08-17: mode=detail — 호버 없이 견적 상세 표(크레딧 장부 모달용).
 // - 2026-08-17: 배송비 안내 — 출고 시 차감 → 주문 시 보류.
 // - 2026-08-17: 견적 한줄 요약 — CA 디자인비(+지그)는 기공비, 어벗은 생산비만(툴팁 기공비 총액·어벗생산비와 일치).
@@ -84,7 +84,7 @@ type PracticeTransferFeeEstimateProps = {
   /** 기공소 뷰 — 자동매칭 기공비를 유효 별점 배수로 단일 확정 */
   labEffectiveStars?: number | null;
   /**
-   * 크레딧 장부 상세 전용. 기공소몫·어벗츠몫 각각 true=보류 중, false=실지급 완료.
+   * 크레딧 장부 상세 전용. 기공소몫·어벗츠몫 각각 true=지급보류, false=지급완료.
    * 미전달 시(의뢰 작성 등) 배송비는 주문 시 보류 안내 유지.
    */
   creditLabHoldPending?: boolean | null;
@@ -94,12 +94,37 @@ type PracticeTransferFeeEstimateProps = {
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
 
 const creditShareSettlementLabel = (pending: boolean) =>
-  pending ? "보류 중" : "실지급 완료";
+  pending ? "지급보류" : "지급완료";
 
 const creditShareSettlementClass = (pending: boolean) =>
   pending
     ? "border-amber-200 bg-amber-50 text-amber-900"
     : "border-emerald-200 bg-emerald-50 text-emerald-800";
+
+const renderCreditShareHeader = (
+  shareLabel: string,
+  holdPending: boolean | null | undefined,
+  className?: string,
+) => (
+  <span
+    className={cn(
+      "inline-flex flex-wrap items-center justify-center gap-1",
+      className,
+    )}
+  >
+    <span>{shareLabel}</span>
+    {holdPending !== null && holdPending !== undefined ? (
+      <span
+        className={cn(
+          "rounded border px-1 py-px text-[10px] font-medium leading-tight",
+          creditShareSettlementClass(holdPending),
+        )}
+      >
+        {creditShareSettlementLabel(holdPending)}
+      </span>
+    ) : null}
+  </span>
+);
 
 type FeeBreakdownLine = {
   toothNumber: string;
@@ -200,6 +225,8 @@ function FeeBreakdownTable({
   /** 치과·기공소 공통: CA 디자인비를 생산가와 분리 표시 */
   splitDesignFee = false,
   designFeeLabel = "디자인비+지그제작비",
+  labShareHoldPending = null,
+  abutmentShareHoldPending = null,
 }: {
   lines: FeeBreakdownLine[];
   showLabColumn: boolean;
@@ -216,6 +243,10 @@ function FeeBreakdownTable({
   labSettlementHint?: ReactNode;
   splitDesignFee?: boolean;
   designFeeLabel?: string;
+  /** 크레딧 상세: 기공소몫 지급보류 여부 */
+  labShareHoldPending?: boolean | null;
+  /** 크레딧 상세: 어벗츠몫 지급보류 여부 */
+  abutmentShareHoldPending?: boolean | null;
 }) {
   // 치과·기공소 공통: 기공소몫 | 어벗츠몫 2단 헤더(+ slate 구분선).
   // 기공소: 보철기공비(+어벗디자인비) | 어벗생산비.
@@ -361,11 +392,19 @@ function FeeBreakdownTable({
       {showShareGroupHeaders ? (
         <>
           <span aria-hidden className="pb-0.5" />
-          <span className={cn(groupHeaderClass, labGroupSpanClass)}>
-            기공소몫
+          <span
+            className={cn(
+              groupHeaderClass,
+              labGroupSpanClass,
+              "whitespace-normal",
+            )}
+          >
+            {renderCreditShareHeader("기공소몫", labShareHoldPending)}
           </span>
           {renderShareDivider("hdr-div")}
-          <span className={groupHeaderClass}>어벗츠몫</span>
+          <span className={cn(groupHeaderClass, "whitespace-normal")}>
+            {renderCreditShareHeader("어벗츠몫", abutmentShareHoldPending)}
+          </span>
         </>
       ) : null}
       <span className="pb-0.5 text-[10px] font-medium text-muted-foreground">
@@ -924,6 +963,12 @@ export function PracticeTransferFeeEstimate({
                 </>
               ) : null
             }
+            labShareHoldPending={
+              showCreditShareSettlement ? creditLabHoldPending : null
+            }
+            abutmentShareHoldPending={
+              showCreditShareSettlement ? creditAbutmentHoldPending : null
+            }
           />
           {labSettlementDiffers &&
           !(isLab && abutmentDesignQty > 0 && abutmentDesignLabFee > 0) ? (
@@ -1045,34 +1090,6 @@ export function PracticeTransferFeeEstimate({
         role="region"
         aria-label="기공의뢰 견적 상세"
       >
-        {showCreditShareSettlement ? (
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            {creditLabHoldPending !== null &&
-            creditLabHoldPending !== undefined ? (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium",
-                  creditShareSettlementClass(creditLabHoldPending),
-                )}
-              >
-                <span className="opacity-80">기공소몫</span>
-                {creditShareSettlementLabel(creditLabHoldPending)}
-              </span>
-            ) : null}
-            {creditAbutmentHoldPending !== null &&
-            creditAbutmentHoldPending !== undefined ? (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium",
-                  creditShareSettlementClass(creditAbutmentHoldPending),
-                )}
-              >
-                <span className="opacity-80">어벗츠몫</span>
-                {creditShareSettlementLabel(creditAbutmentHoldPending)}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
         {breakdownPanel}
       </div>
     );
