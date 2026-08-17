@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 내부기공소 배당 건은 배송비를 공통 지출로 먼저 차감 후 분배.
 // - 2026-08-17: 기공사업 — 한 카드에 내부 부서(면세)·개발운영사(VAT) 분배.
 // related files:
 // - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
@@ -13,7 +14,7 @@ import { SectionHeader } from "./shareUi";
 
 export function LabBusinessTab() {
   const { state, setPreviewPool } = useBusinessAreaShare();
-  const { previewPool, departments } = state.lab;
+  const { previewPool } = state.lab;
 
   return (
     <Card className="app-glass-card app-glass-card--lg overflow-hidden">
@@ -21,7 +22,7 @@ export function LabBusinessTab() {
         <SectionHeader
           icon={FlaskConical}
           title="기공사업"
-          description="어벗츠기공소 주문 매출을 부서·팀원 인센티브로 나눕니다. 기공팀·영업팀은 내부(면세), 개발운영사는 외부(+VAT)."
+          description="내부기공소(기공사업부)에 배당된 건만, 배송비를 공통 지출로 먼저 차감한 뒤 나머지를 부서·팀원 인센티브로 나눕니다. 기공팀·영업팀은 내부(면세), 개발운영사는 외부(+VAT)."
           trailing={
             <div className="relative w-36">
               <Input
@@ -47,11 +48,6 @@ export function LabBusinessTab() {
           allowedShareKinds={["percent"]}
           departmentAmount={(dept) =>
             departmentPoolAmount(previewPool, dept.sharePercent)
-          }
-          noteFor={(dept) =>
-            dept.role === "labTeam" || dept.id === "lab-gigong"
-              ? "기공소 배송비는 출고 시 기공팀이 받습니다."
-              : null
           }
         />
       </CardContent>

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 사업영역 분배는 배송비 제외 매출만. 제조사 배송 지급은 여기 미기재.
 // - 2026-08-17: 어벗사업 — 한 카드에 건당 분배·소개코드·특별주문가.
 // related files:
 // - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
@@ -24,15 +25,12 @@ import {
 } from "@/components/ui/command";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
-import { AFFILIATE_VAT_RATE } from "@/shared/settlement/affiliateVat";
 import { useBusinessAreaShare } from "./PartnerShareContext";
 import {
   allocateAbutmentCase,
   createSpecialShare,
   formatWon,
   payoutWithVat,
-  vatOn,
 } from "./partnerShare";
 import { ShareRoster } from "./DepartmentRoster";
 import { SectionHeader } from "./shareUi";
@@ -44,8 +42,6 @@ type RequestorItem = {
 
 export function AbutmentBusinessTab() {
   const { token } = useAuthStore();
-  const { data: systemSettings } = useSystemSettings();
-  const credit = systemSettings?.creditSettings;
   const {
     state,
     setAbutmentPreviewSellPrice,
@@ -67,14 +63,6 @@ export function AbutmentBusinessTab() {
     () => new Map(allocation.rows.map((row) => [row.id, row.supply])),
     [allocation.rows],
   );
-
-  const shippingCustomer = Number(credit?.shippingFee ?? 3500);
-  const shippingMfr = Number(credit?.manufacturerShippingUnitPrice ?? 3500);
-  const shippingVat = vatOn(
-    shippingMfr,
-    credit?.affiliateVatRate ?? AFFILIATE_VAT_RATE,
-  );
-  const shippingAbuts = Math.max(0, shippingCustomer - shippingMfr);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -120,7 +108,7 @@ export function AbutmentBusinessTab() {
         <SectionHeader
           icon={Hexagon}
           title="어벗사업"
-          description="판매가에서 건당 몫을 떼고 나머지는 어벗츠. 제조사·개발운영사·영업자는 +VAT."
+          description="판매가(배송비 제외)에서 건당 몫을 떼고 나머지는 어벗츠. 제조사·개발운영사·영업자는 +VAT."
           trailing={
             <div className="relative w-36">
               <Input
@@ -146,18 +134,11 @@ export function AbutmentBusinessTab() {
           area="abutment"
           allowedShareKinds={["perCase", "remainder"]}
           departmentAmount={(dept) => amountById.get(dept.id) || 0}
-          noteFor={(dept) => {
-            if (dept.role === "manufacturer" || dept.id === "abut-manufacturer") {
-              return `박스당 배송 ${formatWon(shippingMfr)}+VAT ${formatWon(shippingVat)}는 제조사 지급.`;
-            }
-            if (dept.salesmanFallback) {
-              return "의뢰서 소개코드(영업자BA)가 있으면 영업자, 없으면 어벗츠.";
-            }
-            if (dept.shareKind === "remainder") {
-              return `배송 잔여 ${formatWon(shippingAbuts)}(고객 배송비 − 제조사 공급가)도 어벗츠.`;
-            }
-            return null;
-          }}
+          noteFor={(dept) =>
+            dept.salesmanFallback
+              ? "의뢰서 소개코드(영업자BA)가 있으면 영업자, 없으면 어벗츠."
+              : null
+          }
         />
 
         <div className="space-y-2 border-t border-slate-100 pt-3">
