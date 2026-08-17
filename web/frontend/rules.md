@@ -140,7 +140,7 @@ Notes:
   - `src/shared/components/CreditLedgerModal.tsx` (내역: 잔액 카드 + rounded-2xl 테이블)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (크레딧 · 커스텀어벗 · 인증 기공소 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
-  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「파트너」. 탭: 수익분배 · 기공사업부 · 영업부 · 기공파트너 · 영업파트너. 재원=어벗츠 매출−제조사 생산비(배송비 포함). 기본 분배비 20/10/30/20. 사업부 `max(최소지급, 배분액)`, 파트너는 배분액. 세금 설정은 이후 추가)
+  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭: 기공사업 · 어벗사업 · 플랫폼사업. 부서(사업자)·팀원(개인 계정) 추가/수정/삭제. 기공=어벗츠기공소 매출을 부서→팀원 비율 분배(초기 기공팀·영업팀·개발운영사). 어벗=건당 제조사 9,000·개발운영사 1,000·영업자BA 3,000+부가세, 잔여 어벗츠, 영업자 없으면 어벗츠가 영업자 몫, 특별주문가는 주체별 배분액. 플랫폼=멤버십·자동매칭·지정수수료(현재 무료)를 어벗츠 90%/개발운영사 10%(비율 수정). 배송비는 룰 흐름(제조사 배송 공급가+VAT, 잔여 어벗츠)이며 생산 분배 재원에서 제외)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 환영 무료 크레딧·멤버십·배송 / `variant=customAbut`: 커스텀어벗(CNC/환봉·어벗디자인비)·어벗 추가 요청·특별 공급가)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)

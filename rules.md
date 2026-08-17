@@ -155,7 +155,7 @@
   3. **기공소 직접 운영** — 치과 의뢰를 어벗츠가 직접 처리·기공료 수취. Role SSOT: `internalLab`(어벗츠기공소).
   4. **치과 월 구독료** — `practiceMembershipMonthlyFee`(기본 50,000원, 면세·유료 크레딧 차감). 상세는 아래 매칭·멤버십 과금 SSOT.
   - 가격 안내 UI(`PricingPolicyDialog`)는 커스텀 어벗 단가·출고 정책 안내용이며, 사업 축 정의와 혼용하지 않는다.
-  - 관리자 정산 UI: `AdminPaymentsPage` 상단 4사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`.
+  - 관리자 정산 UI: `AdminPaymentsPage` 상단 4사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`. 분배 설정 UI: 관리자「사업영역」(`/dashboard/partners`, 기공·어벗·플랫폼).
 - **매칭·멤버십 과금 SSOT(강제):**
   - 한 줄: **기공소 월 참여 수수료 0원 + 치과 멤버십만 월 과금(면세·부가세 없음, 유료 크레딧 차감).**
   - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 참여 ON/OFF만 운영. 과금은 자동 매칭 **성공 수수료(`platformFeeRate`%)만** — 작업완료 정산(에스크로 해제) 시 기공비에서 공제. 지정 의뢰는 `directPlatformFeeEnabled` **기본 off=무료**(별도 공지 시까지); on 시 `directPlatformFeeRate%`.
@@ -173,7 +173,10 @@
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 공급가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당) + VAT(`affiliateVatRate` 기본 0.1 → 지급합 9,900 / 3,850). 유료·무료 모두 **적립(확인용)** 하되, **정산 지급은 유료만**(무료 크레딧 지급 0).
-  - **잔여 분배**: 의뢰자 소비 공급가 − 제조사 공급가 → 영업자·개발운영사·관리자 상대비율로 재분배(`vatAmount = 0`). 배송 잔여(고객 배송비 − 제조사 배송 공급가) → 관리자.
+  - **어벗 생산 분배**: 판매가에서 건당 제조사 9,000 · 개발운영사 1,000 · 영업자(영업자BA) 3,000을 공급가로 떼고 지급 시 부가세 10%. 잔여 → 어벗츠(면세). 영업자 없으면 영업자 몫은 어벗츠. 특별주문가는 주체별 배분액. 설정 UI: 관리자「사업영역」어벗사업.
+  - **배송 분배**: 제조사 배송 공급가+VAT. 고객 배송비 − 제조사 공급가 잔여 → 어벗츠. 생산 분배 재원에서 제외.
+  - **플랫폼 분배**: 치과 멤버십·기공소 자동매칭 수수료·지정 수수료(현재 무료)를 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 지급 시 부가세.
+  - **기공(어벗츠기공소) 분배**: 어벗츠기공소 주문 매출을 부서(사업자) 비율 → 부서 내 팀원(개인 계정) 비율로 배분. 초기 부서 기공팀·영업팀·개발운영사. 배송비는 출고 룰 흐름으로 지급하며 이 재원에 넣지 않음.
   - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **어벗 개수×1회**만. express는 잔여 분배에만 포함.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록

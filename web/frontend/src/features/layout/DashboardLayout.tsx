@@ -10,7 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
-// - 2026-08-17: 관리자 설정 그룹에「파트너」(플랫폼 설정 아래).
+// - 2026-08-17: 관리자 설정 그룹에「사업영역」(플랫폼 설정 아래).
 // - 2026-08-17: 기공소·어벗츠기공소·개발운영사 사이드에 정산 복구.
 // - 2026-08-17: unread-updated 이벤트는 lab 수신 배지 조회 가능할 때만 반영(치과 유령 배지 방지).
 // - 2026-08-17: 접힌 사이드바에도 practice-transfers/lab-work 미확인 배지 표시.
@@ -123,7 +123,7 @@ import {
   Package,
   CheckCircle,
   SlidersHorizontal,
-  Handshake,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
@@ -300,7 +300,7 @@ const sidebarItems = {
       href: "/dashboard/inquiries",
     },
     { icon: SlidersHorizontal, label: "플랫폼 설정", href: "/dashboard/platform-settings" },
-    { icon: Handshake, label: "파트너", href: "/dashboard/partners" },
+    { icon: Layers, label: "사업영역", href: "/dashboard/partners" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
 } as const;
@@ -404,7 +404,7 @@ const adminSidebarSections: SidebarSection[] = [
         label: "플랫폼 설정",
         href: "/dashboard/platform-settings",
       },
-      { icon: Handshake, label: "파트너", href: "/dashboard/partners" },
+      { icon: Layers, label: "사업영역", href: "/dashboard/partners" },
       { icon: Settings, label: "설정", href: "/dashboard/settings" },
     ],
   },
