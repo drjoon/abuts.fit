@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-08-17: 테이블이 남은 높이를 채워 바깥 스크롤을 없애고 표 스크롤만 남김.
 // - 2026-08-17: 유형 열 생략(모두 커스텀어벗 생산+배송비). 상세 모달은 의뢰/배송 분리.
 // - 2026-08-17: 생산·배송 원장을 KST 하루로 묶고, 클릭 시 수취자(우편함)별 상세.
 // - 2026-08-17: 어벗 1개당 9,000+VAT. 무료 크레딧은 지급 0. 기공의뢰 생산도 같은 라벨.
@@ -859,9 +860,11 @@ export const ManufacturerPaymentPage = () => {
 
   return (
     <>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
     <DashboardShell
       title="정산 내역"
       subtitle=""
+      fillHeight
       statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-3"
       stats={
         <>
@@ -925,9 +928,13 @@ export const ManufacturerPaymentPage = () => {
         </>
       }
       mainLeft={
-        <div className="space-y-4">
-          <Tabs value={tab} onValueChange={handleTabChange}>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="flex h-full min-h-0 flex-col">
+          <Tabs
+            value={tab}
+            onValueChange={handleTabChange}
+            className="flex min-h-0 flex-1 flex-col gap-2"
+          >
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <PeriodFilter value={period} onChange={setPeriod} />
               <div className="flex items-center gap-1">
                 <SettlementFilterChip
@@ -1009,17 +1016,22 @@ export const ManufacturerPaymentPage = () => {
               </SettlementPolicyDialog>
             </div>
 
-            <SettlementVatNotice />
+            <div className="shrink-0">
+              <SettlementVatNotice />
+            </div>
 
-            <TabsContent value="ledger" className="mt-0">
+            <TabsContent
+              value="ledger"
+              className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-[state=inactive]:hidden"
+            >
               {snapshotAnomalyMessage ? (
-                <div className="mb-2 rounded-md border border-destructive/80 bg-destructive-soft px-3 py-2 text-xs text-destructive">
+                <div className="mb-2 shrink-0 rounded-md border border-destructive/80 bg-destructive-soft px-3 py-2 text-xs text-destructive">
                   {snapshotAnomalyMessage}
                 </div>
               ) : null}
               <SettlementTableFrame
                 scrollRef={ledgerScrollRef}
-                className="max-h-[60vh] overflow-y-auto"
+                className="min-h-0 flex-1 overflow-y-auto"
               >
                 <Table>
                   <TableHeader>
@@ -1169,10 +1181,13 @@ export const ManufacturerPaymentPage = () => {
               </SettlementTableFrame>
             </TabsContent>
 
-            <TabsContent value="payments" className="mt-0">
+            <TabsContent
+              value="payments"
+              className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-[state=inactive]:hidden"
+            >
               <SettlementTableFrame
                 scrollRef={paymentScrollRef}
-                className="max-h-[60vh] overflow-y-auto"
+                className="min-h-0 flex-1 overflow-y-auto"
               >
                 <Table>
                   <TableHeader>
@@ -1269,6 +1284,7 @@ export const ManufacturerPaymentPage = () => {
         </div>
       }
     />
+    </div>
     <ManufacturerDailyLedgerDetailDialog
       detail={dailyDetail}
       onOpenChange={(open) => {
