@@ -22,6 +22,18 @@ import {
   getYesterdayYmdInKst,
 } from "../../utils/krBusinessDays.js";
 
+function parseLedgerOccurredAt(raw, endOfDay) {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return new Date(
+      `${s}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}+09:00`,
+    );
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function kstYmdToUtcRange(ymd) {
   const dt = new Date(`${ymd}T00:00:00.000+09:00`);
   if (Number.isNaN(dt.getTime())) return null;
@@ -33,8 +45,8 @@ function kstYmdToUtcRange(ymd) {
 /**
  * 제조사 REV 라인 → 일별(또는 단일 기간) 금액/건수 집계 스테이지.
  * 금액: 라인 합산(신속추가비 저널 포함).
- * 건수: (eventType, creditKind, refId) 유니크 — 의뢰/패키지 1건당 1회.
- *   machining_spend + express_surcharge, paid/free 분해 라인을 별도 건으로 세지 않는다.
+ * 건수: (eventType, creditKind, spendUniqueKey|refId) 유니크.
+ *   기공의뢰 배송 lab/abuts 2구간은 같은 refId라도 구간별로 1건.
  */
 function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
   const amountCond = (eventType, creditKind) => ({
@@ -120,8 +132,13 @@ function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
           ],
         },
         eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-        // refId 누락 이관 데이터는 journalId로라도 유니크 키를 유지
-        settleRefKey: { $ifNull: ["$refId", "$journalId"] },
+        // 기공의뢰 배송은 같은 refId에 lab/abuts 2구간이 있어 spendUniqueKey로 건수 분리
+        settleRefKey: {
+          $ifNull: [
+            "$journalDoc.meta.spendUniqueKey",
+            { $ifNull: ["$meta.spendUniqueKey", { $ifNull: ["$refId", "$journalId"] }] },
+          ],
+        },
       },
     },
     {
@@ -263,16 +280,12 @@ export async function getManufacturerCreditLedger(req, res) {
     };
 
     if (typeof from === "string" && from.trim()) {
-      const d = new Date(from);
-      if (!Number.isNaN(d.getTime())) {
-        match.occurredAt = { ...(match.occurredAt || {}), $gte: d };
-      }
+      const d = parseLedgerOccurredAt(from, false);
+      if (d) match.occurredAt = { ...(match.occurredAt || {}), $gte: d };
     }
     if (typeof to === "string" && to.trim()) {
-      const d = new Date(to);
-      if (!Number.isNaN(d.getTime())) {
-        match.occurredAt = { ...(match.occurredAt || {}), $lte: d };
-      }
+      const d = parseLedgerOccurredAt(to, true);
+      if (d) match.occurredAt = { ...(match.occurredAt || {}), $lte: d };
     }
 
     if (requestSettlement === "paid") {
@@ -322,6 +335,19 @@ export async function getManufacturerCreditLedger(req, res) {
           },
           amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
           requestIdMeta: { $ifNull: ["$journalDoc.meta.requestId", ""] },
+          displayLabel: {
+            $ifNull: [
+              "$meta.displayLabel",
+              { $ifNull: ["$journalDoc.meta.displayLabel", ""] },
+            ],
+          },
+          usageKind: {
+            $ifNull: [
+              "$meta.usageKind",
+              { $ifNull: ["$journalDoc.meta.usageKind", ""] },
+            ],
+          },
+          occurredAt: { $ifNull: ["$occurredAt", "$journalDoc.occurredAt"] },
         },
       },
     ];
@@ -333,7 +359,13 @@ export async function getManufacturerCreditLedger(req, res) {
     if (rx) {
       pipeline.push({
         $match: {
-          $or: [{ uniqueKey: rx }, { refType: rx }, { requestIdMeta: rx }],
+          $or: [
+            { uniqueKey: rx },
+            { refType: rx },
+            { requestIdMeta: rx },
+            { displayLabel: rx },
+            { usageKind: rx },
+          ],
         },
       });
     }
@@ -341,38 +373,55 @@ export async function getManufacturerCreditLedger(req, res) {
     pipeline.push(
       { $sort: { occurredAt: -1, _id: -1 } },
       {
-        $facet: {
-          rows: [
-            { $skip: skip },
-            { $limit: l },
-            {
-              $project: {
-                _id: 1,
-                manufacturerOrganization: { $literal: manufacturerOrganization },
-                manufacturerId: user._id,
-                type: 1,
-                amount: "$amountBase",
-                amountExcludingVat: "$amountBase",
-                vatAmount: { $literal: 0 },
-                amountIncludingVat: "$amountBase",
-                refType: 1,
-                refId: 1,
-                uniqueKey: 1,
-                occurredAt: 1,
-                createdAt: 1,
-                creditKind: 1,
-                eventType: "$journalDoc.eventType",
-              },
-            },
-          ],
-          totalRows: [{ $count: "count" }],
+        $project: {
+          _id: 1,
+          manufacturerOrganization: { $literal: manufacturerOrganization },
+          manufacturerId: user._id,
+          type: 1,
+          amount: "$amountBase",
+          amountExcludingVat: "$amountBase",
+          vatAmount: { $literal: 0 },
+          amountIncludingVat: "$amountBase",
+          refType: 1,
+          refId: 1,
+          uniqueKey: 1,
+          occurredAt: 1,
+          createdAt: "$occurredAt",
+          creditKind: 1,
+          eventType: "$journalDoc.eventType",
+          displayLabel: 1,
+          usageKind: 1,
         },
       },
     );
 
-    const [result] = await LedgerLine.aggregate(pipeline);
-    const rows = Array.isArray(result?.rows) ? result.rows : [];
-    const total = Number(result?.totalRows?.[0]?.count || 0);
+    const allRows = await LedgerLine.aggregate(pipeline);
+    let totalBalance = 0;
+    for (const r of allRows) {
+      const t = String(r?.type || "");
+      const v = Number(r?.amount || 0);
+      if (t === "EARN" || t === "ADJUST") totalBalance += v;
+      else if (t === "PAYOUT") totalBalance -= v;
+    }
+    const total = allRows.length;
+    const startIdx = skip;
+    const endIdx = skip + l;
+    let skippedSum = 0;
+    for (const r of allRows.slice(0, startIdx)) {
+      const t = String(r?.type || "");
+      const v = Number(r?.amount || 0);
+      if (t === "EARN" || t === "ADJUST") skippedSum += v;
+      else if (t === "PAYOUT") skippedSum -= v;
+    }
+    let runningBalance = totalBalance - skippedSum;
+    const rows = allRows.slice(startIdx, endIdx).map((r) => {
+      const v = Number(r?.amount || 0);
+      const t = String(r?.type || "");
+      const balanceAfter = runningBalance;
+      if (t === "EARN" || t === "ADJUST") runningBalance -= v;
+      else if (t === "PAYOUT") runningBalance += v;
+      return { ...r, balanceAfter };
+    });
 
     return res.status(200).json({
       success: true,

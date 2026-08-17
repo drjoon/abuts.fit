@@ -101,6 +101,22 @@ describe("manufacturer fixed unit + residual allocation", () => {
     expect(alloc.admin).toBe(8250);
   });
 
+  test("PTX dentist-origin shipping: no manufacturer unit, residual to admin", () => {
+    const alloc = resolveRevenueOwnerBaseAllocation({
+      spendAmount: 3500,
+      hasSalesmanReferrer: true,
+      configuredRates: {},
+      owners,
+      isShippingSpend: true,
+      applyManufacturerUnit: false,
+      creditSettings,
+    });
+
+    expect(alloc.manufacturer).toBe(0);
+    expect(alloc.manufacturerVat).toBe(0);
+    expect(alloc.admin).toBe(3500);
+  });
+
   test("shipping spend: manufacturer unit, residual to admin", () => {
     const alloc = resolveRevenueOwnerBaseAllocation({
       spendAmount: 3500,

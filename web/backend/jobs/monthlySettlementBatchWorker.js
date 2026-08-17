@@ -10,9 +10,12 @@ import SettlementBatch from "../models/settlementBatch.model.js";
 import SettlementBatchItem from "../models/settlementBatchItem.model.js";
 import {
   AFFILIATE_SETTLEMENT_ACCOUNTS,
-  computeSettlementBalance,
+  computeSettlementPayoutBreakdown,
 } from "../services/settlement.service.js";
 import { resolvePreviousKstMonthRange } from "../services/practiceLabInvoice.service.js";
+
+// change-log:
+// - 2026-08-17: DRAFT 배치 금액을 지급 분해(공급가·VAT·입금합계)로 생성.
 
 let timerHandle = null;
 let running = false;
@@ -56,17 +59,19 @@ async function createDraftForPreviousMonth() {
       .select({ payoutAccount: 1 })
       .lean();
     for (const anchor of anchors) {
-      const amount = await computeSettlementBalance({
+      const breakdown = await computeSettlementPayoutBreakdown({
         role: definition.role,
         businessAnchorId: anchor._id,
       });
-      if (amount <= 0) continue;
+      if (breakdown.amount <= 0) continue;
       items.push({
         batchId: batch._id,
         role: definition.role,
         businessAnchorId: anchor._id,
         accountCode: definition.accountCode,
-        amount,
+        amount: breakdown.amount,
+        supplyAmount: breakdown.supplyAmount,
+        vatAmount: breakdown.vatAmount,
         payoutAccount: anchor.payoutAccount || {},
       });
     }

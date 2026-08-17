@@ -23,6 +23,10 @@ import Request from "../../models/request.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
+import {
+  resolveAffiliateVatRate,
+  resolveSettlementPayoutAmounts,
+} from "../../services/settlement.service.js";
 import { Types } from "mongoose";
 import {
   buildCreditLedgerRequestSummary,
@@ -1280,19 +1284,30 @@ export async function adminCreateSalesmanPayout(req, res) {
       else if (type === "PAYOUT") payout += total;
       else if (type === "ADJUST") adjust += total;
     }
+    // body.amount = 공급가(장부 잔액). 입금은 지급 시 VAT 합산.
+    const supplyAmount = amount;
     const balance = Math.round(earn - payout + adjust);
-    if (balance < amount) {
+    if (balance < supplyAmount) {
       return res.status(400).json({
         success: false,
         message: "정산 전 잔액이 부족합니다.",
       });
     }
 
+    const vatRate = await resolveAffiliateVatRate();
+    const breakdown = resolveSettlementPayoutAmounts({
+      role: "salesman",
+      balanceAmount: supplyAmount,
+      vatRate,
+    });
+    const depositTotal = breakdown.amount;
+    const vatAmount = breakdown.vatAmount;
+
     const now = new Date();
     const requestIdempotencyKey = String(req.body?.idempotencyKey || "").trim();
     const idempotencyKey =
       requestIdempotencyKey ||
-      `gl:settlement_payout:salesman:${String(ownerAnchorId)}:${String(amount)}:${now.getTime()}`;
+      `gl:settlement_payout:salesman:${String(ownerAnchorId)}:${String(supplyAmount)}:${now.getTime()}`;
 
     const posted = await postGeneralLedgerJournal({
       idempotencyKey,
@@ -1305,22 +1320,29 @@ export async function adminCreateSalesmanPayout(req, res) {
       meta: {
         payoutTargetRole: "salesman",
         payoutTargetUserId: String(salesmanId),
-        payoutAmount: amount,
+        payoutAmount: depositTotal,
+        payoutSupplyAmount: supplyAmount,
+        payoutVatAmount: vatAmount,
       },
       lines: [
         {
           accountCode: "REV_SALESMAN",
           ownerRole: "salesman",
           ownerId: ownerAnchorId,
-          amount,
-          amountExcludingVat: amount,
-          vatAmount: 0,
-          amountIncludingVat: amount,
+          // 잔액 차감은 공급가. VAT는 어벗츠 추가 지급분(세금계산서).
+          amount: supplyAmount,
+          amountExcludingVat: supplyAmount,
+          vatAmount,
+          amountIncludingVat: depositTotal,
+          creditKind: "PAID",
           refType: "ADMIN_PAYOUT",
           refId: null,
           meta: {
             payoutTargetRole: "salesman",
             payoutTargetUserId: String(salesmanId),
+            payoutSupplyAmount: supplyAmount,
+            payoutVatAmount: vatAmount,
+            payoutAmount: depositTotal,
           },
         },
       ],
@@ -1331,7 +1353,9 @@ export async function adminCreateSalesmanPayout(req, res) {
       data: {
         _id: posted?.journalId || null,
         salesmanId: String(salesmanId),
-        amount,
+        amount: depositTotal,
+        supplyAmount,
+        vatAmount,
         type: "PAYOUT",
         createdAt: now,
         idempotent: Boolean(posted?.idempotent),

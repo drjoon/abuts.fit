@@ -3,11 +3,11 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/commission/CommissionPaymentsPage.tsx
 /**
- * 영업자(salesman) 전용 정산 페이지.
- * 개발운영사는 pages/devops/DevopsPaymentsPage.tsx.
+ * 개발운영사(devops) 전용 정산 페이지.
+ * 지급 시 부가세 10% · 세금계산서(어벗츠↔개발운영사 과세).
  */
 import { CommissionPaymentsPage } from "@/features/commission/CommissionPaymentsPage";
 
-export default function SalesmanPaymentsPage() {
-  return <CommissionPaymentsPage variant="salesman" />;
+export default function DevopsPaymentsPage() {
+  return <CommissionPaymentsPage variant="devops" />;
 }

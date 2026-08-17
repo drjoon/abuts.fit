@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 기간 필터 + 제조사·영업자·개발운영사 과세(세금계산서) / 어벗츠(관리자)·고객 경로 면세(계산서).
 // - 2026-08-16: 어벗츠 4사업 축 API 와이어링 + 선택형 상세·모던 UI 리팩터.
 // related files:
 // - web/frontend/rules.md
@@ -20,6 +21,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -29,6 +31,12 @@ import {
   CreditSectionHeader,
   CreditStatTile,
 } from "@/pages/admin/credits/creditPageUi";
+import {
+  SETTLEMENT_EXEMPT_INVOICE_LABEL,
+  SETTLEMENT_TAXABLE_INVOICE_LABEL,
+  splitAffiliateVat,
+  vatPctLabel,
+} from "@/shared/settlement/affiliateVat";
 
 const HISTORY_MONTHS = 6;
 
@@ -337,7 +345,7 @@ function AffiliateGroupCard({ group }: { group: AnchorGroup }) {
 
 export default function AdminPaymentsPage() {
   const { token, user } = useAuthStore();
-  const { period, customStartDate, customEndDate } = usePeriodStore();
+  const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
   const { toast } = useToast();
   const [rows, setRows] = useState<SalesmanRow[]>([]);
   const [manufacturerSummary, setManufacturerSummary] =
@@ -760,6 +768,16 @@ export default function AdminPaymentsPage() {
   const membership = businessOverview?.practiceMembership;
 
   const feeRatePct = Math.round(Number(autoMatch?.platformFeeRate ?? 0.1) * 100);
+  const salesmanUnpaidSupply = roleFinanceRows.salesman.reduce(
+    (sum, r) => sum + Number(r.wallet?.balanceAmountPeriod || 0),
+    0,
+  );
+  const salesmanUnpaidVat = splitAffiliateVat(salesmanUnpaidSupply);
+  const devopsUnpaidSupply = roleFinanceRows.devops.reduce(
+    (sum, r) => sum + Number(r.wallet?.balanceAmountPeriod || 0),
+    0,
+  );
+  const devopsUnpaidVat = splitAffiliateVat(devopsUnpaidSupply);
 
   if (!user || user.role !== "admin") return null;
 
@@ -767,7 +785,9 @@ export default function AdminPaymentsPage() {
     <DashboardShell
       title="정산"
       subtitle="어벗츠 4사업 · 기간 집계"
-      headerRight={undefined}
+      headerRight={
+        <PeriodFilter value={period} onChange={setPeriod} />
+      }
       statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
       stats={
         <>
@@ -858,7 +878,7 @@ export default function AdminPaymentsPage() {
                 <CreditSectionHeader
                   icon={Factory}
                   title="커스텀 어벗 · 제조사 하청"
-                  description="원청(어벗츠)–하청(애크로덴트) 고정단가. 유료·무료 모두 적립하되 지급은 유료만(VAT 포함)."
+                  description="원청(어벗츠)–하청(애크로덴트) 고정단가. 유료·무료 모두 적립하되 지급은 유료만(부가세 포함 · 세금계산서)."
                 />
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <CreditStatTile
@@ -981,7 +1001,7 @@ export default function AdminPaymentsPage() {
                 <CreditSectionHeader
                   icon={Percent}
                   title="자동매칭 수수료"
-                  description="자동 매칭 작업완료(에스크로 해제) 시 기공비에 platformFeeRate를 적용한 어벗츠 수수료."
+                  description="자동 매칭 작업완료(에스크로 해제) 시 기공비에 platformFeeRate를 적용한 어벗츠 수수료. 치과–기공소–어벗츠 경로는 면세 · 계산서."
                 />
                 <div className="grid gap-3 sm:grid-cols-3">
                   <CreditStatTile
@@ -1011,7 +1031,7 @@ export default function AdminPaymentsPage() {
                 <CreditSectionHeader
                   icon={Building2}
                   title="기공소 직접 운영"
-                  description="어벗츠기공소(internalLab)가 치과 의뢰를 직접 처리하고 수취한 기공정산크레딧."
+                  description="어벗츠기공소(internalLab)가 치과 의뢰를 직접 처리하고 수취한 기공정산크레딧. 면세 · 계산서."
                 />
                 <div className="grid gap-3 sm:grid-cols-3">
                   <CreditStatTile
@@ -1042,7 +1062,7 @@ export default function AdminPaymentsPage() {
                 <CreditSectionHeader
                   icon={Sparkles}
                   title="치과 월 구독료"
-                  description="치과 멤버십 월 구독. 면세·유료 크레딧(REQ_PAID_CREDIT)만 차감."
+                  description="치과 멤버십 월 구독. 면세·유료 크레딧(REQ_PAID_CREDIT)만 차감 · 계산서."
                 />
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <CreditStatTile
@@ -1065,7 +1085,7 @@ export default function AdminPaymentsPage() {
                   <CreditStatTile
                     label="월 단가"
                     value={formatWon(membership?.monthlyFee)}
-                    hint="VAT 0 · 유료 크레딧"
+                    hint="면세 · 유료 크레딧"
                   />
                 </div>
               </div>
@@ -1077,7 +1097,7 @@ export default function AdminPaymentsPage() {
               <CreditSectionHeader
                 icon={HandCoins}
                 title="관계사 잔여 분배"
-                description="커스텀 어벗 잔여·매칭 수수료 재분배(영업자·개발운영사·관리자)."
+                description="커스텀 어벗 잔여·매칭 수수료 재분배. 영업자·개발운영사 지급은 과세(세금계산서), 어벗츠(관리자)는 면세(계산서)."
                 trailing={
                   <div className="relative w-full sm:w-[260px]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1111,15 +1131,10 @@ export default function AdminPaymentsPage() {
                       value={`${filteredBySearch.salesman.length.toLocaleString()}곳`}
                     />
                     <CreditStatTile
-                      label="유료 미정산"
-                      value={formatWon(
-                        roleFinanceRows.salesman.reduce(
-                          (sum, r) =>
-                            sum + Number(r.wallet?.balanceAmountPeriod || 0),
-                          0,
-                        ),
-                      )}
+                      label="유료 미정산 공급가"
+                      value={formatWon(salesmanUnpaidSupply)}
                       tone="accent"
+                      hint={`지급 시 +부가세 ${vatPctLabel()} → ${formatWon(salesmanUnpaidVat.total)} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                     />
                     <CreditStatTile
                       label="무료(참고)"
@@ -1160,15 +1175,10 @@ export default function AdminPaymentsPage() {
                       value={`${filteredBySearch.devops.length.toLocaleString()}곳`}
                     />
                     <CreditStatTile
-                      label="유료 미정산"
-                      value={formatWon(
-                        roleFinanceRows.devops.reduce(
-                          (sum, r) =>
-                            sum + Number(r.wallet?.balanceAmountPeriod || 0),
-                          0,
-                        ),
-                      )}
+                      label="유료 미정산 공급가"
+                      value={formatWon(devopsUnpaidSupply)}
                       tone="accent"
+                      hint={`지급 시 +부가세 ${vatPctLabel()} → ${formatWon(devopsUnpaidVat.total)} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                     />
                     <CreditStatTile
                       label="무료(참고)"
@@ -1224,6 +1234,7 @@ export default function AdminPaymentsPage() {
                         ),
                       )}
                       tone="accent"
+                      hint={`면세 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
                     />
                     <CreditStatTile
                       label="무료(참고)"

@@ -24,6 +24,8 @@ import { useSocket } from "@/shared/hooks/useSocket";
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
+// - web/frontend/src/pages/devops/DevopsPaymentsPage.tsx
+// - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 
 const Index = lazy(() => import("./pages/public/Index"));
@@ -109,6 +111,9 @@ import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import AdminPaymentsPage from "@/pages/admin/AdminPaymentsPage";
+import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
+import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPayoutTab";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/equipment/EquipmentPage").then((m) => ({
     default: m.EquipmentPage,
@@ -243,11 +248,17 @@ const ReferralGroupsRoute = () => {
 
 const PaymentsRoute = () => {
   const { user } = useAuthStore();
+  const { kind } = useRequestorBusinessAccess();
 
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
   if (user.role === "salesman") return <SalesmanPaymentsPage />;
+  if (user.role === "devops") return <DevopsPaymentsPage />;
   if (user.role === "admin") return <AdminPaymentsPage />;
+  if (user.role === "internalLab") return <LabSettlementPayoutTab />;
+  if (user.role === "requestor" && kind === "lab") {
+    return <LabSettlementPayoutTab />;
+  }
   return <Navigate to="/dashboard" replace />;
 };
 
@@ -716,7 +727,14 @@ const App = () => {
                     path="payments"
                     element={
                       <RoleProtectedRoute
-                        roles={["manufacturer", "salesman", "admin"]}
+                        roles={[
+                          "manufacturer",
+                          "salesman",
+                          "admin",
+                          "devops",
+                          "requestor",
+                          "internalLab",
+                        ]}
                       >
                         <PaymentsRoute />
                       </RoleProtectedRoute>

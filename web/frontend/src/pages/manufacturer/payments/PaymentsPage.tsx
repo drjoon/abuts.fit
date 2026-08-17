@@ -5,7 +5,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
-// - 2026-08-15: 하청 고정단가(의뢰/배송·VAT 포함 지급). 유료/무료는 보조 필터.
+// - 2026-08-17: 정산 내역을 의뢰자 크레딧과 같은 거래 원장으로 표시. VAT는 지급 안내 한 줄.
 // - 2026-08-11: 기공소 기공크레딧 정산과 동일 UX — 요약 카드 축소·(N건), 일자 제거, 액션 세로열, 초기화 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -14,27 +14,15 @@ import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { isPeriodFilterValue } from "@/shared/ui/periodFilterValues";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
   BookOpenText,
   CalendarClock,
   HandCoins,
   ReceiptText,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -43,7 +31,37 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/shared/ui/cn";
+import {
+  SETTLEMENT_TAXABLE_INVOICE_LABEL,
+  SETTLEMENT_VAT_PAYOUT_NOTICE,
+  SETTLEMENT_VAT_POLICY,
+  formatWon,
+} from "@/shared/settlement/affiliateVat";
+import {
+  SettlementFilterChip,
+  SettlementPolicyDialog,
+  SettlementPolicySection,
+  SettlementSortIcon,
+  SettlementStatCard,
+  SettlementTableFrame,
+  SettlementVatNotice,
+} from "@/shared/settlement/settlementUi";
+
+type LedgerItem = {
+  _id: string;
+  type: "EARN" | "ADJUST" | "PAYOUT";
+  amount: number;
+  creditKind?: string | null;
+  eventType?: string;
+  displayLabel?: string;
+  usageKind?: string;
+  refType?: string;
+  uniqueKey?: string;
+  createdAt?: string;
+  occurredAt?: string;
+  balanceAfter?: number;
+};
 
 type PaymentItem = {
   _id: string;
@@ -92,15 +110,6 @@ type ManufacturerDailySnapshotRow = {
   netFreeAmount?: number;
 };
 
-type SnapshotSortKey =
-  | "ymd"
-  | "request"
-  | "shipping"
-  | "deduction"
-  | "payoutNet"
-  | "paidNet"
-  | "freeNet";
-
 type SnapshotValidationResult =
   | { valid: true }
   | { valid: false; reason: string };
@@ -115,6 +124,41 @@ const PAGE_SIZE = 50;
 
 type SortDirection = "asc" | "desc";
 type PaymentSortKey = "occurredAt" | "status" | "amount" | "note";
+
+const manufacturerTypeLabel = (row: LedgerItem) => {
+  const label = String(row.displayLabel || "").trim();
+  if (label) return label;
+  if (row.type === "PAYOUT") return "지급";
+  if (row.type === "ADJUST") return "조정";
+  const event = String(row.eventType || "");
+  if (event === "SHIPPING_SPEND_COMMIT") return "배송";
+  if (event === "REQUEST_SPEND_COMMIT") return "의뢰";
+  if (event === "PRACTICE_TRANSFER_SPEND_COMMIT") return "기공의뢰";
+  return "적립";
+};
+
+const manufacturerPayoutBadge = (row: LedgerItem) => {
+  if (row.type === "PAYOUT") {
+    return {
+      label: "지급 완료",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    };
+  }
+  const kind = String(row.creditKind || "");
+  if (kind === "FREE_REQUEST" || kind === "FREE_SHIPPING") {
+    return {
+      label: "지급 0",
+      className: "border-slate-200 bg-slate-50 text-slate-600",
+    };
+  }
+  if (row.type === "EARN") {
+    return {
+      label: "미지급",
+      className: "border-sky-200 bg-sky-50 text-sky-800",
+    };
+  }
+  return null;
+};
 
 const formatDate = (iso: string) => {
   const d = new Date(iso);
@@ -305,21 +349,26 @@ export const ManufacturerPaymentPage = () => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
 
-  const [tab, setTab] = useState<"snapshot" | "payments">("snapshot");
+  const [tab, setTab] = useState<"ledger" | "payments">("ledger");
 
   const { period, setPeriod } = usePeriodStore();
   const [q, setQ] = useState("");
   const [requestSettlementFilter, setRequestSettlementFilter] = useState<
     "all" | "paid" | "free"
   >("all");
-  const [snapshotSort, setSnapshotSort] = useState<{
-    key: SnapshotSortKey;
-    direction: SortDirection;
-  }>({ key: "ymd", direction: "desc" });
   const [paymentSort, setPaymentSort] = useState<{
     key: PaymentSortKey;
     direction: SortDirection;
   }>({ key: "occurredAt", direction: "desc" });
+
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerItems, setLedgerItems] = useState<LedgerItem[]>([]);
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerHasMore, setLedgerHasMore] = useState(true);
+  const [ledgerSort, setLedgerSort] = useState<{
+    key: "createdAt" | "type" | "amount" | "balanceAfter" | "detail";
+    direction: SortDirection;
+  }>({ key: "createdAt", direction: "desc" });
 
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<PaymentItem[]>([]);
@@ -332,10 +381,12 @@ export const ManufacturerPaymentPage = () => {
     [],
   );
   const [snapshotAnomalyMessage, setSnapshotAnomalyMessage] = useState("");
-  const anyLoading = loading || snapLoading;
+  const anyLoading = loading || snapLoading || ledgerLoading;
 
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const ledgerScrollRef = useRef<HTMLDivElement | null>(null);
+  const paymentScrollRef = useRef<HTMLDivElement | null>(null);
+  const ledgerSentinelRef = useRef<HTMLDivElement | null>(null);
+  const paymentSentinelRef = useRef<HTMLDivElement | null>(null);
   const isManufacturer = Boolean(user && user.role === "manufacturer");
 
   const buildQueryParams = useCallback(
@@ -353,6 +404,61 @@ export const ManufacturerPaymentPage = () => {
       return params.toString();
     },
     [period, q],
+  );
+
+  const buildLedgerParams = useCallback(
+    (p: number) => {
+      const params = new URLSearchParams({
+        page: String(p),
+        limit: String(PAGE_SIZE),
+        requestSettlement: requestSettlementFilter,
+      });
+      const range = periodToYmdRange(period);
+      if (range) {
+        params.set("from", range.from);
+        params.set("to", range.to);
+      }
+      if (q.trim()) params.set("q", q.trim());
+      return params.toString();
+    },
+    [period, q, requestSettlementFilter],
+  );
+
+  const loadLedger = useCallback(
+    async (p: number, reset: boolean) => {
+      if (!token) return;
+      setLedgerLoading(true);
+      try {
+        const res = await apiFetch<
+          ApiEnvelope<LedgerItem[]> & {
+            pagination?: { total?: number; totalPages?: number };
+          }
+        >({
+          path: `/api/manufacturer/credits/ledger?${buildLedgerParams(p)}`,
+          method: "GET",
+          token,
+        });
+        if (!res.ok || !res.data?.success) {
+          throw new Error(res.data?.message || "조회 실패");
+        }
+        const fetched: LedgerItem[] = Array.isArray(res.data.data)
+          ? res.data.data
+          : [];
+        setLedgerItems((prev) => (reset ? fetched : [...prev, ...fetched]));
+        setLedgerHasMore(fetched.length >= PAGE_SIZE);
+        setLedgerPage(p);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "조회 실패";
+        toast({
+          title: "조회 실패",
+          description: message,
+          variant: "destructive",
+        });
+      } finally {
+        setLedgerLoading(false);
+      }
+    },
+    [token, buildLedgerParams, toast],
   );
 
   const loadPayments = useCallback(
@@ -458,36 +564,68 @@ export const ManufacturerPaymentPage = () => {
 
   useEffect(() => {
     if (!isManufacturer) return;
+    void loadSnapshots();
+  }, [isManufacturer, period, loadSnapshots]);
+
+  useEffect(() => {
+    if (!isManufacturer) return;
     if (tab === "payments") {
       setPage(1);
       setHasMore(true);
       void loadPayments(1, true);
       return;
     }
-    if (tab === "snapshot") {
-      void loadSnapshots();
-    }
-  }, [isManufacturer, tab, period, q, loadPayments, loadSnapshots]);
+    setLedgerPage(1);
+    setLedgerHasMore(true);
+    void loadLedger(1, true);
+  }, [
+    isManufacturer,
+    tab,
+    period,
+    q,
+    requestSettlementFilter,
+    loadPayments,
+    loadLedger,
+  ]);
 
   useEffect(() => {
     if (!isManufacturer) return;
-    const sentinel = sentinelRef.current;
-    const root = scrollRef.current;
-    if (!sentinel || !root || !hasMore || loading || tab !== "payments") return;
+    const sentinel =
+      tab === "payments" ? paymentSentinelRef.current : ledgerSentinelRef.current;
+    const root =
+      tab === "payments" ? paymentScrollRef.current : ledgerScrollRef.current;
+    if (!sentinel || !root) return;
+    const loadingMore = tab === "payments" ? loading : ledgerLoading;
+    const hasMoreRows = tab === "payments" ? hasMore : ledgerHasMore;
+    if (!hasMoreRows || loadingMore) return;
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting) && hasMore && !loading) {
-          void loadPayments(page + 1, false);
+        if (!entries.some((e) => e.isIntersecting)) return;
+        if (tab === "payments") {
+          if (hasMore && !loading) void loadPayments(page + 1, false);
+          return;
         }
+        if (ledgerHasMore && !ledgerLoading) void loadLedger(ledgerPage + 1, false);
       },
       { root, rootMargin: "200px", threshold: 0 },
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [isManufacturer, hasMore, loading, page, tab, loadPayments]);
+  }, [
+    isManufacturer,
+    hasMore,
+    loading,
+    page,
+    tab,
+    loadPayments,
+    ledgerHasMore,
+    ledgerLoading,
+    ledgerPage,
+    loadLedger,
+  ]);
 
   const handleTabChange = (v: string) => {
-    if (v === "snapshot" || v === "payments") {
+    if (v === "ledger" || v === "payments") {
       setTab(v);
     }
   };
@@ -585,14 +723,6 @@ export const ManufacturerPaymentPage = () => {
     };
   }, [snapItems]);
 
-  const toggleSnapshotSort = (key: SnapshotSortKey) => {
-    setSnapshotSort((prev) =>
-      prev.key === key
-        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: key === "ymd" ? "desc" : "asc" },
-    );
-  };
-
   const togglePaymentSort = (key: PaymentSortKey) => {
     setPaymentSort((prev) =>
       prev.key === key
@@ -600,62 +730,6 @@ export const ManufacturerPaymentPage = () => {
         : { key, direction: key === "occurredAt" ? "desc" : "asc" },
     );
   };
-
-  const sortedSnapItems = useMemo(() => {
-    const requestValueOf = (r: ManufacturerDailySnapshotRow) => {
-      const paid = Number(r.earnRequestPaidAmount ?? 0);
-      const free = Number(r.earnRequestFreeAmount ?? 0);
-      if (requestSettlementFilter === "paid") return paid;
-      if (requestSettlementFilter === "free") return free;
-      return paid + free;
-    };
-    const shippingValueOf = (r: ManufacturerDailySnapshotRow) => {
-      const paid = Number(r.earnShippingPaidAmount ?? 0);
-      const free = Number(r.earnShippingFreeAmount ?? 0);
-      if (requestSettlementFilter === "paid") return paid;
-      if (requestSettlementFilter === "free") return free;
-      return paid + free;
-    };
-    const deductionValueOf = (r: ManufacturerDailySnapshotRow) =>
-      Number(r.refundAmount || 0) +
-      Number(r.payoutAmount || 0) +
-      Number(r.adjustAmount || 0);
-    const paidNetValueOf = (r: ManufacturerDailySnapshotRow) =>
-      Number(r.netPayoutAmount ?? r.netAmount ?? 0);
-    const freeNetValueOf = (r: ManufacturerDailySnapshotRow) =>
-      Number(r.netFreeAmount ?? 0) ||
-      Number(r.earnRequestFreeAmount ?? 0) + Number(r.earnShippingFreeAmount ?? 0);
-
-    const sorted = [...snapItems].sort((a, b) => {
-      let av = 0;
-      let bv = 0;
-      if (snapshotSort.key === "ymd") {
-        av = String(a.ymd || "").localeCompare(String(b.ymd || ""));
-        return snapshotSort.direction === "asc" ? av : -av;
-      }
-      if (snapshotSort.key === "request") {
-        av = requestValueOf(a);
-        bv = requestValueOf(b);
-      } else if (snapshotSort.key === "shipping") {
-        av = shippingValueOf(a);
-        bv = shippingValueOf(b);
-      } else if (snapshotSort.key === "deduction") {
-        av = deductionValueOf(a);
-        bv = deductionValueOf(b);
-      } else if (
-        snapshotSort.key === "paidNet" ||
-        snapshotSort.key === "payoutNet"
-      ) {
-        av = paidNetValueOf(a);
-        bv = paidNetValueOf(b);
-      } else {
-        av = freeNetValueOf(a);
-        bv = freeNetValueOf(b);
-      }
-      return snapshotSort.direction === "asc" ? av - bv : bv - av;
-    });
-    return sorted;
-  }, [snapItems, requestSettlementFilter, snapshotSort]);
 
   const sortedPaymentItems = useMemo(() => {
     return [...items].sort((a, b) => {
@@ -684,14 +758,51 @@ export const ManufacturerPaymentPage = () => {
     });
   }, [items, paymentSort]);
 
-  const renderSortIcon = (active: boolean, direction: SortDirection) => {
-    if (!active) return <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />;
-    return direction === "asc" ? (
-      <ArrowUp className="h-3.5 w-3.5 text-foreground" />
-    ) : (
-      <ArrowDown className="h-3.5 w-3.5 text-foreground" />
+  const toggleLedgerSort = (
+    key: "createdAt" | "type" | "amount" | "balanceAfter" | "detail",
+  ) => {
+    setLedgerSort((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: key === "createdAt" ? "desc" : "asc" },
     );
   };
+
+  const sortedLedgerItems = useMemo(() => {
+    return [...ledgerItems].sort((a, b) => {
+      if (ledgerSort.key === "createdAt") {
+        const av = new Date(a.createdAt || a.occurredAt || 0).getTime();
+        const bv = new Date(b.createdAt || b.occurredAt || 0).getTime();
+        return ledgerSort.direction === "asc" ? av - bv : bv - av;
+      }
+      if (ledgerSort.key === "type") {
+        const av = manufacturerTypeLabel(a);
+        const bv = manufacturerTypeLabel(b);
+        return ledgerSort.direction === "asc"
+          ? av.localeCompare(bv, "ko")
+          : bv.localeCompare(av, "ko");
+      }
+      if (ledgerSort.key === "amount") {
+        const av = Number(a.amount || 0);
+        const bv = Number(b.amount || 0);
+        return ledgerSort.direction === "asc" ? av - bv : bv - av;
+      }
+      if (ledgerSort.key === "balanceAfter") {
+        const av = Number(a.balanceAfter ?? Number.NEGATIVE_INFINITY);
+        const bv = Number(b.balanceAfter ?? Number.NEGATIVE_INFINITY);
+        return ledgerSort.direction === "asc" ? av - bv : bv - av;
+      }
+      const av = String(a.uniqueKey || a.refType || "");
+      const bv = String(b.uniqueKey || b.refType || "");
+      return ledgerSort.direction === "asc"
+        ? av.localeCompare(bv, "ko")
+        : bv.localeCompare(av, "ko");
+    });
+  }, [ledgerItems, ledgerSort]);
+
+  const renderSortIcon = (active: boolean, direction: SortDirection) => (
+    <SettlementSortIcon active={active} direction={direction} />
+  );
 
   if (!isManufacturer) return null;
 
@@ -699,176 +810,66 @@ export const ManufacturerPaymentPage = () => {
     <DashboardShell
       title="정산 내역"
       subtitle=""
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-3"
       stats={
         <>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                유료 미지급 합계 (VAT 포함)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="text-center text-lg font-semibold text-primary-strong tabular-nums sm:text-xl">
-                ₩{snapshotTotals.payoutEligibleTotal.toLocaleString()}
-                <span className="ml-1 text-sm font-medium text-muted-foreground">
-                  (
-                  {snapshotTotals.requestCountTotal +
-                    snapshotTotals.shippingCountTotal}
-                  건)
-                </span>
-              </div>
-              <div className="mt-1 space-y-0.5 text-center text-[11px] text-muted-foreground tabular-nums">
+          <SettlementStatCard
+            label="유료 미지급"
+            value={snapshotTotals.paidUnsettledTotal}
+            tone="primary"
+            selected={tab === "ledger" && requestSettlementFilter !== "free"}
+            onClick={() => {
+              setRequestSettlementFilter("paid");
+              setTab("ledger");
+            }}
+            hint="공급가"
+            hintTooltip={SETTLEMENT_VAT_PAYOUT_NOTICE}
+            footer={
+              <div className="space-y-0.5 text-[11px] tabular-nums text-slate-600 sm:text-xs">
                 <div>
-                  의뢰 ₩{snapshotTotals.requestTotalWithVat.toLocaleString()} (
-                  {snapshotTotals.requestCountTotal}) · 공급{" "}
-                  {snapshotTotals.requestSupplyTotal.toLocaleString()}+VAT{" "}
-                  {snapshotTotals.requestVatTotal.toLocaleString()}
+                  의뢰 {formatWon(snapshotTotals.paidRequestTotal)} (
+                  {snapshotTotals.paidRequestCountTotal}건)
                 </div>
                 <div>
-                  배송 ₩{snapshotTotals.shippingTotalWithVat.toLocaleString()} (
-                  {snapshotTotals.shippingCountTotal}) · 공급{" "}
-                  {snapshotTotals.shippingSupplyTotal.toLocaleString()}+VAT{" "}
-                  {snapshotTotals.shippingVatTotal.toLocaleString()}
+                  배송 {formatWon(snapshotTotals.paidShippingTotal)} (
+                  {snapshotTotals.paidShippingCountTotal}건)
                 </div>
               </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                무료 미정산(참고·지급 0)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="text-center text-lg font-semibold text-muted-foreground tabular-nums sm:text-xl">
-                ₩{snapshotTotals.freeUnsettledTotal.toLocaleString()}
-                <span className="ml-1 text-sm font-medium text-muted-foreground">
-                  (
-                  {snapshotTotals.freeRequestCountTotal +
-                    snapshotTotals.freeShippingCountTotal}
-                  건)
-                </span>
-              </div>
-              <div className="mt-1 space-y-0.5 text-center text-[11px] text-muted-foreground tabular-nums">
+            }
+          />
+          <SettlementStatCard
+            label="무료 미정산"
+            value={snapshotTotals.freeUnsettledTotal}
+            selected={tab === "ledger" && requestSettlementFilter === "free"}
+            onClick={() => {
+              setRequestSettlementFilter("free");
+              setTab("ledger");
+            }}
+            hint="참고 · 지급 0"
+            footer={
+              <div className="space-y-0.5 text-[11px] tabular-nums text-slate-600 sm:text-xs">
                 <div>
-                  의뢰 ₩{snapshotTotals.freeRequestTotal.toLocaleString()} (
-                  {snapshotTotals.freeRequestCountTotal})
+                  의뢰 {formatWon(snapshotTotals.freeRequestTotal)} (
+                  {snapshotTotals.freeRequestCountTotal}건)
                 </div>
                 <div>
-                  배송 ₩{snapshotTotals.freeShippingTotal.toLocaleString()} (
-                  {snapshotTotals.freeShippingCountTotal})
+                  배송 {formatWon(snapshotTotals.freeShippingTotal)} (
+                  {snapshotTotals.freeShippingCountTotal}건)
                 </div>
               </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-center text-sm font-medium text-muted-foreground break-keep">
-                지급 합계
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="text-center text-lg font-semibold tabular-nums sm:text-xl">
-                ₩{snapshotTotals.payoutTotal.toLocaleString()}
-                <span className="ml-1 text-sm font-medium text-muted-foreground">
-                  ({snapshotTotals.payoutCount}건)
-                </span>
+            }
+          />
+          <SettlementStatCard
+            label="지급 합계"
+            value={snapshotTotals.payoutTotal}
+            selected={tab === "payments"}
+            onClick={() => setTab("payments")}
+            footer={
+              <div className="text-xs text-muted-foreground">
+                {snapshotTotals.payoutCount}건 · {SETTLEMENT_TAXABLE_INVOICE_LABEL}
               </div>
-            </CardContent>
-          </Card>
-          <div className="flex flex-col justify-center gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant={tab === "snapshot" ? "default" : "outline"}
-              className="h-8 w-full"
-              onClick={() => setTab("snapshot")}
-            >
-              일별 정산
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={tab === "payments" ? "default" : "outline"}
-              className="h-8 w-full"
-              onClick={() => setTab("payments")}
-            >
-              입금 내역
-            </Button>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 w-full"
-                >
-                  정산규칙
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>제조사 정산 규칙</DialogTitle>
-                </DialogHeader>
-
-                <div className="grid gap-2 text-sm">
-                  <div className="flex items-start gap-3 rounded-lg border p-3">
-                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                      01
-                    </span>
-                    <HandCoins className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="font-medium">가공 승인 적립 (하청)</div>
-                      <div className="text-muted-foreground">
-                        의뢰 1건당 공급가 9,000원 + 부가세 10%(합 9,900원).
-                        유료·무료 모두 적립하되, 지급은 유료만(무료 지급 0).
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-lg border p-3">
-                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                      02
-                    </span>
-                    <ReceiptText className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="font-medium">배송비 적립 (하청)</div>
-                      <div className="text-muted-foreground">
-                        발송 패키지 1박스당 공급가 3,500원 + 부가세 10%(합
-                        3,850원).
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-lg border p-3">
-                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                      03
-                    </span>
-                    <BookOpenText className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="font-medium">롤백 시 환불</div>
-                      <div className="text-muted-foreground">
-                        가공·포장 롤백 시 기존 소비/적립 커밋 내역은 삭제형
-                        롤백으로 정리
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-lg border p-3">
-                    <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                      04
-                    </span>
-                    <CalendarClock className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="font-medium">일별 정산 집계</div>
-                      <div className="text-muted-foreground">
-                        원장 기준 KST 일자별 실시간 집계. 월 지급은 부가세
-                        포함액.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
+            }
+          />
         </>
       }
       mainLeft={
@@ -876,243 +877,225 @@ export const ManufacturerPaymentPage = () => {
           <Tabs value={tab} onValueChange={handleTabChange}>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <PeriodFilter value={period} onChange={setPeriod} />
-              <div className="inline-flex items-center rounded-md border bg-background p-0.5">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={
-                    requestSettlementFilter === "all" ? "default" : "ghost"
-                  }
-                  className="h-7 px-2"
+              <div className="flex items-center gap-1">
+                <SettlementFilterChip
+                  active={requestSettlementFilter === "all"}
                   onClick={() => setRequestSettlementFilter("all")}
                   disabled={anyLoading}
                 >
                   전체
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={
-                    requestSettlementFilter === "paid" ? "default" : "ghost"
-                  }
-                  className="h-7 px-2"
+                </SettlementFilterChip>
+                <SettlementFilterChip
+                  active={requestSettlementFilter === "paid"}
                   onClick={() => setRequestSettlementFilter("paid")}
                   disabled={anyLoading}
                 >
                   유료
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={
-                    requestSettlementFilter === "free" ? "default" : "ghost"
-                  }
-                  className="h-7 px-2"
+                </SettlementFilterChip>
+                <SettlementFilterChip
+                  active={requestSettlementFilter === "free"}
                   onClick={() => setRequestSettlementFilter("free")}
                   disabled={anyLoading}
                 >
                   무료
-                </Button>
+                </SettlementFilterChip>
               </div>
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="검색 (메모/외부ID/키)"
-                className="h-9 w-full sm:w-[280px]"
+                className="h-9 w-full rounded-xl border-slate-200 sm:w-[280px]"
               />
+              <SettlementPolicyDialog
+                title="제조사 정산 규칙"
+                description="하청 고정단가 · 부가세 · 세금계산서"
+              >
+                <SettlementPolicySection title="가공 승인 적립 (하청)">
+                  <div className="flex gap-2.5">
+                    <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p>
+                      의뢰 1건당 공급가 9,000원 + 부가세 10%(합 9,900원).
+                      유료·무료 모두 적립하되, 지급은 유료만(무료 지급 0).
+                    </p>
+                  </div>
+                </SettlementPolicySection>
+                <SettlementPolicySection title="배송비 적립 (하청)">
+                  <div className="flex gap-2.5">
+                    <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p>
+                      발송 패키지 1박스당 공급가 3,500원 + 부가세 10%(합
+                      3,850원).
+                    </p>
+                  </div>
+                </SettlementPolicySection>
+                <SettlementPolicySection title="부가세 · 세금계산서">
+                  <div className="flex gap-2.5">
+                    <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p>{SETTLEMENT_VAT_POLICY.taxable}</p>
+                  </div>
+                </SettlementPolicySection>
+                <SettlementPolicySection title="롤백">
+                  <div className="flex gap-2.5">
+                    <BookOpenText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p>
+                      가공·포장 롤백 시 기존 소비/적립 커밋 내역은 삭제형
+                      롤백으로 정리합니다.
+                    </p>
+                  </div>
+                </SettlementPolicySection>
+                <SettlementPolicySection title="일별 정산 집계">
+                  <div className="flex gap-2.5">
+                    <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <p>
+                      원장 기준 KST 일자별 실시간 집계. 월 지급은 부가세
+                      포함액이며 {SETTLEMENT_TAXABLE_INVOICE_LABEL}를
+                      수취합니다.
+                    </p>
+                  </div>
+                </SettlementPolicySection>
+              </SettlementPolicyDialog>
             </div>
 
-            <TabsContent value="snapshot" className="mt-0">
+            <SettlementVatNotice />
+
+            <TabsContent value="ledger" className="mt-0">
               {snapshotAnomalyMessage ? (
                 <div className="mb-2 rounded-md border border-destructive/80 bg-destructive-soft px-3 py-2 text-xs text-destructive">
                   {snapshotAnomalyMessage}
                 </div>
               ) : null}
-              <div className="overflow-x-auto rounded-md border">
+              <SettlementTableFrame
+                scrollRef={ledgerScrollRef}
+                className="max-h-[60vh] overflow-y-auto"
+              >
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-[190px] text-center">
+                        <button
+                          type="button"
+                          className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
+                          onClick={() => toggleLedgerSort("createdAt")}
+                        >
+                          일시
+                          {renderSortIcon(ledgerSort.key === "createdAt", ledgerSort.direction)}
+                        </button>
+                      </TableHead>
+                      <TableHead className="w-[140px] text-center">
+                        <button
+                          type="button"
+                          className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
+                          onClick={() => toggleLedgerSort("type")}
+                        >
+                          유형
+                          {renderSortIcon(ledgerSort.key === "type", ledgerSort.direction)}
+                        </button>
+                      </TableHead>
                       <TableHead className="w-[110px] text-center">
+                        <span className="whitespace-nowrap text-xs sm:text-sm">
+                          지급 상태
+                        </span>
+                      </TableHead>
+                      <TableHead className="min-w-[140px] text-center">
                         <button
                           type="button"
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("ymd")}
+                          onClick={() => toggleLedgerSort("amount")}
                         >
-                          일자
-                          {renderSortIcon(snapshotSort.key === "ymd", snapshotSort.direction)}
+                          금액
+                          {renderSortIcon(ledgerSort.key === "amount", ledgerSort.direction)}
                         </button>
                       </TableHead>
-
-                      <TableHead className="min-w-[200px] text-center">
+                      <TableHead className="w-[140px] text-center">
                         <button
                           type="button"
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("request")}
+                          onClick={() => toggleLedgerSort("balanceAfter")}
                         >
-                          의뢰
-                          {renderSortIcon(snapshotSort.key === "request", snapshotSort.direction)}
-                        </button>
-                      </TableHead>
-                      <TableHead className="min-w-[200px] text-center">
-                        <button
-                          type="button"
-                          className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("shipping")}
-                        >
-                          배송
-                          {renderSortIcon(snapshotSort.key === "shipping", snapshotSort.direction)}
-                        </button>
-                      </TableHead>
-                      <TableHead className="min-w-[120px] text-center">
-                        <button
-                          type="button"
-                          className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("deduction")}
-                        >
-                          차감
-                          {renderSortIcon(snapshotSort.key === "deduction", snapshotSort.direction)}
-                        </button>
-                      </TableHead>
-                      <TableHead className="w-[130px] text-center">
-                        <button
-                          type="button"
-                          className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("payoutNet")}
-                        >
-                          지급순액
+                          잔액
                           {renderSortIcon(
-                            snapshotSort.key === "payoutNet" ||
-                              snapshotSort.key === "paidNet",
-                            snapshotSort.direction,
+                            ledgerSort.key === "balanceAfter",
+                            ledgerSort.direction,
                           )}
                         </button>
                       </TableHead>
-                      <TableHead className="min-w-[170px] text-center">
+                      <TableHead className="min-w-[200px] text-center">
                         <button
                           type="button"
                           className="mx-auto inline-flex items-center gap-1 whitespace-nowrap text-xs sm:text-sm"
-                          onClick={() => toggleSnapshotSort("freeNet")}
+                          onClick={() => toggleLedgerSort("detail")}
                         >
-                          유료/무료(참고)
-                          {renderSortIcon(snapshotSort.key === "freeNet", snapshotSort.direction)}
+                          거래내역
+                          {renderSortIcon(ledgerSort.key === "detail", ledgerSort.direction)}
                         </button>
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedSnapItems.map((r) => {
-                      const paidAmount = Number(r.earnRequestPaidAmount ?? 0);
-                      const paidCount = Number(r.earnRequestPaidCount ?? 0);
-                      const freeAmount = Number(r.earnRequestFreeAmount ?? 0);
-                      const freeCount = Number(r.earnRequestFreeCount ?? 0);
-
-                      const shippingPaidAmount = Number(
-                        r.earnShippingPaidAmount ?? 0,
-                      );
-                      const shippingPaidCount = Number(
-                        r.earnShippingPaidCount ?? 0,
-                      );
-                      const shippingFreeAmount = Number(
-                        r.earnShippingFreeAmount ?? 0,
-                      );
-                      const shippingFreeCount = Number(
-                        r.earnShippingFreeCount ?? 0,
-                      );
-
-                      const requestTotal = Number(
-                        r.earnRequestTotal ??
-                          Number(r.earnRequestAmount || 0) +
-                            Number(r.earnRequestVat || 0),
-                      );
-                      const shippingTotal = Number(
-                        r.earnShippingTotal ??
-                          Number(r.earnShippingAmount || 0) +
-                            Number(r.earnShippingVat || 0),
-                      );
-                      const requestCount = Number(r.earnRequestCount || 0);
-                      const shippingCount = Number(r.earnShippingCount || 0);
-
-                      let requestText = `₩${requestTotal.toLocaleString()}(${requestCount}) · 공급${Number(r.earnRequestAmount || 0).toLocaleString()}+VAT${Number(r.earnRequestVat || 0).toLocaleString()}`;
-                      let shippingText = `₩${shippingTotal.toLocaleString()}(${shippingCount}) · 공급${Number(r.earnShippingAmount || 0).toLocaleString()}+VAT${Number(r.earnShippingVat || 0).toLocaleString()}`;
-                      const deductionParts: string[] = [];
-                      const refundAmount = Number(r.refundAmount || 0);
-                      const payoutAmount = Number(r.payoutAmount || 0);
-                      const adjustAmount = Number(r.adjustAmount || 0);
-                      if (refundAmount !== 0) deductionParts.push(`환불 ₩${refundAmount.toLocaleString()}`);
-                      if (payoutAmount !== 0) deductionParts.push(`지급 ₩${payoutAmount.toLocaleString()}`);
-                      if (adjustAmount !== 0) deductionParts.push(`조정 ₩${adjustAmount.toLocaleString()}`);
-                      let deductionText = deductionParts.length ? deductionParts.join(" / ") : "-";
-                      const payoutNetValue = Number(
-                        r.netPayoutAmount ?? r.netAmount ?? 0,
-                      );
-                      let payoutNetText = `₩${payoutNetValue.toLocaleString()}`;
-                      let refText = `유료 의뢰₩${paidAmount.toLocaleString()}(${paidCount}) / 배송₩${shippingPaidAmount.toLocaleString()}(${shippingPaidCount}) · 무료 의뢰₩${freeAmount.toLocaleString()}(${freeCount}) / 배송₩${shippingFreeAmount.toLocaleString()}(${shippingFreeCount})`;
-
-                      if (requestSettlementFilter === "paid") {
-                        const paidReqTotal = Number(
-                          r.earnRequestPaidTotal ?? paidAmount,
-                        );
-                        const paidShipTotal = Number(
-                          r.earnShippingPaidTotal ?? shippingPaidAmount,
-                        );
-                        requestText = `₩${paidReqTotal.toLocaleString()}(${paidCount})`;
-                        shippingText = `₩${paidShipTotal.toLocaleString()}(${shippingPaidCount})`;
-                        refText = "-";
-                      }
-
-                      if (requestSettlementFilter === "free") {
-                        const freeReqTotal = Number(
-                          r.earnRequestFreeTotal ?? freeAmount,
-                        );
-                        const freeShipTotal = Number(
-                          r.earnShippingFreeTotal ?? shippingFreeAmount,
-                        );
-                        requestText = `₩${freeReqTotal.toLocaleString()}(${freeCount})`;
-                        shippingText = `₩${freeShipTotal.toLocaleString()}(${shippingFreeCount})`;
-                        deductionText = "-";
-                        payoutNetText = "-";
-                        refText = "-";
-                      }
-
+                    {sortedLedgerItems.map((r) => {
+                      const amount = Number(r.amount || 0);
+                      const isMinus = amount < 0 || r.type === "PAYOUT";
+                      const badge = manufacturerPayoutBadge(r);
+                      const signed = r.type === "PAYOUT" ? -Math.abs(amount) : amount;
                       return (
-                        <TableRow key={r.ymd}>
-                          <TableCell className="text-center text-xs tabular-nums whitespace-nowrap">
-                            {r.ymd}
+                        <TableRow key={r._id}>
+                          <TableCell className="whitespace-nowrap text-center text-xs">
+                            {formatDate(String(r.createdAt || r.occurredAt || ""))}
                           </TableCell>
-
-                          <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
-                            {requestText}
+                          <TableCell className="text-center text-xs font-medium">
+                            {manufacturerTypeLabel(r)}
                           </TableCell>
-                          <TableCell className="text-center text-[11px] tabular-nums whitespace-nowrap">
-                            {shippingText}
+                          <TableCell className="text-center">
+                            {badge ? (
+                              <span
+                                className={cn(
+                                  "inline-flex whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-none",
+                                  badge.className,
+                                )}
+                              >
+                                {badge.label}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
                           </TableCell>
-                          <TableCell className="text-center text-[11px] tabular-nums text-accent-strong whitespace-nowrap">
-                            {deductionText}
+                          <TableCell
+                            className={cn(
+                              "text-center font-medium tabular-nums",
+                              isMinus ? "text-destructive" : "text-primary-strong",
+                            )}
+                          >
+                            {signed > 0 ? "+" : ""}
+                            {signed.toLocaleString()}원
                           </TableCell>
-                          <TableCell className="text-center text-xs font-semibold tabular-nums text-primary-strong whitespace-nowrap">
-                            {payoutNetText}
+                          <TableCell className="whitespace-nowrap text-center text-xs tabular-nums text-muted-foreground">
+                            {r.balanceAfter !== undefined
+                              ? `${Number(r.balanceAfter).toLocaleString()}원`
+                              : "-"}
                           </TableCell>
-                          <TableCell className="text-center text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
-                            {refText}
+                          <TableCell className="text-center text-xs text-muted-foreground">
+                            {String(r.uniqueKey || "").replace(/^gl:/, "") ||
+                              r.refType ||
+                              "—"}
                           </TableCell>
                         </TableRow>
                       );
                     })}
-                    {snapLoading && (
+                    {ledgerLoading && (
                       <TableRow>
                         <TableCell
                           colSpan={6}
-                          className="text-center text-sm text-muted-foreground py-4"
+                          className="py-4 text-center text-sm text-muted-foreground"
                         >
                           불러오는 중...
                         </TableCell>
                       </TableRow>
                     )}
-                    {!snapLoading && snapItems.length === 0 && (
+                    {!ledgerLoading && ledgerItems.length === 0 && (
                       <TableRow>
                         <TableCell
                           colSpan={6}
-                          className="text-center text-sm text-muted-foreground py-8"
+                          className="py-8 text-center text-sm text-muted-foreground"
                         >
                           조회 결과가 없습니다.
                         </TableCell>
@@ -1120,13 +1103,14 @@ export const ManufacturerPaymentPage = () => {
                     )}
                   </TableBody>
                 </Table>
-              </div>
+                <div ref={ledgerSentinelRef} className="h-8" />
+              </SettlementTableFrame>
             </TabsContent>
 
             <TabsContent value="payments" className="mt-0">
-              <div
-                ref={scrollRef}
-                className="overflow-y-auto overflow-x-auto rounded-md border max-h-[60vh]"
+              <SettlementTableFrame
+                scrollRef={paymentScrollRef}
+                className="max-h-[60vh] overflow-y-auto"
               >
                 <Table>
                   <TableHeader>
@@ -1215,9 +1199,9 @@ export const ManufacturerPaymentPage = () => {
                   </TableBody>
                 </Table>
                 {hasMore && !loading && (
-                  <div ref={sentinelRef} className="h-8" />
+                  <div ref={paymentSentinelRef} className="h-8" />
                 )}
-              </div>
+              </SettlementTableFrame>
             </TabsContent>
           </Tabs>
         </div>

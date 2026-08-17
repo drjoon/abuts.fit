@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-17: 기공소·어벗츠기공소·개발운영사 사이드에 정산 복구.
 // - 2026-08-17: unread-updated 이벤트는 lab 수신 배지 조회 가능할 때만 반영(치과 유령 배지 방지).
 // - 2026-08-17: 접힌 사이드바에도 practice-transfers/lab-work 미확인 배지 표시.
 // - 2026-08-17: 어벗츠기공소「기공의뢰수신」(/lab-work)에도 수신 미확인·채팅 사이드 배지.
@@ -202,6 +203,9 @@ const buildRequestorSidebarItems = (
       accent: "어벗",
     },
     { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
+    ...(kind === "lab"
+      ? [{ icon: Wallet, label: "정산", href: "/dashboard/payments" }]
+      : []),
     ...requestorSidebarCommonTail,
   ];
 };
@@ -216,6 +220,7 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   devops: [
+    { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   practice: [
@@ -255,6 +260,7 @@ const sidebarItems = {
       accent: "어벗",
     },
     { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
+    { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [

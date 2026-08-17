@@ -8,7 +8,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { periodToRange } from "@/store/usePeriodStore";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -58,6 +57,7 @@ const formatDate = (iso: string) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -75,7 +75,7 @@ const formatShortCode = (value: string) => {
 
 const typeLabel = (t: SalesmanLedgerType) => {
   if (t === "EARN") return "적립";
-  if (t === "PAYOUT") return "정산";
+  if (t === "PAYOUT") return "지급";
   return "조정";
 };
 
@@ -115,14 +115,6 @@ export const CommissionLedgerInline = ({
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-
-  const resetFilters = () => {
-    if (!externalPeriod) setInternalPeriod("30d");
-    setType("all");
-    setFrom("");
-    setTo("");
-    setQ("");
-  };
 
   const buildQs = useCallback((p: number) => {
     const qs = new URLSearchParams({
@@ -272,26 +264,13 @@ export const CommissionLedgerInline = ({
         )}
         <div className="flex flex-wrap items-center gap-2">
           <Input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="h-9 w-[140px]"
-          />
-          <span className="text-xs text-muted-foreground">~</span>
-          <Input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="h-9 w-[140px]"
-          />
-          <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="검색 (참조/코드/refId)"
-            className="h-9 min-w-[160px] flex-1"
+            placeholder="검색 (거래내역/코드/refId)"
+            className="h-9 w-full rounded-xl border-slate-200 sm:w-[280px]"
           />
           <select
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-9 rounded-xl border border-slate-200 bg-background px-3 text-sm text-foreground shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
             value={type}
             onChange={(e) => {
               const next = e.target.value;
@@ -305,25 +284,17 @@ export const CommissionLedgerInline = ({
               }
             }}
           >
-            <option value="all">전체</option>
+            <option value="all">전체 동작</option>
             <option value="EARN">적립</option>
-            <option value="PAYOUT">정산</option>
+            <option value="PAYOUT">지급</option>
             <option value="ADJUST">조정</option>
           </select>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-9 shrink-0"
-            onClick={resetFilters}
-          >
-            초기화
-          </Button>
         </div>
       </div>
 
       <div
         ref={scrollRef}
-        className="max-h-[480px] overflow-y-auto overflow-x-auto rounded-md border"
+        className="max-h-[480px] overflow-y-auto overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
       >
         <Table>
           <TableHeader>
@@ -347,6 +318,11 @@ export const CommissionLedgerInline = ({
                   유형
                   {renderSortIcon(sort.key === "type", sort.direction)}
                 </button>
+              </TableHead>
+              <TableHead className="w-[110px] text-center">
+                <span className="whitespace-nowrap text-xs sm:text-sm">
+                  지급 상태
+                </span>
               </TableHead>
               <TableHead className="w-[130px] text-center">
                 <button
@@ -393,10 +369,24 @@ export const CommissionLedgerInline = ({
                   <TableCell className="text-center text-xs font-medium whitespace-nowrap">
                     {typeLabel(r.type)}
                   </TableCell>
+                  <TableCell className="text-center">
+                    {r.type === "PAYOUT" ? (
+                      <span className="inline-flex whitespace-nowrap rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium leading-none text-emerald-800">
+                        지급 완료
+                      </span>
+                    ) : r.type === "EARN" ? (
+                      <span className="inline-flex whitespace-nowrap rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium leading-none text-sky-800">
+                        미지급
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell
-                    className={`text-center text-xs font-semibold tabular-nums whitespace-nowrap ${amount < 0 ? "text-destructive" : "text-primary-strong"}`}
+                    className={`text-center text-xs font-semibold tabular-nums whitespace-nowrap ${amount < 0 || r.type === "PAYOUT" ? "text-destructive" : "text-primary-strong"}`}
                   >
-                    {amount.toLocaleString()}원
+                    {r.type === "PAYOUT" ? "-" : "+"}
+                    {Math.abs(amount).toLocaleString()}원
                   </TableCell>
                   <TableCell className="text-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                     {balanceAfter !== null
@@ -419,7 +409,7 @@ export const CommissionLedgerInline = ({
             {!loading && items.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="py-8 text-center text-sm text-muted-foreground"
                 >
                   조회 결과가 없습니다.

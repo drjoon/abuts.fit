@@ -336,12 +336,18 @@ function pushRevenueLines({
   const freeShip = Math.max(0, Math.round(Number(fromFreeShipping || 0)));
   const freeSourceTotal = freeReq + freeShip;
 
+  const usageKind = String(meta?.usageKind || "");
+  const isPtxShipping =
+    usageKind === "practice_transfer_lab_shipping" ||
+    usageKind === "practice_transfer_abuts_shipping";
   const revenueBaseByOwner = resolveRevenueOwnerBaseAllocation({
     spendAmount,
     hasSalesmanReferrer: owners.hasSalesmanReferrer,
     configuredRates: owners.configuredRates,
     owners,
-    isShippingSpend: false,
+    isShippingSpend: isPtxShipping || String(meta?.displayKind || "") === "shipping",
+    // 치과 출발 배송비는 제조사 하청 박스 단가가 아님. 잔여(전액)는 관리자.
+    applyManufacturerUnit: !isPtxShipping,
   });
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: revenueBaseByOwner,

@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-17: 기공의뢰 행 재통합 + 유형 옆 지급 상태(보류/일부/완료).
+// - 2026-08-17: 잔액 카드를 정산 공통 SettlementStatCard로 교체.
 // - 2026-08-17: 견적 상세 모달 — 환자·기공소·주문일·치과도착일·메모 표시.
 // - 2026-08-17: 견적 상세 모달 — 기공소몫/어벗츠몫 보류·실지급을 각각 전달.
 // - 2026-08-17: 금액 호버 툴팁 + 행 클릭 시 견적 상세 모달(첨1).
@@ -88,13 +88,14 @@ import {
 } from "@/features/requests/components/RequestDetailDialog";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingMode } from "@/shared/shipping/shippingMode";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { SettlementStatCard } from "@/shared/settlement/settlementUi";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import {
   parsePracticeTransferFeeQuote,
@@ -110,74 +111,6 @@ import {
   CREDIT_PAID_BUCKET_HINT,
   CREDIT_SETTLEMENT_BUCKET_HINT,
 } from "@/shared/legal/creditPrepaidCopy";
-
-function BalanceStatCard({
-  label,
-  value,
-  hint,
-  hintTooltip,
-  tone = "default",
-}: {
-  label: string;
-  value: number;
-  hint?: string;
-  hintTooltip?: string;
-  tone?: "default" | "primary";
-}) {
-  const hintNode =
-    hint && hintTooltip ? (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="mx-auto cursor-help border-b border-dotted border-slate-400 text-[11px] text-slate-500 sm:text-xs"
-            >
-              {hint}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent
-            side="bottom"
-            className="max-w-xs text-xs leading-relaxed"
-          >
-            <p>{hintTooltip}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    ) : hint ? (
-      <div className="text-center text-[11px] text-slate-500 sm:text-xs">
-        {hint}
-      </div>
-    ) : null;
-
-  return (
-    <div
-      className={cn(
-        "flex min-h-[6.5rem] flex-col justify-center rounded-2xl border px-4 py-3.5 shadow-sm",
-        tone === "primary"
-          ? "border-primary-muted bg-primary-soft/40 ring-1 ring-primary-muted/70"
-          : "border-slate-200/80 bg-white/80",
-      )}
-    >
-      <div className="text-center text-[13px] font-medium text-slate-500">
-        {label}
-      </div>
-      <div
-        className={cn(
-          "mt-1 text-center text-2xl font-semibold tabular-nums tracking-tight sm:text-[1.55rem]",
-          tone === "primary" ? "text-primary-strong" : "text-slate-900",
-        )}
-      >
-        ₩{value.toLocaleString()}
-      </div>
-      {hintNode ? (
-        <div className="mt-2 border-t border-slate-100/80 pt-2 text-center">
-          {hintNode}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 type CreditLedgerType =
   | "CHARGE_PAID"
@@ -1259,7 +1192,7 @@ export const CreditLedgerModal = ({
                   : "grid-cols-1 sm:grid-cols-3",
               )}
             >
-              <BalanceStatCard
+              <SettlementStatCard
                 label="현재 잔액"
                 value={currentBalanceTotal}
                 tone="primary"
@@ -1269,20 +1202,20 @@ export const CreditLedgerModal = ({
                     : "유료(선입금) + 무료"
                 }
               />
-              <BalanceStatCard
+              <SettlementStatCard
                 label="유료크레딧"
                 value={Number(currentBalanceSnapshot.paidCredit || 0)}
                 hint={CREDIT_PAID_BUCKET_HINT}
                 hintTooltip={CREDIT_LEDGER_PREPAID_NOTICE_BODY}
               />
-              <BalanceStatCard
+              <SettlementStatCard
                 label="무료크레딧"
                 value={freeCreditTotal}
                 hint={CREDIT_FREE_BUCKET_HINT}
                 hintTooltip={CREDIT_LEDGER_FREE_NOTICE_BODY}
               />
               {showSettlementCredit ? (
-                <BalanceStatCard
+                <SettlementStatCard
                   label="기공크레딧"
                   value={settlementCreditTotal}
                   hint={CREDIT_SETTLEMENT_BUCKET_HINT}

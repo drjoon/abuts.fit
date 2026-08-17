@@ -38,7 +38,12 @@ const settlementBatchItemSchema = new mongoose.Schema(
       index: true,
     },
     accountCode: { type: String, required: true },
+    /** 실제 입금액(과세 관계사는 VAT 포함 합계). */
     amount: { type: Number, required: true, min: 0 },
+    /** 공급가(면세 기공소는 amount와 동일). */
+    supplyAmount: { type: Number, default: null, min: 0 },
+    /** 부가세(면세 0). */
+    vatAmount: { type: Number, default: null, min: 0 },
     payoutAccount: {
       bankName: { type: String, default: "" },
       accountNumber: { type: String, default: "" },

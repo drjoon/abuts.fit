@@ -172,9 +172,13 @@ Notes:
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
   - `src/pages/admin/support/AdminChatManagement.tsx`
   - `src/pages/admin/support/AdminSmsPage.tsx` (로컬 SMS 템플릿 CRUD·사업자/사용자 휴대폰 수신자 선택)
-- 제조사 정산
-  - `src/pages/manufacturer/payments/PaymentsPage.tsx` — 하청 고정단가(의뢰/배송·VAT 포함 지급)
-  - `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 4사업 축(선택형) + `settlement-business-overview` 와이어링 + 관계사 잔여 분배
+- 역할별 정산
+  - 공통 UI: `src/shared/settlement/settlementUi.tsx` · VAT 카피 `src/shared/settlement/affiliateVat.ts` (의뢰자 크레딧/기공크레딧 최신 스타일)
+  - 기공소/어벗츠기공소: `src/features/settings/tabs/LabSettlementPayoutTab.tsx` — 면세 계산서
+  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·유형·지급상태·금액·잔액·거래내역). 장부는 공급가, 부가세 10%는 지급 시 합산
+  - 영업자: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 공급가 장부, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
+  - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 잔여 분배 공급가, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
+  - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 4사업 축 + 관계사 잔여 분배(관리자=어벗츠 면세)
 
 ## 1. 구조
 
@@ -402,8 +406,10 @@ Notes:
     `totalFreeRequest+totalFreeShipping`, `totalSpentFreeRequestAmount+totalSpentFreeShippingAmount`를 SSOT로 사용합니다.
 
 - 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 이중 체계:
-  - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지.
-  - **관계사 정산(과세)**: 제조사 등 하청·관계사 지급 UI에는 공급가·부가세·합계(부가세 포함) 표시 허용.
+  - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.
+  - **과세 지급**: 어벗츠↔제조사, 어벗츠↔영업자, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
+  - **면세**: 치과·기공소·어벗츠(=관리자). 공급가·**계산서**.
+  - 공통 UI: `src/shared/settlement/settlementUi.tsx`, VAT 카피 `src/shared/settlement/affiliateVat.ts`
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
     화면 제목/안내: **크레딧(기공료 선입금)** — 선불페이(전자금융업)가 아니라 B2B 기공물 대금 선납임을 충전 화면·FAQ·약관에 명시.
     카피 SSOT: `src/shared/legal/creditPrepaidCopy.ts`
@@ -417,7 +423,7 @@ Notes:
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 치과·기공소 경로는 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금).
   - 가격 정책/대시보드: `PricingPolicyDialog` — CNC어벗 생산만(2만/멤버십 1.5만) · CNC어벗 디자인+생산(4만/멤버십 2.5만) · 환봉어벗 생산만/디자인+생산(`creditSettings` 단가, 0원이면 별도 고지) + 배송비 별도(박스당 과금).
   - 제조사 정산규칙: 원청–하청 고정단가(의뢰 공급가+VAT / 배송 공급가+VAT). % 분배 안내 금지.
-  - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 관계사 `AFFILIATE_TO_ABUTS`는 과세.
+  - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 제조사·영업자·개발운영사 `AFFILIATE_TO_ABUTS`만 과세.
 
 - 단일 SSOT 장부 UI 필드 계약(초안):
   - Journal: `journalId`, `eventType`, `businessAnchorId`, `refType`, `refId`, `stageFrom`, `stageTo`, `occurredAt`
@@ -502,7 +508,7 @@ Notes:
   - 일별 표 컬럼: `의뢰/배송/환불·지급·조정/지급 순액(VAT 포함)·참고(유료·무료 분해)`.
   - 의뢰/배송 **건수**는 백엔드 유니크 건수 SSOT. (`machining_spend`+`express_surcharge`를 프론트에서 각각 세지 않음.)
   - 일별 목록은 KST **오늘 이후(미도래 일자)를 표시하지 않는다**. `이번달` 프리셋 종료일도 오늘이다.
-  - 제조사 지급 대상은 **유료 하청비만**(VAT 포함). 무료는 적립·표시만 하고 지급 0. 상단 카드는 의뢰·배송 분해.
+  - 제조사 지급 대상은 **유료 하청비만**(부가세 포함 · 세금계산서). 무료는 적립·표시만 하고 지급 0. 상단 카드는 의뢰·배송 분해.
   - 상단 합계 카드는 `DashboardShell.statsGridClassName`을 명시해 카드가 과도하게 좁아지지 않도록 유지합니다.
 
 - 관리자 정산(`AdminPaymentsPage`) 표시 정책:
@@ -512,8 +518,8 @@ Notes:
     - (2) `PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`
     - (3) `internalLab` `LAB_SETTLEMENT_CREDIT` 적립
     - (4) `PRACTICE_MEMBERSHIP_SPEND` + 활성 멤버 수
-  - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 영업자·개발운영사·관리자.
-  - `PricingPolicyDialog`는 가격·출고 안내만(사업 축 UI 아님).
+  - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 영업자·개발운영사(과세·세금계산서)·어벗츠 관리자(면세·계산서).
+  - 기간 필터는 `PeriodFilter`(KST). `PricingPolicyDialog`는 가격·출고 안내만(사업 축 UI 아님).
   - UI: `creditPageUi` 패널/스탯 타일 + 선택형 사업 카드.
 
 - 어벗츠기공소(`internalLab`) UI SSOT:

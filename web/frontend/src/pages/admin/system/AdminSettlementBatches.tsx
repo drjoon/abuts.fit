@@ -10,6 +10,8 @@ type Item = {
   _id: string;
   role: string;
   amount: number;
+  supplyAmount?: number | null;
+  vatAmount?: number | null;
   status: string;
   payoutAccount?: { bankName?: string; accountNumber?: string; holderName?: string };
   businessAnchorId?: { name?: string };
@@ -95,7 +97,7 @@ export default function AdminSettlementBatches() {
         <div>
           <h1 className="text-xl font-semibold">월 정산 배치</h1>
           <p className="text-sm text-muted-foreground">
-            확정 후 실제 송금을 완료한 항목만 지급완료 처리합니다.
+            확정 후 실제 송금을 완료한 항목만 지급완료 처리합니다. 과세 관계사(제조사·영업자·개발운영사) 금액은 VAT 포함 입금합계입니다.
           </p>
         </div>
         <Button onClick={() => void action("/api/admin/settlement-batches", "정산 배치를 생성했습니다.")} disabled={loading}>
@@ -149,7 +151,15 @@ export default function AdminSettlementBatches() {
                     <div key={item._id} className="rounded-md border p-3 text-sm">
                       <div className="flex flex-wrap justify-between gap-2">
                         <span>{item.businessAnchorId?.name || item.role} · {item.role}</span>
-                        <span className="font-medium">{money(item.amount)}</span>
+                        <span className="font-medium text-right">
+                          {money(item.amount)}
+                          {Number(item.vatAmount || 0) > 0 && (
+                            <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                              공급 {money(Number(item.supplyAmount ?? 0))} + VAT{" "}
+                              {money(Number(item.vatAmount || 0))}
+                            </span>
+                          )}
+                        </span>
                       </div>
                       <div className="mt-1 text-muted-foreground">
                         {item.status} · {item.payoutAccount?.bankName || "계좌 미등록"} {item.payoutAccount?.holderName || ""}

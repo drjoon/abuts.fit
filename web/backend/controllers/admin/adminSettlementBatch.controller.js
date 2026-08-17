@@ -10,11 +10,15 @@ import SettlementBatchItem from "../../models/settlementBatchItem.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import {
   AFFILIATE_SETTLEMENT_ACCOUNTS,
-  computeSettlementBalance,
+  TAXABLE_SETTLEMENT_ROLES,
+  computeSettlementPayoutBreakdown,
   hasPayoutAccount,
   postSettlementPayoutJournal,
 } from "../../services/settlement.service.js";
 import { buildPartySnapshotFromAnchor } from "../../utils/taxInvoiceParty.util.js";
+
+// change-log:
+// - 2026-08-17: 영업자·개발운영사 지급액=공급가+VAT. 세금계산서는 분해 필드 SSOT(제조사 이중 VAT 방지).
 
 const ROLE_FILTERS = [
   {
@@ -105,17 +109,19 @@ export async function adminCreateSettlementBatch(req, res) {
         .select({ payoutAccount: 1 })
         .lean();
       for (const anchor of anchors) {
-        const amount = await computeSettlementBalance({
+        const breakdown = await computeSettlementPayoutBreakdown({
           role: definition.role,
           businessAnchorId: anchor._id,
         });
-        if (amount <= 0) continue;
+        if (breakdown.amount <= 0) continue;
         items.push({
           batchId: batch._id,
           role: definition.role,
           businessAnchorId: anchor._id,
           accountCode: definition.accountCode,
-          amount,
+          amount: breakdown.amount,
+          supplyAmount: breakdown.supplyAmount,
+          vatAmount: breakdown.vatAmount,
           payoutAccount: accountSnapshot(anchor),
           status: "PENDING",
         });
@@ -154,25 +160,26 @@ export async function adminConfirmSettlementBatch(req, res) {
         await item.save();
         continue;
       }
-      const amount = await computeSettlementBalance({
+      const breakdown = await computeSettlementPayoutBreakdown({
         role: item.role,
         businessAnchorId: item.businessAnchorId,
       });
-      item.amount = amount;
+      item.amount = breakdown.amount;
+      item.supplyAmount = breakdown.supplyAmount;
+      item.vatAmount = breakdown.vatAmount;
       item.payoutAccount = accountSnapshot(anchor);
-      if (amount <= 0 || !hasPayoutAccount(item.payoutAccount)) {
+      if (breakdown.amount <= 0 || !hasPayoutAccount(item.payoutAccount)) {
         item.status = "EXCLUDED_NO_ACCOUNT";
         await item.save();
         continue;
       }
       item.status = "CONFIRMED";
-      totalAmount += amount;
+      totalAmount += breakdown.amount;
 
-      // 관계사가 어벗츠에 발행하는 과세 세금계산서: 어벗츠 수탁 위수탁발행 초안.
-      if (item.role !== "lab") {
+      // 관계사(제조사·영업자·개발운영사) → 어벗츠 과세 세금계산서(위수탁).
+      if (TAXABLE_SETTLEMENT_ROLES.has(item.role)) {
         const seller = buildPartySnapshotFromAnchor(anchor);
         const buyer = abuts ? buildPartySnapshotFromAnchor(abuts) : {};
-        const vatAmount = Math.round(amount * 0.1);
         const draft = await TaxInvoiceDraft.create({
           businessAnchorId: abuts?._id || null,
           direction: "AFFILIATE_TO_ABUTS",
@@ -183,9 +190,9 @@ export async function adminConfirmSettlementBatch(req, res) {
           buyer,
           itemName: "플랫폼 운영 수수료 정산",
           status: "PENDING_APPROVAL",
-          supplyAmount: amount,
-          vatAmount,
-          totalAmount: amount + vatAmount,
+          supplyAmount: breakdown.supplyAmount,
+          vatAmount: breakdown.vatAmount,
+          totalAmount: breakdown.amount,
           periodStart: batch.periodStart,
           periodEnd: batch.periodEnd,
           sourceRefType: "SETTLEMENT_BATCH_ITEM",

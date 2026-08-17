@@ -745,8 +745,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 해당 작업은 생산/장비 운영 이벤트로만 취급하고 General Ledger 쓰기를 금지합니다.
 
 - 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3) — 이중 체계:
-  - **면세**: 치과–기공소–어벗츠(기공소). 크레딧 충전·소비·기공정산. `vatAmount = 0`.
-  - **과세**: 어벗츠↔관계사(제조사 등). 부가세 10%. 제조사 `REV_MANUFACTURER` 커밋 시 VAT 기록.
+  - **면세**: 치과–기공소–어벗츠. 크레딧 충전·소비·기공정산. `vatAmount = 0`. 증빙은 계산서.
+  - **과세**: 어벗츠↔제조사, 어벗츠↔영업자, 어벗츠↔개발운영사 지급. 부가세 10% · 세금계산서. 제조사 `REV_MANUFACTURER` 커밋 시 VAT 기록. 영업자·개발운영사는 장부 공급가, 지급 시 VAT.
+  - **면세**: 치과–기공소–어벗츠(=관리자). 관리자 잔여는 면세 공급가·계산서.
   - 크레딧은 선불전자지급수단이 아니라 **기공료 선입금(선납 대금)**. 충전 화면·FAQ·약관·입금 확인 알림에 동일 용어를 쓴다.
     프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
     입금 매칭 알림: `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied` / 템플릿 `ats_credit_charged`
@@ -759,20 +760,22 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 제조사 `REV_MANUFACTURER`: `amountExcludingVat`=하청 공급가, `vatAmount`=공급가×`affiliateVatRate`(기본 0.1), `amount`=합.
     구현: `controllers/requests/common.review.helpers.js`, `services/creditRevenuePolicy.service.js`
   - 의뢰자 잔액·보존식 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 제조사 VAT는 어벗츠 추가 지급.
-  - 고객향 세금계산서 드래프트 세액 기본값 0(면세). 관계사 `AFFILIATE_TO_ABUTS`는 과세 10%.
+  - 고객향 세금계산서 드래프트 세액 기본값 0(면세). 제조사·영업자·개발운영사 `AFFILIATE_TO_ABUTS`는 과세 10%.
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
   - `ABUTS_TO_CUSTOMER`(기존 크레딧 충전 계산서, 치과·기공소→어벗츠 결제의 반대방향): `taxType="면세"`, `issuanceMode="SELF"`(어벗츠가 실제 공급자).
   - `LAB_TO_PRACTICE`(①치과→기공소 기공의뢰비의 반대방향, 월합계): `taxType="면세"`, `issuanceMode="TRUSTEE"`. 실제 공급자는 기공소이지만 기공소는 팝빌 회원가입/인증서가 불필요하고, 어벗츠가 수탁자로 위수탁발행한다(치과·기공소·어벗츠 3자 모두 부가세 면세 원칙 — 어벗츠 공동대표가 기공사라 기공소로 간주).
-  - `AFFILIATE_TO_ABUTS`(④어벗츠→관계사 정산의 반대방향): `taxType="과세"`(부가세 10%), `issuanceMode="TRUSTEE"`. 관계사(제조사/영업자/개발운영사)가 실제 공급자이지만 소규모/1인 사업자가 많아 팝빌 가입 부담을 줄이기 위해 어벗츠가 수탁자로 위수탁발행한다.
+  - `AFFILIATE_TO_ABUTS`(어벗츠→제조사·영업자·개발운영사 정산의 반대방향): `taxType="과세"`(부가세 10%), `issuanceMode="TRUSTEE"`. 제조사·영업자·개발운영사가 실제 공급자이지만 소규모/1인 사업자가 많아 어벗츠가 수탁자로 위수탁발행한다.
+  - 어벗츠(관리자) 잔여 지급의 반대방향은 면세 계산서.
   - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.
   - 구현: `utils/popbill.util.js`(`buildTaxinvoiceObject`의 `issuanceMode`/`seller`/`taxType`), `models/taxInvoiceDraft.model.js`.
 
 - 정산/지급 정책:
   - 관리자 4사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - **제조사(하청)**: 고정단가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT. 유료·무료 모두 적립(확인용). **정산 지급은 유료만**(무료 지급 0). 지급액=`amount`(VAT 포함).
-  - **그 외 관계사**: 정산 지급(PAYOUT)은 유료 수익만. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
+  - **제조사(하청)**: 고정단가 — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000)·`manufacturerShippingUnitPrice`(기본 3,500) + VAT. 유료·무료 모두 적립(확인용). **정산 지급은 유료만**(무료 지급 0). 지급액=`amount`(VAT 포함)·세금계산서.
+  - **영업자·개발운영사**: 장부 적립은 공급가. 지급 시 부가세 10%를 더해 **입금·세금계산서**. 구현: `services/settlement.service.js`(`resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금합계, `supplyAmount`/`vatAmount` 분해.
+  - **어벗츠(관리자)·기공소**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
   - 배송: 제조사 고정 배송 공급가(+VAT). 고객 배송비−제조사 공급가 잔여 → 관리자(`vatAmount=0`).
   - 무료 수익은 지급금액 0으로 정산 완료 상태만 표시할 수 있습니다.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공 → 유료** 차감을 사용합니다.
