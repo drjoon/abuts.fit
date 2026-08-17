@@ -1,3 +1,6 @@
+// change-log:
+// - 2026-08-17: 한진 배송조회는 운송장 숫자만 사용. 하이픈 조회는 ERROR-03 + 빈 wrkList.
+// - 2026-08-17: 배송완료(66)는 wrkList 전체에서 찾고, 오류 행은 접수 상태로 되돌리지 않는다.
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
@@ -5,6 +8,8 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/shipping.TrackingPoller.js
+// - web/backend/controllers/requests/shipping.controller.js
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
@@ -94,8 +99,113 @@ export const buildTrackingStatusLabel = (deliveryInfo) => {
   return "-";
 };
 
+export const HANJIN_STATUS = {
+  CANCELED: "03",
+  PICKED_UP: "11",
+  DELIVERED: "66",
+};
+
 export const hasPickupCompleted = (statusCode) =>
-  String(statusCode || "").trim() === "11";
+  String(statusCode || "").trim() === HANJIN_STATUS.PICKED_UP;
+
+export const hasDelivered = (statusCode) =>
+  String(statusCode || "").trim() === HANJIN_STATUS.DELIVERED;
+
+export const isTerminalHanjinStatus = (statusCode) => {
+  const code = String(statusCode || "").trim();
+  return code === HANJIN_STATUS.DELIVERED || code === HANJIN_STATUS.CANCELED;
+};
+
+export const normalizeHanjinWblNo = (value) =>
+  String(value || "")
+    .replace(/\D+/g, "")
+    .trim();
+
+export const canonicalizeHanjinWblNo = (value) => {
+  const raw = String(value || "").trim();
+  const digits = normalizeHanjinWblNo(raw);
+  return digits.length === 12 ? digits : raw;
+};
+
+export const isHanjinTrackingRowOk = (row) => {
+  if (!row || typeof row !== "object") return false;
+  const code = String(row?.resultCode || "")
+    .trim()
+    .toUpperCase();
+  if (code && code !== "OK" && code !== "SUCCESS") return false;
+  return Array.isArray(row?.wrkList) ? row.wrkList.length > 0 : Boolean(code);
+};
+
+export const buildTrackingRowMap = (rows = []) => {
+  const map = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const raw = String(row?.wblNo || row?.wbNo || "").trim();
+    const digits = normalizeHanjinWblNo(raw);
+    if (raw) map.set(raw, row);
+    if (digits) map.set(digits, row);
+  }
+  return map;
+};
+
+export const findTrackingRow = (rowMap, trackingNumber) => {
+  if (!(rowMap instanceof Map)) return null;
+  const raw = String(trackingNumber || "").trim();
+  if (!raw) return null;
+  const digits = normalizeHanjinWblNo(raw);
+  return rowMap.get(raw) || (digits ? rowMap.get(digits) : null) || null;
+};
+
+export const pickLatestTrackingEvent = (events = []) => {
+  if (!Array.isArray(events) || !events.length) return null;
+  return [...events].sort((a, b) => {
+    const at =
+      a?.occurredAt instanceof Date && !Number.isNaN(a.occurredAt.getTime())
+        ? a.occurredAt.getTime()
+        : 0;
+    const bt =
+      b?.occurredAt instanceof Date && !Number.isNaN(b.occurredAt.getTime())
+        ? b.occurredAt.getTime()
+        : 0;
+    return at - bt;
+  }).at(-1);
+};
+
+export const findTrackingEventByCode = (events = [], statusCode) => {
+  const code = String(statusCode || "").trim();
+  if (!code) return null;
+  const matched = (Array.isArray(events) ? events : []).filter(
+    (event) => String(event?.statusCode || "").trim() === code,
+  );
+  return pickLatestTrackingEvent(matched);
+};
+
+export const resolveTrackingApplyFromRow = (row) => {
+  if (!isHanjinTrackingRowOk(row)) return null;
+  const events = normalizeTrackingWorkRows(row?.wrkList);
+  if (!events.length) return null;
+  const last = pickLatestTrackingEvent(events);
+  const deliveredEvent = findTrackingEventByCode(
+    events,
+    HANJIN_STATUS.DELIVERED,
+  );
+  const pickupEvent = findTrackingEventByCode(events, HANJIN_STATUS.PICKED_UP);
+  const canceledByCode = findTrackingEventByCode(
+    events,
+    HANJIN_STATUS.CANCELED,
+  );
+  const canceledEvent =
+    canceledByCode ||
+    (String(last?.statusText || "").trim() === "예약취소" ? last : null);
+  return {
+    events,
+    last,
+    deliveredAt: deliveredEvent?.occurredAt || null,
+    pickedUpAt: pickupEvent?.occurredAt || null,
+    canceledAt: canceledEvent?.occurredAt || null,
+    canonicalWblNo:
+      normalizeHanjinWblNo(row?.wblNo || row?.wbNo || "") || null,
+  };
+};
 
 export const extractTrackingRows = (data) => {
   if (!data || typeof data !== "object") return [];
@@ -147,12 +257,23 @@ export const resolveTrackingSyncTargets = async ({
     .populate("businessAnchorId", "name metadata")
     .populate("deliveryInfoRef");
 
+  const wantedTrackingNumbers = new Set();
+  for (const value of trackingNumberList) {
+    wantedTrackingNumbers.add(value);
+    const digits = normalizeHanjinWblNo(value);
+    if (digits) wantedTrackingNumbers.add(digits);
+  }
+
   return requests.filter((requestDoc) => {
     const di = requestDoc.deliveryInfoRef;
     const trackingNumber = String(di?.trackingNumber || "").trim();
     if (!trackingNumber) return false;
-    if (!trackingNumberList.length) return true;
-    return trackingNumberList.includes(trackingNumber);
+    if (!wantedTrackingNumbers.size) return true;
+    const digits = normalizeHanjinWblNo(trackingNumber);
+    return (
+      wantedTrackingNumbers.has(trackingNumber) ||
+      (digits && wantedTrackingNumbers.has(digits))
+    );
   });
 };
 
@@ -166,13 +287,13 @@ export const applyTrackingRowsToRequests = async ({
   for (const requestDoc of requestDocs) {
     const deliveryInfo = requestDoc.deliveryInfoRef;
     const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
-    const row = rowMap instanceof Map ? rowMap.get(trackingNumber) : null;
-    if (!row || !deliveryInfo) {
+    const row = findTrackingRow(rowMap, trackingNumber);
+    const resolved = resolveTrackingApplyFromRow(row);
+    if (!row || !deliveryInfo || !resolved) {
       continue;
     }
 
-    const events = normalizeTrackingWorkRows(row?.wrkList);
-    const last = events.length ? events[events.length - 1] : null;
+    const { events, last } = resolved;
     deliveryInfo.tracking = deliveryInfo.tracking || {};
     if (last?.statusCode)
       deliveryInfo.tracking.lastStatusCode = last.statusCode;
@@ -183,11 +304,14 @@ export const applyTrackingRowsToRequests = async ({
     if (events.length) {
       deliveryInfo.events = events;
     }
-    if (String(last?.statusCode || "") === "66" && last?.occurredAt) {
-      deliveryInfo.deliveredAt = last.occurredAt;
+    if (resolved.canonicalWblNo) {
+      deliveryInfo.trackingNumber = resolved.canonicalWblNo;
     }
-    if (hasPickupCompleted(last?.statusCode) && last?.occurredAt) {
-      deliveryInfo.pickedUpAt = last.occurredAt;
+    if (resolved.deliveredAt) {
+      deliveryInfo.deliveredAt = resolved.deliveredAt;
+    }
+    if (resolved.pickedUpAt) {
+      deliveryInfo.pickedUpAt = resolved.pickedUpAt;
     }
     if (isTrackingStageEligible(deliveryInfo)) {
       requestDoc.manufacturerStage = "추적관리";
@@ -209,17 +333,25 @@ export const applyTrackingRowsToRequests = async ({
         source,
         updatedAt: deliveryInfo.deliveredAt,
       });
-    } else if (trackingCode === "03" || trackingText === "예약취소") {
+    } else if (
+      trackingCode === HANJIN_STATUS.CANCELED ||
+      trackingText === "예약취소" ||
+      resolved.canceledAt
+    ) {
       applyShippingWorkflowState(requestDoc, {
         code: SHIPPING_WORKFLOW_CODES.CANCELED,
         label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.CANCELED],
-        canceledAt: last?.occurredAt || new Date(),
+        canceledAt: resolved.canceledAt || last?.occurredAt || new Date(),
         trackingStatusCode: trackingCode || null,
         trackingStatusText: trackingText || null,
         source,
-        updatedAt: last?.occurredAt || new Date(),
+        updatedAt: resolved.canceledAt || last?.occurredAt || new Date(),
       });
-    } else if (hasPickupCompleted(trackingCode)) {
+    } else if (
+      hasPickupCompleted(trackingCode) ||
+      deliveryInfo?.pickedUpAt ||
+      resolved.pickedUpAt
+    ) {
       resetPrintedAndAcceptedWorkingState(
         requestDoc,
         deliveryInfo.pickedUpAt || last?.occurredAt || new Date(),
@@ -256,7 +388,7 @@ export const applyTrackingRowsToRequests = async ({
     });
     synced.push({
       requestId: requestDoc.requestId,
-      trackingNumber,
+      trackingNumber: deliveryInfo.trackingNumber || trackingNumber,
       statusCode: deliveryInfo.tracking?.lastStatusCode || null,
       statusText: deliveryInfo.tracking?.lastStatusText || null,
     });

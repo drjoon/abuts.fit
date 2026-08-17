@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 수동 집하 운송장번호는 숫자만 저장하고, 한진 배송조회 폴링을 이어서 돌린다.
 // - 2026-08-17: PTX 직납 수취인(shippingReceiver) 주소 스냅샷 수정 API.
 // - 2026-08-11: mailbox-requests 성능 — exact mailboxAddress, lean+batch hydrate, 15s 캐시, requestIds 단축 경로
 // - 2026-08-04: 수동 집하 pickedUpAt/deliveredAt을 당일 16:00 고정 → 실제 처리 시각(now)으로 기록
@@ -10,6 +11,8 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/shipping.Tracking.helpers.js
+// - web/backend/controllers/requests/shipping.TrackingPoller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
@@ -28,7 +31,8 @@ import {
   normalizeWorksheetRequestForResponse,
 } from "./utils.js";
 
-import { emitDeliveryUpdated } from "./shipping.Tracking.helpers.js";
+import { emitDeliveryUpdated, canonicalizeHanjinWblNo } from "./shipping.Tracking.helpers.js";
+import { startHanjinTrackingPoll } from "./shipping.TrackingPoller.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
@@ -956,7 +960,9 @@ export async function manualHanjinPickupCompleted(req, res) {
       nonHanjinShippingMethods: nonHanjinShippingMethodsRaw = [],
     } = req.body || {};
 
-    const manualTrackingNumber = String(manualTrackingNumberRaw || "").trim();
+    const manualTrackingNumber = canonicalizeHanjinWblNo(
+      String(manualTrackingNumberRaw || "").trim(),
+    );
     const requestedManualStatusCode =
       String(manualStatusCodeRaw || "11").trim() || "11";
     const requestedManualStatusText =
@@ -967,10 +973,13 @@ export async function manualHanjinPickupCompleted(req, res) {
       typeof trackingNumberByMailboxRaw === "object"
         ? Object.fromEntries(
             Object.entries(trackingNumberByMailboxRaw)
-              .map(([mailbox, trackingNumber]) => [
-                String(mailbox || "").trim(),
-                String(trackingNumber || "").trim(),
-              ])
+              .map(([mailbox, trackingNumber]) => {
+                const raw = String(trackingNumber || "").trim();
+                return [
+                  String(mailbox || "").trim(),
+                  canonicalizeHanjinWblNo(raw),
+                ];
+              })
               .filter(([mailbox, trackingNumber]) => mailbox && trackingNumber),
           )
         : {};
@@ -1203,13 +1212,18 @@ export async function manualHanjinPickupCompleted(req, res) {
       // 그룹 키(pkg/mailbox)는 내부 처리 순서용이며, 사용자/추적 화면의 집하 단위를 쪼개면 안 된다.
       // 수동 집하는 사용자가 입력한 운송장번호를 우편함 전체에 강제 적용한다.
       // (레거시 mock 경로와 호환을 위해 trackingNumber가 비어 있으면 fallback 생성값을 사용)
-      const mailboxTrackingNumber = useNonHanjinShippingMethods
+      const mailboxTrackingNumberRaw = useNonHanjinShippingMethods
         ? String(
-            trackingNumberByMailbox?.[mailboxAddress] || manualTrackingNumber || "",
+            trackingNumberByMailbox?.[mailboxAddress] ||
+              manualTrackingNumber ||
+              "",
           ).trim()
         : String(trackingNumberByMailbox?.[mailboxAddress] || "").trim() ||
           manualTrackingNumber ||
           resolveMailboxTrackingNumber(effectiveMailboxRequests, "MOCK", now);
+      const mailboxTrackingNumber = canonicalizeHanjinWblNo(
+        mailboxTrackingNumberRaw,
+      );
 
       for (const group of groups) {
         const trackingNumber = mailboxTrackingNumber;
@@ -1379,6 +1393,32 @@ export async function manualHanjinPickupCompleted(req, res) {
           failedMailboxes,
         },
       });
+    }
+
+    const pickedUpRequestIds = [
+      ...new Set(
+        results.flatMap((item) =>
+          Array.isArray(item?.requestIds) ? item.requestIds : [],
+        ),
+      ),
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    if (!useNonHanjinShippingMethods && pickedUpRequestIds.length) {
+      try {
+        await startHanjinTrackingPoll({
+          requestIds: pickedUpRequestIds,
+          actorUserId: req.user?._id || null,
+          source: "hanjin-tracking-manual-pickup",
+          runImmediate: true,
+        });
+      } catch (pollError) {
+        console.error(
+          "[MANUAL_PICKUP] hanjin tracking poll failed",
+          pollError,
+        );
+      }
     }
 
     return res.status(200).json({

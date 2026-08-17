@@ -275,7 +275,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - blocked mode 재시도 주기: 평일 1시간 간격, 주말은 중지 후 월요일 08:00(KST)부터 재개합니다.
   - 성공 응답이 확인되면 blocked mode를 자동 해제하고 정상 주기로 복귀합니다.
   - 서버 시작 시 `startHanjinTrackingAutoSyncWorker({ runImmediate: false })`를 사용해 부팅 직후 즉시 호출은 비활성화합니다.
-  - 관련 구현: `controllers/requests/shipping.TrackingPoller.js`, `services/hanjin.service.js`, `server.js`
+  - 운송장번호 조회 SSOT는 숫자 12자리. 수동 집하 입력 `5373-3627-0634`는 하이픈을 제거한 뒤 `tracking-wbls`를 호출한다. 하이픈 그대로 조회하면 `ERROR-03` + 빈 `wrkList`가 나와 배송완료(66)로 전이되지 않는다.
+  - 폴링 종료 조건은 집하완료(11)가 아니라 배송완료(66)/예약취소(03). 오류 행은 기존 `picked_up`을 `accepted`로 되돌리지 않는다.
+  - 관련 구현: `controllers/requests/shipping.TrackingPoller.js`, `controllers/requests/shipping.Tracking.helpers.js`, `services/hanjin.service.js`, `server.js`
   - 전역 설정 저장 SSOT: `models/systemSettings.model.js` (`packingScrewLotSettings: [{type, lotNumber}]`)
   - 의뢰 스냅샷 SSOT: `models/request.model.js` (`screwTracking`)
   - API/정규화: `controllers/requests/common.requests.controller.js`

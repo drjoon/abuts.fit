@@ -308,6 +308,7 @@
   - UI: `PricingPolicyDialog`, 의뢰 상세 비용 세부. 신규의뢰 우측·의뢰카드는 금액 미표시(`+디자인` 뱃지만)
   - 상세: `.cursor/rules/design-fee.mdc`
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)
+- 한진 배송조회 운송장번호는 숫자 12자리. 수동 입력 하이픈은 조회 전 제거 (`shipping.Tracking.helpers.js`). 배송완료 전이는 statusCode 66.
 
 ### 2.8 R&D 샘플
 

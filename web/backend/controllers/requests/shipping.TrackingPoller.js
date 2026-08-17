@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-17: 한진 조회 운송장은 숫자만 보내고, 폴링은 배송완료(66)/취소(03)까지 유지.
 // related files:
 // - web/backend/rules.md
 // - web/backend/models/jobLock.model.js
@@ -7,13 +9,16 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/shipping.Tracking.helpers.js
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import hanjinService from "../../services/hanjin.service.js";
 import {
   applyTrackingRowsToRequests,
+  buildTrackingRowMap,
   extractTrackingRows,
-  hasPickupCompleted,
+  isTerminalHanjinStatus,
+  normalizeHanjinWblNo,
   resolveTrackingSyncTargets,
   HANJIN_CLIENT_ID,
 } from "./shipping.Tracking.helpers.js";
@@ -169,9 +174,18 @@ const syncTrackingForTargets = async ({
 
   for (let i = 0; i < requestDocs.length; i += batchSize) {
     const batch = requestDocs.slice(i, i + batchSize);
-    const wblNoList = batch.map((requestDoc) => ({
-      wblNo: String(requestDoc?.deliveryInfoRef?.trackingNumber || "").trim(),
-    }));
+    const seenWblNos = new Set();
+    const wblNoList = [];
+    for (const requestDoc of batch) {
+      const raw = String(
+        requestDoc?.deliveryInfoRef?.trackingNumber || "",
+      ).trim();
+      const wblNo = normalizeHanjinWblNo(raw) || raw;
+      if (!wblNo || seenWblNos.has(wblNo)) continue;
+      seenWblNos.add(wblNo);
+      wblNoList.push({ wblNo });
+    }
+    if (!wblNoList.length) continue;
 
     const data = await hanjinService.requestOrderApi({
       path: "/parcel-delivery/v1/tracking/tracking-wbls",
@@ -183,9 +197,7 @@ const syncTrackingForTargets = async ({
     });
 
     const rows = extractTrackingRows(data);
-    const rowMap = new Map(
-      rows.map((row) => [String(row?.wblNo || row?.wbNo || "").trim(), row]),
-    );
+    const rowMap = buildTrackingRowMap(rows);
 
     const synced = await applyTrackingRowsToRequests({
       requestDocs: batch,
@@ -223,9 +235,22 @@ const pollOnce = async ({
     source,
   });
 
-  const shouldContinue = synced.some(
-    (item) => !hasPickupCompleted(item?.statusCode),
+  const syncedByRequestId = new Map(
+    (Array.isArray(synced) ? synced : []).map((item) => [
+      String(item?.requestId || "").trim(),
+      item,
+    ]),
   );
+  const shouldContinue = targets.some((requestDoc) => {
+    const requestId = String(requestDoc?.requestId || "").trim();
+    const syncedItem = syncedByRequestId.get(requestId);
+    const code = String(
+      syncedItem?.statusCode ||
+        requestDoc?.deliveryInfoRef?.tracking?.lastStatusCode ||
+        "",
+    ).trim();
+    return !isTerminalHanjinStatus(code);
+  });
   return { synced, shouldContinue };
 };
 
@@ -247,7 +272,7 @@ const isAutoSyncTarget = (requestDoc) => {
   const trackingCode = String(
     deliveryInfo?.tracking?.lastStatusCode || "",
   ).trim();
-  if (trackingCode === "66" || trackingCode === "03") return false;
+  if (isTerminalHanjinStatus(trackingCode)) return false;
   return true;
 };
 
