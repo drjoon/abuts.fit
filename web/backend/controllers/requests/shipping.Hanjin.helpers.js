@@ -7,7 +7,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/utils/shippingReceiver.utils.js
 // change-log:
-// - 2026-08-17: PTX 직납 shippingReceiver 스냅샷을 한진 수취인(이름·전화·주소) 우선으로 사용.
+// - 2026-08-17: 운송장 비고는 우편함/사업자명만 (제품 건수는 웹앱에서 확인).
 import Request from "../../models/request.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import hanjinService from "../../services/hanjin.service.js";
@@ -897,11 +897,7 @@ const buildHanjinDraftPayload = async (requests) => {
         mailbox_code: resolveMailboxCode(first),
         organization_name: organizationName,
         request_count: group.length,
-        remark: [
-          resolveMailboxCode(first),
-          organizationName,
-          `${group.length}건`,
-        ]
+        remark: [resolveMailboxCode(first), organizationName]
           .filter(Boolean)
           .join(" / "),
       };
@@ -1055,12 +1051,9 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
 
       const mailboxCode = String(row?.mailbox_code || "").trim();
       const orgName = String(row?.organization_name || "").trim();
-      const reqCount = Number(row?.request_count || 0);
       const remark =
         String(row?.remark || "").trim() ||
-        [mailboxCode, orgName, reqCount > 0 ? `${reqCount}건` : ""]
-          .filter(Boolean)
-          .join(" / ");
+        [mailboxCode, orgName].filter(Boolean).join(" / ");
       const today = getTodayYmdInKst();
       const todayLabel = `${today.replace(/-/g, ".")}.`;
 
@@ -1107,7 +1100,7 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
 ^FO74,418^A0N,16,16^FD${senderAddr}^FS
 ^FO734,392^A0N,18,18^FD${todayLabel} Type:S^FS
 ^FO74,486^A0N,22,22^FD의료기기^FS
-^FO826,486^A0N,18,18^FD1 / 0 (건수/수량)^FS
+^FO826,486^A0N,18,18^FD^FS
 ^FO74,662^A0N,14,14^FD※ 개인정보 보호를 위하여 인수하신 화물의 운송장을 폐기하여 주시기 바랍니다. ⓗ^FS
 ^FO74,712^A0N,16,16^FD${remark}^FS
 ^FO602,552^BY2,2,94^BCN,94,N,N,N^FD${wblNum}^FS

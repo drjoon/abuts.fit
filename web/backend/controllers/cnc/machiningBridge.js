@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-08-17: 우편함 배정 SSOT는 가공→세척.패킹 진입. 포장.발송은 기존 배정 유지.
 // - 2026-08-08: 가공 완료 시 NC(T0707→#7) 툴번호로 사용량·수명 카운트.
 // - 2026-08-07: last-completed 맵에 의뢰자명(businessName) 포함.
 // - 2026-08-07: auto-next 직경 호환을 소재≥maxDiameter 커버 규칙으로 통일 (D6→D8/D10 허용).
@@ -2052,7 +2053,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
           request.businessAnchorId = request.requestor.businessAnchorId;
         }
 
-        // 우편함 배정 SSOT: 세척.패킹 진입 시 동일 업체 활성 점유를 재사용해 선배정한다.
+        // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
         const effectiveAnchorId =
           requestAnchorIdStr || requestorAnchorIdStr || null;
         await assignMailboxForCleaningPackingEnter({

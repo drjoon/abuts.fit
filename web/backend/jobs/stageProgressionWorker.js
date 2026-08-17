@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/requests/mailbox.utils.js
+// change-log:
+// - 2026-08-17: 우편함 배정은 가공→세척.패킹, 포장.발송은 기존 배정 유지.
 import "../bootstrap/env.js";
 import mongoose from "mongoose";
 import Request from "../models/request.model.js";
@@ -12,7 +15,7 @@ import {
 } from "../controllers/requests/utils.js";
 import {
   assignMailboxForCleaningPackingEnter,
-  ensureMailboxAddressForBusiness,
+  retainMailboxOnShippingEnter,
   isManufacturerSampleRequest,
 } from "../controllers/requests/mailbox.utils.js";
 import { applyPracticeShippingReceiverSnapshotToRequest } from "../utils/shippingReceiver.utils.js";
@@ -91,7 +94,7 @@ async function progressStages() {
 
     for (const req of productionToPackaging) {
       applyStatusMapping(req, "세척.패킹");
-      // 우편함 배정 SSOT: 세척.패킹 진입 시 동일 업체 활성 점유를 재사용해 선배정한다.
+      // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
       const requestorOrgId =
         req.businessAnchorId || req.requestor?.businessAnchorId || null;
       await assignMailboxForCleaningPackingEnter({
@@ -119,16 +122,12 @@ async function progressStages() {
         try {
           const requestorOrgId =
             req.businessAnchorId || req.requestor?.businessAnchorId || null;
-          const nextMailboxAddress = await ensureMailboxAddressForBusiness({
-            requestMongoId: req._id,
+          await retainMailboxOnShippingEnter({
+            request: req,
             requestorOrgId,
-            currentMailboxAddress: null,
           });
-          if (nextMailboxAddress) {
-            req.mailboxAddress = nextMailboxAddress;
-          }
         } catch (error) {
-          console.error("[STAGE_WORKER] mailbox allocation failed", {
+          console.error("[STAGE_WORKER] mailbox retain/fallback failed", {
             requestId: req.requestId,
             message: error?.message || String(error),
           });

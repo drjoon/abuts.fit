@@ -6,6 +6,13 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/mailbox.utils.js
+// - web/backend/controllers/requests/shipping.controller.js
+// - web/backend/controllers/requests/shipping.Tracking.helpers.js
+// change-log:
+// - 2026-08-17: 배송비 차감 SSOT를 집하(우편함 비우기)로 옮김. 포장.발송 진입은 우편함만 확인.
+// - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비에서만 해제.
+// - 2026-08-17: 포장.발송 진입 시 기존 우편함을 유지(다른 박스 합류로 주소를 바꾸지 않음).
 // - 2026-08-17: PTX CA 포장 배송비 displayLabel=배송비(치과→어벗츠).
 import mongoose, { Types } from "mongoose";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
@@ -49,7 +56,11 @@ import {
   splitRevenueByCreditKindProRata,
 } from "../../services/creditRevenuePolicy.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
-import { ensureMailboxAddressForBusiness } from "./mailbox.utils.js";
+import {
+  isManufacturerSampleRequest,
+  normalizeBusinessAnchorId,
+  resolveShippingMailboxOrgId,
+} from "./mailbox.utils.js";
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
@@ -530,11 +541,10 @@ export function revertManufacturerStageByReviewStage(request, stage) {
     request.manufacturerStage = "포장.발송";
   }
 
-  // 포장.발송 → 세척.패킹 롤백 시 우편함/패킹 승인 상태를 비운다.
-  // - mailbox를 남기면 타 업체 재승인 시 동일 박스 혼입·ShippingPackage 유니크 충돌이 난다.
-  // - packing review를 APPROVED로 두면 단계는 세척.패킹인데 승인만 남은 불일치 상태가 된다.
-  if (String(stage || "").trim() === "shipping") {
-    request.mailboxAddress = null;
+  // 포장.발송 → 세척.패킹 롤백: 우편함은 라벨 SSOT이므로 유지한다.
+  // packing review만 PENDING으로 되돌려 단계/승인 불일치를 막는다.
+  const reviewStage = String(stage || "").trim();
+  if (reviewStage === "shipping") {
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
     request.caseInfos.reviewByStage.packing = {
@@ -543,6 +553,11 @@ export function revertManufacturerStageByReviewStage(request, stage) {
       updatedBy: null,
       reason: "",
     };
+  }
+  // 세척.패킹 → 가공 롤백: 우편함은 패킹 라벨 SSOT이므로 유지한다.
+  // 가공 → 준비 롤백: 처음부터 다시이므로 우편함을 해제한다.
+  if (reviewStage === "machining") {
+    request.mailboxAddress = null;
   }
 }
 
@@ -1406,20 +1421,11 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
   });
 }
 
-// 타이밍 SSOT: 세척.패킹 승인으로 포장.발송 진입할 때만 호출되어야 한다.
-// spendBusinessAnchorId: PTX CA는 치과(practice)에 배송비 부과(부가세 없음). 패키지 운영 키는 businessAnchorId 유지.
+// 포장.발송 진입: 우편함만 확인한다. 배송비 차감은 집하 SSOT.
 export async function ensureShippingFeeSpendOnPackingApprove({
   request,
-  businessAnchorId,
-  spendBusinessAnchorId = null,
-  actorUserId,
-  session,
-  deferredCreditEvents,
 }) {
-  if (!request?._id || !businessAnchorId) return;
-
-  const payerAnchorId = String(spendBusinessAnchorId || businessAnchorId).trim();
-  if (!payerAnchorId || !Types.ObjectId.isValid(payerAnchorId)) return;
+  if (!request?._id) return;
 
   const mailboxAddress = String(request?.mailboxAddress || "").trim();
   if (!mailboxAddress) {
@@ -1429,302 +1435,243 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     err.statusCode = 400;
     throw err;
   }
+}
 
-  const shipDateYmd = getTodayYmdInKst();
-  let pkg = null;
-  let retryCount = 0;
-  const maxRetries = 3;
-
-  // 다른 발송 대기 의뢰가 점유한 패키지만 재사용한다(자기 과거 패키지는 제외).
-  const pendingPackageCarrier = await Request.findOne(
-    {
-      businessAnchorId,
-      manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
-      shippingPackageId: { $ne: null },
-      requestCategory: "order",
-      _id: { $ne: request._id },
-    },
-    { shippingPackageId: 1, mailboxAddress: 1 },
-    { session },
-  )
-    .sort({ createdAt: 1 })
-    .lean();
-
-  const pendingPackageId = String(
-    pendingPackageCarrier?.shippingPackageId || "",
-  ).trim();
-
-  if (pendingPackageId) {
-    await ShippingPackage.updateOne(
-      { _id: pendingPackageId },
-      { $addToSet: { requestIds: request._id } },
-      { session },
-    );
-    pkg = await ShippingPackage.findById(pendingPackageId, null, {
-      session,
-    });
-
-    const canonicalMailbox = String(
-      pkg?.mailboxAddress || pendingPackageCarrier?.mailboxAddress || "",
+const collectRelatedPtxIds = (requests = []) => {
+  const ids = [];
+  const seen = new Set();
+  for (const request of requests) {
+    const relatedPtxId = String(
+      request?.partnerBilling?.relatedPracticeTransferId || "",
     ).trim();
-    if (canonicalMailbox && canonicalMailbox !== mailboxAddress) {
-      request.mailboxAddress = canonicalMailbox;
-    }
+    if (!relatedPtxId || !Types.ObjectId.isValid(relatedPtxId)) continue;
+    if (seen.has(relatedPtxId)) continue;
+    seen.add(relatedPtxId);
+    ids.push(relatedPtxId);
   }
+  return ids;
+};
 
-  // 다른 활성 패키지가 없으면 자기 과거 패키지를 현재 mailbox로 동기화해 재사용한다.
-  if (!pkg?._id) {
-    const selfPackageId = String(request?.shippingPackageId || "").trim();
-    if (selfPackageId) {
-      await ShippingPackage.updateOne(
-        { _id: selfPackageId },
-        {
-          $set: { mailboxAddress },
-          $addToSet: { requestIds: request._id },
-        },
-        { session },
-      );
-      pkg = await ShippingPackage.findById(selfPackageId, null, { session });
-    }
-  }
+async function maybeConvertPtxAbutsShippingHolds({
+  requests = [],
+  actorUserId = null,
+  session = null,
+}) {
+  const relatedPtxIds = collectRelatedPtxIds(requests);
+  if (!relatedPtxIds.length) return { handled: false };
 
-  const shippingFeeSupply = await resolveShippingFeePerBox();
+  const { getJournalByIdempotencyKey } = await import(
+    "../../services/generalLedger.service.js"
+  );
+  const PracticeTransfer = (
+    await import("../../models/practiceTransfer.model.js")
+  ).default;
+  const { chargePracticeTransferAbutsShipping } = await import(
+    "../../services/practiceTransferBilling.service.js"
+  );
 
-  // 트랜잭션 안에서는 upsert 11000이 트랜잭션 전체를 abort 시킨다.
-  // 레거시 unique(businessId+shipDate+mailbox)는 businessId가 비어 있으면
-  // 서로 다른 businessAnchor도 같은 우편함/일자에서 충돌한다.
-  // → find 후 insert로 바꾸고, 타 업체 박스가 같은 우편함을 쓰면 새 우편함으로 재할당한다.
-  if (!pkg?._id) {
-    const currentMailbox = String(request?.mailboxAddress || mailboxAddress || "").trim();
-    let resolvedMailbox = currentMailbox;
-
-    const foreignPackage = await ShippingPackage.findOne(
-      {
-        shipDateYmd,
-        mailboxAddress: resolvedMailbox,
-        businessAnchorId: { $ne: businessAnchorId },
-      },
-      { _id: 1, businessAnchorId: 1, mailboxAddress: 1 },
-      { session },
-    ).lean();
-
-    if (foreignPackage?._id) {
-      console.warn("[SHIPPING_FEE] mailbox already used by another business today; reallocating", {
-        requestId: request?.requestId || null,
-        mailboxAddress: resolvedMailbox,
-        foreignBusinessAnchorId: String(foreignPackage.businessAnchorId || ""),
-      });
-      try {
-        const nextMailboxAddress = await ensureMailboxAddressForBusiness({
-          requestMongoId: request._id,
-          requestorOrgId: businessAnchorId,
-          currentMailboxAddress: null,
-          session,
-        });
-        if (nextMailboxAddress && nextMailboxAddress !== resolvedMailbox) {
-          resolvedMailbox = String(nextMailboxAddress).trim();
-          request.mailboxAddress = resolvedMailbox;
-        }
-      } catch (reallocErr) {
-        console.error("[SHIPPING_FEE] mailbox reallocation failed", reallocErr);
-      }
-    }
-
-    pkg = await ShippingPackage.findOne(
-      { businessAnchorId, shipDateYmd, mailboxAddress: resolvedMailbox },
-      null,
-      { session },
-    );
-
-    if (pkg?._id) {
-      await ShippingPackage.updateOne(
-        { _id: pkg._id },
-        { $addToSet: { requestIds: request._id } },
-        { session },
-      );
-      pkg = await ShippingPackage.findById(pkg._id, null, { session });
-    } else {
-      while (!pkg?._id && retryCount < maxRetries) {
-        try {
-          const created = await ShippingPackage.create(
-            [
-              {
-                businessAnchorId,
-                shipDateYmd,
-                mailboxAddress: resolvedMailbox,
-                shippingFeeSupply,
-                shippingFeeVat: 0,
-                createdBy: actorUserId || null,
-                requestIds: [request._id],
-              },
-            ],
-            { session },
-          );
-          pkg = created?.[0] || null;
-          break;
-        } catch (err) {
-          if (err.code === 11000 && retryCount < maxRetries - 1) {
-            // 트랜잭션이 abort됐을 수 있으므로 호출부 withTransaction 재시도에 맡긴다.
-            console.log(
-              `[SHIPPING_FEE] Duplicate package detected, retrying... (attempt ${retryCount + 1})`,
-            );
-            retryCount++;
-            pkg = await ShippingPackage.findOne(
-              { businessAnchorId, shipDateYmd, mailboxAddress: resolvedMailbox },
-              null,
-              { session },
-            );
-            if (pkg?._id) {
-              await ShippingPackage.updateOne(
-                { _id: pkg._id },
-                { $addToSet: { requestIds: request._id } },
-                { session },
-              );
-              pkg = await ShippingPackage.findById(pkg._id, null, { session });
-              break;
-            }
-            // 같은 우편함에서 레거시 인덱스 충돌이면 새 우편함으로 한 번 더 시도
-            try {
-              const nextMailboxAddress = await ensureMailboxAddressForBusiness({
-                requestMongoId: request._id,
-                requestorOrgId: businessAnchorId,
-                currentMailboxAddress: null,
-                session,
-              });
-              if (nextMailboxAddress && nextMailboxAddress !== resolvedMailbox) {
-                resolvedMailbox = String(nextMailboxAddress).trim();
-                request.mailboxAddress = resolvedMailbox;
-              }
-            } catch {
-              // ignore and throw original below if still failing
-            }
-            continue;
-          }
-          throw err;
-        }
-      }
-    }
-  }
-
-  if (!pkg?._id) {
-    throw new Error("발송 박스 생성에 실패했습니다.");
-  }
-
-  request.shippingPackageId = pkg._id;
-
-  const requestCategory = String(request?.requestCategory || "").trim();
-  const isSampleRequest =
-    requestCategory === "rnd_sample" || requestCategory === "copied_sample";
-  if (isSampleRequest) {
-    // SSOT 정책: 샘플(rnd/copied)은 무자료/무상 처리(배송 크레딧 차감/정산 기록 없음)
-    return;
-  }
-
-  // LEGACY_REMOVED: 과거 분리 원장 기반 중복 경고 체크 제거
-  // - 실제 중복 방지는 spendShippingCreditAtomic의 uniqueKey/idempotency로 보장
-  // - 장부 SSOT는 General Ledger로 통합되며 레거시 원장 조회에 의존하지 않음
-
-  const relatedPtxIdEarly = String(
-    request?.partnerBilling?.relatedPracticeTransferId || "",
-  ).trim();
-  if (relatedPtxIdEarly && Types.ObjectId.isValid(relatedPtxIdEarly)) {
+  let handled = false;
+  for (const relatedPtxId of relatedPtxIds) {
     try {
-      const { getJournalByIdempotencyKey } = await import(
-        "../../services/generalLedger.service.js"
-      );
       const [already, hold] = await Promise.all([
         getJournalByIdempotencyKey({
-          idempotencyKey: `gl:practice_transfer:${relatedPtxIdEarly}:abuts_shipping`,
+          idempotencyKey: `gl:practice_transfer:${relatedPtxId}:abuts_shipping`,
           session,
         }),
         getJournalByIdempotencyKey({
-          idempotencyKey: `practice_transfer:${relatedPtxIdEarly}:hold:abuts_shipping`,
+          idempotencyKey: `practice_transfer:${relatedPtxId}:hold:abuts_shipping`,
           session,
         }),
       ]);
       if (already?.journalId) {
-        console.log(
-          "[SHIPPING_FEE] skip PTX abuts shipping (already at mark-complete)",
-          {
-            requestId: request?.requestId,
-            relatedPtxId: relatedPtxIdEarly,
-          },
-        );
-        return;
+        handled = true;
+        continue;
       }
-      if (hold?.journalId) {
-        // 주문 시 보류된 PTX 어벗츠 배송비 — 패키지 키로 재차감하지 않고 에스크로 전환
-        const PracticeTransfer = (
-          await import("../../models/practiceTransfer.model.js")
-        ).default;
-        const { chargePracticeTransferAbutsShipping } = await import(
-          "../../services/practiceTransferBilling.service.js"
-        );
-        const transfer = await PracticeTransfer.findById(relatedPtxIdEarly)
-          .session(session || null)
-          .lean();
-        if (transfer?._id) {
-          await chargePracticeTransferAbutsShipping({
-            transfer,
-            toothWorks: Array.isArray(transfer.toothWorks)
-              ? transfer.toothWorks
-              : [],
-            actorUserId,
-            session,
-          });
-          console.log(
-            "[SHIPPING_FEE] PTX abuts shipping converted from hold on packing",
-            {
-              requestId: request?.requestId,
-              relatedPtxId: relatedPtxIdEarly,
-            },
-          );
-          return;
-        }
-      }
-    } catch {
-      // fall through to charge
+      if (!hold?.journalId) continue;
+      const transfer = await PracticeTransfer.findById(relatedPtxId)
+        .session(session || null)
+        .lean();
+      if (!transfer?._id) continue;
+      await chargePracticeTransferAbutsShipping({
+        transfer,
+        toothWorks: Array.isArray(transfer.toothWorks)
+          ? transfer.toothWorks
+          : [],
+        actorUserId,
+        session,
+      });
+      handled = true;
+    } catch (err) {
+      console.error("[SHIPPING_FEE] PTX abuts shipping convert failed", {
+        relatedPtxId,
+        message: err?.message || String(err),
+      });
     }
   }
+  return { handled };
+}
 
-  const spendResult = await spendShippingCreditAtomic({
-    businessAnchorId: payerAnchorId,
-    shippingPackageId: pkg._id,
+function resolveMailboxPickupPayerAnchorId(requests = []) {
+  for (const request of requests) {
+    const practiceFromBilling = normalizeBusinessAnchorId(
+      request?.partnerBilling?.practiceBusinessAnchorId,
+    );
+    if (practiceFromBilling) return practiceFromBilling;
+    const fromReceiver = normalizeBusinessAnchorId(
+      request?.shippingReceiver?.sourceAnchorId,
+    );
+    if (fromReceiver) return fromReceiver;
+    const shippingOrg = normalizeBusinessAnchorId(
+      resolveShippingMailboxOrgId(request),
+    );
+    if (shippingOrg) return shippingOrg;
+    const direct = normalizeBusinessAnchorId(request?.businessAnchorId);
+    if (direct) return direct;
+  }
+  return "";
+}
+
+// 타이밍 SSOT: 우편함 집하(비우기) 1회에 배송비 1회.
+export async function ensureShippingFeeSpendOnMailboxPickup({
+  mailboxAddress,
+  requests = [],
+  actorUserId = null,
+  session = null,
+  deferredCreditEvents,
+  throwOnInsufficient = true,
+}) {
+  const mailbox = String(mailboxAddress || "").trim();
+  const list = (Array.isArray(requests) ? requests : []).filter(Boolean);
+  if (!mailbox || !list.length) return null;
+
+  const chargeable = list.filter(
+    (request) => !isManufacturerSampleRequest(request),
+  );
+  if (!chargeable.length) return null;
+
+  const ptxHandled = await maybeConvertPtxAbutsShippingHolds({
+    requests: chargeable,
     actorUserId,
-    fee: shippingFeeSupply,
     session,
   });
+  if (ptxHandled.handled) {
+    console.log("[SHIPPING_FEE] skip package spend (PTX abuts shipping)", {
+      mailboxAddress: mailbox,
+      requestIds: chargeable.map((row) => row?.requestId).filter(Boolean),
+    });
+    return { didSpend: false, reason: "ptx_abuts_shipping" };
+  }
+
+  const payerAnchorId = resolveMailboxPickupPayerAnchorId(chargeable);
+  const packageAnchorId =
+    normalizeBusinessAnchorId(resolveShippingMailboxOrgId(chargeable[0])) ||
+    payerAnchorId;
+  if (!payerAnchorId || !Types.ObjectId.isValid(payerAnchorId)) {
+    console.warn("[SHIPPING_FEE] pickup spend skipped (no payer)", {
+      mailboxAddress: mailbox,
+    });
+    return null;
+  }
+
+  const shippingFeeSupply = await resolveShippingFeePerBox();
+  const shipDateYmd = getTodayYmdInKst();
+  const requestObjectIds = chargeable.map((row) => row?._id).filter(Boolean);
+
+  let pkg = null;
+  const existingPkgIds = [];
+  const seenPkg = new Set();
+  for (const row of chargeable) {
+    const raw = String(
+      row?.shippingPackageId?._id || row?.shippingPackageId || "",
+    ).trim();
+    if (!raw || !Types.ObjectId.isValid(raw) || seenPkg.has(raw)) continue;
+    seenPkg.add(raw);
+    existingPkgIds.push(raw);
+  }
+  if (existingPkgIds.length) {
+    pkg = await ShippingPackage.findById(existingPkgIds[0], null, { session });
+  }
+  if (!pkg?._id) {
+    const created = await ShippingPackage.create(
+      [
+        {
+          businessAnchorId: packageAnchorId || payerAnchorId,
+          shipDateYmd,
+          mailboxAddress: mailbox,
+          shippingFeeSupply,
+          shippingFeeVat: 0,
+          createdBy: actorUserId || null,
+          requestIds: requestObjectIds,
+        },
+      ],
+      { session: session || undefined },
+    );
+    pkg = created?.[0] || null;
+  } else if (requestObjectIds.length) {
+    await ShippingPackage.updateOne(
+      { _id: pkg._id },
+      { $addToSet: { requestIds: { $each: requestObjectIds } } },
+      { session: session || undefined },
+    );
+  }
+  if (!pkg?._id) {
+    throw new Error("발송 박스 생성에 실패했습니다.");
+  }
+
+  await Request.updateMany(
+    { _id: { $in: requestObjectIds } },
+    { $set: { shippingPackageId: pkg._id } },
+    { session: session || undefined },
+  );
+  for (const row of chargeable) {
+    row.shippingPackageId = pkg._id;
+  }
+
+  let spendResult;
+  try {
+    spendResult = await spendShippingCreditAtomic({
+      businessAnchorId: payerAnchorId,
+      shippingPackageId: pkg._id,
+      actorUserId,
+      fee: shippingFeeSupply,
+      session,
+    });
+  } catch (err) {
+    if (Number(err?.statusCode) === 402) {
+      err.message = "의뢰자 잔액 부족으로 집하할 수 없습니다.";
+      if (!throwOnInsufficient) {
+        console.error("[SHIPPING_FEE] pickup spend insufficient credit", {
+          mailboxAddress: mailbox,
+          payerAnchorId,
+          required: err?.payload?.required || shippingFeeSupply,
+        });
+        return { didSpend: false, reason: "insufficient_credit" };
+      }
+    }
+    throw err;
+  }
 
   if (!spendResult?.didSpend) {
     if (spendResult?.reason === "already_spent") {
-      console.log("[SHIPPING_FEE] skip duplicate shipping fee upsert", {
-        requestId: request?.requestId,
+      console.log("[SHIPPING_FEE] skip duplicate mailbox pickup spend", {
+        mailboxAddress: mailbox,
         shippingPackageId: String(pkg._id),
         uniqueKey: spendResult?.uniqueKey || null,
       });
     }
-    return;
+    return spendResult;
   }
 
-  console.log("[SHIPPING_FEE] shipping fee spend inserted", {
-    requestId: request?.requestId,
-    shippingPackageId: String(pkg._id),
-    amount: Number(spendResult.amount || shippingFeeSupply),
-    fromBonusShipping: Number(spendResult.fromBonusShipping || 0),
-    fromPaid: Number(spendResult.fromPaid || 0),
-    businessAnchorId: String(payerAnchorId),
-    packageBusinessAnchorId: String(businessAnchorId),
-  });
-
   const relatedPtxId = String(
-    request?.partnerBilling?.relatedPracticeTransferId || "",
+    chargeable[0]?.partnerBilling?.relatedPracticeTransferId || "",
   ).trim();
   const isPtxAbutsShipping = Boolean(relatedPtxId);
+  const representative = chargeable[0];
 
   const glPostResult = await postSpendCommitGeneralLedger({
     eventType: "SHIPPING_SPEND_COMMIT",
     spendUniqueKey: spendResult.uniqueKey,
-    request,
+    request: representative,
     businessAnchorId: payerAnchorId,
     actorUserId,
     amount: Number(spendResult.amount || 0),
@@ -1739,8 +1686,8 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     freeAccountCode: "REQ_FREE_SHIPPING_CREDIT",
     refType: "SHIPPING_PACKAGE",
     refId: pkg._id,
-    stageFrom: "세척.패킹",
-    stageTo: "포장.발송",
+    stageFrom: "포장.발송",
+    stageTo: "추적관리",
     session,
     usageKind: isPtxAbutsShipping
       ? "practice_transfer_abuts_shipping"
@@ -1751,13 +1698,15 @@ export async function ensureShippingFeeSpendOnPackingApprove({
 
   if (!glPostResult?.posted) {
     if (glPostResult?.idempotent) {
-      // GL 직집계 모드에서는 선차감 스냅샷이 없으므로 보정 복원은 필요 없다.
-      console.log("[SHIPPING_FEE] duplicate shipping spend detected (no compensation needed)", {
-        requestId: request?.requestId,
-        shippingPackageId: String(pkg._id),
-        uniqueKey: spendResult.uniqueKey,
-      });
-      return;
+      console.log(
+        "[SHIPPING_FEE] duplicate shipping spend detected (no compensation needed)",
+        {
+          mailboxAddress: mailbox,
+          shippingPackageId: String(pkg._id),
+          uniqueKey: spendResult.uniqueKey,
+        },
+      );
+      return spendResult;
     }
     throw new Error("SHIPPING_SPEND_COMMIT ledger posting failed");
   }
@@ -1769,6 +1718,16 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     reason: "shipping_fee_spend",
     refId: pkg._id,
   });
+
+  console.log("[SHIPPING_FEE] mailbox pickup spend inserted", {
+    mailboxAddress: mailbox,
+    shippingPackageId: String(pkg._id),
+    amount: Number(spendResult.amount || shippingFeeSupply),
+    payerAnchorId,
+    requestCount: chargeable.length,
+  });
+
+  return spendResult;
 }
 
 // 타이밍 SSOT: 포장.발송 롤백(세척.패킹 복귀)에서만 호출되어야 한다.

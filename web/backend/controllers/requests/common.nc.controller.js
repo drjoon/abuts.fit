@@ -9,6 +9,7 @@
 // - web/backend/services/requestSnapshotTriggers.service.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-08-17: NC 롤백(준비) 시 우편함 해제.
 // - 2026-08-16: NC 롤백(준비) 시 PTX abutmentProductionStartedAt 클리어.
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
@@ -895,6 +896,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         const update = {
           $set: {
             manufacturerStage: "준비",
+            mailboxAddress: null,
           },
           $inc: {
             [`caseInfos.rollbackCounts.${rollbackStageKey}`]: 1,

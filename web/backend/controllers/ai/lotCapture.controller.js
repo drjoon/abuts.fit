@@ -3,6 +3,9 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // - bg/pc2/lot-server/src/index.js
+// - web/backend/controllers/requests/mailbox.utils.js
+// change-log:
+// - 2026-08-17: 포장.발송 진입 시 세척.패킹 우편함을 유지(없으면 1회 보정).
 import Request from "../../models/request.model.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
@@ -18,7 +21,7 @@ import {
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
 import {
-  ensureMailboxAddressForBusiness,
+  retainMailboxOnShippingEnter,
   normalizeBusinessAnchorId,
 } from "../requests/mailbox.utils.js";
 import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
@@ -427,18 +430,17 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   }
 
   // 샘플(복사/R&D)도 일반 의뢰와 동일하게 세척.패킹 인식 후
-  // 우편함 배정 및 포장.발송 단계 전환을 수행한다.
+  // 포장.발송 단계 전환을 수행한다. 우편함은 세척.패킹 배정을 유지한다.
   try {
-    const nextMailboxAddress = await ensureMailboxAddressForBusiness({
-      requestMongoId: request._id,
+    const nextMailboxAddress = await retainMailboxOnShippingEnter({
+      request,
       requestorOrgId: effectiveAnchorIdStr,
-      currentMailboxAddress: request.mailboxAddress,
     });
     if (nextMailboxAddress) {
       request.mailboxAddress = nextMailboxAddress;
     }
   } catch (err) {
-    console.error("[lot-capture] mailbox allocation failed", {
+    console.error("[lot-capture] mailbox retain/fallback failed", {
       requestId: request.requestId,
       requestMongoId: String(request._id || ""),
       message: err?.message || String(err),

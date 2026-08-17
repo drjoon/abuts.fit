@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 세척.패킹 롤백 시 우편함 유지 안내 토스트.
 // - 2026-08-13: 가공중(Now Playing)에는 NC 코드 에디터·NC 재생성 비활성화.
 // - 2026-08-12: 상단 요약(환자/임플란트/생산) 문구가 열 너비를 넘으면 다음 줄로 넘김.
 // - 2026-08-11: FP 저장 후 "NC 코드 재생성할까요?" 컨펌 → 확인 시 Esprit NC 재생성.
@@ -2426,7 +2427,10 @@ export const PreviewModal = ({
                       toast({
                         title: "롤백 요청 전송됨",
                         description:
-                          stageKey === "machining" || stageKey === "cam"
+                          stageKey === "packing" &&
+                          String(activeReq?.mailboxAddress || "").trim()
+                            ? `가공 단계로 되돌리는 중입니다. 우편함 ${String(activeReq.mailboxAddress).trim()}은 유지됩니다.`
+                            : stageKey === "machining" || stageKey === "cam"
                             ? "준비 단계로 되돌리는 중입니다. 잠시만 기다려주세요."
                             : "이전 공정으로 되돌리는 중입니다. 잠시만 기다려주세요.",
                         duration: 3000,

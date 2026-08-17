@@ -156,8 +156,8 @@ export function resolveShippingMailboxOrgId(requestLike) {
 }
 
 /**
- * 포장.발송 진입 시 PTX 직납 수취인을 live practice BA(+ profile)로 덮어쓴다.
- * 의뢰 생성~출고 사이에 치과 주소가 바뀌어도 택배 수취인이 최신값을 쓰도록 한다.
+ * 세척.패킹 진입(우편함 배정) 시 PTX 직납 수취인을 live practice BA(+ profile)로 덮어쓴다.
+ * 합류 지문(이름/전화/주소)과 운송장 수취인이 같은 스냅샷을 쓰게 한다.
  *
  * @returns {Promise<object|null>} 적용된 shippingReceiver 또는 null
  */

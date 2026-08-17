@@ -287,7 +287,9 @@
 - 배송 방식 SSOT: `Request.shippingMode` + `finalShipping.mode` / `originalShipping.mode`
   - `normal`(묶음) | `express`(신속)
 - 묶음 배송 식별은 박스/패키지 기준으로 유지
-- 배송비 과금 시점: 세척.패킹 승인
+- 우편함 배정 시점: 가공→세척.패킹 진입. 같은 수신자면 집하 전까지 한 칸에 모음(1회 택배비). 포장.발송은 기존 배정 유지. 포장.발송↔세척.패킹·세척.패킹→가공 롤백도 우편함 유지(패킹 라벨 SSOT). 가공→준비 롤백에서만 해제.
+- 합류 키: 수신자 BusinessAnchor. PTX 직납은 치과 BA + 수취인 지문(이름/전화/주소)이 같을 때만 합류. 다른 기공소에서 온 동일 치과도 한 박스. 신속/묶음은 같은 수신자면 같이 묶음.
+- 배송비 과금 시점: 집하(우편함 비우기) 1회. 운송장 라벨에는 건수를 출력하지 않음(웹앱에서 확인).
 - 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1,000원), **가공 진입(CAM 승인) 시 별도 `express_surcharge` 저널로 차감**
   - 설정 UI: 관리자 플랫폼 설정「크레딧」(멤버십·배송) / 「커스텀어벗」(단가) — `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 약속 출고일 자정까지 당일 집하 실패(또는 신속→묶음 전환) 시 신속 추가비만 물리 삭제 취소

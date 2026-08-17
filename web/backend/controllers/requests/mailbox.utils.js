@@ -1,5 +1,7 @@
 import {
   resolveShippingMailboxOrgId,
+  getShippingReceiver,
+  applyPracticeShippingReceiverSnapshotToRequest,
 } from "../../utils/shippingReceiver.utils.js";
 
 const UNKNOWN_ANCHOR_KEY = "__UNKNOWN_BUSINESS_ANCHOR__";
@@ -13,7 +15,16 @@ const MAILBOX_ALLOC_LOCK_RETRY_MS = 50;
 const MAILBOX_SLOT_HANDOFF_MAX_AGE_MS = 60_000;
 // related files:
 // - web/backend/utils/shippingReceiver.utils.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.review.helpers.js
+// - web/backend/jobs/stageProgressionWorker.js
+// - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/controllers/ai/lotCapture.controller.js
 // change-log:
+// - 2026-08-17: PTX 합류는 practice BA + 수취인(이름/전화/주소) 지문이 같을 때만.
+// - 2026-08-17: 세척.패킹→가공 롤백도 우편함 유지. 가공 중 점유/합류. 기존 칸 우선.
+// - 2026-08-17: 집하 전 추적관리 점유는 빈칸 할당을 막고, 합류(재사용) 대상에서는 제외.
+// - 2026-08-17: 우편함 배정 SSOT를 가공→세척.패킹으로 옮기고, 포장.발송은 기존 배정을 유지.
 // - 2026-08-17: PTX 직납 우편함 합류 키를 practice BA(shippingReceiver)로.
 
 // related files (request category SSOT):
@@ -143,31 +154,97 @@ const buildMailboxOccupancyByAddress = (activeRequests = []) => {
   return occupancyByAddress;
 };
 
-const isPackingOrShippingStage = (requestDocLike) =>
-  ACTIVE_MAILBOX_OCCUPY_STAGES.includes(
-    String(requestDocLike?.manufacturerStage || "").trim(),
-  );
+const compactReceiverText = (raw) =>
+  String(raw || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+const compactReceiverPhone = (raw) => String(raw || "").replace(/\D/g, "");
+
+export const normalizeMailboxReceiverFingerprint = (requestLike) => {
+  const receiver = getShippingReceiver(requestLike);
+  if (!receiver) return "";
+  const name = compactReceiverText(receiver.name);
+  const phone = compactReceiverPhone(receiver.phone);
+  const zip = String(receiver.zipCode || "").replace(/\s+/g, "");
+  const address = compactReceiverText(receiver.address);
+  const detail = compactReceiverText(receiver.addressDetail);
+  if (!name && !phone && !address) return "";
+  return `${name}|${phone}|${zip}|${address}|${detail}`;
+};
+
+const fingerprintsCompatible = (incomingFingerprint, occupantFingerprint) => {
+  const incoming = String(incomingFingerprint || "").trim();
+  const occupant = String(occupantFingerprint || "").trim();
+  if (!incoming || !occupant) return true;
+  return incoming === occupant;
+};
+
+const occupantsCompatibleAtAddress = ({
+  requests = [],
+  address,
+  requestorOrgIdStr,
+  incomingFingerprint = "",
+}) => {
+  const addr = normalizeMailboxAddress(address);
+  if (!addr || !requestorOrgIdStr) return true;
+  for (const requestDoc of requests) {
+    if (normalizeMailboxAddress(requestDoc?.mailboxAddress) !== addr) continue;
+    if (resolveOccupantAnchorKey(requestDoc) !== requestorOrgIdStr) continue;
+    if (
+      !fingerprintsCompatible(
+        incomingFingerprint,
+        normalizeMailboxReceiverFingerprint(requestDoc),
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const isMailboxJoinOccupant = (requestDocLike) => {
+  const stage = String(requestDocLike?.manufacturerStage || "").trim();
+  if (ACTIVE_MAILBOX_OCCUPY_STAGES.includes(stage)) return true;
+  // 세척.패킹→가공 롤백 후에도 같은 수신자 칸을 예약한다.
+  if (stage === "가공") {
+    return Boolean(normalizeMailboxAddress(requestDocLike?.mailboxAddress));
+  }
+  return false;
+};
 
 /**
- * 동일 BusinessAnchor 우편함 재사용.
+ * 동일 수신자 우편함 재사용(합류).
  *
- * SSOT (포장.발송 진입 포함):
- * 1) 세척.패킹/포장.발송에 같은 BusinessAnchor가 이미 있으면 그 주소로 합류
- * 2) 없으면 호출측에서 A1A1부터 첫 빈칸 할당
+ * SSOT (가공→세척.패킹 진입):
+ * 1) 세척.패킹/포장.발송/가공(우편함 유지)에 같은 수신자(BA + 수취인 지문)가 있으면 그 주소로 합류
+ * 2) 없으면 A1A1부터 첫 빈칸 할당
  *
- * 추적관리 잔여·타 업체 추적 혼입은 재사용을 막지 않는다.
+ * 집하 전 추적관리는 합류 대상이 아니다.
+ * PTX는 치과 BA가 같아도 이름/전화/주소 지문이 둘 다 있고 다르면 합류하지 않는다.
  */
 const findReusableMailboxAddressForBusiness = ({
   activeRequests = [],
   requestorOrgId,
+  receiverFingerprint = "",
 }) => {
   const requestorOrgIdStr = normalizeBusinessAnchorId(requestorOrgId);
   if (!requestorOrgIdStr) return "";
 
+  const incomingFp = String(receiverFingerprint || "").trim();
   const addresses = [];
   for (const requestDoc of activeRequests) {
-    if (!isPackingOrShippingStage(requestDoc)) continue;
+    if (!isMailboxJoinOccupant(requestDoc)) continue;
     if (resolveOccupantAnchorKey(requestDoc) !== requestorOrgIdStr) continue;
+    if (
+      !fingerprintsCompatible(
+        incomingFp,
+        normalizeMailboxReceiverFingerprint(requestDoc),
+      )
+    ) {
+      continue;
+    }
     const address = normalizeMailboxAddress(requestDoc?.mailboxAddress);
     if (address) addresses.push(address);
   }
@@ -223,6 +300,9 @@ const isTrackingMailboxOccupyingRequest = (requestDocLike) => {
 const isMailboxOccupancyCandidate = (requestDocLike) => {
   const stage = String(requestDocLike?.manufacturerStage || "").trim();
   if (ACTIVE_MAILBOX_OCCUPY_STAGES.includes(stage)) return true;
+  if (stage === "가공") {
+    return Boolean(normalizeMailboxAddress(requestDocLike?.mailboxAddress));
+  }
   if (stage !== "추적관리") return false;
   return isTrackingMailboxOccupyingRequest(requestDocLike);
 };
@@ -237,7 +317,7 @@ const buildActiveMailboxOccupancyFilter = ({
     mailboxAddress: { $ne: null },
     requestCategory,
     manufacturerStage: {
-      $in: [...ACTIVE_MAILBOX_OCCUPY_STAGES, "추적관리"],
+      $in: [...ACTIVE_MAILBOX_OCCUPY_STAGES, "가공", "추적관리"],
     },
   };
 
@@ -295,6 +375,20 @@ const isAddressFreeOrOwnedByBusiness = ({
     row.concreteOrgKeys.size === 1 &&
     row.concreteOrgKeys.has(requestorOrgIdStr)
   );
+};
+
+const isAddressJoinableByBusiness = ({
+  address,
+  packingOccupancyByAddress,
+  requestorOrgIdStr,
+}) => {
+  const normalized = normalizeMailboxAddress(address);
+  if (!normalized || !packingOccupancyByAddress.has(normalized)) return false;
+  return isAddressFreeOrOwnedByBusiness({
+    address: normalized,
+    occupancyByAddress: packingOccupancyByAddress,
+    requestorOrgIdStr,
+  });
 };
 
 async function loadActiveMailboxOccupancy({
@@ -399,6 +493,8 @@ async function resolveMailboxAddressUnderLock({
   excludeRequestMongoId = "",
   session = null,
   scopeFilter = {},
+  preferredMailboxAddress = "",
+  receiverFingerprint = "",
 }) {
   // 커밋된 점유 뷰를 우선 읽는다.
   // (review-status 트랜잭션 스냅샷만 보면, 직전 병렬 배정이 아직 안 보여
@@ -430,9 +526,43 @@ async function resolveMailboxAddressUnderLock({
     activeRequests = Array.from(byId.values());
   }
 
+  // 빈칸 판정은 합류 점유 + 집하 전 추적관리 점유를 본다.
+  // 합류는 세척.패킹/포장.발송/가공(우편함 유지)만 본다.
+  const joinOccupantRequests = activeRequests.filter(isMailboxJoinOccupant);
+  const packingOccupancyByAddress = buildMailboxOccupancyByAddress(
+    joinOccupantRequests,
+  );
+  const occupancyByAddress = buildMailboxOccupancyByAddress(activeRequests);
+
+  const preferred = normalizeMailboxAddress(preferredMailboxAddress);
+  const preferredIsEmpty = Boolean(
+    preferred && !occupancyByAddress.has(preferred),
+  );
+  const preferredIsJoinable =
+    isAddressJoinableByBusiness({
+      address: preferred,
+      packingOccupancyByAddress,
+      requestorOrgIdStr,
+    }) &&
+    occupantsCompatibleAtAddress({
+      requests: joinOccupantRequests,
+      address: preferred,
+      requestorOrgIdStr,
+      incomingFingerprint: receiverFingerprint,
+    });
+  if (preferred && (preferredIsEmpty || preferredIsJoinable)) {
+    await syncMailboxAnchorSlot({
+      MailboxAnchorSlot,
+      requestorOrgIdStr,
+      mailboxAddress: preferred,
+    });
+    return preferred;
+  }
+
   const reusableAddress = findReusableMailboxAddressForBusiness({
     activeRequests,
     requestorOrgId: requestorOrgIdStr,
+    receiverFingerprint,
   });
   if (reusableAddress) {
     await syncMailboxAnchorSlot({
@@ -443,12 +573,6 @@ async function resolveMailboxAddressUnderLock({
     return reusableAddress;
   }
 
-  // 빈칸/핸드오프 판정은 세척.패킹·포장.발송 점유만 본다 (A1A1에 가까운 빈칸 우선).
-  const packingShippingRequests = activeRequests.filter(isPackingOrShippingStage);
-  const occupancyByAddress = buildMailboxOccupancyByAddress(
-    packingShippingRequests,
-  );
-
   // 아직 request 문서에 커밋되기 전인 동시 할당 손잡이(짧은 TTL 슬롯)
   const slot = await readMailboxAnchorSlot({
     MailboxAnchorSlot,
@@ -457,16 +581,28 @@ async function resolveMailboxAddressUnderLock({
   const slotAgeMs = slot?.updatedAt
     ? Date.now() - new Date(slot.updatedAt).getTime()
     : Number.POSITIVE_INFINITY;
+  const slotAddress = normalizeMailboxAddress(slot?.mailboxAddress);
+  const slotIsEmpty = Boolean(
+    slotAddress && !occupancyByAddress.has(slotAddress),
+  );
+  const slotIsJoinable =
+    isAddressJoinableByBusiness({
+      address: slotAddress,
+      packingOccupancyByAddress,
+      requestorOrgIdStr,
+    }) &&
+    occupantsCompatibleAtAddress({
+      requests: joinOccupantRequests,
+      address: slotAddress,
+      requestorOrgIdStr,
+      incomingFingerprint: receiverFingerprint,
+    });
   if (
-    slot?.mailboxAddress &&
+    slotAddress &&
     Number.isFinite(slotAgeMs) &&
     slotAgeMs >= 0 &&
     slotAgeMs <= MAILBOX_SLOT_HANDOFF_MAX_AGE_MS &&
-    isAddressFreeOrOwnedByBusiness({
-      address: slot.mailboxAddress,
-      occupancyByAddress,
-      requestorOrgIdStr,
-    })
+    (slotIsEmpty || slotIsJoinable)
   ) {
     await syncMailboxAnchorSlot({
       MailboxAnchorSlot,
@@ -540,10 +676,11 @@ export async function allocateVirtualMailboxAddress(
 }
 
 /**
- * 세척.패킹 진입 시 우편함 배정.
- * - 동일 businessAnchor의 활성 점유(세척.패킹/포장.발송/추적관리)가 있으면 그 주소를 재사용
- * - 없으면 첫 빈칸 할당
- * - 기존 request.mailboxAddress는 재사용 근거로 쓰지 않는다
+ * 우편함 배정 SSOT (가공→세척.패킹 진입).
+ * - 이미 배정된 칸이 있고 타 수신자 점유가 아니면 그대로 유지 (패킹 라벨/재가공)
+ * - 동일 수신자 활성 점유(세척.패킹/포장.발송/가공 유지 칸, BA+수취인 지문)가 있으면 합류
+ * - 없으면 A1A1부터 첫 빈칸
+ * - 집하 전 추적관리 점유 칸은 빈칸이 아니다
  */
 export async function assignMailboxForCleaningPackingEnter({
   request,
@@ -558,17 +695,28 @@ export async function assignMailboxForCleaningPackingEnter({
     return null;
   }
 
-  request.mailboxAddress = null;
+  const existingMailboxAddress = normalizeMailboxAddress(request.mailboxAddress);
   try {
+    try {
+      await applyPracticeShippingReceiverSnapshotToRequest(request, {
+        session,
+      });
+    } catch (snapshotErr) {
+      console.error("[MAILBOX_ALLOCATION_ERROR] shippingReceiver snapshot", {
+        requestId: request?.requestId || null,
+        message: snapshotErr?.message || String(snapshotErr),
+      });
+    }
     const shippingOrgId =
       normalizeBusinessAnchorId(resolveShippingMailboxOrgId(request)) ||
       normalizeBusinessAnchorId(requestorOrgId);
     const nextMailboxAddress = await ensureMailboxAddressForBusiness({
       requestMongoId: request._id,
       requestorOrgId: shippingOrgId,
-      currentMailboxAddress: null,
+      currentMailboxAddress: existingMailboxAddress || null,
       session,
       scopeFilter,
+      receiverFingerprint: normalizeMailboxReceiverFingerprint(request),
     });
     if (nextMailboxAddress) {
       request.mailboxAddress = nextMailboxAddress;
@@ -583,12 +731,44 @@ export async function assignMailboxForCleaningPackingEnter({
   }
 }
 
+/**
+ * 포장.발송 진입: 세척.패킹에서 배정한 우편함을 유지한다.
+ * 누락(레거시)만 같은 SSOT로 1회 보정한다.
+ */
+export async function retainMailboxOnShippingEnter({
+  request,
+  requestorOrgId,
+  session = null,
+  scopeFilter = {},
+}) {
+  if (!request) return null;
+
+  if (isManufacturerSampleRequest(request)) {
+    request.mailboxAddress = null;
+    return null;
+  }
+
+  const existing = normalizeMailboxAddress(request.mailboxAddress);
+  if (existing) {
+    request.mailboxAddress = existing;
+    return existing;
+  }
+
+  return assignMailboxForCleaningPackingEnter({
+    request,
+    requestorOrgId,
+    session,
+    scopeFilter,
+  });
+}
+
 export async function ensureMailboxAddressForBusiness({
   requestMongoId,
   requestorOrgId,
   currentMailboxAddress,
   session = null,
   scopeFilter = {},
+  receiverFingerprint = "",
 }) {
   const { default: Request } = await import("../../models/request.model.js");
   const { default: MailboxAnchorSlot } = await import(
@@ -599,6 +779,7 @@ export async function ensureMailboxAddressForBusiness({
   const currentMailboxAddressStr = normalizeMailboxAddress(
     currentMailboxAddress,
   );
+  let incomingFingerprint = String(receiverFingerprint || "").trim();
 
   if (requestMongoId) {
     let requestRowQuery = Request.findById(requestMongoId)
@@ -627,6 +808,9 @@ export async function ensureMailboxAddressForBusiness({
       );
       requestorOrgIdStr = directAnchorId || requestorAnchorId;
     }
+    if (!incomingFingerprint) {
+      incomingFingerprint = normalizeMailboxReceiverFingerprint(requestRow);
+    }
   }
 
   if (!requestorOrgIdStr) {
@@ -645,6 +829,8 @@ export async function ensureMailboxAddressForBusiness({
         : "",
       session,
       scopeFilter: normalizedScopeFilter,
+      preferredMailboxAddress: currentMailboxAddressStr,
+      receiverFingerprint: incomingFingerprint,
     }),
   );
 }

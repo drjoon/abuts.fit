@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 집하 완료 시 우편함 단위 배송비를 1회 차감한다.
 // - 2026-08-17: 한진 배송조회는 운송장 숫자만 사용. 하이픈 조회는 ERROR-03 + 빈 wrkList.
 // - 2026-08-17: 배송완료(66)는 wrkList 전체에서 찾고, 오류 행은 접수 상태로 되돌리지 않는다.
 // related files:
@@ -22,6 +23,7 @@ import {
   SHIPPING_WORKFLOW_LABELS,
 } from "./utils.js";
 import { resetPrintedAndAcceptedWorkingState } from "./shipping.MailboxRealtime.helpers.js";
+import { ensureShippingFeeSpendOnMailboxPickup } from "./common.review.helpers.js";
 
 export const HANJIN_CLIENT_ID = String(
   process.env.HANJIN_CLIENT_ID || "",
@@ -284,6 +286,7 @@ export const applyTrackingRowsToRequests = async ({
   source = "hanjin-tracking-sync",
 }) => {
   const synced = [];
+  const pickupByMailbox = new Map();
   for (const requestDoc of requestDocs) {
     const deliveryInfo = requestDoc.deliveryInfoRef;
     const trackingNumber = String(deliveryInfo?.trackingNumber || "").trim();
@@ -333,6 +336,13 @@ export const applyTrackingRowsToRequests = async ({
         source,
         updatedAt: deliveryInfo.deliveredAt,
       });
+      const mailboxAddress = String(requestDoc?.mailboxAddress || "").trim();
+      if (mailboxAddress) {
+        if (!pickupByMailbox.has(mailboxAddress)) {
+          pickupByMailbox.set(mailboxAddress, []);
+        }
+        pickupByMailbox.get(mailboxAddress).push(requestDoc);
+      }
     } else if (
       trackingCode === HANJIN_STATUS.CANCELED ||
       trackingText === "예약취소" ||
@@ -365,6 +375,13 @@ export const applyTrackingRowsToRequests = async ({
         source,
         updatedAt: deliveryInfo.pickedUpAt || last?.occurredAt || new Date(),
       });
+      const mailboxAddress = String(requestDoc?.mailboxAddress || "").trim();
+      if (mailboxAddress) {
+        if (!pickupByMailbox.has(mailboxAddress)) {
+          pickupByMailbox.set(mailboxAddress, []);
+        }
+        pickupByMailbox.get(mailboxAddress).push(requestDoc);
+      }
     } else if (deliveryInfo?.trackingNumber || deliveryInfo?.shippedAt) {
       applyShippingWorkflowState(requestDoc, {
         code: SHIPPING_WORKFLOW_CODES.ACCEPTED,
@@ -393,6 +410,23 @@ export const applyTrackingRowsToRequests = async ({
       statusText: deliveryInfo.tracking?.lastStatusText || null,
     });
   }
+
+  for (const [mailboxAddress, mailboxRequests] of pickupByMailbox.entries()) {
+    try {
+      await ensureShippingFeeSpendOnMailboxPickup({
+        mailboxAddress,
+        requests: mailboxRequests,
+        actorUserId,
+        throwOnInsufficient: false,
+      });
+    } catch (spendErr) {
+      console.error("[SHIPPING_FEE] tracking pickup spend failed", {
+        mailboxAddress,
+        message: spendErr?.message || String(spendErr),
+      });
+    }
+  }
+
   return synced;
 };
 

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: CAM 롤백(준비) 시 우편함 해제.
 // - 2026-08-16: CAM 롤백(준비) 시 PTX abutmentProductionStartedAt 클리어.
 // - 2026-08-11: original/cam signed URL 응답에 fileName을 포함해 프론트 프리뷰가 STL/PLY/OBJ 확장자를 유지.
 // - 2026-08-10: 디자인 파트너(designAccessEnabled) 원본 파일 URL 접근 허용.
@@ -309,6 +310,7 @@ export async function deleteCamFileAndRollback(req, res) {
       };
       bumpRollbackCount(request, "cam");
       request.manufacturerStage = "준비";
+      request.mailboxAddress = null;
       await request.save();
 
       try {

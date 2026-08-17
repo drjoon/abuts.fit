@@ -10,7 +10,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
-// change-log:
+// - 2026-08-17: 배송비는 집하 시 차감. 포장.발송 진입은 우편함만 확인.
+// - 2026-08-17: 우편함 배정 SSOT를 가공→세척.패킹으로 옮기고, 포장.발송은 기존 배정 유지.
 // - 2026-08-17: 포장.발송 진입 시 PTX shippingReceiver를 live practice BA로 스냅샷.
 // - 2026-08-16: PTX 가공 진입 시 practiceTransfer.abutmentProductionStartedAt 기록(수락 취소 가드).
 // - 2026-08-17: PTX CA 포장.발송 시 어벗츠몫 에스크로 해제(releasePracticeTransferAbutmentShare).
@@ -34,7 +35,7 @@ import {
 } from "./utils.js";
 import {
   assignMailboxForCleaningPackingEnter,
-  ensureMailboxAddressForBusiness,
+  retainMailboxOnShippingEnter,
   isManufacturerSampleRequest,
   normalizeBusinessAnchorId,
 } from "./mailbox.utils.js";
@@ -598,9 +599,9 @@ export async function deleteStageFile(req, res) {
       if (prevStage) {
         applyStatusMapping(request, prevStage);
       }
-      // 포장.발송 롤백: 우편함/패킹 승인 잔존으로 타 업체 박스 혼입·재승인 실패를 막는다.
+      // 포장.발송 → 세척.패킹 롤백: 우편함은 라벨 SSOT이므로 유지한다.
+      // packing review만 PENDING으로 되돌려 단계/승인 불일치를 막는다.
       if (stage === "shipping") {
-        request.mailboxAddress = null;
         request.caseInfos = request.caseInfos || {};
         request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
         request.caseInfos.reviewByStage.packing = {
@@ -612,6 +613,7 @@ export async function deleteStageFile(req, res) {
       }
       request.productionSchedule = request.productionSchedule || {};
       if (stage === "machining") {
+        request.mailboxAddress = null;
         request.productionSchedule.actualMachiningStart = null;
         request.productionSchedule.actualMachiningComplete = null;
         request.productionSchedule.assignedMachine = null;
@@ -1653,7 +1655,7 @@ export async function updateReviewStatusByStage(req, res) {
               );
             }
             applyStatusMapping(request, "세척.패킹");
-            // 우편함 배정 SSOT: 세척.패킹 진입 시 동일 업체 활성 점유를 재사용해 선배정한다.
+            // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
             // (패킹 라벨 출력·각인 인식 전에도 메일함 코드가 필요하다)
             await assignMailboxForCleaningPackingEnter({
               request,
@@ -1718,7 +1720,8 @@ export async function updateReviewStatusByStage(req, res) {
           // 출고일은 의뢰 시점 약속 고정. 포장.발송 진입으로 날짜를 바꾸거나
           // 신속 추가비를 여기서 취소하지 않는다(자정 이후 shippingOnTimeEvalWorker).
           await updateCurrentEstimatedShipYmdOnPackingEnter(request);
-          // PTX 직납: 포장.발송 진입 시점에 치과 수취인 스냅샷(주소 변경 반영).
+          // PTX 직납: 운송장 수취인만 최신 practice 주소로 맞춘다.
+          // 우편함 합류 지문은 세척.패킹 배정 시점 스냅샷을 쓴다.
           try {
             await applyPracticeShippingReceiverSnapshotToRequest(request, {
               session,
@@ -1729,80 +1732,34 @@ export async function updateReviewStatusByStage(req, res) {
               message: err?.message || String(err),
             });
           }
-          // 포장.발송 진입: BusinessAnchor 기준 재사용 → 없으면 A1A1부터 첫 빈칸.
-          request.mailboxAddress = null;
+          // 포장.발송 진입: 세척.패킹에서 배정한 우편함을 유지한다.
           try {
             const requestorBusinessAnchorId = resolvedBusinessAnchorId;
             console.log(
-              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
+              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 유지/보정 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
             );
-            const nextMailboxAddress = await ensureMailboxAddressForBusiness({
-              requestMongoId: request._id,
+            const nextMailboxAddress = await retainMailboxOnShippingEnter({
+              request,
               requestorOrgId: requestorBusinessAnchorId,
-              currentMailboxAddress: null,
               session,
               scopeFilter: mailboxAllocationScopeFilter,
             });
-            if (nextMailboxAddress) {
-              request.mailboxAddress = nextMailboxAddress;
-            }
             console.log(
-              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 완료: ${request.mailboxAddress}`,
+              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 유지/보정 완료: ${nextMailboxAddress || request.mailboxAddress || "-"}`,
             );
           } catch (err) {
             console.error("[MAILBOX_ALLOCATION_ERROR]", err);
           }
 
           // 샘플/치과 드롭존 의뢰는 전체 공정 진행은 동일하게 허용하되, 배송비 크레딧은 차감하지 않는다.
-          // PTX CA: 배송비는 치과(practice)에 부과(부가세 없음). 제조사 배송 몫 3850은 GL에 기록.
+          // 배송비 차감은 집하(우편함 비우기) SSOT. 여기서는 우편함만 확인한다.
           if (
             resolvedBusinessAnchorId &&
             !isManufacturerSampleRequest(request) &&
             !isPracticeDropzoneRequest
           ) {
-            let spendBusinessAnchorId = null;
-            const pb =
-              request?.partnerBilling &&
-              typeof request.partnerBilling === "object"
-                ? request.partnerBilling
-                : {};
-            const practiceFromBilling = String(
-              pb.practiceBusinessAnchorId || "",
-            ).trim();
-            const relatedPtxId = String(
-              pb.relatedPracticeTransferId || "",
-            ).trim();
-            if (
-              practiceFromBilling &&
-              Types.ObjectId.isValid(practiceFromBilling)
-            ) {
-              spendBusinessAnchorId = practiceFromBilling;
-            } else if (relatedPtxId && Types.ObjectId.isValid(relatedPtxId)) {
-              try {
-                const PracticeTransfer = (
-                  await import("../../models/practiceTransfer.model.js")
-                ).default;
-                const ptx = await PracticeTransfer.findById(relatedPtxId)
-                  .select({ practiceBusinessAnchorId: 1 })
-                  .session(session || null)
-                  .lean();
-                const practiceId = String(
-                  ptx?.practiceBusinessAnchorId || "",
-                ).trim();
-                if (practiceId && Types.ObjectId.isValid(practiceId)) {
-                  spendBusinessAnchorId = practiceId;
-                }
-              } catch {
-                // keep lab payer
-              }
-            }
             await ensureShippingFeeSpendOnPackingApprove({
               request,
-              businessAnchorId: resolvedBusinessAnchorId,
-              spendBusinessAnchorId,
-              actorUserId: req.user?._id || null,
-              session,
-              deferredCreditEvents,
             });
           }
 

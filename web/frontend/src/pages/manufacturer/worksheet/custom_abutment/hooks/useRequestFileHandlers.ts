@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비 롤백 시 해제.
 // - 2026-08-03: 가공/롤백/승인 로컬 패치에서 의뢰 단계 명칭을 '준비'로 사용하도록 조정 (UI 표시용).
 // - note: 서버 승인/롤백 계약은 변경하지 않음(백엔드 이벤트는 기존 manufacturerStage 값을 사용함).
 // related files:
@@ -280,7 +281,6 @@ export const useRequestFileHandlers = ({
       }
 
       if (stageKey === "shipping" && status === "PENDING") {
-        next.mailboxAddress = null;
         const prevCounts = {
           ...(req.caseInfos?.rollbackCounts || {}),
         } as Record<string, number>;
@@ -289,6 +289,10 @@ export const useRequestFileHandlers = ({
           ...next.caseInfos,
           rollbackCounts: prevCounts as any,
         };
+      }
+
+      if (stageKey === "machining" && status === "PENDING") {
+        next.mailboxAddress = null;
       }
 
       if (stageKey === "tracking" && status === "PENDING") {
@@ -379,14 +383,13 @@ export const useRequestFileHandlers = ({
         }
       }
 
-      if (stageKey === "shipping" && rollbackOnly) {
-        next.mailboxAddress = null;
-      }
-
       if (
         (stageKey === "machining" || stageKey === "packing") &&
         rollbackOnly
       ) {
+        if (stageKey === "machining") {
+          next.mailboxAddress = null;
+        }
         next.assignedMachine = null;
         next.productionSchedule = {
           ...next.productionSchedule,
@@ -776,6 +779,10 @@ export const useRequestFileHandlers = ({
                   : "승인되었습니다."
               : params.status === "REJECTED"
                 ? "반려되었습니다."
+                : stageKey === "packing"
+                  ? String(params.req?.mailboxAddress || "").trim()
+                    ? `가공 단계로 되돌렸습니다. 우편함 ${String(params.req.mailboxAddress).trim()}은 유지됩니다. 패킹 라벨이 있으면 같은 칸으로 재진입합니다.`
+                    : "가공 단계로 되돌렸습니다."
                 : "미승인 상태로 변경되었습니다.";
 
           // 성공 시에만 안내 토스트 표시
@@ -888,6 +895,7 @@ export const useRequestFileHandlers = ({
             : req.caseInfos?.reviewByStage,
         },
         manufacturerStage: "준비",
+        mailboxAddress: null,
       } as ManufacturerRequest;
       const optimisticallyPatched = applySingleRequestPatch(updatedRequest);
       if (!optimisticallyPatched) {
@@ -990,6 +998,7 @@ export const useRequestFileHandlers = ({
             : req.caseInfos?.reviewByStage,
         },
         manufacturerStage: targetStage === "request" ? "준비" : "가공",
+        ...(targetStage === "request" ? { mailboxAddress: null } : {}),
       } as ManufacturerRequest;
       const optimisticallyPatched = applySingleRequestPatch(updatedRequest);
       if (!optimisticallyPatched) {
@@ -1668,7 +1677,11 @@ export const useRequestFileHandlers = ({
           rollbackOnly
             ? {
                 title: "롤백 완료",
-                description: "공정 단계를 되돌렸습니다.",
+                description:
+                  params.stage === "packing" &&
+                  String(params.req?.mailboxAddress || "").trim()
+                    ? `가공 단계로 되돌렸습니다. 우편함 ${String(params.req.mailboxAddress).trim()}은 유지됩니다. 패킹 라벨이 있으면 같은 칸으로 재진입합니다.`
+                    : "공정 단계를 되돌렸습니다.",
               }
             : {
                 title: "삭제 완료",

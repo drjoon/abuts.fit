@@ -4,6 +4,8 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
+// change-log:
+// - 2026-08-17: 운송장 라벨에서 제품 건수 문구를 제거.
 import { request } from "@/shared/api/apiClient";
 
 export const HANJIN_DEV_TEST_PAYLOAD = {
@@ -421,12 +423,9 @@ const renderWaybillRowToPngBlob = async (row: any): Promise<Blob> => {
   const senderAddr = String(row.snd_add || row.snd_addr || "").trim();
   const mailboxCode = String(row.mailbox_code || "").trim();
   const orgName = String(row.organization_name || "").trim();
-  const reqCount = Number(row.request_count || 0);
   const remark = String(
     row.remark ||
-      [mailboxCode, orgName, reqCount > 0 ? `${reqCount}건` : ""]
-        .filter(Boolean)
-        .join(" / ") ||
+      [mailboxCode, orgName].filter(Boolean).join(" / ") ||
       row.msg_key ||
       "",
   ).trim();
@@ -558,7 +557,6 @@ const renderWaybillRowToPngBlob = async (row: any): Promise<Blob> => {
   zt(`${todayLabel} Type:S`, 734, 392 + DY, 18);
 
   zt("의료기기", 74, 486 + DY, 22);
-  zt("1 / 0 (건수/수량)", 826, 486 + DY, 18);
 
   zt2(remark, 74, 712 + DY, 16, 420);
 

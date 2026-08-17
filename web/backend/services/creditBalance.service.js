@@ -484,7 +484,7 @@ export async function spendShippingCreditAtomic({
   });
 
   if (!split.ok) {
-    const err = new Error("의뢰자 잔액 부족으로 포장.발송 진입 불가");
+    const err = new Error("의뢰자 잔액 부족으로 배송비 차감 불가");
     err.statusCode = 402;
     err.payload = {
       reason: "insufficient_credit_for_shipping",

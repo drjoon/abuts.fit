@@ -1,5 +1,4 @@
-// change-log:
-// - 2026-08-17: 수동 집하 운송장번호는 숫자만 저장하고, 한진 배송조회 폴링을 이어서 돌린다.
+// - 2026-08-17: 배송비는 우편함 집하(비우기) 시 1회 차감.
 // - 2026-08-17: PTX 직납 수취인(shippingReceiver) 주소 스냅샷 수정 API.
 // - 2026-08-11: mailbox-requests 성능 — exact mailboxAddress, lean+batch hydrate, 15s 캐시, requestIds 단축 경로
 // - 2026-08-04: 수동 집하 pickedUpAt/deliveredAt을 당일 16:00 고정 → 실제 처리 시각(now)으로 기록
@@ -38,6 +37,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import { cancelHanjinPickupForReset } from "./shipping.Hanjin.controller.js";
 import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import { ensureShippingFeeSpendOnMailboxPickup } from "./common.review.helpers.js";
 import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
 
 function resolveShippingBoxKey(requestDoc) {
@@ -1225,6 +1225,29 @@ export async function manualHanjinPickupCompleted(req, res) {
         mailboxTrackingNumberRaw,
       );
 
+      try {
+        await ensureShippingFeeSpendOnMailboxPickup({
+          mailboxAddress,
+          requests: effectiveMailboxRequests,
+          actorUserId: req.user?._id || null,
+          throwOnInsufficient: true,
+        });
+      } catch (spendErr) {
+        if (Number(spendErr?.statusCode) === 402) {
+          results.push({
+            mailboxAddress,
+            success: false,
+            reason: "insufficient_credit_for_shipping",
+            message: spendErr.message,
+            payload: spendErr.payload || null,
+            requestCount: effectiveMailboxRequests.length,
+            processedCount: 0,
+          });
+          continue;
+        }
+        throw spendErr;
+      }
+
       for (const group of groups) {
         const trackingNumber = mailboxTrackingNumber;
         const processedRequestIds = [];
@@ -1383,6 +1406,26 @@ export async function manualHanjinPickupCompleted(req, res) {
           mailboxAddress: item.mailboxAddress,
           reason: item.reason || "unknown",
         }));
+      const creditFailed = results.find(
+        (item) => item.reason === "insufficient_credit_for_shipping",
+      );
+      if (creditFailed) {
+        return res.status(402).json({
+          success: false,
+          message:
+            creditFailed.message ||
+            "의뢰자 잔액 부족으로 집하할 수 없습니다.",
+          payload:
+            creditFailed.payload || {
+              reason: "insufficient_credit_for_shipping",
+            },
+          data: {
+            pickedUpCount,
+            results,
+            failedMailboxes,
+          },
+        });
+      }
       return res.status(404).json({
         success: false,
         message:

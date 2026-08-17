@@ -490,7 +490,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 생성: `POST /api/practice/transfers/round-bar-requests` — 문의(`manufacturer_add_request`) 자동 접수 + `RoundBarAbutmentRequest` + 치과 `implantFavorites`에 일단 저장(`roundBar=true`, `adopted=false`).
   - 관리자: `GET|PATCH /api/admin/round-bar-requests` — 프리셋 내용 편집. 도입 전에 `adoptedKind=cnc|round_bar` 필수. 도입 체크 시 해당 치과 프리셋 `adopted=true` + 종류 저장. 치과 단가: CNC=CNC어벗, 환봉=환봉어벗. 체크 해제=`adopted=false` + 문의 재오픈. 실시간 `practice:round-bar-request-updated`. UI는 플랫폼 설정「커스텀어벗 > 어벗 추가 요청」.
   - 요금 필드: `membership/regularRoundBarProductionPrice`, `membership/regularRoundBarDesignAndProductionPrice` (0이면 별도 고지).
-  - 기공의뢰 견적 툴팁: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. CA 디자인+생산은 어벗생산비 + 디자인비(+지그) 분해. **배송비(주문 시 보류)**: 생성 시 `holdPracticeTransferCredits`가 예상 배송비를 `PRACTICE_TRANSFER_SPEND_HOLD`로 에스크로 보류. 기공소 출발=`mark-complete` 시 `chargePracticeTransferLabShipping`, 어벗츠 출발=CA 포장 승인 시 `chargePracticeTransferAbutsShipping`/`ensureShippingFeeSpendOnPackingApprove`가 보류→매출 전환(재차감 없음; 레거시 무보류 건만 실차감). 단가=`creditSettings.shippingFee`. `production.skipJig`면 기공 보철 없을 때 기공소 배송 면제. **환봉 요청중(미도입, `헥스(사이즈 미정)`)** 은 기공소 어벗 — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 그 금액. 도입되면 어벗츠 어벗.
+  - 기공의뢰 견적 툴팁: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. CA 디자인+생산은 어벗생산비 + 디자인비(+지그) 분해. **배송비(주문 시 보류)**: 생성 시 `holdPracticeTransferCredits`가 예상 배송비를 `PRACTICE_TRANSFER_SPEND_HOLD`로 에스크로 보류. 기공소 출발=`mark-complete` 시 `chargePracticeTransferLabShipping`, 어벗츠 출발=CA **집하(우편함 비우기)** 시 `chargePracticeTransferAbutsShipping`/`ensureShippingFeeSpendOnMailboxPickup`가 보류→매출 전환(재차감 없음; 레거시 무보류 건만 실차감). 단가=`creditSettings.shippingFee`. `production.skipJig`면 기공 보철 없을 때 기공소 배송 면제. **환봉 요청중(미도입, `헥스(사이즈 미정)`)** 은 기공소 어벗 — 어벗츠 단가 제외, 기공소 `커스텀어벗` 항목 수가가 있으면 그 금액. 도입되면 어벗츠 어벗.
   - 관련 파일:
     - `models/roundBarAbutmentRequest.model.js`
     - `utils/roundBarAbutment.js`
@@ -617,13 +617,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 승인/롤백 이벤트 정책(강제):
   - `REQUEST_SPEND_COMMIT`: **가공 진입 승인(준비→가공)** 시 기록
-  - `SHIPPING_SPEND_COMMIT`: **세척.패킹 승인(포장.발송 진입)** 시 기록
+  - `SHIPPING_SPEND_COMMIT`: **집하(우편함 비우기)** 시 기록. 포장.발송 진입에서는 우편함만 확인한다.
   - `REQUEST` 차감 삭제: **가공→준비 롤백** 시 대응 커밋 이벤트/라인 **물리 삭제**
     - 롤백 엔드포인트(`DELETE /api/requests/:id/nc-file`, `DELETE /api/requests/:id/stage-file?stage=machining`)도 동일 정책으로 `ensureRequestCreditRollbackDeleteOnRollbackToCam`를 반드시 호출해야 합니다.
     - 삭제 대상 커밋 탐색은 idempotencyKey 매칭을 우선하고, 누락 시 `refType/refId`, `journal.meta.requestMongoId|requestId`, `LedgerLine 역탐색`까지 사용해 원본 COMMIT 저널을 식별/삭제합니다.
     - 샘플(`rnd_sample|copied_sample`)은 `no_spend`를 정상으로 허용합니다.
     - 일반 의뢰는 기본적으로 `no_spend`를 409로 중단하되, 요청자 소비 라인(`REQ_PAID_CREDIT|REQ_FREE_REQUEST_CREDIT`, refType=REQUEST, refId=request._id, amount<0)이 이미 없으면 idempotent success로 허용합니다.
-  - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 커밋 이벤트/라인 **물리 삭제**
+  - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시, 집하 전에 차감된 레거시 패키지가 있으면 대응 커밋을 물리 삭제. 집하 전 정상 건은 `shippingPackageId`가 없어 no-op.
   - 롤백에서 REFUND 이벤트/라인 추가 금지
   - 조회 호환성: `type=REFUND` 레거시 조회 파라미터 지원은 제거했습니다.
     조회/표시 타입은 SSOT 목록(`CHARGE_*`, `SPEND_*`, `ADJUST`)만 허용합니다.
@@ -816,11 +816,21 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 목적: 동시성 상황에서 중복 insert(11000)로 트랜잭션이 불필요하게 깨지는 것을 예방
   - 파생 조회(제조사 정산/관리자 대시보드/의뢰자 잔액)는 단일 SSOT 장부 집계값만 사용
 - 우편함/배송 무결성 정책(포장.발송):
-  - 우편함 배정 SSOT (세척.패킹→포장.발송 승인 포함):
-    1) 같은 `businessAnchorId`가 `세척.패킹`/`포장.발송`에 이미 있으면 그 우편함으로 합류
+  - 우편함 배정 SSOT (가공→세척.패킹 진입):
+    1) 같은 수신자(`businessAnchorId` / PTX 직납이면 practice BA)가 `세척.패킹`/`포장.발송`/`가공`(우편함 유지)에 이미 있으면 그 우편함으로 합류
+       - PTX: 치과 BA가 같아도 수취인 지문(이름/전화/우편번호/주소/상세)이 둘 다 있고 다르면 합류하지 않는다
+       - 신속/묶음은 같은 수신자면 한 박스
     2) 없으면 A1A1부터 순서상 가장 가까운 빈칸 할당
-    - 재사용/빈칸 판정은 `세척.패킹`·`포장.발송` 점유만 본다 (추적관리 잔여로 막지 않음)
-    - 기존 의뢰 자신의 `mailboxAddress`는 근거로 쓰지 않는다
+    - 목적: 다른 날짜에 나온 제품도 집하 전까지 같은 박스로 모아 택배비 1회
+    - 합류는 `세척.패킹`·`포장.발송`·우편함을 유지한 `가공` 점유만 본다
+    - 빈칸 판정은 위 합류 점유 + **집하 전 추적관리** 점유를 본다
+    - 이미 배정된 `mailboxAddress`는 타 수신자 점유가 아니면 유지한다 (패킹 라벨/재가공)
+    - 포장.발송 진입에서는 이미 배정된 `mailboxAddress`를 유지한다 (없으면 위 로직으로 1회 보정)
+    - 포장.발송 → 세척.패킹, 세척.패킹 → 가공 롤백에서도 우편함을 유지한다
+    - 가공 → 준비 롤백에서만 `mailboxAddress = null`로 해제한다
+    - 배송비 차감 SSOT: 집하(수동 집하 / 한진 status 11) 때 우편함 1회. `ShippingPackage`는 집하 장부 행이며 점유 정체성이 아니다
+    - `(businessAnchorId, shipDateYmd, mailboxAddress)` unique 인덱스는 쓰지 않는다. 같은 칸을 하루에 두 번 비울 수 있다
+    - 운송장 라벨 비고는 `우편함 / 사업자명`만. 건수는 웹앱에서 확인
   - 우편함 점유(active) 단계(요약/집하 등): `세척.패킹`, `포장.발송`, `추적관리`
     - `추적관리` 중 `picked_up|completed|canceled` 또는 `trackingStatusCode>=11` 건은 점유에서 제외
   - `review-status` 승인 트랜잭션에서 우편함 할당 쿼리는 같은 `session`으로 읽어
