@@ -2,14 +2,21 @@
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // - web/backend/utils/manufacturerLedgerDisplay.js
 // change-log:
+// - 2026-08-17: 수취자 건별 세부는 Collapsible, 초기 닫힘.
 // - 2026-08-17: 상세는 의뢰/배송을 별 섹션으로 나눈다. 유형 라벨은 생략.
 // - 2026-08-17: 제조사 일별 정산 행 클릭 시 수취자(우편함)별 생산·발송 상세.
+import { ChevronDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
 import { formatKstYmdToKo } from "@/shared/date/kst";
 import { cn } from "@/shared/ui/cn";
@@ -84,9 +91,11 @@ const groupsForSection = (
     .filter((group) => group.items.length > 0);
 
 function MailboxGroupList({
+  ymd,
   groups,
   section,
 }: {
+  ymd: string;
   groups: ManufacturerLedgerMailboxGroup[];
   section: LedgerSectionKind;
 }) {
@@ -98,84 +107,97 @@ function MailboxGroupList({
             ? Number(group.productionAmount || 0)
             : Number(group.shippingAmount || 0);
         return (
-          <section
-            key={`${section}:${group.key}`}
+          <Collapsible
+            key={`${ymd}:${section}:${group.key}`}
+            defaultOpen={false}
             className="overflow-hidden rounded-xl border border-slate-200/80"
           >
-            <div className="flex items-baseline justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">
-                  {group.recipientName || "수취자 미확인"}
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 bg-slate-50/80 px-3 py-2 text-left transition-colors hover:bg-slate-100/80 [&[data-state=open]>svg]:rotate-180 [&[data-state=open]]:border-b [&[data-state=open]]:border-slate-100"
+              >
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {group.recipientName || "수취자 미확인"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {group.mailboxAddress
+                      ? `우편함 ${group.mailboxAddress}`
+                      : "우편함 미배정"}
+                    {section === "shipping" && group.shippingCount > 0
+                      ? ` · 발송 ${group.shippingCount}건`
+                      : section === "request" && group.productionCount > 0
+                        ? ` · 의뢰 ${group.productionCount}건`
+                        : ""}
+                  </p>
+                </div>
+                <p className="shrink-0 text-xs font-semibold tabular-nums text-slate-800">
+                  {formatWonWithUnit(subtotal)}
                 </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {group.mailboxAddress
-                    ? `우편함 ${group.mailboxAddress}`
-                    : "우편함 미배정"}
-                  {section === "shipping" && group.shippingCount > 0
-                    ? ` · 발송 ${group.shippingCount}건`
-                    : ""}
-                </p>
-              </div>
-              <p className="shrink-0 text-xs font-semibold tabular-nums text-slate-800">
-                {formatWonWithUnit(subtotal)}
-              </p>
-            </div>
-            <ul className="divide-y divide-slate-100">
-              {group.items.map((item, index) => {
-                const meta = [item.clinicName, item.patientName, item.tooth]
-                  .map((v) => String(v || "").trim())
-                  .filter(Boolean)
-                  .join(" / ");
-                const prefix = itemKindPrefix(item, section);
-                return (
-                  <li
-                    key={`${section}:${group.key}:${item.kind}:${item.requestMongoId || index}`}
-                    className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-800">
-                        {prefix ? <span>{prefix}</span> : null}
-                        {item.requestId ? (
-                          <span
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <ul className="divide-y divide-slate-100">
+                {group.items.map((item, index) => {
+                  const meta = [item.clinicName, item.patientName, item.tooth]
+                    .map((v) => String(v || "").trim())
+                    .filter(Boolean)
+                    .join(" / ");
+                  const prefix = itemKindPrefix(item, section);
+                  return (
+                    <li
+                      key={`${section}:${group.key}:${item.kind}:${item.requestMongoId || index}`}
+                      className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-800">
+                          {prefix ? <span>{prefix}</span> : null}
+                          {item.requestId ? (
+                            <span
+                              className={cn(
+                                "font-mono text-[11px]",
+                                prefix
+                                  ? "ml-1.5 text-slate-500"
+                                  : "text-slate-800",
+                              )}
+                            >
+                              {item.requestId}
+                            </span>
+                          ) : null}
+                        </p>
+                        {meta ? (
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {meta}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {item.amount > 0 ? (
+                          <p
                             className={cn(
-                              "font-mono text-[11px]",
-                              prefix ? "ml-1.5 text-slate-500" : "text-slate-800",
+                              "tabular-nums font-medium",
+                              item.kind === "shipping"
+                                ? "text-slate-800"
+                                : "text-primary-strong",
                             )}
                           >
-                            {item.requestId}
-                          </span>
+                            {formatWonWithUnit(item.amount)}
+                          </p>
                         ) : null}
-                      </p>
-                      {meta ? (
-                        <p className="truncate text-[11px] text-muted-foreground">
-                          {meta}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      {item.amount > 0 ? (
-                        <p
-                          className={cn(
-                            "tabular-nums font-medium",
-                            item.kind === "shipping"
-                              ? "text-slate-800"
-                              : "text-primary-strong",
-                          )}
-                        >
-                          {formatWonWithUnit(item.amount)}
-                        </p>
-                      ) : null}
-                      {creditKindLabel(item.creditKind) ? (
-                        <p className="text-[10px] text-muted-foreground">
-                          {creditKindLabel(item.creditKind)}
-                        </p>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
+                        {creditKindLabel(item.creditKind) ? (
+                          <p className="text-[10px] text-muted-foreground">
+                            {creditKindLabel(item.creditKind)}
+                          </p>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </CollapsibleContent>
+          </Collapsible>
         );
       })}
     </div>
@@ -232,6 +254,7 @@ export function ManufacturerDailyLedgerDetailDialog({
                       </p>
                     </div>
                     <MailboxGroupList
+                      ymd={detail.ymd}
                       groups={requestGroups}
                       section="request"
                     />
@@ -250,6 +273,7 @@ export function ManufacturerDailyLedgerDetailDialog({
                       </p>
                     </div>
                     <MailboxGroupList
+                      ymd={detail.ymd}
                       groups={shippingGroups}
                       section="shipping"
                     />

@@ -23,7 +23,6 @@ import {
   releasePracticeTransferLabShare,
   releasePracticeTransferAbutmentShare,
   chargePracticeTransferLabShipping,
-  chargePracticeTransferAbutsShipping,
   rollbackPracticeTransferBilling,
   toBillingPreviewFields,
   toFeeQuoteApi,
@@ -113,6 +112,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-08-17: mark-complete는 기공소→치과 배송비만. 어벗츠→제조사 배송은 CA 집하.
 // - 2026-08-16: pastReady — 라이브 stage 우선(sticky startedAt OR 제거 시 목록 인자 우선).
 // - 2026-08-17: trash/empty — 하드삭제 의뢰 채팅방 archive(치과 사이드바 유령 unread 방지).
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
@@ -3981,22 +3981,6 @@ export async function markReceivedPracticeTransferComplete(req, res) {
         success: false,
         message:
           shipErr?.message || "기공소 배송비 차감에 실패했습니다.",
-        ...(shipErr?.payload || {}),
-      });
-    }
-
-    try {
-      await chargePracticeTransferAbutsShipping({
-        transfer: doc,
-        toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
-        actorUserId: req.user?._id,
-      });
-    } catch (shipErr) {
-      const status = Number(shipErr?.statusCode || 500);
-      return res.status(status >= 400 && status < 600 ? status : 500).json({
-        success: false,
-        message:
-          shipErr?.message || "어벗츠 배송비 차감에 실패했습니다.",
         ...(shipErr?.payload || {}),
       });
     }

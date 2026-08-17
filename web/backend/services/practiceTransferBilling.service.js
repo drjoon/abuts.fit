@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-17: 어벗츠 배송비는 CA 집하 시 전환. mark-complete는 기공소 배송만.
 // - 2026-08-17: adjustPracticeTransferHold — 배송비 보류는 조정 대상에서 제외(fees.total과만 비교).
 // - 2026-08-17: 생성 시 배송비도 SPEND_HOLD. 출고 시 에스크로→매출 전환(재차감 없음).
 // - 2026-08-17: 신속처리 rushFeeMultiplier — 기공/어벗 배수 스택(기본 1.2·플랫폼 설정).
@@ -4260,9 +4261,9 @@ export async function chargePracticeTransferLabShipping({
 }
 
 /**
- * 어벗츠 출발 배송비(치과→어벗츠). mark-complete 시 1회(CA 있을 때).
- * 포장.발송에서도 동일 idempotency로 중복 차감 방지.
- * 생성 시 보류가 있으면 에스크로→매출만 전환.
+ * 어벗츠 출발 배송비(치과→어벗츠, 제조사는 어벗츠→제조사+VAT).
+ * CA 집하(우편함 비우기) 시 1회. 작업완료(mark-complete)에서는 호출하지 않는다.
+ * 생성 시 보류가 있으면 에스크로→매출만 전환(재차감 없음).
  */
 export async function chargePracticeTransferAbutsShipping({
   transfer,

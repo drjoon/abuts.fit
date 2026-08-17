@@ -3,6 +3,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // change-log:
+// - 2026-08-17: 기공소→치과 배송(practice_transfer_lab_shipping)은 제조사 원장에서 제외.
 // - 2026-08-17: 제조사 장부 표시 — 의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶고, KST 하루+우편함(수취자)으로 묶음.
 import {
   MANUFACTURER_PRODUCTION_LEDGER_LABEL,
@@ -14,6 +15,12 @@ import { SHIPPING_LEDGER_LABELS } from "./shippingLedgerLabels.js";
 const REQUEST_EARN = new Set(MANUFACTURER_REQUEST_EARN_EVENT_TYPES);
 const SHIPPING_EARN = new Set(MANUFACTURER_SHIPPING_EARN_EVENT_TYPES);
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+function stripGlPrefix(uniqueKey) {
+  return String(uniqueKey || "")
+    .trim()
+    .replace(/^(gl:)+/i, "");
+}
 
 export function manufacturerLedgerKstYmd(input) {
   if (input == null) return "";
@@ -27,7 +34,20 @@ export function manufacturerLedgerKstYmd(input) {
   }).format(d);
 }
 
+function usageKindOf(row) {
+  return String(
+    row?.usageKind || row?.meta?.usageKind || "",
+  ).trim();
+}
+
+export function isManufacturerLabOriginShippingRow(row) {
+  if (usageKindOf(row) === "practice_transfer_lab_shipping") return true;
+  const key = stripGlPrefix(row?.uniqueKey);
+  return /:lab_shipping$/i.test(key);
+}
+
 export function isManufacturerDailyEarnRow(row) {
+  if (isManufacturerLabOriginShippingRow(row)) return false;
   if (String(row?.type || "").toUpperCase() !== "EARN") return false;
   const event = String(row?.eventType || "");
   if (REQUEST_EARN.has(event) || SHIPPING_EARN.has(event)) return true;
@@ -40,19 +60,14 @@ export function isManufacturerDailyEarnRow(row) {
 }
 
 export function isManufacturerShippingEarnRow(row) {
+  if (isManufacturerLabOriginShippingRow(row)) return false;
   const event = String(row?.eventType || "");
   if (SHIPPING_EARN.has(event)) return true;
   if (String(row?.refType || "").toUpperCase() === "SHIPPING_PACKAGE") {
     return true;
   }
-  const usage = String(row?.usageKind || "");
+  const usage = usageKindOf(row);
   return usage.includes("shipping");
-}
-
-function stripGlPrefix(uniqueKey) {
-  return String(uniqueKey || "")
-    .trim()
-    .replace(/^(gl:)+/i, "");
 }
 
 function pushObjectId(set, raw) {
@@ -461,6 +476,7 @@ export function groupManufacturerLedgerForDisplay(
   const singles = [];
 
   for (const row of list) {
+    if (isManufacturerLabOriginShippingRow(row)) continue;
     if (!isManufacturerDailyEarnRow(row)) {
       singles.push({ ...row, groupKind: "single", mailboxGroups: null });
       continue;
