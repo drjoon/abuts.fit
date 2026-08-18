@@ -870,7 +870,20 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
     const hexRotation = metadata.hexRotation;
     if (hexRotation && typeof hexRotation === "object") {
-      metadataUpdates["caseInfos.hexRotation"] = hexRotation;
+      const preservedMode = String(
+        request?.caseInfos?.hexRotation?.mode || "",
+      ).trim();
+      const mergedHexRotation = {
+        ...(request?.caseInfos?.hexRotation &&
+        typeof request.caseInfos.hexRotation === "object"
+          ? request.caseInfos.hexRotation
+          : {}),
+        ...hexRotation,
+      };
+      if (preservedMode && !String(hexRotation.mode || "").trim()) {
+        mergedHexRotation.mode = preservedMode;
+      }
+      metadataUpdates["caseInfos.hexRotation"] = mergedHexRotation;
     }
   }
 
@@ -1491,34 +1504,13 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const ci = request.caseInfos || {};
-  // 제조사 수동 좌표계 전처리 모드는 request-meta에서 canonical 값으로 전달한다.
-  // canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
-  // Rhino align 기능으로 구성정보 전처리를 대체하므로, 개별 구성정보 파일 기반 모드는 사용하지 않는다.
-  // PTX 생성 등 rnd 미설정 건: caseInfos.final/requestorHexRotation → STL모델대로 폴백.
-  // (빈 rnd로 500 나면 connectionTargetDiameter도 함께 못 내려 Rhino align이 기본값으로 흐른다.)
-  const manufacturerHexRotationCandidates = [
-    request?.rnd?.manufacturerHexRotation,
-    ci?.finalHexRotation,
-    ci?.requestorHexRotation,
-    ci?.manufacturerHexRotation,
-  ];
-  let manufacturerHexRotationRaw = "";
-  let manufacturerHexRotationMode = null;
-  for (const candidate of manufacturerHexRotationCandidates) {
-    const raw = String(candidate || "").trim();
-    if (!raw) continue;
-    const parsed = parseManufacturerHexRotationModeOrNull(raw);
-    if (parsed) {
-      manufacturerHexRotationRaw = raw;
-      manufacturerHexRotationMode = parsed;
-      break;
-    }
-  }
-  if (!manufacturerHexRotationMode) {
-    manufacturerHexRotationRaw = "STL모델대로";
-    manufacturerHexRotationMode = "STL모델대로";
-    console.warn(
-      `[BG] getRequestMeta: manufacturerHexRotation missing; fallback STL모델대로 requestId=${request.requestId}`,
+  const hexRotationMode = parseManufacturerHexRotationModeOrNull(
+    ci?.hexRotation?.mode,
+  );
+  if (!hexRotationMode) {
+    throw new ApiError(
+      400,
+      `헥스 회전(mode)이 설정되지 않았습니다. requestId=${request.requestId}`,
     );
   }
   const normalizedFinishLine = normalizeFinishLineWithZExtrema(ci?.finishLine);
@@ -1613,9 +1605,8 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           // NC 재생성 경로(request-meta 직접 조회)에서도 PRC 파일명이 필요하므로 여기서 보장.
           faceHolePrcFileName: resolvedPrcFiles.faceHolePrcFileName,
           connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
-          // 제조사 수동 좌표계 전처리 모드(canonical: "STL모델대로"|"헥스30도회전"|"헥스X도회전(total)").
-          // 전달 SSOT: X는 totalDeg(=30+minorDeg). 예) minor 10도 => "헥스40도회전"
-          manufacturerHexRotation: manufacturerHexRotationMode,
+          // Esprit 가공 SSOT: caseInfos.hexRotation.mode (폴백 없음)
+          manufacturerHexRotation: hexRotationMode,
           // Rhino 정렬 telemetry(헥스 회전각).
           // Esprit가 보정(legacy 0) 모드에서 appliedDeg를 부호 반전 해석해 +30에 합산할 때 사용한다.
           hexRotation:
@@ -2120,7 +2111,20 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
   };
 
   if (hexRotation && typeof hexRotation === "object") {
-    metadataSetPayload["caseInfos.hexRotation"] = hexRotation;
+    const preservedMode = String(
+      request.caseInfos?.hexRotation?.mode || "",
+    ).trim();
+    const mergedHexRotation = {
+      ...(request.caseInfos?.hexRotation &&
+      typeof request.caseInfos.hexRotation === "object"
+        ? request.caseInfos.hexRotation
+        : {}),
+      ...hexRotation,
+    };
+    if (preservedMode && !String(hexRotation.mode || "").trim()) {
+      mergedHexRotation.mode = preservedMode;
+    }
+    metadataSetPayload["caseInfos.hexRotation"] = mergedHexRotation;
   }
 
   // taperGuide는 필요시 별도 필드로 저장 (선택적)

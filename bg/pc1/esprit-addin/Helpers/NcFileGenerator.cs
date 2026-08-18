@@ -31,7 +31,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             System.IO.Directory.CreateDirectory(_outputFolder);
             _postProcessorFile = postProcessorFile ?? "Acro_dent_XE.asc";
         }
-        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null, string connectionPrcPath = null, string manufacturerHexRotation = null)
+        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null, string connectionPrcPath = null, string manufacturerHexRotation = null, double? hexRotationAppliedDeg = null)
         {
             if (document == null)
             {
@@ -82,7 +82,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 executedNcPath = fallbackPath;
             }
 
-            UpdateNcHeader(executedNcPath, Path.GetFileName(executedNcPath), frontPointX, stockDiameter, stlBoundingTopZ);
+            UpdateNcHeader(executedNcPath, Path.GetFileName(executedNcPath), frontPointX, stockDiameter, stlBoundingTopZ, manufacturerHexRotation, hexRotationAppliedDeg);
 
             string serialForNc = NormalizeSerialCode(serialCode);
             AppLogger.Log($"NcFileGenerator: Serial 각인 코드 적용 - Raw:'{serialCode ?? string.Empty}' => Use:'{serialForNc}'");
@@ -214,7 +214,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             int length = Math.Min(2, parts.Length);
             return string.Join("-", parts.Take(length));
         }
-        private void UpdateNcHeader(string ncFilePath, string displayName, double frontPointX, double stockDiameter, double? stlBoundingTopZ = null)
+        private void UpdateNcHeader(string ncFilePath, string displayName, double frontPointX, double stockDiameter, double? stlBoundingTopZ = null, string hexRotationMode = null, double? hexRotationAppliedDeg = null)
         {
             try
             {
@@ -228,26 +228,119 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 {
                     lines.Add("%");
                 }
-                if (lines.Count == 1)
-                {
-                    lines.Add(string.Empty);
-                }
-                lines[0] = string.IsNullOrWhiteSpace(lines[0]) ? "%" : lines[0];
-                string truncatedDisplayName = ExtractDisplayName(displayName);
-                // lines[1] = $"({truncatedDisplayName})";
-                lines[1] = $"O4000";
+
                 double backturnClearance = ResolveBackturnClearance(stockDiameter) + 2;
-                ApplyOrInsertNcLine(lines, $"#520= {FormatNcNumber(stlBoundingTopZ, "0.000")}", "#520");
-                ApplyOrInsertNcLine(lines, $"#521= {FormatNcNumber(stockDiameter, "0.000")}", "#521");
-                ApplyOrInsertNcLine(lines, $"#522= {FormatNcNumber(backturnClearance, "0.000")}", "#522");
-                ApplyOrInsertNcLine(lines, $"#523= {FormatNcNumber(AppConfig.DefaultStlShift, "0.000")}", "#523");
-                File.WriteAllLines(ncFilePath, lines.ToArray());
-                AppLogger.Log($"NcFileGenerator: NC 헤더 수정 완료 - #520:{FormatNcNumber(stlBoundingTopZ)} (stlBoundingTopZ), #521:{FormatNcNumber(stockDiameter)}, #522:{FormatNcNumber(backturnClearance)}");
+                string hexComment = FormatHexRotationHeaderComment(hexRotationMode, hexRotationAppliedDeg);
+                var headerBlock = new List<string>
+                {
+                    "%",
+                    "O4000",
+                };
+                if (!string.IsNullOrWhiteSpace(hexComment))
+                {
+                    headerBlock.Add(hexComment);
+                }
+                headerBlock.Add($"#523= {FormatNcNumber(AppConfig.DefaultStlShift, "0.000")}");
+                headerBlock.Add($"#522= {FormatNcNumber(backturnClearance, "0.000")}");
+                headerBlock.Add($"#521= {FormatNcNumber(stockDiameter, "0.000")}");
+                headerBlock.Add($"#520= {FormatNcNumber(stlBoundingTopZ, "0.000")}");
+
+                int firstBodyIndex = -1;
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    string trimmed = (lines[i] ?? string.Empty).Trim();
+                    if (string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        continue;
+                    }
+                    if (trimmed == "%" ||
+                        trimmed == "O4000" ||
+                        trimmed.StartsWith("#520", StringComparison.OrdinalIgnoreCase) ||
+                        trimmed.StartsWith("#521", StringComparison.OrdinalIgnoreCase) ||
+                        trimmed.StartsWith("#522", StringComparison.OrdinalIgnoreCase) ||
+                        trimmed.StartsWith("#523", StringComparison.OrdinalIgnoreCase) ||
+                        (trimmed.StartsWith("(", StringComparison.Ordinal) &&
+                         trimmed.EndsWith(")", StringComparison.Ordinal) &&
+                         (trimmed.IndexOf("STL", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          trimmed.IndexOf("헥스", StringComparison.OrdinalIgnoreCase) >= 0)))
+                    {
+                        continue;
+                    }
+                    firstBodyIndex = i;
+                    break;
+                }
+
+                var rebuilt = new List<string>(headerBlock);
+                if (firstBodyIndex >= 0 && firstBodyIndex < lines.Count)
+                {
+                    rebuilt.AddRange(lines.Skip(firstBodyIndex));
+                }
+
+                File.WriteAllLines(ncFilePath, rebuilt.ToArray());
+                AppLogger.Log($"NcFileGenerator: NC 헤더 수정 완료 - hexComment={(hexComment ?? "<null>")}, #520:{FormatNcNumber(stlBoundingTopZ)}, #521:{FormatNcNumber(stockDiameter)}, #522:{FormatNcNumber(backturnClearance)}");
             }
             catch (Exception ex)
             {
                 AppLogger.Log($"NcFileGenerator: NC 헤더 수정 실패 - {ex.GetType().Name}:{ex.Message}");
             }
+        }
+
+        private static string FormatHexRotationHeaderComment(string hexRotationMode, double? hexRotationAppliedDeg)
+        {
+            string modeComment = FormatHexRotationModeComment(hexRotationMode);
+            string appliedLabel = FormatHexRotationAppliedDegComment(hexRotationAppliedDeg);
+            if (string.IsNullOrWhiteSpace(modeComment) && string.IsNullOrWhiteSpace(appliedLabel))
+            {
+                return null;
+            }
+            if (string.IsNullOrWhiteSpace(modeComment))
+            {
+                return appliedLabel;
+            }
+            if (string.IsNullOrWhiteSpace(appliedLabel))
+            {
+                return modeComment;
+            }
+            return modeComment + " " + appliedLabel;
+        }
+
+        private static string FormatHexRotationAppliedDegComment(double? hexRotationAppliedDeg)
+        {
+            if (!hexRotationAppliedDeg.HasValue ||
+                double.IsNaN(hexRotationAppliedDeg.Value) ||
+                double.IsInfinity(hexRotationAppliedDeg.Value))
+            {
+                return "(null)";
+            }
+            return $"({hexRotationAppliedDeg.Value.ToString("0.###############", CultureInfo.InvariantCulture)})";
+        }
+
+        private static string FormatHexRotationModeComment(string hexRotationMode)
+        {
+            string mode = string.IsNullOrWhiteSpace(hexRotationMode)
+                ? string.Empty
+                : hexRotationMode.Trim();
+            if (string.IsNullOrWhiteSpace(mode))
+            {
+                return null;
+            }
+            if (string.Equals(mode, "0", StringComparison.Ordinal))
+            {
+                return "(STL모델대로)";
+            }
+            if (string.Equals(mode, "30", StringComparison.Ordinal))
+            {
+                return "(헥스30도회전)";
+            }
+            if (string.Equals(mode, "STL모델대로", StringComparison.Ordinal))
+            {
+                return "(STL모델대로)";
+            }
+            if (string.Equals(mode, "헥스30도회전", StringComparison.Ordinal))
+            {
+                return "(헥스30도회전)";
+            }
+            return $"({mode})";
         }
         private static double ResolveBackturnClearance(double stockDiameter)
         {

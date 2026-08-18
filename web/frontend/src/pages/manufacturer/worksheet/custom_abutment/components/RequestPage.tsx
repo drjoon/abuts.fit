@@ -1780,6 +1780,10 @@ export const RequestPage = ({
             caseInfos: {
               ...(item.caseInfos || {}),
               finalHexRotation: toFinalHexRotation(nextValue),
+              hexRotation: {
+                ...(((item.caseInfos || {}) as any)?.hexRotation || {}),
+                mode: backendValue,
+              },
             },
             rnd: {
               ...(item.rnd || {}),
@@ -1832,6 +1836,10 @@ export const RequestPage = ({
                     ? "헥스30도회전"
                     : "STL모델대로",
                 finalHexRotation: savedFinal,
+                hexRotation: {
+                  ...(((item.caseInfos || {}) as any)?.hexRotation || {}),
+                  mode: savedManufacturer,
+                },
               },
               rnd: {
                 ...(item.rnd || {}),

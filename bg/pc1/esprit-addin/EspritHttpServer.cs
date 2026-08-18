@@ -44,6 +44,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         [DataMember] public Vector3Dto TiltAxisVector { get; set; }
         [DataMember] public Vector3Dto FrontPoint { get; set; }
         [DataMember] public bool TwoPhase { get; set; }
+        [DataMember] public bool OnePhase { get; set; }
+        // Esprit 가공 SSOT: caseInfos.hexRotation.mode (백엔드 payload 직접 전달, 폴백 없음)
+        [DataMember] public string ManufacturerHexRotation { get; set; }
+        [DataMember(Name = "manufacturerHexRotation")] public string manufacturerHexRotation { get; set; }
+        [DataMember] public double HexRotationAppliedDeg { get; set; }
+        [DataMember(Name = "hexRotationAppliedDeg")] public double hexRotationAppliedDeg { get; set; }
     }
 
     [DataContract]
@@ -314,7 +320,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     response.OutputStream.Write(buffer, 0, buffer.Length);
                     return;
                 }
-                AppLogger.Log($"[HTTP Server] Accepted NC request: {req.RequestId} (Clinic: {req.ClinicName}, Patient: {req.PatientName}, TwoPhase: {req.TwoPhase})");
+                var hexRotationMode = !string.IsNullOrWhiteSpace(req.ManufacturerHexRotation)
+                    ? req.ManufacturerHexRotation.Trim()
+                    : (req.manufacturerHexRotation ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(hexRotationMode))
+                {
+                    AppLogger.Log($"[HTTP Server] Bad request: ManufacturerHexRotation missing for {req.RequestId}");
+                    response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"ManufacturerHexRotation is required\"}");
+                    response.OutputStream.Write(buffer, 0, buffer.Length);
+                    return;
+                }
+                AppLogger.Log($"[HTTP Server] Accepted NC request: {req.RequestId} (Clinic: {req.ClinicName}, Patient: {req.PatientName}, TwoPhase: {req.TwoPhase}, OnePhase: {req.OnePhase}, HexRotation: {hexRotationMode})");
                 await NotifyRuntimeStatus(
                     req.RequestId,
                     "started",
@@ -497,6 +514,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 throw new InvalidOperationException("FrontPoint from backend is missing");
             }
+            var hexRotationMode = !string.IsNullOrWhiteSpace(req.ManufacturerHexRotation)
+                ? req.ManufacturerHexRotation.Trim()
+                : (req.manufacturerHexRotation ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(hexRotationMode))
+            {
+                throw new InvalidOperationException("ManufacturerHexRotation from backend payload is missing");
+            }
+            double? hexAppliedDeg = null;
+            if (!double.IsNaN(req.HexRotationAppliedDeg) && !double.IsInfinity(req.HexRotationAppliedDeg))
+            {
+                hexAppliedDeg = req.HexRotationAppliedDeg;
+            }
+            else if (!double.IsNaN(req.hexRotationAppliedDeg) && !double.IsInfinity(req.hexRotationAppliedDeg))
+            {
+                hexAppliedDeg = req.hexRotationAppliedDeg;
+            }
+            bool twoPhase = !req.OnePhase;
             double frontLimitX = -req.FrontPoint.z;
             var processor = new StlFileProcessor(_espApp)
             {
@@ -510,12 +544,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 frontLimitX,
                 null,
                 req.MaterialDiameter,
-                req.TwoPhase,
+                twoPhase,
                 req.RequestId,
                 req.TiltAxisVector?.x,
                 req.TiltAxisVector?.y,
                 req.TiltAxisVector?.z,
-                req.TotalLength);
+                req.TotalLength,
+                hexRotationMode,
+                hexAppliedDeg);
             AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
         }
         private async Task ProcessQueueLoop(CancellationToken token)

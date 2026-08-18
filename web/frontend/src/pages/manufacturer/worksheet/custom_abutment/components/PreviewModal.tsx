@@ -868,12 +868,16 @@ export const PreviewModal = ({
       setAnodizingEnabledDraft(true);
     }
 
-    // 헥스 회전 SSOT 우선순위:
-    // 1) 제조사 저장값(rnd/caseInfos.manufacturerHexRotation)
-    // 2) 준비·CAM 단계(미저장): designSoftware 정책(ExoCAD=헥스30도, 3Shape=STL) > requestorHexRotation
-    //    - 생성 시 finalHexRotation은 제조사 미저장이면 STL로 고정되므로 준비 단계 기본값으로 쓰지 않는다.
-    // 3) 가공 이후(미저장 스냅샷): finalHexRotation > requestorHexRotation > designSoftware
+    // 헥스 회전 SSOT: caseInfos.hexRotation.mode
+    // 1) 저장된 mode
+    // 2) 준비·CAM 단계(미저장): designSoftware 정책 > requestorHexRotation
+    // 3) 가공 이후(미저장 스냅샷): legacy finalHexRotation/requestorHexRotation
+    const savedHexRotationMode = normalizeManufacturerHexRotationMode(
+      (req as any)?.caseInfos?.hexRotation?.mode,
+    );
+
     const savedManufacturerHexMode =
+      savedHexRotationMode ||
       normalizeManufacturerHexRotationMode(
         (req as any)?.rnd?.manufacturerHexRotation,
       ) ||
@@ -2532,17 +2536,15 @@ export const PreviewModal = ({
                     setApproving(true);
                     suppressRealtimePreviewRefreshUntilRef.current = Date.now() + 7000;
                     try {
-                      // 준비 단계 승인(준비→가공) 전, rnd.manufacturerHexRotation 누락 시
-                      // 현재 선택된 "헥스 회전" 값(라벨: STL모델대로/헥스30도회전)으로 선저장한다.
-                      // request-meta는 rnd.manufacturerHexRotation을 필수로 사용하므로,
-                      // 누락 상태에서 승인되면 BG(Esprit) 재실행이 실패할 수 있다.
+                      // 준비 단계 승인(준비→가공) 전, caseInfos.hexRotation.mode 누락 시
+                      // 현재 선택된 "헥스 회전" 값으로 선저장한다.
                       if (currentReviewStageKey === "request") {
-                        const hasRndManufacturerHex =
+                        const hasHexRotationMode =
                           !!normalizeManufacturerHexRotationMode(
-                            activeReq?.rnd?.manufacturerHexRotation,
+                            activeReq?.caseInfos?.hexRotation?.mode,
                           );
 
-                        if (!hasRndManufacturerHex) {
+                        if (!hasHexRotationMode) {
                           if (!onSaveManufacturerHexRotation) {
                             toast({
                               title: "승인 불가",
@@ -2655,8 +2657,15 @@ export const PreviewModal = ({
 
                   try {
                     await runApprove();
-                  } catch (err) {
+                  } catch (err: any) {
                     console.error("Review status update failed:", err);
+                    toast({
+                      title: "승인 실패",
+                      description:
+                        err?.message ||
+                        "승인 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+                      variant: "destructive",
+                    });
                   }
                 }}
                 aria-label="다음 공정"

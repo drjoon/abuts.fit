@@ -1080,6 +1080,13 @@ const buildCaseInfosForDualHexClone = ({ sourceCaseInfos, now, oppositeHex }) =>
     camFile: sourceCaseInfos?.camFile || null,
     ncFile: null,
     finalHexRotation: oppositeHex,
+    hexRotation: {
+      ...(sourceCaseInfos?.hexRotation &&
+      typeof sourceCaseInfos.hexRotation === "object"
+        ? sourceCaseInfos.hexRotation
+        : {}),
+      mode: oppositeHex,
+    },
   };
 
   return caseInfos;

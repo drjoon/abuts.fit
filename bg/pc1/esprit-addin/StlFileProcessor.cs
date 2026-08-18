@@ -152,11 +152,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // requestIdHint:
         // - 백엔드가 트리거 시 전달한 canonical requestId
         // - R&D 샘플 복사본이 원본과 동일 STL 파일명을 공유해도, 공정/콜백 귀속이 원본으로 섞이지 않도록 우선 사용한다.
-        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null, double? stlZLengthMm = null)
+        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null, double? stlZLengthMm = null, string manufacturerHexRotationHint = null, double? hexRotationAppliedDegHint = null)
         {
             AppLogger.BeginRun();
             AppLogger.Log("StlFileProcessor: Process 시작");
             ResetPerRunState();
+            if (string.IsNullOrWhiteSpace(manufacturerHexRotationHint))
+            {
+                throw new InvalidOperationException("ManufacturerHexRotation from backend payload is missing");
+            }
+            _backendManufacturerHexRotation = manufacturerHexRotationHint.Trim();
+            if (hexRotationAppliedDegHint.HasValue &&
+                !double.IsNaN(hexRotationAppliedDegHint.Value) &&
+                !double.IsInfinity(hexRotationAppliedDegHint.Value))
+            {
+                _backendHexRotationAppliedDeg = hexRotationAppliedDegHint.Value;
+            }
+            AppLogger.Log($"StlFileProcessor: payload hex mode={_backendManufacturerHexRotation}, appliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
             TryApplyCompositeOrientationVectorEnvFromPayload(tiltAxisX, tiltAxisY, tiltAxisZ);
             TryApplyCompositeFinishToleranceEnv(stlZLengthMm);
             Directory.CreateDirectory(_outputFolder);
@@ -194,8 +206,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendRequestId = null;
             _backendImplantLabel = null;
             _backendFinishLinePoints = null;
-            _backendManufacturerHexRotation = null;
-            _backendHexRotationAppliedDeg = null;
+            // hex mode/appliedDeg는 payload SSOT — 아래 null 초기화 대상에서 제외한다.
             try
             {
                 requestId = string.IsNullOrWhiteSpace(requestIdHint)
@@ -264,21 +275,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         _backendRetentionGroove = string.IsNullOrWhiteSpace(requestMeta.retentionGroove)
                             ? null
                             : requestMeta.retentionGroove.Trim();
-                        // 제조사 헥스 회전 모드값 캐시
-                        // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
-                        // - legacy("0"/"30", minor 라벨)은 NormalizeManufacturerHexRotationMode에서 정규화한다.
-                        // - 빈값/미지원값은 default로 대체하지 않고 예외로 처리한다.
-                        _backendManufacturerHexRotation = string.IsNullOrWhiteSpace(requestMeta.manufacturerHexRotation)
-                            ? null
-                            : requestMeta.manufacturerHexRotation.Trim();
-
-                        // Rhino 정렬 telemetry(헥스 회전각) 캐시
-                        // - caseInfos.hexRotation.appliedDeg
-                        // - canonical "STL모델대로" 모드에서만 +30 기본 회전에 추가 적용
-                        double? appliedHex = requestMeta.hexRotation?.appliedDeg;
-                        if (appliedHex.HasValue && !double.IsNaN(appliedHex.Value) && !double.IsInfinity(appliedHex.Value))
+                        // hex mode는 payload SSOT — request-meta에서 덮어쓰지 않는다.
+                        // Rhino telemetry(appliedDeg)는 payload에 없을 때만 request-meta에서 보조 로드한다.
+                        if (!_backendHexRotationAppliedDeg.HasValue)
                         {
-                            _backendHexRotationAppliedDeg = appliedHex.Value;
+                            double? appliedHex = requestMeta.hexRotation?.appliedDeg;
+                            if (appliedHex.HasValue && !double.IsNaN(appliedHex.Value) && !double.IsInfinity(appliedHex.Value))
+                            {
+                                _backendHexRotationAppliedDeg = appliedHex.Value;
+                            }
                         }
                         TryApplyCompositeFirstPassPercentEnv(requestMeta.tooth);
                         TryApplyCompositeOrientationVectorEnv(requestMeta);
@@ -417,7 +422,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     _backendSerialCode,
                     stlBoundingTopZ,
                     _prcManager?.ConnectionMachiningProcessFilePath,
-                    _backendManufacturerHexRotation);
+                    _backendManufacturerHexRotation,
+                    _backendHexRotationAppliedDeg);
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {

@@ -107,6 +107,15 @@ const requestSchema = new mongoose.Schema(
       // - 미지정 시 Esprit 기본값 1.0 사용
       frontFaceEndOffsetMm: Number,
       hexRotation: {
+        // Esprit 가공 SSOT: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
+        mode: {
+          type: String,
+          validate: {
+            validator: (v) => v == null || isCanonicalManufacturerHexRotation(v),
+            message:
+              "hexRotation.mode는 'STL모델대로' | '헥스30도회전' | '헥스X도회전(total)' 형식이어야 합니다.",
+          },
+        },
         version: Number,
         moduleVersion: String,
         beforeToXDeg: Number,

@@ -776,6 +776,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         retentionGroove,
         requestorHexRotation: manufacturerHexRotation,
         finalHexRotation: manufacturerHexRotation,
+        hexRotation: {
+          mode: manufacturerHexRotation,
+        },
         faceHolePrcFileName: resolvedPrc.faceHolePrcFileName || undefined,
         connectionPrcFileName: resolvedPrc.connectionPrcFileName || undefined,
         reviewByStage: {

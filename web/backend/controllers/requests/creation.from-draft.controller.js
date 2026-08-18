@@ -1410,6 +1410,8 @@ export async function createRequestsFromDraft(req, res) {
           const resolvedFinalHexRotation = resolveFinalHexRotationValue({
             manufacturerHexRotation: resolvedManufacturerHexRotation,
           });
+          const hexRotationMode =
+            resolvedManufacturerHexRotation || resolvedRequestorHexRotation;
 
           const quotedPrice = isPracticeRoutingSubmission
             ? item.computedPrice
@@ -1440,6 +1442,9 @@ export async function createRequestsFromDraft(req, res) {
                   : requestorAnodizingEnabled,
               requestorHexRotation: resolvedRequestorHexRotation,
               finalHexRotation: resolvedFinalHexRotation,
+              hexRotation: {
+                mode: hexRotationMode,
+              },
             },
             ...(resolvedManufacturerHexRotation
               ? {

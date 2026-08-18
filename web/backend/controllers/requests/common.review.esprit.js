@@ -10,6 +10,7 @@ import {
   chooseMachineForCamMachining,
   inferDiameterGroupFromDiameter,
 } from "./common.review.machine.js";
+import { resolveCaseInfosHexRotationMode } from "./common.requests.controller.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -112,6 +113,8 @@ export async function triggerEspritForNc({
     resolvedGroup: matGroup,
   });
 
+  const hexRotationMode = resolveCaseInfosHexRotationMode(request);
+
   let resp;
   try {
     const payload = {
@@ -149,6 +152,19 @@ export async function triggerEspritForNc({
         "frontend-manual",
       // One-Phase 제어 플래그 (2026-06-08): Two-Phase가 기본값, One-Phase는 명시적 요청
       OnePhase: Boolean(onePhase),
+      // Esprit 가공 SSOT: caseInfos.hexRotation.mode (폴백 없음)
+      ManufacturerHexRotation: hexRotationMode,
+      manufacturerHexRotation: hexRotationMode,
+      ...(Number.isFinite(Number(request?.caseInfos?.hexRotation?.appliedDeg))
+        ? {
+            HexRotationAppliedDeg: Number(
+              request.caseInfos.hexRotation.appliedDeg,
+            ),
+            hexRotationAppliedDeg: Number(
+              request.caseInfos.hexRotation.appliedDeg,
+            ),
+          }
+        : {}),
     };
     const headers = withEspritHeaders({ "Content-Type": "application/json" });
     console.log("[ESPRIT] POST / payload", {
@@ -157,6 +173,7 @@ export async function triggerEspritForNc({
       MaterialDiameter: payload.MaterialDiameter,
       MaterialDiameterGroup: payload.MaterialDiameterGroup,
       OnePhase: payload.OnePhase,
+      ManufacturerHexRotation: payload.ManufacturerHexRotation,
     });
     console.log("[ESPRIT] request headers", {
       url: espritUrl,

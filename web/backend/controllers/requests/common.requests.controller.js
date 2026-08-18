@@ -436,6 +436,27 @@ const resolveFinalHexRotationValue = ({
   );
 };
 
+// Esprit 가공 SSOT: caseInfos.hexRotation.mode (폴백 없음)
+export const resolveCaseInfosHexRotationMode = (requestDoc) => {
+  const modeRaw = String(requestDoc?.caseInfos?.hexRotation?.mode || "").trim();
+  if (!modeRaw) {
+    const err = new Error(
+      "헥스 회전(mode)이 설정되지 않았습니다. 준비 단계에서 'STL모델대로' 또는 '헥스30도회전'을 저장한 뒤 다시 시도해주세요.",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+  const parsed = parseManufacturerHexRotationMode(modeRaw);
+  if (!parsed) {
+    const err = new Error(
+      `헥스 회전(mode) 값이 유효하지 않습니다. mode='${modeRaw}'`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+  return parsed;
+};
+
 const normalizeLegacyManufacturerHexRotationOnRequest = (requestDoc) => {
   if (!requestDoc) return false;
   const raw = String(requestDoc?.rnd?.manufacturerHexRotation || "").trim();
@@ -3116,6 +3137,15 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   request.set("caseInfos.requestorHexRotation", requestorHexRotation);
   request.set("caseInfos.manufacturerHexRotation", manufacturerHexRotation);
   request.set("caseInfos.finalHexRotation", finalHexRotation);
+  const existingHexRotation =
+    request.caseInfos?.hexRotation &&
+    typeof request.caseInfos.hexRotation === "object"
+      ? request.caseInfos.hexRotation
+      : {};
+  request.set("caseInfos.hexRotation", {
+    ...existingHexRotation,
+    mode: manufacturerHexRotation,
+  });
 
   // 의뢰자 사업자 디폴트 헥스 회전값은 canonical 모드(STL모델대로/헥스30도회전/헥스X도회전(total))를 저장한다.
   if (Types.ObjectId.isValid(requestorBusinessAnchorId)) {
@@ -3167,6 +3197,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
           requestorHexRotation,
           manufacturerHexRotation,
           finalHexRotation,
+          hexRotation: request.caseInfos?.hexRotation || { mode: manufacturerHexRotation },
         },
         rnd: {
           manufacturerHexRotation,
@@ -3186,6 +3217,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
       requestorHexRotation,
       manufacturerHexRotation,
       finalHexRotation,
+      hexRotation: request.caseInfos?.hexRotation || { mode: manufacturerHexRotation },
       manufacturerHexRotationUpdatedAt:
         request.rnd?.manufacturerHexRotationUpdatedAt || null,
       manufacturerHexRotationUpdatedBy:
