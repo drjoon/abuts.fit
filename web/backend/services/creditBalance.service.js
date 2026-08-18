@@ -236,18 +236,44 @@ export async function getBusinessCreditBalanceSnapshot({
   };
 }
 
+const REQUEST_SPEND_COMMIT_EVENT_TYPE = "REQUEST_SPEND_COMMIT";
+
 async function findCommitJournalBySpendKey({ spendUniqueKey, session }) {
   const idempotencyKey = `gl:${String(spendUniqueKey || "").trim()}`;
   if (!idempotencyKey || idempotencyKey === "gl:") return null;
 
   const journal = await LedgerJournal.findOne({
     idempotencyKey,
-    eventType: { $in: ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"] },
+    eventType: { $in: [REQUEST_SPEND_COMMIT_EVENT_TYPE, "SHIPPING_SPEND_COMMIT"] },
   })
     .session(session || null)
     .lean();
 
   return journal || null;
+}
+
+async function filterRequestSpendCommitJournalIds({ journalIds, session }) {
+  const ids = [
+    ...new Set(
+      (journalIds || [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!ids.length) return [];
+
+  const rows = await LedgerJournal.find({
+    journalId: { $in: ids },
+    eventType: REQUEST_SPEND_COMMIT_EVENT_TYPE,
+  })
+    .select({ journalId: 1 })
+    .session(session || null)
+    .lean();
+
+  const allowed = new Set(
+    (rows || []).map((row) => String(row?.journalId || "")).filter(Boolean),
+  );
+  return ids.filter((id) => allowed.has(id));
 }
 
 async function computeSpendRestoreBreakdownByJournalId({ journalId, session }) {
@@ -569,7 +595,7 @@ export async function deleteRequestSpendAtomicOnRollback({
     // 2) journal ref 매칭 (레거시 합산 차감 포함)
     if (!journalIds.length) {
       const byRef = await LedgerJournal.find({
-        eventType: "REQUEST_SPEND_COMMIT",
+        eventType: REQUEST_SPEND_COMMIT_EVENT_TYPE,
         refType: "REQUEST",
         refId: request._id,
       })
@@ -586,7 +612,7 @@ export async function deleteRequestSpendAtomicOnRollback({
       if (requestId) metaOr.push({ "meta.requestId": requestId });
 
       const byMeta = await LedgerJournal.find({
-        eventType: "REQUEST_SPEND_COMMIT",
+        eventType: REQUEST_SPEND_COMMIT_EVENT_TYPE,
         $or: metaOr,
       })
         .select({ journalId: 1 })
@@ -597,6 +623,7 @@ export async function deleteRequestSpendAtomicOnRollback({
     }
 
     // 4) line 기준 역탐색 (journal ref/meta 누락 케이스 보완)
+    // HOLD 차감 라인(제출 보류)은 소비 커밋이 아니므로 COMMIT만 채택한다.
     if (!journalIds.length) {
       const lineRows = await LedgerLine.find({
         businessAnchorId: anchorObjectId,
@@ -611,17 +638,31 @@ export async function deleteRequestSpendAtomicOnRollback({
         .session(txSession)
         .lean();
 
-      for (const row of lineRows || []) pushJournalId(row?.journalId);
+      const lineJournalIds = [];
+      for (const row of lineRows || []) {
+        const id = String(row?.journalId || "").trim();
+        if (id) lineJournalIds.push(id);
+      }
+      const commitIds = await filterRequestSpendCommitJournalIds({
+        journalIds: lineJournalIds,
+        session: txSession,
+      });
+      for (const id of commitIds) pushJournalId(id);
     }
+
+    const commitJournalIds = await filterRequestSpendCommitJournalIds({
+      journalIds,
+      session: txSession,
+    });
 
     console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] lookup result", {
       requestMongoId,
       requestId: requestId || null,
       uniqueKeys,
-      matchedJournalIds: journalIds,
+      matchedJournalIds: commitJournalIds,
     });
 
-    if (!journalIds.length) {
+    if (!commitJournalIds.length) {
       console.warn("[CREDIT_ROLLBACK][REQUEST][SERVICE] no spend journals found", {
         requestMongoId,
         requestId: requestId || null,
@@ -638,7 +679,7 @@ export async function deleteRequestSpendAtomicOnRollback({
     let restoreBonusRequestSum = 0;
     let rollbackAmountSum = 0;
 
-    for (const journalId of journalIds) {
+    for (const journalId of commitJournalIds) {
       const { restorePaid, restoreBonusRequest, rollbackAmount } =
         await computeSpendRestoreBreakdownByJournalId({
           journalId,
@@ -655,7 +696,7 @@ export async function deleteRequestSpendAtomicOnRollback({
 
       const deleteResult = await deleteGeneralLedgerCommitJournal({
         journalId,
-        expectedEventTypes: ["REQUEST_SPEND_COMMIT"],
+        expectedEventTypes: [REQUEST_SPEND_COMMIT_EVENT_TYPE],
         session: txSession,
       });
 
@@ -692,14 +733,14 @@ export async function deleteRequestSpendAtomicOnRollback({
       restoreBonusRequestSum: Number(restoreBonusRequestSum || 0),
       rollbackAmountSum: Number(rollbackAmountSum || 0),
       reconciledSnapshot,
-      deletedJournalIds: journalIds,
+      deletedJournalIds: commitJournalIds,
     });
 
     return {
       didRollback: true,
       rollbackAmount: Math.round(Number(rollbackAmountSum || 0)),
       deletedSpendUniqueKeys: uniqueKeys,
-      deletedJournalIds: journalIds,
+      deletedJournalIds: commitJournalIds,
     };
   } catch (error) {
     if (ownSession) {

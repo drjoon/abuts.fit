@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-08-19: no_spend 잔여 라인 판정에서 HOLD 저널을 제외(준비 단계 취소).
 // - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
 // - 2026-08-17: 의뢰·배송 크레딧 보류(제출)→에스크로→CAM/집하 매출 전환.
 // - 2026-08-17: 배송비 차감 SSOT를 집하(우편함 비우기)로 옮김. 포장.발송 진입은 우편함만 확인. 기공의뢰 어벗츠 배송도 집하.
@@ -1465,6 +1466,47 @@ export async function healMissingExpressSurchargesForBusiness({
   return { healed, checked: (candidates || []).length };
 }
 
+async function requestorCommitSpendLineExists({
+  request,
+  businessAnchorId,
+  session,
+}) {
+  const lines = await LedgerLine.find({
+    ownerRole: "requestor",
+    ownerId: businessAnchorId,
+    refType: "REQUEST",
+    refId: request._id,
+    accountCode: {
+      $in: [
+        "REQ_PAID_CREDIT",
+        "REQ_FREE_REQUEST_CREDIT",
+        "REQ_FREE_SHIPPING_CREDIT",
+        "LAB_SETTLEMENT_CREDIT",
+      ],
+    },
+    amount: { $lt: 0 },
+  })
+    .select({ journalId: 1 })
+    .session(session || null)
+    .lean();
+
+  const journalIds = [
+    ...new Set(
+      (lines || [])
+        .map((row) => String(row?.journalId || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!journalIds.length) return false;
+
+  return Boolean(
+    await LedgerJournal.exists({
+      journalId: { $in: journalIds },
+      eventType: "REQUEST_SPEND_COMMIT",
+    }).session(session || null),
+  );
+}
+
 // 타이밍 SSOT: 가공 단계 롤백(CAM 복귀)에서만 호출되어야 한다.
 export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
   request,
@@ -1519,27 +1561,17 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
       return;
     }
 
-    // 일반 의뢰에서 no_spend가 나왔더라도, 실제 소비 라인이 이미 없다면
-    // (이전 시도에서 저널 삭제 완료된 경우 등) idempotent success로 허용한다.
+    // 일반 의뢰에서 no_spend가 나왔더라도, COMMIT 소비 라인이 이미 없다면
+    // (이전 시도에서 저널 삭제 완료, 또는 제출 HOLD만 있는 준비 단계) idempotent success.
     if (rollbackResult?.reason === "no_spend") {
-      const requestorSpendLineExists = await LedgerLine.exists({
-        ownerRole: "requestor",
-        ownerId: businessAnchorId,
-        refType: "REQUEST",
-        refId: request._id,
-        accountCode: {
-          $in: [
-            "REQ_PAID_CREDIT",
-            "REQ_FREE_REQUEST_CREDIT",
-            "REQ_FREE_SHIPPING_CREDIT",
-            "LAB_SETTLEMENT_CREDIT",
-          ],
-        },
-        amount: { $lt: 0 },
-      }).session(session || null);
+      const requestorSpendLineExists = await requestorCommitSpendLineExists({
+        request,
+        businessAnchorId,
+        session,
+      });
 
       if (!requestorSpendLineExists) {
-        console.log("[CREDIT_ROLLBACK][REQUEST] no_spend but no requestor spend lines; treat as idempotent", {
+        console.log("[CREDIT_ROLLBACK][REQUEST] no_spend but no requestor commit spend lines; treat as idempotent", {
           requestMongoId: String(request._id),
           requestId: request?.requestId || null,
           businessAnchorId: String(businessAnchorId),
@@ -1547,7 +1579,7 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
         return;
       }
 
-      console.warn("[CREDIT_ROLLBACK][REQUEST] no_spend but requestor spend lines still exist", {
+      console.warn("[CREDIT_ROLLBACK][REQUEST] no_spend but requestor commit spend lines still exist", {
         requestMongoId: String(request._id),
         requestId: request?.requestId || null,
         businessAnchorId: String(businessAnchorId),

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 준비 단계 취소 시 HOLD 해제를 COMMIT 롤백보다 먼저 수행.
 // - 2026-08-19: GET /my 목록에 price·estimatedShipYmd 포함(의뢰 상세 비용·출고일).
 // - 2026-08-18: 준비 단계 진입 시 로트번호 발급. 워크시트 조회 시 누락분 보정. 샘플 복사는 준비 시작도 즉시 발급.
 // - 2026-08-10: worksheet select에 caseInfos.memo/toothWorks/prosthesisType/files 추가(디자인 큐).
@@ -553,17 +554,8 @@ async function ensureRequestCancelRollbackDelete({
     request.businessAnchorId || request.requestor?.businessAnchorId;
   if (!businessAnchorId) return;
 
-  // SSOT 정책: 취소 시 REFUND를 추가하지 않고, 기존 소비 커밋을 삭제형 롤백으로 정리한다.
-  // 단, 이 삭제 정리는 준비 단계 취소 경로에서만 허용한다.
-  // 크레딧 이벤트는 트랜잭션 커밋 이후 발행하도록 deferredCreditEvents에 적재한다.
-  await ensureRequestCreditRollbackDeleteOnRollbackToCam({
-    request,
-    businessAnchorId,
-    actorUserId,
-    session: session || null,
-    deferredCreditEvents,
-  });
-
+  // 준비 단계 취소 SSOT: 미전환 HOLD를 먼저 해제한다.
+  // HOLD 차감 라인이 남아 있으면 COMMIT 롤백이 보류 저널을 소비로 오인한다.
   try {
     const { releaseRequestCreditHoldsOnCancel } = await import(
       "../../services/requestCreditHold.service.js"
@@ -580,7 +572,19 @@ async function ensureRequestCancelRollbackDelete({
       String(request?._id || ""),
       holdErr?.message || holdErr,
     );
+    throw holdErr;
   }
+
+  // SSOT 정책: 취소 시 REFUND를 추가하지 않고, 기존 소비 커밋을 삭제형 롤백으로 정리한다.
+  // 단, 이 삭제 정리는 준비 단계 취소 경로에서만 허용한다.
+  // 크레딧 이벤트는 트랜잭션 커밋 이후 발행하도록 deferredCreditEvents에 적재한다.
+  await ensureRequestCreditRollbackDeleteOnRollbackToCam({
+    request,
+    businessAnchorId,
+    actorUserId,
+    session: session || null,
+    deferredCreditEvents,
+  });
 
   // PTX 연동 CA: 어벗 디자인비(ADJUST)도 함께 회수(관리자/의뢰자 삭제·취소).
   const relatedTransferId = String(
