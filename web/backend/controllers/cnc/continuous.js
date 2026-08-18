@@ -31,16 +31,13 @@ function buildStoredNcS3Key(requestId, fileName) {
 }
 
 function buildRequestNcBridgePath(fileName, requestId) {
-  const safeName =
-    sanitizeS3KeySegment(String(fileName || "").trim()) || "program.nc";
   const rid = String(requestId || "").trim();
-
-  // requestId가 있으면 3-nc/{requestId}/{fileName} 형태로 저장
-  // 없으면 레거시 호환을 위해 3-nc/{fileName} 형태로 저장
   if (rid) {
-    return `3-nc/${rid}/${safeName}`;
+    // 가공 아카이브는 bridge가 storage/{requestId}_{suffix}.nc 로 남긴다.
+    // 여기(코드 저장/동기화)는 최신본 storage/{requestId}.nc 만 유지한다.
+    return `${rid}.nc`;
   }
-  return `3-nc/${safeName}`;
+  return sanitizeS3KeySegment(String(fileName || "").trim()) || "program.nc";
 }
 
 function buildDirectBridgePath({ machineId, originalFileName }) {
@@ -57,15 +54,9 @@ function buildDirectBridgePath({ machineId, originalFileName }) {
 }
 
 function resolveRequestNcBridgePath({
-  currentPath,
-  requestedPath,
   fileName,
   requestId,
 }) {
-  const current = String(currentPath || "").trim();
-  const requested = String(requestedPath || "").trim();
-  if (/^3-nc\//i.test(current)) return current;
-  if (/^3-nc\//i.test(requested)) return requested;
   return buildRequestNcBridgePath(fileName, requestId);
 }
 

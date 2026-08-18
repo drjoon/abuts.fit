@@ -206,19 +206,20 @@ function makeDirectRootNcName({ requestId, fileName }) {
 }
 
 function makeRequestNcBridgePath(fileName, requestId) {
+  const rid = String(requestId || "").trim();
+  if (rid) {
+    // 가공 아카이브는 bridge가 storage/{requestId}_{suffix}.nc 로 남긴다.
+    // 여기(코드 보기/동기화)는 최신본 storage/{requestId}.nc 만 유지한다.
+    return `${rid}.nc`;
+  }
   const normalized = String(fileName || "")
     .trim()
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
     .replace(/^3-nc\//i, "");
-  const rid = String(requestId || "").trim();
-
-  // requestId가 있으면 3-nc/{requestId}/{fileName} 형태로 저장
-  // 없으면 레거시 호환을 위해 3-nc/{fileName} 형태로 저장
-  if (rid) {
-    return `3-nc/${rid}/${normalized || "program.nc"}`;
-  }
-  return `3-nc/${normalized || "program.nc"}`;
+  const leaf =
+    (normalized.split("/").pop() || "program.nc").trim() || "program.nc";
+  return leaf;
 }
 
 async function uploadNcToBridgeStore({
@@ -232,12 +233,8 @@ async function uploadNcToBridgeStore({
   }
   const buf = await s3Utils.getObjectBufferFromS3(s3Key);
   const content = buf.toString("utf8");
-  const programNo = extractProgramNoFromNcText(content);
   const camDiameter = extractCamDiameterFromNcText(content);
-  const normalizedName =
-    programNo != null
-      ? `O${String(programNo).padStart(4, "0")}.nc`
-      : String(fileName || "").trim();
+  const normalizedName = String(fileName || "").trim() || "program.nc";
   if (!normalizedName) {
     return { ok: false, reason: "missing fileName" };
   }
@@ -301,14 +298,10 @@ export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
     let bridgePath =
       storeScope === "direct_root"
         ? requestedBridgePath
-        : /^3-nc\//i.test(existingPath)
-          ? existingPath
-          : /^3-nc\//i.test(requestedBridgePath)
-            ? requestedBridgePath
-            : makeRequestNcBridgePath(
-                fileName || existingPath || requestedBridgePath,
-                requestId,
-              );
+        : makeRequestNcBridgePath(
+            fileName || existingPath || requestedBridgePath,
+            requestId,
+          );
 
     if (!bridgePath) {
       const pushed = await uploadNcToBridgeStore({

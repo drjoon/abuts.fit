@@ -3,6 +3,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // change-log:
+// - 2026-08-18: 가공마다 storage/{requestId}_{HHmmss}.nc 로 아카이브하고, CNC 전송은 O4000.nc 임시 파일을 사용한다.
 // - 2026-08-07: 정상 완료 후 로컬 큐가 비면 백엔드 auto-trigger를 재요청한다.
 using System;
 using System.Collections.Generic;
@@ -1801,9 +1802,114 @@ private static bool TryGetMachineAlarms(string machineId, out List<object> alarm
     }
 }
 
+private static string SanitizeArchiveToken(string value)
+{
+    var s = (value ?? string.Empty).Trim();
+    if (string.IsNullOrEmpty(s)) return string.Empty;
+    return Regex.Replace(s, @"[^A-Za-z0-9_\-]", "_");
+}
+
+private static void TryDeleteFile(string path)
+{
+    try
+    {
+        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+    catch { }
+}
+
+/// <summary>
+/// CNC가 받아들이는 프로그램 파일명(O4000.nc)으로 임시 저장한다.
+/// 장비 전송은 Hi-Link programNo=4000 으로 이뤄지며, 이 파일은 전송 후 삭제한다.
+/// </summary>
+private static string TryWriteCncTempProgramFile(string machineId, int slotNo, string content)
+{
+    try
+    {
+        var mid = SanitizeArchiveToken(machineId);
+        if (string.IsNullOrEmpty(mid)) mid = "cnc";
+        var dir = Path.Combine(Path.GetTempPath(), "abuts-cnc-upload", mid);
+        if (!Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+        var name = string.Format("O{0:D4}.nc", slotNo > 0 ? slotNo : SLOT_A);
+        var full = Path.Combine(dir, name);
+        File.WriteAllText(full, content ?? string.Empty, Encoding.ASCII);
+        Console.WriteLine("[CncMachining] cnc temp program written path={0}", full);
+        return full;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CncMachining] cnc temp program write failed machine={0} err={1}", machineId, ex.Message);
+        return null;
+    }
+}
+
+/// <summary>
+/// 가공마다 storage/{requestId}_{yyyyMMdd-HHmmss}.nc 로 보관한다. 동일 초 충돌 시 _2, _3...
+/// </summary>
+private static void TryArchiveMachiningNc(CncJobItem job, string content)
+{
+    try
+    {
+        var root = Path.GetFullPath(Config.BridgeStoreRoot);
+        if (string.IsNullOrWhiteSpace(root)) return;
+        if (!Directory.Exists(root))
+        {
+            Directory.CreateDirectory(root);
+        }
+
+        var rid = SanitizeArchiveToken(NormalizeRequestId(job?.requestId, job?.fileName, job?.originalFileName));
+        if (string.IsNullOrEmpty(rid))
+        {
+            var fallback = Path.GetFileNameWithoutExtension((job?.originalFileName ?? job?.fileName ?? string.Empty).Trim());
+            rid = SanitizeArchiveToken(fallback);
+        }
+        if (string.IsNullOrEmpty(rid)) rid = "nc";
+
+        var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        string saved = null;
+        for (var i = 0; i < 50; i++)
+        {
+            var suffix = i == 0 ? stamp : stamp + "_" + (i + 1);
+            var full = Path.Combine(root, rid + "_" + suffix + ".nc");
+            try
+            {
+                using (var fs = new FileStream(full, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (var sw = new StreamWriter(fs, Encoding.ASCII))
+                {
+                    sw.Write(content ?? string.Empty);
+                }
+                saved = full;
+                break;
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+        }
+
+        if (string.IsNullOrEmpty(saved))
+        {
+            Console.WriteLine("[CncMachining] archive nc name exhausted jobId={0} requestId={1}", job?.id, job?.requestId);
+            return;
+        }
+        Console.WriteLine("[CncMachining] archived nc jobId={0} requestId={1} path={2}", job?.id, job?.requestId, saved);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CncMachining] archive nc failed jobId={0} err={1}", job?.id, ex.Message);
+    }
+}
+
 private static async Task<(bool Success, string Error)> UploadProgramToSlot(string machineId, CncJobItem job, int slotNo)
 {
     string error = null;
+    string cncTempPath = null;
     try
     {
         if (job == null) return (false, null);
@@ -1908,6 +2014,7 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
             processedPreviewLines.Length > 0 ? processedPreviewLines[0] : string.Empty,
             processedPreviewLines.Length > 1 ? processedPreviewLines[1] : string.Empty);
 
+        cncTempPath = TryWriteCncTempProgramFile(machineId, slotNo, processedContent);
         // StartNewJob() already clears the target slot before calling this helper.
         var uploaded = BridgeShared.UploadProgramDataBlocking(machineId, 1, slotNo, processedContent, true, out var usedMode, out var uploadErr);
         if (!uploaded)
@@ -1918,9 +2025,10 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
         }
 
         Console.WriteLine("[CncMachining] upload ok machine={0} jobId={1} slot=O{2} usedMode={3}", machineId, job?.id, slotNo, usedMode);
+        TryArchiveMachiningNc(job, processedContent);
         if (isTempFile)
         {
-            try { File.Delete(fullPath); } catch { }
+            TryDeleteFile(fullPath);
         }
         return (true, null);
     }
@@ -1929,6 +2037,10 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
         Console.WriteLine("[CncMachining] upload error machine={0} jobId={1} slot=O{2} err={3}", machineId, job?.id, slotNo, ex.Message);
         error = "exception: " + ex.Message;
         return (false, error);
+    }
+    finally
+    {
+        TryDeleteFile(cncTempPath);
     }
 }
 
@@ -2261,8 +2373,7 @@ fullPath = null;
 error = null;
 var root = Path.GetFullPath(Config.BridgeStoreRoot);
 // S3 기반 job: s3Key가 있으면 시스템 temp 폴더에 임시 파일 경로를 반환한다.
-// 다운로드 후 CNC 업로드 완료 시 즉시 삭제하므로 영구 캐시를 남기지 않는다.
-// bridgePath 경로 충돌(동일 파일명 덮어쓰기) 문제도 방지된다.
+// CNC 전송 후 이 temp 파일은 삭제하고, 가공 아카이브는 storage/{requestId}_{suffix}.nc 로 남긴다.
 try
 {
 var sk = (job.s3Key ?? string.Empty).Trim();
