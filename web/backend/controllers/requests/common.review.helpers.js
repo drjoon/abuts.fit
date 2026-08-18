@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
 // - 2026-08-17: 의뢰·배송 크레딧 보류(제출)→에스크로→CAM/집하 매출 전환.
 // - 2026-08-17: 배송비 차감 SSOT를 집하(우편함 비우기)로 옮김. 포장.발송 진입은 우편함만 확인. 기공의뢰 어벗츠 배송도 집하.
 // - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비에서만 해제.
@@ -803,6 +804,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
           await import("../../utils/creditSettingsDefaults.js");
         creditSettingsForQuote = await loadCreditSettingsDefaults({
           requestorOrgId: businessAnchorId,
+          applyLabSupplyPrices: false,
         });
         expressFeePerRequest = Math.max(
           0,
@@ -853,6 +855,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       await import("../../utils/creditSettingsDefaults.js");
     creditSettingsForQuote = await loadCreditSettingsDefaults({
       requestorOrgId: spendAnchorId,
+      applyLabSupplyPrices: !practicePrepaid,
     });
     if (shippingMode === "express") {
       expressFeeUnit = Math.max(

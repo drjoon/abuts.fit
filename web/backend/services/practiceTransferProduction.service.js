@@ -5,7 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
-// - 2026-08-17: shippingReceiver는 포장.발송 진입 시 스냅샷. 생성 시에는 practiceBusinessAnchorId·clinicName만.
+// - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
 // - 2026-08-17: PTX CA Request에 shippingReceiver(치과 수취인) 스냅샷·practiceBusinessAnchorId 저장.
 // - 2026-08-17: PTX CA 제조 모드는 2·3영업일 포함 항상 묶음. 타이트 납기는 지연고지·도착−1 스케줄.
 // - 2026-08-17: ≤3영업일 → 제조 express+지연고지. 출고 스케줄은 항상 묶음(도착−1 clamp).
@@ -608,6 +608,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   try {
     creditSettingsForQuote = await loadCreditSettingsDefaults({
       requestorOrgId: labAnchorId,
+      applyLabSupplyPrices: false,
     });
     expressFeePerRequest = Math.max(
       0,
@@ -1477,6 +1478,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   try {
     creditSettingsForQuote = await loadCreditSettingsDefaults({
       requestorOrgId: labAnchorId || null,
+      applyLabSupplyPrices: false,
     });
     expressFeePerRequest = Math.max(
       0,

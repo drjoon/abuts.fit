@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-08-18: 기공소 공급 안내 — 어벗생산의뢰만. 기공의뢰 수신 CA는 치과 공급.
+// - 2026-08-18: 기공소 공급 CNC·환봉 소제목을 가로 2열로.
+// - 2026-08-18: 기공소 공급 어벗을 의뢰자별이 아니라 치과 공급과 같은 전역 멤버 카드 4장으로.
 // - 2026-08-18: 카드 제목 커스텀어벗→치과 공급 어벗, 특별 공급가→기공소 공급 어벗.
 // - 2026-08-18: 금액 입력 스피너 숨김·원 접미사 여백 확보(숫자 잘림 방지).
 // - 2026-08-18: 분배 비율 스피너 5% 단위.
@@ -41,7 +44,7 @@
 // - web/backend/models/systemSettings.model.js
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
-import { useCallback, useMemo, useState, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useState, useEffect, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -56,20 +59,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import {
   Tooltip,
   TooltipContent,
@@ -77,7 +66,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  ChevronsUpDown,
   CircleHelp,
   CloudUpload,
   Crown,
@@ -85,14 +73,10 @@ import {
   Loader2,
   Package,
   Percent,
-  Plus,
-  Search,
   Truck,
-  X,
   Zap,
   Check,
 } from "lucide-react";
-import { REQUESTOR_CAPABILITY_LABEL } from "@/shared/business/requestorCapabilities";
 import { AdminRoundBarAbutmentTab } from "@/pages/admin/system/AdminRoundBarAbutmentTab";
 
 interface CreditSettings {
@@ -119,6 +103,10 @@ interface CreditSettings {
   regularRoundBarProductionPrice: number;
   membershipRoundBarDesignAndProductionPrice: number;
   regularRoundBarDesignAndProductionPrice: number;
+  labProductionPrice: number;
+  labDesignAndProductionPrice: number;
+  labRoundBarProductionPrice: number;
+  labRoundBarDesignAndProductionPrice: number;
   membershipProductionManufacturerUnitPrice: number;
   membershipProductionSalesmanUnitPrice: number;
   membershipProductionDevopsUnitPrice: number;
@@ -171,26 +159,11 @@ type SpecialRequestorPrice = {
   designAndProductionDevopsUnitPrice: number;
 };
 
-type RequestorItem = {
-  id: string;
-  name: string;
-  representativeName?: string;
-  businessNumber?: string;
-  address?: string;
-  requestorKind?: "practice" | "lab" | null;
-  status?: string | null;
-};
-
 type CreditSettingsApiResponse = {
   success?: boolean;
   data?: {
     creditSettings?: Partial<CreditSettings>;
   };
-};
-
-type CreditPriceRequestorsApiResponse = {
-  success?: boolean;
-  data?: { items?: RequestorItem[] };
 };
 
 const AUTO_SAVE_DELAY_MS = 700;
@@ -351,6 +324,28 @@ const CNC_DEFAULT_TIERS: Array<{
     partyPrefix: "regularDesignAndProduction",
     shareKind: "regular",
   },
+];
+
+type LabSupplyPriceKey =
+  | "labProductionPrice"
+  | "labDesignAndProductionPrice"
+  | "labRoundBarProductionPrice"
+  | "labRoundBarDesignAndProductionPrice";
+
+const LAB_SUPPLY_CNC_CARDS: Array<{
+  id: LabSupplyPriceKey;
+  title: string;
+}> = [
+  { id: "labProductionPrice", title: "CNC 생산" },
+  { id: "labDesignAndProductionPrice", title: "CNC D+P" },
+];
+
+const LAB_SUPPLY_ROUND_BAR_CARDS: Array<{
+  id: LabSupplyPriceKey;
+  title: string;
+}> = [
+  { id: "labRoundBarProductionPrice", title: "환봉 생산" },
+  { id: "labRoundBarDesignAndProductionPrice", title: "환봉 D+P" },
 ];
 
 function tierPartyFieldKey(prefix: TierPartyPrefix, kind: PartyKind): keyof CreditSettings {
@@ -862,6 +857,46 @@ function normalizeCreditSettings(
           0,
       ) || 0,
     ),
+    labProductionPrice: Math.max(
+      0,
+      Number(
+        (raw as CreditSettings).labProductionPrice ??
+          fallback.labProductionPrice ??
+          (raw as CreditSettings).regularProductionPrice ??
+          fallback.regularProductionPrice ??
+          0,
+      ) || 0,
+    ),
+    labDesignAndProductionPrice: Math.max(
+      0,
+      Number(
+        (raw as CreditSettings).labDesignAndProductionPrice ??
+          fallback.labDesignAndProductionPrice ??
+          (raw as CreditSettings).regularDesignAndProductionPrice ??
+          fallback.regularDesignAndProductionPrice ??
+          0,
+      ) || 0,
+    ),
+    labRoundBarProductionPrice: Math.max(
+      0,
+      Number(
+        (raw as CreditSettings).labRoundBarProductionPrice ??
+          fallback.labRoundBarProductionPrice ??
+          raw.regularRoundBarProductionPrice ??
+          fallback.regularRoundBarProductionPrice ??
+          0,
+      ) || 0,
+    ),
+    labRoundBarDesignAndProductionPrice: Math.max(
+      0,
+      Number(
+        (raw as CreditSettings).labRoundBarDesignAndProductionPrice ??
+          fallback.labRoundBarDesignAndProductionPrice ??
+          raw.regularRoundBarDesignAndProductionPrice ??
+          fallback.regularRoundBarDesignAndProductionPrice ??
+          0,
+      ) || 0,
+    ),
     manufacturerSharePercent: clampSharePercent(
       Number(
         (raw as CreditSettings).manufacturerSharePercent ??
@@ -1119,7 +1154,7 @@ function SubSectionHeader({
 export type AdminCreditSettingsVariant = "credits" | "customAbut";
 
 type AdminCreditSettingsTabProps = {
-  /** credits: 환영 무료 크레딧·멤버십·배송. customAbut: 단가·추가요청·특별 공급가. */
+  /** credits: 환영 무료 크레딧·멤버십·배송. customAbut: 치과·기공소 공급 단가·추가요청. */
   variant?: AdminCreditSettingsVariant;
 };
 
@@ -1136,6 +1171,14 @@ export const AdminCreditSettingsTab = ({
     normalizeCreditSettings(CREDIT_SETTINGS_DEFAULTS, {
       ...CREDIT_SETTINGS_DEFAULTS,
       specialRequestorPrices: [],
+      labProductionPrice:
+        CREDIT_SETTINGS_DEFAULTS.regularProductionPrice,
+      labDesignAndProductionPrice:
+        CREDIT_SETTINGS_DEFAULTS.regularDesignAndProductionPrice,
+      labRoundBarProductionPrice:
+        CREDIT_SETTINGS_DEFAULTS.regularRoundBarProductionPrice,
+      labRoundBarDesignAndProductionPrice:
+        CREDIT_SETTINGS_DEFAULTS.regularRoundBarDesignAndProductionPrice,
       manufacturerSharePercent: MEMBERSHIP_SHARE_PERCENTS.manufacturer,
       salesmanSharePercent: MEMBERSHIP_SHARE_PERCENTS.salesman,
       devopsSharePercent: MEMBERSHIP_SHARE_PERCENTS.devops,
@@ -1144,8 +1187,6 @@ export const AdminCreditSettingsTab = ({
       regularDevopsSharePercent: REGULAR_SHARE_PERCENTS.devops,
     } as CreditSettings),
   );
-  const [requestors, setRequestors] = useState<RequestorItem[]>([]);
-  const [requestorPickerOpen, setRequestorPickerOpen] = useState(false);
   const [itemSaveStates, setItemSaveStates] = useState<
     Record<string, AutoSaveState>
   >({});
@@ -1301,103 +1342,17 @@ export const AdminCreditSettingsTab = ({
     [applySettingsUpdate, scheduleSharePercentSave],
   );
 
-  const scheduleSpecialPricesSave = useCallback(
-    (scopeKey: string) => {
-      scheduleItemSave(scopeKey, () => ({
-        specialRequestorPrices: settingsRef.current.specialRequestorPrices,
-      }));
-    },
-    [scheduleItemSave],
-  );
-
-  const requestorById = useMemo(() => {
-    const map = new Map<string, RequestorItem>();
-    requestors.forEach((item) => map.set(item.id, item));
-    return map;
-  }, [requestors]);
-
-  const availableRequestors = useMemo(
-    () =>
-      requestors.filter(
-        (requestor) =>
-          !settings.specialRequestorPrices.some(
-            (item) => item.requestorAnchorId === requestor.id,
-          ),
-      ),
-    [requestors, settings.specialRequestorPrices],
-  );
-
-  const getRequestorLabel = (item: RequestorItem) => {
-    const kindLabel =
-      item.requestorKind === "practice" || item.requestorKind === "lab"
-        ? REQUESTOR_CAPABILITY_LABEL[item.requestorKind]
-        : "";
-    const bn = String(item.businessNumber || "").trim();
-    return [item.name, kindLabel, bn ? `(${bn})` : ""].filter(Boolean).join(" ");
-  };
-
-  const updateSpecialPrice = (
-    requestorAnchorId: string,
-    patch: Partial<SpecialRequestorPrice>,
-    saveScopeKey: string,
+  const updateLabSupplyPrice = (
+    key: LabSupplyPriceKey,
+    next: number,
   ) => {
-    applySettingsUpdate((prev) =>
-      syncComputedPartyFields({
-        ...prev,
-        specialRequestorPrices: prev.specialRequestorPrices.map((price) => {
-          if (price.requestorAnchorId !== requestorAnchorId) return price;
-          const next = { ...price, ...patch };
-          if (patch.productionPrice != null || patch.amount != null) {
-            const productionPrice = Math.max(
-              0,
-              Number(patch.productionPrice ?? patch.amount) || 0,
-            );
-            next.productionPrice = productionPrice;
-            next.amount = productionPrice;
-          }
-          return next;
-        }),
-      }),
-    );
-    scheduleSpecialPricesSave(saveScopeKey);
-  };
-
-  const addSpecialRequestor = (requestor: RequestorItem) => {
-    if (
-      settings.specialRequestorPrices.some(
-        (item) => item.requestorAnchorId === requestor.id,
-      )
-    ) {
-      return;
-    }
-    applySettingsUpdate((prev) =>
-      syncComputedPartyFields({
-        ...prev,
-        specialRequestorPrices: [
-          ...prev.specialRequestorPrices,
-          {
-            requestorAnchorId: requestor.id,
-            amount: prev.membershipProductionPrice,
-            productionPrice: prev.membershipProductionPrice,
-            designAndProductionPrice: prev.membershipDesignAndProductionPrice,
-            roundBarProductionPrice: prev.membershipRoundBarProductionPrice,
-            roundBarDesignAndProductionPrice:
-              prev.membershipRoundBarDesignAndProductionPrice,
-            manufacturerRequestUnitPrice: prev.manufacturerRequestUnitPrice,
-            devopsRequestUnitPrice: prev.devopsRequestUnitPrice,
-            salesmanRequestUnitPrice: prev.salesmanRequestUnitPrice,
-            productionManufacturerUnitPrice: 0,
-            productionSalesmanUnitPrice: 0,
-            productionDevopsUnitPrice: 0,
-            designAndProductionManufacturerUnitPrice: 0,
-            designAndProductionSalesmanUnitPrice: 0,
-            designAndProductionDevopsUnitPrice: 0,
-          },
-        ],
-      }),
-    );
-    scheduleSpecialPricesSave(`special:${requestor.id}:init`);
-    setRequestorPickerOpen(false);
+    applySettingsUpdate((prev) => ({
+      ...prev,
+      [key]: next,
+    }));
+    scheduleItemSave(`lab:${key}`, () => ({
+      [key]: settingsRef.current[key],
+    }));
   };
 
   const fetchSettings = useCallback(async () => {
@@ -1441,20 +1396,6 @@ export const AdminCreditSettingsTab = ({
   useEffect(() => {
     void fetchSettings();
   }, [fetchSettings]);
-
-  useEffect(() => {
-    if (!token || !showCustomAbut) return;
-    void (async () => {
-      const res = await apiFetch<CreditPriceRequestorsApiResponse>({
-        path: "/api/admin/settings/credits/requestors",
-        method: "GET",
-        token,
-      });
-      if (res.ok) {
-        setRequestors(res.data?.data?.items || []);
-      }
-    })();
-  }, [token, showCustomAbut]);
 
   useEffect(() => {
     if (!showCredits || !hydratedRef.current || !token || loading) return;
@@ -1633,7 +1574,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Package}
                   title="치과 공급 어벗"
-                  description="기공소 공급 어벗이 없으면 이 금액이 적용됩니다."
+                  description="치과 의뢰와 기공의뢰 커스텀어벗에 적용됩니다. 멤버십이 있으면 멤버 단가입니다."
                 />
 
                 <div className="space-y-3">
@@ -1809,245 +1750,47 @@ export const AdminCreditSettingsTab = ({
             <Card className="app-glass-card app-glass-card--lg overflow-hidden">
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
-                  icon={Search}
+                  icon={Package}
                   title="기공소 공급 어벗"
-                  description="의뢰자를 검색해 추가한 뒤 CNC·환봉 매출을 입력하세요."
-                  trailing={
-                    <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
-                      {settings.specialRequestorPrices.length}곳
-                    </span>
-                  }
+                  description="기공소 어벗생산의뢰에 적용됩니다. 기공의뢰 수신 커스텀어벗에는 쓰지 않습니다."
                 />
 
-                <div className="space-y-3">
-                  {settings.specialRequestorPrices.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-8 text-center">
-                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 ring-1 ring-slate-200/80">
-                        <Search className="h-4 w-4 text-slate-400" />
-                      </span>
-                      <p className="mt-3 text-sm font-medium text-slate-700">
-                        지정된 의뢰자가 없습니다
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        아래에서 검색해 특별 가격을 추가하세요.
-                      </p>
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <div className="space-y-3">
+                    <SubSectionHeader title="CNC어벗" />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {LAB_SUPPLY_CNC_CARDS.map((card) => (
+                        <SalesAmountCard
+                          key={card.id}
+                          id={card.id}
+                          title={card.title}
+                          badge="멤버"
+                          value={settings[card.id]}
+                          disabled={loading}
+                          saveState={itemSaveStates[`lab:${card.id}`] ?? "idle"}
+                          onChange={(next) => updateLabSupplyPrice(card.id, next)}
+                        />
+                      ))}
                     </div>
-                  ) : (
-                    settings.specialRequestorPrices.map((item) => {
-                      const requestor = requestorById.get(
-                        item.requestorAnchorId,
-                      );
-                      const kindLabel =
-                        requestor?.requestorKind === "practice" ||
-                        requestor?.requestorKind === "lab"
-                          ? REQUESTOR_CAPABILITY_LABEL[requestor.requestorKind]
-                          : null;
-                      return (
-                        <div
-                          key={item.requestorAnchorId}
-                          className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm"
-                        >
-                          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-semibold text-slate-900">
-                                {requestor?.name || "삭제된 의뢰자"}
-                              </div>
-                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                {[
-                                  kindLabel,
-                                  requestor?.representativeName
-                                    ? `대표 ${requestor.representativeName}`
-                                    : "",
-                                  requestor?.businessNumber || "",
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ") || "—"}
-                              </div>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                              disabled={loading}
-                              aria-label={`${requestor?.name || "의뢰자"} 기공소 공급 어벗 삭제`}
-                              onClick={() => {
-                                applySettingsUpdate((prev) => ({
-                                  ...prev,
-                                  specialRequestorPrices:
-                                    prev.specialRequestorPrices.filter(
-                                      (price) =>
-                                        price.requestorAnchorId !==
-                                        item.requestorAnchorId,
-                                    ),
-                                }));
-                                scheduleSpecialPricesSave(
-                                  `special:${item.requestorAnchorId}:remove`,
-                                );
-                              }}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
+                  </div>
 
-                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                            <SalesAmountCard
-                              id={`special-cnc-production-${item.requestorAnchorId}`}
-                              title="CNC 생산"
-                              value={item.productionPrice}
-                              disabled={loading}
-                              saveState={
-                                itemSaveStates[
-                                  `special:${item.requestorAnchorId}:production`
-                                ] ?? "idle"
-                              }
-                              onChange={(productionPrice) =>
-                                updateSpecialPrice(
-                                  item.requestorAnchorId,
-                                  { productionPrice },
-                                  `special:${item.requestorAnchorId}:production`,
-                                )
-                              }
-                            />
-                            <SalesAmountCard
-                              id={`special-cnc-design-${item.requestorAnchorId}`}
-                              title="CNC D+P"
-                              value={item.designAndProductionPrice}
-                              disabled={loading}
-                              saveState={
-                                itemSaveStates[
-                                  `special:${item.requestorAnchorId}:design`
-                                ] ?? "idle"
-                              }
-                              onChange={(designAndProductionPrice) =>
-                                updateSpecialPrice(
-                                  item.requestorAnchorId,
-                                  { designAndProductionPrice },
-                                  `special:${item.requestorAnchorId}:design`,
-                                )
-                              }
-                            />
-                            <SalesAmountCard
-                              id={`special-round-production-${item.requestorAnchorId}`}
-                              title="환봉 생산"
-                              value={item.roundBarProductionPrice}
-                              disabled={loading}
-                              saveState={
-                                itemSaveStates[
-                                  `special:${item.requestorAnchorId}:roundProduction`
-                                ] ?? "idle"
-                              }
-                              onChange={(roundBarProductionPrice) =>
-                                updateSpecialPrice(
-                                  item.requestorAnchorId,
-                                  { roundBarProductionPrice },
-                                  `special:${item.requestorAnchorId}:roundProduction`,
-                                )
-                              }
-                            />
-                            <SalesAmountCard
-                              id={`special-round-design-${item.requestorAnchorId}`}
-                              title="환봉 D+P"
-                              value={item.roundBarDesignAndProductionPrice}
-                              disabled={loading}
-                              saveState={
-                                itemSaveStates[
-                                  `special:${item.requestorAnchorId}:roundDesign`
-                                ] ?? "idle"
-                              }
-                              onChange={(roundBarDesignAndProductionPrice) =>
-                                updateSpecialPrice(
-                                  item.requestorAnchorId,
-                                  { roundBarDesignAndProductionPrice },
-                                  `special:${item.requestorAnchorId}:roundDesign`,
-                                )
-                              }
-                            />
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-
-                  <Popover
-                    open={requestorPickerOpen}
-                    onOpenChange={setRequestorPickerOpen}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={requestorPickerOpen}
-                        disabled={loading}
-                        className="h-11 w-full justify-between rounded-xl border-slate-200 bg-white hover:bg-slate-50 sm:max-w-md"
-                      >
-                        <span className="inline-flex items-center gap-2 text-muted-foreground">
-                          <Plus className="h-4 w-4" />
-                          의뢰자 검색 후 추가…
-                        </span>
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      className="w-[min(28rem,calc(100vw-2rem))] p-0"
-                      align="start"
-                    >
-                      <Command>
-                        <CommandInput placeholder="사업자명·대표자·사업자번호 검색" />
-                        <CommandList>
-                          <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
-                          <CommandGroup>
-                            {availableRequestors.map((requestor) => {
-                              const meta = [
-                                requestor.requestorKind === "practice" ||
-                                requestor.requestorKind === "lab"
-                                  ? REQUESTOR_CAPABILITY_LABEL[
-                                      requestor.requestorKind
-                                    ]
-                                  : "",
-                                requestor.representativeName
-                                  ? `대표 ${requestor.representativeName}`
-                                  : "",
-                                requestor.businessNumber || "",
-                              ]
-                                .filter(Boolean)
-                                .join(" · ");
-                              const searchValue = [
-                                requestor.name,
-                                requestor.representativeName,
-                                requestor.businessNumber,
-                                requestor.address,
-                                requestor.id,
-                              ]
-                                .filter(Boolean)
-                                .join(" ");
-                              return (
-                                <CommandItem
-                                  key={requestor.id}
-                                  value={searchValue}
-                                  onSelect={() =>
-                                    addSpecialRequestor(requestor)
-                                  }
-                                >
-                                  <div className="min-w-0">
-                                    <div className="truncate text-sm">
-                                      {getRequestorLabel(requestor)}
-                                    </div>
-                                    {meta ? (
-                                      <div className="truncate text-xs text-muted-foreground">
-                                        {meta}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                </CommandItem>
-                              );
-                            })}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <div className="space-y-3">
+                    <SubSectionHeader title="환봉어벗" />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {LAB_SUPPLY_ROUND_BAR_CARDS.map((card) => (
+                        <SalesAmountCard
+                          key={card.id}
+                          id={card.id}
+                          title={card.title}
+                          badge="멤버"
+                          value={settings[card.id]}
+                          disabled={loading}
+                          saveState={itemSaveStates[`lab:${card.id}`] ?? "idle"}
+                          onChange={(next) => updateLabSupplyPrice(card.id, next)}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

@@ -11,7 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
-// - 2026-08-17: 어벗츠 배송비는 CA 집하 시 전환. mark-complete는 기공소 배송만.
+// - 2026-08-18: 기공소 공급 어벗은 전역 단가. 의뢰자별 특별가는 적용하지 않음.
 // - 2026-08-17: adjustPracticeTransferHold — 배송비 보류는 조정 대상에서 제외(fees.total과만 비교).
 // - 2026-08-17: 생성 시 배송비도 SPEND_HOLD. 출고 시 에스크로→매출 전환(재차감 없음).
 // - 2026-08-17: 신속처리 rushFeeMultiplier — 기공/어벗 배수 스택(기본 1.2·플랫폼 설정).
@@ -98,7 +98,6 @@ import {
   resolveRushFeeMultiplier,
 } from "../utils/practiceTransferRush.js";
 import {
-  applySpecialRequestorPricesToCreditSettings,
   loadCreditSettingsDefaults,
 } from "../utils/creditSettingsDefaults.js";
 import {
@@ -197,11 +196,9 @@ async function loadCachedAbutmentCreditPrices(practiceAnchorId = null) {
 
 async function loadAbutmentCreditPrices(practiceAnchorId = null) {
   try {
+    void practiceAnchorId;
     const settings = await loadCreditSettingsDefaults();
-    const withSpecial = practiceAnchorId
-      ? applySpecialRequestorPricesToCreditSettings(settings, practiceAnchorId)
-      : settings;
-    return normalizeAbutsAbutmentCreditPrices(withSpecial);
+    return normalizeAbutsAbutmentCreditPrices(settings);
   } catch {
     return normalizeAbutsAbutmentCreditPrices();
   }
@@ -3691,16 +3688,10 @@ export async function buildFeeQuotesForTransferDocs({
     ? labEffectiveStarsById.get(viewerLabId) ?? DEFAULT_EFFECTIVE_LAB_STARS
     : DEFAULT_EFFECTIVE_LAB_STARS;
 
-  const abutmentPricesForPractice = (practiceId) =>
-    normalizeAbutsAbutmentCreditPrices(
-      applySpecialRequestorPricesToCreditSettings(
-        {
-          ...creditSettings,
-          ...abutmentPricesBase,
-        },
-        practiceId,
-      ),
-    );
+  const abutmentPrices = normalizeAbutsAbutmentCreditPrices({
+    ...creditSettings,
+    ...abutmentPricesBase,
+  });
 
   const scheduleByLab = new Map(
     labs.map((lab) => [String(lab._id), lab.labFeeSchedule || null]),
@@ -3808,7 +3799,6 @@ export async function buildFeeQuotesForTransferDocs({
       : noLab
         ? autoScheduleMax || LAB_FEE_SCHEDULE_ZEROS
         : resolveLabFeeScheduleSource(schedule);
-    const abutmentPrices = abutmentPricesForPractice(practiceId);
     const remakeFees = computePracticeTransferRetailFees({
       toothWorks,
       implantFavorites,

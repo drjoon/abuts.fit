@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
+// - 2026-08-18: 기공소 공급 단가는 어벗생산의뢰만. 기공의뢰(PTX) CA는 치과 공급 단가.
 // - 2026-08-17: practiceRushFeeMultiplier(기공의뢰 신속처리 할증) 추가.
 // - 2026-08-18: CNC 분배 비율 멤버(60+20+5+15)·일반(60+10+30) 분리.
 // - 2026-08-18: CNC 매출 분배 공통 비율(%) — 티어별 금액은 매출×비율로 산출.
@@ -194,6 +195,16 @@ const SCHEMA_DEFAULTS = (() => {
     regularRoundBarDesignAndProductionPrice: pickDefault(
       "creditSettings.regularRoundBarDesignAndProductionPrice",
     ),
+    labProductionPrice: pickDefault("creditSettings.labProductionPrice"),
+    labDesignAndProductionPrice: pickDefault(
+      "creditSettings.labDesignAndProductionPrice",
+    ),
+    labRoundBarProductionPrice: pickDefault(
+      "creditSettings.labRoundBarProductionPrice",
+    ),
+    labRoundBarDesignAndProductionPrice: pickDefault(
+      "creditSettings.labRoundBarDesignAndProductionPrice",
+    ),
     manufacturerSharePercent: pickDefault("creditSettings.manufacturerSharePercent"),
     salesmanSharePercent: pickDefault("creditSettings.salesmanSharePercent"),
     devopsSharePercent: pickDefault("creditSettings.devopsSharePercent"),
@@ -278,6 +289,69 @@ export function normalizeSpecialRequestorPrice(item = {}, fallback = {}) {
     designAndProductionManufacturerUnitPrice,
     designAndProductionSalesmanUnitPrice,
     designAndProductionDevopsUnitPrice,
+  };
+}
+
+function readWon(value, fallback = 0) {
+  if (value == null || value === "") {
+    const fb = Number(fallback);
+    return Number.isFinite(fb) && fb >= 0 ? Math.round(fb) : 0;
+  }
+  const n = Number(value);
+  if (Number.isFinite(n) && n >= 0) return Math.round(n);
+  const fb = Number(fallback);
+  return Number.isFinite(fb) && fb >= 0 ? Math.round(fb) : 0;
+}
+
+function readLabSupplyPrices(creditSettings = {}) {
+  return {
+    labProductionPrice: readWon(
+      creditSettings.labProductionPrice,
+      creditSettings.regularProductionPrice ?? SCHEMA_DEFAULTS.labProductionPrice,
+    ),
+    labDesignAndProductionPrice: readWon(
+      creditSettings.labDesignAndProductionPrice,
+      creditSettings.regularDesignAndProductionPrice ??
+        SCHEMA_DEFAULTS.labDesignAndProductionPrice,
+    ),
+    labRoundBarProductionPrice: readWon(
+      creditSettings.labRoundBarProductionPrice,
+      creditSettings.regularRoundBarProductionPrice ??
+        SCHEMA_DEFAULTS.labRoundBarProductionPrice,
+    ),
+    labRoundBarDesignAndProductionPrice: readWon(
+      creditSettings.labRoundBarDesignAndProductionPrice,
+      creditSettings.regularRoundBarDesignAndProductionPrice ??
+        SCHEMA_DEFAULTS.labRoundBarDesignAndProductionPrice,
+    ),
+  };
+}
+
+/** 기공소 공급 어벗 전역 단가를 멤버십·일반 필드에 동일하게 덮어쓴다. */
+export function applyLabSupplyPricesToCreditSettings(creditSettings) {
+  const lab = readLabSupplyPrices(creditSettings);
+  const overlaid = {
+    ...creditSettings,
+    ...lab,
+    minCreditForRequest: lab.labProductionPrice,
+    designFee: Math.max(
+      0,
+      lab.labDesignAndProductionPrice - lab.labProductionPrice,
+    ),
+    membershipProductionPrice: lab.labProductionPrice,
+    regularProductionPrice: lab.labProductionPrice,
+    membershipDesignAndProductionPrice: lab.labDesignAndProductionPrice,
+    regularDesignAndProductionPrice: lab.labDesignAndProductionPrice,
+    membershipRoundBarProductionPrice: lab.labRoundBarProductionPrice,
+    regularRoundBarProductionPrice: lab.labRoundBarProductionPrice,
+    membershipRoundBarDesignAndProductionPrice:
+      lab.labRoundBarDesignAndProductionPrice,
+    regularRoundBarDesignAndProductionPrice:
+      lab.labRoundBarDesignAndProductionPrice,
+  };
+  return {
+    ...overlaid,
+    ...buildNormalizedTierPartyFields(overlaid, SCHEMA_DEFAULTS),
   };
 }
 
@@ -368,6 +442,7 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       creditSettings.regularRoundBarDesignAndProductionPrice ??
         SCHEMA_DEFAULTS.regularRoundBarDesignAndProductionPrice,
     ),
+    ...readLabSupplyPrices(creditSettings),
   };
   return {
     minCreditForRequest: membership.productionPrice,
@@ -459,33 +534,48 @@ export async function loadCreditSettingsDefaults(options = {}) {
   const requestorOrgId = options?.requestorOrgId;
   if (!requestorOrgId) return base;
 
-  const withSpecial = applySpecialRequestorPricesToCreditSettings(
-    base,
-    requestorOrgId,
-  );
-  const pricingTier =
-    await resolveRequestorAbutmentPricingTier(requestorOrgId);
-  const picked = pickAbutsAbutmentCreditPrices(withSpecial, pricingTier);
-  const membership = pricingTier === "membership";
+  const id = String(requestorOrgId || "").trim();
+  let requestorKind = null;
+  let pricingTier = "regular";
+  if (id && Types.ObjectId.isValid(id)) {
+    const anchor = await BusinessAnchor.findById(id)
+      .select({ requestorKind: 1, practiceMembershipActive: 1 })
+      .lean();
+    requestorKind = String(anchor?.requestorKind || "").trim();
+    if (requestorKind === "practice") {
+      pricingTier = resolveAbutsAbutmentPricingTier({
+        practiceMembershipActive: Boolean(anchor?.practiceMembershipActive),
+      });
+    }
+  }
+
+  const applyLabSupply =
+    requestorKind === "lab" && options?.applyLabSupplyPrices !== false;
+  const priced = applyLabSupply
+    ? applyLabSupplyPricesToCreditSettings(base)
+    : base;
+  const pickTier = applyLabSupply ? "membership" : pricingTier;
+  const picked = pickAbutsAbutmentCreditPrices(priced, pickTier);
+  const membership = pickTier === "membership";
   return {
-    ...withSpecial,
+    ...priced,
     minCreditForRequest: picked.productionPrice,
     designFee: picked.designFeePerTooth,
     abutmentPricingTier: picked.pricingTier,
     manufacturerRequestUnitPrice: Number(
       membership
-        ? withSpecial.membershipProductionManufacturerUnitPrice
-        : withSpecial.regularProductionManufacturerUnitPrice,
+        ? priced.membershipProductionManufacturerUnitPrice
+        : priced.regularProductionManufacturerUnitPrice,
     ),
     salesmanRequestUnitPrice: Number(
       membership
-        ? withSpecial.membershipProductionSalesmanUnitPrice
-        : withSpecial.regularProductionSalesmanUnitPrice,
+        ? priced.membershipProductionSalesmanUnitPrice
+        : priced.regularProductionSalesmanUnitPrice,
     ),
     devopsRequestUnitPrice: Number(
       membership
-        ? withSpecial.membershipProductionDevopsUnitPrice
-        : withSpecial.regularProductionDevopsUnitPrice,
+        ? priced.membershipProductionDevopsUnitPrice
+        : priced.regularProductionDevopsUnitPrice,
     ),
   };
 }

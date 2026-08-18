@@ -53,8 +53,13 @@ const systemSettingsSchema = new mongoose.Schema(
       regularRoundBarProductionPrice: { type: Number, default: 0 },
       membershipRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
       regularRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
+      // 기공소 공급 어벗(전역). 멤버십 없음 — CNC/환봉 × 생산만·디자인+생산.
+      labProductionPrice: { type: Number, default: 15000 },
+      labDesignAndProductionPrice: { type: Number, default: 25000 },
+      labRoundBarProductionPrice: { type: Number, default: 0 },
+      labRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
       // 개발운영사 지정 의뢰자별 커스텀어벗 공급가(CNC/환봉 × 생산만/디자인+생산).
-      // amount는 CNC 생산만 레거시 호환(productionPrice와 동기화).
+      // amount는 CNC 생산만 레거시 호환(productionPrice와 동기화). 신규 UI는 기공소 전역 단가.
       specialRequestorPrices: {
         type: [
           {

@@ -10,7 +10,7 @@
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/backend/services/practiceTransferBilling.service.js
-// - 2026-08-14: 크레딧 단가 저장 시 기공의뢰 quote-context 캐시 무효화.
+// - 2026-08-18: 기공소 공급 어벗 전역 단가 PATCH.
 import SystemSettings from "../../models/systemSettings.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
@@ -380,6 +380,14 @@ export async function updateCreditSettings(req, res) {
     const regularRoundBarDesignAndProductionPrice = Number(
       payload.regularRoundBarDesignAndProductionPrice,
     );
+    const labProductionPrice = Number(payload.labProductionPrice);
+    const labDesignAndProductionPrice = Number(
+      payload.labDesignAndProductionPrice,
+    );
+    const labRoundBarProductionPrice = Number(payload.labRoundBarProductionPrice);
+    const labRoundBarDesignAndProductionPrice = Number(
+      payload.labRoundBarDesignAndProductionPrice,
+    );
     const abutmentRetailPrice = Number(payload.abutmentRetailPrice);
     const practiceMembershipMonthlyFee = Number(
       payload.practiceMembershipMonthlyFee,
@@ -594,6 +602,28 @@ export async function updateCreditSettings(req, res) {
     ) {
       sanitized.regularRoundBarDesignAndProductionPrice =
         regularRoundBarDesignAndProductionPrice;
+    }
+    if (!Number.isNaN(labProductionPrice) && labProductionPrice >= 0) {
+      sanitized.labProductionPrice = labProductionPrice;
+    }
+    if (
+      !Number.isNaN(labDesignAndProductionPrice) &&
+      labDesignAndProductionPrice >= 0
+    ) {
+      sanitized.labDesignAndProductionPrice = labDesignAndProductionPrice;
+    }
+    if (
+      !Number.isNaN(labRoundBarProductionPrice) &&
+      labRoundBarProductionPrice >= 0
+    ) {
+      sanitized.labRoundBarProductionPrice = labRoundBarProductionPrice;
+    }
+    if (
+      !Number.isNaN(labRoundBarDesignAndProductionPrice) &&
+      labRoundBarDesignAndProductionPrice >= 0
+    ) {
+      sanitized.labRoundBarDesignAndProductionPrice =
+        labRoundBarDesignAndProductionPrice;
     }
     if (!Number.isNaN(abutmentRetailPrice) && abutmentRetailPrice >= 0) {
       sanitized.abutmentRetailPrice = abutmentRetailPrice;

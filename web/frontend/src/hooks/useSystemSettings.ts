@@ -48,6 +48,10 @@ export interface CreditSettings {
   regularRoundBarProductionPrice: number;
   membershipRoundBarDesignAndProductionPrice: number;
   regularRoundBarDesignAndProductionPrice: number;
+  labProductionPrice: number;
+  labDesignAndProductionPrice: number;
+  labRoundBarProductionPrice: number;
+  labRoundBarDesignAndProductionPrice: number;
 }
 
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
@@ -78,6 +82,11 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   regularRoundBarProductionPrice: 0,
   membershipRoundBarDesignAndProductionPrice: 0,
   regularRoundBarDesignAndProductionPrice: 0,
+  labProductionPrice: ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
+  labDesignAndProductionPrice:
+    ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
+  labRoundBarProductionPrice: 0,
+  labRoundBarDesignAndProductionPrice: 0,
 };
 
 export interface SystemSettingsData {
@@ -179,6 +188,26 @@ export const useSystemSettings = () => {
         regularRoundBarDesignAndProductionPrice: Number(
           raw.regularRoundBarDesignAndProductionPrice ??
             CREDIT_SETTINGS_DEFAULTS.regularRoundBarDesignAndProductionPrice,
+        ),
+        labProductionPrice: Number(
+          raw.labProductionPrice ??
+            raw.regularProductionPrice ??
+            CREDIT_SETTINGS_DEFAULTS.labProductionPrice,
+        ),
+        labDesignAndProductionPrice: Number(
+          raw.labDesignAndProductionPrice ??
+            raw.regularDesignAndProductionPrice ??
+            CREDIT_SETTINGS_DEFAULTS.labDesignAndProductionPrice,
+        ),
+        labRoundBarProductionPrice: Number(
+          raw.labRoundBarProductionPrice ??
+            raw.regularRoundBarProductionPrice ??
+            CREDIT_SETTINGS_DEFAULTS.labRoundBarProductionPrice,
+        ),
+        labRoundBarDesignAndProductionPrice: Number(
+          raw.labRoundBarDesignAndProductionPrice ??
+            raw.regularRoundBarDesignAndProductionPrice ??
+            CREDIT_SETTINGS_DEFAULTS.labRoundBarDesignAndProductionPrice,
         ),
       };
       return { creditSettings } as SystemSettingsData;

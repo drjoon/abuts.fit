@@ -1110,10 +1110,6 @@ export async function computePriceForRequest({
     0,
     Number(creditSettings?.minCreditForRequest ?? 15000) || 0,
   );
-  const specialPrice = (creditSettings?.specialRequestorPrices || []).find(
-    (item) =>
-      String(item?.requestorAnchorId || "") === String(requestorOrgId || ""),
-  );
   // special.amount / productionPrice = CNC 생산만. 디자인+생산은 designFee로 가산.
   const BASE_UNIT_PRICE = baseUnitPrice;
 
@@ -1170,26 +1166,6 @@ export async function computePriceForRequest({
         quotedAt: now,
       };
     }
-  }
-
-  // 개발운영사가 지정한 공급가는 가입/주문량 할인보다 우선한다.
-  // 단, 무상 리메이크는 품질보증 정책이므로 위에서 그대로 유지한다.
-  if (specialPrice) {
-    const amount = Math.max(
-      0,
-      Number(specialPrice.productionPrice ?? specialPrice.amount) || 0,
-    );
-    return {
-      baseAmount: amount,
-      discountAmount: 0,
-      amount,
-      currency: "KRW",
-      rule: "special_requestor_supply_price",
-      discountMeta: {
-        requestorAnchorId: String(requestorOrgId),
-      },
-      quotedAt: now,
-    };
   }
 
   // 1) 신규 90일 고정가: 가입일(대표 계정 기준) 90일 내 -> 10,000원 고정
