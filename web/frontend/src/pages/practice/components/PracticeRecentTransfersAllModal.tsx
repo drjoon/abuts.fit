@@ -9,6 +9,7 @@
  * 2026-08-17: 채팅 미확인 배지를 카드 헤더(상태 옆)에 표시 — 사이드바·수신 카드와 정합.
  * 2026-08-17: 리메이크=카드 아이콘(툴팁)·단건 확인. 검색창 옆 선택 일괄 버튼 제거.
  * 2026-08-16: 카드 본문=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·메모 덤프 제거).
+ * 2026-08-18: 카드 메타 1행 1항목. 수정·리메이크·삭제는 헤더 액션.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Repeat, Search, Trash2 } from "lucide-react";
@@ -418,50 +419,92 @@ export function PracticeRecentTransfersAllModal({
                       }
                     }}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <PracticeTransferRequestCardMeta
-                          createdAt={transfer.createdAt}
-                          statusLabel={toStatusBadgeLabel(transfer.status)}
-                          extraBadges={
-                            <>
-                              {acceptOverdue ? (
-                                <PracticeAcceptOverdueBadge viewer="practice" />
-                              ) : null}
-                              {transfer.isRemake ? (
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    "whitespace-nowrap",
-                                    PRACTICE_REMAKE_BADGE_CLASS,
-                                  )}
-                                >
+                    <PracticeTransferRequestCardMeta
+                      createdAt={transfer.createdAt}
+                      statusLabel={toStatusBadgeLabel(transfer.status)}
+                      extraBadges={
+                        <>
+                          {acceptOverdue ? (
+                            <PracticeAcceptOverdueBadge viewer="practice" />
+                          ) : null}
+                          {transfer.isRemake ? (
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "whitespace-nowrap",
+                                PRACTICE_REMAKE_BADGE_CLASS,
+                              )}
+                            >
+                              리메이크
+                            </Badge>
+                          ) : null}
+                          {transfer.unreadCount > 0 ? (
+                            <Badge
+                              variant="destructive"
+                              className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
+                              aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
+                            >
+                              {transfer.unreadCount > 99
+                                ? "99+"
+                                : transfer.unreadCount}
+                            </Badge>
+                          ) : null}
+                        </>
+                      }
+                      headerActions={
+                        <>
+                          {canEdit && onEditTransfer ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-primary-strong hover:text-primary"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onEditTransfer(transfer);
+                                      }}
+                                      aria-label="의뢰 수정"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="left" className="max-w-xs text-xs">
+                                  수락 전 의뢰 수정
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : null}
+                          {canRemake && onAskRemake ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-amber-600 hover:text-amber-700"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onAskRemake(transfer);
+                                      }}
+                                      aria-label="리메이크"
+                                    >
+                                      <Repeat className="h-4 w-4" />
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="left" className="max-w-xs text-xs">
                                   리메이크
-                                </Badge>
-                              ) : null}
-                              {transfer.unreadCount > 0 ? (
-                                <Badge
-                                  variant="destructive"
-                                  className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
-                                  aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
-                                >
-                                  {transfer.unreadCount > 99
-                                    ? "99+"
-                                    : transfer.unreadCount}
-                                </Badge>
-                              ) : null}
-                            </>
-                          }
-                          counterpartLabel="기공소"
-                          counterpartValue={targetLabText}
-                          orderDate={transfer.orderDate}
-                          arrivalDate={transfer.arrivalDate}
-                          patientName={resolvePracticeTransferListPatientName(transfer)}
-                          toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
-                        />
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {canEdit && onEditTransfer ? (
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : null}
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -470,82 +513,38 @@ export function PracticeRecentTransfersAllModal({
                                     type="button"
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8 text-primary-strong hover:text-primary"
+                                    className="h-8 w-8 text-muted-foreground hover:text-destructive disabled:pointer-events-none"
+                                    disabled={deleteLocked}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onEditTransfer(transfer);
+                                      onDeleteTransfer(transfer);
                                     }}
-                                    aria-label="의뢰 수정"
+                                    aria-label={
+                                      deleteLocked
+                                        ? "의뢰수락 이후 삭제 불가"
+                                        : "의뢰서 전송 내역 삭제"
+                                    }
                                   >
-                                    <Pencil className="h-4 w-4" />
+                                    <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent side="left" className="max-w-xs text-xs">
-                                수락 전 의뢰 수정
+                                {deleteLocked
+                                  ? "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다."
+                                  : "휴지통으로 이동"}
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
-                        ) : null}
-                        {canRemake && onAskRemake ? (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-amber-600 hover:text-amber-700"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onAskRemake(transfer);
-                                    }}
-                                    aria-label="리메이크"
-                                  >
-                                    <Repeat className="h-4 w-4" />
-                                  </Button>
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="left" className="max-w-xs text-xs">
-                                리메이크
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        ) : null}
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-destructive disabled:pointer-events-none"
-                                  disabled={deleteLocked}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDeleteTransfer(transfer);
-                                  }}
-                                  aria-label={
-                                    deleteLocked
-                                      ? "의뢰수락 이후 삭제 불가"
-                                      : "의뢰서 전송 내역 삭제"
-                                  }
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="left" className="max-w-xs text-xs">
-                              {deleteLocked
-                                ? "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다."
-                                : "휴지통으로 이동"}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                    </div>
+                        </>
+                      }
+                      counterpartLabel="기공소"
+                      counterpartValue={targetLabText}
+                      orderDate={transfer.orderDate}
+                      arrivalDate={transfer.arrivalDate}
+                      patientName={resolvePracticeTransferListPatientName(transfer)}
+                      toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
+                    />
                   </div>
                 );
               })}

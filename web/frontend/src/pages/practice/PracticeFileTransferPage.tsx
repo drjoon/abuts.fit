@@ -69,7 +69,9 @@
  * - 2026-08-14: 기공소 수락 시 웹소켓 feeQuote로 치과「확정 기공비」즉시 반영.
  * - 2026-08-15: 치과 기공의뢰 카드 상단에 익스프레스/엑스퍼트 모드 전환.
  * - 2026-08-15: 기공소 전송은 작성 중 draft만. 전송/빈 폼 후 최신 임시저장을 폼에 자동 주입하지 않음.
- * - 2026-08-15: Express는 툴바 최근의뢰/임시저장/휴지통(다이얼로그). Expert는 xl 우측 접이식 카드.
+ * - 2026-08-15: Express/Expert 공통 툴바 최근의뢰/임시저장/휴지통(다이얼로그).
+ * - 2026-08-18: Expert 상단에도 새로 작성·최근 의뢰·임시저장·휴지통 버튼.
+ * - 2026-08-18: Expert는 우측 목록을 빼고 작성 폼 전폭. 치식은 full 차트.
  * - 2026-08-15: 「새로 작성」을 기공의뢰 카드 위 툴바로 이동.
  * - 2026-08-15: 「새로 작성」을 모드 전환 바로 오른쪽으로. 익스프레스 진행률·스텝 한 줄.
  * - 2026-08-15: 익스프레스 스텝·진행률을 기공의뢰 제목과 같은 헤더 행(좌·우)에 둔다.
@@ -86,6 +88,7 @@
  * - 2026-08-16: 최근의뢰 카드=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·기간·메모 덤프 제거).
  * - 2026-08-18: 수락 전(의뢰) 전송건을 폼에 불러와 수정. 삭제 후 재작성 대체.
  * - 2026-08-18: 의뢰 수정 저장 후 임시저장 목록 재조회를 기다리지 않음.
+ * - 2026-08-18: 상세 「의뢰 수정」은 좌측 의뢰정보 상단. 목록 카드 메타는 1행 1항목.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -94,7 +97,6 @@ import { useNavigate, useLocation } from "react-router-dom";
 import {
   UploadCloud,
   ClipboardList,
-  Search,
   Trash2,
   RotateCcw,
   BookmarkPlus,
@@ -103,8 +105,6 @@ import {
   Download,
   Plus,
   Settings,
-  ChevronDown,
-  LayoutGrid,
   Repeat,
   Pencil,
 } from "lucide-react";
@@ -118,8 +118,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { WorkspaceModeSwitch } from "@/features/layout/WorkspaceModeSwitch";
 import {
@@ -137,8 +135,6 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { cn } from "@/shared/ui/cn";
-import { Skeleton } from "@/components/ui/skeleton";
-import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch, invalidateApiGetCache } from "@/shared/api/apiClient";
@@ -198,12 +194,9 @@ import {
 } from "@/shared/workspace/workspaceMode";
 import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
-  PRACTICE_RECENT_STATUS_BADGES,
-  PRACTICE_REMAKE_BADGE_CLASS,
   canRemakePracticeTransferByStatus,
   canEditPracticeTransferByStatus,
   computeGroupedStatusCounts,
-  filterGroupedTransfersByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
   isPracticeTransferActionNeededStatus,
@@ -211,13 +204,10 @@ import {
   mapMyPracticeTransferApiRows,
   mergeOpenPracticeTransferFromRequestRows,
   type PracticeRecentRequestItem,
-  type PracticeRecentStatusFilter,
   type PracticeRecentTransferFileItem,
   type PracticeRecentTransferItem,
 } from "@/shared/practice/practiceRecentTransferList";
 import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
-import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
-import { PracticeAcceptOverdueBadge } from "@/shared/components/practice/PracticeAcceptOverdueBadge";
 import {
   DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
@@ -306,11 +296,6 @@ import {
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 
 type RecentRequestItem = PracticeRecentRequestItem;
 type TransferFileItem = PracticeRecentTransferFileItem;
@@ -1021,7 +1006,7 @@ export const PracticeFileTransferPage = ({
 } = {}) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { period, setPeriod } = usePeriodStore();
+  const { period } = usePeriodStore();
   const { toast } = useToast();
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
@@ -1029,9 +1014,6 @@ export const PracticeFileTransferPage = ({
     authUser?.workspaceMode ?? DEFAULT_WORKSPACE_MODE,
   );
   const isExpressMode = workspaceMode === "express";
-  const [requestSearchTerm, setRequestSearchTerm] = useState("");
-  const [recentStatusFilter, setRecentStatusFilter] =
-    useState<PracticeRecentStatusFilter>("all");
   const [remakeSelectedIds, setRemakeSelectedIds] = useState<string[]>([]);
   const [remakeConfirmOpen, setRemakeConfirmOpen] = useState(false);
   const [remakeBusy, setRemakeBusy] = useState(false);
@@ -1221,9 +1203,6 @@ export const PracticeFileTransferPage = ({
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
   const [recentTransfersAllOpen, setRecentTransfersAllOpen] = useState(false);
-  const [recentTransfersOpen, setRecentTransfersOpen] = useState(true);
-  const [draftsPanelOpen, setDraftsPanelOpen] = useState(true);
-  const [trashPanelOpen, setTrashPanelOpen] = useState(true);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
@@ -3065,8 +3044,8 @@ export const PracticeFileTransferPage = ({
   }, [activeDraftId, localFormHydrated, practiceDraftList]);
 
   const periodAndSearchFilteredRequests = useMemo(
-    () => filterRequestsByPeriodAndSearch(recentRequests, period, requestSearchTerm),
-    [recentRequests, requestSearchTerm, period],
+    () => filterRequestsByPeriodAndSearch(recentRequests, period, ""),
+    [recentRequests, period],
   );
 
   const filteredRecentRequests = useMemo(
@@ -3097,14 +3076,7 @@ export const PracticeFileTransferPage = ({
 
   const recentActionNeededCount = statusCounts.canceled;
 
-  const filteredGroupedTransfers = useMemo(
-    () => filterGroupedTransfersByStatus(groupedTransfers, recentStatusFilter),
-    [groupedTransfers, recentStatusFilter],
-  );
-
   const draftGroupedTransfers = useMemo(() => {
-    const query = requestSearchTerm.trim().toLowerCase();
-
     return practiceDraftList
       .map((draft): RecentTransferItem => {
         const updatedAtRaw = draft.updatedAt || draft.createdAt || new Date().toISOString();
@@ -3156,9 +3128,8 @@ export const PracticeFileTransferPage = ({
             .join(" ")
             .toLowerCase(),
         };
-      })
-      .filter((transfer) => !query || transfer.searchBlob.includes(query));
-  }, [practiceDraftList, requestSearchTerm]);
+      });
+  }, [practiceDraftList]);
 
   const trashGroupedTransfers = useMemo(() => {
     const byKey = new Map<string, RecentTransferItem>();
@@ -3275,8 +3246,6 @@ export const PracticeFileTransferPage = ({
       (a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0),
     );
   }, [trashRecentRequests, trashedDraftList]);
-
-  const displayGroupedTransfers = filteredGroupedTransfers;
 
   const remakeSelectedTransfers = useMemo(() => {
     const selected = new Set(remakeSelectedIds);
@@ -5762,6 +5731,7 @@ export const PracticeFileTransferPage = ({
 
   const practiceTransferRequestIntakeProps: PracticeTransferRequestIntakePanelProps = {
     variant: "plain",
+    toothChartDisplayMode: isExpressMode ? "compact" : "full",
                     selectedLab,
                   setSelectedLab,
                   labOpen,
@@ -5980,7 +5950,7 @@ export const PracticeFileTransferPage = ({
       activeClassName="ring-2 ring-primary/30"
       className="h-full min-h-0 bg-gradient-subtle"
     >
-      <div className="mx-auto h-full min-h-0 max-w-6xl space-y-3 p-4">
+      <div className={cn("mx-auto h-full min-h-0 space-y-3 p-4", isExpressMode ? "max-w-6xl" : "max-w-7xl")}>
         <div className="flex flex-wrap items-center gap-2">
           {roleSwitcher}
           <WorkspaceModeSwitch />
@@ -6000,59 +5970,54 @@ export const PracticeFileTransferPage = ({
               작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
             </TooltipContent>
           </Tooltip>
-          {isExpressMode ? (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 gap-1.5 px-3"
-                onClick={() => setRecentTransfersAllOpen(true)}
-              >
-                <ClipboardList className="h-4 w-4 shrink-0" />
-                최근 의뢰
-                {recentActionNeededCount > 0 ? (
-                  <Badge variant="secondary" className="ml-0.5">
-                    {recentActionNeededCount}
-                  </Badge>
-                ) : null}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 gap-1.5 px-3"
-                onClick={() => setDraftsOpen(true)}
-              >
-                <BookmarkPlus className="h-4 w-4 shrink-0" />
-                임시저장
-                {draftGroupedTransfers.length > 0 ? (
-                  <Badge variant="secondary" className="ml-0.5">
-                    {draftGroupedTransfers.length}
-                  </Badge>
-                ) : null}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 gap-1.5 px-3"
-                onClick={() => setTrashOpen(true)}
-              >
-                <Trash2 className="h-4 w-4 shrink-0" />
-                휴지통
-                {trashGroupedTransfers.length > 0 ? (
-                  <Badge variant="secondary" className="ml-0.5">
-                    {trashGroupedTransfers.length}
-                  </Badge>
-                ) : null}
-              </Button>
-            </>
-          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 px-3"
+            onClick={() => setRecentTransfersAllOpen(true)}
+          >
+            <ClipboardList className="h-4 w-4 shrink-0" />
+            최근 의뢰
+            {recentActionNeededCount > 0 ? (
+              <Badge variant="secondary" className="ml-0.5">
+                {recentActionNeededCount}
+              </Badge>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 px-3"
+            onClick={() => setDraftsOpen(true)}
+          >
+            <BookmarkPlus className="h-4 w-4 shrink-0" />
+            임시저장
+            {draftGroupedTransfers.length > 0 ? (
+              <Badge variant="secondary" className="ml-0.5">
+                {draftGroupedTransfers.length}
+              </Badge>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 px-3"
+            onClick={() => setTrashOpen(true)}
+          >
+            <Trash2 className="h-4 w-4 shrink-0" />
+            휴지통
+            {trashGroupedTransfers.length > 0 ? (
+              <Badge variant="secondary" className="ml-0.5">
+                {trashGroupedTransfers.length}
+              </Badge>
+            ) : null}
+          </Button>
         </div>
 
-        <div className={cn("grid grid-cols-1 gap-3", !isExpressMode && "xl:grid-cols-10")}>
-          <div className={cn("flex min-w-0 flex-col gap-3", !isExpressMode && "xl:col-span-7")}>
+        <div className="flex min-w-0 flex-col gap-3">
           <Card className="border-slate-200/80 shadow-sm">
             <CardHeader className="pb-2 pt-3">
               <div className="flex items-center gap-4">
@@ -6317,615 +6282,8 @@ export const PracticeFileTransferPage = ({
               setPendingRushArrivalYmd("");
             }}
           />
-          </div>
-
-          {!isExpressMode ? (
-          <div className="space-y-3 xl:col-span-3">
-            <Card className="border-slate-200/80 shadow-sm">
-              <Collapsible open={recentTransfersOpen} onOpenChange={setRecentTransfersOpen}>
-              <CardHeader className="pb-2 pt-3">
-                <div className="mb-2 flex w-full items-center justify-between gap-2">
-                  <CollapsibleTrigger asChild>
-                    <button type="button" className="flex min-w-0 flex-1 items-center text-left">
-                      <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                        <ClipboardList className="h-4 w-4 text-primary-strong" />
-                        최근 전송
-                        {recentActionNeededCount > 0 ? (
-                          <Badge variant="secondary" className="ml-1">
-                            {recentActionNeededCount}
-                          </Badge>
-                        ) : null}
-                      </CardTitle>
-                    </button>
-                  </CollapsibleTrigger>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1 px-2 border-primary-muted text-primary-strong hover:bg-primary-soft hover:text-primary-strong"
-                      onClick={() => setRecentTransfersAllOpen(true)}
-                    >
-                      <LayoutGrid className="h-3.5 w-3.5" />
-                      전체 보기
-                    </Button>
-                    <CollapsibleTrigger asChild>
-                      <button type="button" className="shrink-0 text-muted-foreground">
-                        <ChevronDown
-                          className={`h-4 w-4 transition-transform ${recentTransfersOpen ? "rotate-180" : ""}`}
-                        />
-                      </button>
-                    </CollapsibleTrigger>
-                  </div>
-                </div>
-                <CollapsibleContent>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-center justify-start">
-                    <PeriodFilter
-                      value={period}
-                      onChange={setPeriod}
-                      presets={[]}
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {PRACTICE_RECENT_STATUS_BADGES.map((item) => (
-                      <Tooltip key={item.filter}>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className="rounded-full"
-                            onClick={() =>
-                              setRecentStatusFilter((prev) =>
-                                prev === item.filter ? "all" : item.filter,
-                              )
-                            }
-                            aria-pressed={recentStatusFilter === item.filter}
-                          >
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "cursor-pointer",
-                                item.filter === "리메이크"
-                                  ? recentStatusFilter === item.filter
-                                    ? PRACTICE_REMAKE_BADGE_CLASS
-                                    : "border-amber-200 bg-amber-50/70 text-amber-800 hover:bg-amber-50"
-                                  : recentStatusFilter === item.filter
-                                    ? "border-primary/70 bg-primary-soft text-primary-strong"
-                                    : "hover:bg-muted/40",
-                              )}
-                            >
-                              {item.label} {statusCounts[item.countKey]}건
-                            </Badge>
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-                          {item.tooltip}
-                        </TooltipContent>
-                      </Tooltip>
-                    ))}
-                  </div>
-
-                  <div className="flex w-full items-center gap-2 md:max-w-md">
-                    <div className="relative min-w-0 flex-1">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        value={requestSearchTerm}
-                        onChange={(e) => setRequestSearchTerm(e.target.value)}
-                        className="pl-9"
-                        placeholder="전송ID, 환자명 검색"
-                      />
-                    </div>
-                  </div>
-                </div>
-                </CollapsibleContent>
-              </CardHeader>
-              <CollapsibleContent>
-              <CardContent className="space-y-2">
-                {recentRequestsLoading ? (
-                  <div className="space-y-2">
-                    {Array.from({ length: 3 }).map((_, idx) => (
-                      <div
-                        key={`recent-skel-${idx}`}
-                        className="rounded-lg border px-3 py-2 space-y-2"
-                      >
-                        <Skeleton className="h-4 w-28" />
-                        <div className="flex items-center gap-2">
-                          <Skeleton className="h-3 w-24" />
-                          <Skeleton className="h-5 w-14 rounded-full" />
-                        </div>
-                        <Skeleton className="h-3 w-40" />
-                      </div>
-                    ))}
-                  </div>
-                ) : recentRequestsError ? (
-                  <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-destructive">
-                    {recentRequestsError}
-                  </div>
-                ) : displayGroupedTransfers.length === 0 ? (
-                  <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                    {recentStatusFilter === "all"
-                      ? "전송 내역 없음"
-                      : `${
-                          recentStatusFilter === "발송완료"
-                            ? "의뢰"
-                            : recentStatusFilter === "포장.발송"
-                              ? "발송"
-                              : recentStatusFilter === "의뢰수락"
-                                ? "수락"
-                                : recentStatusFilter === "작업완료"
-                                  ? "완료"
-                                  : recentStatusFilter === "취소"
-                                    ? "취소"
-                                  : recentStatusFilter === "리메이크"
-                                    ? "리메이크"
-                                  : recentStatusFilter
-                        } 없음`}
-                  </div>
-                ) : (
-                  <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
-                    {displayGroupedTransfers.map((transfer) => {
-                      const targetLabText =
-                        String(transfer.targetLab || "-")
-                          .replace(/\s*→.*$/g, "")
-                          .trim() || "-";
-                      const isDraftTransfer =
-                        transfer.status === "임시저장" ||
-                        transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
-                      const canRemake = canRemakePracticeTransferByStatus(transfer.status);
-                      const acceptOverdue =
-                        !isDraftTransfer &&
-                        isPracticeTransferAcceptOverdue({
-                          status: transfer.status,
-                          orderDate: transfer.orderDate,
-                          createdAtTs: transfer.createdAtTs,
-                        });
-                      const needsAction = isPracticeTransferActionNeededStatus(
-                        transfer.status,
-                      );
-
-                      return (
-                        <div
-                          key={`${transfer.id}:${transfer.createdAt}`}
-                          role="button"
-                          tabIndex={0}
-                          className={cn(
-                            "w-full cursor-pointer rounded-xl border border-slate-200/90 bg-white px-3 py-2.5 text-left text-sm shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            needsAction && "practice-transfer-attention",
-                          )}
-                          aria-label={
-                            needsAction
-                              ? `${transfer.transferId !== "-" ? transfer.transferId : transfer.id} 조치 대기`
-                              : undefined
-                          }
-                          onClick={() => void handleOpenTransferDialog(transfer)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              void handleOpenTransferDialog(transfer);
-                            }
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <PracticeTransferRequestCardMeta
-                                createdAt={transfer.createdAt}
-                                statusLabel={
-                                  isDraftTransfer
-                                    ? "임시저장"
-                                    : toStatusBadgeLabel(transfer.status)
-                                }
-                                extraBadges={
-                                  <>
-                                    {acceptOverdue ? (
-                                      <PracticeAcceptOverdueBadge viewer="practice" />
-                                    ) : null}
-                                    {transfer.isRemake ? (
-                                      <Badge
-                                        variant="outline"
-                                        className={cn(
-                                          "whitespace-nowrap",
-                                          PRACTICE_REMAKE_BADGE_CLASS,
-                                        )}
-                                      >
-                                        리메이크
-                                      </Badge>
-                                    ) : null}
-                                    {transfer.unreadCount > 0 ? (
-                                      <Badge
-                                        variant="destructive"
-                                        className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none"
-                                        aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
-                                      >
-                                        {transfer.unreadCount > 99
-                                          ? "99+"
-                                          : transfer.unreadCount}
-                                      </Badge>
-                                    ) : null}
-                                  </>
-                                }
-                                counterpartLabel="기공소"
-                                counterpartValue={targetLabText}
-                                orderDate={transfer.orderDate}
-                                arrivalDate={transfer.arrivalDate}
-                                patientName={resolvePracticeTransferListPatientName(transfer)}
-                                toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
-                              />
-                            </div>
-
-                            <div className="flex shrink-0 items-center gap-1.5">
-                              {canEditPracticeTransferByStatus(transfer.status) ? (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="inline-flex">
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-primary-strong hover:text-primary"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleBeginEditSentTransfer(transfer);
-                                          }}
-                                          aria-label="의뢰 수정"
-                                        >
-                                          <Pencil className="h-4 w-4" />
-                                        </Button>
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="left" className="max-w-xs text-xs">
-                                      수락 전 의뢰 수정
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : null}
-                              {canRemake ? (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="inline-flex">
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-amber-600 hover:text-amber-700"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            askRemakeForTransfer(transfer);
-                                          }}
-                                          aria-label="리메이크"
-                                        >
-                                          <Repeat className="h-4 w-4" />
-                                        </Button>
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="left" className="max-w-xs text-xs">
-                                      리메이크
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : null}
-                              {(() => {
-                                const deleteLocked =
-                                  !canDeletePracticeTransferByStatus(transfer.status);
-                                return (
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span className="inline-flex">
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-muted-foreground hover:text-destructive disabled:pointer-events-none"
-                                            disabled={deleteLocked}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              void handleAskDeleteTransfer(transfer);
-                                            }}
-                                            aria-label={
-                                              deleteLocked
-                                                ? "의뢰수락 이후 삭제 불가"
-                                                : "의뢰서 전송 내역 삭제"
-                                            }
-                                          >
-                                            <Trash2 className="h-4 w-4" />
-                                          </Button>
-                                        </span>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="left" className="max-w-xs text-xs">
-                                        {deleteLocked
-                                          ? "기공소가 의뢰를 수락한 이후에는 삭제할 수 없습니다."
-                                          : "휴지통으로 이동"}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-              </CollapsibleContent>
-              </Collapsible>
-            </Card>
-
-            <Card className="border-slate-200/80 shadow-sm">
-              <Collapsible open={draftsPanelOpen} onOpenChange={setDraftsPanelOpen}>
-              <CardHeader className="pb-2 pt-3">
-                <div className="flex items-center justify-between gap-2">
-                  <CollapsibleTrigger asChild>
-                    <button type="button" className="flex min-w-0 flex-1 items-center text-left">
-                      <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                        <BookmarkPlus className="h-4 w-4 text-slate-500" />
-                        임시저장
-                        {draftGroupedTransfers.length > 0 ? (
-                          <Badge variant="secondary" className="ml-1">
-                            {draftGroupedTransfers.length}
-                          </Badge>
-                        ) : null}
-                      </CardTitle>
-                    </button>
-                  </CollapsibleTrigger>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {draftGroupedTransfers.length > 0 ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1 px-2 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
-                        disabled={clearingAllDrafts}
-                        onClick={handleAskClearAllDrafts}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        {clearingAllDrafts ? "삭제 중..." : "전체삭제"}
-                      </Button>
-                    ) : null}
-                    <CollapsibleTrigger asChild>
-                      <button type="button" className="shrink-0 text-muted-foreground">
-                        <ChevronDown
-                          className={`h-4 w-4 transition-transform ${draftsPanelOpen ? "rotate-180" : ""}`}
-                        />
-                      </button>
-                    </CollapsibleTrigger>
-                  </div>
-                </div>
-              </CardHeader>
-              <CollapsibleContent>
-              <CardContent className="space-y-2">
-                {draftGroupedTransfers.length === 0 ? (
-                  <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-                    없음
-                  </div>
-                ) : (
-                  <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
-                    {draftGroupedTransfers.map((transfer) => {
-                      const targetLabText =
-                        String(transfer.targetLab || "-")
-                          .replace(/\s*→.*$/g, "")
-                          .trim() || "-";
-                      const ownerLabel = transfer.isMineDraft
-                        ? "나"
-                        : transfer.practiceUserLabel || "동료";
-                      const isActive = transfer.id === activeDraftId;
-
-                      return (
-                        <div
-                          key={`draft:${transfer.id}:${transfer.createdAt}`}
-                          role="button"
-                          tabIndex={0}
-                          className={cn(
-                            "w-full cursor-pointer rounded-xl border px-3 py-2.5 text-left text-sm shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            isActive
-                              ? "border-primary/70 bg-primary-soft ring-1 ring-primary-muted"
-                              : transfer.isMineDraft
-                                ? "border-primary-muted bg-primary-soft/50"
-                                : "border-slate-200/90 bg-white",
-                          )}
-                          onClick={() => handleAdoptDraftTransfer(transfer)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              handleAdoptDraftTransfer(transfer);
-                            }
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <PracticeTransferRequestCardMeta
-                                createdAt={transfer.createdAt}
-                                statusLabel="임시저장"
-                                extraBadges={
-                                  <>
-                                    <Badge variant="outline" className="whitespace-nowrap">
-                                      {ownerLabel}
-                                    </Badge>
-                                    {isActive ? (
-                                      <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
-                                        작성 중
-                                      </Badge>
-                                    ) : null}
-                                  </>
-                                }
-                                counterpartLabel="기공소"
-                                counterpartValue={targetLabText}
-                                orderDate={transfer.orderDate}
-                                arrivalDate={transfer.arrivalDate}
-                                patientName={resolvePracticeTransferListPatientName(transfer)}
-                                toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
-                              />
-                            </div>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      void handleAskDeleteTransfer(transfer);
-                                    }}
-                                    aria-label="임시저장을 휴지통으로"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="left" className="max-w-xs text-xs">
-                                  휴지통으로 이동
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-              </CollapsibleContent>
-              </Collapsible>
-            </Card>
-
-            <Card className="border-slate-200/80 shadow-sm">
-              <Collapsible open={trashPanelOpen} onOpenChange={setTrashPanelOpen}>
-              <CardHeader className="pb-2 pt-3">
-                <div className="flex items-center justify-between gap-2">
-                  <CollapsibleTrigger asChild>
-                    <button type="button" className="flex min-w-0 flex-1 items-center text-left">
-                      <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                        <Trash2 className="h-4 w-4 text-slate-500" />
-                        휴지통
-                        {trashGroupedTransfers.length > 0 ? (
-                          <Badge variant="secondary" className="ml-1">
-                            {trashGroupedTransfers.length}
-                          </Badge>
-                        ) : null}
-                      </CardTitle>
-                    </button>
-                  </CollapsibleTrigger>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {trashGroupedTransfers.length > 0 ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1 px-2 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
-                        disabled={emptyingTrash}
-                        onClick={handleAskEmptyTrash}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        {emptyingTrash ? "비우는 중..." : "비우기"}
-                      </Button>
-                    ) : null}
-                    <CollapsibleTrigger asChild>
-                      <button type="button" className="shrink-0 text-muted-foreground">
-                        <ChevronDown
-                          className={`h-4 w-4 transition-transform ${trashPanelOpen ? "rotate-180" : ""}`}
-                        />
-                      </button>
-                    </CollapsibleTrigger>
-                  </div>
-                </div>
-              </CardHeader>
-              <CollapsibleContent>
-              <CardContent className="space-y-2">
-                {trashGroupedTransfers.length === 0 ? (
-                  <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-                    비어 있음
-                  </div>
-                ) : (
-                  <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
-                    {trashGroupedTransfers.map((transfer) => {
-                      const targetLabText =
-                        String(transfer.targetLab || "-")
-                          .replace(/\s*→.*$/g, "")
-                          .trim() || "-";
-                      const isDraftTrash =
-                        transfer.status === "임시저장" ||
-                        transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
-
-                      return (
-                        <div
-                          key={`trash:${transfer.id}:${transfer.createdAt}`}
-                          role="button"
-                          tabIndex={0}
-                          className="w-full cursor-pointer rounded-xl border border-slate-200/90 bg-white px-3 py-2.5 text-left text-sm shadow-sm transition hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => void handleOpenTransferDialog(transfer, { fromTrash: true })}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              void handleOpenTransferDialog(transfer, { fromTrash: true });
-                            }
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <PracticeTransferRequestCardMeta
-                                createdAt={transfer.createdAt}
-                                statusLabel={isDraftTrash ? "임시저장" : toStatusBadgeLabel(transfer.status)}
-                                extraBadges={
-                                  isDraftTrash && transfer.practiceUserLabel ? (
-                                    <Badge variant="outline" className="whitespace-nowrap">
-                                      {transfer.practiceUserLabel}
-                                    </Badge>
-                                  ) : null
-                                }
-                                counterpartLabel="기공소"
-                                counterpartValue={targetLabText}
-                                orderDate={transfer.orderDate}
-                                arrivalDate={transfer.arrivalDate}
-                                patientName={resolvePracticeTransferListPatientName(transfer)}
-                                toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
-                              />
-                            </div>
-
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 shrink-0 text-slate-500 hover:text-primary-strong"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleAskRestoreTransfer(transfer);
-                                    }}
-                                    aria-label={isDraftTrash ? "임시저장 복구" : "의뢰서 복구"}
-                                  >
-                                    <RotateCcw className="h-4 w-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
-                                  {isDraftTrash
-                                    ? "임시저장 목록으로 되돌립니다. 복구 후 카드를 눌러 이어서 작성할 수 있습니다."
-                                    : "최근 전송 내역으로 되돌립니다. 기공소에서도 다시 확인할 수 있습니다."}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-              </CollapsibleContent>
-              </Collapsible>
-            </Card>
-          </div>
-          ) : null}
         </div>
 
-        {isExpressMode ? (
-          <>
         <Dialog open={draftsOpen} onOpenChange={setDraftsOpen}>
           <DialogContent className="flex max-h-[min(90vh,820px)] w-[min(96vw,720px)] max-w-none flex-col gap-0 overflow-hidden p-0">
             <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 px-6 pb-4 pt-5 pr-14">
@@ -6984,7 +6342,7 @@ export const PracticeFileTransferPage = ({
                         role="button"
                         tabIndex={0}
                         className={cn(
-                          "group flex w-full items-start gap-3 rounded-xl border bg-white px-4 py-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          "w-full cursor-pointer rounded-xl border bg-white px-4 py-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           isActive
                             ? "border-primary/50 bg-primary-soft/70 shadow-sm ring-1 ring-primary/20"
                             : "border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/80",
@@ -6997,53 +6355,53 @@ export const PracticeFileTransferPage = ({
                           }
                         }}
                       >
-                        <div className="min-w-0 flex-1">
-                          <PracticeTransferRequestCardMeta
-                            layout="comfortable"
-                            createdAt={transfer.createdAt}
-                            statusLabel="임시저장"
-                            extraBadges={
-                              <>
-                                <Badge variant="outline" className="whitespace-nowrap">
-                                  {ownerLabel}
+                        <PracticeTransferRequestCardMeta
+                          layout="comfortable"
+                          createdAt={transfer.createdAt}
+                          statusLabel="임시저장"
+                          extraBadges={
+                            <>
+                              <Badge variant="outline" className="whitespace-nowrap">
+                                {ownerLabel}
+                              </Badge>
+                              {isActive ? (
+                                <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
+                                  작성 중
                                 </Badge>
-                                {isActive ? (
-                                  <Badge className="h-5 whitespace-nowrap rounded-md border-0 bg-primary-strong px-1.5 text-[10px] font-medium text-white hover:bg-primary-strong">
-                                    작성 중
-                                  </Badge>
-                                ) : null}
-                              </>
-                            }
-                            counterpartLabel="기공소"
-                            counterpartValue={targetLabText}
-                            orderDate={transfer.orderDate}
-                            arrivalDate={transfer.arrivalDate}
-                            patientName={resolvePracticeTransferListPatientName(transfer)}
-                            toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
-                          />
-                        </div>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="mt-0.5 h-9 w-9 shrink-0 text-slate-400 opacity-70 hover:bg-destructive-soft hover:text-destructive group-hover:opacity-100"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleAskDeleteTransfer(transfer);
-                                }}
-                                aria-label="임시저장을 휴지통으로"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="left" className="max-w-xs text-xs">
-                              휴지통으로 이동
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                              ) : null}
+                            </>
+                          }
+                          headerActions={
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handleAskDeleteTransfer(transfer);
+                                    }}
+                                    aria-label="임시저장을 휴지통으로"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="left" className="max-w-xs text-xs">
+                                  휴지통으로 이동
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          }
+                          counterpartLabel="기공소"
+                          counterpartValue={targetLabText}
+                          orderDate={transfer.orderDate}
+                          arrivalDate={transfer.arrivalDate}
+                          patientName={resolvePracticeTransferListPatientName(transfer)}
+                          toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
+                        />
                       </div>
                     );
                   })}
@@ -7109,7 +6467,7 @@ export const PracticeFileTransferPage = ({
                         key={`trash:${transfer.id}:${transfer.createdAt}`}
                         role="button"
                         tabIndex={0}
-                        className="group flex w-full items-start gap-3 rounded-xl border border-slate-200/90 bg-white px-4 py-3.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="w-full cursor-pointer rounded-xl border border-slate-200/90 bg-white px-4 py-3.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => void handleOpenTransferDialog(transfer, { fromTrash: true })}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
@@ -7118,53 +6476,52 @@ export const PracticeFileTransferPage = ({
                           }
                         }}
                       >
-                        <div className="min-w-0 flex-1">
-                          <PracticeTransferRequestCardMeta
-                            layout="comfortable"
-                            createdAt={transfer.createdAt}
-                            statusLabel={
-                              isDraftTrash ? "임시저장" : toStatusBadgeLabel(transfer.status)
-                            }
-                            extraBadges={
-                              isDraftTrash && transfer.practiceUserLabel ? (
-                                <Badge variant="outline" className="whitespace-nowrap">
-                                  {transfer.practiceUserLabel}
-                                </Badge>
-                              ) : null
-                            }
-                            counterpartLabel="기공소"
-                            counterpartValue={targetLabText}
-                            orderDate={transfer.orderDate}
-                            arrivalDate={transfer.arrivalDate}
-                            patientName={resolvePracticeTransferListPatientName(transfer)}
-                            toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
-                          />
-                        </div>
-
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="mt-0.5 h-9 w-9 shrink-0 text-slate-400 opacity-70 hover:bg-primary-soft hover:text-primary-strong group-hover:opacity-100"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleAskRestoreTransfer(transfer);
-                                }}
-                                aria-label={isDraftTrash ? "임시저장 복구" : "의뢰서 복구"}
-                              >
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
-                              {isDraftTrash
-                                ? "임시저장 목록으로 되돌립니다. 복구 후 카드를 눌러 이어서 작성할 수 있습니다."
-                                : "최근 전송 내역으로 되돌립니다. 기공소에서도 다시 확인할 수 있습니다."}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        <PracticeTransferRequestCardMeta
+                          layout="comfortable"
+                          createdAt={transfer.createdAt}
+                          statusLabel={
+                            isDraftTrash ? "임시저장" : toStatusBadgeLabel(transfer.status)
+                          }
+                          extraBadges={
+                            isDraftTrash && transfer.practiceUserLabel ? (
+                              <Badge variant="outline" className="whitespace-nowrap">
+                                {transfer.practiceUserLabel}
+                              </Badge>
+                            ) : null
+                          }
+                          headerActions={
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0 text-slate-500 hover:bg-primary-soft hover:text-primary-strong"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleAskRestoreTransfer(transfer);
+                                    }}
+                                    aria-label={isDraftTrash ? "임시저장 복구" : "의뢰서 복구"}
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
+                                  {isDraftTrash
+                                    ? "임시저장 목록으로 되돌립니다. 복구 후 카드를 눌러 이어서 작성할 수 있습니다."
+                                    : "최근 전송 내역으로 되돌립니다. 기공소에서도 다시 확인할 수 있습니다."}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          }
+                          counterpartLabel="기공소"
+                          counterpartValue={targetLabText}
+                          orderDate={transfer.orderDate}
+                          arrivalDate={transfer.arrivalDate}
+                          patientName={resolvePracticeTransferListPatientName(transfer)}
+                          toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
+                        />
                       </div>
                     );
                   })}
@@ -7173,8 +6530,6 @@ export const PracticeFileTransferPage = ({
             </div>
           </DialogContent>
         </Dialog>
-          </>
-        ) : null}
 
         <PracticeRecentTransfersAllModal
           open={recentTransfersAllOpen}
@@ -7186,8 +6541,8 @@ export const PracticeFileTransferPage = ({
           token={authToken}
           chatRooms={chatRooms}
           initialPeriod={period}
-          initialSearch={requestSearchTerm}
-          initialStatusFilter={recentStatusFilter}
+          initialSearch=""
+          initialStatusFilter="all"
           initialRequests={recentRequests}
           initialHasMore={recentRequestsHasMore}
           initialLoading={recentRequestsLoading}

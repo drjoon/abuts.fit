@@ -15,7 +15,7 @@
 // - 2026-08-16: 이미지 미리보기(다운로드 오버레이) + IndexedDB 캐시.
 // - 2026-08-16: 프리뷰 파일 여러 개일 때 이전/다음 이동.
 // - 2026-08-16: STL/PLY/OBJ 클릭 시 3D 미리보기(다운로드는 모달).
-// - 2026-08-18: 치과 수락 전 의뢰 수정 CTA.
+// - 2026-08-18: 치과 수락 전 의뢰 수정 CTA(좌측 의뢰정보 패널 상단).
 // - 2026-08-16: 어벗 가공 시작 시 상세 모달 작업취소(수락 취소) 비활성 안내.
 // - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔) / 작업 파일(어벗 디자인·보철물).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 왼쪽 구강스캔 업로드 UI 제거(스캔 없이 수락).
@@ -589,28 +589,30 @@ export function PracticeTransferDetailChatDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-[90rem] h-[86vh] p-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-base">
+          <DialogTitle className="flex items-center gap-2 pr-8 text-base">
             <MessageSquare className="h-4 w-4 text-primary-strong" />
-            <span className="min-w-0 flex-1 truncate">{title}</span>
-            {onEditRequest ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="ml-auto shrink-0 gap-1.5"
-                disabled={editRequestDisabled}
-                onClick={() => onEditRequest()}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                의뢰 수정
-              </Button>
-            ) : null}
+            <span className="min-w-0 truncate">{title}</span>
           </DialogTitle>
         </DialogHeader>
 
         <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
           <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="min-h-0 space-y-4 overflow-y-auto rounded-lg border bg-card p-3 text-[15px]">
+              {onEditRequest ? (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 gap-1.5"
+                    disabled={editRequestDisabled}
+                    onClick={() => onEditRequest()}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    의뢰 수정
+                  </Button>
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-3">
                 {summaryItems.map((row, idx) => {
                   const valueNode = (

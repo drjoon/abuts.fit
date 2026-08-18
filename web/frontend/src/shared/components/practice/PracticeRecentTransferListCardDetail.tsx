@@ -2,7 +2,8 @@
  * 치과·기공소 의뢰 목록 카드 본문 메타 SSOT.
  * 필수만: 시각 / 상태 / 주문일·치과도착일 / 상대(기공소|치과)·환자명·치아번호.
  * 2026-08-16: headerActions — 1행 오른쪽 끝(의뢰 수락 취소 등).
- * 2026-08-16: 전송ID·파일수·기간·메모 덤프 제거, 2열 메타·시맨틱 뱃지.
+ * 2026-08-16: 전송ID·파일수·기간·메모 덤프 제거, 시맨틱 뱃지.
+ * 2026-08-18: 메타는 1행 1항목(세로 스택). 잘림 없이 wrap. 액션은 headerActions.
  * 2026-08-16: 기공소 수신 카드와 동일 레이아웃(counterpart 라벨로 분기).
  * 2026-08-16: 카드에 치아번호(11,21)만 — 보철 형태 등은 상세 모달.
  * 2026-08-16: 상태 뱃지를 시각과 같은 줄에 배치(행 높이 절약).
@@ -107,7 +108,7 @@ function MetaField({
   tabular?: boolean;
 }) {
   return (
-    <p className="min-w-0 truncate text-[12px] leading-snug">
+    <p className="min-w-0 break-words text-[12px] leading-snug">
       <span className="text-muted-foreground">{label}</span>{" "}
       <span
         className={cn(
@@ -168,7 +169,7 @@ export function PracticeTransferRequestCardMeta({
     <div className={cn("min-w-0", comfortable ? "space-y-2.5" : "space-y-2")}>
       <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="min-w-0 truncate text-[11px] tabular-nums tracking-tight text-muted-foreground">
+          <p className="text-[11px] tabular-nums tracking-tight text-muted-foreground">
             {createdAt}
           </p>
           {statusLabel ? (
@@ -197,7 +198,7 @@ export function PracticeTransferRequestCardMeta({
 
       <div
         className={cn(
-          "grid grid-cols-2 gap-x-3 gap-y-1",
+          "grid grid-cols-1 gap-y-1",
           comfortable &&
             "rounded-lg border border-slate-200/80 bg-gradient-to-b from-slate-50/90 to-white px-2.5 py-2",
         )}

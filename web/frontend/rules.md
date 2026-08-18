@@ -586,7 +586,7 @@ Notes:
 - practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`
   - 상단 필터 뱃지 UI(기공의뢰·기공의뢰수신·대시보드 기공 행): **의뢰 · 수락 · 완료 · 발송 · 추적관리** (수신 뱃지 없음. `수신완료`·`자동매칭` 공개 풀은 의뢰 집계·필터에 합산. 발송=`포장.발송` 슬롯). 카드 뱃지 문구도 동일(`toStatusBadgeLabel`: 자동매칭/발송·수신완료→의뢰, 의뢰수락→수락). 상대 표시명만「자동 매칭」마스킹(실명은 DB·앵커에 보존).
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
-  - 수락 전(의뢰 단계) 내용 수정: 최근의뢰 연필·상세 「의뢰 수정」→ 작성 폼 복원 → `POST .../update-content`. 수락 이후는 삭제와 같이 잠금. 수정 저장은 임시저장 목록 재조회를 기다리지 않음.
+  - 수락 전(의뢰 단계) 내용 수정: 최근의뢰 연필(카드 헤더)·상세 좌측 의뢰정보 「의뢰 수정」→ 작성 폼 복원 → `POST .../update-content`. 수락 이후는 삭제와 같이 잠금. 수정 저장은 임시저장 목록 재조회를 기다리지 않음. 최근의뢰·임시저장·휴지통 카드 메타는 1행 1항목(세로 스택, 잘림 없음).
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(수락 시 갱신).
@@ -646,6 +646,7 @@ Notes:
   - 사용자 고정: `localStorage.practice_pinned_labs_v1` (최대 5개, 어벗츠 제외). 드롭다운 「고정」= 어벗츠기공소(항상) + 사용자 pin. 「최근」에서는 pin·어벗츠를 제외. `togglePinLab`로 토글(어벗츠 해제 불가).
   - 「새로 작성」은 의뢰 폼/임시저장 캐시만 비우고, 최근 기공소 목록은 드롭다운 후보로만 유지한다. 기공소 선택은 비워 다시 고르게 한다. 보철물 차트는 M(전치부) 위치로 되돌린다.
   - 기공의뢰 상단에는 수동 「임시 저장」버튼이 없다. 목록 반영은 기공소·환자명 입력 후 자동 동기화만 수행한다.
+  - 기공의뢰 상단 툴바(Express/Expert 공통): 「새로 작성」·「최근 의뢰」·「임시저장」·「휴지통」. 최근 의뢰=전체보기 모달, 임시저장/휴지통=다이얼로그. Expert는 우측 목록 없이 작성 폼 전폭(치식 full 차트).
   - 신규 draft 생성(autosave) 및 갱신: 기공소·환자명 둘 다 필요. 치아·메모·파일만으로는 목록에 올리지 않는다. 둘 다 입력된 뒤의 기존 draft 갱신에서는 치아 변경도 동기화한다.
   - 기공소 전송 성공·draft 삭제 후에는 작성자/동료/다른 탭 모두 폼을 비운다. 페이지 remount 시에도 최근 기공소를 자동 선택하지 않는다(드롭다운 후보만 유지).
   - 구현: `src/pages/practice/hooks/usePracticeTransferStep1.ts`, `PracticeFileTransferPage.tsx`
