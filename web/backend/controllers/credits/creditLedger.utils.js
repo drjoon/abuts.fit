@@ -5,6 +5,7 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-08-19: 기본 내역은 최근 라인만 잘라 10건 lookup. 기간 전체 $count 생략.
 // - 2026-08-19: 어벗디자인 원장 — 수신자(박스) 묶음용 mailbox/shippingReceiver 요약. ObjectId 재귀 가드.
 // - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
 // - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
@@ -110,13 +111,14 @@ export function buildLedgerItemsWithBucketBalanceAfter({
   endIdx,
   spendableBalance = 0,
   settlementBalance = 0,
+  skippedSum: skippedSumArg = 0,
   mapRow,
 }) {
   const list = Array.isArray(rows) ? rows : [];
   const start = Math.max(0, Number(startIdx) || 0);
   const end = Math.max(start, Number(endIdx) || start);
 
-  let skippedSum = 0;
+  let skippedSum = Number(skippedSumArg || 0);
   for (const row of list.slice(0, start)) {
     skippedSum += Number(row?.amount || 0);
   }
@@ -576,3 +578,372 @@ export const CREDIT_LEDGER_REQUEST_SELECT = {
   "caseInfos.maxDiameter": 1,
   "caseInfos.connectionDiameter": 1,
 };
+
+const REQUESTOR_CREDIT_ACCOUNT_CODES = [
+  "REQ_PAID_CREDIT",
+  "REQ_FREE_REQUEST_CREDIT",
+  "REQ_FREE_SHIPPING_CREDIT",
+  "LAB_SETTLEMENT_CREDIT",
+];
+
+const SPEND_SETTLEMENT_EVENT_TYPES = [
+  "REQUEST_SPEND_COMMIT",
+  "REQUEST_SPEND_HOLD",
+  "SHIPPING_SPEND_COMMIT",
+  "SHIPPING_SPEND_HOLD",
+];
+
+function uniqueKeyFromJournalDocExpr() {
+  return {
+    $let: {
+      vars: {
+        rawKey: {
+          $ifNull: [
+            "$journalDoc.meta.spendUniqueKey",
+            { $ifNull: ["$journalDoc.idempotencyKey", "$_id"] },
+          ],
+        },
+      },
+      in: {
+        $cond: [
+          { $eq: [{ $substrBytes: ["$$rawKey", 0, 3] }, "gl:"] },
+          "$$rawKey",
+          { $concat: ["gl:", "$$rawKey"] },
+        ],
+      },
+    },
+  };
+}
+
+function creditLedgerRowTypeExpr() {
+  return {
+    $switch: {
+      branches: [
+        { case: { $eq: ["$eventType", "CHARGE_PAID"] }, then: "CHARGE_PAID" },
+        {
+          case: { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
+          then: "CHARGE_FREE_REQUEST",
+        },
+        {
+          case: { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
+          then: "CHARGE_FREE_SHIPPING",
+        },
+        {
+          case: {
+            $in: [
+              "$eventType",
+              [
+                "PRACTICE_TRANSFER_SPEND_HOLD",
+                "PRACTICE_TRANSFER_HOLD_ADJUST",
+                "REQUEST_SPEND_HOLD",
+                "SHIPPING_SPEND_HOLD",
+              ],
+            ],
+          },
+          then: "SPEND_HOLD",
+        },
+        {
+          case: {
+            $and: [
+              {
+                $in: [
+                  "$eventType",
+                  [
+                    "REQUEST_SPEND_COMMIT",
+                    "SHIPPING_SPEND_COMMIT",
+                    "PRACTICE_TRANSFER_SPEND_COMMIT",
+                    "PRACTICE_MEMBERSHIP_SPEND",
+                  ],
+                ],
+              },
+              { $gt: ["$spentPaidAmount", 0] },
+            ],
+          },
+          then: "SPEND_PAID",
+        },
+        {
+          case: {
+            $and: [
+              { $in: ["$eventType", SPEND_SETTLEMENT_EVENT_TYPES] },
+              { $gt: ["$spentSettlementAmount", 0] },
+            ],
+          },
+          then: "SPEND_SETTLEMENT",
+        },
+        {
+          case: {
+            $and: [
+              {
+                $in: [
+                  "$eventType",
+                  ["REQUEST_SPEND_COMMIT", "PRACTICE_TRANSFER_SPEND_COMMIT"],
+                ],
+              },
+              { $gt: ["$spentFreeAmount", 0] },
+            ],
+          },
+          then: "SPEND_FREE_REQUEST",
+        },
+        {
+          case: { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+          then: "SPEND_FREE_REQUEST",
+        },
+        {
+          case: { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+          then: "SPEND_FREE_SHIPPING",
+        },
+        {
+          case: { $eq: ["$eventType", "LAB_SETTLEMENT_CHARGE"] },
+          then: "LAB_SETTLEMENT_CHARGE",
+        },
+        {
+          case: { $eq: ["$eventType", "PRACTICE_TRANSFER_LAB_PLATFORM_FEE"] },
+          then: "SPEND_SETTLEMENT",
+        },
+        {
+          case: { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] },
+          then: "LAB_SETTLEMENT_PAYOUT",
+        },
+        {
+          case: {
+            $and: [
+              {
+                $in: [
+                  "$eventType",
+                  [
+                    "PRACTICE_TRANSFER_SPEND_COMMIT",
+                    "PRACTICE_TRANSFER_ESCROW_RELEASE",
+                  ],
+                ],
+              },
+              { $gt: ["$amount", 0] },
+            ],
+          },
+          then: "LAB_SETTLEMENT_CHARGE",
+        },
+        CREDIT_LEDGER_DESIGN_FEE_AS_SETTLEMENT_CASE,
+        { case: { $eq: ["$eventType", "ADJUST"] }, then: "ADJUST" },
+      ],
+      default: "ADJUST",
+    },
+  };
+}
+
+function journalLookupAndTypeStages(journalCollectionName) {
+  return [
+    {
+      $lookup: {
+        from: journalCollectionName,
+        localField: "_id",
+        foreignField: "journalId",
+        as: "journalDoc",
+      },
+    },
+    {
+      $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: true },
+    },
+    {
+      $addFields: {
+        eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+        uniqueKey: uniqueKeyFromJournalDocExpr(),
+        requestIdMeta: { $ifNull: ["$journalDoc.meta.requestId", ""] },
+        displayLabel: {
+          $ifNull: [
+            "$meta.displayLabel",
+            { $ifNull: ["$journalDoc.meta.displayLabel", ""] },
+          ],
+        },
+        holdShare: {
+          $ifNull: [
+            "$meta.holdShare",
+            { $ifNull: ["$journalDoc.meta.holdShare", ""] },
+          ],
+        },
+        relatedPracticeTransferId: CREDIT_LEDGER_RELATED_PTX_ID_EXPR,
+        ledgerSource: CREDIT_LEDGER_SOURCE_EXPR,
+        refType: {
+          $ifNull: ["$refType", { $ifNull: ["$journalDoc.refType", ""] }],
+        },
+        refId: { $ifNull: ["$refId", "$journalDoc.refId"] },
+      },
+    },
+    { $addFields: { type: creditLedgerRowTypeExpr() } },
+    { $project: { journalDoc: 0 } },
+  ];
+}
+
+function lineGroupStage() {
+  const amountBase = { $ifNull: ["$amountExcludingVat", "$amount"] };
+  return {
+    $group: {
+      _id: "$journalId",
+      occurredAt: { $max: "$occurredAt" },
+      createdAt: { $max: "$createdAt" },
+      refType: { $first: "$refType" },
+      refId: { $first: "$refId" },
+      meta: { $first: "$meta" },
+      amount: { $sum: amountBase },
+      spentPaidAmount: {
+        $sum: {
+          $cond: [
+            {
+              $and: [
+                { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
+                { $lt: [amountBase, 0] },
+              ],
+            },
+            { $abs: amountBase },
+            0,
+          ],
+        },
+      },
+      spentFreeAmount: {
+        $sum: {
+          $cond: [
+            {
+              $and: [
+                {
+                  $in: [
+                    "$accountCode",
+                    ["REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
+                  ],
+                },
+                { $lt: [amountBase, 0] },
+              ],
+            },
+            { $abs: amountBase },
+            0,
+          ],
+        },
+      },
+      spentSettlementAmount: {
+        $sum: {
+          $cond: [
+            {
+              $and: [
+                { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
+                { $lt: [amountBase, 0] },
+              ],
+            },
+            { $abs: amountBase },
+            0,
+          ],
+        },
+      },
+      accountCode: { $first: "$accountCode" },
+    },
+  };
+}
+
+function pagingFacet({ startIdx, pageSize, itemStages = [], extra = 0 }) {
+  const skip = Math.max(0, Number(startIdx) || 0);
+  const limit = Math.max(1, Number(pageSize) || 10) + Math.max(0, Number(extra) || 0);
+  const facet = {
+    items: [{ $skip: skip }, { $limit: limit }, ...itemStages],
+  };
+  if (skip > 0) {
+    facet.skipped = [
+      { $limit: skip },
+      { $group: { _id: null, sum: { $sum: "$amount" } } },
+    ];
+  }
+  return { $facet: facet };
+}
+
+const JOURNAL_LINE_OVERFETCH = 8;
+
+/**
+ * 의뢰자 원장: 기본 조회는 최근 라인만 잘라 저널 10건(+1)만 lookup.
+ * 유형/검색 필터가 있을 때만 기간 전체를 저널에 붙인다.
+ */
+export function buildRequestorCreditLedgerPipeline({
+  ownerId,
+  journalCollectionName,
+  occurredAt,
+  filterTypes,
+  searchOrs,
+  startIdx,
+  pageSize,
+}) {
+  const match = {
+    ownerRole: "requestor",
+    ownerId,
+    accountCode: { $in: REQUESTOR_CREDIT_ACCOUNT_CODES },
+  };
+  if (occurredAt && Object.keys(occurredAt).length) {
+    match.occurredAt = occurredAt;
+  }
+
+  const skip = Math.max(0, Number(startIdx) || 0);
+  const limit = Math.max(1, Number(pageSize) || 10);
+  const pipeline = [
+    { $match: match },
+    {
+      $project: {
+        journalId: 1,
+        occurredAt: 1,
+        createdAt: 1,
+        accountCode: 1,
+        amount: 1,
+        amountExcludingVat: 1,
+        refType: 1,
+        refId: 1,
+        meta: 1,
+      },
+    },
+  ];
+
+  const hasTypeFilter = Array.isArray(filterTypes);
+  const hasSearch = Array.isArray(searchOrs) && searchOrs.length > 0;
+  const lookupStages = journalLookupAndTypeStages(journalCollectionName);
+
+  if (hasTypeFilter || hasSearch) {
+    pipeline.push(lineGroupStage(), { $sort: { occurredAt: -1, _id: -1 } });
+    pipeline.push(...lookupStages);
+    if (hasTypeFilter) {
+      pipeline.push({
+        $match: {
+          type: { $in: filterTypes.length ? filterTypes : ["__none__"] },
+        },
+      });
+    }
+    if (hasSearch) {
+      pipeline.push({ $match: { $or: searchOrs } });
+    }
+    pipeline.push(
+      pagingFacet({
+        startIdx: skip,
+        pageSize: limit,
+        extra: 1,
+      }),
+    );
+  } else {
+    const lineCap = (skip + limit + 1) * JOURNAL_LINE_OVERFETCH;
+    pipeline.push(
+      { $sort: { occurredAt: -1, _id: -1 } },
+      { $limit: lineCap },
+      lineGroupStage(),
+      { $sort: { occurredAt: -1, _id: -1 } },
+      pagingFacet({
+        startIdx: skip,
+        pageSize: limit,
+        extra: 1,
+        itemStages: lookupStages,
+      }),
+    );
+  }
+
+  return pipeline;
+}
+
+export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
+  const row = Array.isArray(facetRaw) ? facetRaw[0] : facetRaw;
+  const size = Math.max(1, Number(pageSize) || 10);
+  const rawItems = Array.isArray(row?.items) ? row.items : [];
+  const hasMore = rawItems.length > size;
+  return {
+    hasMore,
+    skippedSum: Number(row?.skipped?.[0]?.sum || 0),
+    items: hasMore ? rawItems.slice(0, size) : rawItems,
+  };
+}

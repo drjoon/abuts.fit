@@ -1481,12 +1481,14 @@ export function scheduleHealMissingExpressSurchargesForBusiness(args) {
   const last = lastExpressSurchargeHealAtByAnchor.get(key) || 0;
   if (now - last < EXPRESS_SURCHARGE_HEAL_COOLDOWN_MS) return;
   lastExpressSurchargeHealAtByAnchor.set(key, now);
-  void healMissingExpressSurchargesForBusiness(args).catch((err) => {
-    console.error("[CREDIT_SPEND] scheduled heal failed", {
-      businessAnchorId: key,
-      message: err?.message || String(err || ""),
+  setTimeout(() => {
+    void healMissingExpressSurchargesForBusiness(args).catch((err) => {
+      console.error("[CREDIT_SPEND] scheduled heal failed", {
+        businessAnchorId: key,
+        message: err?.message || String(err || ""),
+      });
     });
-  });
+  }, 2500);
 }
 
 async function requestorCommitSpendLineExists({

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 기본 내역은 10건+hasMore. 기간 전체 $count를 하지 않는다.
 // - 2026-08-19: 원장 GET에서 신속비 보정을 기다리지 않음. 잔액·집계 병렬, enrich 병렬.
 // - 2026-08-19: 어벗디자인 원장 — 수신자/박스 묶음용 mailbox·shippingPackage 메타.
 // - 2026-08-19: 기공의뢰 견적 열 — 보철기공비|어벗 디자인+생산비(둘 다 기공비). 원청/하청 수수료 분기.
@@ -37,16 +38,15 @@ import {
   buildFreeCreditGrantReason,
   buildLedgerItemsWithBucketBalanceAfter,
   collectPracticeTransferLookupIds,
-  CREDIT_LEDGER_DESIGN_FEE_AS_SETTLEMENT_CASE,
-  CREDIT_LEDGER_RELATED_PTX_ID_EXPR,
   CREDIT_LEDGER_REQUEST_SELECT,
-  CREDIT_LEDGER_SOURCE_EXPR,
   isAbutmentDesignLabFeeLedgerRow,
   mergeRequestExpressSurchargeIntoMachiningSpend,
+  parseCreditLedgerFacetResult,
   parseSpendKindFromUniqueKey,
   promoteAbutmentDesignFeeToPracticeTransfer,
   resolveFreeCreditGrantIdFromLedgerItem,
   resolveLedgerTypesForFilters,
+  buildRequestorCreditLedgerPipeline,
 } from "./creditLedger.utils.js";
 
 async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
@@ -126,31 +126,6 @@ function safeRegex(query) {
   return new RegExp(escaped, "i");
 }
 
-/** idempotencyKey가 이미 gl:면 이중 접두를 만들지 않는다. */
-function buildLedgerUniqueKeyExpr() {
-  return {
-    $let: {
-      vars: {
-        rawKey: {
-          $ifNull: [
-            "$journalDoc.meta.spendUniqueKey",
-            { $ifNull: ["$journalDoc.idempotencyKey", "$journalId"] },
-          ],
-        },
-      },
-      in: {
-        $cond: [
-          {
-            $eq: [{ $substrBytes: ["$$rawKey", 0, 3] }, "gl:"],
-          },
-          "$$rawKey",
-          { $concat: ["gl:", "$$rawKey"] },
-        ],
-      },
-    },
-  };
-}
-
 export async function listMyCreditLedger(req, res) {
   const businessAnchorId = req.user?.businessAnchorId;
 
@@ -170,7 +145,7 @@ export async function listMyCreditLedger(req, res) {
   const qRaw = String(req.query.q || "").trim();
 
   const page = Math.max(1, Number(req.query.page || 1) || 1);
-  const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize || 50) || 50));
+  const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize || 10) || 10));
 
   // 신속비 누락 보정은 읽기 경로를 막지 않는다. 실제 차감 시 소켓으로 목록 재조회.
   scheduleHealMissingExpressSurchargesForBusiness({
@@ -204,331 +179,38 @@ export async function listMyCreditLedger(req, res) {
     }
   }
 
-  const match = {
-    ownerRole: "requestor",
-    ownerId: anchorObjectId,
-    accountCode: {
-      $in: [
-        "REQ_PAID_CREDIT",
-        "REQ_FREE_REQUEST_CREDIT",
-        "REQ_FREE_SHIPPING_CREDIT",
-        "LAB_SETTLEMENT_CREDIT",
-      ],
-    },
-  };
-
-  if (Object.keys(occurredAt).length) {
-    match.occurredAt = occurredAt;
-  }
-
-  const pipeline = [
-    { $match: match },
-    {
-      $project: {
-        journalId: 1,
-        occurredAt: 1,
-        createdAt: 1,
-        accountCode: 1,
-        amount: 1,
-        amountExcludingVat: 1,
-        refType: 1,
-        refId: 1,
-        meta: 1,
-      },
-    },
-    {
-      $lookup: {
-        from: LedgerJournal.collection.name,
-        localField: "journalId",
-        foreignField: "journalId",
-        as: "journalDoc",
-      },
-    },
-    {
-      $unwind: {
-        path: "$journalDoc",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $addFields: {
-        eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-        amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
-        uniqueKey: buildLedgerUniqueKeyExpr(),
-        requestIdMeta: { $ifNull: ["$journalDoc.meta.requestId", ""] },
-        displayLabel: {
-          $ifNull: [
-            "$meta.displayLabel",
-            { $ifNull: ["$journalDoc.meta.displayLabel", ""] },
-          ],
-        },
-        holdShare: {
-          $ifNull: [
-            "$meta.holdShare",
-            { $ifNull: ["$journalDoc.meta.holdShare", ""] },
-          ],
-        },
-        relatedPracticeTransferId: CREDIT_LEDGER_RELATED_PTX_ID_EXPR,
-        ledgerSource: CREDIT_LEDGER_SOURCE_EXPR,
-      },
-    },
-    {
-      $group: {
-        _id: "$journalId",
-        occurredAt: { $max: "$occurredAt" },
-        createdAt: { $max: "$createdAt" },
-        eventType: { $first: "$eventType" },
-        refType: { $first: "$refType" },
-        refId: { $first: "$refId" },
-        uniqueKey: { $first: "$uniqueKey" },
-        displayLabel: { $first: "$displayLabel" },
-        holdShare: { $first: "$holdShare" },
-        relatedPracticeTransferId: { $first: "$relatedPracticeTransferId" },
-        ledgerSource: { $first: "$ledgerSource" },
-        amount: { $sum: "$amountBase" },
-        spentPaidAmount: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  {
-                    $in: [
-                      "$eventType",
-                      [
-                        "REQUEST_SPEND_COMMIT",
-                        "REQUEST_SPEND_HOLD",
-                        "SHIPPING_SPEND_COMMIT",
-                        "SHIPPING_SPEND_HOLD",
-                        "PRACTICE_TRANSFER_SPEND_COMMIT",
-                        "PRACTICE_TRANSFER_SPEND_HOLD",
-                        "PRACTICE_TRANSFER_HOLD_ADJUST",
-                        "PRACTICE_MEMBERSHIP_SPEND",
-                      ],
-                    ],
-                  },
-                  { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
-                  { $lt: ["$amountBase", 0] },
-                ],
-              },
-              { $abs: "$amountBase" },
-              0,
-            ],
-          },
-        },
-        spentFreeAmount: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  {
-                    $in: [
-                      "$eventType",
-                      [
-                        "REQUEST_SPEND_COMMIT",
-                        "REQUEST_SPEND_HOLD",
-                        "SHIPPING_SPEND_COMMIT",
-                        "SHIPPING_SPEND_HOLD",
-                        "PRACTICE_TRANSFER_SPEND_COMMIT",
-                        "PRACTICE_TRANSFER_SPEND_HOLD",
-                        "PRACTICE_TRANSFER_HOLD_ADJUST",
-                      ],
-                    ],
-                  },
-                  {
-                    $in: [
-                      "$accountCode",
-                      ["REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
-                    ],
-                  },
-                  { $lt: ["$amountBase", 0] },
-                ],
-              },
-              { $abs: "$amountBase" },
-              0,
-            ],
-          },
-        },
-        spentSettlementAmount: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  {
-                    $in: [
-                      "$eventType",
-                      ["REQUEST_SPEND_COMMIT", "REQUEST_SPEND_HOLD", "SHIPPING_SPEND_COMMIT", "SHIPPING_SPEND_HOLD"],
-                    ],
-                  },
-                  { $eq: ["$accountCode", "LAB_SETTLEMENT_CREDIT"] },
-                  { $lt: ["$amountBase", 0] },
-                ],
-              },
-              { $abs: "$amountBase" },
-              0,
-            ],
-          },
-        },
-        accountCode: { $first: "$accountCode" },
-      },
-    },
-    {
-      $addFields: {
-        type: {
-          $switch: {
-            branches: [
-              { case: { $eq: ["$eventType", "CHARGE_PAID"] }, then: "CHARGE_PAID" },
-              {
-                case: { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
-                then: "CHARGE_FREE_REQUEST",
-              },
-              {
-                case: { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
-                then: "CHARGE_FREE_SHIPPING",
-              },
-              {
-                case: {
-                  $in: [
-                    "$eventType",
-                    [
-                      "PRACTICE_TRANSFER_SPEND_HOLD",
-                      "PRACTICE_TRANSFER_HOLD_ADJUST",
-                      "REQUEST_SPEND_HOLD",
-                      "SHIPPING_SPEND_HOLD",
-                    ],
-                  ],
-                },
-                then: "SPEND_HOLD",
-              },
-              {
-                case: {
-                  $and: [
-                    {
-                      $in: [
-                        "$eventType",
-                        [
-                          "REQUEST_SPEND_COMMIT",
-                          "SHIPPING_SPEND_COMMIT",
-                          "PRACTICE_TRANSFER_SPEND_COMMIT",
-                          "PRACTICE_MEMBERSHIP_SPEND",
-                        ],
-                      ],
-                    },
-                    { $gt: ["$spentPaidAmount", 0] },
-                  ],
-                },
-                then: "SPEND_PAID",
-              },
-              {
-                case: {
-                  $and: [
-                    {
-                      $in: [
-                        "$eventType",
-                        ["REQUEST_SPEND_COMMIT", "REQUEST_SPEND_HOLD", "SHIPPING_SPEND_COMMIT", "SHIPPING_SPEND_HOLD"],
-                      ],
-                    },
-                    { $gt: ["$spentSettlementAmount", 0] },
-                  ],
-                },
-                then: "SPEND_SETTLEMENT",
-              },
-              {
-                case: {
-                  $and: [
-                    {
-                      $in: [
-                        "$eventType",
-                        [
-                          "REQUEST_SPEND_COMMIT",
-                          "PRACTICE_TRANSFER_SPEND_COMMIT",
-                        ],
-                      ],
-                    },
-                    { $gt: ["$spentFreeAmount", 0] },
-                  ],
-                },
-                then: "SPEND_FREE_REQUEST",
-              },
-              {
-                case: { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
-                then: "SPEND_FREE_REQUEST",
-              },
-              {
-                case: { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
-                then: "SPEND_FREE_SHIPPING",
-              },
-              {
-                case: { $eq: ["$eventType", "LAB_SETTLEMENT_CHARGE"] },
-                then: "LAB_SETTLEMENT_CHARGE",
-              },
-              {
-                case: {
-                  $eq: ["$eventType", "PRACTICE_TRANSFER_LAB_PLATFORM_FEE"],
-                },
-                then: "SPEND_SETTLEMENT",
-              },
-              {
-                case: { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] },
-                then: "LAB_SETTLEMENT_PAYOUT",
-              },
-              {
-                case: {
-                  $and: [
-                    {
-                      $in: [
-                        "$eventType",
-                        [
-                          "PRACTICE_TRANSFER_SPEND_COMMIT",
-                          "PRACTICE_TRANSFER_ESCROW_RELEASE",
-                        ],
-                      ],
-                    },
-                    { $gt: ["$amount", 0] },
-                  ],
-                },
-                then: "LAB_SETTLEMENT_CHARGE",
-              },
-              CREDIT_LEDGER_DESIGN_FEE_AS_SETTLEMENT_CASE,
-              { case: { $eq: ["$eventType", "ADJUST"] }, then: "ADJUST" },
-            ],
-            default: "ADJUST",
-          },
-        },
-      },
-    },
-  ];
-
   const filterTypes = resolveLedgerTypesForFilters({
     creditKind: creditKindRaw,
     action: actionRaw,
     type: typeRaw,
   });
-  if (Array.isArray(filterTypes)) {
-    pipeline.push({
-      $match: { type: { $in: filterTypes.length ? filterTypes : ["__none__"] } },
-    });
-  }
 
+  const searchOrs = [];
   if (qRaw) {
     const rx = safeRegex(qRaw);
-    const ors = [];
     if (rx) {
-      ors.push({ uniqueKey: rx }, { refType: rx }, { requestIdMeta: rx });
+      searchOrs.push({ uniqueKey: rx }, { refType: rx }, { requestIdMeta: rx });
     }
     if (mongoose.Types.ObjectId.isValid(qRaw)) {
-      ors.push({ refId: new mongoose.Types.ObjectId(qRaw) });
+      searchOrs.push({ refId: new mongoose.Types.ObjectId(qRaw) });
     }
     if (requestIdSearchObjectId) {
-      ors.push({ refId: requestIdSearchObjectId });
-    }
-    if (ors.length) {
-      pipeline.push({ $match: { $or: ors } });
+      searchOrs.push({ refId: requestIdSearchObjectId });
     }
   }
 
-  pipeline.push({ $sort: { occurredAt: -1, _id: -1 } });
+  const startIdx = (page - 1) * pageSize;
+  const pipeline = buildRequestorCreditLedgerPipeline({
+    ownerId: anchorObjectId,
+    journalCollectionName: LedgerJournal.collection.name,
+    occurredAt: Object.keys(occurredAt).length ? occurredAt : null,
+    filterTypes,
+    searchOrs,
+    startIdx,
+    pageSize,
+  });
 
-  const [balanceSnapshot, requestorKind, allRowsRaw] = await Promise.all([
+  const [balanceSnapshot, requestorKind, facetRaw] = await Promise.all([
     getBusinessCreditBalanceSnapshot({
       businessAnchorId: anchorObjectId,
       upsertIfMissing: true,
@@ -539,17 +221,17 @@ export async function listMyCreditLedger(req, res) {
   const currentBalance = Number(balanceSnapshot?.balance || 0);
   const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
 
-  const allRows = mergeRequestExpressSurchargeIntoMachiningSpend(allRowsRaw);
-  const total = Array.isArray(allRows) ? allRows.length : 0;
-  const startIdx = (page - 1) * pageSize;
-  const endIdx = startIdx + pageSize;
+  const { hasMore, skippedSum, items: pageRows } =
+    parseCreditLedgerFacetResult(facetRaw, { pageSize });
+  const allRows = mergeRequestExpressSurchargeIntoMachiningSpend(pageRows);
 
   const items = buildLedgerItemsWithBucketBalanceAfter({
     rows: allRows,
-    startIdx,
-    endIdx,
+    startIdx: 0,
+    endIdx: allRows.length,
     spendableBalance: currentBalance,
     settlementBalance: currentSettlementCredit,
+    skippedSum,
     mapRow: (row, base) => {
       const uniqueKey = String(row?.uniqueKey || base.uniqueKey || "");
       return {
@@ -839,7 +521,8 @@ export async function listMyCreditLedger(req, res) {
     success: true,
     data: {
       items: enrichedItems,
-      total,
+      total: startIdx + enrichedItems.length + (hasMore ? 1 : 0),
+      hasMore,
       page,
       pageSize,
       currentBalanceSnapshot: buildCurrentBalanceSnapshot(

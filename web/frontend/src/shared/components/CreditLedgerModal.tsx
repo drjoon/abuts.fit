@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-19: 원장 조회가 사업자 me를 기다리지 않음. requestorKind는 auth/스냅샷 사용.
+// - 2026-08-19: 내역 무한스크롤을 10건 단위로 가져와 첫 화면을 빨리 연다.
 // - 2026-08-19: 어벗디자인으로 행도 보류/일부 지급/지급 완료 상태를 표시.
 // - 2026-08-19: 의뢰비·배송비 보류를 기공의뢰-어벗디자인으로 묶음. 기존 기공의뢰는 구강스캔으로.
 // - 2026-08-19: 견적 상세 — 보철기공비|어벗 디자인+생산비(둘 다 기공비). 기공소몫/어벗츠몫 헤더 제거.
@@ -254,7 +254,7 @@ export type CreditLedgerModalProps = {
   className?: string;
 };
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 10;
 
 type SortDirection = "asc" | "desc";
 type LedgerSortKey = "createdAt" | "type" | "amount" | "balanceAfter" | "detail";
@@ -1295,6 +1295,7 @@ export const CreditLedgerModal = ({
           total: number;
           page: number;
           pageSize: number;
+          hasMore?: boolean;
           currentBalanceSnapshot?: CreditBalanceSnapshot;
         };
         message?: string;
@@ -1325,7 +1326,10 @@ export const CreditLedgerModal = ({
       }
       setItems((prev) => {
         const next = reset ? fetched : [...prev, ...fetched];
-        const more = next.length < total;
+        const more =
+          typeof data?.hasMore === "boolean"
+            ? data.hasMore
+            : next.length < total;
         setHasMore(more);
         hasMoreRef.current = more;
         return next;

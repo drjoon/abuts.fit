@@ -67,6 +67,23 @@ describe("buildLedgerItemsWithBucketBalanceAfter", () => {
     expect(items[0].balanceAfter).toBe(70);
     expect(items[1].balanceAfter).toBe(20);
   });
+
+  test("페이지 행만 넘겨도 skippedSum으로 잔액이 같다", () => {
+    const items = buildLedgerItemsWithBucketBalanceAfter({
+      rows: [
+        { _id: "2", type: "CHARGE_PAID", amount: 50 },
+        { _id: "3", type: "LAB_SETTLEMENT_CHARGE", amount: 20 },
+      ],
+      startIdx: 0,
+      endIdx: 2,
+      spendableBalance: 50,
+      settlementBalance: 120,
+      skippedSum: 100,
+    });
+    expect(items).toHaveLength(2);
+    expect(items[0].balanceAfter).toBe(70);
+    expect(items[1].balanceAfter).toBe(20);
+  });
 });
 
 describe("resolveLedgerTypesForFilters", () => {
