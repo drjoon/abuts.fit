@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-08-19: 견적 표시 — 하청 후 원청(기공사업부)은 전액 수주(수수료 0), 하청은 subcontractFeeRate.
 // - 2026-08-18: rollbackPracticeTransferBilling — 멱등키 조회·저널 삭제를 병렬화.
 // - 2026-08-18: 기공소 공급 어벗은 전역 단가. 의뢰자별 특별가는 적용하지 않음.
 // - 2026-08-17: adjustPracticeTransferHold — 배송비 보류는 조정 대상에서 제외(fees.total과만 비교).
@@ -73,6 +74,7 @@ import {
   splitRevenueByCreditKindProRata,
   resolveConfiguredRevenueRates,
   resolvePracticeTransferFeeRate,
+  resolvePracticeTransferFeeRateForViewer,
   resolveManufacturerUnitApply,
   resolveManufacturerUnitQty,
   MANUFACTURER_PRODUCTION_LEDGER_LABEL,
@@ -108,6 +110,8 @@ import {
 import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
 import {
+  getAssigneeLabAnchorId,
+  getPrimeLabAnchorId,
   isAutoMatchOpenPool,
   isPracticeTransferSubcontracted,
   resolvePerformingLabAnchorId,
@@ -3635,7 +3639,17 @@ export async function loadPracticeTransferQuoteContext({
  * 목록/상세용 견적. 과금 완료 건은 스냅샷 금액 유지.
  * 미청구·지정·수락된 자동매칭: billing.labFeeMultiplier 스냅샷(할증 소급 금지).
  * 미청구·자동매칭 공개풀: 의뢰 createdAt 기준 as-of(history).
+ * 하청 후 원청(어벗츠 기공사업부) 화면은 전액 수주(수수료 0). 하청은 subcontractFeeRate.
  */
+function isViewerPrimeContractor(doc, viewingLabAnchorId) {
+  const viewerId = String(viewingLabAnchorId || "").trim();
+  if (!viewerId) return false;
+  if (!isPracticeTransferSubcontracted(doc)) return false;
+  const primeId = getPrimeLabAnchorId(doc);
+  const assigneeId = getAssigneeLabAnchorId(doc);
+  return Boolean(primeId && viewerId === primeId && viewerId !== assigneeId);
+}
+
 export async function buildFeeQuotesForTransferDocs({
   docs,
   viewingLabAnchorId = null,
@@ -3880,10 +3894,11 @@ export async function buildFeeQuotesForTransferDocs({
       ? partnerByPair.get(pairKey(quoteLabId, practiceId))
       : null;
     const kind = relationshipKindFromPartner(partner);
-    const feeRateApplied = resolvePracticeTransferFeeRate({
+    const feeRateApplied = resolvePracticeTransferFeeRateForViewer({
       matchingMode,
       payoutRates,
       subcontracted: isPracticeTransferSubcontracted(doc),
+      viewerIsPrimeContractor: isViewerPrimeContractor(doc, viewerLabId),
     });
     const remakeFeeRateApplied = resolvePracticeTransferFeeRate({
       matchingMode: "direct",
@@ -3945,14 +3960,23 @@ export async function buildFeeQuotesForTransferDocs({
         });
         out.set(docId, {
           ...storedQuote,
+          feeRateApplied,
           labFeeTotal: starLabFeeTotal,
           labSettlementAmount: split.labSettlementAmount,
           abutsRevenueAmount: split.abutsRevenueAmount,
           remakeFeeQuote,
         });
       } else {
+        const split = splitPracticeTransferSettlement({
+          labFeeTotal: storedQuote.labFeeTotal,
+          abutmentRetailTotal: storedQuote.abutmentRetailTotal,
+          feeRateApplied,
+        });
         out.set(docId, {
           ...storedQuote,
+          feeRateApplied,
+          labSettlementAmount: split.labSettlementAmount,
+          abutsRevenueAmount: split.abutsRevenueAmount,
           remakeFeeQuote,
         });
       }

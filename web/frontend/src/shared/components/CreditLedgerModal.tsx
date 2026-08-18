@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 견적 상세 — 보철기공비|어벗 디자인+생산비(둘 다 기공비). 기공소몫/어벗츠몫 헤더 제거.
 // - 2026-08-17: 기공소 지급 상태는 기공비만. 어벗츠 생산비와 무관.
 // - 2026-08-17: 기공소 기공의뢰 행 — 치과와 동일(기공비에 디자인 합침·일부 지급·상세 모달).
 // - 2026-08-17: 기공소 보철기공비+디자인비(+지그)를 한 기공의뢰 행으로 묶음.
@@ -436,6 +437,7 @@ type PracticeTransferFeeKind =
   | "labFee"
   | "design"
   | "abutProduction"
+  | "abutCombined"
   | "shipping"
   | "other";
 
@@ -447,16 +449,16 @@ type PracticeTransferTreeLeaf = {
 
 const FEE_KIND_ORDER: PracticeTransferFeeKind[] = [
   "labFee",
-  "design",
-  "abutProduction",
+  "abutCombined",
   "shipping",
   "other",
 ];
 
 const FEE_KIND_LABEL: Record<PracticeTransferFeeKind, string> = {
-  labFee: "기공비",
-  design: "디자인비+지그",
-  abutProduction: "어벗제작비",
+  labFee: "보철기공비",
+  design: "어벗 디자인+생산비",
+  abutProduction: "어벗 디자인+생산비",
+  abutCombined: "어벗 디자인+생산비",
   shipping: "배송비",
   other: "기타",
 };
@@ -490,7 +492,7 @@ const classifyPracticeTransferPart = (
   return { route, kind: "other" };
 };
 
-/** 경로 행 없이 기공비·배송 등 항목만 합산. 디자인비(+지그)는 기공비에 합친다(치과 장부와 동일). */
+/** 경로 행 없이 보철기공비·어벗 디자인+생산비·배송만 합산. 둘 다 기공비. */
 const buildPracticeTransferFeeLeaves = (
   parts: LedgerDisplayPart[],
 ): PracticeTransferTreeLeaf[] => {
@@ -498,7 +500,7 @@ const buildPracticeTransferFeeLeaves = (
   for (const part of parts) {
     const { kind } = classifyPracticeTransferPart(part);
     const mapped: PracticeTransferFeeKind =
-      kind === "design" ? "labFee" : kind;
+      kind === "design" || kind === "abutProduction" ? "abutCombined" : kind;
     byKind.set(mapped, (byKind.get(mapped) || 0) + Number(part.amount || 0));
   }
   return FEE_KIND_ORDER.filter((kind) => byKind.has(kind)).map((kind) => ({

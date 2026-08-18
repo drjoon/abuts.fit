@@ -8,6 +8,7 @@ import {
   resolveDirectPlatformFeeRateConfigured,
   resolvePlatformFeeRate,
   resolvePracticeTransferFeeRate,
+  resolvePracticeTransferFeeRateForViewer,
 } from "../../services/creditRevenuePolicy.service.js";
 
 describe("resolvePracticeTransferFeeRate", () => {
@@ -68,6 +69,25 @@ describe("resolvePracticeTransferFeeRate", () => {
         payoutRates: { subcontractFeeRate: 0.2, platformFeeRate: 0.1 },
       }),
     ).toBe(0.2);
+  });
+
+  test("하청 후 원청 견적은 전액 수주(0), 하청은 subcontractFeeRate", () => {
+    expect(
+      resolvePracticeTransferFeeRateForViewer({
+        matchingMode: "auto",
+        subcontracted: true,
+        viewerIsPrimeContractor: true,
+        payoutRates: { subcontractFeeRate: 0.15 },
+      }),
+    ).toBe(0);
+    expect(
+      resolvePracticeTransferFeeRateForViewer({
+        matchingMode: "auto",
+        subcontracted: true,
+        viewerIsPrimeContractor: false,
+        payoutRates: { subcontractFeeRate: 0.15 },
+      }),
+    ).toBe(0.15);
   });
 
   test("platformFeeRate가 없으면 nonPartnerFeeRate로 fallback", () => {

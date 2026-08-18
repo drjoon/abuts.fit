@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 기공의뢰 견적 열 — 보철기공비|어벗 디자인+생산비(둘 다 기공비). 원청/하청 수수료 분기.
 // - 2026-08-17: PTX 디자인비(+지그)를 기공의뢰 행으로 승격(보철기공비와 동일 의뢰건).
 // - 2026-08-17: PRACTICE_TRANSFER enrich — transferMemo(크레딧 상세 주문일·도착일·메모).
 // - 2026-08-17: PRACTICE_TRANSFER enrich — feeQuote·skipJig(크레딧 행 클릭 상세 모달).
@@ -675,6 +676,7 @@ export async function listMyCreditLedger(req, res) {
         transferId: 1,
         targetLabName: 1,
         targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
         practiceBusinessAnchorId: 1,
         matchingMode: 1,
         transferMemo: 1,
@@ -689,6 +691,10 @@ export async function listMyCreditLedger(req, res) {
 
     const quotesById = await buildFeeQuotesForTransferDocs({
       docs: transferDocs,
+      viewingLabAnchorId:
+        String(requestorKind || "").trim() === "lab"
+          ? String(anchorObjectId)
+          : null,
     });
 
     for (const doc of transferDocs || []) {

@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-08-19: 견적 표시용 수수료 — 원청(하청 후) 전액 수주 0, 하청은 subcontractFeeRate.
 // - 2026-08-18: 제조사 하청 면세(기공소 등록) — vatRate 0, 공급가=지급액.
 // - 2026-08-17: 제조사 하청은 어벗 1개당 고정단가(기본 9,000). %분배·타 역할 재분배는 별도.
 // - 2026-08-15: 제조사 의뢰 공급가 기본 8,000 → 9,000.
@@ -148,6 +149,25 @@ export function resolvePracticeTransferFeeRate({
     return 0;
   }
   return resolveDirectPlatformFeeRate(payoutRates);
+}
+
+/**
+ * 견적 표시용 수수료율.
+ * 원청(어벗츠 기공사업부)이 하청을 준 뒤 자기 화면을 보면 전액 수주이므로 0.
+ * 하청 수행 기공소는 subcontractFeeRate.
+ */
+export function resolvePracticeTransferFeeRateForViewer({
+  matchingMode,
+  payoutRates,
+  subcontracted = false,
+  viewerIsPrimeContractor = false,
+} = {}) {
+  if (subcontracted && viewerIsPrimeContractor) return 0;
+  return resolvePracticeTransferFeeRate({
+    matchingMode,
+    payoutRates,
+    subcontracted,
+  });
 }
 
 export function isShippingSpendRevenueContext({ refType, freeAccountCode }) {
