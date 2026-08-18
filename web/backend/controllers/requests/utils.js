@@ -5,6 +5,8 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/backend/controllers/requests/designHandoff.controller.js
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
@@ -912,6 +914,19 @@ export function bumpRollbackCount(request, stageKey) {
     Number(request.caseInfos.rollbackCounts[key] || 0) + 1;
 }
 
+const READY_LOT_STAGES = new Set(["준비", "의뢰", "CAM"]);
+
+export function seqToLotLetters(seqRaw) {
+  const total = 26 * 26 * 26;
+  const n = Number(seqRaw);
+  const seq = Number.isFinite(n) ? ((n % total) + total) % total : 0;
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const a = Math.floor(seq / (26 * 26)) % 26;
+  const b = Math.floor(seq / 26) % 26;
+  const c = seq % 26;
+  return `${alphabet[a]}${alphabet[b]}${alphabet[c]}`;
+}
+
 async function nextLotLetters() {
   const counter = await LotCounter.findOneAndUpdate(
     { key: "global" },
@@ -920,16 +935,15 @@ async function nextLotLetters() {
   ).lean();
 
   const seqRaw = typeof counter?.seq === "number" ? counter.seq : 0;
-  const total = 26 * 26 * 26;
-  const seq = ((seqRaw % total) + total) % total;
-  const toLetters = (n) => {
-    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const a = Math.floor(n / (26 * 26)) % 26;
-    const b = Math.floor(n / 26) % 26;
-    const c = n % 26;
-    return `${alphabet[a]}${alphabet[b]}${alphabet[c]}`;
-  };
-  return toLetters(Math.max(seq, 0));
+  return seqToLotLetters(seqRaw);
+}
+
+export function shouldAssignLotNumberOnReady(requestDoc) {
+  if (!requestDoc) return false;
+  return (
+    String(requestDoc?.caseInfos?.productMode || "").trim() !==
+    "design_custom_abutment"
+  );
 }
 
 function getWorkTypePrefix(requestDoc, { defaultPrefix }) {
@@ -951,12 +965,57 @@ export async function ensureLotNumberForMachining(requestDoc) {
   }
 
   // 로트 규칙(CA, 크라운은 CR): PREFIX + YYMMDD + "-" + 26진 3자리 (AAA, AAB, ... ZZZ 이후 다시 AAA)
+  // 발급 시점 SSOT: 제조사 준비 단계 진입. 가공/CAM 경로는 누락 시 보정.
   const todayYmd = getTodayYmdInKst(); // YYYY-MM-DD
   const yyMMdd = todayYmd.replace(/-/g, "").slice(2); // YYMMDD
 
   const letters = await nextLotLetters();
   const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CA" });
   requestDoc.lotNumber.value = `${prefix}${yyMMdd}-${letters}`;
+}
+
+export async function ensureLotNumberOnReadyEnter(requestDoc) {
+  if (!shouldAssignLotNumberOnReady(requestDoc)) return false;
+  const before = canonicalizeLotNumberValue(requestDoc?.lotNumber?.value);
+  await ensureLotNumberForMachining(requestDoc);
+  const after = canonicalizeLotNumberValue(requestDoc?.lotNumber?.value);
+  return Boolean(after) && after !== before;
+}
+
+export async function persistReadyLotNumbersIfMissing(requestDocs) {
+  if (!Array.isArray(requestDocs) || requestDocs.length === 0) return 0;
+  const ops = [];
+  for (const doc of requestDocs) {
+    const stage = String(doc?.manufacturerStage || "").trim();
+    if (stage && !READY_LOT_STAGES.has(stage)) continue;
+    const assigned = await ensureLotNumberOnReadyEnter(doc);
+    const value = canonicalizeLotNumberValue(doc?.lotNumber?.value);
+    if (!assigned || !value || !doc?._id) continue;
+    ops.push({
+      updateOne: {
+        filter: {
+          _id: doc._id,
+          $or: [
+            { "lotNumber.value": { $exists: false } },
+            { "lotNumber.value": null },
+            { "lotNumber.value": "" },
+          ],
+        },
+        update: { $set: { "lotNumber.value": value } },
+      },
+    });
+  }
+  if (ops.length === 0) return 0;
+  try {
+    const result = await Request.bulkWrite(ops, { ordered: false });
+    return Number(result?.modifiedCount || 0);
+  } catch (err) {
+    console.warn("[LOT_NUMBER] persistReadyLotNumbersIfMissing failed", {
+      count: ops.length,
+      error: err?.message || err,
+    });
+    return 0;
+  }
 }
 
 export async function ensureFinishedLotNumberForPacking(requestDoc) {

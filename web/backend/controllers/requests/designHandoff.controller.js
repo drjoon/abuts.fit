@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 제조사 준비 큐 진입(생산 승격) 시 로트번호(3글자)를 발급한다.
 // - 2026-08-16: 다치아 생산 취소 시 연동 Request 전원 구강스캔 복원.
 // - 2026-08-16: 생산 취소 가드 — stage뿐 아니라 actualCamStart(가공 진입 중)도 차단.
 // - 2026-08-16: PTX 핸드오프 시 기공소 designSoftware·아노다이징·헥스·유지홈을 Request에 스탬프.
@@ -22,6 +23,7 @@
 // - web/backend/models/request.model.js
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/utils.js
 // - web/backend/middlewares/auth.middleware.js
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/services/practiceTransferBilling.service.js
@@ -48,6 +50,7 @@ import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/reques
 import { emitAppEventToRoles } from "../../socket.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
+import { ensureLotNumberOnReadyEnter } from "./utils.js";
 
 const PRODUCT_MODE_DESIGN = "design_custom_abutment";
 const PRODUCT_MODE_PRODUCTION = "custom_abutment";
@@ -525,6 +528,7 @@ export async function handoffDesignToProduction(req, res) {
         });
       }
 
+      await ensureLotNumberOnReadyEnter(request);
       await request.save();
 
       try {

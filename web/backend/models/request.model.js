@@ -50,6 +50,7 @@ const requestSchema = new mongoose.Schema(
       },
       value: {
         // 단일 로트번호 : CA + YYMMDD + -AAA (workType에 따라 prefix 변형 가능)
+        // 발급 시점: 제조사 준비 단계 진입. 가공/CAM은 누락 시 보정.
         type: String,
         unique: true,
         sparse: true,

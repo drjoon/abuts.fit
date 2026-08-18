@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: CAM 파일 삭제 롤백 시 로트번호(value)는 유지(준비 단계 발급 SSOT).
 // - 2026-08-17: CAM 롤백(준비) 시 우편함 해제.
 // - 2026-08-16: CAM 롤백(준비) 시 PTX abutmentProductionStartedAt 클리어.
 // - 2026-08-11: original/cam signed URL 응답에 fileName을 포함해 프론트 프리뷰가 STL/PLY/OBJ 확장자를 유지.
@@ -369,7 +370,7 @@ export async function deleteCamFileAndRollback(req, res) {
     };
     bumpRollbackCount(request, "cam");
     request.lotNumber = request.lotNumber || {};
-    request.lotNumber.value = undefined;
+    // 로트번호(value)는 준비 단계 발급 SSOT — CAM 파일 삭제 시에도 유지한다.
     request.lotNumber.material = "";
     request.manufacturerStage = "준비";
 

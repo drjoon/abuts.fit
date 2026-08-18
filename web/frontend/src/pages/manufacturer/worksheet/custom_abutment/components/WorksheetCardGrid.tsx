@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 준비 탭 의뢰카드에 로트번호 3글자 뱃지 표시.
 // - 2026-08-17: 환자 호버 직납 치과 툴팁 — resolvePracticeDirectShippingContact 사용.
 // - 2026-08-13: 준비 탭 라이노 미완료 카드 블러 + 「라이노 작업중」 오버레이, 클릭 차단. 완료 SSOT=camFile.s3Key.
 // - 2026-08-12: 세척.패킹 카드 오른쪽 스크류 뱃지 위에 각인코드 3글자 뱃지 표시.
@@ -613,11 +614,14 @@ export const WorksheetCardGrid = ({
           reviewStageKey !== "request" &&
           reviewStageKey !== "cam" &&
           Boolean(realtimeBadge || realtimeElapsedLabel);
-        const showPackingLotShortBadge =
-          tabStage === "packing" && Boolean(lotShortCode);
+        const showLotShortBadge =
+          (tabStage === "packing" ||
+            tabStage === "request" ||
+            tabStage === "cam") &&
+          Boolean(lotShortCode);
         const showSideSpecBadges =
           shouldShowAnodizingOffBadge ||
-          showPackingLotShortBadge ||
+          showLotShortBadge ||
           (tabStage === "packing" && Boolean(resolvedConnectionSpec.screwType));
 
         const hasTopFloatingControls =
@@ -1030,11 +1034,15 @@ export const WorksheetCardGrid = ({
                     아노X
                   </Badge>
                 )}
-                {showPackingLotShortBadge && (
+                {showLotShortBadge && (
                   <Badge
                     variant="outline"
                     className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-slate-800 bg-slate-900 text-white tracking-wider"
-                    title={`각인코드 ${lotShortCode}`}
+                    title={
+                      tabStage === "packing"
+                        ? `각인코드 ${lotShortCode}`
+                        : `로트번호 ${lotShortCode}`
+                    }
                   >
                     {lotShortCode}
                   </Badge>

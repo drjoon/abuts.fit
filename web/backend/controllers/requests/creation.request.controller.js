@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // change-log:
+// - 2026-08-18: 생산 의뢰는 준비 단계 진입(생성) 시 로트번호(3글자)를 발급한다.
 // - 2026-08-11: 아노다이징은 의뢰건 caseInfos 우선, 미설정 시 사업체 기본값(ON) 폴백.
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
@@ -22,6 +23,7 @@ import {
   normalizeRequestStage,
   REQUEST_STAGE_ORDER,
   canAccessRequestAsRequestor,
+  ensureLotNumberOnReadyEnter,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import {
@@ -307,6 +309,8 @@ export async function createRequest(req, res) {
         reason: "",
       };
     }
+
+    await ensureLotNumberOnReadyEnter(newRequest);
 
     // [변경] 생산 시작(CAM 승인) 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 SPEND 로직을 제거합니다.
     await newRequest.save();
@@ -1184,6 +1188,8 @@ export async function createRequestsBulk(req, res) {
               reason: "",
             };
           }
+
+          await ensureLotNumberOnReadyEnter(newRequest);
 
           const tSave0 = Date.now();
           await newRequest.save();

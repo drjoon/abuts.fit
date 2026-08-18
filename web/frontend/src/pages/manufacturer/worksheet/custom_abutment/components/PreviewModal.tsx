@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 준비 단계 프리뷰에도 로트번호를 표시한다.
 // - 2026-08-18: filled STL/NC 재생성 요청 시 pending 표시 + 로컬 캐시 선삭제.
 // - 2026-08-17: 세척.패킹 롤백 시 우편함 유지 안내 토스트.
 // - 2026-08-13: 가공중(Now Playing)에는 NC 코드 에디터·NC 재생성 비활성화.
@@ -2091,9 +2092,7 @@ export const PreviewModal = ({
   const realtimeToneClass = getRealtimeToneClass(
     activeReq?.realtimeProgress?.tone,
   );
-  const fullLotLabel = isRequestStage
-    ? ""
-    : String(activeReq?.lotNumber?.value || "").trim();
+  const fullLotLabel = String(activeReq?.lotNumber?.value || "").trim();
   const hasNcMetadata = Boolean(activeReq?.caseInfos?.ncFile?.s3Key);
   const previewShippingMode = resolveShippingMode(activeReq as any);
 

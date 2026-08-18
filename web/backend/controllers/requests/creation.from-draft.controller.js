@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-18: 생산 의뢰는 준비 단계 진입(생성) 시 로트번호(3글자)를 발급한다.
 // - 2026-08-13: 제출 지연 단축. 설정/리드타임/크레딧을 트랜잭션 밖 병렬 prefetch,
 //   incoming caseInfos.file.s3Key를 받아 Draft PATCH 왕복 생략.
 // - 2026-08-11: 아노다이징은 의뢰건 caseInfos 우선, 미설정 시 사업체 기본값(ON) 폴백.
@@ -22,6 +23,7 @@ import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
   assertOrderableImplantPresetOrThrow,
+  ensureLotNumberOnReadyEnter,
 } from "./utils.js";
 import {
   computePriceForRequest,
@@ -1618,6 +1620,10 @@ export async function createRequestsFromDraft(req, res) {
           }
 
           requestDocs.push(newRequest);
+        }
+
+        for (const doc of requestDocs) {
+          await ensureLotNumberOnReadyEnter(doc);
         }
 
         const insertedRequests = await Request.insertMany(requestDocs, {

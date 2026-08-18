@@ -313,6 +313,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 구현: `controllers/requests/common.review.controller.js`, `services/reviewApprovalQueue.service.js`
 - BG request-meta(`GET /api/bg/request-meta`)의 lotNumber 전달 SSOT:
   - 백엔드 `ensureLotNumberForMachining` 로직을 사용해 `lotNumber.value`를 생성/보정합니다.
+  - 발급 시점 SSOT는 제조사 **준비 단계 진입**입니다(`ensureLotNumberOnReadyEnter`).
+    디자인+생산(`design_custom_abutment`)은 핸드오프(생산 승격) 때 발급합니다.
+    가공/CAM 경로는 누락 시 보정만 합니다.
   - 생성된 `lotNumber.value`를 기준으로 `caseInfos.lotNumber`/`serialCode`를 계산해 전달합니다.
   - fallback 필드(`material`, `part`) 추론으로 대체하지 않습니다.
   - 구현: `controllers/bg/bg.controller.js`, `controllers/requests/utils.js`

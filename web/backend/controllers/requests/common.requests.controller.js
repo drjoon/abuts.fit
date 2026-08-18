@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 준비 단계 진입 시 로트번호 발급. 워크시트 조회 시 누락분 보정. 샘플 복사는 준비 시작도 즉시 발급.
 // - 2026-08-10: worksheet select에 caseInfos.memo/toothWorks/prosthesisType/files 추가(디자인 큐).
 // - 2026-08-17: 취소/삭제 시 PTX 연동 어벗 디자인비(ADJUST) revoke.
 // related files:
@@ -41,6 +42,7 @@ import {
   normalizeWorksheetRequestForResponse,
   normalizeRequestStage,
   ensureLotNumberForMachining,
+  persistReadyLotNumbersIfMissing,
   ensureFinishedLotNumberForPacking,
   buildRequestorOrgScopeFilter,
   buildManufacturerOrgScopeFilter,
@@ -1776,6 +1778,10 @@ export async function getAllRequests(req, res) {
             ])
           : Promise.resolve(null),
       ]);
+
+    if (isWorksheetView) {
+      await persistReadyLotNumbersIfMissing(rawRequests);
+    }
 
     // 모니터링 뷰는 초경량 응답: normalize/우선순위 계산 생략
     const requests = isMonitoringView
@@ -4143,16 +4149,9 @@ export async function cloneFromSampleToRequest(req, res) {
         ],
       });
 
-      // 정책: 복사 시작 공정이 CAM/가공/세척.패킹이면 즉시 새 lotNumber를 발급한다.
-      // - 원본/기존 샘플 lot 재사용 금지 (중복 및 귀속 혼선 방지)
-      // - 의뢰 시작(의뢰 탭) 복사본은 승인 시점에 기존 흐름대로 lot 부여
-      if (
-        startStage === "CAM" ||
-        startStage === "가공" ||
-        startStage === "세척.패킹"
-      ) {
-        await ensureLotNumberForMachining(clonedRequest);
-      }
+      // 정책: 복사 시작 공정과 무관하게 원본과 다른 별도 로트번호를 즉시 발급한다.
+      // 준비 탭 복사본도 의뢰카드에 3글자 로트를 표시해야 한다.
+      await ensureLotNumberForMachining(clonedRequest);
 
       await clonedRequest.save({ session });
 
@@ -4345,16 +4344,8 @@ export async function cloneRequestsForRecall(req, res) {
           ],
         });
 
-        // 정책: 추적관리/리콜 재제작 복사에서도 시작 공정이 CAM/가공/세척.패킹이면
-        // 즉시 새 lotNumber를 발급한다.
-        // 복사본이 곧바로 CAM/가공/세척.패킹 큐에 진입하므로, lot 누락 상태로 내려가면 안 된다.
-        if (
-          startStage === "CAM" ||
-          startStage === "가공" ||
-          startStage === "세척.패킹"
-        ) {
-          await ensureLotNumberForMachining(clonedRequest);
-        }
+        // 정책: 재제작 복사본도 시작 공정과 무관하게 새 lotNumber를 즉시 발급한다.
+        await ensureLotNumberForMachining(clonedRequest);
 
         await clonedRequest.save();
 
