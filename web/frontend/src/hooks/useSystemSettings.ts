@@ -28,6 +28,7 @@ export interface CreditSettings {
   shippingFee: number;
   manufacturerRequestUnitPrice: number;
   devopsRequestUnitPrice: number;
+  salesmanRequestUnitPrice: number;
   manufacturerShippingUnitPrice: number;
   affiliateVatRate: number;
   expressFee: number;
@@ -54,6 +55,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   shippingFee: 3500,
   manufacturerRequestUnitPrice: 9000,
   devopsRequestUnitPrice: 1000,
+  salesmanRequestUnitPrice: 3000,
   manufacturerShippingUnitPrice: 3500,
   affiliateVatRate: 0.1,
   expressFee: 2000,
@@ -106,6 +108,10 @@ export const useSystemSettings = () => {
         devopsRequestUnitPrice: Number(
           raw.devopsRequestUnitPrice ??
             CREDIT_SETTINGS_DEFAULTS.devopsRequestUnitPrice,
+        ),
+        salesmanRequestUnitPrice: Number(
+          raw.salesmanRequestUnitPrice ??
+            CREDIT_SETTINGS_DEFAULTS.salesmanRequestUnitPrice,
         ),
         manufacturerShippingUnitPrice: Number(
           raw.manufacturerShippingUnitPrice ??

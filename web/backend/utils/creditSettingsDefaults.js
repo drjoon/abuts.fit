@@ -7,6 +7,9 @@
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
 // - 2026-08-17: practiceRushFeeMultiplier(기공의뢰 신속처리 할증) 추가.
+// - 2026-08-18: CNC 매출 분배 공통 비율(%) — 티어별 금액은 매출×비율로 산출.
+// - 2026-08-18: CNC 티어별·특별공급가 항목별 건당 분배 필드.
+// - 2026-08-18: salesmanRequestUnitPrice(영업자 건당) 추가.
 // - 2026-08-15: 제조사 하청 단가·affiliateVatRate 설정 필드 추가.
 // - 2026-08-15: 특별 공급가 CNC/환봉 × 생산만·디자인+생산 정규화. 의뢰자 로드 시 단가 오버라이드.
 import { Types } from "mongoose";
@@ -24,6 +27,80 @@ const clampPracticeRushFeeMultiplier = (value, fallback = 1.2) => {
   return Math.min(2, Math.round(n * 100) / 100);
 };
 
+const CNC_TIER_PARTY_PREFIXES = [
+  "membershipProduction",
+  "regularProduction",
+  "membershipDesignAndProduction",
+  "regularDesignAndProduction",
+];
+
+const PARTY_KINDS = ["Manufacturer", "Salesman", "Devops"];
+
+const CNC_TIER_REVENUE_KEYS = {
+  membershipProduction: "membershipProductionPrice",
+  regularProduction: "regularProductionPrice",
+  membershipDesignAndProduction: "membershipDesignAndProductionPrice",
+  regularDesignAndProduction: "regularDesignAndProductionPrice",
+};
+
+function clampSharePercent(value, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(100, Math.round(n * 100) / 100);
+}
+
+function readSharePercents(creditSettings = {}, schemaDefaults = SCHEMA_DEFAULTS) {
+  return {
+    manufacturer: clampSharePercent(
+      creditSettings.manufacturerSharePercent ??
+        schemaDefaults.manufacturerSharePercent,
+      schemaDefaults.manufacturerSharePercent,
+    ),
+    salesman: clampSharePercent(
+      creditSettings.salesmanSharePercent ?? schemaDefaults.salesmanSharePercent,
+      schemaDefaults.salesmanSharePercent,
+    ),
+    devops: clampSharePercent(
+      creditSettings.devopsSharePercent ?? schemaDefaults.devopsSharePercent,
+      schemaDefaults.devopsSharePercent,
+    ),
+  };
+}
+
+function allocateRevenueByPercent(revenue, shares) {
+  const rev = Math.max(0, Math.round(Number(revenue) || 0));
+  return {
+    manufacturer: Math.round((rev * shares.manufacturer) / 100),
+    salesman: Math.round((rev * shares.salesman) / 100),
+    devops: Math.round((rev * shares.devops) / 100),
+  };
+}
+
+function pickTierPartySchemaDefaults(pickDefault) {
+  const out = {};
+  for (const prefix of CNC_TIER_PARTY_PREFIXES) {
+    for (const kind of PARTY_KINDS) {
+      const key = `${prefix}${kind}UnitPrice`;
+      out[key] = pickDefault(`creditSettings.${key}`);
+    }
+  }
+  return out;
+}
+
+function buildNormalizedTierPartyFields(creditSettings = {}, schemaDefaults = {}) {
+  const merged = { ...schemaDefaults, ...creditSettings };
+  const shares = readSharePercents(merged, schemaDefaults);
+  const out = {};
+  for (const prefix of CNC_TIER_PARTY_PREFIXES) {
+    const revenueKey = CNC_TIER_REVENUE_KEYS[prefix];
+    const party = allocateRevenueByPercent(merged[revenueKey], shares);
+    out[`${prefix}ManufacturerUnitPrice`] = party.manufacturer;
+    out[`${prefix}SalesmanUnitPrice`] = party.salesman;
+    out[`${prefix}DevopsUnitPrice`] = party.devops;
+  }
+  return out;
+}
+
 const SCHEMA_DEFAULTS = (() => {
   const pickDefault = (path) =>
     Number(SystemSettings.schema.path(path)?.options?.default ?? 0) || 0;
@@ -35,6 +112,7 @@ const SCHEMA_DEFAULTS = (() => {
       "creditSettings.manufacturerRequestUnitPrice",
     ),
     devopsRequestUnitPrice: pickDefault("creditSettings.devopsRequestUnitPrice"),
+    salesmanRequestUnitPrice: pickDefault("creditSettings.salesmanRequestUnitPrice"),
     manufacturerShippingUnitPrice: pickDefault(
       "creditSettings.manufacturerShippingUnitPrice",
     ),
@@ -81,6 +159,10 @@ const SCHEMA_DEFAULTS = (() => {
     regularRoundBarDesignAndProductionPrice: pickDefault(
       "creditSettings.regularRoundBarDesignAndProductionPrice",
     ),
+    manufacturerSharePercent: pickDefault("creditSettings.manufacturerSharePercent"),
+    salesmanSharePercent: pickDefault("creditSettings.salesmanSharePercent"),
+    devopsSharePercent: pickDefault("creditSettings.devopsSharePercent"),
+    ...pickTierPartySchemaDefaults(pickDefault),
   };
 })();
 
@@ -124,22 +206,18 @@ export function normalizeSpecialRequestorPrice(item = {}, fallback = {}) {
         : (fallback.membershipRoundBarDesignAndProductionPrice ?? 0),
     ) || 0,
   );
-  const manufacturerRequestUnitPrice = Math.max(
-    0,
-    Number(
-      item?.manufacturerRequestUnitPrice ??
-        fallback.manufacturerRequestUnitPrice ??
-        SCHEMA_DEFAULTS.manufacturerRequestUnitPrice,
-    ) || 0,
+  const shares = readSharePercents(fallback, SCHEMA_DEFAULTS);
+  const productionParty = allocateRevenueByPercent(productionPrice, shares);
+  const designParty = allocateRevenueByPercent(
+    designAndProductionPrice,
+    shares,
   );
-  const devopsRequestUnitPrice = Math.max(
-    0,
-    Number(
-      item?.devopsRequestUnitPrice ??
-        fallback.devopsRequestUnitPrice ??
-        SCHEMA_DEFAULTS.devopsRequestUnitPrice,
-    ) || 0,
-  );
+  const productionManufacturerUnitPrice = productionParty.manufacturer;
+  const productionSalesmanUnitPrice = productionParty.salesman;
+  const productionDevopsUnitPrice = productionParty.devops;
+  const designAndProductionManufacturerUnitPrice = designParty.manufacturer;
+  const designAndProductionSalesmanUnitPrice = designParty.salesman;
+  const designAndProductionDevopsUnitPrice = designParty.devops;
   return {
     requestorAnchorId,
     amount: productionPrice,
@@ -147,8 +225,15 @@ export function normalizeSpecialRequestorPrice(item = {}, fallback = {}) {
     designAndProductionPrice,
     roundBarProductionPrice,
     roundBarDesignAndProductionPrice,
-    manufacturerRequestUnitPrice,
-    devopsRequestUnitPrice,
+    manufacturerRequestUnitPrice: productionManufacturerUnitPrice,
+    devopsRequestUnitPrice: productionDevopsUnitPrice,
+    salesmanRequestUnitPrice: productionSalesmanUnitPrice,
+    productionManufacturerUnitPrice,
+    productionSalesmanUnitPrice,
+    productionDevopsUnitPrice,
+    designAndProductionManufacturerUnitPrice,
+    designAndProductionSalesmanUnitPrice,
+    designAndProductionDevopsUnitPrice,
   };
 }
 
@@ -206,8 +291,10 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     ...creditSettings,
   });
   const membership = pickAbutsAbutmentCreditPrices(abutmentPrices, "membership");
+  const sharePercents = readSharePercents(creditSettings, SCHEMA_DEFAULTS);
   const withRoundBar = {
     ...abutmentPrices,
+    ...buildNormalizedTierPartyFields(creditSettings, SCHEMA_DEFAULTS),
     membershipRoundBarProductionPrice: Number(
       creditSettings.membershipRoundBarProductionPrice ??
         SCHEMA_DEFAULTS.membershipRoundBarProductionPrice,
@@ -234,12 +321,16 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       : [],
     shippingFee: Number(creditSettings.shippingFee ?? SCHEMA_DEFAULTS.shippingFee),
     manufacturerRequestUnitPrice: Number(
-      creditSettings.manufacturerRequestUnitPrice ??
+      withRoundBar.membershipProductionManufacturerUnitPrice ??
         SCHEMA_DEFAULTS.manufacturerRequestUnitPrice,
     ),
     devopsRequestUnitPrice: Number(
-      creditSettings.devopsRequestUnitPrice ??
+      withRoundBar.membershipProductionDevopsUnitPrice ??
         SCHEMA_DEFAULTS.devopsRequestUnitPrice,
+    ),
+    salesmanRequestUnitPrice: Number(
+      withRoundBar.membershipProductionSalesmanUnitPrice ??
+        SCHEMA_DEFAULTS.salesmanRequestUnitPrice,
     ),
     manufacturerShippingUnitPrice: Number(
       creditSettings.manufacturerShippingUnitPrice ??
@@ -281,6 +372,9 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     ),
     // 환영 배송 분리 지급 폐기. 로드 시에도 0으로 정규화.
     defaultShippingFreeCredit: 0,
+    manufacturerSharePercent: sharePercents.manufacturer,
+    salesmanSharePercent: sharePercents.salesman,
+    devopsSharePercent: sharePercents.devops,
     ...withRoundBar,
   };
 }

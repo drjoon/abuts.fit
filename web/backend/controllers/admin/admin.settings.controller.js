@@ -34,6 +34,60 @@ import { normalizeConfiguredRushFeeMultiplier } from "../../utils/practiceTransf
 const normalizeCreditSettings = (raw = {}) =>
   normalizeLoadedCreditSettings(raw);
 
+const CNC_TIER_PARTY_PREFIXES = [
+  "membershipProduction",
+  "regularProduction",
+  "membershipDesignAndProduction",
+  "regularDesignAndProduction",
+];
+const PARTY_KINDS = ["Manufacturer", "Salesman", "Devops"];
+
+function sanitizeOptionalAmount(value) {
+  const n = Number(value);
+  if (Number.isNaN(n) || n < 0) return null;
+  return n;
+}
+
+function sanitizeSharePercent(value) {
+  const n = Number(value);
+  if (Number.isNaN(n) || n < 0) return null;
+  return Math.min(100, Math.round(n * 100) / 100);
+}
+
+function appendTierPartyFields(payload, sanitized) {
+  for (const prefix of CNC_TIER_PARTY_PREFIXES) {
+    for (const kind of PARTY_KINDS) {
+      const key = `${prefix}${kind}UnitPrice`;
+      const next = sanitizeOptionalAmount(payload[key]);
+      if (next != null) sanitized[key] = next;
+    }
+  }
+}
+
+function appendSpecialPartyFields(item, target) {
+  const pairs = [
+    ["productionManufacturerUnitPrice", item?.productionManufacturerUnitPrice],
+    ["productionSalesmanUnitPrice", item?.productionSalesmanUnitPrice],
+    ["productionDevopsUnitPrice", item?.productionDevopsUnitPrice],
+    [
+      "designAndProductionManufacturerUnitPrice",
+      item?.designAndProductionManufacturerUnitPrice,
+    ],
+    [
+      "designAndProductionSalesmanUnitPrice",
+      item?.designAndProductionSalesmanUnitPrice,
+    ],
+    [
+      "designAndProductionDevopsUnitPrice",
+      item?.designAndProductionDevopsUnitPrice,
+    ],
+  ];
+  for (const [key, raw] of pairs) {
+    const next = sanitizeOptionalAmount(raw);
+    if (next != null) target[key] = next;
+  }
+}
+
 export async function getSystemSettings(req, res) {
   try {
     const leadDays = await getDeliveryEtaLeadDays();
@@ -297,6 +351,7 @@ export async function updateCreditSettings(req, res) {
       payload.manufacturerRequestUnitPrice,
     );
     const devopsRequestUnitPrice = Number(payload.devopsRequestUnitPrice);
+    const salesmanRequestUnitPrice = Number(payload.salesmanRequestUnitPrice);
     const manufacturerShippingUnitPrice = Number(
       payload.manufacturerShippingUnitPrice,
     );
@@ -330,6 +385,11 @@ export async function updateCreditSettings(req, res) {
       payload.practiceMembershipMonthlyFee,
     );
     const defaultRequestFreeCredit = Number(payload.defaultRequestFreeCredit);
+    const manufacturerSharePercent = sanitizeSharePercent(
+      payload.manufacturerSharePercent,
+    );
+    const salesmanSharePercent = sanitizeSharePercent(payload.salesmanSharePercent);
+    const devopsSharePercent = sanitizeSharePercent(payload.devopsSharePercent);
     const specialRequestorPrices = Array.isArray(payload.specialRequestorPrices)
       ? payload.specialRequestorPrices
           .map((item) => {
@@ -354,6 +414,9 @@ export async function updateCreditSettings(req, res) {
             const specialDevopsRequestUnitPrice = Number(
               item?.devopsRequestUnitPrice,
             );
+            const specialSalesmanRequestUnitPrice = Number(
+              item?.salesmanRequestUnitPrice,
+            );
             if (
               !Types.ObjectId.isValid(requestorAnchorId) ||
               !Number.isFinite(productionPrice) ||
@@ -361,7 +424,7 @@ export async function updateCreditSettings(req, res) {
             ) {
               return null;
             }
-            return {
+            const row = {
               requestorAnchorId: new Types.ObjectId(requestorAnchorId),
               amount: productionPrice,
               productionPrice,
@@ -396,7 +459,18 @@ export async function updateCreditSettings(req, res) {
                     ),
                   }
                 : {}),
+              ...(Number.isFinite(specialSalesmanRequestUnitPrice) &&
+              specialSalesmanRequestUnitPrice >= 0
+                ? {
+                    salesmanRequestUnitPrice: Math.max(
+                      0,
+                      specialSalesmanRequestUnitPrice,
+                    ),
+                  }
+                : {}),
             };
+            appendSpecialPartyFields(item, row);
+            return row;
           })
           .filter(Boolean)
       : null;
@@ -416,6 +490,12 @@ export async function updateCreditSettings(req, res) {
     }
     if (!Number.isNaN(devopsRequestUnitPrice) && devopsRequestUnitPrice >= 0) {
       sanitized.devopsRequestUnitPrice = devopsRequestUnitPrice;
+    }
+    if (
+      !Number.isNaN(salesmanRequestUnitPrice) &&
+      salesmanRequestUnitPrice >= 0
+    ) {
+      sanitized.salesmanRequestUnitPrice = salesmanRequestUnitPrice;
     }
     if (
       !Number.isNaN(manufacturerShippingUnitPrice) &&
@@ -466,6 +546,19 @@ export async function updateCreditSettings(req, res) {
       sanitized.regularDesignAndProductionPrice =
         regularDesignAndProductionPrice;
     }
+    appendTierPartyFields(payload, sanitized);
+    if (sanitized.membershipProductionManufacturerUnitPrice != null) {
+      sanitized.manufacturerRequestUnitPrice =
+        sanitized.membershipProductionManufacturerUnitPrice;
+    }
+    if (sanitized.membershipProductionDevopsUnitPrice != null) {
+      sanitized.devopsRequestUnitPrice =
+        sanitized.membershipProductionDevopsUnitPrice;
+    }
+    if (sanitized.membershipProductionSalesmanUnitPrice != null) {
+      sanitized.salesmanRequestUnitPrice =
+        sanitized.membershipProductionSalesmanUnitPrice;
+    }
     if (
       !Number.isNaN(membershipRoundBarProductionPrice) &&
       membershipRoundBarProductionPrice >= 0
@@ -504,6 +597,15 @@ export async function updateCreditSettings(req, res) {
     }
     if (!Number.isNaN(defaultRequestFreeCredit) && defaultRequestFreeCredit >= 0) {
       sanitized.defaultRequestFreeCredit = defaultRequestFreeCredit;
+    }
+    if (manufacturerSharePercent != null) {
+      sanitized.manufacturerSharePercent = manufacturerSharePercent;
+    }
+    if (salesmanSharePercent != null) {
+      sanitized.salesmanSharePercent = salesmanSharePercent;
+    }
+    if (devopsSharePercent != null) {
+      sanitized.devopsSharePercent = devopsSharePercent;
     }
     // 환영 배송 분리 지급 폐기. 레거시 필드는 항상 0으로 정규화.
     sanitized.defaultShippingFreeCredit = 0;
