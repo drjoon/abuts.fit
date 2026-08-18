@@ -90,6 +90,7 @@
  * - 2026-08-18: 의뢰 수정 저장 후 임시저장 목록 재조회를 기다리지 않음.
  * - 2026-08-18: 상세 「의뢰 수정」은 좌측 의뢰정보 상단. 목록 카드 메타는 1행 1항목.
  * - 2026-08-18: 기공의뢰 카드 외곽선 제거. 상단 5버튼을 동기화 상태 행으로 이동(Express/Expert).
+ * - 2026-08-18: Express 보철물도 Expert와 같이 full 치식(16칸).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -5730,7 +5731,7 @@ export const PracticeFileTransferPage = ({
 
   const practiceTransferRequestIntakeProps: PracticeTransferRequestIntakePanelProps = {
     variant: "plain",
-    toothChartDisplayMode: isExpressMode ? "compact" : "full",
+    toothChartDisplayMode: "full",
                     selectedLab,
                   setSelectedLab,
                   labOpen,
@@ -5949,7 +5950,7 @@ export const PracticeFileTransferPage = ({
       activeClassName="ring-2 ring-primary/30"
       className="h-full min-h-0 bg-gradient-subtle"
     >
-      <div className={cn("mx-auto h-full min-h-0 space-y-3 p-4", isExpressMode ? "max-w-6xl" : "max-w-7xl")}>
+      <div className="mx-auto h-full min-h-0 max-w-7xl space-y-3 p-4">
         {roleSwitcher ? (
           <div className="flex flex-wrap items-center gap-2">{roleSwitcher}</div>
         ) : null}

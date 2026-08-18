@@ -35,6 +35,7 @@ import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWor
 // - 2026-08-15: 체크는 실제 방문 단계만. 새로 작성 시 방문·파일 캐시 리셋.
 // - 2026-08-15: 스텝·진행률은 카드 헤더(제목 오른쪽)로 이동.
 // - 2026-08-15: 체크 표시는 일정 기본값·빈 파일을 제외(게이트와 분리).
+// - 2026-08-18: Express 보철물도 Expert와 같이 full 치식(16칸).
 
 export type PracticeTransferExpressStepId =
   | "lab"
@@ -219,6 +220,7 @@ export function PracticeTransferExpressWizard({
       ...requestIntakeProps,
       variant: "plain" as const,
       hideEnlargeButton: true,
+      toothChartDisplayMode: "full" as const,
       showFeeEstimate: stepId === "prosthesis" || stepId === "confirm",
     };
     switch (stepId) {
