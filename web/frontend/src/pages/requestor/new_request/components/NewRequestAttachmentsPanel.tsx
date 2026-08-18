@@ -1150,7 +1150,7 @@ export function NewRequestAttachmentsPanel({
           fileInputId="new-request-stl-upload"
           onFiles={onFilesSelected}
           accept={NEW_REQUEST_STL_ACCEPT}
-          acceptedHint="STL"
+          acceptedHint=""
           filterFiles={(incoming) => incoming}
           compact={hasAnyAttachment}
           label="여기를 클릭하거나 STL 파일을 드래그해 추가하세요."
