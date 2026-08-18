@@ -580,6 +580,7 @@ Notes:
     - `BusinessPaidAccessGate`, 사이드바 `isPaidRequestorPath`, 설정 `PAID_REQUESTOR_SETTINGS_TABS`
     - 변경 후 `notifyRequestorAccessUpdated`
   - 기공의뢰서: 발신=`kind===practice`, 수신=`kind===lab` (`PracticeTransferRoleTabs`)
+  - 치과 사이드: 「기공의뢰」메인 행 + 서브 `구강스캔으로`(`/dashboard/practice-transfers?mode=send`, 서비스 2·3) · `어벗디자인으로`(`/dashboard/new-request`, 서비스 1). 기공소 사이드는 기공의뢰수신·어벗생산의뢰 유지.
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
   - 계정 전환: `AccountSwitcher`
 

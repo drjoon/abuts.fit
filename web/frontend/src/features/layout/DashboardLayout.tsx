@@ -10,6 +10,8 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-18: 치과 사이드 — 기공의뢰 메인 + 구강스캔으로/어벗디자인으로 서브.
+// - 2026-08-18: 치과 사이드 — 기공의뢰 그룹 아래 구강스캔/어벗디자인 서브(관리자 섹션과 동일).
 // - 2026-08-18: 계정 뱃지 salesman=딜러, admin=관리자 (USER_ROLE_LABEL).
 // - 2026-08-17: 관리자 설정 그룹에「사업영역」(플랫폼 설정 아래).
 // - 2026-08-17: 기공소·어벗츠기공소·개발운영사 사이드에 정산 복구.
@@ -60,7 +62,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/design/DesignPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
-// - web/frontend/src/shared/ui/gigongAbutAccent.ts
+// - web/frontend/src/features/layout/DashboardSidebarNav.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -75,11 +77,7 @@ import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPat
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { LabFeeSetupPrompt } from "@/features/settings/LabFeeSetupPrompt";
-import {
-  getRequestorRoleBadgeLabel,
-  isPaidRequestorSidebarLocked,
-  PAID_ACCESS_DISABLED_HINT,
-} from "@/shared/business/requestorCapabilities";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 import { getAppUserRoleLabel } from "@/shared/types/role";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -95,12 +93,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -126,7 +118,6 @@ import {
   CheckCircle,
   SlidersHorizontal,
   Layers,
-  type LucideIcon,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -142,25 +133,15 @@ import {
   type ColleagueAccount,
 } from "@/features/layout/AccountSwitcher";
 import {
-  gigongAbutConnectorLineClass,
-  type GigongAbutAccentKey,
-} from "@/shared/ui/gigongAbutAccent";
+  DashboardSidebarNav,
+  sidebarItemPath,
+  type DashboardSidebarItem,
+} from "@/features/layout/DashboardSidebarNav";
 
 /** DashboardLayout StrictMode remount에도 토큰당 unread 시드 API 1회만 */
 const practiceUnreadSeededTokens = new Set<string>();
 
-type SidebarItem = {
-  icon: LucideIcon;
-  label: string;
-  href: string;
-  /** 사이드바 호버 빠른툴팁(선택) */
-  tooltip?: string;
-  /** 기공/어벗 가로 연결선 액센트 */
-  accent?: GigongAbutAccentKey;
-};
-
-const sidebarItemPath = (href: string) =>
-  String(href || "").split("?")[0].replace(/\/$/, "") || "/";
+type SidebarItem = DashboardSidebarItem;
 
 /** 사이드바 충전 뱃지 임계(공급가). 충전 단위(기공소 50만/치과 100만)와 별개. */
 const CREDIT_LOW_BALANCE_THRESHOLD = 500_000;
@@ -174,43 +155,65 @@ const requestorSidebarCommonTail: SidebarItem[] = [
 
 const ABUTMENT_REQUEST_TOOLTIP =
   "커스텀어벗 디자인을 올려서 CNC 생산 의뢰";
+const PRACTICE_ORAL_SCAN_HREF = "/dashboard/practice-transfers?mode=send";
+const PRACTICE_ABUTMENT_DESIGN_HREF = "/dashboard/new-request";
+const PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP =
+  "구강스캔으로 커스텀어벗 디자인+생산, 지그·임시치아·지르 보철 의뢰";
+const PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP =
+  "완성된 어벗 디자인(STL)으로 CNC 생산 의뢰";
 
 const buildRequestorSidebarItems = (
   kind: "practice" | "lab" | null,
 ): SidebarItem[] => {
-  const transferItem: SidebarItem =
-    kind === "lab"
-      ? {
-          icon: Building2,
-          label: "기공의뢰수신",
-          href: "/dashboard/practice-transfers?mode=receive",
-          tooltip:
-            "구강스캔 파일을 받아서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 처리",
-          accent: "기공",
-        }
-      : {
-          icon: Building2,
-          label: "기공의뢰",
-          href: "/dashboard/practice-transfers?mode=send",
-          tooltip:
-            "구강스캔 파일을 올려서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 의뢰",
-          accent: "기공",
-        };
+  if (kind === "lab") {
+    return [
+      { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+      {
+        icon: Building2,
+        label: "기공의뢰수신",
+        href: "/dashboard/practice-transfers?mode=receive",
+        tooltip:
+          "구강스캔 파일을 받아서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 처리",
+        accent: "기공",
+      },
+      {
+        icon: FileText,
+        label: "어벗생산의뢰",
+        href: "/dashboard/new-request",
+        tooltip: ABUTMENT_REQUEST_TOOLTIP,
+        accent: "어벗",
+      },
+      { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
+      { icon: Wallet, label: "정산", href: "/dashboard/payments" },
+      ...requestorSidebarCommonTail,
+    ];
+  }
 
   return [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    transferItem,
     {
-      icon: FileText,
-      label: "어벗생산의뢰",
-      href: "/dashboard/new-request",
-      tooltip: ABUTMENT_REQUEST_TOOLTIP,
-      accent: "어벗",
+      icon: Building2,
+      label: "기공의뢰",
+      href: PRACTICE_ORAL_SCAN_HREF,
+      tooltip: "구강스캔 또는 완성 디자인으로 기공 의뢰",
+      children: [
+        {
+          icon: Building2,
+          label: "구강스캔으로",
+          href: PRACTICE_ORAL_SCAN_HREF,
+          tooltip: PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP,
+          accent: "기공",
+        },
+        {
+          icon: FileText,
+          label: "어벗디자인으로",
+          href: PRACTICE_ABUTMENT_DESIGN_HREF,
+          tooltip: PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP,
+          accent: "어벗",
+        },
+      ],
     },
     { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
-    ...(kind === "lab"
-      ? [{ icon: Wallet, label: "정산", href: "/dashboard/payments" }]
-      : []),
     ...requestorSidebarCommonTail,
   ];
 };
@@ -1426,150 +1429,17 @@ export const DashboardLayout = () => {
                 ))}
               </div>
             ) : (
-              <ul className="space-y-1 lg:space-y-2">
-                {resolvedMenuItems.map((item) => {
-                  const itemPath = sidebarItemPath(item.href);
-                  const isRootDashboard = itemPath === "/dashboard";
-                  const isActive = isRootDashboard
-                    ? location.pathname === itemPath
-                    : location.pathname === itemPath ||
-                      location.pathname.startsWith(`${itemPath}/`);
-                  const isCreditsLowHighlight =
-                    isCreditLow && itemPath === CREDITS_HREF && !isActive;
-                  const paidLocked =
-                    user.role === "requestor" &&
-                    isPaidRequestorSidebarLocked({
-                      kind: requestorKind,
-                      canUsePaid: requestorCanUsePaid,
-                      href: item.href,
-                    });
-                  const quickTooltip = paidLocked
-                    ? PAID_ACCESS_DISABLED_HINT
-                    : isCreditsLowHighlight
-                      ? "크레딧이 부족합니다. 충전해주세요."
-                      : item.tooltip;
-
-                  const button = (
-                    <Button
-                      variant="ghost"
-                      disabled={paidLocked}
-                      className={`relative z-[1] w-full h-10 lg:h-11 gap-1.5 text-sm lg:text-base transition-all ${
-                        isCollapsed
-                          ? "justify-center px-2"
-                          : "justify-start px-3 lg:px-4"
-                      } ${
-                        paidLocked
-                          ? "cursor-not-allowed opacity-50"
-                          : isActive
-                            ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                      }`}
-                      onClick={() => {
-                        if (paidLocked) return;
-                        goSidebarHref(item.href);
-                      }}
-                      aria-current={isActive ? "page" : undefined}
-                      aria-label={
-                        isCreditsLowHighlight
-                          ? "크레딧 부족 — 충전 탭으로 이동"
-                          : undefined
-                      }
-                    >
-                      <item.icon className="h-4 w-4 flex-shrink-0" />
-                      {!isCollapsed && (
-                        <span className="truncate flex-1">{item.label}</span>
-                      )}
-                      {(() => {
-                        const badgeCount = getSidebarBadgeCount(item.href);
-                        if (!isCollapsed) {
-                          if (isCreditsLowHighlight) {
-                            return (
-                              <Badge
-                                variant="outline"
-                                className="ml-auto h-5 animate-pulse border-accent-muted bg-accent text-accent-foreground px-1.5 text-[10px] font-semibold leading-none flex-shrink-0"
-                              >
-                                충전
-                              </Badge>
-                            );
-                          }
-                          return badgeCount > 0 ? (
-                            <Badge
-                              variant="destructive"
-                              className="ml-auto h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0"
-                            >
-                              {badgeCount > 99 ? "99+" : badgeCount}
-                            </Badge>
-                          ) : null;
-                        }
-                        if (isCreditsLowHighlight) {
-                          return (
-                            <span
-                              aria-hidden
-                              className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
-                            />
-                          );
-                        }
-                        return badgeCount > 0 ? (
-                          <span
-                            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-semibold leading-none text-white"
-                            aria-label={`미확인 ${badgeCount}건`}
-                          >
-                            {badgeCount > 99 ? "99+" : badgeCount}
-                          </span>
-                        ) : null;
-                      })()}
-                    </Button>
-                  );
-
-                  const buttonWithAccent = item.accent ? (
-                    <div className="relative">
-                      <div
-                        aria-hidden
-                        className={gigongAbutConnectorLineClass(item.accent)}
-                      />
-                      {button}
-                    </div>
-                  ) : (
-                    button
-                  );
-
-                  return (
-                    <li key={item.href}>
-                      {quickTooltip ? (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                className={`block w-full ${
-                                  paidLocked ? "cursor-not-allowed" : ""
-                                }`}
-                              >
-                                <span
-                                  className={
-                                    paidLocked
-                                      ? "pointer-events-none block"
-                                      : "block"
-                                  }
-                                >
-                                  {buttonWithAccent}
-                                </span>
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent
-                              side="right"
-                              className="max-w-xs text-center"
-                            >
-                              <p>{quickTooltip}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      ) : (
-                        buttonWithAccent
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
+              <DashboardSidebarNav
+                items={resolvedMenuItems}
+                isCollapsed={isCollapsed}
+                pathname={location.pathname}
+                isCreditLow={isCreditLow}
+                userRole={user.role}
+                requestorKind={requestorKind}
+                requestorCanUsePaid={requestorCanUsePaid}
+                onNavigate={goSidebarHref}
+                getBadgeCount={getSidebarBadgeCount}
+              />
             )}
           </nav>
 
