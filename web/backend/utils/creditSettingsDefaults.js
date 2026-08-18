@@ -7,6 +7,7 @@
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
 // - 2026-08-17: practiceRushFeeMultiplier(기공의뢰 신속처리 할증) 추가.
+// - 2026-08-18: CNC 분배 비율 멤버(60+20+5+15)·일반(60+10+30) 분리.
 // - 2026-08-18: CNC 매출 분배 공통 비율(%) — 티어별 금액은 매출×비율로 산출.
 // - 2026-08-18: CNC 티어별·특별공급가 항목별 건당 분배 필드.
 // - 2026-08-18: salesmanRequestUnitPrice(영업자 건당) 추가.
@@ -43,13 +44,43 @@ const CNC_TIER_REVENUE_KEYS = {
   regularDesignAndProduction: "regularDesignAndProductionPrice",
 };
 
+const CNC_TIER_SHARE_KIND = {
+  membershipProduction: "membership",
+  regularProduction: "regular",
+  membershipDesignAndProduction: "membership",
+  regularDesignAndProduction: "regular",
+};
+
 function clampSharePercent(value, fallback = 0) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return fallback;
   return Math.min(100, Math.round(n * 100) / 100);
 }
 
-function readSharePercents(creditSettings = {}, schemaDefaults = SCHEMA_DEFAULTS) {
+function readSharePercents(
+  creditSettings = {},
+  schemaDefaults = SCHEMA_DEFAULTS,
+  kind = "membership",
+) {
+  if (kind === "regular") {
+    return {
+      manufacturer: clampSharePercent(
+        creditSettings.regularManufacturerSharePercent ??
+          schemaDefaults.regularManufacturerSharePercent,
+        schemaDefaults.regularManufacturerSharePercent,
+      ),
+      salesman: clampSharePercent(
+        creditSettings.regularSalesmanSharePercent ??
+          schemaDefaults.regularSalesmanSharePercent,
+        schemaDefaults.regularSalesmanSharePercent,
+      ),
+      devops: clampSharePercent(
+        creditSettings.regularDevopsSharePercent ??
+          schemaDefaults.regularDevopsSharePercent,
+        schemaDefaults.regularDevopsSharePercent,
+      ),
+    };
+  }
   return {
     manufacturer: clampSharePercent(
       creditSettings.manufacturerSharePercent ??
@@ -89,10 +120,14 @@ function pickTierPartySchemaDefaults(pickDefault) {
 
 function buildNormalizedTierPartyFields(creditSettings = {}, schemaDefaults = {}) {
   const merged = { ...schemaDefaults, ...creditSettings };
-  const shares = readSharePercents(merged, schemaDefaults);
   const out = {};
   for (const prefix of CNC_TIER_PARTY_PREFIXES) {
     const revenueKey = CNC_TIER_REVENUE_KEYS[prefix];
+    const shares = readSharePercents(
+      merged,
+      schemaDefaults,
+      CNC_TIER_SHARE_KIND[prefix],
+    );
     const party = allocateRevenueByPercent(merged[revenueKey], shares);
     out[`${prefix}ManufacturerUnitPrice`] = party.manufacturer;
     out[`${prefix}SalesmanUnitPrice`] = party.salesman;
@@ -162,6 +197,15 @@ const SCHEMA_DEFAULTS = (() => {
     manufacturerSharePercent: pickDefault("creditSettings.manufacturerSharePercent"),
     salesmanSharePercent: pickDefault("creditSettings.salesmanSharePercent"),
     devopsSharePercent: pickDefault("creditSettings.devopsSharePercent"),
+    regularManufacturerSharePercent: pickDefault(
+      "creditSettings.regularManufacturerSharePercent",
+    ),
+    regularSalesmanSharePercent: pickDefault(
+      "creditSettings.regularSalesmanSharePercent",
+    ),
+    regularDevopsSharePercent: pickDefault(
+      "creditSettings.regularDevopsSharePercent",
+    ),
     ...pickTierPartySchemaDefaults(pickDefault),
   };
 })();
@@ -206,7 +250,7 @@ export function normalizeSpecialRequestorPrice(item = {}, fallback = {}) {
         : (fallback.membershipRoundBarDesignAndProductionPrice ?? 0),
     ) || 0,
   );
-  const shares = readSharePercents(fallback, SCHEMA_DEFAULTS);
+  const shares = readSharePercents(fallback, SCHEMA_DEFAULTS, "membership");
   const productionParty = allocateRevenueByPercent(productionPrice, shares);
   const designParty = allocateRevenueByPercent(
     designAndProductionPrice,
@@ -268,7 +312,7 @@ export function applySpecialRequestorPricesToCreditSettings(
     0,
     Number(special.roundBarDesignAndProductionPrice) || 0,
   );
-  return {
+  const overlaid = {
     ...creditSettings,
     minCreditForRequest: productionPrice,
     designFee: Math.max(0, designAndProductionPrice - productionPrice),
@@ -283,6 +327,10 @@ export function applySpecialRequestorPricesToCreditSettings(
     regularRoundBarDesignAndProductionPrice:
       roundBarDesignAndProductionPrice,
   };
+  return {
+    ...overlaid,
+    ...buildNormalizedTierPartyFields(overlaid, SCHEMA_DEFAULTS),
+  };
 }
 
 export function normalizeLoadedCreditSettings(creditSettings = {}) {
@@ -291,7 +339,16 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     ...creditSettings,
   });
   const membership = pickAbutsAbutmentCreditPrices(abutmentPrices, "membership");
-  const sharePercents = readSharePercents(creditSettings, SCHEMA_DEFAULTS);
+  const membershipShares = readSharePercents(
+    creditSettings,
+    SCHEMA_DEFAULTS,
+    "membership",
+  );
+  const regularShares = readSharePercents(
+    creditSettings,
+    SCHEMA_DEFAULTS,
+    "regular",
+  );
   const withRoundBar = {
     ...abutmentPrices,
     ...buildNormalizedTierPartyFields(creditSettings, SCHEMA_DEFAULTS),
@@ -372,9 +429,12 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     ),
     // 환영 배송 분리 지급 폐기. 로드 시에도 0으로 정규화.
     defaultShippingFreeCredit: 0,
-    manufacturerSharePercent: sharePercents.manufacturer,
-    salesmanSharePercent: sharePercents.salesman,
-    devopsSharePercent: sharePercents.devops,
+    manufacturerSharePercent: membershipShares.manufacturer,
+    salesmanSharePercent: membershipShares.salesman,
+    devopsSharePercent: membershipShares.devops,
+    regularManufacturerSharePercent: regularShares.manufacturer,
+    regularSalesmanSharePercent: regularShares.salesman,
+    regularDevopsSharePercent: regularShares.devops,
     ...withRoundBar,
   };
 }
@@ -406,11 +466,27 @@ export async function loadCreditSettingsDefaults(options = {}) {
   const pricingTier =
     await resolveRequestorAbutmentPricingTier(requestorOrgId);
   const picked = pickAbutsAbutmentCreditPrices(withSpecial, pricingTier);
+  const membership = pricingTier === "membership";
   return {
     ...withSpecial,
     minCreditForRequest: picked.productionPrice,
     designFee: picked.designFeePerTooth,
     abutmentPricingTier: picked.pricingTier,
+    manufacturerRequestUnitPrice: Number(
+      membership
+        ? withSpecial.membershipProductionManufacturerUnitPrice
+        : withSpecial.regularProductionManufacturerUnitPrice,
+    ),
+    salesmanRequestUnitPrice: Number(
+      membership
+        ? withSpecial.membershipProductionSalesmanUnitPrice
+        : withSpecial.regularProductionSalesmanUnitPrice,
+    ),
+    devopsRequestUnitPrice: Number(
+      membership
+        ? withSpecial.membershipProductionDevopsUnitPrice
+        : withSpecial.regularProductionDevopsUnitPrice,
+    ),
   };
 }
 

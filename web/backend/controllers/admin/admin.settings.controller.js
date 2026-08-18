@@ -390,6 +390,15 @@ export async function updateCreditSettings(req, res) {
     );
     const salesmanSharePercent = sanitizeSharePercent(payload.salesmanSharePercent);
     const devopsSharePercent = sanitizeSharePercent(payload.devopsSharePercent);
+    const regularManufacturerSharePercent = sanitizeSharePercent(
+      payload.regularManufacturerSharePercent,
+    );
+    const regularSalesmanSharePercent = sanitizeSharePercent(
+      payload.regularSalesmanSharePercent,
+    );
+    const regularDevopsSharePercent = sanitizeSharePercent(
+      payload.regularDevopsSharePercent,
+    );
     const specialRequestorPrices = Array.isArray(payload.specialRequestorPrices)
       ? payload.specialRequestorPrices
           .map((item) => {
@@ -606,6 +615,15 @@ export async function updateCreditSettings(req, res) {
     }
     if (devopsSharePercent != null) {
       sanitized.devopsSharePercent = devopsSharePercent;
+    }
+    if (regularManufacturerSharePercent != null) {
+      sanitized.regularManufacturerSharePercent = regularManufacturerSharePercent;
+    }
+    if (regularSalesmanSharePercent != null) {
+      sanitized.regularSalesmanSharePercent = regularSalesmanSharePercent;
+    }
+    if (regularDevopsSharePercent != null) {
+      sanitized.regularDevopsSharePercent = regularDevopsSharePercent;
     }
     // 환영 배송 분리 지급 폐기. 레거시 필드는 항상 0으로 정규화.
     sanitized.defaultShippingFreeCredit = 0;

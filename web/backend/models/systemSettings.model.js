@@ -32,23 +32,23 @@ const systemSettingsSchema = new mongoose.Schema(
       // CNC 티어별 건당 분배(제조사·영업자·개발운영사). 어벗츠=매출−합계.
       membershipProductionManufacturerUnitPrice: { type: Number, default: 9000 },
       membershipProductionSalesmanUnitPrice: { type: Number, default: 3000 },
-      membershipProductionDevopsUnitPrice: { type: Number, default: 1000 },
-      regularProductionManufacturerUnitPrice: { type: Number, default: 9000 },
-      regularProductionSalesmanUnitPrice: { type: Number, default: 3000 },
-      regularProductionDevopsUnitPrice: { type: Number, default: 1000 },
-      membershipDesignAndProductionManufacturerUnitPrice: { type: Number, default: 9000 },
-      membershipDesignAndProductionSalesmanUnitPrice: { type: Number, default: 3000 },
-      membershipDesignAndProductionDevopsUnitPrice: { type: Number, default: 1000 },
-      regularDesignAndProductionManufacturerUnitPrice: { type: Number, default: 9000 },
-      regularDesignAndProductionSalesmanUnitPrice: { type: Number, default: 3000 },
-      regularDesignAndProductionDevopsUnitPrice: { type: Number, default: 1000 },
-      // CNC 매출 분배 공통 비율(%). 어벗츠=매출−(제조사+영업자+개발운영사).
+      membershipProductionDevopsUnitPrice: { type: Number, default: 750 },
+      regularProductionManufacturerUnitPrice: { type: Number, default: 12000 },
+      regularProductionSalesmanUnitPrice: { type: Number, default: 0 },
+      regularProductionDevopsUnitPrice: { type: Number, default: 2000 },
+      membershipDesignAndProductionManufacturerUnitPrice: { type: Number, default: 15000 },
+      membershipDesignAndProductionSalesmanUnitPrice: { type: Number, default: 5000 },
+      membershipDesignAndProductionDevopsUnitPrice: { type: Number, default: 1250 },
+      regularDesignAndProductionManufacturerUnitPrice: { type: Number, default: 24000 },
+      regularDesignAndProductionSalesmanUnitPrice: { type: Number, default: 0 },
+      regularDesignAndProductionDevopsUnitPrice: { type: Number, default: 4000 },
+      // CNC 매출 분배 비율(%). 멤버=영업자 포함, 일반=영업자 없음. 어벗츠=잔여.
       manufacturerSharePercent: { type: Number, default: 60 },
       salesmanSharePercent: { type: Number, default: 20 },
-      devopsSharePercent: {
-        type: Number,
-        default: 1000 / 15000 * 100,
-      },
+      devopsSharePercent: { type: Number, default: 5 },
+      regularManufacturerSharePercent: { type: Number, default: 60 },
+      regularSalesmanSharePercent: { type: Number, default: 0 },
+      regularDevopsSharePercent: { type: Number, default: 10 },
       membershipRoundBarProductionPrice: { type: Number, default: 0 },
       regularRoundBarProductionPrice: { type: Number, default: 0 },
       membershipRoundBarDesignAndProductionPrice: { type: Number, default: 0 },
@@ -85,7 +85,7 @@ const systemSettingsSchema = new mongoose.Schema(
       // 제조사(기공소·면세) 하청 공급가
       manufacturerRequestUnitPrice: { type: Number, default: 9000 },
       // 개발운영사 어벗 생산 외주 공급가(1어벗당). 지급 시 +VAT.
-      devopsRequestUnitPrice: { type: Number, default: 1000 },
+      devopsRequestUnitPrice: { type: Number, default: 750 },
       // 영업자(영업자BA) 어벗 생산 수수료(1어벗당). 지급 시 +VAT. 없으면 어벗츠 귀속.
       salesmanRequestUnitPrice: { type: Number, default: 3000 },
       manufacturerShippingUnitPrice: { type: Number, default: 3500 },

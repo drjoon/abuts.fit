@@ -1,4 +1,10 @@
 // change-log:
+// - 2026-08-18: 금액 입력 스피너 숨김·원 접미사 여백 확보(숫자 잘림 방지).
+// - 2026-08-18: 분배 비율 스피너 5% 단위.
+// - 2026-08-18: 분배 비율 라벨 — 영업자 포함(소개코드 있음)/비포함(없음).
+// - 2026-08-18: 분배 비율을 페이지 상단 카드로. 자동저장 문구 제거·UI 단순화.
+// - 2026-08-18: 분배 비율을 멤버(60+20+5+15)·일반(60+10+30) 두 식으로 분리.
+// - 2026-08-18: 공통 분배 비율을 맨 위로. CNC·디자인비 매출만 5열, 환봉은 제외.
 // - 2026-08-18: CNC 분배 공통 %(맨 위) — 항목별 매출만 입력, 분배는 비율×매출.
 // - 2026-08-18: 분배 행 UI 개선·자동저장 상태 표시(700ms 디바운스).
 // - 2026-08-18: CNC·특별공급가 항목별 제조사/영업자/개발운영사 분배(공통 설정 제거).
@@ -75,10 +81,9 @@ import {
   CloudUpload,
   Crown,
   Gift,
-  HandCoins,
-  Hexagon,
   Loader2,
   Package,
+  Percent,
   Plus,
   Search,
   Truck,
@@ -128,6 +133,9 @@ interface CreditSettings {
   manufacturerSharePercent: number;
   salesmanSharePercent: number;
   devopsSharePercent: number;
+  regularManufacturerSharePercent: number;
+  regularSalesmanSharePercent: number;
+  regularDevopsSharePercent: number;
 }
 
 type TierPartyPrefix =
@@ -187,12 +195,20 @@ type CreditPriceRequestorsApiResponse = {
 const AUTO_SAVE_DELAY_MS = 700;
 const AMOUNT_STEP = 1000;
 const SHIPPING_AMOUNT_STEP = 500;
-const PERCENT_STEP = 0.1;
+const PERCENT_STEP = 5;
 
-const DEFAULT_SHARE_PERCENTS = {
+type ShareKind = "membership" | "regular";
+
+const MEMBERSHIP_SHARE_PERCENTS = {
   manufacturer: 60,
   salesman: 20,
-  devops: (1000 / 15000) * 100,
+  devops: 5,
+};
+
+const REGULAR_SHARE_PERCENTS = {
+  manufacturer: 60,
+  salesman: 0,
+  devops: 10,
 };
 
 function clampSharePercent(value: number, fallback = 0): number {
@@ -201,19 +217,39 @@ function clampSharePercent(value: number, fallback = 0): number {
   return Math.min(100, Math.round(n * 100) / 100);
 }
 
-function readSharePercents(settings: Partial<CreditSettings>) {
+function readSharePercents(
+  settings: Partial<CreditSettings>,
+  kind: ShareKind = "membership",
+) {
+  if (kind === "regular") {
+    return {
+      manufacturer: clampSharePercent(
+        settings.regularManufacturerSharePercent ??
+          REGULAR_SHARE_PERCENTS.manufacturer,
+        REGULAR_SHARE_PERCENTS.manufacturer,
+      ),
+      salesman: clampSharePercent(
+        settings.regularSalesmanSharePercent ?? REGULAR_SHARE_PERCENTS.salesman,
+        REGULAR_SHARE_PERCENTS.salesman,
+      ),
+      devops: clampSharePercent(
+        settings.regularDevopsSharePercent ?? REGULAR_SHARE_PERCENTS.devops,
+        REGULAR_SHARE_PERCENTS.devops,
+      ),
+    };
+  }
   return {
     manufacturer: clampSharePercent(
-      settings.manufacturerSharePercent ?? DEFAULT_SHARE_PERCENTS.manufacturer,
-      DEFAULT_SHARE_PERCENTS.manufacturer,
+      settings.manufacturerSharePercent ?? MEMBERSHIP_SHARE_PERCENTS.manufacturer,
+      MEMBERSHIP_SHARE_PERCENTS.manufacturer,
     ),
     salesman: clampSharePercent(
-      settings.salesmanSharePercent ?? DEFAULT_SHARE_PERCENTS.salesman,
-      DEFAULT_SHARE_PERCENTS.salesman,
+      settings.salesmanSharePercent ?? MEMBERSHIP_SHARE_PERCENTS.salesman,
+      MEMBERSHIP_SHARE_PERCENTS.salesman,
     ),
     devops: clampSharePercent(
-      settings.devopsSharePercent ?? DEFAULT_SHARE_PERCENTS.devops,
-      DEFAULT_SHARE_PERCENTS.devops,
+      settings.devopsSharePercent ?? MEMBERSHIP_SHARE_PERCENTS.devops,
+      MEMBERSHIP_SHARE_PERCENTS.devops,
     ),
   };
 }
@@ -239,21 +275,6 @@ function allocateRevenueByPercent(
 }
 
 type AutoSaveState = "idle" | "pending" | "saving" | "saved";
-
-type DistributionCellVariant =
-  | "revenue"
-  | "manufacturer"
-  | "salesman"
-  | "devops";
-
-const DISTRIBUTION_CELL_STYLES: Record<DistributionCellVariant, string> = {
-  revenue:
-    "border-primary-muted/70 bg-primary-soft/25 focus-within:ring-primary-muted/60",
-  manufacturer:
-    "border-slate-200/90 bg-white focus-within:ring-slate-200",
-  salesman: "border-sky-200/80 bg-sky-50/50 focus-within:ring-sky-200",
-  devops: "border-violet-200/80 bg-violet-50/50 focus-within:ring-violet-200",
-};
 
 function parseTierLabel(label: string): { title: string; badge?: string } {
   const match = label.match(/^(.+?)\((.+)\)$/);
@@ -295,14 +316,6 @@ function AutoSaveIndicator({ state }: { state: AutoSaveState }) {
   );
 }
 
-function FormulaOperator({ children }: { children: string }) {
-  return (
-    <span className="hidden pb-2 text-base font-medium text-slate-300 sm:inline">
-      {children}
-    </span>
-  );
-}
-
 const CNC_DEFAULT_TIERS: Array<{
   label: string;
   revenueKey:
@@ -311,26 +324,31 @@ const CNC_DEFAULT_TIERS: Array<{
     | "membershipDesignAndProductionPrice"
     | "regularDesignAndProductionPrice";
   partyPrefix: TierPartyPrefix;
+  shareKind: ShareKind;
 }> = [
   {
     label: "CNC 생산(멤버)",
     revenueKey: "membershipProductionPrice",
     partyPrefix: "membershipProduction",
+    shareKind: "membership",
   },
   {
     label: "CNC 생산(일반)",
     revenueKey: "regularProductionPrice",
     partyPrefix: "regularProduction",
+    shareKind: "regular",
   },
   {
     label: "CNC D+P(멤버)",
     revenueKey: "membershipDesignAndProductionPrice",
     partyPrefix: "membershipDesignAndProduction",
+    shareKind: "membership",
   },
   {
     label: "CNC D+P(일반)",
     revenueKey: "regularDesignAndProductionPrice",
     partyPrefix: "regularDesignAndProduction",
+    shareKind: "regular",
   },
 ];
 
@@ -341,7 +359,10 @@ function tierPartyFieldKey(prefix: TierPartyPrefix, kind: PartyKind): keyof Cred
 function readTierParty(settings: Partial<CreditSettings>, prefix: TierPartyPrefix): TierParty {
   const tier = CNC_DEFAULT_TIERS.find((item) => item.partyPrefix === prefix);
   const revenue = tier ? Number(settings[tier.revenueKey] ?? 0) || 0 : 0;
-  return allocateRevenueByPercent(revenue, readSharePercents(settings));
+  return allocateRevenueByPercent(
+    revenue,
+    readSharePercents(settings, tier?.shareKind ?? "membership"),
+  );
 }
 
 function buildNormalizedTierPartyFields(
@@ -363,11 +384,13 @@ function buildNormalizedTierPartyFields(
   | "regularDesignAndProductionDevopsUnitPrice"
 > {
   const merged = { ...fallback, ...raw };
-  const shares = readSharePercents(merged);
   const out = {} as Record<string, number>;
   for (const tier of CNC_DEFAULT_TIERS) {
     const revenue = Number(merged[tier.revenueKey] ?? 0) || 0;
-    const party = allocateRevenueByPercent(revenue, shares);
+    const party = allocateRevenueByPercent(
+      revenue,
+      readSharePercents(merged, tier.shareKind),
+    );
     out[tierPartyFieldKey(tier.partyPrefix, "Manufacturer")] = party.manufacturer;
     out[tierPartyFieldKey(tier.partyPrefix, "Salesman")] = party.salesman;
     out[tierPartyFieldKey(tier.partyPrefix, "Devops")] = party.devops;
@@ -391,19 +414,19 @@ function buildNormalizedTierPartyFields(
 
 function syncComputedPartyFields(settings: CreditSettings): CreditSettings {
   const tierFields = buildNormalizedTierPartyFields(settings, settings);
-  const shares = readSharePercents(settings);
+  const membershipShares = readSharePercents(settings, "membership");
   const membershipParty = allocateRevenueByPercent(
     settings.membershipProductionPrice,
-    shares,
+    membershipShares,
   );
   const specialRequestorPrices = settings.specialRequestorPrices.map((item) => {
     const productionParty = allocateRevenueByPercent(
       item.productionPrice,
-      shares,
+      membershipShares,
     );
     const designParty = allocateRevenueByPercent(
       item.designAndProductionPrice,
-      shares,
+      membershipShares,
     );
     return {
       ...item,
@@ -436,6 +459,9 @@ function buildSharePercentSavePayload(
     manufacturerSharePercent: synced.manufacturerSharePercent,
     salesmanSharePercent: synced.salesmanSharePercent,
     devopsSharePercent: synced.devopsSharePercent,
+    regularManufacturerSharePercent: synced.regularManufacturerSharePercent,
+    regularSalesmanSharePercent: synced.regularSalesmanSharePercent,
+    regularDevopsSharePercent: synced.regularDevopsSharePercent,
     ...buildNormalizedTierPartyFields(synced, synced),
     manufacturerRequestUnitPrice: synced.manufacturerRequestUnitPrice,
     salesmanRequestUnitPrice: synced.salesmanRequestUnitPrice,
@@ -470,34 +496,13 @@ function buildTierSavePayload(
   return payload;
 }
 
-function formatWonAmount(value: number): string {
-  return `${Math.max(0, Math.round(Number(value) || 0)).toLocaleString("ko-KR")}원`;
-}
-
-function computeAbutsShare(
-  revenue: number,
-  manufacturer: number,
-  salesman: number,
-  devops: number,
-): number {
-  return Math.max(
-    0,
-    Math.round(Number(revenue) || 0) -
-      Math.max(0, Math.round(Number(manufacturer) || 0)) -
-      Math.max(0, Math.round(Number(salesman) || 0)) -
-      Math.max(0, Math.round(Number(devops) || 0)),
-  );
-}
-
-function DistributionAmountCell({
+function PercentField({
   id,
   label,
   value,
   onChange,
   disabled,
   readOnly = false,
-  variant,
-  step = AMOUNT_STEP,
 }: {
   id: string;
   label: string;
@@ -505,288 +510,186 @@ function DistributionAmountCell({
   onChange?: (next: number) => void;
   disabled?: boolean;
   readOnly?: boolean;
-  variant: DistributionCellVariant;
-  step?: number;
 }) {
-  if (readOnly) {
-    return (
-      <div
-        className={`rounded-xl border px-2.5 py-2 shadow-sm ${DISTRIBUTION_CELL_STYLES[variant]}`}
-      >
-        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-          {label}
-        </div>
-        <div className="text-right text-[15px] font-semibold tabular-nums tracking-tight text-slate-800">
-          {formatWonAmount(value)}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div
-      className={`rounded-xl border px-2.5 py-2 shadow-sm ring-0 transition-shadow focus-within:ring-2 ${DISTRIBUTION_CELL_STYLES[variant]}`}
-    >
-      <Label
-        htmlFor={id}
-        className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500"
-      >
+    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+      <Label htmlFor={id} className="mb-3 block text-sm font-medium text-slate-800">
         {label}
       </Label>
-      <div className="relative">
-        <Input
-          id={id}
-          type="number"
-          min="0"
-          step={step}
-          className="h-9 border-0 bg-transparent p-0 pr-7 text-right text-[15px] font-semibold tabular-nums tracking-tight shadow-none focus-visible:ring-0"
-          value={value}
-          disabled={disabled}
-          onChange={(event) =>
-            onChange?.(Math.max(0, Number(event.target.value)))
-          }
-        />
-        <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-400">
-          원
-        </span>
-      </div>
+      {readOnly ? (
+        <div className="relative">
+          <div className="flex h-11 items-center justify-end rounded-xl border border-slate-200 bg-slate-50/60 pr-10 text-base font-semibold tabular-nums tracking-tight text-slate-800">
+            {value.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}
+          </div>
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+            %
+          </span>
+        </div>
+      ) : (
+        <div className="relative">
+          <Input
+            id={id}
+            type="number"
+            min="0"
+            max="100"
+            step={PERCENT_STEP}
+            className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
+            value={value}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange?.(clampSharePercent(Number(event.target.value), value))
+            }
+          />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+            %
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
-function SharePercentCell({
-  id,
-  label,
-  value,
-  onChange,
+function SharePercentRow({
+  idPrefix,
+  title,
+  description,
+  shares,
+  showSalesman,
   disabled,
-  variant,
+  onManufacturerChange,
+  onSalesmanChange,
+  onDevopsChange,
 }: {
-  id: string;
-  label: string;
-  value: number;
-  onChange: (next: number) => void;
+  idPrefix: string;
+  title: string;
+  description: string;
+  shares: ReturnType<typeof readSharePercents>;
+  showSalesman: boolean;
   disabled?: boolean;
-  variant: DistributionCellVariant;
+  onManufacturerChange: (next: number) => void;
+  onSalesmanChange?: (next: number) => void;
+  onDevopsChange: (next: number) => void;
 }) {
+  const overAllocated =
+    shares.manufacturer + shares.salesman + shares.devops > 100.001;
+  const abutsPercent = computeAbutsSharePercent(shares);
+
   return (
-    <div
-      className={`rounded-xl border px-2.5 py-2 shadow-sm ring-0 transition-shadow focus-within:ring-2 ${DISTRIBUTION_CELL_STYLES[variant]}`}
-    >
-      <Label
-        htmlFor={id}
-        className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <h4 className="text-sm font-semibold tracking-tight text-slate-800">
+          {title}
+        </h4>
+        <p className="text-[13px] text-muted-foreground">{description}</p>
+        {overAllocated ? (
+          <span className="text-[12px] font-medium text-amber-700">
+            합계 100% 초과
+          </span>
+        ) : null}
+      </div>
+      <div
+        className={`grid gap-3 sm:grid-cols-2 ${
+          showSalesman ? "lg:grid-cols-4" : "lg:grid-cols-3"
+        }`}
       >
-        {label}
-      </Label>
-      <div className="relative">
-        <Input
-          id={id}
-          type="number"
-          min="0"
-          max="100"
-          step={PERCENT_STEP}
-          className="h-9 border-0 bg-transparent p-0 pr-6 text-right text-[15px] font-semibold tabular-nums tracking-tight shadow-none focus-visible:ring-0"
-          value={value}
+        <PercentField
+          id={`${idPrefix}-manufacturer`}
+          label="제조사"
+          value={shares.manufacturer}
           disabled={disabled}
-          onChange={(event) =>
-            onChange(clampSharePercent(Number(event.target.value), value))
-          }
+          onChange={onManufacturerChange}
         />
-        <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-400">
-          %
-        </span>
+        {showSalesman ? (
+          <PercentField
+            id={`${idPrefix}-salesman`}
+            label="영업자"
+            value={shares.salesman}
+            disabled={disabled}
+            onChange={onSalesmanChange}
+          />
+        ) : null}
+        <PercentField
+          id={`${idPrefix}-devops`}
+          label="개발운영사"
+          value={shares.devops}
+          disabled={disabled}
+          onChange={onDevopsChange}
+        />
+        <PercentField
+          id={`${idPrefix}-abuts`}
+          label="어벗츠"
+          value={abutsPercent}
+          readOnly
+        />
       </div>
     </div>
   );
 }
 
 function SharePercentPanel({
-  shares,
-  abutsPercent,
+  membershipShares,
+  regularShares,
   disabled,
-  saveState,
-  onManufacturerChange,
-  onSalesmanChange,
-  onDevopsChange,
+  onMembershipChange,
+  onRegularChange,
 }: {
-  shares: ReturnType<typeof readSharePercents>;
-  abutsPercent: number;
+  membershipShares: ReturnType<typeof readSharePercents>;
+  regularShares: ReturnType<typeof readSharePercents>;
   disabled?: boolean;
-  saveState?: AutoSaveState;
-  onManufacturerChange: (next: number) => void;
-  onSalesmanChange: (next: number) => void;
-  onDevopsChange: (next: number) => void;
+  onMembershipChange: (
+    patch: Partial<
+      Pick<
+        CreditSettings,
+        | "manufacturerSharePercent"
+        | "salesmanSharePercent"
+        | "devopsSharePercent"
+      >
+    >,
+  ) => void;
+  onRegularChange: (
+    patch: Partial<
+      Pick<
+        CreditSettings,
+        | "regularManufacturerSharePercent"
+        | "regularSalesmanSharePercent"
+        | "regularDevopsSharePercent"
+      >
+    >,
+  ) => void;
 }) {
-  const overAllocated =
-    shares.manufacturer + shares.salesman + shares.devops > 100.001;
-
   return (
-    <div
-      className={`overflow-hidden rounded-2xl border shadow-sm ring-1 ring-black/[0.02] ${
-        overAllocated
-          ? "border-amber-200/90 bg-gradient-to-br from-amber-50/40 to-white"
-          : "border-slate-200/80 bg-gradient-to-br from-white to-slate-50/70"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100/90 bg-white/70 px-4 py-2.5">
-        <div>
-          <div className="text-sm font-semibold tracking-tight text-slate-900">
-            분배 비율 (공통)
-          </div>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
-            항목별 매출에 동일 비율을 적용합니다. 어벗츠는 잔여분입니다.
-          </p>
-        </div>
-        <AutoSaveIndicator state={saveState ?? "idle"} />
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end">
-        <SharePercentCell
-          id="manufacturerSharePercent"
-          label="제조사"
-          value={shares.manufacturer}
-          disabled={disabled}
-          variant="manufacturer"
-          onChange={onManufacturerChange}
-        />
-        <FormulaOperator>+</FormulaOperator>
-        <SharePercentCell
-          id="salesmanSharePercent"
-          label="영업자"
-          value={shares.salesman}
-          disabled={disabled}
-          variant="salesman"
-          onChange={onSalesmanChange}
-        />
-        <FormulaOperator>+</FormulaOperator>
-        <SharePercentCell
-          id="devopsSharePercent"
-          label="개발운영사"
-          value={shares.devops}
-          disabled={disabled}
-          variant="devops"
-          onChange={onDevopsChange}
-        />
-        <FormulaOperator>+</FormulaOperator>
-        <div className="col-span-2 rounded-xl border border-primary-muted/60 bg-primary-soft/30 px-3 py-2 shadow-sm sm:col-span-1">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary-strong/80">
-            어벗츠
-          </div>
-          <div
-            className={`text-right text-[15px] font-bold tabular-nums tracking-tight ${
-              overAllocated ? "text-amber-700" : "text-primary-strong"
-            }`}
-          >
-            {abutsPercent.toLocaleString("ko-KR", {
-              maximumFractionDigits: 1,
-            })}
-            %
-          </div>
-        </div>
-      </div>
-
-      {overAllocated ? (
-        <p className="border-t border-amber-100/80 bg-amber-50/50 px-4 py-2 text-[11px] leading-relaxed text-amber-800">
-          분배 비율 합계가 100%를 초과합니다. 어벗츠 잔여분이 0%가 됩니다.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function RevenueDistributionRow({
-  label,
-  revenueId,
-  revenueValue,
-  onRevenueChange,
-  manufacturer,
-  salesman,
-  devops,
-  disabled,
-  saveState = "idle",
-}: {
-  label: string;
-  revenueId: string;
-  revenueValue: number;
-  onRevenueChange: (next: number) => void;
-  manufacturer: number;
-  salesman: number;
-  devops: number;
-  disabled?: boolean;
-  saveState?: AutoSaveState;
-}) {
-  const abutsShare = computeAbutsShare(
-    revenueValue,
-    manufacturer,
-    salesman,
-    devops,
-  );
-  const { title, badge } = parseTierLabel(label);
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white to-slate-50/70 shadow-sm ring-1 ring-black/[0.02]">
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100/90 bg-white/70 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-semibold tracking-tight text-slate-900">
-            {title}
-          </span>
-          {badge ? (
-            <span className="shrink-0 rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-semibold text-primary-strong ring-1 ring-primary-muted/60">
-              {badge}
-            </span>
-          ) : null}
-        </div>
-        <AutoSaveIndicator state={saveState} />
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-[minmax(0,1.15fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end">
-        <DistributionAmountCell
-          id={revenueId}
-          label="매출"
-          value={revenueValue}
-          disabled={disabled}
-          step={AMOUNT_STEP}
-          variant="revenue"
-          onChange={onRevenueChange}
-        />
-        <FormulaOperator>=</FormulaOperator>
-        <DistributionAmountCell
-          id={`${revenueId}-manufacturer`}
-          label="제조사"
-          value={manufacturer}
-          disabled={disabled}
-          variant="manufacturer"
-          readOnly
-        />
-        <FormulaOperator>+</FormulaOperator>
-        <DistributionAmountCell
-          id={`${revenueId}-salesman`}
-          label="영업자"
-          value={salesman}
-          disabled={disabled}
-          variant="salesman"
-          readOnly
-        />
-        <FormulaOperator>+</FormulaOperator>
-        <DistributionAmountCell
-          id={`${revenueId}-devops`}
-          label="개발운영사"
-          value={devops}
-          disabled={disabled}
-          variant="devops"
-          readOnly
-        />
-        <FormulaOperator>+</FormulaOperator>
-        <div className="col-span-2 rounded-xl border border-primary-muted/60 bg-primary-soft/30 px-3 py-2 shadow-sm sm:col-span-1">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary-strong/80">
-            어벗츠
-          </div>
-          <div className="text-right text-[15px] font-bold tabular-nums tracking-tight text-primary-strong">
-            {formatWonAmount(abutsShare)}
-          </div>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <SharePercentRow
+        idPrefix="membershipShare"
+        title="영업자 포함"
+        description="의뢰자 소개 코드에 영업자 있음"
+        shares={membershipShares}
+        showSalesman
+        disabled={disabled}
+        onManufacturerChange={(manufacturerSharePercent) =>
+          onMembershipChange({ manufacturerSharePercent })
+        }
+        onSalesmanChange={(salesmanSharePercent) =>
+          onMembershipChange({ salesmanSharePercent })
+        }
+        onDevopsChange={(devopsSharePercent) =>
+          onMembershipChange({ devopsSharePercent })
+        }
+      />
+      <SharePercentRow
+        idPrefix="regularShare"
+        title="영업자 비포함"
+        description="의뢰자 소개 코드에 영업자 없음"
+        shares={regularShares}
+        showSalesman={false}
+        disabled={disabled}
+        onManufacturerChange={(regularManufacturerSharePercent) =>
+          onRegularChange({ regularManufacturerSharePercent })
+        }
+        onDevopsChange={(regularDevopsSharePercent) =>
+          onRegularChange({ regularDevopsSharePercent })
+        }
+      />
     </div>
   );
 }
@@ -814,7 +717,7 @@ function normalizeSpecialRequestorPrice(
         : productionPrice + legacyDesignFee,
     ) || 0,
   );
-  const shares = readSharePercents(fallback);
+  const shares = readSharePercents(fallback, "membership");
   const productionParty = allocateRevenueByPercent(productionPrice, shares);
   const designParty = allocateRevenueByPercent(
     designAndProductionPrice,
@@ -962,25 +865,49 @@ function normalizeCreditSettings(
       Number(
         (raw as CreditSettings).manufacturerSharePercent ??
           (fallback as CreditSettings).manufacturerSharePercent ??
-          DEFAULT_SHARE_PERCENTS.manufacturer,
+          MEMBERSHIP_SHARE_PERCENTS.manufacturer,
       ),
-      DEFAULT_SHARE_PERCENTS.manufacturer,
+      MEMBERSHIP_SHARE_PERCENTS.manufacturer,
     ),
     salesmanSharePercent: clampSharePercent(
       Number(
         (raw as CreditSettings).salesmanSharePercent ??
           (fallback as CreditSettings).salesmanSharePercent ??
-          DEFAULT_SHARE_PERCENTS.salesman,
+          MEMBERSHIP_SHARE_PERCENTS.salesman,
       ),
-      DEFAULT_SHARE_PERCENTS.salesman,
+      MEMBERSHIP_SHARE_PERCENTS.salesman,
     ),
     devopsSharePercent: clampSharePercent(
       Number(
         (raw as CreditSettings).devopsSharePercent ??
           (fallback as CreditSettings).devopsSharePercent ??
-          DEFAULT_SHARE_PERCENTS.devops,
+          MEMBERSHIP_SHARE_PERCENTS.devops,
       ),
-      DEFAULT_SHARE_PERCENTS.devops,
+      MEMBERSHIP_SHARE_PERCENTS.devops,
+    ),
+    regularManufacturerSharePercent: clampSharePercent(
+      Number(
+        (raw as CreditSettings).regularManufacturerSharePercent ??
+          (fallback as CreditSettings).regularManufacturerSharePercent ??
+          REGULAR_SHARE_PERCENTS.manufacturer,
+      ),
+      REGULAR_SHARE_PERCENTS.manufacturer,
+    ),
+    regularSalesmanSharePercent: clampSharePercent(
+      Number(
+        (raw as CreditSettings).regularSalesmanSharePercent ??
+          (fallback as CreditSettings).regularSalesmanSharePercent ??
+          REGULAR_SHARE_PERCENTS.salesman,
+      ),
+      REGULAR_SHARE_PERCENTS.salesman,
+    ),
+    regularDevopsSharePercent: clampSharePercent(
+      Number(
+        (raw as CreditSettings).regularDevopsSharePercent ??
+          (fallback as CreditSettings).regularDevopsSharePercent ??
+          REGULAR_SHARE_PERCENTS.devops,
+      ),
+      REGULAR_SHARE_PERCENTS.devops,
     ),
     ...buildNormalizedTierPartyFields({ ...fallback, ...raw, ...abutmentPrices }, {
       ...CREDIT_SETTINGS_DEFAULTS,
@@ -1019,6 +946,58 @@ function FieldHelp({ text }: { text: string }) {
         {text}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function SalesAmountCard({
+  id,
+  title,
+  badge,
+  value,
+  onChange,
+  disabled,
+  saveState = "idle",
+  help,
+}: {
+  id: string;
+  title: string;
+  badge?: string;
+  value: number;
+  onChange: (next: number) => void;
+  disabled?: boolean;
+  saveState?: AutoSaveState;
+  help?: string;
+}) {
+  const label = badge ? `${title} (${badge})` : title;
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Label htmlFor={id} className="text-sm font-medium text-slate-800">
+            {label}
+          </Label>
+          {help ? <FieldHelp text={help} /> : null}
+        </div>
+        <AutoSaveIndicator state={saveState} />
+      </div>
+      <div className="relative">
+        <Input
+          id={id}
+          type="number"
+          min="0"
+          step={AMOUNT_STEP}
+          className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
+          value={value}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange(Math.max(0, Number(event.target.value)))
+          }
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+          원
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -1070,146 +1049,6 @@ function AmountField({
           disabled={disabled}
         />
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
-          원
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function DualTierAmountField({
-  label,
-  membershipId,
-  regularId,
-  membershipValue,
-  regularValue,
-  onMembershipChange,
-  onRegularChange,
-  disabled,
-  help,
-  icon: Icon,
-  step = AMOUNT_STEP,
-}: {
-  label: string;
-  membershipId: string;
-  regularId: string;
-  membershipValue: number;
-  regularValue: number;
-  onMembershipChange: (next: number) => void;
-  onRegularChange: (next: number) => void;
-  disabled?: boolean;
-  help?: string;
-  icon?: typeof Gift;
-  step?: number;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
-      <div className="mb-3 flex items-center gap-2">
-        {Icon ? (
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200/80">
-            <Icon className="h-4 w-4 text-slate-600" />
-          </span>
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <div className="text-sm font-medium text-slate-800">{label}</div>
-            {help ? <FieldHelp text={help} /> : null}
-          </div>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <Label
-            htmlFor={membershipId}
-            className="mb-1.5 block text-[11px] font-medium text-slate-500"
-          >
-            멤버십
-          </Label>
-          <div className="relative">
-            <Input
-              id={membershipId}
-              type="number"
-              min="0"
-              step={step}
-              className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
-              value={membershipValue}
-              onChange={(e) =>
-                onMembershipChange(Math.max(0, Number(e.target.value)))
-              }
-              disabled={disabled}
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
-              원
-            </span>
-          </div>
-        </div>
-        <div>
-          <Label
-            htmlFor={regularId}
-            className="mb-1.5 block text-[11px] font-medium text-slate-500"
-          >
-            일반
-          </Label>
-          <div className="relative">
-            <Input
-              id={regularId}
-              type="number"
-              min="0"
-              step={step}
-              className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-10 text-right text-base font-semibold tabular-nums tracking-tight"
-              value={regularValue}
-              onChange={(e) =>
-                onRegularChange(Math.max(0, Number(e.target.value)))
-              }
-              disabled={disabled}
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
-              원
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CompactAmountInput({
-  id,
-  label,
-  value,
-  onChange,
-  disabled,
-  step = AMOUNT_STEP,
-}: {
-  id: string;
-  label: string;
-  value: number;
-  onChange: (next: number) => void;
-  disabled?: boolean;
-  step?: number;
-}) {
-  return (
-    <div>
-      <Label
-        htmlFor={id}
-        className="mb-1.5 block text-[11px] font-medium text-slate-500"
-      >
-        {label}
-      </Label>
-      <div className="relative">
-        <Input
-          id={id}
-          type="number"
-          min="0"
-          step={step}
-          className="h-10 rounded-xl border-slate-200 bg-slate-50/60 pr-9 text-right font-semibold tabular-nums"
-          value={value}
-          disabled={disabled}
-          onChange={(event) =>
-            onChange(Math.max(0, Number(event.target.value)))
-          }
-        />
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">
           원
         </span>
       </div>
@@ -1296,9 +1135,12 @@ export const AdminCreditSettingsTab = ({
     normalizeCreditSettings(CREDIT_SETTINGS_DEFAULTS, {
       ...CREDIT_SETTINGS_DEFAULTS,
       specialRequestorPrices: [],
-      manufacturerSharePercent: DEFAULT_SHARE_PERCENTS.manufacturer,
-      salesmanSharePercent: DEFAULT_SHARE_PERCENTS.salesman,
-      devopsSharePercent: DEFAULT_SHARE_PERCENTS.devops,
+      manufacturerSharePercent: MEMBERSHIP_SHARE_PERCENTS.manufacturer,
+      salesmanSharePercent: MEMBERSHIP_SHARE_PERCENTS.salesman,
+      devopsSharePercent: MEMBERSHIP_SHARE_PERCENTS.devops,
+      regularManufacturerSharePercent: REGULAR_SHARE_PERCENTS.manufacturer,
+      regularSalesmanSharePercent: REGULAR_SHARE_PERCENTS.salesman,
+      regularDevopsSharePercent: REGULAR_SHARE_PERCENTS.devops,
     } as CreditSettings),
   );
   const [requestors, setRequestors] = useState<RequestorItem[]>([]);
@@ -1441,6 +1283,9 @@ export const AdminCreditSettingsTab = ({
           | "manufacturerSharePercent"
           | "salesmanSharePercent"
           | "devopsSharePercent"
+          | "regularManufacturerSharePercent"
+          | "regularSalesmanSharePercent"
+          | "regularDevopsSharePercent"
         >
       >,
     ) => {
@@ -1760,11 +1605,27 @@ export const AdminCreditSettingsTab = ({
 
         {showCustomAbut ? (
           <>
-            <div className="px-0.5">
-              <p className="text-[12px] text-muted-foreground">
-                항목마다 {AUTO_SAVE_DELAY_MS / 1000}초 후 개별 자동 저장됩니다.
-              </p>
-            </div>
+            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+              <CardContent className="space-y-5 p-5 sm:p-6">
+                <SectionHeader
+                  icon={Percent}
+                  title="분배 비율 (공통)"
+                  description="환봉어벗을 제외한 항목 매출에 적용합니다. 어벗츠는 잔여분입니다."
+                  trailing={
+                    <AutoSaveIndicator
+                      state={itemSaveStates.sharePercents ?? "idle"}
+                    />
+                  }
+                />
+                <SharePercentPanel
+                  membershipShares={readSharePercents(settings, "membership")}
+                  regularShares={readSharePercents(settings, "regular")}
+                  disabled={loading}
+                  onMembershipChange={(patch) => updateSharePercent(patch)}
+                  onRegularChange={(patch) => updateSharePercent(patch)}
+                />
+              </CardContent>
+            </Card>
 
             <Card className="app-glass-card app-glass-card--lg overflow-hidden">
               <CardContent className="space-y-5 p-5 sm:p-6">
@@ -1774,42 +1635,22 @@ export const AdminCreditSettingsTab = ({
                   description="특별 공급가가 없으면 이 금액이 적용됩니다."
                 />
 
-                <div className="space-y-4 rounded-2xl border border-slate-200/70 bg-slate-50/40 p-4">
-                  <SubSectionHeader
-                    title="CNC어벗"
-                    description="1어벗당. 매출 = 제조사 + 영업자 + 개발운영사 + 어벗츠(잔여)."
-                  />
-                  <SharePercentPanel
-                    shares={readSharePercents(settings)}
-                    abutsPercent={computeAbutsSharePercent(readSharePercents(settings))}
-                    disabled={loading}
-                    saveState={itemSaveStates.sharePercents ?? "idle"}
-                    onManufacturerChange={(manufacturerSharePercent) =>
-                      updateSharePercent({ manufacturerSharePercent })
-                    }
-                    onSalesmanChange={(salesmanSharePercent) =>
-                      updateSharePercent({ salesmanSharePercent })
-                    }
-                    onDevopsChange={(devopsSharePercent) =>
-                      updateSharePercent({ devopsSharePercent })
-                    }
-                  />
-                  <div className="space-y-3">
+                <div className="space-y-3">
+                  <SubSectionHeader title="CNC어벗 · 디자인비" />
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     {CNC_DEFAULT_TIERS.map((tier) => {
-                      const party = readTierParty(settings, tier.partyPrefix);
+                      const { title, badge } = parseTierLabel(tier.label);
                       const scopeKey = `tier:${tier.partyPrefix}`;
                       return (
-                        <RevenueDistributionRow
+                        <SalesAmountCard
                           key={tier.revenueKey}
-                          label={tier.label}
-                          revenueId={tier.revenueKey}
-                          revenueValue={settings[tier.revenueKey]}
-                          manufacturer={party.manufacturer}
-                          salesman={party.salesman}
-                          devops={party.devops}
+                          id={tier.revenueKey}
+                          title={title}
+                          badge={badge}
+                          value={settings[tier.revenueKey]}
                           disabled={loading}
                           saveState={itemSaveStates[scopeKey] ?? "idle"}
-                          onRevenueChange={(next) => {
+                          onChange={(next) => {
                             applySettingsUpdate((prev) => {
                               const patch: Partial<CreditSettings> = {
                                 [tier.revenueKey]: next,
@@ -1843,15 +1684,13 @@ export const AdminCreditSettingsTab = ({
                         />
                       );
                     })}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:max-w-xs">
-                    <AmountField
+                    <SalesAmountCard
                       id="abutmentDesignLabFee"
-                      label="디자인비+지그제작비"
-                      icon={HandCoins}
+                      title="디자인비+지그"
                       value={settings.abutmentDesignLabFee}
+                      disabled={loading}
+                      saveState={itemSaveStates["misc:designLabFee"] ?? "idle"}
+                      help="기공의뢰에 커스텀어벗이 포함되면 수락 기공소가 디자인한 뒤 지급합니다. 1어벗당. 기본 10,000원."
                       onChange={(next) => {
                         applySettingsUpdate((prev) => ({
                           ...prev,
@@ -1862,64 +1701,69 @@ export const AdminCreditSettingsTab = ({
                             settingsRef.current.abutmentDesignLabFee,
                         }));
                       }}
-                      disabled={loading}
-                      help="기공의뢰에 커스텀어벗이 포함되면 수락 기공소가 디자인한 뒤 지급합니다. 1어벗당. 기본 10,000원."
                     />
+                  </div>
                 </div>
 
-                <div className="space-y-4 rounded-2xl border border-slate-200/70 bg-slate-50/40 p-4">
-                  <SubSectionHeader
-                    title="환봉어벗"
-                    description="1어벗당. 0원이면 가격 별도 고지."
-                  />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <DualTierAmountField
-                      label="생산만"
-                      icon={Hexagon}
-                      membershipId="membershipRoundBarProductionPrice"
-                      regularId="regularRoundBarProductionPrice"
-                      membershipValue={
-                        settings.membershipRoundBarProductionPrice
+                <div className="space-y-3">
+                  <SubSectionHeader title="환봉어벗" />
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    <SalesAmountCard
+                      id="membershipRoundBarProductionPrice"
+                      title="환봉 생산"
+                      badge="멤버"
+                      value={settings.membershipRoundBarProductionPrice}
+                      disabled={loading}
+                      saveState={
+                        itemSaveStates["roundBar:production"] ?? "idle"
                       }
-                      regularValue={settings.regularRoundBarProductionPrice}
-                      onMembershipChange={(next) => {
+                      onChange={(next) => {
                         applySettingsUpdate((prev) => ({
                           ...prev,
                           membershipRoundBarProductionPrice: next,
                         }));
                         scheduleItemSave("roundBar:production", () => ({
                           membershipRoundBarProductionPrice:
-                            settingsRef.current.membershipRoundBarProductionPrice,
+                            settingsRef.current
+                              .membershipRoundBarProductionPrice,
                           regularRoundBarProductionPrice:
                             settingsRef.current.regularRoundBarProductionPrice,
                         }));
                       }}
-                      onRegularChange={(next) => {
+                    />
+                    <SalesAmountCard
+                      id="regularRoundBarProductionPrice"
+                      title="환봉 생산"
+                      badge="일반"
+                      value={settings.regularRoundBarProductionPrice}
+                      disabled={loading}
+                      saveState={
+                        itemSaveStates["roundBar:production"] ?? "idle"
+                      }
+                      onChange={(next) => {
                         applySettingsUpdate((prev) => ({
                           ...prev,
                           regularRoundBarProductionPrice: next,
                         }));
                         scheduleItemSave("roundBar:production", () => ({
                           membershipRoundBarProductionPrice:
-                            settingsRef.current.membershipRoundBarProductionPrice,
+                            settingsRef.current
+                              .membershipRoundBarProductionPrice,
                           regularRoundBarProductionPrice:
                             settingsRef.current.regularRoundBarProductionPrice,
                         }));
                       }}
-                      disabled={loading}
                     />
-                    <DualTierAmountField
-                      label="디자인+생산"
-                      icon={Hexagon}
-                      membershipId="membershipRoundBarDesignAndProductionPrice"
-                      regularId="regularRoundBarDesignAndProductionPrice"
-                      membershipValue={
+                    <SalesAmountCard
+                      id="membershipRoundBarDesignAndProductionPrice"
+                      title="환봉 D+P"
+                      badge="멤버"
+                      value={
                         settings.membershipRoundBarDesignAndProductionPrice
                       }
-                      regularValue={
-                        settings.regularRoundBarDesignAndProductionPrice
-                      }
-                      onMembershipChange={(next) => {
+                      disabled={loading}
+                      saveState={itemSaveStates["roundBar:design"] ?? "idle"}
+                      onChange={(next) => {
                         applySettingsUpdate((prev) => ({
                           ...prev,
                           membershipRoundBarDesignAndProductionPrice: next,
@@ -1933,7 +1777,15 @@ export const AdminCreditSettingsTab = ({
                               .regularRoundBarDesignAndProductionPrice,
                         }));
                       }}
-                      onRegularChange={(next) => {
+                    />
+                    <SalesAmountCard
+                      id="regularRoundBarDesignAndProductionPrice"
+                      title="환봉 D+P"
+                      badge="일반"
+                      value={settings.regularRoundBarDesignAndProductionPrice}
+                      disabled={loading}
+                      saveState={itemSaveStates["roundBar:design"] ?? "idle"}
+                      onChange={(next) => {
                         applySettingsUpdate((prev) => ({
                           ...prev,
                           regularRoundBarDesignAndProductionPrice: next,
@@ -1947,7 +1799,6 @@ export const AdminCreditSettingsTab = ({
                               .regularRoundBarDesignAndProductionPrice,
                         }));
                       }}
-                      disabled={loading}
                     />
                   </div>
                 </div>
@@ -1959,7 +1810,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Search}
                   title="특별 공급가"
-                  description="의뢰자를 검색해 추가한 뒤 CNC·환봉 가격을 입력하세요."
+                  description="의뢰자를 검색해 추가한 뒤 CNC·환봉 매출을 입력하세요."
                   trailing={
                     <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
                       {settings.specialRequestorPrices.length}곳
@@ -1993,9 +1844,9 @@ export const AdminCreditSettingsTab = ({
                       return (
                         <div
                           key={item.requestorAnchorId}
-                          className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white to-slate-50/80 shadow-sm ring-1 ring-black/[0.02]"
+                          className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm"
                         >
-                          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100/90 bg-white/75 px-4 py-3">
+                          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-sm font-semibold text-slate-900">
                                 {requestor?.name || "삭제된 의뢰자"}
@@ -2038,23 +1889,18 @@ export const AdminCreditSettingsTab = ({
                             </Button>
                           </div>
 
-                          <div className="space-y-4 p-4">
-                            <div className="space-y-3">
-                              <SubSectionHeader title="CNC어벗" />
-                            <RevenueDistributionRow
-                              label="CNC 생산"
-                              revenueId={`special-cnc-production-${item.requestorAnchorId}`}
-                              revenueValue={item.productionPrice}
-                              manufacturer={item.productionManufacturerUnitPrice}
-                              salesman={item.productionSalesmanUnitPrice}
-                              devops={item.productionDevopsUnitPrice}
+                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <SalesAmountCard
+                              id={`special-cnc-production-${item.requestorAnchorId}`}
+                              title="CNC 생산"
+                              value={item.productionPrice}
                               disabled={loading}
                               saveState={
                                 itemSaveStates[
                                   `special:${item.requestorAnchorId}:production`
                                 ] ?? "idle"
                               }
-                              onRevenueChange={(productionPrice) =>
+                              onChange={(productionPrice) =>
                                 updateSpecialPrice(
                                   item.requestorAnchorId,
                                   { productionPrice },
@@ -2062,22 +1908,17 @@ export const AdminCreditSettingsTab = ({
                                 )
                               }
                             />
-                            <RevenueDistributionRow
-                              label="CNC D+P"
-                              revenueId={`special-cnc-design-${item.requestorAnchorId}`}
-                              revenueValue={item.designAndProductionPrice}
-                              manufacturer={
-                                item.designAndProductionManufacturerUnitPrice
-                              }
-                              salesman={item.designAndProductionSalesmanUnitPrice}
-                              devops={item.designAndProductionDevopsUnitPrice}
+                            <SalesAmountCard
+                              id={`special-cnc-design-${item.requestorAnchorId}`}
+                              title="CNC D+P"
+                              value={item.designAndProductionPrice}
                               disabled={loading}
                               saveState={
                                 itemSaveStates[
                                   `special:${item.requestorAnchorId}:design`
                                 ] ?? "idle"
                               }
-                              onRevenueChange={(designAndProductionPrice) =>
+                              onChange={(designAndProductionPrice) =>
                                 updateSpecialPrice(
                                   item.requestorAnchorId,
                                   { designAndProductionPrice },
@@ -2085,44 +1926,42 @@ export const AdminCreditSettingsTab = ({
                                 )
                               }
                             />
-                            </div>
-
-                            <div className="space-y-3 rounded-xl border border-slate-200/70 bg-white/70 p-3">
-                              <SubSectionHeader
-                                title="환봉어벗"
-                                description="1어벗당. 0원이면 가격 별도 고지."
-                              />
-                              <div className="grid gap-2 sm:grid-cols-2">
-                              <CompactAmountInput
-                                id={`special-round-production-${item.requestorAnchorId}`}
-                                label="환봉 생산"
-                                value={item.roundBarProductionPrice}
-                                disabled={loading}
-                                step={AMOUNT_STEP}
-                                onChange={(roundBarProductionPrice) =>
-                                  updateSpecialPrice(
-                                    item.requestorAnchorId,
-                                    { roundBarProductionPrice },
-                                    `special:${item.requestorAnchorId}:roundProduction`,
-                                  )
-                                }
-                              />
-                              <CompactAmountInput
-                                id={`special-round-design-${item.requestorAnchorId}`}
-                                label="환봉 D+P"
-                                value={item.roundBarDesignAndProductionPrice}
-                                disabled={loading}
-                                step={AMOUNT_STEP}
-                                onChange={(roundBarDesignAndProductionPrice) =>
-                                  updateSpecialPrice(
-                                    item.requestorAnchorId,
-                                    { roundBarDesignAndProductionPrice },
-                                    `special:${item.requestorAnchorId}:roundDesign`,
-                                  )
-                                }
-                              />
-                            </div>
-                            </div>
+                            <SalesAmountCard
+                              id={`special-round-production-${item.requestorAnchorId}`}
+                              title="환봉 생산"
+                              value={item.roundBarProductionPrice}
+                              disabled={loading}
+                              saveState={
+                                itemSaveStates[
+                                  `special:${item.requestorAnchorId}:roundProduction`
+                                ] ?? "idle"
+                              }
+                              onChange={(roundBarProductionPrice) =>
+                                updateSpecialPrice(
+                                  item.requestorAnchorId,
+                                  { roundBarProductionPrice },
+                                  `special:${item.requestorAnchorId}:roundProduction`,
+                                )
+                              }
+                            />
+                            <SalesAmountCard
+                              id={`special-round-design-${item.requestorAnchorId}`}
+                              title="환봉 D+P"
+                              value={item.roundBarDesignAndProductionPrice}
+                              disabled={loading}
+                              saveState={
+                                itemSaveStates[
+                                  `special:${item.requestorAnchorId}:roundDesign`
+                                ] ?? "idle"
+                              }
+                              onChange={(roundBarDesignAndProductionPrice) =>
+                                updateSpecialPrice(
+                                  item.requestorAnchorId,
+                                  { roundBarDesignAndProductionPrice },
+                                  `special:${item.requestorAnchorId}:roundDesign`,
+                                )
+                              }
+                            />
                           </div>
                         </div>
                       );
