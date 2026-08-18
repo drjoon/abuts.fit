@@ -94,7 +94,7 @@ export function SalesmanCreditTab({
     <TabsContent value="salesman" className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <CreditStatTile
-          label="영업자"
+          label="딜러"
           value={loading ? "…" : summaryForView.totalSalesmen.toLocaleString()}
         />
         <CreditStatTile
@@ -137,7 +137,7 @@ export function SalesmanCreditTab({
         <div className="space-y-5 p-5 sm:p-6">
           <CreditSectionHeader
             icon={Users}
-            title="영업자 크레딧"
+            title="딜러 크레딧"
             description="기간 잔액·수수료·소개 매출입니다. 카드를 누르면 원장을 엽니다."
             trailing={
               <select
@@ -167,7 +167,7 @@ export function SalesmanCreditTab({
             </div>
           ) : salesmanRows.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
-              영업자 데이터가 없습니다.
+              딜러 데이터가 없습니다.
             </div>
           ) : (
             <div ref={salesmanScrollRef}>
@@ -256,7 +256,7 @@ export function SalesmanCreditTab({
 
                       <div className="mt-2 space-y-1 text-xs">
                         <div className="flex justify-between gap-2 text-muted-foreground">
-                          <span>소개 조직 / 영업자</span>
+                          <span>소개 조직 / 딜러</span>
                           <span className="font-medium text-slate-700">
                             {Number(s.performance30d?.referredOrgCount || 0)} /{" "}
                             {Number(s.referredSalesmanCount || 0)}

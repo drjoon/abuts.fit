@@ -120,7 +120,7 @@ export async function computeAffiliateSettlementBalance({
   accountCode = AFFILIATE_SETTLEMENT_ACCOUNTS[ownerRole],
 }) {
   if (!accountCode) throw new Error("Unsupported affiliate ownerRole.");
-  // 제조사·영업자·개발운영사 하청/수수료: 지급은 유료만, 잔액은 공급가(amountExcludingVat).
+  // 제조사·딜러사·개발운영사 하청/수수료: 지급은 유료만, 잔액은 공급가(amountExcludingVat).
   const rows = await LedgerLine.aggregate([
     { $match: { ownerRole, ownerId: ownerAnchorId, accountCode } },
     {
@@ -223,7 +223,7 @@ export function hasPayoutAccount(account) {
  * 실송금이 끝난 뒤에만 GL에 지급을 포스팅한다. 배치 item ID가 idempotency key라
  * 관리자 재클릭/네트워크 재시도에도 이중 지급 원장을 만들지 않는다.
  *
- * 과세 관계사(영업자·개발운영사):
+ * 과세 관계사(딜러사·개발운영사):
  * - amount = 입금 합계(VAT 포함)
  * - amountExcludingVat = 공급가(원장 잔액 차감)
  * - vatAmount = 부가세

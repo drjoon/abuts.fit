@@ -247,7 +247,7 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
               <p className="text-sm text-muted-foreground mb-4">
                 {userRole === "requestor"
                   ? "제조사에게 결제하기 위한 자동이체를 등록합니다."
-                  : "관리자(어벗츠.핏)에게 결제하기 위한 자동이체를 등록합니다."}
+                  : "어벗츠에게 결제하기 위한 자동이체를 등록합니다."}
               </p>
 
               <div className="bg-muted/30 rounded-lg p-4 mb-4">

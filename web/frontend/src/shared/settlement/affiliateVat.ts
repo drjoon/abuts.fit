@@ -6,7 +6,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/shared/settlement/settlementUi.tsx
 
-/** 관계사(영업자·개발운영사) 지급 부가세율. 루트 rules.md §2.3. */
+/** 관계사(딜러사·개발운영사) 지급 부가세율. 루트 rules.md §2.3. */
 export const AFFILIATE_VAT_RATE = 0.1;
 
 export type AffiliateVatSplit = {
@@ -40,9 +40,9 @@ export function vatPctLabel(rate: number = AFFILIATE_VAT_RATE): string {
   return `${Math.round(Number(rate || 0) * 100)}%`;
 }
 
-/** 과세 지급(영업자·개발운영사): 세금계산서. */
+/** 과세 지급(딜러사·개발운영사): 세금계산서. */
 export const SETTLEMENT_TAXABLE_INVOICE_LABEL = "세금계산서";
-/** 면세 경로(치과·기공소·제조사·어벗츠=관리자): 계산서. */
+/** 면세 경로(치과·기공소·제조사·어벗츠): 계산서. */
 export const SETTLEMENT_EXEMPT_INVOICE_LABEL = "계산서";
 
 /** 과세 정산 화면 공통 안내. 행마다 VAT를 붙이지 않는다. */
@@ -55,15 +55,15 @@ export const SETTLEMENT_EXEMPT_PAYOUT_NOTICE =
 
 export const SETTLEMENT_VAT_POLICY = {
   taxable:
-    "부가세는 어벗츠가 영업자·개발운영사에게 지급할 때 붙습니다. 지급액에 부가세 10%를 더하고 세금계산서를 수취합니다.",
+    "부가세는 어벗츠가 딜러사·개발운영사에게 지급할 때 붙습니다. 지급액에 부가세 10%를 더하고 세금계산서를 수취합니다.",
   exempt:
-    "치과·기공소·제조사·어벗츠(관리자) 사이는 면세입니다. 부가세가 없고 세금계산서가 아닌 계산서를 발행합니다.",
+    "치과·기공소·제조사·어벗츠 사이는 면세입니다. 부가세가 없고 세금계산서가 아닌 계산서를 발행합니다.",
   manufacturerEarn:
     "하청 적립은 공급가입니다. 제조사는 기공소(면세)로 등록되어 부가세 없이 지급합니다. 유료만 지급하며 무료는 확인용(지급 0)입니다.",
   salesmanPayout:
-    "영업자 수수료 장부는 공급가입니다. 지급 시 부가세 10%를 더해 세금계산서를 수취합니다.",
+    "딜러사 수수료 장부는 공급가입니다. 지급 시 부가세 10%를 더해 세금계산서를 수취합니다.",
   devopsPayout:
     "개발운영사 잔여 분배 장부는 공급가입니다. 지급 시 부가세 10%를 더해 세금계산서를 수취합니다.",
   adminExempt:
-    "어벗츠(관리자) 잔여 분배는 면세입니다. 부가세 없이 계산서를 발행합니다.",
+    "어벗츠 잔여 분배는 면세입니다. 부가세 없이 계산서를 발행합니다.",
 } as const;

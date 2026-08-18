@@ -7,7 +7,7 @@
 // - rules.md
 
 import { AFFILIATE_VAT_RATE } from "@/shared/settlement/affiliateVat";
-import { getAppUserRoleLabel } from "@/shared/types/role";
+import { sharePartyLabel } from "@/shared/types/role";
 
 export const AREA_KEYS = ["lab", "abutment", "platform"] as const;
 export type AreaKey = (typeof AREA_KEYS)[number];
@@ -102,7 +102,7 @@ export function defaultLabDepartments(): Department[] {
   return [
     createDepartment({
       id: "lab-gigong",
-      name: "기공팀",
+      name: sharePartyLabel("labTeam"),
       role: "labTeam",
       shareKind: "percent",
       sharePercent: 0,
@@ -110,7 +110,7 @@ export function defaultLabDepartments(): Department[] {
     }),
     createDepartment({
       id: "lab-sales",
-      name: "영업팀",
+      name: sharePartyLabel("salesTeam"),
       role: "salesTeam",
       shareKind: "percent",
       sharePercent: 0,
@@ -118,7 +118,7 @@ export function defaultLabDepartments(): Department[] {
     }),
     createDepartment({
       id: "lab-devops",
-      name: "개발운영사",
+      name: sharePartyLabel("devops"),
       role: "devops",
       shareKind: "percent",
       sharePercent: 0,
@@ -131,7 +131,7 @@ export function defaultAbutmentDepartments(): Department[] {
   return [
     createDepartment({
       id: "abut-manufacturer",
-      name: "제조사",
+      name: sharePartyLabel("manufacturer"),
       role: "manufacturer",
       shareKind: "perCase",
       perCaseAmount: DEFAULT_ABUTMENT_UNITS.manufacturer,
@@ -139,7 +139,7 @@ export function defaultAbutmentDepartments(): Department[] {
     }),
     createDepartment({
       id: "abut-devops",
-      name: "개발운영사",
+      name: sharePartyLabel("devops"),
       role: "devops",
       shareKind: "perCase",
       perCaseAmount: DEFAULT_ABUTMENT_UNITS.devops,
@@ -147,7 +147,7 @@ export function defaultAbutmentDepartments(): Department[] {
     }),
     createDepartment({
       id: "abut-salesman",
-      name: "영업자",
+      name: sharePartyLabel("salesman"),
       role: "salesman",
       shareKind: "perCase",
       perCaseAmount: DEFAULT_ABUTMENT_UNITS.salesman,
@@ -156,7 +156,7 @@ export function defaultAbutmentDepartments(): Department[] {
     }),
     createDepartment({
       id: "abut-abuts",
-      name: "어벗츠",
+      name: sharePartyLabel("admin"),
       role: "admin",
       shareKind: "remainder",
       taxable: false,
@@ -168,7 +168,7 @@ export function defaultPlatformDepartments(): Department[] {
   return [
     createDepartment({
       id: "plat-abuts",
-      name: "어벗츠",
+      name: sharePartyLabel("admin"),
       role: "admin",
       shareKind: "percent",
       sharePercent: 90,
@@ -176,7 +176,7 @@ export function defaultPlatformDepartments(): Department[] {
     }),
     createDepartment({
       id: "plat-devops",
-      name: "개발운영사",
+      name: sharePartyLabel("devops"),
       role: "devops",
       shareKind: "percent",
       sharePercent: 10,
@@ -235,7 +235,7 @@ export function payoutWithVat(supply: number, taxable: boolean, rate = AFFILIATE
 }
 
 export function partnerRoleLabel(role: string): string {
-  return getAppUserRoleLabel(role);
+  return sharePartyLabel(role);
 }
 
 export function departmentPoolAmount(pool: number, sharePercent: number): number {

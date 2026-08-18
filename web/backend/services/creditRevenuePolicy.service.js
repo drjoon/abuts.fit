@@ -52,7 +52,7 @@ function roundRate4(value) {
 }
 
 /**
- * 영업자 소개가 없을 때: 영업자 분배비의 절반 → 제조사, 나머지 절반 → 관리자.
+ * 딜러사 소개가 없을 때: 딜러사 분배비의 절반 → 제조사, 나머지 절반 → 어벗츠.
  * 레거시 %분배용. 제조사 고정단가 경로에서는 salesman 몫만 admin에 가산한다.
  */
 export function resolveRatesWithoutSalesman(configuredRates) {
@@ -66,7 +66,7 @@ export function resolveRatesWithoutSalesman(configuredRates) {
   };
 }
 
-/** 잔여(비제조사) 분배율: 영업자 없으면 salesman 몫 → admin. */
+/** 잔여(비제조사) 분배율: 딜러사 없으면 salesman 몫 → admin. */
 export function resolveResidualRatesWithoutSalesman(configuredRates) {
   const rates = resolveConfiguredRevenueRates(configuredRates);
   return {

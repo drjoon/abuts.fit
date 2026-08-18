@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { getBusinessTypeLabel as formatBusinessTypeLabel } from "@/shared/types/role";
 import type { BusinessCredit } from "@/pages/admin/credits/adminCredit.types";
 
 type ApiBusinessCreditsResponse = {
@@ -148,20 +149,8 @@ const normalizeBusinessType = (rawType?: string) => {
   return normalized;
 };
 
-const getBusinessTypeLabel = (type?: string) => {
-  switch (normalizeBusinessType(type)) {
-    case "requestor":
-      return "의뢰자";
-    case "salesman":
-      return "영업자";
-    case "manufacturer":
-      return "제조사";
-    case "devops":
-      return "개발운영사";
-    default:
-      return String(type || "").trim() || "미분류";
-  }
-};
+const getBusinessTypeLabel = (type?: string) =>
+  formatBusinessTypeLabel(normalizeBusinessType(type));
 
 const getBusinessTypeBadgeClass = (type?: string) => {
   switch (normalizeBusinessType(type)) {
@@ -584,7 +573,7 @@ export default function AdminBusinessPage() {
                   [
                     ["all", "전체"],
                     ["requestor", "의뢰자"],
-                    ["salesman", "영업자"],
+                    ["salesman", formatBusinessTypeLabel("salesman")],
                     ["manufacturer", "제조사"],
                     ["devops", "개발운영사"],
                   ] as const

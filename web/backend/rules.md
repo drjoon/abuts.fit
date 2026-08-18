@@ -261,13 +261,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - PracticeTransfer 에스크로 SSOT: **생성(`POST /api/practice/transfers`)** 시 치과 유료+무료 잔액 검사 후 기공소몫·어벗츠몫·예상 배송비를 각각 `PRACTICE_TRANSFER_SPEND_HOLD`로 `PLATFORM_ESCROW`에 보류(`billing.heldAt`/`heldTotal`/`heldLabTotal`/`heldAbutmentTotal`/`heldShippingLabTotal`/`heldShippingAbutsTotal`, 라벨 `기공비 보류(치과→기공소|어벗츠)`/`배송비 보류(치과→기공소|어벗츠)`). UI 견적: `GET /api/practice/transfers/quote-context`(스케줄·수수료율·멤버십 티어) + 치식별 합산(`labFeeSchedule.js`). **자동매칭**은 `autoMatchMinLabRating`(1~5)으로 플랫폼 고정수가(평균×배수: 1=0.8 / 2=0.9 / 3=1 / 4=1.1 / 5=1.2, 1천원 올림)를 `billing.autoMatchBudget` v4로 스냅샷. 평균수가=기공비 설정 기공소 표본에서 1σ 이상치 제외 후 재평균, **매일 KST 자정** `abutsLabFeeAverageWorker`가 `SystemSettings.abutsLabFeeSchedule` 갱신. 생성 시 인증·수가설정·별점 게이트를 통과한 기공소를 `autoMatch.eligibleLabAnchorIds`에 스냅샷. 견적·보류·수락 청구 모두 고정수가(+어벗츠 어벗). **수락(`mark-accepted`)** 시 고정수가로 보류 조정(`PRACTICE_TRANSFER_HOLD_ADJUST`)·`billing.billedAt` 확정(기공크레딧 미지급). **기공소 발송=`mark-complete`** → `releasePracticeTransferLabShare`: 에스크로에서 기공비 **총액**을 기공소 `LAB_SETTLEMENT_CREDIT`로 적립 후, `PRACTICE_TRANSFER_LAB_PLATFORM_FEE`로 기공소 장부에서 플랫폼 수수료 차감→어벗츠 매출(`billing.labSettledAt`). **제조사 발송=포장.발송(packing)** → `releasePracticeTransferAbutmentShare`: 어벗츠몫 에스크로 해제→어벗츠 매출(`billing.abutmentSettledAt`). `settledAt`는 해당 몫이 모두 끝난 시점. 무료로 지불해도 기공소 정산 적립은 유지. **취소/작업취소/거부/휴지통 비우기(하드삭제)/생성실패 정리**는 `rollbackPracticeTransferBilling`으로 hold(lab/abutment)·adjust·release(lab/abutment)·lab_platform_fee·레거시 commit·**lab_shipping·디자인비 ADJUST**를 삭제형 롤백(refType+refId 스윕 보강)·잔액 upsert/emit. 목록 `feeQuote`: 치과=크레딧 소비(`total`), 기공소 UI 주 표기=설정 수가(`labFeeTotal`)·수수료 시 수령(`labSettlementAmount`) 보조.
     - **자동 매칭 성공**(`matchingMode=auto`): 수수료 `BusinessAnchor.payoutRates.platformFeeRate`(기본 **10%**, 레거시 `nonPartnerFeeRate` fallback). 등록/미등록 치과를 나누지 않는다.
     - **지정 기공소**(`matchingMode=direct`): `payoutRates.directPlatformFeeEnabled`가 true일 때만 `directPlatformFeeRate`(기본 **5%**) 적용. **기본 off = 별도 공지 시까지 무료(실효 0%)**.
-    - 걷힌 수수료 금액의 잔여 분배: 제조사는 하청 고정단가 경로와 분리. 수수료 잔액은 영업자·개발운영사·관리자 상대비율로 재분배(루트 `rules.md` §2.3).
+    - 걷힌 수수료 금액의 잔여 분배: 제조사는 하청 고정단가 경로와 분리. 수수료 잔액은 딜러사·개발운영사·어벗츠 상대비율로 재분배(루트 `rules.md` §2.3).
     - 자동 매칭 식별 정보: 치과명·담당자명·기공소명·담당자명은 상대방에게 비공개(`AUTO_MATCH_LAB_DISPLAY_NAME` 유지, 수신 목록 치과 식별 마스킹). **자동매칭 청구는 플랫폼 고정수가(할증 없음)**. 지정 기공소는 생성 시 `billing.labFeeMultiplier` 스냅샷. **매칭 참여 조건**: 어벗츠 인증 통과 AND 설정 ≤ 유효 별점 ≤ 설정+2(선택 1~5; 상한 5 클램프; 평가 3회 이하·미평가는 유효 3점). 별점 수치는 기공소에 공개·치과·메모는 비공개. 평가(1~5)는 매칭·지정 공통. 기공비 배수: 1=0.8 / 2=0.9 / 3=1 / 4=1.1 / 5=1.2.
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
   - eventType: `PRACTICE_TRANSFER_SPEND_HOLD` / `PRACTICE_TRANSFER_HOLD_ADJUST` / `PRACTICE_TRANSFER_ESCROW_RELEASE`(레거시 `PRACTICE_TRANSFER_SPEND_COMMIT` 유지); accountCode: `PLATFORM_ESCROW`, `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부: `기공비 보류` / 기공소: `기공크레딧` 적립(완료 시).
   - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공정산크레딧 → 계좌 이체. 크레딧 페이지 탭은 내역·충전만(기공크레딧 정산 탭 없음; 내역 필터로 기공 버킷 조회).
   - 장부「잔액」(`balanceAfter`): 유료+무료+기공 합산 러닝(현재 잔액과 동일 기준). 버킷별 분리 표시 금지(기공 적립 시 잔액이 리셋되어 보임).
-  - 어벗의뢰(직접 커스텀 어벗 생산 의뢰, `practicePrepaid=false`)는 의뢰자가 설정된 비용을 전액 부담한다. 제조사 하청은 어벗 1개당 고정단가이며, 잔여 분배(영업자·개발운영사·관리자)는 별도 확정 전까지 기존 잔여 비율을 유지한다(`controllers/requests/common.review.helpers.js`).
+  - 어벗의뢰(직접 커스텀 어벗 생산 의뢰, `practicePrepaid=false`)는 의뢰자가 설정된 비용을 전액 부담한다. 제조사 하청은 어벗 1개당 고정단가이며, 잔여 분배(딜러사·개발운영사·어벗츠)는 별도 확정 전까지 기존 잔여 비율을 유지한다(`controllers/requests/common.review.helpers.js`).
 
 - 스커리씁 로트 추적(세척.패킹)은 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
 - 한진 배송조회 자동동기화 장애 우회 정책:
@@ -433,6 +433,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `GET /api/auth/colleagues` — 동일 `businessAnchorId` 활성·승인 계정(본인 제외)
     - `POST /api/auth/switch-account` `{ userId, password }` — JWT 재발급
     - 구현: `controllers/auth/auth.controller.js`, `modules/auth/auth.routes.js`
+    - 롤 한글 SSOT: `utils/roleLabels.js` (User=딜러/관리자, BA=딜러사/어벗츠). 코드 키 salesman/admin 유지.
   - 기공의뢰서 저장 SSOT는 `PracticeTransfer`(`/api/practice/transfers/*`). Request 도메인 혼입 금지.
   - 레거시 혼입 경로(`/api/requests/practice/*`, 구 practice draft)는 제거 대상으로 유지합니다.
 
@@ -747,7 +748,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 부가세(VAT) / 면세 정책(강제, 루트 `rules.md` §2.3) — 이중 체계:
   - **면세**: 치과–기공소–제조사–어벗츠. 크레딧 충전·소비·기공정산·제조사 하청. `vatAmount = 0`. 증빙은 계산서.
-  - **과세**: 어벗츠↔영업자, 어벗츠↔개발운영사 지급. 부가세 10% · 세금계산서. 영업자·개발운영사는 장부 공급가, 지급 시 VAT.
+  - **과세**: 어벗츠↔딜러사, 어벗츠↔개발운영사 지급. 부가세 10% · 세금계산서. 딜러사·개발운영사는 장부 공급가, 지급 시 VAT.
   - 크레딧은 선불전자지급수단이 아니라 **기공료 선입금(선납 대금)**. 충전 화면·FAQ·약관·입금 확인 알림에 동일 용어를 쓴다.
     프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
     입금 매칭 알림: `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied` / 템플릿 `ats_credit_charged`
@@ -758,13 +759,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     구현: `controllers/credits/creditBPlan.controller.js`
   - `REV_*`(제조사 포함): `amount = amountExcludingVat = base`, `vatAmount = 0`.
     구현: `controllers/requests/common.review.helpers.js`, `services/creditRevenuePolicy.service.js`
-  - 의뢰자 잔액·보존식 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 영업자·개발운영사 지급 VAT는 어벗츠 추가 지급.
-  - 고객향 계산서 직접발행 세액 기본 0(면세). 정산 배치 Draft: 제조사·기공소=면세, 영업자·개발운영사=과세 10%.
+  - 의뢰자 잔액·보존식 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 딜러사·개발운영사 지급 VAT는 어벗츠 추가 지급.
+  - 고객향 계산서 직접발행 세액 기본 0(면세). 정산 배치 Draft: 제조사·기공소=면세, 딜러사·개발운영사=과세 10%.
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
   - `ABUTS_TO_CUSTOMER`(기존 크레딧 충전 계산서, 치과·기공소→어벗츠 결제의 반대방향): `taxType="면세"`, `issuanceMode="SELF"`(어벗츠가 실제 공급자).
   - `LAB_TO_PRACTICE`(①치과→기공소 기공의뢰비의 반대방향, 월합계): `taxType="면세"`, `issuanceMode="TRUSTEE"`. 실제 공급자는 기공소이지만 기공소는 팝빌 회원가입/인증서가 불필요하고, 어벗츠가 수탁자로 위수탁발행한다(치과·기공소·어벗츠 3자 모두 부가세 면세 원칙 — 어벗츠 공동대표가 기공사라 기공소로 간주).
-  - `AFFILIATE_TO_ABUTS`(어벗츠→영업자·개발운영사·제조사·기공소 정산의 반대방향): 영업자·개발운영사는 `taxType="과세"`(부가세 10%), 제조사·기공소는 `taxType="면세"`. 모두 `issuanceMode="TRUSTEE"`. 실제 공급자(기공소·제조사·영업자·개발운영사)는 팝빌 회원 불필요, 어벗츠가 수탁자로 위수탁발행.
+  - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 제조사·기공소는 `taxType="면세"`. 모두 `issuanceMode="TRUSTEE"`. 실제 공급자(기공소·제조사·딜러사·개발운영사)는 팝빌 회원 불필요, 어벗츠가 수탁자로 위수탁발행.
   - 정산 배치 확정(`adminConfirmSettlementBatch`) 시 위 역할별 Draft 자동 생성. SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.
   - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.
   - 구현: `utils/popbill.util.js`(`buildTaxinvoiceObject`의 `issuanceMode`/`seller`/`taxType`), `models/taxInvoiceDraft.model.js`.
@@ -773,15 +774,15 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 관리자 4사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
   - **제조사(하청)**: 고정단가(면세) — `creditSettings.manufacturerRequestUnitPrice`(기본 9,000, **어벗 1개당**)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 유료·무료 모두 적립(확인용). **정산 지급은 유료만**(무료 크레딧 지급 0). 지급액=공급가·계산서.
-  - **영업자·개발운영사**: 장부 적립은 공급가. 지급 시 부가세 10%를 더해 **입금·세금계산서**. 구현: `services/settlement.service.js`(`resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금합계, `supplyAmount`/`vatAmount` 분해.
-  - **어벗츠(관리자)·기공소·제조사**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
+  - **딜러사·개발운영사**: 장부 적립은 공급가. 지급 시 부가세 10%를 더해 **입금·세금계산서**. 구현: `services/settlement.service.js`(`resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금합계, `supplyAmount`/`vatAmount` 분해.
+  - **어벗츠·기공소·제조사**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
   - 배송: 제조사 고정 배송 공급가(면세). 고객 배송비−제조사 공급가 잔여 → 관리자(`vatAmount=0`).
   - 무료 수익은 지급금액 0으로 정산 완료 상태만 표시할 수 있습니다.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공 → 유료** 차감을 사용합니다.
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
-    - 제조사 = 고정 공급가(어벗 1개당 / 배송 박스당). 잔여 = 소비 공급가 − 제조사 공급가 → 영업자·개발운영사·관리자 상대비율(`BusinessAnchor.payoutRates`의 salesman/devops/admin). 영업자 없으면 salesman 몫을 admin에 가산. 잔여 분배율은 추후 별도 확정.
+    - 제조사 = 고정 공급가(어벗 1개당 / 배송 박스당). 잔여 = 소비 공급가 − 제조사 공급가 → 딜러사·개발운영사·어벗츠 상대비율(`BusinessAnchor.payoutRates`의 salesman/devops/admin). 딜러사 없으면 salesman 몫을 admin에 가산. 잔여 분배율은 추후 별도 확정.
     - 기공의뢰 성공 수수료: 매칭 `platformFeeRate`(기본 10%) · 지정 `directPlatformFeeEnabled`(기본 **off=무료**) / on 시 `directPlatformFeeRate`(기본 5%) · 월 참여 `autoMatchMonthlyFee`(**정책 0원**) — 관리자 플랫폼 설정「인증 기공소」. 치과 멤버십 월정은 `practiceMembershipMonthlyFee`(기본 50,000·면세) — 루트 `rules.md` §2.3.
     - `machining_spend`+`express_surcharge`: 제조사 단가 1회만(`manufacturerUnitApplied` / 기존 의뢰 유니크와 정합).
 

@@ -108,7 +108,7 @@ export function AbutmentBusinessTab() {
         <SectionHeader
           icon={Hexagon}
           title="어벗사업"
-          description="판매가(배송비 제외)에서 건당 몫을 떼고 나머지는 어벗츠. 제조사는 면세, 개발운영사·영업자는 +VAT."
+          description="판매가(배송비 제외)에서 건당 몫을 떼고 나머지는 어벗츠. 제조사는 면세, 개발운영사·딜러사는 +VAT."
           trailing={
             <div className="relative w-36">
               <Input
@@ -136,7 +136,7 @@ export function AbutmentBusinessTab() {
           departmentAmount={(dept) => amountById.get(dept.id) || 0}
           noteFor={(dept) =>
             dept.salesmanFallback
-              ? "의뢰서 소개코드(영업자BA)가 있으면 영업자, 없으면 어벗츠."
+              ? "의뢰서 소개코드(딜러사)가 있으면 딜러사, 없으면 어벗츠."
               : null
           }
         />
@@ -171,7 +171,7 @@ export function AbutmentBusinessTab() {
                   [
                     ["manufacturer", "제조사", false],
                     ["devops", "개발운영사", true],
-                    ["salesman", "영업자", true],
+                    ["salesman", "딜러사", true],
                     ["abuts", "어벗츠", false],
                   ] as const
                 ).map(([key, label, taxable]) => {

@@ -58,7 +58,7 @@ export function CommissionPaymentsPage({
     [data?.organizations],
   );
 
-  const title = isSalesman ? "영업자 정산" : "개발운영사 정산";
+  const title = isSalesman ? "딜러 정산" : "개발운영사 정산";
 
   if (!user) return null;
 
@@ -172,7 +172,7 @@ export function CommissionPaymentsPage({
                           <span className="text-muted-foreground">소개 단계</span>
                           <span>
                             {org.referralLevel === "unaffiliated"
-                              ? "영업자 미설정"
+                              ? "딜러사 미설정"
                               : "소개"}
                           </span>
                         </div>

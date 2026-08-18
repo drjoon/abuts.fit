@@ -26,7 +26,7 @@ export const ACCOUNTS = {
     email: "salesman.owner@demo.abuts.fit",
     password: "So!8qL#3mV@6pK2!",
     role: "salesman",
-    name: "데모 영업자 대표",
+    name: "데모 딜러 대표",
     phone: "01011114444",
   },
   requestor: {

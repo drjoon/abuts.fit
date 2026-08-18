@@ -94,7 +94,7 @@ export default function AdminCreditPage() {
               치과 · 기공소
             </TabsTrigger>
             <TabsTrigger value="salesman" className="rounded-lg px-5 text-sm">
-              영업자
+              딜러
             </TabsTrigger>
           </TabsList>
 
@@ -103,7 +103,7 @@ export default function AdminCreditPage() {
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="영업자명 · 이메일 · 추천코드"
+                placeholder="딜러명 · 이메일 · 추천코드"
                 className="h-10 w-full rounded-xl border-slate-200 sm:w-[280px] lg:w-[360px]"
               />
             ) : null}

@@ -1083,7 +1083,7 @@ export default function AdminPaymentsPage() {
               <CreditSectionHeader
                 icon={HandCoins}
                 title="관계사 잔여 분배"
-                description="커스텀 어벗 잔여·매칭 수수료 재분배. 영업자·개발운영사 지급은 과세(세금계산서), 제조사·어벗츠(관리자)는 면세(계산서)."
+                description="커스텀 어벗 잔여·매칭 수수료 재분배. 딜러사·개발운영사 지급은 과세(세금계산서), 제조사·어벗츠는 면세(계산서)."
                 trailing={
                   <div className="relative w-full sm:w-[260px]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1100,13 +1100,13 @@ export default function AdminPaymentsPage() {
               <Tabs value={affiliateTab} onValueChange={setAffiliateTab}>
                 <TabsList className="h-11 rounded-xl bg-slate-100/80 p-1">
                   <TabsTrigger value="salesman" className="rounded-lg px-4">
-                    영업자
+                    딜러사
                   </TabsTrigger>
                   <TabsTrigger value="devops" className="rounded-lg px-4">
                     개발운영사
                   </TabsTrigger>
                   <TabsTrigger value="admin" className="rounded-lg px-4">
-                    관리자
+                    어벗츠
                   </TabsTrigger>
                 </TabsList>
 
@@ -1144,11 +1144,11 @@ export default function AdminPaymentsPage() {
                     </div>
                   ) : (
                     <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-muted-foreground">
-                      표시할 영업자가 없습니다.
+                      표시할 딜러사가 없습니다.
                     </div>
                   )}
                   <MonthlyHistorySection
-                    title="월단위 과거 내역 (영업자)"
+                    title="월단위 과거 내역 (딜러사)"
                     rows={monthlyHistory.salesman}
                     isLoading={historyLoading}
                   />
@@ -1234,7 +1234,7 @@ export default function AdminPaymentsPage() {
                     />
                   </div>
                   <MonthlyHistorySection
-                    title="월단위 과거 내역 (관리자)"
+                    title="월단위 과거 내역 (어벗츠)"
                     rows={monthlyHistory.admin}
                     isLoading={historyLoading}
                   />

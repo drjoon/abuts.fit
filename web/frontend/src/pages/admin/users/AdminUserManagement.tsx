@@ -75,6 +75,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { getAppUserRoleLabel } from "@/shared/types/role";
 
 const normalizeRole = (rawRole?: string) => {
   const normalized = String(rawRole || "")
@@ -102,28 +103,8 @@ const normalizeRole = (rawRole?: string) => {
   return normalized;
 };
 
-const getRoleLabel = (role: string) => {
-  switch (normalizeRole(role)) {
-    case "requestor":
-      return "의뢰자";
-    case "manufacturer":
-      return "제조사";
-    case "internalLab":
-      return "어벗츠기공소";
-    case "admin":
-      return "어벗츠.핏";
-    case "salesman":
-      return "영업자";
-    case "devops":
-      return "개발운영사";
-    case "labTeam":
-      return "기공팀";
-    case "salesTeam":
-      return "영업팀";
-    default:
-      return "사용자";
-  }
-};
+const getRoleLabel = (role: string) =>
+  getAppUserRoleLabel(normalizeRole(role) || role);
 
 const resolveUserRequestorKind = (
   user: Pick<
@@ -847,7 +828,7 @@ export const AdminUserManagement = () => {
       if (!nextRole) {
         toast({
           title: "역할 변경 불가",
-          description: "의뢰자/영업자 계정만 서로 전환할 수 있습니다.",
+          description: "의뢰자/딜러 계정만 서로 전환할 수 있습니다.",
           variant: "destructive",
         });
         return;
@@ -917,7 +898,7 @@ export const AdminUserManagement = () => {
     },
     {
       key: "salesman",
-      label: "영업자",
+      label: getAppUserRoleLabel("salesman"),
       count: totalSalesman,
       icon: Briefcase,
       iconWrap: "bg-primary-soft",
@@ -980,7 +961,7 @@ export const AdminUserManagement = () => {
   const roleFilters = [
     ["all", "전체"],
     ["requestor", "의뢰자"],
-    ["salesman", "영업자"],
+    ["salesman", getAppUserRoleLabel("salesman")],
     ["devops", "개발운영사"],
     ["manufacturer", "제조사"],
     ["internalLab", "어벗츠기공소"],
@@ -1663,7 +1644,7 @@ export const AdminUserManagement = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="requestor">의뢰자</SelectItem>
-                          <SelectItem value="salesman">영업자</SelectItem>
+                          <SelectItem value="salesman">{getAppUserRoleLabel("salesman")}</SelectItem>
                           <SelectItem value="devops">개발운영사</SelectItem>
                           <SelectItem value="manufacturer">제조사</SelectItem>
                           <SelectItem value="internalLab">어벗츠기공소</SelectItem>

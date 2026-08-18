@@ -133,15 +133,16 @@ Notes:
   - `src/pages/admin/users/AdminUserManagement.tsx`
   - `src/pages/admin/businesses/AdminBusinessPage.tsx`
   - 관리자 UI에서 별도 `치과`(practice) role 필터/생성은 제거. 레거시 practice는 의뢰자로 표시하고, 의뢰자 `requestorCapabilities`(발신(치과)/수신(기공소·기공실)) 뱃지로 구분.
+  - 롤 한글 SSOT: User=`USER_ROLE_LABEL`(salesman=딜러, admin=관리자), BA=`BUSINESS_TYPE_LABEL`(salesman=딜러사, admin=어벗츠). `src/shared/types/role.ts`. 제품명 어벗츠.핏·「관리자에게 문의」는 유지.
 - 관리자 크레딧
-  - `src/pages/admin/credits/AdminCreditPage.tsx` (탭: 치과 · 기공소 / 영업자)
+  - `src/pages/admin/credits/AdminCreditPage.tsx` (탭: 치과 · 기공소 / 딜러)
   - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
   - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
   - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
   - `src/shared/components/CreditLedgerModal.tsx` (내역: 잔액 카드 + rounded-2xl 테이블)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 멤버십/일반 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (크레딧 · 커스텀어벗 · 인증 기공소 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
-  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·영업자·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=건당 제조사 9,000(면세)·개발운영사 1,000·영업자 3,000+VAT, 잔여 어벗츠. 의뢰서 소개코드(영업자BA) 있으면 영업자·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=멤버십·자동매칭·지정(현재 무료)을 어벗츠 90%/개발운영사 10%)
+  - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=건당 제조사 9,000(면세)·개발운영사 1,000·딜러사 3,000+VAT, 잔여 어벗츠. 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=멤버십·자동매칭·지정(현재 무료)을 어벗츠 90%/개발운영사 10%)
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 환영 무료 크레딧·멤버십·배송 / `variant=customAbut`: 커스텀어벗(CNC/환봉·어벗디자인비)·어벗 추가 요청·특별 공급가)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
@@ -169,7 +170,7 @@ Notes:
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정 on·off·%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소는 설정「어벗츠 인증」에서 신청(`POST /api/businesses/me/auto-match-participation`, 미인증 시 신청만·월정 0). 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정은 기본 무료(`directPlatformFeeEnabled` off) · on 시 `directPlatformFeeRate%`. 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
   - 검증된 디자이너 지정: `DesignerAssignmentTab` / `BusinessAnchor.designAccessEnabled`(디자인 큐). API·게이트 유지, 파트너 탭 UI에서는 제거
-  - 영업자 없을 때 분배: 설정된 영업자 분배비의 절반→제조사, 나머지 절반→관리자 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
+  - 딜러사 없을 때 분배: 설정된 딜러사 분배비의 절반→제조사, 나머지 절반→어벗츠 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
   - 관리자 대시보드/소통
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
   - `src/pages/admin/support/AdminChatManagement.tsx`
@@ -178,9 +179,9 @@ Notes:
   - 공통 UI: `src/shared/settlement/settlementUi.tsx` · VAT 카피 `src/shared/settlement/affiliateVat.ts` (의뢰자 크레딧/기공크레딧 최신 스타일)
   - 기공소/어벗츠기공소: `src/features/settings/tabs/LabSettlementPayoutTab.tsx` — 면세 계산서
   - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 수취자(우편함)별. 장부는 공급가(어벗 1개당 9,000, 면세). 무료 크레딧은 지급 0.
-  - 영업자: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 공급가 장부, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
+  - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 공급가 장부, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 잔여 분배 공급가, 지급 시 부가세·세금계산서(실입금=공급가+VAT)
-  - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 4사업 축 + 관계사 잔여 분배(관리자=어벗츠 면세)
+  - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 4사업 축 + 관계사 잔여 분배(어벗츠 면세)
 
 ## 1. 구조
 
@@ -189,6 +190,7 @@ Notes:
 - 도메인 기능은 `src/features`, 페이지는 `src/pages`, 공유 유틸은 `src/shared`를 우선 사용합니다.
 - 페이지 폴더끼리 직접 import하지 않습니다.
 - 앱 전역 role 타입 SSOT는 `src/shared/types/role.ts`를 사용합니다. (로컬 컴포넌트에서 role union 재정의 금지)
+  User 라벨=`USER_ROLE_LABEL`, BA·정산 주체=`BUSINESS_TYPE_LABEL`/`sharePartyLabel`. 제품명=`PRODUCT_NAME`(어벗츠.핏).
 
 ## 2. 구현 메모
 
@@ -410,8 +412,8 @@ Notes:
 
 - 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 이중 체계:
   - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.
-  - **과세 지급**: 어벗츠↔영업자, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
-  - **면세**: 치과·기공소·제조사·어벗츠(=관리자). 공급가·**계산서**.
+  - **과세 지급**: 어벗츠↔딜러사, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
+  - **면세**: 치과·기공소·제조사·어벗츠. 공급가·**계산서**.
   - 공통 UI: `src/shared/settlement/settlementUi.tsx`, VAT 카피 `src/shared/settlement/affiliateVat.ts`
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
     화면 제목/안내: **크레딧(기공료 선입금)** — 선불페이(전자금융업)가 아니라 B2B 기공물 대금 선납임을 충전 화면·FAQ·약관에 명시.
@@ -426,7 +428,7 @@ Notes:
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 치과·기공소 경로는 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금).
   - 가격 정책/대시보드: `PricingPolicyDialog` — CNC어벗 생산만(2만/멤버십 1.5만) · CNC어벗 디자인+생산(4만/멤버십 2.5만) · 환봉어벗 생산만/디자인+생산(`creditSettings` 단가, 0원이면 별도 고지) + 배송비 별도(박스당 과금).
   - 제조사 정산규칙: 원청–하청 고정단가(의뢰·배송 공급가, 면세). % 분배 안내 금지.
-  - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 영업자·개발운영사 `AFFILIATE_TO_ABUTS`만 과세.
+  - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 딜러사·개발운영사 `AFFILIATE_TO_ABUTS`만 과세.
 
 - 단일 SSOT 장부 UI 필드 계약(초안):
   - Journal: `journalId`, `eventType`, `businessAnchorId`, `refType`, `refId`, `stageFrom`, `stageTo`, `occurredAt`
@@ -521,7 +523,7 @@ Notes:
     - (2) `PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`
     - (3) `internalLab` `LAB_SETTLEMENT_CREDIT` 적립
     - (4) `PRACTICE_MEMBERSHIP_SPEND` + 활성 멤버 수
-  - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 영업자·개발운영사(과세·세금계산서)·제조사·어벗츠 관리자(면세·계산서).
+  - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 딜러사·개발운영사(과세·세금계산서)·제조사·어벗츠(면세·계산서).
   - 기간 필터는 `PeriodFilter`(KST). `PricingPolicyDialog`는 가격·출고 안내만(사업 축 UI 아님).
   - UI: `creditPageUi` 패널/스탯 타일 + 선택형 사업 카드.
 

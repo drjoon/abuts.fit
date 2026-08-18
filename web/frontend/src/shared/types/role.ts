@@ -1,10 +1,13 @@
 // related files:
+// - rules.md
 // - web/frontend/rules.md
+// - web/backend/utils/roleLabels.js
 // - web/frontend/src/store/useAuthStore.ts
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/auth/SignupPage.tsx
 // - web/frontend/src/shared/components/RoleSelect.tsx
 // - web/frontend/src/pages/admin/partners/partnerShare.ts
+// - 2026-08-18: USER_ROLE_LABEL(딜러/관리자) vs BUSINESS_TYPE_LABEL(딜러사/어벗츠). 코드 키 salesman/admin 유지.
 // - 2026-08-17: staff 가입에 labTeam(기공팀)·salesTeam(영업팀) 추가.
 
 export const APP_USER_ROLES = [
@@ -64,13 +67,33 @@ export const isSelectableSignupRole = (
 ): value is SelectableSignupRole =>
   SELECTABLE_SIGNUP_ROLE_SET.has(String(value || "").trim());
 
-export const APP_USER_ROLE_LABEL: Record<AppUserRole, string> = {
+/** 제품명. 랜딩·SMS·고객지원 채팅. 계정/BA 롤 라벨과 섞지 않는다. */
+export const PRODUCT_NAME = "어벗츠.핏";
+
+/** 개인 계정(User.role) 표시명. salesman=딜러, admin=관리자. */
+export const USER_ROLE_LABEL: Record<AppUserRole, string> = {
   requestor: "의뢰자",
   practice: "의뢰 발신자 (치과)",
-  salesman: "영업자",
+  salesman: "딜러",
   manufacturer: "제조사",
   internalLab: "어벗츠기공소",
-  admin: "어벗츠.핏",
+  admin: "관리자",
+  devops: "개발운영사",
+  labTeam: "기공팀",
+  salesTeam: "영업팀",
+};
+
+/** @deprecated USER_ROLE_LABEL 별칭. 신규 코드는 USER_ROLE_LABEL. */
+export const APP_USER_ROLE_LABEL = USER_ROLE_LABEL;
+
+/** 사업자(BusinessAnchor.businessType) 표시명. salesman=딜러사, admin=어벗츠. */
+export const BUSINESS_TYPE_LABEL: Record<AppUserRole, string> = {
+  requestor: "의뢰자",
+  practice: "의뢰 발신자 (치과)",
+  salesman: "딜러사",
+  manufacturer: "제조사",
+  internalLab: "어벗츠기공소",
+  admin: "어벗츠",
   devops: "개발운영사",
   labTeam: "기공팀",
   salesTeam: "영업팀",
@@ -78,14 +101,19 @@ export const APP_USER_ROLE_LABEL: Record<AppUserRole, string> = {
 
 export function getAppUserRoleLabel(role: string): string {
   const key = String(role || "").trim();
-  if (isAppUserRole(key)) return APP_USER_ROLE_LABEL[key];
+  if (isAppUserRole(key)) return USER_ROLE_LABEL[key];
   return "사용자";
 }
 
-/** 사업영역 수익 분배 주체 표시명. admin은 어벗츠. */
+export function getBusinessTypeLabel(type: string): string {
+  const key = String(type || "").trim();
+  if (isAppUserRole(key)) return BUSINESS_TYPE_LABEL[key];
+  return key || "미분류";
+}
+
+/** 사업영역·정산 분배 주체. BA 라벨. */
 export function sharePartyLabel(role: string): string {
-  if (String(role || "").trim() === "admin") return "어벗츠";
-  return getAppUserRoleLabel(role);
+  return getBusinessTypeLabel(role);
 }
 
 export const AREA_SHARE_ROLES = {

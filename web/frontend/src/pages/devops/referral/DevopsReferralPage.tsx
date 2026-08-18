@@ -112,7 +112,7 @@ export const DevopsReferralPage = () => {
                     <MetricCard
                       title="내가 소개한 사업자 수"
                       value={`${referralBusinessCount.toLocaleString()}개소`}
-                      subtitle="영업자 연결 없이 자동 배정된 사업자"
+                      subtitle="딜러사 연결 없이 자동 배정된 사업자"
                     />
                     <MetricCard
                       title="소개 사업자 의뢰건수 합산 (최근 30일)"
@@ -125,7 +125,7 @@ export const DevopsReferralPage = () => {
                     />
                     <div className="rounded-xl bg-primary-soft px-4 py-3.5 text-xs leading-relaxed text-primary-strong sm:col-span-2 lg:col-span-1">
                       <p>
-                        영업자 소개 없이 가입한 의뢰자는 자동으로 개발운영사
+                        딜러사 소개 없이 가입한 의뢰자는 자동으로 개발운영사
                         소개로 등록됩니다.
                       </p>
                       <p className="mt-1.5">

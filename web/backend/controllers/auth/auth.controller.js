@@ -8,6 +8,7 @@
 // - web/backend/controllers/credits/credit.controller.js
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
+// - web/backend/utils/roleLabels.js
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -33,6 +34,7 @@ import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.s
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
+import { getUserRoleLabel } from "../../utils/roleLabels.js";
 
 const createReferralCode = (length, alphaOnly = false) => {
   const alphabet = alphaOnly
@@ -82,7 +84,7 @@ function getReferralRoleMismatchMessage({ signupRole, referrerRole }) {
     normalizedSignupRole !== "requestor" &&
     normalizedSignupRole !== "salesman"
   ) {
-    return "영업자 소개 링크로는 의뢰자 또는 영업자만 가입할 수 있습니다.";
+    return `${getUserRoleLabel("salesman")} 소개 링크로는 ${getUserRoleLabel("requestor")} 또는 ${getUserRoleLabel("salesman")}만 가입할 수 있습니다.`;
   }
   return "소개 링크와 가입 역할이 맞지 않습니다.";
 }
@@ -190,12 +192,16 @@ async function resolveReferrerTargets({
   }
 
   if (!REFERRAL_ALLOWED_ROLES.has(String(refUser.role || ""))) {
-    throw new Error("추천인은 의뢰자/영업자/개발운영사 계정만 가능합니다.");
+    throw new Error(
+      `추천인은 ${getUserRoleLabel("requestor")}/${getUserRoleLabel("salesman")}/${getUserRoleLabel("devops")} 계정만 가능합니다.`,
+    );
   }
 
   const normalizedReferrerRole = String(refUser.role || "").trim();
   if (!SIGNUP_LINK_REFERRER_ALLOWED_ROLES.has(normalizedReferrerRole)) {
-    throw new Error("소개 링크 가입은 의뢰자 또는 영업자 소개만 가능합니다.");
+    throw new Error(
+      `소개 링크 가입은 ${getUserRoleLabel("requestor")} 또는 ${getUserRoleLabel("salesman")} 소개만 가능합니다.`,
+    );
   }
 
   const allowedSignupRoles = getAllowedSignupRolesForReferrerRole(
@@ -837,7 +843,7 @@ async function validateReferral(req, res) {
     if (!REFERRAL_ALLOWED_ROLES.has(String(refUser.role || ""))) {
       return res.status(400).json({
         success: false,
-        message: "추천인은 의뢰자/영업자/개발운영사 계정만 가능합니다.",
+        message: `추천인은 ${getUserRoleLabel("requestor")}/${getUserRoleLabel("salesman")}/${getUserRoleLabel("devops")} 계정만 가능합니다.`,
       });
     }
 
@@ -845,7 +851,7 @@ async function validateReferral(req, res) {
     if (!SIGNUP_LINK_REFERRER_ALLOWED_ROLES.has(normalizedReferrerRole)) {
       return res.status(400).json({
         success: false,
-        message: "소개 링크 가입은 의뢰자 또는 영업자 소개만 가능합니다.",
+        message: `소개 링크 가입은 ${getUserRoleLabel("requestor")} 또는 ${getUserRoleLabel("salesman")} 소개만 가능합니다.`,
       });
     }
 

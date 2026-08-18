@@ -86,10 +86,10 @@ export const useRequestChat = ({
           : baseSenderRole === "manufacturer"
             ? "제작사"
             : baseSenderRole === "salesman"
-              ? "영업자"
+              ? "딜러"
               : baseSenderRole === "devops"
                 ? "개발운영사"
-                : "어벗츠.핏");
+                : "관리자");
 
     if (requestId) {
       toast({

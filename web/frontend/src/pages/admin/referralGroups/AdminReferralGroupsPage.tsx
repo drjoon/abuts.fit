@@ -28,6 +28,7 @@ import { ReferralNetworkChart } from "@/features/referral/components/ReferralNet
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import { getAppUserRoleLabel } from "@/shared/types/role";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -117,7 +118,7 @@ const roleBadge = (role?: string, requestorKind?: "practice" | "lab" | null) => 
   if (role === "salesman") {
     return (
       <span className="rounded-md border border-primary-muted bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold text-primary-strong">
-        영업자
+        {getAppUserRoleLabel("salesman")}
       </span>
     );
   }
@@ -675,7 +676,7 @@ export default function AdminReferralGroupsPage() {
                       : "text-slate-600 hover:bg-white"
                   }`}
                 >
-                  영업자
+                  딜러
                 </button>
                 <button
                   type="button"
@@ -899,7 +900,7 @@ export default function AdminReferralGroupsPage() {
                   [
                     ["all", "전체"],
                     ["requestor", "의뢰자"],
-                    ["salesman", "영업자"],
+                    ["salesman", "딜러"],
                     ["devops", "개발운영사"],
                   ] as const
                 ).map(([value, label]) => {

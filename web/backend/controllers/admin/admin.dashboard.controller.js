@@ -1136,7 +1136,7 @@ async function buildAdminDashboardPayload(req) {
     };
 
     // 크레딧 소비 ↔ 수익 귀속 합계 무결성 점검 (의뢰 단위)
-    // SSOT: 의뢰자 순소비(netConsumed) == (어벗츠+제조사+개발운영사+영업자) 수익합(공급가)
+    // SSOT: 의뢰자 순소비(netConsumed) == (어벗츠+제조사+개발운영사+딜러사) 수익합(공급가)
     if (Number(flowSummary?.mismatchCount || 0) > 0) {
       const top = (flowSummary.topMismatches || [])[0] || null;
       const sampleText = top

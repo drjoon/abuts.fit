@@ -3,7 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 /**
- * 영업자(salesman) 대시보드에서 사용하는
+ * 딜러(salesman) 대시보드에서 사용하는
  * /api/salesman/dashboard 데이터 훅 + 타입 + 포매터.
  *
  * 역할별 UI 분기는 이 훅에 두지 않는다.
@@ -62,7 +62,7 @@ export type CommissionDashboardData = {
     monthCommissionAmount: number;
     referralLevel?: "direct" | "unaffiliated";
   }>;
-  /** 영업자만 사용. devops는 빈 배열 반환 */
+  /** 딜러만 사용. devops는 빈 배열 반환 */
   referralSalesmen?: Array<{
     userId: string;
     name: string;
@@ -80,7 +80,7 @@ export const formatMoney = (n?: number): string => {
 };
 
 /**
- * 영업자 대시보드·정산 데이터 훅.
+ * 딜러 대시보드·정산 데이터 훅.
  * /api/salesman/dashboard 엔드포인트가 반환한 값을 그대로 표시한다.
  */
 export function useCommissionDashboard(period: PeriodFilterValue) {

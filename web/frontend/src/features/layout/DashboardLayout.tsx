@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
+// - 2026-08-18: 계정 뱃지 salesman=딜러, admin=관리자 (USER_ROLE_LABEL).
 // - 2026-08-17: 관리자 설정 그룹에「사업영역」(플랫폼 설정 아래).
 // - 2026-08-17: 기공소·어벗츠기공소·개발운영사 사이드에 정산 복구.
 // - 2026-08-17: unread-updated 이벤트는 lab 수신 배지 조회 가능할 때만 반영(치과 유령 배지 방지).
@@ -79,6 +80,7 @@ import {
   isPaidRequestorSidebarLocked,
   PAID_ACCESS_DISABLED_HINT,
 } from "@/shared/business/requestorCapabilities";
+import { getAppUserRoleLabel } from "@/shared/types/role";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -416,28 +418,11 @@ const getRoleLabel = (
   role: string,
   requestorKind?: "practice" | "lab" | null,
 ) => {
-  switch (role) {
-    case "requestor":
-      return getRequestorRoleBadgeLabel(requestorKind);
-    case "salesman":
-      return "영업자";
-    case "devops":
-      return "개발운영사";
-    case "manufacturer":
-      return "제조사";
-    case "internalLab":
-      return "어벗츠기공소";
-    case "practice":
-      return getRequestorRoleBadgeLabel(requestorKind ?? "practice");
-    case "admin":
-      return "어벗츠.핏";
-    case "labTeam":
-      return "기공팀";
-    case "salesTeam":
-      return "영업팀";
-    default:
-      return "사용자";
+  if (role === "requestor") return getRequestorRoleBadgeLabel(requestorKind);
+  if (role === "practice") {
+    return getRequestorRoleBadgeLabel(requestorKind ?? "practice");
   }
+  return getAppUserRoleLabel(role);
 };
 
 const getRoleBadgeVariant = (role: string) => {

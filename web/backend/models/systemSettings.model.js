@@ -29,7 +29,7 @@ const systemSettingsSchema = new mongoose.Schema(
       regularProductionPrice: { type: Number, default: 20000 },
       membershipDesignAndProductionPrice: { type: Number, default: 25000 },
       regularDesignAndProductionPrice: { type: Number, default: 40000 },
-      // CNC 티어별 건당 분배(제조사·영업자·개발운영사). 어벗츠=매출−합계.
+      // CNC 티어별 건당 분배(제조사·딜러사·개발운영사). 어벗츠=매출−합계.
       membershipProductionManufacturerUnitPrice: { type: Number, default: 9000 },
       membershipProductionSalesmanUnitPrice: { type: Number, default: 3000 },
       membershipProductionDevopsUnitPrice: { type: Number, default: 750 },
@@ -42,7 +42,7 @@ const systemSettingsSchema = new mongoose.Schema(
       regularDesignAndProductionManufacturerUnitPrice: { type: Number, default: 24000 },
       regularDesignAndProductionSalesmanUnitPrice: { type: Number, default: 0 },
       regularDesignAndProductionDevopsUnitPrice: { type: Number, default: 4000 },
-      // CNC 매출 분배 비율(%). 멤버=영업자 포함, 일반=영업자 없음. 어벗츠=잔여.
+      // CNC 매출 분배 비율(%). 멤버=딜러사 포함, 일반=딜러사 없음. 어벗츠=잔여.
       manufacturerSharePercent: { type: Number, default: 60 },
       salesmanSharePercent: { type: Number, default: 20 },
       devopsSharePercent: { type: Number, default: 5 },
@@ -91,7 +91,7 @@ const systemSettingsSchema = new mongoose.Schema(
       manufacturerRequestUnitPrice: { type: Number, default: 9000 },
       // 개발운영사 어벗 생산 외주 공급가(1어벗당). 지급 시 +VAT.
       devopsRequestUnitPrice: { type: Number, default: 750 },
-      // 영업자(영업자BA) 어벗 생산 수수료(1어벗당). 지급 시 +VAT. 없으면 어벗츠 귀속.
+      // 딜러사(salesman BA) 어벗 생산 수수료(1어벗당). 지급 시 +VAT. 없으면 어벗츠 귀속.
       salesmanRequestUnitPrice: { type: Number, default: 3000 },
       manufacturerShippingUnitPrice: { type: Number, default: 3500 },
       affiliateVatRate: { type: Number, default: 0.1 },

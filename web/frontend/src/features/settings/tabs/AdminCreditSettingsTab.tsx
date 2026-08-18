@@ -5,6 +5,7 @@
 // - 2026-08-18: 카드 제목 커스텀어벗→치과 공급 어벗, 특별 공급가→기공소 공급 어벗.
 // - 2026-08-18: 금액 입력 스피너 숨김·원 접미사 여백 확보(숫자 잘림 방지).
 // - 2026-08-18: 분배 비율 스피너 5% 단위.
+// - 2026-08-18: 분배 비율 라벨 — 딜러사 포함/비포함(소개코드).
 // - 2026-08-18: 분배 비율 라벨 — 영업자 포함(소개코드 있음)/비포함(없음).
 // - 2026-08-18: 분배 비율을 페이지 상단 카드로. 자동저장 문구 제거·UI 단순화.
 // - 2026-08-18: 분배 비율을 멤버(60+20+5+15)·일반(60+10+30) 두 식으로 분리.
@@ -598,7 +599,7 @@ function SharePercentRow({
         {showSalesman ? (
           <PercentField
             id={`${idPrefix}-salesman`}
-            label="영업자"
+            label="딜러사"
             value={shares.salesman}
             disabled={disabled}
             onChange={onSalesmanChange}
@@ -657,8 +658,8 @@ function SharePercentPanel({
     <div className="space-y-5">
       <SharePercentRow
         idPrefix="membershipShare"
-        title="영업자 포함"
-        description="의뢰자 소개 코드에 영업자 있음"
+        title="딜러사 포함"
+        description="의뢰자 소개 코드에 딜러사 있음"
         shares={membershipShares}
         showSalesman
         disabled={disabled}
@@ -674,8 +675,8 @@ function SharePercentPanel({
       />
       <SharePercentRow
         idPrefix="regularShare"
-        title="영업자 비포함"
-        description="의뢰자 소개 코드에 영업자 없음"
+        title="딜러사 비포함"
+        description="의뢰자 소개 코드에 딜러사 없음"
         shares={regularShares}
         showSalesman={false}
         disabled={disabled}

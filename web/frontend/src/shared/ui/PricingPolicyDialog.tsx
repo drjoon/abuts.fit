@@ -352,7 +352,7 @@ export const PricingPolicyDialog = ({
     variant === 'devops'
       ? '개발운영사 분배 기준'
       : variant === 'salesman'
-        ? '영업자 수수료 정책'
+        ? '딜러사 수수료 정책'
         : '커스텀 어벗 생산 가격 · 출고 정책 안내';
 
   const subtitle =
@@ -386,7 +386,7 @@ export const PricingPolicyDialog = ({
                 </p>
                 <BulletList
                   items={[
-                    '소개 관계 기준: 의뢰자 가입 시 입력한 영업자 코드',
+                    '소개 관계 기준: 의뢰자 가입 시 입력한 딜러 코드',
                     '집계 범위: 1단계 소개만 포함',
                     '유료 매출 기준: 의뢰 결제 완료 시점'
                   ]}
@@ -414,12 +414,12 @@ export const PricingPolicyDialog = ({
                   <span className='font-semibold text-slate-900'>10%</span>가
                   정산됩니다.
                 </p>
-                <p>영업자 소개 유무와 무관하게 개발·운영사 비율은 동일합니다.</p>
+                <p>딜러사 소개 유무와 무관하게 개발·운영사 비율은 동일합니다.</p>
               </PolicySection>
 
               <PolicySection title='네트워크 반영'>
                 <p>
-                  영업자 소개 없이 가입한 의뢰 건은 제조사 65% / 관리자 25% /
+                  딜러사 소개 없이 가입한 의뢰 건은 제조사 65% / 어벗츠 25% /
                   개발·운영사 10% 규칙이 적용됩니다.
                 </p>
               </PolicySection>

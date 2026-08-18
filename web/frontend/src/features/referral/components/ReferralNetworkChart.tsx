@@ -5,6 +5,7 @@
 import { useId, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import { getAppUserRoleLabel } from "@/shared/types/role";
 
 type ReferralNode = {
   _id: string;
@@ -32,7 +33,7 @@ const ROLE_COLOR: Record<ReferralRole, string> = {
 
 const ROLE_LABEL: Record<ReferralRole, string> = {
   requestor: getRequestorRoleBadgeLabel(null),
-  salesman: "영업자",
+  salesman: getAppUserRoleLabel("salesman"),
   devops: "개발운영사",
 };
 

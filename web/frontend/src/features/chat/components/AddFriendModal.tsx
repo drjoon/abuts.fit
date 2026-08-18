@@ -33,7 +33,7 @@ const getRoleLabel = (role: string) => {
     case "manufacturer":
       return "제작사";
     case "admin":
-      return "어벗츠.핏";
+      return "관리자";
     default:
       return "사용자";
   }

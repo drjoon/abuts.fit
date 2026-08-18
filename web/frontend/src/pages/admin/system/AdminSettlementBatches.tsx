@@ -97,7 +97,7 @@ export default function AdminSettlementBatches() {
         <div>
           <h1 className="text-xl font-semibold">월 정산 배치</h1>
           <p className="text-sm text-muted-foreground">
-            확정 후 실제 송금을 완료한 항목만 지급완료 처리합니다. 과세 관계사(영업자·개발운영사) 금액은 VAT 포함 입금합계입니다.
+            확정 후 실제 송금을 완료한 항목만 지급완료 처리합니다. 과세 관계사(딜러사·개발운영사) 금액은 VAT 포함 입금합계입니다.
           </p>
         </div>
         <Button onClick={() => void action("/api/admin/settlement-batches", "정산 배치를 생성했습니다.")} disabled={loading}>

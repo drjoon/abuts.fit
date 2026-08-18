@@ -521,7 +521,7 @@ export async function adminGetSalesmanCreditsOverview(req, res) {
     if (!payload) {
       return res.status(500).json({
         success: false,
-        message: "영업자 크레딧 요약 조회에 실패했습니다.",
+        message: "딜러 크레딧 요약 조회에 실패했습니다.",
       });
     }
 
@@ -530,7 +530,7 @@ export async function adminGetSalesmanCreditsOverview(req, res) {
     console.error("adminGetSalesmanCreditsOverview error:", error);
     return res.status(500).json({
       success: false,
-      message: "영업자 크레딧 요약 조회에 실패했습니다.",
+      message: "딜러 크레딧 요약 조회에 실패했습니다.",
     });
   }
 }
@@ -1192,7 +1192,7 @@ export async function adminCreateSalesmanPayout(req, res) {
     if (!Types.ObjectId.isValid(salesmanIdRaw)) {
       return res.status(400).json({
         success: false,
-        message: "영업자 ID가 올바르지 않습니다.",
+        message: "딜러 ID가 올바르지 않습니다.",
       });
     }
     const salesmanId = new Types.ObjectId(salesmanIdRaw);
@@ -1218,7 +1218,7 @@ export async function adminCreateSalesmanPayout(req, res) {
     if (!salesman || String(salesman.role || "") !== "salesman") {
       return res.status(404).json({
         success: false,
-        message: "영업자를 찾을 수 없습니다.",
+        message: "딜러를 찾을 수 없습니다.",
       });
     }
 
@@ -1226,7 +1226,7 @@ export async function adminCreateSalesmanPayout(req, res) {
     if (!ownerAnchorIdRaw || !Types.ObjectId.isValid(ownerAnchorIdRaw)) {
       return res.status(400).json({
         success: false,
-        message: "영업자 사업체 정보가 없습니다.",
+        message: "딜러 사업체 정보가 없습니다.",
       });
     }
     const ownerAnchorId = new Types.ObjectId(ownerAnchorIdRaw);
@@ -2146,7 +2146,7 @@ export async function adminGetSalesmanCredits(req, res) {
     console.error("adminGetSalesmanCredits error:", error);
     return res.status(500).json({
       success: false,
-      message: "영업자 크레딧 조회에 실패했습니다.",
+      message: "딜러 크레딧 조회에 실패했습니다.",
     });
   }
 }
@@ -2989,7 +2989,7 @@ export async function adminGetSalesmanLedger(req, res) {
     if (!Types.ObjectId.isValid(salesmanIdRaw)) {
       return res.status(400).json({
         success: false,
-        message: "영업자 ID가 올바르지 않습니다.",
+        message: "딜러 ID가 올바르지 않습니다.",
       });
     }
 
@@ -3205,7 +3205,7 @@ export async function adminGetSalesmanLedger(req, res) {
     console.error("adminGetSalesmanLedger error:", error);
     return res.status(500).json({
       success: false,
-      message: "영업자 원장 조회에 실패했습니다.",
+      message: "딜러 원장 조회에 실패했습니다.",
     });
   }
 }

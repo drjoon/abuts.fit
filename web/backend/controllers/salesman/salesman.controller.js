@@ -729,7 +729,7 @@ export async function getSalesmanDashboard(req, res) {
     console.error("[salesman.getSalesmanDashboard] error", error);
     return res.status(500).json({
       success: false,
-      message: "영업자 대시보드 조회 중 오류가 발생했습니다.",
+      message: "딜러 대시보드 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

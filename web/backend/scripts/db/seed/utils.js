@@ -100,7 +100,7 @@ export async function createSalesmen({
     }
 
     const salesman = await User.create({
-      name: `데모 영업자${i}`,
+      name: `데모 딜러${i}`,
       email,
       password,
       role: "salesman",

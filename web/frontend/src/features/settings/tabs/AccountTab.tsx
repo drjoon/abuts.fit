@@ -20,6 +20,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import { getAppUserRoleLabel } from "@/shared/types/role";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { cn } from "@/shared/ui/cn";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
@@ -734,13 +735,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                       requestorKind ??
                         (userData?.role === "practice" ? "practice" : null),
                     )
-                  : userData?.role === "manufacturer"
-                    ? "제조사"
-                    : userData?.role === "salesman"
-                      ? "영업자"
-                      : userData?.role === "devops"
-                        ? "개발운영사"
-                        : "어벗츠.핏"}
+                  : getAppUserRoleLabel(String(userData?.role || ""))}
               </Badge>
             </CardTitle>
             <CardDescription className="text-[13px] leading-relaxed">

@@ -77,7 +77,7 @@ export const ExpandedRequestCard = ({
       case "manufacturer":
         return "애크로덴트(제조사)";
       case "admin":
-        return "어벗츠.핏(운영자)";
+        return "관리자";
       default:
         return "사용자";
     }

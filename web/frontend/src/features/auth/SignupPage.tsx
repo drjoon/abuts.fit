@@ -14,6 +14,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
+  getAppUserRoleLabel,
   isSelectableSignupRole,
   isStaffSignupRole,
   STAFF_SIGNUP_ROLES,
@@ -106,11 +107,11 @@ const clearSignupProgress = (sessionId?: string) => {
 
 
 const STAFF_SIGNUP_LABEL: Record<(typeof STAFF_SIGNUP_ROLES)[number], string> = {
-  manufacturer: "제조사",
-  devops: "개발운영사",
-  admin: "관리자",
-  labTeam: "기공팀",
-  salesTeam: "영업팀",
+  manufacturer: getAppUserRoleLabel("manufacturer"),
+  devops: getAppUserRoleLabel("devops"),
+  admin: getAppUserRoleLabel("admin"),
+  labTeam: getAppUserRoleLabel("labTeam"),
+  salesTeam: getAppUserRoleLabel("salesTeam"),
 };
 
 const STAFF_SIGNUP_HINT: Record<(typeof STAFF_SIGNUP_ROLES)[number], string> = {
@@ -406,7 +407,7 @@ export const SignupPage = () => {
     if (isStaffSignupRoute) {
       return [...STAFF_SIGNUP_ROLES];
     }
-    // /signup 경로는 의뢰자/영업자만 허용 (치과는 별도 경로)
+    // /signup 경로는 의뢰자/딜러만 허용 (치과는 별도 경로)
     if (typeof effectiveReferralCode !== "string")
       return ["requestor", "salesman"];
     const roles = referrerInfo?.allowedSignupRoles || [];
@@ -439,12 +440,7 @@ export const SignupPage = () => {
           nextAllowedSignupRoles.length > 0 &&
           !nextAllowedSignupRoles.includes(signupRole)
         ) {
-          const roleLabel =
-            signupRole === "salesman"
-              ? "영업자"
-              : signupRole === "practice"
-                ? "치과"
-                : "의뢰자";
+          const roleLabel = getAppUserRoleLabel(signupRole);
           toast({
             title: "소개 코드 불일치",
             description: `이 소개 코드는 ${roleLabel} 가입에 사용할 수 없습니다.`,
@@ -1306,7 +1302,7 @@ export const SignupPage = () => {
                                   : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
                             }`}
                           >
-                            영업자
+                            {getAppUserRoleLabel("salesman")}
                           </button>
                         </div>
                       )}
@@ -1317,7 +1313,7 @@ export const SignupPage = () => {
                       )}
                       {signupRole === "salesman" && (
                         <p className="text-sm text-white/70 text-right">
-                          영업하는 개인사업자 혹은 법인
+                          딜러사로 활동하는 개인사업자 혹은 법인
                         </p>
                       )}
                       {isStaffSignupRole(signupRole) ? (

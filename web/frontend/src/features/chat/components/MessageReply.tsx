@@ -6,6 +6,7 @@ import { Reply, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import { getAppUserRoleLabel } from "@/shared/types/role";
 import { getRoleBadgeClassName } from "@/shared/ui/semanticStatus";
 
 export interface ReplyToMessage {
@@ -38,18 +39,9 @@ export function MessageReply({
 
 
   const getRoleLabel = (role: string) => {
-    switch (role) {
-      case "admin":
-        return "관리자";
-      case "manufacturer":
-        return "제조사";
-      case "requestor":
-        return getRequestorRoleBadgeLabel("lab");
-      case "practice":
-        return getRequestorRoleBadgeLabel("practice");
-      default:
-        return role;
-    }
+    if (role === "requestor") return getRequestorRoleBadgeLabel("lab");
+    if (role === "practice") return getRequestorRoleBadgeLabel("practice");
+    return getAppUserRoleLabel(role);
   };
 
   if (compact || embedded) {

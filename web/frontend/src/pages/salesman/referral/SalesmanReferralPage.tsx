@@ -149,7 +149,7 @@ export const SalesmanReferralPage = () => {
             <Card>
               <CardContent className="pt-6">
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                  영업자 계정에서 확인할 수 있습니다.
+                  딜러 계정에서 확인할 수 있습니다.
                 </div>
               </CardContent>
             </Card>
@@ -220,7 +220,7 @@ export const SalesmanReferralPage = () => {
               <Card className="flex h-full flex-col xl:col-span-7">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between gap-3">
-                    <CardTitle className="text-xl">영업자 소개 통계</CardTitle>
+                    <CardTitle className="text-xl">딜러 소개 통계</CardTitle>
                     <Button
                       type="button"
                       variant="outline"
@@ -249,9 +249,9 @@ export const SalesmanReferralPage = () => {
                         secondaryValue={`${directReferralOrders.toLocaleString()}건`}
                       />
                       <MetricCard
-                        title="소개 영업자"
-                        tooltip="내가 소개한 영업자 수"
-                        primaryLabel="영업자"
+                        title="소개 딜러"
+                        tooltip="내가 소개한 딜러 수"
+                        primaryLabel="딜러"
                         primaryValue={`${salesmanCount.toLocaleString()}개소`}
                         secondaryLabel="소개 의뢰건수"
                         secondaryValue={`${directReferralOrders.toLocaleString()}건`}
