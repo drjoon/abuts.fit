@@ -358,6 +358,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   정규화 단계가 `request`(준비)인 경우만 허용. 불완전가공(`rnd.unmachinableAt`)은 예외로 취소 가능.
   - 레거시 문구/판정(`의뢰 또는 CAM 단계`) 사용 금지.
   - 중복 replace(`from-draft`/`creation.request`)의 `isCancelableStage`도 `stageOrder<=0`(준비)만 허용.
+  - 취소 HTTP 응답은 준비 단계면 트랜잭션 없이 uniqueKeys 조회+`updateOne` 후 슬림 페이로드. 웹소켓 정규화·크레딧 emit은 백그라운드.
   - 관련 파일: `controllers/requests/common.requests.controller.js`,
     `controllers/requests/creation.from-draft.controller.js`,
     `controllers/requests/creation.request.controller.js`

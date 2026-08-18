@@ -10,7 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
-// - 2026-08-19: no_spend 잔여 라인 판정에서 HOLD 저널을 제외(준비 단계 취소).
+// - 2026-08-19: 준비 단계 취소는 uniqueKeysOnly 소비 조회로 레거시 풀스캔을 생략.
 // - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
 // - 2026-08-17: 의뢰·배송 크레딧 보류(제출)→에스크로→CAM/집하 매출 전환.
 // - 2026-08-17: 배송비 차감 SSOT를 집하(우편함 비우기)로 옮김. 포장.발송 진입은 우편함만 확인. 기공의뢰 어벗츠 배송도 집하.
@@ -1514,6 +1514,7 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
   actorUserId,
   session,
   deferredCreditEvents,
+  uniqueKeysOnly = false,
 }) {
   if (!request?._id || !businessAnchorId) {
     console.warn("[CREDIT_ROLLBACK][REQUEST] skipped invalid input", {
@@ -1539,6 +1540,7 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
     request,
     businessAnchorId,
     session,
+    uniqueKeysOnly: Boolean(uniqueKeysOnly),
   });
 
   if (!rollbackResult?.didRollback) {
@@ -1564,6 +1566,15 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
     // 일반 의뢰에서 no_spend가 나왔더라도, COMMIT 소비 라인이 이미 없다면
     // (이전 시도에서 저널 삭제 완료, 또는 제출 HOLD만 있는 준비 단계) idempotent success.
     if (rollbackResult?.reason === "no_spend") {
+      if (uniqueKeysOnly) {
+        console.log("[CREDIT_ROLLBACK][REQUEST] no_spend uniqueKeysOnly; treat as idempotent", {
+          requestMongoId: String(request._id),
+          requestId: request?.requestId || null,
+          businessAnchorId: String(businessAnchorId),
+        });
+        return;
+      }
+
       const requestorSpendLineExists = await requestorCommitSpendLineExists({
         request,
         businessAnchorId,

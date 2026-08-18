@@ -5,7 +5,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
 // - 2026-08-19: 기본 제목 완료 내역(구 지난 의뢰).
-// - 2026-08-19: 상세/확인 중에는 목록 모달을 닫지 않음. 취소 행은 목록에서만 제거.
+// - 2026-08-19: 취소 확인은 즉시 닫고 목록 행을 낙관적으로 제거.
 // - 2026-08-19: 진행중인 의뢰 목록에서 준비 단계 취소.
 // - 2026-08-19: description prop — 진행중인 의뢰 목록 안내 문구.
 // - 2026-08-18: 모달을 정책 안내와 같은 rounded-2xl·필터 카드 톤으로 정리.
@@ -302,21 +302,22 @@ export const PastRequestsModal = ({
 
   const handleConfirmCancel = async () => {
     const mongoId = String(cancelTarget?._id || cancelTarget?.id || "").trim();
+    const snapshot = cancelTarget;
     if (!mongoId || !onCancelRequest) {
       setCancelTarget(null);
       return;
     }
+    setItems((prev) =>
+      prev.filter((row) => String(row?._id || row?.id || "") !== mongoId),
+    );
+    setCancelTarget(null);
     setCanceling(true);
     try {
       const ok = await onCancelRequest(mongoId);
       if (ok) {
-        setItems((prev) =>
-          prev.filter(
-            (row) => String(row?._id || row?.id || "") !== mongoId,
-          ),
-        );
-        setCancelTarget(null);
         onCanceled?.();
+      } else if (snapshot) {
+        setItems((prev) => [snapshot, ...prev]);
       }
     } finally {
       setCanceling(false);

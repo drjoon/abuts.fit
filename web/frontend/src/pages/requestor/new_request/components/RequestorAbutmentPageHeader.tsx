@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-19: 헤더 라벨 진행중 / 출고예정 / 완료 내역.
+// - 2026-08-19: 취소 확인은 즉시 닫고, 헤더 건수 재조회는 스냅샷 완료 뒤로 미룸.
 // - 2026-08-19: 헤더 라벨 출고예정. 취소 후 출고 스냅샷 쿼리도 무효화.
 // - 2026-08-19: 취소 후 진행중인 의뢰 목록으로 복귀. 확인 클릭이 목록을 닫지 않음.
 // - 2026-08-19: 진행중인 의뢰 상세에서 준비 단계 취소. 원본 STL 프리뷰는 RequestDetailDialog.
@@ -147,8 +147,10 @@ export const RequestorAbutmentPageHeader = () => {
   const canCancelSelected = isPrepCancelableRequest(selectedPastRequest);
 
   const refreshHeaderCounts = () => {
-    void queryClient.invalidateQueries({ queryKey: cardsSummaryQueryKey });
-    void queryClient.invalidateQueries({ queryKey: ["requestor-bulk-shipping"] });
+    window.setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: cardsSummaryQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ["requestor-bulk-shipping"] });
+    }, 2000);
   };
 
   const decrementInProgressCountOptimistic = () => {
@@ -233,16 +235,19 @@ export const RequestorAbutmentPageHeader = () => {
     const mongoId = String(
       selectedPastRequest?._id || selectedPastRequest?.id || "",
     ).trim();
+    const snapshot = selectedPastRequest;
     if (!mongoId) {
       setCancelConfirmOpen(false);
       return;
     }
+    setCanceledMongoId(mongoId);
+    closeDetailAndRestoreList();
     setCanceling(true);
     try {
       const ok = await cancelRequestByMongoId(mongoId);
-      if (ok) {
-        setCanceledMongoId(mongoId);
-        closeDetailAndRestoreList();
+      if (!ok) {
+        setCanceledMongoId(null);
+        setSelectedPastRequest(snapshot);
       }
     } finally {
       setCanceling(false);

@@ -545,136 +545,139 @@ export async function deleteRequestSpendAtomicOnRollback({
   request,
   businessAnchorId,
   session,
+  uniqueKeysOnly = false,
 }) {
   if (!request?._id) return { didRollback: false, reason: "invalid_request" };
 
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
   if (!anchorObjectId) return { didRollback: false, reason: "invalid_anchor" };
 
+  const requestMongoId = String(request._id);
+  const requestId = String(request?.requestId || "").trim();
+  const uniqueKeys = [
+    `request:${requestMongoId}:machining_spend`,
+    `request:${requestMongoId}:express_surcharge`,
+  ];
+  const journalIds = [];
+  const seen = new Set();
+
+  const pushJournalId = (rawId) => {
+    const id = String(rawId || "").trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    journalIds.push(id);
+  };
+
+  const lookupSession = session || null;
+
+  console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] lookup start", {
+    requestMongoId,
+    requestId: requestId || null,
+    businessAnchorId: String(anchorObjectId),
+    uniqueKeys,
+    hasSession: !!session,
+    uniqueKeysOnly: Boolean(uniqueKeysOnly),
+  });
+
+  const byUniques = await Promise.all(
+    uniqueKeys.map((uniqueKey) =>
+      findCommitJournalBySpendKey({
+        spendUniqueKey: uniqueKey,
+        session: lookupSession,
+      }),
+    ),
+  );
+  for (const byUnique of byUniques) {
+    if (byUnique?.journalId) {
+      pushJournalId(byUnique.journalId);
+    }
+  }
+
+  if (!uniqueKeysOnly && !journalIds.length) {
+    const byRef = await LedgerJournal.find({
+      eventType: REQUEST_SPEND_COMMIT_EVENT_TYPE,
+      refType: "REQUEST",
+      refId: request._id,
+    })
+      .select({ journalId: 1 })
+      .session(lookupSession)
+      .lean();
+
+    for (const row of byRef || []) pushJournalId(row?.journalId);
+  }
+
+  if (!uniqueKeysOnly && !journalIds.length) {
+    const metaOr = [{ "meta.requestMongoId": requestMongoId }];
+    if (requestId) metaOr.push({ "meta.requestId": requestId });
+
+    const byMeta = await LedgerJournal.find({
+      eventType: REQUEST_SPEND_COMMIT_EVENT_TYPE,
+      $or: metaOr,
+    })
+      .select({ journalId: 1 })
+      .session(lookupSession)
+      .lean();
+
+    for (const row of byMeta || []) pushJournalId(row?.journalId);
+  }
+
+  if (!uniqueKeysOnly && !journalIds.length) {
+    const lineRows = await LedgerLine.find({
+      businessAnchorId: anchorObjectId,
+      ownerRole: "requestor",
+      ownerId: anchorObjectId,
+      refType: "REQUEST",
+      refId: request._id,
+      accountCode: { $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT"] },
+      amount: { $lt: 0 },
+    })
+      .select({ journalId: 1 })
+      .session(lookupSession)
+      .lean();
+
+    const lineJournalIds = [];
+    for (const row of lineRows || []) {
+      const id = String(row?.journalId || "").trim();
+      if (id) lineJournalIds.push(id);
+    }
+    const commitIds = await filterRequestSpendCommitJournalIds({
+      journalIds: lineJournalIds,
+      session: lookupSession,
+    });
+    for (const id of commitIds) pushJournalId(id);
+  }
+
+  const commitJournalIds = journalIds.length
+    ? await filterRequestSpendCommitJournalIds({
+        journalIds,
+        session: lookupSession,
+      })
+    : [];
+
+  console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] lookup result", {
+    requestMongoId,
+    requestId: requestId || null,
+    uniqueKeys,
+    matchedJournalIds: commitJournalIds,
+  });
+
+  if (!commitJournalIds.length) {
+    console.warn("[CREDIT_ROLLBACK][REQUEST][SERVICE] no spend journals found", {
+      requestMongoId,
+      requestId: requestId || null,
+      businessAnchorId: String(anchorObjectId),
+      uniqueKeys,
+      refType: "REQUEST",
+      refId: requestMongoId,
+    });
+    return { didRollback: false, reason: "no_spend" };
+  }
+
   const ownSession = !session;
   const txSession = session || (await mongoose.startSession());
 
   try {
     if (ownSession) txSession.startTransaction();
-
-    const requestMongoId = String(request._id);
-    const requestId = String(request?.requestId || "").trim();
-    const uniqueKeys = [
-      `request:${requestMongoId}:machining_spend`,
-      `request:${requestMongoId}:express_surcharge`,
-    ];
-    const journalIds = [];
-    const seen = new Set();
-
-    const pushJournalId = (rawId) => {
-      const id = String(rawId || "").trim();
-      if (!id || seen.has(id)) return;
-      seen.add(id);
-      journalIds.push(id);
-    };
-
-    console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] lookup start", {
-      requestMongoId,
-      requestId: requestId || null,
-      businessAnchorId: String(anchorObjectId),
-      uniqueKeys,
-      hasSession: !!session,
-    });
-
-    // 1) canonical unique keys(idempotency) — 생산비 + 신속 추가비
-    for (const uniqueKey of uniqueKeys) {
-      const byUnique = await findCommitJournalBySpendKey({
-        spendUniqueKey: uniqueKey,
-        session: txSession,
-      });
-      if (byUnique?.journalId) {
-        pushJournalId(byUnique.journalId);
-      }
-    }
-
-    // 2) journal ref 매칭 (레거시 합산 차감 포함)
-    if (!journalIds.length) {
-      const byRef = await LedgerJournal.find({
-        eventType: REQUEST_SPEND_COMMIT_EVENT_TYPE,
-        refType: "REQUEST",
-        refId: request._id,
-      })
-        .select({ journalId: 1 })
-        .session(txSession)
-        .lean();
-
-      for (const row of byRef || []) pushJournalId(row?.journalId);
-    }
-
-    // 3) journal meta 매칭 (legacy/이관 데이터 호환)
-    if (!journalIds.length) {
-      const metaOr = [{ "meta.requestMongoId": requestMongoId }];
-      if (requestId) metaOr.push({ "meta.requestId": requestId });
-
-      const byMeta = await LedgerJournal.find({
-        eventType: REQUEST_SPEND_COMMIT_EVENT_TYPE,
-        $or: metaOr,
-      })
-        .select({ journalId: 1 })
-        .session(txSession)
-        .lean();
-
-      for (const row of byMeta || []) pushJournalId(row?.journalId);
-    }
-
-    // 4) line 기준 역탐색 (journal ref/meta 누락 케이스 보완)
-    // HOLD 차감 라인(제출 보류)은 소비 커밋이 아니므로 COMMIT만 채택한다.
-    if (!journalIds.length) {
-      const lineRows = await LedgerLine.find({
-        businessAnchorId: anchorObjectId,
-        ownerRole: "requestor",
-        ownerId: anchorObjectId,
-        refType: "REQUEST",
-        refId: request._id,
-        accountCode: { $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT"] },
-        amount: { $lt: 0 },
-      })
-        .select({ journalId: 1 })
-        .session(txSession)
-        .lean();
-
-      const lineJournalIds = [];
-      for (const row of lineRows || []) {
-        const id = String(row?.journalId || "").trim();
-        if (id) lineJournalIds.push(id);
-      }
-      const commitIds = await filterRequestSpendCommitJournalIds({
-        journalIds: lineJournalIds,
-        session: txSession,
-      });
-      for (const id of commitIds) pushJournalId(id);
-    }
-
-    const commitJournalIds = await filterRequestSpendCommitJournalIds({
-      journalIds,
-      session: txSession,
-    });
-
-    console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] lookup result", {
-      requestMongoId,
-      requestId: requestId || null,
-      uniqueKeys,
-      matchedJournalIds: commitJournalIds,
-    });
-
-    if (!commitJournalIds.length) {
-      console.warn("[CREDIT_ROLLBACK][REQUEST][SERVICE] no spend journals found", {
-        requestMongoId,
-        requestId: requestId || null,
-        businessAnchorId: String(anchorObjectId),
-        uniqueKeys,
-        refType: "REQUEST",
-        refId: requestMongoId,
-      });
-      if (ownSession) await txSession.commitTransaction();
-      return { didRollback: false, reason: "no_spend" };
-    }
-
     let restorePaidSum = 0;
     let restoreBonusRequestSum = 0;
     let rollbackAmountSum = 0;

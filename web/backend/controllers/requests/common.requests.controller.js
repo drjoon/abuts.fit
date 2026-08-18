@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 준비 단계 취소는 트랜잭션 없이 uniqueKeys 조회+status updateOne. 웹소켓은 백그라운드.
 // - 2026-08-19: 준비 단계 취소 시 HOLD 해제를 COMMIT 롤백보다 먼저 수행.
 // - 2026-08-19: GET /my 목록에 price·estimatedShipYmd 포함(의뢰 상세 비용·출고일).
 // - 2026-08-18: 준비 단계 진입 시 로트번호 발급. 워크시트 조회 시 누락분 보정. 샘플 복사는 준비 시작도 즉시 발급.
@@ -69,6 +70,7 @@ import { emitAppEventToRoles } from "../../socket.js";
 import { buildMonitoringStageStatsFromGroupedRows } from "../../services/requestStageStats.service.js";
 import { buildCreatedAtFilterFromQuery } from "../../utils/dateRange.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
+import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditHold.service.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -557,9 +559,6 @@ async function ensureRequestCancelRollbackDelete({
   // 준비 단계 취소 SSOT: 미전환 HOLD를 먼저 해제한다.
   // HOLD 차감 라인이 남아 있으면 COMMIT 롤백이 보류 저널을 소비로 오인한다.
   try {
-    const { releaseRequestCreditHoldsOnCancel } = await import(
-      "../../services/requestCreditHold.service.js"
-    );
     await releaseRequestCreditHoldsOnCancel({
       request,
       actorUserId,
@@ -575,6 +574,10 @@ async function ensureRequestCancelRollbackDelete({
     throw holdErr;
   }
 
+  const uniqueKeysOnly =
+    normalizeRequestStage(request) === "request" &&
+    !request?.rnd?.unmachinableAt;
+
   // SSOT 정책: 취소 시 REFUND를 추가하지 않고, 기존 소비 커밋을 삭제형 롤백으로 정리한다.
   // 단, 이 삭제 정리는 준비 단계 취소 경로에서만 허용한다.
   // 크레딧 이벤트는 트랜잭션 커밋 이후 발행하도록 deferredCreditEvents에 적재한다.
@@ -584,6 +587,7 @@ async function ensureRequestCancelRollbackDelete({
     actorUserId,
     session: session || null,
     deferredCreditEvents,
+    uniqueKeysOnly,
   });
 
   // PTX 연동 CA: 어벗 디자인비(ADJUST)도 함께 회수(관리자/의뢰자 삭제·취소).
@@ -3310,6 +3314,88 @@ export const updateRndMemo = asyncHandler(async (req, res) => {
   });
 });
 
+async function emitCanceledRequestSideEffects({
+  request,
+  prevManufacturerStage,
+  deferredCreditEvents,
+}) {
+  try {
+    const legacyHexNormalized = normalizeLegacyManufacturerHexRotationOnRequest(
+      request,
+    );
+    if (legacyHexNormalized) {
+      console.info("[updateManufacturerStage] normalized legacy manufacturer hex mode", {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || ""),
+      });
+    }
+
+    const requestorAnchorIdForCredit = String(
+      request.businessAnchorId || request.requestor?.businessAnchorId || "",
+    ).trim();
+    if (requestorAnchorIdForCredit) {
+      const rollbackDelta = (deferredCreditEvents || []).reduce(
+        (sum, evt) => sum + Number(evt?.balanceDelta || 0),
+        0,
+      );
+      try {
+        await emitCreditBalanceUpdatedToBusiness({
+          businessAnchorId: requestorAnchorIdForCredit,
+          balanceDelta: Number.isFinite(rollbackDelta) ? rollbackDelta : 0,
+          reason: "request_cancel",
+          refId: request._id,
+          forceEmit: true,
+        });
+      } catch (emitErr) {
+        console.error("[updateManufacturerStage] credit emit failed", {
+          requestId: request.requestId || null,
+          requestMongoId: request._id ? String(request._id) : null,
+          message: emitErr?.message || String(emitErr || ""),
+        });
+      }
+    }
+
+    const normalizedRequest = await normalizeRequestForResponse(request);
+    const requestMongoId = String(request._id || "").trim();
+    const requestorAnchorId = String(request.businessAnchorId || "").trim();
+
+    emitAppEventToRoles(
+      ["requestor", "manufacturer", "admin"],
+      "request:stage-changed",
+      {
+        source: "requestor-recent-cancel",
+        requestId: request.requestId || null,
+        requestMongoId: requestMongoId || null,
+        fromStage: prevManufacturerStage || null,
+        toStage: "취소",
+        businessAnchorId: requestorAnchorId || null,
+        ownerBusinessAnchorId: requestorAnchorId || null,
+        requestorBusinessAnchorId: requestorAnchorId || null,
+        manufacturerStage: "취소",
+        request: normalizedRequest,
+      },
+    );
+
+    if (prevManufacturerStage && prevManufacturerStage !== "취소") {
+      emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+        source: "requestor-cancel",
+        action: "canceled",
+        stage: prevManufacturerStage,
+        delta: -1,
+        requestId: request.requestId || null,
+        requestMongoId: requestMongoId || null,
+        requestCategory: resolveRequestCategory(request),
+      });
+    }
+  } catch (err) {
+    console.error("[updateManufacturerStage] cancel side effects failed", {
+      requestId: request?.requestId || null,
+      requestMongoId: request?._id ? String(request._id) : null,
+      message: err?.message || String(err || ""),
+    });
+  }
+}
+
 export async function updateRequestStatus(req, res) {
   try {
     const requestId = req.params.id;
@@ -3405,112 +3491,24 @@ export async function updateRequestStatus(req, res) {
 
     // 의뢰 상태 변경
     if (manufacturerStage === "취소") {
-      const session = await mongoose.startSession();
-      try {
-        await session.withTransaction(async () => {
-          await ensureRequestCancelRollbackDelete({
-            request,
-            actorUserId: req.user?._id || null,
-            session,
-            deferredCreditEvents,
-          });
-          applyStatusMapping(request, manufacturerStage);
-          await request.save({ session });
-        });
-      } finally {
-        session.endSession();
-      }
-
-      // 중요: 크레딧 이벤트는 트랜잭션 커밋 이후 발행한다.
-      // 수신측(DashboardLayout)은 credit:balance-updated 수신 후 /api/credits/balance를 silent refetch한다.
-      const requestorAnchorIdForCredit = String(
-        request.businessAnchorId || request.requestor?.businessAnchorId || "",
-      ).trim();
-      if (requestorAnchorIdForCredit) {
-        const rollbackDelta = deferredCreditEvents.reduce(
-          (sum, evt) => sum + Number(evt?.balanceDelta || 0),
-          0,
-        );
-
-        try {
-          await emitCreditBalanceUpdatedToBusiness({
-            businessAnchorId: requestorAnchorIdForCredit,
-            balanceDelta: Number.isFinite(rollbackDelta) ? rollbackDelta : 0,
-            reason: "request_cancel",
-            refId: request._id,
-            // 준비 단계 취소(차감 없음, delta=0)에서도 헤더 잔액 동기화 refetch를 유도한다.
-            forceEmit: true,
-          });
-        } catch (emitErr) {
-          console.error("[updateManufacturerStage] credit emit failed", {
-            requestId: request.requestId || null,
-            requestMongoId: request._id ? String(request._id) : null,
-            message: emitErr?.message || String(emitErr || ""),
-          });
-        }
-      }
-    } else {
-      applyStatusMapping(request, manufacturerStage);
-      await request.save();
-    }
-
-    // 신속배송(express) 표시/우선순위는 finalShipping.mode / shippingMode SSOT 사용
-
-    const legacyHexNormalized = normalizeLegacyManufacturerHexRotationOnRequest(
-      request,
-    );
-
-    if (legacyHexNormalized) {
-      console.info("[updateManufacturerStage] normalized legacy manufacturer hex mode", {
-        requestId: request.requestId,
-        requestMongoId: String(request._id || ""),
+      await ensureRequestCancelRollbackDelete({
+        request,
+        actorUserId: req.user?._id || null,
+        session: null,
+        deferredCreditEvents,
       });
-    }
-
-    console.log("[updateManufacturerStage] Stage updated", {
-      requestId: request.requestId,
-      newStage: manufacturerStage,
-      businessAnchorId: String(request.businessAnchorId || ""),
-    });
-
-    // 취소 시 웹소켓 실시간 이벤트 발행 (requestor/manufacturer/admin)
-    if (manufacturerStage === "취소") {
-      const normalizedRequest = await normalizeRequestForResponse(request);
-      const requestMongoId = String(request._id || "").trim();
-      const requestorAnchorId = String(request.businessAnchorId || "").trim();
-
-      emitAppEventToRoles(
-        ["requestor", "manufacturer", "admin"],
-        "request:stage-changed",
-        {
-          source: "requestor-recent-cancel",
-          requestId: request.requestId || null,
-          requestMongoId: requestMongoId || null,
-          fromStage: prevManufacturerStage || null,
-          toStage: "취소",
-          businessAnchorId: requestorAnchorId || null,
-          ownerBusinessAnchorId: requestorAnchorId || null,
-          requestorBusinessAnchorId: requestorAnchorId || null,
-          manufacturerStage: "취소",
-          request: normalizedRequest,
-        },
+      applyStatusMapping(request, manufacturerStage);
+      await Request.updateOne(
+        { _id: request._id },
+        { $set: { manufacturerStage: request.manufacturerStage } },
       );
 
-      if (prevManufacturerStage && prevManufacturerStage !== "취소") {
-        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
-          source: "requestor-cancel",
-          action: "canceled",
-          stage: prevManufacturerStage,
-          delta: -1,
-          requestId: request.requestId || null,
-          requestMongoId: requestMongoId || null,
-          requestCategory: resolveRequestCategory(request),
-        });
-      }
-    }
+      console.log("[updateManufacturerStage] Stage updated", {
+        requestId: request.requestId,
+        newStage: manufacturerStage,
+        businessAnchorId: String(request.businessAnchorId || ""),
+      });
 
-    // 취소 시 대시보드 스냅샷 무효화 (백그라운드)
-    if (manufacturerStage === "취소") {
       const anchorId = String(request.businessAnchorId || "").trim();
       if (anchorId) {
         console.log("[updateManufacturerStage] Triggering dashboard refresh", {
@@ -3531,7 +3529,48 @@ export async function updateRequestStatus(req, res) {
           `request-canceled:${request.requestId}`,
         );
       }
+
+      res.status(200).json({
+        success: true,
+        message: "의뢰 공정 단계가 성공적으로 변경되었습니다.",
+        data: {
+          _id: request._id,
+          requestId: request.requestId,
+          manufacturerStage: "취소",
+        },
+      });
+
+      setImmediate(() => {
+        void emitCanceledRequestSideEffects({
+          request,
+          prevManufacturerStage,
+          deferredCreditEvents,
+        });
+      });
+      return;
     }
+
+    applyStatusMapping(request, manufacturerStage);
+    await request.save();
+
+    // 신속배송(express) 표시/우선순위는 finalShipping.mode / shippingMode SSOT 사용
+
+    const legacyHexNormalized = normalizeLegacyManufacturerHexRotationOnRequest(
+      request,
+    );
+
+    if (legacyHexNormalized) {
+      console.info("[updateManufacturerStage] normalized legacy manufacturer hex mode", {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || ""),
+      });
+    }
+
+    console.log("[updateManufacturerStage] Stage updated", {
+      requestId: request.requestId,
+      newStage: manufacturerStage,
+      businessAnchorId: String(request.businessAnchorId || ""),
+    });
 
     res.status(200).json({
       success: true,
