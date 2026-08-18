@@ -10,10 +10,15 @@
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/bg/bg.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RegenerationCompleteAlerts.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
+// change-log:
+// - 2026-08-18: Filled STL/NC 재생성 완료 시 IndexedDB 캐시 삭제 + 큐 요약 아래 alert.
 import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -26,7 +31,14 @@ import {
   onCncMachiningTick,
 } from "@/shared/realtime/socket";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
-import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
+import { invalidateRequestPreviewCaches } from "@/shared/files/fileBlobCache";
+import {
+  consumeFilledStlRegenerationPending,
+  consumeNcRegenerationPending,
+  peekFilledStlRegenerationPending,
+  peekNcRegenerationPending,
+} from "../utils/regenerationPending";
+import type { RegenerationCompleteAlert } from "../components/RegenerationCompleteAlerts";
 import {
   deriveStageForFilter,
   type ManufacturerRequest,
@@ -77,6 +89,10 @@ export function useWorksheetRealtimeStatus({
 }: UseWorksheetRealtimeStatusParams) {
   const realtimeBaseRef = useRef<Record<string, number>>({});
   const startedToastShownRef = useRef<Record<string, number>>({});
+  const lastRegenAlertAtRef = useRef<Record<string, number>>({});
+  const [regenerationAlerts, setRegenerationAlerts] = useState<
+    RegenerationCompleteAlert[]
+  >([]);
   const latestRef = useRef({
     previewOpen,
     previewFiles,
@@ -108,6 +124,112 @@ export function useWorksheetRealtimeStatus({
       });
     },
     [toast],
+  );
+
+  const dismissRegenerationAlert = useCallback((id: string) => {
+    setRegenerationAlerts((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const pushRegenerationAlert = useCallback(
+    (
+      kind: "filled" | "nc",
+      requestId: string,
+      extras?: {
+        requestMongoId?: string;
+        clinicName?: string;
+        patientName?: string;
+        tooth?: string;
+        request?: ManufacturerRequest | null;
+        regenerated?: boolean;
+      },
+    ) => {
+      const rid = String(requestId || "").trim();
+      if (!rid) return;
+      const pending =
+        kind === "filled"
+          ? peekFilledStlRegenerationPending(rid)
+          : peekNcRegenerationPending(rid);
+      if (!pending && extras?.regenerated !== true) return;
+
+      const key = `${kind}:${rid}`;
+      const now = Date.now();
+      if (now - Number(lastRegenAlertAtRef.current[key] || 0) < 8000) return;
+      lastRegenAlertAtRef.current[key] = now;
+      if (kind === "filled") consumeFilledStlRegenerationPending(rid);
+      else consumeNcRegenerationPending(rid);
+
+      const eventReq = extras?.request || null;
+      const clinicName =
+        String(extras?.clinicName || eventReq?.caseInfos?.clinicName || "").trim() ||
+        undefined;
+      const patientName =
+        String(extras?.patientName || eventReq?.caseInfos?.patientName || "").trim() ||
+        undefined;
+      const tooth =
+        String(extras?.tooth || eventReq?.caseInfos?.tooth || "").trim() ||
+        undefined;
+      const requestMongoId =
+        String(extras?.requestMongoId || eventReq?._id || "").trim() || undefined;
+
+      setRegenerationAlerts((prev) => {
+        const next = prev.filter(
+          (item) => !(item.kind === kind && item.requestId === rid),
+        );
+        return [
+          {
+            id: `${key}:${now}`,
+            kind,
+            requestId: rid,
+            requestMongoId,
+            clinicName,
+            patientName,
+            tooth,
+            createdAt: now,
+            request: eventReq,
+          },
+          ...next,
+        ].slice(0, 8);
+      });
+    },
+    [],
+  );
+
+  const invalidateCachesForProcessedFile = useCallback(
+    (args: {
+      kind: "filled" | "nc";
+      requestId: string;
+      requestMongoId?: string;
+      incomingS3Key?: string;
+      previousS3Key?: string;
+      previousNcS3Key?: string;
+      localCamS3Key?: string;
+      localNcS3Key?: string;
+    }) => {
+      const previousS3Key = String(args.previousS3Key || "").trim();
+      const incomingS3Key = String(args.incomingS3Key || "").trim();
+      const previousNcS3Key = String(args.previousNcS3Key || "").trim();
+      const localCamS3Key = String(args.localCamS3Key || "").trim();
+      const localNcS3Key = String(args.localNcS3Key || "").trim();
+      void invalidateRequestPreviewCaches({
+        camS3Key:
+          args.kind === "filled"
+            ? previousS3Key || incomingS3Key || localCamS3Key
+            : localCamS3Key || null,
+        ncS3Key:
+          args.kind === "nc"
+            ? previousS3Key || incomingS3Key || localNcS3Key || previousNcS3Key
+            : previousNcS3Key || localNcS3Key || null,
+        requestMongoId: args.requestMongoId,
+        requestId: args.requestId,
+      });
+      if (args.kind === "filled" && incomingS3Key && incomingS3Key !== previousS3Key) {
+        void invalidateRequestPreviewCaches({ camS3Key: incomingS3Key });
+      }
+      if (args.kind === "nc" && incomingS3Key && incomingS3Key !== previousS3Key) {
+        void invalidateRequestPreviewCaches({ ncS3Key: incomingS3Key });
+      }
+    },
+    [],
   );
 
   // change-log: 2026-08-03 - manufacturerStage request 단계는 '준비' 단일값으로 표시.
@@ -380,6 +502,35 @@ export function useWorksheetRealtimeStatus({
         // Rhino filled STL 등 BG 파일 수신: 열린 프리뷰 silent 갱신 (packing 패턴)
         if (source === "bg-file-processed" && requestId) {
           refreshOpenPreviewIfMatch(requestId, eventRequest || null);
+          const regenerationKind = String(payload?.regenerationKind || "").trim();
+          const reviewStage = String(payload?.reviewStage || "").trim();
+          const kind: "filled" | "nc" | null =
+            regenerationKind === "filled" || reviewStage === "request"
+              ? "filled"
+              : regenerationKind === "nc" || reviewStage === "cam"
+                ? "nc"
+                : null;
+          if (kind) {
+            const camS3Key = String(
+              (eventRequest as any)?.caseInfos?.camFile?.s3Key || "",
+            ).trim();
+            const ncS3Key = String(
+              (eventRequest as any)?.caseInfos?.ncFile?.s3Key || "",
+            ).trim();
+            invalidateCachesForProcessedFile({
+              kind,
+              requestId,
+              requestMongoId: String((eventRequest as any)?._id || "").trim(),
+              incomingS3Key: kind === "filled" ? camS3Key : ncS3Key,
+              localCamS3Key: camS3Key,
+              localNcS3Key: ncS3Key,
+            });
+            pushRegenerationAlert(kind, requestId, {
+              requestMongoId: String((eventRequest as any)?._id || "").trim(),
+              request: eventRequest || null,
+              regenerated: payload?.regenerated === true,
+            });
+          }
         }
         return;
       }
@@ -404,6 +555,23 @@ export function useWorksheetRealtimeStatus({
           (metaSource === "bg-file-processed:2-filled" || hasCam)
         ) {
           refreshOpenPreviewIfMatch(requestId, eventRequest || null);
+        }
+        if (requestId && metaSource === "bg-file-processed:2-filled") {
+          const camS3Key = String(
+            (eventRequest as any)?.caseInfos?.camFile?.s3Key || "",
+          ).trim();
+          invalidateCachesForProcessedFile({
+            kind: "filled",
+            requestId,
+            requestMongoId: String((eventRequest as any)?._id || "").trim(),
+            incomingS3Key: camS3Key,
+            localCamS3Key: camS3Key,
+          });
+          pushRegenerationAlert("filled", requestId, {
+            requestMongoId: String((eventRequest as any)?._id || "").trim(),
+            request: eventRequest || null,
+            regenerated: payload?.regenerated === true,
+          });
         }
         return;
       }
@@ -553,6 +721,8 @@ export function useWorksheetRealtimeStatus({
     pendingStageTransitionToastRef,
     matchesCurrentPage,
     refreshOpenPreviewIfMatch,
+    invalidateCachesForProcessedFile,
+    pushRegenerationAlert,
   ]);
 
   // 웹소켓 실시간 업데이트(app-event): 활성 페이지에서만 이벤트를 반영한다.
@@ -640,37 +810,52 @@ export function useWorksheetRealtimeStatus({
 
       const requestId = String(notification?.data?.requestId || "").trim();
       const sourceStep = String(notification?.data?.sourceStep || "").trim();
-      const status = String(notification?.data?.status || "").trim();
+      const status = String(notification?.data?.status || "")
+        .trim()
+        .toLowerCase();
+      const isSuccess = status === "success";
+      const incomingS3Key = String(notification?.data?.s3Key || "").trim();
+      const incomingFileName = String(notification?.data?.fileName || "").trim();
+      const incomingUploadedAt = notification?.data?.uploadedAt || null;
+      const incomingFileSize = notification?.data?.fileSize;
+      const previousS3Key = String(notification?.data?.previousS3Key || "").trim();
+      const previousNcS3Key = String(
+        notification?.data?.previousNcS3Key || "",
+      ).trim();
+      const regenerated = notification?.data?.regenerated === true;
+      const requestMongoId = String(
+        notification?.data?.requestMongoId || "",
+      ).trim();
 
-      // NC 파일 재생성 완료 시 이전 NC 캐시 무효화 (현재 request에 남아있는 구 s3Key 기반)
-      if (sourceStep === "3-nc" && status === "success" && requestId) {
-        setRequests((prev) => {
-          const found = prev.find(
-            (r) => String((r as any)?.requestId || "").trim() === requestId,
-          );
-          const oldS3Key = (found as any)?.caseInfos?.ncFile?.s3Key;
-          if (oldS3Key) void deleteCncProgramCache(oldS3Key);
-          return prev;
+      if (
+        isSuccess &&
+        requestId &&
+        (sourceStep === "2-filled" || sourceStep === "3-nc")
+      ) {
+        invalidateCachesForProcessedFile({
+          kind: sourceStep === "2-filled" ? "filled" : "nc",
+          requestId,
+          requestMongoId,
+          incomingS3Key,
+          previousS3Key,
+          previousNcS3Key,
         });
       }
 
       let shouldRefreshList = false;
+      let foundRequest: ManufacturerRequest | null = null;
       if (requestId) {
-        setRequests((prev) =>
-          prev.map((r) => {
+        setRequests((prev) => {
+          foundRequest =
+            prev.find(
+              (r) => String((r as any)?.requestId || "").trim() === requestId,
+            ) || null;
+          return prev.map((r) => {
             if (String((r as any)?.requestId || "").trim() !== requestId) {
               return r;
             }
             if (sourceStep === "2-filled") {
               delete realtimeBaseRef.current[requestId];
-              const isSuccess =
-                String(status || "").trim().toLowerCase() === "success";
-              const incomingS3Key = isSuccess
-                ? String(notification?.data?.s3Key || "").trim()
-                : "";
-              const incomingFileName = isSuccess
-                ? String(notification?.data?.fileName || "").trim()
-                : "";
               const prevCaseInfos = ((r as any)?.caseInfos ||
                 {}) as Record<string, any>;
               const prevCamFile = (prevCaseInfos?.camFile ||
@@ -686,15 +871,27 @@ export function useWorksheetRealtimeStatus({
                     ...(normalizedFilePath
                       ? { filePath: normalizedFilePath }
                       : {}),
+                    uploadedAt: incomingUploadedAt || new Date().toISOString(),
+                    ...(incomingFileSize != null
+                      ? { fileSize: incomingFileSize }
+                      : {}),
                   }
                 : prevCamFile;
-              const nextCaseInfos = incomingS3Key
-                ? { ...prevCaseInfos, camFile: nextCamFile }
+              const nextCaseInfos = isSuccess
+                ? {
+                    ...prevCaseInfos,
+                    ...(incomingS3Key ? { camFile: nextCamFile } : {}),
+                    ncFile: null,
+                  }
                 : prevCaseInfos;
               return {
                 ...(r as any),
-                ...(incomingS3Key
-                  ? { caseInfos: nextCaseInfos, camFile: nextCamFile }
+                ...(isSuccess
+                  ? {
+                      caseInfos: nextCaseInfos,
+                      ...(incomingS3Key ? { camFile: nextCamFile } : {}),
+                      ncFile: null,
+                    }
                   : {}),
                 realtimeProgress: incomingS3Key
                   ? null
@@ -709,11 +906,13 @@ export function useWorksheetRealtimeStatus({
             if (sourceStep === "3-nc") {
               delete realtimeBaseRef.current[requestId];
 
-              const incomingS3Key = String(notification?.data?.s3Key || "").trim();
-              const incomingFileName = String(notification?.data?.fileName || "").trim();
-
-              const prevCaseInfos = ((r as any)?.caseInfos || {}) as Record<string, any>;
-              const prevNcFile = (prevCaseInfos?.ncFile || (r as any)?.ncFile || {}) as Record<string, any>;
+              const prevCaseInfos = ((r as any)?.caseInfos || {}) as Record<
+                string,
+                any
+              >;
+              const prevNcFile = (prevCaseInfos?.ncFile ||
+                (r as any)?.ncFile ||
+                {}) as Record<string, any>;
 
               const normalizedFilePath = incomingFileName
                 ? incomingFileName.replace(/^3-nc\//i, "")
@@ -723,6 +922,10 @@ export function useWorksheetRealtimeStatus({
                 ...prevNcFile,
                 ...(incomingS3Key ? { s3Key: incomingS3Key } : {}),
                 ...(normalizedFilePath ? { filePath: normalizedFilePath } : {}),
+                uploadedAt: incomingUploadedAt || new Date().toISOString(),
+                ...(incomingFileSize != null
+                  ? { fileSize: incomingFileSize }
+                  : {}),
               };
 
               const nextCaseInfos = {
@@ -739,7 +942,43 @@ export function useWorksheetRealtimeStatus({
               } as any;
             }
             return r;
-          }),
+          });
+        });
+      }
+
+      if (
+        isSuccess &&
+        requestId &&
+        (sourceStep === "2-filled" || sourceStep === "3-nc")
+      ) {
+        const localCamS3Key = String(
+          (foundRequest as any)?.caseInfos?.camFile?.s3Key || "",
+        ).trim();
+        const localNcS3Key = String(
+          (foundRequest as any)?.caseInfos?.ncFile?.s3Key || "",
+        ).trim();
+        invalidateCachesForProcessedFile({
+          kind: sourceStep === "2-filled" ? "filled" : "nc",
+          requestId,
+          requestMongoId:
+            requestMongoId || String((foundRequest as any)?._id || ""),
+          incomingS3Key,
+          previousS3Key,
+          previousNcS3Key: previousNcS3Key || localNcS3Key,
+          localCamS3Key,
+          localNcS3Key,
+        });
+        pushRegenerationAlert(
+          sourceStep === "2-filled" ? "filled" : "nc",
+          requestId,
+          {
+            requestMongoId,
+            clinicName: String(notification?.data?.clinicName || "").trim(),
+            patientName: String(notification?.data?.patientName || "").trim(),
+            tooth: String(notification?.data?.tooth || "").trim(),
+            request: foundRequest,
+            regenerated,
+          },
         );
       }
       if (shouldRefreshList && fetchRequests) {
@@ -747,12 +986,12 @@ export function useWorksheetRealtimeStatus({
           void fetchRequests(true);
         }, 180);
       }
-      // notification 경로 fallback: 2-filled 성공 시 열린 프리뷰 silent 갱신
+      // notification 경로 fallback: 2-filled/3-nc 성공 시 열린 프리뷰 silent 갱신
       // (app-event와 중복되어도 usePreviewLoader loadGeneration이 최신만 반영)
       if (
-        sourceStep === "2-filled" &&
-        String(status || "").trim().toLowerCase() === "success" &&
-        requestId
+        isSuccess &&
+        requestId &&
+        (sourceStep === "2-filled" || sourceStep === "3-nc")
       ) {
         window.setTimeout(() => {
           refreshOpenPreviewIfMatch(requestId, null);
@@ -834,9 +1073,13 @@ export function useWorksheetRealtimeStatus({
     showStartedToast,
     toast,
     refreshOpenPreviewIfMatch,
+    invalidateCachesForProcessedFile,
+    pushRegenerationAlert,
   ]);
 
   return {
     realtimeBaseRef,
+    regenerationAlerts,
+    dismissRegenerationAlert,
   };
 }

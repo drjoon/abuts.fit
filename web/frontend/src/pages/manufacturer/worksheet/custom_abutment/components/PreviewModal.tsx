@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: filled STL/NC 재생성 요청 시 pending 표시 + 로컬 캐시 선삭제.
 // - 2026-08-17: 세척.패킹 롤백 시 우편함 유지 안내 토스트.
 // - 2026-08-13: 가공중(Now Playing)에는 NC 코드 에디터·NC 재생성 비활성화.
 // - 2026-08-12: 상단 요약(환자/임플란트/생산) 문구가 열 너비를 넘으면 다음 줄로 넘김.
@@ -29,6 +30,7 @@
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/modules/requests/request.routes.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -60,7 +62,11 @@ import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { generateModelNumber } from "@/utils/modelNumber";
-import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
+import { deleteCncProgramCache, invalidateRequestPreviewCaches } from "@/shared/files/fileBlobCache";
+import {
+  markFilledStlRegenerationPending,
+  markNcRegenerationPending,
+} from "../utils/regenerationPending";
 import {
   type ManufacturerRequest,
   type ReviewStageKey,
@@ -1499,10 +1505,13 @@ export const PreviewModal = ({
       }
 
       // STL 재생성 성공 시 캐시 무효화 (filled.stl 재생성 시 NC도 재생성되므로 NC 캐시도 무효화)
-      const ncS3Key = activeReq?.caseInfos?.ncFile?.s3Key;
-      if (ncS3Key) {
-        await deleteCncProgramCache(ncS3Key);
-      }
+      markFilledStlRegenerationPending(activeReq?.requestId);
+      await invalidateRequestPreviewCaches({
+        camS3Key: activeReq?.caseInfos?.camFile?.s3Key,
+        ncS3Key: activeReq?.caseInfos?.ncFile?.s3Key,
+        requestMongoId: String(activeReq?._id || "").trim(),
+        requestId: String(activeReq?.requestId || "").trim(),
+      });
 
       toast({
         title: "재생성 요청",
@@ -1682,6 +1691,7 @@ export const PreviewModal = ({
       if (s3Key) {
         await deleteCncProgramCache(s3Key);
       }
+      markNcRegenerationPending(requestId);
 
       toast({
         title: "NC 재생성 요청",

@@ -108,6 +108,8 @@ Notes:
   - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx`
   - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
   - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+  - `src/pages/manufacturer/worksheet/custom_abutment/components/RegenerationCompleteAlerts.tsx`
+  - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts`
   - `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
   - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`
 - practice
@@ -342,6 +344,8 @@ Notes:
     라이노 완료 웹소켓(`request:stage-changed` source=`bg-file-processed`,
     `request:stl-metadata-updated` source=`bg-file-processed:2-filled`,
     notification `bg-file-processed` step=`2-filled`)으로 camFile이 패치되면 블러를 해제한다.
+    Filled STL/NC 재생성 완료 시 IndexedDB 캐시(s3Key·버전 키)를 삭제하고, 상단 「진행중인 의뢰 N건」 아래에
+    재생성 완료 alert를 띄운다. 클릭하면 PreviewModal을 forceRefresh로 연다.
     디자인+생산 큐(`DesignRequestTransferView`)에는 적용하지 않는다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`

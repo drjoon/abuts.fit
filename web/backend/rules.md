@@ -292,6 +292,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 가공 이력의 영속 SSOT는 `MachiningRecord` 입니다.
 - 팝빌/세금계산서 작업은 web이 직접 처리하지 않고 큐에 넣습니다.
 - BG 콜백 의뢰 매칭 우선순위는 `requestMongoId` → `requestId` → 파일명 fallback 입니다.
+- Rhino filled STL(`sourceStep=2-filled`) 재생성 성공 시 기존 `caseInfos.ncFile`을 `$unset` 한다.
+  - 가공 단계 NC는 새 filled STL 기준으로 CAM(NC) 재생성이 필요하다.
+  - 웹소켓 `bg-file-processed` / `request:stage-changed` payload에 `regenerated`, `ncCleared`, `uploadedAt`를 포함한다.
+  - 구현: `controllers/bg/bg.controller.js`
 - 의뢰 단계 승인(`review-status`, stage=request)에서
   의뢰자 BusinessAnchor의 `requestSettings.defaultManufacturerHexRotation`(레거시 `hexRotationAngle` 포함)이 null이고
   `processBothHexVariants=true`이면,

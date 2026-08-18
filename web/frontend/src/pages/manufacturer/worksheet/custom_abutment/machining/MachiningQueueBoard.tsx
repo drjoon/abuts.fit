@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 재생성 완료 alert 클릭 시 CAM 프리뷰를 forceRefresh로 연다.
 // - 2026-08-13: 가공중(Now Playing) 프리뷰에서 NC 에디터·재생성 잠금 신호를 PreviewModal에 전달.
 // - 2026-08-06: 큐→프리뷰에 designSoftware·헥스 회전(rnd/caseInfos) 전달. 가공 단계 누락 수정.
 // - 2026-08-06: 출고예정·마감 뱃지용 estimatedShipYmd를 큐→프리뷰로 전달.
@@ -18,6 +19,7 @@
 // - web/backend/controllers/requests/machiningPriorityRules.js
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { onNotification } from "@/shared/realtime/socket";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useSearchParams } from "react-router-dom";
@@ -152,8 +154,12 @@ const isMaterialExhaustedAlarmText = (value: unknown) => {
 
 export const MachiningQueueBoard = ({
   searchQuery,
+  pendingPreviewRequest = null,
+  onPendingPreviewConsumed,
 }: {
   searchQuery?: string;
+  pendingPreviewRequest?: ManufacturerRequest | null;
+  onPendingPreviewConsumed?: () => void;
 }) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -444,6 +450,39 @@ export const MachiningQueueBoard = ({
     setPreviewFiles: setCamPreviewFiles,
     setPreviewOpen: setCamPreviewOpen,
   });
+
+  useEffect(() => {
+    if (!pendingPreviewRequest) return;
+    onPendingPreviewConsumed?.();
+    void handleOpenPreview(pendingPreviewRequest, { forceRefresh: true });
+  }, [pendingPreviewRequest, handleOpenPreview, onPendingPreviewConsumed]);
+
+  useEffect(() => {
+    if (!token) return;
+    const unsub = onNotification((notification: any) => {
+      const type = String(notification?.type || "").trim();
+      if (type !== "bg-file-processed") return;
+      const sourceStep = String(notification?.data?.sourceStep || "").trim();
+      if (sourceStep !== "2-filled" && sourceStep !== "3-nc") return;
+      const status = String(notification?.data?.status || "")
+        .trim()
+        .toLowerCase();
+      if (status !== "success") return;
+      if (!camPreviewOpen) return;
+      const requestId = String(notification?.data?.requestId || "").trim();
+      const openReq = camPreviewFiles?.request as ManufacturerRequest | undefined;
+      const openRid = String(openReq?.requestId || "").trim();
+      if (!requestId || !openRid || requestId !== openRid || !openReq) return;
+      void handleOpenPreview(openReq, {
+        forceRefresh: true,
+        openOnlyIfAlreadyOpen: true,
+        silent: true,
+      });
+    });
+    return () => {
+      if (typeof unsub === "function") unsub();
+    };
+  }, [token, camPreviewOpen, camPreviewFiles, handleOpenPreview]);
 
   const {
     handleDownloadOriginalStl,

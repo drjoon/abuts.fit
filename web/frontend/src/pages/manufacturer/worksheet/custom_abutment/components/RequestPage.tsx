@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: Filled STL/NC 재생성 완료 시 큐 요약 아래 alert + 클릭 시 프리뷰.
 // - 2026-08-11: 디자인 어벗 파일 선택은 STL만 허용.
 // - 2026-08-11: 디자인 클레임 목록 갱신 — 프론트 타이머 제거, websocket(request:design-claim-changed)만 사용.
 // - 2026-08-11: transferChat(의뢰수신) 빈/로딩 시 빈 상태 카드 미표시(상위 전송 내역과 중복 방지).
@@ -24,6 +25,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RegenerationCompleteAlerts.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // - web/frontend/rules.md
 import {
   useMemo,
@@ -43,6 +46,8 @@ import {
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
+import { RegenerationCompleteAlerts } from "./RegenerationCompleteAlerts";
+import type { RegenerationCompleteAlert } from "./RegenerationCompleteAlerts";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -87,6 +92,10 @@ import { useMailboxManagement } from "@/pages/manufacturer/worksheet/custom_abut
 import { useRequestCardHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestCardHandlers";
 import { useCardActions } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions";
 import { useRequestFiltering } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFiltering";
+import {
+  markFilledStlRegenerationPending,
+  markNcRegenerationPending,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
@@ -155,6 +164,8 @@ export const RequestPage = ({
     tabStage === "shipping" ? SHIPPING_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
 
   const pageState = useRequestPageState();
+  const [pendingMachiningPreviewRequest, setPendingMachiningPreviewRequest] =
+    useState<ManufacturerRequest | null>(null);
   const [mailboxSummaries, setMailboxSummaries] = useState<
     MailboxSummaryItem[]
   >([]);
@@ -1054,7 +1065,33 @@ export const RequestPage = ({
     [handleOpenPreview],
   );
 
-  const { realtimeBaseRef } = useWorksheetRealtimeStatus({
+  const handleOpenRegenerationAlert = useCallback(
+    (alert: RegenerationCompleteAlert) => {
+      const rid = String(alert.requestId || "").trim();
+      const fromList = pageState.requests.find(
+        (item) => String(item?.requestId || "").trim() === rid,
+      );
+      const req = fromList || alert.request || null;
+      if (!req) return;
+      if (tabStage === "machining") {
+        setPendingMachiningPreviewRequest(req);
+        return;
+      }
+      void handleOpenPreviewWithSameReopenGuard(req, { forceRefresh: true });
+    },
+    [
+      handleOpenPreviewWithSameReopenGuard,
+      pageState.requests,
+      tabStage,
+    ],
+  );
+
+  const handlePendingMachiningPreviewConsumed = useCallback(() => {
+    setPendingMachiningPreviewRequest(null);
+  }, []);
+
+  const { realtimeBaseRef, regenerationAlerts, dismissRegenerationAlert } =
+    useWorksheetRealtimeStatus({
     enabled: true,
     token,
     setRequests: pageState.setRequests,
@@ -2337,6 +2374,11 @@ export const RequestPage = ({
             failCount += 1;
             continue;
           }
+          if (tabStage === "request") {
+            markFilledStlRegenerationPending(requestId);
+          } else {
+            markNcRegenerationPending(requestId);
+          }
           successCount += 1;
         } catch {
           failCount += 1;
@@ -2564,6 +2606,13 @@ export const RequestPage = ({
             counts={diameterQueueForReceive.counts}
           />
         )}
+        {showQueueBar ? (
+          <RegenerationCompleteAlerts
+            alerts={regenerationAlerts}
+            onOpen={handleOpenRegenerationAlert}
+            onDismiss={dismissRegenerationAlert}
+          />
+        ) : null}
 
         <div
           className={`space-y-4 ${tabStage === "shipping" ? "mt-0" : "mt-6"}`}
@@ -2573,7 +2622,11 @@ export const RequestPage = ({
               // 가공 큐 우선순위/자동시작 정책은 백엔드 SSOT로 관리한다.
               // - 아노다이징 ON 우선
               // - 아노다이징 OFF는 큐 마지막 + "아노 X 가공" 수동 시작
-              <MachiningQueueBoard searchQuery={worksheetSearch} />
+              <MachiningQueueBoard
+                searchQuery={worksheetSearch}
+                pendingPreviewRequest={pendingMachiningPreviewRequest}
+                onPendingPreviewConsumed={handlePendingMachiningPreviewConsumed}
+              />
             ) : tabStage === "shipping" ? (
               <div className="w-full">
                 <MailboxGrid

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 2-filled 재생성 성공 시 기존 NC 메타 $unset. regenerated/ncCleared를 웹소켓에 포함.
 // - 2026-08-16: request-meta — manufacturerHexRotation 누락 시 caseInfos/STL모델대로 폴백(500 제거).
 // related files:
 // - web/backend/rules.md
@@ -13,6 +14,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RegenerationCompleteAlerts.tsx
+// - web/frontend/src/shared/files/fileBlobCache.ts
 import { Types } from "mongoose";
 import s3Utils from "../../utils/s3.utils.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -871,6 +874,22 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     }
   }
 
+  const previousCamS3Key = String(
+    request?.caseInfos?.camFile?.s3Key || "",
+  ).trim();
+  const previousNcS3Key = String(request?.caseInfos?.ncFile?.s3Key || "").trim();
+  const callbackStep = String(sourceStep || "").trim();
+  const isCallbackSuccess =
+    String(status || "")
+      .trim()
+      .toLowerCase() === "success";
+  const isFilledRegeneration =
+    isCallbackSuccess && callbackStep === "2-filled" && Boolean(previousCamS3Key);
+  const isNcRegeneration =
+    isCallbackSuccess && callbackStep === "3-nc" && Boolean(previousNcS3Key);
+  const shouldClearNcOnFilled =
+    isCallbackSuccess && callbackStep === "2-filled" && Boolean(previousNcS3Key);
+
   if (status === "success") {
     switch (sourceStep) {
       case "2-filled":
@@ -1062,9 +1081,17 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     console.error("[BG-Callback] CncEvent.create failed:", e?.message);
   }
 
+  const mongoUpdate = { $set: updateData };
+  if (shouldClearNcOnFilled) {
+    mongoUpdate.$unset = { "caseInfos.ncFile": 1 };
+    console.log(
+      `[BG-Callback] Clearing NC after filled STL regeneration request=${request.requestId} previousNcS3Key=${previousNcS3Key}`,
+    );
+  }
+
   const updatedRequest = await Request.findByIdAndUpdate(
     request._id,
-    { $set: updateData },
+    mongoUpdate,
     { new: true },
   );
 
@@ -1094,10 +1121,32 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       message: "파일 처리 결과가 반영되었습니다.",
       data: {
         requestId: request?.requestId || null,
+        requestMongoId: String(request?._id || "").trim() || null,
         sourceStep: String(sourceStep || "").trim() || null,
         status: String(status || "").trim() || null,
         fileName: String(fileName || "").trim() || null,
         s3Key: s3Info?.s3Key || null, // 프론트엔드 캐시 무효화용
+        uploadedAt: s3Info?.uploadedAt || now,
+        fileSize: s3Info?.fileSize ?? incomingFileSize ?? null,
+        regenerated: isFilledRegeneration || isNcRegeneration,
+        regenerationKind:
+          callbackStep === "2-filled"
+            ? "filled"
+            : callbackStep === "3-nc"
+              ? "nc"
+              : null,
+        ncCleared: shouldClearNcOnFilled,
+        previousS3Key:
+          callbackStep === "2-filled"
+            ? previousCamS3Key || null
+            : callbackStep === "3-nc"
+              ? previousNcS3Key || null
+              : null,
+        previousNcS3Key: previousNcS3Key || null,
+        clinicName: String(request?.caseInfos?.clinicName || "").trim() || null,
+        patientName:
+          String(request?.caseInfos?.patientName || "").trim() || null,
+        tooth: String(request?.caseInfos?.tooth || "").trim() || null,
       },
       timestamp: new Date(),
     });
@@ -1196,6 +1245,10 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
                 ? "cam"
                 : "machining",
           reviewStatus: "APPROVED",
+          regenerated: isFilledRegeneration || isNcRegeneration,
+          regenerationKind:
+            step === "2-filled" ? "filled" : step === "3-nc" ? "nc" : null,
+          ncCleared: shouldClearNcOnFilled,
           request: normalizedUpdatedRequest,
         },
       );
@@ -1212,6 +1265,9 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             source: "bg-file-processed:2-filled",
             requestId: request?.requestId || null,
             requestMongoId: String(request?._id || "").trim() || null,
+            regenerated: isFilledRegeneration,
+            regenerationKind: "filled",
+            ncCleared: shouldClearNcOnFilled,
             metadata: {
               maxDiameter: caseInfos?.maxDiameter ?? null,
               connectionDiameter: caseInfos?.connectionDiameter ?? null,

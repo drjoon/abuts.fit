@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-08-18: filled STL 재생성 통보 시 큐 NC 메타를 비워 CAM 재생성을 가능하게 함.
 // - 2026-08-12: 빠른 가공 재배치 Alert 확인(닫기) 후 같은 id는 새로고침해도 재표시하지 않음.
 // - 2026-08-07: 예약목록 PlaylistJobItem에 의뢰자명·치과/환자 구조화 필드 전달.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -646,7 +647,10 @@ export const useMachiningBoard = ({
     }, 180);
   }, [refreshProductionQueues]);
 
-  const patchQueueNcMetaFromRequest = useCallback((requestRaw: any) => {
+  const patchQueueNcMetaFromRequest = useCallback((
+    requestRaw: any,
+    opts?: { clearNc?: boolean },
+  ) => {
     const requestId = String(requestRaw?.requestId || "").trim();
     const requestMongoId = String(requestRaw?._id || requestRaw?.id || "").trim();
     if (!requestId && !requestMongoId) return;
@@ -693,7 +697,9 @@ export const useMachiningBoard = ({
                 ? prevCaseInfos.ncFile
                 : {};
 
-          const mergedNcFile = requestNcFile
+          const mergedNcFile = opts?.clearNc
+            ? null
+            : requestNcFile
             ? {
                 ...prevNcFile,
                 ...requestNcFile,
@@ -1174,6 +1180,19 @@ export const useMachiningBoard = ({
         (eventRequest as any)?.caseInfos?.ncFile?.s3Key ||
           (eventRequest as any)?.ncFile?.s3Key,
       );
+      const regenerationKind = String(payload["regenerationKind"] || "").trim();
+      const ncCleared = payload["ncCleared"] === true;
+      const isFilledDoneEvent =
+        (source === "bg-file-processed" &&
+          (reviewStage === "request" || regenerationKind === "filled")) ||
+        (type === "request:stl-metadata-updated" &&
+          source === "bg-file-processed:2-filled");
+
+      if (isFilledDoneEvent && (ncCleared || !hasNc)) {
+        patchQueueNcMetaFromRequest(eventRequest as any, { clearNc: true });
+        scheduleNcQueueVerifyRefresh();
+        return;
+      }
 
       const isNcReadyEvent =
         hasNc &&

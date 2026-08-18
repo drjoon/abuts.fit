@@ -2,8 +2,11 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
 // IndexedDB 기반 바이너리 파일 Blob 캐시 유틸리티
 // key: fileId 또는 s3Key
+// change-log:
+// - 2026-08-18: filled STL/NC 재생성 시 s3Key·버전 키·cnc:s3 접두 캐시를 함께 삭제.
 
 const DB_NAME = "abutsfit-file-blob-cache";
 const DB_VERSION = 2;
@@ -206,8 +209,97 @@ export async function deleteFileBlob(key: string): Promise<void> {
 // CNC 프로그램 캐시 무효화 (s3Key 기반)
 export async function deleteCncProgramCache(s3Key: string): Promise<void> {
   if (!s3Key) return;
-  const cacheKey = `cnc:s3:${s3Key}`;
-  await deleteFileBlob(cacheKey);
+  await deleteFileBlobsMatchingS3Key(s3Key);
+}
+
+export async function deleteFileBlobsMatchingS3Key(s3Key: string): Promise<void> {
+  const needle = String(s3Key || "").trim();
+  if (!needle) return;
+  await deleteFileBlobsWhere((key) => {
+    return (
+      key === needle ||
+      key.startsWith(`${needle}:v=`) ||
+      key === `cnc:s3:${needle}` ||
+      key.startsWith(`cnc:s3:${needle}:`)
+    );
+  });
+}
+
+export async function deleteFileBlobsMatchingPrefix(
+  prefix: string,
+): Promise<void> {
+  const needle = String(prefix || "").trim();
+  if (!needle) return;
+  await deleteFileBlobsWhere(
+    (key) => key === needle || key.startsWith(`${needle}:`) || key.startsWith(needle),
+  );
+}
+
+export async function invalidateRequestPreviewCaches(opts: {
+  camS3Key?: string | null;
+  ncS3Key?: string | null;
+  requestMongoId?: string | null;
+  requestId?: string | null;
+}): Promise<void> {
+  const jobs: Promise<void>[] = [];
+  const camS3Key = String(opts.camS3Key || "").trim();
+  const ncS3Key = String(opts.ncS3Key || "").trim();
+  if (camS3Key) jobs.push(deleteFileBlobsMatchingS3Key(camS3Key));
+  if (ncS3Key && ncS3Key !== camS3Key) {
+    jobs.push(deleteFileBlobsMatchingS3Key(ncS3Key));
+  }
+  const ids = [opts.requestMongoId, opts.requestId]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const uniqueIds = Array.from(new Set(ids));
+  for (const id of uniqueIds) {
+    jobs.push(deleteFileBlobsMatchingPrefix(`stl:${id}:cam`));
+    jobs.push(deleteFileBlobsMatchingPrefix(`stl:${id}:original`));
+  }
+  if (!jobs.length) return;
+  await Promise.all(jobs);
+}
+
+async function deleteFileBlobsWhere(
+  match: (key: string) => boolean,
+): Promise<void> {
+  const db = await openDb();
+  if (!db) return;
+
+  return new Promise<void>((resolve: () => void) => {
+    try {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+
+      req.onsuccess = () => {
+        const records = (req.result as FileBlobRecord[]) || [];
+        const toDelete = records
+          .map((record) => String(record?.key || ""))
+          .filter((key) => key && match(key));
+
+        if (toDelete.length === 0) {
+          resolve();
+          return;
+        }
+
+        for (const key of toDelete) {
+          store.delete(key);
+        }
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      };
+
+      req.onerror = () => {
+        console.warn("IndexedDB deleteFileBlobsWhere error", req.error);
+        resolve();
+      };
+    } catch (e) {
+      console.warn("IndexedDB deleteFileBlobsWhere exception", e);
+      resolve();
+    }
+  });
 }
 
 // 모든 CNC 캐시 무효화 (cnc:s3: 프리픽스)
