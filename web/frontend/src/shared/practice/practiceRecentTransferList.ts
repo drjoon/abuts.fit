@@ -286,6 +286,12 @@ export const canDeletePracticeTransferByStatus = (status: unknown) => {
   );
 };
 
+/** 수락 전(의뢰)만 치과가 내용 수정 가능. 작업취소는 기공소 재선택 경로. */
+export const canEditPracticeTransferByStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  return s === "발송완료" || s === "수신완료" || s === "자동매칭";
+};
+
 const toDateLabel = (value: unknown) => {
   const d = new Date(String(value || ""));
   if (Number.isNaN(d.getTime())) return "-";

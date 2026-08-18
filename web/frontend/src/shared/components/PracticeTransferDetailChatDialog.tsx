@@ -15,6 +15,7 @@
 // - 2026-08-16: 이미지 미리보기(다운로드 오버레이) + IndexedDB 캐시.
 // - 2026-08-16: 프리뷰 파일 여러 개일 때 이전/다음 이동.
 // - 2026-08-16: STL/PLY/OBJ 클릭 시 3D 미리보기(다운로드는 모달).
+// - 2026-08-18: 치과 수락 전 의뢰 수정 CTA.
 // - 2026-08-16: 어벗 가공 시작 시 상세 모달 작업취소(수락 취소) 비활성 안내.
 // - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔) / 작업 파일(어벗 디자인·보철물).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 왼쪽 구강스캔 업로드 UI 제거(스캔 없이 수락).
@@ -36,7 +37,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { CircleHelp, MessageSquare } from "lucide-react";
+import { CircleHelp, MessageSquare, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -238,6 +239,9 @@ type PracticeTransferDetailChatDialogProps = {
   inputDisabled: boolean;
   /** 전송 중(ChatComposer isSending). 빈 draft 차단은 Composer가 처리 */
   sendDisabled?: boolean;
+  /** 치과: 수락 전 의뢰 내용을 작성 폼으로 불러와 수정 */
+  onEditRequest?: () => void;
+  editRequestDisabled?: boolean;
 };
 
 export function PracticeTransferDetailChatDialog({
@@ -312,6 +316,8 @@ export function PracticeTransferDetailChatDialog({
   composerPlaceholder,
   inputDisabled,
   sendDisabled = false,
+  onEditRequest,
+  editRequestDisabled = false,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -585,7 +591,20 @@ export function PracticeTransferDetailChatDialog({
         <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2 text-base">
             <MessageSquare className="h-4 w-4 text-primary-strong" />
-            {title}
+            <span className="min-w-0 flex-1 truncate">{title}</span>
+            {onEditRequest ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="ml-auto shrink-0 gap-1.5"
+                disabled={editRequestDisabled}
+                onClick={() => onEditRequest()}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                의뢰 수정
+              </Button>
+            ) : null}
           </DialogTitle>
         </DialogHeader>
 

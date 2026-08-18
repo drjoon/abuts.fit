@@ -1,0 +1,68 @@
+// related files:
+// - web/backend/utils/practiceTransferStage.js
+import {
+  canEditPracticeTransferContent,
+  resolvePracticeTransferManufacturerStage,
+} from "../../utils/practiceTransferStage.js";
+
+describe("practiceTransferStage pending-accept edit", () => {
+  test("지정 기공소 미열람(발송완료)은 수정 가능", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      targetLabAnchorId: "64a000000000000000000002",
+    };
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("발송완료");
+    expect(canEditPracticeTransferContent(doc)).toBe(true);
+  });
+
+  test("지정 기공소 열람(수신완료)은 수정 가능", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      targetLabAnchorId: "64a000000000000000000002",
+      requestorReadAt: new Date("2026-08-18T01:00:00.000Z"),
+    };
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("수신완료");
+    expect(canEditPracticeTransferContent(doc)).toBe(true);
+  });
+
+  test("자동매칭 공개 풀은 수정 가능", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "auto",
+      targetLabAnchorId: null,
+      autoMatch: { eligibleLabAnchorIds: ["64a000000000000000000002"] },
+    };
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("자동매칭");
+    expect(canEditPracticeTransferContent(doc)).toBe(true);
+  });
+
+  test("의뢰수락 이후는 수정 불가", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      targetLabAnchorId: "64a000000000000000000002",
+      requestorDownloadedAt: new Date("2026-08-18T02:00:00.000Z"),
+    };
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("의뢰수락");
+    expect(canEditPracticeTransferContent(doc)).toBe(false);
+  });
+
+  test("휴지통·작업취소는 수정 불가", () => {
+    expect(
+      canEditPracticeTransferContent({
+        status: "canceled",
+        matchingMode: "direct",
+      }),
+    ).toBe(false);
+    expect(
+      canEditPracticeTransferContent({
+        status: "active",
+        matchingMode: "direct",
+        targetLabAnchorId: "64a000000000000000000002",
+        workCanceledAt: new Date("2026-08-18T03:00:00.000Z"),
+      }),
+    ).toBe(false);
+  });
+});

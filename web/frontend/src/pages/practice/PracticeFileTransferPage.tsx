@@ -84,6 +84,7 @@
  * - 2026-08-16: 리메이크 버튼을 목록 검색 옆으로 이동. 컨펌은 리메이크비 무료·배송비 차감 안내.
  * - 2026-08-17: 리메이크=카드 Repeat 아이콘(툴팁)·단건 확인. 검색창 옆 선택 일괄 버튼 제거.
  * - 2026-08-16: 최근의뢰 카드=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·기간·메모 덤프 제거).
+ * - 2026-08-18: 수락 전(의뢰) 전송건을 폼에 불러와 수정. 삭제 후 재작성 대체.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -104,6 +105,7 @@ import {
   ChevronDown,
   LayoutGrid,
   Repeat,
+  Pencil,
 } from "lucide-react";
 import {
   Card,
@@ -198,6 +200,7 @@ import {
   PRACTICE_RECENT_STATUS_BADGES,
   PRACTICE_REMAKE_BADGE_CLASS,
   canRemakePracticeTransferByStatus,
+  canEditPracticeTransferByStatus,
   computeGroupedStatusCounts,
   filterGroupedTransfersByStatus,
   filterRequestsByPeriodAndSearch,
@@ -353,6 +356,25 @@ type DraftListSummary = {
 };
 
 const PRACTICE_DRAFT_TRANSFER_ID = "DRAFT-TEMP";
+
+type EditingSentTransfer = {
+  transferId: string;
+  transferMongoId: string;
+  orderDate: string;
+};
+
+const inferPracticeTransferFileMimetype = (fileName: string) => {
+  const lower = String(fileName || "").trim().toLowerCase();
+  const idx = lower.lastIndexOf(".");
+  const ext = idx >= 0 ? lower.slice(idx) : "";
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".bmp") return "image/bmp";
+  if (ext === ".stl") return "model/stl";
+  return "application/octet-stream";
+};
 
 const toDraftListSummary = (
   payload: PracticeTransferDraftPayload,
@@ -1055,6 +1077,7 @@ export const PracticeFileTransferPage = ({
   const [recentRequestsError, setRecentRequestsError] = useState("");
   const [recentRequestsHasMore, setRecentRequestsHasMore] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<RecentTransferItem | null>(null);
+  const [editingSentTransfer, setEditingSentTransfer] = useState<EditingSentTransfer | null>(null);
   const [labRejectedReselectTarget, setLabRejectedReselectTarget] =
     useState<RecentTransferItem | null>(null);
   const [labRejectedRetargetBusy, setLabRejectedRetargetBusy] = useState(false);
@@ -1101,6 +1124,7 @@ export const PracticeFileTransferPage = ({
   const skipNextArrivalAutoSyncRef = useRef(false);
   const suppressLocalFormPersistRef = useRef(false);
   const skipFormAutosaveRef = useRef(false);
+  const editingSentTransferRef = useRef<EditingSentTransfer | null>(null);
   const pendingLocalFormEditRef = useRef(false);
   const lastSavedFormFingerprintRef = useRef<string | null>(null);
   const currentFormFingerprintRef = useRef("");
@@ -1163,6 +1187,7 @@ export const PracticeFileTransferPage = ({
   pendingLocalFilesRef.current = files;
   draftFilesRef.current = draftFiles;
   activeDraftIdRef.current = activeDraftId;
+  editingSentTransferRef.current = editingSentTransfer;
   draftSummaryIdRef.current = String(draftSummary?.id || "").trim() || null;
   const recentLabsRef = useRef(recentLabs);
   recentLabsRef.current = recentLabs;
@@ -2627,6 +2652,7 @@ export const PracticeFileTransferPage = ({
     async (seq: number) => {
       if (seq !== formAutosaveSeqRef.current) return;
       if (!authToken) return;
+      if (editingSentTransferRef.current) return;
       if (requestSubmitting || fileSyncInFlightRef.current) return;
 
       const filesForSave = draftFilesRef.current;
@@ -2835,6 +2861,7 @@ export const PracticeFileTransferPage = ({
   useEffect(() => {
     if (!localFormHydrated) return;
     if (skipFormAutosaveRef.current) return;
+    if (editingSentTransferRef.current) return;
     if (!authToken) return;
     if (requestSubmitting) return;
 
@@ -2938,6 +2965,8 @@ export const PracticeFileTransferPage = ({
     setActiveDraftId(null);
     activeDraftSeenInListRef.current = null;
     draftSummaryIdRef.current = null;
+    setEditingSentTransfer(null);
+    editingSentTransferRef.current = null;
     lastSavedFormFingerprintRef.current = null;
     setLastSavedFormFingerprint(null);
     lastAppliedServerUpdatedAtRef.current = 0;
@@ -3336,7 +3365,16 @@ export const PracticeFileTransferPage = ({
   );
 
   const applyDraftSummaryToForm = useCallback(
-    (draft: DraftListSummary) => {
+    (
+      draft: DraftListSummary,
+      options?: {
+        keepOrderDate?: boolean;
+        keepPastArrival?: boolean;
+        skipDraftBind?: boolean;
+        skipDesignConfirm?: boolean;
+        skipJig?: boolean;
+      },
+    ) => {
       suppressLocalFormPersistRef.current = true;
       skipFormAutosaveRef.current = true;
       formAutosaveSeqRef.current += 1;
@@ -3383,11 +3421,17 @@ export const PracticeFileTransferPage = ({
       setLabSearch("");
 
       skipNextArrivalAutoSyncRef.current = true;
-      setOrderDate(todayDate);
+      const restoredOrderDate = String(parsed.orderDate || "").trim();
+      const nextOrderDate =
+        options?.keepOrderDate && /^\d{4}-\d{2}-\d{2}$/.test(restoredOrderDate)
+          ? restoredOrderDate
+          : todayDate;
+      setOrderDate(nextOrderDate);
       {
         const restoredArrival = String(parsed.arrivalDate || "").trim();
         const nextArrival =
-          restoredArrival && restoredArrival >= todayDate
+          restoredArrival &&
+          (options?.keepPastArrival || restoredArrival >= todayDate)
             ? restoredArrival
             : addDaysToDateInput(
                 todayDate,
@@ -3398,10 +3442,16 @@ export const PracticeFileTransferPage = ({
         setArrivalDate(nextArrival);
         setRushProcessing(
           shouldEnablePracticeRushProcessing({
-            orderYmd: todayDate,
+            orderYmd: nextOrderDate,
             arrivalYmd: nextArrival,
           }),
         );
+      }
+      if (typeof options?.skipDesignConfirm === "boolean") {
+        setSkipDesignConfirm(options.skipDesignConfirm);
+      }
+      if (typeof options?.skipJig === "boolean") {
+        setSkipJig(options.skipJig);
       }
       if (Number.isFinite(Number(parsed.arrivalDefaultDays))) {
         const days = normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays));
@@ -3433,8 +3483,14 @@ export const PracticeFileTransferPage = ({
       setToothWorks(nextToothWorks);
 
       setDraftFiles(draft.files);
-      setDraftSummary(draft);
-      setActiveDraftId(draft.id);
+      if (options?.skipDraftBind) {
+        setDraftSummary(null);
+        setActiveDraftId(null);
+        activeDraftSeenInListRef.current = null;
+      } else {
+        setDraftSummary(draft);
+        setActiveDraftId(draft.id);
+      }
       setExpressDone(false);
       setExpressStepId("confirm");
 
@@ -3488,7 +3544,7 @@ export const PracticeFileTransferPage = ({
               orderYmd: parsed.orderDate || todayDate,
               arrivalYmd: parsed.arrivalDate,
             }),
-            activeDraftId: draft.id,
+            activeDraftId: options?.skipDraftBind ? null : draft.id,
             updatedAt: Number.isFinite(ts) && ts > 0 ? ts : Date.now(),
           } satisfies PracticeTransferLocalFormDraft),
         );
@@ -3518,6 +3574,8 @@ export const PracticeFileTransferPage = ({
 
       // 다른 케이스의 로컬(미동기화) 파일이 섞여 전송되지 않게 비운다.
       void clearLocalFilesWithCache();
+      setEditingSentTransfer(null);
+      editingSentTransferRef.current = null;
       applyDraftSummaryToForm(draft);
       // 목록 카드보다 서버 최신 스냅샷을 우선해, 빈 기공소/환자명도 정확히 맞춘다.
       void loadPracticeTransferDraft({ draftId: draft.id });
@@ -3534,6 +3592,100 @@ export const PracticeFileTransferPage = ({
       clearLocalFilesWithCache,
       loadPracticeTransferDraft,
       practiceDraftList,
+      toast,
+    ],
+  );
+
+  const handleBeginEditSentTransfer = useCallback(
+    (transfer: RecentTransferItem) => {
+      if (!canEditPracticeTransferByStatus(transfer.status)) {
+        toast({
+          title: "수정할 수 없습니다",
+          description: "기공소가 수락하기 전(의뢰 단계)에만 내용을 바꿀 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const transferId = String(transfer.transferId || "").trim();
+      const transferMongoId = String(transfer.transferMongoIds?.[0] || "").trim();
+      if (!transferId) {
+        toast({
+          title: "의뢰를 찾지 못했습니다",
+          description: "목록을 새로고침한 뒤 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const restoredFiles: DraftTransferFileItem[] = (transfer.files || [])
+        .map((file, index) => {
+          const originalName = String(file.fileName || "").trim();
+          const s3Key = String(file.s3Key || "").trim();
+          if (!originalName || !s3Key) return null;
+          return {
+            fileId: `ptx:${transferId}:${index}:${s3Key}`,
+            originalName,
+            mimetype: inferPracticeTransferFileMimetype(originalName),
+            size: Number(file.size || 0),
+            s3Key,
+          };
+        })
+        .filter((row): row is DraftTransferFileItem => Boolean(row));
+
+      const memoSource = String(
+        transfer.rawTransferMemo || transfer.transferMemo || "",
+      ).trim();
+      const draft: DraftListSummary & { matchingMode?: string | null } = {
+        id: "",
+        practiceUserId: String(authUser?._id || "").trim(),
+        practiceUserLabel: "",
+        isMine: true,
+        targetLabAnchorId: String(transfer.targetLabAnchorId || "").trim() || null,
+        targetLabName: String(transfer.targetLab || "").trim(),
+        transferMemo: memoSource,
+        patientName: "",
+        fileCount: restoredFiles.length,
+        files: restoredFiles,
+        updatedAt: null,
+        createdAt: transfer.createdAt || null,
+        matchingMode: transfer.matchingMode || null,
+      };
+
+      void clearLocalFilesWithCache();
+      const nextEditing: EditingSentTransfer = {
+        transferId,
+        transferMongoId,
+        orderDate: String(transfer.orderDate || "").trim(),
+      };
+      setEditingSentTransfer(nextEditing);
+      editingSentTransferRef.current = nextEditing;
+      applyDraftSummaryToForm(draft, {
+        keepOrderDate: true,
+        keepPastArrival: true,
+        skipDraftBind: true,
+        skipDesignConfirm: transfer.skipDesignConfirm !== false,
+        skipJig: Boolean(transfer.skipJig),
+      });
+
+      returnToAllModalRef.current = false;
+      setTransferDialogOpen(false);
+      transferDialogOpenRef.current = false;
+      selectedTransferIdRef.current = "";
+      setSelectedTransfer(null);
+      setActiveChatRoom(null);
+      setRecentTransfersAllOpen(false);
+      setDraftsOpen(false);
+      toast({
+        title: "의뢰 수정",
+        description:
+          "작성 폼에 불러왔습니다. 저장하면 같은 의뢰가 기공소에 다시 전달됩니다.",
+      });
+    },
+    [
+      applyDraftSummaryToForm,
+      authUser?._id,
+      clearLocalFilesWithCache,
       toast,
     ],
   );
@@ -3854,6 +4006,7 @@ export const PracticeFileTransferPage = ({
 
   const syncDraftFilesToServer = async (nextDraftFiles: DraftTransferFileItem[]) => {
     if (!authToken) return;
+    if (editingSentTransferRef.current) return;
 
     if (nextDraftFiles.length === 0) {
       const draftId = String(activeDraftIdRef.current || "").trim();
@@ -4885,11 +5038,16 @@ export const PracticeFileTransferPage = ({
 
       const transferFiles = [...draftFiles, ...localTempFiles];
       const clinicName = autoClinicName;
-      const transferId = makeTransferId();
+      const editing = editingSentTransferRef.current;
+      const transferId = editing?.transferId || makeTransferId();
+      const submitOrderDate =
+        (editing?.orderDate && /^\d{4}-\d{2}-\d{2}$/.test(editing.orderDate)
+          ? editing.orderDate
+          : orderDate) || orderDate;
       const submitArrivalDate = arrivalDate;
       const transferMemo = buildPracticeTransferMemo({
         memo: requestMemo,
-        orderDate,
+        orderDate: submitOrderDate,
         arrivalDate: submitArrivalDate,
         arrivalDefaultDays,
         prosthesisTypes: normalizedProsthesisTypes,
@@ -4966,16 +5124,18 @@ export const PracticeFileTransferPage = ({
             ];
 
       const submitRes = await apiFetch<unknown>({
-        path: "/api/practice/transfers",
+        path: editing
+          ? `/api/practice/transfers/${encodeURIComponent(transferId)}/update-content`
+          : "/api/practice/transfers",
         method: "POST",
         token: authToken,
         jsonBody: {
           transferId,
-          draftId: draftIdToSubmit || undefined,
+          draftId: editing ? undefined : draftIdToSubmit || undefined,
           matchingMode: autoMatch ? "auto" : "direct",
           targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
           targetLabName: String(selectedLab?.name || "").trim(),
-          orderDate,
+          orderDate: submitOrderDate,
           arrivalDate: submitArrivalDate,
           arrivalDefaultDays,
           transferMemo,
@@ -4991,7 +5151,12 @@ export const PracticeFileTransferPage = ({
       });
       if (!submitRes.ok) {
         const body = asApiMessagePayload(submitRes.data);
-        throw new Error(String(body?.message || "기공소 전송에 실패했습니다."));
+        throw new Error(
+          String(
+            body?.message ||
+              (editing ? "의뢰 수정에 실패했습니다." : "기공소 전송에 실패했습니다."),
+          ),
+        );
       }
 
       suppressLocalFormPersistRef.current = true;
@@ -5015,9 +5180,10 @@ export const PracticeFileTransferPage = ({
       await loadPracticeTransferDraftList();
 
       toast({
-        title: "기공소 전송 완료",
-        description:
-          remainingDraftCount > 0
+        title: editing ? "의뢰가 수정되었습니다" : "기공소 전송 완료",
+        description: editing
+          ? "같은 의뢰가 기공소에 다시 전달되었습니다. 수락 전이면 기공소 화면에도 바로 반영됩니다."
+          : remainingDraftCount > 0
             ? `작성 중이던 의뢰만 전송했습니다. 임시저장 ${remainingDraftCount}건은 목록에 남아 있습니다.`
             : "기공소로 정상 전송되었습니다.",
       });
@@ -5031,7 +5197,9 @@ export const PracticeFileTransferPage = ({
       }
     } catch (error) {
       toast({
-        title: "기공소 전송 실패",
+        title: editingSentTransferRef.current
+          ? "의뢰 수정 실패"
+          : "기공소 전송 실패",
         description:
           error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
         variant: "destructive",
@@ -5043,8 +5211,9 @@ export const PracticeFileTransferPage = ({
     }
   };
 
-  const formSyncStatusLabel =
-    formSyncStatus === "pending"
+  const formSyncStatusLabel = editingSentTransfer
+    ? "수락 전 수정 중"
+    : formSyncStatus === "pending"
       ? "동기화 대기…"
       : formSyncStatus === "saving"
         ? "동기화 중…"
@@ -5196,8 +5365,9 @@ export const PracticeFileTransferPage = ({
     setArrivalDate(addDaysToDateInput(orderDate, arrivalDefaultDays));
   }, [orderDate, arrivalDefaultDays]);
 
-  // 주문일은 항상 오늘(KST)로 고정
+  // 주문일은 항상 오늘(KST)로 고정. 수락 전 수정 중이면 원래 주문일을 유지한다.
   useEffect(() => {
+    if (editingSentTransfer || editingSentTransferRef.current) return;
     if (orderDate === todayDate) return;
     skipNextArrivalAutoSyncRef.current = true;
     setOrderDate(todayDate);
@@ -5206,7 +5376,7 @@ export const PracticeFileTransferPage = ({
       if (current && current >= todayDate) return current;
       return addDaysToDateInput(todayDate, arrivalDefaultDays);
     });
-  }, [arrivalDefaultDays, orderDate, todayDate]);
+  }, [arrivalDefaultDays, editingSentTransfer, orderDate, todayDate]);
 
   useEffect(() => {
     if (!localFormHydrated) return;
@@ -5282,6 +5452,8 @@ export const PracticeFileTransferPage = ({
     setDraftSummary(null);
     setActiveDraftId(null);
     activeDraftSeenInListRef.current = null;
+    setEditingSentTransfer(null);
+    editingSentTransferRef.current = null;
     setToothChartResetNonce((n) => n + 1);
     setExpressDone(false);
     setExpressStepId("lab");
@@ -5917,6 +6089,12 @@ export const PracticeFileTransferPage = ({
               </div>
               </div>
             </CardHeader>
+            {editingSentTransfer ? (
+              <div className="mx-6 mb-1 rounded-md border border-primary/30 bg-primary-soft px-3 py-2 text-sm text-primary-strong">
+                기공소가 수락하기 전인 의뢰를 수정 중입니다. 저장하면 같은 의뢰가
+                업데이트됩니다. 새로 작성하면 수정이 취소됩니다.
+              </div>
+            ) : null}
             <CardContent className="pt-5">
               {showExpressWizard ? (
                 <PracticeTransferExpressWizard
@@ -5945,6 +6123,10 @@ export const PracticeFileTransferPage = ({
                   submitting={requestSubmitting}
                   canSubmit={hasRequiredSubmitFields}
                   missingRequiredFields={missingRequiredFields}
+                  submitLabel={editingSentTransfer ? "수정 저장" : "기공소로 전송"}
+                  submittingLabel={
+                    editingSentTransfer ? "수정 저장 중…" : "전송 중…"
+                  }
                 />
               ) : isExpressMode && expressDone ? (
                 <PracticeTransferExpressDonePanel
@@ -6001,7 +6183,13 @@ export const PracticeFileTransferPage = ({
                     onClick={() => void handleSubmitPracticeRequest()}
                     disabled={requestSubmitting || !hasRequiredSubmitFields}
                   >
-                    {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
+                    {requestSubmitting
+                      ? editingSentTransfer
+                        ? "수정 저장 중..."
+                        : "기공소로 전송 중..."
+                      : editingSentTransfer
+                        ? "수정 저장"
+                        : "기공소로 전송"}
                   </Button>
                 </span>
               </TooltipTrigger>
@@ -6011,9 +6199,11 @@ export const PracticeFileTransferPage = ({
                 className="max-w-xs border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-snug text-slate-900 shadow-lg"
               >
                 {requestSubmitting ? (
-                  <p>전송 중…</p>
+                  <p>{editingSentTransfer ? "수정 저장 중…" : "전송 중…"}</p>
                 ) : hasRequiredSubmitFields ? (
-                  <p className="text-primary-strong">전송 가능</p>
+                  <p className="text-primary-strong">
+                    {editingSentTransfer ? "수정 저장 가능" : "전송 가능"}
+                  </p>
                 ) : (
                   <ul className="space-y-1">
                     {(
@@ -6359,6 +6549,32 @@ export const PracticeFileTransferPage = ({
                             </div>
 
                             <div className="flex shrink-0 items-center gap-1.5">
+                              {canEditPracticeTransferByStatus(transfer.status) ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-flex">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 text-primary-strong hover:text-primary"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleBeginEditSentTransfer(transfer);
+                                          }}
+                                          aria-label="의뢰 수정"
+                                        >
+                                          <Pencil className="h-4 w-4" />
+                                        </Button>
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="max-w-xs text-xs">
+                                      수락 전 의뢰 수정
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : null}
                               {canRemake ? (
                                 <TooltipProvider>
                                   <Tooltip>
@@ -6980,6 +7196,9 @@ export const PracticeFileTransferPage = ({
             handleAskDeleteTransfer(transfer);
           }}
           onAskRemake={(transfer) => askRemakeForTransfer(transfer)}
+          onEditTransfer={(transfer) => {
+            handleBeginEditSentTransfer(transfer);
+          }}
         />
 
         <PracticeTransferDetailChatDialog
@@ -6994,6 +7213,12 @@ export const PracticeFileTransferPage = ({
           title="의뢰 상세 · 기공소 채팅"
           conversationTitle="기공소와의 소통"
           authToken={authToken}
+          onEditRequest={
+            selectedTransfer &&
+            canEditPracticeTransferByStatus(selectedTransfer.status)
+              ? () => handleBeginEditSentTransfer(selectedTransfer)
+              : undefined
+          }
           chatHeaderAction={
             selectedTransfer &&
             selectedTransfer.canRateLab &&

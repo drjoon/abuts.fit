@@ -958,6 +958,19 @@ export function RequestorPracticeReceivePage({
           }
           return merged;
         });
+        if (!append) {
+          setSelectedTransfer((prev) => {
+            if (!prev) return prev;
+            const key = String(prev.transferId || prev._id || "").trim();
+            if (!key) return prev;
+            const next = mapped.find(
+              (row) =>
+                String(row.transferId || "").trim() === key ||
+                String(row._id || "").trim() === key,
+            );
+            return next || prev;
+          });
+        }
 
         setPage(nextPage);
 
@@ -1036,6 +1049,7 @@ export function RequestorPracticeReceivePage({
           action === "deleted" ||
           action === "removed" ||
           action === "purged" ||
+          (action === "content-updated" && payload.retargetedAway === true) ||
           statusLower === "canceled" ||
           statusLower === "cancelled" ||
           statusLower === "deleted" ||
@@ -1273,6 +1287,7 @@ export function RequestorPracticeReceivePage({
 
       const shouldReload =
         type === "practice:transfer-created" ||
+        action === "content-updated" ||
         isRemovedEvent ||
         !transferId;
 

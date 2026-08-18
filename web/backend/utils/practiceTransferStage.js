@@ -6,6 +6,7 @@
 // - 2026-08-15: 대시보드 버킷에 거부 추가. 수락/거부·완료/취소 병기.
 // - 2026-08-16: 공개풀 decline의 labRejectedAt은 미배정 취소 시 「취소」(거부 아님).
 // - 2026-08-16: 자동매칭 재공개(openPool)는 작업취소보다 우선 → 「자동매칭」.
+// - 2026-08-18: 수락 전(의뢰) 내용 수정 게이트 canEditPracticeTransferContent.
 import {
   isAutoMatchMode,
   toAutoMatchApiFields,
@@ -63,6 +64,19 @@ export const resolvePracticeTransferManufacturerStage = (
   if (transferDoc?.requestorDownloadedAt) return "의뢰수락";
   if (transferDoc?.requestorReadAt) return "수신완료";
   return "발송완료";
+};
+
+/** 치과가 전송 내용을 수정할 수 있는 단계 — 의뢰(발송완료|수신완료|자동매칭). 수락·취소·거부 이후 불가. */
+export const canEditPracticeTransferContent = (
+  transferDoc,
+  options = {},
+) => {
+  const stage = resolvePracticeTransferManufacturerStage(transferDoc, options);
+  return (
+    stage === "발송완료" ||
+    stage === "수신완료" ||
+    stage === "자동매칭"
+  );
 };
 
 /**

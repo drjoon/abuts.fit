@@ -118,6 +118,8 @@ type PracticeTransferExpressWizardProps = {
   submitting: boolean;
   canSubmit: boolean;
   missingRequiredFields: string[];
+  submitLabel?: string;
+  submittingLabel?: string;
 };
 
 const stepIndexOf = (id: PracticeTransferExpressStepId) =>
@@ -200,6 +202,8 @@ export function PracticeTransferExpressWizard({
   submitting,
   canSubmit,
   missingRequiredFields,
+  submitLabel = "기공소로 전송",
+  submittingLabel = "전송 중…",
 }: PracticeTransferExpressWizardProps) {
   const stepIndex = Math.max(0, stepIndexOf(stepId));
   const stepMeta = PRACTICE_TRANSFER_EXPRESS_STEPS[stepIndex];
@@ -445,15 +449,17 @@ export function PracticeTransferExpressWizard({
                     onClick={onSubmit}
                     disabled={submitting || !canSubmit}
                   >
-                    {submitting ? "전송 중…" : "기공소로 전송"}
+                    {submitting ? submittingLabel : submitLabel}
                   </Button>
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-sm">
                 {submitting ? (
-                  <p>전송 중…</p>
+                  <p>{submittingLabel}</p>
                 ) : canSubmit ? (
-                  <p className="text-primary-strong">전송 가능</p>
+                  <p className="text-primary-strong">
+                    {submitLabel === "기공소로 전송" ? "전송 가능" : "수정 저장 가능"}
+                  </p>
                 ) : (
                   <ul className="space-y-1">
                     {missingRequiredFields.map((field) => (

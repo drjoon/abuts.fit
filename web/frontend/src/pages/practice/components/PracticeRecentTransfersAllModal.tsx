@@ -11,7 +11,7 @@
  * 2026-08-16: 카드 본문=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·메모 덤프 제거).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Repeat, Search, Trash2 } from "lucide-react";
+import { Pencil, Repeat, Search, Trash2 } from "lucide-react";
 
 import {
   Dialog,
@@ -43,6 +43,7 @@ import {
   PRACTICE_RECENT_STATUS_BADGES,
   PRACTICE_REMAKE_BADGE_CLASS,
   canDeletePracticeTransferByStatus,
+  canEditPracticeTransferByStatus,
   canRemakePracticeTransferByStatus,
   computeGroupedStatusCounts,
   filterGroupedTransfersByStatus,
@@ -78,6 +79,7 @@ type PracticeRecentTransfersAllModalProps = {
   onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
   onAskRemake?: (transfer: PracticeRecentTransferItem) => void;
+  onEditTransfer?: (transfer: PracticeRecentTransferItem) => void;
 };
 
 export function PracticeRecentTransfersAllModal({
@@ -95,6 +97,7 @@ export function PracticeRecentTransfersAllModal({
   onSelectTransfer,
   onDeleteTransfer,
   onAskRemake,
+  onEditTransfer,
 }: PracticeRecentTransfersAllModalProps) {
   const [period, setPeriod] = useState(initialPeriod);
   const [search, setSearch] = useState(initialSearch);
@@ -383,6 +386,7 @@ export function PracticeRecentTransfersAllModal({
                     .trim() || "-";
                 const deleteLocked = !canDeletePracticeTransferByStatus(transfer.status);
                 const canRemake = canRemakePracticeTransferByStatus(transfer.status);
+                const canEdit = canEditPracticeTransferByStatus(transfer.status);
                 const acceptOverdue = isPracticeTransferAcceptOverdue({
                   status: transfer.status,
                   orderDate: transfer.orderDate,
@@ -457,6 +461,32 @@ export function PracticeRecentTransfersAllModal({
                         />
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
+                        {canEdit && onEditTransfer ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-primary-strong hover:text-primary"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onEditTransfer(transfer);
+                                    }}
+                                    aria-label="의뢰 수정"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="left" className="max-w-xs text-xs">
+                                수락 전 의뢰 수정
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : null}
                         {canRemake && onAskRemake ? (
                           <TooltipProvider>
                             <Tooltip>

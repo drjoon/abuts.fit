@@ -37,6 +37,7 @@ import {
   retargetPracticeTransferLab,
   upsertPracticeTransferDraft,
   upsertPracticeTransferLabRating,
+  updatePracticeTransferContent,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 import {
   getPracticeTransferSettings,
@@ -110,6 +111,13 @@ router.post(
 router.post("/trash/empty", authenticate, sendAuth, emptyPracticeTransferTrash);
 
 router.post("/remake", authenticate, sendAuth, remakePracticeTransfers);
+
+router.post(
+  "/:transferId/update-content",
+  authenticate,
+  sendAuth,
+  updatePracticeTransferContent,
+);
 
 router.get("/received", authenticate, receiveAuth, getReceivedPracticeTransfers);
 

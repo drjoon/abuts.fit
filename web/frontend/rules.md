@@ -586,6 +586,7 @@ Notes:
 - practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`
   - 상단 필터 뱃지 UI(기공의뢰·기공의뢰수신·대시보드 기공 행): **의뢰 · 수락 · 완료 · 발송 · 추적관리** (수신 뱃지 없음. `수신완료`·`자동매칭` 공개 풀은 의뢰 집계·필터에 합산. 발송=`포장.발송` 슬롯). 카드 뱃지 문구도 동일(`toStatusBadgeLabel`: 자동매칭/발송·수신완료→의뢰, 의뢰수락→수락). 상대 표시명만「자동 매칭」마스킹(실명은 DB·앵커에 보존).
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
+  - 수락 전(의뢰 단계) 내용 수정: 최근의뢰 연필·상세 「의뢰 수정」→ 작성 폼 복원 → `POST .../update-content`. 수락 이후는 삭제와 같이 잠금.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=의뢰수락)
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(수락 시 갱신).
