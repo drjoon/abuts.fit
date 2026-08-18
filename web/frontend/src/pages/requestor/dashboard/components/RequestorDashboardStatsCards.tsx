@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 치과 행 라벨 구강스캔/어벗디자인. 라벨 박스 폭 확대.
 // - 2026-08-15: 기공「수락/거부」·「완료/취소」라벨 — 2줄·긴 라벨 허용과 동일 경로.
 // - 2026-08-15: 기공「완료/취소」라벨 — 2줄·긴 라벨 허용과 동일 경로.
 // - 2026-08-12: 카드 라벨 2줄 허용 — 어벗「무료 재제작 잔여」표시.
@@ -18,6 +19,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/shared/ui/gigongAbutAccent.ts
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/shared/ui/cn";
@@ -26,6 +28,7 @@ import {
   GIGONG_ABUT_ACCENT,
   GIGONG_ABUT_CONNECTOR_THICKNESS_CLASS,
   gigongAbutConnectorLineClass,
+  resolveGigongAbutAccentKey,
   type GigongAbutAccentKey,
 } from "@/shared/ui/gigongAbutAccent";
 
@@ -39,6 +42,7 @@ export type RequestorDashboardStat = {
 
 export type RequestorDashboardStatRow = {
   rowLabel: string;
+  accent?: GigongAbutAccentKey;
   stats: RequestorDashboardStat[];
 };
 
@@ -52,10 +56,22 @@ type Props = {
 };
 
 /** 기공/어벗 공통: 라벨 열 폭을 맞춰 카드 영역 시작점을 정렬 */
-const ROW_LABEL_COL_CLASS = "w-full xl:w-[10rem] xl:shrink-0";
+const ROW_LABEL_COL_CLASS = "w-full xl:w-[11rem] xl:shrink-0";
+const ROW_LABEL_BOX_CLASS = "h-[3rem] w-[8.25rem]";
 
-const resolveRowTheme = (label: string) =>
-  GIGONG_ABUT_ACCENT[label as GigongAbutAccentKey] || DEFAULT_GIGONG_ABUT_ACCENT;
+const resolveRowAccent = (row: {
+  rowLabel?: string;
+  accent?: GigongAbutAccentKey;
+}): GigongAbutAccentKey | undefined =>
+  row.accent || resolveGigongAbutAccentKey(row.rowLabel);
+
+const resolveRowTheme = (row: {
+  rowLabel?: string;
+  accent?: GigongAbutAccentKey;
+}) => {
+  const accent = resolveRowAccent(row);
+  return (accent && GIGONG_ABUT_ACCENT[accent]) || DEFAULT_GIGONG_ABUT_ACCENT;
+};
 
 const StatCardSkeleton = () => (
   <Card className="app-glass-card app-glass-card--lg min-w-0 xl:flex-1">
@@ -69,13 +85,20 @@ const StatCardSkeleton = () => (
   </Card>
 );
 
-const RowLabelSlot = ({ label }: { label: string }) => {
-  const theme = resolveRowTheme(label);
+const RowLabelSlot = ({
+  label,
+  accent,
+}: {
+  label: string;
+  accent?: GigongAbutAccentKey;
+}) => {
+  const theme = resolveRowTheme({ rowLabel: label, accent });
   return (
     <div className="flex h-full min-h-[3.5rem] w-full items-center justify-center">
       <div
         className={cn(
-          "relative inline-flex h-[3rem] w-[6.5rem] items-center justify-center overflow-hidden rounded-xl border px-2 py-1.5 backdrop-blur-sm",
+          "relative inline-flex items-center justify-center overflow-hidden rounded-xl border px-2.5 py-1.5 backdrop-blur-sm",
+          ROW_LABEL_BOX_CLASS,
           theme.shell,
           theme.glow,
         )}
@@ -86,7 +109,7 @@ const RowLabelSlot = ({ label }: { label: string }) => {
         />
         <span
           className={cn(
-            "relative z-[1] text-center text-xs font-semibold leading-none tracking-[0.14em]",
+            "relative z-[1] text-center text-xs font-semibold leading-tight tracking-wide",
             theme.text,
           )}
         >
@@ -146,15 +169,17 @@ const renderStatCards = (
 
 const StatsRowShell = ({
   rowLabel,
+  accent,
   children,
 }: {
   rowLabel?: string;
+  accent?: GigongAbutAccentKey;
   children: React.ReactNode;
 }) => (
   <div className="relative z-[1] flex flex-col gap-2 xl:flex-row xl:items-stretch">
     {rowLabel ? (
       <div className={ROW_LABEL_COL_CLASS}>
-        <RowLabelSlot label={rowLabel} />
+        <RowLabelSlot label={rowLabel} accent={accent} />
       </div>
     ) : null}
     <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:flex xl:flex-1">
@@ -174,11 +199,9 @@ const StatsRow = ({
     <div className="relative">
       <div
         aria-hidden
-        className={gigongAbutConnectorLineClass(
-          row.rowLabel as GigongAbutAccentKey,
-        )}
+        className={gigongAbutConnectorLineClass(resolveRowAccent(row))}
       />
-      <StatsRowShell rowLabel={row.rowLabel}>
+      <StatsRowShell rowLabel={row.rowLabel} accent={row.accent}>
         {renderStatCards(row, onCardClick)}
       </StatsRowShell>
     </div>
@@ -210,7 +233,7 @@ export const RequestorDashboardStatsCards = ({
               <div className="relative z-[1] flex flex-col gap-2 xl:flex-row xl:items-stretch">
                 <div className={ROW_LABEL_COL_CLASS}>
                   <div className="flex min-h-[3.5rem] w-full items-center justify-center">
-                    <Skeleton className="h-[3rem] w-[6.5rem] rounded-xl" />
+                    <Skeleton className="h-[3rem] w-[8.25rem] rounded-xl" />
                   </div>
                 </div>
                 <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:flex xl:flex-1">

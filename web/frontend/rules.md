@@ -17,7 +17,7 @@
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
-- Requestor workspace header: 기간 필터는 대시보드만. 지난 의뢰는 대시보드 `RequestorRecentRequestsCard` 헤더 우측. 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
+- Requestor workspace header: 기간 필터는 대시보드만. 지난 의뢰는 대시보드 `RequestorRecentRequestsCard` 헤더 우측. 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
 - Semantic color palette (강제, 앱 전체):
   - 의미 축 4 + 서비스 1만 사용. 같은 축 안 차이는 soft/muted/DEFAULT/strong 밝기만.
     - **Primary** (`--primary*`) — 브랜드·CTA·공정·묶음출고·정상/완료
@@ -94,6 +94,8 @@ Notes:
   - `src/pages/requestor/new_request/utils/patientGroups.ts` (구강스캔 자동묶음·파일크기 분류)
   - `src/pages/requestor/new_request/hooks/usePatientFileGroups.ts`
   - `src/shared/components/RequestorWorkspaceHeader.tsx` (대시보드 기간 필터+알림)
+  - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx` (치과 헤더 `[정책 안내]`만)
+  - `src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx` (치과 행 라벨=구강스캔/어벗디자인)
   - `src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx` (지난 의뢰 버튼)
   - `src/pages/requestor/credits/RequestorCreditsPage.tsx` (사이드바 크레딧: 내역/충전)
   - `src/shared/legal/creditPrepaidCopy.ts` (기공료 선입금 UI/FAQ 카피)
@@ -160,13 +162,13 @@ Notes:
     - 상단 배너: `LabDashboardTopBanners` — 기공의뢰수신·어벗생산의뢰 상단.
       - 왼쪽: 인증 기공소 가입 안내 (`LabAutoMatchParticipationBanner`) → `?tab=auto-match` (`abutsLabCertification.status=certified`일 때만 숨김)
       - 오른쪽: 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
-      - 대시보드 `[정책 안내]` 옆 `[가입 이유]`로도 동일 모달 열기(기공소·치과)
+      - 대시보드 `[정책 안내]` 옆 `[가입 이유]`로도 동일 모달 열기(기공소)
       - `src/features/platform/PlatformBenefitsDialog.tsx` (`variant`: lab | practice)
       - `src/shared/platform/platformBenefitsContent.ts`
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
-  - 의뢰자(치과) 설정: `requestorKind=practice`일 때 알림 **왼쪽**에 「구독」탭 (`?tab=subscription`)
-    - `src/features/settings/tabs/PracticeSubscriptionTab.tsx` — 월 구독료·멤버십 단가 혜택 + 구독/해지. 대시보드 헤더 `[구독]`(미구독 시 빨간 하이라이트) → 이 탭
+  - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=서비스 3종 단일가(어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만 · 풀세트 9만). 멤버십/구독 UI 없음.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정 on·off·%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소는 설정「어벗츠 인증」에서 신청(`POST /api/businesses/me/auto-match-participation`, 미인증 시 신청만·월정 0). 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정은 기본 무료(`directPlatformFeeEnabled` off) · on 시 `directPlatformFeeRate%`. 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
@@ -430,7 +432,7 @@ Notes:
     잔액 < 50만원이면 사이드바 `크레딧`에 깜빡이는 충전 뱃지·클릭 시 `?tab=charge` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 치과·기공소 경로는 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금).
-  - 가격 정책/대시보드: `PricingPolicyDialog` — CNC어벗 생산만(2만/멤버십 1.5만) · CNC어벗 디자인+생산(4만/멤버십 2.5만) · 환봉어벗 생산만/디자인+생산(`creditSettings` 단가, 0원이면 별도 고지) + 배송비 별도(박스당 과금).
+  - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 서비스 3종 단일가(어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만 · 풀세트 9만=2.5+0.5+6) · 환봉은 고시가(0원이면 별도 고지) + 배송비 별도(박스당 과금). 멤버십/구독 행 없음.
   - 제조사 정산규칙: 원청–하청 고정단가(의뢰·배송 공급가, 면세). % 분배 안내 금지.
   - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 딜러사·개발운영사 `AFFILIATE_TO_ABUTS`만 과세.
 
@@ -581,11 +583,12 @@ Notes:
     - 변경 후 `notifyRequestorAccessUpdated`
   - 기공의뢰서: 발신=`kind===practice`, 수신=`kind===lab` (`PracticeTransferRoleTabs`)
   - 치과 사이드: 「기공의뢰」메인 행 + 서브 `구강스캔으로`(`/dashboard/practice-transfers?mode=send`, 서비스 2·3) · `어벗디자인으로`(`/dashboard/new-request`, 서비스 1). 기공소 사이드는 기공의뢰수신·어벗생산의뢰 유지.
+  - 치과 대시보드 요약 행 라벨: `구강스캔` / `어벗디자인` (기공소는 `기공` / `어벗`). 액센트는 기공·어벗 토큰.
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
   - 계정 전환: `AccountSwitcher`
 
 - practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`
-  - 상단 필터 뱃지 UI(기공의뢰·기공의뢰수신·대시보드 기공 행): **의뢰 · 수락 · 완료 · 발송 · 추적관리** (수신 뱃지 없음. `수신완료`·`자동매칭` 공개 풀은 의뢰 집계·필터에 합산. 발송=`포장.발송` 슬롯). 카드 뱃지 문구도 동일(`toStatusBadgeLabel`: 자동매칭/발송·수신완료→의뢰, 의뢰수락→수락). 상대 표시명만「자동 매칭」마스킹(실명은 DB·앵커에 보존).
+  - 상단 필터 뱃지 UI(기공의뢰·기공의뢰수신·대시보드 구강스캔 행): **의뢰 · 수락 · 완료 · 발송 · 추적관리** (수신 뱃지 없음. `수신완료`·`자동매칭` 공개 풀은 의뢰 집계·필터에 합산. 발송=`포장.발송` 슬롯). 카드 뱃지 문구도 동일(`toStatusBadgeLabel`: 자동매칭/발송·수신완료→의뢰, 의뢰수락→수락). 상대 표시명만「자동 매칭」마스킹(실명은 DB·앵커에 보존).
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - 수락 전(의뢰 단계) 내용 수정: 최근의뢰 연필(카드 헤더)·상세 좌측 의뢰정보 「의뢰 수정」→ 작성 폼 복원 → `POST .../update-content`. 수락 이후는 삭제와 같이 잠금. 수정 저장은 임시저장 목록 재조회를 기다리지 않음. 최근의뢰·임시저장·휴지통 카드 메타는 1행 1항목(세로 스택, 잘림 없음).
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 치과 요약 라벨 구강스캔/어벗디자인 → 기공/어벗 액센트 매핑.
 // - 2026-08-11: 기공=soft blue(208°) / 어벗=soft gold(46°) — 낮은 채도.
 // - 2026-08-11: 기공=sky(199°) / 어벗=coral(19°) 보색 쌍.
 // - 2026-08-11: 기공=sky / 어벗=emerald — 다른 색 계열로 구분감 강화.
@@ -11,8 +12,18 @@
 // - web/frontend/src/shared/ui/semanticStatus.ts
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/features/layout/DashboardSidebarNav.tsx
 
 export type GigongAbutAccentKey = "기공" | "어벗";
+
+/** 치과 대시보드 행 라벨(구강스캔/어벗디자인)도 기공·어벗 액센트에 매핑 */
+export const resolveGigongAbutAccentKey = (
+  label?: string | null,
+): GigongAbutAccentKey | undefined => {
+  if (label === "기공" || label === "구강스캔") return "기공";
+  if (label === "어벗" || label === "어벗디자인") return "어벗";
+  return undefined;
+};
 
 export type GigongAbutAccentTheme = {
   shell: string;

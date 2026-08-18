@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - .cursor/rules/design-fee.mdc
 // change-log:
+// - 2026-08-18: 치과 고시 — 서비스 3종 단일가(생산·디자인+생산·풀세트 지그/지르).
 // - 2026-08-14: 환봉 0원은「가격 별도 고지」로 표시.
 // - 2026-08-14: 환봉 단가 필드 포함. 도입 종류별 단가 계산은 labFeeSchedule.
 // - 2026-08-13: creditSettings 멤버십/일반 생산·디자인+생산 단가 정규화.
@@ -86,6 +87,11 @@ export const ABUTS_ABUTMENT_DESIGN_AND_PRODUCTION_LIST_PRICE =
 export const ABUTS_ABUTMENT_DESIGN_LIST_FEE =
   ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE -
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE;
+
+/** 서비스 3 풀세트 구성 — 지그+임시치아 (1치) */
+export const ABUTS_ABUTMENT_JIG_AND_TEMP_PRICE = 5_000;
+/** 서비스 3 풀세트 구성 — 지르코니아 보철 (1치) */
+export const ABUTS_ABUTMENT_ZIRCONIA_PROSTHESIS_PRICE = 60_000;
 
 export const ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT = 50_000;
 

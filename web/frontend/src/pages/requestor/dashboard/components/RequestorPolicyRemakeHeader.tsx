@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 치과 헤더 [구독] 제거. 정책 안내는 서비스 3종 단일가 모달만.
 // - 2026-08-15: [구독] 라벨. 미구독 시 빨간 하이라이트 → 설정 `?tab=subscription`.
 // - 2026-08-13: 치과 [멤버십] → 가입 모달. [가입 이유] 제거.
 // - 2026-08-12: 기공소·치과 — [정책 안내] 오른쪽 [가입 이유] 버튼(PlatformBenefitsDialog).
@@ -12,17 +13,12 @@
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
-// - web/frontend/src/features/settings/tabs/PracticeSubscriptionTab.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
-import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import { usePracticeMembershipStatus } from "@/shared/pricing/useAbutsAbutmentPricingTier";
-import { cn } from "@/shared/ui/cn";
 import { useState } from "react";
 
 type PricingReferralStats = {
@@ -85,11 +81,6 @@ export const useRequestorMonthlyRemakeFreeRemaining = () => {
 
 export const RequestorPolicyRemakeHeader = () => {
   const [policyOpen, setPolicyOpen] = useState(false);
-  const navigate = useNavigate();
-  const { kind, loading } = useRequestorBusinessAccess();
-  const membership = usePracticeMembershipStatus();
-  const showSubscription = !loading && kind === "practice";
-  const needsSubscription = showSubscription && !membership.active;
 
   return (
     <>
@@ -101,23 +92,6 @@ export const RequestorPolicyRemakeHeader = () => {
       >
         정책 안내
       </Button>
-
-      {showSubscription ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className={cn(
-            "h-8 px-10 text-xs",
-            needsSubscription
-              ? "border-red-500 bg-red-50 text-red-700 ring-2 ring-red-500/40 hover:bg-red-100 hover:text-red-800"
-              : "border border-input bg-white text-foreground hover:bg-slate-50 hover:text-foreground",
-          )}
-          onClick={() => navigate("/dashboard/settings?tab=subscription")}
-        >
-          구독
-        </Button>
-      ) : null}
 
       <PricingPolicyDialog open={policyOpen} onOpenChange={setPolicyOpen} />
     </>

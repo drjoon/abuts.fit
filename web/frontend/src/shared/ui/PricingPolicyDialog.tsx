@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 치과 정책 — 멤버십/구독 제거. 서비스 3종 단일가(어벗디자인·구강스캔·풀세트).
 // - 2026-08-17: 디자인비+지그제작비(수락 기공소 지급) 행 추가. 견적 요약의 기공비(보철+디자인) 분류와 맞춤.
 // - 2026-08-16: 기공소는 멤버십 없이 CNC 1만/2만·환봉 2만/3만(지그 제외) 고정 단가. 치과는 기존 멤버십 안내 유지.
 // - 2026-08-14: 환봉어벗 단가를 creditSettings에서 읽어 표시(0원이면 별도 고지).
@@ -30,7 +31,6 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
-// - web/frontend/src/features/platform/PracticeMembershipJoinDialog.tsx
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Dialog,
@@ -39,7 +39,6 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { request } from '@/shared/api/apiClient';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useRequestorBusinessAccess } from '@/shared/business/useRequestorBusinessAccess';
@@ -47,14 +46,11 @@ import {
   CREDIT_SETTINGS_DEFAULTS,
   useSystemSettings
 } from '@/hooks/useSystemSettings';
-import { usePracticeMembershipStatus } from '@/shared/pricing/useAbutsAbutmentPricingTier';
-import { PracticeMembershipJoinDialog } from '@/features/platform/PracticeMembershipJoinDialog';
 import {
+  ABUTS_ABUTMENT_JIG_AND_TEMP_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
-  ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
+  ABUTS_ABUTMENT_ZIRCONIA_PROSTHESIS_PRICE,
   formatAbutsAbutmentServiceWon,
   formatAbutsManwon
 } from '@/shared/pricing/abutsAbutmentService';
@@ -157,33 +153,16 @@ function PriceRow({
   );
 }
 
-function resolveRoundBarPriceRow(regular: number, membership: number) {
-  const hasRegular = regular > 0;
-  const hasMembership = membership > 0;
-  if (!hasRegular && !hasMembership) {
+function resolveSinglePriceRow(primary: number, fallback = 0) {
+  const amount = primary > 0 ? primary : fallback;
+  if (amount <= 0) {
     return {
       value: '가격 별도 고지',
-      strikeValue: undefined as string | undefined,
-      unitLabel: '1개당'
-    };
-  }
-  if (hasRegular && hasMembership) {
-    return {
-      value: `멤버십 ${formatAbutsManwon(membership)}`,
-      strikeValue: formatAbutsManwon(regular),
-      unitLabel: '1개당'
-    };
-  }
-  if (hasMembership) {
-    return {
-      value: `멤버십 ${formatAbutsManwon(membership)}`,
-      strikeValue: undefined as string | undefined,
       unitLabel: '1개당'
     };
   }
   return {
-    value: formatAbutsManwon(regular),
-    strikeValue: undefined as string | undefined,
+    value: formatAbutsManwon(amount),
     unitLabel: '1개당'
   };
 }
@@ -208,13 +187,8 @@ export const PricingPolicyDialog = ({
 }: Props) => {
   const { token } = useAuthStore();
   const { kind } = useRequestorBusinessAccess();
-  const membership = usePracticeMembershipStatus();
   const isLab = kind === 'lab';
   const showWelcomeCredit = isLab;
-  const showMembershipJoin = kind === 'practice';
-  const isPracticeMember = membership.active;
-  const cancelScheduled = isPracticeMember && membership.cancelAtPeriodEnd;
-  const [membershipOpen, setMembershipOpen] = useState(false);
   const [leadTimes, setLeadTimes] = useState(DEFAULT_LEAD_TIMES);
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
@@ -225,36 +199,14 @@ export const PricingPolicyDialog = ({
         CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit
     ) || CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit
   );
-  const membershipMonthlyFee = Math.max(
-    0,
-    Number(
-      systemSettings?.creditSettings?.practiceMembershipMonthlyFee ??
-        CREDIT_SETTINGS_DEFAULTS.practiceMembershipMonthlyFee ??
-        ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT
-    ) || ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT
-  );
-  const productionRegular = Math.max(
-    0,
-    Number(
-      systemSettings?.creditSettings?.regularProductionPrice ??
-        ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE
-    ) || ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE
-  );
-  const productionMembership = Math.max(
+  const productionPrice = Math.max(
     0,
     Number(
       systemSettings?.creditSettings?.membershipProductionPrice ??
         ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
     ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
   );
-  const designAndProductionRegular = Math.max(
-    0,
-    Number(
-      systemSettings?.creditSettings?.regularDesignAndProductionPrice ??
-        ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE
-    ) || ABUTS_ABUTMENT_REGULAR_DESIGN_AND_PRODUCTION_PRICE
-  );
-  const designAndProductionMembership = Math.max(
+  const designAndProductionPrice = Math.max(
     0,
     Number(
       systemSettings?.creditSettings?.membershipDesignAndProductionPrice ??
@@ -289,14 +241,32 @@ export const PricingPolicyDialog = ({
         CREDIT_SETTINGS_DEFAULTS.abutmentDesignLabFee
     ) || CREDIT_SETTINGS_DEFAULTS.abutmentDesignLabFee
   );
-
-  const roundBarProductionRow = resolveRoundBarPriceRow(
-    roundBarProductionRegular,
-    roundBarProductionMembership
+  const shippingFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.shippingFee ??
+        CREDIT_SETTINGS_DEFAULTS.shippingFee
+    ) || CREDIT_SETTINGS_DEFAULTS.shippingFee
   );
-  const roundBarDesignRow = resolveRoundBarPriceRow(
-    roundBarDesignRegular,
-    roundBarDesignMembership
+  const expressFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.expressFee ??
+        CREDIT_SETTINGS_DEFAULTS.expressFee
+    ) || CREDIT_SETTINGS_DEFAULTS.expressFee
+  );
+  const jigAndTempPrice = ABUTS_ABUTMENT_JIG_AND_TEMP_PRICE;
+  const zirconiaPrice = ABUTS_ABUTMENT_ZIRCONIA_PROSTHESIS_PRICE;
+  const fullSetPrice =
+    designAndProductionPrice + jigAndTempPrice + zirconiaPrice;
+
+  const practiceRoundBarProductionRow = resolveSinglePriceRow(
+    roundBarProductionMembership,
+    roundBarProductionRegular
+  );
+  const practiceRoundBarDesignRow = resolveSinglePriceRow(
+    roundBarDesignMembership,
+    roundBarDesignRegular
   );
 
   useEffect(() => {
@@ -353,17 +323,20 @@ export const PricingPolicyDialog = ({
       ? '개발운영사 분배 기준'
       : variant === 'salesman'
         ? '딜러사 수수료 정책'
-        : '커스텀 어벗 생산 가격 · 출고 정책 안내';
+        : isLab
+          ? '커스텀 어벗 생산 가격 · 출고 정책 안내'
+          : '가격 · 출고 정책 안내';
 
   const subtitle =
     variant === 'devops'
       ? '유료의뢰비 정산 비율과 화면 안내를 확인하세요.'
       : variant === 'salesman'
         ? '소개 수수료 지급 기준과 정산 주기를 확인하세요.'
-        : '단가 · 출고 기준을 한눈에 확인하세요.';
+        : isLab
+          ? '단가 · 출고 기준을 한눈에 확인하세요.'
+          : '구강스캔 · 어벗디자인 단가와 출고 기준을 확인하세요.';
 
   return (
-    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0 sm:rounded-2xl'>
         <DialogHeader className='border-b border-slate-100 px-6 pb-4 pt-6'>
@@ -484,98 +457,88 @@ export const PricingPolicyDialog = ({
                   ) : (
                     <>
                       <PriceRow
-                        label='CNC어벗 생산만'
-                        strikeValue={formatAbutsManwon(productionRegular)}
-                        value={`멤버십 ${formatAbutsManwon(productionMembership)}`}
-                        unitLabel='1개당'
+                        label='어벗디자인 · 생산'
+                        value={formatAbutsManwon(productionPrice)}
+                        unitLabel='1개당 · 완성 STL'
                       />
                       <div className='h-px bg-slate-100' />
                       <PriceRow
-                        label='CNC어벗 디자인+생산 의뢰'
-                        strikeValue={formatAbutsManwon(
-                          designAndProductionRegular
-                        )}
-                        value={`멤버십 ${formatAbutsManwon(
-                          designAndProductionMembership
-                        )}`}
-                        unitLabel='1개당'
+                        label='구강스캔 · 디자인+생산'
+                        value={formatAbutsManwon(designAndProductionPrice)}
+                        unitLabel='1개당 · 지그 생략'
+                      />
+                      <div className='h-px bg-slate-100' />
+                      <PriceRow
+                        label='구강스캔 · 디자인+생산+보철'
+                        value={formatAbutsManwon(fullSetPrice)}
+                        unitLabel={`1치 · 디자인+생산 ${formatAbutsManwon(
+                          designAndProductionPrice
+                        )} + 지그·임시치아 ${formatAbutsManwon(
+                          jigAndTempPrice
+                        )} + 지르 ${formatAbutsManwon(zirconiaPrice)}`}
                       />
                       <div className='h-px bg-slate-100' />
                       <PriceRow
                         label='환봉어벗 생산만'
-                        strikeValue={roundBarProductionRow.strikeValue}
-                        value={roundBarProductionRow.value}
-                        unitLabel={roundBarProductionRow.unitLabel}
+                        value={practiceRoundBarProductionRow.value}
+                        unitLabel={practiceRoundBarProductionRow.unitLabel}
                       />
                       <div className='h-px bg-slate-100' />
                       <PriceRow
                         label='환봉어벗 디자인+생산'
-                        strikeValue={roundBarDesignRow.strikeValue}
-                        value={roundBarDesignRow.value}
-                        unitLabel={roundBarDesignRow.unitLabel}
-                      />
-                      <div className='h-px bg-slate-100' />
-                      <PriceRow
-                        label='치과 멤버십'
-                        value={`월 ${formatAbutsAbutmentServiceWon(
-                          membershipMonthlyFee
-                        )}`}
-                        note={
-                          cancelScheduled
-                            ? '해지 예약 · 다음 결제일까지 유지'
-                            : '매월 구독료 자동 결제'
-                        }
-                        noteAction={
-                          showMembershipJoin ? (
-                            isPracticeMember ? (
-                              <Button
-                                type='button'
-                                variant='link'
-                                className='h-auto shrink-0 px-0 py-0 text-xs font-semibold'
-                                onClick={() => setMembershipOpen(true)}
-                              >
-                                {cancelScheduled ? '해지 예약' : '이용 중'}
-                              </Button>
-                            ) : (
-                              <Button
-                                type='button'
-                                variant='link'
-                                className='h-auto shrink-0 px-0 py-0 text-xs font-semibold'
-                                onClick={() => setMembershipOpen(true)}
-                              >
-                                멤버십 가입
-                              </Button>
-                            )
-                          ) : null
-                        }
+                        value={practiceRoundBarDesignRow.value}
+                        unitLabel={practiceRoundBarDesignRow.unitLabel}
                       />
                     </>
                   )}
-                  <div className='h-px bg-slate-100' />
-                  <PriceRow
-                    label='디자인비+지그제작비'
-                    value={formatAbutsAbutmentServiceWon(abutmentDesignLabFee)}
-                    unitLabel='1개당 · 기공의뢰 CA 시 수락 기공소 지급(기공비)'
-                  />
+                  {isLab ? (
+                    <>
+                      <div className='h-px bg-slate-100' />
+                      <PriceRow
+                        label='디자인비+지그제작비'
+                        value={formatAbutsAbutmentServiceWon(
+                          abutmentDesignLabFee
+                        )}
+                        unitLabel='1개당 · 기공의뢰 CA 시 수락 기공소 지급(기공비)'
+                      />
+                    </>
+                  ) : null}
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='커스텀 어벗 신속 출고'
-                    value='+2,000원'
+                    value={`+${formatAbutsAbutmentServiceWon(expressFee)}`}
                     unitLabel='1개당'
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
                     label='배송비'
-                    value='3,500원'
+                    value={formatAbutsAbutmentServiceWon(shippingFee)}
                     unitLabel='1박스당'
                   />
                 </div>
                 <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>
-                  <span className='font-medium text-slate-800'>
-                    기공의뢰 견적
-                  </span>
-                  : 기공비 = 보철기공비 + 디자인비(+지그) · 어벗 = 어벗생산비.
-                  <br />
+                  {isLab ? (
+                    <>
+                      <span className='font-medium text-slate-800'>
+                        기공의뢰 견적
+                      </span>
+                      : 기공비 = 보철기공비 + 디자인비(+지그) · 어벗 = 어벗생산비.
+                      <br />
+                    </>
+                  ) : (
+                    <>
+                      <span className='font-medium text-slate-800'>
+                        구강스캔
+                      </span>
+                      은 기공의뢰,{' '}
+                      <span className='font-medium text-slate-800'>
+                        어벗디자인
+                      </span>
+                      은 완성 STL 생산입니다. 지정 기공소 보철은 해당 기공소
+                      수가를 씁니다.
+                      <br />
+                    </>
+                  )}
                   <span className='font-medium text-slate-800'>
                     리메이크 무료
                   </span>
@@ -679,7 +642,8 @@ export const PricingPolicyDialog = ({
                     <p className='mt-1 text-xs leading-relaxed text-slate-600'>
                       영업일 12시 이전은 당일 16:00, 이후·휴일은 익영업일
                       16:00 목표. 디자인+생산은 +1영업일. 묶음보다 빠를 때만
-                      선택 가능하며, 1개당 +2,000원이 추가됩니다.
+                      선택 가능하며, 1개당 +
+                      {formatAbutsAbutmentServiceWon(expressFee)}이 추가됩니다.
                     </p>
                   </div>
                 </div>
@@ -711,10 +675,5 @@ export const PricingPolicyDialog = ({
         </div>
       </DialogContent>
     </Dialog>
-      <PracticeMembershipJoinDialog
-        open={membershipOpen}
-        onOpenChange={setMembershipOpen}
-      />
-    </>
   );
 };

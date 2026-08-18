@@ -57,6 +57,7 @@ import {
   modelFileBasename,
 } from "@/shared/files/modelPreviewFile";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   RequestorPolicyRemakeHeader,
   useRequestorMonthlyRemakeFreeRemaining,
@@ -78,6 +79,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-18: 치과 요약 행 라벨 기공/어벗 → 구강스캔/어벗디자인.
 // - 2026-08-15: 기공 요약「수락」카드 →「수락/거부」병기(accepted/rejected).
 // - 2026-08-15: 기공 요약「완료」카드 →「완료/취소」병기(completed/canceled).
 // - 2026-08-15: 기공 요약 카드 — dashboard-cards-summary.practiceTransferStats 연동.
@@ -129,6 +131,7 @@ type DashboardOutletContext = {
 
 export const RequestorDashboardPage = () => {
   const { user, token } = useAuthStore();
+  const { kind: requestorKind } = useRequestorBusinessAccess();
   const queryClient = useQueryClient();
   const location = useLocation();
   const { toast } = useToast();
@@ -2008,8 +2011,16 @@ export const RequestorDashboardPage = () => {
   })();
 
   const requestorStatRows: RequestorDashboardStatRow[] = [
-    { rowLabel: "기공", stats: practiceTransferStats },
-    { rowLabel: "어벗", stats: abutmentStats },
+    {
+      rowLabel: requestorKind === "lab" ? "기공" : "구강스캔",
+      accent: "기공",
+      stats: practiceTransferStats,
+    },
+    {
+      rowLabel: requestorKind === "lab" ? "어벗" : "어벗디자인",
+      accent: "어벗",
+      stats: abutmentStats,
+    },
   ];
 
   return (
@@ -2053,7 +2064,7 @@ export const RequestorDashboardPage = () => {
             rows={requestorStatRows}
             loading={isStatsLoading}
             onCardClick={(stat, rowLabel) => {
-              if (rowLabel === "기공") return;
+              if (rowLabel === "기공" || rowLabel === "구강스캔") return;
               setStatsModalLabel(stat.label);
               setStatsModalOpen(true);
             }}
