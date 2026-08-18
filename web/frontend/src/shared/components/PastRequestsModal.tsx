@@ -4,6 +4,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-18: 모달을 정책 안내와 같은 rounded-2xl·필터 카드 톤으로 정리.
 // - 2026-08-18: 지난 의뢰 기본에서 취소 제외(추적관리만).
 // - 2026-08-18: 열릴 때 initialPeriod로 페이지 헤더 기간과 동기.
 // - 2026-08-03: PastRequestsModal: display normalize manufacturer stage (의뢰 -> 준비) for table '상태' column. (display-only)
@@ -12,6 +13,7 @@ import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -265,13 +267,18 @@ export const PastRequestsModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader className="pb-2">
-          <DialogTitle className="text-lg">{title || "지난 의뢰"}</DialogTitle>
+      <DialogContent className="flex h-[min(85vh,800px)] w-[92vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
+        <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
+          <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
+            {title || "지난 의뢰"}
+          </DialogTitle>
+          <DialogDescription className="text-sm text-slate-500">
+            추적관리 단계의 지난 의뢰를 기간별로 확인하고 상세를 엽니다.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 min-h-0 flex-1">
-          <div className="flex flex-col gap-2">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-5">
+          <div className="rounded-xl bg-slate-50 px-3.5 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2 py-0.5">
                 <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
@@ -279,7 +286,7 @@ export const PastRequestsModal = ({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-9"
+                  className="h-9 rounded-lg"
                   onClick={resetFilters}
                   disabled={loading}
                 >
@@ -288,36 +295,36 @@ export const PastRequestsModal = ({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 py-0.5">
+            <div className="mt-2 flex flex-wrap items-center gap-2 py-0.5">
               <Input
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="h-9 w-[150px]"
+                className="h-9 w-[150px] rounded-lg bg-white"
               />
-              <span className="text-xs text-muted-foreground">~</span>
+              <span className="text-xs text-slate-400">~</span>
               <Input
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="h-9 w-[150px]"
+                className="h-9 w-[150px] rounded-lg bg-white"
               />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="검색 (의뢰번호/치과/환자/임플란트)"
-                className="h-9 w-full sm:w-[320px]"
+                className="h-9 w-full rounded-lg bg-white sm:w-[320px]"
               />
             </div>
           </div>
 
           <div
             ref={scrollRef}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-auto rounded-md border"
+            className="min-h-0 flex-1 overflow-y-auto overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
           >
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableHead className="w-[170px]">일시</TableHead>
                   <TableHead className="w-[90px]">상태</TableHead>
                   <TableHead className="min-w-[220px]">케이스</TableHead>
@@ -339,18 +346,18 @@ export const PastRequestsModal = ({
                   return (
                     <TableRow
                       key={id || requestId}
-                      className="cursor-pointer"
+                      className="cursor-pointer hover:bg-slate-50"
                       onClick={() => onSelectRequest(r)}
                     >
-                      <TableCell className="text-xs">
+                      <TableCell className="text-xs text-slate-600">
                         {formatDate(r?.createdAt)}
                       </TableCell>
-                      <TableCell className="text-xs font-medium">
+                      <TableCell className="text-xs font-medium text-slate-900">
                         {stage}
                       </TableCell>
-                      <TableCell className="text-xs">{caseText}</TableCell>
-                      <TableCell className="text-xs">{implantText}</TableCell>
-                      <TableCell className="text-xs font-mono">
+                      <TableCell className="text-xs text-slate-700">{caseText}</TableCell>
+                      <TableCell className="text-xs text-slate-700">{implantText}</TableCell>
+                      <TableCell className="font-mono text-xs text-slate-800">
                         {requestId}
                       </TableCell>
                     </TableRow>
@@ -361,7 +368,7 @@ export const PastRequestsModal = ({
                   <TableRow>
                     <TableCell
                       colSpan={5}
-                      className="text-center text-sm text-muted-foreground py-4"
+                      className="py-8 text-center text-sm text-slate-500"
                     >
                       불러오는 중...
                     </TableCell>
@@ -372,7 +379,7 @@ export const PastRequestsModal = ({
                   <TableRow>
                     <TableCell
                       colSpan={5}
-                      className="text-center text-sm text-muted-foreground py-8"
+                      className="py-12 text-center text-sm text-slate-500"
                     >
                       조회 결과가 없습니다.
                     </TableCell>

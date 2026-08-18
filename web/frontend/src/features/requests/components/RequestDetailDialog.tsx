@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-18: 의뢰 상세 모달을 rounded-2xl 헤더·섹션 카드 톤으로 정리.
 // - 2026-08-09: 배송비(출고 시)를 크레딧 사용액 아래로 이동, 별도 차감 안내 문구 분리.
 // - 2026-08-09: 디자인+생산 — 커스텀어벗 치아만 표시·과금 수량. 신속비=단가×어벗수.
 // - 2026-08-09: 디자인+생산(우열)에서 STL 다어벗 공통이 아닌 스펙(임플란트/SW/직경/유지홈) 숨김.
@@ -339,23 +340,21 @@ export const RequestDetailDialog = ({
       }}
     >
       <DialogContent
-        className={`w-[min(96vw,880px)] max-w-[880px] max-h-[92vh] overflow-y-auto ${
-          isUnmachinable ? "border-accent-muted ring-2 ring-accent-muted/80" : ""
+        className={`flex max-h-[85vh] w-[min(96vw,880px)] max-w-[880px] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl ${
+          isUnmachinable ? "border-accent-muted" : ""
         }`}
       >
-        <DialogHeader>
+        <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <DialogTitle>의뢰 상세</DialogTitle>
-              {description && (
-                <DialogDescription>
-                  <span className="text-sm text-muted-foreground">
-                    {description}
-                  </span>
-                </DialogDescription>
-              )}
+            <div className="min-w-0">
+              <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
+                의뢰 상세
+              </DialogTitle>
+              {description ? (
+                <p className="mt-1 text-sm text-slate-500">{description}</p>
+              ) : null}
             </div>
-            <div className="flex items-center gap-2 pr-8">
+            <div className="flex items-center gap-2 pr-2">
               {request &&
                 getStatusBadge(
                   request.manufacturerStage || "-",
@@ -371,11 +370,11 @@ export const RequestDetailDialog = ({
           </div>
         </DialogHeader>
         <DialogDescription asChild>
-          <div className="space-y-3 text-sm text-foreground">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-5 text-sm text-foreground">
             {isUnmachinable && (
-              <div className="rounded-md border border-accent-muted bg-accent-soft px-3 py-2 space-y-1">
-                <div className="text-xs font-semibold text-accent-strong">불완전가공 판정</div>
-                <div className="text-sm text-accent-strong">
+              <div className="space-y-1 rounded-xl border border-accent-muted bg-accent-soft/80 px-4 py-3">
+                <div className="text-sm font-semibold tracking-tight text-accent-strong">불완전가공 판정</div>
+                <div className="text-sm leading-relaxed text-accent-strong">
                   {unmachinableReason || "불완전가공 사유가 등록되지 않았습니다."}
                 </div>
               </div>
@@ -416,7 +415,7 @@ export const RequestDetailDialog = ({
                 )}
 
                 {priceAmount != null && (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3 space-y-2">
+                  <div className="space-y-2 rounded-xl bg-slate-50 px-4 py-3.5">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold tracking-wide text-slate-500">
                         비용 세부 내역
@@ -517,7 +516,7 @@ export const RequestDetailDialog = ({
               </div>
 
               {/* 우열: 의뢰 정보 */}
-              <div className="rounded-lg border border-slate-200 p-3 space-y-2.5 min-w-0">
+              <div className="min-w-0 space-y-2.5 rounded-xl bg-slate-50 px-4 py-3.5">
                 {additionalContent && (
                   <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2 text-sm text-slate-700">
                     {additionalContent}
@@ -592,7 +591,11 @@ export const RequestDetailDialog = ({
             </div>
           </div>
         </DialogDescription>
-        {footer}
+        {footer ? (
+          <div className="shrink-0 border-t border-slate-100 px-6 py-4">
+            {footer}
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

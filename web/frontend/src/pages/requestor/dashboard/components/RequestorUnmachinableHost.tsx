@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 안내 모달을 정책 안내와 같은 rounded-2xl·섹션 카드 톤으로 정리.
 // - 2026-08-18: 치과 어벗디자인 헤더 [불완전 가공 x건] + 결정 모달(대시보드에서 이전).
 // related files:
 // - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -43,6 +45,15 @@ const splitUnmachinableReasons = (rawReason: unknown): string[] => {
     ),
   );
 };
+
+const InfoRow = ({ label, value }: { label: string; value: string }) => (
+  <div className="flex items-start justify-between gap-3">
+    <span className="shrink-0 text-sm text-slate-500">{label}</span>
+    <span className="min-w-0 text-right text-sm font-medium leading-6 text-slate-900 break-words">
+      {value}
+    </span>
+  </div>
+);
 
 export const RequestorUnmachinableHost = ({ period, count }: Props) => {
   const { token } = useAuthStore();
@@ -414,88 +425,104 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
           if (!next) setFocusedRequestId(null);
         }}
       >
-        <DialogContent className="w-[92vw] max-w-4xl h-[64vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>불완전 가공 안내</DialogTitle>
+        <DialogContent className="flex h-[min(82vh,720px)] w-[92vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
+          <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
+            <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
+              불완전 가공 안내
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              제조사에서 불완전 가공으로 판정한 의뢰입니다. 취소 또는 계속
+              진행을 선택해 주세요.
+            </DialogDescription>
           </DialogHeader>
 
           {isLoading ? (
-            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+            <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-slate-500">
+              불러오는 중...
+            </div>
           ) : !item ? (
-            <div className="text-sm text-muted-foreground">
-              표시할 불완전 가공 의뢰가 없습니다.
+            <div className="flex flex-1 items-center justify-center px-6 py-10">
+              <div className="w-full rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
+                <p className="text-sm font-medium text-slate-700">
+                  표시할 불완전 가공 의뢰가 없습니다
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  판정 건이 생기면 여기에 표시됩니다
+                </p>
+              </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden px-6 py-5 md:grid-cols-2">
               {previewLoading ? (
-                <div className="flex-1 min-h-0 rounded-md border border-dashed border-slate-300 flex items-center justify-center text-base text-slate-500">
+                <div className="flex h-full min-h-[300px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
                   원본 STL 불러오는 중...
                 </div>
               ) : previewFile ? (
-                <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
+                <div className="h-full min-h-[300px] overflow-hidden rounded-xl border border-slate-200/80 bg-slate-50">
                   <StlPreviewViewer file={previewFile} showOverlay={false} />
                 </div>
               ) : (
-                <div className="flex-1 min-h-0 rounded-md border border-dashed border-slate-300 flex items-center justify-center text-base text-slate-500">
+                <div className="flex h-full min-h-[300px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 text-center text-sm text-slate-500">
                   {previewError || "원본 3D 모델 파일이 없습니다."}
                 </div>
               )}
 
-              <div className="rounded-lg border border-accent-muted bg-accent-soft/60 p-3.5 flex flex-col min-h-0 overflow-hidden">
-                <div className="space-y-2.5 overflow-auto pr-1">
-                  <div className="text-sm text-slate-600">의뢰번호: {requestId}</div>
-                  <div className="rounded-md border border-slate-200 bg-white px-3 py-2.5 space-y-2 text-sm leading-6 text-slate-800">
-                    <div>
-                      <span className="font-semibold">치과:</span> {clinicName}
-                    </div>
-                    <div>
-                      <span className="font-semibold">환자:</span> {patientName}
-                    </div>
-                    <div>
-                      <span className="font-semibold">치아번호:</span> {tooth}
-                    </div>
-                    <div className="break-words">
-                      <span className="font-semibold">임플란트:</span>{" "}
-                      {implantManufacturer} / {implantBrand} / {implantFamily} /{" "}
-                      {implantType}
-                    </div>
-                    <div>
-                      <span className="font-semibold">커넥션 직경:</span>{" "}
-                      {connectionDiameterText}
-                    </div>
-                  </div>
+              <div className="flex min-h-0 flex-col overflow-hidden">
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
+                  <p className="text-xs font-medium text-slate-500">
+                    의뢰번호{" "}
+                    <span className="font-mono text-slate-900">{requestId}</span>
+                  </p>
+
+                  <section className="space-y-2.5 rounded-xl bg-slate-50 px-4 py-3.5">
+                    <InfoRow label="치과" value={clinicName} />
+                    <InfoRow label="환자" value={patientName} />
+                    <InfoRow label="치아번호" value={tooth} />
+                    <InfoRow
+                      label="임플란트"
+                      value={`${implantManufacturer} / ${implantBrand} / ${implantFamily} / ${implantType}`}
+                    />
+                    <InfoRow
+                      label="커넥션 직경"
+                      value={
+                        connectionDiameterText === "-"
+                          ? "-"
+                          : `${connectionDiameterText} mm`
+                      }
+                    />
+                  </section>
+
+                  <section className="rounded-xl border border-accent-muted bg-accent-soft/80 px-4 py-3.5">
+                    <h3 className="text-sm font-semibold tracking-tight text-accent-strong">
+                      불완전 가공 사유
+                    </h3>
+                    <ul className="mt-2 space-y-1.5">
+                      {(reasonItems.length > 0 ? reasonItems : ["미등록"]).map(
+                        (reasonItem, idx) => (
+                          <li
+                            key={`unmachinable-reason-${idx}`}
+                            className="flex gap-2 text-sm leading-relaxed text-accent-strong"
+                          >
+                            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent-strong" />
+                            <span className="min-w-0 break-words">
+                              {reasonItem}
+                            </span>
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </section>
                 </div>
 
-                <div className="mt-4 space-y-1">
-                  <div className="text-sm font-semibold text-accent-strong">
-                    불완전 가공 사유
-                  </div>
-                  {reasonItems.length > 0 ? (
-                    <div className="space-y-0.5">
-                      {reasonItems.map((reasonItem, idx) => (
-                        <div
-                          key={`unmachinable-reason-${idx}`}
-                          className="text-[15px] leading-6 text-accent-strong break-words font-medium"
-                        >
-                          • {reasonItem}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-[15px] leading-6 text-accent-strong break-words font-medium">
-                      • 미등록
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-auto pt-4">
-                  <div className="text-sm text-right leading-6 text-slate-800">
-                    해당 의뢰건을 취소할지, 그대로 진행할지 선택해주세요.
-                  </div>
-                  <div className="mt-3.5 flex items-center justify-end gap-2">
+                <div className="mt-4 border-t border-slate-100 pt-4">
+                  <p className="text-right text-sm leading-6 text-slate-600">
+                    해당 의뢰건을 취소할지, 그대로 진행할지 선택해 주세요.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                     <Button
                       type="button"
                       variant="outline"
+                      className="h-9 rounded-lg"
                       onClick={() => setOpen(false)}
                       disabled={approving}
                     >
@@ -504,7 +531,7 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
                     <Button
                       type="button"
                       variant="outline"
-                      className="border-destructive text-destructive hover:bg-destructive"
+                      className="h-9 rounded-lg border-destructive text-destructive hover:bg-destructive hover:text-white"
                       onClick={() => {
                         if (!canDecide) return;
                         setPendingCancelIds([requestMongoId]);
@@ -516,6 +543,7 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
                     </Button>
                     <Button
                       type="button"
+                      className="h-9 rounded-lg"
                       onClick={async () => {
                         if (!canDecide) return;
                         const continued = await markContinue(requestMongoId);
@@ -536,7 +564,19 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
       <ConfirmDialog
         open={cancelConfirmOpen}
         title="의뢰건 자체를 취소합니다"
-        description="해당 불완전 가공 의뢰건을 취소 처리합니다. 계속할까요?"
+        description={
+          <div className="space-y-3">
+            <p>해당 불완전 가공 의뢰건을 취소 처리합니다. 계속할까요?</p>
+            {requestId !== "-" ? (
+              <p className="rounded-xl bg-slate-50 px-3.5 py-2.5 text-sm text-slate-600">
+                의뢰번호{" "}
+                <span className="font-mono font-medium text-slate-900">
+                  {requestId}
+                </span>
+              </p>
+            ) : null}
+          </div>
+        }
         confirmLabel="취소 진행"
         cancelLabel="닫기"
         onCancel={() => {

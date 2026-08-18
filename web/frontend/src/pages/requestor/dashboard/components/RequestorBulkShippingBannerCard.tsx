@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 출고대기·리드타임·오늘출고 모달을 정책 안내와 같은 rounded-2xl 톤으로 정리.
 // - 2026-08-18: variant=headerButton — 치과 어벗디자인 헤더 [출고대기내역 x건].
 // - 2026-08-11: 오늘 출고 예정은 건 단위만 표시. 좌측 세로 버튼·우측 요약 배치.
 // - 2026-08-11: 출고 안내 문구를 카드에서 제거하고 Info 빠른 툴팁으로 이동.
@@ -17,7 +18,6 @@ import { Box, Clock, Info, Package, Zap } from "lucide-react";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -753,200 +754,203 @@ export const RequestorBulkShippingBannerCard = ({
       )}
 
       <Dialog open={todayBoxDialogOpen} onOpenChange={setTodayBoxDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+        <DialogContent className="max-h-[85vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-2xl">
+          <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
+            <DialogTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight text-slate-900">
               <Box className="h-5 w-5 text-primary-strong" />
               오늘 출고 박스 내역
             </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              오늘 출고 예정인 의뢰를 박스 단위로 확인합니다.
+            </DialogDescription>
           </DialogHeader>
-          {shippingMemo.todayRequests.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
-              <Box className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-              <p className="text-sm font-medium text-slate-700">
-                오늘 출고 예정인 박스가 없습니다
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                오늘 출고될 의뢰가 모이면 여기에 표시됩니다
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
-              {shippingMemo.todayRequests.map(
-                (req: ShippingPackageSummaryRequest) => {
-                  const ci = req?.caseInfos || {};
-                  const title =
-                    String(req?.title || "").trim() ||
-                    [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
-                    String(req?.requestId || "");
-                  const nextEta =
-                    req?.timeline?.nextEstimatedShipYmd ||
-                    req?.timeline?.estimatedShipYmd ||
-                    req?.timeline?.originalEstimatedShipYmd ||
-                    null;
-                  return (
-                    <div
-                      key={String(req?.id || req?._id || Math.random())}
-                      className="rounded-md border border-gray-200 bg-white px-3 py-2"
-                    >
-                      <div className="text-sm font-semibold text-gray-900 truncate">
-                        {title}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        의뢰번호: {String(req?.requestId || "")}
-                      </div>
-                      {nextEta && (
-                        <div className="text-[11px] text-primary-strong mt-1">
-                          다음 출고일: {formatDateWithDay(nextEta)}
+          <div className="max-h-[calc(85vh-5.5rem)] overflow-y-auto px-6 py-5">
+            {shippingMemo.todayRequests.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
+                <Box className="mx-auto mb-3 h-10 w-10 text-slate-300" />
+                <p className="text-sm font-medium text-slate-700">
+                  오늘 출고 예정인 박스가 없습니다
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  오늘 출고될 의뢰가 모이면 여기에 표시됩니다
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {shippingMemo.todayRequests.map(
+                  (req: ShippingPackageSummaryRequest) => {
+                    const ci = req?.caseInfos || {};
+                    const title =
+                      String(req?.title || "").trim() ||
+                      [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
+                      String(req?.requestId || "");
+                    const nextEta =
+                      req?.timeline?.nextEstimatedShipYmd ||
+                      req?.timeline?.estimatedShipYmd ||
+                      req?.timeline?.originalEstimatedShipYmd ||
+                      null;
+                    return (
+                      <div
+                        key={String(req?.id || req?._id || Math.random())}
+                        className="rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5"
+                      >
+                        <div className="truncate text-sm font-semibold text-slate-900">
+                          {title}
                         </div>
-                      )}
-                    </div>
-                  );
-                },
-              )}
-            </div>
-          )}
+                        <div className="truncate text-xs text-slate-500">
+                          의뢰번호: {String(req?.requestId || "")}
+                        </div>
+                        {nextEta && (
+                          <div className="mt-1 text-[11px] font-medium text-primary-strong">
+                            다음 출고일: {formatDateWithDay(nextEta)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  },
+                )}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader className="space-y-3">
-            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+        <DialogContent className="max-h-[85vh] max-w-3xl gap-0 overflow-hidden p-0 sm:rounded-2xl">
+          <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
+            <DialogTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight text-slate-900">
               <Package className="h-5 w-5 text-primary" />
               출고 대기 현황
             </DialogTitle>
-            <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
-              <p className="text-xs leading-relaxed text-slate-600">
-                {SHIP_OUT_INFO_MESSAGE}
-              </p>
-            </div>
+            <DialogDescription className="text-sm text-slate-500">
+              제조사 출고일이 잡힌 대기 의뢰를 예정일별로 확인합니다.
+            </DialogDescription>
           </DialogHeader>
-          {!isEtaReady ? (
-            <div className="py-6 space-y-4">
-              <div className="flex items-center justify-between gap-6">
-                <div className="flex-1">
-                  <Skeleton className="h-5 w-24" />
-                  <div className="mt-4 space-y-2">
-                    <Skeleton className="h-16 w-full" />
-                    <Skeleton className="h-16 w-full" />
-                    <Skeleton className="h-16 w-full" />
+          <div className="max-h-[calc(85vh-5.5rem)] space-y-4 overflow-y-auto px-6 py-5">
+            <p className="rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs leading-relaxed text-slate-600">
+              {SHIP_OUT_INFO_MESSAGE}
+            </p>
+            {!isEtaReady ? (
+              <div className="space-y-4 py-2">
+                <div className="flex items-center justify-between gap-6">
+                  <div className="flex-1">
+                    <Skeleton className="h-5 w-24" />
+                    <div className="mt-4 space-y-2">
+                      <Skeleton className="h-16 w-full rounded-xl" />
+                      <Skeleton className="h-16 w-full rounded-xl" />
+                      <Skeleton className="h-16 w-full rounded-xl" />
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center justify-center w-16">
-                  <Skeleton className="h-12 w-12 rounded-full" />
-                </div>
-                <div className="flex-1">
-                  <Skeleton className="h-5 w-24" />
-                  <div className="mt-4 space-y-2">
-                    <Skeleton className="h-16 w-full" />
-                    <Skeleton className="h-16 w-full" />
-                    <Skeleton className="h-16 w-full" />
+                  <div className="flex w-16 items-center justify-center">
+                    <Skeleton className="h-12 w-12 rounded-full" />
+                  </div>
+                  <div className="flex-1">
+                    <Skeleton className="h-5 w-24" />
+                    <div className="mt-4 space-y-2">
+                      <Skeleton className="h-16 w-full rounded-xl" />
+                      <Skeleton className="h-16 w-full rounded-xl" />
+                      <Skeleton className="h-16 w-full rounded-xl" />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {bulkItems.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-12 text-center">
-                  <Package className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-                  <p className="text-sm font-medium text-slate-700">
-                    출고 대기 중인 제품이 없습니다
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    의뢰 후 제조사 출고일이 여기에 표시됩니다
-                  </p>
-                </div>
-              ) : (
-                bulkGroups.map((group) => (
-                  <div
-                    key={group.etaKey}
-                    className="rounded-xl border border-slate-200 bg-white/80 p-3 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                      <div className="text-sm text-slate-700">
-                        <span className="font-semibold text-foreground">
-                          출고 예정일
-                        </span>
-                        <span className="ml-2 font-medium text-primary-strong">
-                          {group.etaKey === "-" ? "-" : formatEta(group.etaKey)}
-                        </span>
-                      </div>
-                      <Badge variant="secondary" className="text-[11px]">
-                        {group.items.length}개
-                      </Badge>
+            ) : bulkItems.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
+                <Package className="mx-auto mb-3 h-10 w-10 text-slate-300" />
+                <p className="text-sm font-medium text-slate-700">
+                  출고 대기 중인 제품이 없습니다
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  의뢰 후 제조사 출고일이 여기에 표시됩니다
+                </p>
+              </div>
+            ) : (
+              bulkGroups.map((group) => (
+                <section
+                  key={group.etaKey}
+                  className="rounded-xl border border-slate-200/80 bg-white p-3.5"
+                >
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                    <div className="text-sm text-slate-700">
+                      <span className="font-semibold text-slate-900">
+                        출고 예정일
+                      </span>
+                      <span className="ml-2 font-medium text-primary-strong">
+                        {group.etaKey === "-" ? "-" : formatEta(group.etaKey)}
+                      </span>
                     </div>
-
-                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      {group.items.map((item) => (
-                        <div
-                          key={item.id}
-                          className="rounded-lg border border-slate-100 bg-slate-50/70 p-2.5"
-                        >
-                          <p className="text-sm font-medium text-foreground truncate">
-                            {item.title || item.id}
-                          </p>
-                          <p className="text-xs text-slate-600 truncate">
-                            {item.clinic || ""}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {item.patient || "-"} / {item.tooth || "-"} /{" "}
-                            {item.diameter || "-"}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
+                    <Badge variant="secondary" className="rounded-md text-[11px]">
+                      {group.items.length}개
+                    </Badge>
                   </div>
-                ))
-              )}
-            </div>
-          )}
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {group.items.map((item) => (
+                      <div
+                        key={item.id}
+                        className="rounded-xl bg-slate-50 px-3 py-2.5"
+                      >
+                        <p className="truncate text-sm font-medium text-slate-900">
+                          {item.title || item.id}
+                        </p>
+                        <p className="truncate text-xs text-slate-600">
+                          {item.clinic || ""}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {item.patient || "-"} / {item.tooth || "-"} /{" "}
+                          {item.diameter || "-"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isLeadTimeModalOpen} onOpenChange={setIsLeadTimeModalOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader className="space-y-3">
-            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+        <DialogContent className="max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0 sm:rounded-2xl">
+          <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
+            <DialogTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight text-slate-900">
               <Clock className="h-5 w-5 text-primary" />
               제조사 출고 리드타임
             </DialogTitle>
-            <CardDescription className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
-              직경별 예상 리드타임을 확인하세요. {SHIP_OUT_INFO_MESSAGE}
-            </CardDescription>
+            <DialogDescription className="text-sm text-slate-500">
+              직경별 예상 리드타임을 확인하세요.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="max-h-[calc(85vh-5.5rem)] space-y-4 overflow-y-auto px-6 py-5">
+            <p className="rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs leading-relaxed text-slate-600">
+              {SHIP_OUT_INFO_MESSAGE}
+            </p>
             {leadTimeData ? (
-              <>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {(Object.keys(DIAMETER_LABELS) as DiameterKey[]).map(
-                    (key) => {
-                      const entry = leadTimeData.leadTimes[key];
-                      return (
-                        <div
-                          key={key}
-                          className="rounded-2xl border border-slate-200 bg-white/80 p-4 text-center shadow-sm"
-                        >
-                          <p className="text-[12px] font-semibold text-slate-700">
-                            {DIAMETER_LABELS[key]}
-                          </p>
-                          <p className="mt-2 text-base font-bold text-slate-900">
-                            {entry
-                              ? `${entry.minBusinessDays}~${entry.maxBusinessDays} 영업일`
-                              : "-"}
-                          </p>
-                        </div>
-                      );
-                    },
-                  )}
-                </div>
-              </>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(Object.keys(DIAMETER_LABELS) as DiameterKey[]).map((key) => {
+                  const entry = leadTimeData.leadTimes[key];
+                  return (
+                    <div
+                      key={key}
+                      className="rounded-xl border border-slate-200/80 bg-white px-3 py-4 text-center"
+                    >
+                      <p className="text-xs font-semibold text-slate-500">
+                        {DIAMETER_LABELS[key]}
+                      </p>
+                      <p className="mt-2 text-base font-semibold tracking-tight text-slate-900">
+                        {entry
+                          ? `${entry.minBusinessDays}~${entry.maxBusinessDays} 영업일`
+                          : "-"}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <div className="space-y-3">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full rounded-xl" />
+                <Skeleton className="h-12 w-full rounded-xl" />
+                <Skeleton className="h-12 w-full rounded-xl" />
               </div>
             )}
           </div>
