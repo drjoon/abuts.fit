@@ -1,8 +1,11 @@
 // change-log:
+// - 2026-08-19: 헤더 라벨 진행중 / 출고예정 / 완료 내역.
+// - 2026-08-19: 헤더 라벨 출고예정. 취소 후 출고 스냅샷 쿼리도 무효화.
+// - 2026-08-19: 취소 후 진행중인 의뢰 목록으로 복귀. 확인 클릭이 목록을 닫지 않음.
 // - 2026-08-19: 진행중인 의뢰 상세에서 준비 단계 취소. 원본 STL 프리뷰는 RequestDetailDialog.
 // - 2026-08-19: [정책 안내] 오른쪽 [진행중인 의뢰] — 준비~포장.발송.
 // - 2026-08-18: 지난의뢰 건수·목록에서 취소 제외(추적관리만).
-// - 2026-08-18: 치과 어벗디자인 상단 — 기간필터·정책안내·출고대기·지난의뢰·불완전가공.
+// - 2026-08-18: 치과 어벗디자인 상단 — 기간필터·정책안내·출고예정·지난의뢰·불완전가공.
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
@@ -50,6 +53,10 @@ export const RequestorAbutmentPageHeader = () => {
   const [selectedPastRequest, setSelectedPastRequest] = useState<any | null>(
     null,
   );
+  const [listSource, setListSource] = useState<"inProgress" | "past" | null>(
+    null,
+  );
+  const [canceledMongoId, setCanceledMongoId] = useState<string | null>(null);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
 
@@ -139,8 +146,49 @@ export const RequestorAbutmentPageHeader = () => {
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
   const canCancelSelected = isPrepCancelableRequest(selectedPastRequest);
 
-  const refreshInProgressCounts = () => {
+  const refreshHeaderCounts = () => {
     void queryClient.invalidateQueries({ queryKey: cardsSummaryQueryKey });
+    void queryClient.invalidateQueries({ queryKey: ["requestor-bulk-shipping"] });
+  };
+
+  const decrementInProgressCountOptimistic = () => {
+    queryClient.setQueryData(cardsSummaryQueryKey, (old: any) => {
+      const stats = old?.data?.stats;
+      if (!old || !stats || typeof stats !== "object") return old;
+      return {
+        ...old,
+        data: {
+          ...old.data,
+          stats: {
+            ...stats,
+            totalRequests: Math.max(0, Number(stats.totalRequests ?? 0) - 1),
+          },
+        },
+      };
+    });
+  };
+
+  const removeFromBulkShippingOptimistic = (mongoId: string) => {
+    queryClient.setQueryData(["requestor-bulk-shipping"], (old: any) => {
+      const data = old?.data;
+      if (!old || !data || typeof data !== "object") return old;
+      const matches = (item: any) => {
+        const itemMongoId = String(item?.mongoId || item?._id || "").trim();
+        const itemRequestId = String(item?.id || "").trim();
+        return itemMongoId === mongoId || itemRequestId === mongoId;
+      };
+      const withoutCanceled = (list: unknown) =>
+        Array.isArray(list) ? list.filter((item) => !matches(item)) : list;
+      return {
+        ...old,
+        data: {
+          ...data,
+          pre: withoutCanceled(data.pre),
+          post: withoutCanceled(data.post),
+          waiting: withoutCanceled(data.waiting),
+        },
+      };
+    });
   };
 
   const cancelRequestByMongoId = async (mongoId: string) => {
@@ -168,8 +216,17 @@ export const RequestorAbutmentPageHeader = () => {
       title: "의뢰가 취소되었습니다",
       duration: 2000,
     });
-    refreshInProgressCounts();
+    decrementInProgressCountOptimistic();
+    removeFromBulkShippingOptimistic(mongoId);
+    refreshHeaderCounts();
     return true;
+  };
+
+  const closeDetailAndRestoreList = () => {
+    setCancelConfirmOpen(false);
+    setSelectedPastRequest(null);
+    if (listSource === "inProgress") setInProgressOpen(true);
+    if (listSource === "past") setPastOpen(true);
   };
 
   const handleConfirmCancel = async () => {
@@ -184,8 +241,8 @@ export const RequestorAbutmentPageHeader = () => {
     try {
       const ok = await cancelRequestByMongoId(mongoId);
       if (ok) {
-        setCancelConfirmOpen(false);
-        setSelectedPastRequest(null);
+        setCanceledMongoId(mongoId);
+        closeDetailAndRestoreList();
       }
     } finally {
       setCanceling(false);
@@ -203,7 +260,7 @@ export const RequestorAbutmentPageHeader = () => {
           className="h-8 px-3 text-xs"
           onClick={() => setInProgressOpen(true)}
         >
-          진행중인 의뢰 {inProgressCount.toLocaleString()}건
+          진행중 {inProgressCount.toLocaleString()}건
         </Button>
         <RequestorBulkShippingBannerCard
           variant="headerButton"
@@ -221,7 +278,7 @@ export const RequestorAbutmentPageHeader = () => {
           className="h-8 px-3 text-xs"
           onClick={() => setPastOpen(true)}
         >
-          지난의뢰 {pastCount.toLocaleString()}건
+          완료 내역 {pastCount.toLocaleString()}건
         </Button>
         <RequestorUnmachinableHost period={period} count={unmachinableCount} />
       </RequestorWorkspaceHeader>
@@ -229,15 +286,17 @@ export const RequestorAbutmentPageHeader = () => {
       <PastRequestsModal
         open={inProgressOpen}
         onOpenChange={setInProgressOpen}
-        title="진행중인 의뢰"
+        title="진행중"
         description="준비·가공·세척.패킹·포장.발송 단계의 의뢰를 확인하고 상세를 엽니다. 준비 단계에서는 취소할 수 있습니다."
         manufacturerStageIn={IN_PROGRESS_MANUFACTURER_STAGES}
         initialPeriod={period}
         allowCancel
-        onCanceled={refreshInProgressCounts}
+        suspend={listSource === "inProgress" && Boolean(selectedPastRequest)}
+        removeMongoId={canceledMongoId}
+        onCanceled={refreshHeaderCounts}
         onCancelRequest={cancelRequestByMongoId}
         onSelectRequest={(request) => {
-          setInProgressOpen(false);
+          setListSource("inProgress");
           setSelectedPastRequest(request);
         }}
       />
@@ -245,21 +304,23 @@ export const RequestorAbutmentPageHeader = () => {
       <PastRequestsModal
         open={pastOpen}
         onOpenChange={setPastOpen}
-        title="지난 의뢰"
+        title="완료 내역"
         manufacturerStageIn={["추적관리"]}
         initialPeriod={period}
+        suspend={listSource === "past" && Boolean(selectedPastRequest)}
         onSelectRequest={(request) => {
-          setPastOpen(false);
+          setListSource("past");
           setSelectedPastRequest(request);
         }}
       />
 
       <RequestDetailDialog
         open={Boolean(selectedPastRequest)}
+        dismissLocked={cancelConfirmOpen || canceling}
         onOpenChange={(next) => {
           if (!next) {
-            setSelectedPastRequest(null);
-            setCancelConfirmOpen(false);
+            if (cancelConfirmOpen || canceling) return;
+            closeDetailAndRestoreList();
           }
         }}
         request={selectedPastRequest}
@@ -286,10 +347,14 @@ export const RequestorAbutmentPageHeader = () => {
         description="준비 단계 의뢰만 취소할 수 있습니다. 취소 후 크레딧은 정책에 따라 복구됩니다."
         confirmLabel="의뢰 취소"
         cancelLabel="닫기"
+        busy={canceling}
         onConfirm={() => {
           void handleConfirmCancel();
         }}
-        onCancel={() => setCancelConfirmOpen(false)}
+        onCancel={() => {
+          if (canceling) return;
+          setCancelConfirmOpen(false);
+        }}
       />
     </>
   );

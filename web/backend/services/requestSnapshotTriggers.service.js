@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/services/bulkShippingSnapshot.service.js
+// change-log:
+// - 2026-08-19: 대시보드 카드 새로고침 때 출고예정 스냅샷도 같이 재계산(취소 후 stale 건수).
 import { Types } from "mongoose";
 import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -190,13 +193,27 @@ export const triggerDashboardSummaryRefreshForAnchorId = (
     .then(async () => {
       invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
 
+      // 출고예정 스냅샷도 같이 갱신한다. 카드 요약만 재계산하면 취소 직후
+      // GET /bulk-shipping 이 당일 예전 스냅샷을 그대로 내려준다.
+      const bulkRefresh = recomputeBulkShippingSnapshotForBusinessAnchorId(
+        anchorId,
+      ).catch((error) => {
+        console.error(
+          `[bulkShippingSnapshot] triggerDashboardSummaryRefreshForAnchorId failed${reason ? ` (${reason})` : ""}`,
+          error,
+        );
+        return null;
+      });
+
       await invalidateTodayRequestorDashboardSummarySnapshotsForBusinessAnchorId(
         anchorId,
       );
-      const results =
-        await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+      const [results] = await Promise.all([
+        recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
           anchorId,
-        );
+        ),
+        bulkRefresh,
+      ]);
 
       invalidateDashboardAndBulkCachesForBusinessAnchorId(anchorId);
 

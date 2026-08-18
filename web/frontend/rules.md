@@ -17,7 +17,7 @@
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
-- Requestor workspace header: 기간 필터는 치과 `어벗디자인으로`(`/dashboard/new-request`) 상단과 기공소 대시보드. 헤더 버튼: `[정책 안내]` · `[출고대기내역 x건]` · `[지난의뢰 x건]` · `[불완전 가공 x건]` (x=기간 건수). 치과는 대시보드 메뉴를 두지 않음(`/dashboard` → 구강스캔, 제출 후 어벗디자인). 기공소·어벗츠기공소 대시보드(대기보드)는 유지. 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
+- Requestor workspace header: 기간 필터는 치과 `어벗디자인으로`(`/dashboard/new-request`) 상단과 기공소 대시보드. 헤더 버튼: `[정책 안내]` · `[진행중 x건]` · `[출고예정 x건]` · `[완료 내역 x건]` · `[불완전 가공 x건]` (x=기간 건수). 치과는 대시보드 메뉴를 두지 않음(`/dashboard` → 구강스캔, 제출 후 어벗디자인). 기공소·어벗츠기공소 대시보드(대기보드)는 유지. 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
 - Semantic color palette (강제, 앱 전체):
   - 의미 축 4 + 서비스 1만 사용. 같은 축 안 차이는 soft/muted/DEFAULT/strong 밝기만.
     - **Primary** (`--primary*`) — 브랜드·CTA·공정·묶음출고·정상/완료
@@ -39,7 +39,8 @@ Notes:
   - 중첩 `TooltipProvider`/`Tooltip`에 `delayDuration={0}`/`{200}` 등 다른 지연을 두지 말 것.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
-  - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절
+  - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절,
+    `RequestorAbutmentPageHeader`+`PastRequestsModal`(취소 후 목록 모달 유지)
   - API: `PATCH /api/requests/:id/status` 취소 검증, 중복 replace(`from-draft`/`creation.request`)의 `isCancelableStage`
 
 ## 0. Frontend 중요 진입 파일 지도 (로컬)
@@ -96,7 +97,7 @@ Notes:
   - `src/shared/components/RequestorWorkspaceHeader.tsx` (대시보드 기간 필터+알림)
   - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx` (치과 헤더 `[정책 안내]`만)
   - `src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx` (치과 행 라벨=구강스캔/어벗디자인)
-  - `src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx` (지난 의뢰 버튼)
+  - `src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx` (완료 내역 버튼)
   - `src/pages/requestor/credits/RequestorCreditsPage.tsx` (사이드바 크레딧: 내역/충전)
   - `src/shared/legal/creditPrepaidCopy.ts` (기공료 선입금 UI/FAQ 카피)
   - `src/shared/shipping/shippingMode.ts`

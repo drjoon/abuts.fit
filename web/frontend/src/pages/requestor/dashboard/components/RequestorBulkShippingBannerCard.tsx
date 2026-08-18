@@ -1,6 +1,7 @@
 // change-log:
+// - 2026-08-19: 헤더 버튼 라벨 [출고예정 x건]. 취소 후 스냅샷 갱신과 맞춤.
 // - 2026-08-18: 출고대기·리드타임·오늘출고 모달을 정책 안내와 같은 rounded-2xl 톤으로 정리.
-// - 2026-08-18: variant=headerButton — 치과 어벗디자인 헤더 [출고대기내역 x건].
+// - 2026-08-18: variant=headerButton — 치과 어벗디자인 헤더 [출고예정 x건].
 // - 2026-08-11: 오늘 출고 예정은 건 단위만 표시. 좌측 세로 버튼·우측 요약 배치.
 // - 2026-08-11: 출고 안내 문구를 카드에서 제거하고 Info 빠른 툴팁으로 이동.
 // - 2026-08-09: 디자인+생산 출고 +1영업일 안내를 SHIP_OUT_INFO_MESSAGE에 반영.
@@ -96,7 +97,7 @@ type Props = {
   period?: PeriodFilterValue;
   /** true면 카드 chrome은 유지하고 "오늘 출고 예정" 수치 영역만 스켈레톤 처리 */
   loading?: boolean;
-  /** headerButton: 카드 없이 헤더용 [출고대기내역 x건] + 기존 모달 */
+  /** headerButton: 카드 없이 헤더용 [출고예정 x건] + 기존 모달 */
   variant?: "card" | "headerButton";
 };
 
@@ -657,7 +658,7 @@ export const RequestorBulkShippingBannerCard = ({
           className="h-8 px-3 text-xs"
           onClick={handleOpenModal}
         >
-          출고대기내역 {waitingCount.toLocaleString()}건
+          출고예정 {waitingCount.toLocaleString()}건
         </Button>
       ) : (
       <Card className="app-glass-card app-glass-card--lg h-full min-w-0">

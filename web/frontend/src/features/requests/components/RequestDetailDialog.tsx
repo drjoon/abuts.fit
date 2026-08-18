@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 // change-log:
+// - 2026-08-19: dismissLocked — 확인 중 바깥 클릭·ESC로 상세를 닫지 않음.
 // - 2026-08-19: 왼쪽 원본 STL 프리뷰. 준비 단계 취소를 footer로 연결.
 // - 2026-08-18: 의뢰 상세 모달을 rounded-2xl 헤더·섹션 카드 톤으로 정리.
 // - 2026-08-09: 배송비(출고 시)를 크레딧 사용액 아래로 이동, 별도 차감 안내 문구 분리.
@@ -16,6 +17,7 @@ import { type ReactNode } from "react";
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/backend/controllers/requests/designPrice.utils.js
 // - .cursor/rules/design-fee.mdc
@@ -132,6 +134,8 @@ type RequestDetailDialogProps = {
   additionalContent?: ReactNode;
   extraBadge?: ReactNode;
   footer?: ReactNode;
+  /** 확인 모달이 위에 열린 동안 바깥 클릭·ESC로 닫지 않음 */
+  dismissLocked?: boolean;
 };
 
 const formatTimestamp = (value?: string) => {
@@ -252,6 +256,7 @@ export const RequestDetailDialog = ({
   additionalContent,
   extraBadge,
   footer,
+  dismissLocked = false,
 }: RequestDetailDialogProps) => {
   const { data: systemSettings } = useSystemSettings();
   const requestMongoId = String(request?._id || request?.id || "").trim();
@@ -357,13 +362,27 @@ export const RequestDetailDialog = ({
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (!next && dismissLocked) return;
         onOpenChange(next);
       }}
     >
       <DialogContent
-        className={`flex max-h-[85vh] w-[min(96vw,880px)] max-w-[880px] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl ${
+        overlayClassName="z-[110]"
+        className={`z-[110] flex max-h-[85vh] w-[min(96vw,880px)] max-w-[880px] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl ${
           isUnmachinable ? "border-accent-muted" : ""
         }`}
+        onPointerDownOutside={(e) => {
+          if (dismissLocked) e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          if (dismissLocked) e.preventDefault();
+        }}
+        onFocusOutside={(e) => {
+          if (dismissLocked) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (dismissLocked) e.preventDefault();
+        }}
       >
         <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
           <div className="flex items-start justify-between gap-4">

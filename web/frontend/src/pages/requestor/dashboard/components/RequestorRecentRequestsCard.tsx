@@ -50,6 +50,7 @@ import {
 } from "@/shared/ui/semanticStatus";
 
 // change-log:
+// - 2026-08-19: 카드 헤더 버튼·모달 제목 완료 내역(구 지난 의뢰).
 // - 2026-08-19: 의뢰 상세 모달에 준비 단계 취소 버튼.
 // - 2026-08-11: 지연(출고예정일 경과·미출고) 케이스를 빨간 뱃지로 표시.
 // - 2026-08-11: 좌측 2행 높이에 맞춰 리스트가 카드 전체 높이를 채우도록 변경(고정 2.5행 maxHeight 제거).
@@ -780,7 +781,7 @@ export const RequestorRecentRequestsCard = ({
             setPastRequestsOpen(true);
           }}
         >
-          지난 의뢰
+          완료 내역
         </Button>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col pt-2 min-h-0 overflow-hidden">
@@ -1098,7 +1099,7 @@ export const RequestorRecentRequestsCard = ({
       <PastRequestsModal
         open={pastRequestsOpen}
         onOpenChange={setPastRequestsOpen}
-        title="지난 의뢰"
+        title="완료 내역"
         onSelectRequest={(r) => {
           setPastRequestsOpen(false);
           onEdit(r as RecentRequestCardItem);

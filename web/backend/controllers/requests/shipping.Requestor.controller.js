@@ -6,7 +6,9 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/expressSelectable.utils.js
+// - web/backend/services/bulkShippingSnapshot.service.js
 // change-log:
+// - 2026-08-19: GET bulk-shipping — 재계산 in-flight를 기다린 뒤 스냅샷을 반환(취소 후 stale 건수).
 // - 2026-08-08: 신속 모드 전환 시 ETA 이점(신속 < 묶음) 없으면 400.
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -35,6 +37,7 @@ import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/reques
 import {
   getBulkShippingSnapshotForBusinessAnchorId,
   recomputeBulkShippingSnapshotForBusinessAnchorId,
+  waitForBulkShippingSnapshotRefreshForAnchorId,
 } from "../../services/bulkShippingSnapshot.service.js";
 import {
   getBulkShippingCacheValue,
@@ -325,6 +328,7 @@ export async function getMyBulkShipping(req, res) {
     const cacheKey = `bulk-shipping:${String(req.user?._id || "")}:${String(
       businessAnchorId,
     )}`;
+    // 취소 직후 재계산이 끝나기 전에 당일 스냅샷/메모리를 읽으면 예전 건수가 다시 캐시된다.
     const hasBulkShippingItems = (value) => {
       const pre = Array.isArray(value?.pre) ? value.pre : [];
       const post = Array.isArray(value?.post) ? value.post : [];
@@ -341,6 +345,10 @@ export async function getMyBulkShipping(req, res) {
       return rows.every((row) => row?.createdAt != null);
     };
 
+    if (businessAnchorId) {
+      await waitForBulkShippingSnapshotRefreshForAnchorId(businessAnchorId);
+    }
+
     const cached = getBulkShippingCacheValue(cacheKey);
     if (cached && hasBulkShippingItems(cached) && hasCreatedAtOnItems(cached)) {
       return res.status(200).json({
@@ -351,6 +359,9 @@ export async function getMyBulkShipping(req, res) {
     }
 
     const data = await withBulkShippingInFlight(cacheKey, async () => {
+      if (businessAnchorId) {
+        await waitForBulkShippingSnapshotRefreshForAnchorId(businessAnchorId);
+      }
       const snapshot = businessAnchorId
         ? await getBulkShippingSnapshotForBusinessAnchorId(businessAnchorId)
         : null;

@@ -4,6 +4,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-19: 기본 제목 완료 내역(구 지난 의뢰).
+// - 2026-08-19: 상세/확인 중에는 목록 모달을 닫지 않음. 취소 행은 목록에서만 제거.
 // - 2026-08-19: 진행중인 의뢰 목록에서 준비 단계 취소.
 // - 2026-08-19: description prop — 진행중인 의뢰 목록 안내 문구.
 // - 2026-08-18: 모달을 정책 안내와 같은 rounded-2xl·필터 카드 톤으로 정리.
@@ -61,6 +63,10 @@ export type PastRequestsModalProps = {
   onCancelRequest?: (requestMongoId: string) => Promise<boolean>;
   /** 취소 성공 후 건수 갱신 등 */
   onCanceled?: () => void;
+  /** 상세 모달이 위에 열린 동안 목록을 유지(숨김)하고 바깥 클릭·ESC로 닫지 않음 */
+  suspend?: boolean;
+  /** 상세에서 취소한 mongoId — 목록에서 해당 행만 제거 */
+  removeMongoId?: string | null;
 };
 
 const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
@@ -118,6 +124,8 @@ export const PastRequestsModal = ({
   allowCancel = false,
   onCancelRequest,
   onCanceled,
+  suspend = false,
+  removeMongoId = null,
 }: PastRequestsModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -282,6 +290,15 @@ export const PastRequestsModal = ({
   }, [items, q]);
 
   const colSpan = allowCancel ? 6 : 5;
+  const dismissLocked = Boolean(suspend || cancelTarget);
+
+  useEffect(() => {
+    const mongoId = String(removeMongoId || "").trim();
+    if (!mongoId) return;
+    setItems((prev) =>
+      prev.filter((row) => String(row?._id || row?.id || "") !== mongoId),
+    );
+  }, [removeMongoId]);
 
   const handleConfirmCancel = async () => {
     const mongoId = String(cancelTarget?._id || cancelTarget?.id || "").trim();
@@ -308,15 +325,38 @@ export const PastRequestsModal = ({
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(85vh,800px)] w-[92vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
+    <Dialog
+      open={open}
+      modal={!suspend}
+      onOpenChange={(next) => {
+        if (!next && dismissLocked) return;
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent
+        className={`flex h-[min(85vh,800px)] w-[92vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl${
+          suspend ? " hidden" : ""
+        }`}
+        onPointerDownOutside={(e) => {
+          if (dismissLocked) e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          if (dismissLocked) e.preventDefault();
+        }}
+        onFocusOutside={(e) => {
+          if (dismissLocked) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (dismissLocked) e.preventDefault();
+        }}
+      >
         <DialogHeader className="space-y-1.5 border-b border-slate-100 px-6 pb-4 pt-6 pr-12 text-left">
           <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
-            {title || "지난 의뢰"}
+            {title || "완료 내역"}
           </DialogTitle>
           <DialogDescription className="text-sm text-slate-500">
             {description ||
-              "추적관리 단계의 지난 의뢰를 기간별로 확인하고 상세를 엽니다."}
+              "추적관리 단계의 완료 내역을 기간별로 확인하고 상세를 엽니다."}
           </DialogDescription>
         </DialogHeader>
 
@@ -466,10 +506,14 @@ export const PastRequestsModal = ({
       description="준비 단계 의뢰만 취소할 수 있습니다. 취소 후 크레딧은 정책에 따라 복구됩니다."
       confirmLabel="의뢰 취소"
       cancelLabel="닫기"
+      busy={canceling}
       onConfirm={() => {
         void handleConfirmCancel();
       }}
-      onCancel={() => setCancelTarget(null)}
+      onCancel={() => {
+        if (canceling) return;
+        setCancelTarget(null);
+      }}
     />
     </>
   );
