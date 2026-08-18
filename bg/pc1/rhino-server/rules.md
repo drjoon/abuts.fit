@@ -44,6 +44,10 @@
 - `No active Rhino instances found via RhinoCode list`가 뜨면 Rhino 실행 후 `RhinoCode` 또는 `ScriptEditor`를 한 번 열어 RhinoCode 서비스를 깨웁니다.
 - align 버전은 올라갔는데 `residual_to_X_deg` 로그가 안 보이면, 실행 경로의 `process_abutment_stl.py` 반영 여부를 먼저 확인합니다.
   - `align_stl_coordinate.py`만 반영되고 래퍼 로그 출력 코드가 누락되면 잔차 로그가 사라질 수 있습니다.
+- **커넥션 Z 원점이 헥스에 붙는 경우(2026-08-18):**
+  - ExoCAD 원본이 이미 커넥션 원점(헥스가 -Z, OSSTEM TS3 Regular는 약 -2.5mm)인 경우가 있다.
+  - 크라운 주축으로 Z를 기울이거나, 직경 이진탐색이 교합면 개구의 허위 3.35mm를 고르면 원점이 헥스로 내려간다.
+  - `align_stl_coordinate.py`는 bbox 최장축이 이미 Z이면 주축 회전을 건너뛰고, 직경 매칭에 원형성 점수를 쓴다.
 - **원격 PC 실행 경로 주의(2026-07-08):**
   - 운영 로그의 절대 경로(예: `C:\Users\user\abuts.fit\...`)는 개발 PC 경로와 다를 수 있습니다.
   - 경로 문자열이 달라도 동일 모듈 버전(`moduleVersion`)과 로그 키로 반영 여부를 판단합니다.

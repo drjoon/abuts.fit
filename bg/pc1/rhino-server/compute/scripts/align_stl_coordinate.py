@@ -7,8 +7,10 @@
 STL 좌표계 자동 정렬 스크립트 (Rhino 내부 실행/라이브러리 공용)
 
 정렬 순서:
-1) BoundingBox 축 길이 기준으로 가장 긴 축을 Z축으로 회전
+1) BoundingBox 최장축이 Z가 아니면 그 축(또는 주축)을 Z로 회전
+   - 이미 Z가 최장축이면 주축 회전을 하지 않는다(크라운 질량이 커넥션 축을 기울이는 것 방지)
 2) 커넥션 외부 직경(target_diameter) 단면의 Z를 찾아 Z=0으로 평행이동
+   - 직경 오차 + 원형성으로 채점. 헥스/교합면 개구의 허위 3.35mm 해를 배제
 3) target_diameter 단면을 -Z 측 해 우선으로 다시 Z=0 재정렬(Z-2)
 4) z=0 기준 상방(+Z) 길이와 하방(-Z) 길이를 비교해 긴 쪽이 +Z가 되도록 방향 강제
    - flip 발생 시 target_diameter 단면을 Z=0으로 한 번 더 재고정(Z-2b)
@@ -30,7 +32,7 @@ import sys
 
 import Rhino.Geometry as rg
 
-ALIGN_MODULE_VERSION = "2026-07-23.hex-telemetry-only-v1"
+ALIGN_MODULE_VERSION = "2026-08-18.connection-z-origin-v1"
 DEFAULT_TARGET_DIAMETER = 3.33
 HEX_RESIDUAL_TARGET_DEG = 0.01
 HEX_REFINEMENT_MAX_ITERS = 3
@@ -231,24 +233,111 @@ def resolve_target_diameter(target_diameter=None, implant_profile=None):
 
 
 def _estimate_circle_from_polyline(polyline):
+    metrics = _estimate_section_metrics_from_polyline(polyline)
+    if metrics is None:
+        return None
+    return (metrics["cx"], metrics["cy"], metrics["r"])
+
+
+def _estimate_section_metrics_from_polyline(polyline):
+    """
+    단면 polyline의 외곽 원 근사 + 원형성.
+
+    Returns:
+        {cx, cy, r, d, circularity, hex_ratio, r_std} or None
+        - r: centroid 기준 최대 반경(외곽 직경 매칭용)
+        - circularity: 외곽 점 반경 상대표준편차 (원=작음, 헥스/타원=큼)
+        - hex_ratio: 외곽 r_max/r_min (정육각 ~1.155)
+    """
     points = []
     for i in range(polyline.Count):
         pt = polyline[i]
         points.append((pt.X, pt.Y))
 
+    if len(points) >= 2:
+        x0, y0 = points[0]
+        x1, y1 = points[-1]
+        if math.hypot(x1 - x0, y1 - y0) <= 1e-6:
+            points = points[:-1]
+
     if len(points) < 3:
         return None
 
-    center_x = sum(p[0] for p in points) / len(points)
-    center_y = sum(p[1] for p in points) / len(points)
+    center_x = sum(p[0] for p in points) / float(len(points))
+    center_y = sum(p[1] for p in points) / float(len(points))
 
+    radii = []
     max_radius = 0.0
     for px, py in points:
         r = math.sqrt((px - center_x) ** 2 + (py - center_y) ** 2)
+        radii.append(r)
         if r > max_radius:
             max_radius = r
 
-    return (center_x, center_y, max_radius)
+    if max_radius <= 1e-8:
+        return None
+
+    # 외곽 루프만으로 원형성 평가.
+    # 0.80: 헥스 플랫(r_min/r_max≈0.866)은 포함하고, 스크류홀(≈0.6)은 제외
+    r_cut = max_radius * 0.80
+    outer = [r for r in radii if r >= r_cut] or radii
+    r_mean = sum(outer) / float(len(outer))
+    var = sum((r - r_mean) * (r - r_mean) for r in outer) / float(len(outer))
+    r_std = math.sqrt(max(var, 0.0))
+    r_min_outer = min(outer)
+    hex_ratio = max_radius / max(r_min_outer, 1e-9)
+    circularity = r_std / max(r_mean, 1e-9)
+
+    return {
+        "cx": center_x,
+        "cy": center_y,
+        "r": max_radius,
+        "d": max_radius * 2.0,
+        "circularity": circularity,
+        "hex_ratio": hex_ratio,
+        "r_std": r_std,
+    }
+
+
+def _outer_section_metrics_at_z(mesh, z_height, section_cache=None):
+    polylines = _mesh_plane_polylines(mesh, z_height, cache=section_cache)
+    if not polylines:
+        return None
+
+    best = None
+    for pl in polylines:
+        metrics = _estimate_section_metrics_from_polyline(pl)
+        if metrics is None:
+            continue
+        if best is None or metrics["r"] > best["r"]:
+            best = metrics
+    return best
+
+
+def _score_connection_z_candidate(z, metrics, target_diameter, z_min, z_max):
+    """
+    커넥션 Z 후보 점수(낮을수록 좋음).
+
+    직경만 쓰면 교합면 개구/헥스 외접원이 target_diameter에 가까운 허위 해를 고른다.
+    원형 커넥션(원형성 높음)을 우선하고, 메시 상단(교합면)과 헥스 단면은 감점한다.
+    """
+    diameter_err = abs(float(metrics.get("d", 0.0)) - float(target_diameter))
+    circ = float(metrics.get("circularity") or 0.0)
+    hex_ratio = float(metrics.get("hex_ratio") or 1.0)
+    span = max(float(z_max) - float(z_min), 1e-6)
+    t = (float(z) - float(z_min)) / span
+
+    score = diameter_err
+    score += 2.4 * circ
+    if hex_ratio >= 1.08:
+        score += 0.55 + 0.85 * min(hex_ratio - 1.08, 0.6)
+    # 교합면/스크류 개구 쪽 허위 3.35mm
+    if t >= 0.78:
+        score += 0.85
+    # 헥스 끝단
+    if t <= 0.03:
+        score += 0.25
+    return score
 
 
 def _solve_3x3(m, b):
@@ -1368,6 +1457,15 @@ def _rotate_longest_axis_to_z(mesh):
 
     _log("BBox lengths: X={:.3f} Y={:.3f} Z={:.3f}".format(lx, ly, lz))
 
+    # 이미 Z가 최장축이면 주축(정점 공분산)으로 기울이지 않는다.
+    # ExoCAD 커스텀 어버트먼트는 커넥션 원점이 이미 맞는 경우가 많고,
+    # 기울어진 크라운 질량이 주축을 수 도 끌어 수평 단면이 일그러지면
+    # 커넥션 직경 매칭이 헥스/교합면 허위 해로 떨어진다.
+    # 잔여 기울기는 이후 스크류홀 축 정렬에서 보정한다.
+    if lz >= lx and lz >= ly:
+        _log("BBox longest axis already Z; skip principal-axis rotation")
+        return False
+
     principal = _estimate_principal_axis(mesh)
     if principal is None:
         # 폴백: 기존 월드축 기반 판단
@@ -2158,14 +2256,14 @@ def _find_best_z_for_diameter_by_sampling(
 ):
     """
     비단조 형상(동일 직경이 여러 Z에서 나타나는 경우)을 위해
-    구간 샘플링으로 target_diameter에 가장 가까운 Z를 찾는다.
+    구간 샘플링으로 target_diameter 커넥션 단면을 찾는다.
 
-    성능/안정성 절충:
-    - 1차 coarse 전구간 탐색
-    - 2차 fine 국소 재탐색(1차 best 주변)
+    직경 오차만 쓰면 교합면 개구·헥스 외접원이 이긴다.
+    원형성/헥스비/메시 상단 여부를 함께 채점한다.
 
     Returns:
         (z_best, best_err, circle_info) or (None, None, None)
+        circle_info: (cx, cy, r)
     """
     if z_max - z_min <= 1e-6:
         return (None, None, None)
@@ -2174,27 +2272,34 @@ def _find_best_z_for_diameter_by_sampling(
     coarse_n = int(max(24, min(DIAMETER_SAMPLING_COARSE_COUNT, total_budget)))
     fine_n = int(max(8, min(DIAMETER_SAMPLING_FINE_COUNT, total_budget - coarse_n)))
 
-    best = None
+    best = None  # (score, diameter_err, z, metrics)
+
+    def _consider(z):
+        nonlocal best
+        metrics = _outer_section_metrics_at_z(
+            mesh, z, section_cache=section_cache
+        )
+        if metrics is None:
+            return
+        diameter_err = abs(float(metrics["d"]) - float(target_diameter))
+        score = _score_connection_z_candidate(
+            z, metrics, target_diameter, z_min, z_max
+        )
+        cand = (score, diameter_err, z, metrics)
+        if best is None or cand[0] < best[0]:
+            best = cand
 
     # 1) coarse
     for i in range(coarse_n):
         t = (i + 0.5) / float(coarse_n)
         z = z_min + (z_max - z_min) * t
-        c = find_circle_at_z(mesh, z, section_cache=section_cache)
-        if c is None:
-            continue
-
-        d = c[2] * 2.0
-        err = abs(d - target_diameter)
-
-        if best is None or err < best[1]:
-            best = (z, err, c)
+        _consider(z)
 
     if best is None:
         return (None, None, None)
 
     # 2) fine (best 주변 국소 탐색)
-    z_best = float(best[0])
+    z_best = float(best[2])
     z_window = min(
         max(0.25, float(DIAMETER_SAMPLING_FINE_WINDOW_MM)),
         max(0.3, (z_max - z_min) * 0.35),
@@ -2206,16 +2311,22 @@ def _find_best_z_for_diameter_by_sampling(
         for i in range(fine_n):
             t = (i + 0.5) / float(fine_n)
             z = f_min + (f_max - f_min) * t
-            c = find_circle_at_z(mesh, z, section_cache=section_cache)
-            if c is None:
-                continue
+            _consider(z)
 
-            d = c[2] * 2.0
-            err = abs(d - target_diameter)
-            if err < best[1]:
-                best = (z, err, c)
-
-    return best
+    score, diameter_err, z_hit, metrics = best
+    circle = (metrics["cx"], metrics["cy"], metrics["r"])
+    _log(
+        "Diameter sample pick: z={:.3f} d={:.3f} err={:.4f} score={:.4f} "
+        "circ={:.4f} hexR={:.3f}".format(
+            z_hit,
+            float(metrics["d"]),
+            diameter_err,
+            score,
+            float(metrics.get("circularity") or 0.0),
+            float(metrics.get("hex_ratio") or 0.0),
+        )
+    )
+    return (z_hit, diameter_err, circle)
 
 
 def _translate_z_to_target_diameter_zero(
@@ -2246,7 +2357,28 @@ def _translate_z_to_target_diameter_zero(
 
     section_cache = {}
 
-    # 우선: -Z 쪽(하단)에서 직경 매칭 시도 -> 상부/하부 다중해 중 하단 해 선택
+    # 전 구간 샘플링이 기본. 이진탐색은 교합면 개구의 허위 직경에 수렴한다.
+    z_full, err_full, _circle_full = _find_best_z_for_diameter_by_sampling(
+        mesh,
+        target_diameter,
+        z_min,
+        z_max,
+        sample_count=120,
+        section_cache=section_cache,
+    )
+    if z_full is not None:
+        z_target = z_full
+        _log(
+            "{}Found Z by scored sampling: z={:.3f}mm diameter_err={:.4f}mm range=[{:.3f},{:.3f}]".format(
+                prefix,
+                z_target,
+                err_full if err_full is not None else -1.0,
+                z_min,
+                z_max,
+            )
+        )
+
+    # -Z(임플란트/포스트) 측 원형 해가 더 좋으면 교체
     if prefer_negative_side and z_span > 1e-6:
         band_min = z_min + z_span * 0.05
         band_max = z_min + z_span * 0.72
@@ -2259,18 +2391,41 @@ def _translate_z_to_target_diameter_zero(
             section_cache=section_cache,
         )
         if z_band is not None:
-            z_target = z_band
-            _log(
-                "{}Found Z by lower-band sampling: z={:.3f}mm diameter_err={:.4f}mm range=[{:.3f},{:.3f}]".format(
-                    prefix,
-                    z_target,
-                    err_band if err_band is not None else -1.0,
-                    band_min,
-                    band_max,
-                )
+            metrics_band = _outer_section_metrics_at_z(
+                mesh, z_band, section_cache=section_cache
             )
+            metrics_full = None
+            if z_target is not None:
+                metrics_full = _outer_section_metrics_at_z(
+                    mesh, z_target, section_cache=section_cache
+                )
+            score_band = (
+                _score_connection_z_candidate(
+                    z_band, metrics_band, target_diameter, z_min, z_max
+                )
+                if metrics_band is not None
+                else 1e9
+            )
+            score_full = (
+                _score_connection_z_candidate(
+                    z_target, metrics_full, target_diameter, z_min, z_max
+                )
+                if metrics_full is not None
+                else 1e9
+            )
+            if z_target is None or score_band <= score_full + 0.02:
+                z_target = z_band
+                _log(
+                    "{}Prefer lower-band Z: z={:.3f}mm diameter_err={:.4f}mm range=[{:.3f},{:.3f}]".format(
+                        prefix,
+                        z_target,
+                        err_band if err_band is not None else -1.0,
+                        band_min,
+                        band_max,
+                    )
+                )
 
-    # 폴백: 기존 이진탐색(구버전 로직)
+    # 폴백: 기존 이진탐색(구버전 로직) — 샘플링 실패 시에만
     if z_target is None:
         z_target = find_z_for_diameter(
             mesh,
