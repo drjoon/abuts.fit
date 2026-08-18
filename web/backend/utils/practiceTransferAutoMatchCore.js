@@ -4,8 +4,8 @@
 //
 // 자동매칭 우선창·필터 순수 헬퍼 (Mongo 모델 import 없음).
 
-/** 어벗츠기공소(internalLab) 자동매칭 우선 노출 창. */
-export const PRACTICE_TRANSFER_AUTO_MATCH_PRIORITY_MS = 5 * 60 * 1000;
+/** 어벗츠기공소(internalLab) 원청 우선 수락 창. 하청 전환 시 즉시 종료. */
+export const PRACTICE_TRANSFER_AUTO_MATCH_PRIORITY_MS = 30 * 60 * 1000;
 
 /**
  * @deprecated 자동매칭 3시간 강제 클레임 만료는 폐기.
@@ -13,8 +13,10 @@ export const PRACTICE_TRANSFER_AUTO_MATCH_PRIORITY_MS = 5 * 60 * 1000;
  */
 export const PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS = 3;
 
+/** @deprecated 치과 표시는 어벗츠기공소. 레거시 matchingMode=auto 문서 호환. */
 export const AUTO_MATCH_LAB_DISPLAY_NAME = "자동 매칭";
 export const AUTO_MATCH_PRACTICE_DISPLAY_NAME = "자동 매칭";
+export const ABUTS_LAB_DISPLAY_NAME = "어벗츠기공소";
 
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
@@ -61,11 +63,28 @@ export const isAutoMatchMode = (transfer) =>
 export const isAutoMatchCompleted = (transfer) =>
   Boolean(transfer?.autoMatch?.completedAt);
 
-/** 수락 기공소가 배정·미완료면 활성. 시간 만료로 재공개하지 않음. */
+export const getAssigneeLabAnchorId = (transfer) =>
+  String(transfer?.assigneeLabAnchorId || "").trim();
+
+export const getPrimeLabAnchorId = (transfer) =>
+  String(transfer?.targetLabAnchorId || "").trim();
+
+/** 수행 기공소. 하청이 있으면 assignee, 없으면 원청(또는 레거시 클레임 target). */
+export const resolvePerformingLabAnchorId = (transfer) =>
+  getAssigneeLabAnchorId(transfer) || getPrimeLabAnchorId(transfer);
+
+export const isPracticeTransferSubcontracted = (transfer) => {
+  const prime = getPrimeLabAnchorId(transfer);
+  const assignee = getAssigneeLabAnchorId(transfer);
+  return Boolean(prime && assignee && prime !== assignee);
+};
+
+/** 수행 기공소가 배정·미완료면 활성. 원청만 있고 미클레임이면 공개 풀. */
 export const isAutoMatchClaimActive = (transfer, _now = Date.now()) => {
   if (!isAutoMatchMode(transfer)) return false;
   if (isAutoMatchCompleted(transfer)) return false;
-  return Boolean(String(transfer?.targetLabAnchorId || "").trim());
+  if (getAssigneeLabAnchorId(transfer)) return true;
+  return Boolean(transfer?.autoMatch?.claimedAt);
 };
 
 export const isAutoMatchOpenPool = (transfer, now = Date.now()) => {
@@ -97,6 +116,16 @@ export const isAutoMatchPriorityActive = (transfer, now = Date.now()) => {
   const nowMs = toMs(now);
   if (!Number.isFinite(nowMs)) return false;
   return untilMs > nowMs;
+};
+
+/** 어벗츠 팀원이 우선창을 끊고 하청 풀을 열 수 있는지. */
+export const canOpenPracticeTransferSubcontract = (
+  transfer,
+  viewerLabAnchorId,
+  now = Date.now(),
+) => {
+  if (!isAutoMatchPriorityActive(transfer, now)) return false;
+  return isAutoMatchPriorityLabAnchorId(transfer, viewerLabAnchorId);
 };
 
 /** 우선창 중이면 priority lab만 공개 풀 노출·클레임 가능. */
@@ -177,9 +206,12 @@ export const toAutoMatchApiFieldsCore = (transfer, viewerLabAnchorId = null) => 
     ? new Date(auto.priorityUntil).toISOString()
     : null;
   const targetId = String(transfer?.targetLabAnchorId || "").trim();
+  const assigneeId = getAssigneeLabAnchorId(transfer);
   const viewerId = String(viewerLabAnchorId || "").trim();
   const mine = Boolean(
-    claimActive && viewerId && targetId && viewerId === targetId,
+    viewerId &&
+      ((assigneeId && viewerId === assigneeId) ||
+        (targetId && viewerId === targetId)),
   );
   const declinedIds = Array.isArray(auto?.declinedLabAnchorIds)
     ? auto.declinedLabAnchorIds
@@ -190,9 +222,21 @@ export const toAutoMatchApiFieldsCore = (transfer, viewerLabAnchorId = null) => 
   const priorityLabForMe = Boolean(
     viewerId && isAutoMatchPriorityLabAnchorId(transfer, viewerId),
   );
+  const canOpenSubcontract = canOpenPracticeTransferSubcontract(
+    transfer,
+    viewerId,
+    now,
+  );
+  const revealAssignee = Boolean(viewerId);
 
   return {
     matchingMode,
+    ...(revealAssignee
+      ? {
+          assigneeLabAnchorId: assigneeId || null,
+          assigneeLabName: String(transfer?.assigneeLabName || "").trim(),
+        }
+      : {}),
     autoMatch: {
       claimedAt: auto?.claimedAt || null,
       deadlineAt: null,
@@ -209,6 +253,10 @@ export const toAutoMatchApiFieldsCore = (transfer, viewerLabAnchorId = null) => 
       priorityUntil,
       priorityActive,
       priorityLabForMe,
+      canOpenSubcontract,
+      subcontracted: revealAssignee
+        ? isPracticeTransferSubcontracted(transfer)
+        : false,
     },
   };
 };

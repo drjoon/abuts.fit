@@ -233,11 +233,12 @@ const businessAnchorSchema = new mongoose.Schema(
       salesmanRate: { type: Number, default: 0.1, min: 0, max: 1 },
       adminRate: { type: Number, default: 0.2, min: 0, max: 1 },
       // 기공의뢰 플랫폼 수수료율.
-      // - platformFeeRate: 매칭(auto) 성공 시 (기본 10%)
+      // - subcontractFeeRate: 어벗츠 원청을 타 기공소가 하청 수행할 때 (기본 15%)
+      // - platformFeeRate: 레거시 매칭 성공 수수료 (경로 B 자체 수행은 0)
       // - directPlatformFeeEnabled: 지정(direct) 수수료 적용 on/off(기본 off=무료)
       // - directPlatformFeeRate: 지정 적용 on일 때 요율 (기본 5%)
-      // 걷힌 수수료 총액은 위 4자 배분율로 다시 나뉜다.
       platformFeeRate: { type: Number, default: 0.1, min: 0, max: 1 },
+      subcontractFeeRate: { type: Number, default: 0.15, min: 0, max: 1 },
       directPlatformFeeEnabled: { type: Boolean, default: false },
       directPlatformFeeRate: { type: Number, default: 0.05, min: 0, max: 1 },
       // 기공소 자동 매칭 월 참여 수수료(원). 정책상 0 고정(성공 %만 과금). 관리자「기공소 매칭」.

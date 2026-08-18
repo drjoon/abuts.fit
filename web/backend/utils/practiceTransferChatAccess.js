@@ -18,7 +18,8 @@ export const isSameObjectIdText = (a, b) => {
 
 /**
  * 지정된 기공소(requestor businessAnchor) 구성원이면 primaryContact 해석 실패해도 채팅 참여 가능.
- * - transfer.targetLabAnchorId === currentUser.businessAnchorId
+ * - 수행 기공소(하청 assignee) 또는 원청(targetLab, 어벗츠)
+ * - internalLab(어벗츠기공소) 팀원도 원청으로 참여
  */
 export const canJoinPracticeTransferAsLabPeer = ({
   currentUserId,
@@ -26,15 +27,25 @@ export const canJoinPracticeTransferAsLabPeer = ({
   currentUserBusinessAnchorId,
   transferDoc,
 }) => {
-  if (String(currentUserRole || "").trim() !== "requestor") return false;
+  const role = String(currentUserRole || "").trim();
+  if (role !== "requestor" && role !== "internalLab") return false;
 
   const userId = String(currentUserId || "").trim();
   if (!userId) return false;
 
   const userAnchorId = String(currentUserBusinessAnchorId || "").trim();
-  const targetLabAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
   if (!userAnchorId || !Types.ObjectId.isValid(userAnchorId)) return false;
-  if (!targetLabAnchorId || !Types.ObjectId.isValid(targetLabAnchorId)) return false;
+
+  const targetLabAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+  const assigneeLabAnchorId = String(
+    transferDoc?.assigneeLabAnchorId || "",
+  ).trim();
+  if (assigneeLabAnchorId && Types.ObjectId.isValid(assigneeLabAnchorId)) {
+    if (userAnchorId === assigneeLabAnchorId) return true;
+  }
+  if (!targetLabAnchorId || !Types.ObjectId.isValid(targetLabAnchorId)) {
+    return false;
+  }
 
   return userAnchorId === targetLabAnchorId;
 };

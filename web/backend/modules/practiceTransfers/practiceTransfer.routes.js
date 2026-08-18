@@ -29,6 +29,7 @@ import {
   appendReceivedPracticeTransferResultFiles,
   markReceivedPracticeTransferRelease,
   markReceivedPracticeTransferReject,
+  openSubcontractPracticeTransfer,
   markReceivedPracticeTransferDownloaded,
   confirmPracticeTransferAbutmentDesign,
   confirmPracticeTransferProduction,
@@ -190,6 +191,13 @@ router.post(
   authenticate,
   receiveAuth,
   markReceivedPracticeTransferReject,
+);
+
+router.post(
+  "/:transferId/open-subcontract",
+  authenticate,
+  receiveAuth,
+  openSubcontractPracticeTransfer,
 );
 
 router.post(

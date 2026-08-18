@@ -79,6 +79,8 @@ export function resolveResidualRatesWithoutSalesman(configuredRates) {
 export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_DEFAULT_RATES);
 
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
+/** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 15%, 수행 기공소 85%). */
+export const DEFAULT_SUBCONTRACT_FEE_RATE = 0.15;
 /** 지정 기공소(direct) 성공 수수료 기본 5%(적용 on일 때만). */
 export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
 /**
@@ -123,17 +125,27 @@ export function resolveDirectPlatformFeeRate(payoutRates) {
   return resolveDirectPlatformFeeRateConfigured(payoutRates);
 }
 
+export function resolveSubcontractFeeRate(payoutRates) {
+  const raw = payoutRates?.subcontractFeeRate;
+  if (raw != null && Number.isFinite(Number(raw))) {
+    return Math.min(1, Math.max(0, Number(raw)));
+  }
+  return DEFAULT_SUBCONTRACT_FEE_RATE;
+}
+
 /**
- * 기공의뢰 플랫폼 수수료율.
- * - 매칭(auto): platformFeeRate (기본 10%)
- * - 지정(direct): 적용 on이면 directPlatformFeeRate(기본 5%), off면 0(무료)
+ * 기공의뢰 플랫폼/하청 수수료율.
+ * - 하청 수행(assignee ≠ 원청): subcontractFeeRate (기본 15%)
+ * - 어벗츠 자체 수행·지정 거래: 지정 적용 on이면 directPlatformFeeRate, off면 0
  */
 export function resolvePracticeTransferFeeRate({
   matchingMode,
   payoutRates,
+  subcontracted = false,
 } = {}) {
+  if (subcontracted) return resolveSubcontractFeeRate(payoutRates);
   if (String(matchingMode || "").trim() === "auto") {
-    return resolvePlatformFeeRate(payoutRates);
+    return 0;
   }
   return resolveDirectPlatformFeeRate(payoutRates);
 }

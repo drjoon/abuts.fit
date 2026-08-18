@@ -30,22 +30,29 @@ import {
 } from "../../services/practiceTransferBilling.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
+  ABUTS_LAB_DISPLAY_NAME,
   AUTO_MATCH_LAB_DISPLAY_NAME,
   buildAutoMatchClaimableFilter,
   buildAutoMatchPriorityFields,
   buildReceivedScopeWithAutoMatch,
+  canOpenPracticeTransferSubcontract,
+  getAssigneeLabAnchorId,
   isAutoMatchClaimActive,
   isAutoMatchCompleted,
   isAutoMatchMode,
   isAutoMatchOpenPool,
   isAutoMatchPriorityActive,
   isAutoMatchPriorityLabAnchorId,
+  isInternalLabBusinessType,
   isPracticeTransferLabReceiverRole,
   isLabAnchorAutoMatchEligible,
   loadAutoMatchEligibleLabAnchors,
   redactAutoMatchLabIdentity,
   redactAutoMatchPracticeIdentity,
+  resolveAbutsPrimeLabFields,
+  resolvePerformingLabAnchorId,
   toAutoMatchApiFields,
+  wantsAbutsPrimePool,
 } from "../../utils/practiceTransferAutoMatch.js";
 import {
   clearAutoMatchPriorityTimers,
@@ -121,7 +128,8 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
-// - 2026-08-15: 자동매칭 어벗츠(internalLab) 5분 우선창 — 목록·클레임 게이트, 거부 시 조기 공개.
+// - 2026-08-19: 경로 B — 어벗츠 원청 고정·하청 assignee·30분 우선창·하청 전환.
+// - 2026-08-15: 자동매칭 어벗츠(internalLab) 30분 우선창 — 목록·클레임 게이트, 거부 시 조기 공개.
 // - 2026-08-15: practiceTransferManufacturerStage SSOT를 utils/practiceTransferStage로 분리.
 // - 2026-08-13: 어벗 치아에 임플란트·스캔바디 프리셋이 없으면 전송 거절.
 // - 2026-08-14: GET /my 목록 — countDocuments 제거·레거시 $or 축소·동료/견적 조회 캐시.
@@ -285,8 +293,18 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
     typeof prevBilling.autoMatchBudget === "object"
       ? prevBilling.autoMatchBudget
       : undefined;
-  doc.targetLabAnchorId = null;
-  doc.targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
+  const keepPrime =
+    Boolean(doc.assigneeLabAnchorId) ||
+    String(doc.targetLabName || "").trim() === ABUTS_LAB_DISPLAY_NAME;
+  if (keepPrime) {
+    doc.assigneeLabAnchorId = null;
+    doc.assigneeLabName = "";
+  } else {
+    doc.targetLabAnchorId = null;
+    doc.targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
+    doc.assigneeLabAnchorId = null;
+    doc.assigneeLabName = "";
+  }
   doc.requestorReadAt = null;
   doc.requestorReadBy = null;
   doc.requestorDownloadedAt = null;
@@ -338,6 +356,54 @@ const normalizeEligibleLabAnchorIds = (raw) =>
   (Array.isArray(raw) ? raw : [])
     .map((id) => String(id || "").trim())
     .filter((id) => Types.ObjectId.isValid(id));
+
+/** 치과 픽커: 어벗츠/레거시 자동매칭 → 경로 B(원청 어벗츠). 지정 기공소는 direct. */
+const resolveCreateMatchingTarget = async ({
+  matchingModeRaw,
+  autoMatchFlag,
+  rawAnchorId,
+  targetLabName,
+}) => {
+  let matchingMode = wantsAbutsPrimePool({
+    matchingModeRaw,
+    autoMatchFlag,
+    rawAnchorId,
+    targetLabName,
+  })
+    ? "auto"
+    : "direct";
+
+  if (matchingMode === "direct" && Types.ObjectId.isValid(rawAnchorId)) {
+    const picked = await BusinessAnchor.findById(rawAnchorId)
+      .select({ businessType: 1, name: 1 })
+      .lean();
+    if (isInternalLabBusinessType(picked)) {
+      matchingMode = "auto";
+    } else {
+      return {
+        matchingMode: "direct",
+        targetLabAnchorId: new Types.ObjectId(rawAnchorId),
+        targetLabName:
+          String(targetLabName || "").trim() ||
+          String(picked?.name || "").trim(),
+      };
+    }
+  }
+
+  if (matchingMode === "auto") {
+    const prime = await resolveAbutsPrimeLabFields();
+    if (prime.error) return prime;
+    return prime;
+  }
+
+  return {
+    matchingMode: "direct",
+    targetLabAnchorId: Types.ObjectId.isValid(rawAnchorId)
+      ? new Types.ObjectId(rawAnchorId)
+      : null,
+    targetLabName: String(targetLabName || "").trim(),
+  };
+};
 
 /**
  * 자동매칭 풀 변경을 적격 기공소 requestor에게 fan-out.
@@ -1963,26 +2029,24 @@ export async function createPracticeTransfer(req, res) {
     )
       .trim()
       .toLowerCase();
-    const wantsAutoMatch =
-      matchingModeRaw === "auto" ||
-      req.body?.autoMatch === true ||
-      practiceRouting?.autoMatch === true ||
-      rawAnchorId === "__auto_match__" ||
-      targetLabName === AUTO_MATCH_LAB_DISPLAY_NAME ||
-      targetLabName === "자동매칭";
+    const resolvedTarget = await resolveCreateMatchingTarget({
+      matchingModeRaw,
+      autoMatchFlag:
+        req.body?.autoMatch === true || practiceRouting?.autoMatch === true,
+      rawAnchorId,
+      targetLabName,
+    });
+    if (resolvedTarget.error) {
+      return res.status(resolvedTarget.error.status).json({
+        success: false,
+        message: resolvedTarget.error.message,
+      });
+    }
+    const matchingMode = resolvedTarget.matchingMode;
+    const targetLabAnchorId = resolvedTarget.targetLabAnchorId;
+    targetLabName = resolvedTarget.targetLabName;
 
-    const matchingMode = wantsAutoMatch ? "auto" : "direct";
-
-    const targetLabAnchorId =
-      matchingMode === "auto"
-        ? null
-        : Types.ObjectId.isValid(rawAnchorId)
-          ? new Types.ObjectId(rawAnchorId)
-          : null;
-
-    if (matchingMode === "auto") {
-      targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
-    } else if (!targetLabName && targetLabAnchorId) {
+    if (matchingMode === "direct" && !targetLabName && targetLabAnchorId) {
       const anchor = await BusinessAnchor.findById(targetLabAnchorId)
         .select({ name: 1 })
         .lean();
@@ -2186,6 +2250,8 @@ export async function createPracticeTransfer(req, res) {
       practiceBusinessAnchorId: practiceAnchorId,
       targetLabAnchorId,
       targetLabName,
+      assigneeLabAnchorId: matchingMode === "auto" ? null : undefined,
+      assigneeLabName: matchingMode === "auto" ? "" : undefined,
       matchingMode,
       autoMatch:
         matchingMode === "auto"
@@ -2496,26 +2562,26 @@ export async function updatePracticeTransferContent(req, res) {
     )
       .trim()
       .toLowerCase();
-    const wantsAutoMatch =
-      matchingModeRaw === "auto" ||
-      req.body?.autoMatch === true ||
-      practiceRouting?.autoMatch === true ||
-      rawAnchorId === "__auto_match__" ||
-      targetLabName === AUTO_MATCH_LAB_DISPLAY_NAME ||
-      targetLabName === "자동매칭" ||
-      targetLabName === "자동 매칭";
-    const matchingMode = wantsAutoMatch ? "auto" : "direct";
-
+    const resolvedTarget = await resolveCreateMatchingTarget({
+      matchingModeRaw,
+      autoMatchFlag:
+        req.body?.autoMatch === true || practiceRouting?.autoMatch === true,
+      rawAnchorId,
+      targetLabName,
+    });
+    if (resolvedTarget.error) {
+      return res.status(resolvedTarget.error.status).json({
+        success: false,
+        message: resolvedTarget.error.message,
+      });
+    }
+    const matchingMode = resolvedTarget.matchingMode;
     const targetLabAnchorId =
-      matchingMode === "auto"
-        ? null
-        : Types.ObjectId.isValid(rawAnchorId)
-          ? new Types.ObjectId(rawAnchorId)
-          : doc.targetLabAnchorId || null;
+      resolvedTarget.targetLabAnchorId ||
+      (matchingMode === "direct" ? doc.targetLabAnchorId || null : null);
+    targetLabName = resolvedTarget.targetLabName;
 
-    if (matchingMode === "auto") {
-      targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
-    } else if (!targetLabName && targetLabAnchorId) {
+    if (matchingMode === "direct" && !targetLabName && targetLabAnchorId) {
       const anchor = await BusinessAnchor.findById(targetLabAnchorId)
         .select({ name: 1 })
         .lean();
@@ -2614,8 +2680,7 @@ export async function updatePracticeTransferContent(req, res) {
     const previousTargetLabName = String(doc.targetLabName || "").trim();
     const previousProduction =
       doc.production && typeof doc.production === "object" ? { ...doc.production } : {};
-    const nextLabAnchorIdText =
-      matchingMode === "auto" ? "" : String(targetLabAnchorId || "").trim();
+    const nextLabAnchorIdText = String(targetLabAnchorId || "").trim();
     const labChanged =
       previousMatchingMode !== matchingMode ||
       previousLabAnchorIdRaw !== nextLabAnchorIdText;
@@ -2856,6 +2921,8 @@ export async function updatePracticeTransferContent(req, res) {
     const nextSet = {
       targetLabAnchorId,
       targetLabName,
+      assigneeLabAnchorId: null,
+      assigneeLabName: "",
       matchingMode,
       autoMatch: nextAutoMatch,
       transferMemo: transferMemoResolved,
@@ -4168,10 +4235,14 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       }
 
       // 내 활성 claim이면 idempotent 성공
-      if (
-        isAutoMatchClaimActive(doc, now.getTime()) &&
-        String(doc.targetLabAnchorId || "").trim() === labAnchorId
-      ) {
+      const assigneeId = getAssigneeLabAnchorId(doc);
+      const performingId = resolvePerformingLabAnchorId(doc);
+      const claimIsMine =
+        assigneeId === labAnchorId ||
+        (!assigneeId &&
+          Boolean(doc.autoMatch?.claimedAt) &&
+          performingId === labAnchorId);
+      if (isAutoMatchClaimActive(doc, now.getTime()) && claimIsMine) {
         try {
           await ensureAbutmentRequestsOnAccept({
             transferDoc: doc,
@@ -4202,10 +4273,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       }
 
       // 타인 활성 claim
-      if (
-        isAutoMatchClaimActive(doc, now.getTime()) &&
-        String(doc.targetLabAnchorId || "").trim() !== labAnchorId
-      ) {
+      if (isAutoMatchClaimActive(doc, now.getTime()) && !claimIsMine) {
         return res.status(409).json({
           success: false,
           message: "다른 기공소가 이미 수락했습니다.",
@@ -4213,7 +4281,11 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         });
       }
 
-      const labName = AUTO_MATCH_LAB_DISPLAY_NAME;
+      const claimingLab = await BusinessAnchor.findById(labOid)
+        .select({ name: 1 })
+        .lean();
+      const assigneeLabName =
+        String(claimingLab?.name || "").trim() || ABUTS_LAB_DISPLAY_NAME;
       const wasUnread = !doc.requestorReadAt;
 
       const claimed = await PracticeTransfer.findOneAndUpdate(
@@ -4223,8 +4295,8 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         },
         {
           $set: {
-            targetLabAnchorId: labOid,
-            targetLabName: labName,
+            assigneeLabAnchorId: labOid,
+            assigneeLabName,
             requestorReadAt: now,
             requestorReadBy: req.user?._id || null,
             requestorDownloadedAt: now,
@@ -5711,6 +5783,135 @@ export async function markReceivedPracticeTransferRelease(req, res) {
 }
 
 /**
+ * 어벗츠 기공사업부: 30분 우선창을 즉시 종료하고 인증 기공소 하청 풀을 연다.
+ * 거부(decline)하지 않는다. 어벗츠 자체 수행도 계속 가능.
+ */
+export async function openSubcontractPracticeTransfer(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "internalLab" && role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "어벗츠 기공사업부만 하청으로 전환할 수 있습니다.",
+      });
+    }
+    if (!isPracticeTransferLabReceiverRole(role) && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const now = new Date();
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    if (String(doc.status || "").trim() === "canceled") {
+      return res.status(409).json({
+        success: false,
+        message: "이미 취소된 기공의뢰입니다.",
+      });
+    }
+
+    if (!isAutoMatchMode(doc) || !isAutoMatchOpenPool(doc, now)) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 수락되었거나 하청 풀이 아닙니다.",
+      });
+    }
+
+    if (!canOpenPracticeTransferSubcontract(doc, labAnchorId, now)) {
+      return res.status(409).json({
+        success: false,
+        message: "우선 수락 시간이 아니거나 하청 전환 권한이 없습니다.",
+      });
+    }
+
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      { $set: { "autoMatch.priorityUntil": now } },
+    );
+    if (!doc.autoMatch || typeof doc.autoMatch !== "object") {
+      doc.autoMatch = {};
+    }
+    doc.autoMatch.priorityUntil = now;
+    clearAutoMatchPriorityTimers(doc._id);
+
+    const realtimePayload = {
+      action: "auto-match-priority-opened",
+      transferId: String(doc.transferId || "").trim(),
+      transferMongoId: String(doc._id || "").trim(),
+      targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
+      matchingMode: "auto",
+      practiceUserId: String(doc.practiceUserId || "").trim() || null,
+      status: String(doc.status || "active").trim(),
+      manufacturerStage: "자동매칭",
+      updatedAt: now,
+      source: "openSubcontract",
+      ...toAutoMatchApiFields(doc, labAnchorId),
+    };
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+
+    void notifyAutoMatchPriorityOpenedEarly({
+      transfer: doc,
+      realtimePayload: {
+        ...realtimePayload,
+        manufacturerStage: "자동매칭",
+        ...toAutoMatchApiFields(doc, null),
+      },
+      excludeLabAnchorIds: [],
+      emitPoolCreated: emitAutoMatchPoolCreated,
+    }).catch((err) => {
+      console.warn(
+        "[practiceTransfer] open-subcontract emit failed",
+        String(doc?._id || ""),
+        err?.message || err,
+      );
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "하청 기공소에 즉시 공개했습니다.",
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        matchingMode: "auto",
+        manufacturerStage: "자동매칭",
+        ...toAutoMatchApiFields(doc, labAnchorId),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "하청 전환 처리 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
  * 기공소 수락 전 「거부」.
  * - 자동매칭 공개 풀: 이 기공소만 declinedLabAnchorIds에 넣고 목록에서 제외(의뢰는 타 기공소에 유지).
  * - 지정 기공소: canceled(휴지통)로 보내지 않고 작업취소로 둔다. 치과 「취소」·기공소 「거부」.
@@ -6084,26 +6285,31 @@ export async function retargetPracticeTransferLab(req, res) {
       .toLowerCase();
     const rawAnchorId = String(req.body?.targetLabAnchorId || "").trim();
     const rawLabName = String(req.body?.targetLabName || "").trim();
-    const wantsAutoMatch =
-      matchingModeRaw === "auto" ||
-      req.body?.autoMatch === true ||
-      rawAnchorId === "__auto_match__" ||
-      rawLabName === AUTO_MATCH_LAB_DISPLAY_NAME ||
-      rawLabName === "자동매칭";
-    const matchingMode = wantsAutoMatch ? "auto" : "direct";
-
-    let targetLabAnchorId = null;
-    let targetLabName = rawLabName;
-    if (matchingMode === "auto") {
-      targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
-    } else {
-      if (!Types.ObjectId.isValid(rawAnchorId)) {
+    const resolvedTarget = await resolveCreateMatchingTarget({
+      matchingModeRaw,
+      autoMatchFlag: req.body?.autoMatch === true,
+      rawAnchorId,
+      targetLabName: rawLabName,
+    });
+    if (resolvedTarget.error) {
+      return res.status(resolvedTarget.error.status).json({
+        success: false,
+        message: resolvedTarget.error.message,
+      });
+    }
+    const matchingMode = resolvedTarget.matchingMode;
+    let targetLabAnchorId = resolvedTarget.targetLabAnchorId;
+    let targetLabName = resolvedTarget.targetLabName;
+    if (matchingMode === "direct") {
+      if (!Types.ObjectId.isValid(rawAnchorId) && !targetLabAnchorId) {
         return res.status(400).json({
           success: false,
           message: "대상 기공소를 선택해주세요.",
         });
       }
-      targetLabAnchorId = new Types.ObjectId(rawAnchorId);
+      if (!targetLabAnchorId) {
+        targetLabAnchorId = new Types.ObjectId(rawAnchorId);
+      }
       if (!targetLabName) {
         const anchor = await BusinessAnchor.findById(targetLabAnchorId)
           .select({ name: 1 })
@@ -6269,6 +6475,8 @@ export async function retargetPracticeTransferLab(req, res) {
 
     doc.targetLabAnchorId = targetLabAnchorId;
     doc.targetLabName = targetLabName;
+    doc.assigneeLabAnchorId = null;
+    doc.assigneeLabName = "";
     doc.matchingMode = matchingMode;
     doc.autoMatch = nextAutoMatch;
     doc.workCanceledAt = null;
@@ -6288,6 +6496,8 @@ export async function retargetPracticeTransferLab(req, res) {
         $set: {
           targetLabAnchorId,
           targetLabName,
+          assigneeLabAnchorId: null,
+          assigneeLabName: "",
           matchingMode,
           autoMatch: nextAutoMatch,
           workCanceledAt: null,

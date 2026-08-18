@@ -39,32 +39,35 @@ describe("resolvePracticeTransferFeeRate", () => {
     ).toBe(0.05);
   });
 
-  test("매칭 거래는 platformFeeRate를 쓴다", () => {
+  test("어벗츠 자체 수행(경로 B, 비해하청)은 0", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "auto",
         payoutRates: {
           platformFeeRate: 0.2,
+          subcontractFeeRate: 0.15,
           directPlatformFeeEnabled: true,
           directPlatformFeeRate: 0.05,
-          partnerFeeRate: 0,
-          nonPartnerFeeRate: 0.25,
         },
       }),
-    ).toBe(0.2);
+    ).toBe(0);
   });
 
-  test("등록/미등록 관계와 무관하다", () => {
-    const rates = {
-      platformFeeRate: 0.15,
-      directPlatformFeeEnabled: true,
-      directPlatformFeeRate: 0.05,
-      partnerFeeRate: 0,
-      nonPartnerFeeRate: 0.4,
-    };
+  test("하청 수행은 subcontractFeeRate(기본 15%)", () => {
     expect(
-      resolvePracticeTransferFeeRate({ matchingMode: "auto", payoutRates: rates }),
+      resolvePracticeTransferFeeRate({
+        matchingMode: "auto",
+        subcontracted: true,
+        payoutRates: {},
+      }),
     ).toBe(0.15);
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "auto",
+        subcontracted: true,
+        payoutRates: { subcontractFeeRate: 0.2, platformFeeRate: 0.1 },
+      }),
+    ).toBe(0.2);
   });
 
   test("platformFeeRate가 없으면 nonPartnerFeeRate로 fallback", () => {

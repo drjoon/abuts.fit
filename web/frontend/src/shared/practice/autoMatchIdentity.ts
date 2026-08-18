@@ -1,7 +1,7 @@
 // related files:
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
-export const AUTO_MATCH_IDENTITY_LABEL = "자동 매칭";
+export const AUTO_MATCH_IDENTITY_LABEL = "어벗츠기공소";
 
 export const isAutoMatchModeValue = (mode?: string | null) =>
   String(mode || "").trim() === "auto";

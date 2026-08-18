@@ -437,6 +437,7 @@ export function RequestorPracticeReceivePage({
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [rejectBusy, setRejectBusy] = useState(false);
+  const [openSubcontractBusy, setOpenSubcontractBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
   const cardActionBusyIdRef = useRef<string>("");
@@ -642,6 +643,13 @@ export function RequestorPracticeReceivePage({
                   ? Number(autoMatchRaw.remainingMs)
                   : null,
               releaseCount: Number(autoMatchRaw.releaseCount || 0),
+              priorityUntil: autoMatchRaw.priorityUntil
+                ? String(autoMatchRaw.priorityUntil)
+                : null,
+              priorityActive: Boolean(autoMatchRaw.priorityActive),
+              priorityLabForMe: Boolean(autoMatchRaw.priorityLabForMe),
+              canOpenSubcontract: Boolean(autoMatchRaw.canOpenSubcontract),
+              subcontracted: Boolean(autoMatchRaw.subcontracted),
             }
           : null;
         const productionRaw =
@@ -2852,6 +2860,86 @@ export function RequestorPracticeReceivePage({
     [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, chatUploads, resetDownloads, toast, token],
   );
 
+  const markTransferOpenSubcontract = useCallback(
+    async (transfer: ReceivedPracticeTransfer) => {
+      if (!token) return false;
+      if (!transfer.autoMatch?.canOpenSubcontract) {
+        toast({
+          title: "하청 전환 불가",
+          description: "우선 수락 시간이 아니거나 이미 공개된 의뢰입니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      try {
+        const [res] = await Promise.all([
+          apiFetch<unknown>({
+            path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/open-subcontract`,
+            method: "POST",
+            token,
+          }),
+          new Promise<void>((resolve) => {
+            window.setTimeout(resolve, ACTION_UI_MIN_MS);
+          }),
+        ]);
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "하청 전환 실패",
+            description: String(
+              body.message || "하청 전환 중 오류가 발생했습니다.",
+            ),
+            variant: "destructive",
+          });
+          return false;
+        }
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const data =
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : body;
+        const autoMatchRaw =
+          data.autoMatch && typeof data.autoMatch === "object"
+            ? (data.autoMatch as Record<string, unknown>)
+            : null;
+        applyAcceptedLocalPatch(transfer, {
+          manufacturerStage: "자동매칭",
+          autoMatch: {
+            ...(transfer.autoMatch || {}),
+            openPool: true,
+            claimActive: false,
+            priorityActive: false,
+            canOpenSubcontract: false,
+            priorityUntil:
+              autoMatchRaw?.priorityUntil != null
+                ? String(autoMatchRaw.priorityUntil)
+                : new Date().toISOString(),
+          },
+        });
+        void loadFirstPage({ silent: true });
+        toast({
+          title: "하청 전환",
+          description: "인증 기공소에 즉시 공개했습니다.",
+        });
+        return true;
+      } catch {
+        toast({
+          title: "하청 전환 실패",
+          description: "하청 전환 요청 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadFirstPage, toast, token],
+  );
+
   const resolveTransferChatRoom = useCallback(
     async (transfer: ReceivedPracticeTransfer, resolveSeq: number) => {
       if (!token) return;
@@ -2931,7 +3019,8 @@ export function RequestorPracticeReceivePage({
   ]);
 
   const handleRejectTransfer = useCallback(async () => {
-    if (!selectedTransfer || rejectBusy || acceptBusy || releaseBusy) return;
+    if (!selectedTransfer || rejectBusy || acceptBusy || releaseBusy || openSubcontractBusy)
+      return;
     setRejectBusy(true);
     try {
       await markTransferReject(selectedTransfer);
@@ -2941,6 +3030,32 @@ export function RequestorPracticeReceivePage({
   }, [
     acceptBusy,
     markTransferReject,
+    openSubcontractBusy,
+    rejectBusy,
+    releaseBusy,
+    selectedTransfer,
+  ]);
+
+  const handleOpenSubcontract = useCallback(async () => {
+    if (
+      !selectedTransfer ||
+      openSubcontractBusy ||
+      acceptBusy ||
+      rejectBusy ||
+      releaseBusy
+    ) {
+      return;
+    }
+    setOpenSubcontractBusy(true);
+    try {
+      await markTransferOpenSubcontract(selectedTransfer);
+    } finally {
+      setOpenSubcontractBusy(false);
+    }
+  }, [
+    acceptBusy,
+    markTransferOpenSubcontract,
+    openSubcontractBusy,
     rejectBusy,
     releaseBusy,
     selectedTransfer,
@@ -3872,6 +3987,24 @@ export function RequestorPracticeReceivePage({
     [markTransferRelease],
   );
 
+  const handleCardOpenSubcontract = useCallback(
+    async (transfer: ReceivedPracticeTransfer, event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || cardActionBusyIdRef.current) return;
+      cardActionBusyIdRef.current = id;
+      setCardActionBusyId(id);
+      try {
+        await markTransferOpenSubcontract(transfer);
+      } finally {
+        cardActionBusyIdRef.current = "";
+        setCardActionBusyId("");
+      }
+    },
+    [markTransferOpenSubcontract],
+  );
+
   const openTransferDialog = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return;
@@ -4205,6 +4338,11 @@ export function RequestorPracticeReceivePage({
                 }
                 onComplete={(event) => handleCardComplete(transfer, event)}
                 onRelease={(event) => void handleCardRelease(transfer, event)}
+                onOpenSubcontract={
+                  transfer.autoMatch?.canOpenSubcontract
+                    ? (event) => void handleCardOpenSubcontract(transfer, event)
+                    : undefined
+                }
                 onDesignConfirm={() => {
                   void confirmAbutmentDesign(transfer);
                 }}
@@ -4540,6 +4678,12 @@ export function RequestorPracticeReceivePage({
           selectedTransfer?.autoMatch?.declinedByMe
             ? undefined
             : () => void handleRejectTransfer()
+        }
+        openSubcontractBusy={openSubcontractBusy}
+        onOpenSubcontract={
+          selectedTransfer?.autoMatch?.canOpenSubcontract
+            ? () => void handleOpenSubcontract()
+            : undefined
         }
         orderDate={selectedTransfer?.orderDate || null}
         arrivalDate={selectedTransfer?.arrivalDate || null}

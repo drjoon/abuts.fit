@@ -99,6 +99,7 @@ export type PracticeTransferLabReceiveCardProps = {
   onAbutmentProductionCancel: (event: MouseEvent) => void;
   onComplete: (event: MouseEvent) => void;
   onRelease: (event: MouseEvent) => void;
+  onOpenSubcontract?: (event: MouseEvent) => void;
   onDesignConfirm: () => void;
   onDropFiles: (files: File[]) => void;
 };
@@ -117,6 +118,7 @@ export function PracticeTransferLabReceiveCard({
   onAbutmentProductionCancel,
   onComplete,
   onRelease,
+  onOpenSubcontract,
   onDesignConfirm,
   onDropFiles,
 }: PracticeTransferLabReceiveCardProps) {
@@ -238,8 +240,23 @@ export function PracticeTransferLabReceiveCard({
       )
     ) : null;
 
-  /** 헤더 우측 — 수락중「의뢰 수락 취소」/ 완료후「작업 완료 취소」 */
-  const headerCancelButton = showWorkActions ? (
+  /** 헤더 우측 — 수락중「의뢰 수락 취소」/ 완료후「작업 완료 취소」/ 우선창「하청 전환」 */
+  const headerCancelButton = transfer.autoMatch?.canOpenSubcontract &&
+  onOpenSubcontract ? (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={cardBusy}
+      className="h-7 px-2 text-[11px]"
+      onClick={(event) => {
+        event.stopPropagation();
+        void onOpenSubcontract(event);
+      }}
+    >
+      {cardBusy ? "처리 중..." : "하청 전환"}
+    </Button>
+  ) : showWorkActions ? (
     productionStarted ? (
       <Tooltip>
         <TooltipTrigger asChild>

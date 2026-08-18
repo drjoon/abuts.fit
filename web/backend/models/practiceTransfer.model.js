@@ -50,6 +50,18 @@ const practiceTransferSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    // 경로 B 수행 기공소(하청). 원청은 targetLab(어벗츠)로 고정.
+    assigneeLabAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
+      index: true,
+    },
+    assigneeLabName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     // "direct"(지정 기공소) | "auto"(검증 기공소 공개 풀 · 선착순)
     matchingMode: {
       type: String,
@@ -90,7 +102,7 @@ const practiceTransferSchema = new mongoose.Schema(
         default: undefined,
         index: true,
       },
-      // 어벗츠기공소(internalLab) 우선창: 생성 시 적격이면 +5분. 거부·작업취소 시 조기 종료.
+      // 어벗츠기공소(internalLab) 우선창: 생성 시 적격이면 +30분. 하청 전환·거부·작업취소 시 조기 종료.
       priorityUntil: { type: Date, default: null, index: true },
       priorityLabAnchorIds: {
         type: [

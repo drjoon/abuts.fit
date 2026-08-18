@@ -74,6 +74,11 @@ export type PracticeTransferLabReceiveItem = {
     declinedByMe?: boolean;
     remainingMs?: number | null;
     releaseCount?: number;
+    priorityUntil?: string | null;
+    priorityActive?: boolean;
+    priorityLabForMe?: boolean;
+    canOpenSubcontract?: boolean;
+    subcontracted?: boolean;
   } | null;
   hasCustomAbutment?: boolean;
   production?: {

@@ -107,7 +107,11 @@ import {
 } from "../utils/abutsAbutmentService.js";
 import LabTradingPartner from "../models/labTradingPartner.model.js";
 import { findLabPracticeRelationship } from "../utils/labTradingPartner.util.js";
-import { isAutoMatchOpenPool } from "../utils/practiceTransferAutoMatch.js";
+import {
+  isAutoMatchOpenPool,
+  isPracticeTransferSubcontracted,
+  resolvePerformingLabAnchorId,
+} from "../utils/practiceTransferAutoMatch.js";
 import {
   assertLabWithinAutoMatchBudget,
   buildScheduleFromAutoMatchBudget,
@@ -720,7 +724,7 @@ export async function commitPracticeTransferBilling({
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
-  const labAnchorId = transfer?.targetLabAnchorId;
+  const labAnchorId = resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
   if (!transferId || !practiceAnchorId || !labAnchorId) {
     return { billed: false, reason: "missing_anchors" };
   }
@@ -842,6 +846,7 @@ export async function commitPracticeTransferBilling({
   const feeRateApplied = resolvePracticeTransferFeeRate({
     matchingMode: isAutoMatch ? "auto" : "direct",
     payoutRates: devopsAnchorForFeeRate?.payoutRates,
+    subcontracted: isPracticeTransferSubcontracted(transfer),
   });
 
   const { abutsRevenueAmount, labSettlementAmount } =
@@ -1819,7 +1824,7 @@ async function computeAcceptedPracticeTransferFees({
   session = null,
 }) {
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
-  const labAnchorId = transfer?.targetLabAnchorId;
+  const labAnchorId = resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
   const isAutoMatch = String(transfer?.matchingMode || "").trim() === "auto";
 
   const [lab, practice, abutmentPricingTier, abutmentPrices, partner, devopsAnchorForFeeRate, autoMatchCatalog] =
@@ -1903,6 +1908,7 @@ async function computeAcceptedPracticeTransferFees({
   const feeRateApplied = resolvePracticeTransferFeeRate({
     matchingMode: isAutoMatch ? "auto" : "direct",
     payoutRates: devopsAnchorForFeeRate?.payoutRates,
+    subcontracted: isPracticeTransferSubcontracted(transfer),
   });
   const { abutsRevenueAmount, labSettlementAmount } =
     splitPracticeTransferSettlement({
@@ -1937,7 +1943,7 @@ export async function adjustPracticeTransferHold({
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
-  const labAnchorId = transfer?.targetLabAnchorId;
+  const labAnchorId = resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
   if (!transferId || !practiceAnchorId || !labAnchorId) {
     return { adjusted: false, reason: "missing_anchors" };
   }
@@ -2380,7 +2386,7 @@ export async function releasePracticeTransferLabShare({
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
-  const labAnchorId = transfer?.targetLabAnchorId;
+  const labAnchorId = resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
   if (!transferId || !practiceAnchorId || !labAnchorId) {
     return { released: false, reason: "missing_anchors" };
   }
@@ -3877,6 +3883,7 @@ export async function buildFeeQuotesForTransferDocs({
     const feeRateApplied = resolvePracticeTransferFeeRate({
       matchingMode,
       payoutRates,
+      subcontracted: isPracticeTransferSubcontracted(doc),
     });
     const remakeFeeRateApplied = resolvePracticeTransferFeeRate({
       matchingMode: "direct",

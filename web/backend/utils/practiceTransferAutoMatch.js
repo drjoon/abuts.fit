@@ -13,6 +13,7 @@ import {
   resolveRequestorProfile,
 } from "./requestorCapabilities.js";
 import {
+  ABUTS_LAB_DISPLAY_NAME,
   AUTO_MATCH_LAB_DISPLAY_NAME,
   AUTO_MATCH_PRACTICE_DISPLAY_NAME,
   PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
@@ -21,7 +22,12 @@ import {
   buildAutoMatchPriorityFieldsCore,
   buildAutoMatchPriorityUntil,
   canAccessAutoMatchOpenPool,
+  canOpenPracticeTransferSubcontract,
+  getAssigneeLabAnchorId,
   getAutoMatchPriorityLabAnchorIds,
+  getPrimeLabAnchorId,
+  isPracticeTransferSubcontracted,
+  resolvePerformingLabAnchorId,
   isAutoMatchClaimActive,
   isAutoMatchCompleted,
   isAutoMatchMode,
@@ -38,12 +44,16 @@ import {
 export {
   AUTO_MATCH_LAB_DISPLAY_NAME,
   AUTO_MATCH_PRACTICE_DISPLAY_NAME,
+  ABUTS_LAB_DISPLAY_NAME,
   PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
   PRACTICE_TRANSFER_AUTO_MATCH_PRIORITY_MS,
   buildAutoMatchPriorityAccessClause,
   buildAutoMatchPriorityUntil,
   canAccessAutoMatchOpenPool,
+  canOpenPracticeTransferSubcontract,
+  getAssigneeLabAnchorId,
   getAutoMatchPriorityLabAnchorIds,
+  getPrimeLabAnchorId,
   isAutoMatchClaimActive,
   isAutoMatchCompleted,
   isAutoMatchMode,
@@ -52,10 +62,12 @@ export {
   isAutoMatchPriorityLabAnchorId,
   isInternalLabBusinessType,
   isPracticeTransferLabReceiverRole,
+  isPracticeTransferSubcontracted,
   normalizeLabAnchorIdList,
+  resolvePerformingLabAnchorId,
 };
 
-/** 자동매칭 의뢰의 기공소명·기공소 앵커는 치과/타 기공소에 비공개. */
+/** 치과에는 원청(어벗츠기공소)만 보이고, 하청 기공소는 숨긴다. */
 export const redactAutoMatchLabIdentity = (
   matchingMode,
   { targetLabName = "", targetLabAnchorId = null } = {},
@@ -67,9 +79,12 @@ export const redactAutoMatchLabIdentity = (
       targetLabAnchorId: targetLabAnchorId || null,
     };
   }
+  const name = String(targetLabName || "").trim();
+  const isLegacyAutoLabel =
+    name === AUTO_MATCH_LAB_DISPLAY_NAME || name === "자동매칭";
   return {
-    targetLabName: AUTO_MATCH_LAB_DISPLAY_NAME,
-    targetLabAnchorId: null,
+    targetLabName: isLegacyAutoLabel || !name ? ABUTS_LAB_DISPLAY_NAME : name,
+    targetLabAnchorId: targetLabAnchorId || null,
   };
 };
 
@@ -175,7 +190,12 @@ export const buildReceivedScopeWithAutoMatch = ({
   if (!labId || !Types.ObjectId.isValid(labId)) return null;
 
   const labOid = new Types.ObjectId(labId);
-  const mine = { targetLabAnchorId: labOid };
+  const mine = {
+    $or: [
+      { targetLabAnchorId: labOid },
+      { assigneeLabAnchorId: labOid },
+    ],
+  };
 
   if (!autoMatchEligible) {
     return mine;
@@ -203,8 +223,14 @@ export const buildReceivedScopeWithAutoMatch = ({
       },
       {
         $or: [
-          { targetLabAnchorId: null },
-          { targetLabAnchorId: { $exists: false } },
+          { assigneeLabAnchorId: null },
+          { assigneeLabAnchorId: { $exists: false } },
+        ],
+      },
+      {
+        $or: [
+          { "autoMatch.claimedAt": null },
+          { "autoMatch.claimedAt": { $exists: false } },
         ],
       },
       buildAutoMatchPriorityAccessClause(labOid, now),
@@ -270,8 +296,14 @@ export const buildAutoMatchClaimableFilter = (
       },
       {
         $or: [
-          { targetLabAnchorId: null },
-          { targetLabAnchorId: { $exists: false } },
+          { assigneeLabAnchorId: null },
+          { assigneeLabAnchorId: { $exists: false } },
+        ],
+      },
+      {
+        $or: [
+          { "autoMatch.claimedAt": null },
+          { "autoMatch.claimedAt": { $exists: false } },
         ],
       },
       ...(labOid ? [buildAutoMatchPriorityAccessClause(labOid, now)] : []),
@@ -310,3 +342,53 @@ export async function isLabAnchorAutoMatchEligible(labAnchorId) {
 
 export const toAutoMatchApiFields = (transfer, viewerLabAnchorId = null) =>
   toAutoMatchApiFieldsCore(transfer, viewerLabAnchorId);
+
+/** 어벗츠기공소(internalLab) 원청 앵커. */
+export async function resolveInternalLabAnchor() {
+  const row = await BusinessAnchor.findOne({ businessType: "internalLab" })
+    .select({ _id: 1, name: 1, businessType: 1, status: 1 })
+    .sort({ createdAt: 1 })
+    .lean();
+  return row || null;
+}
+
+/** 치과가 어벗츠기공소(또는 레거시 자동매칭)를 고른 경로 B. */
+export const wantsAbutsPrimePool = ({
+  matchingModeRaw = "",
+  autoMatchFlag = false,
+  rawAnchorId = "",
+  targetLabName = "",
+} = {}) => {
+  const mode = String(matchingModeRaw || "").trim().toLowerCase();
+  const name = String(targetLabName || "").trim();
+  const id = String(rawAnchorId || "").trim();
+  return (
+    mode === "auto" ||
+    autoMatchFlag === true ||
+    id === "__auto_match__" ||
+    name === AUTO_MATCH_LAB_DISPLAY_NAME ||
+    name === "자동매칭" ||
+    name === ABUTS_LAB_DISPLAY_NAME
+  );
+};
+
+/**
+ * 경로 B 원청 필드. 실패 시 { error }.
+ * 지정 기공소(direct)면 호출측에서 기존 앵커를 쓴다.
+ */
+export async function resolveAbutsPrimeLabFields() {
+  const internal = await resolveInternalLabAnchor();
+  if (!internal?._id) {
+    return {
+      error: {
+        status: 409,
+        message: "어벗츠기공소를 찾을 수 없습니다.",
+      },
+    };
+  }
+  return {
+    matchingMode: "auto",
+    targetLabAnchorId: internal._id,
+    targetLabName: ABUTS_LAB_DISPLAY_NAME,
+  };
+}

@@ -32,6 +32,7 @@ import { PRACTICE_RUSH_FEE_MULTIPLIER } from "@/shared/practice/labFeeSchedule";
 
 type PlatformFeeSettings = {
   platformFeeRate?: number;
+  subcontractFeeRate?: number;
   directPlatformFeeEnabled?: boolean;
   directPlatformFeeRate?: number;
   nonPartnerFeeRate?: number;
@@ -71,14 +72,14 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
   const { token } = useAuthStore();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(Boolean(token));
-  const [platformFeeRate, setPlatformFeeRate] = useState("10");
+  const [platformFeeRate, setPlatformFeeRate] = useState("15");
   const [directFeeEnabled, setDirectFeeEnabled] = useState(false);
   const [directFeeRate, setDirectFeeRate] = useState("5");
   const [rushFeeMultiplier, setRushFeeMultiplier] = useState(
     toMultiplierString(PRACTICE_RUSH_FEE_MULTIPLIER, PRACTICE_RUSH_FEE_MULTIPLIER),
   );
   const hydratedRef = useRef(false);
-  const savedMatchRef = useRef("10");
+  const savedMatchRef = useRef("15");
   const savedDirectEnabledRef = useRef(false);
   const savedDirectRef = useRef("5");
   const savedRushRef = useRef(
@@ -112,8 +113,12 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
 
         const settings = res.data?.data?.platformFeeSettings || {};
         const matchPct = toPctString(
-          Number(settings.platformFeeRate ?? settings.nonPartnerFeeRate),
-          0.1,
+          Number(
+            settings.subcontractFeeRate ??
+              settings.platformFeeRate ??
+              settings.nonPartnerFeeRate,
+          ),
+          0.15,
         );
         const directPct = toPctString(
           Number(settings.directPlatformFeeRate),
@@ -194,7 +199,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
           method: "PATCH",
           token,
           jsonBody: {
-            platformFeeRate: match / 100,
+            subcontractFeeRate: match / 100,
             directPlatformFeeEnabled: nextDirectEnabled,
             directPlatformFeeRate: direct / 100,
             practiceRushFeeMultiplier: Math.round(rush * 100) / 100,
@@ -212,7 +217,11 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         const saved = res.data?.data?.platformFeeSettings;
         savedMatchRef.current = saved
           ? toPctString(
-              Number(saved.platformFeeRate ?? saved.nonPartnerFeeRate),
+              Number(
+                saved.subcontractFeeRate ??
+                  saved.platformFeeRate ??
+                  saved.nonPartnerFeeRate,
+              ),
               match / 100,
             )
           : String(match);
@@ -261,10 +270,10 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               htmlFor="rate-match"
               className="text-sm font-semibold text-slate-900"
             >
-              매칭 거래
+              하청 수수료
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              성공 수수료
+              수행 기공소 공제(기본 15%)
             </p>
           </div>
         </div>

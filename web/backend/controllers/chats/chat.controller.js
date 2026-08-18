@@ -1184,7 +1184,9 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
     }
 
     const practiceUserId = String(transferDoc?.practiceUserId || "").trim();
-    const targetLabAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+    const targetLabAnchorId =
+      String(transferDoc?.assigneeLabAnchorId || "").trim() ||
+      String(transferDoc?.targetLabAnchorId || "").trim();
     const currentUserRole = String(req.user?.role || "").trim();
     const currentUserBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
 
@@ -1336,7 +1338,9 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       currentUserId === String(transferDoc?.requestorDownloadedBy || "").trim() ||
       currentUserId === String(transferDoc?.requestorReadBy || "").trim();
     const isAutoOpenPool =
-      String(transferDoc?.matchingMode || "").trim() === "auto" && !targetLabAnchorId;
+      String(transferDoc?.matchingMode || "").trim() === "auto" &&
+      !String(transferDoc?.assigneeLabAnchorId || "").trim() &&
+      !transferDoc?.autoMatch?.claimedAt;
 
     // 기공소가 지정됐지만 사용자 해석 실패: 치과 쪽은 practice-only 방으로 열고
     // 기공소 구성원이 나중에 isLabPeer로 합류한다.

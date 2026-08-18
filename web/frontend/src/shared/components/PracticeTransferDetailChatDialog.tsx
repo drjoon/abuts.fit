@@ -203,6 +203,9 @@ type PracticeTransferDetailChatDialogProps = {
   /** 수락 전 거부 (수신 페이지). 자동매칭=풀에서 숨김, 지정=의뢰 취소 */
   rejectBusy?: boolean;
   onReject?: () => void | Promise<void>;
+  /** 어벗츠 우선창을 끊고 하청 풀을 즉시 연다 */
+  openSubcontractBusy?: boolean;
+  onOpenSubcontract?: () => void | Promise<void>;
   /** 수락 바 짧은 작업기간 표시용 */
   orderDate?: string | null;
   arrivalDate?: string | null;
@@ -288,6 +291,8 @@ export function PracticeTransferDetailChatDialog({
   onAccept,
   rejectBusy = false,
   onReject,
+  openSubcontractBusy = false,
+  onOpenSubcontract,
   orderDate = null,
   arrivalDate = null,
   releaseBusy = false,
@@ -815,6 +820,19 @@ export function PracticeTransferDetailChatDialog({
                         viewer="lab"
                         className="text-xs"
                       />
+                    ) : null}
+                    {onOpenSubcontract ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void onOpenSubcontract()}
+                        disabled={
+                          acceptBusy || rejectBusy || openSubcontractBusy
+                        }
+                      >
+                        {openSubcontractBusy ? "전환 중..." : "하청 전환"}
+                      </Button>
                     ) : null}
                     {onReject ? (
                       <Button

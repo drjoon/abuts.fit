@@ -375,7 +375,7 @@ export const mapMyPracticeTransferApiRows = (
       ).trim();
       const targetLab =
         matchingMode === "auto"
-          ? "자동 매칭"
+          ? "어벗츠기공소"
           : targetLabFromRouting || extractLabNameFromMessage(message) || "-";
       const toothRaw = String(ci.tooth || "").trim();
       const createdAtRaw = String(r.createdAt || "");

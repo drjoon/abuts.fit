@@ -153,6 +153,7 @@ import {
   getBusinessLabel,
   usePracticeTransferStep1,
   isAutoMatchLab,
+  isAbutsPrimePoolLab,
   isPinnedAbutsRecentLab,
   preferCachedAbutsLab,
   ABUTS_PINNED_LAB_SEED,
@@ -5036,7 +5037,7 @@ export const PracticeFileTransferPage = ({
         skipDesignConfirm,
         skipJig: effectiveSkipJig,
       });
-      const autoMatch = isAutoMatchLab(selectedLab);
+      const autoMatch = isAbutsPrimePoolLab(selectedLab);
       const budgetForAuto = resolveAutoMatchBudgetOrDefaults(
         autoMatchBudget,
         abutsLabFeeCatalog,
@@ -5046,7 +5047,7 @@ export const PracticeFileTransferPage = ({
         },
       );
       const practiceRouting = {
-        targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
+        targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
         targetLabName: String(selectedLab?.name || "").trim(),
         matchingMode: autoMatch ? "auto" : "direct",
         skipDesignConfirm,
@@ -5113,7 +5114,7 @@ export const PracticeFileTransferPage = ({
           transferId,
           draftId: editing ? undefined : draftIdToSubmit || undefined,
           matchingMode: autoMatch ? "auto" : "direct",
-          targetLabAnchorId: autoMatch ? null : toApiLabAnchorId(selectedLab?._id),
+          targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
           targetLabName: String(selectedLab?.name || "").trim(),
           orderDate: submitOrderDate,
           arrivalDate: submitArrivalDate,
@@ -5223,7 +5224,7 @@ export const PracticeFileTransferPage = ({
       missing.push(`어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`);
     }
     const attachmentCount = files.length + draftFiles.length;
-    if (isAutoMatchLab(selectedLab) && attachmentCount === 0) {
+    if (isAbutsPrimePoolLab(selectedLab) && attachmentCount === 0) {
       missing.push("구강스캔 파일");
     }
     return missing;
@@ -5240,7 +5241,7 @@ export const PracticeFileTransferPage = ({
 
   const showExpressWizard = isExpressMode && !expressDone;
 
-  const expressOralScanRequired = isAutoMatchLab(selectedLab);
+  const expressOralScanRequired = isAbutsPrimePoolLab(selectedLab);
 
   const expressStepGate = useMemo(() => {
     const hasLab = Boolean(String(selectedLab?._id || "").trim());
@@ -5284,7 +5285,7 @@ export const PracticeFileTransferPage = ({
       },
       files: {
         ok: hasRequiredFiles,
-        reason: "자동 매칭은 구강스캔 파일이 필요합니다.",
+        reason: "어벗츠기공소 의뢰는 구강스캔 파일이 필요합니다.",
       },
       confirm: {
         ok: hasRequiredSubmitFields,
@@ -5704,8 +5705,8 @@ export const PracticeFileTransferPage = ({
     acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
-                      isAutoMatchLab(selectedLab)
-                        ? "자동매칭은 구강스캔 첨부가 필수입니다."
+                      isAbutsPrimePoolLab(selectedLab)
+                        ? "어벗츠기공소 의뢰는 구강스캔 첨부가 필수입니다."
                         : null,
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
@@ -6201,7 +6202,7 @@ export const PracticeFileTransferPage = ({
                               },
                             ]
                           : []),
-                        ...(isAutoMatchLab(selectedLab)
+                        ...(isAbutsPrimePoolLab(selectedLab)
                           ? [
                               {
                                 key: "구강스캔 파일",
@@ -6851,10 +6852,8 @@ export const PracticeFileTransferPage = ({
             const transferId = String(target?.transferId || "").trim();
             if (!target || !transferId || !selectedLab) return;
 
-            const autoMatch = isAutoMatchLab(selectedLab);
-            const targetLabAnchorId = autoMatch
-              ? null
-              : toApiLabAnchorId(selectedLab._id);
+            const autoMatch = isAbutsPrimePoolLab(selectedLab);
+            const targetLabAnchorId = toApiLabAnchorId(selectedLab._id);
             if (!autoMatch && !targetLabAnchorId) {
               toast({
                 title: "기공소를 선택해 주세요",
@@ -6887,7 +6886,7 @@ export const PracticeFileTransferPage = ({
                 jsonBody: {
                   matchingMode: autoMatch ? "auto" : "direct",
                   targetLabAnchorId: autoMatch
-                    ? "__auto_match__"
+                    ? targetLabAnchorId || "__auto_match__"
                     : targetLabAnchorId,
                   targetLabName: String(selectedLab.name || "").trim(),
                   autoMatchMinLabRating: autoMatch

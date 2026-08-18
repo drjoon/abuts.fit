@@ -28,6 +28,7 @@ import {
   isDirectPlatformFeeEnabled,
   resolveDirectPlatformFeeRateConfigured,
   resolvePlatformFeeRate,
+  resolveSubcontractFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
 import { normalizeConfiguredRushFeeMultiplier } from "../../utils/practiceTransferRush.js";
 
@@ -846,6 +847,7 @@ async function findDevopsPayoutAnchor() {
 
 function normalizePlatformFeeRates(payoutRates = {}, creditSettings = {}) {
   const platformFeeRate = resolvePlatformFeeRate(payoutRates);
+  const subcontractFeeRate = resolveSubcontractFeeRate(payoutRates);
   const directPlatformFeeEnabled = isDirectPlatformFeeEnabled(payoutRates);
   const directPlatformFeeRate =
     resolveDirectPlatformFeeRateConfigured(payoutRates);
@@ -855,6 +857,7 @@ function normalizePlatformFeeRates(payoutRates = {}, creditSettings = {}) {
   );
   return {
     platformFeeRate,
+    subcontractFeeRate,
     directPlatformFeeEnabled,
     directPlatformFeeRate,
     autoMatchMonthlyFee,
@@ -897,11 +900,28 @@ export async function updatePlatformFeeSettings(req, res) {
     const platformFeeRate = Number(
       payload.platformFeeRate ?? payload.nonPartnerFeeRate,
     );
-    if (!Number.isFinite(platformFeeRate) || platformFeeRate < 0 || platformFeeRate > 1) {
-      return res.status(400).json({
-        success: false,
-        message: "매칭 거래 수수료율은 0~100% 범위여야 합니다.",
-      });
+    if (payload.platformFeeRate != null || payload.nonPartnerFeeRate != null) {
+      if (!Number.isFinite(platformFeeRate) || platformFeeRate < 0 || platformFeeRate > 1) {
+        return res.status(400).json({
+          success: false,
+          message: "매칭 거래 수수료율은 0~100% 범위여야 합니다.",
+        });
+      }
+    }
+
+    let subcontractFeeRate;
+    if (payload.subcontractFeeRate != null) {
+      subcontractFeeRate = Number(payload.subcontractFeeRate);
+      if (
+        !Number.isFinite(subcontractFeeRate) ||
+        subcontractFeeRate < 0 ||
+        subcontractFeeRate > 1
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "하청 수수료율은 0~100% 범위여야 합니다.",
+        });
+      }
     }
 
     let directPlatformFeeRate;
@@ -970,11 +990,19 @@ export async function updatePlatformFeeSettings(req, res) {
     }
 
     const $set = {
-      "payoutRates.platformFeeRate": platformFeeRate,
-      "payoutRates.partnerFeeRate": platformFeeRate,
-      "payoutRates.nonPartnerFeeRate": platformFeeRate,
       "payoutRates.updatedAt": new Date(),
     };
+    if (
+      Number.isFinite(platformFeeRate) &&
+      (payload.platformFeeRate != null || payload.nonPartnerFeeRate != null)
+    ) {
+      $set["payoutRates.platformFeeRate"] = platformFeeRate;
+      $set["payoutRates.partnerFeeRate"] = platformFeeRate;
+      $set["payoutRates.nonPartnerFeeRate"] = platformFeeRate;
+    }
+    if (subcontractFeeRate != null) {
+      $set["payoutRates.subcontractFeeRate"] = subcontractFeeRate;
+    }
     if (directPlatformFeeRate != null) {
       $set["payoutRates.directPlatformFeeRate"] = directPlatformFeeRate;
     }

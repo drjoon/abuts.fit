@@ -88,12 +88,26 @@ describe("practiceTransferChatAccess", () => {
     ).toBe(true);
   });
 
-  test("기존 방만 있고 작성자가 participants에 없어도 접근 가능", () => {
+  test("하청 assignee 기공소 구성원은 lab peer", () => {
     expect(
-      canAccessPracticeTransferChat({
-        currentUserId: senderId,
+      canJoinPracticeTransferAsLabPeer({
+        currentUserId: otherLabStaffId,
         currentUserRole: "requestor",
-        currentUserBusinessAnchorId: practiceAnchorId,
+        currentUserBusinessAnchorId: "64a000000000000000000099",
+        transferDoc: {
+          ...transferDoc,
+          assigneeLabAnchorId: "64a000000000000000000099",
+        },
+      }),
+    ).toBe(true);
+  });
+
+  test("internalLab 원청 팀원은 lab peer", () => {
+    expect(
+      canJoinPracticeTransferAsLabPeer({
+        currentUserId: labStaffId,
+        currentUserRole: "internalLab",
+        currentUserBusinessAnchorId: labAnchorId,
         transferDoc,
       }),
     ).toBe(true);
