@@ -1,10 +1,13 @@
 // related files:
 // - web/backend/controllers/credits/creditLedger.utils.js
+import mongoose from "mongoose";
 import {
+  buildCreditLedgerRequestSummary,
   buildLedgerItemsWithBucketBalanceAfter,
   collectPracticeTransferLookupIds,
   isAbutmentDesignLabFeeLedgerRow,
   isSettlementLedgerType,
+  parseSpendKindFromUniqueKey,
   promoteAbutmentDesignFeeToPracticeTransfer,
   resolveLedgerTypesForFilters,
 } from "../../controllers/credits/creditLedger.utils.js";
@@ -160,5 +163,58 @@ describe("abutment design fee → practice transfer", () => {
         "aaaaaaaaaaaaaaaaaaaaaaaa",
       ),
     ).toEqual(row);
+  });
+});
+
+describe("parseSpendKindFromUniqueKey", () => {
+  test("shipping_fee / machining_spend 접미를 인식한다", () => {
+    expect(
+      parseSpendKindFromUniqueKey("gl:request:abc:hold:shipping_fee"),
+    ).toBe("shipping_fee");
+    expect(
+      parseSpendKindFromUniqueKey("shippingPackage:abc:shipping_fee"),
+    ).toBe("shipping_fee");
+    expect(
+      parseSpendKindFromUniqueKey("gl:request:abc:machining_spend"),
+    ).toBe("machining_spend");
+  });
+});
+
+describe("buildCreditLedgerRequestSummary", () => {
+  test("수신자·박스 묶음 키를 내려준다", () => {
+    const summary = buildCreditLedgerRequestSummary({
+      _id: "aaaaaaaaaaaaaaaaaaaaaaaa",
+      requestId: "20260819-000001",
+      mailboxAddress: "a1a1",
+      shippingPackageId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+      businessAnchorId: "cccccccccccccccccccccccc",
+      shippingReceiver: {
+        name: "향기로운치과",
+        phone: "010-1234-5678",
+        address: "서울",
+        sourceAnchorId: "cccccccccccccccccccccccc",
+      },
+      caseInfos: { clinicName: "향기로운치과", patientName: "환자", tooth: "22" },
+    });
+    expect(summary.mailboxAddress).toBe("A1A1");
+    expect(summary.recipientName).toBe("향기로운치과");
+    expect(summary.shippingPackageId).toBe("bbbbbbbbbbbbbbbbbbbbbbbb");
+    expect(summary.shippingReceiverGroupKey).toContain("향기로운치과");
+  });
+
+  test("mongoose ObjectId sourceAnchorId도 스택 없이 묶음 키를 만든다", () => {
+    const oid = new mongoose.Types.ObjectId("cccccccccccccccccccccccc");
+    const summary = buildCreditLedgerRequestSummary({
+      _id: new mongoose.Types.ObjectId("aaaaaaaaaaaaaaaaaaaaaaaa"),
+      requestId: "20260819-000001",
+      mailboxAddress: "a1a1",
+      businessAnchorId: oid,
+      shippingReceiver: {
+        name: "향기로운치과",
+        sourceAnchorId: oid,
+      },
+      caseInfos: { clinicName: "향기로운치과" },
+    });
+    expect(summary.shippingReceiverGroupKey.startsWith(`${oid}:`)).toBe(true);
   });
 });

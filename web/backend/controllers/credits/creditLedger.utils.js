@@ -4,6 +4,8 @@
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/services/practiceTransferBilling.service.js
+// - web/backend/services/requestCreditHold.service.js
+// - 2026-08-19: 어벗디자인 원장 — 수신자(박스) 묶음용 mailbox/shippingReceiver 요약. ObjectId 재귀 가드.
 // - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
 // - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
 
@@ -156,6 +158,7 @@ export function parseSpendKindFromUniqueKey(uniqueKey) {
     .replace(/^(gl:)+/i, "");
   if (raw.endsWith(":express_surcharge")) return "express_surcharge";
   if (raw.endsWith(":machining_spend")) return "machining_spend";
+  if (raw.endsWith(":shipping_fee")) return "shipping_fee";
   return "";
 }
 
@@ -277,6 +280,77 @@ export function mergeRequestExpressSurchargeIntoMachiningSpend(rows) {
     });
 }
 
+function normalizeMailboxAddress(raw) {
+  return String(raw || "")
+    .replace(/\s+/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function shippingReceiverName(doc) {
+  const receiver =
+    doc?.shippingReceiver && typeof doc.shippingReceiver === "object"
+      ? doc.shippingReceiver
+      : {};
+  const caseInfos = doc?.caseInfos || {};
+  return (
+    String(receiver.name || "").trim() ||
+    String(caseInfos.clinicName || "").trim()
+  );
+}
+
+function objectIdString(raw) {
+  if (raw == null) return "";
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    return /^[a-fA-F0-9]{24}$/.test(s) ? s : "";
+  }
+  if (typeof raw !== "object") return "";
+  // mongoose ObjectId._id returns itself — do not recurse into it.
+  if (typeof raw.toHexString === "function") {
+    try {
+      const hex = String(raw.toHexString()).trim();
+      if (/^[a-fA-F0-9]{24}$/.test(hex)) return hex;
+    } catch {
+      // fall through
+    }
+  }
+  const nested = raw._id || raw.id || raw.businessAnchorId;
+  if (nested != null && nested !== raw) return objectIdString(nested);
+  const s = String(raw).trim();
+  return /^[a-fA-F0-9]{24}$/.test(s) ? s : "";
+}
+
+function shippingReceiverGroupKeyFromDoc(doc) {
+  const receiver =
+    doc?.shippingReceiver && typeof doc.shippingReceiver === "object"
+      ? doc.shippingReceiver
+      : {};
+  const org =
+    objectIdString(receiver.sourceAnchorId) ||
+    objectIdString(doc?.businessAnchorId) ||
+    "_";
+  const name = String(receiver.name || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const phone = String(receiver.phone || "").replace(/\D/g, "");
+  const zip = String(receiver.zipCode || "").replace(/\s+/g, "");
+  const address = String(receiver.address || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const detail = String(receiver.addressDetail || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const fp =
+    name || phone || address
+      ? `${name}|${phone}|${zip}|${address}|${detail}`
+      : "_";
+  return `${org}:${fp}`;
+}
+
 export function buildCreditLedgerRequestSummary(doc) {
   if (!doc?._id) return null;
   const caseInfos = doc?.caseInfos || {};
@@ -285,6 +359,16 @@ export function buildCreditLedgerRequestSummary(doc) {
     doc?.originalShipping?.mode ||
     doc?.shippingMode ||
     "normal";
+  const receiver =
+    doc?.shippingReceiver && typeof doc.shippingReceiver === "object"
+      ? doc.shippingReceiver
+      : {};
+  const relatedPracticeTransferId = String(
+    doc?.partnerBilling?.relatedPracticeTransferId || "",
+  ).trim();
+  const shippingPackageId = String(
+    doc?.shippingPackageId?._id || doc?.shippingPackageId || "",
+  ).trim();
 
   return {
     requestId: String(doc.requestId || ""),
@@ -309,6 +393,18 @@ export function buildCreditLedgerRequestSummary(doc) {
     lotNumber: {
       value: String(doc?.lotNumber?.value || ""),
     },
+    mailboxAddress: normalizeMailboxAddress(doc?.mailboxAddress),
+    shippingPackageId,
+    shippingReceiverGroupKey: shippingReceiverGroupKeyFromDoc(doc),
+    recipientName: shippingReceiverName(doc),
+    relatedPracticeTransferId,
+    shippingReceiver: {
+      name: String(receiver.name || "").trim(),
+      address: String(receiver.address || "").trim(),
+      addressDetail: String(receiver.addressDetail || "").trim(),
+      zipCode: String(receiver.zipCode || "").trim(),
+      phone: String(receiver.phone || "").trim(),
+    },
     caseInfos: {
       clinicName: String(caseInfos.clinicName || ""),
       patientName: String(caseInfos.patientName || ""),
@@ -325,6 +421,71 @@ export function buildCreditLedgerRequestSummary(doc) {
           : Number(caseInfos.connectionDiameter),
     },
   };
+}
+
+export function attachCreditLedgerRequestFields(
+  item,
+  requestSummary,
+  refRequestId = "",
+) {
+  return {
+    ...item,
+    refRequestId: refRequestId || requestSummary?.requestId || "",
+    refRequestSummary: requestSummary || null,
+    patientName: requestSummary?.patientName || "",
+    tooth: requestSummary?.tooth || "",
+    clinicName: requestSummary?.clinicName || "",
+    manufacturerStage: requestSummary?.manufacturerStage || "",
+    shippingMode: requestSummary?.shippingMode || "normal",
+    lotNumber: requestSummary?.lotNumber || null,
+    caseInfos: requestSummary?.caseInfos || null,
+    mailboxAddress: requestSummary?.mailboxAddress || "",
+    shippingPackageId: requestSummary?.shippingPackageId || "",
+    shippingReceiverGroupKey: requestSummary?.shippingReceiverGroupKey || "",
+    recipientName: requestSummary?.recipientName || "",
+    relatedPracticeTransferId: requestSummary?.relatedPracticeTransferId || null,
+  };
+}
+
+export function buildCreditLedgerShippingPackageMeta({
+  packageDocs = [],
+  deliveryInfoByRequestId = new Map(),
+  requestSummaryById = new Map(),
+} = {}) {
+  const byId = new Map();
+  for (const pkg of packageDocs || []) {
+    if (!pkg?._id) continue;
+    const requestIds = Array.from(
+      new Set(
+        (Array.isArray(pkg.requestIds) ? pkg.requestIds : [])
+          .map((id) => String(id || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    const trackingNumbers = Array.from(
+      new Set(
+        requestIds
+          .map((requestId) => deliveryInfoByRequestId.get(String(requestId)) || "")
+          .filter(Boolean),
+      ),
+    );
+    const firstSummary = requestIds
+      .map((id) => requestSummaryById.get(String(id)) || null)
+      .find(Boolean);
+    byId.set(String(pkg._id), {
+      trackingNumbers,
+      mailboxAddress:
+        normalizeMailboxAddress(pkg.mailboxAddress) ||
+        String(firstSummary?.mailboxAddress || "").trim(),
+      recipientName: String(firstSummary?.recipientName || "").trim(),
+      shippingReceiverGroupKey: String(
+        firstSummary?.shippingReceiverGroupKey || "",
+      ).trim(),
+      requestIds,
+      requestCount: requestIds.length,
+    });
+  }
+  return byId;
 }
 
 export const ABUTMENT_DESIGN_LAB_FEE_SOURCE = "abutment_design_lab_fee";
@@ -395,6 +556,11 @@ export const CREDIT_LEDGER_REQUEST_SELECT = {
   manufacturerStage: 1,
   lotNumber: 1,
   shippingMode: 1,
+  mailboxAddress: 1,
+  shippingPackageId: 1,
+  businessAnchorId: 1,
+  shippingReceiver: 1,
+  "partnerBilling.relatedPracticeTransferId": 1,
   "finalShipping.mode": 1,
   "originalShipping.mode": 1,
   "price.amount": 1,

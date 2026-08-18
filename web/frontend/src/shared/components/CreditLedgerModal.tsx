@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-19: 어벗디자인으로 행도 보류/일부 지급/지급 완료 상태를 표시.
+// - 2026-08-19: 의뢰비·배송비 보류를 기공의뢰-어벗디자인으로 묶음. 기존 기공의뢰는 구강스캔으로.
 // - 2026-08-19: 견적 상세 — 보철기공비|어벗 디자인+생산비(둘 다 기공비). 기공소몫/어벗츠몫 헤더 제거.
 // - 2026-08-17: 기공소 지급 상태는 기공비만. 어벗츠 생산비와 무관.
 // - 2026-08-17: 기공소 기공의뢰 행 — 치과와 동일(기공비에 디자인 합침·일부 지급·상세 모달).
@@ -50,6 +52,7 @@
 // - web/backend/controllers/credits/creditLedger.controller.js
 // - web/backend/controllers/credits/creditLedger.utils.js
 // - web/backend/controllers/admin/adminCredit.controller.js
+// - web/frontend/src/shared/components/AbutmentDesignLedgerDetailDialog.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -103,6 +106,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import {
+  AbutmentDesignLedgerDetailDialog,
+  type AbutmentDesignLedgerDetail,
+} from "@/shared/components/AbutmentDesignLedgerDetailDialog";
 import {
   parsePracticeTransferFeeQuote,
   type PracticeTransferFeeQuote,
@@ -175,6 +182,12 @@ type CreditLedgerItem = {
   shippingMode?: ShippingMode | string | null;
   freeReason?: string;
   trackingNumbers?: string[];
+  mailboxAddress?: string;
+  shippingPackageId?: string;
+  shippingReceiverGroupKey?: string;
+  recipientName?: string;
+  shippingPackageRequestCount?: number;
+  shippingPackageRequestIds?: string[];
   lotNumber?: {
     value?: string;
   } | null;
@@ -189,6 +202,18 @@ type CreditLedgerItem = {
     originalShipping?: { mode?: string | null } | null;
     lotNumber?: {
       value?: string;
+    } | null;
+    mailboxAddress?: string;
+    shippingPackageId?: string;
+    shippingReceiverGroupKey?: string;
+    recipientName?: string;
+    relatedPracticeTransferId?: string;
+    shippingReceiver?: {
+      name?: string;
+      address?: string;
+      addressDetail?: string;
+      zipCode?: string;
+      phone?: string;
     } | null;
   } | null;
   caseInfos?: {
@@ -275,10 +300,16 @@ type LedgerDisplayRow = {
   practiceTransferPending: boolean;
   practiceTransferPayoutStatus: PracticeTransferPayoutStatus | null;
   isPracticeTransfer: boolean;
+  isAbutmentDesign: boolean;
+  requestCount: number;
+  recipientName: string;
+  mailboxAddress: string;
+  members: CreditLedgerItem[];
   item: CreditLedgerItem;
 };
 
-const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰";
+const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰-구강스캔으로";
+const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗디자인으로";
 
 const practiceTransferPayoutStatusLabel = (
   status: PracticeTransferPayoutStatus,
@@ -591,6 +622,73 @@ function PracticeTransferAmountHover({
   );
 }
 
+function LedgerPartsAmountHover({
+  totalAmount,
+  parts,
+}: {
+  totalAmount: number;
+  parts: LedgerDisplayPart[];
+}) {
+  const merged = useMemo(() => {
+    const byLabel = new Map<string, number>();
+    for (const part of parts) {
+      const label = String(part.label || "").trim() || "기타";
+      byLabel.set(label, (byLabel.get(label) || 0) + Number(part.amount || 0));
+    }
+    return [...byLabel.entries()].map(([label, amount]) => ({ label, amount }));
+  }, [parts]);
+
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            title="마우스를 올리면 금액이 보입니다"
+            className={cn(
+              "mx-auto inline-flex items-center justify-center gap-1 rounded-lg px-1.5 py-1 font-medium tabular-nums transition-colors hover:bg-slate-50/80",
+              totalAmount < 0 ? "text-destructive" : "text-primary-strong",
+            )}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span>{formatSignedWon(totalAmount)}</span>
+            <CircleHelp
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
+              aria-hidden
+            />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          align="center"
+          className="pointer-events-auto w-max max-w-[min(100vw-2rem,20rem)] select-text px-3 py-3 text-xs leading-relaxed"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="space-y-1.5 tabular-nums">
+            {merged.map((row) => (
+              <p
+                key={row.label}
+                className="flex items-center justify-between gap-4"
+              >
+                <span className="text-muted-foreground">{row.label}</span>
+                <span className="font-medium text-foreground">
+                  {formatSignedWon(row.amount)}
+                </span>
+              </p>
+            ))}
+            {merged.length > 1 ? (
+              <p className="flex items-center justify-between gap-4 border-t border-foreground/15 pt-1.5 font-medium text-foreground">
+                <span>합계</span>
+                <span>{formatSignedWon(totalAmount)}</span>
+              </p>
+            ) : null}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 const isPtxDesignFeeLedgerItem = (item: CreditLedgerItem) => {
   const source = String(item.ledgerSource || "").trim();
   if (source === "abutment_design_lab_fee") return true;
@@ -600,7 +698,15 @@ const isPtxDesignFeeLedgerItem = (item: CreditLedgerItem) => {
 const practiceTransferGroupKey = (item: CreditLedgerItem) => {
   const refType = String(item.refType || "");
   const isDesignFee = isPtxDesignFeeLedgerItem(item);
-  if (refType !== "PRACTICE_TRANSFER" && !isDesignFee) return "";
+  if (refType !== "PRACTICE_TRANSFER" && !isDesignFee) {
+    const relatedFromRequest = String(
+      item.relatedPracticeTransferId ||
+        item.refRequestSummary?.relatedPracticeTransferId ||
+        "",
+    ).trim();
+    if (relatedFromRequest) return `ptx:${relatedFromRequest}`;
+    return "";
+  }
   const related = String(item.relatedPracticeTransferId || "").trim();
   const refId = String(item.refId || "").trim();
   const ptx = String(item.refPracticeTransferId || "").trim();
@@ -611,99 +717,277 @@ const practiceTransferGroupKey = (item: CreditLedgerItem) => {
   return "";
 };
 
-const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
+const isAbutmentShippingPackageItem = (item: CreditLedgerItem) => {
+  if (String(item.refType || "") !== "SHIPPING_PACKAGE") return false;
+  const label = String(item.displayLabel || "");
+  if (label.includes("어벗츠") || label.includes("기공소")) return false;
+  return true;
+};
+
+const abutmentDesignGroupKey = (item: CreditLedgerItem) => {
+  if (practiceTransferGroupKey(item)) return "";
+  const refType = String(item.refType || "");
+  const relatedPtx = String(
+    item.relatedPracticeTransferId ||
+      item.refRequestSummary?.relatedPracticeTransferId ||
+      "",
+  ).trim();
+  if (relatedPtx) return "";
+
+  if (refType === "REQUEST") {
+    const pkg = String(
+      item.shippingPackageId || item.refRequestSummary?.shippingPackageId || "",
+    ).trim();
+    if (pkg) return `pkg:${pkg}`;
+    const rec = String(
+      item.shippingReceiverGroupKey ||
+        item.refRequestSummary?.shippingReceiverGroupKey ||
+        "",
+    ).trim();
+    if (rec && rec !== "_:_" && !rec.endsWith(":_")) return `rec:${rec}`;
+    const mailbox = String(
+      item.mailboxAddress || item.refRequestSummary?.mailboxAddress || "",
+    )
+      .trim()
+      .toUpperCase();
+    if (mailbox) return `mb:${mailbox}`;
+    const refId = String(item.refId || "").trim();
+    return refId ? `req:${refId}` : "";
+  }
+
+  if (isAbutmentShippingPackageItem(item)) {
+    const pkg = String(item.shippingPackageId || item.refId || "").trim();
+    if (pkg) return `pkg:${pkg}`;
+    const rec = String(item.shippingReceiverGroupKey || "").trim();
+    if (rec && rec !== "_:_" && !rec.endsWith(":_")) return `rec:${rec}`;
+    const mailbox = String(item.mailboxAddress || "")
+      .trim()
+      .toUpperCase();
+    if (mailbox) return `mb:${mailbox}`;
+  }
+  return "";
+};
+
+const isAbutmentShippingLedgerItem = (item: CreditLedgerItem) => {
+  if (String(item.refType || "") === "SHIPPING_PACKAGE") return true;
+  if (String(item.spendKind || "") === "shipping_fee") return true;
+  const label = String(item.displayLabel || "");
+  return label.includes("배송");
+};
+
+const abutmentPartLabel = (item: CreditLedgerItem) => {
+  if (isAbutmentShippingLedgerItem(item)) return "배송비";
+  return "의뢰비";
+};
+
+const toAbutmentDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
+  label: abutmentPartLabel(item),
+  amount: Number(item.amount || 0),
+  spentPaidAmount: Number(item.spentPaidAmount || 0),
+  spentFreeAmount: Number(item.spentFreeAmount || 0),
+});
+
+const recipientNameOf = (item: CreditLedgerItem) =>
+  String(
+    item.recipientName ||
+      item.refRequestSummary?.recipientName ||
+      item.refRequestSummary?.shippingReceiver?.name ||
+      item.clinicName ||
+      item.refRequestSummary?.clinicName ||
+      "",
+  ).trim();
+
+const mailboxAddressOf = (item: CreditLedgerItem) =>
+  String(
+    item.mailboxAddress || item.refRequestSummary?.mailboxAddress || "",
+  )
+    .trim()
+    .toUpperCase();
+
+const emptyDisplayRowExtras = {
+  isAbutmentDesign: false,
+  requestCount: 0,
+  recipientName: "",
+  mailboxAddress: "",
+  members: [] as CreditLedgerItem[],
+};
+
+/** 어벗디자인 원장: 보류만=지급 보류, 보류+확정 혼재=일부 지급, 확정만=지급 완료. */
+const resolveAbutmentDesignPayoutStatus = (
+  members: CreditLedgerItem[],
+): PracticeTransferPayoutStatus => {
+  const list = Array.isArray(members) && members.length > 0 ? members : [];
+  if (list.length === 0) return "hold";
+  const holdCount = list.filter(
+    (row) => String(row.type || "") === "SPEND_HOLD",
+  ).length;
+  if (holdCount === list.length) return "hold";
+  if (holdCount > 0) return "partial";
+  return "settled";
+};
   label: String(item.displayLabel || "").trim() || typeLabel(item.type),
   amount: Number(item.amount || 0),
   spentPaidAmount: Number(item.spentPaidAmount || 0),
   spentFreeAmount: Number(item.spentFreeAmount || 0),
 });
 
-/** 동일 기공의뢰(PTX) 원장을 한 행으로 묶는다. */
+/** 동일 기공의뢰(PTX)와 어벗디자인(수신자 박스) 원장을 한 행으로 묶는다. */
 const groupLedgerItemsForDisplay = (
   items: CreditLedgerItem[],
   labShareOnly = false,
 ): LedgerDisplayRow[] => {
-  const groupMap = new Map<string, CreditLedgerItem[]>();
+  const ptxMap = new Map<string, CreditLedgerItem[]>();
+  const abutmentMap = new Map<string, CreditLedgerItem[]>();
   for (const item of items) {
-    const gKey = practiceTransferGroupKey(item);
-    if (!gKey) continue;
-    const list = groupMap.get(gKey);
+    const ptxKey = practiceTransferGroupKey(item);
+    if (ptxKey) {
+      const list = ptxMap.get(ptxKey);
+      if (list) list.push(item);
+      else ptxMap.set(ptxKey, [item]);
+      continue;
+    }
+    const abutmentKey = abutmentDesignGroupKey(item);
+    if (!abutmentKey) continue;
+    const list = abutmentMap.get(abutmentKey);
     if (list) list.push(item);
-    else groupMap.set(gKey, [item]);
+    else abutmentMap.set(abutmentKey, [item]);
   }
 
   const seenGroups = new Set<string>();
   const out: LedgerDisplayRow[] = [];
 
   for (const item of items) {
-    const gKey = practiceTransferGroupKey(item);
-    if (!gKey) {
+    const ptxKey = practiceTransferGroupKey(item);
+    if (ptxKey) {
+      if (seenGroups.has(ptxKey)) continue;
+      seenGroups.add(ptxKey);
+
+      const members = [...(ptxMap.get(ptxKey) || [])].sort(
+        (a, b) =>
+          new Date(a.createdAt || 0).getTime() -
+          new Date(b.createdAt || 0).getTime(),
+      );
+      if (members.length === 0) continue;
+
+      const latest = members[members.length - 1];
+      const representative =
+        [...members].reverse().find((m) => m.feeQuote) || latest;
+      const amount = members.reduce((sum, m) => sum + Number(m.amount || 0), 0);
+      const spentPaidAmount = members.reduce(
+        (sum, m) => sum + Number(m.spentPaidAmount || 0),
+        0,
+      );
+      const spentFreeAmount = members.reduce(
+        (sum, m) => sum + Number(m.spentFreeAmount || 0),
+        0,
+      );
+      const pending = resolvePracticeTransferPending(latest, "other", members);
+      const payoutStatus = resolvePracticeTransferPayoutStatus(
+        representative,
+        members,
+        labShareOnly,
+      );
       out.push({
-        key: String(item._id || item.uniqueKey),
-        createdAt: String(item.createdAt || ""),
-        amount: Number(item.amount || 0),
-        balanceAfter: item.balanceAfter,
-        spentPaidAmount: Number(item.spentPaidAmount || 0),
-        spentFreeAmount: Number(item.spentFreeAmount || 0),
-        type: item.type,
-        displayLabel: resolvePracticeTransferDisplayLabel(item),
-        parts: null,
-        practiceTransferPending: resolvePracticeTransferPending(
-          item,
-          resolvePracticeTransferRoute(item),
-        ),
-        practiceTransferPayoutStatus: resolvePracticeTransferPayoutStatus(
-          item,
-          undefined,
-          labShareOnly,
-        ),
-        isPracticeTransfer: String(item.refType || "") === "PRACTICE_TRANSFER",
-        item,
+        key: ptxKey,
+        createdAt: String(latest.createdAt || ""),
+        amount,
+        balanceAfter: latest.balanceAfter,
+        spentPaidAmount,
+        spentFreeAmount,
+        type: latest.type,
+        displayLabel: PRACTICE_TRANSFER_TYPE_LABEL,
+        parts: members.map(toDisplayPart),
+        practiceTransferPending: pending,
+        practiceTransferPayoutStatus: payoutStatus,
+        isPracticeTransfer: true,
+        ...emptyDisplayRowExtras,
+        members,
+        item: representative,
       });
       continue;
     }
-    if (seenGroups.has(gKey)) continue;
-    seenGroups.add(gKey);
 
-    const members = [...(groupMap.get(gKey) || [])].sort(
-      (a, b) =>
-        new Date(a.createdAt || 0).getTime() -
-        new Date(b.createdAt || 0).getTime(),
-    );
-    if (members.length === 0) continue;
+    const abutmentKey = abutmentDesignGroupKey(item);
+    if (abutmentKey) {
+      if (seenGroups.has(abutmentKey)) continue;
+      seenGroups.add(abutmentKey);
 
-    const latest = members[members.length - 1];
-    const representative =
-      [...members].reverse().find((m) => m.feeQuote) || latest;
-    const amount = members.reduce((sum, m) => sum + Number(m.amount || 0), 0);
-    const spentPaidAmount = members.reduce(
-      (sum, m) => sum + Number(m.spentPaidAmount || 0),
-      0,
-    );
-    const spentFreeAmount = members.reduce(
-      (sum, m) => sum + Number(m.spentFreeAmount || 0),
-      0,
-    );
-    const pending = resolvePracticeTransferPending(latest, "other", members);
-    const payoutStatus = resolvePracticeTransferPayoutStatus(
-      representative,
-      members,
-      labShareOnly,
-    );
+      const members = [...(abutmentMap.get(abutmentKey) || [])].sort(
+        (a, b) =>
+          new Date(a.createdAt || 0).getTime() -
+          new Date(b.createdAt || 0).getTime(),
+      );
+      if (members.length === 0) continue;
+
+      const latest = members[members.length - 1];
+      const amount = members.reduce((sum, m) => sum + Number(m.amount || 0), 0);
+      const spentPaidAmount = members.reduce(
+        (sum, m) => sum + Number(m.spentPaidAmount || 0),
+        0,
+      );
+      const spentFreeAmount = members.reduce(
+        (sum, m) => sum + Number(m.spentFreeAmount || 0),
+        0,
+      );
+      const requestIds = new Set<string>();
+      for (const member of members) {
+        if (String(member.refType || "") !== "REQUEST") continue;
+        const id = String(member.refId || "").trim();
+        if (id) requestIds.add(id);
+      }
+      const packageRequestCount = members.reduce(
+        (max, member) =>
+          Math.max(max, Number(member.shippingPackageRequestCount || 0)),
+        0,
+      );
+      const requestCount = Math.max(requestIds.size, packageRequestCount, 1);
+      const named = [...members].reverse().find((m) => recipientNameOf(m));
+      const payoutStatus = resolveAbutmentDesignPayoutStatus(members);
+      out.push({
+        key: abutmentKey,
+        createdAt: String(latest.createdAt || ""),
+        amount,
+        balanceAfter: latest.balanceAfter,
+        spentPaidAmount,
+        spentFreeAmount,
+        type: latest.type,
+        displayLabel: ABUTMENT_DESIGN_TYPE_LABEL,
+        parts: members.map(toAbutmentDisplayPart),
+        practiceTransferPending: payoutStatus !== "settled",
+        practiceTransferPayoutStatus: payoutStatus,
+        isPracticeTransfer: false,
+        isAbutmentDesign: true,
+        requestCount,
+        recipientName: recipientNameOf(named || latest) || "수신자 미확인",
+        mailboxAddress: mailboxAddressOf(named || latest),
+        members,
+        item: named || latest,
+      });
+      continue;
+    }
+
     out.push({
-      key: gKey,
-      createdAt: String(latest.createdAt || ""),
-      amount,
-      balanceAfter: latest.balanceAfter,
-      spentPaidAmount,
-      spentFreeAmount,
-      type: latest.type,
-      displayLabel: PRACTICE_TRANSFER_TYPE_LABEL,
-      parts: members.map(toDisplayPart),
-      practiceTransferPending: pending,
-      practiceTransferPayoutStatus: payoutStatus,
-      isPracticeTransfer: true,
-      item: representative,
+      key: String(item._id || item.uniqueKey),
+      createdAt: String(item.createdAt || ""),
+      amount: Number(item.amount || 0),
+      balanceAfter: item.balanceAfter,
+      spentPaidAmount: Number(item.spentPaidAmount || 0),
+      spentFreeAmount: Number(item.spentFreeAmount || 0),
+      type: item.type,
+      displayLabel: resolvePracticeTransferDisplayLabel(item),
+      parts: null,
+      practiceTransferPending: resolvePracticeTransferPending(
+        item,
+        resolvePracticeTransferRoute(item),
+      ),
+      practiceTransferPayoutStatus: resolvePracticeTransferPayoutStatus(
+        item,
+        undefined,
+        labShareOnly,
+      ),
+      isPracticeTransfer: String(item.refType || "") === "PRACTICE_TRANSFER",
+      ...emptyDisplayRowExtras,
+      item,
     });
   }
 
@@ -863,14 +1147,9 @@ const renderTransactionDetail = ({
     const labName = String(item.labName || "").trim() || "-";
     const patientName = String(item.patientName || "").trim() || "-";
     return (
-      <>
-        <span className="text-[11px] text-muted-foreground">
-          {PRACTICE_TRANSFER_TYPE_LABEL}
-        </span>
-        <span className="pt-1 text-[11px] text-slate-700">
-          {labName} / {patientName}
-        </span>
-      </>
+      <span className="pt-1 text-[11px] text-slate-700">
+        {labName} / {patientName}
+      </span>
     );
   }
 
@@ -946,6 +1225,8 @@ export const CreditLedgerModal = ({
     arrivalDate: string;
     memo: string;
   } | null>(null);
+  const [abutmentDetail, setAbutmentDetail] =
+    useState<AbutmentDesignLedgerDetail | null>(null);
   const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
     useState<CreditBalanceSnapshot | null>(null);
 
@@ -1222,6 +1503,78 @@ export const CreditLedgerModal = ({
     },
   });
 
+  const toAbutmentDetail = (
+    row: LedgerDisplayRow,
+  ): AbutmentDesignLedgerDetail => {
+    const requestById = new Map<
+      string,
+      AbutmentDesignLedgerDetail["items"][number]
+    >();
+    let shippingAmount = 0;
+    let shippingCount = 0;
+    for (const member of row.members) {
+      if (isAbutmentShippingLedgerItem(member)) {
+        shippingAmount += Number(member.amount || 0);
+        shippingCount += 1;
+        continue;
+      }
+      const refId = String(member.refId || "").trim();
+      const requestId = formatRequestIdSafe(
+        member.refRequestId || member.refRequestSummary?.requestId || "",
+        `${refId}::${String(member.uniqueKey || "")}`,
+      );
+      const key = refId || requestId || String(member._id || member.uniqueKey);
+      const prev = requestById.get(key);
+      requestById.set(key, {
+        kind: "request",
+        amount: Number(prev?.amount || 0) + Number(member.amount || 0),
+        requestId: requestId || prev?.requestId,
+        clinicName:
+          member.clinicName ||
+          member.refRequestSummary?.clinicName ||
+          prev?.clinicName ||
+          "",
+        patientName:
+          member.patientName ||
+          member.refRequestSummary?.patientName ||
+          prev?.patientName ||
+          "",
+        tooth:
+          member.tooth ||
+          member.refRequestSummary?.tooth ||
+          prev?.tooth ||
+          "",
+      });
+    }
+    const requestItems = [...requestById.values()];
+    const requestAmount = requestItems.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0,
+    );
+    const items = [
+      ...requestItems,
+      ...(shippingCount > 0
+        ? [
+            {
+              kind: "shipping" as const,
+              amount: shippingAmount,
+            },
+          ]
+        : []),
+    ];
+    return {
+      title: row.displayLabel || ABUTMENT_DESIGN_TYPE_LABEL,
+      recipientName: row.recipientName || "수신자 미확인",
+      mailboxAddress: row.mailboxAddress || "",
+      amount: Number(row.amount || 0),
+      requestAmount,
+      requestCount: Math.max(row.requestCount, requestItems.length),
+      shippingAmount,
+      shippingCount: shippingCount > 0 ? 1 : 0,
+      items,
+    };
+  };
+
   const title = `크레딧 내역${titleSuffix ? ` · ${titleSuffix}` : ""}`;
 
   const headerActions = (
@@ -1445,7 +1798,8 @@ export const CreditLedgerModal = ({
                   const spentPaid = Number(r.spentPaidAmount || 0);
                   const spentFree = Number(r.spentFreeAmount ?? 0);
                   const hasParts =
-                    Boolean(r.isPracticeTransfer) &&
+                    (Boolean(r.isPracticeTransfer) ||
+                      Boolean(r.isAbutmentDesign)) &&
                     Array.isArray(r.parts) &&
                     r.parts.length > 0;
                   const showSplit =
@@ -1472,16 +1826,21 @@ export const CreditLedgerModal = ({
                     r.isPracticeTransfer &&
                       parsePracticeTransferFeeQuote(r.item.feeQuote),
                   );
+                  const canOpenAbutmentDetail = Boolean(r.isAbutmentDesign);
                   const payoutStatus = r.practiceTransferPayoutStatus;
                   return (
                     <TableRow
                       key={r.key}
                       className={cn(
-                        canOpenFeeQuote
+                        canOpenFeeQuote || canOpenAbutmentDetail
                           ? "cursor-pointer hover:bg-slate-50/80"
                           : undefined,
                       )}
                       onClick={() => {
+                        if (canOpenAbutmentDetail) {
+                          setAbutmentDetail(toAbutmentDetail(r));
+                          return;
+                        }
                         if (!canOpenFeeQuote) return;
                         const quote = parsePracticeTransferFeeQuote(
                           r.item.feeQuote,
@@ -1545,10 +1904,17 @@ export const CreditLedgerModal = ({
                         )}
                       >
                         {hasParts ? (
-                          <PracticeTransferAmountHover
-                            totalAmount={amount}
-                            parts={r.parts!}
-                          />
+                          r.isAbutmentDesign ? (
+                            <LedgerPartsAmountHover
+                              totalAmount={amount}
+                              parts={r.parts!}
+                            />
+                          ) : (
+                            <PracticeTransferAmountHover
+                              totalAmount={amount}
+                              parts={r.parts!}
+                            />
+                          )
                         ) : showSplit ? (
                           <div className="flex flex-col items-center leading-4">
                             {spentPaid > 0 && (
@@ -1575,17 +1941,28 @@ export const CreditLedgerModal = ({
                       <TableCell
                         className="text-center align-middle text-xs"
                         onClick={(event) => {
-                          if (canOpenFeeQuote) return;
+                          if (canOpenFeeQuote || canOpenAbutmentDetail) return;
                           event.stopPropagation();
                         }}
                       >
                         <div className="flex flex-col items-center leading-4">
-                          {renderTransactionDetail({
-                            item: r.item,
-                            safeRef,
-                            onOpenRequestDetail: () =>
-                              setSelectedDetail(toRequestDetail(r.item)),
-                          })}
+                          {r.isAbutmentDesign ? (
+                            <>
+                              <span className="text-[11px] font-medium text-slate-800">
+                                {r.recipientName || "수신자 미확인"}
+                              </span>
+                              <span className="pt-1 text-[11px] text-muted-foreground">
+                                {r.requestCount}건
+                              </span>
+                            </>
+                          ) : (
+                            renderTransactionDetail({
+                              item: r.item,
+                              safeRef,
+                              onOpenRequestDetail: () =>
+                                setSelectedDetail(toRequestDetail(r.item)),
+                            })
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1668,6 +2045,13 @@ export const CreditLedgerModal = ({
         rows={rows}
       />
 
+      <AbutmentDesignLedgerDetailDialog
+        detail={abutmentDetail}
+        onOpenChange={(next) => {
+          if (!next) setAbutmentDetail(null);
+        }}
+      />
+
       <Dialog
         open={Boolean(feeQuoteDetail)}
         onOpenChange={(next) => {
@@ -1677,7 +2061,7 @@ export const CreditLedgerModal = ({
         <DialogContent className="max-h-[85vh] w-[min(92vw,40rem)] overflow-y-auto rounded-2xl sm:rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold tracking-tight text-slate-900">
-              {feeQuoteDetail?.title || "기공의뢰 상세 내역"}
+              {feeQuoteDetail?.title || "기공의뢰-구강스캔으로 상세 내역"}
             </DialogTitle>
           </DialogHeader>
           {feeQuoteDetail ? (

@@ -41,7 +41,7 @@ Notes:
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절,
     `RequestorAbutmentPageHeader`+`PastRequestsModal`(취소 후 목록 모달 유지)
-  - API: `PATCH /api/requests/:id/status` 취소 검증, 중복 replace(`from-draft`/`creation.request`)의 `isCancelableStage`
+  - API: `PATCH /api/requests/:id/status` 취소 검증, 중복 replace(`from-draft`/`creation.request`)의 `isCancelableStage`. 취소 응답은 저장 직후 슬림 페이로드(웹소켓·정규화는 백그라운드).
 
 ## 0. Frontend 중요 진입 파일 지도 (로컬)
 
@@ -293,7 +293,7 @@ Notes:
     - **기공소 기공의뢰수신**: 의뢰카드·전송 상세에 수령액(청구 − 플랫폼 수수료) 표시.
     - **기공소**: 유료(선입금)·무료·기공크레딧을 **경로별로 분리 표시**. 주문 차감은 무료→기공→유료 통합. 기공 사용=월 정산 상계. 크레딧 페이지 탭은 내역·충전만. 내역 필터: 버킷(유료/무료/기공)·동작(충전/소비/조정). `SPEND_SETTLEMENT`=기공크레딧 주문 사용.
     - **기공소 기공의뢰 장부**: 보철기공비와 어벗 디자인+생산비는 모두 기공비. 금액 호버는 두 열+배송. **지급 상태는 기공비만**(지급되었으면 지급완료). 행 클릭 상세는 기공소 견적 뷰(열: 보철기공비|어벗 디자인+생산비). CA 디자인비 원장(`abutment_design_lab_fee`)을 생산의뢰 행으로 따로 표시하지 않는다.
-  - 치과 장부 라벨: 기공비 / 어벗의뢰비 / 배송비.
+    - **치과 장부**: 구강스캔 기공의뢰=`기공의뢰-구강스캔으로`. 어벗디자인 의뢰비·배송비 보류/소비는 수신자(1박스) 단위로 묶어 `기공의뢰-어벗디자인으로`. 거래내역은 수신자+건수, 클릭 시 의뢰/배송 상세(제조사 정산 모달 UX). 지급 상태는 구강스캔과 같이 보류/일부 지급/지급 완료.
   - 안내 모달([정책 안내])·어벗 라인 요약카드(무료 재제작 잔여) 문구는 동일한 `90일` 기준을 사용해야 합니다.
   - 관련 파일:
     - `src/shared/ui/PricingPolicyDialog.tsx`
@@ -403,7 +403,8 @@ Notes:
 - 관리자 크레딧 원장 모달(`src/shared/components/CreditLedgerModal.tsx`) 표시 정책:
   - 모달 상단 잔액 요약은 단일 SSOT 장부 API의 `currentBalanceSnapshot` 값을 사용합니다.
   - 테이블 `balanceAfter` 칼럼 라벨은 「잔액」이며, 각 행 시점의 총잔액(유료+무료+기공)입니다.
-  - 의뢰(REQUEST) 차감 행에는 신속/묶음배송 뱃지를 표시합니다 (`ShippingModeBadge`).
+  - 의뢰(REQUEST) 차감은 수신자(1박스) 단위로 `기공의뢰-어벗디자인으로` 1행. 거래내역은 수신자+건수, 클릭 시 의뢰/배송 상세. 지급 상태는 보류 저널이면 「지급 보류」, 보류+확정 혼재면 「일부 지급」, 확정만이면 「지급 완료」.
+  - 기존 기공의뢰(PRACTICE_TRANSFER)는 `기공의뢰-구강스캔으로`.
   - 신속 추가비(`express_surcharge`)는 API에서 생산비(`machining_spend`)와 합산해 1행으로 내려줍니다(표시 금액=생산비+추가비).
   - 레거시 `BONUS` 타입 문구/분기 사용 금지. 이벤트 타입/계정코드(`LedgerJournal.eventType`, `LedgerLine.accountCode`)를 기준으로 표시합니다.
   - 표시 타입은 아래로 고정합니다.
@@ -763,6 +764,7 @@ Notes:
     - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
     - `src/pages/admin/AdminPaymentsPage.tsx`
     - `src/shared/components/CreditLedgerModal.tsx`
+    - `src/shared/components/AbutmentDesignLedgerDetailDialog.tsx`
     - `src/features/chat/components/*`
   - 제조사 워크시트 리팩터링 메모(웹소켓 업데이트 표준 적용):
     - `TrackingPage`: 이벤트 수신 시 `runTrackingFetch({ silent: true, append: false })`로 무플리커 재동기화합니다.

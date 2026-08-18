@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
+// - 2026-08-19: 어벗디자인 원장 — 수신자/박스 묶음용 mailbox·shippingPackage 메타.
 // - 2026-08-17: PTX 디자인비(+지그)를 기공의뢰 행으로 승격(보철기공비와 동일 의뢰건).
 // - 2026-08-17: 사업 장부 PRACTICE_TRANSFER — displayLabel·holdShare·lab/abutment pending.
 // - web/backend/models/ledgerJournal.model.js
@@ -30,7 +31,9 @@ import {
 } from "../../services/settlement.service.js";
 import { Types } from "mongoose";
 import {
+  attachCreditLedgerRequestFields,
   buildCreditLedgerRequestSummary,
+  buildCreditLedgerShippingPackageMeta,
   buildFreeCreditGrantReason,
   buildLedgerItemsWithBucketBalanceAfter,
   collectPracticeTransferLookupIds,
@@ -973,18 +976,37 @@ export async function adminGetBusinessLedger(req, res) {
       }
     }
 
-    const shippingTrackingNumbersByPackageId = new Map();
+    const shippingPackageMetaById = new Map();
     if (shippingPackageRefIds.length > 0) {
       const packageDocs = await ShippingPackage.find({
         _id: { $in: shippingPackageRefIds.map((id) => new Types.ObjectId(id)) },
       })
-        .select({ _id: 1, requestIds: 1 })
+        .select({ _id: 1, requestIds: 1, mailboxAddress: 1 })
         .lean();
 
       const requestIdSet = new Set();
       for (const pkg of packageDocs || []) {
         for (const requestId of pkg?.requestIds || []) {
           if (requestId) requestIdSet.add(String(requestId));
+        }
+      }
+
+      const missingRequestIds = [...requestIdSet].filter(
+        (id) =>
+          !refRequestSummaryById.has(id) && Types.ObjectId.isValid(id),
+      );
+      if (missingRequestIds.length > 0) {
+        const extraDocs = await Request.find({
+          _id: {
+            $in: missingRequestIds.map((id) => new Types.ObjectId(id)),
+          },
+        })
+          .select(CREDIT_LEDGER_REQUEST_SELECT)
+          .lean();
+        for (const doc of extraDocs || []) {
+          if (!doc?._id) continue;
+          refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
+          refRequestSummaryById.set(String(doc._id), buildRequestSummary(doc));
         }
       }
 
@@ -1008,18 +1030,13 @@ export async function adminGetBusinessLedger(req, res) {
         }
       }
 
-      for (const pkg of packageDocs || []) {
-        const trackingNumbers = Array.from(
-          new Set(
-            (pkg?.requestIds || [])
-              .map(
-                (requestId) =>
-                  deliveryInfoByRequestId.get(String(requestId)) || "",
-              )
-              .filter(Boolean),
-          ),
-        );
-        shippingTrackingNumbersByPackageId.set(String(pkg._id), trackingNumbers);
+      const packageMeta = buildCreditLedgerShippingPackageMeta({
+        packageDocs,
+        deliveryInfoByRequestId,
+        requestSummaryById: refRequestSummaryById,
+      });
+      for (const [id, meta] of packageMeta.entries()) {
+        shippingPackageMetaById.set(id, meta);
       }
     }
 
@@ -1132,26 +1149,21 @@ export async function adminGetBusinessLedger(req, res) {
         const requestSummary = refId
           ? refRequestSummaryById.get(refId) || null
           : null;
-        return {
-          ...it,
-          refRequestId,
-          refRequestSummary: requestSummary,
-          patientName: requestSummary?.patientName || "",
-          tooth: requestSummary?.tooth || "",
-          clinicName: requestSummary?.clinicName || "",
-          manufacturerStage: requestSummary?.manufacturerStage || "",
-          shippingMode: requestSummary?.shippingMode || "normal",
-          lotNumber: requestSummary?.lotNumber || null,
-        };
+        return attachCreditLedgerRequestFields(it, requestSummary, refRequestId);
       }
 
       if (refType === "SHIPPING_PACKAGE") {
         const refId = it?.refId ? String(it.refId) : "";
+        const pkgMeta = refId ? shippingPackageMetaById.get(refId) || null : null;
         return {
           ...it,
-          trackingNumbers: refId
-            ? shippingTrackingNumbersByPackageId.get(refId) || []
-            : [],
+          trackingNumbers: pkgMeta?.trackingNumbers || [],
+          mailboxAddress: pkgMeta?.mailboxAddress || "",
+          shippingPackageId: refId,
+          shippingReceiverGroupKey: pkgMeta?.shippingReceiverGroupKey || "",
+          recipientName: pkgMeta?.recipientName || "",
+          shippingPackageRequestCount: Number(pkgMeta?.requestCount || 0),
+          shippingPackageRequestIds: pkgMeta?.requestIds || [],
         };
       }
 
