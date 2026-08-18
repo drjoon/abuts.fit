@@ -66,6 +66,10 @@ export const PRACTICE_NORMAL_MIN_PERIOD_MESSAGE =
 export const PRACTICE_WORK_PERIOD_RECOMMEND_NOTE =
   "3+2영업일 이상 설정을 권합니다.";
 
+/** 커스텀어벗 치과 직납·출고/배송 목표 안내 SSOT (Express 힌트·날짜 필드 툴팁 공용) */
+export const PRACTICE_CA_DIRECT_SHIP_NOTE =
+  "커스텀어벗은 치과로 직납(출고=도착 2영업일 전)이며, 지정 도착일 1영업일 전 배송이 목표입니다.";
+
 /** 신속처리 확인 모달 문구 */
 export const PRACTICE_RUSH_CONFIRM_TITLE = "신속처리로 진행할까요?";
 export const PRACTICE_RUSH_CONFIRM_PERIOD_LABEL = "3영업일 이하 납기 · 할증 없음";
@@ -104,8 +108,7 @@ export function formatPracticeWorkPlusShipMeaningTooltip(
   totalBusinessDays: number | null | undefined,
 ): string {
   const workDays = getPracticeWorkOnlyBusinessDays(totalBusinessDays);
-  const shipNote =
-    "커스텀어벗은 치과로 직납되며, 출고는 도착 2영업일 전(지정 도착일 1영업일 전 배송 목표)입니다.";
+  const shipNote = PRACTICE_CA_DIRECT_SHIP_NOTE;
   const lead =
     workDays == null
       ? `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`

@@ -22,6 +22,7 @@ import {
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { cn } from "@/shared/ui/cn";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
+import { PRACTICE_CA_DIRECT_SHIP_NOTE } from "@/shared/practice/practiceWorkPeriod";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -64,7 +65,7 @@ export const PRACTICE_TRANSFER_EXPRESS_STEPS: Array<{
   {
     id: "schedule",
     title: "언제 치과에 도착하면 될까요?",
-    hint: "주문일은 오늘로 고정됩니다. 도착일만 고르면 됩니다. 커스텀어벗은 치과로 직납(출고=도착 2영업일 전)이며, 지정 도착일 1영업일 전 배송이 목표입니다.",
+    hint: `주문일은 오늘로 고정됩니다. 도착일만 고르면 됩니다. ${PRACTICE_CA_DIRECT_SHIP_NOTE}`,
   },
   {
     id: "prosthesis",

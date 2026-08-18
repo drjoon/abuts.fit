@@ -20,6 +20,7 @@ import { cn } from "@/shared/ui/cn";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
 import {
+  PRACTICE_CA_DIRECT_SHIP_NOTE,
   PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL,
   PRACTICE_WORK_PERIOD_RECOMMEND_NOTE,
   getPracticeWorkPeriodDays,
@@ -30,6 +31,7 @@ import {
 // - web/frontend/src/shared/practice/practiceWorkPeriod.ts
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
+// - 2026-08-19: 도움말 — 출고=도착−2영업일, 지정 도착일 1영업일 전 배송 목표.
 // - 2026-08-17: 도움말 툴팁 가로폭 확대(문장 한 줄 유지).
 // - 2026-08-17: 도움말 — 3영업일 이하 지연 가능·4영업일 이상 안내로 단순화.
 // - 2026-08-17: 주문-치과도착 도움말 줄바꿈·간결화.
@@ -169,6 +171,7 @@ export function PracticeOrderArrivalDateRangeField({
             >
               <p>주문일은 오늘 고정.</p>
               <p>치과도착일만 선택하면 됩니다.</p>
+              <p>{PRACTICE_CA_DIRECT_SHIP_NOTE}</p>
               <p>
                 3영업일 이하는 늦게 도착할 수 있으니, 4영업일 이상 설정해주세요.
               </p>
