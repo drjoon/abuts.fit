@@ -4,6 +4,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-19: description prop — 진행중인 의뢰 목록 안내 문구.
 // - 2026-08-18: 모달을 정책 안내와 같은 rounded-2xl·필터 카드 톤으로 정리.
 // - 2026-08-18: 지난 의뢰 기본에서 취소 제외(추적관리만).
 // - 2026-08-18: 열릴 때 initialPeriod로 페이지 헤더 기간과 동기.
@@ -46,6 +47,7 @@ export type PastRequestsModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title?: string;
+  description?: string;
   onSelectRequest: (request: any) => void;
   /** 기본: 완료(추적관리)만. 취소 제외 */
   manufacturerStageIn?: string[];
@@ -101,6 +103,7 @@ export const PastRequestsModal = ({
   open,
   onOpenChange,
   title,
+  description,
   onSelectRequest,
   manufacturerStageIn,
   initialPeriod,
@@ -273,7 +276,8 @@ export const PastRequestsModal = ({
             {title || "지난 의뢰"}
           </DialogTitle>
           <DialogDescription className="text-sm text-slate-500">
-            추적관리 단계의 지난 의뢰를 기간별로 확인하고 상세를 엽니다.
+            {description ||
+              "추적관리 단계의 지난 의뢰를 기간별로 확인하고 상세를 엽니다."}
           </DialogDescription>
         </DialogHeader>
 

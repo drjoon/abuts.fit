@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: [정책 안내] 오른쪽 [진행중인 의뢰] — 준비~포장.발송.
 // - 2026-08-18: 지난의뢰 건수·목록에서 취소 제외(추적관리만).
 // - 2026-08-18: 치과 어벗디자인 상단 — 기간필터·정책안내·출고대기·지난의뢰·불완전가공.
 // related files:
@@ -21,9 +22,20 @@ import { PastRequestsModal } from "@/shared/components/PastRequestsModal";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 
+/** 지난의뢰(추적관리)를 제외한 생산 파이프라인 */
+const IN_PROGRESS_MANUFACTURER_STAGES = [
+  "준비",
+  "의뢰",
+  "CAM",
+  "가공",
+  "세척.패킹",
+  "포장.발송",
+];
+
 export const RequestorAbutmentPageHeader = () => {
   const { user, token } = useAuthStore();
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [inProgressOpen, setInProgressOpen] = useState(false);
   const [pastOpen, setPastOpen] = useState(false);
   const [selectedPastRequest, setSelectedPastRequest] = useState<any | null>(
     null,
@@ -88,6 +100,14 @@ export const RequestorAbutmentPageHeader = () => {
   const stats = cardsSummaryResponse?.success
     ? cardsSummaryResponse.data?.stats || {}
     : {};
+  const inProgressCount = Math.max(
+    0,
+    Number(stats.totalRequests ?? 0) +
+      Number(stats.inCam ?? 0) +
+      Number(stats.inProduction ?? 0) +
+      Number(stats.inPacking ?? 0) +
+      Number(stats.inShipping ?? 0),
+  );
   const pastCount = Math.max(0, Number(stats.inTracking ?? 0));
   const unmachinableCount = (() => {
     const judged = Number(stats.unmachinableJudgedTotalCount);
@@ -110,6 +130,15 @@ export const RequestorAbutmentPageHeader = () => {
     <>
       <RequestorWorkspaceHeader period={period} onPeriodChange={setPeriod}>
         <RequestorPolicyRemakeHeader />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 px-3 text-xs"
+          onClick={() => setInProgressOpen(true)}
+        >
+          진행중인 의뢰 {inProgressCount.toLocaleString()}건
+        </Button>
         <RequestorBulkShippingBannerCard
           variant="headerButton"
           bulkData={bulkData}
@@ -130,6 +159,19 @@ export const RequestorAbutmentPageHeader = () => {
         </Button>
         <RequestorUnmachinableHost period={period} count={unmachinableCount} />
       </RequestorWorkspaceHeader>
+
+      <PastRequestsModal
+        open={inProgressOpen}
+        onOpenChange={setInProgressOpen}
+        title="진행중인 의뢰"
+        description="준비·가공·세척.패킹·포장.발송 단계의 의뢰를 확인하고 상세를 엽니다."
+        manufacturerStageIn={IN_PROGRESS_MANUFACTURER_STAGES}
+        initialPeriod={period}
+        onSelectRequest={(request) => {
+          setInProgressOpen(false);
+          setSelectedPastRequest(request);
+        }}
+      />
 
       <PastRequestsModal
         open={pastOpen}
