@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 제출 중 중복 클릭 방지. 첨부 즉시 업로드는 useNewRequestPage.
 // - 2026-08-18: 치과 어벗디자인 상단 — 기간필터·정책안내·출고예정·지난의뢰·불완전가공.
 // - 2026-08-16: 미설정 시에도 X로 닫기 가능(재진입·새로고침 시 다시 강제).
 // - 2026-08-16: internalLab 저장은 사업체 필드만 — 개인 아노 403 수정(useRequestorRequestSettings).
@@ -123,6 +124,7 @@ const NewRequestPageContent = () => {
   const [oversizedPendingFiles, setOversizedPendingFiles] = useState<File[]>([]);
   const [oversizedPreviewIndex, setOversizedPreviewIndex] = useState(0);
   const handleIncomingFilesRef = useRef<(files: File[]) => void>(() => {});
+  const submitClickGuardRef = useRef(false);
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
@@ -168,6 +170,7 @@ const NewRequestPageContent = () => {
     setImplantType,
     syncSelectedConnection,
     handleSubmit,
+    isSubmitting,
     handleCancel,
     caseInfos,
     setCaseInfos,
@@ -1877,6 +1880,7 @@ const NewRequestPageContent = () => {
 
           <div className="flex flex-col flex-1 min-h-0 h-full">
             <NewRequestShippingSection
+              disabled={isSubmitting}
               weeklyBatchDays={weeklyBatchDays}
               onWeeklyBatchDaysChange={handleWeeklyBatchDaysChange}
               leadTimes={leadTimes}
@@ -1884,6 +1888,7 @@ const NewRequestPageContent = () => {
               defaultShippingMode={defaultShippingMode}
               onDefaultShippingModeChange={handleDefaultShippingModeChange}
               onSubmit={() => {
+                if (isSubmitting || submitClickGuardRef.current) return;
                 if (!files.length) {
                   toast({
                     title: "파일이 필요합니다",
@@ -1912,6 +1917,7 @@ const NewRequestPageContent = () => {
                   setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
                   return;
                 }
+                submitClickGuardRef.current = true;
                 (async () => {
                   const hasBulkShipping = files.some((file) => {
                     const key = toNormalizedFileKey(file);
@@ -1944,15 +1950,16 @@ const NewRequestPageContent = () => {
                     duration: 15000,
                   });
 
-                  if ((duplicateResolutions || []).length > 0) {
-                    handleSubmitWithDuplicateResolutions(
-                      duplicateResolutions as any,
-                    );
-                    return;
-                  }
-
-                  handleSubmit();
-                })();
+                  const submitPromise =
+                    (duplicateResolutions || []).length > 0
+                      ? handleSubmitWithDuplicateResolutions(
+                          duplicateResolutions as any,
+                        )
+                      : handleSubmit();
+                  await Promise.resolve(submitPromise);
+                })().finally(() => {
+                  submitClickGuardRef.current = false;
+                });
               }}
             />
           </div>

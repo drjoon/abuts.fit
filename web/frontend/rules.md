@@ -635,7 +635,7 @@ Notes:
   - 첨부 직후 백그라운드 사전 업로드(`useFilePreUpload`). 페이지 이동·복원 시 S3/File 메타가 있으면 재업로드하지 않는다(공유 캐시 + sessionStorage). 로그인 세션이 있을 때:
     - 기공의뢰: Dropzone·FileTransfer. 파일카드에 `uploadProgress` 프로그레스바.
       제출([기공소로 전송])은 캐시된 결과를 재사용하고, 미완료면 백그라운드 업로드만 기다린다. 재업로드 토스트를 띄우지 않는다.
-    - 생산의뢰: `useNewRequestPage` → 제출 시 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`)
+    - 생산의뢰: `useNewRequestPage` 첨부 직후 `preUploadFiles`. 파일카드 프로그레스바·%. 제출은 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`)
     - 채팅 첨부: `useBackgroundTempUpload` + `BackgroundUploadList`
       (첨부 즉시 백그라운드 업로드, 칩 프로그레스바. 전송 시 `ensureUploaded` 재사용)
       - 지원 채팅: `ChatComposer` / `NewChatWidget` / `AdminChatManagement`

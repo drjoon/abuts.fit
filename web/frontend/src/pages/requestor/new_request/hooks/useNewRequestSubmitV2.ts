@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-19: 제출 잠금(ref). 방금 생성된 건을 중복으로 오인하면 성공 처리.
 // - 2026-08-13: 제출 시 사전업로드 캐시·from-draft caseInfos로 PATCH/credits GET 생략
 /**
  * ===== 신규 의뢰 제출 표준 훅 (SSOT) =====
@@ -90,6 +91,7 @@ export const useNewRequestSubmitV2 = ({
 }: UseNewRequestSubmitV2Params) => {
   const { toast, dismiss } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const preparedDraftRef = useRef<{
     draftId: string;
     uploadFingerprint: string;
@@ -199,7 +201,7 @@ export const useNewRequestSubmitV2 = ({
   const submitFromDraft = async (
     duplicateResolutions?: DuplicateResolutionCase[],
   ) => {
-    if (isSubmitting) return;
+    if (submittingRef.current || isSubmitting) return;
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -289,12 +291,57 @@ export const useNewRequestSubmitV2 = ({
       return;
     }
 
+    submittingRef.current = true;
     const submitStart = Date.now();
     console.log("[NewRequestSubmit] submit start", {
       draftId,
       filesCount: files.length,
       hasDuplicateResolutions: Boolean(duplicateResolutions?.length),
     });
+
+    const finishSuccessfulSubmit = async () => {
+      saveParseLogs().catch((err) => {
+        console.warn("[useNewRequestSubmitV2] Failed to save parse logs:", err);
+      });
+
+      try {
+        void fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
+          method: "DELETE",
+          headers: getHeaders(),
+        });
+      } catch {
+        // noop
+      }
+
+      preparedDraftRef.current = null;
+      setFiles([]);
+      setSelectedPreviewIndex(null);
+
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(NEW_REQUEST_DRAFT_ID_STORAGE_KEY);
+          clearFileCache();
+        }
+      } catch {
+        // noop
+      }
+
+      try {
+        const { clearLocalDraft } = await import("../utils/localDraftStorage");
+        clearLocalDraft();
+        const { clearAllFiles } = await import("../utils/fileIndexedDB");
+        await clearAllFiles();
+      } catch (err) {
+        console.warn("[submitFromDraft] Failed to clear local draft:", err);
+      }
+
+      dismiss();
+      toast({ title: "의뢰가 제출되었습니다" });
+      console.log("[NewRequestSubmit] navigate", {
+        t: Date.now() - submitStart,
+      });
+      navigate(`/dashboard`);
+    };
 
     try {
       setIsSubmitting(true);
@@ -644,14 +691,43 @@ export const useNewRequestSubmitV2 = ({
             Array.isArray(duplicates) &&
             duplicates.length > 0
           ) {
+            const liveDuplicates = duplicates.filter((dup: any) => {
+              const stage = String(
+                dup?.existingRequest?.manufacturerStage || "",
+              ).trim();
+              return stage !== "취소";
+            });
+            const justCreated = liveDuplicates.filter((dup: any) => {
+              const createdAtMs = new Date(
+                dup?.existingRequest?.createdAt || 0,
+              ).getTime();
+              return (
+                Number.isFinite(createdAtMs) &&
+                createdAtMs >= submitStart - 30_000
+              );
+            });
+            const remaining = liveDuplicates.filter(
+              (dup: any) => !justCreated.includes(dup),
+            );
+            if (remaining.length === 0 && justCreated.length > 0) {
+              await finishSuccessfulSubmit();
+              return;
+            }
+            if (remaining.length === 0) {
+              return;
+            }
             console.log(
               "[useNewRequestSubmitV2] Duplicate detected, opening prompt",
               {
                 mode,
-                count: duplicates.length,
+                count: remaining.length,
               },
             );
-            onDuplicateDetected?.({ mode, duplicates, remakeQuota });
+            onDuplicateDetected?.({
+              mode,
+              duplicates: remaining,
+              remakeQuota,
+            });
             return;
           }
         }
@@ -663,58 +739,7 @@ export const useNewRequestSubmitV2 = ({
         throw new Error(`${detailMsg}${errorContext}`);
       }
 
-      const data = await res.json();
-      console.log("[NewRequestSubmit] submit API json parsed", {
-        t: Date.now() - submitStart,
-      });
-
-      // 파싱 로그 저장 (비동기, 실패해도 무시)
-      saveParseLogs().catch((err) => {
-        console.warn("[useNewRequestSubmitV2] Failed to save parse logs:", err);
-      });
-
-      try {
-        void fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
-          method: "DELETE",
-          headers: getHeaders(),
-        });
-      } catch {
-        // noop
-      }
-
-      // 상태 초기화
-      preparedDraftRef.current = null;
-      setFiles([]);
-      setSelectedPreviewIndex(null);
-
-      // localStorage 및 캐시 정리
-      try {
-        if (typeof window !== "undefined") {
-          window.localStorage.removeItem(NEW_REQUEST_DRAFT_ID_STORAGE_KEY);
-          clearFileCache();
-        }
-      } catch {
-        // noop
-      }
-
-      // V3 로컬 드래프트 정리 (localStorage + IndexedDB)
-      try {
-        const { clearLocalDraft } = await import("../utils/localDraftStorage");
-        clearLocalDraft();
-        const { clearAllFiles } = await import("../utils/fileIndexedDB");
-        await clearAllFiles();
-      } catch (err) {
-        console.warn("[submitFromDraft] Failed to clear local draft:", err);
-      }
-
-
-
-      dismiss();
-      toast({ title: "의뢰가 제출되었습니다" });
-      console.log("[NewRequestSubmit] navigate", {
-        t: Date.now() - submitStart,
-      });
-      navigate(`/dashboard`);
+      await finishSuccessfulSubmit();
     } catch (err: any) {
       const rawMessage = err?.message || "";
       const isNoAbutmentError =
@@ -740,6 +765,7 @@ export const useNewRequestSubmitV2 = ({
         variant: "destructive",
       });
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };

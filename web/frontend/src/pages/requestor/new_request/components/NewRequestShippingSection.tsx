@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 제출 중 의뢰하기 버튼 비활성·접수 중 라벨.
 // - 2026-08-11: 의뢰하기 위 «디자인까지 의뢰할 경우 1일 추가» 안내 삭제.
 // - 2026-08-11: 묶음/신속 옵션 카드 ring·그림자 잘림 방지(내부 여백 확대).
 // - 2026-08-09: 첨부 건이 디자인+생산이면 신속 선택 판정에 productMode(+1영업일) 반영.
@@ -440,7 +441,7 @@ export function NewRequestShippingSection({
             className="w-full sm:w-1/2 text-lg mx-auto"
             disabled={isDisabled}
           >
-            의뢰하기
+            {isDisabled ? "접수 중..." : "의뢰하기"}
           </Button>
         </div>
       </div>

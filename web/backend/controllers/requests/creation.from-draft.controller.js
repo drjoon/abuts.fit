@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-19: 의뢰 생성 후 GET /my 메모리 캐시 무효화(진행중 목록이 비어 보이는 문제).
 // - 2026-08-18: 생산 의뢰는 준비 단계 진입(생성) 시 로트번호(3글자)를 발급한다.
 // - 2026-08-13: 제출 지연 단축. 설정/리드타임/크레딧을 트랜잭션 밖 병렬 prefetch,
 //   incoming caseInfos.file.s3Key를 받아 Draft PATCH 왕복 생략.
@@ -1674,6 +1675,14 @@ export async function createRequestsFromDraft(req, res) {
           "",
       ).trim();
       if (createdAnchorId) {
+        try {
+          const { clearMyRequestsCache } = await import(
+            "./common.requests.controller.js"
+          );
+          clearMyRequestsCache();
+        } catch {
+          // best-effort
+        }
         console.log("[createRequestsFromDraft] Triggering dashboard refresh", {
           businessAnchorId: createdAnchorId,
           createdCount: createdRequests.length,

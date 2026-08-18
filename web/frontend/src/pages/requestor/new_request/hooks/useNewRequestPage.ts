@@ -5,12 +5,14 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-19: 첨부 직후 preUploadFiles를 바로 호출(기공의뢰와 동일). 제출 잠금·헤더 건수 무효화.
 // - 2026-08-19: 입력 중 중복 체크 — 추적관리면 tracking 모드(진행중으로 오인하지 않음).
 // - 2026-08-18: 치과 제출 후 `/dashboard` 대신 어벗디자인 페이지에 잔류(대시보드 메뉴 없음).
 // - 2026-08-13: 제출 시 이미 사업자가 있으면 profile/credits GET을 생략
 // - 2026-08-13: 복원·포워딩 시 이미 S3/메타가 있는 STL은 재업로드하지 않음.
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useNewRequestClinics } from "./useNewRequestClinics";
@@ -63,6 +65,7 @@ export const useNewRequestPage = (
   const { user, token, setLastDashboardPath } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { kind: requestorKind } = useRequestorBusinessAccess();
   const enableOralScanGrouping = options?.enableOralScanGrouping !== false;
   // 사이드바 goSidebarHref와 동일: /dashboard 허브가 lastDashboardPath(신규의뢰 등)로
@@ -71,6 +74,9 @@ export const useNewRequestPage = (
     (path: string) => {
       if (path === "/dashboard") {
         if (requestorKind === "practice") {
+          void queryClient.invalidateQueries({
+            queryKey: ["requestor-dashboard-cards-summary"],
+          });
           navigate("/dashboard/new-request");
           return;
         }
@@ -95,7 +101,7 @@ export const useNewRequestPage = (
 
       navigate(path);
     },
-    [navigate, requestorKind, setLastDashboardPath, token],
+    [navigate, queryClient, requestorKind, setLastDashboardPath, token],
   );
 
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
@@ -111,6 +117,8 @@ export const useNewRequestPage = (
     } | null;
   } | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const filesRef = useRef(files);
+  filesRef.current = files;
   const [draftFiles, setDraftFiles] = useState<DraftCaseInfo[]>([]);
   const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<
     number | null
@@ -426,7 +434,6 @@ export const useNewRequestPage = (
       }
     }
 
-    let hydratedAll = true;
     for (const file of files) {
       const localMeta = localByKey.get(getFileKey(file));
       const draftMeta =
@@ -440,10 +447,7 @@ export const useNewRequestPage = (
         })();
       const fileId = String(localMeta?.fileId || draftMeta?.fileId || "").trim();
       const s3Key = String(localMeta?.s3Key || draftMeta?.s3Key || "").trim();
-      if (!fileId || !s3Key) {
-        hydratedAll = false;
-        continue;
-      }
+      if (!fileId || !s3Key) continue;
       rememberUploadedFile(file, {
         _id: fileId,
         originalName: String(
@@ -460,8 +464,6 @@ export const useNewRequestPage = (
         key: s3Key,
       });
     }
-
-    if (!hydratedAll && draftStatus === "loading") return;
 
     preUploadFiles(files);
 
@@ -491,7 +493,6 @@ export const useNewRequestPage = (
   }, [
     token,
     files,
-    draftStatus,
     initialDraftFiles,
     ensureFilesUploaded,
     peekCachedUploadedFiles,
@@ -602,6 +603,7 @@ export const useNewRequestPage = (
             });
 
             if (!res.ok) return;
+            if (filesRef.current.length === 0) return;
 
             const body: any = res.data || {};
             const data = body?.data || body;
@@ -620,6 +622,7 @@ export const useNewRequestPage = (
               const existingStage = String(
                 existingRequest?.manufacturerStage || "",
               ).trim();
+              if (existingStage === "취소") return;
               const mode = existingStage === "추적관리" ? "tracking" : "active";
 
               // 중복 발견 시 모달 표시 (입력 중 체크: 제출 플로우 아님)
@@ -800,13 +803,14 @@ export const useNewRequestPage = (
     enableOralScanGrouping,
   });
 
-  // V3 래퍼: 로컬 저장만 수행 (S3 업로드 없음)
+  // V3 래퍼: 로컬 저장 + 첨부 직후 S3 사전 업로드(onFilesAdded → preUploadFiles)
   const { handleUpload: handleLocalUpload } = useNewRequestLocalFiles({
     setFiles,
     setSelectedPreviewIndex,
     updateCaseInfos,
     caseInfosMap,
     onFilesAdded: ({ files: addedFiles, parsed }) => {
+      preUploadFiles(addedFiles);
       const patientByKey: Record<string, string | undefined> = {};
       const clinicByKey: Record<string, string | undefined> = {};
       for (const row of parsed) {
@@ -1168,6 +1172,7 @@ export const useNewRequestPage = (
     handleSubmitWithDuplicateResolutions:
       rawHandleSubmitWithDuplicateResolutions,
     handleCancel: rawHandleCancel,
+    isSubmitting,
   } = useNewRequestSubmitV2({
     existingRequestId,
     draftId,
@@ -1250,6 +1255,7 @@ export const useNewRequestPage = (
     handleUploadUnchecked: isReady ? handleUploadUnchecked : () => {},
     handleRemoveFile: isReady ? handleRemoveFile : () => {},
     uploadProgress,
+    isSubmitting,
 
     // 디자인+생산: 환자 케이스(구강 스캔 합치기)
     patientGroups: patientFileGroupsApi.patientGroups,

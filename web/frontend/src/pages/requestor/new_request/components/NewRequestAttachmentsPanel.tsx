@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 파일카드에 백그라운드 업로드 % 표시(기공의뢰 파일페인과 동일).
 // - 2026-08-16: 메타 뱃지를 RequestCaseMetaBadges 공용 컴포넌트로.
 // - 2026-08-13: 첨부를 PracticeTransferFileDropTarget + useFilePreUpload 진행률바로.
 // - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(accept·드롭존 문구).
@@ -108,6 +109,16 @@ function pickUploadProgress(
     rows.find((row) => row.status === "uploading" || row.status === "error") ||
     rows[0]
   );
+}
+
+function renderUploadProgressMeta(progress?: PreUploadFileProgress | null) {
+  if (!progress) return "";
+  if (progress.status === "uploading") {
+    const pct = Math.max(0, Math.min(100, Math.round(progress.percent ?? 0)));
+    return ` · ${pct}%`;
+  }
+  if (progress.status === "error") return " · 실패";
+  return "";
 }
 
 function renderUploadProgressBar(progress?: PreUploadFileProgress | null) {
@@ -829,6 +840,7 @@ export function NewRequestAttachmentsPanel({
           ? "ring-2 ring-destructive/80 ring-offset-1 ring-offset-white"
           : "";
     const selectFill = checked ? "bg-primary-soft/90" : "";
+    const uploadProgressRow = pickUploadProgress([file], uploadProgress);
 
     return (
       <div
@@ -840,7 +852,7 @@ export function NewRequestAttachmentsPanel({
         aria-selected={checked}
         className={`relative shrink-0 overflow-hidden app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
       >
-        {renderUploadProgressBar(pickUploadProgress([file], uploadProgress))}
+        {renderUploadProgressBar(uploadProgressRow)}
         <div className="relative z-10 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -871,6 +883,7 @@ export function NewRequestAttachmentsPanel({
                 title={`${file.size.toLocaleString()} bytes`}
               >
                 {formatAttachmentSize(file.size)}
+                {renderUploadProgressMeta(uploadProgressRow)}
               </span>
               {renderCaseMetaBadges(fileInfo)}
               {isVerified && (
@@ -943,6 +956,10 @@ export function NewRequestAttachmentsPanel({
           ? "ring-2 ring-destructive/80 ring-offset-1 ring-offset-white"
           : "";
     const selectFill = checked ? "bg-primary-soft/90" : "";
+    const uploadProgressRow = pickUploadProgress(
+      fileIndices.map((idx) => files[idx]),
+      uploadProgress,
+    );
 
     const handleRemoveGroup = () => {
       // 인덱스 밀림 방지: 큰 인덱스부터 순차 삭제
@@ -969,12 +986,7 @@ export function NewRequestAttachmentsPanel({
         aria-selected={checked}
         className={`relative shrink-0 overflow-hidden app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
       >
-        {renderUploadProgressBar(
-          pickUploadProgress(
-            fileIndices.map((idx) => files[idx]),
-            uploadProgress,
-          ),
-        )}
+        {renderUploadProgressBar(uploadProgressRow)}
         <div className="relative z-10 flex flex-col gap-2">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 flex items-center gap-2">
@@ -1066,6 +1078,9 @@ export function NewRequestAttachmentsPanel({
                       title={`${member.size.toLocaleString()} bytes`}
                     >
                       {formatAttachmentSize(member.size)}
+                      {renderUploadProgressMeta(
+                        uploadProgress[toTempUploadFileKey(member)],
+                      )}
                     </span>
                     {memberKey === primaryKey
                       ? renderCaseMetaBadges(fileInfo)

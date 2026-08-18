@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-19: 준비 단계 취소는 트랜잭션 없이 uniqueKeys 조회+status updateOne. 웹소켓은 백그라운드.
 // - 2026-08-19: 준비 단계 취소 시 HOLD 해제를 COMMIT 롤백보다 먼저 수행.
+// - 2026-08-19: 의뢰 생성/취소 후 GET /my 메모리 캐시를 비운다(진행중 목록 지연).
 // - 2026-08-19: GET /my 목록에 price·estimatedShipYmd 포함(의뢰 상세 비용·출고일).
 // - 2026-08-18: 준비 단계 진입 시 로트번호 발급. 워크시트 조회 시 누락분 보정. 샘플 복사는 준비 시작도 즉시 발급.
 // - 2026-08-10: worksheet select에 caseInfos.memo/toothWorks/prosthesisType/files 추가(디자인 큐).
@@ -179,6 +180,10 @@ const setMyRequestsCacheValue = (key, value, ttlMs) => {
     expiresAt: Date.now() + ttlMs,
   });
   return value;
+};
+
+export const clearMyRequestsCache = () => {
+  __myRequestsCache.clear();
 };
 
 const withMyRequestsInFlight = async (key, factory) => {
@@ -3511,6 +3516,7 @@ export async function updateRequestStatus(req, res) {
 
       const anchorId = String(request.businessAnchorId || "").trim();
       if (anchorId) {
+        clearMyRequestsCache();
         console.log("[updateManufacturerStage] Triggering dashboard refresh", {
           requestId: request.requestId,
           businessAnchorId: anchorId,
