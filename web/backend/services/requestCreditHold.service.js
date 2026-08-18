@@ -6,6 +6,8 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
+// change-log:
+// - 2026-08-19: 같은 제출에서 원장 잔액 집계·가드 락을 앵커당 1회로 재사용.
 import mongoose, { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
@@ -245,6 +247,46 @@ async function computeHoldRestoreDeltaByJournalId({ journalId, session }) {
   return fromPaid + fromFreeRequest + fromFreeShipping + fromSettlement;
 }
 
+function normalizeHoldBalanceBuckets(balance) {
+  const paidCredit = Math.max(0, Math.round(Number(balance?.paidCredit || 0)));
+  const freeRequestCredit = Math.max(
+    0,
+    Math.round(Number(balance?.freeRequestCredit || 0)),
+  );
+  const freeShippingCredit = Math.max(
+    0,
+    Math.round(Number(balance?.freeShippingCredit || 0)),
+  );
+  const settlementCredit = Math.max(
+    0,
+    Math.round(Number(balance?.settlementCredit || 0)),
+  );
+  const freeCredit = freeRequestCredit + freeShippingCredit;
+  return {
+    paidCredit,
+    freeRequestCredit,
+    freeShippingCredit,
+    freeCredit,
+    settlementCredit,
+    balance: paidCredit + freeCredit,
+    spendableBalance: paidCredit + freeCredit + settlementCredit,
+  };
+}
+
+function applyHoldSplitToBalance(balance, split) {
+  return normalizeHoldBalanceBuckets({
+    paidCredit: Number(balance?.paidCredit || 0) - Number(split?.fromPaid || 0),
+    freeRequestCredit:
+      Number(balance?.freeRequestCredit || 0) -
+      Number(split?.fromFreeRequest || 0),
+    freeShippingCredit:
+      Number(balance?.freeShippingCredit || 0) -
+      Number(split?.fromFreeShipping || 0),
+    settlementCredit:
+      Number(balance?.settlementCredit || 0) - Number(split?.fromSettlement || 0),
+  });
+}
+
 async function postOneRequestHold({
   request,
   requestorAnchorId,
@@ -256,6 +298,8 @@ async function postOneRequestHold({
   freeOrder = ["freeRequest", "freeShipping"],
   actorUserId = null,
   session = null,
+  cachedBalance = null,
+  skipLock = false,
 }) {
   const amt = Math.max(0, Math.round(Number(amount || 0)));
   const requestId = request?._id;
@@ -276,15 +320,19 @@ async function postOneRequestHold({
     };
   }
 
-  await lockCreditBalanceGuardByAnchor({
-    businessAnchorId: requestorAnchorId,
-    session,
-  });
+  if (!skipLock) {
+    await lockCreditBalanceGuardByAnchor({
+      businessAnchorId: requestorAnchorId,
+      session,
+    });
+  }
 
-  const balance = await computeBusinessCreditBalanceFromLedger({
-    businessAnchorId: requestorAnchorId,
-    session,
-  });
+  const balance = cachedBalance
+    ? normalizeHoldBalanceBuckets(cachedBalance)
+    : await computeBusinessCreditBalanceFromLedger({
+        businessAnchorId: requestorAnchorId,
+        session,
+      });
 
   const split = allocateSpendFromCreditBuckets({
     amount: amt,
@@ -364,15 +412,17 @@ async function postOneRequestHold({
     skipIdempotencyLookup: true,
   });
 
+  const posted = Boolean(journal?.posted);
   return {
-    held: Boolean(journal?.posted),
-    reason: journal?.posted ? "posted" : journal?.idempotent ? "already_held" : "not_posted",
+    held: posted,
+    reason: posted ? "posted" : journal?.idempotent ? "already_held" : "not_posted",
     journalId: journal?.journalId || existing?.journalId || null,
     amount: amt,
     fromPaid: split.fromPaid,
     fromFreeRequest: split.fromFreeRequest,
     fromFreeShipping: split.fromFreeShipping,
     fromSettlement: split.fromSettlement,
+    balanceAfter: posted ? applyHoldSplitToBalance(balance, split) : null,
   };
 }
 
@@ -416,21 +466,55 @@ export async function holdRequestCreditsOnSubmit({
   requests = [],
   actorUserId = null,
   session = null,
+  devopsAnchorId: devopsAnchorIdArg = null,
+  shippingFee: shippingFeeArg = null,
 }) {
   const list = (Array.isArray(requests) ? requests : []).filter(Boolean);
   if (!list.length) return { held: false, reason: "empty" };
 
-  const devopsAnchorId = await resolveDevopsEscrowOwnerId(session);
+  const devopsAnchorId =
+    String(devopsAnchorIdArg || "").trim() ||
+    (await resolveDevopsEscrowOwnerId(session));
   if (!devopsAnchorId) {
     const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
     err.statusCode = 500;
     throw err;
   }
 
-  const shippingFee = await resolveShippingFeePerBox();
+  const shippingFeeFromArg = Math.round(Number(shippingFeeArg));
+  const shippingFee =
+    Number.isFinite(shippingFeeFromArg) && shippingFeeFromArg > 0
+      ? shippingFeeFromArg
+      : await resolveShippingFeePerBox();
   const shippingGroupHeld = new Set();
+  const lockedAnchors = new Set();
+  const balanceByAnchor = new Map();
   let totalHeld = 0;
   const results = [];
+
+  const takeCachedBalance = async (requestorAnchorId) => {
+    if (!lockedAnchors.has(requestorAnchorId)) {
+      await lockCreditBalanceGuardByAnchor({
+        businessAnchorId: requestorAnchorId,
+        session,
+      });
+      lockedAnchors.add(requestorAnchorId);
+    }
+    const cached = balanceByAnchor.get(requestorAnchorId);
+    if (cached) return cached;
+    const computed = await computeBusinessCreditBalanceFromLedger({
+      businessAnchorId: requestorAnchorId,
+      session,
+    });
+    balanceByAnchor.set(requestorAnchorId, computed);
+    return computed;
+  };
+
+  const rememberBalance = (requestorAnchorId, holdResult) => {
+    if (holdResult?.balanceAfter) {
+      balanceByAnchor.set(requestorAnchorId, holdResult.balanceAfter);
+    }
+  };
 
   for (const request of list) {
     const requestorAnchorId = resolveRequestCreditHoldAnchorId(request);
@@ -449,8 +533,11 @@ export async function holdRequestCreditsOnSubmit({
           idempotencyKey: requestMachiningHoldKey(request._id),
           actorUserId,
           session,
+          cachedBalance: await takeCachedBalance(requestorAnchorId),
+          skipLock: true,
         });
         if (holdResult.held) totalHeld += machiningAmount;
+        rememberBalance(requestorAnchorId, holdResult);
         results.push({ kind: "machining_spend", ...holdResult });
       }
 
@@ -466,8 +553,11 @@ export async function holdRequestCreditsOnSubmit({
           idempotencyKey: requestExpressHoldKey(request._id),
           actorUserId,
           session,
+          cachedBalance: await takeCachedBalance(requestorAnchorId),
+          skipLock: true,
         });
         if (holdResult.held) totalHeld += expressAmount;
+        rememberBalance(requestorAnchorId, holdResult);
         results.push({ kind: "express_surcharge", ...holdResult });
       }
     }
@@ -487,8 +577,11 @@ export async function holdRequestCreditsOnSubmit({
           freeOrder: ["freeShipping", "freeRequest"],
           actorUserId,
           session,
+          cachedBalance: await takeCachedBalance(requestorAnchorId),
+          skipLock: true,
         });
         if (holdResult.held) totalHeld += shippingFee;
+        rememberBalance(requestorAnchorId, holdResult);
         results.push({ kind: "shipping_fee", groupKey, ...holdResult });
       }
     }

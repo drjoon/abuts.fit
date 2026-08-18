@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 제출·공정 변경 소켓으로 진행중/출고예정 건수 재조회(리프레시 없이).
 // - 2026-08-19: 취소 확인은 즉시 닫고, 헤더 건수 재조회는 스냅샷 완료 뒤로 미룸.
 // - 2026-08-19: 헤더 라벨 출고예정. 취소 후 출고 스냅샷 쿼리도 무효화.
 // - 2026-08-19: 취소 후 진행중인 의뢰 목록으로 복귀. 확인 클릭이 목록을 닫지 않음.
@@ -14,12 +15,16 @@
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorUnmachinableHost.tsx
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/frontend/src/features/requests/components/RequestDetailDialog.tsx
+// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 import { RequestorWorkspaceHeader } from "@/shared/components/RequestorWorkspaceHeader";
 import { RequestorPolicyRemakeHeader } from "@/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader";
 import { RequestorBulkShippingBannerCard } from "@/pages/requestor/dashboard/components/RequestorBulkShippingBannerCard";
@@ -114,6 +119,41 @@ export const RequestorAbutmentPageHeader = () => {
     refetchOnWindowFocus: false,
     enabled: !!token,
     placeholderData: (previous) => previous,
+  });
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(token) && Boolean(user?.businessAnchorId),
+    eventTypes: [
+      "credit:balance-updated",
+      "request:stage-changed",
+      "request:delivery-updated",
+      "request:delivery-updated-batch",
+    ],
+    delayMs: 160,
+    deferWhenEditing: false,
+    shouldHandle: (evt) => {
+      const type = String(evt?.type || "").trim();
+      const myOrgId = String(user?.businessAnchorId || "").trim();
+      if (!myOrgId) return false;
+      if (type === "credit:balance-updated") {
+        return isCreditEventForBusiness(evt, myOrgId);
+      }
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as {
+              businessAnchorId?: unknown;
+              requestorBusinessAnchorId?: unknown;
+            })
+          : {};
+      const eventOrgId = String(
+        payload.requestorBusinessAnchorId || payload.businessAnchorId || "",
+      ).trim();
+      return !eventOrgId || eventOrgId === myOrgId;
+    },
+    onMatch: () => {
+      void queryClient.invalidateQueries({ queryKey: cardsSummaryQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ["requestor-bulk-shipping"] });
+    },
   });
 
   const stats = cardsSummaryResponse?.success

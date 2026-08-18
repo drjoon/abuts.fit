@@ -631,6 +631,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 승인/롤백 이벤트 정책(강제):
   - `REQUEST_SPEND_HOLD` / `SHIPPING_SPEND_HOLD`: **의뢰 제출** 시 `PLATFORM_ESCROW` 보류. 동일 제출·동일 수신자 배송비 1회. PTX CA는 PTX 생성 보류 SSOT.
+    같은 제출에서 원장 잔액 집계·CreditBalanceGuard 락은 앵커당 1회 재사용(`holdRequestCreditsOnSubmit`).
   - `REQUEST_SPEND_COMMIT`: **가공 진입 승인(준비→가공)** 시 보류→매출(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **집하(우편함 비우기)** 시 배송 보류→매출. 포장.발송 진입에서는 우편함만 확인한다.
   - 우편함 합류: 합류 의뢰의 중복 `SHIPPING_SPEND_HOLD` 해제. 칸당 보류 1개 불변.

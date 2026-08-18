@@ -5,13 +5,14 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-19: 치과 제출 성공 시 로컬 초안 복원 억제·입력 중 중복 체크 generation. 성공 토스트와 중복 모달이 동시에 뜨지 않게.
 // - 2026-08-19: 첨부 직후 preUploadFiles를 바로 호출(기공의뢰와 동일). 제출 잠금·헤더 건수 무효화.
 // - 2026-08-19: 입력 중 중복 체크 — 추적관리면 tracking 모드(진행중으로 오인하지 않음).
 // - 2026-08-18: 치과 제출 후 `/dashboard` 대신 어벗디자인 페이지에 잔류(대시보드 메뉴 없음).
 // - 2026-08-13: 제출 시 이미 사업자가 있으면 profile/credits GET을 생략
 // - 2026-08-13: 복원·포워딩 시 이미 S3/메타가 있는 STL은 재업로드하지 않음.
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
@@ -64,6 +65,7 @@ export const useNewRequestPage = (
 ) => {
   const { user, token, setLastDashboardPath } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { kind: requestorKind } = useRequestorBusinessAccess();
@@ -77,7 +79,12 @@ export const useNewRequestPage = (
           void queryClient.invalidateQueries({
             queryKey: ["requestor-dashboard-cards-summary"],
           });
-          navigate("/dashboard/new-request");
+          void queryClient.invalidateQueries({
+            queryKey: ["requestor-bulk-shipping"],
+          });
+          if (location.pathname !== "/dashboard/new-request") {
+            navigate("/dashboard/new-request");
+          }
           return;
         }
         setLastDashboardPath("/dashboard");
@@ -101,7 +108,7 @@ export const useNewRequestPage = (
 
       navigate(path);
     },
-    [navigate, queryClient, requestorKind, setLastDashboardPath, token],
+    [location.pathname, navigate, queryClient, requestorKind, setLastDashboardPath, token],
   );
 
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
@@ -119,6 +126,8 @@ export const useNewRequestPage = (
   const [files, setFiles] = useState<File[]>([]);
   const filesRef = useRef(files);
   filesRef.current = files;
+  const skipLocalDraftRestoreRef = useRef(false);
+  const duplicateCheckGenRef = useRef(0);
   const [draftFiles, setDraftFiles] = useState<DraftCaseInfo[]>([]);
   const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<
     number | null
@@ -316,8 +325,11 @@ export const useNewRequestPage = (
   useEffect(() => {
     // 이미 UI에 파일이 있으면 복원 스킵
     if (files.length > 0) return;
+    // 방금 제출 성공: 같은 페이지에 잔류해도 초안 STL을 다시 올리지 않음
+    if (skipLocalDraftRestoreRef.current) return;
 
     const restoreLocal = async () => {
+      if (skipLocalDraftRestoreRef.current) return;
       const draft = getLocalDraft() || initLocalDraft();
       if (!draft.files || draft.files.length === 0) return;
 
@@ -346,6 +358,7 @@ export const useNewRequestPage = (
       }
 
       if (restored.length > 0) {
+        if (skipLocalDraftRestoreRef.current) return;
         setFiles(restored);
         setSelectedPreviewIndex(0);
 
@@ -587,6 +600,8 @@ export const useNewRequestPage = (
       const tooth = String(merged.tooth || "").trim();
 
       if (clinicName && patientName && tooth && file && token) {
+        if (skipLocalDraftRestoreRef.current) return;
+        const checkGen = duplicateCheckGenRef.current;
         // 중복 체크 수행
         (async () => {
           try {
@@ -603,6 +618,8 @@ export const useNewRequestPage = (
             });
 
             if (!res.ok) return;
+            if (duplicateCheckGenRef.current !== checkGen) return;
+            if (skipLocalDraftRestoreRef.current) return;
             if (filesRef.current.length === 0) return;
 
             const body: any = res.data || {};
@@ -810,6 +827,7 @@ export const useNewRequestPage = (
     updateCaseInfos,
     caseInfosMap,
     onFilesAdded: ({ files: addedFiles, parsed }) => {
+      skipLocalDraftRestoreRef.current = false;
       preUploadFiles(addedFiles);
       const patientByKey: Record<string, string | undefined> = {};
       const clinicByKey: Record<string, string | undefined> = {};
@@ -1104,6 +1122,7 @@ export const useNewRequestPage = (
         currentMonthEndExclusiveYmd?: string;
       } | null;
     }) => {
+      if (skipLocalDraftRestoreRef.current) return;
       if (!payload || !Array.isArray(payload.duplicates)) return;
 
       const normalizedDuplicates = payload.duplicates
@@ -1189,6 +1208,42 @@ export const useNewRequestPage = (
     uploadFiles: ensureFilesUploaded,
     peekCachedUploadedFiles,
     onDuplicateDetected: handleServerDuplicateDetected,
+    onSubmitStart: () => {
+      duplicateCheckGenRef.current += 1;
+    },
+    onSuccessfulSubmitBegin: () => {
+      skipLocalDraftRestoreRef.current = true;
+      duplicateCheckGenRef.current += 1;
+      setDuplicatePrompt(null);
+      setDuplicatePromptFromSubmit(false);
+      const createdCount = filesRef.current.length;
+      if (createdCount > 0) {
+        queryClient.setQueriesData(
+          { queryKey: ["requestor-dashboard-cards-summary"] },
+          (old: any) => {
+            const stats = old?.data?.stats;
+            if (!old || !stats || typeof stats !== "object") return old;
+            return {
+              ...old,
+              data: {
+                ...old.data,
+                stats: {
+                  ...stats,
+                  totalRequests:
+                    Math.max(0, Number(stats.totalRequests ?? 0)) + createdCount,
+                },
+              },
+            };
+          },
+        );
+      }
+      void queryClient.invalidateQueries({
+        queryKey: ["requestor-dashboard-cards-summary"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["requestor-bulk-shipping"],
+      });
+    },
   });
 
   const handleCancel = useCallback(async () => {
@@ -1197,6 +1252,7 @@ export const useNewRequestPage = (
   }, [clearPreUploadCache, rawHandleCancel]);
 
   const handleSubmit = useCallback(async () => {
+    duplicateCheckGenRef.current += 1;
     const ok = await ensureSetupForUpload();
     if (!ok) return;
 
@@ -1212,6 +1268,7 @@ export const useNewRequestPage = (
         existingRequestId: string;
       }[],
     ) => {
+      duplicateCheckGenRef.current += 1;
       const ok = await ensureSetupForUpload();
       if (!ok) return;
       await rawHandleSubmitWithDuplicateResolutions(opts as any);
@@ -1293,6 +1350,9 @@ export const useNewRequestPage = (
     handleSubmit,
     handleSubmitWithDuplicateResolutions,
     handleCancel,
+    invalidateInFlightDuplicateCheck: () => {
+      duplicateCheckGenRef.current += 1;
+    },
     selectedRequest,
     duplicatePrompt,
     setDuplicatePrompt,

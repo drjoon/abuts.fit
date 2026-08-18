@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-19: 성공 시 로컬 초안을 파일 비우기 전에 지움. 제출 시작/성공 콜백으로 입력 중 중복 체크를 무효화.
 // - 2026-08-19: 제출 잠금(ref). 방금 생성된 건을 중복으로 오인하면 성공 처리.
 // - 2026-08-13: 제출 시 사전업로드 캐시·from-draft caseInfos로 PATCH/credits GET 생략
 /**
@@ -64,6 +65,10 @@ type UseNewRequestSubmitV2Params = {
       currentMonthEndExclusiveYmd?: string;
     } | null;
   }) => void;
+  /** 제출 시작 — 진행 중인 입력 중 중복 체크를 무효화 */
+  onSubmitStart?: () => void;
+  /** 성공 확정 직후(파일 비우기 전) — 로컬 초안 복원·중복 모달 억제 */
+  onSuccessfulSubmitBegin?: () => void | Promise<void>;
 };
 
 type DuplicateResolutionCase = {
@@ -88,6 +93,8 @@ export const useNewRequestSubmitV2 = ({
   uploadFiles,
   peekCachedUploadedFiles,
   onDuplicateDetected,
+  onSubmitStart,
+  onSuccessfulSubmitBegin,
 }: UseNewRequestSubmitV2Params) => {
   const { toast, dismiss } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -292,6 +299,7 @@ export const useNewRequestSubmitV2 = ({
     }
 
     submittingRef.current = true;
+    onSubmitStart?.();
     const submitStart = Date.now();
     console.log("[NewRequestSubmit] submit start", {
       draftId,
@@ -303,6 +311,21 @@ export const useNewRequestSubmitV2 = ({
       saveParseLogs().catch((err) => {
         console.warn("[useNewRequestSubmitV2] Failed to save parse logs:", err);
       });
+
+      try {
+        await Promise.resolve(onSuccessfulSubmitBegin?.());
+      } catch {
+        // noop
+      }
+
+      try {
+        const { clearLocalDraft } = await import("../utils/localDraftStorage");
+        clearLocalDraft();
+        const { clearAllFiles } = await import("../utils/fileIndexedDB");
+        await clearAllFiles();
+      } catch (err) {
+        console.warn("[submitFromDraft] Failed to clear local draft:", err);
+      }
 
       try {
         void fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
@@ -324,15 +347,6 @@ export const useNewRequestSubmitV2 = ({
         }
       } catch {
         // noop
-      }
-
-      try {
-        const { clearLocalDraft } = await import("../utils/localDraftStorage");
-        clearLocalDraft();
-        const { clearAllFiles } = await import("../utils/fileIndexedDB");
-        await clearAllFiles();
-      } catch (err) {
-        console.warn("[submitFromDraft] Failed to clear local draft:", err);
       }
 
       dismiss();

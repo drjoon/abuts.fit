@@ -76,6 +76,7 @@ grep -R "window.location.reload\|location.reload\|navigate(0)" web/frontend/src 
 - `src/pages/practice/PracticeFileTransferPage.tsx`
 - `src/pages/practice/PracticeDropzonePage.tsx` (`practice:round-bar-request-updated` → 프리셋 도입 배지 patch)
 - `src/pages/requestor/new_request/components/NewRequestDesignAbutmentFields.tsx` (`practice:round-bar-request-updated`)
+- `src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx` (`request:stage-changed` / `credit:balance-updated` → 진행중·출고예정 건수)
 - `src/shared/components/CreditLedgerModal.tsx`
 - `src/features/requests/hooks/useStlMetadata.ts`
 - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts`

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 의뢰하기 클릭 즉시 입력 중 중복 체크 무효화(성공 토스트+중복 모달 동시 표시 방지).
 // - 2026-08-19: 제출 중 중복 클릭 방지. 첨부 즉시 업로드는 useNewRequestPage.
 // - 2026-08-18: 치과 어벗디자인 상단 — 기간필터·정책안내·출고예정·지난의뢰·불완전가공.
 // - 2026-08-16: 미설정 시에도 X로 닫기 가능(재진입·새로고침 시 다시 강제).
@@ -172,6 +173,7 @@ const NewRequestPageContent = () => {
     handleSubmit,
     isSubmitting,
     handleCancel,
+    invalidateInFlightDuplicateCheck,
     caseInfos,
     setCaseInfos,
     connections,
@@ -1918,6 +1920,7 @@ const NewRequestPageContent = () => {
                   return;
                 }
                 submitClickGuardRef.current = true;
+                invalidateInFlightDuplicateCheck();
                 (async () => {
                   const hasBulkShipping = files.some((file) => {
                     const key = toNormalizedFileKey(file);

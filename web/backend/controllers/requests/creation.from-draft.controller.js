@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-08-19: 제출 트랜잭션에서 크레딧 보류는 잔액 집계 1회·가드 1회로 재사용.
 // - 2026-08-19: 의뢰 생성 후 GET /my 메모리 캐시 무효화(진행중 목록이 비어 보이는 문제).
 // - 2026-08-18: 생산 의뢰는 준비 단계 진입(생성) 시 로트번호(3글자)를 발급한다.
 // - 2026-08-13: 제출 지연 단축. 설정/리드타임/크레딧을 트랜잭션 밖 병렬 prefetch,
@@ -51,7 +52,6 @@ import {
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
-import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
 import {
@@ -1137,6 +1137,15 @@ export async function createRequestsFromDraft(req, res) {
     const totalShippingFee = isPracticeRoutingSubmission
       ? 0
       : boxCount * shippingFeePerBox;
+    const devopsAnchorPrefetch = isPracticeRoutingSubmission
+      ? null
+      : await BusinessAnchor.findOne({ businessType: "devops" })
+          .select({ _id: 1 })
+          .sort({ createdAt: 1 })
+          .lean();
+    const devopsAnchorIdPrefetch = devopsAnchorPrefetch?._id
+      ? String(devopsAnchorPrefetch._id)
+      : "";
     console.log("[createRequestsFromDraft] pre-fetch done", {
       t: Date.now() - startTime,
       shippingFeePerBox,
@@ -1633,6 +1642,7 @@ export async function createRequestsFromDraft(req, res) {
         insertedRequests.forEach((doc) => createdRequests.push(doc));
 
         if (!isPracticeRoutingSubmission && insertedRequests.length > 0) {
+          const holdT0 = Date.now();
           const { holdRequestCreditsOnSubmit } = await import(
             "../../services/requestCreditHold.service.js"
           );
@@ -1640,6 +1650,13 @@ export async function createRequestsFromDraft(req, res) {
             requests: insertedRequests,
             actorUserId: req.user?._id || null,
             session,
+            shippingFee: shippingFeePerBox,
+            devopsAnchorId: devopsAnchorIdPrefetch,
+          });
+          console.log("[createRequestsFromDraft] credit hold done", {
+            t: Date.now() - startTime,
+            dt: Date.now() - holdT0,
+            created: insertedRequests.length,
           });
         }
       });
@@ -1713,14 +1730,6 @@ export async function createRequestsFromDraft(req, res) {
             err,
           ),
         );
-        // bulk shipping은 요약 스냅샷과 분리된 materialized snapshot이므로 별도로 갱신한다.
-        recomputeBulkShippingSnapshotForBusinessAnchorId(createdAnchorId).catch(
-          (err) =>
-            console.error(
-              "[createRequestsFromDraft] bulk shipping snapshot error",
-              err,
-            ),
-        );
       } else {
         console.warn(
           "[createRequestsFromDraft] No businessAnchorId for dashboard refresh",
@@ -1753,6 +1762,11 @@ export async function createRequestsFromDraft(req, res) {
     }
 
     if (!isPracticeRoutingSubmission && createdRequests.length > 0) {
+      const createdAnchorIdForEvent = String(
+        createdRequests[0]?.businessAnchorId ||
+          req.user?.businessAnchorId ||
+          "",
+      ).trim();
       emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
         source: "requestor-new-request",
         action: "created",
@@ -1766,6 +1780,23 @@ export async function createRequestsFromDraft(req, res) {
           .map((row) => String(row?._id || "").trim())
           .filter(Boolean),
       });
+      if (createdAnchorIdForEvent) {
+        emitAppEventToRoles(["requestor"], "request:stage-changed", {
+          source: "createRequestsFromDraft",
+          action: "created",
+          fromStage: "",
+          toStage: "준비",
+          businessAnchorId: createdAnchorIdForEvent,
+          requestorBusinessAnchorId: createdAnchorIdForEvent,
+          requestIds: createdRequests
+            .map((row) => String(row?.requestId || "").trim())
+            .filter(Boolean),
+          requestMongoIds: createdRequests
+            .map((row) => String(row?._id || "").trim())
+            .filter(Boolean),
+          count: createdRequests.length,
+        });
+      }
 
       const designQueueCreated = createdRequests.filter(
         (row) =>
