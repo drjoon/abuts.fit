@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-08-19: 출고 목표=치과도착−2영업일. 지정 도착일 1영업일 전 배송이 목표.
 // - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
 // - 2026-08-17: PTX CA Request에 shippingReceiver(치과 수취인) 스냅샷·practiceBusinessAnchorId 저장.
 // - 2026-08-17: PTX CA 제조 모드는 2·3영업일 포함 항상 묶음. 타이트 납기는 지연고지·도착−1 스케줄.
@@ -326,12 +327,13 @@ const ymdToUtcNoonMs = (ymd) => {
 
 /**
  * PTX CA 치과 직납 배송 lead(영업일).
- * 제조사 출고 목표 = 치과도착일 − 이 값 (기공소 경유 시절 −3 → −2 → −1).
+ * 제조사 출고 목표 = 치과도착일 − 이 값 (기공소 경유 시절 −3 → −2).
+ * 지정 도착일 1영업일 전 배송이 목표.
  */
-export const PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 1;
+export const PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
 
 /**
- * 제조사 출고 목표 = 치과도착일 − 1영업일 (치과 직납).
+ * 제조사 출고 목표 = 치과도착일 − 2영업일 (치과 직납).
  */
 export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
   let ymd = String(arrivalYmd || "").trim();
@@ -417,7 +419,7 @@ const PTX_SHIP_SCHEDULE_PRODUCT_MODE = "custom_abutment";
 /**
  * PTX CA 출고모드(제조사 주문 shippingMode).
  * 2·3영업일 신속처리 포함 항상 묶음배송(normal).
- * 출고 스케줄도 묶음 규칙(주간 묶음일·도착−1 clamp).
+ * 출고 스케줄도 묶음 규칙(주간 묶음일·도착−2 clamp).
  */
 export async function resolveShippingModeForPracticeTransferArrival({
   transferDoc,
@@ -586,7 +588,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // 항상 도착−1 출고 목표(묶음).
+  // 항상 도착−2 출고 목표(묶음). 지정 도착일 1영업일 전 배송.
   const targetShipYmd = arrivalYmd
     ? await resolveManufacturerTargetShipYmd(arrivalYmd)
     : null;
@@ -1533,7 +1535,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   }
 
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // 항상 도착−1 출고 목표(묶음).
+  // 항상 도착−2 출고 목표(묶음). 지정 도착일 1영업일 전 배송.
   const targetShipYmd = arrivalYmd
     ? await resolveManufacturerTargetShipYmd(arrivalYmd)
     : null;

@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/features/platform/PlatformBenefitsDialog.tsx
 // - web/frontend/src/features/lab/LabPlatformBenefitsBanner.tsx
+// - 2026-08-19: 치과 가입이유 — 출고=도착−2영업일, 지정 도착일 1영업일 전 배송 목표.
 // - 2026-08-16: 기공소 가입이유 커스텀어벗 문구는 직납 안내 없이 유지.
 // - 2026-08-16: 커스텀어벗 생산 후 치과 직납 안내(치과 가입이유).
 // - 2026-08-12: 기공소·치과 가입 이유 모달 SSOT.
@@ -140,7 +141,7 @@ const PRACTICE_BENEFITS: PlatformBenefitsConfig = {
       title: "직접 커스텀 어벗 디자인하세요?",
       points: [
         "디자인하신 어벗 STL 파일을 올려주시면 고품질의 CNC 어벗을 생산해드립니다.",
-        "생산 후 치과로 바로 납품합니다(출고 목표=치과도착일 1영업일 전).",
+        "생산 후 치과로 바로 납품합니다(출고=치과도착일 2영업일 전, 지정 도착일 1영업일 전 배송 목표).",
         "3D 모델·의뢰서 이동과 관리를 플랫폼에서 원스톱으로 처리합니다.",
       ],
     },

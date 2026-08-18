@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
 // - web/frontend/src/shared/components/practice/PracticeWorkPeriodText.tsx
 // - web/frontend/src/shared/components/practice/PracticeRushConfirmDialog.tsx
+// - 2026-08-19: 출고=도착−2영업일. 지정 도착일 1영업일 전 배송 목표.
 // - 2026-08-17: N+2 의미 툴팁 — 치과 배송·출고=치과도착일, 줄바꿈.
 // - 2026-08-17: 제조 모드 항상 묶음. 2·3영업일은 지연고지(빨간 툴팁)만. 출고=도착−1. 할증 없음.
 // - 2026-08-17: ≤3영업일 → 제조 express+지연고지. 출고 스케줄은 항상 묶음(도착−1 clamp).
@@ -27,9 +28,9 @@ export const PRACTICE_SHIPPING_BUSINESS_DAYS = 2;
 
 /**
  * 커스텀어벗 제조 출고 목표 = 치과도착일 − 이 값(영업일).
- * 배송 lead(2)와 별도: 출고는 도착 1영업일 전.
+ * 배송 lead(2)와 별도: 출고는 도착 2영업일 전 → 지정 도착일 1영업일 전 배송 목표.
  */
-export const PRACTICE_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 1;
+export const PRACTICE_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
 
 /** 일반 의뢰 최소 작업+배송 합계(영업일) = 2+2. */
 export const PRACTICE_WORK_PERIOD_MIN_DAYS = 4;
@@ -72,7 +73,7 @@ export const PRACTICE_RUSH_CONFIRM_DETAILS = [
   {
     label: "어벗",
     value: [
-      "2·3영업일: 제조는 묶음배송. 출고는 도착 1영업일 전 규칙으로 진행하며 지연될 수 있습니다.",
+      "2·3영업일: 제조는 묶음배송. 출고는 도착 2영업일 전 규칙으로 진행하며 지연될 수 있습니다.",
     ],
   },
   { label: "보철", value: "선택 납기까지 도착 목표" },
@@ -104,7 +105,7 @@ export function formatPracticeWorkPlusShipMeaningTooltip(
 ): string {
   const workDays = getPracticeWorkOnlyBusinessDays(totalBusinessDays);
   const shipNote =
-    "커스텀어벗은 치과로 배송되며, 출고 목표는 치과도착일입니다.";
+    "커스텀어벗은 치과로 직납되며, 출고는 도착 2영업일 전(지정 도착일 1영업일 전 배송 목표)입니다.";
   const lead =
     workDays == null
       ? `${PRACTICE_SHIPPING_BUSINESS_DAYS}일은 배송시간입니다.`
@@ -117,7 +118,7 @@ export function formatPracticeWorkPlusShipMeaningTooltip(
  */
 export function formatPracticeTightRushPeriodTooltip(): string {
   return [
-    "2·3영업일 납기입니다. 제조는 묶음배송으로 넘기며, 출고는 치과도착 1영업일 전 규칙으로 진행합니다.",
+    "2·3영업일 납기입니다. 제조는 묶음배송으로 넘기며, 출고는 치과도착 2영업일 전 규칙으로 진행합니다.",
     "목표 일정에 늦을 수 있습니다.",
     PRACTICE_WORK_PERIOD_RECOMMEND_NOTE,
     PRACTICE_RUSH_COURIER_DISCLAIMER,

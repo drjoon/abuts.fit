@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/services/practiceTransferProduction.service.js
+// - 2026-08-19: 출고 목표=치과도착−2영업일.
 import {
   ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
   ORAL_SCAN_REQUIRED_FROM_LAB,
@@ -17,8 +18,8 @@ import {
 } from "../../services/practiceTransferProduction.service.js";
 
 describe("practiceTransferProduction Abuts-first helpers", () => {
-  test("PTX CA ship offset is dental-direct (arrival − 1 business day)", () => {
-    expect(PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(1);
+  test("PTX CA ship offset is dental-direct (arrival − 2 business days)", () => {
+    expect(PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(2);
   });
 
   test("resolveShippingModeForPracticeTransferArrival: always 묶음 including ≤3 rush", async () => {
@@ -64,10 +65,10 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
     expect(mode).toBe("normal");
   });
 
-  test("resolveManufacturerTargetShipYmd subtracts 1 business day", async () => {
-    // 2026-08-21(금) → 20(목)
+  test("resolveManufacturerTargetShipYmd subtracts 2 business days", async () => {
+    // 2026-08-21(금) → 19(수)
     expect(await resolveManufacturerTargetShipYmd("2026-08-21")).toBe(
-      "2026-08-20",
+      "2026-08-19",
     );
     expect(await resolveManufacturerTargetShipYmd("bad")).toBeNull();
     expect(await resolveManufacturerTargetShipYmd("")).toBeNull();
