@@ -41,6 +41,10 @@ export const ABUTS_PINNED_LAB_SEED: SearchBusinessResult = {
   requestorKind: "lab",
 };
 
+export const isPinnedAbutsRecentLab = (
+  lab?: { name?: string | null } | null,
+) => String(lab?.name || "").trim() === ABUTS_PINNED_LAB_NAME;
+
 /** 경로 B: 어벗츠기공소 원청 + 인증 기공소 공개 풀 */
 export const isAbutsPrimePoolLab = (
   lab?: { _id?: string | null; name?: string | null } | null,
