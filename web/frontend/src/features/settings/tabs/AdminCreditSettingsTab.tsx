@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 카드 제목 커스텀어벗→치과 공급 어벗, 특별 공급가→기공소 공급 어벗.
 // - 2026-08-18: 금액 입력 스피너 숨김·원 접미사 여백 확보(숫자 잘림 방지).
 // - 2026-08-18: 분배 비율 스피너 5% 단위.
 // - 2026-08-18: 분배 비율 라벨 — 영업자 포함(소개코드 있음)/비포함(없음).
@@ -1631,8 +1632,8 @@ export const AdminCreditSettingsTab = ({
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
                   icon={Package}
-                  title="커스텀어벗"
-                  description="특별 공급가가 없으면 이 금액이 적용됩니다."
+                  title="치과 공급 어벗"
+                  description="기공소 공급 어벗이 없으면 이 금액이 적용됩니다."
                 />
 
                 <div className="space-y-3">
@@ -1809,7 +1810,7 @@ export const AdminCreditSettingsTab = ({
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
                   icon={Search}
-                  title="특별 공급가"
+                  title="기공소 공급 어벗"
                   description="의뢰자를 검색해 추가한 뒤 CNC·환봉 매출을 입력하세요."
                   trailing={
                     <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
@@ -1869,7 +1870,7 @@ export const AdminCreditSettingsTab = ({
                               size="icon"
                               className="h-9 w-9 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                               disabled={loading}
-                              aria-label={`${requestor?.name || "의뢰자"} 특별 공급가 삭제`}
+                              aria-label={`${requestor?.name || "의뢰자"} 기공소 공급 어벗 삭제`}
                               onClick={() => {
                                 applySettingsUpdate((prev) => ({
                                   ...prev,
