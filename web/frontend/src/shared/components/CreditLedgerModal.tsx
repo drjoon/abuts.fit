@@ -825,6 +825,8 @@ const resolveAbutmentDesignPayoutStatus = (
   if (holdCount > 0) return "partial";
   return "settled";
 };
+
+const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
   label: String(item.displayLabel || "").trim() || typeLabel(item.type),
   amount: Number(item.amount || 0),
   spentPaidAmount: Number(item.spentPaidAmount || 0),
