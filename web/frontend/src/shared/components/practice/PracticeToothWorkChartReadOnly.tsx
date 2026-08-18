@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
+// - 2026-08-18: full 치식 카드 min-w·브리지 슬롯 축소로 라벨이 잘리지 않게.
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ import type {
 
 const TOOTH_CHART_VISIBLE = 6;
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
+const TOOTH_SLOT_CLASS = "min-w-[3.5rem] flex-1";
 
 const TOOTH_CHART_ROWS: ReadonlyArray<{
   key: string;
@@ -225,7 +227,7 @@ export const PracticeToothWorkChartReadOnly = ({
 
             const bridgeSlot = showBridgeConnector ? (
               <div
-                className="relative z-20 flex w-3.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
+                className="relative z-20 flex w-1.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
               >
                 <span
                   aria-hidden
@@ -245,10 +247,10 @@ export const PracticeToothWorkChartReadOnly = ({
             if (!row) {
               return (
                 <div key={`ro-tooth-slot-${toothNumber}`} className="contents">
-                  <div className="min-w-0 flex-1">
+                  <div className={TOOTH_SLOT_CLASS}>
                     <div
                       className={cn(
-                        "flex w-full flex-col items-center justify-start rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 px-1 pt-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]",
+                        "flex w-full flex-col items-center justify-start rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 px-0.5 pt-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]",
                         TOOTH_CARD_HEIGHT_CLASS,
                       )}
                     >
@@ -274,7 +276,7 @@ export const PracticeToothWorkChartReadOnly = ({
 
             return (
               <div key={`ro-tooth-slot-${toothNumber}`} className="contents">
-                <div className="relative min-w-0 flex-1">
+                <div className={cn("relative", TOOTH_SLOT_CLASS)}>
                   {linkedChartNext && !showBridgeConnector ? (
                     <span
                       aria-hidden
@@ -290,7 +292,7 @@ export const PracticeToothWorkChartReadOnly = ({
 
                   <div
                     className={cn(
-                      "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-1 pb-1 pt-1.5 shadow-sm",
+                      "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-0.5 pb-1 pt-1.5 shadow-sm",
                       TOOTH_CARD_HEIGHT_CLASS,
                       isMissingTooth
                         ? isLinked
