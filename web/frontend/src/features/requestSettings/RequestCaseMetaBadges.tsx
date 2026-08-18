@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
+// - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
 // - 2026-08-16: secondary 배경이 카드에서 안 보여 muted+border 필로 명시(가시성).

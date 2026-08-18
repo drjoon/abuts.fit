@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/shipping/shippingMode.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 import { Badge } from "@/components/ui/badge";
 import {

@@ -1,9 +1,14 @@
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
+// - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
+// - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-19: 모달 가로폭을 뷰포트 여백 기준(min 92vw, 최대 1440)으로 맞춤.
+// - 2026-08-19: 모달 가로 확장·기간 캘린더 입력 제거·검색을 기간필터 오른쪽·신속/묶음·디자인SW·아노 뱃지.
 // - 2026-08-19: 기본 제목 완료 내역(구 지난 의뢰).
 // - 2026-08-19: 취소 확인은 즉시 닫고 목록 행을 낙관적으로 제거.
 // - 2026-08-19: 진행중인 의뢰 목록에서 준비 단계 취소.
@@ -35,8 +40,12 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { periodToRange } from "@/store/usePeriodStore";
+import { toKstYmd } from "@/shared/date/kst";
 import { formatImplantDisplay } from "@/utils/implant";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
 
 type ApiMyRequestsResponse = {
   success: boolean;
@@ -86,31 +95,19 @@ const formatDate = (iso?: string) => {
   });
 };
 
-const pickRangeByPeriod = (period: PeriodFilterValue) => {
-  const now = new Date();
-  const end = new Date(now);
-  const start = new Date(now);
-
-  if (period === "30d") start.setDate(start.getDate() - 30);
-  else if (period === "90d") start.setDate(start.getDate() - 90);
-  else if (period === "thisMonth") {
-    start.setDate(1);
-  } else if (period === "lastMonth") {
-    start.setMonth(start.getMonth() - 1);
-    start.setDate(1);
-    end.setDate(0);
-  } else {
-    return { start: "", end: "" };
-  }
-
-  const toYmd = (d: Date) => {
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
+const ymdRangeForPeriod = (
+  period: PeriodFilterValue,
+  customStart = "",
+  customEnd = "",
+) => {
+  const range = periodToRange(period, {
+    customStartDate: customStart,
+    customEndDate: customEnd,
+  });
+  return {
+    start: toKstYmd(range.startDate) || "",
+    end: toKstYmd(range.endDate) || "",
   };
-
-  return { start: toYmd(start), end: toYmd(end) };
 };
 
 export const PastRequestsModal = ({
@@ -145,8 +142,8 @@ export const PastRequestsModal = ({
     initialPeriod || "30d",
   );
   const [q, setQ] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<any[]>([]);
@@ -160,11 +157,16 @@ export const PastRequestsModal = ({
 
   const effectiveManufacturerStageIn = initialManufacturerStageIn;
 
+  const { start: from, end: to } = useMemo(
+    () => ymdRangeForPeriod(period, customStartDate, customEndDate),
+    [period, customStartDate, customEndDate],
+  );
+
   const resetFilters = () => {
     setPeriod("30d");
     setQ("");
-    setFrom("");
-    setTo("");
+    setCustomStartDate("");
+    setCustomEndDate("");
   };
 
   const buildPath = (pageNum: number) => {
@@ -213,30 +215,11 @@ export const PastRequestsModal = ({
 
   useEffect(() => {
     if (!open) return;
-    if (initialPeriod) {
-      setPeriod(initialPeriod);
-      const range = pickRangeByPeriod(initialPeriod);
-      setFrom(range.start);
-      setTo(range.end);
-      return;
-    }
-    const range = pickRangeByPeriod(period);
-    if (!from && !to && (range.start || range.end)) {
-      setFrom(range.start);
-      setTo(range.end);
-    }
+    if (initialPeriod) setPeriod(initialPeriod);
+    setCustomStartDate("");
+    setCustomEndDate("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (period && !from && !to) {
-      const range = pickRangeByPeriod(period);
-      setFrom(range.start);
-      setTo(range.end);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period]);
 
   useEffect(() => {
     if (!open) return;
@@ -289,7 +272,7 @@ export const PastRequestsModal = ({
     });
   }, [items, q]);
 
-  const colSpan = allowCancel ? 6 : 5;
+  const colSpan = allowCancel ? 7 : 6;
   const dismissLocked = Boolean(suspend || cancelTarget);
 
   useEffect(() => {
@@ -335,7 +318,7 @@ export const PastRequestsModal = ({
       }}
     >
       <DialogContent
-        className={`flex h-[min(85vh,800px)] w-[92vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl${
+        className={`flex h-[min(85vh,800px)] w-[min(92vw,calc(100vw-4rem))] max-w-[min(92vw,1440px)] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl${
           suspend ? " hidden" : ""
         }`}
         onPointerDownOutside={(e) => {
@@ -363,9 +346,23 @@ export const PastRequestsModal = ({
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-5">
           <div className="rounded-xl bg-slate-50 px-3.5 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2">
               <div className="flex flex-wrap items-center gap-2 py-0.5">
-                <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
+                <PeriodFilter
+                  value={period}
+                  onChange={setPeriod}
+                  useStoreCustomRange={false}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomRangeChange={({ startDate, endDate }) => {
+                    setCustomStartDate(startDate);
+                    setCustomEndDate(endDate);
+                  }}
+                  onClearCustomRange={() => {
+                    setCustomStartDate("");
+                    setCustomEndDate("");
+                  }}
+                />
 
                 <Button
                   type="button"
@@ -377,27 +374,11 @@ export const PastRequestsModal = ({
                   초기화
                 </Button>
               </div>
-            </div>
-
-            <div className="mt-2 flex flex-wrap items-center gap-2 py-0.5">
-              <Input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="h-9 w-[150px] rounded-lg bg-white"
-              />
-              <span className="text-xs text-slate-400">~</span>
-              <Input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="h-9 w-[150px] rounded-lg bg-white"
-              />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="검색 (의뢰번호/치과/환자/임플란트)"
-                className="h-9 w-full rounded-lg bg-white sm:w-[320px]"
+                className="h-9 min-w-[220px] flex-1 rounded-lg bg-white sm:ml-auto sm:max-w-[360px] sm:flex-none sm:w-[320px]"
               />
             </div>
           </div>
@@ -411,6 +392,7 @@ export const PastRequestsModal = ({
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-[170px]">일시</TableHead>
                   <TableHead className="w-[90px]">상태</TableHead>
+                  <TableHead className="w-[88px]">출고</TableHead>
                   <TableHead className="min-w-[220px]">케이스</TableHead>
                   <TableHead className="min-w-[220px]">임플란트</TableHead>
                   <TableHead className="w-[160px]">의뢰번호</TableHead>
@@ -443,7 +425,22 @@ export const PastRequestsModal = ({
                       <TableCell className="text-xs font-medium text-slate-900">
                         {stage}
                       </TableCell>
-                      <TableCell className="text-xs text-slate-700">{caseText}</TableCell>
+                      <TableCell>
+                        <ShippingModeBadge source={r} size="sm" />
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-700">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{caseText}</span>
+                          <RequestCaseMetaBadges
+                            designSoftware={ci?.designSoftware}
+                            anodizingEnabled={
+                              typeof ci?.anodizingEnabled === "boolean"
+                                ? ci.anodizingEnabled
+                                : null
+                            }
+                          />
+                        </div>
+                      </TableCell>
                       <TableCell className="text-xs text-slate-700">{implantText}</TableCell>
                       <TableCell className="font-mono text-xs text-slate-800">
                         {requestId}
