@@ -47,7 +47,7 @@ import {
   promoteAbutmentDesignFeeToPracticeTransfer,
   resolveFreeCreditGrantIdFromLedgerItem,
 } from "../credits/creditLedger.utils.js";
-import { healMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
+import { scheduleHealMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
 import {
   getLast30DaysRangeUtc,
   getTodayMidnightUtcInKst,
@@ -562,7 +562,7 @@ export async function adminGetBusinessLedger(req, res) {
     );
 
     try {
-      await healMissingExpressSurchargesForBusiness({
+      scheduleHealMissingExpressSurchargesForBusiness({
         businessAnchorId,
         actorUserId: req.user?._id || null,
         limit: 30,

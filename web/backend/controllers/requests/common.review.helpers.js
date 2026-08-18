@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-08-19: 원장 GET에서 신속비 보정을 백그라운드·쿨다운으로 분리.
 // - 2026-08-19: 준비 단계 취소는 uniqueKeysOnly 소비 조회로 레거시 풀스캔을 생략.
 // - 2026-08-18: 기공의뢰 CA 생산 견적은 치과 공급 단가(기공소 공급 단가 제외).
 // - 2026-08-17: 의뢰·배송 크레딧 보류(제출)→에스크로→CAM/집하 매출 전환.
@@ -1464,6 +1465,28 @@ export async function healMissingExpressSurchargesForBusiness({
   });
 
   return { healed, checked: (candidates || []).length };
+}
+
+const EXPRESS_SURCHARGE_HEAL_COOLDOWN_MS = 60 * 1000;
+const lastExpressSurchargeHealAtByAnchor = new Map();
+
+/**
+ * 원장 GET을 막지 않는다. 보정은 백그라운드·앵커당 쿨다운.
+ * 실제 차감이 생기면 credit:balance-updated로 목록이 다시 로드된다.
+ */
+export function scheduleHealMissingExpressSurchargesForBusiness(args) {
+  const key = String(args?.businessAnchorId || "").trim();
+  if (!key) return;
+  const now = Date.now();
+  const last = lastExpressSurchargeHealAtByAnchor.get(key) || 0;
+  if (now - last < EXPRESS_SURCHARGE_HEAL_COOLDOWN_MS) return;
+  lastExpressSurchargeHealAtByAnchor.set(key, now);
+  void healMissingExpressSurchargesForBusiness(args).catch((err) => {
+    console.error("[CREDIT_SPEND] scheduled heal failed", {
+      businessAnchorId: key,
+      message: err?.message || String(err || ""),
+    });
+  });
 }
 
 async function requestorCommitSpendLineExists({

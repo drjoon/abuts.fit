@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 원장 GET에서 신속비 보정을 기다리지 않음. 잔액·집계 병렬, enrich 병렬.
 // - 2026-08-19: 어벗디자인 원장 — 수신자/박스 묶음용 mailbox·shippingPackage 메타.
 // - 2026-08-19: 기공의뢰 견적 열 — 보철기공비|어벗 디자인+생산비(둘 다 기공비). 원청/하청 수수료 분기.
 // - 2026-08-17: PTX 디자인비(+지그)를 기공의뢰 행으로 승격(보철기공비와 동일 의뢰건).
@@ -27,7 +28,7 @@ import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
-import { healMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
+import { scheduleHealMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
   attachCreditLedgerRequestFields,
@@ -171,29 +172,12 @@ export async function listMyCreditLedger(req, res) {
   const page = Math.max(1, Number(req.query.page || 1) || 1);
   const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize || 50) || 50));
 
-  // 신속배송 추가비 누락 보정: 가공 진입 후 express_surcharge 미차감 건을 보완한다.
-  try {
-    await healMissingExpressSurchargesForBusiness({
-      businessAnchorId: anchorObjectId,
-      actorUserId: req.user?._id || null,
-      limit: 30,
-    });
-  } catch (healErr) {
-    console.error("[CREDIT_LEDGER] healMissingExpressSurcharges failed", {
-      businessAnchorId: String(anchorObjectId),
-      message: healErr?.message || String(healErr || ""),
-    });
-  }
-
-  const [balanceSnapshot, requestorKind] = await Promise.all([
-    getBusinessCreditBalanceSnapshot({
-      businessAnchorId: anchorObjectId,
-      upsertIfMissing: true,
-    }),
-    resolveRequestorKindForAnchor(anchorObjectId, req.user?.requestorKind),
-  ]);
-  const currentBalance = Number(balanceSnapshot?.balance || 0);
-  const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
+  // 신속비 누락 보정은 읽기 경로를 막지 않는다. 실제 차감 시 소켓으로 목록 재조회.
+  scheduleHealMissingExpressSurchargesForBusiness({
+    businessAnchorId: anchorObjectId,
+    actorUserId: req.user?._id || null,
+    limit: 30,
+  });
 
   const occurredAt = {};
   const sinceFromPeriod = parsePeriod(periodRaw);
@@ -239,6 +223,19 @@ export async function listMyCreditLedger(req, res) {
 
   const pipeline = [
     { $match: match },
+    {
+      $project: {
+        journalId: 1,
+        occurredAt: 1,
+        createdAt: 1,
+        accountCode: 1,
+        amount: 1,
+        amountExcludingVat: 1,
+        refType: 1,
+        refId: 1,
+        meta: 1,
+      },
+    },
     {
       $lookup: {
         from: LedgerJournal.collection.name,
@@ -531,7 +528,17 @@ export async function listMyCreditLedger(req, res) {
 
   pipeline.push({ $sort: { occurredAt: -1, _id: -1 } });
 
-  const allRowsRaw = await LedgerLine.aggregate(pipeline);
+  const [balanceSnapshot, requestorKind, allRowsRaw] = await Promise.all([
+    getBusinessCreditBalanceSnapshot({
+      businessAnchorId: anchorObjectId,
+      upsertIfMissing: true,
+    }),
+    resolveRequestorKindForAnchor(anchorObjectId, req.user?.requestorKind),
+    LedgerLine.aggregate(pipeline),
+  ]);
+  const currentBalance = Number(balanceSnapshot?.balance || 0);
+  const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
+
   const allRows = mergeRequestExpressSurchargeIntoMachiningSpend(allRowsRaw);
   const total = Array.isArray(allRows) ? allRows.length : 0;
   const startIdx = (page - 1) * pageSize;
@@ -600,180 +607,161 @@ export async function listMyCreditLedger(req, res) {
     ),
   );
 
+  const toObjectIds = (ids) =>
+    ids.map((id) => new mongoose.Types.ObjectId(id));
+
+  const [requestDocs, packageDocs, transferDocs, grants] = await Promise.all([
+    requestRefIds.length
+      ? Request.find({ _id: { $in: toObjectIds(requestRefIds) } })
+          .select(CREDIT_LEDGER_REQUEST_SELECT)
+          .lean()
+      : Promise.resolve([]),
+    shippingPackageRefIds.length
+      ? ShippingPackage.find({
+          _id: { $in: toObjectIds(shippingPackageRefIds) },
+        })
+          .select({ _id: 1, requestIds: 1, mailboxAddress: 1 })
+          .lean()
+      : Promise.resolve([]),
+    practiceTransferRefIds.length
+      ? PracticeTransfer.find({
+          _id: { $in: toObjectIds(practiceTransferRefIds) },
+        })
+          .select({
+            _id: 1,
+            transferId: 1,
+            targetLabName: 1,
+            targetLabAnchorId: 1,
+            assigneeLabAnchorId: 1,
+            practiceBusinessAnchorId: 1,
+            matchingMode: 1,
+            transferMemo: 1,
+            files: 1,
+            toothWorks: 1,
+            billing: 1,
+            "production.skipJig": 1,
+            "production.rushProcessing": 1,
+            autoMatch: 1,
+          })
+          .lean()
+      : Promise.resolve([]),
+    freeCreditGrantIds.length
+      ? FreeCreditGrant.find({ _id: { $in: toObjectIds(freeCreditGrantIds) } })
+          .select({ _id: 1, type: 1, source: 1, overrideReason: 1 })
+          .lean()
+      : Promise.resolve([]),
+  ]);
+
   const refRequestIdById = new Map();
   const refRequestSummaryById = new Map();
-  if (requestRefIds.length > 0) {
-    const requestDocs = await Request.find({
-      _id: { $in: requestRefIds.map((id) => new mongoose.Types.ObjectId(id)) },
-    })
-      .select(CREDIT_LEDGER_REQUEST_SELECT)
-      .lean();
+  for (const doc of requestDocs || []) {
+    if (!doc?._id) continue;
+    refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
+    refRequestSummaryById.set(String(doc._id), buildRequestSummary(doc));
+  }
 
-    for (const doc of requestDocs || []) {
-      if (doc?._id) {
-        refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
-        refRequestSummaryById.set(String(doc._id), buildRequestSummary(doc));
-      }
+  const requestIdSet = new Set();
+  for (const pkg of packageDocs || []) {
+    for (const requestId of pkg?.requestIds || []) {
+      if (requestId) requestIdSet.add(String(requestId));
+    }
+  }
+  const missingRequestIds = [...requestIdSet].filter(
+    (id) =>
+      !refRequestSummaryById.has(id) && mongoose.Types.ObjectId.isValid(id),
+  );
+
+  const [extraDocs, deliveryInfos, quotesById] = await Promise.all([
+    missingRequestIds.length
+      ? Request.find({ _id: { $in: toObjectIds(missingRequestIds) } })
+          .select(CREDIT_LEDGER_REQUEST_SELECT)
+          .lean()
+      : Promise.resolve([]),
+    requestIdSet.size
+      ? DeliveryInfo.find({
+          request: { $in: toObjectIds(Array.from(requestIdSet)) },
+        })
+          .select({ request: 1, trackingNumber: 1 })
+          .lean()
+      : Promise.resolve([]),
+    (transferDocs || []).length
+      ? buildFeeQuotesForTransferDocs({
+          docs: transferDocs,
+          viewingLabAnchorId:
+            String(requestorKind || "").trim() === "lab"
+              ? String(anchorObjectId)
+              : null,
+        })
+      : Promise.resolve(new Map()),
+  ]);
+
+  for (const doc of extraDocs || []) {
+    if (!doc?._id) continue;
+    refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
+    refRequestSummaryById.set(String(doc._id), buildRequestSummary(doc));
+  }
+
+  const deliveryInfoByRequestId = new Map();
+  for (const delivery of deliveryInfos || []) {
+    if (delivery?.request) {
+      deliveryInfoByRequestId.set(
+        String(delivery.request),
+        String(delivery.trackingNumber || ""),
+      );
     }
   }
 
-  const shippingPackageMetaById = new Map();
-  if (shippingPackageRefIds.length > 0) {
-    const packageDocs = await ShippingPackage.find({
-      _id: {
-        $in: shippingPackageRefIds.map((id) => new mongoose.Types.ObjectId(id)),
-      },
-    })
-      .select({ _id: 1, requestIds: 1, mailboxAddress: 1 })
-      .lean();
-
-    const requestIdSet = new Set();
-    for (const pkg of packageDocs || []) {
-      for (const requestId of pkg?.requestIds || []) {
-        if (requestId) requestIdSet.add(String(requestId));
-      }
-    }
-
-    const missingRequestIds = [...requestIdSet].filter(
-      (id) =>
-        !refRequestSummaryById.has(id) && mongoose.Types.ObjectId.isValid(id),
-    );
-    if (missingRequestIds.length > 0) {
-      const extraDocs = await Request.find({
-        _id: {
-          $in: missingRequestIds.map((id) => new mongoose.Types.ObjectId(id)),
-        },
-      })
-        .select(CREDIT_LEDGER_REQUEST_SELECT)
-        .lean();
-      for (const doc of extraDocs || []) {
-        if (!doc?._id) continue;
-        refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
-        refRequestSummaryById.set(String(doc._id), buildRequestSummary(doc));
-      }
-    }
-
-    const deliveryInfoByRequestId = new Map();
-    if (requestIdSet.size > 0) {
-      const deliveryInfos = await DeliveryInfo.find({
-        request: {
-          $in: Array.from(requestIdSet).map((id) => new mongoose.Types.ObjectId(id)),
-        },
-      })
-        .select({ request: 1, trackingNumber: 1 })
-        .lean();
-
-      for (const delivery of deliveryInfos || []) {
-        if (delivery?.request) {
-          deliveryInfoByRequestId.set(
-            String(delivery.request),
-            String(delivery.trackingNumber || ""),
-          );
-        }
-      }
-    }
-
-    const packageMeta = buildCreditLedgerShippingPackageMeta({
-      packageDocs,
-      deliveryInfoByRequestId,
-      requestSummaryById: refRequestSummaryById,
-    });
-    for (const [id, meta] of packageMeta.entries()) {
-      shippingPackageMetaById.set(id, meta);
-    }
-  }
+  const shippingPackageMetaById = buildCreditLedgerShippingPackageMeta({
+    packageDocs,
+    deliveryInfoByRequestId,
+    requestSummaryById: refRequestSummaryById,
+  });
 
   const practiceTransferIdById = new Map();
   const practiceTransferMetaById = new Map();
-  if (practiceTransferRefIds.length > 0) {
-    const transferDocs = await PracticeTransfer.find({
-      _id: {
-        $in: practiceTransferRefIds.map((id) => new mongoose.Types.ObjectId(id)),
-      },
-    })
-      .select({
-        _id: 1,
-        transferId: 1,
-        targetLabName: 1,
-        targetLabAnchorId: 1,
-        assigneeLabAnchorId: 1,
-        practiceBusinessAnchorId: 1,
-        matchingMode: 1,
-        transferMemo: 1,
-        files: 1,
-        toothWorks: 1,
-        billing: 1,
-        "production.skipJig": 1,
-        "production.rushProcessing": 1,
-        autoMatch: 1,
-      })
-      .lean();
-
-    const quotesById = await buildFeeQuotesForTransferDocs({
-      docs: transferDocs,
-      viewingLabAnchorId:
-        String(requestorKind || "").trim() === "lab"
-          ? String(anchorObjectId)
-          : null,
+  for (const doc of transferDocs || []) {
+    if (!doc?._id) continue;
+    const id = String(doc._id);
+    const memo = String(doc.transferMemo || "");
+    const memoPatient = String(
+      memo.match(/\[\s*환자명\s*:\s*([^\]]*)\]/)?.[1] || "",
+    ).trim();
+    const filePatient = String(
+      (Array.isArray(doc.files) ? doc.files : [])
+        .map((f) => String(f?.patientName || "").trim())
+        .find(Boolean) || "",
+    ).trim();
+    const heldAt = doc?.billing?.heldAt || null;
+    const settledAt = doc?.billing?.settledAt || null;
+    const labSettledAt = doc?.billing?.labSettledAt || null;
+    const abutmentSettledAt = doc?.billing?.abutmentSettledAt || null;
+    const fullySettled = Boolean(settledAt);
+    const skipJigRaw = doc?.production?.skipJig;
+    practiceTransferIdById.set(id, String(doc.transferId || ""));
+    practiceTransferMetaById.set(id, {
+      patientName: memoPatient || filePatient,
+      labName: String(doc.targetLabName || "").trim(),
+      transferMemo: memo,
+      practiceTransferPending: Boolean(heldAt) && !fullySettled,
+      practiceTransferLabPending:
+        Boolean(heldAt) && !fullySettled && !labSettledAt,
+      practiceTransferAbutmentPending:
+        Boolean(heldAt) && !fullySettled && !abutmentSettledAt,
+      feeQuote: quotesById.get(id) || null,
+      skipJig: !(
+        skipJigRaw === false ||
+        skipJigRaw === "false" ||
+        skipJigRaw === 0 ||
+        skipJigRaw === "0"
+      ),
+      rushProcessing: Boolean(doc?.production?.rushProcessing),
     });
-
-    for (const doc of transferDocs || []) {
-      if (!doc?._id) continue;
-      const id = String(doc._id);
-      const memo = String(doc.transferMemo || "");
-      const memoPatient = String(
-        memo.match(/\[\s*환자명\s*:\s*([^\]]*)\]/)?.[1] || "",
-      ).trim();
-      const filePatient = String(
-        (Array.isArray(doc.files) ? doc.files : [])
-          .map((f) => String(f?.patientName || "").trim())
-          .find(Boolean) || "",
-      ).trim();
-      const heldAt = doc?.billing?.heldAt || null;
-      const settledAt = doc?.billing?.settledAt || null;
-      const labSettledAt = doc?.billing?.labSettledAt || null;
-      const abutmentSettledAt = doc?.billing?.abutmentSettledAt || null;
-      const fullySettled = Boolean(settledAt);
-      const skipJigRaw = doc?.production?.skipJig;
-      practiceTransferIdById.set(id, String(doc.transferId || ""));
-      practiceTransferMetaById.set(id, {
-        patientName: memoPatient || filePatient,
-        labName: String(doc.targetLabName || "").trim(),
-        transferMemo: memo,
-        practiceTransferPending: Boolean(heldAt) && !fullySettled,
-        practiceTransferLabPending:
-          Boolean(heldAt) && !fullySettled && !labSettledAt,
-        practiceTransferAbutmentPending:
-          Boolean(heldAt) && !fullySettled && !abutmentSettledAt,
-        feeQuote: quotesById.get(id) || null,
-        skipJig: !(
-          skipJigRaw === false ||
-          skipJigRaw === "false" ||
-          skipJigRaw === 0 ||
-          skipJigRaw === "0"
-        ),
-        rushProcessing: Boolean(doc?.production?.rushProcessing),
-      });
-    }
   }
 
   const freeReasonByGrantId = new Map();
-  if (freeCreditGrantIds.length > 0) {
-    const grants = await FreeCreditGrant.find({
-      _id: {
-        $in: freeCreditGrantIds.map((id) => new mongoose.Types.ObjectId(id)),
-      },
-    })
-      .select({ _id: 1, type: 1, source: 1, overrideReason: 1 })
-      .lean();
-
-    for (const grant of grants || []) {
-      if (!grant?._id) continue;
-      freeReasonByGrantId.set(
-        String(grant._id),
-        buildFreeCreditGrantReason(grant),
-      );
-    }
+  for (const grant of grants || []) {
+    if (!grant?._id) continue;
+    freeReasonByGrantId.set(String(grant._id), buildFreeCreditGrantReason(grant));
   }
 
   const enrichedItems = items.map((it) => {

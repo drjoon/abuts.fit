@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 크레딧 페이지 진입 시 사업자 me를 기다리지 않음. 충전 탭은 열 때만 마운트.
 // - 2026-08-14: 기공크레딧(정산) 탭 제거. 내역·충전만. ?tab=settlement → ledger.
 // - 2026-08-14: 내역 탭 UI를 기공크레딧 탭과 동일 최신 스타일로 정리(CreditLedgerModal).
 // - 2026-08-13: 기공소 정산 탭 라벨을 「기공크레딧」으로 통일.
@@ -34,17 +35,15 @@ import {
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import { RequestorCreditsPageSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
 
 type TabKey = "ledger" | "charge";
 
 export default function RequestorCreditsPage() {
   const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { loading: accessLoading } = useRequestorBusinessAccess();
+  const tabFromUrl = (searchParams.get("tab") as TabKey | null) || "ledger";
+  const activeTab: TabKey = tabFromUrl === "charge" ? "charge" : "ledger";
 
-  // Hooks must run unconditionally (before accessLoading early return).
   const tabs = useMemo<SettingsTabDef[]>(
     () => [
       {
@@ -61,29 +60,18 @@ export default function RequestorCreditsPage() {
         key: "charge",
         label: "충전",
         icon: CreditCard,
-        content: (
-          <div className="flex h-full min-h-0 items-center justify-center overflow-auto">
-            <div className="mx-auto w-full max-w-4xl">
-              <PaymentTab userData={user || {}} compact />
+        content:
+          activeTab === "charge" ? (
+            <div className="flex h-full min-h-0 items-center justify-center overflow-auto">
+              <div className="mx-auto w-full max-w-4xl">
+                <PaymentTab userData={user || {}} compact />
+              </div>
             </div>
-          </div>
-        ),
+          ) : null,
       },
     ],
-    [user],
+    [activeTab, user],
   );
-
-  if (accessLoading) {
-    return (
-      <div className="h-full min-h-0">
-        <RequestorCreditsPageSkeleton tabCount={2} />
-      </div>
-    );
-  }
-
-  const tabFromUrl = (searchParams.get("tab") as TabKey | null) || "ledger";
-  const allowed = new Set(tabs.map((t) => t.key));
-  const activeTab = allowed.has(tabFromUrl) ? tabFromUrl : "ledger";
 
   return (
     <div className="h-full min-h-0">

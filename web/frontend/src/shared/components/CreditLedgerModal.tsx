@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-19: 원장 조회가 사업자 me를 기다리지 않음. requestorKind는 auth/스냅샷 사용.
 // - 2026-08-19: 어벗디자인으로 행도 보류/일부 지급/지급 완료 상태를 표시.
 // - 2026-08-19: 의뢰비·배송비 보류를 기공의뢰-어벗디자인으로 묶음. 기존 기공의뢰는 구강스캔으로.
 // - 2026-08-19: 견적 상세 — 보철기공비|어벗 디자인+생산비(둘 다 기공비). 기공소몫/어벗츠몫 헤더 제거.
@@ -37,7 +38,6 @@
 // - 2026-08-04: 의뢰 차감 행에 신속/묶음배송 뱃지 표시. (display-only)
 // - 2026-08-03: Credit ledger detail row의 공정 배지 표시를 normalizeStageLabel 기반으로 정규화(의뢰 -> 준비). (display-only)
 // related files:
-// - web/frontend/rules.md
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
@@ -48,7 +48,6 @@
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts
-// - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
 // - web/backend/controllers/credits/creditLedger.controller.js
 // - web/backend/controllers/credits/creditLedger.utils.js
 // - web/backend/controllers/admin/adminCredit.controller.js
@@ -97,7 +96,6 @@ import {
 } from "@/features/requests/components/RequestDetailDialog";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingMode } from "@/shared/shipping/shippingMode";
-import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { SettlementStatCard } from "@/shared/settlement/settlementUi";
 import {
   Tooltip,
@@ -1190,7 +1188,7 @@ export const CreditLedgerModal = ({
   const navigate = useNavigate();
   const { toast } = useToast();
   const { token, user } = useAuthStore();
-  const { kind: accessKind } = useRequestorBusinessAccess();
+  const accessKind = user?.requestorKind || null;
   const isOpen = embedded ? true : open;
 
   const goCharge = () => {
