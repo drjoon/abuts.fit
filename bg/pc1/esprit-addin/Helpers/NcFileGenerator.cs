@@ -88,6 +88,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             AppLogger.Log($"NcFileGenerator: Serial 각인 코드 적용 - Raw:'{serialCode ?? string.Empty}' => Use:'{serialForNc}'");
             UpdateSerialBlocks(executedNcPath, serialForNc, connectionPrcPath);
             ApplyManufacturerHexRotationToNc(executedNcPath, manufacturerHexRotation);
+            StripBlankNcLines(executedNcPath);
             return executedNcPath;
         }
         private string BuildNcFilePath(string stlPath)
@@ -248,21 +249,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 int firstBodyIndex = -1;
                 for (int i = 0; i < lines.Count; i++)
                 {
-                    string trimmed = (lines[i] ?? string.Empty).Trim();
-                    if (string.IsNullOrWhiteSpace(trimmed))
-                    {
-                        continue;
-                    }
-                    if (trimmed == "%" ||
-                        trimmed == "O4000" ||
-                        trimmed.StartsWith("#520", StringComparison.OrdinalIgnoreCase) ||
-                        trimmed.StartsWith("#521", StringComparison.OrdinalIgnoreCase) ||
-                        trimmed.StartsWith("#522", StringComparison.OrdinalIgnoreCase) ||
-                        trimmed.StartsWith("#523", StringComparison.OrdinalIgnoreCase) ||
-                        (trimmed.StartsWith("(", StringComparison.Ordinal) &&
-                         trimmed.EndsWith(")", StringComparison.Ordinal) &&
-                         (trimmed.IndexOf("STL", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                          trimmed.IndexOf("헥스", StringComparison.OrdinalIgnoreCase) >= 0)))
+                    if (IsSkippablePostHeaderLine(lines[i]))
                     {
                         continue;
                     }
@@ -282,6 +269,70 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             catch (Exception ex)
             {
                 AppLogger.Log($"NcFileGenerator: NC 헤더 수정 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        // ESPRIT 포스트(Acro_dent_XE) 헤더 잔여분:
+        // ( PATH1) / #520= 0 (END POSITION) / #521= 8. (STOCK DIA)
+        // 이 줄들을 본문으로 잡으면 우리가 넣은 #520/#521 뒤에 원본 매크로가 중복된다.
+        private static bool IsSkippablePostHeaderLine(string line)
+        {
+            string trimmed = (line ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                return true;
+            }
+            if (trimmed == "%" ||
+                Regex.IsMatch(trimmed, @"^O\d+\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                return true;
+            }
+            if (trimmed.StartsWith("#520", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("#521", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("#522", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("#523", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            if (!trimmed.StartsWith("(", StringComparison.Ordinal) ||
+                !trimmed.EndsWith(")", StringComparison.Ordinal))
+            {
+                return false;
+            }
+            if (trimmed.IndexOf("STL", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                trimmed.IndexOf("헥스", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+            if (Regex.IsMatch(trimmed, @"^\(\s*PATH\s*\d+\s*\)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                return true;
+            }
+            if (trimmed.IndexOf("END POSITION", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                trimmed.IndexOf("STOCK DIA", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private static void StripBlankNcLines(string ncFilePath)
+        {
+            try
+            {
+                if (!File.Exists(ncFilePath))
+                {
+                    return;
+                }
+                var lines = File.ReadAllLines(ncFilePath)
+                    .Where(line => !string.IsNullOrWhiteSpace(line))
+                    .ToArray();
+                File.WriteAllLines(ncFilePath, lines);
+                AppLogger.Log($"NcFileGenerator: NC 빈 줄 제거 완료 - lines={lines.Length}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"NcFileGenerator: NC 빈 줄 제거 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
 
