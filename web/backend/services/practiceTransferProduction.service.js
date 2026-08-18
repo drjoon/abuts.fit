@@ -27,6 +27,7 @@
 // - 2026-08-15: 작업취소(release) 시 연동 CA Request 취소·디자인 미러 정리. 재수락 시 소유 동기화.
 // - 2026-08-15: PTX CA — 치과 멤버십/일반 생산단가·출고목표·묶음 우선. 디자인비는 기공소 지급 분리.
 // - 2026-08-15: 지정 CA — 스캔 없이 수락 가능. 스캔은 수락 후 업로드 후 Request 생성.
+// - 2026-08-19: 생성 시 구강스캔은 선택(어벗츠기공소/자동매칭·지정 공통).
 // - 2026-08-15: 구강스캔 — 자동매칭은 치과 필수, 지정은 수락 기공소 업로드 허용.
 // - 2026-08-15: Abuts-first — 수락 시 스캔(files)로 Request 생성, 기일 기준 스케줄, 디자인 컨펌 후 생산.
 // - 2026-08-13: 치아별 abutmentProductMode(생산만/디자인+생산)를 어벗츠 의뢰 productMode로 전달.
@@ -103,7 +104,7 @@ const normalizeResultFiles = (raw) => {
     .filter(Boolean);
 };
 
-/** 자동매칭: 치과 전송 시 구강스캔 필수 */
+/** @deprecated 생성 시 구강스캔은 선택. 메시지·코드는 레거시 클라이언트용 */
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
   "자동매칭으로 보낼 때는 구강스캔 파일을 첨부해주세요.";
 
@@ -157,21 +158,9 @@ export function resolveOralScanFilesForAccept({
   return { files: incoming, attachedByLab: true };
 }
 
-/** 자동매칭 생성 시 구강스캔 필수 */
-export function assertOralScanFilesForCreate({
-  matchingMode,
-  toothWorks,
-  files,
-} = {}) {
-  if (String(matchingMode || "").trim() !== "auto") return;
-  const list = normalizeResultFiles(files);
-  if (list.length > 0) return;
-  const err = makeOralScanError(
-    ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
-    "oral_scan_required_for_auto_match",
-  );
-  err.statusCode = 400;
-  throw err;
+/** 생성 시 구강스캔은 선택. 어벗츠기공소(auto)·지정 모두 첨부 없이 전송 가능. */
+export function assertOralScanFilesForCreate() {
+  return;
 }
 
 const parsePatientNameFromMemo = (memo) => {

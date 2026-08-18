@@ -91,6 +91,7 @@
  * - 2026-08-18: 상세 「의뢰 수정」은 좌측 의뢰정보 상단. 목록 카드 메타는 1행 1항목.
  * - 2026-08-18: 기공의뢰 카드 외곽선 제거. 상단 5버튼을 동기화 상태 행으로 이동(Express/Expert).
  * - 2026-08-18: Express 보철물도 Expert와 같이 full 치식(16칸).
+ * - 2026-08-19: 어벗츠기공소도 지정과 같이 첨부 없이 전송 가능.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -291,9 +292,6 @@ import {
   isPracticeWorkPeriodShort,
   shouldEnablePracticeRushProcessing,
 } from "@/shared/practice/practiceWorkPeriod";
-import {
-  ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
-} from "@/shared/practice/oralScanRequirement";
 import {
   PracticeTransferRequestCardMeta,
   resolvePracticeTransferListPatientName,
@@ -4924,12 +4922,9 @@ export const PracticeFileTransferPage = ({
     }
 
     if (missingRequiredFields.length > 0) {
-      const needsOralScan = missingRequiredFields.includes("구강스캔 파일");
       toast({
         title: "필수 입력 항목을 확인해주세요",
-        description: needsOralScan
-          ? ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE
-          : `미입력 항목: ${missingRequiredFields.join(", ")}`,
+        description: `미입력 항목: ${missingRequiredFields.join(", ")}`,
         variant: "destructive",
       });
       return;
@@ -5223,25 +5218,17 @@ export const PracticeFileTransferPage = ({
     if (missingAbutmentPresetTeeth.length > 0) {
       missing.push(`어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`);
     }
-    const attachmentCount = files.length + draftFiles.length;
-    if (isAbutsPrimePoolLab(selectedLab) && attachmentCount === 0) {
-      missing.push("구강스캔 파일");
-    }
     return missing;
   }, [
     selectedLab,
     normalizedPatientName,
     normalizedToothWorks,
     missingAbutmentPresetTeeth,
-    files.length,
-    draftFiles.length,
   ]);
 
   const hasRequiredSubmitFields = missingRequiredFields.length === 0;
 
   const showExpressWizard = isExpressMode && !expressDone;
-
-  const expressOralScanRequired = isAbutsPrimePoolLab(selectedLab);
 
   const expressStepGate = useMemo(() => {
     const hasLab = Boolean(String(selectedLab?._id || "").trim());
@@ -5254,8 +5241,6 @@ export const PracticeFileTransferPage = ({
         row.bridgeLinkedTeeth.length === 0,
     );
     const hasAbutmentPresetIssue = missingAbutmentPresetTeeth.length > 0;
-    const attachmentCount = files.length + draftFiles.length;
-    const hasRequiredFiles = !expressOralScanRequired || attachmentCount > 0;
 
     const byStep: Record<
       PracticeTransferExpressStepId,
@@ -5284,8 +5269,8 @@ export const PracticeFileTransferPage = ({
               : "",
       },
       files: {
-        ok: hasRequiredFiles,
-        reason: "어벗츠기공소 의뢰는 구강스캔 파일이 필요합니다.",
+        ok: true,
+        reason: "",
       },
       confirm: {
         ok: hasRequiredSubmitFields,
@@ -5303,9 +5288,6 @@ export const PracticeFileTransferPage = ({
     arrivalDate,
     normalizedToothWorks,
     missingAbutmentPresetTeeth,
-    files.length,
-    draftFiles.length,
-    expressOralScanRequired,
     hasRequiredSubmitFields,
     missingRequiredFields,
   ]);
@@ -5704,10 +5686,7 @@ export const PracticeFileTransferPage = ({
   const practiceTransferFilePaneProps: PracticeTransferFilePaneProps = {
     acceptedHint: PRACTICE_ACCEPTED_HINT,
                     fileInputId: "practice-file-transfer-input",
-                    requirementNote:
-                      isAbutsPrimePoolLab(selectedLab)
-                        ? "어벗츠기공소 의뢰는 구강스캔 첨부가 필수입니다."
-                        : null,
+                    requirementNote: null,
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
                         file.kind === "local" ? files[file.localIndex] : null;
@@ -6092,7 +6071,7 @@ export const PracticeFileTransferPage = ({
                   }}
                   canProceed={expressStepGate[expressStepId]?.ok ?? false}
                   proceedBlockedReason={expressStepGate[expressStepId]?.reason}
-                  oralScanRequired={expressOralScanRequired}
+                  oralScanRequired={false}
                   skipDesignConfirm={skipDesignConfirm}
                   onSkipDesignConfirmChange={persistSkipDesignConfirmSetting}
                   onOpenSkipDesignConfirmUncheck={() =>
@@ -6199,14 +6178,6 @@ export const PracticeFileTransferPage = ({
                                     ? `어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`
                                     : "어벗 프리셋",
                                 ok: missingAbutmentPresetTeeth.length === 0,
-                              },
-                            ]
-                          : []),
-                        ...(isAbutsPrimePoolLab(selectedLab)
-                          ? [
-                              {
-                                key: "구강스캔 파일",
-                                ok: files.length + draftFiles.length > 0,
                               },
                             ]
                           : []),

@@ -2,7 +2,6 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - 2026-08-19: 출고 목표=치과도착−2영업일.
 import {
-  ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE,
   ORAL_SCAN_REQUIRED_FROM_LAB,
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
   PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
@@ -195,25 +194,23 @@ describe("oral scan requirement for CA accept/create", () => {
     file: { originalName: "scan.stl", s3Key: "scan-key", size: 100 },
   };
 
-  test("assertOralScanFilesForCreate — auto requires files", () => {
+  test("assertOralScanFilesForCreate — auto and direct may omit files", () => {
     expect(() =>
       assertOralScanFilesForCreate({
         matchingMode: "auto",
         toothWorks: caTooth,
         files: [],
       }),
-    ).toThrow(ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE);
+    ).not.toThrow();
 
     expect(() =>
       assertOralScanFilesForCreate({
         matchingMode: "auto",
-        toothWorks: caTooth,
-        files: [scanFile],
+        toothWorks: [{ customAbutment: false, toothNumber: "21" }],
+        files: [],
       }),
     ).not.toThrow();
-  });
 
-  test("assertOralScanFilesForCreate — direct CA may omit files", () => {
     expect(() =>
       assertOralScanFilesForCreate({
         matchingMode: "direct",
@@ -221,16 +218,6 @@ describe("oral scan requirement for CA accept/create", () => {
         files: [],
       }),
     ).not.toThrow();
-  });
-
-  test("assertOralScanFilesForCreate — auto without CA still requires files", () => {
-    expect(() =>
-      assertOralScanFilesForCreate({
-        matchingMode: "auto",
-        toothWorks: [{ customAbutment: false, toothNumber: "21" }],
-        files: [],
-      }),
-    ).toThrow(ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE);
   });
 
   test("resolveOralScanFilesForAccept — existing files win", () => {

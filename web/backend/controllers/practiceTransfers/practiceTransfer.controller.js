@@ -127,6 +127,7 @@ import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabS
 // - 2026-08-17: trash/empty — 하드삭제 의뢰 채팅방 archive(치과 사이드바 유령 unread 방지).
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
+// - 2026-08-19: 생성 시 구강스캔은 선택(어벗츠기공소/자동매칭 포함).
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
 // - 2026-08-19: 경로 B — 어벗츠 원청 고정·하청 assignee·30분 우선창·하청 전환.
 // - 2026-08-15: 자동매칭 어벗츠(internalLab) 30분 우선창 — 목록·클레임 게이트, 거부 시 조기 공개.

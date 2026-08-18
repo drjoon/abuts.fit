@@ -1,3 +1,4 @@
+// - 2026-08-19: 치과 전송 시 구강스캔은 선택(어벗츠기공소 포함).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 기공소 구강스캔 업로드 UI 제거. 지정은 스캔 없이 수락.
 // - 2026-08-15: 수락 기공소 CA 디자인 — 구강스캔 다운로드 잠금 해제. 지정은 스캔 없이 수락 가능.
 // - web/backend/services/practiceTransferProduction.service.js
@@ -5,7 +6,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 
-/** 자동매칭: 치과 전송 시 구강스캔 필수 */
+/** @deprecated 생성 시 구강스캔은 선택. 레거시 토스트 문구 */
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
   "자동매칭으로 보낼 때는 구강스캔 파일을 첨부해주세요.";
 
