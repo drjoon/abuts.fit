@@ -89,13 +89,13 @@
  * - 2026-08-18: 수락 전(의뢰) 전송건을 폼에 불러와 수정. 삭제 후 재작성 대체.
  * - 2026-08-18: 의뢰 수정 저장 후 임시저장 목록 재조회를 기다리지 않음.
  * - 2026-08-18: 상세 「의뢰 수정」은 좌측 의뢰정보 상단. 목록 카드 메타는 1행 1항목.
+ * - 2026-08-18: 기공의뢰 카드 외곽선 제거. 상단 5버튼을 동기화 상태 행으로 이동(Express/Expert).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 import {
-  UploadCloud,
   ClipboardList,
   Trash2,
   RotateCcw,
@@ -112,7 +112,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -5951,79 +5950,77 @@ export const PracticeFileTransferPage = ({
       className="h-full min-h-0 bg-gradient-subtle"
     >
       <div className={cn("mx-auto h-full min-h-0 space-y-3 p-4", isExpressMode ? "max-w-6xl" : "max-w-7xl")}>
-        <div className="flex flex-wrap items-center gap-2">
-          {roleSwitcher}
-          <WorkspaceModeSwitch />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 px-3"
-                onClick={() => void handleStartNewTransfer()}
-              >
-                새로 작성
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs text-xs">
-              작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
-            </TooltipContent>
-          </Tooltip>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5 px-3"
-            onClick={() => setRecentTransfersAllOpen(true)}
-          >
-            <ClipboardList className="h-4 w-4 shrink-0" />
-            최근 의뢰
-            {recentActionNeededCount > 0 ? (
-              <Badge variant="secondary" className="ml-0.5">
-                {recentActionNeededCount}
-              </Badge>
-            ) : null}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5 px-3"
-            onClick={() => setDraftsOpen(true)}
-          >
-            <BookmarkPlus className="h-4 w-4 shrink-0" />
-            임시저장
-            {draftGroupedTransfers.length > 0 ? (
-              <Badge variant="secondary" className="ml-0.5">
-                {draftGroupedTransfers.length}
-              </Badge>
-            ) : null}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5 px-3"
-            onClick={() => setTrashOpen(true)}
-          >
-            <Trash2 className="h-4 w-4 shrink-0" />
-            휴지통
-            {trashGroupedTransfers.length > 0 ? (
-              <Badge variant="secondary" className="ml-0.5">
-                {trashGroupedTransfers.length}
-              </Badge>
-            ) : null}
-          </Button>
-        </div>
+        {roleSwitcher ? (
+          <div className="flex flex-wrap items-center gap-2">{roleSwitcher}</div>
+        ) : null}
 
         <div className="flex min-w-0 flex-col gap-3">
-          <Card className="border-slate-200/80 shadow-sm">
-            <CardHeader className="pb-2 pt-3">
+          <Card className="border-0 bg-transparent shadow-none hover:shadow-none">
+            <CardHeader className="px-0 pb-2 pt-0">
               <div className="flex items-center gap-4">
-                <CardTitle className="flex shrink-0 items-center gap-2 text-xl font-bold tracking-tight">
-                  <UploadCloud className="h-5 w-5 shrink-0 text-primary-strong" />
-                  <span className="shrink-0">기공의뢰</span>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <WorkspaceModeSwitch />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 px-3"
+                        onClick={() => void handleStartNewTransfer()}
+                      >
+                        새로 작성
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs text-xs">
+                      작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
+                    </TooltipContent>
+                  </Tooltip>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5 px-3"
+                    onClick={() => setRecentTransfersAllOpen(true)}
+                  >
+                    <ClipboardList className="h-4 w-4 shrink-0" />
+                    최근 의뢰
+                    {recentActionNeededCount > 0 ? (
+                      <Badge variant="secondary" className="ml-0.5">
+                        {recentActionNeededCount}
+                      </Badge>
+                    ) : null}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5 px-3"
+                    onClick={() => setDraftsOpen(true)}
+                  >
+                    <BookmarkPlus className="h-4 w-4 shrink-0" />
+                    임시저장
+                    {draftGroupedTransfers.length > 0 ? (
+                      <Badge variant="secondary" className="ml-0.5">
+                        {draftGroupedTransfers.length}
+                      </Badge>
+                    ) : null}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5 px-3"
+                    onClick={() => setTrashOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" />
+                    휴지통
+                    {trashGroupedTransfers.length > 0 ? (
+                      <Badge variant="secondary" className="ml-0.5">
+                        {trashGroupedTransfers.length}
+                      </Badge>
+                    ) : null}
+                  </Button>
                   {formSyncStatusLabel ? (
                     <span
                       className={cn(
@@ -6036,7 +6033,7 @@ export const PracticeFileTransferPage = ({
                       {formSyncStatusLabel}
                     </span>
                   ) : null}
-                </CardTitle>
+                </div>
               <div className="flex flex-1 items-center justify-end gap-4">
                 {showExpressWizard ? (
                   <PracticeTransferExpressStepProgress
@@ -6060,12 +6057,12 @@ export const PracticeFileTransferPage = ({
               </div>
             </CardHeader>
             {editingSentTransfer ? (
-              <div className="mx-6 mb-1 rounded-md border border-primary/30 bg-primary-soft px-3 py-2 text-sm text-primary-strong">
+              <div className="mb-1 rounded-md border border-primary/30 bg-primary-soft px-3 py-2 text-sm text-primary-strong">
                 기공소가 수락하기 전인 의뢰를 수정 중입니다. 저장하면 같은 의뢰가
                 업데이트됩니다. 새로 작성하면 수정이 취소됩니다.
               </div>
             ) : null}
-            <CardContent className="pt-5">
+            <CardContent className="px-0 pt-5">
               {showExpressWizard ? (
                 <PracticeTransferExpressWizard
                   key={expressWizardEpoch}
