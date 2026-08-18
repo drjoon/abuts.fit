@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 치과 어벗디자인 상단 — 기간필터·정책안내·출고대기·지난의뢰·불완전가공.
 // - 2026-08-16: 미설정 시에도 X로 닫기 가능(재진입·새로고침 시 다시 강제).
 // - 2026-08-16: internalLab 저장은 사업체 필드만 — 개인 아노 403 수정(useRequestorRequestSettings).
 // - 2026-08-16: 디자인SW·아노다이징을 공통 requestSettings 훅/다이얼로그로. 진입 시 미설정 강제.
@@ -58,6 +59,7 @@ import { Button } from "@/components/ui/button";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
+import { RequestorAbutmentPageHeader } from "./components/RequestorAbutmentPageHeader";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
 import {
@@ -72,6 +74,7 @@ import {
 
 
 // related files:
+// - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - web/frontend/src/features/requestSettings/useRequestorRequestSettings.ts
@@ -1503,6 +1506,7 @@ const NewRequestPageContent = () => {
     >
       <div className="max-w-6xl mx-auto w-full space-y-3 flex flex-col flex-1 min-h-0 h-full">
         {isLabRequestor ? <LabDashboardTopBanners /> : null}
+        {isPracticeRequestor ? <RequestorAbutmentPageHeader /> : null}
         <Dialog
           open={practiceIntroOpen}
           onOpenChange={(next) => {

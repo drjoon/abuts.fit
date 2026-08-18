@@ -4,9 +4,11 @@ import { AdminDashboardPage } from "@/pages/admin/dashboard/AdminDashboardPage";
 import { SalesmanDashboardPage } from "@/pages/salesman/SalesmanDashboardPage";
 import { Navigate, useLocation } from "react-router-dom";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // change-log:
+// - 2026-08-18: 치과 `/dashboard`는 구강스캔(또는 제출 후 어벗디자인)으로 보냄. 대시보드 페이지 미사용.
 // - 2026-08-17: internalLab `/dashboard` = 대기보드(RequestorDashboardPage). 기본 랜딩은 lab-work 유지.
 // - 2026-08-09: 신규의뢰 제출 등 refreshDashboardAt 의도 이동은 last path 허브 리다이렉트를 건너뛴다.
 // - 2026-08-09: 모든 role에서 /dashboard 허브가 lastDashboardPath(없으면 역할 기본값)로 복원.
@@ -19,6 +21,8 @@ import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath
 export const DashboardHome = () => {
   const { user } = useAuthStore();
   const location = useLocation();
+  const { kind: requestorKind, loading: requestorAccessLoading } =
+    useRequestorBusinessAccess();
 
   if (!user) return null;
 
@@ -31,6 +35,21 @@ export const DashboardHome = () => {
   );
 
   const entry = resolveEntryDashboardPath(user);
+
+  if (user.role === "requestor") {
+    if (requestorAccessLoading && requestorKind == null) return null;
+    if (requestorKind === "practice") {
+      if (stayOnDashboardHome) {
+        return <Navigate to="/dashboard/new-request" replace />;
+      }
+      const dest =
+        !entry || entry === "/dashboard" || entry === "/dashboard/"
+          ? "/dashboard/practice-transfers?mode=send"
+          : entry;
+      return <Navigate to={dest} replace />;
+    }
+  }
+
   // `/dashboard`는 진입 허브. 최근 메뉴(또는 역할 기본)가 다른면 그쪽으로 보낸다.
   // 단, 신규의뢰 제출 등 명시적 홈 이동(refreshDashboardAt)은 bounce 하지 않는다.
   if (!stayOnDashboardHome && entry !== "/dashboard") {

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: 그룹 메뉴(기공의뢰) 호버·클릭 글자를 foreground로 — ghost accent 흰 글자 방지.
 // - 2026-08-18: 치과 기공의뢰 — 메인 행 + 들여쓴 서브(구강스캔으로 / 어벗디자인으로).
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx
@@ -111,10 +112,10 @@ const SidebarNavButton = ({
           : isActive
             ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
             : nested
-              ? "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              ? "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               : groupActive
-                ? "text-foreground hover:bg-muted/60"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                ? "text-foreground hover:bg-muted/60 hover:text-foreground"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
       }`}
       onClick={() => {
         if (paidLocked) return;

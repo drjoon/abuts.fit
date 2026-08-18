@@ -3,6 +3,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 // - web/frontend/src/store/useAuthStore.ts
+// - 2026-08-18: 치과 requestor `/dashboard` last path는 구강스캔으로 보정(대시보드 메뉴 제거).
 // - 2026-08-17: internalLab `/dashboard` = 대기보드 허용(기본 랜딩은 lab-work).
 
 /**

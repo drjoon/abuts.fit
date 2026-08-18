@@ -5,6 +5,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-08-18: 치과 제출 후 `/dashboard` 대신 어벗디자인 페이지에 잔류(대시보드 메뉴 없음).
 // - 2026-08-13: 제출 시 이미 사업자가 있으면 profile/credits GET을 생략
 // - 2026-08-13: 복원·포워딩 시 이미 S3/메타가 있는 STL은 재업로드하지 않음.
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
@@ -23,6 +24,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import type { TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { apiFetch, request } from "@/shared/api/apiClient";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   getFileKey,
   getLocalDraft,
@@ -60,12 +62,17 @@ export const useNewRequestPage = (
   const { user, token, setLastDashboardPath } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { kind: requestorKind } = useRequestorBusinessAccess();
   const enableOralScanGrouping = options?.enableOralScanGrouping !== false;
   // 사이드바 goSidebarHref와 동일: /dashboard 허브가 lastDashboardPath(신규의뢰 등)로
   // 다시 bounce 하지 않도록 이동 전에 last path를 pin 한다.
   const navigateWithDashboardRefresh = useCallback(
     (path: string) => {
       if (path === "/dashboard") {
+        if (requestorKind === "practice") {
+          navigate("/dashboard/new-request");
+          return;
+        }
         setLastDashboardPath("/dashboard");
         if (token) {
           void apiFetch({
@@ -87,7 +94,7 @@ export const useNewRequestPage = (
 
       navigate(path);
     },
-    [navigate, setLastDashboardPath, token],
+    [navigate, requestorKind, setLastDashboardPath, token],
   );
 
   const [selectedRequest, setSelectedRequest] = useState<any>(null);

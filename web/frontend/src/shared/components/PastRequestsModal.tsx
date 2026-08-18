@@ -1,8 +1,11 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-08-18: 지난 의뢰 기본에서 취소 제외(추적관리만).
+// - 2026-08-18: 열릴 때 initialPeriod로 페이지 헤더 기간과 동기.
 // - 2026-08-03: PastRequestsModal: display normalize manufacturer stage (의뢰 -> 준비) for table '상태' column. (display-only)
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
@@ -14,13 +17,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -49,11 +45,13 @@ export type PastRequestsModalProps = {
   onOpenChange: (open: boolean) => void;
   title?: string;
   onSelectRequest: (request: any) => void;
-  /** 기본: 완료/취소만 표시 */
+  /** 기본: 완료(추적관리)만. 취소 제외 */
   manufacturerStageIn?: string[];
+  /** 열릴 때 기간 필터를 이 값으로 맞춘다(페이지 헤더 기간과 동기). */
+  initialPeriod?: PeriodFilterValue;
 };
 
-const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리", "취소"];
+const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
 
 const PAGE_SIZE = 50;
 
@@ -103,6 +101,7 @@ export const PastRequestsModal = ({
   title,
   onSelectRequest,
   manufacturerStageIn,
+  initialPeriod,
 }: PastRequestsModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -118,10 +117,9 @@ export const PastRequestsModal = ({
     [manufacturerStageIn],
   );
 
-  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
-  const [statusMode, setStatusMode] = useState<
-    "default" | "completed" | "cancel"
-  >("default");
+  const [period, setPeriod] = useState<PeriodFilterValue>(
+    initialPeriod || "30d",
+  );
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -134,15 +132,10 @@ export const PastRequestsModal = ({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const effectiveManufacturerStageIn = useMemo(() => {
-    if (statusMode === "completed") return ["추적관리"];
-    if (statusMode === "cancel") return ["취소"];
-    return initialManufacturerStageIn;
-  }, [statusMode, initialManufacturerStageIn]);
+  const effectiveManufacturerStageIn = initialManufacturerStageIn;
 
   const resetFilters = () => {
     setPeriod("30d");
-    setStatusMode("default");
     setQ("");
     setFrom("");
     setTo("");
@@ -194,6 +187,13 @@ export const PastRequestsModal = ({
 
   useEffect(() => {
     if (!open) return;
+    if (initialPeriod) {
+      setPeriod(initialPeriod);
+      const range = pickRangeByPeriod(initialPeriod);
+      setFrom(range.start);
+      setTo(range.end);
+      return;
+    }
     const range = pickRangeByPeriod(period);
     if (!from && !to && (range.start || range.end)) {
       setFrom(range.start);
@@ -218,7 +218,7 @@ export const PastRequestsModal = ({
     setHasMore(true);
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, period, statusMode, from, to]);
+  }, [open, period, from, to]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -275,22 +275,6 @@ export const PastRequestsModal = ({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2 py-0.5">
                 <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
-
-                <div className="w-[140px]">
-                  <Select
-                    value={statusMode}
-                    onValueChange={(v) => setStatusMode(v as any)}
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="전체" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">전체(완료/취소)</SelectItem>
-                      <SelectItem value="completed">완료</SelectItem>
-                      <SelectItem value="cancel">취소</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
 
                 <Button
                   type="button"

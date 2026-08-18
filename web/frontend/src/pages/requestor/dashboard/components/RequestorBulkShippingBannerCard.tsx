@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-18: variant=headerButton — 치과 어벗디자인 헤더 [출고대기내역 x건].
 // - 2026-08-11: 오늘 출고 예정은 건 단위만 표시. 좌측 세로 버튼·우측 요약 배치.
 // - 2026-08-11: 출고 안내 문구를 카드에서 제거하고 Info 빠른 툴팁으로 이동.
 // - 2026-08-09: 디자인+생산 출고 +1영업일 안내를 SHIP_OUT_INFO_MESSAGE에 반영.
@@ -9,6 +10,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Box, Clock, Info, Package, Zap } from "lucide-react";
@@ -93,6 +95,8 @@ type Props = {
   period?: PeriodFilterValue;
   /** true면 카드 chrome은 유지하고 "오늘 출고 예정" 수치 영역만 스켈레톤 처리 */
   loading?: boolean;
+  /** headerButton: 카드 없이 헤더용 [출고대기내역 x건] + 기존 모달 */
+  variant?: "card" | "headerButton";
 };
 
 const periodToShippingSummaryDays = (period: PeriodFilterValue): number => {
@@ -182,6 +186,7 @@ export const RequestorBulkShippingBannerCard = ({
   onRefresh,
   period = "30d",
   loading = false,
+  variant = "card",
 }: Props) => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
@@ -638,8 +643,22 @@ export const RequestorBulkShippingBannerCard = ({
     }
   };
 
+  const waitingCount = items.length;
+  const isHeaderButton = variant === "headerButton";
+
   return (
     <>
+      {isHeaderButton ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 px-3 text-xs"
+          onClick={handleOpenModal}
+        >
+          출고대기내역 {waitingCount.toLocaleString()}건
+        </Button>
+      ) : (
       <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -731,6 +750,7 @@ export const RequestorBulkShippingBannerCard = ({
           </div>
         </CardContent>
       </Card>
+      )}
 
       <Dialog open={todayBoxDialogOpen} onOpenChange={setTodayBoxDialogOpen}>
         <DialogContent className="max-w-lg">

@@ -202,7 +202,11 @@ test.describe("Requestor capability labels – 실계정 로그인", () => {
     const url = page.url();
     expect(url).toMatch(/\/dashboard/);
     const pathOnly = new URL(url).pathname.replace(/\/$/, "") || "/";
-    expect(pathOnly).toBe("/dashboard");
+    expect(
+      pathOnly === "/dashboard" ||
+        pathOnly === "/dashboard/practice-transfers" ||
+        pathOnly === "/dashboard/new-request",
+    ).toBe(true);
   });
 
   test("유료 게이트 해제 – paid+verified 모킹 시에도 대시보드 허용", async ({

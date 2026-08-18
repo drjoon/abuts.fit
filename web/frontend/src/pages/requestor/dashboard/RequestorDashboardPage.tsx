@@ -79,6 +79,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-08-18: 치과는 대시보드를 쓰지 않음. 기공소·어벗츠기공소 대기보드만 유지.
 // - 2026-08-18: 치과 요약 행 라벨 기공/어벗 → 구강스캔/어벗디자인.
 // - 2026-08-15: 기공 요약「수락」카드 →「수락/거부」병기(accepted/rejected).
 // - 2026-08-15: 기공 요약「완료」카드 →「완료/취소」병기(completed/canceled).
@@ -102,6 +103,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
+// - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx

@@ -17,7 +17,7 @@
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
-- Requestor workspace header: 기간 필터는 대시보드만. 지난 의뢰는 대시보드 `RequestorRecentRequestsCard` 헤더 우측. 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
+- Requestor workspace header: 기간 필터는 치과 `어벗디자인으로`(`/dashboard/new-request`) 상단과 기공소 대시보드. 헤더 버튼: `[정책 안내]` · `[출고대기내역 x건]` · `[지난의뢰 x건]` · `[불완전 가공 x건]` (x=기간 건수). 치과는 대시보드 메뉴를 두지 않음(`/dashboard` → 구강스캔, 제출 후 어벗디자인). 기공소·어벗츠기공소 대시보드(대기보드)는 유지. 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
 - Semantic color palette (강제, 앱 전체):
   - 의미 축 4 + 서비스 1만 사용. 같은 축 안 차이는 soft/muted/DEFAULT/strong 밝기만.
     - **Primary** (`--primary*`) — 브랜드·CTA·공정·묶음출고·정상/완료
@@ -168,7 +168,7 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=서비스 3종 단일가(어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만 · 풀세트 9만). 멤버십/구독 UI 없음.
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만(구강지그 제외) · 신속 +2,000 · 배송 3,500. 풀세트·환봉 행 없음. 멤버십/구독 UI 없음.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정 on·off·%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소는 설정「어벗츠 인증」에서 신청(`POST /api/businesses/me/auto-match-participation`, 미인증 시 신청만·월정 0). 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정은 기본 무료(`directPlatformFeeEnabled` off) · on 시 `directPlatformFeeRate%`. 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
@@ -432,7 +432,7 @@ Notes:
     잔액 < 50만원이면 사이드바 `크레딧`에 깜빡이는 충전 뱃지·클릭 시 `?tab=charge` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage` — 치과·기공소 경로는 면세·부가세 없음, 크레딧=기공료 선입금(선납 대금).
-  - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 서비스 3종 단일가(어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만 · 풀세트 9만=2.5+0.5+6) · 환봉은 고시가(0원이면 별도 고지) + 배송비 별도(박스당 과금). 멤버십/구독 행 없음.
+  - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 고시 어벗디자인으로 생산 1.5만 · 구강스캔으로 디자인+생산 2.5만(구강지그 제외) · 신속 출고 +2,000(1개당) · 배송비 3,500(1박스당). 풀세트·환봉 행 없음. 멤버십/구독 행 없음.
   - 제조사 정산규칙: 원청–하청 고정단가(의뢰·배송 공급가, 면세). % 분배 안내 금지.
   - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 딜러사·개발운영사 `AFFILIATE_TO_ABUTS`만 과세.
 
@@ -582,8 +582,8 @@ Notes:
     - `BusinessPaidAccessGate`, 사이드바 `isPaidRequestorPath`, 설정 `PAID_REQUESTOR_SETTINGS_TABS`
     - 변경 후 `notifyRequestorAccessUpdated`
   - 기공의뢰서: 발신=`kind===practice`, 수신=`kind===lab` (`PracticeTransferRoleTabs`)
-  - 치과 사이드: 「기공의뢰」메인 행 + 서브 `구강스캔으로`(`/dashboard/practice-transfers?mode=send`, 서비스 2·3) · `어벗디자인으로`(`/dashboard/new-request`, 서비스 1). 기공소 사이드는 기공의뢰수신·어벗생산의뢰 유지.
-  - 치과 대시보드 요약 행 라벨: `구강스캔` / `어벗디자인` (기공소는 `기공` / `어벗`). 액센트는 기공·어벗 토큰.
+  - 치과 사이드: 「기공의뢰」메인 행 + 서브 `구강스캔으로`(`/dashboard/practice-transfers?mode=send`, 서비스 2·3) · `어벗디자인으로`(`/dashboard/new-request`, 서비스 1). 대시보드 메뉴 없음. 기공소 사이드는 대시보드·기공의뢰수신·어벗생산의뢰 유지.
+  - 치과 대시보드 요약 행 라벨: `구강스캔` / `어벗디자인` (기공소는 `기공` / `어벗`). 액센트는 기공·어벗 토큰. 치과는 대시보드 페이지를 쓰지 않고 같은 기간 건수를 어벗디자인 헤더 버튼으로 연다.
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
   - 계정 전환: `AccountSwitcher`
 
